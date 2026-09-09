@@ -1,0 +1,101 @@
+---
+to: "lib/ash_a2a.ex"
+---
+<%#
+  Generated Spark.Dsl.Extension -- mirrors ash-extension-core-pack's
+  extension.ex.tmpl shape (packs/ash-extension-core-pack/templates/extension.ex.tmpl),
+  translated from Tera {% %} syntax to EEx <%= %>/<% %> per the ggen-igniter-eex
+  research finding: struct module + nested Argument struct module + two
+  %Spark.Dsl.Entity{} module attributes (@argument nested under @skill via
+  entities: [arguments: [@argument]]) + one %Spark.Dsl.Section{} + `use
+  Spark.Dsl.Extension`. Skill args/schema mirror ash_ai's real @tool entity
+  (~/xaas/deps/ash_ai/lib/ash_ai/dsl.ex:228-268, args: [:name, {:optional,
+  :resource}, :action]) and its nested @tool_argument (target
+  AshAi.Tool.Argument, ~/xaas/deps/ash_ai/lib/ash_ai.ex:46-58: name, type,
+  description, default, allow_nil?). Echoes admitted PRD/ARD facts (FR1-FR2,
+  §3.1, §3.4); does not invent new DSL shape.
+%>
+defmodule <%= @skill_struct %> do
+  @moduledoc false
+
+  @enforce_keys [:name, :action]
+
+  defstruct [
+    :name,
+    :resource,
+    :action,
+    :arguments,
+    :__identifier__,
+    :__spark_metadata__
+  ]
+end
+
+defmodule <%= @argument_struct %> do
+  @moduledoc false
+
+  @enforce_keys [:name, :type]
+
+  defstruct [
+    :name,
+    :type,
+    :description,
+    :__identifier__,
+    :__spark_metadata__,
+    default: nil,
+    allow_nil?: true
+  ]
+end
+
+defmodule <%= @module_name %> do
+  @moduledoc """
+  Spark.Dsl.Extension for `<%= @package_name %>`.
+
+  Manufactured by ggen from an admitted ash_a2a:AshExtensionSpec -- do not
+  hand-edit; regenerate from the ontology instead.
+  """
+
+  @<%= @argument_entity %> %Spark.Dsl.Entity{
+    name: :<%= @argument_entity %>,
+    target: <%= @argument_struct %>,
+    args: [:name, :type],
+    describe: "An argument accepted by this skill's underlying Ash action.",
+    schema: [
+      name: [type: :atom, required: true, doc: "The argument's atom name."],
+      type: [type: :any, required: true, doc: "The argument's Ash/Spark type."],
+      description: [type: :string, required: false, doc: "Human-readable description of the argument."],
+      default: [type: :any, required: false, default: nil, doc: "Default value used when the argument is omitted."],
+      allow_nil?: [type: :boolean, required: false, default: true, doc: "Whether nil is an acceptable value for this argument."]
+    ]
+  }
+
+  @<%= @skill_entity %> %Spark.Dsl.Entity{
+    name: :<%= @skill_entity %>,
+    target: <%= @skill_struct %>,
+    args: [:name, {:optional, :resource}, :action],
+    identifier: :name,
+    describe: """
+    Expose an Ash resource/domain action as an A2A-discoverable agent skill.
+    """,
+    entities: [
+      arguments: [@<%= @argument_entity %>]
+    ],
+    schema: [
+      name: [type: :atom, required: true, doc: "The skill's atom name."],
+      resource: [type: :module, required: false, doc: "The Ash resource this skill's action belongs to. Optional and context-normalized: implicit on a resource-level declaration, required on a domain-level declaration."],
+      action: [type: :atom, required: true, doc: "The Ash action this skill invokes on its resource."]
+    ]
+  }
+
+  @skills %Spark.Dsl.Section{
+    name: :a2a,
+    describe: "Declare Ash resource/domain actions as A2A-discoverable agent skills.",
+    entities: [
+      @<%= @skill_entity %>
+    ]
+  }
+
+  use Spark.Dsl.Extension,
+    sections: [@skills],
+    transformers: [<%= @module_name %>.Persist],
+    verifiers: [<%= @module_name %>.Verify]
+end

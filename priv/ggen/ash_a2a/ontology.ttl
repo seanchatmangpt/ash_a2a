@@ -1,0 +1,208 @@
+@prefix ash_a2a: <http://seanchatmangpt.github.io/packs/ash-a2a#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+
+#################################################################
+# Vocabulary
+#################################################################
+# Loosely modeled on ash-extension-core-pack's aex: vocabulary
+# (/Users/sac/ggen-marketplace/packs/ash-extension-core-pack/ontology.ttl),
+# but this is a standalone project, namespaced ash_a2a: -- not a fork of
+# that pack, not reusing its aex: IRIs.
+
+ash_a2a:AshExtensionSpec a rdfs:Class ;
+    rdfs:label "One ash_a2a Spark.Dsl.Extension to manufacture -- a Spark.Dsl.Extension exposing a :skill DSL entity, its context-normalization transformer, and a Verify module delegating to an external validate/1 function." .
+
+ash_a2a:packageName a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "hex package name, snake_case, e.g. ash_a2a" .
+ash_a2a:moduleName a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "top Elixir module, e.g. AshA2A" .
+
+#################################################################
+# Skill entity (Spark.Dsl.Entity), args: [name, {:optional, resource}, action]
+#################################################################
+
+ash_a2a:SkillEntity a rdfs:Class ;
+    rdfs:label "The :skill Spark.Dsl.Entity this extension contributes -- args [:name, {:optional, :resource}, :action], mirroring ash_ai's AshAi.Tool entity shape (dsl.ex:228-268: args: [:name, {:optional, :resource}, :action])." .
+ash_a2a:skillOf   a rdf:Property ; rdfs:domain ash_a2a:SkillEntity ; rdfs:range ash_a2a:AshExtensionSpec .
+ash_a2a:entityName a rdf:Property ; rdfs:domain ash_a2a:SkillEntity ;
+    rdfs:comment "atom name, e.g. :skill" .
+ash_a2a:entityStruct a rdf:Property ; rdfs:domain ash_a2a:SkillEntity ;
+    rdfs:comment "backing struct module, e.g. AshA2A.Dsl.Skill" .
+
+ash_a2a:SkillArg a rdfs:Class ;
+    rdfs:label "One positional Spark.Dsl.Entity :args entry on the :skill entity (name, optional resource, action)." .
+ash_a2a:argOf     a rdf:Property ; rdfs:domain ash_a2a:SkillArg ; rdfs:range ash_a2a:SkillEntity .
+ash_a2a:argOrder  a rdf:Property ; rdfs:domain ash_a2a:SkillArg .
+ash_a2a:argName   a rdf:Property ; rdfs:domain ash_a2a:SkillArg ;
+    rdfs:comment "must match one of the skill entity's own schema field names." .
+ash_a2a:argOptional a rdf:Property ; rdfs:domain ash_a2a:SkillArg ;
+    rdfs:comment "boolean -- true renders this positional arg as Spark's {:optional, :field} form (e.g. resource), false renders a bare atom (name, action)." .
+
+ash_a2a:SkillSchemaField a rdfs:Class ;
+    rdfs:label "One field of the :skill entity's Spark schema (name/resource/action)." .
+ash_a2a:fieldOf      a rdf:Property ; rdfs:domain ash_a2a:SkillSchemaField ; rdfs:range ash_a2a:SkillEntity .
+ash_a2a:fieldOrder   a rdf:Property ; rdfs:domain ash_a2a:SkillSchemaField .
+ash_a2a:fieldName    a rdf:Property ; rdfs:domain ash_a2a:SkillSchemaField .
+ash_a2a:fieldType    a rdf:Property ; rdfs:domain ash_a2a:SkillSchemaField ;
+    rdfs:comment "closed set: atom | string | boolean | integer | module | list_atom | list_string | any." .
+ash_a2a:fieldRequired a rdf:Property ; rdfs:domain ash_a2a:SkillSchemaField .
+ash_a2a:fieldDoc      a rdf:Property ; rdfs:domain ash_a2a:SkillSchemaField .
+
+#################################################################
+# Argument entity (nested under Skill), args: [name, type]
+#################################################################
+
+ash_a2a:ArgumentEntity a rdfs:Class ;
+    rdfs:label "The nested :argument Spark.Dsl.Entity declared inside :skill's entities: [arguments: [...]] field, mirroring ash_ai's @tool_argument nested under @tool (dsl.ex:228-268, target AshAi.Tool.Argument). Fields: name, type, description, default, allow_nil?." .
+ash_a2a:nestedOf a rdf:Property ; rdfs:domain ash_a2a:ArgumentEntity ; rdfs:range ash_a2a:SkillEntity ;
+    rdfs:comment "the parent :skill entity this :argument is nested under." .
+ash_a2a:nestedFieldName a rdf:Property ; rdfs:domain ash_a2a:ArgumentEntity ;
+    rdfs:comment "field name (atom, no colon) on the parent's entities: [...] keyword list AND the field on the parent struct holding the nested list, e.g. \"arguments\"." .
+ash_a2a:argumentEntityName a rdf:Property ; rdfs:domain ash_a2a:ArgumentEntity ;
+    rdfs:comment "atom name of the nested entity itself, e.g. :argument" .
+ash_a2a:argumentEntityStruct a rdf:Property ; rdfs:domain ash_a2a:ArgumentEntity ;
+    rdfs:comment "backing struct module, e.g. AshA2A.Dsl.Skill.Argument" .
+
+ash_a2a:ArgumentArg a rdfs:Class ;
+    rdfs:label "One positional Spark.Dsl.Entity :args entry on the nested :argument entity (name, type)." .
+ash_a2a:argumentArgOf    a rdf:Property ; rdfs:domain ash_a2a:ArgumentArg ; rdfs:range ash_a2a:ArgumentEntity .
+ash_a2a:argumentArgOrder a rdf:Property ; rdfs:domain ash_a2a:ArgumentArg .
+ash_a2a:argumentArgName  a rdf:Property ; rdfs:domain ash_a2a:ArgumentArg ;
+    rdfs:comment "must match one of the argument entity's own schema field names." .
+
+ash_a2a:ArgumentSchemaField a rdfs:Class ;
+    rdfs:label "One field of the nested :argument entity's Spark schema (name/type/description/default/allow_nil?)." .
+ash_a2a:argumentFieldOf      a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField ; rdfs:range ash_a2a:ArgumentEntity .
+ash_a2a:argumentFieldOrder   a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField .
+ash_a2a:argumentFieldName    a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField .
+ash_a2a:argumentFieldType    a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField ;
+    rdfs:comment "closed set: atom | string | boolean | integer | module | list_atom | list_string | any." .
+ash_a2a:argumentFieldRequired a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField .
+ash_a2a:argumentFieldDoc      a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField .
+ash_a2a:argumentFieldDefault  a rdf:Property ; rdfs:domain ash_a2a:ArgumentSchemaField ;
+    rdfs:comment "optional literal Elixir default value source, e.g. \"nil\" or \"[]\", rendered verbatim after `default:`." .
+
+#################################################################
+# Context normalization (ash_ai AshAi.Transformers.ResourceTools pattern)
+#################################################################
+
+ash_a2a:contextNormalize a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "boolean -- opt in to a generated resource/domain context-normalization transformer step, the ash_ai AshAi.Transformers.ResourceTools pattern (lib/ash_ai/transformers/resource_tools.ex:13-55,125-127): detect resource-vs-domain via `Module.get_attribute(module, :spark_is) == Ash.Resource`, fill in the target-context field on resource-local (implicit) declarations, raise Spark.Error.DslError if that field is explicitly supplied at the resource level, raise Spark.Error.DslError if it is missing at the domain level. Requires ash_a2a:contextTargetEntity and ash_a2a:contextTargetField." .
+ash_a2a:contextTargetEntity a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "entity name (atom, no leading colon) whose instances carry the context-resolved field -- ash_a2a's is \"skill\". Only meaningful when ash_a2a:contextNormalize is true." .
+ash_a2a:contextTargetField a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "field name (atom, no leading colon) on ash_a2a:contextTargetEntity that is positionally optional (Spark {:optional, :field} in that entity's :args) and gets filled in / validated by the normalization transformer -- ash_a2a's is \"resource\". Only meaningful when ash_a2a:contextNormalize is true." .
+
+#################################################################
+# After-transformers (0+ rows, empty for ash_a2a)
+#################################################################
+
+ash_a2a:afterTransformer a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "0+ rows -- a real Ash core transformer module name this extension's Persist transformer must declare after?/1 true for, per ash_r2rml/lib/ash_r2rml/resource.ex:188-194's pattern. Row order carries no meaning. Absence means Persist emits no after?/1 override at all." .
+
+#################################################################
+# Verify delegate (ash_r2rml AshR2RML.Resource.Verify 2-branch shape)
+#################################################################
+
+ash_a2a:validateDelegateModule a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "when set (with ash_a2a:validateDelegateFunction), the generated Verify module's compiled-present branch delegates business validation to `Module.function(compiled)` instead of a per-verifier with-chain, mirroring ash_r2rml's exact 2-branch shape (resource.ex:492-511): nil-check stays inline, a separate module's validate/1 does the real check, :ok -> :ok, {:error, refusals} -> Spark.Error.DslError.exception(message: Enum.map_join(refusals, \"; \", &\"#{&1.code}: #{&1.detail}\"))." .
+ash_a2a:validateDelegateFunction a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "function name (atom, no colon) on ash_a2a:validateDelegateModule, arity 1, returning :ok | {:error, [%{code: _, detail: _}]}. Only meaningful when ash_a2a:validateDelegateModule is set." .
+
+#################################################################
+# Legacy adapter (ash_r2rml Info.mapping_result/1 rescue pattern) -- none for ash_a2a
+#################################################################
+
+ash_a2a:legacyAdapterModule a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "optional -- when set (with ash_a2a:legacyAdapterFunction), the generated Info module's result-tuple getter rescues to `Module.function(resource)` on any error, mirroring ash_r2rml's Info.mapping_result/1 (resource.ex:527-534). Absent means no rescue clause." .
+ash_a2a:legacyAdapterFunction a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "function name (atom, no colon) on ash_a2a:legacyAdapterModule, arity 1. Only meaningful when ash_a2a:legacyAdapterModule is set." .
+
+#################################################################
+# Dual-level fixture (xaas Xaas.Library / Xaas.Library.Book stacking pattern)
+#################################################################
+
+ash_a2a:dualLevelFixture a rdf:Property ; rdfs:domain ash_a2a:AshExtensionSpec ;
+    rdfs:comment "boolean -- generate composition_test fixtures at BOTH a resource-level and a domain-level module, each stacking this extension alongside other extensions, instead of a single bare-fixture compile check. Real exemplar: xaas's Xaas.Library domain (lib/xaas/library.ex:8) and Xaas.Library.Book resource (lib/xaas/library/book.ex:36) -- same extension family co-resident with 2-3 other extensions at both levels in one real package." .
+
+#################################################################
+# Worked instance: AshA2ASpec -- the single ash_a2a AshExtensionSpec
+#################################################################
+
+ash_a2a:AshA2ASpec a ash_a2a:AshExtensionSpec ;
+    ash_a2a:packageName "ash_a2a" ;
+    ash_a2a:moduleName "AshA2A" ;
+    ash_a2a:contextNormalize true ;
+    ash_a2a:contextTargetEntity "skill" ;
+    ash_a2a:contextTargetField "resource" ;
+    ash_a2a:validateDelegateModule "AshA2A.CapabilityIndex" ;
+    ash_a2a:validateDelegateFunction "validate" ;
+    ash_a2a:dualLevelFixture true .
+    # ash_a2a:afterTransformer: no rows -- empty, per instruction.
+    # ash_a2a:legacyAdapterModule / ash_a2a:legacyAdapterFunction: absent -- "legacy-adapter none".
+
+ash_a2a:AshA2ASkillEntity a ash_a2a:SkillEntity ;
+    ash_a2a:skillOf ash_a2a:AshA2ASpec ;
+    ash_a2a:entityName "skill" ;
+    ash_a2a:entityStruct "AshA2A.Dsl.Skill" .
+
+ash_a2a:AshA2ASkillArgName a ash_a2a:SkillArg ;
+    ash_a2a:argOf ash_a2a:AshA2ASkillEntity ; ash_a2a:argOrder 1 ;
+    ash_a2a:argName "name" ; ash_a2a:argOptional false .
+ash_a2a:AshA2ASkillArgResource a ash_a2a:SkillArg ;
+    ash_a2a:argOf ash_a2a:AshA2ASkillEntity ; ash_a2a:argOrder 2 ;
+    ash_a2a:argName "resource" ; ash_a2a:argOptional true .
+ash_a2a:AshA2ASkillArgAction a ash_a2a:SkillArg ;
+    ash_a2a:argOf ash_a2a:AshA2ASkillEntity ; ash_a2a:argOrder 3 ;
+    ash_a2a:argName "action" ; ash_a2a:argOptional false .
+
+ash_a2a:AshA2ASkillFieldName a ash_a2a:SkillSchemaField ;
+    ash_a2a:fieldOf ash_a2a:AshA2ASkillEntity ;
+    ash_a2a:fieldOrder 1 ; ash_a2a:fieldName "name" ; ash_a2a:fieldType "atom" ;
+    ash_a2a:fieldRequired true ; ash_a2a:fieldDoc "The skill's atom name." .
+ash_a2a:AshA2ASkillFieldResource a ash_a2a:SkillSchemaField ;
+    ash_a2a:fieldOf ash_a2a:AshA2ASkillEntity ;
+    ash_a2a:fieldOrder 2 ; ash_a2a:fieldName "resource" ; ash_a2a:fieldType "module" ;
+    ash_a2a:fieldRequired false ;
+    ash_a2a:fieldDoc "The Ash resource this skill's action belongs to. Optional and context-normalized: implicit on a resource-level declaration, required on a domain-level declaration." .
+ash_a2a:AshA2ASkillFieldAction a ash_a2a:SkillSchemaField ;
+    ash_a2a:fieldOf ash_a2a:AshA2ASkillEntity ;
+    ash_a2a:fieldOrder 3 ; ash_a2a:fieldName "action" ; ash_a2a:fieldType "atom" ;
+    ash_a2a:fieldRequired true ; ash_a2a:fieldDoc "The Ash action this skill invokes on its resource." .
+
+ash_a2a:AshA2AArgumentEntity a ash_a2a:ArgumentEntity ;
+    ash_a2a:nestedOf ash_a2a:AshA2ASkillEntity ;
+    ash_a2a:nestedFieldName "arguments" ;
+    ash_a2a:argumentEntityName "argument" ;
+    ash_a2a:argumentEntityStruct "AshA2A.Dsl.Skill.Argument" .
+
+ash_a2a:AshA2AArgumentArgName a ash_a2a:ArgumentArg ;
+    ash_a2a:argumentArgOf ash_a2a:AshA2AArgumentEntity ; ash_a2a:argumentArgOrder 1 ;
+    ash_a2a:argumentArgName "name" .
+ash_a2a:AshA2AArgumentArgType a ash_a2a:ArgumentArg ;
+    ash_a2a:argumentArgOf ash_a2a:AshA2AArgumentEntity ; ash_a2a:argumentArgOrder 2 ;
+    ash_a2a:argumentArgName "type" .
+
+ash_a2a:AshA2AArgumentFieldName a ash_a2a:ArgumentSchemaField ;
+    ash_a2a:argumentFieldOf ash_a2a:AshA2AArgumentEntity ;
+    ash_a2a:argumentFieldOrder 1 ; ash_a2a:argumentFieldName "name" ; ash_a2a:argumentFieldType "atom" ;
+    ash_a2a:argumentFieldRequired true ; ash_a2a:argumentFieldDoc "The argument's atom name." .
+ash_a2a:AshA2AArgumentFieldType a ash_a2a:ArgumentSchemaField ;
+    ash_a2a:argumentFieldOf ash_a2a:AshA2AArgumentEntity ;
+    ash_a2a:argumentFieldOrder 2 ; ash_a2a:argumentFieldName "type" ; ash_a2a:argumentFieldType "any" ;
+    ash_a2a:argumentFieldRequired true ; ash_a2a:argumentFieldDoc "The argument's Ash/Spark type." .
+ash_a2a:AshA2AArgumentFieldDescription a ash_a2a:ArgumentSchemaField ;
+    ash_a2a:argumentFieldOf ash_a2a:AshA2AArgumentEntity ;
+    ash_a2a:argumentFieldOrder 3 ; ash_a2a:argumentFieldName "description" ; ash_a2a:argumentFieldType "string" ;
+    ash_a2a:argumentFieldRequired false ; ash_a2a:argumentFieldDoc "Human-readable description of the argument." .
+ash_a2a:AshA2AArgumentFieldDefault a ash_a2a:ArgumentSchemaField ;
+    ash_a2a:argumentFieldOf ash_a2a:AshA2AArgumentEntity ;
+    ash_a2a:argumentFieldOrder 4 ; ash_a2a:argumentFieldName "default" ; ash_a2a:argumentFieldType "any" ;
+    ash_a2a:argumentFieldRequired false ; ash_a2a:argumentFieldDefault "nil" ;
+    ash_a2a:argumentFieldDoc "Default value used when the argument is omitted." .
+ash_a2a:AshA2AArgumentFieldAllowNil a ash_a2a:ArgumentSchemaField ;
+    ash_a2a:argumentFieldOf ash_a2a:AshA2AArgumentEntity ;
+    ash_a2a:argumentFieldOrder 5 ; ash_a2a:argumentFieldName "allow_nil?" ; ash_a2a:argumentFieldType "boolean" ;
+    ash_a2a:argumentFieldRequired false ; ash_a2a:argumentFieldDefault "true" ;
+    ash_a2a:argumentFieldDoc "Whether nil is an acceptable value for this argument." .

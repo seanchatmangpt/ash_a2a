@@ -1,0 +1,58 @@
+# spec.rq -- singleton-row extraction of the ash_a2a AshExtensionSpec plus its
+# nested Skill / Skill.Argument entity shape, modeled on this session's reading of:
+#   - ~/ggen-marketplace/packs/ash-extension-core-pack/templates/persist.ex.tmpl
+#     (the `spec:` SPARQL block -- SELECT DISTINCT ?package_name ?module_name with
+#     SAMPLE()-wrapped OPTIONAL scalar context fields, GROUP BY package_name/module_name)
+#   - ~/ggen-marketplace/packs/ash-extension-core-pack/gates/010_required_extension_contract.rq
+#     and 020_schema_field_contract.rq (aex:AshExtensionSpec / aex:DslSection /
+#     aex:DslEntity required-property shape and closed-enum conventions)
+#   - ~/ggen-marketplace/docs/explanation/ash-a2a-prd-ard.md FR1/FR2/§3.4: a
+#     `skill` is a DslEntity nested under a `:skills` DslSection; each skill's
+#     `Skill.Argument` is itself a nested entity under that skill (mirrors
+#     ash_ai's `@tool` / `@tool_argument` nesting, ~/xaas/deps/ash_ai/lib/ash_ai/dsl.ex:228-268).
+#
+# NOTE: ontology.ttl did not exist yet when this query was authored (per the
+# assigning agent's fallback instruction) -- entity/property names below are a
+# self-consistent extrapolation from the pack's own aex: vocabulary and the
+# PRD's FR1/FR2/§3.4 entity shape (Skill, Skill.Argument as nested DslEntity
+# rows keyed by aex:entityOf back-reference). A later Fix phase reconciles any
+# mismatch against the real authored ontology.ttl.
+#
+# Row shape (singleton, one row per AshExtensionSpec):
+#   ?package_name    -- aex:packageName          (FR1: DSL package, e.g. "ash_a2a")
+#   ?module_name     -- aex:moduleName            (FR1: extension module, e.g. "AshA2a")
+#   ?skill_entity    -- SAMPLE of the DslEntity name for the "skill" DSL entity
+#   ?skill_struct    -- SAMPLE of that entity's target struct module
+#   ?argument_entity -- SAMPLE of the nested "argument" DslEntity name under skill
+#   ?argument_struct -- SAMPLE of that nested entity's target struct module
+
+PREFIX aex: <http://seanchatmangpt.github.io/packs/ash-extension-core#>
+
+SELECT DISTINCT ?package_name ?module_name
+       (SAMPLE(?skill_entity)    AS ?skill_entity)
+       (SAMPLE(?skill_struct)    AS ?skill_struct)
+       (SAMPLE(?argument_entity) AS ?argument_entity)
+       (SAMPLE(?argument_struct) AS ?argument_struct)
+WHERE {
+  ?spec a aex:AshExtensionSpec ;
+        aex:packageName ?package_name ;
+        aex:moduleName ?module_name .
+
+  OPTIONAL {
+    ?skill_section a aex:DslSection ;
+                   aex:sectionOf ?spec ;
+                   aex:sectionName "skills" .
+    ?skill a aex:DslEntity ;
+           aex:entityOf ?skill_section ;
+           aex:entityName ?skill_entity ;
+           aex:entityStruct ?skill_struct .
+
+    OPTIONAL {
+      ?argument a aex:DslEntity ;
+                aex:entityOf ?skill ;
+                aex:entityName ?argument_entity ;
+                aex:entityStruct ?argument_struct .
+    }
+  }
+}
+GROUP BY ?package_name ?module_name
