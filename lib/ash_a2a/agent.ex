@@ -36,6 +36,18 @@ defmodule AshA2A.Agent do
   130-135`) -- is threaded straight through to
   `AshA2A.Dispatcher.dispatch/5`, which folds it into the Ash `context:` opt
   as `:a2a_history` (see `__dispatch__/3` and `task_history/1` below).
+
+  ## Concurrency: one mailbox, not a worker pool
+
+  A generated agent is a single `A2A.Agent` GenServer process, so every
+  `:message`/`:cancel`/`:get_task`/`:list_tasks` call to one agent instance
+  is serialized through that one mailbox -- a slow in-flight dispatch
+  (a long-running Ash action) blocks every other in-flight call to the
+  *same* agent instance until it completes. This is inherent to `A2A.Agent`'s
+  design, not a bug introduced by `AshA2A.Agent`. If concurrent throughput
+  across skills/resources matters, run multiple named agent instances (one
+  per resource/domain, or sharded per tenant) behind `A2A.AgentSupervisor`
+  rather than relying on one process to serve unrelated concurrent work.
   """
 
   @doc false

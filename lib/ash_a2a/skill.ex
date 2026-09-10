@@ -20,5 +20,13 @@ defmodule AshA2A.Skill do
           arguments: [term()]
         }
 
-  defstruct [:name, :resource, :domain, :action, arguments: [], __spark_metadata__: nil]
+  defstruct [
+    :name,
+    :resource,
+    :domain,
+    :action,
+    :__identifier__,
+    arguments: [],
+    __spark_metadata__: nil
+  ]
 end

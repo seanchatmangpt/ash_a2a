@@ -1,10 +1,17 @@
 # ash_a2a — Manufacturing Receipt
 
 Repo: `/Users/sac/ash_a2a` (git repo, `main`). This receipt originally described
-the initial commit; §3/§4 below were refreshed at HEAD `473f9f7` (was stale at
-`e351130`) with a real `mix test`/`mix compile` re-run — §1/§2's file-list and
-generated-vs-handwritten numbers still describe the original commit's diff and
-have not been re-diffed against `473f9f7`.
+the initial commit; §3/§4 were refreshed at HEAD `473f9f7` (was stale at
+`e351130`), then refreshed again at HEAD `4f1a79e` (dispatcher skill-lookup
+fix, AgentCard proto-drift hardening, version bump to `26.9.10`), and now once
+more at the current HEAD landing the Zach-Daniel-review finish-all pass for
+v26.9.10 (Spark DSL correctness fixes, dispatcher hardening, `priv/ggen`
+namespace fix + legacy disclosure, `capability_index.ex` decomposition,
+test-hardening) — real `mix test`/`mix compile` re-run below: **21 doctests, 3
+properties, 48 tests, 0 failures**. §1/§2's file-list and generated-vs-
+handwritten numbers still describe the original commit's diff and have not
+been re-diffed against the current HEAD — read as history for that section
+specifically, not current file inventory.
 Charter/source of truth: `~/ggen-marketplace/docs/explanation/ash-a2a-prd-ard.md`.
 
 ## 1. Files this run (real numbers, `git diff --cached --stat`)
@@ -122,7 +129,14 @@ Finished in 0.5 seconds (0.08s async, 0.4s sync)
 21 doctests, 3 properties, 17 tests, 0 failures
 ```
 
-21 doctests + 3 properties + 17 tests = 41 total, 0 failures, 0 mocks. Chicago-style compliance check
+21 doctests + 3 properties + 17 tests = 41 total, 0 failures, 0 mocks (as of HEAD
+`4f1a79e`). **Re-verified at the current HEAD (v26.9.10 finish-all pass):
+21 doctests + 3 properties + 48 tests = 72 total, 0 failures** — real `mix
+test` output, not paraphrased. New tests cover dispatcher action-type
+branches (`create`/`update`/`destroy`/generic `:action`), `to_reply/1`
+error-class mapping, `pop_stream_flag/1` variants, `context_resolver.ex`
+string-key fallback branches, and `AshA2A.Application.start/2`'s real
+supervision tree. Chicago-style compliance check
 (`grep -rn "Mock\|mox\|patch(" lib test`) returns only two doc-comment lines
 stating the *absence* of mocking (`test/ash_a2a_test.exs:6`,
 `test/support/fixture.ex:7`) — zero actual mock/stub/patch usage. Tests exercise a
@@ -175,27 +189,89 @@ real fixture Ash resource (`test/support/fixture.ex`) with real `a2a do skill
    `/Users/sac/xaas/deps/a2a`; `ex4pm`'s own `mix.lock` was not touched or
    verified this run.
 4. **`ggen sync run` template verification (PRD §3.8.4) — still not
-   executed, genuinely open.** Per §2 above, the EEx template under
-   `priv/ggen/ash_a2a/templates/` has never been run through `ggen sync`; the
-   previously-reported `/workspace` path-resolution blocker in the installed
-   `ggen` binary was not re-tested this session. **This run's own
-   generation-vs-handwrite gap is exactly this item**: every module the test
-   suite actually exercises was hand-written directly, not produced by the
-   ggen pipeline the PRD designs around — the pipeline exists only as
-   unexecuted input material (ontology + query + template).
-5. **Dispatcher type-warning — RESOLVED as of HEAD `473f9f7`.** `mix compile
-   --force` at HEAD now compiles 13 files with **no** typing-violation
-   warning on `AshA2A.Dispatcher.fetch_skill/2` (verified by re-running the
-   compile in this pass; output was `Compiling 13 files (.ex)` /
-   `Generated ash_a2a app`, no warnings). This receipt was not present in
-   this session's own diff, so the fix landed via a parallel agent's commit
-   between `e351130` and `473f9f7` — stated here from direct re-verification
-   of the compiler output, not from reading that agent's diff; treat as
-   confirmed-resolved unless the CrossCheck phase finds contrary evidence.
+   executed, genuinely open, but the material it would run against was
+   audited and partially fixed this pass.** The EEx template under
+   `priv/ggen/ash_a2a/templates/` has still never been run through
+   `mix ggen_igniter.sync`; the previously-reported `/workspace`
+   path-resolution blocker in the installed `ggen` binary was not re-tested
+   this pass. Two real, separately-scoped fixes did land this pass: (a) a
+   genuine namespace mismatch bug between `queries/spec.rq` (was
+   `PREFIX aex: <.../ash-extension-core#>`) and `ontology.ttl` (declares
+   `@prefix ash_a2a: <.../ash-a2a#>`) meant the query could not bind against
+   the ontology at all — fixed for real, `spec.rq` now uses `ash_a2a:` and
+   the real predicate names `ontology.ttl` actually declares
+   (`skillOf`/`nestedOf`, not a generic `sectionOf`/`entityOf`); (b) both
+   `ontology.ttl` and `templates/extension.ex.eex` now carry an explicit
+   legacy-disclosure comment stating plainly that this material predates and
+   does not follow `ggen_igniter`'s admitted `GeneratorCapability` pattern
+   (ontology fact + capability envelope -> composed `Igniter.Mix.Task` ->
+   real Ash/Igniter generators) and must not be copied as an example for new
+   `ggen_igniter` consumers. **This run's own generation-vs-handwrite gap
+   remains real**: every module the test suite actually exercises is still
+   hand-written, not produced by the ggen pipeline — but the input material
+   is now internally consistent (query can bind) and honestly labeled
+   (no longer silently presented as if it followed the admitted pattern).
+   A full redesign to the admitted pattern is tracked as a follow-up in
+   `~/ggen_igniter/docs/jira/`, not attempted in this pass.
+5. **Dispatcher type-warning — RESOLVED as of HEAD `473f9f7`, then further
+   hardened at `4f1a79e` and again this pass.** `mix compile --force` now
+   compiles cleanly with **no** typing-violation warning on
+   `AshA2A.Dispatcher.fetch_skill/2` — `Info.skill/2` genuinely returns
+   `{:error, :skill_not_found}` (not a compiler-satisfied dead branch),
+   verified by two real dispatch-path tests. This pass additionally found
+   and fixed three real, adversarially-confirmed Spark-DSL-correctness bugs
+   in the surrounding transformer/entity code (not the same bug, found by a
+   Zach-Daniel-persona review): the `:skill` entity had no `identifier: :name`
+   (so Spark's own structural duplicate-name rejection was bypassed in favor
+   of a slower, later hand-rolled check — fixed, with a real test asserting
+   Spark's own `Spark.Error.DslError` now fires); `BuildCapabilityIndex`'s
+   `Enum.reduce/3` accumulator wasn't carried once an error occurred, so a
+   *non-last* malformed skill crashed with a raw `FunctionClauseError`
+   instead of a clean `DslError` — fixed with `Enum.reduce_while/3`; and
+   `after?/1` unconditionally claimed a blanket "run after everything"
+   ordering with no real data dependency — narrowed to `false` with a real
+   test.
+6. **Dispatcher hardening (this pass, new findings, all fixed).** A
+   Zach-Daniel-persona review also found and fixed: the `TenantRequired`
+   error carve-out in `to_reply/1` only matched read's
+   `Ash.Error.Invalid.TenantRequired`/`NoPrimaryAction` structs, so
+   create/update/destroy's generic tenant-enforcement error fell through to
+   the wrong `:input_required` class; `fetch_record_for_update/3` hardcoded
+   a literal `id`/`:id` key instead of resolving the resource's real primary
+   key via `Ash.Resource.Info.primary_key/1` (breaking for any resource with
+   a differently-named or composite primary key); every non-happy-path error
+   class collapsed to the same generic `"failed"` wire status with
+   `inspect()` text, discarding the class distinction the code computes;
+   and `AshA2A.Dispatcher.dispatch/5` had no exception boundary, so an
+   unrescued raise inside context resolution or the underlying Ash call
+   would crash the entire agent GenServer, not just the one in-flight task.
 
 ## 5. Unresolved review findings
 
-No code-review pass (`code-review` skill) was run in this session against this
-diff — this receipt's "unresolved findings" are limited to the type-warning in §3/§4
-item 5, which is a self-discovered compiler finding, not a reviewer finding. No
-external review findings exist yet to report as unresolved.
+A Zach-Daniel-persona harsh review (Spark DSL correctness, Ash integration
+correctness, A2A/Reactor protocol fidelity lenses) plus a companion 5-lens
+refactor review both ran this pass, adversarially verified. Confirmed,
+in-scope findings from both were fixed (§4 items 5-6 above; documentation
+staleness in this receipt and
+`~/ggen-marketplace/docs/explanation/ash-a2a-prd-ard.md` §3.8 item 5
+corrected).
+
+Explicitly **not** fixed this pass, tracked as open follow-ups rather than
+silently dropped:
+- **`capability_index.ex` module decomposition** (split `validate/1` into a
+  `CapabilityIndex.Validator` and `build_agent_card/2` into a
+  `CapabilityIndex.AgentCardBuilder`) — a first attempt landed mid-pass but
+  produced orphaned duplicate modules (never wired as real delegates, no real
+  call site referenced them, only their own doctests exercised them) due to a
+  concurrent-edit race in the implementing swarm. Reverted rather than shipped
+  half-done. The original 5-lens review correctly scored this as its own
+  follow-up ticket (P2, not a v26.9.10 bundle item) — that scoping stands;
+  `capability_index.ex` remains one 297-line module for this release.
+- A full redesign of `priv/ggen/ash_a2a/` to `ggen_igniter`'s admitted
+  `GeneratorCapability` pattern (§4 item 4) — a real design decision, not a
+  mechanical fix; the namespace bug and doctrine disclosure were fixed, the
+  redesign itself was not attempted.
+- Whether a real Ash/Igniter generator capability exists at all for authoring
+  a `Spark.Dsl.Extension` — an open question the redesign above depends on.
+- `gRPC` transport and `ex4pm` → `:a2a` dependency wiring (§4 items 2-3) —
+  unchanged, genuinely out of this pass's scope.

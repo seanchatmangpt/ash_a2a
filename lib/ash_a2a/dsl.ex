@@ -37,7 +37,8 @@ defmodule AshA2A.Dsl do
     ],
     target: AshA2A.Skill,
     schema: @skill_schema,
-    args: [:name, {:optional, :resource}, :action]
+    args: [:name, {:optional, :resource}, :action],
+    identifier: :name
   }
 
   @a2a %Spark.Dsl.Section{

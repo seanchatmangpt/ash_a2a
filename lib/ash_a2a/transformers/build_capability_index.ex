@@ -33,7 +33,13 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
 
   alias Spark.Dsl.Transformer
 
-  def after?(_), do: true
+  # No blanket "run after everything" claim: this transformer has no real
+  # data dependency on any other transformer's output -- it reads only its
+  # own `:a2a` entities plus the always-already-persisted `:domain` key
+  # (persisted by `use Ash.Resource`/`use Ash.Domain` themselves, before any
+  # transformer runs). A blanket `true` would force Spark's topological sort
+  # to order this after unrelated extensions' transformers for no reason.
+  def after?(_), do: false
 
   def transform(dsl_state) do
     module = Transformer.get_persisted(dsl_state, :module)
@@ -52,22 +58,23 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
 
     dsl_state
     |> Transformer.get_entities([:a2a])
-    |> Enum.reduce({:ok, dsl_state, []}, fn skill, {:ok, dsl, skills} ->
+    |> Enum.reduce_while({:ok, dsl_state, []}, fn skill, {:ok, dsl, skills} ->
       case resolve_resource(skill, module, resource_dsl?, own_domain) do
         {:ok, resolved} ->
           new_dsl =
             Transformer.replace_entity(dsl, [:a2a], resolved, &(&1.name == skill.name))
 
-          {:ok, new_dsl, [resolved | skills]}
+          {:cont, {:ok, new_dsl, [resolved | skills]}}
 
         {:error, message} ->
-          {:error,
-           Spark.Error.DslError.exception(
-             module: module,
-             path: [:a2a, skill.name, :resource],
-             message: message,
-             location: Spark.Dsl.Entity.anno(skill)
-           )}
+          {:halt,
+           {:error,
+            Spark.Error.DslError.exception(
+              module: module,
+              path: [:a2a, skill.name, :resource],
+              message: message,
+              location: Spark.Dsl.Entity.anno(skill)
+            )}}
       end
     end)
     |> case do

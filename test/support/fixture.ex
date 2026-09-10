@@ -56,6 +56,64 @@ defmodule AshA2A.Test.Fixture.EchoAgent do
   use AshA2A.Agent, resource_or_domain: AshA2A.Test.Fixture.Echo, name: "echo_agent"
 end
 
+defmodule AshA2A.Test.Fixture.Locked do
+  @moduledoc """
+  Real fixture resource with `authorizers: [Ash.Policy.Authorizer]` and a
+  policy that always forbids (`policy always() do forbid_unless(always())
+  end`), paired with `AshA2A.Test.Fixture.LockedDomain`'s `authorization do
+  authorize(:always) end` -- so dispatching it with no actor makes the real,
+  bundled `Ash.Policy.Authorizer` raise a genuine, unmocked
+  `Ash.Error.Forbidden.Policy` (`class: :forbidden`). Used by
+  `test/ash_a2a_test.exs` to exercise `AshA2A.Dispatcher.to_reply/1`'s
+  `{:error, %{class: :forbidden}}` branch through a real Ash authorization
+  denial, not a hand-built term -- `Ash.Policy.Authorizer` ships in core
+  `ash` (no separate `ash_policy_authorizer` dependency needed).
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.LockedDomain,
+    data_layer: Ash.DataLayer.Ets,
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+  end
+
+  policies do
+    policy always() do
+      forbid_unless(always())
+    end
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    skill(:list, :read)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.LockedDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.Locked` above --
+  `authorization do authorize(:always) end` turns authorization on for every
+  dispatch against it (`Ash.Domain.Info.authorize/1` -> `:always`), which is
+  what actually engages the resource's always-forbid policy.
+  """
+
+  use Ash.Domain, extensions: [AshA2A]
+
+  authorization do
+    authorize(:always)
+  end
+
+  resources do
+    resource(AshA2A.Test.Fixture.Locked)
+  end
+end
+
 defmodule AshA2A.Test.Fixture.NoA2A do
   @moduledoc """
   Real fixture resource for doctests (`AshA2A.Info` task #19): a genuine
@@ -137,4 +195,115 @@ defmodule AshA2A.Test.Fixture.WidgetAgent do
   """
 
   use AshA2A.Agent, resource_or_domain: AshA2A.Test.Fixture.Widget, name: "widget_agent"
+end
+
+defmodule AshA2A.Test.Fixture.Item do
+  @moduledoc """
+  Real fixture resource covering the `:create`, `:update`, `:destroy`, and
+  generic `:action`-shaped skills `AshA2A.Dispatcher` handles
+  (`lib/ash_a2a/dispatcher.ex` `run_create/4`, `run_update/4`, `run_destroy/4`,
+  `run_generic/4`) -- previously only `:read`-shaped skills existed as
+  fixtures (`Echo`, `Widget`), so those four dispatch branches, and
+  `to_reply/1`'s real `Ash.Error.Invalid` -> `:input_required` mapping for a
+  missing required create argument, were untested against a real compiled
+  resource. A genuine `Ash.Resource` with `extensions: [AshA2A]`, real
+  `:create`/`:update`/`:destroy` default actions restricted to a required
+  `:label` attribute (so a caller-omitted `label` on create produces a real
+  `Ash.Error.Invalid`), and one real generic `:action` (`:ping`, returning a
+  plain string).
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.ItemDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:label, :string, public?: true, allow_nil?: false)
+  end
+
+  actions do
+    defaults([:read, :destroy, create: [:label], update: [:label]])
+
+    action :ping, :string do
+      run(fn _input, _context -> {:ok, "pong"} end)
+    end
+  end
+
+  a2a do
+    skill(:create_item, :create)
+    skill(:update_item, :update)
+    skill(:destroy_item, :destroy)
+    skill(:ping, :ping)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.ItemDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.Item` above, mirroring
+  `AshA2A.Test.Fixture.Domain`'s shape but kept separate so the
+  create/update/destroy/action fixture is its own genuine Ash domain.
+  """
+
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(AshA2A.Test.Fixture.Item)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.TenantedItem do
+  @moduledoc """
+  Real multitenant fixture resource for the `TenantRequired`-carve-out
+  regression coverage in `test/ash_a2a_dispatcher_tenant_test.exs`. A genuine
+  `Ash.Resource` with `multitenancy do strategy :attribute ...  end` and
+  `extensions: [AshA2A]`, real `:create`/`:update`/`:destroy` default
+  actions. Dispatching `:create`/`:update`/`:destroy` skills against this
+  resource with no tenant in context makes Ash's own multitenancy
+  enforcement (`Ash.Actions.Helpers.validate_changeset_multitenancy/1`) raise
+  a real, unmocked `Ash.Error.Changes.InvalidChanges` (`class: :invalid`)
+  wrapped inside a top-level `Ash.Error.Invalid{errors: [...]}` -- exactly
+  the shape `deps/ash/lib/ash/actions/create.ex`/`update.ex`/`destroy.ex`
+  actually produce, distinct from the `Ash.Error.Invalid.TenantRequired`
+  struct only `:read` raises.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.TenantedItemDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  multitenancy do
+    strategy(:attribute)
+    attribute(:tenant)
+  end
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:tenant, :string, public?: true, allow_nil?: false)
+    attribute(:label, :string, public?: true, allow_nil?: false)
+  end
+
+  actions do
+    defaults([:read, :destroy, create: [:label], update: [:label]])
+  end
+
+  a2a do
+    skill(:create_tenanted_item, :create)
+    skill(:update_tenanted_item, :update)
+    skill(:destroy_tenanted_item, :destroy)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.TenantedItemDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.TenantedItem` above.
+  """
+
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(AshA2A.Test.Fixture.TenantedItem)
+  end
 end

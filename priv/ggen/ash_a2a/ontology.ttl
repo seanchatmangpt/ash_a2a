@@ -3,6 +3,24 @@
 @prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
 
 #################################################################
+# LEGACY DISCLOSURE (v26.9.10 finish-all pass) -- read before using
+#################################################################
+# This ontology + templates/extension.ex.eex predate ggen_igniter's
+# admitted "GeneratorCapability" pattern (~/ggen_igniter/AGENTS.md,
+# "The admitted path": ontology fact + GeneratorCapability admission
+# envelope -> a composed Igniter.Mix.Task -> real Ash/Igniter
+# generators, never hand-emitted Ash DSL source). This material instead
+# models DSL-entity *shape* directly and templates/extension.ex.eex
+# hand-renders raw Elixir `defmodule`/`Spark.Dsl.Entity` source via an
+# EEx `to:` frontmatter -- exactly the superseded pattern ggen_igniter's
+# own doctrine calls refused. It is retained here only as unexecuted
+# input material (never run through `mix ggen_igniter.sync` -- see
+# MANUFACTURING_RECEIPT.md's disclosed blocker) and MUST NOT be copied
+# as a template for how a new ggen_igniter consumer should structure its
+# own ontology/template material. A real redesign to the admitted
+# pattern is tracked as a follow-up in `~/ggen_igniter/docs/jira/`.
+
+#################################################################
 # Vocabulary
 #################################################################
 # Loosely modeled on ash-extension-core-pack's aex: vocabulary

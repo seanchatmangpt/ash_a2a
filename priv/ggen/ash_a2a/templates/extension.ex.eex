@@ -2,6 +2,18 @@
 to: "lib/ash_a2a.ex"
 ---
 <%#
+  LEGACY DISCLOSURE (v26.9.10 finish-all pass): this template hand-renders
+  raw Elixir source (defmodule/%Spark.Dsl.Entity{} literals) via a `to:`
+  frontmatter -- the pattern ggen_igniter's own AGENTS.md doctrine calls
+  superseded/refused (the admitted pattern composes an Igniter.Mix.Task
+  that calls real Ash/Igniter generators, never hand-emits Ash/Spark DSL
+  source directly). This template predates that doctrine, has never been
+  run through `mix ggen_igniter.sync` (see MANUFACTURING_RECEIPT.md's
+  disclosed blocker), and must not be copied as an example of how a new
+  ggen_igniter consumer should structure its own templates. See
+  ontology.ttl's matching disclosure at the top of that file.
+%>
+<%#
   Generated Spark.Dsl.Extension -- mirrors ash-extension-core-pack's
   extension.ex.tmpl shape (packs/ash-extension-core-pack/templates/extension.ex.tmpl),
   translated from Tera {% %} syntax to EEx <%= %>/<% %> per the ggen-igniter-eex

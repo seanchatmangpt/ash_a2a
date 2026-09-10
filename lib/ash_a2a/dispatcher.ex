@@ -387,22 +387,64 @@ defmodule AshA2A.Dispatcher do
     end
   end
 
-  defp fetch_record_for_update(skill, %{"id" => id}, opts) do
-    Ash.get(skill.resource, id, opts)
+  # Resolves the record to update/destroy using the resource's *actual*
+  # primary key (`Ash.Resource.Info.primary_key/1`) instead of a hardcoded
+  # `"id"`/`:id` key. Real `Ash.get/3` (via `Ash.Filter.get_filter/2`,
+  # `deps/ash/lib/ash/filter/filter.ex:480-510`) resolves identity generically:
+  # a single primary-key field of any name, or a composite key supplied as a
+  # map/keyword of all key fields — neither requires the field be named `id`.
+  defp fetch_record_for_update(skill, input, opts) do
+    pk = Ash.Resource.Info.primary_key(skill.resource)
+
+    case fetch_primary_key_values(pk, input) do
+      {:ok, id_or_composite} -> Ash.get(skill.resource, id_or_composite, opts)
+      :error -> {:error, {:missing_argument, missing_argument_name(pk)}}
+    end
   end
 
-  defp fetch_record_for_update(skill, %{id: id}, opts) do
-    Ash.get(skill.resource, id, opts)
+  # Single-attribute primary key: accept either string or atom key input.
+  defp fetch_primary_key_values([field], input) when is_atom(field) do
+    fetch_input_value(input, field)
   end
 
-  defp fetch_record_for_update(_skill, _input, _opts) do
-    {:error, {:missing_argument, :id}}
+  # Composite primary key: every field must be present; pass through as a
+  # map (an accepted `Ash.Filter.get_filter/2` composite-key shape) as-is.
+  defp fetch_primary_key_values(fields, input) when is_list(fields) do
+    Enum.reduce_while(fields, {:ok, %{}}, fn field, {:ok, acc} ->
+      case fetch_input_value(input, field) do
+        {:ok, value} -> {:cont, {:ok, Map.put(acc, field, value)}}
+        :error -> {:halt, :error}
+      end
+    end)
   end
+
+  defp fetch_input_value(input, field) when is_map(input) do
+    case Map.fetch(input, Atom.to_string(field)) do
+      {:ok, value} -> {:ok, value}
+      :error -> Map.fetch(input, field)
+    end
+  end
+
+  defp fetch_input_value(_input, _field), do: :error
+
+  defp missing_argument_name([field]), do: field
+  defp missing_argument_name(fields), do: fields
 
   defp run_destroy(skill, action, input, opts) do
     with {:ok, record} <- fetch_record_for_update(skill, input, opts) do
+      # A non-soft (hard) `:destroy` action never accepts attribute input --
+      # `Ash.Resource.Transformers.DefaultAccept` forces `accept: []` for
+      # every `%{type: :destroy, soft?: false}` action regardless of what a
+      # resource author declares (`deps/ash/lib/ash/resource/transformers/
+      # default_accept.ex`). Passing the raw dispatch `input` (which, by
+      # construction, always carries at least the identity fields
+      # `fetch_record_for_update/3` just used) straight into
+      # `Ash.Changeset.for_destroy/4` therefore fails every real hard-destroy
+      # dispatch with a spurious `Ash.Error.Invalid.NoSuchInput` -- unrelated
+      # to whether the record was found. The record is already resolved
+      # above; a destroy needs no further attribute params.
       record
-      |> Ash.Changeset.for_destroy(action.name, input, opts)
+      |> Ash.Changeset.for_destroy(action.name, %{}, opts)
       |> Ash.destroy(opts)
     end
   end
@@ -462,13 +504,29 @@ defmodule AshA2A.Dispatcher do
   # when no input the client could supply would fix it, so they're routed
   # to `{:error, {:invalid_config, _}}` instead, alongside the other
   # non-`:input_required` error classes below.
-  defp to_reply({:error, %module{class: :invalid} = error})
-       when module in [Ash.Error.Invalid.TenantRequired, Ash.Error.Invalid.NoPrimaryAction] do
-    {:error, {:invalid_config, Exception.message(error)}}
-  end
-
+  #
+  # That struct match alone only catches the read pipeline
+  # (`deps/ash/lib/ash/actions/read/read.ex:2841-2848` raises the literal
+  # `TenantRequired` struct). `:create`/`:update`/`:destroy` enforce
+  # multitenancy differently: `Ash.Actions.Helpers.validate_changeset_multitenancy/1`
+  # (`deps/ash/lib/ash/actions/helpers.ex:1057-1065`) returns a plain string
+  # ("... changesets require a tenant to be specified"), which
+  # `Ash.Changeset.add_error/3` wraps as a generic
+  # `Ash.Error.Changes.InvalidChanges` (`class: :invalid`, not one of the two
+  # modules above) and Ash's top-level `Splode.ErrorClass` then aggregates
+  # into an `Ash.Error.Invalid{errors: [...]}` whose `errors` list holds that
+  # `InvalidChanges` struct. `tenant_required_error?/1` below matches the
+  # struct-level carve-out and also walks a `class: :invalid` error's nested
+  # `errors:` list for a message that says the same "requires a tenant" thing,
+  # so create/update/destroy's missing-tenant errors get the same
+  # `{:invalid_config, _}` treatment as read's instead of falling through to
+  # the generic `:input_required` clause below.
   defp to_reply({:error, %{class: :invalid} = error}) do
-    {:input_required, [Part.Text.new(Exception.message(error))]}
+    if tenant_required_error?(error) do
+      {:error, class_message(:invalid_config, Exception.message(error))}
+    else
+      {:input_required, [Part.Text.new(Exception.message(error))]}
+    end
   end
 
   # `:forbidden`, `:framework`, and `:unknown` are distinct Splode error
@@ -477,23 +535,60 @@ defmodule AshA2A.Dispatcher do
   # caller-actionable in a different way than `:invalid`: forbidden signals
   # "you don't have access" and framework/unknown signal a server-side
   # fault, none of which "supply more input" (`:input_required`) would fix.
-  # They're kept inside `{:error, _}` per the `A2A.Agent.reply()` type but
-  # tagged distinctly so the class survives on the wire instead of
-  # collapsing into an opaque, unlabeled exception term.
+  #
+  # `A2A.Agent.Runtime.handle_reply/2` (the real A2A runtime this dispatcher
+  # feeds) does not branch on the `{:error, reason}` tuple's shape at all --
+  # it only ever does `Message.new_agent("Error: #{inspect(reason)}")`. A
+  # tagged tuple like `{:forbidden, "msg"}` would therefore reach the wire
+  # as literal Elixir tuple syntax (`{:forbidden, "msg"}`), which no real
+  # A2A client can parse into a structured class. So the class label is
+  # folded into a single human-readable string ("forbidden: msg") instead
+  # of a tuple: `inspect/1` of a plain string still adds quotes, but the
+  # class name and message are legible text on the wire rather than opaque
+  # Elixir term syntax.
   defp to_reply({:error, %{class: :forbidden} = error}) do
-    {:error, {:forbidden, Ash.Error.to_class(error) |> Exception.message()}}
+    {:error, class_message(:forbidden, Ash.Error.to_class(error) |> Exception.message())}
   end
 
   defp to_reply({:error, %{class: :framework} = error}) do
-    {:error, {:framework, Ash.Error.to_class(error) |> Exception.message()}}
+    {:error, class_message(:framework, Ash.Error.to_class(error) |> Exception.message())}
   end
 
   defp to_reply({:error, %{class: :unknown} = error}) do
-    {:error, {:unknown, Ash.Error.to_class(error) |> Exception.message()}}
+    {:error, class_message(:unknown, Ash.Error.to_class(error) |> Exception.message())}
   end
 
   defp to_reply({:error, reason}) do
     {:error, reason}
+  end
+
+  defp class_message(class, message) when is_atom(class) and is_binary(message) do
+    "#{class}: #{message}"
+  end
+
+  # Struct-level carve-out (read's `TenantRequired`/`NoPrimaryAction`) or a
+  # nested `errors:` list (create/update/destroy's aggregated
+  # `Ash.Error.Invalid`) containing an error whose message says a tenant is
+  # required. See the comment above the `to_reply/1` clause that calls this.
+  @tenant_required_modules [Ash.Error.Invalid.TenantRequired, Ash.Error.Invalid.NoPrimaryAction]
+  @tenant_required_text "require a tenant to be specified"
+
+  defp tenant_required_error?(%module{}) when module in @tenant_required_modules do
+    true
+  end
+
+  defp tenant_required_error?(%{errors: errors}) when is_list(errors) and errors != [] do
+    Enum.any?(errors, &tenant_required_error?/1)
+  end
+
+  defp tenant_required_error?(error) do
+    error
+    |> Exception.message()
+    |> String.contains?(@tenant_required_text)
+  end
+
+  defp missing_argument_message({:missing_argument, names}) when is_list(names) do
+    "missing required argument(s): #{Enum.map_join(names, ", ", &to_string/1)}"
   end
 
   defp missing_argument_message({:missing_argument, name}) do
