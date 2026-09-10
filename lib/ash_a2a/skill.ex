@@ -15,9 +15,10 @@ defmodule AshA2A.Skill do
   @type t :: %__MODULE__{
           name: atom(),
           resource: module() | nil,
+          domain: module() | nil,
           action: atom(),
           arguments: [term()]
         }
 
-  defstruct [:name, :resource, :action, arguments: [], __spark_metadata__: nil]
+  defstruct [:name, :resource, :domain, :action, arguments: [], __spark_metadata__: nil]
 end

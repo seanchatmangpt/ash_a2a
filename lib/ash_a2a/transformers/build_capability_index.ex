@@ -39,10 +39,21 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
     module = Transformer.get_persisted(dsl_state, :module)
     resource_dsl? = resource_dsl?(module)
 
+    # For a resource-level skill, `module` is the resource currently
+    # mid-compile: `Ash.Resource.Info.domain/1` calls `module.persisted/1`,
+    # which does not exist yet on a module that has not finished compiling
+    # (confirmed empirically -- it returns `nil` there, not the real domain).
+    # The same `:domain` value is already available directly off `dsl_state`
+    # though, persisted by `use Ash.Resource, domain: ...` itself
+    # (`~/deps/ash/lib/ash/resource.ex:153`, `@persist {:domain, domain}`) --
+    # long before any transformer, including this one, runs. Read it from
+    # there instead of round-tripping through the not-yet-compiled module.
+    own_domain = Transformer.get_persisted(dsl_state, :domain)
+
     dsl_state
     |> Transformer.get_entities([:a2a])
     |> Enum.reduce({:ok, dsl_state, []}, fn skill, {:ok, dsl, skills} ->
-      case resolve_resource(skill, module, resource_dsl?) do
+      case resolve_resource(skill, module, resource_dsl?, own_domain) do
         {:ok, resolved} ->
           new_dsl =
             Transformer.replace_entity(dsl, [:a2a], resolved, &(&1.name == skill.name))
@@ -67,20 +78,29 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
     end
   end
 
-  defp resolve_resource(%{resource: nil} = skill, module, true) do
-    {:ok, %{skill | resource: module}}
+  defp resolve_resource(%{resource: nil} = skill, module, true, own_domain) do
+    {:ok, %{skill | resource: module, domain: own_domain}}
   end
 
-  defp resolve_resource(%{resource: nil}, _module, false) do
+  defp resolve_resource(%{resource: nil}, _module, false, _own_domain) do
     {:error, "domain-level skills must declare a resource: `skill :name, Resource, :action`"}
   end
 
-  defp resolve_resource(%{resource: resource} = skill, _module, true) when not is_nil(resource) do
+  defp resolve_resource(%{resource: resource} = skill, _module, true, _own_domain)
+       when not is_nil(resource) do
     {:error,
      "resource-level skills cannot set `resource` (skill `#{skill.name}` set it explicitly)"}
   end
 
-  defp resolve_resource(skill, _module, _resource_dsl?), do: {:ok, skill}
+  defp resolve_resource(%{resource: resource} = skill, _module, _resource_dsl?, _own_domain) do
+    # `resource` here is a foreign, already-fully-compiled module (a
+    # domain-level `skill :name, Resource, :action` names a resource other
+    # than the module currently compiling), so `Ash.Resource.Info.domain/1`
+    # is safe to call directly -- unlike `own_domain` above, there is no
+    # mid-compile chicken-and-egg problem for a module that finished
+    # compiling before the domain referencing it started compiling.
+    {:ok, %{skill | domain: Ash.Resource.Info.domain(resource)}}
+  end
 
   defp resource_dsl?(module) do
     Module.get_attribute(module, :spark_is) == Ash.Resource

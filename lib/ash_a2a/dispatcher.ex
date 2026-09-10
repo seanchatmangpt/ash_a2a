@@ -77,7 +77,6 @@ defmodule AshA2A.Dispatcher do
     case AshA2A.Info.skill(resource_or_domain, to_skill_name(skill_name)) do
       {:ok, skill} -> {:ok, skill}
       :error -> {:error, {:unknown_skill, skill_name}}
-      {:error, _} = error -> error
     end
   end
 
@@ -118,9 +117,9 @@ defmodule AshA2A.Dispatcher do
   # -- Execution ------------------------------------------------------
 
   # `skill` is the persisted capability-index entry (PRD §3.2/§3.4): carries
-  # `resource` and the bare action-name atom `action` (`AshA2A.Skill`,
-  # skill.ex:15-20; `AshA2A.CapabilityIndex.skill()`, capability_index.ex:23-28)
-  # -- there is no `:domain` field on this struct. `action` here is the real,
+  # `resource`, the statically-resolved `domain` (or `nil`), and the bare
+  # action-name atom `action` (`AshA2A.Skill`, skill.ex:15-21;
+  # `AshA2A.CapabilityIndex.skill()`, capability_index.ex:23-29). `action` here is the real,
   # already-resolved `%Ash.Resource.Actions.*{}` struct (via `fetch_action/1`
   # -> `Ash.Resource.Info.action/2`), so `action.type`/`action.name` are
   # available exactly as ash_ai branches on them at
@@ -130,7 +129,7 @@ defmodule AshA2A.Dispatcher do
   # `domain` being the `resource_or_domain` the dispatcher itself was called
   # with.
   defp run_skill(skill, action, input, exec_context) do
-    opts = build_opts(exec_context)
+    opts = build_opts(skill, exec_context)
 
     result =
       case action.type do
@@ -147,9 +146,16 @@ defmodule AshA2A.Dispatcher do
   # Same opts shape as `AshAi.Tool.Execution.build_opts/2`
   # (`~/xaas/deps/ash_ai/lib/ash_ai/tool/execution.ex:100-107`), sourced from
   # the resolved `AshA2A.ExecutionContext` rather than a raw context map.
-  defp build_opts(%AshA2A.ExecutionContext{} = exec_context) do
+  #
+  # `domain` prefers the skill's own persisted `domain` field (populated by
+  # `AshA2A.Transformers.BuildCapabilityIndex` via `Ash.Resource.Info.domain/1`
+  # at compile time -- the domain that actually owns the resource), falling
+  # back to `exec_context.domain` (the `resource_or_domain` the dispatcher was
+  # called with) when the resource has no statically configured domain
+  # (`Ash.Resource.Info.domain/1` returns `nil` for a domain-less resource).
+  defp build_opts(skill, %AshA2A.ExecutionContext{} = exec_context) do
     [
-      domain: exec_context.domain,
+      domain: Map.get(skill, :domain) || exec_context.domain,
       actor: exec_context.actor,
       tenant: exec_context.tenant,
       context: exec_context.context || %{}
@@ -210,7 +216,7 @@ defmodule AshA2A.Dispatcher do
   # invalid/missing-argument error is the closest existing analogue (PRD §1.5
   # FR4), everything else Ash can fail with maps to `{:error, _}`.
   defp to_reply({:ok, result}) do
-    {:reply, [Part.Data.new(encode_result(result))]}
+    {:reply, [Part.Data.new(wrap_for_part_data(encode_result(result)))]}
   end
 
   defp to_reply(:ok) do
@@ -248,4 +254,14 @@ defmodule AshA2A.Dispatcher do
   end
 
   defp encode_result(other), do: other
+
+  # `A2A.Part.Data.new/2` (`~/xaas/deps/a2a/lib/a2a/part.ex:74`) requires a
+  # map. `encode_result/1` returns a bare list for `:read` actions with no
+  # `get?` (list results) and a scalar for `:action` results that return a
+  # non-struct value (e.g. a plain integer/boolean) -- neither is a map, so
+  # both must be wrapped before reaching `Part.Data.new/2`. A result that is
+  # already a map (the common single-record case) passes through unchanged.
+  defp wrap_for_part_data(%{} = map), do: map
+  defp wrap_for_part_data(list) when is_list(list), do: %{results: list}
+  defp wrap_for_part_data(other), do: %{result: other}
 end

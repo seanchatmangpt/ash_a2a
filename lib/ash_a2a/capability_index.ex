@@ -23,6 +23,7 @@ defmodule AshA2A.CapabilityIndex do
   @type skill :: %{
           required(:name) => atom(),
           required(:resource) => module(),
+          optional(:domain) => module() | nil,
           required(:action) => atom(),
           optional(:arguments) => [term()]
         }
