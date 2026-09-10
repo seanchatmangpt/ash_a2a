@@ -10,8 +10,17 @@ defmodule AshA2A.Dispatcher do
       `AshA2A.Info` — never by walking raw DSL entities directly, so dispatch
       can never diverge from the advertised `AgentCard` (PRD §3.2);
     * actor/tenant/context are resolved from the A2A message via
-      `AshA2A.ContextResolver.from_a2a_message/2` — raw A2A metadata is never
-      passed straight into an Ash call (PRD §3.5 trust-boundary requirement);
+      `AshA2A.ContextResolver.from_a2a_message/4` — raw A2A metadata is never
+      passed straight into an Ash call (PRD §3.5 trust-boundary requirement).
+      `actor`/`tenant` specifically come from the transport-verified
+      `auth_identity` argument threaded through `dispatch/5` (sourced by
+      `AshA2A.Agent.__dispatch__/3` from `context.metadata["a2a.auth"][:identity]`,
+      the field `A2A.Plug.Auth` populates only after real credential
+      verification, `~/xaas/deps/a2a/lib/a2a/plug/auth.ex:6-16,175-176,226-242`
+      and `~/xaas/deps/a2a/lib/a2a/plug.ex:159`) — **never** from
+      `a2a_message.metadata`, which is unauthenticated wire input a remote
+      caller fully controls (see `AshA2A.ContextResolver`'s moduledoc for the
+      full trust-boundary writeup);
     * the real Ash action is invoked with the non-bang `{:ok, _} | {:error, _}`
       `Ash.Changeset.for_create/3` / `Ash.Query.for_read/3` /
       `Ash.ActionInput.for_action/3` APIs, per the PRD §3.5 deviation from
@@ -31,7 +40,36 @@ defmodule AshA2A.Dispatcher do
               | {:stream, Enumerable.t()}
               | {:error, term()}
 
-  `dispatch/3` never returns `{:stream, _}` (deferred to v1.1 per PRD §1.3/§3.7).
+  ## Streaming `:read` skills (PRD §3.7)
+
+  `run_read/4` returns `{:stream, Enumerable.t()}` instead of fully
+  materializing the result set whenever the resolved `:read` action itself
+  declares pagination support (`action.pagination` is an
+  `%Ash.Resource.Actions.Read.Pagination{}` with `keyset?: true` or
+  `offset?: true` — `~/xaas/deps/ash/lib/ash/resource/actions/read.ex:168-186`).
+  In that case the query is driven through the real `Ash.stream!/2` API
+  (`~/xaas/deps/ash/lib/ash.ex:2964`, the only public streaming entry point —
+  there is no non-bang `Ash.stream/2`) instead of `Ash.read/2`, letting
+  `Ash.stream!/2` pick its own best strategy (`:keyset` first, `:offset` or
+  `:full_read` only if the action allows a worse one — this module passes
+  `allow_stream_with: :full_read` so a paginated-but-not-keyset action still
+  streams instead of erroring). A `:read` action with no pagination
+  configuration at all keeps calling `Ash.read/2` and returning `{:reply, _}`
+  exactly as before — an unpaginated action has no keyset/offset cursor to
+  stream against, so full materialization is the only correct strategy for
+  it.
+
+  Because `Ash.stream!/2` is a bang API returning a lazy `Enumerable.t()`, any
+  error raised while *building* the stream (an invalid query, a bad
+  pagination option) is caught here and mapped to `{:error, _}` so `dispatch/4`
+  stays fail-closed for that eager part of the call, matching this module's
+  non-bang convention elsewhere. An error raised while the *caller* drains the
+  returned stream (a query execution failure surfacing lazily on a later
+  page) is not, and cannot be, intercepted here — the same limitation
+  `A2A.Agent.Runtime.wrap_stream/3`
+  (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:51-61`) has: it observes emitted
+  parts to finalize the task, it does not wrap enumeration in a rescue
+  either.
   """
 
   alias A2A.Message
@@ -43,6 +81,7 @@ defmodule AshA2A.Dispatcher do
   @type reply ::
           {:reply, [Part.t()]}
           | {:input_required, [Part.t()]}
+          | {:stream, Enumerable.t()}
           | {:error, term()}
 
   @doc """
@@ -50,22 +89,86 @@ defmodule AshA2A.Dispatcher do
 
   Looks the skill up in the persisted capability index (`AshA2A.Info`),
   resolves the Ash execution context from the message
-  (`AshA2A.ContextResolver.from_a2a_message/2`), runs the real Ash action
+  (`AshA2A.ContextResolver.from_a2a_message/4`), runs the real Ash action
   through the non-bang API matching the action's `type`, and maps the
   outcome to an `A2A.Agent` reply tuple.
+
+  `history` is the prior-turn transcript from the caller's `A2A.Agent` task
+  context (`A2A.Agent.context().history`,
+  `~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`) -- `[]` for a fresh task, the
+  accumulated multi-turn history for a continued (`task_id:`) one. It is
+  threaded into the resolved `AshA2A.ExecutionContext` and, from there, into
+  the Ash `context:` opt as `:a2a_history` (`build_opts/2`), so a resource
+  action can read prior turns via `changeset.context[:a2a_history]` /
+  `query.context[:a2a_history]` / `input.context[:a2a_history]` -- it is
+  never discarded.
+
+  `auth_identity` is the transport-verified caller identity -- **never**
+  anything read from `a2a_message.metadata`, which is unauthenticated wire
+  input a remote caller fully controls end to end (PRD §3.5 trust boundary,
+  see `AshA2A.ContextResolver`'s moduledoc). It defaults to `nil`
+  (unauthenticated: both `actor` and `tenant` resolve to `nil`), so a caller
+  that hasn't wired `A2A.Plug.Auth` -- or a direct unit-test call to this
+  function -- fails closed instead of silently trusting the message. A
+  correctly-wired `AshA2A.Agent`-generated agent sources this argument from
+  `context.metadata["a2a.auth"][:identity]` for every real dispatch (see
+  `AshA2A.Agent.__dispatch__/3`).
   """
-  @spec dispatch(skill_name(), Message.t(), resource_or_domain()) :: reply()
-  def dispatch(skill_name, %Message{} = a2a_message, resource_or_domain) do
-    with {:ok, skill} <- fetch_skill(resource_or_domain, skill_name),
+  @spec dispatch(skill_name(), Message.t(), resource_or_domain(), [Message.t()], term()) ::
+          reply()
+  def dispatch(skill_name, %Message{} = a2a_message, resource_or_domain, history \\ [], auth_identity \\ nil)
+      when is_list(history) do
+    start_meta = %{resource_or_domain: resource_or_domain, skill_name: skill_name}
+
+    :telemetry.span([:ash_a2a, :dispatch], start_meta, fn ->
+      reply = do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity)
+      {reply, Map.merge(start_meta, stop_meta(reply))}
+    end)
+  end
+
+  defp do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity) do
+    with {:ok, skill} <- tag_stage(fetch_skill(resource_or_domain, skill_name), :skill_lookup),
          %AshA2A.ExecutionContext{} = exec_context <-
-           AshA2A.ContextResolver.from_a2a_message(a2a_message, resource_or_domain),
+           AshA2A.ContextResolver.from_a2a_message(
+             a2a_message,
+             resource_or_domain,
+             history,
+             auth_identity
+           ),
          {:ok, input} <- fetch_input(a2a_message),
-         {:ok, action} <- fetch_action(skill) do
-      run_skill(skill, action, input, exec_context)
+         {:ok, action} <- tag_stage(fetch_action(skill), :action_resolution) do
+      tag_stage(run_skill(skill, action, input, exec_context), :execution)
     else
-      {:error, reason} -> {:error, reason}
+      {:error, _reason} = error -> error
     end
   end
+
+  # `fetch_skill/2` and `fetch_action/1` already return `{:ok, _} | {:error, reason}`;
+  # this only annotates which pipeline stage an `{:error, reason}` came from,
+  # as `{:error, {stage, reason}}`, so `stop_meta/1` can surface it in the
+  # `[:ash_a2a, :dispatch, :stop]` telemetry event without changing the
+  # reason term any existing caller pattern-matches on.
+  #
+  # Also doubles as the stage-tagger for `run_skill/4`'s result: that
+  # function returns an `A2A.Agent.reply()` tuple rather than
+  # `{:ok, _} | {:error, _}`, but its `{:error, _}` shape matches the same
+  # clause here, while `{:reply, _}`/`{:input_required, _}`/`{:stream, _}`
+  # fall through to the catch-all below and pass through unchanged as the
+  # final dispatch result.
+  defp tag_stage({:ok, _} = ok, _stage), do: ok
+  defp tag_stage({:error, reason}, stage), do: {:error, {stage, reason}}
+  defp tag_stage(reply, _stage), do: reply
+
+  defp stop_meta({:reply, _}), do: %{reply_type: :reply}
+  defp stop_meta({:input_required, _}), do: %{reply_type: :input_required}
+  defp stop_meta({:stream, _}), do: %{reply_type: :stream}
+
+  defp stop_meta({:error, {stage, reason}})
+       when stage in [:skill_lookup, :action_resolution, :execution] do
+    %{stage: stage, error: reason}
+  end
+
+  defp stop_meta({:error, reason}), do: %{stage: :execution, error: reason}
 
   # -- Skill lookup -----------------------------------------------------
 
@@ -141,9 +244,9 @@ defmodule AshA2A.Dispatcher do
   # available exactly as ash_ai branches on them at
   # `~/xaas/deps/ash_ai/lib/ash_ai/tool/execution.ex:79`. `exec_context` is an
   # `%AshA2A.ExecutionContext{}` per PRD §3.5 carrying
-  # `actor`/`tenant`/`context`/`domain` resolved from the message, with
-  # `domain` being the `resource_or_domain` the dispatcher itself was called
-  # with.
+  # `actor`/`tenant`/`context`/`domain`/`history` resolved from the message,
+  # with `domain` being the `resource_or_domain` the dispatcher itself was
+  # called with.
   defp run_skill(skill, action, input, exec_context) do
     opts = build_opts(skill, exec_context)
 
@@ -169,19 +272,76 @@ defmodule AshA2A.Dispatcher do
   # back to `exec_context.domain` (the `resource_or_domain` the dispatcher was
   # called with) when the resource has no statically configured domain
   # (`Ash.Resource.Info.domain/1` returns `nil` for a domain-less resource).
+  #
+  # `exec_context.history` (the prior-turn `A2A.Agent` task transcript,
+  # `~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`) is folded into the Ash
+  # `context:` opt under `:a2a_history` rather than dropped -- Ash threads
+  # this opt straight through to `changeset.context`/`query.context`/
+  # `input.context` (`Ash.Changeset.for_create/3`, `Ash.Query.for_read/3`,
+  # `Ash.ActionInput.for_action/3` each accept `context:` in their opts and
+  # merge it onto the built struct), so a resource action can read prior
+  # turns via `context[:a2a_history]` in a change/preparation/calculation.
   defp build_opts(skill, %AshA2A.ExecutionContext{} = exec_context) do
     [
       domain: Map.get(skill, :domain) || exec_context.domain,
       actor: exec_context.actor,
       tenant: exec_context.tenant,
-      context: exec_context.context || %{}
+      context: Map.put(exec_context.context || %{}, :a2a_history, exec_context.history || [])
     ]
   end
 
   defp run_read(skill, action, input, opts) do
-    skill.resource
-    |> Ash.Query.for_read(action.name, input, opts)
-    |> Ash.read(opts)
+    if streamable_action?(action) do
+      run_read_stream(skill, action, input, opts)
+    else
+      skill.resource
+      |> Ash.Query.for_read(action.name, input, opts)
+      |> Ash.read(opts)
+    end
+  end
+
+  # Only a `:read` action that itself declares keyset or offset pagination
+  # support (`Ash.Resource.Actions.Read.Pagination`,
+  # `~/xaas/deps/ash/lib/ash/resource/actions/read.ex:168-186`) has a cursor
+  # `Ash.stream!/2` can page through. An action with `pagination: nil` or
+  # `pagination: false` (the common, unpaginated case -- e.g. the `:echo`
+  # fixture skill) has no such cursor, so it keeps going through `Ash.read/2`
+  # and `{:reply, _}` exactly as before this change.
+  defp streamable_action?(%{pagination: %{keyset?: keyset?, offset?: offset?}}) do
+    keyset? or offset?
+  end
+
+  defp streamable_action?(_action), do: false
+
+  # Drives the query through the real `Ash.stream!/2` API
+  # (`~/xaas/deps/ash/lib/ash.ex:2964`) instead of `Ash.read/2` (PRD §3.7).
+  # `Ash.stream!/2` is the only public streaming entry point Ash exposes --
+  # there is no non-bang `Ash.stream/2` -- so building the stream is wrapped
+  # in `try/rescue` here to keep this module's fail-closed, non-raising
+  # dispatch contract for the eager part of the call (query validation,
+  # domain/resource resolution); errors raised lazily while the caller drains
+  # the returned `Enumerable.t()` are outside what a `{:stream, _}` reply can
+  # intercept, matching `A2A.Agent.Runtime.wrap_stream/3`'s own scope
+  # (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:51-61`: it observes completed
+  # parts, it does not rescue mid-stream failures either).
+  #
+  # `allow_stream_with: :full_read` is passed so an action that supports only
+  # offset (not keyset) pagination still streams via `Ash.stream!/2`'s worse
+  # strategies instead of raising `Ash.Error.Invalid.NonStreamableAction`.
+  defp run_read_stream(skill, action, input, opts) do
+    query = Ash.Query.for_read(skill.resource, action.name, input, opts)
+
+    if query.valid? do
+      stream_opts = Keyword.put(opts, :allow_stream_with, :full_read)
+
+      try do
+        {:stream_ok, Ash.stream!(query, stream_opts)}
+      rescue
+        error -> {:error, error}
+      end
+    else
+      {:error, Ash.Error.to_error_class(query.errors)}
+    end
   end
 
   defp run_create(skill, action, input, opts) do
@@ -230,7 +390,25 @@ defmodule AshA2A.Dispatcher do
   # (`~/xaas/deps/a2a/lib/a2a/agent.ex:160-164`). `{:input_required, _}` is
   # reserved for a caller-facing "you must supply more input" signal — an Ash
   # invalid/missing-argument error is the closest existing analogue (PRD §1.5
-  # FR4), everything else Ash can fail with maps to `{:error, _}`.
+  # FR4). Not every `class: :invalid` error qualifies, though:
+  # `TenantRequired`/`NoPrimaryAction` are resource/action wiring problems,
+  # not caller-fixable, and are carved out to `{:error, {:invalid_config, _}}`
+  # below. Everything else Ash can fail with maps to `{:error, _}`.
+  # `run_read_stream/4`'s success tag, distinct from the plain `{:ok, _}`
+  # every other `run_*/4` returns so it can bypass the "materialize into one
+  # `Part.Data`" path below and become `{:stream, _}` instead. Each record is
+  # lazily mapped through the same `encode_result/1`/`wrap_for_part_data/1`
+  # pipeline used for a single non-streamed record, then wrapped in
+  # `Part.Data.new/1` -- so a client draining the stream sees the same
+  # per-record shape it would see inside a materialized `{:reply, _}`'s
+  # `results` list, one `A2A.Part.Data.t()` at a time.
+  defp to_reply({:stream_ok, stream}) do
+    {:stream,
+     Stream.map(stream, fn record ->
+       Part.Data.new(wrap_for_part_data(encode_result(record)))
+     end)}
+  end
+
   defp to_reply({:ok, result}) do
     {:reply, [Part.Data.new(wrap_for_part_data(encode_result(result)))]}
   end
@@ -241,6 +419,23 @@ defmodule AshA2A.Dispatcher do
 
   defp to_reply({:error, {:missing_argument, _} = reason}) do
     {:input_required, [Part.Text.new(missing_argument_message(reason))]}
+  end
+
+  # `Ash.Error.Invalid.TenantRequired` (`deps/ash/lib/ash/error/invalid/tenant_required.ex:8`)
+  # and `Ash.Error.Invalid.NoPrimaryAction`
+  # (`deps/ash/lib/ash/error/invalid/no_primary_action.ex:8`) both declare
+  # `class: :invalid`, but neither describes a caller-supplied-argument
+  # defect: they fire because the resource has no tenant context / no
+  # primary action of the requested type wired up, and `dispatcher.ex`
+  # never lets a caller supply tenant or action selection independently of
+  # the already-resolved skill/action (see `run_*/4` above). Signaling
+  # `:input_required` for these would tell the client "supply more input"
+  # when no input the client could supply would fix it, so they're routed
+  # to `{:error, {:invalid_config, _}}` instead, alongside the other
+  # non-`:input_required` error classes below.
+  defp to_reply({:error, %module{class: :invalid} = error})
+       when module in [Ash.Error.Invalid.TenantRequired, Ash.Error.Invalid.NoPrimaryAction] do
+    {:error, {:invalid_config, Exception.message(error)}}
   end
 
   defp to_reply({:error, %{class: :invalid} = error}) do
