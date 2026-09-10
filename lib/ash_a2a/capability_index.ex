@@ -50,6 +50,11 @@ defmodule AshA2A.CapabilityIndex do
     * `:url` -- agent's base URL (default: `"http://localhost:4000"`)
     * `:version` -- agent card version (default: `"0.1.0"`)
     * `:provider` -- `A2A.AgentCard.provider()` map, or `nil` (default: `nil`)
+    * `:security_schemes` -- `%{String.t() => A2A.SecurityScheme.t()}` map of
+      named security scheme definitions (default: `%{}`)
+    * `:security` -- `[%{String.t() => [String.t()]}]` list of security
+      requirement alternatives referencing the names in `:security_schemes`
+      (default: `[]`)
 
   """
   @spec build_agent_card([skill()], keyword()) :: A2A.AgentCard.t()
@@ -65,24 +70,73 @@ defmodule AshA2A.CapabilityIndex do
       url: Keyword.get(opts, :url, "http://localhost:4000"),
       version: Keyword.get(opts, :version, "0.1.0"),
       skills: Enum.map(skills, &build_agent_card_skill/1),
-      provider: Keyword.get(opts, :provider)
+      provider: Keyword.get(opts, :provider),
+      security_schemes: Keyword.get(opts, :security_schemes, %{}),
+      security: Keyword.get(opts, :security, [])
     }
   end
 
   @spec build_agent_card_skill(skill()) :: A2A.AgentCard.skill()
-  defp build_agent_card_skill(%{name: name, resource: resource, action: action} = skill) do
-    arguments = Map.get(skill, :arguments, [])
+  defp build_agent_card_skill(%{name: name, resource: resource, action: action}) do
+    real_action = Ash.Resource.Info.action(resource, action)
 
     %{
       id: to_string(name),
       name: to_string(name),
-      description: "Dispatches to #{inspect(resource)}.#{action}/*",
-      tags: Enum.map(arguments, &argument_tag/1)
+      description: skill_description(resource, action, real_action),
+      tags: skill_tags(action, real_action)
     }
   end
 
-  defp argument_tag(%{name: arg_name}), do: to_string(arg_name)
-  defp argument_tag(other) when is_atom(other) or is_binary(other), do: to_string(other)
+  # `real_action` is `nil` only when a skill names a resource/action pair
+  # `AshA2A.CapabilityIndex.validate/1` (below) has already flagged as
+  # `:REFUSED_ACTION_NOT_FOUND` -- `AshA2A.Verify` runs `validate/1` before
+  # any card is ever built from this index, so this clause exists only as a
+  # defensive fallback, never as an expected path in a compiled resource.
+  defp skill_tags(action, nil), do: [to_string(action)]
+
+  defp skill_tags(_action, real_action) do
+    [real_action.type |> to_string()]
+    |> Kernel.++(Enum.map(input_names(real_action), &to_string/1))
+    |> Enum.uniq()
+  end
+
+  defp skill_description(resource, action, nil) do
+    "Dispatches to #{inspect(resource)}.#{action}/*"
+  end
+
+  defp skill_description(resource, _action, real_action) do
+    inputs = input_names(real_action)
+
+    inputs_clause =
+      case inputs do
+        [] -> "no arguments"
+        names -> "arguments: #{Enum.map_join(names, ", ", &to_string/1)}"
+      end
+
+    base =
+      case real_action.description do
+        nil -> "#{real_action.type} action #{inspect(real_action.name)} on #{inspect(resource)}"
+        description -> description
+      end
+
+    "#{base} (#{inputs_clause})"
+  end
+
+  # Real user-supplied inputs to the action: its declared `arguments`
+  # (`Ash.Resource.Actions.Argument.t()`, present on every action type --
+  # `~/xaas/deps/ash/lib/ash/resource/actions/argument.ex:5-17`) plus, for
+  # create/update actions, the accepted attribute names
+  # (`~/xaas/deps/ash/lib/ash/resource/actions/create.ex:13`,
+  # `accept: nil | list(atom)` -- `nil` means "not yet compiled", which
+  # `Ash.Resource.Info.action/2` never returns since it reads the fully
+  # compiled DSL state).
+  defp input_names(real_action) do
+    argument_names = Enum.map(Map.get(real_action, :arguments, []), & &1.name)
+    accept_names = real_action |> Map.get(:accept) |> List.wrap()
+
+    argument_names ++ accept_names
+  end
 
   @spec validate([skill()]) :: :ok | {:error, [refusal()]}
   def validate(skills) when is_list(skills) do
