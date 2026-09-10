@@ -23,8 +23,10 @@ defmodule AshA2A.Verify do
       nil ->
         {:error,
          Spark.Error.DslError.exception(
+           path: [:a2a],
            message:
-             "AshA2A capability index was not persisted; semantic compilation did not complete"
+             "AshA2A capability index was not persisted; semantic compilation did not complete",
+           location: Spark.Dsl.Transformer.get_section_anno(dsl, [:a2a])
          )}
 
       index ->
@@ -35,9 +37,26 @@ defmodule AshA2A.Verify do
           {:error, refusals} ->
             {:error,
              Spark.Error.DslError.exception(
-               message: Enum.map_join(refusals, "; ", &"#{&1.code}: #{&1.detail}")
+               path: [:a2a],
+               message: Enum.map_join(refusals, "; ", &"#{&1.code}: #{&1.detail}"),
+               location: capability_index_location(dsl, index)
              )}
         end
     end
+  end
+
+  # Best-effort location for a refusal-join error: refusals are validated
+  # across the whole persisted index (duplicate names, missing actions), not
+  # against a single entity, so there is no one skill to blame precisely --
+  # point at the first compiled skill entity's own annotation (per
+  # `Spark.Dsl.Entity.anno/1`, `deps/spark/usage-rules.md` "Error Location
+  # Information") rather than emitting no location at all. Falls back to the
+  # `:a2a` section's own annotation when the index is empty.
+  defp capability_index_location(_dsl, [first_skill | _]) do
+    Spark.Dsl.Entity.anno(first_skill)
+  end
+
+  defp capability_index_location(dsl, []) do
+    Spark.Dsl.Transformer.get_section_anno(dsl, [:a2a])
   end
 end

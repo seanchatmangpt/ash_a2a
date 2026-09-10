@@ -43,3 +43,15 @@ defmodule AshA2A.Test.Fixture.Domain do
     resource(AshA2A.Test.Fixture.Echo)
   end
 end
+
+defmodule AshA2A.Test.Fixture.EchoAgent do
+  @moduledoc """
+  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the fixture
+  `Echo` resource above, for `test/ash_a2a_test.exs` to start under a real
+  `A2A.AgentSupervisor` and send a real `A2A.Message` to -- exercising
+  `AshA2A.Dispatcher.dispatch/3` through an actual supervised process
+  instead of only as a bare synchronous function call.
+  """
+
+  use AshA2A.Agent, resource_or_domain: AshA2A.Test.Fixture.Echo, name: "echo_agent"
+end

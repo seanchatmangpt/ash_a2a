@@ -65,7 +65,8 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
            Spark.Error.DslError.exception(
              module: module,
              path: [:a2a, skill.name, :resource],
-             message: message
+             message: message,
+             location: Spark.Dsl.Entity.anno(skill)
            )}
       end
     end)

@@ -74,14 +74,30 @@ defmodule AshA2A.Dispatcher do
   # re-walking `Spark.Dsl.Extension.get_entities/2` directly, so a skill this
   # function can dispatch is guaranteed to be one the `AgentCard` advertises.
   defp fetch_skill(resource_or_domain, skill_name) do
-    case AshA2A.Info.skill(resource_or_domain, to_skill_name(skill_name)) do
-      {:ok, skill} -> {:ok, skill}
-      :error -> {:error, {:unknown_skill, skill_name}}
+    case to_skill_name(skill_name) do
+      {:ok, name} ->
+        case AshA2A.Info.skill(resource_or_domain, name) do
+          {:ok, skill} -> {:ok, skill}
+          :error -> {:error, {:unknown_skill, skill_name}}
+        end
+
+      :error ->
+        {:error, {:unknown_skill, skill_name}}
     end
   end
 
-  defp to_skill_name(name) when is_atom(name), do: name
-  defp to_skill_name(name) when is_binary(name), do: String.to_existing_atom(name)
+  defp to_skill_name(name) when is_atom(name), do: {:ok, name}
+
+  # `String.to_existing_atom/1` raises `ArgumentError` when `name` isn't
+  # already an atom in the VM (e.g. an unregistered/mistyped skill id from an
+  # inbound A2A message) -- this module's own convention (moduledoc, and this
+  # function's callers) is fail-closed `{:ok, _} | {:error, _}`, never a raise
+  # on attacker-influenced input. Rescue and fail closed instead.
+  defp to_skill_name(name) when is_binary(name) do
+    {:ok, String.to_existing_atom(name)}
+  rescue
+    ArgumentError -> :error
+  end
 
   # -- Action resolution ---------------------------------------------------
 
@@ -228,11 +244,28 @@ defmodule AshA2A.Dispatcher do
   end
 
   defp to_reply({:error, %{class: :invalid} = error}) do
-    {:input_required, [Part.Text.new(Ash.Error.to_class(error) |> Exception.message())]}
+    {:input_required, [Part.Text.new(Exception.message(error))]}
   end
 
-  defp to_reply({:error, %Ash.Error.Invalid{} = error}) do
-    {:input_required, [Part.Text.new(Exception.message(error))]}
+  # `:forbidden`, `:framework`, and `:unknown` are distinct Splode error
+  # classes (`Ash.Error.Forbidden`/`Framework`/`Unknown`, each declaring its
+  # own `class:` per `Splode.ErrorClass`, parallel to `:invalid`) that stay
+  # caller-actionable in a different way than `:invalid`: forbidden signals
+  # "you don't have access" and framework/unknown signal a server-side
+  # fault, none of which "supply more input" (`:input_required`) would fix.
+  # They're kept inside `{:error, _}` per the `A2A.Agent.reply()` type but
+  # tagged distinctly so the class survives on the wire instead of
+  # collapsing into an opaque, unlabeled exception term.
+  defp to_reply({:error, %{class: :forbidden} = error}) do
+    {:error, {:forbidden, Ash.Error.to_class(error) |> Exception.message()}}
+  end
+
+  defp to_reply({:error, %{class: :framework} = error}) do
+    {:error, {:framework, Ash.Error.to_class(error) |> Exception.message()}}
+  end
+
+  defp to_reply({:error, %{class: :unknown} = error}) do
+    {:error, {:unknown, Ash.Error.to_class(error) |> Exception.message()}}
   end
 
   defp to_reply({:error, reason}) do
