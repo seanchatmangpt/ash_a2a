@@ -15,8 +15,9 @@ defmodule AshA2A.ExecutionContext do
           actor: term(),
           tenant: term(),
           context: map(),
-          domain: module()
+          domain: module(),
+          history: [A2A.Message.t()]
         }
 
-  defstruct [:actor, :tenant, :domain, context: %{}]
+  defstruct [:actor, :tenant, :domain, context: %{}, history: []]
 end

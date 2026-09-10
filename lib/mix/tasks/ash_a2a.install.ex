@@ -26,8 +26,10 @@ if Code.ensure_loaded?(Igniter) do
     Installs `ash_a2a` into the current project: adds `{:a2a, "~> 0.2"}` as a
     dependency, wires up the `AshA2A.Formatter` formatter plugin, and -- when
     `--target` is given -- patches the target module's `extensions:` list to
-    include `AshA2A` (for an `Ash.Resource`) or `AshA2A.Domain` (for an
-    `Ash.Domain`, via `--type domain`), plus a starter `a2a do end` block.
+    include `AshA2A` (the one extension module, usable on both an
+    `Ash.Resource` and an `Ash.Domain` -- `--type domain` selects the
+    `skill :name, Resource, :action` DSL shape but does not change which
+    extension module is added), plus a starter `a2a do end` block.
 
     ## Usage
 
@@ -69,8 +71,8 @@ if Code.ensure_loaded?(Igniter) do
           Igniter.add_notice(base, """
           AshA2A installed successfully!
 
-          Add `extensions: [AshA2A]` to your Ash.Resource modules (or
-          `extensions: [AshA2A.Domain]` to your Ash.Domain modules):
+          Add `extensions: [AshA2A]` to your Ash.Resource or Ash.Domain modules
+          (the same `AshA2A` extension module works on both):
 
               use Ash.Resource,
                 extensions: [AshA2A]
@@ -84,30 +86,30 @@ if Code.ensure_loaded?(Igniter) do
 
         target ->
           target_module = Igniter.Project.Module.parse(target)
-          extension_module = extension_module_for(igniter.args.options[:type])
 
           Igniter.Project.Module.find_and_update_module!(base, target_module, fn zipper ->
             {:ok,
              zipper
-             |> add_extension(extension_module)
+             |> add_extension()
              |> add_starter_dsl_block()}
           end)
       end
     end
 
-    defp extension_module_for("domain"), do: "AshA2A.Domain"
-    defp extension_module_for(_resource), do: "AshA2A"
-
-    # Inserts `extensions: [<extension_module>]` after the target module's `use
-    # Ash.Resource` / `use Ash.Domain` call. This is a single unconditional
-    # insert, not a detect-or-append merge -- it does not check whether an
-    # `extensions:` option already exists on that `use` call, so running install
-    # against a module that already has one will add a second `extensions:`
-    # option rather than merging into the first (same disclosed limitation the
-    # bare ash-extension-core-pack template carries; a real detect-and-merge is a
+    # Inserts `extensions: [AshA2A]` after the target module's `use
+    # Ash.Resource` / `use Ash.Domain` call. `AshA2A` is the one extension
+    # module for both target kinds -- there is no separate `AshA2A.Domain`
+    # module (see `AshA2A.Dsl`'s moduledoc and `test/support/fixture.ex`'s
+    # `use Ash.Domain, extensions: [AshA2A]`, the only real domain-extension
+    # usage in this repo). This is a single unconditional insert, not a
+    # detect-or-append merge -- it does not check whether an `extensions:`
+    # option already exists on that `use` call, so running install against a
+    # module that already has one will add a second `extensions:` option
+    # rather than merging into the first (same disclosed limitation the bare
+    # ash-extension-core-pack template carries; a real detect-and-merge is a
     # follow-up, not implemented here).
-    defp add_extension(zipper, extension_module) do
-      Igniter.Code.Common.add_code(zipper, "extensions: [#{extension_module}]", placement: :after)
+    defp add_extension(zipper) do
+      Igniter.Code.Common.add_code(zipper, "extensions: [AshA2A]", placement: :after)
     end
 
     # Adds a minimal, real starter `a2a do end` block so the target module
@@ -143,8 +145,8 @@ else
       2. Add `import_deps: [:ash_a2a]` and `plugins: [AshA2A.Formatter]` to your
          `.formatter.exs`.
 
-      3. Add `extensions: [AshA2A]` to your Ash.Resource modules (or
-         `extensions: [AshA2A.Domain]` to your Ash.Domain modules):
+      3. Add `extensions: [AshA2A]` to your Ash.Resource or Ash.Domain modules
+         (the same `AshA2A` extension module works on both):
 
              use Ash.Resource,
                extensions: [AshA2A]
