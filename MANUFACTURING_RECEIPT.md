@@ -188,13 +188,54 @@ real fixture Ash resource (`test/support/fixture.ex`) with real `a2a do skill
    open.** This repo depends on `:a2a` directly via a `path:` dependency to
    `/Users/sac/xaas/deps/a2a`; `ex4pm`'s own `mix.lock` was not touched or
    verified this run.
-4. **`ggen sync run` template verification (PRD §3.8.4) — still not
-   executed, genuinely open, but the material it would run against was
-   audited and partially fixed this pass.** The EEx template under
-   `priv/ggen/ash_a2a/templates/` has still never been run through
-   `mix ggen_igniter.sync`; the previously-reported `/workspace`
-   path-resolution blocker in the installed `ggen` binary was not re-tested
-   this pass. Two real, separately-scoped fixes did land this pass: (a) a
+4. **`ggen sync run` template verification (PRD §3.8.4) — now actually
+   executed; BLOCKED with a real, reproduced compile error, different from
+   the previously-reported `/workspace` blocker.** This pass ran the real
+   Elixir task (not the standalone Rust `ggen` binary — that binary was not
+   invoked here, so the prior `/workspace` path-resolution blocker was not
+   re-tested/reproduced in this form):
+
+   ```
+   $ mix ggen_igniter.sync \
+       --ontology priv/ggen/ash_a2a/ontology.ttl \
+       --query spec=priv/ggen/ash_a2a/queries/spec.rq \
+       --template priv/ggen/ash_a2a/templates/extension.ex.eex \
+       --out <scratch>/ash_a2a_rendered.ex \
+       --dry-run
+
+   warning: <%# is deprecated, use <%!-- or add a space between <% and # instead
+   └─ nofile:1: (file)
+
+   warning: <%# is deprecated, use <%!-- or add a space between <% and # instead
+   └─ nofile:13: (file)
+
+   error: undefined variable "assigns"
+   └─ nofile:27
+
+   ** (RuntimeError) ggen_igniter: reactor reconciliation failed (refused): %CompileError{file: "nofile", line: 0, description: "cannot compile file (errors have been logged)"}
+       (ggen_igniter 26.9.8) lib/mix/tasks/ggen_igniter.sync.ex:1006: Mix.Tasks.GgenIgniter.Sync.dispatch_reactor_reconcile/2
+       (ggen_igniter 26.9.8) lib/mix/tasks/ggen_igniter.sync.ex:756: Mix.Tasks.GgenIgniter.Sync.run_sync/3
+       (ggen_igniter 26.9.8) lib/mix/tasks/ggen_igniter.sync.ex:199: Mix.Tasks.GgenIgniter.Sync."run (overridable 1)"/1
+   ```
+
+   Root cause, confirmed by inspection: line 27 of
+   `templates/extension.ex.eex` (`defmodule <%= @skill_struct %> do`) uses
+   `@`-assigns-style EEx variable access (the convention this template was
+   authored under, mirroring `ash-extension-core-pack`'s Tera-to-EEx
+   translation), but `ggen_igniter`'s `Render` module compiles/evaluates the
+   template without binding an `assigns` map — its own render path expects
+   plain-binding EEx (`<%= skill_struct %>` against `EEx.eval_string(...,
+   [skill_struct: ...])`), not `Phoenix`-style `@skill_struct` access. This
+   is a genuine template/runtime convention mismatch, not the `/workspace`
+   path bug and not an installation problem — `mix ggen_igniter.sync --help`
+   runs cleanly and the task is real and invokable; the query itself (fixed
+   last pass) was never reached because compilation of the template fails
+   first. Fixing it (rewriting the template's ~15 `@foo` references to plain
+   bindings, or switching `ggen_igniter`'s render to `assigns`-based EEx) was
+   not attempted this pass — out of scope for a verification-only task; this
+   is the disclosed, concretely-reproduced open item going forward, no longer
+   "never re-tested." Two real, separately-scoped fixes landed the prior
+   pass and remain in place: (a) a
    genuine namespace mismatch bug between `queries/spec.rq` (was
    `PREFIX aex: <.../ash-extension-core#>`) and `ontology.ttl` (declares
    `@prefix ash_a2a: <.../ash-a2a#>`) meant the query could not bind against
