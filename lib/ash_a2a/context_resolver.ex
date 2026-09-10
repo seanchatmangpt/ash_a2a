@@ -130,7 +130,12 @@ defmodule AshA2A.ContextResolver do
   """
   @spec from_a2a_message(A2A.Message.t(), module(), [A2A.Message.t()], term()) ::
           ExecutionContext.t()
-  def from_a2a_message(%A2A.Message{metadata: metadata}, domain, history \\ [], auth_identity \\ nil)
+  def from_a2a_message(
+        %A2A.Message{metadata: metadata},
+        domain,
+        history \\ [],
+        auth_identity \\ nil
+      )
       when is_atom(domain) and is_list(history) do
     metadata = metadata || %{}
 

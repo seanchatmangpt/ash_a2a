@@ -1,6 +1,10 @@
 # ash_a2a — Manufacturing Receipt
 
-Repo: `/Users/sac/ash_a2a` (git repo; this commit is the first commit, `main`, no prior history).
+Repo: `/Users/sac/ash_a2a` (git repo, `main`). This receipt originally described
+the initial commit; §3/§4 below were refreshed at HEAD `473f9f7` (was stale at
+`e351130`) with a real `mix test`/`mix compile` re-run — §1/§2's file-list and
+generated-vs-handwritten numbers still describe the original commit's diff and
+have not been re-diffed against `473f9f7`.
 Charter/source of truth: `~/ggen-marketplace/docs/explanation/ash-a2a-prd-ard.md`.
 
 ## 1. Files this run (real numbers, `git diff --cached --stat`)
@@ -106,17 +110,19 @@ clause to be reachable, or the dead clause should be removed. Left as-is and
 reported honestly rather than silently patched without re-deriving the intended
 error contract.
 
-### `mix test`
+### `mix test` (re-run against the current working tree, superseding both the
+`e351130` and `473f9f7` runs below — the working tree now also includes a
+concurrent agent's uncommitted `test/ash_a2a/capability_index_agent_card_shape_test.exs`)
 
 ```
-Running ExUnit with seed: 13245, max_cases: 32
+Running ExUnit with seed: 568942, max_cases: 32
 
-....
-Finished in 0.02 seconds (0.00s async, 0.02s sync)
-4 tests, 0 failures
+.........................................
+Finished in 0.5 seconds (0.08s async, 0.4s sync)
+21 doctests, 3 properties, 17 tests, 0 failures
 ```
 
-4 tests, 0 failures, 0 mocks. Chicago-style compliance check
+21 doctests + 3 properties + 17 tests = 41 total, 0 failures, 0 mocks. Chicago-style compliance check
 (`grep -rn "Mock\|mox\|patch(" lib test`) returns only two doc-comment lines
 stating the *absence* of mocking (`test/ash_a2a_test.exs:6`,
 `test/support/fixture.ex:7`) — zero actual mock/stub/patch usage. Tests exercise a
@@ -124,31 +130,68 @@ real fixture Ash resource (`test/support/fixture.ex`) with real `a2a do skill
 :echo, :read end`, compiled through the real `AshA2A` Spark extension, real
 `AshA2A.Info`/`AshA2A.Dispatcher` — no `:a2a` runtime behavior stubbed.
 
-## 4. Remaining open blockers (PRD §3.8, plus this run's own gap)
+## 4. Remaining open blockers (PRD §3.8, plus this run's own gap) — updated at HEAD `473f9f7`
 
-1. **Proto conformance (PRD §3.8.1) — still UNVERIFIED.** No coupling was
-   established this run between `:a2a` 0.2.0's wire behavior and
-   `~/A2A/specification/a2a.proto`. Not touched in this session.
-2. **gRPC transport (PRD §3.8.2) — still absent.** `:a2a` 0.2.0 has no gRPC
-   support; none was added this run (out of v1 scope per PRD §1.3).
-3. **`ex4pm` → `:a2a` dependency (PRD §3.8.3) — still not wired.** This repo
-   depends on `:a2a` directly via a `path:` dependency to
+1. **Proto conformance (PRD §3.8.1) — CONCRETIZED, not resolved.** This pass
+   diffed `A2A.AgentCard.t()` (`~/xaas/deps/a2a/lib/a2a/agent_card.ex:16-76`)
+   against `AgentCard` in `~/A2A/specification/a2a.proto:396-434` (`Next ID: 20`)
+   field-by-field. Real, named drift found:
+   - **`url`** — the Elixir struct declares a required top-level scalar
+     `url: String.t()` (and `AshA2A.CapabilityIndex.build_agent_card/2`,
+     `lib/ash_a2a/capability_index.ex:120`, always sets it, defaulting to
+     `"http://localhost:4000"`). The proto `AgentCard` message has **no**
+     top-level `url` field at all — field numbers 3/9/14/15/16 are explicitly
+     `reserved` (removed), and the spec's replacement is the repeated
+     `supported_interfaces` field (19), where each `AgentInterface`
+     (`a2a.proto:374-388`) carries its own `url` + `protocol_binding` +
+     `protocol_version`.
+   - **`supported_interfaces`** — present in both the Elixir type (`t/0`
+     field, defaults to `[]`) and the proto (field 19, `REQUIRED`,
+     "Ordered list of supported interfaces. First entry is preferred."), but
+     `build_agent_card/2` never populates it — no `:supported_interfaces` key
+     is read from `opts` or assigned in the struct literal
+     (`lib/ash_a2a/capability_index.ex:112-126`). Every card this library
+     builds ships an empty list where the proto requires at least one entry.
+   - **`security`** — Elixir represents this as
+     `[%{String.t() => [String.t()]}]` (a bare list of scheme-name→scopes
+     maps). The proto's equivalent is `security_requirements` (field 13,
+     `repeated SecurityRequirement`) — a structured message type, not a bare
+     map list, and a different field name than the Elixir key.
+   - **`signatures`** — the proto has `repeated AgentCardSignature
+     signatures = 17` ("JSON Web Signatures computed for this AgentCard").
+     `A2A.AgentCard.t()` has no `signatures` field at all; nothing in this
+     library reads, writes, or verifies signatures.
+   - `name`, `description`, `version`, `security_schemes`, `skills`,
+     `default_input_modes`/`default_output_modes` line up directly and are
+     **not** part of this drift.
+   No code was changed to close this gap this run — it is now a specific,
+   field-level UNVERIFIED-with-citations finding, not the prior vague
+   "no coupling was established" note.
+2. **gRPC transport (PRD §3.8.2) — still absent, genuinely open.** `:a2a`
+   0.2.0 has no gRPC support; none was added this run (out of v1 scope per
+   PRD §1.3).
+3. **`ex4pm` → `:a2a` dependency (PRD §3.8.3) — still not wired, genuinely
+   open.** This repo depends on `:a2a` directly via a `path:` dependency to
    `/Users/sac/xaas/deps/a2a`; `ex4pm`'s own `mix.lock` was not touched or
    verified this run.
-4. **`ggen sync run` template verification (PRD §3.8.4) — still not executed.**
-   Per §2 above, the EEx template under `priv/ggen/ash_a2a/templates/` has never
-   been run through `ggen sync`; the previously-reported `/workspace`
-   path-resolution blocker in the installed `ggen` binary was not re-tested this
-   session. **This run's own generation-vs-handwrite gap is exactly this item**:
-   every module the test suite actually exercises was hand-written directly, not
-   produced by the ggen pipeline the PRD designs around — the pipeline exists only
-   as unexecuted input material (ontology + query + template).
-5. **Dispatcher type-warning (new, this run, §3 above)** — `Info.skill/2`'s return
-   type doesn't support the `{:error, _}` branch `Dispatcher.fetch_skill/2` matches
-   on; functionally the 4 passing tests don't exercise the not-found path enough to
-   surface a runtime bug, but the dead clause means an unmatched skill name's error
-   path is UNVERIFIED by the current test suite. Not fixed in this run — reported so
-   it isn't silently carried forward as if resolved.
+4. **`ggen sync run` template verification (PRD §3.8.4) — still not
+   executed, genuinely open.** Per §2 above, the EEx template under
+   `priv/ggen/ash_a2a/templates/` has never been run through `ggen sync`; the
+   previously-reported `/workspace` path-resolution blocker in the installed
+   `ggen` binary was not re-tested this session. **This run's own
+   generation-vs-handwrite gap is exactly this item**: every module the test
+   suite actually exercises was hand-written directly, not produced by the
+   ggen pipeline the PRD designs around — the pipeline exists only as
+   unexecuted input material (ontology + query + template).
+5. **Dispatcher type-warning — RESOLVED as of HEAD `473f9f7`.** `mix compile
+   --force` at HEAD now compiles 13 files with **no** typing-violation
+   warning on `AshA2A.Dispatcher.fetch_skill/2` (verified by re-running the
+   compile in this pass; output was `Compiling 13 files (.ex)` /
+   `Generated ash_a2a app`, no warnings). This receipt was not present in
+   this session's own diff, so the fix landed via a parallel agent's commit
+   between `e351130` and `473f9f7` — stated here from direct re-verification
+   of the compiler output, not from reading that agent's diff; treat as
+   confirmed-resolved unless the CrossCheck phase finds contrary evidence.
 
 ## 5. Unresolved review findings
 

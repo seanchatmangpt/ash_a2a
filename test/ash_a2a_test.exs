@@ -82,6 +82,25 @@ defmodule AshA2ATest do
     assert Enum.to_list(stream) == []
   end
 
+  test "AshA2A.Dispatcher.dispatch/3 returns {:error, {:unknown_skill, _}} for an unknown skill name" do
+    # Real repro for the `AshA2A.Info.skill/2` dead-clause bug: `fetch_skill/2`
+    # (lib/ash_a2a/dispatcher.ex) matches `AshA2A.Info.skill/2`'s not-found
+    # result as `{:error, :skill_not_found}`. Dispatches a real message with a
+    # skill name absent from the compiled `Echo` fixture's capability index
+    # through the real `AshA2A.Dispatcher.dispatch/3` (no mock/stub anywhere
+    # in this path) and asserts the actual `{:error, {:unknown_skill, _}}`
+    # reply the real not-found branch produces.
+    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+
+    assert {:error, {:skill_lookup, {:unknown_skill, :no_such_skill}}} =
+             AshA2A.Dispatcher.dispatch(:no_such_skill, message, Echo)
+  end
+
+  test "AshA2A.Info.skill/2 returns a real {:error, :skill_not_found} for an unknown skill name" do
+    assert AshA2A.Info.skill(AshA2A.Test.Fixture.Echo, :no_such_skill) ==
+             {:error, :skill_not_found}
+  end
+
   test "AshA2A.Verify fails closed when a skill names a nonexistent action" do
     # Real repro of the `:REFUSED_ACTION_NOT_FOUND` fail-closed path:
     # `AshA2A.CapabilityIndex.validate_actions_exist/1`
@@ -187,6 +206,7 @@ defmodule AshA2ATest do
         name: :"#{__MODULE__}.Sup",
         registry: :"#{__MODULE__}.Registry"
       )
+
     on_exit(fn ->
       try do
         Supervisor.stop(sup)

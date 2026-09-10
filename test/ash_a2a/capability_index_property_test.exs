@@ -28,8 +28,8 @@ defmodule AshA2A.CapabilityIndexPropertyTest do
   # ground truth read via the same `Ash.Resource.Info.action/2` path the
   # validator itself uses, not hardcoded from reading the DSL body.
   @real_action_names Echo
-                      |> Ash.Resource.Info.actions()
-                      |> Enum.map(& &1.name)
+                     |> Ash.Resource.Info.actions()
+                     |> Enum.map(& &1.name)
 
   # A fabricated action name is only usable in this test if it provably does
   # NOT collide with a real action on `Echo` -- checked live via
@@ -54,7 +54,7 @@ defmodule AshA2A.CapabilityIndexPropertyTest do
   end
 
   property "flags exactly the skills naming fabricated actions, never the real ones" do
-    check all specs <- StreamData.list_of(skill_spec_generator(), min_length: 1, max_length: 12) do
+    check all(specs <- StreamData.list_of(skill_spec_generator(), min_length: 1, max_length: 12)) do
       skills =
         specs
         |> Enum.with_index()

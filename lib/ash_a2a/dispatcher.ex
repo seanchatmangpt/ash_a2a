@@ -124,7 +124,13 @@ defmodule AshA2A.Dispatcher do
   """
   @spec dispatch(skill_name(), Message.t(), resource_or_domain(), [Message.t()], term()) ::
           reply()
-  def dispatch(skill_name, %Message{} = a2a_message, resource_or_domain, history \\ [], auth_identity \\ nil)
+  def dispatch(
+        skill_name,
+        %Message{} = a2a_message,
+        resource_or_domain,
+        history \\ [],
+        auth_identity \\ nil
+      )
       when is_list(history) do
     start_meta = %{resource_or_domain: resource_or_domain, skill_name: skill_name}
 
@@ -189,7 +195,7 @@ defmodule AshA2A.Dispatcher do
       {:ok, name} ->
         case AshA2A.Info.skill(resource_or_domain, name) do
           {:ok, skill} -> {:ok, skill}
-          :error -> {:error, {:unknown_skill, skill_name}}
+          {:error, :skill_not_found} -> {:error, {:unknown_skill, skill_name}}
         end
 
       :error ->
@@ -314,7 +320,9 @@ defmodule AshA2A.Dispatcher do
   # directive, not a real action argument.
   defp run_read(skill, action, input, opts) do
     case pop_stream_flag(input) do
-      {true, input} -> run_read_stream(skill, action, input, opts)
+      {true, input} ->
+        run_read_stream(skill, action, input, opts)
+
       {false, input} ->
         skill.resource
         |> Ash.Query.for_read(action.name, input, opts)

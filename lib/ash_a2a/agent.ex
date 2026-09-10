@@ -110,7 +110,13 @@ defmodule AshA2A.Agent do
 
     case resolve_skill_name(resource_or_domain, message) do
       {:ok, skill_name} ->
-        AshA2A.Dispatcher.dispatch(skill_name, message, resource_or_domain, history, auth_identity)
+        AshA2A.Dispatcher.dispatch(
+          skill_name,
+          message,
+          resource_or_domain,
+          history,
+          auth_identity
+        )
 
       {:error, reason} ->
         {:error, reason}

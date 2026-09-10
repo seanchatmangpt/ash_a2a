@@ -130,17 +130,18 @@ defmodule AshA2A.Info do
       {:echo, :read}
 
       iex> AshA2A.Info.skill(AshA2A.Test.Fixture.Echo, :no_such_skill)
-      :error
+      {:error, :skill_not_found}
 
   """
-  @spec skill(module(), atom()) :: {:ok, AshA2A.CapabilityIndex.skill()} | :error
+  @spec skill(module(), atom()) ::
+          {:ok, AshA2A.CapabilityIndex.skill()} | {:error, :skill_not_found}
   def skill(resource_or_domain, name) do
     resource_or_domain
     |> capability_index()
     |> List.wrap()
     |> Enum.find(&(&1.name == name))
     |> case do
-      nil -> :error
+      nil -> {:error, :skill_not_found}
       skill -> {:ok, skill}
     end
   end

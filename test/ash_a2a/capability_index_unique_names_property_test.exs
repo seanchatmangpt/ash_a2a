@@ -36,7 +36,8 @@ defmodule AshA2A.CapabilityIndexUniqueNamesPropertyTest do
 
   property "validate/1 fail-closes with :REFUSED_DUPLICATE_SKILL_NAME exactly when a real duplicate name exists" do
     check all(
-            names <- StreamData.list_of(StreamData.member_of(@name_pool), min_length: 1, max_length: 12),
+            names <-
+              StreamData.list_of(StreamData.member_of(@name_pool), min_length: 1, max_length: 12),
             max_runs: 200
           ) do
       skills = Enum.map(names, &skill/1)

@@ -18,6 +18,52 @@ defmodule AshA2A.CapabilityIndex do
       `Ash.Resource.Info.action/2` introspection function
       (`~/xaas/deps/ash/lib/ash/resource/info.ex:716`,
       `def action(resource, name, type \\\\ nil)` — called here at arity 2).
+
+  ## Known drift: vendored `:a2a` 0.2.0 struct vs. the current a2a.proto spec
+
+  `build_agent_card/2` (below) populates every field the *vendored* `:a2a`
+  0.2.0 dependency's `A2A.AgentCard` struct defines
+  (`~/xaas/deps/a2a/lib/a2a/agent_card.ex:16-76`). That struct has drifted
+  from the current proto spec at `/Users/sac/A2A/specification/a2a.proto`, and
+  this module cannot fix that drift -- fixing it means changing the `:a2a`
+  dependency itself, which is out of scope for `ash_a2a`. What follows is an
+  explicit inventory of what this module does and does not populate, so a
+  future proto-conformance pass on `:a2a` has a starting checklist instead of
+  a silent gap:
+
+    * `url` -- `A2A.AgentCard.t()` still declares `url` as an `@enforce_keys`
+      required field (`agent_card.ex:59-65`) and this module always supplies
+      one (`build_agent_card/2` defaults it to `"http://localhost:4000"`,
+      line ~120 below). The current proto marks the analogous field
+      differently (absent/reserved per the prior drift-finding pass) --
+      `ash_a2a` cannot stop requiring `url` without the vendored struct
+      changing first.
+    * `security` -- populated here as the bare
+      `[%{String.t() => [String.t()]}]` list shape the vendored struct
+      declares (`agent_card.ex:52`, `security: []` default), not the proto's
+      typed `security_requirements` message. This module has no typed
+      `SecurityRequirement` struct to build against because `:a2a` doesn't
+      define one.
+    * `signatures` -- **not populated, and cannot be**: `A2A.AgentCard.t()`
+      has no `signatures` field at all (`agent_card.ex:41-76` enumerates
+      every field the struct supports; there is no `:signatures` key in the
+      `@type t` or in `defstruct`). Adding it here would mean either patching
+      the vendored dependency or fabricating a field the wire struct silently
+      drops -- both out of scope.
+    * `supported_interfaces` -- populated as `[]` by the struct's own
+      default (`agent_card.ex:73`) since `build_agent_card/2` never sets it
+      explicitly; the proto marks this field `[REQUIRED]` but the vendored
+      struct does not enforce it (`@enforce_keys` above excludes it), so
+      nothing in this module would catch a caller who never supplies real
+      interfaces.
+
+  See `AshA2A.CapabilityIndexAgentCardShapeTest`
+  (`test/ash_a2a/capability_index_agent_card_shape_test.exs`) for a real,
+  compiled-struct test that pins the current `A2A.AgentCard` field set this
+  module depends on -- a `:a2a` dependency bump that adds/removes/renames a
+  field (e.g. finally adding `signatures`, or making `url` optional) fails
+  that test loudly instead of this module silently building a
+  proto-nonconformant card.
   """
 
   # `AshA2A.Skill.t/0` (skill.ex:15-21), not a bare map -- every real skill in
