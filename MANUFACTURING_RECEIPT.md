@@ -256,17 +256,22 @@ staleness in this receipt and
 `~/ggen-marketplace/docs/explanation/ash-a2a-prd-ard.md` §3.8 item 5
 corrected).
 
+**`capability_index.ex` module decomposition — RESOLVED (follow-up pass).** A
+first attempt landed mid-swarm but produced orphaned duplicate modules (never
+wired as real delegates, no real call site referenced them) due to a
+concurrent-edit race in that swarm; that attempt was reverted rather than
+shipped half-done. It was then redone directly, carefully: `validate/1`
+extracted to `AshA2A.CapabilityIndex.Validator`, `build_agent_card/2`
+extracted to `AshA2A.CapabilityIndex.AgentCardBuilder`, with
+`AshA2A.CapabilityIndex` kept as a real thin facade (`defdelegate`) so
+existing call sites (`AshA2A.Verify`, `AshA2A.Info`) and the
+`CapabilityIndex.skill()`/`refusal()` types they reference keep working
+unchanged. Re-verified: `mix compile --warnings-as-errors` clean, `mix
+format --check-formatted` clean, `mix test`: 21 doctests, 3 properties, 48
+tests, 0 failures.
+
 Explicitly **not** fixed this pass, tracked as open follow-ups rather than
 silently dropped:
-- **`capability_index.ex` module decomposition** (split `validate/1` into a
-  `CapabilityIndex.Validator` and `build_agent_card/2` into a
-  `CapabilityIndex.AgentCardBuilder`) — a first attempt landed mid-pass but
-  produced orphaned duplicate modules (never wired as real delegates, no real
-  call site referenced them, only their own doctests exercised them) due to a
-  concurrent-edit race in the implementing swarm. Reverted rather than shipped
-  half-done. The original 5-lens review correctly scored this as its own
-  follow-up ticket (P2, not a v26.9.10 bundle item) — that scoping stands;
-  `capability_index.ex` remains one 297-line module for this release.
 - A full redesign of `priv/ggen/ash_a2a/` to `ggen_igniter`'s admitted
   `GeneratorCapability` pattern (§4 item 4) — a real design decision, not a
   mechanical fix; the namespace bug and doctrine disclosure were fixed, the
