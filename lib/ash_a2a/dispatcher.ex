@@ -43,25 +43,33 @@ defmodule AshA2A.Dispatcher do
   ## Streaming `:read` skills (PRD §3.7)
 
   `run_read/4` returns `{:stream, Enumerable.t()}` instead of fully
-  materializing the result set whenever the resolved `:read` action itself
-  declares pagination support (`action.pagination` is an
-  `%Ash.Resource.Actions.Read.Pagination{}` with `keyset?: true` or
-  `offset?: true` — `~/xaas/deps/ash/lib/ash/resource/actions/read.ex:168-186`).
-  In that case the query is driven through the real `Ash.stream!/2` API
-  (`~/xaas/deps/ash/lib/ash.ex:2964`, the only public streaming entry point —
-  there is no non-bang `Ash.stream/2`) instead of `Ash.read/2`, letting
-  `Ash.stream!/2` pick its own best strategy (`:keyset` first, `:offset` or
-  `:full_read` only if the action allows a worse one — this module passes
-  `allow_stream_with: :full_read` so a paginated-but-not-keyset action still
-  streams instead of erroring). A `:read` action with no pagination
-  configuration at all keeps calling `Ash.read/2` and returning `{:reply, _}`
-  exactly as before — an unpaginated action has no keyset/offset cursor to
-  stream against, so full materialization is the only correct strategy for
-  it.
+  materializing the result set whenever the caller explicitly opts in with
+  `"stream" => true` (or `%{stream: true}`) in the inbound `A2A.Part.Data`
+  input map. This is deliberately a per-call caller choice, not a static
+  property of the action: every default Ash `:read` action already carries a
+  non-nil `%Ash.Resource.Actions.Read.Pagination{keyset?: true, offset?: true}`
+  struct even with no `pagination do ... end` declared (confirmed against the
+  real compiled `AshA2A.Test.Fixture.Echo` fixture's plain `defaults([:read])`
+  action, `~/xaas/deps/ash/lib/ash/resource/actions/read.ex:168-186`), so
+  branching on `action.pagination` alone cannot distinguish "this call wants
+  streaming" from "this is an ordinary Ash read action" -- virtually every
+  real `:read` action would match. The `stream` key is popped out of the
+  input map before it reaches `Ash.Query.for_read/3` (it is a dispatch
+  directive, not a real action argument).
+
+  When streaming is requested, the query is driven through the real
+  `Ash.stream!/2` API (`~/xaas/deps/ash/lib/ash.ex:2964`, the only public
+  streaming entry point — there is no non-bang `Ash.stream/2`) instead of
+  `Ash.read/2`, letting `Ash.stream!/2` pick its own best strategy (`:keyset`
+  first, `:offset` or `:full_read` only if the action allows a worse one --
+  this module passes `allow_stream_with: :full_read` so any read action can
+  stream regardless of which pagination strategies it declares). Omitting the
+  `stream` flag (the default) keeps calling `Ash.read/2` and returning
+  `{:reply, _}` exactly as before this change.
 
   Because `Ash.stream!/2` is a bang API returning a lazy `Enumerable.t()`, any
   error raised while *building* the stream (an invalid query, a bad
-  pagination option) is caught here and mapped to `{:error, _}` so `dispatch/4`
+  pagination option) is caught here and mapped to `{:error, _}` so `dispatch/5`
   stays fail-closed for that eager part of the call, matching this module's
   non-bang convention elsewhere. An error raised while the *caller* drains the
   returned stream (a query execution failure surfacing lazily on a later
@@ -290,28 +298,41 @@ defmodule AshA2A.Dispatcher do
     ]
   end
 
+  # `{"stream" => true}` / `%{stream: true}` in the inbound `A2A.Part.Data`
+  # input map (`fetch_input/1`) is the caller's real, explicit opt-in signal
+  # to stream this `:read` skill rather than fully materialize it (PRD §3.7).
+  # This is deliberately a per-call caller choice, not a static property of
+  # the action: every default Ash `:read` action already carries a non-nil
+  # `%Ash.Resource.Actions.Read.Pagination{keyset?: true, offset?: true}`
+  # struct even with no `pagination do ... end` declared (confirmed against
+  # the real compiled `AshA2A.Test.Fixture.Echo` fixture -- its plain
+  # `defaults([:read])` action already has `keyset?: true, offset?: true`),
+  # so branching on `action.pagination` alone cannot distinguish "this skill
+  # wants streaming" from "this is an ordinary Ash read action" -- virtually
+  # every real `:read` action would match. The `stream` flag is popped out of
+  # `input` before it reaches `Ash.Query.for_read/3` since it is a dispatch
+  # directive, not a real action argument.
   defp run_read(skill, action, input, opts) do
-    if streamable_action?(action) do
-      run_read_stream(skill, action, input, opts)
-    else
-      skill.resource
-      |> Ash.Query.for_read(action.name, input, opts)
-      |> Ash.read(opts)
+    case pop_stream_flag(input) do
+      {true, input} -> run_read_stream(skill, action, input, opts)
+      {false, input} ->
+        skill.resource
+        |> Ash.Query.for_read(action.name, input, opts)
+        |> Ash.read(opts)
     end
   end
 
-  # Only a `:read` action that itself declares keyset or offset pagination
-  # support (`Ash.Resource.Actions.Read.Pagination`,
-  # `~/xaas/deps/ash/lib/ash/resource/actions/read.ex:168-186`) has a cursor
-  # `Ash.stream!/2` can page through. An action with `pagination: nil` or
-  # `pagination: false` (the common, unpaginated case -- e.g. the `:echo`
-  # fixture skill) has no such cursor, so it keeps going through `Ash.read/2`
-  # and `{:reply, _}` exactly as before this change.
-  defp streamable_action?(%{pagination: %{keyset?: keyset?, offset?: offset?}}) do
-    keyset? or offset?
+  defp pop_stream_flag(input) when is_map(input) do
+    {raw, input} =
+      case Map.pop(input, "stream") do
+        {nil, input_without_string_key} -> Map.pop(input_without_string_key, :stream)
+        {value, input_without_string_key} -> {value, input_without_string_key}
+      end
+
+    {raw in [true, "true"], input}
   end
 
-  defp streamable_action?(_action), do: false
+  defp pop_stream_flag(input), do: {false, input}
 
   # Drives the query through the real `Ash.stream!/2` API
   # (`~/xaas/deps/ash/lib/ash.ex:2964`) instead of `Ash.read/2` (PRD §3.7).

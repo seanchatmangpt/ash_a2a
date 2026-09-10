@@ -29,7 +29,8 @@ defmodule AshA2A.MixProject do
       {:ash, "~> 3.0"},
       {:igniter, "~> 0.6"},
       {:ggen_igniter, "~> 26.9"},
-      {:a2a, path: "/Users/sac/xaas/deps/a2a"}
+      {:a2a, path: "/Users/sac/xaas/deps/a2a"},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]
   end
 end

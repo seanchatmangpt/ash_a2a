@@ -3,7 +3,7 @@ defmodule AshA2A.Agent do
   Generates a real, runnable `A2A.Agent` GenServer for an `AshA2A`-extended
   resource or domain, so a compiled capability index has an actual supervised
   process a caller can send an `A2A.Message` to -- not just a synchronous
-  `AshA2A.Dispatcher.dispatch/4` function call.
+  `AshA2A.Dispatcher.dispatch/5` function call.
 
       defmodule MyApp.EchoAgent do
         use AshA2A.Agent, resource_or_domain: MyApp.Echo
@@ -25,7 +25,7 @@ defmodule AshA2A.Agent do
   convention). A resource/domain with exactly one compiled skill lets the
   caller omit `:skill` metadata entirely -- that single skill is dispatched
   by default. Either way, dispatch runs through the real
-  `AshA2A.Dispatcher.dispatch/4` path (PRD §3.2/§3.5), so an agent process
+  `AshA2A.Dispatcher.dispatch/5` path (PRD §3.2/§3.5), so an agent process
   built with this macro can never diverge from what `AshA2A.Info.agent_card/2`
   advertises.
 
@@ -34,7 +34,7 @@ defmodule AshA2A.Agent do
   -- the accumulated multi-turn transcript `A2A.Agent.Runtime` builds for a
   continued (`task_id:`) task (`~/xaas/deps/a2a/lib/a2a/agent.ex:69-90,
   130-135`) -- is threaded straight through to
-  `AshA2A.Dispatcher.dispatch/4`, which folds it into the Ash `context:` opt
+  `AshA2A.Dispatcher.dispatch/5`, which folds it into the Ash `context:` opt
   as `:a2a_history` (see `__dispatch__/3` and `task_history/1` below).
   """
 
@@ -158,8 +158,8 @@ defmodule AshA2A.Agent do
   # `_context` and never read it (ash_a2a task #8), so a resource action had
   # no way to see prior turns on a continued task -- the second dispatch of a
   # multi-turn conversation looked identical to a fresh one. Threaded here
-  # into `AshA2A.Dispatcher.dispatch/4` -> `AshA2A.ContextResolver.
-  # from_a2a_message/3` -> `AshA2A.ExecutionContext.history` -> the Ash
+  # into `AshA2A.Dispatcher.dispatch/5` -> `AshA2A.ContextResolver.
+  # from_a2a_message/4` -> `AshA2A.ExecutionContext.history` -> the Ash
   # `context:` opt (`AshA2A.Dispatcher.build_opts/2`), so a resource action
   # can read it via `context[:a2a_history]`. `context` may be a plain map
   # lacking `:history` (a direct unit-test call, or a first turn with no
@@ -177,12 +177,16 @@ defmodule AshA2A.Agent do
   # parked in `:input_required` awaiting a follow-up message (ash_a2a task
   # #13). Unlike `handle_message/2`, the `context()` passed here
   # (`%{task_id, context_id, history, metadata}`) is not wrapped in an
-  # `A2A.Message` -- it carries the *same* `metadata` shape
-  # `AshA2A.ContextResolver.from_a2a_message/2` already knows how to read
-  # (`actor`/`tenant`/`context` under atom-or-string keys), so a synthetic,
-  # never-dispatched `A2A.Message` is built here purely to reuse that same
-  # trust-boundary-crossing resolver rather than re-implementing its
-  # atom-then-string metadata lookup convention a second time.
+  # `A2A.Message` -- a synthetic, never-dispatched `A2A.Message` is built
+  # here purely to reuse `AshA2A.ContextResolver.from_a2a_message/4`'s
+  # `:context` extraction (atom-or-string `metadata[:context]`) rather than
+  # re-implementing it a second time. `actor`/`tenant` are NOT read from
+  # this synthetic message's metadata either (same PRD §3.5 trust boundary
+  # as `__dispatch__/3`) -- they come from the same
+  # `metadata["a2a.auth"][:identity]` extraction via `verified_auth_identity/1`,
+  # so a cancel telemetry event reports the real verified caller, never a
+  # value an unauthenticated remote caller could spoof through cancel-request
+  # metadata.
   #
   # There is no ash_a2a DSL hook (no `on_cancel` skill option) for a resource
   # author to run real Ash-side compensation here, and none is fabricated --
@@ -202,7 +206,9 @@ defmodule AshA2A.Agent do
     exec_context =
       AshA2A.ContextResolver.from_a2a_message(
         %A2A.Message{role: :user, parts: [], metadata: metadata || %{}},
-        resource_or_domain
+        resource_or_domain,
+        [],
+        verified_auth_identity(context)
       )
 
     :telemetry.execute(

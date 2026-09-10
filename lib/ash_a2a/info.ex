@@ -24,6 +24,17 @@ defmodule AshA2A.Info do
   Returns the compiled, persisted capability index (a list of
   `AshA2A.CapabilityIndex.skill()`-shaped skills), or `nil` if
   `resource_or_domain` has no compiled `AshA2A` capability index.
+
+  ## Examples
+
+      iex> [%AshA2A.Skill{name: name, action: action}] =
+      ...>   AshA2A.Info.capability_index(AshA2A.Test.Fixture.Echo)
+      iex> {name, action}
+      {:echo, :read}
+
+      iex> AshA2A.Info.capability_index(AshA2A.Test.Fixture.NoA2A)
+      nil
+
   """
   @spec capability_index(module()) :: [AshA2A.CapabilityIndex.skill()] | nil
   def capability_index(resource_or_domain) do
@@ -38,6 +49,17 @@ defmodule AshA2A.Info do
   `{:error, :not_compiled}` when `resource_or_domain` has no persisted
   `:ash_a2a_capability_index` -- e.g. the `AshA2A` extension was never added,
   or the module has not finished compiling.
+
+  ## Examples
+
+      iex> {:ok, [%AshA2A.Skill{name: name}]} =
+      ...>   AshA2A.Info.capability_index_result(AshA2A.Test.Fixture.Echo)
+      iex> name
+      :echo
+
+      iex> AshA2A.Info.capability_index_result(AshA2A.Test.Fixture.NoA2A)
+      {:error, :not_compiled}
+
   """
   @spec capability_index_result(module()) ::
           {:ok, [AshA2A.CapabilityIndex.skill()]} | {:error, not_compiled()}
@@ -51,6 +73,17 @@ defmodule AshA2A.Info do
   @doc """
   Same as `capability_index/1`, but raises `ArgumentError` instead of
   returning `nil` when `resource_or_domain` has no compiled capability index.
+
+  ## Examples
+
+      iex> [%AshA2A.Skill{name: name}] =
+      ...>   AshA2A.Info.capability_index!(AshA2A.Test.Fixture.Echo)
+      iex> name
+      :echo
+
+      iex> AshA2A.Info.capability_index!(AshA2A.Test.Fixture.NoA2A)
+      ** (ArgumentError) AshA2A.Test.Fixture.NoA2A has no compiled AshA2A capability index -- add `use AshA2A`/the `AshA2A` extension and ensure the module has compiled
+
   """
   @spec capability_index!(module()) :: [AshA2A.CapabilityIndex.skill()]
   def capability_index!(resource_or_domain) do
@@ -65,13 +98,41 @@ defmodule AshA2A.Info do
     end
   end
 
-  @doc "True if `resource_or_domain` has a compiled, verified `AshA2A` capability index (even an empty one)."
+  @doc """
+  True if `resource_or_domain` has a compiled, verified `AshA2A` capability
+  index (even an empty one).
+
+  ## Examples
+
+      iex> AshA2A.Info.capability_index?(AshA2A.Test.Fixture.Echo)
+      true
+
+      iex> AshA2A.Info.capability_index?(AshA2A.Test.Fixture.Domain)
+      true
+
+      iex> AshA2A.Info.capability_index?(AshA2A.Test.Fixture.NoA2A)
+      false
+
+  """
   @spec capability_index?(module()) :: boolean()
   def capability_index?(resource_or_domain) do
     match?({:ok, _}, capability_index_result(resource_or_domain))
   end
 
-  @doc "Looks up one skill by name in the persisted capability index."
+  @doc """
+  Looks up one skill by name in the persisted capability index.
+
+  ## Examples
+
+      iex> {:ok, %AshA2A.Skill{name: name, action: action}} =
+      ...>   AshA2A.Info.skill(AshA2A.Test.Fixture.Echo, :echo)
+      iex> {name, action}
+      {:echo, :read}
+
+      iex> AshA2A.Info.skill(AshA2A.Test.Fixture.Echo, :no_such_skill)
+      :error
+
+  """
   @spec skill(module(), atom()) :: {:ok, AshA2A.CapabilityIndex.skill()} | :error
   def skill(resource_or_domain, name) do
     resource_or_domain
@@ -88,6 +149,17 @@ defmodule AshA2A.Info do
   Builds a real `A2A.AgentCard.t()` from `resource_or_domain`'s persisted
   capability index, delegating to `AshA2A.CapabilityIndex.build_agent_card/2`
   (ash_a2a PRD/ARD §3.2/FR3).
+
+  ## Examples
+
+      iex> card = AshA2A.Info.agent_card(AshA2A.Test.Fixture.Echo, name: "echo_agent")
+      iex> {card.name, length(card.skills)}
+      {"echo_agent", 1}
+
+      iex> card = AshA2A.Info.agent_card(AshA2A.Test.Fixture.Domain)
+      iex> card.skills
+      []
+
   """
   @spec agent_card(module(), keyword()) :: A2A.AgentCard.t()
   def agent_card(resource_or_domain, opts \\ []) do

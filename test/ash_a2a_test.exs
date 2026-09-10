@@ -67,6 +67,21 @@ defmodule AshA2ATest do
              AshA2A.Dispatcher.dispatch(:echo, message, Echo)
   end
 
+  test "AshA2A.Dispatcher.dispatch/3 returns {:stream, _} for a real :echo read when the caller opts in" do
+    # PRD §3.7: a `:read` skill must be able to serve its result incrementally
+    # instead of fully materializing. `"stream" => true` in the inbound
+    # `A2A.Part.Data` is the caller's real opt-in signal
+    # (`AshA2A.Dispatcher.pop_stream_flag/1`) -- exercised here against the
+    # real compiled `Echo` fixture and the real `Ash.stream!/2` API, not a
+    # stub. `Enum.to_list/1` actually drains the returned `Enumerable.t()` to
+    # prove it is a real, consumable stream, not just a `:stream`-tagged
+    # tuple.
+    message = A2A.Message.new_user([A2A.Part.Data.new(%{"stream" => true})])
+
+    assert {:stream, stream} = AshA2A.Dispatcher.dispatch(:echo, message, Echo)
+    assert Enum.to_list(stream) == []
+  end
+
   test "AshA2A.Verify fails closed when a skill names a nonexistent action" do
     # Real repro of the `:REFUSED_ACTION_NOT_FOUND` fail-closed path:
     # `AshA2A.CapabilityIndex.validate_actions_exist/1`
