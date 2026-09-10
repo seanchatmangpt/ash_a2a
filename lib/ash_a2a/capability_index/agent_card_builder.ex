@@ -37,6 +37,24 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
     * `:security` -- `[%{String.t() => [String.t()]}]` list of security
       requirement alternatives referencing the names in `:security_schemes`
       (default: `[]`)
+    * `:supported_interfaces` -- `[A2A.AgentCard.supported_interface()]` list
+      of `%{url:, protocol_binding:, protocol_version:}` maps (default: a
+      single real entry derived from the `:url` option -- see below)
+
+  ### Why `:supported_interfaces` defaults to a derived entry, not `[]`
+
+  Unlike `:security_schemes` (no fabricated default, see above), the current
+  proto marks `supported_interfaces` `[REQUIRED]`. Leaving it `[]` would mean
+  every card this library builds is silently proto-nonconformant on a
+  required field, when a real, non-fabricated value is directly derivable:
+  the agent is already reachable at `:url` over JSON-RPC (this library's own
+  dispatch, `AshA2A.Verify`/`AshA2A.Info`, is JSON-RPC-based), so the default
+  is one real `A2A.AgentCard.supported_interface()` entry --
+  `%{url: <the :url option>, protocol_binding: "JSONRPC", protocol_version:
+  "0.3.0"}` -- not an invented endpoint. A caller that serves additional
+  transports (gRPC, HTTP+JSON REST) should pass `:supported_interfaces`
+  explicitly to describe them; this default only asserts the one real
+  interface the library can already prove exists.
 
   ### Why `:security_schemes` defaults to `%{}` (no fabricated default scheme)
 
@@ -83,6 +101,8 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
   """
   @spec build_agent_card([skill()], keyword()) :: A2A.AgentCard.t()
   def build_agent_card(skills, opts \\ []) when is_list(skills) do
+    url = Keyword.get(opts, :url, "http://localhost:4000")
+
     %A2A.AgentCard{
       name: Keyword.get(opts, :name, "ash_a2a_agent"),
       description:
@@ -91,13 +111,24 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
           :description,
           "Ash-backed A2A agent exposing #{length(skills)} skill(s)."
         ),
-      url: Keyword.get(opts, :url, "http://localhost:4000"),
+      url: url,
       version: Keyword.get(opts, :version, "0.1.0"),
       skills: Enum.map(skills, &build_agent_card_skill/1),
       provider: Keyword.get(opts, :provider),
       security_schemes: Keyword.get(opts, :security_schemes, %{}),
-      security: Keyword.get(opts, :security, [])
+      security: Keyword.get(opts, :security, []),
+      supported_interfaces:
+        Keyword.get(opts, :supported_interfaces, [default_supported_interface(url)])
     }
+  end
+
+  # A real, non-fabricated `A2A.AgentCard.supported_interface()` entry: the
+  # agent's own `:url`, advertised over the JSON-RPC binding this library's
+  # dispatch actually speaks -- see moduledoc for why this is derived rather
+  # than left `[]`.
+  @spec default_supported_interface(String.t()) :: A2A.AgentCard.supported_interface()
+  defp default_supported_interface(url) do
+    %{url: url, protocol_binding: "JSONRPC", protocol_version: "0.3.0"}
   end
 
   @spec build_agent_card_skill(skill()) :: A2A.AgentCard.skill()

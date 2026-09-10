@@ -51,12 +51,16 @@ defmodule AshA2A.CapabilityIndex do
       `@type t` or in `defstruct`). Adding it here would mean either patching
       the vendored dependency or fabricating a field the wire struct silently
       drops -- both out of scope.
-    * `supported_interfaces` -- populated as `[]` by the struct's own
-      default (`agent_card.ex:73`) since `AgentCardBuilder` never sets it
-      explicitly; the proto marks this field `[REQUIRED]` but the vendored
-      struct does not enforce it (`@enforce_keys` above excludes it), so
-      nothing in this library would catch a caller who never supplies real
-      interfaces.
+    * `supported_interfaces` -- **fixed**: `AgentCardBuilder.build_agent_card/2`
+      now accepts a `:supported_interfaces` option (mirroring `:url`) that
+      defaults to a single real, non-fabricated
+      `A2A.AgentCard.supported_interface()` entry derived from the `:url`
+      option -- `%{url: url, protocol_binding: "JSONRPC", protocol_version:
+      "0.3.0"}` -- rather than the struct's own `[]` default
+      (`agent_card.ex:73`). This satisfies the proto's `[REQUIRED]` marking
+      for the one transport this library can actually prove exists (its own
+      JSON-RPC dispatch); a caller serving additional transports should pass
+      `:supported_interfaces` explicitly.
 
   See `AshA2A.CapabilityIndexAgentCardShapeTest`
   (`test/ash_a2a/capability_index_agent_card_shape_test.exs`) for a real,

@@ -91,9 +91,40 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
       # documents.
       assert card.security == []
       assert card.security_schemes == %{}
-      # supported_interfaces is never set by build_agent_card/2 today --
-      # it falls through to the struct's own default.
-      assert card.supported_interfaces == []
+    end
+
+    test "build_agent_card/2 defaults supported_interfaces to a real, non-empty entry derived from :url" do
+      skills = AshA2A.Info.capability_index(Echo)
+
+      card =
+        CapabilityIndex.build_agent_card(skills,
+          name: "shape_test_agent",
+          url: "https://agent.example.com"
+        )
+
+      assert card.supported_interfaces == [
+               %{
+                 url: "https://agent.example.com",
+                 protocol_binding: "JSONRPC",
+                 protocol_version: "0.3.0"
+               }
+             ]
+    end
+
+    test "build_agent_card/2 accepts an explicit :supported_interfaces option, overriding the derived default" do
+      skills = AshA2A.Info.capability_index(Echo)
+
+      custom_interfaces = [
+        %{url: "https://grpc.example.com", protocol_binding: "GRPC", protocol_version: "0.3.0"}
+      ]
+
+      card =
+        CapabilityIndex.build_agent_card(skills,
+          name: "shape_test_agent",
+          supported_interfaces: custom_interfaces
+        )
+
+      assert card.supported_interfaces == custom_interfaces
     end
   end
 end
