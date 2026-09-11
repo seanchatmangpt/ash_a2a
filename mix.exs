@@ -54,11 +54,26 @@ defmodule AshA2A.MixProject do
       {:igniter, "~> 0.6"},
       {:ggen_igniter, "~> 26.9"},
       {:a2a, "~> 0.2"},
-      # `:plug` is an optional dep of `:a2a` (A2A.Plug/A2A.Plug.Auth), never
-      # otherwise pulled in by this project -- added test-only so
-      # test/ash_a2a_plug_agent_card_test.exs can drive a REAL A2A.Plug HTTP
-      # pipeline via Plug.Test instead of leaving A2A.Plug entirely untested.
-      {:plug, "~> 1.16", only: :test},
+      {:ash_ai, "~> 1.0"},
+      # AshA2A.Telemetry.OcelForwarder's real HTTP POST to beam4pm's real
+      # OCEL ingest endpoint -- already transitively present (via :a2a's
+      # optional dep / :igniter), promoted to direct since this module
+      # calls it explicitly.
+      {:req, "~> 0.5"},
+      # Real local Bandit server for
+      # test/ash_a2a_telemetry_ocel_forwarder_test.exs's fixture standing
+      # in for BeamPM.OcelIngest.Router (same MicroBeam4pm-style pattern
+      # already used in ex4pm/ash_ex4pm/xaas this session).
+      {:bandit, "~> 1.5", only: :test},
+      {:req_llm, "~> 1.18"},
+      {:ash_r2rml, "~> 26.8"},
+      # `:plug` is an optional dep of `:a2a` (A2A.Plug/A2A.Plug.Auth). Also
+      # now pulled in transitively as a normal dep via `:ash_ai`'s
+      # `:websock_adapter` dependency, so it can no longer be restricted to
+      # `only: :test` (Mix rejects a narrower :only than a transitive dep
+      # requires). test/ash_a2a_plug_agent_card_test.exs drives a REAL
+      # A2A.Plug HTTP pipeline via Plug.Test.
+      {:plug, "~> 1.16"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
