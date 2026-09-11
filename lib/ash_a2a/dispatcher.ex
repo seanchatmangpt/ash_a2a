@@ -190,38 +190,49 @@ defmodule AshA2A.Dispatcher do
   # (`AshA2A.Info.agent_card/1`'s own source of truth, PRD §3.2) — never by
   # re-walking `Spark.Dsl.Extension.get_entities/2` directly, so a skill this
   # function can dispatch is guaranteed to be one the `AgentCard` advertises.
+  #
+  # Matches directly against the real compiled capability index rather than
+  # converting `skill_name` to an atom first (`String.to_existing_atom/1`,
+  # the prior approach): that conversion is fail-*open* to a real production
+  # bug, not just theoretically -- `String.to_existing_atom/1` only succeeds
+  # if some OTHER, unrelated code path has already interned that exact atom
+  # somewhere in the running VM (e.g. a compile-time literal in some other
+  # module, or a prior in-process atom-typed dispatch call). A skill name
+  # that arrives as a string (the only real shape a remote A2A/JSON caller
+  # can ever send -- JSON has no atoms) can therefore raise `ArgumentError`
+  # nondeterministically, depending entirely on incidental VM atom-table
+  # state, for a real, valid, currently-compiled skill. Reproduced for real:
+  # a caller with an unqualified `metadata["skill"]` string naming a real
+  # skill on a resource with 2+ skills (so default-skill-selection can't
+  # apply) failed with `{:unknown_skill, _}` even though the skill was real
+  # and currently compiled -- confirmed via `AshA2A.Info.skill/2` succeeding
+  # for the identical atom moments later once something else happened to
+  # intern it. Matching against `capability_index/1`'s real, already-loaded
+  # skill list needs no atom conversion at all.
   defp fetch_skill(resource_or_domain, skill_name) do
-    case to_skill_name(skill_name) do
-      {:ok, name} ->
-        case AshA2A.Info.skill(resource_or_domain, name) do
-          {:ok, skill} -> {:ok, skill}
-          {:error, :skill_not_found} -> {:error, {:unknown_skill, skill_name}}
-        end
-
-      :error ->
-        {:error, {:unknown_skill, skill_name}}
+    resource_or_domain
+    |> AshA2A.Info.capability_index()
+    |> List.wrap()
+    |> Enum.find(&skill_name_matches?(&1.name, skill_name))
+    |> case do
+      nil -> {:error, {:unknown_skill, skill_name}}
+      skill -> {:ok, skill}
     end
   end
 
-  defp to_skill_name(name) when is_atom(name), do: {:ok, name}
+  # `skill_name` originates from `AshA2A.Agent.resolve_skill_name/2`, which
+  # reads it out of an unauthenticated, unschema'd remote-caller-controlled
+  # `A2A.Message.metadata` map with no type check -- match the real compiled
+  # atom directly, or its string form for the real over-the-wire shape, and
+  # fail closed for anything else (integer, list, map, etc.) rather than
+  # ever raising.
+  defp skill_name_matches?(name, name) when is_atom(name), do: true
 
-  # `String.to_existing_atom/1` raises `ArgumentError` when `name` isn't
-  # already an atom in the VM (e.g. an unregistered/mistyped skill id from an
-  # inbound A2A message) -- this module's own convention (moduledoc, and this
-  # function's callers) is fail-closed `{:ok, _} | {:error, _}`, never a raise
-  # on attacker-influenced input. Rescue and fail closed instead.
-  defp to_skill_name(name) when is_binary(name) do
-    {:ok, String.to_existing_atom(name)}
-  rescue
-    ArgumentError -> :error
+  defp skill_name_matches?(name, string) when is_atom(name) and is_binary(string) do
+    Atom.to_string(name) == string
   end
 
-  # Catch-all: `skill_name` originates from `AshA2A.Agent.resolve_skill_name/2`,
-  # which reads it out of an unauthenticated, unschema'd remote-caller-controlled
-  # `A2A.Message.metadata` map with no type check. A non-atom/non-binary value
-  # (integer, list, map, etc.) must still fail closed here rather than raise a
-  # `FunctionClauseError` that would crash the calling `A2A.Agent` process.
-  defp to_skill_name(_name), do: :error
+  defp skill_name_matches?(_name, _other), do: false
 
   # -- Action resolution ---------------------------------------------------
 

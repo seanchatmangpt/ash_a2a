@@ -54,6 +54,11 @@ defmodule AshA2A.MixProject do
       {:igniter, "~> 0.6"},
       {:ggen_igniter, "~> 26.9"},
       {:a2a, "~> 0.2"},
+      # `:plug` is an optional dep of `:a2a` (A2A.Plug/A2A.Plug.Auth), never
+      # otherwise pulled in by this project -- added test-only so
+      # test/ash_a2a_plug_agent_card_test.exs can drive a REAL A2A.Plug HTTP
+      # pipeline via Plug.Test instead of leaving A2A.Plug entirely untested.
+      {:plug, "~> 1.16", only: :test},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
