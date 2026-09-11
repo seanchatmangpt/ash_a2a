@@ -30,10 +30,9 @@ defmodule AshA2A.MixProject do
 
   defp package do
     [
-      links: %{"GitHub" => "https://github.com/seanchatmangpt/ash_a2a"}
-      # NOTE: no `licenses:` key -- this repo has no LICENSE file. Hex requires
-      # a real, present license before this package can actually be published;
-      # do not add a licenses: [...] entry until one is chosen and committed.
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/seanchatmangpt/ash_a2a"},
+      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
