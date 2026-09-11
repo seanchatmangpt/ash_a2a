@@ -152,9 +152,6 @@ defmodule AshA2A.ContextResolver do
   defp tenant_claim(_auth_identity), do: nil
 
   defp fetch(metadata, key) when is_map(metadata) do
-    case Map.fetch(metadata, key) do
-      {:ok, value} -> value
-      :error -> Map.get(metadata, Atom.to_string(key))
-    end
+    AshA2A.MetadataKey.get(metadata, key)
   end
 end

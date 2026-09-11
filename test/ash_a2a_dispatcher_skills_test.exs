@@ -38,10 +38,12 @@ defmodule AshA2ADispatcherSkillsTest do
 
   use ExUnit.Case
 
+  import AshA2A.Test.MessageHelpers
+
   alias AshA2A.Test.Fixture.Item
 
   test "dispatch/3 runs a real :create skill end to end" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "widget"})])
+    message = data_message(%{"label" => "widget"})
 
     assert {:reply, [%A2A.Part.Data{data: %{label: "widget", id: id}}]} =
              AshA2A.Dispatcher.dispatch(:create_item, message, Item)
@@ -52,7 +54,7 @@ defmodule AshA2ADispatcherSkillsTest do
   end
 
   test "dispatch/3's :update skill maps a real missing id to {:input_required, _} (to_reply/1)" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "no id here"})])
+    message = data_message(%{"label" => "no id here"})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
              AshA2A.Dispatcher.dispatch(:update_item, message, Item)
@@ -61,7 +63,7 @@ defmodule AshA2ADispatcherSkillsTest do
   end
 
   test "dispatch/3's :update skill still fails closed for a real missing atom-keyed id" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{label: "no id here either"})])
+    message = data_message(%{label: "no id here either"})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
              AshA2A.Dispatcher.dispatch(:update_item, message, Item)
@@ -70,7 +72,7 @@ defmodule AshA2ADispatcherSkillsTest do
   end
 
   test "dispatch/3's :destroy skill maps a real missing id to {:input_required, _} (to_reply/1)" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
              AshA2A.Dispatcher.dispatch(:destroy_item, message, Item)
@@ -79,7 +81,7 @@ defmodule AshA2ADispatcherSkillsTest do
   end
 
   test "dispatch/3 runs a real generic :action skill" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:reply, [%A2A.Part.Data{data: %{result: "pong"}}]} =
              AshA2A.Dispatcher.dispatch(:ping, message, Item)
@@ -89,7 +91,7 @@ defmodule AshA2ADispatcherSkillsTest do
     # `Item`'s `:create` action requires `:label` (allow_nil?: false) --
     # omitting it produces a genuine `Ash.Error.Invalid` from
     # `Ash.Changeset.for_create/3`/`Ash.create/2`, not a hand-built error.
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
              AshA2A.Dispatcher.dispatch(:create_item, message, Item)
@@ -102,7 +104,7 @@ defmodule AshA2ADispatcherSkillsTest do
     # streaming test: exercises `pop_stream_flag/1`'s other real branch,
     # `%{stream: true}`, against the same real compiled `Echo` fixture and
     # the real `Ash.stream!/2` API.
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{stream: true})])
+    message = data_message(%{stream: true})
 
     assert {:stream, stream} =
              AshA2A.Dispatcher.dispatch(:echo, message, AshA2A.Test.Fixture.Echo)

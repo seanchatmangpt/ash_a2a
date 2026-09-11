@@ -6,9 +6,34 @@ defmodule AshA2A.MixProject do
       app: :ash_a2a,
       version: "26.9.10",
       elixir: "~> 1.19",
+      description: description(),
+      package: package(),
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
-      deps: deps()
+      deps: deps(),
+      docs: docs()
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md"]
+    ]
+  end
+
+  defp description do
+    "A Spark.Dsl.Extension that exposes Ash.Resource/Ash.Domain actions as " <>
+      "A2A protocol agent skills, compiling a verified AgentCard and " <>
+      "dispatching inbound A2A messages to Ash actions."
+  end
+
+  defp package do
+    [
+      links: %{"GitHub" => "https://github.com/seanchatmangpt/ash_a2a"}
+      # NOTE: no `licenses:` key -- this repo has no LICENSE file. Hex requires
+      # a real, present license before this package can actually be published;
+      # do not add a licenses: [...] entry until one is chosen and committed.
     ]
   end
 
@@ -29,8 +54,9 @@ defmodule AshA2A.MixProject do
       {:ash, "~> 3.0"},
       {:igniter, "~> 0.6"},
       {:ggen_igniter, "~> 26.9"},
-      {:a2a, path: "/Users/sac/xaas/deps/a2a"},
-      {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
+      {:a2a, "~> 0.2"},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 end

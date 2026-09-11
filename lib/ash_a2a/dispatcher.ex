@@ -216,6 +216,13 @@ defmodule AshA2A.Dispatcher do
     ArgumentError -> :error
   end
 
+  # Catch-all: `skill_name` originates from `AshA2A.Agent.resolve_skill_name/2`,
+  # which reads it out of an unauthenticated, unschema'd remote-caller-controlled
+  # `A2A.Message.metadata` map with no type check. A non-atom/non-binary value
+  # (integer, list, map, etc.) must still fail closed here rather than raise a
+  # `FunctionClauseError` that would crash the calling `A2A.Agent` process.
+  defp to_skill_name(_name), do: :error
+
   # -- Action resolution ---------------------------------------------------
 
   # The persisted capability-index skill (`AshA2A.CapabilityIndex.skill()`,
@@ -419,10 +426,7 @@ defmodule AshA2A.Dispatcher do
   end
 
   defp fetch_input_value(input, field) when is_map(input) do
-    case Map.fetch(input, Atom.to_string(field)) do
-      {:ok, value} -> {:ok, value}
-      :error -> Map.fetch(input, field)
-    end
+    AshA2A.MetadataKey.fetch(input, field)
   end
 
   defp fetch_input_value(_input, _field), do: :error

@@ -24,10 +24,12 @@ defmodule AshA2ADispatcherTenantTest do
 
   use ExUnit.Case
 
+  import AshA2A.Test.MessageHelpers
+
   alias AshA2A.Test.Fixture.TenantedItem
 
   test "dispatch/3 maps a real missing-tenant :create error to a class-tagged :invalid_config error, not :input_required" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "widget"})])
+    message = data_message(%{"label" => "widget"})
 
     assert {:error, {:execution, reason}} =
              AshA2A.Dispatcher.dispatch(:create_tenanted_item, message, TenantedItem)
@@ -43,7 +45,7 @@ defmodule AshA2ADispatcherTenantTest do
       |> Ash.create(domain: AshA2A.Test.Fixture.TenantedItemDomain)
 
     message =
-      A2A.Message.new_user([A2A.Part.Data.new(%{"id" => record.id, "label" => "after"})])
+      data_message(%{"id" => record.id, "label" => "after"})
 
     assert {:error, {:execution, reason}} =
              AshA2A.Dispatcher.dispatch(:update_tenanted_item, message, TenantedItem)
@@ -58,7 +60,7 @@ defmodule AshA2ADispatcherTenantTest do
       |> Ash.Changeset.for_create(:create, %{label: "before"}, tenant: "acme")
       |> Ash.create(domain: AshA2A.Test.Fixture.TenantedItemDomain)
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"id" => record.id})])
+    message = data_message(%{"id" => record.id})
 
     assert {:error, {:execution, reason}} =
              AshA2A.Dispatcher.dispatch(:destroy_tenanted_item, message, TenantedItem)
@@ -72,7 +74,7 @@ defmodule AshA2ADispatcherTenantTest do
     # attribute error on a *non*-multitenant resource must still be
     # caller-actionable (`:input_required`), not swept into
     # `:invalid_config` by an overly broad tenant-message match.
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:input_required, _parts} =
              AshA2A.Dispatcher.dispatch(:create_item, message, AshA2A.Test.Fixture.Item)

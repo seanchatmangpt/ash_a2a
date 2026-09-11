@@ -16,23 +16,11 @@ defmodule AshA2ARegistryTest do
   alias AshA2A.Test.Fixture.{EchoAgent, WidgetAgent}
 
   test "two distinct AshA2A.Agent modules register distinct A2A.Registry identities" do
-    sup_name = :"#{__MODULE__}.Sup"
-    registry_name = :"#{__MODULE__}.Registry"
-
-    {:ok, sup} =
-      A2A.AgentSupervisor.start_link(
-        agents: [EchoAgent, WidgetAgent],
-        name: sup_name,
-        registry: registry_name
-      )
-
-    on_exit(fn ->
-      try do
-        Supervisor.stop(sup)
-      catch
-        :exit, _ -> :ok
-      end
-    end)
+    {sup, registry_name} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [
+        EchoAgent,
+        WidgetAgent
+      ])
 
     # Both agent processes are real, independently-supervised children of
     # the same real supervisor -- not the same process under two names.

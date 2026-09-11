@@ -3,8 +3,10 @@ defmodule AshA2A.Skill do
   Spark DSL entity target for `a2a do skill ... end`.
 
   Field shape matches `AshA2A.CapabilityIndex.skill/0` (`name`, `resource`,
-  `action`, `arguments`) so a compiled entity can be persisted into the
-  capability index without translation (ash_a2a PRD/ARD §3.2/§3.4).
+  `action`) so a compiled entity can be persisted into the capability index
+  without translation (ash_a2a PRD/ARD §3.2/§3.4). `arguments` holds any
+  nested `argument ... end` entities declared inside the `skill do ... end`
+  block (`AshA2A.Dsl`'s `:skill` entity `entities: [arguments: [@argument]]`).
 
   `resource` is `nil` at declaration time for a resource-level `skill :name,
   :action` (2-arg) invocation -- `AshA2A.Transformers.BuildCapabilityIndex`
@@ -17,7 +19,7 @@ defmodule AshA2A.Skill do
           resource: module() | nil,
           domain: module() | nil,
           action: atom(),
-          arguments: [term()]
+          arguments: [AshA2A.Argument.t()]
         }
 
   defstruct [

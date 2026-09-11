@@ -32,12 +32,12 @@ defmodule AshA2A.CapabilityIndex.Validator do
       iex> AshA2A.CapabilityIndex.Validator.validate(skills)
       :ok
 
-      iex> bad = %{name: :bogus, resource: AshA2A.Test.Fixture.Echo, action: :not_real, arguments: []}
+      iex> bad = %{name: :bogus, resource: AshA2A.Test.Fixture.Echo, action: :not_real}
       iex> {:error, [refusal]} = AshA2A.CapabilityIndex.Validator.validate([bad])
       iex> refusal.code
       :REFUSED_ACTION_NOT_FOUND
 
-      iex> dup = %{name: :dup, resource: AshA2A.Test.Fixture.Echo, action: :read, arguments: []}
+      iex> dup = %{name: :dup, resource: AshA2A.Test.Fixture.Echo, action: :read}
       iex> {:error, [refusal]} = AshA2A.CapabilityIndex.Validator.validate([dup, dup])
       iex> refusal.code
       :REFUSED_DUPLICATE_SKILL_NAME

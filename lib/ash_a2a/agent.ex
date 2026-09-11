@@ -249,7 +249,7 @@ defmodule AshA2A.Agent do
   defp resolve_skill_name(resource_or_domain, %A2A.Message{metadata: metadata}) do
     metadata = metadata || %{}
 
-    case Map.get(metadata, :skill) || Map.get(metadata, "skill") do
+    case AshA2A.MetadataKey.get(metadata, :skill) do
       nil -> default_skill_name(resource_or_domain)
       name -> {:ok, name}
     end

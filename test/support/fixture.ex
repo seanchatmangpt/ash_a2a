@@ -296,6 +296,48 @@ defmodule AshA2A.Test.Fixture.TenantedItem do
   end
 end
 
+defmodule AshA2A.Test.Fixture.EchoWithArgument do
+  @moduledoc """
+  Real fixture resource proving the `:skill` entity's `entities: [arguments:
+  [@argument]]` (`lib/ash_a2a/dsl.ex`) actually accepts a nested `do...end`
+  block: `skill :echo, :read do argument :query, :string end` below is a
+  genuine `Spark.Dsl.Entity` nested-entity declaration, compiled for real (no
+  mocked DSL/parser), not a hand-built `%AshA2A.Skill{}` struct literal.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.EchoWithArgumentDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:message, :string, public?: true)
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    skill :echo, :read do
+      argument(:query, :string)
+    end
+  end
+end
+
+defmodule AshA2A.Test.Fixture.EchoWithArgumentDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.EchoWithArgument` above.
+  """
+
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(AshA2A.Test.Fixture.EchoWithArgument)
+  end
+end
+
 defmodule AshA2A.Test.Fixture.TenantedItemDomain do
   @moduledoc """
   Real fixture domain for `AshA2A.Test.Fixture.TenantedItem` above.

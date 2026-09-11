@@ -28,6 +28,31 @@ defmodule AshA2A.Dsl do
     ]
   ]
 
+  @argument_schema [
+    name: [
+      type: :atom,
+      required: true,
+      doc: "The argument's name."
+    ],
+    type: [
+      type: :any,
+      required: true,
+      doc: "The argument's Ash/Spark type."
+    ]
+  ]
+
+  @argument %Spark.Dsl.Entity{
+    name: :argument,
+    describe: "Declares an argument accepted by the enclosing skill.",
+    examples: [
+      "argument :query, :string"
+    ],
+    target: AshA2A.Argument,
+    schema: @argument_schema,
+    args: [:name, :type],
+    identifier: :name
+  }
+
   @skill %Spark.Dsl.Entity{
     name: :skill,
     describe: "Exposes a real Ash action as an A2A-discoverable agent skill.",
@@ -38,7 +63,10 @@ defmodule AshA2A.Dsl do
     target: AshA2A.Skill,
     schema: @skill_schema,
     args: [:name, {:optional, :resource}, :action],
-    identifier: :name
+    identifier: :name,
+    entities: [
+      arguments: [@argument]
+    ]
   }
 
   @a2a %Spark.Dsl.Section{

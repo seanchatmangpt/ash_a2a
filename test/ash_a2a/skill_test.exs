@@ -8,7 +8,7 @@ defmodule AshA2A.SkillTest do
   struct directly and asserts on its own real default values.
   """
 
-  test "struct defaults arguments to [] and __spark_metadata__ to nil, with other fields nil" do
+  test "struct defaults to nil for all fields, with __spark_metadata__ nil" do
     skill = %AshA2A.Skill{}
 
     assert skill.name == nil
@@ -24,14 +24,12 @@ defmodule AshA2A.SkillTest do
       name: :echo,
       resource: AshA2A.Test.Fixture.Echo,
       domain: AshA2A.Test.Fixture.Domain,
-      action: :read,
-      arguments: [:id]
+      action: :read
     }
 
     assert skill.name == :echo
     assert skill.resource == AshA2A.Test.Fixture.Echo
     assert skill.domain == AshA2A.Test.Fixture.Domain
     assert skill.action == :read
-    assert skill.arguments == [:id]
   end
 end

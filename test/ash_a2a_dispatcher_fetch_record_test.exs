@@ -125,6 +125,8 @@ defmodule AshA2ADispatcherFetchRecordTest do
 
   use ExUnit.Case
 
+  import AshA2A.Test.MessageHelpers
+
   alias AshA2ADispatcherFetchRecordTest.LineItem
   alias AshA2ADispatcherFetchRecordTest.Ticket
 
@@ -161,7 +163,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
   end
 
   test "update dispatch still fails closed (missing_argument) when the real primary key is absent" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"status" => "closed"})])
+    message = data_message(%{"status" => "closed"})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
              AshA2A.Dispatcher.dispatch(:close, message, Ticket)
@@ -175,7 +177,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
       |> Ash.Changeset.for_create(:create, %{ticket_ref: "TCK-3", status: "open"})
       |> Ash.create!()
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"ticket_ref" => ticket.ticket_ref})])
+    message = data_message(%{"ticket_ref" => ticket.ticket_ref})
 
     assert {:reply, [%A2A.Part.Data{}]} = AshA2A.Dispatcher.dispatch(:remove, message, Ticket)
 

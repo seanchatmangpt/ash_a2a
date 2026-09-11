@@ -67,8 +67,7 @@ defmodule AshA2A.CapabilityIndexPropertyTest do
             name: :"skill_#{index}",
             resource: Echo,
             domain: nil,
-            action: action,
-            arguments: []
+            action: action
           }
           |> Map.put(:__fixture_real?, real?)
         end)

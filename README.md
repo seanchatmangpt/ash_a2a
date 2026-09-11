@@ -23,7 +23,7 @@ Add `ash_a2a` and the `:a2a` SDK to `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 0.1.0"},
+    {:ash_a2a, "~> 26.9"},
     {:a2a, "~> 0.1"}
   ]
 end
@@ -132,7 +132,7 @@ optional HTTP deps your app needs on top of `ash_a2a`/`a2a`:
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 0.1.0"},
+    {:ash_a2a, "~> 26.9"},
     {:a2a, "~> 0.1"},
     {:bandit, "~> 1.5"},
     {:plug, "~> 1.16"},

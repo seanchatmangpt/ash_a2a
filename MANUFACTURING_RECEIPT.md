@@ -161,11 +161,16 @@ real fixture Ash resource (`test/support/fixture.ex`) with real `a2a do skill
      `protocol_version`.
    - **`supported_interfaces`** — present in both the Elixir type (`t/0`
      field, defaults to `[]`) and the proto (field 19, `REQUIRED`,
-     "Ordered list of supported interfaces. First entry is preferred."), but
-     `build_agent_card/2` never populates it — no `:supported_interfaces` key
-     is read from `opts` or assigned in the struct literal
-     (`lib/ash_a2a/capability_index.ex:112-126`). Every card this library
-     builds ships an empty list where the proto requires at least one entry.
+     "Ordered list of supported interfaces. First entry is preferred.").
+     **Fixed**: `AshA2A.CapabilityIndex.AgentCardBuilder.build_agent_card/2`
+     (`lib/ash_a2a/capability_index/agent_card_builder.ex:103-123`) reads
+     `Keyword.get(opts, :supported_interfaces, [default_supported_interface(url)])`,
+     defaulting to a real, non-fabricated entry derived from `:url`
+     (`default_supported_interface/1`, same file, lines 129-132: `%{url:,
+     protocol_binding: "JSONRPC", protocol_version: "0.3.0"}`). Every card
+     this library builds now ships at least one entry, satisfying the
+     proto's `[REQUIRED]` marking. Pinned by
+     `test/ash_a2a/capability_index_agent_card_shape_test.exs:96-113`.
    - **`security`** — Elixir represents this as
      `[%{String.t() => [String.t()]}]` (a bare list of scheme-name→scopes
      maps). The proto's equivalent is `security_requirements` (field 13,

@@ -8,6 +8,8 @@ defmodule AshA2ATest do
 
   use ExUnit.Case
 
+  import AshA2A.Test.MessageHelpers
+
   import Spark.Test, only: [assert_dsl_error: 2]
 
   alias AshA2A.Test.Fixture.Echo
@@ -61,7 +63,7 @@ defmodule AshA2ATest do
     # declares `:domain` (skill.ex:23) and `BuildCapabilityIndex` fills it in
     # at compile time, so this must run cleanly against the real compiled
     # fixture, not a hand-built struct.
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:reply, [%A2A.Part.Data{data: %{results: []}}]} =
              AshA2A.Dispatcher.dispatch(:echo, message, Echo)
@@ -76,7 +78,7 @@ defmodule AshA2ATest do
     # stub. `Enum.to_list/1` actually drains the returned `Enumerable.t()` to
     # prove it is a real, consumable stream, not just a `:stream`-tagged
     # tuple.
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"stream" => true})])
+    message = data_message(%{"stream" => true})
 
     assert {:stream, stream} = AshA2A.Dispatcher.dispatch(:echo, message, Echo)
     assert Enum.to_list(stream) == []
@@ -90,7 +92,7 @@ defmodule AshA2ATest do
     # through the real `AshA2A.Dispatcher.dispatch/3` (no mock/stub anywhere
     # in this path) and asserts the actual `{:error, {:unknown_skill, _}}`
     # reply the real not-found branch produces.
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:error, {:skill_lookup, {:unknown_skill, :no_such_skill}}} =
              AshA2A.Dispatcher.dispatch(:no_such_skill, message, Echo)
@@ -114,7 +116,7 @@ defmodule AshA2ATest do
     # tuple.
     alias AshA2A.Test.Fixture.Locked
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:error, reason} = AshA2A.Dispatcher.dispatch(:list, message, Locked)
 
@@ -241,22 +243,10 @@ defmodule AshA2ATest do
     # resulting `A2A.Task`.
     alias AshA2A.Test.Fixture.EchoAgent
 
-    {:ok, sup} =
-      A2A.AgentSupervisor.start_link(
-        agents: [EchoAgent],
-        name: :"#{__MODULE__}.Sup",
-        registry: :"#{__MODULE__}.Registry"
-      )
+    {_sup, _registry_name} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [EchoAgent])
 
-    on_exit(fn ->
-      try do
-        Supervisor.stop(sup)
-      catch
-        :exit, _ -> :ok
-      end
-    end)
-
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = data_message(%{})
 
     assert {:ok, task} = EchoAgent.call(EchoAgent, message)
     assert task.status.state == :completed
