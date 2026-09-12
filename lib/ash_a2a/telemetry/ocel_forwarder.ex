@@ -53,7 +53,12 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   """
   @spec attach!() :: :ok
   def attach! do
-    case :telemetry.attach(@handler_id, [:ash_a2a, :dispatch, :stop], &__MODULE__.handle_event/4, nil) do
+    case :telemetry.attach(
+           @handler_id,
+           [:ash_a2a, :dispatch, :stop],
+           &__MODULE__.handle_event/4,
+           nil
+         ) do
       :ok -> :ok
       {:error, :already_exists} -> :ok
     end
@@ -92,12 +97,18 @@ defmodule AshA2A.Telemetry.OcelForwarder do
         :ok
 
       {:error, reason} ->
-        Logger.warning("AshA2A.Telemetry.OcelForwarder: failed to forward OCEL event to #{url}: #{inspect(reason)}")
+        Logger.warning(
+          "AshA2A.Telemetry.OcelForwarder: failed to forward OCEL event to #{url}: #{inspect(reason)}"
+        )
+
         :ok
     end
   rescue
     error ->
-      Logger.warning("AshA2A.Telemetry.OcelForwarder: unexpected error building/forwarding OCEL event: #{inspect(error)}")
+      Logger.warning(
+        "AshA2A.Telemetry.OcelForwarder: unexpected error building/forwarding OCEL event: #{inspect(error)}"
+      )
+
       :ok
   end
 

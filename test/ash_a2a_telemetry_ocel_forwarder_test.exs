@@ -54,14 +54,20 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
         _ ->
           conn
           |> Plug.Conn.put_resp_content_type("application/json")
-          |> Plug.Conn.send_resp(422, Jason.encode!(%{"ok" => false, "error" => "expected events list"}))
+          |> Plug.Conn.send_resp(
+            422,
+            Jason.encode!(%{"ok" => false, "error" => "expected events list"})
+          )
       end
     end
 
     match(_) do
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.send_resp(404, Jason.encode!(%{"ok" => false, "error" => "route_not_admitted"}))
+      |> Plug.Conn.send_resp(
+        404,
+        Jason.encode!(%{"ok" => false, "error" => "route_not_admitted"})
+      )
     end
   end
 
@@ -94,7 +100,10 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
   test "a real AshA2A skill dispatch produces a real OCEL v2 event at the ingest endpoint" do
     message =
       Message.new_user([
-        Part.Data.new(%{"phase" => :trust_god, "prompt_text" => "Name one thing you trust today."})
+        Part.Data.new(%{
+          "phase" => :trust_god,
+          "prompt_text" => "Name one thing you trust today."
+        })
       ])
 
     assert {:reply, _parts} = AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator)
@@ -136,8 +145,12 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     events = Agent.get(MicroBeamOcelIngest.Store, & &1)
 
     cond do
-      length(events) >= min_count -> events
-      System.monotonic_time(:millisecond) >= deadline -> events
+      length(events) >= min_count ->
+        events
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        events
+
       true ->
         Process.sleep(25)
         poll_until(min_count, deadline)
