@@ -123,6 +123,45 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     refute Map.has_key?(event["attributes"], "stage")
   end
 
+  test "a real :next_phase dispatch forwards a real, non-empty OCEL relationships entry naming the real plan instance" do
+    plan_name = :"ocel_forwarder_relationships_test_#{System.unique_integer([:positive])}"
+
+    message =
+      Message.new_user([
+        Part.Data.new(%{plan_name: plan_name, prompt_text: "next real phase, please"})
+      ])
+
+    assert {:reply, _parts} =
+             AshA2A.Dispatcher.dispatch(
+               :next_phase,
+               message,
+               Facilitator,
+               [],
+               nil
+             )
+
+    events = wait_for_events(1, 2_000)
+
+    assert [event] = events
+    assert event["event_type"] == "ash_a2a.dispatch.facilitator.next_phase"
+    assert [%{"qualifier" => "acted_on", "object_id" => object_id}] = event["relationships"]
+    assert object_id == Atom.to_string(plan_name)
+  end
+
+  test "a real :run_phase dispatch (no real object identity available) forwards an empty relationships array, never a fabricated one" do
+    message =
+      Message.new_user([
+        Part.Data.new(%{"phase" => :trust_god, "prompt_text" => "no plan_name here"})
+      ])
+
+    assert {:reply, _parts} = AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator)
+
+    events = wait_for_events(1, 2_000)
+
+    assert [event] = events
+    assert event["relationships"] == []
+  end
+
   test "a real refused dispatch (unknown skill) still produces real OCEL evidence -- refusals are first-class" do
     message = Message.new_user([Part.Data.new(%{})])
 

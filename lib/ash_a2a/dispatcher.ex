@@ -135,9 +135,29 @@ defmodule AshA2A.Dispatcher do
     start_meta = %{resource_or_domain: resource_or_domain, skill_name: skill_name}
 
     :telemetry.span([:ash_a2a, :dispatch], start_meta, fn ->
-      reply = do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity)
-      {reply, Map.merge(start_meta, stop_meta(reply))}
+      {reply, object_id} =
+        do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity)
+
+      stop = start_meta |> Map.merge(stop_meta(reply)) |> maybe_put_object_id(object_id)
+      {reply, stop}
     end)
+  end
+
+  # `object_id`, when non-nil, is the real identity of the specific resource
+  # instance (or, for a generic `:action` skill with no data-layer record at
+  # all, the specific stateful non-Ash instance -- e.g. the FreedomGym
+  # `AshA2A.Test.Fixture.FreedomGym.MeetingPlan` phase-tracking plan named by
+  # a `plan_name` argument) the dispatch actually acted on. It threads
+  # through to `AshA2A.Telemetry.OcelForwarder`'s `[:ash_a2a, :dispatch,
+  # :stop]` handler as `metadata.object_id`, letting the forwarder emit a
+  # real non-empty OCEL v2 `relationships` entry instead of every forwarded
+  # event being relationship-less. `nil` (no real identity available for
+  # this dispatch) means the forwarder emits `relationships: []`, never a
+  # fabricated id.
+  defp maybe_put_object_id(meta, nil), do: meta
+
+  defp maybe_put_object_id(meta, object_id) when is_binary(object_id) do
+    Map.put(meta, :object_id, object_id)
   end
 
   defp do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity) do
@@ -151,9 +171,10 @@ defmodule AshA2A.Dispatcher do
            ),
          {:ok, input} <- fetch_input(a2a_message),
          {:ok, action} <- tag_stage(fetch_action(skill), :action_resolution) do
-      tag_stage(run_skill(skill, action, input, exec_context), :execution)
+      {reply, object_id} = run_skill(skill, action, input, exec_context)
+      {tag_stage(reply, :execution), object_id}
     else
-      {:error, _reason} = error -> error
+      {:error, _reason} = error -> {error, nil}
     end
   end
 
@@ -291,8 +312,54 @@ defmodule AshA2A.Dispatcher do
         :action -> run_generic(skill, action, input, opts)
       end
 
-    to_reply(result)
+    {to_reply(result), object_id(result, input)}
   end
+
+  # -- Real object identity for OCEL relationship forwarding ---------------
+  #
+  # Two real, non-fabricated sources, tried in order:
+  #
+  #   1. The already-persisted Ash record a `:create`/`:update`/`:read`
+  #      (`get?`)/`:destroy` action actually produced or acted on --
+  #      identified via the resource's own real `Ash.Resource.Info.
+  #      primary_key/1`, the same identity `fetch_record_for_update/2`
+  #      resolves *records* by. A composite key (2+ fields) is skipped --
+  #      no single real id string represents it without inventing a
+  #      delimiter convention nothing else in this codebase uses.
+  #   2. For a generic `:action` skill with no Ash data-layer record at all
+  #      (`AshA2A.Test.Fixture.FreedomGym.Facilitator`'s `:next_phase`/
+  #      `:reset_plan`), the real `plan_name` argument the caller supplied
+  #      -- it names a real, specific stateful instance
+  #      (`AshA2A.Test.Fixture.FreedomGym.MeetingPlan`'s per-name Agent
+  #      state), not a fabricated id. `AshA2A.MetadataKey.fetch/2` handles
+  #      both the atom-key (in-process caller) and string-key (real A2A
+  #      wire JSON) shapes the same way `fetch_record_for_update/2` already
+  #      relies on for CRUD primary keys.
+  #
+  # Neither source is guaranteed present -- most skills (e.g. `:run_phase`,
+  # a pure stateless echo) have no real object identity at all, and this
+  # returns `nil` for them rather than inventing one.
+  defp object_id({:ok, %resource{} = record}, _input) do
+    case Ash.Resource.Info.primary_key(resource) do
+      [field] ->
+        case Map.get(record, field) do
+          nil -> nil
+          value -> to_string(value)
+        end
+
+      _other ->
+        nil
+    end
+  end
+
+  defp object_id(_result, input) when is_map(input) do
+    case AshA2A.MetadataKey.fetch(input, :plan_name) do
+      {:ok, value} -> to_string(value)
+      :error -> nil
+    end
+  end
+
+  defp object_id(_result, _input), do: nil
 
   # Same opts shape as `AshAi.Tool.Execution.build_opts/2`
   # (`~/xaas/deps/ash_ai/lib/ash_ai/tool/execution.ex:100-107`), sourced from
