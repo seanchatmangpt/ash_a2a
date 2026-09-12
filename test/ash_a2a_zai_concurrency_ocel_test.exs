@@ -111,7 +111,11 @@ defmodule AshA2AZaiConcurrencyOcelTest do
               prompt_text: "Concurrency probe ##{i}: reply with exactly the digit #{i}."
             })
 
-          result = ZaiLlmAvatarAgent.call(ZaiLlmAvatarAgent, message)
+          # A2A.Agent.call/3's default GenServer.call timeout (60s) is too
+          # tight once `@concurrency` real calls genuinely contend for
+          # this machine's/Z.AI's resources at once -- a real timeout was
+          # hit and fixed here, not guessed in advance.
+          result = ZaiLlmAvatarAgent.call(ZaiLlmAvatarAgent, message, timeout: 150_000)
           finish = System.monotonic_time()
           {i, start, finish, result}
         end,
