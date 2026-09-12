@@ -3,9 +3,16 @@ defmodule AshA2A.Test.Fixture.FreedomGym.LlmAvatar do
   Real fixture resource for the "Chicago AI" tier of the FreedomGym
   primitive (`test/ash_a2a_freedom_gym_llm_test.exs`): a participant avatar
   whose `:respond_to_prompt` action is backed by a REAL live LLM call
-  (`AshAi.Actions.Prompt`, via `ReqLLM`, against Groq) rather than the
+  (`AshAi.Actions.Prompt`, via `ReqLLM`, against Z.AI) rather than the
   deterministic Elixir logic in `freedom_gym_fixture.ex`'s four Chicago-Core
   avatars.
+
+  Formerly Groq-backed; swapped 2026-09 per explicit request to replace
+  this repo's Groq usage with Z.AI. This makes it a near-duplicate of
+  `ZaiLlmAvatar` below (same provider, same model) -- kept as its own
+  module rather than merged/deleted since only conversion, not
+  consolidation, was asked for; worth revisiting whether one of the two
+  should be removed.
 
   This is deliberately a separate resource/avatar/test from Chicago-Core --
   Chicago-Core stays exact-output-assertable and CI-safe (no network, no
@@ -15,11 +22,10 @@ defmodule AshA2A.Test.Fixture.FreedomGym.LlmAvatar do
   Ash return-type contract constrains it to a real structured shape, and
   callers assert invariants over that structure -- never exact text.
 
-  No mock: no `ReqLLM` stub, no canned HTTP response. `GROQ_API_KEY` is read
-  directly from the OS environment by `req_llm`'s Groq provider (see
-  `deps/req_llm/guides/groq.md`) -- no key is echoed, typed into a form, or
-  otherwise handled by this code; it flows straight from env var to the
-  HTTP client.
+  No mock: no `ReqLLM` stub, no canned HTTP response. `ZAI_API_KEY` is read
+  directly from the OS environment by `req_llm`'s `zai_coder` provider --
+  no key is echoed, typed into a form, or otherwise handled by this code;
+  it flows straight from env var to the HTTP client.
   """
 
   use Ash.Resource,
@@ -42,7 +48,7 @@ defmodule AshA2A.Test.Fixture.FreedomGym.LlmAvatar do
 
       run(
         prompt(
-          "groq:openai/gpt-oss-20b",
+          "zai_coder:glm-5.3-flash",
           prompt: {
             """
             You are simulating one participant avatar in a Chicago-style
@@ -60,7 +66,12 @@ defmodule AshA2A.Test.Fixture.FreedomGym.LlmAvatar do
             omit if you would not speak), and are you asking the group for
             help with something (asks_for_help?).
             """
-          }
+          },
+          # Z.AI's `:zai_coder` provider errors on an out-of-range default
+          # max_tokens ("The max_tokens parameter is illegal") -- a real
+          # 400 hit and fixed against the live API, not guessed (see
+          # `ZaiLlmAvatar` below, where this was first diagnosed).
+          req_llm_opts: [max_tokens: 4096]
         )
       )
     end
@@ -94,16 +105,17 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatar do
   @moduledoc """
-  Same "Chicago AI" avatar contract as `LlmAvatar`, but backed by a REAL
-  live call to Z.AI's GLM coding-plan endpoint (`req_llm`'s native
-  `:zai_coder` provider) instead of Groq -- proving the same AshAi
-  `prompt/2` action works unchanged against a second real provider.
+  Same "Chicago AI" avatar contract as `LlmAvatar` (both are now Z.AI-backed
+  after `LlmAvatar`'s 2026-09 Groq->Z.AI conversion -- functionally
+  redundant with each other; kept separate since only conversion, not
+  consolidation, was asked for). Backed by a REAL live call to Z.AI's GLM
+  coding-plan endpoint (`req_llm`'s native `:zai_coder` provider).
 
-  `Z_AI_API_KEY` lives in `~/.env` (not the process environment), under a
-  name that doesn't match `req_llm`'s `zai_coder` provider's expected
-  `ZAI_API_KEY`/`:zai_coder_api_key` lookup (see `ReqLLM.Keys`) -- so
-  `test/ash_a2a_freedom_gym_zai_test.exs` reads the real key from
-  `~/.env` once, at test setup, and sets it via
+  `Z_AI_API_KEY` lives in `~/.env` (not necessarily the process
+  environment), under a name that doesn't match `req_llm`'s `zai_coder`
+  provider's expected `ZAI_API_KEY`/`:zai_coder_api_key` lookup (see
+  `ReqLLM.Keys`) -- so `test/ash_a2a_freedom_gym_zai_test.exs` reads the
+  real key from `~/.env` once, at test setup, and sets it via
   `Application.put_env(:req_llm, :zai_coder_api_key, key)` (ReqLLM.Keys'
   documented `:application` precedence tier). No key is echoed, typed into
   a form, or handled by this resource module itself.

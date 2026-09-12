@@ -1,11 +1,13 @@
 defmodule AshA2AFreedomGymZaiTest do
   @moduledoc """
-  Chicago-AI tier of the FreedomGym primitive, second real provider: a REAL
-  live call to Z.AI's GLM coding-plan endpoint (via `ash_ai`'s
-  `AshAi.Actions.Prompt` + `req_llm`'s native `:zai_coder` provider),
-  dispatched through a real supervised `A2A.Agent` -- no mock LLM client,
-  no canned response, exactly like `ash_a2a_freedom_gym_llm_test.exs`'s
-  Groq-backed avatar.
+  Chicago-AI tier of the FreedomGym primitive: a REAL live call to Z.AI's
+  GLM coding-plan endpoint (via `ash_ai`'s `AshAi.Actions.Prompt` +
+  `req_llm`'s native `:zai_coder` provider), dispatched through a real
+  supervised `A2A.Agent` -- no mock LLM client, no canned response.
+  Functionally redundant with `ash_a2a_freedom_gym_llm_test.exs`'s
+  `LlmAvatar` since that avatar's 2026-09 Groq->Z.AI conversion (same
+  provider, same model); kept separate since only conversion, not
+  consolidation, was asked for.
 
   `Z_AI_API_KEY` lives in `~/.env` (checked via `mix dotenvy` loading at
   boot for other keys, but this repo doesn't declare `dotenvy` as a
