@@ -117,9 +117,26 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       "event_id" => Ash.UUIDv7.generate(),
       "event_type" => event_type(metadata),
       "event_time" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "attributes" => attributes(measurements, metadata)
+      "attributes" => attributes(measurements, metadata),
+      "relationships" => relationships(metadata)
     }
   end
+
+  # Real E2O relationship, present exactly when `AshA2A.Dispatcher` resolved
+  # a real object identity for this dispatch (`dispatcher.ex`'s `object_id/2`
+  # -- a persisted Ash record's own primary key, or, for a generic `:action`
+  # skill with no data-layer record at all, a real `plan_name` argument
+  # naming a specific stateful instance). `[]` (never a fabricated id) when
+  # the dispatch had no real object to relate to (e.g. a pure stateless echo
+  # skill like `:run_phase`). Field name matches beam4pm's real
+  # `BeamPM.OcelIngest.Router` wire contract exactly (`lib/beam4pm_ocel_ingest.ex`
+  # `decode_relationships/1`: `"qualifier"` / `"object_id"`, snake_case --
+  # not `"objectId"`).
+  defp relationships(%{object_id: object_id}) when is_binary(object_id) and object_id != "" do
+    [%{"qualifier" => "acted_on", "object_id" => object_id}]
+  end
+
+  defp relationships(_metadata), do: []
 
   defp event_type(%{resource_or_domain: resource, skill_name: skill}) do
     short_name =
