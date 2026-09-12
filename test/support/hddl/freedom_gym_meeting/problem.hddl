@@ -1,0 +1,8 @@
+(define (problem freedom-gym-meeting-p1)
+  (:domain freedom-gym-meeting)
+  (:objects open trust-god clean-house help-others fellowship close - phase)
+  (:htn
+    :parameters ()
+    :ordered-subtasks (and (m1 (run-meeting open))))
+  (:init (current-phase open))
+  (:goal (and (current-phase close))))

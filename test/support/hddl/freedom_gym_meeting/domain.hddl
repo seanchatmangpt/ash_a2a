@@ -1,0 +1,18 @@
+(define (domain freedom-gym-meeting)
+  (:types phase)
+  (:predicates
+    (current-phase ?p - phase))
+  (:task run-meeting :parameters (?start - phase))
+  (:action advance
+    :parameters (?from - phase ?to - phase)
+    :precondition (current-phase ?from)
+    :effect (and (not (current-phase ?from)) (current-phase ?to)))
+  (:method m-run-meeting
+    :parameters (?start - phase)
+    :task (run-meeting ?start)
+    :ordered-subtasks (and
+      (t1 (advance open trust-god))
+      (t2 (advance trust-god clean-house))
+      (t3 (advance clean-house help-others))
+      (t4 (advance help-others fellowship))
+      (t5 (advance fellowship close)))))
