@@ -31,22 +31,11 @@ defmodule AshA2AFreedomGymZaiTest do
 
   alias AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatarAgent
 
-  @env_path Path.expand("~/.env")
-
-  # Module-attribute evaluation runs at compile time, before any `defp` in
-  # this module is invocable, so the real key-extraction logic is inlined
-  # here directly (a local function call at this point would fail to
-  # compile -- confirmed by a real CompileError on the first attempt).
-  @zai_key (case File.exists?(@env_path) && File.read(@env_path) do
-              {:ok, contents} ->
-                case Regex.run(~r/^Z_AI_API_KEY=(.+)$/m, contents) do
-                  [_, key] -> String.trim(key)
-                  nil -> nil
-                end
-
-              _ ->
-                nil
-            end)
+  # See AshA2A.Test.EnvKeyFixture's moduledoc for why this compile-time
+  # extraction calls a shared *external* support module rather than a local
+  # `defp` (a local call would fail to compile at this point -- confirmed by
+  # a real CompileError on the first attempt, before this extraction).
+  @zai_key AshA2A.Test.EnvKeyFixture.read_key("Z_AI_API_KEY")
 
   @moduletag :external_api
   @describetag skip: is_nil(@zai_key) && "Z_AI_API_KEY not found in ~/.env"
