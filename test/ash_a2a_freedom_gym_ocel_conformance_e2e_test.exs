@@ -58,6 +58,33 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
   @ingest_url System.get_env("OCEL_INGEST_URL", "http://127.0.0.1:4210")
   @output_dir Path.expand("../../beam4pm/qualification/gym_bridge", __DIR__)
 
+  # Real, cheap (300ms) TCP-connect reachability check against the real
+  # ingest URL, run once at compile time -- gives this test an honest,
+  # visible skip (matching the `ZAI_API_KEY not found` /
+  # `GROQ_API_KEY not set` convention the sibling LLM-backed FreedomGym
+  # tests already use) instead of a hard `Req.TransportError:
+  # :econnrefused` failure whenever beam4pm's real out-of-process server
+  # isn't up under `--include external_api`.
+  @ingest_reachable? (
+                       uri = URI.parse(@ingest_url)
+                       host = String.to_charlist(uri.host || "127.0.0.1")
+                       port = uri.port || 4210
+
+                       case :gen_tcp.connect(host, port, [:binary, active: false], 300) do
+                         {:ok, socket} ->
+                           :gen_tcp.close(socket)
+                           true
+
+                         {:error, _reason} ->
+                           false
+                       end
+                     )
+
+  @moduletag skip:
+               not @ingest_reachable? &&
+                 "beam4pm's real OCEL ingest server is not reachable at #{@ingest_url} -- " <>
+                   "start it separately before running with --include external_api"
+
   setup do
     {_sup, _registry_name} =
       AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [FacilitatorAgent])
