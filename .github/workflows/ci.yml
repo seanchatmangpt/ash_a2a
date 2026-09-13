@@ -23,16 +23,6 @@ jobs:
       - run: mix local.hex --force
       - run: mix local.rebar --force
       - run: mix deps.get
-      - name: Materialize formatter repair candidate
-        run: mix format
-      - name: Preserve formatter repair candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: formatter-repair
-          path: |
-            lib/ash_a2a/planning/semantic_synthesis.ex
-            test/ash_a2a/semantic_synthesis_test.exs
-      - name: Verify formatting is committed
-        run: git diff --exit-code
+      - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mix test
