@@ -50,7 +50,9 @@ defmodule AshA2AFreedomGymPhaseAdmissionTest do
 
       assert {:refused, reason} = PhaseAdmission.admission_verdict(:not_a_real_phase)
       assert reason =~ "not an admitted FreedomGym meeting phase"
-      assert %{verdict: :refused, phase: :not_a_real_phase} = PhaseAdmission.decision(:not_a_real_phase)
+
+      assert %{verdict: :refused, phase: :not_a_real_phase} =
+               PhaseAdmission.decision(:not_a_real_phase)
     end
   end
 

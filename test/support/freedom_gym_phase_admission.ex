@@ -48,13 +48,13 @@ defmodule AshA2A.Test.Fixture.FreedomGym.PhaseAdmission do
   """
 
   @admitted_phases MapSet.new([
-                      :open,
-                      :trust_god,
-                      :clean_house,
-                      :help_others,
-                      :fellowship,
-                      :close
-                    ])
+                     :open,
+                     :trust_god,
+                     :clean_house,
+                     :help_others,
+                     :fellowship,
+                     :close
+                   ])
 
   @doc "The real admitted-phase allowlist enforced by this gate."
   @spec admitted_phases() :: MapSet.t(atom())
