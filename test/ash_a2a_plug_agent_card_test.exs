@@ -85,7 +85,15 @@ defmodule AshA2A.PlugAgentCardTest do
     # And concretely assert the real skill made it through the real HTTP
     # response body, not just structural equality with another computed
     # value.
-    assert %{"skills" => [%{"id" => "greet"}]} = served_card
+    # Real current shape (fbc3213 "derive canonical skills from public Ash
+    # actions"): `id` is the fully-qualified "<Resource>.<action>" identity
+    # (avoids collisions across resources sharing a short skill name);
+    # `name` carries the short, declared skill name instead.
+    assert %{
+             "skills" => [
+               %{"id" => "AshA2A.Test.PlugFixture.Greeter.read", "name" => "greet"}
+             ]
+           } = served_card
     assert served_card["url"] == base_url
   end
 

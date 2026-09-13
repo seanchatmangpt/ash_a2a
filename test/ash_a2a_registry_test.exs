@@ -49,8 +49,11 @@ defmodule AshA2ARegistryTest do
     # `AshA2A.Info.agent_card/2` -> the resource/domain's own compiled
     # capability index) are likewise distinct -- confirms the two entries
     # are genuinely different agents, not one card registered twice.
-    assert [%{id: "echo", name: "echo"}] = echo_card.skills
-    assert [%{id: "inspect", name: "inspect"}] = widget_card.skills
+    # Real current shape (fbc3213 "derive canonical skills from public Ash
+    # actions"): `id` is the fully-qualified "<Resource>.<action>" identity;
+    # `name` carries the short, declared skill name.
+    assert [%{id: "AshA2A.Test.Fixture.Echo.read", name: "echo"}] = echo_card.skills
+    assert [%{id: "AshA2A.Test.Fixture.Widget.read", name: "inspect"}] = widget_card.skills
 
     all_entries = A2A.Registry.all(registry_name)
     registered_modules = Enum.map(all_entries, fn {mod, _card} -> mod end)
