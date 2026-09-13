@@ -4,7 +4,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.9.10",
+      version: "26.9.12",
       elixir: "~> 1.19",
       description: description(),
       package: package(),
