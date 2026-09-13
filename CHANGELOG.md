@@ -23,4 +23,10 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
-Nothing yet.
+### v26.9.12 candidate architecture
+
+The stacked PR series #1 through #6 now defines one candidate sequence: derive capabilities from Ash public actions, separate machine identities, add the receipted command path, compose lifecycle behavior with AshStateMachine and Reactor, separate background delivery through Oban, and project Group as runtime topology.
+
+The design keeps task, command, execution, runtime, delivery, and topology identities distinct instead of collapsing them into one agent identifier.
+
+DurableServer is the next runtime-continuity layer and is tracked in issue #8. FLAME and Phoenix Presence remain later optional composition points. This section records design state only; the stacked work remains CANDIDATE until fresh execution evidence exists.
