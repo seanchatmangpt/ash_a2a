@@ -118,6 +118,40 @@ See `test/support/fixture.ex` and `test/ash_a2a_test.exs` for a complete,
 compiling, end-to-end example (including the fail-closed verifier paths)
 exercised by the real test suite.
 
+### 4. LLM-backed actions: role-based provider resolution
+
+An Ash action backed by a real LLM call (via `ash_ai`'s `prompt/2`) should
+never hardcode a provider or model string directly — that couples the
+capability's identity to a specific vendor. `AshA2A.LLMProfiles` resolves
+an abstract role to a real provider spec at runtime, from config:
+
+```elixir
+# config/config.exs
+config :ash_a2a, :llm_profiles,
+  semantic_reasoner: [provider: :zai_coder, model: "glm-5.3-flash", max_tokens: 4096]
+```
+
+```elixir
+action :summarize, :map do
+  argument(:text, :string, allow_nil?: false)
+
+  run(
+    prompt(
+      AshA2A.LLMProfiles.model_spec!(:semantic_reasoner),
+      prompt: {"You summarize text in one sentence.", "<%= @input.arguments.text %>"},
+      req_llm_opts: AshA2A.LLMProfiles.req_llm_opts!(:semantic_reasoner)
+    )
+  )
+end
+```
+
+The action's own source names only `:semantic_reasoner`. Switching
+providers — Z.AI to Groq, or any other `req_llm`-supported provider — is a
+config change, never a source change. A role with no configured profile
+raises a clear `ArgumentError` naming the missing role, rather than
+silently falling back to a guessed provider. See
+`lib/ash_a2a/llm_profiles.ex` and `test/ash_a2a_llm_profiles_test.exs`.
+
 ### 4. End-to-end over HTTP: serve the agent, call it with `A2A.Client`
 
 The same `MyApp.EchoAgent` from step 3 is a real `A2A.Agent` GenServer, so it
