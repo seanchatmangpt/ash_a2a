@@ -35,7 +35,10 @@ defmodule AshA2A.RuntimeProvidersIntegrationTest do
       # test exercises real durability semantics without requiring cloud
       # storage credentials.
       ekv_name = :"#{sup_name}_ekv"
-      data_dir = Path.join(System.tmp_dir!(), "ash_a2a_ekv_test_#{System.unique_integer([:positive])}")
+
+      data_dir =
+        Path.join(System.tmp_dir!(), "ash_a2a_ekv_test_#{System.unique_integer([:positive])}")
+
       on_exit(fn -> File.rm_rf!(data_dir) end)
 
       # cluster_size: 1 -- a real single-voter CAS quorum, sufficient for a
@@ -61,7 +64,8 @@ defmodule AshA2A.RuntimeProvidersIntegrationTest do
     test "ensure_task/delete_task drive an actual DurableServer-managed GenServer", %{sup: sup} do
       task_id = Identity.new(:task, "runtime-providers-#{System.unique_integer([:positive])}")
 
-      assert {:ok, %AshA2A.RuntimeReceipt{provider: :durable_server, operation: :ensure_started_child}} =
+      assert {:ok,
+              %AshA2A.RuntimeReceipt{provider: :durable_server, operation: :ensure_started_child}} =
                Durability.ensure_task(sup, DurableServerFixture, task_id, %{count: 0})
 
       {pid, _meta} = DurableServer.Supervisor.lookup(sup, Durability.key(task_id))
@@ -103,7 +107,10 @@ defmodule AshA2A.RuntimeProvidersIntegrationTest do
 
     test "track/list/untrack drive an actual Phoenix.Presence process" do
       alias AshA2A.Topology.Presence
-      identity = Identity.new(:agent, "runtime-providers-topology-#{System.unique_integer([:positive])}")
+
+      identity =
+        Identity.new(:agent, "runtime-providers-topology-#{System.unique_integer([:positive])}")
+
       topic = "runtime-providers:test"
 
       assert {:ok, %AshA2A.RuntimeReceipt{provider: :phoenix_presence, operation: :track}} =
