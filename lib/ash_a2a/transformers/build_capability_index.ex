@@ -11,6 +11,7 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
 
   alias Spark.Dsl.Transformer
 
+  @impl true
   def after?(_), do: false
 
   @impl true

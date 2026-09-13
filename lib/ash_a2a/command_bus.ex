@@ -20,7 +20,7 @@ defmodule AshA2A.CommandBus do
 
     store_opts = Keyword.get(opts, :store_opts, [])
 
-    with {:ok, skill, action, consequence} <- inspect_target(command, resource_or_domain),
+    with {:ok, skill, _action, consequence} <- inspect_target(command, resource_or_domain),
          :ok <- admit(command, consequence),
          claim <- store.claim(command, store_opts) do
       case claim do
