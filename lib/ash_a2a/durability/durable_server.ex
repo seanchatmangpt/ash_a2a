@@ -6,14 +6,24 @@ defmodule AshA2A.Durability.DurableServer do
   PID/storage lock/node placement remain provider state. Mutating lifecycle
   operations return `AshA2A.RuntimeReceipt`; none of them imply Ash command
   execution or task completion.
+
+  The provider defaults to `DurableServer.Supervisor`. Hosts may configure
+  `:ash_a2a, :durable_server_provider` with an API-compatible module. This is
+  a provider substitution seam only: it does not change TaskID semantics,
+  manufacture durability, or grant command authority.
   """
 
   alias AshA2A.{Identity, RuntimeReceipt}
 
-  @provider DurableServer.Supervisor
+  @default_provider DurableServer.Supervisor
+
+  @spec provider() :: module()
+  def provider do
+    Application.get_env(:ash_a2a, :durable_server_provider, @default_provider)
+  end
 
   @spec available?() :: boolean()
-  def available?, do: Code.ensure_loaded?(@provider)
+  def available?, do: Code.ensure_loaded?(provider())
 
   @spec key(Identity.t()) :: String.t()
   def key(%Identity{kind: :task} = task_id), do: Identity.external(task_id)
@@ -62,8 +72,10 @@ defmodule AshA2A.Durability.DurableServer do
   end
 
   defp invoke(function, args) do
-    if available?() and function_exported?(@provider, function, length(args)) do
-      apply(@provider, function, args)
+    provider = provider()
+
+    if Code.ensure_loaded?(provider) and function_exported?(provider, function, length(args)) do
+      apply(provider, function, args)
     else
       {:error, {:unsupported, :durable_server, function, length(args)}}
     end
