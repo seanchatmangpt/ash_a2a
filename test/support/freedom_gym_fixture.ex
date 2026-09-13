@@ -18,8 +18,13 @@ defmodule AshA2A.Test.Fixture.FreedomGym.Facilitator do
   `AshA2A.Test.Fixture.FreedomGym.MeetingPlan`'s real in-memory plan
   position -- itself derived from a real `hddl_solve` run over a real HDDL
   domain/problem (`test/support/hddl/freedom_gym_meeting/`), never a
-  hardcoded phase list -- and returns the real next phase in that real
-  plan, advancing the real plan-position state as a side effect.
+  hardcoded phase list -- then runs the popped phase through
+  `AshA2A.Test.Fixture.FreedomGym.PhaseAdmission.admit/1` (a real,
+  independent SELECT-vs-DO admission gate, the local equivalent of
+  beam4pm's `BeamPM.Actuation` fail-closed allowlist check) before
+  returning it, refusing with a typed `{:error, {:not_admitted, phase}}`
+  for anything the plan produces that isn't on the real admitted-phase
+  allowlist -- never actuating an unadmitted phase silently.
   """
 
   use Ash.Resource,
@@ -53,17 +58,21 @@ defmodule AshA2A.Test.Fixture.FreedomGym.Facilitator do
         plan_name = input.arguments.plan_name
         prompt_text = input.arguments.prompt_text
 
-        case AshA2A.Test.Fixture.FreedomGym.MeetingPlan.next_phase(plan_name) do
-          {:ok, phase} ->
-            {:ok,
-             %{
-               phase: phase,
-               prompt_text: prompt_text,
-               requires_redirect_check?: phase == :clean_house
-             }}
-
+        with {:ok, phase} <- AshA2A.Test.Fixture.FreedomGym.MeetingPlan.next_phase(plan_name),
+             {:ok, admitted_phase} <-
+               AshA2A.Test.Fixture.FreedomGym.PhaseAdmission.admit(phase) do
+          {:ok,
+           %{
+             phase: admitted_phase,
+             prompt_text: prompt_text,
+             requires_redirect_check?: admitted_phase == :clean_house
+           }}
+        else
           {:error, :plan_exhausted} ->
             {:error, "real HDDL plan exhausted for #{inspect(plan_name)}"}
+
+          {:error, {:not_admitted, phase}} ->
+            {:error, "phase #{inspect(phase)} refused by PhaseAdmission gate (not_admitted)"}
         end
       end)
     end

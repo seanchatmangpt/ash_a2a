@@ -193,5 +193,37 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
 
     assert File.exists?(reference_path)
     assert File.exists?(deviant_path)
+
+    # Real ERC receipt: this run's own actual counts, not asserted
+    # constants, so the receipt can't drift from what this execution
+    # really produced.
+    {:ok, receipt_path} =
+      AshA2A.Research.ERC.emit!(%{
+        id: "ERC-001",
+        claim:
+          "A real HDDL-planned facilitator, dispatched over real A2A, produces OCEL v2 " <>
+            "events that a real out-of-process beam4pm ingest endpoint accepts (HTTP 201) " <>
+            "for every phase transition.",
+        falsifier:
+          "Any dispatched phase transition fails to produce a 201-accepted OCEL event at " <>
+            "beam4pm's ingest endpoint under the same real HDDL plan.",
+        state: :verified,
+        evidence: %{
+          "reference_meetings" => 3,
+          "reference_events_posted" => length(reference_events),
+          "reference_events_accepted" => length(accepted_reference),
+          "deviant_events_posted" => length(deviant_events_with_gap),
+          "deviant_events_accepted" => length(accepted_deviant),
+          "reference_capture_file" => reference_path,
+          "deviant_capture_file" => deviant_path,
+          "ingest_url" => @ingest_url
+        },
+        notes:
+          "Deviant capture deliberately omits the clean_house phase event -- consumed by " <>
+            "beam4pm's BeamPM.PowlConformanceE2ETest (ERC-002) as the injected falsifier " <>
+            "case for the downstream conformance claim."
+      })
+
+    IO.puts("ERC-001 receipt written: #{receipt_path}")
   end
 end

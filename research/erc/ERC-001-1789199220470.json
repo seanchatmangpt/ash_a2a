@@ -1,0 +1,30 @@
+{
+  "artifact": {
+    "git_dirty?": true,
+    "git_sha": "dbb5cc06577111d5bf26fcbdc9ffbc32c1b7fede",
+    "repo": "ash_a2a"
+  },
+  "claim": "A real HDDL-planned facilitator, dispatched over real A2A, produces OCEL v2 events that a real out-of-process beam4pm ingest endpoint accepts (HTTP 201) for every phase transition.",
+  "environment": {
+    "elixir": "1.19.5",
+    "hostname": "Mac",
+    "otp": "28"
+  },
+  "evidence": {
+    "deviant_capture_file": "/Users/sac/beam4pm/qualification/gym_bridge/deviant_ocel_events.json",
+    "deviant_events_accepted": 5,
+    "deviant_events_posted": 5,
+    "ingest_url": "http://127.0.0.1:4210",
+    "reference_capture_file": "/Users/sac/beam4pm/qualification/gym_bridge/reference_ocel_events.json",
+    "reference_events_accepted": 18,
+    "reference_events_posted": 18,
+    "reference_meetings": 3
+  },
+  "execution": {
+    "emitted_at": "2026-09-12T07:47:00.470389Z"
+  },
+  "falsifier": "Any dispatched phase transition fails to produce a 201-accepted OCEL event at beam4pm's ingest endpoint under the same real HDDL plan.",
+  "id": "ERC-001",
+  "notes": "Deviant capture deliberately omits the clean_house phase event -- consumed by beam4pm's BeamPM.PowlConformanceE2ETest (ERC-002) as the injected falsifier case for the downstream conformance claim.",
+  "state": "verified"
+}
