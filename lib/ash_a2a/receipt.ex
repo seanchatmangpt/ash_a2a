@@ -43,7 +43,12 @@ defmodule AshA2A.Receipt do
   @type t :: %__MODULE__{}
 
   @spec from_reply(Command.t(), Identity.t(), atom(), term()) :: t()
-  def from_reply(%Command{} = command, %Identity{kind: :execution} = execution_id, consequence, reply) do
+  def from_reply(
+        %Command{} = command,
+        %Identity{kind: :execution} = execution_id,
+        consequence,
+        reply
+      ) do
     %__MODULE__{
       receipt_id: Identity.runtime(Ash.UUIDv7.generate()),
       command_id: command.command_id,

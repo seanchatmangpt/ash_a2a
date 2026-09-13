@@ -50,7 +50,26 @@ defmodule AshA2A.CancelInflightTest do
 
     on_exit(fn -> :telemetry.detach(handler_id) end)
 
-    message = data_message(%{"stream" => true})
+    # Explicit `"skill" => "list_items"` metadata is required here: since
+    # `fbc3213` ("derive canonical skills from public Ash actions"), the
+    # capability index is compiled from *every* public Ash action on the
+    # resource (`AshA2A.CapabilityIndex.Compiler.compile_resource/2`), not
+    # just the `a2a do skill ... end` overrides declared in
+    # `test/support/cancel_fixture.ex`. `StreamItem` has two public actions
+    # (`:read`, exposed here as `:list_items`, and the default `:create`
+    # used by this test's own `Ash.create!/2` setup calls above) -- both are
+    # now real, legitimately-dispatchable skills, so
+    # `AshA2A.Agent.default_skill_name/1`'s single-skill omission
+    # convenience (`AshA2A.Info.capability_index/1` returning exactly one
+    # entry) no longer applies and correctly refuses to guess
+    # (`{:error, {:ambiguous_skill, resource}}`) when the caller doesn't say
+    # which skill it means. This is real, intentional new admission
+    # behavior, not a lifecycle regression: confirmed by driving
+    # `AshA2A.Dispatcher.dispatch/3` directly with `:list_items` (bypassing
+    # skill-name resolution entirely), which still returns a real
+    # `{:stream, ...}` reply exactly as before -- only the *default* skill
+    # inference changed, not dispatch or task-lifecycle admission.
+    message = data_message(%{"stream" => true}, %{metadata: %{"skill" => "list_items"}})
 
     assert {:ok, task} = StreamItemAgent.call(StreamItemAgent, message)
 

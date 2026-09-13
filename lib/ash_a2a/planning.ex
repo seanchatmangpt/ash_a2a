@@ -120,8 +120,11 @@ defmodule AshA2A.Planning do
   defp resolve_all(resource_or_domain, capability_ids) do
     Enum.reduce_while(capability_ids, {:ok, []}, fn capability_id, {:ok, skills} ->
       case AshA2A.Info.skill(resource_or_domain, capability_id) do
-        {:ok, skill} -> {:cont, {:ok, [skill | skills]}}
-        {:error, :skill_not_found} -> {:halt, {:error, refusal(:noncanonical_capability, capability_id)}}
+        {:ok, skill} ->
+          {:cont, {:ok, [skill | skills]}}
+
+        {:error, :skill_not_found} ->
+          {:halt, {:error, refusal(:noncanonical_capability, capability_id)}}
       end
     end)
     |> case do

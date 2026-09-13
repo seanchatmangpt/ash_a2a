@@ -94,7 +94,10 @@ defmodule AshA2A.Command do
   end
 
   defp ensure_identity(kind, %Identity{kind: kind} = identity), do: identity
-  defp ensure_identity(kind, %Identity{} = identity), do: raise(ArgumentError, "expected #{kind} identity, got #{inspect(identity.kind)}")
+
+  defp ensure_identity(kind, %Identity{} = identity),
+    do: raise(ArgumentError, "expected #{kind} identity, got #{inspect(identity.kind)}")
+
   defp ensure_identity(kind, value), do: Identity.new(kind, value)
 
   defp optional_identity(_kind, nil), do: nil

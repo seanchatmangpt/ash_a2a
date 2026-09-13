@@ -11,7 +11,7 @@ defmodule AshA2A.Test.Fixture.ZeroConfig do
   end
 
   actions do
-    read :visible
+    read(:visible)
 
     read :internal do
       public?(false)

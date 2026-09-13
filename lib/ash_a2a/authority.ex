@@ -11,7 +11,16 @@ defmodule AshA2A.Authority do
   alias AshA2A.Identity
 
   @enforce_keys [:token_id, :subject, :capability_id, :source, :issued_at]
-  defstruct [:token_id, :subject, :capability_id, :source, :issued_at, :expires_at, evidence: %{}, constraints: %{}]
+  defstruct [
+    :token_id,
+    :subject,
+    :capability_id,
+    :source,
+    :issued_at,
+    :expires_at,
+    evidence: %{},
+    constraints: %{}
+  ]
 
   @type t :: %__MODULE__{
           token_id: Identity.t(),

@@ -122,8 +122,13 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     }
 
     case Map.get(metadata, :stage) do
-      nil -> base
-      stage -> base |> Map.put("stage", to_string(stage)) |> Map.put("error", inspect(Map.get(metadata, :error)))
+      nil ->
+        base
+
+      stage ->
+        base
+        |> Map.put("stage", to_string(stage))
+        |> Map.put("error", inspect(Map.get(metadata, :error)))
     end
   end
 

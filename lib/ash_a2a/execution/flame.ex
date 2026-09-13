@@ -23,7 +23,11 @@ defmodule AshA2A.Execution.FLAME do
 
       result =
         try do
-          apply(FLAME, :call, [pool, fn -> AshA2A.CommandBus.run(command, message, resource_or_domain, bus_opts) end, flame_opts])
+          apply(FLAME, :call, [
+            pool,
+            fn -> AshA2A.CommandBus.run(command, message, resource_or_domain, bus_opts) end,
+            flame_opts
+          ])
         rescue
           exception -> {:error, {:exception, exception.__struct__, Exception.message(exception)}}
         catch

@@ -30,7 +30,13 @@ defmodule AshA2A.Durability.DurableServer do
 
   @spec ensure_task(term(), module(), Identity.t(), map(), keyword()) ::
           {:ok, RuntimeReceipt.t()} | {:error, term()}
-  def ensure_task(supervisor, server_module, %Identity{kind: :task} = task_id, initial_state, opts \\ [])
+  def ensure_task(
+        supervisor,
+        server_module,
+        %Identity{kind: :task} = task_id,
+        initial_state,
+        opts \\ []
+      )
       when is_atom(server_module) and is_map(initial_state) do
     spec = {server_module, key: key(task_id), initial_state: initial_state}
     actuate(:ensure_started_child, task_id, [supervisor, spec, opts])
@@ -43,13 +49,20 @@ defmodule AshA2A.Durability.DurableServer do
 
   @spec rehome_task(term(), module(), Identity.t(), map(), keyword()) ::
           {:ok, RuntimeReceipt.t()} | {:error, term()}
-  def rehome_task(supervisor, server_module, %Identity{kind: :task} = task_id, initial_state, opts \\ [])
+  def rehome_task(
+        supervisor,
+        server_module,
+        %Identity{kind: :task} = task_id,
+        initial_state,
+        opts \\ []
+      )
       when is_atom(server_module) and is_map(initial_state) do
     spec = {server_module, key: key(task_id), initial_state: initial_state}
     actuate(:rehome_child, task_id, [supervisor, spec, opts])
   end
 
-  @spec cordon_task(term(), Identity.t(), keyword()) :: {:ok, RuntimeReceipt.t()} | {:error, term()}
+  @spec cordon_task(term(), Identity.t(), keyword()) ::
+          {:ok, RuntimeReceipt.t()} | {:error, term()}
   def cordon_task(supervisor, %Identity{kind: :task} = task_id, opts \\ []) do
     actuate(:terminate_and_cordon_child, task_id, [supervisor, key(task_id), opts])
   end
@@ -59,15 +72,24 @@ defmodule AshA2A.Durability.DurableServer do
     actuate(:uncordon_child, task_id, [supervisor, key(task_id)])
   end
 
-  @spec delete_task(term(), Identity.t(), timeout()) :: {:ok, RuntimeReceipt.t()} | {:error, term()}
+  @spec delete_task(term(), Identity.t(), timeout()) ::
+          {:ok, RuntimeReceipt.t()} | {:error, term()}
   def delete_task(supervisor, %Identity{kind: :task} = task_id, timeout \\ 5_000) do
-    actuate(:terminate_and_delete_child, task_id, [supervisor, key(task_id), timeout], irreversible?: true)
+    actuate(:terminate_and_delete_child, task_id, [supervisor, key(task_id), timeout],
+      irreversible?: true
+    )
   end
 
   defp actuate(function, subject, args, metadata \\ []) do
     case invoke(function, args) do
-      {:error, _} = error -> error
-      result -> {:ok, RuntimeReceipt.new(:durable_server, function, subject, result, metadata: Map.new(metadata))}
+      {:error, _} = error ->
+        error
+
+      result ->
+        {:ok,
+         RuntimeReceipt.new(:durable_server, function, subject, result,
+           metadata: Map.new(metadata)
+         )}
     end
   end
 

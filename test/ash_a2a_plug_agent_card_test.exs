@@ -94,6 +94,7 @@ defmodule AshA2A.PlugAgentCardTest do
                %{"id" => "AshA2A.Test.PlugFixture.Greeter.read", "name" => "greet"}
              ]
            } = served_card
+
     assert served_card["url"] == base_url
   end
 

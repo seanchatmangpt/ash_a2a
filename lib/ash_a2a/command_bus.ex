@@ -11,7 +11,13 @@ defmodule AshA2A.CommandBus do
 
   @spec run(Command.t(), A2A.Message.t(), module(), keyword()) :: result()
   def run(%Command{} = command, %A2A.Message{} = message, resource_or_domain, opts \\ []) do
-    store = Keyword.get(opts, :store, Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory))
+    store =
+      Keyword.get(
+        opts,
+        :store,
+        Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory)
+      )
+
     store_opts = Keyword.get(opts, :store_opts, [])
 
     with {:ok, skill, action, consequence} <- inspect_target(command, resource_or_domain),
@@ -56,7 +62,9 @@ defmodule AshA2A.CommandBus do
   defp admit(_command, :observe), do: :ok
 
   defp admit(%Command{authority: %Authority{} = authority} = command, :change) do
-    if Authority.admits?(authority, command), do: :ok, else: {:error, refusal(:authority_mismatch)}
+    if Authority.admits?(authority, command),
+      do: :ok,
+      else: {:error, refusal(:authority_mismatch)}
   end
 
   defp admit(_command, :change), do: {:error, refusal(:authority_required)}

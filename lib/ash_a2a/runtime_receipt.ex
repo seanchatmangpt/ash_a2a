@@ -46,7 +46,9 @@ defmodule AshA2A.RuntimeReceipt do
   defp status({:error, _}), do: :failed
   defp status(_), do: :observed
 
-  defp summarize({:ok, {pid, meta}}) when is_pid(pid), do: {:ok, %{pid: inspect(pid), metadata: meta}}
+  defp summarize({:ok, {pid, meta}}) when is_pid(pid),
+    do: {:ok, %{pid: inspect(pid), metadata: meta}}
+
   defp summarize({pid, meta}) when is_pid(pid), do: %{pid: inspect(pid), metadata: meta}
   defp summarize(result), do: result
 end

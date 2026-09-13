@@ -63,7 +63,8 @@ defmodule AshA2A.Info do
     |> capability_index()
     |> List.wrap()
     |> Enum.find(fn skill ->
-      skill.id == selector || skill.name == selector || to_string(skill.name) == to_string(selector)
+      skill.id == selector || skill.name == selector ||
+        to_string(skill.name) == to_string(selector)
     end)
     |> case do
       nil -> {:error, :skill_not_found}
