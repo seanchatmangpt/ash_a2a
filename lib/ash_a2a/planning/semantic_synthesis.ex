@@ -36,6 +36,7 @@ defmodule AshA2A.Planning.SemanticSynthesis do
       {:error, refusal(:no_canonical_capabilities)}
     else
       model_spec = LLMProfiles.model_spec!(role)
+
       llm_opts =
         role
         |> LLMProfiles.req_llm_opts!()
