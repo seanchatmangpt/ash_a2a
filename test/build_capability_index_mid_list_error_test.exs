@@ -44,6 +44,6 @@ defmodule AshA2A.BuildCapabilityIndexMidListErrorTest do
         end
       end
 
-    assert error.message =~ "domain-level skills must declare a resource"
+    assert error.message =~ "domain-level skill overrides must declare a resource"
   end
 end
