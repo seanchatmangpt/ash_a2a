@@ -1,52 +1,19 @@
 defmodule AshA2A.CapabilityIndex.Validator do
   @moduledoc """
-  Fail-closed business-rule validation of a compiled A2A capability index.
+  Fail-closed validation for residual A2A skill overrides.
 
-  Extracted from `AshA2A.CapabilityIndex` (which remains the public facade
-  and delegates `validate/1` here) to separate this module's concern --
-  business-rule checking over a compiled index -- from `CapabilityIndex`'s
-  other, unrelated concern (`AgentCardBuilder`'s wire-format AgentCard
-  construction).
-
-  Two checks, both fail-closed:
-
-    * every skill name is unique across the compiled index;
-    * every skill's `{resource, action}` pair names an action that actually
-      exists on that resource, confirmed via the real
-      `Ash.Resource.Info.action/2` introspection function
-      (`~/xaas/deps/ash/lib/ash/resource/info.ex:716`,
-      `def action(resource, name, type \\\\ nil)` — called here at arity 2).
+  Overrides may describe or suppress an existing capability, but they may not
+  create one. Every `{resource, action}` pair must therefore name a real,
+  public Ash action. Private actions remain internal even if explicitly named
+  in the A2A DSL.
   """
 
-  @type skill :: AshA2A.Skill.t()
+  @type skill :: AshA2A.Skill.t() | map()
   @type refusal :: %{code: atom(), detail: String.t()}
 
-  @doc """
-  Fail-closed validation of a compiled capability index (see moduledoc): every
-  skill name must be unique, and every skill's `{resource, action}` pair must
-  name a real, existing action.
-
-  ## Examples
-
-      iex> skills = AshA2A.Info.capability_index(AshA2A.Test.Fixture.Echo)
-      iex> AshA2A.CapabilityIndex.Validator.validate(skills)
-      :ok
-
-      iex> bad = %{name: :bogus, resource: AshA2A.Test.Fixture.Echo, action: :not_real}
-      iex> {:error, [refusal]} = AshA2A.CapabilityIndex.Validator.validate([bad])
-      iex> refusal.code
-      :REFUSED_ACTION_NOT_FOUND
-
-      iex> dup = %{name: :dup, resource: AshA2A.Test.Fixture.Echo, action: :read}
-      iex> {:error, [refusal]} = AshA2A.CapabilityIndex.Validator.validate([dup, dup])
-      iex> refusal.code
-      :REFUSED_DUPLICATE_SKILL_NAME
-
-  """
   @spec validate([skill()]) :: :ok | {:error, [refusal()]}
   def validate(skills) when is_list(skills) do
-    refusals = validate_unique_names(skills) ++ validate_actions_exist(skills)
-
+    refusals = validate_unique_names(skills) ++ validate_actions(skills)
     if refusals == [], do: :ok, else: {:error, refusals}
   end
 
@@ -58,12 +25,12 @@ defmodule AshA2A.CapabilityIndex.Validator do
       %{
         code: :REFUSED_DUPLICATE_SKILL_NAME,
         detail:
-          "skill name #{inspect(name)} is declared #{count} times; skill names must be unique"
+          "skill name #{inspect(name)} is declared #{count} times; skill override names must be unique"
       }
     end)
   end
 
-  defp validate_actions_exist(skills) do
+  defp validate_actions(skills) do
     Enum.flat_map(skills, fn %{name: name, resource: resource, action: action} ->
       case Ash.Resource.Info.action(resource, action) do
         nil ->
@@ -73,6 +40,16 @@ defmodule AshA2A.CapabilityIndex.Validator do
               detail:
                 "skill #{inspect(name)} names action #{inspect(action)} on #{inspect(resource)}, " <>
                   "but no such action exists on that resource"
+            }
+          ]
+
+        %{public?: false} ->
+          [
+            %{
+              code: :REFUSED_ACTION_NOT_PUBLIC,
+              detail:
+                "skill override #{inspect(name)} names private action #{inspect(action)} on #{inspect(resource)}; " <>
+                  "AshA2A only projects Ash.Resource.Info.public_actions/1"
             }
           ]
 
