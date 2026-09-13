@@ -74,6 +74,23 @@ defmodule AshA2A.MixProject do
       # requires). test/ash_a2a_plug_agent_card_test.exs drives a REAL
       # A2A.Plug HTTP pipeline via Plug.Test.
       {:plug, "~> 1.16"},
+      # Real provider implementations for the three runtime-provider
+      # boundaries: AshA2A.Execution.FLAME (Placement),
+      # AshA2A.Durability.DurableServer (Durability), and
+      # AshA2A.Topology.Presence (Topology). Declaring them as resolvable
+      # deps makes each adapter's available?/0 (or available?/1) true and
+      # its call path reachable; the adapters themselves remain
+      # authority-free regardless -- they never gain independent DO
+      # capability, only observed provider evidence via RuntimeReceipt.
+      {:flame, "~> 0.5"},
+      {:durable_server, "~> 0.1.5"},
+      # DurableServer.Backends.EKVStore's real local storage engine, used by
+      # AshA2A.RuntimeProvidersIntegrationTest so Durability can be
+      # exercised with a real local durable-KV backend instead of the
+      # default ObjectStore/S3 backend (which needs cloud credentials).
+      {:ekv, "~> 0.4", only: :test},
+      {:phoenix_pubsub, "~> 2.1"},
+      {:phoenix, "~> 1.7"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
