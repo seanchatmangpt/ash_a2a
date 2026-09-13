@@ -63,6 +63,13 @@ once it reaches 1.0.
   supervision-tree assertions accounting for the new
   `AshA2A.ReceiptStore.Memory` default child).
 
+### Docs
+- Added a [Diataxis](https://diataxis.fr/)-structured documentation set
+  under `docs/`: **tutorials** (`docs/tutorials/`), **how-to guides**
+  (`docs/how-to/`), **reference** (`docs/reference/`), and **explanation**
+  (`docs/explanation/`). README.md's inline usage walkthrough was trimmed
+  to a short quick-start and now links into this set.
+
 ### Status note
 This release's admission/receipt/lifecycle/ecosystem-adapter machinery is
 real, committed, and independently tested, but **not yet the architecture's

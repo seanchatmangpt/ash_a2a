@@ -31,7 +31,7 @@ end
 
 ## Usage
 
-### 1. Declare the DSL on a resource (or domain)
+Declare the DSL on a resource (or domain):
 
 ```elixir
 defmodule MyApp.Echo do
@@ -67,7 +67,7 @@ end
 `:ash_a2a_capability_index`, and `AshA2A.Verify` checks it (fail-closed) after
 compilation. `AshA2A` may be used on a resource, a domain, or both.
 
-### 2. Dispatch a message directly (no process)
+Dispatch a message directly (no process):
 
 ```elixir
 message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
@@ -76,145 +76,35 @@ message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
   AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
 ```
 
-### 3. Or run it as a real supervised A2A agent
+For the full walkthrough — running a supervised `A2A.Agent` process, serving
+it over HTTP with `A2A.Plug`/`A2A.Client`, and role-based LLM provider
+resolution — see the [Getting Started tutorial](docs/tutorials/getting-started.md).
 
-```elixir
-defmodule MyApp.EchoAgent do
-  use AshA2A.Agent, resource_or_domain: MyApp.Echo, name: "echo_agent"
-end
-```
+## Documentation
 
-```elixir
-children = [
-  {A2A.AgentSupervisor, agents: [MyApp.EchoAgent]}
-]
+This project follows the [Diataxis](https://diataxis.fr/) documentation
+framework: tutorials for learning, how-to guides for specific tasks,
+reference for lookup, and explanation for understanding.
 
-Supervisor.start_link(children, strategy: :one_for_one)
-
-message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
-{:ok, task} = MyApp.EchoAgent.call(MyApp.EchoAgent, message)
-
-task.status.state
-#=> :completed
-```
-
-`AshA2A.Agent` builds the running process's `A2A.AgentCard` from the same
-verified capability index `AshA2A.Info.agent_card/2` produces, and routes
-every inbound message through `AshA2A.Dispatcher.dispatch/3` — the agent can
-never advertise a skill dispatch can't actually serve. When a
-resource/domain declares exactly one skill, the `metadata[:skill]` key on the
-inbound `A2A.Message` may be omitted; with more than one skill, the caller
-must set it to pick which one to dispatch.
-
-Agents to boot with the app are read from application config by
-`AshA2A.Application` (already wired as this app's `mod`):
-
-```elixir
-# config/config.exs
-config :ash_a2a, :agents, [MyApp.EchoAgent]
-```
-
-See `test/support/fixture.ex` and `test/ash_a2a_test.exs` for a complete,
-compiling, end-to-end example (including the fail-closed verifier paths)
-exercised by the real test suite.
-
-### 4. LLM-backed actions: role-based provider resolution
-
-An Ash action backed by a real LLM call (via `ash_ai`'s `prompt/2`) should
-never hardcode a provider or model string directly — that couples the
-capability's identity to a specific vendor. `AshA2A.LLMProfiles` resolves
-an abstract role to a real provider spec at runtime, from config:
-
-```elixir
-# config/config.exs
-config :ash_a2a, :llm_profiles,
-  semantic_reasoner: [provider: :zai_coder, model: "glm-5.3-flash", max_tokens: 4096]
-```
-
-```elixir
-action :summarize, :map do
-  argument(:text, :string, allow_nil?: false)
-
-  run(
-    prompt(
-      AshA2A.LLMProfiles.model_spec!(:semantic_reasoner),
-      prompt: {"You summarize text in one sentence.", "<%= @input.arguments.text %>"},
-      req_llm_opts: AshA2A.LLMProfiles.req_llm_opts!(:semantic_reasoner)
-    )
-  )
-end
-```
-
-The action's own source names only `:semantic_reasoner`. Switching
-providers — Z.AI to Groq, or any other `req_llm`-supported provider — is a
-config change, never a source change. A role with no configured profile
-raises a clear `ArgumentError` naming the missing role, rather than
-silently falling back to a guessed provider. See
-`lib/ash_a2a/llm_profiles.ex` and `test/ash_a2a_llm_profiles_test.exs`.
-
-### 4. End-to-end over HTTP: serve the agent, call it with `A2A.Client`
-
-The same `MyApp.EchoAgent` from step 3 is a real `A2A.Agent` GenServer, so it
-can be served over HTTP with `A2A.Plug` (standalone under `Bandit`, or
-`forward`ed into a Phoenix router) and driven from a separate process with
-`A2A.Client` — a full round trip over JSON-RPC, not a direct BEAM call.
-
-`A2A.Plug` and `A2A.Client` are conditionally compiled by `:a2a` itself
-(`Code.ensure_loaded?(Plug)` / `Code.ensure_loaded?(Req)`), so add whichever
-optional HTTP deps your app needs on top of `ash_a2a`/`a2a`:
-
-```elixir
-def deps do
-  [
-    {:ash_a2a, "~> 26.9"},
-    {:a2a, "~> 0.1"},
-    {:bandit, "~> 1.5"},
-    {:plug, "~> 1.16"},
-    {:req, "~> 0.5"}
-  ]
-end
-```
-
-Start the agent under a supervisor together with `A2A.Plug`/`Bandit` serving
-it at `/a2a`:
-
-```elixir
-children = [
-  {A2A.AgentSupervisor, agents: [MyApp.EchoAgent]},
-  {Bandit,
-   plug: {A2A.Plug, agent: MyApp.EchoAgent, base_url: "http://localhost:4000/a2a"},
-   port: 4000}
-]
-
-Supervisor.start_link(children, strategy: :one_for_one)
-```
-
-From a client (a different node, a test, or a plain `iex -S mix` shell),
-discover the agent card and send it a message with `A2A.Client` — nothing
-about `MyApp.EchoAgent`'s module or the Ash resource behind it is required,
-only the URL:
-
-```elixir
-{:ok, card} = A2A.Client.discover("http://localhost:4000/a2a")
-card.name #=> "echo_agent"
-
-client = A2A.Client.new(card)
-
-{:ok, task} =
-  A2A.Client.send_message(client, A2A.Message.new_user([A2A.Part.Data.new(%{})]))
-
-task.status.state
-#=> :completed
-```
-
-`A2A.Client.discover/2` fetches `GET /a2a/.well-known/agent-card.json`
-(served by `A2A.Plug` from the exact same verified capability index as steps
-1–3), and `A2A.Client.send_message/3` posts `message/send` over JSON-RPC to
-the same `A2A.Plug` mount. `A2A.Plug` forwards the decoded `A2A.Message` into
-`MyApp.EchoAgent`'s GenServer, which routes it through
-`AshA2A.Agent.__dispatch__/3` into `AshA2A.Dispatcher.dispatch/3` — the exact
-same dispatch path as the in-process `call/2` in step 3, just carried over
-HTTP instead of a direct BEAM message.
+- **Tutorials** — [Getting Started](docs/tutorials/getting-started.md): a
+  complete, compiling, end-to-end walkthrough from DSL declaration through
+  direct dispatch, a supervised agent process, HTTP serving with
+  `A2A.Plug`/`A2A.Client`, and role-based LLM provider resolution.
+- **How-to guides**:
+  - [Authenticate inbound A2A requests](docs/how-to/authenticate-agent-requests.md)
+    — wire `A2A.Plug.Auth` in front of `A2A.Plug` so a Bearer credential
+    becomes `context.actor`/`context.tenant` inside your Ash actions.
+  - [Observe dispatch with OCEL](docs/how-to/observe-dispatch-with-ocel.md)
+    — forward every `AshA2A.Dispatcher` skill dispatch as an OCEL v2 event
+    to an external process-mining ingest endpoint.
+  - [Use role-based LLM resolution](docs/how-to/use-role-based-llm-resolution.md)
+    — add an LLM-backed action that declares an abstract role instead of
+    hardcoding a provider/model string.
+- **Reference** — [Reference index](docs/reference/index.md): module and
+  DSL lookup.
+- **Explanation** — [Architecture](docs/explanation/architecture.md): how
+  the capability index, verifier, dispatcher, and agent process fit together
+  and why they're designed that way.
 
 ## Installer
 
