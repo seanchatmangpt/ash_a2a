@@ -4,22 +4,17 @@ version = "0.1.0"
 edition = "2021"
 description = """
 Real, small, standalone binary crate: parses two HDDL file paths (domain,
-problem) from argv, calls beam4pm's ferroplan::solve_hddl (path-dependency
-on the real crate at ../../../beam4pm/native/ferroplan/crates/ferroplan --
-NOT a reimplementation, NOT a mock) and prints the real UniversalPlan (or a
-{"error": ...} object on failure) as JSON on stdout.
+problem) from argv, calls ferroplan::solve_hddl from the canonical ferroplan
+repository pinned to the exact commit carried by beam4pm's ferroplan submodule,
+and prints the real UniversalPlan (or a {\"error\": ...} object on failure) as
+JSON on stdout.
 
 Why a subprocess instead of an in-process NIF/dependency from ash_a2a's own
 mix.exs: ash_a2a is a general-purpose Ash extension library (published,
 consumed by arbitrary host apps) and must not carry a hard dependency on one
-specific consumer app's (beam4pm's) BEAM-side manufacturing pipeline or its
-ggen-generated Elixir surface. beam4pm's own agent-facing A2A skill surface
-(BeamPM.A2AAgent, branch feat/ash-a2a-agent-facing) exposes only 2 curated
-Ash resources (OcelEvent, ConformanceResult) today -- no hddl_solve skill --
-so there is no live A2A call path to reuse yet. This binary is the disclosed,
-real, non-mocked alternative: a real Cargo path-dependency on beam4pm's own
-ferroplan crate (same Rust source solve_hddl the beam4pm wasm facade wraps),
-invoked as a real OS subprocess from the Elixir facilitator via System.cmd.
+specific consumer app's BEAM-side manufacturing pipeline or its ggen-generated
+Elixir surface. The Rust dependency is therefore the canonical ferroplan source
+itself, not an ambient sibling checkout and not a reimplementation or mock.
 """
 license = "MIT"
 
@@ -28,5 +23,5 @@ name = "hddl_cli"
 path = "src/main.rs"
 
 [dependencies]
-ferroplan = { path = "../../../beam4pm/native/ferroplan/crates/ferroplan" }
+ferroplan = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "29134d7bc2c578aa39e05bceeee43a6893f2026b" }
 serde_json = "1"
