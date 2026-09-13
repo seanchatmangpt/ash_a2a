@@ -1,86 +1,67 @@
 defmodule AshA2A.Telemetry.OcelForwarder do
   @moduledoc """
-  Real OCEL v2 egress for `AshA2A.Dispatcher`'s own, already-real
-  `:telemetry.span([:ash_a2a, :dispatch], ...)` (dispatcher.ex:137-140) --
-  every skill dispatch across every `AshA2A`-backed app (the FreedomGym
-  Chicago-core/LLM scenarios, the rap-battle integration test, any real
-  A2A traffic) already fires this span; this module is the only new piece
-  needed to give that traffic real OCEL v2 visibility, not a new
-  instrumentation point.
+  Best-effort OCEL v2 egress for raw dispatch spans and committed AshA2A
+  command receipts.
 
-  Mirrors `Xaas.Telemetry.OcelForwarder`'s exact pattern (real HTTP POST,
-  best-effort, never fatal to the caller) but targets beam4pm's own real,
-  already-running ingest endpoint (`BeamPM.OcelIngest.Router`,
-  `POST /ocel/events`, confirmed by reading `lib/beam4pm_ocel_ingest.ex`
-  directly) instead of ex4pm's envelope-wrapped ingest -- beam4pm's
-  contract is simpler: a bare `{"events": [...]}` (or single-object) POST,
-  each event needing `event_id`/`event_type`/`event_time`/`attributes`,
-  no `schema`/`producer`/`sequence` envelope, no separate validator call
-  (the router's own generated `BeamPM.Types.OcelEvent.new/1` constructor
-  IS the validation, applied server-side).
-
-  ## Real OCEL v2 shape emitted per dispatch
-
-  `event_type` is `"ash_a2a.dispatch.<resource_short_name>.<skill_name>"` --
-  real, introspected via `Ash.Resource.Info.short_name/1` on the dispatch's
-  `resource_or_domain` metadata when it resolves to a real Ash resource
-  (falls back to `inspect/1` for a domain-only dispatch, since
-  `Ash.Resource.Info.short_name/1` requires an actual resource module).
-  `attributes` carries the real `skill_name`, `reply_type` (`:reply` /
-  `:input_required` / `:stream` / `:error`), and (for the error path) the
-  real `stage`/`error` from `AshA2A.Dispatcher`'s own `stop_meta/1` --
-  refusals are forwarded as real OCEL evidence too, not silently dropped.
-
-  ## Attach
-
-      AshA2A.Telemetry.OcelForwarder.attach!()
-
-  Reads `Application.get_env(:ash_a2a, :ocel_ingest_url)` (e.g.
-  `"http://127.0.0.1:4210"`) at call time, per span -- `nil` (the default)
-  means "don't forward", matching `Xaas.Telemetry.OcelForwarder`'s own
-  same-shaped `nil`-means-disabled convention.
+  Dispatch events preserve the existing low-level execution visibility.
+  Receipt events add replay/identity/standing evidence from the canonical
+  CommandBus without changing command behavior. Both are observational only.
   """
 
   require Logger
 
-  @handler_id {__MODULE__, :dispatch_stop}
+  @dispatch_handler_id {__MODULE__, :dispatch_stop}
+  @receipt_handler_id {__MODULE__, :receipt_committed}
 
-  @doc """
-  Attaches the real `:telemetry.attach/4` handler for
-  `[:ash_a2a, :dispatch, :stop]`. Idempotent: re-attaching with the same
-  handler id is a real, harmless `{:error, :already_exists}` from
-  `:telemetry` itself, not raised here.
-  """
   @spec attach!() :: :ok
   def attach! do
-    case :telemetry.attach(
-           @handler_id,
-           [:ash_a2a, :dispatch, :stop],
-           &__MODULE__.handle_event/4,
-           nil
-         ) do
-      :ok -> :ok
-      {:error, :already_exists} -> :ok
-    end
+    :ok = attach(@dispatch_handler_id, [:ash_a2a, :dispatch, :stop])
+    :ok = attach(@receipt_handler_id, [:ash_a2a, :receipt, :committed])
+    :ok
   end
 
-  @doc "Detaches the handler (mainly for test isolation)."
   @spec detach() :: :ok | {:error, :not_found}
-  def detach, do: :telemetry.detach(@handler_id)
+  def detach do
+    results = [
+      :telemetry.detach(@dispatch_handler_id),
+      :telemetry.detach(@receipt_handler_id)
+    ]
+
+    if :ok in results, do: :ok, else: {:error, :not_found}
+  end
 
   @doc false
   def handle_event([:ash_a2a, :dispatch, :stop], measurements, metadata, _config) do
     case ingest_url() do
       nil -> :ok
-      url -> forward(url, measurements, metadata)
+      url -> post_event(url, build_dispatch_event(measurements, metadata))
+    end
+  end
+
+  def handle_event(
+        [:ash_a2a, :receipt, :committed],
+        _measurements,
+        %{receipt: %AshA2A.Receipt{} = receipt},
+        _config
+      ) do
+    case ingest_url() do
+      nil -> :ok
+      url -> post_event(url, AshA2A.SemanticProjection.ocel_event(receipt))
+    end
+  end
+
+  def handle_event(_event, _measurements, _metadata, _config), do: :ok
+
+  defp attach(handler_id, event) do
+    case :telemetry.attach(handler_id, event, &__MODULE__.handle_event/4, nil) do
+      :ok -> :ok
+      {:error, :already_exists} -> :ok
     end
   end
 
   defp ingest_url, do: Application.get_env(:ash_a2a, :ocel_ingest_url)
 
-  defp forward(url, measurements, metadata) do
-    event = build_event(measurements, metadata)
-
+  defp post_event(url, event) do
     Req.post(url <> "/ocel/events",
       json: %{"events" => [event]},
       receive_timeout: receive_timeout_ms()
@@ -106,18 +87,18 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   rescue
     error ->
       Logger.warning(
-        "AshA2A.Telemetry.OcelForwarder: unexpected error building/forwarding OCEL event: #{inspect(error)}"
+        "AshA2A.Telemetry.OcelForwarder: unexpected error forwarding OCEL event: #{inspect(error)}"
       )
 
       :ok
   end
 
-  defp build_event(measurements, metadata) do
+  defp build_dispatch_event(measurements, metadata) do
     %{
       "event_id" => Ash.UUIDv7.generate(),
       "event_type" => event_type(metadata),
       "event_time" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "attributes" => attributes(measurements, metadata),
+      "attributes" => dispatch_attributes(measurements, metadata),
       "relationships" => relationships(metadata)
     }
   end
@@ -149,7 +130,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     "ash_a2a.dispatch.#{short_name}.#{skill}"
   end
 
-  defp attributes(measurements, metadata) do
+  defp dispatch_attributes(measurements, metadata) do
     base = %{
       "skill_name" => to_string(Map.get(metadata, :skill_name)),
       "resource_or_domain" => inspect(Map.get(metadata, :resource_or_domain)),

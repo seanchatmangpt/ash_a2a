@@ -60,8 +60,13 @@ defmodule AshA2APlugAuthTest do
   end
 
   defp whoami_request_body do
-    {:ok, message_json} =
-      A2A.JSON.encode(A2A.Message.new_user([A2A.Part.Data.new(%{})]))
+    # `AuthProbe` now has 2 public actions (`:read` via `defaults([:read])`
+    # plus the generic `:whoami`), so it exposes 2 real skills since fbc3213
+    # "derive canonical skills from public Ash actions" -- explicit
+    # `metadata["skill"]` is required to disambiguate (real regression,
+    # confirmed via {:ambiguous_skill, ...} on a real failing run).
+    message = %{A2A.Message.new_user([A2A.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
+    {:ok, message_json} = A2A.JSON.encode(message)
 
     Jason.encode!(%{
       "jsonrpc" => "2.0",

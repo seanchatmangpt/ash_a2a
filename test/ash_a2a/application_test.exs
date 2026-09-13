@@ -43,7 +43,13 @@ defmodule AshA2A.ApplicationTest do
 
     children = Supervisor.which_children(pid)
 
-    assert [{A2A.AgentSupervisor, child_pid, :supervisor, _modules}] = children
+    # The real supervision tree also carries the intentional
+    # AshA2A.ReceiptStore.Memory worker (added by the receipted command
+    # bus work) -- locate A2A.AgentSupervisor specifically rather than
+    # requiring an exhaustive one-child list.
+    assert {A2A.AgentSupervisor, child_pid, :supervisor, _modules} =
+             List.keyfind(children, A2A.AgentSupervisor, 0)
+
     assert is_pid(child_pid)
     assert Process.alive?(child_pid)
 
@@ -65,7 +71,8 @@ defmodule AshA2A.ApplicationTest do
 
     {:ok, pid} = AshA2A.Application.start(:normal, [])
 
-    [{A2A.AgentSupervisor, agent_sup_pid, :supervisor, _}] = Supervisor.which_children(pid)
+    {A2A.AgentSupervisor, agent_sup_pid, :supervisor, _} =
+      List.keyfind(Supervisor.which_children(pid), A2A.AgentSupervisor, 0)
 
     agent_children = Supervisor.which_children(agent_sup_pid)
 
