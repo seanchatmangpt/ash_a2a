@@ -20,6 +20,16 @@
 #     a `--type` option (`resource` | `domain`, default `resource`), since AshA2A
 #     is usable as an extension on either -- the bare template assumes one fixed
 #     `extension_target`.
+#   - `extensions:` merge uses `Spark.Igniter.add_extension/5`, the same real,
+#     already-vendored (via the `:ash`/`:spark` deps this project already has)
+#     detect-and-merge helper that `ash_r2rml.install.ex` itself calls for the
+#     identical job (see that file's `igniter/1`) -- there is no ggen-marketplace
+#     pack for this (confirmed by direct inspection of
+#     `ash-extension-pack/templates/install.ex.tmpl`, which carries the same
+#     disclosed unconditional-insert limitation this file used to), but there IS
+#     an established Igniter/Spark ecosystem primitive already wired into this
+#     project's own dependency tree, so it is reused here rather than hand-rolled
+#     from lower-level `Igniter.Code.Keyword`/`Igniter.Code.List` zipper calls.
 if Code.ensure_loaded?(Igniter) do
   defmodule Mix.Tasks.AshA2a.Install do
     @moduledoc """
@@ -30,6 +40,12 @@ if Code.ensure_loaded?(Igniter) do
     `Ash.Resource` and an `Ash.Domain` -- `--type domain` selects the
     `skill :name, Resource, :action` DSL shape but does not change which
     extension module is added), plus a starter `a2a do end` block.
+
+    Detects an existing `extensions:` option on the target module's `use
+    Ash.Resource` / `use Ash.Domain` call and merges `AshA2A` into it instead of
+    inserting a second, separate `extensions:` option -- idempotent, so
+    re-running install against an already-patched module does not duplicate
+    `AshA2A` in the list.
 
     ## Usage
 
@@ -87,43 +103,74 @@ if Code.ensure_loaded?(Igniter) do
         target ->
           target_module = Igniter.Project.Module.parse(target)
 
-          Igniter.Project.Module.find_and_update_module!(base, target_module, fn zipper ->
-            {:ok,
-             zipper
-             |> add_extension()
-             |> add_starter_dsl_block()}
-          end)
+          base
+          |> add_extension(target_module)
+          |> add_starter_dsl_block(target_module)
       end
     end
 
-    # Inserts `extensions: [AshA2A]` after the target module's `use
-    # Ash.Resource` / `use Ash.Domain` call. `AshA2A` is the one extension
-    # module for both target kinds -- there is no separate `AshA2A.Domain`
-    # module (see `AshA2A.Dsl`'s moduledoc and `test/support/fixture.ex`'s
-    # `use Ash.Domain, extensions: [AshA2A]`, the only real domain-extension
-    # usage in this repo). This is a single unconditional insert, not a
-    # detect-or-append merge -- it does not check whether an `extensions:`
-    # option already exists on that `use` call, so running install against a
-    # module that already has one will add a second `extensions:` option
-    # rather than merging into the first (same disclosed limitation the bare
-    # ash-extension-core-pack template carries; a real detect-and-merge is a
-    # follow-up, not implemented here).
-    defp add_extension(zipper) do
-      Igniter.Code.Common.add_code(zipper, "extensions: [AshA2A]", placement: :after)
+    # Detects an existing `extensions:` option on the target module's `use
+    # Ash.Resource` / `use Ash.Domain` call and merges `AshA2A` into it rather
+    # than inserting a second, separate `extensions:` option. `AshA2A` is the
+    # one extension module for both target kinds -- there is no separate
+    # `AshA2A.Domain` module (see `AshA2A.Dsl`'s moduledoc and
+    # `test/support/fixture.ex`'s `use Ash.Domain, extensions: [AshA2A]`, the
+    # only real domain-extension usage in this repo) -- so searching for either
+    # `Ash.Resource` or `Ash.Domain`'s `use` clause covers both targets without
+    # needing to branch on the `--type` option here.
+    #
+    # Delegates to `Spark.Igniter.add_extension/5` (`igniter`, target module,
+    # use-clause type(s), option key, extension module) instead of hand-composing
+    # `Igniter.Code.Keyword.keyword_has_path?/2` +
+    # `Igniter.Code.Keyword.get_key/2` + `Igniter.Code.List.append_new_to_list/3`
+    # directly: `Spark.Igniter.add_extension/5` already *is* that detect-and-merge
+    # composition (real, already-vendored via this project's `:ash`/`:spark`
+    # deps, and used for the identical job by every other Ash extension
+    # installer in this dependency tree -- `ash_r2rml.install.ex`, the sibling
+    # installer this file's header already cites as its model, `ash.extend.ex`,
+    # `ash_ai.gen.chat.ex`, and `ash_json_api`'s resource/domain wiring all call
+    # it this same way). It merges idempotently
+    # (`Igniter.Code.List.prepend_new_to_list/3`, deduped by AST equality) when
+    # `extensions:` is already present, adds a fresh `extensions: [AshA2A]`
+    # option when the `use` call has other options but no `extensions:` key yet,
+    # and appends `extensions: [AshA2A]` as the call's second argument when the
+    # `use` call has no options at all -- covering the "no prior `extensions:`"
+    # case without a separate fallback branch here.
+    defp add_extension(igniter, target_module) do
+      Spark.Igniter.add_extension(
+        igniter,
+        target_module,
+        [Ash.Resource, Ash.Domain],
+        :extensions,
+        AshA2A
+      )
     end
 
     # Adds a minimal, real starter `a2a do end` block so the target module
     # compiles immediately after install rather than needing hand-authored DSL
-    # content.
-    defp add_starter_dsl_block(zipper) do
-      Igniter.Code.Common.add_code(
-        zipper,
-        """
-        a2a do
+    # content. Inserted right after the target module's `use Ash.Resource` /
+    # `use Ash.Domain` call specifically, found fresh via
+    # `Igniter.Code.Module.move_to_use/2` rather than reusing a zipper position
+    # from `add_extension/2` above (which runs as its own separate
+    # `Igniter.t()` pass, per `Spark.Igniter.add_extension/5`'s own shape).
+    defp add_starter_dsl_block(igniter, target_module) do
+      Igniter.Project.Module.find_and_update_module!(igniter, target_module, fn zipper ->
+        case Igniter.Code.Module.move_to_use(zipper, [Ash.Resource, Ash.Domain]) do
+          {:ok, use_zipper} ->
+            {:ok,
+             Igniter.Code.Common.add_code(
+               use_zipper,
+               """
+               a2a do
+               end
+               """,
+               placement: :after
+             )}
+
+          :error ->
+            {:ok, zipper}
         end
-        """,
-        placement: :after
-      )
+      end)
     end
   end
 else
