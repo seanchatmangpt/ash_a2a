@@ -178,6 +178,18 @@ defmodule AshA2A.Agent do
   #     `{:error, {:action_resolution, _}}` shapes unchanged, rather than
   #     this function inventing a second, differently shaped error for the
   #     same failure.
+  # v26.9.14: the explicit semantic-compilation A2A surface. Two independent
+  # gates, both real capability truth or real caller-supplied signal --
+  # never a content sniff of unstructured text, never a fallback for an
+  # unrecognized skill name: (1) the target resource/domain declared
+  # `a2a do semantic_requests true end` (`AshA2A.Info.
+  # semantic_requests_enabled?/1`, compiled DSL truth); (2) the caller's own
+  # inbound message sets `:semantic_request`/`"semantic_request"` metadata
+  # to `true` (`AshA2A.MetadataKey`'s existing atom-then-string convention,
+  # the same one `:skill` metadata already uses). A message missing either
+  # gate falls straight through to the ordinary skill-resolution path below
+  # exactly as before this feature existed -- this branch adds a new,
+  # explicit route, it does not change the meaning of any existing message.
   @doc false
   @spec __dispatch__(module(), A2A.Message.t(), A2A.Agent.context() | map()) ::
           AshA2A.Dispatcher.reply()
@@ -185,6 +197,55 @@ defmodule AshA2A.Agent do
     history = task_history(context)
     auth_identity = verified_auth_identity(context)
 
+    if semantic_request?(resource_or_domain, message) do
+      dispatch_semantic(resource_or_domain, message)
+    else
+      dispatch_skill(resource_or_domain, message, history, auth_identity)
+    end
+  end
+
+  defp semantic_request?(resource_or_domain, %A2A.Message{metadata: metadata}) do
+    AshA2A.Info.semantic_requests_enabled?(resource_or_domain) and
+      AshA2A.MetadataKey.get(metadata || %{}, :semantic_request) == true
+  end
+
+  # `A2A.Message.text/1` returns the first real `A2A.Part.Text` part's
+  # string, or `nil` if the message carries none (~/xaas/deps/a2a/lib/
+  # a2a/message.ex) -- a caller opting into this explicit surface must
+  # actually send text to compile; a flagged message with no text is a real
+  # caller error, refused closed rather than compiling an empty string.
+  #
+  # Wrapped in `rescue`: `AshA2A.Semantic.Compiler.compile/3` calls
+  # `AshA2A.LLMProfiles.model_spec!/1`, which genuinely `raise`s
+  # `ArgumentError` when the required LLM role is unconfigured (a real,
+  # deliberate fail-closed design in that module) -- every OTHER dispatch
+  # path in this codebase (`AshA2A.Dispatcher`) is careful to never raise,
+  # resolving each step through a non-bang API specifically so one caller's
+  # malformed/misconfigured request can never crash the real, shared
+  # `A2A.Agent` GenServer process (which would terminate every other
+  # in-flight task that process happens to be managing, not just this
+  # request). This branch is held to the identical contract: a
+  # misconfigured LLM profile becomes a real, typed `{:error, ...}` reply,
+  # never an uncaught exception reaching the caller's mailbox.
+  defp dispatch_semantic(resource_or_domain, %A2A.Message{} = message) do
+    case A2A.Message.text(message) do
+      nil ->
+        {:error, %{code: :semantic_request_missing_text}}
+
+      text ->
+        try do
+          case AshA2A.Semantic.Compiler.compile(resource_or_domain, text) do
+            {:ok, package} -> AshA2A.Semantic.ExecutionPackage.to_reply(package)
+            {:error, reason} -> {:error, reason}
+          end
+        rescue
+          error ->
+            {:error, %{code: :semantic_compilation_failed, detail: Exception.message(error)}}
+        end
+    end
+  end
+
+  defp dispatch_skill(resource_or_domain, message, history, auth_identity) do
     case resolve_skill_name(resource_or_domain, message) do
       {:ok, skill_name} ->
         case consequence(resource_or_domain, skill_name) do

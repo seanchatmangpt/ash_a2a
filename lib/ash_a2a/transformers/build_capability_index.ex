@@ -44,10 +44,13 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
     end)
     |> case do
       {:ok, dsl, overrides} ->
+        semantic_requests? = Transformer.get_option(dsl, [:a2a], :semantic_requests, false)
+
         dsl =
           dsl
           |> Transformer.persist(:ash_a2a_skill_overrides, Enum.reverse(overrides))
           |> Transformer.persist(:ash_a2a_subject_kind, subject_kind)
+          |> Transformer.persist(:ash_a2a_semantic_requests_enabled, semantic_requests?)
 
         {:ok, dsl}
 

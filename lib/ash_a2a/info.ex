@@ -79,4 +79,18 @@ defmodule AshA2A.Info do
     |> List.wrap()
     |> AshA2A.CapabilityIndex.build_agent_card(opts)
   end
+
+  @doc """
+  Whether `resource_or_domain` has explicitly opted into the semantic-
+  compilation A2A surface (`a2a do semantic_requests true end`).
+
+  This is real capability truth, not a runtime message-content sniff --
+  false for any resource/domain that never declares it, `AshA2A.Agent`'s
+  default-path dispatch never even inspects message content to decide this.
+  """
+  @spec semantic_requests_enabled?(module()) :: boolean()
+  def semantic_requests_enabled?(resource_or_domain) do
+    Extension.get_persisted(resource_or_domain, :ash_a2a_semantic_requests_enabled, false) ==
+      true
+  end
 end
