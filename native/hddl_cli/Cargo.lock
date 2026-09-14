@@ -93,6 +93,7 @@ dependencies = [
 [[package]]
 name = "ferroplan"
 version = "0.26.0"
+source = "git+https://github.com/seanchatmangpt/ferroplan.git?rev=29134d7bc2c578aa39e05bceeee43a6893f2026b#29134d7bc2c578aa39e05bceeee43a6893f2026b"
 dependencies = [
  "blake3",
  "ferroplan-hddl",
@@ -106,10 +107,12 @@ dependencies = [
 [[package]]
 name = "ferroplan-hddl"
 version = "0.26.0"
+source = "git+https://github.com/seanchatmangpt/ferroplan.git?rev=29134d7bc2c578aa39e05bceeee43a6893f2026b#29134d7bc2c578aa39e05bceeee43a6893f2026b"
 
 [[package]]
 name = "ferroplan-sat"
 version = "0.26.0"
+source = "git+https://github.com/seanchatmangpt/ferroplan.git?rev=29134d7bc2c578aa39e05bceeee43a6893f2026b#29134d7bc2c578aa39e05bceeee43a6893f2026b"
 
 [[package]]
 name = "find-msvc-tools"

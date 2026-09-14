@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Admit exact subject
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.0"
+          elixir-version: "1.19.0"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            native/hddl_cli/target
+          key: ash-a2a-${{ runner.os }}-${{ hashFiles('mix.lock', 'native/hddl_cli/Cargo.lock') }}
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Build exact ferroplan-backed HDDL CLI
+        run: cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked
+      - name: Preserve Cargo lock candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hddl-cli-cargo-lock
+          path: native/hddl_cli/Cargo.lock
+          if-no-files-found: error
+      - name: Verify Cargo lock is tracked and current
+        run: |
+          git ls-files --error-unmatch native/hddl_cli/Cargo.lock
+          git diff --exit-code -- native/hddl_cli/Cargo.lock
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get
+      - run: mix format --check-formatted
+      - run: mix compile --warnings-as-errors
+      - run: mix test
