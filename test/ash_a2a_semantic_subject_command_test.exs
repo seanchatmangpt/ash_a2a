@@ -46,7 +46,8 @@ defmodule AshA2A.SemanticSubjectCommandTest do
         semantic_subject: subject
       )
 
-    receipt = Receipt.from_reply(command, Identity.new(:execution, "execution-1"), :read, {:reply, :ok})
+    receipt =
+      Receipt.from_reply(command, Identity.new(:execution, "execution-1"), :read, {:reply, :ok})
 
     assert receipt.semantic_subject == subject
     assert receipt.fingerprint == command.fingerprint
@@ -57,7 +58,9 @@ defmodule AshA2A.SemanticSubjectCommandTest do
     command = Command.new("people.read", agent_id: "agent-1", principal_id: "principal-1")
     assert command.semantic_subject == nil
 
-    receipt = Receipt.from_reply(command, Identity.new(:execution, "execution-1"), :read, {:reply, :ok})
+    receipt =
+      Receipt.from_reply(command, Identity.new(:execution, "execution-1"), :read, {:reply, :ok})
+
     assert receipt.semantic_subject == nil
   end
 
