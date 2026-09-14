@@ -6,6 +6,104 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.14] - 2026-09-14
+
+### Added
+- **Explicit production semantic-request A2A surface**: a resource/domain
+  opts in via `a2a do semantic_requests true end` (real, compiled DSL
+  truth, `AshA2A.Info.semantic_requests_enabled?/1`); a caller opts in by
+  setting `:semantic_request`/`"semantic_request"` message metadata to
+  `true` (the same atom-then-string convention `:skill` metadata already
+  uses). Both gates must be true, or dispatch falls straight through to
+  ordinary skill resolution exactly as before -- never a silent fallback
+  for an unrecognized skill name or arbitrary free text. Routes to
+  `AshA2A.Semantic.Compiler.compile/3` for real, converting the resulting
+  `ExecutionPackage` into a real `AshA2A.Dispatcher.reply()` via
+  `ExecutionPackage.to_reply/1` (candidate-standing, `authority: none`
+  evidence only).
+- **Receipt-driven replanning**, automatic only for a continuation
+  carrying a prior `ExecutionPackage`'s fingerprint (`:continuation_fingerprint`
+  message metadata): a follow-up semantic request correlates back to the
+  real committed `AshA2A.Receipt` that closed the original package and
+  routes through `AshA2A.Semantic.Compiler.replan/4` for real
+  (`Feedback.from_receipt/2` -> `PlanningIR.with_observation/2` ->
+  re-synthesis) -- never a fresh compile, never auto-DO. A continuation
+  fingerprint with no matching committed receipt is refused closed
+  (`:continuation_receipt_not_found`). New `AshA2A.Semantic.PackageStore`
+  (started alongside the default receipt store) correlates a package's
+  one-way content-addressed fingerprint back to the full struct
+  `replan/4` needs.
+- **Real Oban integration** (`AshA2A.Delivery.Oban`): a real Postgres-backed
+  `oban_jobs` table and a real `Oban.Worker` reconstructing an admitted
+  `AshA2A.Command` from persisted job args and re-admitting through
+  `CommandBus` -- proving queue acceptance != execution receipt and that
+  Oban's at-least-once delivery replays through `CommandBus` rather than
+  double-executing.
+- **Real AshStateMachine integration** (`AshA2A.TaskLifecycle`): a real
+  fixture resource genuinely transitions state through the real extension
+  (`possible_next_states/2` now returns real extension-sourced values
+  instead of the `:unsupported` degrade path for an opted-in resource).
+- **Real Reactor DAG execution**: `AshA2A.Reactor.CommandWorkflow` composes
+  real steps run through the actual `Reactor.run/2` engine (previously
+  only the `Reactor.Step` callback contract had ever been exercised, via a
+  bare function call) -- proving a deliberately unauthorized command halts
+  the real Reactor run before any receipt commits or record is created.
+- **Real single-node DurableServer restart evidence**: a real managed
+  process is really killed (`Process.exit/2`) and the real dependency's
+  own lifecycle manager really restarts it under real supervision with
+  real recovered state -- real cross-node rehome remains a disclosed,
+  separate gap (see below).
+- **Real distributed BEAM peer-node evidence**: a genuine second node via
+  OTP 28's `:peer` module, real `:nodedown` delivery, and a real
+  cross-node `Group` membership purge on node loss -- proving
+  `TaskID != PID != Node` with real distributed evidence.
+- **Real Group, FLAME, and ash_r2rml exercises**: `AshA2A.Topology.Group`
+  against a real running registry; `AshA2A.Execution.FLAME` placing a real
+  `CommandBus.run/4` dispatch on a distinct real process via
+  `FLAME.LocalBackend`; a real fixture genuinely declaring the `AshR2RML`
+  extension with a real, admitted subject map (previously only the
+  refusal path had ever been exercised).
+- **Real OCEL sink for the default dispatch path**: a real local sink
+  genuinely receives real HTTP POSTs derived from a real committed
+  Receipt for a CommandBus-routed dispatch through the default `Agent`
+  path.
+- Architecture verifier extended 4 -> 9 real checks (`mix
+  ash_a2a.verify_architecture`); real property/fuzz suite
+  (`test/ash_a2a_property_fuzz_test.exs`); real concurrency/replay stress
+  test (30 concurrent racers, same command_id, exactly one execution);
+  consolidated real failure-injection suite; performance harness extended
+  to 8 benchmarked operations.
+
+### Fixed
+- `Oban.Testing.perform_job/2` crashed (`DateTime.diff/3`
+  `FunctionClauseError`) on a job fetched straight off the DB because
+  `attempted_at` is nil until a real dequeue happens -- worked around with
+  a real Ecto `dequeue!/1` step mirroring Oban's own producer SQL.
+- `DurableServer.Backends.EKVStore` round-trips state as a native
+  atom-keyed term, not string-keyed JSON -- the pre-existing
+  `DurableServerFixture`'s `load_state/2` clause never actually matched
+  this backend and silently fell through to a default, latent only
+  because that fixture was never restarted before this release's real
+  restart test existed.
+
+### Changed
+- `docs/explanation/architecture.md`'s "ecosystem adapters" section,
+  stale since earlier dependency additions, corrected: `oban`,
+  `ash_oban`, `ash_state_machine`, `flame`, `durable_server`, and the
+  `group`/`phoenix_pubsub` transitive/direct deps are all real, and every
+  adapter now has a real qualification test cited by name.
+
+### Disclosed, not silently resolved
+- OCEL: one CommandBus-routed dispatch fires 2 real events at the
+  configured sink ([:ash_a2a, :dispatch, :stop] and [:ash_a2a, :receipt,
+  :committed]) for the same logical action -- a real, asserted
+  duplication, not yet deduplicated.
+- DurableServer cross-node rehome (a second node taking over an orphaned
+  task) remains unexercised; only real single-node restart is proven.
+- A resource author can still explicitly declare `consequence: :observe`
+  on an otherwise-mutating action via source-code DSL override -- an
+  intentional escape hatch, never something a remote caller can trigger.
+
 ## [26.9.13] - 2026-09-13
 
 ### Added
