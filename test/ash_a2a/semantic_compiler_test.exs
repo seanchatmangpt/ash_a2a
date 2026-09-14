@@ -36,7 +36,12 @@ defmodule AshA2A.Semantic.CompilerTest do
     |> Map.new(&{Atom.to_string(&1), []})
     |> Map.put("authority", "none")
     |> Map.put("goals", [
-      %{"id" => "lead", "kind" => "goal", "description" => "lead the people", "source_quote" => "The goal is to lead the people."}
+      %{
+        "id" => "lead",
+        "kind" => "goal",
+        "description" => "lead the people",
+        "source_quote" => "The goal is to lead the people."
+      }
     ])
   end
 end

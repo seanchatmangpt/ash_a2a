@@ -5,7 +5,14 @@ defmodule AshA2A.Semantic.Feedback do
   alias AshA2A.Semantic.ExecutionPackage
 
   @enforce_keys [:package_fingerprint, :receipt_id, :observation, :fingerprint]
-  defstruct [:package_fingerprint, :receipt_id, :observation, :fingerprint, standing: :observed, authority: :none]
+  defstruct [
+    :package_fingerprint,
+    :receipt_id,
+    :observation,
+    :fingerprint,
+    standing: :observed,
+    authority: :none
+  ]
 
   @type t :: %__MODULE__{}
 
@@ -34,6 +41,9 @@ defmodule AshA2A.Semantic.Feedback do
   end
 
   defp fingerprint(term) do
-    term |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16(case: :lower)
+    term
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
   end
 end

@@ -20,7 +20,14 @@ defmodule AshA2A.Semantic.ExecutionPackage do
 
   @type t :: %__MODULE__{}
 
-  def new(%Source{} = source, %IR{} = ir, %Ontology{} = ontology, %PlanningIR{} = planning, %Candidate{} = candidate, opts \\ []) do
+  def new(
+        %Source{} = source,
+        %IR{} = ir,
+        %Ontology{} = ontology,
+        %PlanningIR{} = planning,
+        %Candidate{} = candidate,
+        opts \\ []
+      ) do
     with :ok <- fence(ir, ontology, planning, candidate) do
       term = {source.id, ontology.fingerprint, planning.fingerprint, candidate.fingerprint}
 
@@ -38,10 +45,20 @@ defmodule AshA2A.Semantic.ExecutionPackage do
     end
   end
 
-  defp fence(%IR{standing: :admitted, authority: :none}, %Ontology{authority: :none}, %PlanningIR{authority: :none}, %Candidate{standing: :candidate, authority: :none}), do: :ok
+  defp fence(
+         %IR{standing: :admitted, authority: :none},
+         %Ontology{authority: :none},
+         %PlanningIR{authority: :none},
+         %Candidate{standing: :candidate, authority: :none}
+       ),
+       do: :ok
+
   defp fence(_, _, _, _), do: {:error, %{code: :semantic_package_authority_ceiling_violated}}
 
   defp fingerprint(term) do
-    term |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16(case: :lower)
+    term
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
   end
 end

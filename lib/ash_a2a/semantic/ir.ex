@@ -8,10 +8,11 @@ defmodule AshA2A.Semantic.IR do
   @type t :: %__MODULE__{}
 
   def from_map(source_id, proposed) when is_binary(source_id) and is_map(proposed) do
-    ir = Enum.reduce(@fields, %__MODULE__{source_id: source_id}, fn field, acc ->
-      values = Map.get(proposed, Atom.to_string(field), [])
-      Map.put(acc, field, if(is_list(values), do: values, else: []))
-    end)
+    ir =
+      Enum.reduce(@fields, %__MODULE__{source_id: source_id}, fn field, acc ->
+        values = Map.get(proposed, Atom.to_string(field), [])
+        Map.put(acc, field, if(is_list(values), do: values, else: []))
+      end)
 
     authority = if Map.get(proposed, "authority") == "none", do: :none, else: :invalid
     {:ok, %{ir | authority: authority}}

@@ -2,7 +2,18 @@ defmodule AshA2A.Semantic.Compiler do
   @moduledoc "Closed-loop semantic compiler: text -> admitted semantics -> ontology -> PlanningIR -> HDDL/FOND candidate."
 
   alias AshA2A.{LLMProfiles, Planning.SemanticSynthesis}
-  alias AshA2A.Semantic.{Admission, ExecutionPackage, Feedback, IR, Ontology, PlanningIR, Schema, Source, Vocabulary}
+
+  alias AshA2A.Semantic.{
+    Admission,
+    ExecutionPackage,
+    Feedback,
+    IR,
+    Ontology,
+    PlanningIR,
+    Schema,
+    Source,
+    Vocabulary
+  }
 
   @default_role :semantic_reasoner
 
@@ -23,7 +34,8 @@ defmodule AshA2A.Semantic.Compiler do
          {:ok, ontology} <- Ontology.from_ir(admitted_ir),
          {:ok, planning_ir} <- PlanningIR.from_ir(admitted_ir, ontology),
          {:ok, plan_candidate} <- synthesize(resource_or_domain, planning_ir, role, opts),
-         {:ok, package} <- ExecutionPackage.new(source, admitted_ir, ontology, planning_ir, plan_candidate) do
+         {:ok, package} <-
+           ExecutionPackage.new(source, admitted_ir, ontology, planning_ir, plan_candidate) do
       {:ok, package}
     else
       {:error, %{code: _} = refusal} -> {:error, refusal}
@@ -35,7 +47,11 @@ defmodule AshA2A.Semantic.Compiler do
     concurrency = Keyword.get(opts, :max_concurrency, 50)
 
     texts
-    |> Task.async_stream(&compile(resource_or_domain, &1, opts), max_concurrency: concurrency, ordered: true, timeout: :infinity)
+    |> Task.async_stream(&compile(resource_or_domain, &1, opts),
+      max_concurrency: concurrency,
+      ordered: true,
+      timeout: :infinity
+    )
     |> Enum.map(fn
       {:ok, result} -> result
       {:exit, reason} -> {:error, %{code: :semantic_worker_exit, detail: reason}}
@@ -45,11 +61,23 @@ defmodule AshA2A.Semantic.Compiler do
   def replan(resource_or_domain, %ExecutionPackage{} = package, receipt, opts \\ []) do
     with {:ok, feedback} <- Feedback.from_receipt(package, receipt),
          planning_ir <- PlanningIR.with_observation(package.planning_ir, feedback.observation),
-         {:ok, candidate} <- synthesize(resource_or_domain, planning_ir, Keyword.get(opts, :role, @default_role), opts),
-         {:ok, next} <- ExecutionPackage.new(package.source, package.semantic_ir, package.ontology, planning_ir, candidate,
-           parent_fingerprint: package.fingerprint,
-           feedback: package.feedback ++ [feedback]
-         ) do
+         {:ok, candidate} <-
+           synthesize(
+             resource_or_domain,
+             planning_ir,
+             Keyword.get(opts, :role, @default_role),
+             opts
+           ),
+         {:ok, next} <-
+           ExecutionPackage.new(
+             package.source,
+             package.semantic_ir,
+             package.ontology,
+             planning_ir,
+             candidate,
+             parent_fingerprint: package.fingerprint,
+             feedback: package.feedback ++ [feedback]
+           ) do
       {:ok, next, feedback}
     end
   end

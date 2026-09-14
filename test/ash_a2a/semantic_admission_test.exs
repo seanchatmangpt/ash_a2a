@@ -20,7 +20,12 @@ defmodule AshA2A.Semantic.AdmissionTest do
     |> Map.new(&{Atom.to_string(&1), []})
     |> Map.put("authority", "none")
     |> Map.put("goals", [
-      %{"id" => "lead", "kind" => "goal", "description" => "lead the people", "source_quote" => quote}
+      %{
+        "id" => "lead",
+        "kind" => "goal",
+        "description" => "lead the people",
+        "source_quote" => quote
+      }
     ])
   end
 end

@@ -50,11 +50,21 @@ defmodule AshA2A.Semantic.PlanningIR do
   end
 
   def with_observation(%__MODULE__{} = planning, observation) when is_map(observation) do
-    next = %{planning | observations: planning.observations ++ [observation], fingerprint: "pending"}
+    next = %{
+      planning
+      | observations: planning.observations ++ [observation],
+        fingerprint: "pending"
+    }
+
     %{next | fingerprint: fingerprint(next)}
   end
 
   defp fingerprint(term) do
-    term |> Map.from_struct() |> Map.delete(:fingerprint) |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16(case: :lower)
+    term
+    |> Map.from_struct()
+    |> Map.delete(:fingerprint)
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
   end
 end

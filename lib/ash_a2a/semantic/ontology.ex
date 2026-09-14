@@ -9,10 +9,14 @@ defmodule AshA2A.Semantic.Ontology do
   @type t :: %__MODULE__{}
 
   def from_ir(%IR{standing: :admitted, authority: :none} = ir) do
-    ids = ir |> IR.items() |> Enum.map(fn {_field, item} -> Map.get(item, "id") end) |> MapSet.new()
+    ids =
+      ir |> IR.items() |> Enum.map(fn {_field, item} -> Map.get(item, "id") end) |> MapSet.new()
+
     triples = base_triples(ir) ++ relation_triples(ir.relations, ids)
     triples = Enum.sort_by(triples, &{&1.subject, &1.predicate, to_string(&1.object)})
-    {:ok, %__MODULE__{source_id: ir.source_id, triples: triples, fingerprint: fingerprint(triples)}}
+
+    {:ok,
+     %__MODULE__{source_id: ir.source_id, triples: triples, fingerprint: fingerprint(triples)}}
   end
 
   def from_ir(_), do: {:error, %{code: :ontology_requires_admitted_semantics}}
@@ -39,15 +43,25 @@ defmodule AshA2A.Semantic.Ontology do
     Enum.map(relations, fn relation ->
       object = Map.fetch!(relation, "object")
       object = if MapSet.member?(ids, object), do: node(object), else: object
-      triple(node(Map.fetch!(relation, "subject")), Vocabulary.expand(Map.fetch!(relation, "predicate")), object)
+
+      triple(
+        node(Map.fetch!(relation, "subject")),
+        Vocabulary.expand(Map.fetch!(relation, "predicate")),
+        object
+      )
     end)
   end
 
-  defp triple(subject, predicate, object), do: %{subject: subject, predicate: predicate, object: object}
+  defp triple(subject, predicate, object),
+    do: %{subject: subject, predicate: predicate, object: object}
+
   defp node(id), do: "urn:ash-a2a:semantic:node:#{id}"
   defp source(id), do: "urn:ash-a2a:source:#{id}"
 
   defp fingerprint(term) do
-    term |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16(case: :lower)
+    term
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
   end
 end

@@ -59,8 +59,12 @@ defmodule AshA2A.Semantic.Admission do
     quote = Map.get(item, "source_quote", "")
 
     cond do
-      missing != [] -> error(:semantic_fields_missing, %{field: field, missing: missing})
-      not String.contains?(text, quote) -> error(:ungrounded_assertion, Map.get(item, "id"))
+      missing != [] ->
+        error(:semantic_fields_missing, %{field: field, missing: missing})
+
+      not String.contains?(text, quote) ->
+        error(:ungrounded_assertion, Map.get(item, "id"))
+
       field == :authorities and Map.get(item, "mode") not in ["described", "denied", "unknown"] ->
         error(:authority_grant_not_admissible)
 

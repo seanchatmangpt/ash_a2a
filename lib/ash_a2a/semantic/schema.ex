@@ -12,7 +12,8 @@ defmodule AshA2A.Semantic.Schema do
     %{
       "type" => "object",
       "additionalProperties" => false,
-      "properties" => Map.put(collections, "authority", %{"type" => "string", "enum" => ["none"]}),
+      "properties" =>
+        Map.put(collections, "authority", %{"type" => "string", "enum" => ["none"]}),
       "required" => ["authority" | Enum.map(IR.fields(), &Atom.to_string/1)]
     }
   end
