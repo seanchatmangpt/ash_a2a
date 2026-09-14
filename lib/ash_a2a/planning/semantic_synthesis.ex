@@ -78,7 +78,7 @@ defmodule AshA2A.Planning.SemanticSynthesis do
   defp normalize_proposal(proposed, role) when is_map(proposed) do
     authority = field(proposed, "authority")
 
-    if authority in ["none", :none] do
+    if authority == "none" do
       capability_ids = field(proposed, "capability_ids")
       request_id = field(proposed, "request_id")
 
