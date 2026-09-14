@@ -24,7 +24,10 @@ defmodule AshA2A.Planning.SemanticSynthesis do
 
   `:generate_object` is an injectable four-arity function used only as a test
   seam around `ReqLLM.generate_object/4`. It does not bypass candidate
-  admission or the authority fence.
+  admission or the authority fence. Tests inject a real anonymous function
+  with fixed output because a live network LLM call isn't viable in CI;
+  capability admission (via `AshA2A.Planning.from_envelope`) and the authority
+  fence still run for real against whatever the injected function returns.
   """
   @spec synthesize(module(), String.t(), map(), keyword()) :: result()
   def synthesize(resource_or_domain, goal, observation, opts \\ [])

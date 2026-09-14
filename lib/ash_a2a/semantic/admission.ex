@@ -35,7 +35,11 @@ defmodule AshA2A.Semantic.Admission do
   defp require_goal(_), do: error(:semantic_goal_missing)
 
   defp unique_ids(ir) do
-    ids = Enum.map(IR.items(ir), fn {_field, item} -> Map.get(item, "id") end)
+    ids =
+      Enum.map(IR.items(ir), fn
+        {_field, item} when is_map(item) -> Map.get(item, "id")
+        {_field, _item} -> nil
+      end)
 
     if Enum.all?(ids, &is_binary/1) and length(ids) == length(Enum.uniq(ids)) do
       :ok

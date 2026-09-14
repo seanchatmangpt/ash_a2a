@@ -1,5 +1,16 @@
 defmodule AshA2A.Semantic.Compiler do
-  @moduledoc "Closed-loop semantic compiler: text -> admitted semantics -> ontology -> PlanningIR -> HDDL/FOND candidate."
+  @moduledoc """
+  Closed-loop semantic compiler: text -> admitted semantics -> ontology -> PlanningIR -> HDDL/FOND candidate.
+
+  The `:generate_object` opt is a real 4-arity function argument (a
+  dependency-injection test seam), not a call into any mocking library; it
+  defaults to the real `ReqLLM.generate_object/4` in production. Tests inject
+  a real anonymous function producing fixed, schema-valid output because a
+  live network LLM call is not viable to run deterministically in CI. Every
+  step downstream of that seam (IR construction, Admission fencing, Ontology
+  projection, PlanningIR projection, ExecutionPackage fencing/fingerprinting)
+  executes for real, with no further test doubles.
+  """
 
   alias AshA2A.{LLMProfiles, Planning.SemanticSynthesis}
 
@@ -47,7 +58,7 @@ defmodule AshA2A.Semantic.Compiler do
     concurrency = Keyword.get(opts, :max_concurrency, 50)
 
     texts
-    |> Task.async_stream(&compile(resource_or_domain, &1, opts),
+    |> Task.async_stream(&isolated_compile(resource_or_domain, &1, opts),
       max_concurrency: concurrency,
       ordered: true,
       timeout: :infinity
@@ -56,6 +67,21 @@ defmodule AshA2A.Semantic.Compiler do
       {:ok, result} -> result
       {:exit, reason} -> {:error, %{code: :semantic_worker_exit, detail: reason}}
     end)
+  end
+
+  # `Task.async_stream/3` links each worker to the calling process, so a raised
+  # exception in one text's pipeline would otherwise crash the entire batch
+  # (and its caller) instead of isolating to that slot. Rescue here and return
+  # a normal `{:error, ...}` value so the task itself completes without
+  # crashing; the surrounding `{:exit, reason}` clause in `compile_many/3`
+  # remains for genuine task exits (e.g. a `:timeout`), which this cannot
+  # convert since the task never even completes in that case.
+  defp isolated_compile(resource_or_domain, text, opts) do
+    compile(resource_or_domain, text, opts)
+  rescue
+    error ->
+      {:error,
+       %{code: :semantic_worker_exit, detail: Exception.format(:error, error, __STACKTRACE__)}}
   end
 
   def replan(resource_or_domain, %ExecutionPackage{} = package, receipt, opts \\ []) do

@@ -82,4 +82,123 @@ defmodule AshA2A.Planning.SemanticSynthesisTest do
                generate_object: generator
              )
   end
+
+  defmodule NoCapabilities.Resource do
+    @moduledoc """
+    Real fixture resource, local to this test file, with `extensions:
+    [AshA2A]` attached but zero public actions (`defaults([])`) and no `a2a
+    do skill ... end` block -- so `AshA2A.CapabilityIndex.Compiler.compile/3`
+    has zero `Ash.Resource.Info.public_actions/1` to project and zero
+    overrides, yielding a provably empty capability index for the
+    `:no_canonical_capabilities` short-circuit test below.
+    """
+
+    use Ash.Resource,
+      domain: AshA2A.Planning.SemanticSynthesisTest.NoCapabilities.Domain,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshA2A]
+
+    attributes do
+      uuid_primary_key(:id)
+    end
+
+    actions do
+      defaults([])
+    end
+  end
+
+  defmodule NoCapabilities.Domain do
+    @moduledoc """
+    Real fixture domain pairing `NoCapabilities.Resource` above, mirroring
+    `AshA2A.Test.Fixture.Domain`'s shape.
+    """
+
+    use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+    resources do
+      resource(AshA2A.Planning.SemanticSynthesisTest.NoCapabilities.Resource)
+    end
+  end
+
+  test ":no_canonical_capabilities short-circuits before any generate_object call" do
+    assert SemanticSynthesis.capability_ids(NoCapabilities.Domain) == []
+
+    generator = fn _model_spec, _prompt, _schema, _opts ->
+      raise "must not be called"
+    end
+
+    assert {:error, %{code: :no_canonical_capabilities}} =
+             SemanticSynthesis.synthesize(NoCapabilities.Domain, "some goal", %{},
+               generate_object: generator
+             )
+  end
+
+  test "invalid_semantic_plan_shape: empty capability_ids list" do
+    generator = fn _model_spec, _prompt, _schema, _opts ->
+      {:ok,
+       %{
+         "request_id" => "surface-plan-empty",
+         "authority" => "none",
+         "capability_ids" => [],
+         "hddl" => "candidate",
+         "fond" => "candidate"
+       }}
+    end
+
+    assert {:error, %{code: :invalid_semantic_plan_shape}} =
+             SemanticSynthesis.synthesize(Echo, "goal", %{}, generate_object: generator)
+  end
+
+  test "invalid_semantic_plan_shape: non-string capability id" do
+    generator = fn _model_spec, _prompt, _schema, _opts ->
+      {:ok,
+       %{
+         "request_id" => "surface-plan-nonstring",
+         "authority" => "none",
+         "capability_ids" => [123],
+         "hddl" => "candidate",
+         "fond" => "candidate"
+       }}
+    end
+
+    assert {:error, %{code: :invalid_semantic_plan_shape}} =
+             SemanticSynthesis.synthesize(Echo, "goal", %{}, generate_object: generator)
+  end
+
+  test "invalid_semantic_plan_shape: missing request_id" do
+    generator = fn _model_spec, _prompt, _schema, _opts ->
+      {:ok,
+       %{
+         "authority" => "none",
+         "capability_ids" => ["AshA2A.Test.Fixture.Echo.read"],
+         "hddl" => "candidate",
+         "fond" => "candidate"
+       }}
+    end
+
+    assert {:error, %{code: :invalid_semantic_plan_shape}} =
+             SemanticSynthesis.synthesize(Echo, "goal", %{}, generate_object: generator)
+  end
+
+  test "invalid_semantic_plan_shape: proposal is not a map" do
+    generator = fn _model_spec, _prompt, _schema, _opts ->
+      {:ok, "not a map at all"}
+    end
+
+    assert {:error, %{code: :invalid_semantic_plan_shape}} =
+             SemanticSynthesis.synthesize(Echo, "goal", %{}, generate_object: generator)
+  end
+
+  test "semantic_synthesis_failed wraps a raw non-code error reason" do
+    generator = fn _model_spec, _prompt, _schema, _opts ->
+      {:error, "raw reason string"}
+    end
+
+    assert {:error, %{code: :semantic_synthesis_failed, detail: "raw reason string"}} =
+             SemanticSynthesis.synthesize(Echo, "goal", %{}, generate_object: generator)
+  end
+
+  test "capability_ids/1 returns the sorted, stringified canonical Echo capability ids" do
+    assert SemanticSynthesis.capability_ids(Echo) == ["AshA2A.Test.Fixture.Echo.read"]
+  end
 end
