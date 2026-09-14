@@ -106,6 +106,17 @@ defmodule AshA2A.MixProject do
       # exercised with a real local durable-KV backend instead of the
       # default ObjectStore/S3 backend (which needs cloud credentials).
       {:ekv, "~> 0.4", only: :test},
+      # Real property/fuzz testing (test/ash_a2a_property_fuzz_test.exs).
+      # Already a required, unrestricted (non-`only:`) transitive dep of
+      # `:ash` itself (mix.lock: "stream_data": {:hex, :stream_data,
+      # "1.4.0", ...}; deps/ash/mix.exs declares it with no `:only`) --
+      # promoted to an explicit direct dep here so this repo's own property
+      # tests declare their real dependency instead of relying on an
+      # incidental transitive pin ash could drop or relax in a future
+      # version. Cannot be narrowed to `only: :test` -- Mix rejects a
+      # narrower `:only` than a transitive dependency requires, the same
+      # real constraint already documented above for `:plug`/`:postgrex`.
+      {:stream_data, "~> 1.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
