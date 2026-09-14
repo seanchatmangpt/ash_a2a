@@ -230,11 +230,27 @@ defmodule AshA2A.Dispatcher do
   # for the identical atom moments later once something else happened to
   # intern it. Matching against `capability_index/1`'s real, already-loaded
   # skill list needs no atom conversion at all.
+  # Matches on either the skill's canonical A2A wire `id`
+  # (`AshA2A.CapabilityIndex.Compiler.capability_id/2`'s stable
+  # `"#{inspect(resource)}.#{action}"` form -- the identifier
+  # `~/xaas/deps/a2a/lib/a2a/agent_card.ex:16-21` documents as the real,
+  # canonical per-skill wire identifier) or its residual display `name`, the
+  # same two-field match `AshA2A.Info.skill/2` already performs
+  # (`info.ex:65-68`). Before this fix, this function matched only `.name`,
+  # so a spec-faithful caller selecting a `:read`/`:observe` skill by its
+  # real `id` (rather than its display `name`) was refused with
+  # `{:unknown_skill, _}` on this direct-dispatch path even though the
+  # identical selector would have resolved correctly via `CommandBus.run/4`'s
+  # `:change`/`:external_do` route (which calls `AshA2A.Info.skill/2`
+  # directly) -- a real selector-matching inconsistency between the two
+  # canonical lookup paths, not a security issue (it only ever fails closed,
+  # never admits something it shouldn't), but a real usability/consistency
+  # bug this fixes.
   defp fetch_skill(resource_or_domain, skill_name) do
     resource_or_domain
     |> AshA2A.Info.capability_index()
     |> List.wrap()
-    |> Enum.find(&skill_name_matches?(&1.name, skill_name))
+    |> Enum.find(&(&1.id == skill_name or skill_name_matches?(&1.name, skill_name)))
     |> case do
       nil -> {:error, {:unknown_skill, skill_name}}
       skill -> {:ok, skill}

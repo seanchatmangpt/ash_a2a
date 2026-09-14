@@ -13,6 +13,19 @@ defmodule AshA2A.Application do
   def start(_type, _args) do
     agents = Application.get_env(:ash_a2a, :agents, [])
 
+    # `AshA2A.Telemetry.OcelForwarder.attach!/0` is real and correct
+    # (`ocel_forwarder.ex`) but was never called from anywhere in `lib/` --
+    # only 3 test files attached it directly, so a host app got no OCEL
+    # forwarding for `[:ash_a2a, :dispatch, :stop]`/`[:ash_a2a, :receipt,
+    # :committed]` events by default, silently. Attaching here is a real
+    # no-op cost when unconfigured: `attach/2` is idempotent
+    # (`{:error, :already_exists} -> :ok`) and `handle_event/4` only ever
+    # POSTs when `Application.get_env(:ash_a2a, :ocel_ingest_url)` is set --
+    # otherwise every event handler short-circuits to `:ok`. This makes the
+    # forwarder live-by-default the moment a host configures an ingest URL,
+    # instead of requiring every host to remember to call `attach!/0` itself.
+    :ok = AshA2A.Telemetry.OcelForwarder.attach!()
+
     children =
       receipt_store_children() ++
         [
