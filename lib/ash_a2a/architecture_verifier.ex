@@ -49,6 +49,46 @@ defmodule AshA2A.ArchitectureVerifier.Fixture.Resource do
   end
 end
 
+defmodule AshA2A.ArchitectureVerifier.Fixture.SemanticResource do
+  @moduledoc """
+  Real, minimal `Ash.Resource` fixture, private to `AshA2A.ArchitectureVerifier`,
+  declaring `a2a do semantic_requests true end` -- the explicit v26.9.14
+  production semantic-compilation A2A surface gate
+  (`AshA2A.Dsl`/`AshA2A.Info.semantic_requests_enabled?/1`). Exists
+  specifically so this module's checks can compare a resource that DID
+  declare the gate against `Fixture.Resource` above, which never does
+  (zero explicit `a2a do ... end` entities at all).
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.ArchitectureVerifier.Fixture.SemanticDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    semantic_requests(true)
+    skill(:probe, :read, consequence: :observe)
+  end
+end
+
+defmodule AshA2A.ArchitectureVerifier.Fixture.SemanticDomain do
+  @moduledoc "Real fixture domain for `SemanticResource` above."
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.ArchitectureVerifier.Fixture.SemanticResource)
+  end
+end
+
 defmodule AshA2A.ArchitectureVerifier.Fixture.Domain do
   @moduledoc """
   Real fixture domain for `AshA2A.ArchitectureVerifier.Fixture.Resource`
@@ -144,10 +184,21 @@ defmodule AshA2A.ArchitectureVerifier do
        genuinely different `input`), instead of only comparing two
        `Command.fingerprint/1` values in isolation the way
        `check_fingerprint_invariants/0` does.
+
+  ## Follow-up (checks 8-9): the originally-briefed semantic_requests checks
+
+  The two checks named BLOCKED above (real capability truth for `a2a do
+  semantic_requests true end`; an unopted-in resource's flagged dispatch
+  falling through) became addable as soon as this branch's merge brought
+  the foundation commit (`95ce672`) and this unit's own commit together
+  for the first time -- added here as `check_semantic_requests_gate_compiles/0`
+  and `check_unopted_semantic_request_falls_through/0`, closing the two
+  real gaps this moduledoc explicitly named rather than leaving them
+  permanently unaddressed.
   """
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
-  alias AshA2A.ArchitectureVerifier.Fixture.Resource
+  alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
 
   @type result :: %{name: String.t(), status: :pass | :fail, detail: String.t()}
 
@@ -161,7 +212,9 @@ defmodule AshA2A.ArchitectureVerifier do
       check_fingerprint_invariants(),
       check_fingerprint_excludes_transport_timestamp(),
       check_change_consequence_succeeds_with_matching_authority(),
-      check_command_bus_conflict_refused_on_reused_command_id()
+      check_command_bus_conflict_refused_on_reused_command_id(),
+      check_semantic_requests_gate_compiles(),
+      check_unopted_semantic_request_falls_through()
     ]
   end
 
@@ -526,6 +579,109 @@ defmodule AshA2A.ArchitectureVerifier do
         fail(
           name,
           "expected the :create fixture skill's real consequence to be :change, got #{inspect(other)}"
+        )
+    end
+  end
+
+  # -- Check 8: the semantic_requests DSL gate real-compiles and is real capability truth --
+
+  @doc """
+  Real check: `AshA2A.Info.semantic_requests_enabled?/1` returns real
+  `true` for `Fixture.SemanticResource` (which declares `a2a do
+  semantic_requests true end`) and real `false` for `Fixture.Resource`
+  (which declares no `a2a do ... end` block at all) -- the first of the
+  two real production gates `AshA2A.Agent.__dispatch__/3`'s private
+  `semantic_request?/2` checks before ever routing to
+  `AshA2A.Semantic.Compiler.compile/3`. This is real compiled DSL truth,
+  not a runtime flag -- both resources are compiled once, at this
+  module's own load time, by the real `AshA2A` Spark extension.
+  """
+  @spec check_semantic_requests_gate_compiles() :: result()
+  def check_semantic_requests_gate_compiles do
+    name = "a2a do semantic_requests true end real-compiles as real capability truth"
+
+    opted_in = Info.semantic_requests_enabled?(SemanticResource)
+    opted_out = Info.semantic_requests_enabled?(Resource)
+
+    cond do
+      opted_in and not opted_out ->
+        pass(
+          name,
+          "SemanticResource (declared semantic_requests true) -> #{opted_in}; " <>
+            "Resource (no a2a do end block) -> #{opted_out}"
+        )
+
+      not opted_in ->
+        fail(
+          name,
+          "SemanticResource declared `a2a do semantic_requests true end` but " <>
+            "Info.semantic_requests_enabled?/1 returned false"
+        )
+
+      true ->
+        fail(
+          name,
+          "Resource declared no semantic_requests option but " <>
+            "Info.semantic_requests_enabled?/1 returned true -- the gate defaulted open"
+        )
+    end
+  end
+
+  # -- Check 9: an unopted-in resource's flagged dispatch falls through --
+
+  @doc """
+  Real check: the second of the two real production gates. A real
+  `A2A.Message` carrying `:semantic_request` metadata set to `true`,
+  dispatched against `Fixture.Resource` (which never declared `a2a do
+  semantic_requests true end`), real-falls-through
+  `AshA2A.Agent.__dispatch__/3` to ordinary skill resolution --
+  `AshA2A.Agent.semantic_request?/2` requires BOTH the resource's own
+  compiled opt-in AND the caller's flag before ever calling
+  `AshA2A.Semantic.Compiler.compile/3`; a caller flag alone must never be
+  sufficient (that would make the explicit surface into exactly the
+  silent-fallback-for-arbitrary-messages behavior v26.9.14 was designed
+  to NOT be). `__dispatch__/3` is called directly, as a real plain
+  function call, with no supervised `A2A.Agent` process needed to prove
+  this branch.
+  """
+  @spec check_unopted_semantic_request_falls_through() :: result()
+  def check_unopted_semantic_request_falls_through do
+    name = "an unopted-in resource's :semantic_request-flagged dispatch real-falls-through"
+
+    # `Fixture.Resource` has two real skills (`:create` and `:probe`), so
+    # an explicit `:skill` metadata is required alongside `:semantic_request`
+    # here -- without it, `resolve_skill_name/2`'s real default-skill
+    # resolution would itself refuse with a real, but unrelated,
+    # `{:ambiguous_skill, _}` before this check's actual target (the
+    # `:semantic_request` gate) is even reached. Naming `:probe` explicitly
+    # isolates exactly the real behavior under test.
+    message =
+      %{
+        A2A.Message.new_user([A2A.Part.Data.new(%{})])
+        | metadata: %{semantic_request: true, skill: "probe"}
+      }
+
+    case AshA2A.Agent.__dispatch__(Resource, message, %{}) do
+      {:error, %{code: :consequence_unclassified}} ->
+        # The one real skill this fixture's default-skill resolution can
+        # reach is :probe (consequence :unknown) -- reaching its real,
+        # ordinary :consequence_unclassified refusal (not a semantic-
+        # compiler error shape) IS the proof this fell through to normal
+        # skill dispatch rather than reaching the semantic compiler.
+        pass(
+          name,
+          "Resource.probe (real consequence :unknown) was real-reached via ordinary skill " <>
+            "resolution -- the :semantic_request flag alone, without the resource's own " <>
+            "compiled opt-in, never routed to Semantic.Compiler.compile/3"
+        )
+
+      other ->
+        fail(
+          name,
+          "expected the real ordinary-dispatch refusal {:error, %{code: :consequence_unclassified}} " <>
+            "(proving fallthrough to skill resolution), got #{inspect(other)} -- if this reached " <>
+            "the semantic compiler instead, the caller-supplied flag alone was sufficient to bypass " <>
+            "the resource's own compiled opt-in gate"
         )
     end
   end

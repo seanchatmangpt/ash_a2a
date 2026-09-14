@@ -1,6 +1,6 @@
 defmodule AshA2AArchitectureVerifierTest do
   @moduledoc """
-  Direct ExUnit coverage of `AshA2A.ArchitectureVerifier`'s seven real
+  Direct ExUnit coverage of `AshA2A.ArchitectureVerifier`'s nine real
   architecture checks -- the same production code `mix
   ash_a2a.verify_architecture` (`lib/mix/tasks/ash_a2a.verify_architecture.ex`)
   runs from a shell, called here directly so each check's real return value
@@ -8,30 +8,31 @@ defmodule AshA2AArchitectureVerifierTest do
   `:pass`/`:fail` summary. No Mock/mox/patch/monkeypatch anywhere in this
   file: every assertion below is against the real, unmodified
   `AshA2A.Info`/`AshA2A.Command`/`AshA2A.CommandBus`/`AshA2A.Authority` API
-  and the real compiled `AshA2A.ArchitectureVerifier.Fixture.Resource`
-  (`lib/ash_a2a/architecture_verifier.ex`).
+  and the real compiled `AshA2A.ArchitectureVerifier.Fixture.{Resource,
+  SemanticResource}` (`lib/ash_a2a/architecture_verifier.ex`).
 
-  Checks 5-7 (added by Squad J / agent 47) real-substitute two checks this
-  unit's own task brief originally named (`semantic_requests` DSL opt-in
-  compiling, and unopted-in dispatch real-falling-through past a
-  `:semantic_request` gate): those name real production symbols that do not
-  exist on this worktree's branch (introduced by commit `95ce672`, which
-  landed on the shared `v26.9.14/release-closure` branch after this worktree
-  was branched from it -- verified via `git merge-base` and a real zero-hit
-  `grep -rn "semantic_requests" lib/ test/`). See
-  `AshA2A.ArchitectureVerifier`'s moduledoc for the full account.
+  Checks 5-7 (added by Squad J / agent 47) real-substituted the two checks
+  that unit's own task brief originally named (`semantic_requests` DSL
+  opt-in compiling, and unopted-in dispatch real-falling-through past a
+  `:semantic_request` gate) because those named real production symbols
+  that did not yet exist on that unit's worktree branch (introduced by
+  commit `95ce672`, which landed on the shared `v26.9.14/release-closure`
+  branch after that worktree was branched from it). Checks 8-9 below are
+  those originally-briefed checks, added once this branch's merge brought
+  both commits together -- see `AshA2A.ArchitectureVerifier`'s moduledoc
+  for the full account.
   """
 
   use ExUnit.Case, async: true
 
   alias AshA2A.ArchitectureVerifier
-  alias AshA2A.ArchitectureVerifier.Fixture.Resource
+  alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
   alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
 
-  test "checks/0 reports all seven real architecture invariants as passing" do
+  test "checks/0 reports all nine real architecture invariants as passing" do
     results = ArchitectureVerifier.checks()
 
-    assert length(results) == 7
+    assert length(results) == 9
     assert Enum.all?(results, &(&1.status == :pass)), inspect(results)
     assert Enum.all?(results, &(&1.detail != ""))
   end
@@ -216,5 +217,27 @@ defmodule AshA2AArchitectureVerifierTest do
 
     assert {:ok, %Receipt{status: :completed}} = CommandBus.run(first, message, Resource)
     assert {:error, %{code: :command_conflict}} = CommandBus.run(second, message, Resource)
+  end
+
+  test "check 8: the semantic_requests DSL gate real-compiles as real capability truth" do
+    result = ArchitectureVerifier.check_semantic_requests_gate_compiles()
+    assert result.status == :pass
+
+    assert Info.semantic_requests_enabled?(SemanticResource)
+    refute Info.semantic_requests_enabled?(Resource)
+  end
+
+  test "check 9: an unopted-in resource's :semantic_request-flagged dispatch real-falls-through" do
+    result = ArchitectureVerifier.check_unopted_semantic_request_falls_through()
+    assert result.status == :pass
+
+    message =
+      %{
+        A2A.Message.new_user([A2A.Part.Data.new(%{})])
+        | metadata: %{semantic_request: true, skill: "probe"}
+      }
+
+    assert {:error, %{code: :consequence_unclassified}} =
+             AshA2A.Agent.__dispatch__(Resource, message, %{})
   end
 end

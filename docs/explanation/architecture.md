@@ -60,27 +60,62 @@ and real evidence, not a sketch, and it is now the route both
 `AshA2A.Agent.__dispatch__/3` path use (see below) -- not a parallel,
 opt-in route only some callers happen to take.
 
-## The ecosystem adapters are seams, not integrations
+## The ecosystem adapters are real integrations, not just seams (as of v26.9.14)
 
 `AshA2A.Delivery.Oban`, `AshA2A.Topology.Group`, `AshA2A.Topology.Presence`,
-`AshA2A.Durability.DurableServer`, and `AshA2A.Execution.FLAME` each guard
-themselves with `Code.ensure_loaded?/1` and degrade to an `:unsupported`
-error or a no-op when their provider isn't present. None of `oban`, `flame`,
-a `Group` topology module, `Phoenix.Presence`, or a `DurableServer` provider
-is a dependency of this project's `mix.exs` today. These modules exist so a
-host that *does* depend on one of those libraries gets a receipted,
-non-authoritative bridge to it (queue insertion records delivery only;
-FLAME placement never gains independent authority; a `Group` registration
-returns an `AshA2A.RuntimeReceipt`, never Ash domain truth) -- but inside
-this repository, every one is exercised only by tests that stub the
-provider or assert the `:unsupported` degradation path. They are real code
-with no real collaborator to call yet.
+`AshA2A.Durability.DurableServer`, `AshA2A.Execution.FLAME`, and
+`AshA2A.TaskLifecycle`'s `AshStateMachine` adapter each guard themselves
+with `Code.ensure_loaded?/1` and degrade to an `:unsupported` error or a
+no-op when their provider isn't present -- that adapter shape is unchanged.
+What changed in v26.9.14: `oban`, `ash_oban`, `ash_state_machine`, and
+`postgrex` are now real, direct dependencies of this project's own
+`mix.exs` (`flame`/`durable_server`/`phoenix_pubsub`/`phoenix` already were),
+and every one of these six providers now has a real Chicago-style
+qualification test in this repository's own suite exercising it against a
+genuinely running real collaborator -- not a stub, not merely the
+`:unsupported` degradation path:
 
-`AshA2A.TaskLifecycle` is the same shape for a sixth dependency:
-`AshStateMachine` is not installed here, so `possible_next_states/2` always
-returns `{:error, {:unsupported, :ash_state_machine}}` in this repo -- the
-module declares the canonical A2A state vocabulary for interoperability but
-defers transition legality to the host's own `AshStateMachine` when present.
+- `AshA2A.Delivery.Oban` -- `test/ash_a2a/oban_delivery_qualification_test.exs`:
+  a real Postgres-backed `oban_jobs` table, a real `Oban.Worker` reconstructing
+  an admitted `Command` and re-admitting through `CommandBus`, proving queue
+  acceptance != execution receipt and that Oban's at-least-once delivery
+  replays through `CommandBus` rather than double-executing.
+- `AshA2A.Topology.Group` -- `test/ash_a2a/group_real_topology_test.exs`
+  (single-node) and `test/ash_a2a/distributed_node_loss_test.exs` (two real
+  BEAM nodes via `:peer`): real registration/membership/purge-on-death
+  against the real `:group` dependency.
+- `AshA2A.Topology.Presence` -- `test/ash_a2a_runtime_providers_integration_test.exs`:
+  real `Phoenix.PubSub` + `Phoenix.Presence` track/list/untrack.
+- `AshA2A.Durability.DurableServer` -- `test/ash_a2a_runtime_providers_integration_test.exs`
+  (real managed GenServer lifecycle) and
+  `test/ash_a2a/durable_server_real_restart_test.exs` (real OTP process
+  death + real supervision-driven restart with real recovered state).
+  Real cross-node rehome (a second real node taking over an orphaned task)
+  remains unexercised -- a real, disclosed gap, not the same claim as the
+  single-node restart evidence above.
+- `AshA2A.Execution.FLAME` -- `test/ash_a2a/flame_real_placement_test.exs`:
+  a real `FLAME.Pool` (`FLAME.LocalBackend`) genuinely placing a
+  `CommandBus.run/4` dispatch on a distinct real process.
+- `AshA2A.TaskLifecycle`'s `AshStateMachine` adapter --
+  `test/ash_a2a/task_lifecycle_state_machine_test.exs`: a real fixture
+  resource genuinely transitioning state through the real extension's
+  compiled atomic guard.
+
+None of this changes the authority model: queue insertion still only
+records delivery, FLAME placement still never gains independent authority,
+a `Group`/`Presence` registration still only returns an
+`AshA2A.RuntimeReceipt`, never Ash domain truth, and a state transition is
+still not a DO -- every one of these adapters still funnels any real
+consequence through `AshA2A.CommandBus`, which the direct-Ash-DO census in
+`test/ash_a2a_property_fuzz_test.exs`'s security re-audit (and this
+project's own architecture verifier) confirm still holds.
+
+`ash_r2rml` semantic mapping also moved from "refusal-path-only" to a real,
+asserted mapping: `test/ash_a2a/semantic_projection_r2rml_real_test.exs`
+exercises a real `AshR2RML.Resource`-extended fixture through
+`AshR2RML.Resource.Verify`'s real compile-time admission and
+`AshR2RML.render/1`'s real Turtle output, not merely the pre-existing
+`:REFUSED_MISSING_SUBJECT_MAP` contrast case.
 
 ## CommandBus on the default dispatch path
 
