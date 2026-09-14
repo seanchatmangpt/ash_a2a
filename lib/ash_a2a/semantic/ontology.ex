@@ -23,7 +23,7 @@ defmodule AshA2A.Semantic.Ontology do
 
   defp base_triples(ir) do
     Enum.flat_map(IR.items(ir), fn {field, item} ->
-      subject = node(Map.fetch!(item, "id"))
+      subject = semantic_node(Map.fetch!(item, "id"))
       value = Map.get(item, "description") || Map.get(item, "label") || Map.fetch!(item, "kind")
 
       [
@@ -42,10 +42,10 @@ defmodule AshA2A.Semantic.Ontology do
   defp relation_triples(relations, ids) do
     Enum.map(relations, fn relation ->
       object = Map.fetch!(relation, "object")
-      object = if MapSet.member?(ids, object), do: node(object), else: object
+      object = if MapSet.member?(ids, object), do: semantic_node(object), else: object
 
       triple(
-        node(Map.fetch!(relation, "subject")),
+        semantic_node(Map.fetch!(relation, "subject")),
         Vocabulary.expand(Map.fetch!(relation, "predicate")),
         object
       )
@@ -55,7 +55,7 @@ defmodule AshA2A.Semantic.Ontology do
   defp triple(subject, predicate, object),
     do: %{subject: subject, predicate: predicate, object: object}
 
-  defp node(id), do: "urn:ash-a2a:semantic:node:#{id}"
+  defp semantic_node(id), do: "urn:ash-a2a:semantic:node:#{id}"
   defp source(id), do: "urn:ash-a2a:source:#{id}"
 
   defp fingerprint(term) do
