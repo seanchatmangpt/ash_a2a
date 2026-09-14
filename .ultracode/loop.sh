@@ -86,8 +86,11 @@ printf '%s\n' "$COURT_RC" > "$FINAL/court.exit"
 
 subject > "$FINAL/subject"
 mix run -e 'IO.puts(Mix.Project.config()[:version])' > "$FINAL/version" 2>/dev/null || true
-HEX="$(ls -1t ./*.hex 2>/dev/null | head -1 || true)"
-[[ -n "$HEX" ]] && sha256sum "$HEX" > "$FINAL/package.sha256"
+PKG="$(ls -1t ./ash_a2a-*.tar 2>/dev/null | head -1 || true)"
+if [[ -n "$PKG" ]]; then
+  sha256sum "$PKG" > "$FINAL/package.sha256"
+  tar -tf "$PKG" > "$FINAL/package.contents"
+fi
 
 {
   echo 'publication_executed=false'
