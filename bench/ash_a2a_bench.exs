@@ -57,12 +57,64 @@ defmodule AshA2A.Bench.Fixture.Domain do
   end
 end
 
+# `Item` mirrors `test/support/fixture.ex`'s `AshA2A.Test.Fixture.Item`
+# exactly (real `:create`/`:update`/`:destroy` actions restricted to a
+# required `:label`, plus one real generic `:action` (`:ping`) with an
+# explicit `consequence: :observe` override) -- inlined here for the same
+# reason `Echo`/`Domain` above are inlined: `test/support/fixture.ex` is not
+# on `elixirc_paths` outside `Mix.env() == :test`, so `mix run` cannot see
+# it. This gives the three new benchmarks below (a real `:change`-consequence
+# `CommandBus.run/4`, and a real multi-action `Compiler.compile/3`) a real
+# resource with several distinct action types instead of `Echo`'s single
+# `:read`.
+defmodule AshA2A.Bench.Fixture.Item do
+  @moduledoc false
+
+  use Ash.Resource,
+    domain: AshA2A.Bench.Fixture.ItemDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:label, :string, public?: true, allow_nil?: false)
+  end
+
+  actions do
+    defaults([:read, :destroy, create: [:label], update: [:label]])
+
+    action :ping, :string do
+      run(fn _input, _context -> {:ok, "pong"} end)
+    end
+  end
+
+  a2a do
+    skill(:create_item, :create)
+    skill(:update_item, :update)
+    skill(:destroy_item, :destroy)
+    skill(:ping, :ping, consequence: :observe)
+  end
+end
+
+defmodule AshA2A.Bench.Fixture.ItemDomain do
+  @moduledoc false
+
+  # Same real, documented `validate_config_inclusion?: false` opt-out as
+  # `AshA2A.Bench.Fixture.Domain` above, for the same reason: this domain
+  # exists only for the lifetime of this script.
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Bench.Fixture.Item)
+  end
+end
+
 defmodule AshA2A.Bench do
   @moduledoc false
 
-  alias AshA2A.{Command, Identity, Info, Receipt}
+  alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
   alias AshA2A.Semantic.{Compiler, IR}
-  alias AshA2A.Bench.Fixture.Echo
+  alias AshA2A.Bench.Fixture.{Echo, Item}
 
   @iterations 100
   @warmup 10
@@ -124,6 +176,124 @@ defmodule AshA2A.Bench do
     bench("AshA2A.Receipt.from_reply/4", fn ->
       Receipt.from_reply(command, execution_id, :read, reply)
     end)
+
+    # -- CommandBus.run/4, :observe consequence -----------------------------
+    #
+    # Real end-to-end admit -> claim -> dispatch -> receipt -> commit path
+    # for a real `:observe`-consequence skill (`Echo`'s `:read`, same
+    # fixture/capability id as the `Info.capability_index/1` bench above).
+    # `admit/2` short-circuits authority for `:observe`, but every other real
+    # mechanic still runs: `AshA2A.Info.skill/2` lookup, the real
+    # `store.claim/2` GenServer round trip, real `AshA2A.Dispatcher.dispatch/5`
+    # against the real ETS data layer, `Receipt.from_reply/4`, and the real
+    # `store.commit/2` round trip. A dedicated, freshly-started
+    # `AshA2A.ReceiptStore.Memory` backs this one benchmark's full run (warm-up
+    # + timed iterations); each timed call builds a brand-new `Command` (fresh
+    # `command_id` via `Command.new/2`'s own default `Ash.UUIDv7.generate()`)
+    # so every call is a real first-time `:execute` claim, never a `:replay`
+    # short-circuit or a `:command_conflict` refusal.
+    observe_store_name = AshA2A.Bench.ObserveReceiptStore
+    {:ok, _pid} = AshA2A.ReceiptStore.Memory.start_link(name: observe_store_name)
+
+    bench("AshA2A.CommandBus.run/4 (:observe consequence, real dispatch)", fn ->
+      command =
+        Command.new(@capability_id,
+          agent_id: "bench-agent",
+          principal_id: "bench-principal-observe",
+          input: %{}
+        )
+
+      message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+
+      case CommandBus.run(command, message, Echo, store_opts: [name: observe_store_name]) do
+        {:ok, %Receipt{status: :completed, consequence: :observe}} ->
+          :ok
+
+        other ->
+          raise "unexpected CommandBus.run/4 (:observe) result in bench loop: #{inspect(other)}"
+      end
+    end)
+
+    # -- CommandBus.run/4, :change consequence, real synthesized Authority --
+    #
+    # Same real end-to-end path as above, but against `Item`'s real
+    # `:create` action (`consequence: :change`, Ash's own default for
+    # `:create`/`:update`/`:destroy` -- see `AshA2A.CapabilityIndex.Compiler`'s
+    # `default_consequence/1`), with a real `AshA2A.Authority` struct
+    # synthesized via `Authority.new/3` (mirroring
+    # `test/ash_a2a/command_bus_test.exs`'s "matching authority admits a real
+    # create and commits its receipt" case) so `admit/2`'s
+    # `Authority.admits?/2` branch actually passes and the command reaches
+    # real `Ash.Changeset.for_create/3` / `Ash.create/2` -- not just the
+    # authority-refusal branch the `:observe` benchmark above never even
+    # exercises. `item_principal`/`item_authority` are built once, outside
+    # the timed loop (matching this script's existing convention of building
+    # fixed fixtures once, e.g. `command = build_command()` for
+    # `Command.fingerprint/1` above) since `Authority.admits?/2` only checks
+    # `subject`/`capability_id`/expiry, never the per-call `command_id` --
+    # reusing one authority across iterations changes nothing about which
+    # real code path runs. Its own dedicated `ReceiptStore.Memory` (again,
+    # one store per benchmark run, fresh `command_id` per timed call) keeps
+    # this benchmark's real repeated creates collision-free exactly like the
+    # `:observe` one above.
+    item_capability_id = AshA2A.CapabilityIndex.Compiler.capability_id(Item, :create)
+    item_principal = Identity.principal("bench-principal-item")
+
+    item_authority =
+      Authority.new(item_principal, item_capability_id, token_id: "bench-authority-item-1")
+
+    change_store_name = AshA2A.Bench.ChangeReceiptStore
+    {:ok, _pid} = AshA2A.ReceiptStore.Memory.start_link(name: change_store_name)
+
+    bench("AshA2A.CommandBus.run/4 (:change consequence, real Ash.create)", fn ->
+      command =
+        Command.new(item_capability_id,
+          agent_id: "bench-agent",
+          principal_id: item_principal,
+          authority: item_authority,
+          input: %{label: "widget"}
+        )
+
+      message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "widget"})])
+
+      case CommandBus.run(command, message, Item, store_opts: [name: change_store_name]) do
+        {:ok, %Receipt{status: :completed, consequence: :change}} ->
+          :ok
+
+        other ->
+          raise "unexpected CommandBus.run/4 (:change) result in bench loop: #{inspect(other)}"
+      end
+    end)
+
+    # -- AshA2A.CapabilityIndex.Compiler.compile/3 classification cost ------
+    #
+    # Real consequence-classification cost (`AshA2A.CapabilityIndex.Compiler`'s
+    # `default_consequence/1` plus its one explicit `Skill` override) for
+    # `Item`, which (unlike `Echo`'s single `:read`) has several real action
+    # types: `:read` (default `:observe`), `:create`/`:update`/`:destroy`
+    # (default `:change`), and one generic `:action` (`:ping`) with an
+    # explicit `consequence: :observe` DSL override -- the one
+    # `default_consequence/1` branch (`:unknown`) the other two operations
+    # above never reach. `item_kind`/`item_overrides` are the exact same real
+    # persisted terms `AshA2A.Info.capability_index_result/1` itself reads
+    # via `Spark.Dsl.Extension.get_persisted/3` before calling `compile/3` --
+    # fetched once, outside the timed loop, so the timed closure measures
+    # `compile/3` alone, not the persisted-term lookup already covered by the
+    # `Info.capability_index/1` benchmark above.
+    item_kind = Spark.Dsl.Extension.get_persisted(Item, :ash_a2a_subject_kind, :resource)
+    item_overrides = Spark.Dsl.Extension.get_persisted(Item, :ash_a2a_skill_overrides, [])
+    item_action_count = Item |> Ash.Resource.Info.public_actions() |> length()
+
+    bench(
+      "AshA2A.CapabilityIndex.Compiler.compile/3 (Item, #{item_action_count} actions)",
+      fn ->
+        skills = AshA2A.CapabilityIndex.Compiler.compile(Item, item_kind, item_overrides)
+
+        unless length(skills) == item_action_count and Enum.all?(skills, & &1.consequence) do
+          raise "unexpected compile/3 result in bench loop: #{inspect(skills)}"
+        end
+      end
+    )
   end
 
   # Real (if benchmark-only) LLM profile config -- `AshA2A.LLMProfiles`
