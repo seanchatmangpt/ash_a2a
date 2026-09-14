@@ -37,8 +37,39 @@ defmodule AshA2A.Application do
 
   defp receipt_store_children do
     case Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory) do
-      AshA2A.ReceiptStore.Memory -> [{AshA2A.ReceiptStore.Memory, []}]
-      _custom_store -> []
+      AshA2A.ReceiptStore.Memory ->
+        [{AshA2A.ReceiptStore.Memory, []}]
+
+      AshA2A.ReceiptStore.Ekv ->
+        # `AshA2A.ReceiptStore.Ekv` needs a real, already-started `EKV`
+        # instance under its configured `:name` -- unlike
+        # `AshA2A.ReceiptStore.Memory`, which owns its own GenServer, `EKV`
+        # is a separate supervised child this application starts on the
+        # store's behalf so choosing `AshA2A.ReceiptStore.Ekv` gets the same
+        # automatic wiring the default store gets, rather than requiring
+        # every host to hand-start `EKV` itself.
+        [{EKV, receipt_store_ekv_opts()}]
+
+      _custom_store ->
+        []
     end
+  end
+
+  # `:name`, `:data_dir`, and `:cluster_size` are given sensible defaults so
+  # `receipt_store: AshA2A.ReceiptStore.Ekv` works with zero extra config;
+  # a host overrides any of them via `config :ash_a2a,
+  # receipt_store_ekv_opts: [...]` (for example a real persistent
+  # `:data_dir` outside the OS tmp directory for production durability --
+  # the tmp-dir default below is fine for local/dev use, where surviving a
+  # single BEAM restart is the point, but is not guaranteed to survive a
+  # host reboot on every platform).
+  defp receipt_store_ekv_opts do
+    default_data_dir = Path.join(System.tmp_dir!(), "ash_a2a_receipt_store_ekv")
+
+    :ash_a2a
+    |> Application.get_env(:receipt_store_ekv_opts, [])
+    |> Keyword.put_new(:name, AshA2A.ReceiptStore.Ekv)
+    |> Keyword.put_new(:data_dir, default_data_dir)
+    |> Keyword.put_new(:cluster_size, 1)
   end
 end
