@@ -75,7 +75,8 @@ defmodule AshA2AFreedomGymPhaseAdmissionTest do
                  data_message(
                    %{plan_name: plan_name, prompt_text: "attempt to actuate an unadmitted phase"},
                    %{metadata: %{skill: "next_phase"}}
-                 )
+                 ),
+                 metadata: %{"a2a.auth" => %{identity: "phase-admission-test-caller"}}
                )
 
       assert task.status.state == :failed
@@ -90,7 +91,8 @@ defmodule AshA2AFreedomGymPhaseAdmissionTest do
                  data_message(
                    %{plan_name: plan_name, prompt_text: "first real admitted phase"},
                    %{metadata: %{skill: "next_phase"}}
-                 )
+                 ),
+                 metadata: %{"a2a.auth" => %{identity: "phase-admission-test-caller"}}
                )
 
       assert task.status.state == :completed

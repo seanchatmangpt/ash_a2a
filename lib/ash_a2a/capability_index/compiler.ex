@@ -60,9 +60,26 @@ defmodule AshA2A.CapabilityIndex.Compiler do
       description: override_value(override, :description, nil),
       tags: override_value(override, :tags, nil),
       expose?: true,
+      consequence: override_value(override, :consequence, default_consequence(action.type)),
       arguments: []
     }
   end
+
+  # Repository-native default consequence per real Ash action type
+  # (`AshA2A.Skill`'s own @moduledoc documents the full rationale): `:read`
+  # is unambiguously non-consequence-bearing;
+  # `:create`/`:update`/`:destroy` are unambiguously consequence-bearing via
+  # the canonical Ash data layer. A generic `:action` has no safe default --
+  # `action.type` alone cannot tell a pure calculation from a real
+  # mutating/externally-effecting operation -- so it defaults to `:unknown`
+  # and stays there (fail-closed for `CommandBus`/`AshA2A.Agent` admission)
+  # until a resource author explicitly declares `consequence:` on its
+  # `a2a do skill ... end` entry.
+  defp default_consequence(:read), do: :observe
+  defp default_consequence(:create), do: :change
+  defp default_consequence(:update), do: :change
+  defp default_consequence(:destroy), do: :change
+  defp default_consequence(_generic_action), do: :unknown
 
   defp override_value(nil, _field, default), do: default
   defp override_value(override, field, default), do: Map.get(override, field) || default

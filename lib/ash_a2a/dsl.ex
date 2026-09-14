@@ -42,6 +42,15 @@ defmodule AshA2A.Dsl do
       type: :boolean,
       default: true,
       doc: "Whether this otherwise-public Ash action is exposed through A2A."
+    ],
+    consequence: [
+      type: {:one_of, [:observe, :change, :external_do, :unknown]},
+      required: false,
+      doc:
+        "Explicit consequence classification (see AshA2A.Skill's @moduledoc). " <>
+          "Required to lift a generic :action skill off the fail-closed :unknown " <>
+          "default; has no effect on :read/:create/:update/:destroy unless a " <>
+          "resource author deliberately wants to override their own default."
     ]
   ]
 

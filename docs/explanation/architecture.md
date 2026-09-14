@@ -34,51 +34,31 @@ wired in wherever a resource author calls it, tested against a live call,
 and orthogonal to admission -- it answers "which provider," not "was this
 authorized."
 
-## Layer 2: admission and receipts (real, but opt-in)
+## Layer 2: admission and receipts (real, and mandatory for consequence-bearing skills)
 
 `AshA2A.Command`, `AshA2A.Authority`, `AshA2A.Identity`, and
-`AshA2A.CommandBus.run/4` form a second, parallel route to the same
-dispatcher. `CommandBus.run/4` looks up the skill via `AshA2A.Info.skill/2`,
-classifies the underlying Ash action as `:observe` (read) or `:change`
-(everything else), and for `:change` actions requires an `AshA2A.Authority`
-struct that names the same principal and capability the command claims
-(`Authority.admits?/2`) -- a command with no authority, or authority for a
-different principal or capability, is refused before dispatch ever runs.
-Once admitted, it asks a pluggable `AshA2A.ReceiptStore` to `claim/2` the
-command: a fresh claim proceeds to real dispatch and commits an
-`AshA2A.Receipt`; a claim that has already been executed is replayed by
-returning the stored receipt instead of re-executing. This is real
-idempotency and real evidence, not a sketch -- it is exercised by
-`AshA2A.Reactor.ExecuteCommand` (a `Reactor.Step` that calls `CommandBus.run/4`
-and nothing else) and by the Oban/FLAME adapters described below.
-
-What it is not, today, is mandatory. `AshA2A.Agent.__dispatch__/3` calls
-`AshA2A.Dispatcher.dispatch/5` directly -- it does not construct an
-`AshA2A.Command`, does not consult `AshA2A.Authority`, and never touches a
-`ReceiptStore`. A plain `A2A.Message` sent to a generated agent is authorized
-only by whatever `A2A.Plug.Auth` verified at the transport boundary and
-whatever the Ash action's own policies enforce; it produces no receipt and
-is not deduplicated on replay.
-
-## Why CommandBus isn't in the default dispatch path
-
-This is a deliberate, named gap, not an oversight. `CommandBus.run/4` needs
-an `AshA2A.Command` (with a `principal_id`, a `capability_id`, and often an
-`AshA2A.Authority`) and a `ReceiptStore` (the in-memory default has no
-cross-node or restart durability). Building an `AshA2A.Command` from a bare
-`A2A.Message` requires deciding, for every resource author, what "the same
-command" means for replay (the `fingerprint`), what identity issues
-`Authority` for an ordinary transport call with no explicit authority broker
-present, and what a `:read` action's "receipt" is worth when it is
-deliberately treated as `:observe` and never admitted at all. None of those
-decisions has one correct default across every resource this library
-serves, so wiring `CommandBus` into `__dispatch__/3` today would mean
-picking authority-issuance and receipt-durability defaults most callers
-didn't ask for, on every call. Leaving it opt-in keeps the zero-config path
-(a resource author who just wants a working `A2A.Agent`) unchanged, while
-giving Reactor/Oban/FLAME callers -- who already have a durable job or
-workflow identity to hang a command on -- a real receipted route to use
-deliberately.
+`AshA2A.CommandBus.run/4` are the canonical receipted admission layer over
+the same dispatcher. `CommandBus.run/4` looks up the skill via
+`AshA2A.Info.skill/2` and reads its real, compiled `consequence`
+classification (`AshA2A.Skill`'s `:observe` / `:change` / `:external_do` /
+`:unknown` -- computed once at compile time from the real Ash `action.type`
+plus any explicit `a2a do skill ..., consequence: ... end` override, never
+re-derived ad hoc per caller). For `:change`/`:external_do` it requires an
+`AshA2A.Authority` struct naming the same principal and capability the
+command claims (`Authority.admits?/2`) -- a command with no authority, or
+authority for a different principal or capability, is refused before
+dispatch ever runs; `:unknown` is refused closed with
+`:consequence_unclassified`, never silently treated as safe. Once admitted,
+it asks a pluggable `AshA2A.ReceiptStore` to `claim/2` the command, keyed on
+`command.command_id`: a fresh claim proceeds to real dispatch and commits an
+`AshA2A.Receipt`; a claim already executed under that same `command_id` with
+an identical `Command.fingerprint/1` is replayed by returning the stored
+receipt instead of re-executing (a matching `command_id` with a *different*
+fingerprint is a real `:command_conflict` refusal). This is real idempotency
+and real evidence, not a sketch, and it is now the route both
+`AshA2A.Reactor.ExecuteCommand`/the Oban/FLAME adapters AND the default
+`AshA2A.Agent.__dispatch__/3` path use (see below) -- not a parallel,
+opt-in route only some callers happen to take.
 
 ## The ecosystem adapters are seams, not integrations
 
@@ -102,19 +82,86 @@ returns `{:error, {:unsupported, :ash_state_machine}}` in this repo -- the
 module declares the canonical A2A state vocabulary for interoperability but
 defers transition legality to the host's own `AshStateMachine` when present.
 
-## What would need to change
+## CommandBus on the default dispatch path
 
-For the admission/receipt layer to become the enforced default,
-`AshA2A.Agent.__dispatch__/3` would need to build an `AshA2A.Command` from
-the inbound message (a default fingerprinting scheme, a default authority
-source for the common case), pick a `ReceiptStore` with real durability as
-the shipped default instead of the in-memory one, and call
-`AshA2A.CommandBus.run/4` in place of its current direct
-`AshA2A.Dispatcher.dispatch/5` call. That is the single largest remaining
-gap between what exists today and a system that enforces receipted
-admission on every call, rather than only on calls explicitly routed
-through `CommandBus`, `Reactor.ExecuteCommand`, `Delivery.Oban`, or
-`Execution.FLAME`. Each ecosystem adapter becoming a real integration is a
-smaller, separate change: add the real dependency, and the existing
-`Code.ensure_loaded?` seam starts resolving to the real provider with no
-change to the adapter's contract.
+`AshA2A.Agent.__dispatch__/3` now builds a real `AshA2A.Command` from the
+inbound message and routes any skill whose real, compiled
+`AshA2A.Skill.consequence` is `:change`/`:external_do` through
+`AshA2A.CommandBus.run/4` (which itself calls the same
+`AshA2A.Dispatcher.dispatch/5` unchanged) instead of calling `dispatch/5`
+directly. Routing is by consequence classification, never by re-deriving a
+binary judgment from `action.type` at dispatch time -- `action.type` alone
+cannot tell a pure generic `:action` (a calculation, a read-shaped custom
+query) from a real mutating/externally-effecting one, which is exactly why
+this is a real, separate capability-truth field rather than an inline
+`if action.type == :read` check (see "Consequence semantics" below).
+
+`command_id` is the real, protocol-native `A2A.Message.message_id` -- not a
+freshly generated id per dispatch -- so a genuine client retry (the same
+`message_id` resent after a dropped response) engages `CommandBus`'s real
+replay/conflict detection through this default path too: the same
+`command_id` with an identical `Command.fingerprint/1` replays the original
+receipt instead of re-executing; the same `command_id` with genuinely
+different content is a real `:command_conflict` refusal.
+
+`Authority` is synthesized per call via
+`AshA2A.Authority.from_verified_identity/2` from the already-verified
+`auth_identity` (`nil` for an unauthenticated caller, which fails
+`:change`/`:external_do` admission closed with `:authority_required` before
+the Ash action ever runs); this authority always admits for its own
+principal/capability pair -- it does not replace or tighten Ash's own
+actor/policy authorization, which still runs exactly as before inside the
+wrapped `dispatch/5` call. Its `token_id` is deterministic (a stable hash of
+`{subject, capability_id}`), not a fresh random one per call: a synthesized
+*standing* claim ("this already-verified principal may act with this
+capability") must be idempotent for the same pair, or every retry's
+`Command.fingerprint/1` (which hashes the authority's `token_id`) would
+differ from the last and permanently defeat replay detection -- a real,
+reproduced-and-fixed regression, not a hypothetical.
+
+## Consequence semantics: not `action.type`
+
+`AshA2A.Skill.consequence` (`:observe` / `:change` / `:external_do` /
+`:unknown`) is computed once at compile time
+(`AshA2A.CapabilityIndex.Compiler.project/3`) and carried as real capability
+truth alongside `id`/`resource`/`action`, rather than recomputed ad hoc by
+each consumer. Repository-native defaults: Ash `:read` -> `:observe`;
+`:create`/`:update`/`:destroy` -> `:change`; a generic `:action` -> `:unknown`
+unless a resource author explicitly overrides it
+(`a2a do skill :name, :action, consequence: :observe | :change | :external_do end`).
+An `:unknown` capability is refused closed by both enforcement points
+(`AshA2A.Agent.__dispatch__/3` before any dispatch attempt at all, and
+`CommandBus.admit/2` independently, for any caller reaching it directly) --
+never treated as either safe-to-skip or safe-to-execute by default. This
+exists because `action.type` alone is not a sufficient consequence calculus:
+a real regression this design prevents was caught directly -- naively
+routing every non-`:read` skill through `CommandBus` broke a real,
+non-mutating multi-turn `:action` fixture (an ordinary pure calculation)
+by failing it closed for lack of authority it never needed. Every
+pre-existing generic `:action` skill in this repository has now been
+explicitly classified (`:observe` for pure calculations/queries -- `ping`,
+`whoami`, `converse`, `respond_to_prompt`, `verse`, `judge`, `run_phase`;
+`:change` for the two that genuinely mutate real state --
+`FreedomGym.Facilitator`'s `:next_phase`/`:reset_plan`, which advance/reset
+a real in-memory plan position).
+
+`:read` stays off the `CommandBus` route regardless of consequence
+classification for a second, independent reason: a streaming `:read` reply
+(`Dispatcher.run_read_stream/4`, PRD §3.7) would have its real
+`Enumerable.t()` collapsed to a placeholder by `AshA2A.Receipt.from_reply/4`'s
+`summarize/1` if routed through `CommandBus` -- `:read` is also, by its own
+default, `:observe`, so this is consistent with, not an exception to, the
+consequence-based routing rule above.
+
+Two things remain real, disclosed gaps, not silently resolved by this work:
+
+- **A new generic `:action` skill defaults to `:unknown` (refused) until a
+  resource author explicitly classifies it.** This is intentional
+  fail-closed behavior, not an oversight -- but it does mean a resource
+  author adding a new generic action must remember to declare
+  `consequence:` for it to be reachable through the default agent path at
+  all.
+- The default `ReceiptStore` is still the in-memory one
+  (`AshA2A.ReceiptStore.Memory`); a host wanting durable receipts across
+  restarts still configures `:receipt_store` to a real implementation, as
+  before.

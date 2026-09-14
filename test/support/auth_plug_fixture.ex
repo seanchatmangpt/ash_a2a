@@ -35,7 +35,7 @@ defmodule AshA2A.Test.Fixture.AuthProbe do
   end
 
   a2a do
-    skill(:whoami, :whoami)
+    skill(:whoami, :whoami, consequence: :observe)
   end
 end
 

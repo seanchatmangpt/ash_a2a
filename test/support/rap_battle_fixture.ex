@@ -29,7 +29,7 @@ defmodule AshA2A.Test.Fixture.RapBattle.FiftyCent do
   end
 
   a2a do
-    skill(:verse, :verse)
+    skill(:verse, :verse, consequence: :observe)
   end
 end
 
@@ -65,7 +65,7 @@ defmodule AshA2A.Test.Fixture.RapBattle.Jadakiss do
   end
 
   a2a do
-    skill(:verse, :verse)
+    skill(:verse, :verse, consequence: :observe)
   end
 end
 
@@ -149,7 +149,7 @@ defmodule AshA2A.Test.Fixture.RapBattle.JudgePanel do
   end
 
   a2a do
-    skill(:judge, :judge)
+    skill(:judge, :judge, consequence: :observe)
   end
 
   # Real, deterministic judging heuristics -- each a genuinely different real

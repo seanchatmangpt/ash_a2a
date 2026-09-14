@@ -39,7 +39,7 @@ defmodule AshA2A.Test.Fixture.SemanticReasoner do
   end
 
   a2a do
-    skill(:respond_to_prompt, :respond_to_prompt)
+    skill(:respond_to_prompt, :respond_to_prompt, consequence: :observe)
   end
 end
 

@@ -11,7 +11,37 @@ defmodule AshA2A.Skill do
   `arguments` and Spark metadata may therefore be populated on a raw DSL
   entity, but they are never copied into the canonical capability index.
   Action arguments are always derived from Ash introspection.
+
+  ## `consequence`
+
+  `Ash.Resource.Actions.*{}.type` alone is not a sufficient consequence
+  calculus: `:read` is unambiguously non-consequence-bearing, and
+  `:create`/`:update`/`:destroy` are unambiguously consequence-bearing, but
+  a generic `:action` may be either (a pure calculation/query, or a real
+  data-/state-mutating or externally-effecting operation) -- `action.type`
+  alone cannot distinguish the two. `consequence` is this capability's own,
+  explicit classification, computed once at compile time
+  (`AshA2A.CapabilityIndex.Compiler.project/3`) and carried as real
+  capability truth alongside `id`/`resource`/`action` rather than
+  recomputed ad hoc by every consumer (`AshA2A.Agent`, `AshA2A.CommandBus`):
+
+    * `:observe` -- never consequence-bearing; never requires `CommandBus`
+      admission/authority, never produces a `Receipt`. Default for `:read`.
+    * `:change` -- consequence-bearing via the canonical Ash data layer.
+      Default for `:create`/`:update`/`:destroy`.
+    * `:external_do` -- consequence-bearing via some effect outside the Ash
+      data layer (e.g. mutating other real process state). No default
+      action type maps here; a resource author must declare it explicitly.
+    * `:unknown` -- not yet classified. Default for a generic `:action`
+      with no explicit `consequence:` override. `CommandBus`/`AshA2A.Agent`
+      both fail an `:unknown` capability closed
+      (`:consequence_unclassified`) rather than silently treating it as
+      either safe-to-skip or safe-to-execute -- an unclassified generic
+      action must never be the means by which a real consequence bypasses
+      the `CommandBus` DO boundary.
   """
+
+  @type consequence :: :observe | :change | :external_do | :unknown
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
@@ -22,6 +52,7 @@ defmodule AshA2A.Skill do
           description: String.t() | nil,
           tags: [String.t()] | nil,
           expose?: boolean(),
+          consequence: consequence() | nil,
           arguments: [AshA2A.Argument.t()]
         }
 
@@ -34,6 +65,7 @@ defmodule AshA2A.Skill do
     :description,
     :tags,
     :__identifier__,
+    :consequence,
     expose?: true,
     arguments: [],
     __spark_metadata__: nil

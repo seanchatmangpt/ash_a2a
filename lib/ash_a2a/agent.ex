@@ -113,6 +113,71 @@ defmodule AshA2A.Agent do
     ]
   end
 
+  # `AshA2A.CommandBus.run/4` is the canonical receipted route to
+  # `AshA2A.Dispatcher.dispatch/5` -- it calls `dispatch/5` internally with
+  # this exact same `skill_name`/`message`/`resource_or_domain`/`history`/
+  # `auth_identity` shape (`command_bus.ex:32-38`), so routing every real
+  # dispatch through it here does not change what actually executes or how
+  # its reply is shaped; it wraps that unchanged execution with admission
+  # (capability/action resolution), a claim against the configured
+  # `ReceiptStore` (real replay/conflict detection for a caller-supplied
+  # stable `command_id`), and a committed `AshA2A.Receipt` for every real
+  # outcome. Before this change, the default `A2A.Agent` path -- the only
+  # path any deployed agent actually uses -- called `Dispatcher.dispatch/5`
+  # directly and left `CommandBus` reachable only from the parallel,
+  # opt-in `Reactor.ExecuteCommand`/`Delivery.Oban`/`Execution.FLAME` routes,
+  # so no default-path invocation ever left a receipt and `CommandBus` was
+  # not, in fact, the sole DO path its own moduledoc claims to be.
+  #
+  # `command_id` is the real, canonical, protocol-native
+  # `A2A.Message.message_id` (see `build_command/4` below for the full
+  # rationale), not a fresh id generated per call -- so a genuine client
+  # retry (same `message_id`) engages `CommandBus`'s real replay/conflict
+  # detection through this default path too, the same as it always did for
+  # `Reactor.ExecuteCommand`/`Delivery.Oban` callers that already construct
+  # a `Command` with a stable, caller-chosen id. The gains for every
+  # default-path dispatch here are: (1) a persisted `AshA2A.Receipt` for
+  # every consequence-bearing outcome, where none existed before; (2) a
+  # real, fail-closed `AshA2A.Authority` admission gate ahead of `:change`/
+  # `:external_do` consequences -- synthesized from the already-verified
+  # `auth_identity` via
+  # `AshA2A.Authority.from_verified_identity/2` (`nil` for an unauthenticated
+  # caller, so an unauthenticated write is refused with `:authority_required`
+  # before ever reaching the Ash action, matching this module's existing
+  # fail-closed convention elsewhere). This synthesized authority always
+  # admits for its own principal/capability pair -- it does not replace or
+  # tighten Ash's own actor/policy authorization, which still runs exactly as
+  # before inside the wrapped `Dispatcher.dispatch/5` call; it only adds a
+  # receipted admission gate ahead of it.
+  #
+  # Routing is by `skill.consequence` -- real capability truth computed once
+  # at compile time (`AshA2A.CapabilityIndex.Compiler`, `AshA2A.Skill`'s
+  # @moduledoc) -- never by re-deriving a binary "read or not" judgment from
+  # `action.type` here. Four branches:
+  #
+  #   * `:observe` -- direct `Dispatcher.dispatch/5`, no `CommandBus`. This
+  #     also covers a streaming `:read` (PRD §3.7,
+  #     `Dispatcher.run_read_stream/4`) correctly: `AshA2A.Receipt.
+  #     from_reply/4`'s `summarize/1` would otherwise collapse a real
+  #     `{:stream, enumerable}` reply into the placeholder
+  #     `{:stream, :enumerable}` before a caller could ever consume it.
+  #   * `:change` / `:external_do` -- routed through `AshA2A.CommandBus.run/4`
+  #     for real admission/authority/receipt.
+  #   * `:unknown` -- an unclassified generic `:action` skill. Refused
+  #     closed with a typed `:consequence_unclassified` code *before* any
+  #     dispatch attempt at all -- never executed, on the theory that a
+  #     capability nobody has yet declared safe must not be reachable
+  #     through the default agent path merely because no one classified it.
+  #     (`CommandBus.admit/2` also refuses `:unknown` independently, for any
+  #     caller reaching it directly -- this is defense in depth, not the
+  #     only enforcement point.)
+  #   * A skill/action lookup failure resolves to `:observe` here (falls
+  #     through to a direct `Dispatcher.dispatch/5` call) so an unknown or
+  #     misconfigured skill still surfaces through `dispatch/5`'s own
+  #     existing, tagged `{:error, {:skill_lookup, _}}`/
+  #     `{:error, {:action_resolution, _}}` shapes unchanged, rather than
+  #     this function inventing a second, differently shaped error for the
+  #     same failure.
   @doc false
   @spec __dispatch__(module(), A2A.Message.t(), A2A.Agent.context() | map()) ::
           AshA2A.Dispatcher.reply()
@@ -122,17 +187,87 @@ defmodule AshA2A.Agent do
 
     case resolve_skill_name(resource_or_domain, message) do
       {:ok, skill_name} ->
-        AshA2A.Dispatcher.dispatch(
-          skill_name,
-          message,
-          resource_or_domain,
-          history,
-          auth_identity
-        )
+        case consequence(resource_or_domain, skill_name) do
+          :observe ->
+            AshA2A.Dispatcher.dispatch(
+              skill_name,
+              message,
+              resource_or_domain,
+              history,
+              auth_identity
+            )
+
+          consequence when consequence in [:change, :external_do] ->
+            command = build_command(resource_or_domain, skill_name, message, auth_identity)
+
+            case AshA2A.CommandBus.run(command, message, resource_or_domain,
+                   history: history,
+                   auth_identity: auth_identity
+                 ) do
+              {:ok, %AshA2A.Receipt{reply: reply}} -> reply
+              {:error, reason} -> {:error, reason}
+            end
+
+          :unknown ->
+            {:error, %{code: :consequence_unclassified, capability_id: to_string(skill_name)}}
+        end
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @spec consequence(module(), AshA2A.Dispatcher.skill_name()) :: AshA2A.Skill.consequence()
+  defp consequence(resource_or_domain, skill_name) do
+    case AshA2A.Info.skill(resource_or_domain, skill_name) do
+      {:ok, %AshA2A.Skill{consequence: consequence}} when not is_nil(consequence) -> consequence
+      _ -> :observe
+    end
+  end
+
+  # Builds the real `AshA2A.Command` `CommandBus.run/4` admits. `principal`
+  # is derived once and reused for both `principal_id` and the synthesized
+  # `Authority`'s `subject`, since `Authority.admits?/2` requires
+  # `authority.subject == command.principal_id` to match exactly --
+  # `AshA2A.Identity.principal/1` normalizes any given value the same way on
+  # every call, so two separate calls with the same `auth_identity` value
+  # produce equal identities. An unauthenticated caller (`auth_identity` is
+  # `nil`) still gets a `:principal` identity for the command (`"anonymous"`,
+  # matching the literal value real `CommandBus` tests already use for an
+  # unauthenticated `:read` command) but no `Authority` --
+  # `Authority.from_verified_identity/2` returns `nil` for `nil`, which fails
+  # `:change` admission closed as intended.
+  #
+  # `command_id` is the real, canonical, protocol-native `A2A.Message.
+  # message_id` (`~/xaas/deps/a2a/lib/a2a/message.ex:10-22,41,57` --
+  # `A2A.ID.generate("msg")` when the caller supplies none, but a caller
+  # retrying the same logical request after a dropped response is expected
+  # to resend the SAME `message_id`, the same way any idempotency-key
+  # convention works) rather than a fresh UUID generated here on every call.
+  # This is what actually lets `CommandBus`'s existing replay/conflict
+  # detection (`ReceiptStore.claim/2`, keyed on `command_id`, comparing
+  # `command.fingerprint` against what a prior claim under that same id
+  # recorded) engage for a real client retry arriving through the default
+  # agent path: same `message_id` + same semantic command content (same
+  # `capability_id`/`agent_id`/`principal_id`/`input`/authority token, all
+  # of which `Command.fingerprint/1` hashes) replays the original receipt
+  # instead of re-executing; same `message_id` with different semantic
+  # content is a real `:command_conflict` refusal, never a silent
+  # double-execution or a silently accepted divergent retry.
+  @spec build_command(module(), AshA2A.Dispatcher.skill_name(), A2A.Message.t(), term()) ::
+          AshA2A.Command.t()
+  defp build_command(resource_or_domain, skill_name, message, auth_identity) do
+    capability_id = to_string(skill_name)
+    principal = AshA2A.Identity.principal(auth_identity || "anonymous")
+    {:ok, input} = AshA2A.Dispatcher.fetch_input(message)
+
+    AshA2A.Command.new(capability_id,
+      command_id: message.message_id,
+      agent_id: to_string(resource_or_domain),
+      principal_id: principal,
+      authority: AshA2A.Authority.from_verified_identity(auth_identity, capability_id),
+      input: input
+    )
   end
 
   # Extracts the transport-verified caller identity from

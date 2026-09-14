@@ -276,7 +276,17 @@ defmodule AshA2A.Dispatcher do
   # (`~/xaas/deps/a2a/lib/a2a/part.ex:58-74`, `data: map()`). Text-only
   # messages (no data part) dispatch with an empty input map so actions that
   # accept no arguments still work.
-  defp fetch_input(%Message{parts: parts}) do
+  #
+  # Public (not `defp`) so `AshA2A.Agent.__dispatch__/3` can extract the same
+  # real input to carry as `AshA2A.Command.input` for fingerprinting when it
+  # routes a dispatch through `AshA2A.CommandBus.run/4` -- reusing this exact
+  # extraction keeps the command's fingerprinted input identical to what the
+  # action actually receives, rather than duplicating this logic or passing
+  # an empty placeholder that would collapse distinct requests onto the same
+  # fingerprint.
+  @doc false
+  @spec fetch_input(Message.t()) :: {:ok, map()}
+  def fetch_input(%Message{parts: parts}) do
     case Enum.find_value(parts, fn
            %Part.Data{data: data} -> {:ok, data}
            _ -> nil
@@ -464,12 +474,36 @@ defmodule AshA2A.Dispatcher do
     |> Ash.create(opts)
   end
 
+  # Real, pre-existing bug fixed here, same shape as `run_destroy/4`'s own
+  # documented fix below: `input` (by construction) always carries at least
+  # the resource's real primary-key field(s), since `fetch_record_for_update/2`
+  # just read them out of this same map to resolve `record`. An update
+  # action whose `accept` list does not also happen to include those pk
+  # field(s) (e.g. a resource whose real primary key is `:id` but whose
+  # update action only accepts `[:label]`, unlike `AshA2ADispatcherFetchRecordTest.
+  # Ticket`'s update action, which happens to accept its own natural-key pk
+  # `:ticket_ref` too) previously received the pk field(s) as
+  # unrecognized attribute input straight through to
+  # `Ash.Changeset.for_update/3`, raising a spurious
+  # `Ash.Error.Invalid.NoSuchInput` -- unrelated to whether the record was
+  # found -- mapped by `to_reply/1` to a misleading `{:input_required, _}`.
+  # The record identity is already resolved; an update needs only the
+  # remaining, real attribute changes.
   defp run_update(skill, action, input, opts) do
     with {:ok, record} <- fetch_record_for_update(skill, input, opts) do
+      pk = Ash.Resource.Info.primary_key(skill.resource)
+      update_input = drop_primary_key_fields(input, pk)
+
       record
-      |> Ash.Changeset.for_update(action.name, input, opts)
+      |> Ash.Changeset.for_update(action.name, update_input, opts)
       |> Ash.update(opts)
     end
+  end
+
+  defp drop_primary_key_fields(input, pk) when is_map(input) do
+    Enum.reduce(pk, input, fn field, acc ->
+      acc |> Map.delete(field) |> Map.delete(Atom.to_string(field))
+    end)
   end
 
   # Resolves the record to update/destroy using the resource's *actual*

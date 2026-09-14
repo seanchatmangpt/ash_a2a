@@ -52,10 +52,33 @@ defmodule AshA2A.Authority do
   def from_verified_identity(nil, _capability_id), do: nil
 
   def from_verified_identity(identity, capability_id) do
-    new(Identity.principal(identity), capability_id,
+    subject = Identity.principal(identity)
+
+    new(subject, capability_id,
+      # Deterministic, not a fresh `Ash.UUIDv7.generate()` per call (unlike
+      # `new/3`'s own default): this authority is a synthesized STANDING
+      # claim ("this already-verified principal may act with this
+      # capability"), not a one-time-issued credential grant, so it must be
+      # idempotent for the same (subject, capability_id) pair. A fresh
+      # random `token_id` here would leak into `AshA2A.Command.fingerprint/1`
+      # (which hashes `authority.token_id`) and make every retry of the
+      # exact same command fingerprint differently from the last, defeating
+      # `AshA2A.CommandBus`'s replay detection for every authenticated
+      # caller -- confirmed as a real, reproduced regression this fix closes
+      # (a genuine client retry through the default `AshA2A.Agent` dispatch
+      # path was hitting `:command_conflict` instead of a real replay, even
+      # with 100% identical semantic command content).
+      token_id: deterministic_token_id(subject, capability_id),
       source: :transport_verified,
       evidence: %{transport_identity: identity}
     )
+  end
+
+  defp deterministic_token_id(%Identity{} = subject, capability_id) do
+    {subject.value, capability_id}
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
   end
 
   @spec admits?(t() | nil, map()) :: boolean()

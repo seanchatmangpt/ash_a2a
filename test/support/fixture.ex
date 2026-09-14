@@ -235,7 +235,7 @@ defmodule AshA2A.Test.Fixture.Item do
     skill(:create_item, :create)
     skill(:update_item, :update)
     skill(:destroy_item, :destroy)
-    skill(:ping, :ping)
+    skill(:ping, :ping, consequence: :observe)
   end
 end
 

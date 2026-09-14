@@ -49,7 +49,7 @@ defmodule AshA2A.Test.Fixture.MultiTurnConversation do
   end
 
   a2a do
-    skill(:converse, :converse)
+    skill(:converse, :converse, consequence: :observe)
   end
 end
 

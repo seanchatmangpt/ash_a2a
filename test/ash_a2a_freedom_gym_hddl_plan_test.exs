@@ -63,7 +63,8 @@ defmodule AshA2AFreedomGymHddlPlanTest do
                  data_message(
                    %{plan_name: plan_name, prompt_text: "next real phase, please"},
                    %{metadata: %{skill: "next_phase"}}
-                 )
+                 ),
+                 metadata: %{"a2a.auth" => %{identity: "hddl-plan-test-caller"}}
                )
 
       assert task.status.state == :completed
@@ -106,7 +107,8 @@ defmodule AshA2AFreedomGymHddlPlanTest do
     assert {:ok, reset_task} =
              FacilitatorAgent.call(
                FacilitatorAgent,
-               data_message(%{plan_name: plan_name}, %{metadata: %{skill: "reset_plan"}})
+               data_message(%{plan_name: plan_name}, %{metadata: %{skill: "reset_plan"}}),
+               metadata: %{"a2a.auth" => %{identity: "hddl-plan-test-caller"}}
              )
 
     assert reset_task.status.state == :completed

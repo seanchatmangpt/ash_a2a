@@ -88,9 +88,9 @@ defmodule AshA2A.Test.Fixture.FreedomGym.Facilitator do
   end
 
   a2a do
-    skill(:run_phase, :run_phase)
-    skill(:next_phase, :next_phase)
-    skill(:reset_plan, :reset_plan)
+    skill(:run_phase, :run_phase, consequence: :observe)
+    skill(:next_phase, :next_phase, consequence: :change)
+    skill(:reset_plan, :reset_plan, consequence: :change)
   end
 end
 
@@ -141,7 +141,7 @@ defmodule AshA2A.Test.Fixture.FreedomGym.NewNervous do
   end
 
   a2a do
-    skill(:respond_to_prompt, :respond_to_prompt)
+    skill(:respond_to_prompt, :respond_to_prompt, consequence: :observe)
   end
 end
 
@@ -200,7 +200,7 @@ defmodule AshA2A.Test.Fixture.FreedomGym.Drunkalog do
   end
 
   a2a do
-    skill(:respond_to_prompt, :respond_to_prompt)
+    skill(:respond_to_prompt, :respond_to_prompt, consequence: :observe)
   end
 end
 
@@ -250,7 +250,7 @@ defmodule AshA2A.Test.Fixture.FreedomGym.EverythingGreat do
   end
 
   a2a do
-    skill(:respond_to_prompt, :respond_to_prompt)
+    skill(:respond_to_prompt, :respond_to_prompt, consequence: :observe)
   end
 end
 
@@ -298,7 +298,7 @@ defmodule AshA2A.Test.Fixture.FreedomGym.HelpRequest do
   end
 
   a2a do
-    skill(:respond_to_prompt, :respond_to_prompt)
+    skill(:respond_to_prompt, :respond_to_prompt, consequence: :observe)
   end
 end
 

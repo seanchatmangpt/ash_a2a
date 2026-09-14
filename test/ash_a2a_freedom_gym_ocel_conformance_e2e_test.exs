@@ -113,7 +113,8 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
                  data_message(
                    %{plan_name: plan_name, prompt_text: "next real phase"},
                    %{metadata: %{skill: "next_phase"}}
-                 )
+                 ),
+                 metadata: %{"a2a.auth" => %{identity: "ocel-conformance-test-caller"}}
                )
 
       assert task.status.state == :completed
