@@ -37,7 +37,11 @@ defmodule AshA2A.CommandBus do
               Keyword.get(opts, :auth_identity)
             )
 
-          receipt = Receipt.from_reply(command, execution_id, consequence, reply)
+          receipt =
+            command
+            |> Receipt.from_reply(execution_id, consequence, reply)
+            |> mark_standing(store)
+
           :ok = store.commit(receipt, store_opts)
           emit_receipt(receipt)
           {:ok, receipt}
@@ -85,6 +89,23 @@ defmodule AshA2A.CommandBus do
   defp admit(_command, :unknown), do: {:error, refusal(:consequence_unclassified)}
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
+
+  # `Receipt.from_reply/4` always sets `standing: :observed`. This upgrades
+  # it to `:durable` only when the configured `store` module itself declares
+  # real durability via a `durable?/0` function returning `true` -- checked
+  # with `Code.ensure_loaded?/1` + `function_exported?/3`, the exact idiom
+  # already used by `AshA2A.Durability.DurableServer`'s provider dispatch
+  # and `AshA2A.Execution.FLAME.available?/0` -- rather than a hardcoded
+  # allowlist of "known-durable" store modules. `AshA2A.ReceiptStore.Memory`
+  # exports no such function, so its receipts are unaffected and stay
+  # `:observed`.
+  defp mark_standing(%Receipt{} = receipt, store) do
+    if Code.ensure_loaded?(store) and function_exported?(store, :durable?, 0) and store.durable?() do
+      %{receipt | standing: :durable}
+    else
+      receipt
+    end
+  end
 
   defp emit_receipt(receipt) do
     :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})

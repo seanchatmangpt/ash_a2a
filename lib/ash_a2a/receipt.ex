@@ -5,9 +5,35 @@ defmodule AshA2A.Receipt do
   Receipt identity is distinct from command, task, agent, semantic subject, and
   execution identity. The receipt records what was attempted and what reply
   shape was observed; it does not infer success beyond the returned outcome.
+
+  ## Standing
+
+  `:standing` (see `t:standing/0`) records how durably this receipt has
+  actually been persisted -- it is evidence about the *store*, not about the
+  underlying command's own consequence/status. `from_reply/4` always sets it
+  to `:observed`; only `AshA2A.CommandBus.run/4` ever upgrades it to
+  `:durable`, and only when the configured `AshA2A.ReceiptStore` declares
+  itself durable (see `AshA2A.ReceiptStore.Ekv.durable?/0`).
   """
 
   alias AshA2A.{Command, Identity}
+
+  @typedoc """
+  How durably a receipt has actually been persisted.
+
+    * `:observed` -- the default set by `from_reply/4` for every receipt,
+      regardless of which store ultimately commits it. Reflects only that a
+      reply was observed; it does not mean the receipt has reached durable
+      storage. `AshA2A.ReceiptStore.Memory`-committed receipts always stay
+      `:observed` -- an in-process `Map` is lost on restart.
+    * `:durable` -- set by `AshA2A.CommandBus.run/4` (never by `from_reply/4`
+      itself) only when the configured store module exports a real
+      `durable?/0` function returning `true` (e.g.
+      `AshA2A.ReceiptStore.Ekv.durable?/0`), checked via
+      `Code.ensure_loaded?/1` + `function_exported?/3` rather than a
+      hardcoded list of "known-durable" modules.
+  """
+  @type standing :: :observed | :durable
 
   @enforce_keys [
     :receipt_id,
