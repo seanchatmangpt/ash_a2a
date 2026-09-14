@@ -1,0 +1,15 @@
+(define (domain unsolvable-qualification)
+  (:types phase)
+  (:predicates
+    (current-phase ?p - phase)
+    (has-permission))
+  (:task run-sequence :parameters (?start - phase))
+  (:action advance
+    :parameters (?from - phase ?to - phase)
+    :precondition (and (current-phase ?from) (has-permission))
+    :effect (and (not (current-phase ?from)) (current-phase ?to)))
+  (:method m-run-sequence
+    :parameters (?start - phase)
+    :task (run-sequence ?start)
+    :ordered-subtasks (and
+      (t1 (advance locked unlocked)))))
