@@ -25,3 +25,21 @@ config :ash_a2a, :llm_profiles,
     model: "glm-5.3-flash",
     max_tokens: 4096
   ]
+
+# GAP D -- real Oban delivery qualification
+# (test/ash_a2a/oban_delivery_qualification_test.exs). AshA2A.Test.Repo is
+# the real Ecto.Repo AshA2A.Delivery.Oban.enqueue/3 and a real Oban.Worker
+# are exercised against (real oban_jobs table via Oban.Migrations.up/0,
+# real Oban.insert/2, real Oban.Testing.perform_job/2) -- pointed at this
+# release cycle's dedicated, already-running local Postgres instance. Not
+# started or managed by this test suite itself; the test's own setup_all
+# checks reachability for real before starting the repo.
+config :ash_a2a, ecto_repos: [AshA2A.Test.Repo]
+
+config :ash_a2a, AshA2A.Test.Repo,
+  hostname: "localhost",
+  port: 55432,
+  username: "postgres",
+  password: "postgres",
+  database: "ash_a2a_test",
+  pool_size: 4
