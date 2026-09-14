@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.14] - 2026-09-14
+
+### Added
+- **`AshA2A.ReceiptStore.Ekv`**: a real, on-disk-persisted `ReceiptStore`
+  implementation backed by the `:ekv` dependency (promoted out of
+  `only: :test` — it is now a real, non-test collaborator, the same
+  precedent as the earlier `:plug` promotion). Closes the previous gap
+  where the only shipped store (`AshA2A.ReceiptStore.Memory`) lost every
+  receipt on process restart. `claim/2`/`commit/2`/`fetch/2` replicate
+  `Memory`'s replay / `:command_conflict` / `:in_flight` decision logic
+  against real durable storage. `AshA2A.Application.receipt_store_children/0`
+  auto-wires a supervised `EKV` child when `:ash_a2a, :receipt_store` is
+  configured as `AshA2A.ReceiptStore.Ekv`, configurable via
+  `:ash_a2a, :receipt_store_ekv_opts`.
+- **`AshA2A.Receipt.standing` vocabulary**: `:durable`, alongside the
+  existing `:observed`. `CommandBus.run/4` marks a committed receipt
+  `:durable` only when the configured store exports `durable?/0 -> true`
+  (checked via the same `Code.ensure_loaded?`/`function_exported?` idiom
+  already used for `DurableServer`/`FLAME` provider detection — no
+  hardcoded module allowlist). `AshA2A.ReceiptStore.Memory` is unaffected;
+  its receipts still carry `standing: :observed`.
+- **Typed per-skill arguments in the capability index**:
+  `AshA2A.CapabilityIndex.Compiler.project/3` now derives real
+  `AshA2A.Argument` entries from `Ash.Resource.Info.action/2`'s real
+  `arguments` (public actions) and, for `:create`/`:update`, from
+  `action.accept`-derived attributes — closing a gap `AshA2A.Skill`'s own
+  moduledoc had already promised ("Action arguments are always derived
+  from Ash introspection") but `project/3` never implemented, leaving
+  every skill's `arguments` field hardcoded to `[]`. The wire
+  `A2A.AgentCard` projection still cannot carry per-argument schema data
+  (the vendored `A2A.AgentCard` skill struct has no schema field — a real,
+  separate constraint of that dependency, not worked around here); the
+  real, useful surface is the in-process `AshA2A.Info.capability_index/1`
+  and `AshA2A.Info.skill/2` API, which an in-process composer can call
+  directly.
+
+### Fixed
+- **`AshA2A.FlamePlacementTest` real happy-path coverage**: the only
+  existing FLAME test wrapped its entire body in
+  `unless FLAME.available?() do ... end` with no else branch, so in any
+  environment where FLAME is actually available (including this one) the
+  test passed vacuously and never exercised the real
+  `CommandBus`-through-`FLAME` path. Added a real integration test against
+  FLAME's own documented local execution mode (a real `FLAME.Pool` on
+  `FLAME.LocalBackend`, not a mock), asserting on the real returned
+  receipt/placement structs including a genuine replay round-trip. Also
+  fixed a real bug found while writing it: the module's own
+  `alias AshA2A.{..., Execution.FLAME, ...}` shadowed the bare `FLAME`
+  name, so an unqualified `{FLAME.Pool, ...}` child spec resolved to the
+  nonexistent `AshA2A.Execution.FLAME.Pool`.
+
 ## [26.9.13] - 2026-09-13
 
 ### Added
