@@ -165,3 +165,54 @@ Two things remain real, disclosed gaps, not silently resolved by this work:
   (`AshA2A.ReceiptStore.Memory`); a host wanting durable receipts across
   restarts still configures `:receipt_store` to a real implementation, as
   before.
+
+## The explicit semantic-request surface (v26.9.14)
+
+The semantic-closed-loop pipeline (`Source -> SemanticIR -> Admission -> Ontology ->
+PlanningIR -> SemanticSynthesis -> ExecutionPackage`, `AshA2A.Semantic.Compiler.compile/3`)
+had zero non-test production caller until this surface. `AshA2A.Agent.__dispatch__/3` now
+picks between two real routes before either the consequence-based `CommandBus` routing
+above or the ordinary skill-resolution path ever runs:
+
+- **Gate 1** — the target resource/domain declared `a2a do semantic_requests true end`
+  (`AshA2A.Dsl`'s new `:a2a` section option, persisted by
+  `AshA2A.Transformers.BuildCapabilityIndex` and read back via
+  `AshA2A.Info.semantic_requests_enabled?/1`). Real compiled DSL truth, not a runtime
+  check; defaults to `false`, so no existing resource's behavior changes.
+- **Gate 2** — the caller's own inbound `A2A.Message.metadata` sets
+  `:semantic_request`/`"semantic_request"` to `true`, resolved through the same
+  atom-then-string `AshA2A.MetadataKey.get/2` convention `:skill` metadata already uses.
+
+Only when **both** are true does dispatch reach the private `dispatch_semantic/2`, which
+extracts the message's real text (`A2A.Message.text/1`) and calls
+`AshA2A.Semantic.Compiler.compile/3` for real, converting the resulting
+`AshA2A.Semantic.ExecutionPackage` into a real `AshA2A.Dispatcher.reply()` via the new
+`AshA2A.Semantic.ExecutionPackage.to_reply/1`. Either gate false, or a message with no
+`A2A.Part.Text` part, falls straight through to the ordinary skill-resolution path
+(`dispatch_skill/4`) unchanged — this is a new, explicit route added beside the existing
+one, never a content sniff of unstructured text and never a silent fallback for an
+unrecognized skill name.
+
+This route never joins `CommandBus`/`Authority`/`ReceiptStore`, and it cannot produce
+anything mistakable for a `DO` receipt: `to_reply/1` only ever emits `standing:
+"candidate"`, `authority: "none"` evidence (re-admitted `capability_ids`, the synthesized
+`hddl`/`fond`/`rationale`, and the package's own content-addressed
+`execution_package_fingerprint` for a later `Compiler.replan/4` continuation) or, for a
+package that fails the same `standing: :candidate, authority: :none` fence
+`ExecutionPackage.new/6` enforces at construction, a typed
+`:semantic_package_authority_ceiling_violated` refusal. `Compiler.compile/3` calls
+`AshA2A.LLMProfiles.model_spec!/1`, which genuinely `raise`s on a misconfigured LLM role —
+unlike every other `AshA2A.Dispatcher` path's deliberately non-raising contract —
+so `dispatch_semantic/2` wraps the whole compile in a real `rescue`, turning any real
+compilation failure (misconfigured profile or otherwise) into a typed
+`:semantic_compilation_failed` reply rather than crashing the shared `A2A.Agent`
+GenServer and taking down every other in-flight task it is managing.
+
+See [Enable semantic requests](../how-to/enable-semantic-requests.md) for the concrete
+DSL declaration, the exact caller-side message shape, and the real reply field names.
+
+Two things remain real, disclosed gaps here too, matching this file's existing "not
+silently resolved" convention: committed runtime evidence (a `Receipt`) does not yet
+automatically reach `AshA2A.Semantic.Feedback`/`Compiler.replan/4` for a semantic-compiled
+task's continuation, and there is no architecture-verifier gate yet asserting this surface
+is production-reachable.
