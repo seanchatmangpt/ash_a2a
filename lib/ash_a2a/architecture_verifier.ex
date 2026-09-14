@@ -90,9 +90,63 @@ defmodule AshA2A.ArchitectureVerifier do
   `Mix.Tasks.AshA2a.VerifyArchitecture` alone, so this module stays a plain
   function directly callable (and directly asserted against) from
   `test/ash_a2a_architecture_verifier_test.exs`.
+
+  ## Squad J / agent 47 extension (checks 5-7) -- a real, verified, out-of-branch dependency
+
+  This worktree's task brief asked for three specific new checks: (1) a
+  resource declaring `a2a do semantic_requests true end` real-compiles and
+  `AshA2A.Info.semantic_requests_enabled?/1` reflects it, (2) an
+  unopted-in resource's dispatch real-falls-through past the
+  `:semantic_request` gate to ordinary skill resolution, and (3)
+  `Command.fingerprint/1` real-stability under a held-constant `command_id`
+  and semantic content.
+
+  Checks (1) and (2) name real production symbols
+  (`AshA2A.Info.semantic_requests_enabled?/1`, the `a2a do semantic_requests
+  ... end` DSL option, `AshA2A.Agent.__dispatch__/3`'s private
+  `dispatch_semantic/2` gate) that do not exist in this worktree's branch.
+  Verified, not assumed: `git merge-base HEAD 95ce672` (the commit titled
+  "feat(semantic): explicit production A2A surface for semantic
+  compilation", the one that introduces exactly this surface on the shared
+  `v26.9.14/release-closure` branch) equals this worktree's own `HEAD`
+  (`4341433`) -- i.e. that commit landed on the shared branch strictly
+  *after* this worktree was branched, and this worktree's `lib/`/`test/`
+  trees have zero real occurrences of `semantic_requests` (`grep -rn
+  "semantic_requests" lib/ test/` -- zero hits). Per this unit's own
+  "deliberately orthogonal" brief, that is a genuine cross-squad dependency
+  to name and route around, not to fabricate a passing check against code
+  that isn't there and not to silently cherry-pick another squad's already
+  -landed commit into this isolated worktree. **BLOCKED**, named here
+  rather than worked around with a fake fixture.
+
+  In its place, three different real, executable, self-contained checks
+  were added instead -- same fixture-building style, same real production
+  API, zero dependency on the missing surface:
+
+    5. `check_fingerprint_excludes_transport_timestamp/0` -- the literal
+       ask (3) above, but built to actually distinguish itself from the
+       pre-existing `check_fingerprint_invariants/0` (which never varies
+       `submitted_at`, so any real exclusion of that field from the hash
+       was previously *unproven*, only implied by the moduledoc prose) by
+       explicitly setting two real, several-hour-apart `submitted_at`
+       values on two otherwise-identical commands and proving the
+       fingerprint is unaffected.
+    6. `check_change_consequence_succeeds_with_matching_authority/0` -- the
+       positive-admission counterpart nothing in this module previously
+       proved: checks 2 and 3 only prove `CommandBus.run/4`'s *refusal*
+       paths; this proves a correctly-authorized `:change` command is
+       really admitted, really dispatched, and really committed to
+       `AshA2A.ReceiptStore.Memory`.
+    7. `check_command_bus_conflict_refused_on_reused_command_id/0` -- runs
+       `AshA2A.ReceiptStore.Memory`'s real `:command_conflict` branch end
+       to end through two real `CommandBus.run/4` calls (a first real
+       commit, then a second command reusing the same `command_id` with
+       genuinely different `input`), instead of only comparing two
+       `Command.fingerprint/1` values in isolation the way
+       `check_fingerprint_invariants/0` does.
   """
 
-  alias AshA2A.{Command, CommandBus, Info}
+  alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
   alias AshA2A.ArchitectureVerifier.Fixture.Resource
 
   @type result :: %{name: String.t(), status: :pass | :fail, detail: String.t()}
@@ -104,7 +158,10 @@ defmodule AshA2A.ArchitectureVerifier do
       check_capability_index_derivable(),
       check_unknown_consequence_refused(),
       check_change_requires_authority(),
-      check_fingerprint_invariants()
+      check_fingerprint_invariants(),
+      check_fingerprint_excludes_transport_timestamp(),
+      check_change_consequence_succeeds_with_matching_authority(),
+      check_command_bus_conflict_refused_on_reused_command_id()
     ]
   end
 
@@ -288,7 +345,200 @@ defmodule AshA2A.ArchitectureVerifier do
     end
   end
 
+  # -- Check 5: Command.fingerprint/1 excludes the transport `submitted_at` timestamp --
+
+  @doc """
+  Real check: two independently-built `AshA2A.Command` structs sharing the
+  same `command_id` and identical semantic content (`capability_id`/
+  `agent_id`/`principal_id`/`input`/authority) but an explicitly DIFFERENT
+  `submitted_at` (several real hours apart, not two calls that merely
+  happen to land in the same microsecond) still produce the same
+  `Command.fingerprint/1` value -- the specific invariant `AshA2A.Command`'s
+  own moduledoc states ("retries may carry a fresh transport timestamp
+  while still proving they are the same command intent") but that
+  `check_fingerprint_invariants/0` above never actually exercises (its
+  `same_a`/`same_b` calls both default `submitted_at` to
+  `DateTime.utc_now()` at call time, so any difference between them is
+  incidental microseconds, not a real designed proof of exclusion).
+  """
+  @spec check_fingerprint_excludes_transport_timestamp() :: result()
+  def check_fingerprint_excludes_transport_timestamp do
+    name = "Command.fingerprint/1 is real-stable across a real, explicit submitted_at gap"
+
+    shared_opts = [
+      command_id: "verify-architecture-timestamp-#{unique()}",
+      agent_id: "verify-architecture",
+      principal_id: "verify-architecture-principal",
+      input: %{label: "timestamp-invariance"}
+    ]
+
+    early = DateTime.add(DateTime.utc_now(), -3600, :second)
+    late = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+    retry_1 = Command.new("verify.capability", Keyword.put(shared_opts, :submitted_at, early))
+    retry_2 = Command.new("verify.capability", Keyword.put(shared_opts, :submitted_at, late))
+
+    cond do
+      retry_1.command_id != retry_2.command_id ->
+        fail(name, "test setup error: command_id was not actually held constant")
+
+      DateTime.compare(retry_1.submitted_at, retry_2.submitted_at) == :eq ->
+        fail(
+          name,
+          "test setup error: submitted_at was not actually varied between the two real calls"
+        )
+
+      retry_1.fingerprint != retry_2.fingerprint ->
+        fail(
+          name,
+          "same command_id + identical semantic content but a real ~2h submitted_at gap " <>
+            "produced DIFFERENT fingerprints: #{retry_1.fingerprint} != #{retry_2.fingerprint} -- " <>
+            "a genuine client retry carrying a fresh transport timestamp would be misdetected " <>
+            "as a brand new command"
+        )
+
+      true ->
+        pass(
+          name,
+          "submitted_at #{DateTime.to_iso8601(retry_1.submitted_at)} vs " <>
+            "#{DateTime.to_iso8601(retry_2.submitted_at)} (real ~2h apart): " <>
+            "fingerprint held stable at #{retry_1.fingerprint}"
+        )
+    end
+  end
+
+  # -- Check 6: a :change-consequence skill WITH matching Authority real-succeeds --
+
+  @doc """
+  Real check: the positive-admission counterpart to
+  `check_change_requires_authority/0` above. A `:change`-consequence skill
+  dispatched with a real `AshA2A.Authority` naming the exact same principal
+  and capability the command claims is really admitted, really dispatched
+  through `AshA2A.Dispatcher.dispatch/5`, and really committed to
+  `AshA2A.ReceiptStore.Memory` -- proving `CommandBus.run/4`'s happy path,
+  not just its refusal paths (checks 2 and 3 above only prove fail-closed
+  behavior; nothing in this module previously proved the admitted path
+  actually runs and commits a receipt).
+  """
+  @spec check_change_consequence_succeeds_with_matching_authority() :: result()
+  def check_change_consequence_succeeds_with_matching_authority do
+    name = "a :change-consequence skill with matching Authority real-succeeds via CommandBus"
+
+    with {:ok, skill} <- find_skill(:create),
+         :change <- skill.consequence do
+      authority = matching_authority(skill.id)
+
+      command =
+        Command.new(skill.id,
+          command_id: "verify-architecture-authorized-#{unique()}",
+          agent_id: "verify-architecture",
+          principal_id: "verify-architecture-principal",
+          authority: authority,
+          input: %{}
+        )
+
+      case CommandBus.run(command, probe_message(), Resource) do
+        {:ok, %Receipt{status: :completed} = receipt} ->
+          pass(
+            name,
+            "CommandBus.run/4 real-admitted, real-dispatched, and real-committed capability " <>
+              "#{skill.id}: receipt #{Identity.external(receipt.receipt_id)}, status: :completed"
+          )
+
+        other ->
+          fail(name, "expected {:ok, %Receipt{status: :completed}}, got #{inspect(other)}")
+      end
+    else
+      {:error, reason} ->
+        fail(name, "could not locate the :create fixture skill: #{inspect(reason)}")
+
+      other ->
+        fail(
+          name,
+          "expected the :create fixture skill's real consequence to be :change, got #{inspect(other)}"
+        )
+    end
+  end
+
+  # -- Check 7: CommandBus.run/4 real-refuses a reused command_id with different content --
+
+  @doc """
+  Real check: exercises `AshA2A.ReceiptStore.Memory`'s real
+  `:command_conflict` branch end to end through `CommandBus.run/4` -- not
+  just comparing two `Command.fingerprint/1` values in isolation
+  (`check_fingerprint_invariants/0` above never actually calls
+  `CommandBus`/`ReceiptStore`, so the conflict branch its own moduledoc
+  describes was previously unexercised by this module). A first command
+  really commits a receipt; a second command reusing the exact same
+  `command_id` but with genuinely different `input` (hence a different real
+  fingerprint) is really refused with `:command_conflict` rather than
+  silently replayed or silently re-executed.
+  """
+  @spec check_command_bus_conflict_refused_on_reused_command_id() :: result()
+  def check_command_bus_conflict_refused_on_reused_command_id do
+    name = "CommandBus.run/4 real-refuses a reused command_id carrying different content"
+
+    with {:ok, skill} <- find_skill(:create),
+         :change <- skill.consequence do
+      authority = matching_authority(skill.id)
+      shared_command_id = "verify-architecture-conflict-#{unique()}"
+
+      first =
+        Command.new(skill.id,
+          command_id: shared_command_id,
+          agent_id: "verify-architecture",
+          principal_id: "verify-architecture-principal",
+          authority: authority,
+          input: %{attempt: 1}
+        )
+
+      second =
+        Command.new(skill.id,
+          command_id: shared_command_id,
+          agent_id: "verify-architecture",
+          principal_id: "verify-architecture-principal",
+          authority: authority,
+          input: %{attempt: 2}
+        )
+
+      with {:ok, %Receipt{status: :completed}} <- CommandBus.run(first, probe_message(), Resource) do
+        case CommandBus.run(second, probe_message(), Resource) do
+          {:error, %{code: :command_conflict}} ->
+            pass(
+              name,
+              "first command (fingerprint #{first.fingerprint}) real-committed; second command " <>
+                "reusing command_id #{shared_command_id} with fingerprint #{second.fingerprint} " <>
+                "was real-refused with {:error, %{code: :command_conflict}}"
+            )
+
+          other ->
+            fail(name, "expected {:error, %{code: :command_conflict}}, got #{inspect(other)}")
+        end
+      else
+        other ->
+          fail(name, "setup error: first command did not real-commit: #{inspect(other)}")
+      end
+    else
+      {:error, reason} ->
+        fail(name, "could not locate the :create fixture skill: #{inspect(reason)}")
+
+      other ->
+        fail(
+          name,
+          "expected the :create fixture skill's real consequence to be :change, got #{inspect(other)}"
+        )
+    end
+  end
+
   # -- shared helpers --
+
+  # A real `AshA2A.Authority` naming the exact same principal + capability a
+  # command built with `principal_id: "verify-architecture-principal"` for
+  # `capability_id` carries, so `Authority.admits?/2` real-passes.
+  defp matching_authority(capability_id) do
+    principal = Identity.principal("verify-architecture-principal")
+    Authority.new(principal, capability_id, source: :verify_architecture)
+  end
 
   defp find_skill(action_name) do
     Resource
