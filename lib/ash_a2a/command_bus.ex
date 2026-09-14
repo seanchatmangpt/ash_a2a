@@ -28,14 +28,7 @@ defmodule AshA2A.CommandBus do
           {:ok, receipt}
 
         {:execute, %Identity{kind: :execution} = execution_id} ->
-          reply =
-            AshA2A.Dispatcher.dispatch(
-              skill.name,
-              message,
-              resource_or_domain,
-              Keyword.get(opts, :history, []),
-              Keyword.get(opts, :auth_identity)
-            )
+          reply = dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts)
 
           receipt =
             command
@@ -109,5 +102,37 @@ defmodule AshA2A.CommandBus do
 
   defp emit_receipt(receipt) do
     :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})
+  end
+
+  # Marks this process, for the duration of the synchronous internal
+  # `AshA2A.Dispatcher.dispatch/5` call below, so
+  # `AshA2A.Telemetry.OcelForwarder`'s `[:ash_a2a, :dispatch, :stop]` handler
+  # can tell a CommandBus-routed dispatch apart from a direct
+  # `AshA2A.Dispatcher.dispatch/5` call and defer its OCEL POST until the
+  # single `[:ash_a2a, :receipt, :committed]` event fires (via `emit_receipt/1`
+  # above) instead of independently POSTing its own separate OCEL v2 event --
+  # otherwise every CommandBus-routed dispatch produced two OCEL events for
+  # one logical command.
+  #
+  # A plain process-dictionary flag (rather than an explicit argument threaded
+  # through `AshA2A.Dispatcher.dispatch/5`, which would change that module's
+  # public, already-consumed signature) is safe here because `:telemetry.span/3`
+  # (`dispatcher.ex:137`) executes its function synchronously in the calling
+  # process, per `:telemetry`'s own documented contract, and `run/4` is not
+  # currently reentrant on the same process.
+  defp dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts) do
+    Process.put(:ash_a2a_ocel_command_bus_dispatch, true)
+
+    try do
+      AshA2A.Dispatcher.dispatch(
+        skill.name,
+        message,
+        resource_or_domain,
+        Keyword.get(opts, :history, []),
+        Keyword.get(opts, :auth_identity)
+      )
+    after
+      Process.delete(:ash_a2a_ocel_command_bus_dispatch)
+    end
   end
 end

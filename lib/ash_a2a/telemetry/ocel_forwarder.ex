@@ -30,11 +30,28 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     if :ok in results, do: :ok, else: {:error, :not_found}
   end
 
+  # `AshA2A.CommandBus.run/4` marks the calling process with
+  # `:ash_a2a_ocel_command_bus_dispatch` for the duration of its internal
+  # `AshA2A.Dispatcher.dispatch/5` call (see that module's
+  # `dispatch_with_ocel_correlation/4`). When present, this dispatch-stop
+  # event did NOT originate from a standalone direct-dispatch caller -- it is
+  # the internal span inside a CommandBus-routed command that will also emit
+  # its own `[:ash_a2a, :receipt, :committed]` event moments later. Stashing
+  # `{measurements, metadata}` here (instead of posting immediately) and
+  # merging them into that single receipt event below is what eliminates the
+  # duplicate OCEL v2 POST for one logical CommandBus-routed dispatch, while
+  # a direct `AshA2A.Dispatcher.dispatch/5` call (no marker present) keeps
+  # posting immediately exactly as before.
   @doc false
   def handle_event([:ash_a2a, :dispatch, :stop], measurements, metadata, _config) do
-    case ingest_url() do
-      nil -> :ok
-      url -> post_event(url, build_dispatch_event(measurements, metadata))
+    if Process.get(:ash_a2a_ocel_command_bus_dispatch) do
+      Process.put(:ash_a2a_ocel_pending_dispatch, {measurements, metadata})
+      :ok
+    else
+      case ingest_url() do
+        nil -> :ok
+        url -> post_event(url, build_dispatch_event(measurements, metadata))
+      end
     end
   end
 
@@ -46,7 +63,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       ) do
     case ingest_url() do
       nil -> :ok
-      url -> post_event(url, AshA2A.SemanticProjection.ocel_event(receipt))
+      url -> post_event(url, receipt_event(receipt))
     end
   end
 
@@ -91,6 +108,32 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       )
 
       :ok
+  end
+
+  # Builds the single OCEL v2 event posted for a `[:ash_a2a, :receipt,
+  # :committed]` event. When this receipt was reached via a CommandBus-routed
+  # dispatch, `handle_event/4`'s dispatch-stop clause above left the raw
+  # dispatch span's `{measurements, metadata}` behind under
+  # `:ash_a2a_ocel_pending_dispatch` -- read and cleared here (never left
+  # stale across calls) and merged in, via the same real `dispatch_attributes/2`
+  # and `relationships/1` helpers a direct dispatch event already uses, so no
+  # evidence from the raw dispatch span (duration, reply_type, object_id
+  # relationships) is lost -- only the duplicate POST is eliminated. A direct
+  # `AshA2A.Dispatcher.dispatch/5` call never sets that key, so
+  # `Process.delete/1` returns `nil` and the receipt-only event is emitted
+  # unchanged.
+  defp receipt_event(receipt) do
+    event = AshA2A.SemanticProjection.ocel_event(receipt)
+
+    case Process.delete(:ash_a2a_ocel_pending_dispatch) do
+      {measurements, metadata} ->
+        event
+        |> Map.update!("attributes", &Map.merge(&1, dispatch_attributes(measurements, metadata)))
+        |> Map.put("relationships", relationships(metadata))
+
+      nil ->
+        event
+    end
   end
 
   defp build_dispatch_event(measurements, metadata) do
