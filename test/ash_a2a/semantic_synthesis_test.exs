@@ -201,4 +201,58 @@ defmodule AshA2A.Planning.SemanticSynthesisTest do
   test "capability_ids/1 returns the sorted, stringified canonical Echo capability ids" do
     assert SemanticSynthesis.capability_ids(Echo) == ["AshA2A.Test.Fixture.Echo.read"]
   end
+
+  test "authority ceiling admits ONLY the literal string \"none\", closed over every other representation" do
+    # Fuzz/regression coverage for `normalize_proposal/2`'s real authority
+    # check (`if authority == "none" do ... else {:error,
+    # refusal(:planner_authority_ceiling_violated, authority)} end`, reading
+    # the value via `field/2` = `Map.get(map, "authority") || Map.get(map,
+    # :authority)`). Every case below keeps `capability_ids`, `hddl`, and
+    # `fond` well-formed and schema-valid so the only variable under test is
+    # the literal value returned for "authority" -- proving the ceiling is a
+    # closed, exact-string comparison and not a loose truthiness/type check.
+    base = %{
+      "capability_ids" => ["AshA2A.Test.Fixture.Echo.read"],
+      "hddl" => "(:task inspect-surface)",
+      "fond" => "(:policy observe-or-replan)"
+    }
+
+    cases = [
+      {"exact literal string", "none", :ok},
+      {"uppercase", "NONE", {:error, :planner_authority_ceiling_violated, "NONE"}},
+      {"atom :none", :none, {:error, :planner_authority_ceiling_violated, :none}},
+      {"trailing space", "none ", {:error, :planner_authority_ceiling_violated, "none "}},
+      {"capitalized", "None", {:error, :planner_authority_ceiling_violated, "None"}},
+      {"nil", nil, {:error, :planner_authority_ceiling_violated, nil}},
+      {"boolean true", true, {:error, :planner_authority_ceiling_violated, true}},
+      {"admin string", "admin", {:error, :planner_authority_ceiling_violated, "admin"}},
+      {"do string", "do", {:error, :planner_authority_ceiling_violated, "do"}},
+      {"integer zero", 0, {:error, :planner_authority_ceiling_violated, 0}},
+      {"empty list", [], {:error, :planner_authority_ceiling_violated, []}}
+    ]
+
+    for {label, authority_value, expected} <- cases do
+      request_id = "authority-fuzz-" <> String.replace(label, " ", "-")
+
+      generator = fn _model_spec, _prompt, _schema, _opts ->
+        {:ok, Map.merge(base, %{"request_id" => request_id, "authority" => authority_value})}
+      end
+
+      result =
+        SemanticSynthesis.synthesize(Echo, "probe authority ceiling", %{},
+          generate_object: generator
+        )
+
+      case expected do
+        :ok ->
+          assert {:ok, candidate} = result
+          assert candidate.plan["authority"] == "none"
+          assert candidate.authority == :none
+          assert candidate.capability_ids == ["AshA2A.Test.Fixture.Echo.read"]
+
+        {:error, code, detail} ->
+          assert {:error, %{code: ^code, detail: ^detail}} = result
+      end
+    end
+  end
 end
