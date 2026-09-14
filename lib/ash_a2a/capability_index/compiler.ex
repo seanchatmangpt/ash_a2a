@@ -7,6 +7,7 @@ defmodule AshA2A.CapabilityIndex.Compiler do
   residual projection overrides keyed by `{resource, action}`.
   """
 
+  alias AshA2A.Argument
   alias AshA2A.Skill
   alias Spark.Dsl.Extension
 
@@ -61,8 +62,89 @@ defmodule AshA2A.CapabilityIndex.Compiler do
       tags: override_value(override, :tags, nil),
       expose?: true,
       consequence: override_value(override, :consequence, default_consequence(action.type)),
-      arguments: []
+      arguments: derive_arguments(resource, action)
     }
+  end
+
+  # Derives real per-skill argument type data from canonical Ash
+  # introspection. `AshA2A.Skill`'s own @moduledoc states the intent ("Action
+  # arguments are always derived from Ash introspection"); this is where
+  # that intent is actually implemented -- previously this field was
+  # hardcoded to `[]` regardless of what the real action declared.
+  #
+  # Two real Ash introspection surfaces feed this list:
+  #
+  #   1. `action.arguments` -- real `Ash.Resource.Actions.Argument.t()`
+  #      structs declared directly on the action
+  #      (`deps/ash/lib/ash/resource/actions/argument.ex`: `name`, `type`,
+  #      `public?`, among others). Only `public?: true` arguments are
+  #      included -- the same filter
+  #      `AshA2A.CapabilityIndex.AgentCardBuilder.input_names/1` already
+  #      applies to the wire-facing tags/description text, so a non-public
+  #      argument is treated the same way on both the wire projection and
+  #      this in-process one: not a real callable input for an external
+  #      caller.
+  #
+  #   2. `action.accept` -- for `:create`/`:update` actions, the list of
+  #      directly-accepted attribute names
+  #      (`deps/ash/lib/ash/resource/actions/create.ex`/`update.ex`:
+  #      `accept: nil | list(atom)`).
+  #
+  #      Design decision, stated explicitly rather than silently picked:
+  #      accepted attributes ARE represented as `AshA2A.Argument` entries
+  #      here, not omitted. Rationale --
+  #      `AshA2A.CapabilityIndex.AgentCardBuilder.input_names/1` already
+  #      folds `accept` names into the same "inputs" list as real action
+  #      arguments for the wire card's tags/description
+  #      (`argument_names ++ accept_names`), i.e. this codebase already
+  #      treats an accepted attribute as an equally real callable input to
+  #      an action argument. An in-process composer calling
+  #      `AshA2A.Info.skill/2` needs the same completeness the wire
+  #      projection's prose already implies: it cannot tell "declared
+  #      argument" from "accepted attribute" apart from the outside (both
+  #      are just named, typed inputs it may supply), so hiding accepted
+  #      attributes from `arguments` here would make this the *less*
+  #      complete of the two projections despite being the one meant to
+  #      carry real typed argument data. Each accepted attribute's real
+  #      type comes from `Ash.Resource.Info.attribute(resource,
+  #      name).type` (the real `Ash.Resource.Attribute.t()`), never
+  #      guessed or left untyped.
+  #
+  #      If `action.accept` names an attribute introspection cannot find
+  #      (should not happen on a resource that compiled successfully, but
+  #      Ash does not make this statically impossible -- e.g. a stale
+  #      `accept` list after an attribute rename), that name is silently
+  #      skipped rather than raising: a capability index deriving step must
+  #      never crash resource compilation over a residual accept-list
+  #      mismatch.
+  #
+  # Declared arguments are listed before accept-derived entries, and the
+  # combined list is de-duplicated by name (first occurrence wins) in case
+  # a declared argument and an accepted attribute ever share a name.
+  @spec derive_arguments(module(), Ash.Resource.Actions.action()) :: [Argument.t()]
+  defp derive_arguments(resource, action) do
+    argument_entries =
+      action
+      |> Map.get(:arguments, [])
+      |> Enum.filter(&Map.get(&1, :public?, true))
+      |> Enum.map(&%Argument{name: &1.name, type: &1.type})
+
+    accept_entries =
+      action
+      |> Map.get(:accept)
+      |> List.wrap()
+      |> Enum.map(&accepted_attribute_argument(resource, &1))
+      |> Enum.reject(&is_nil/1)
+
+    (argument_entries ++ accept_entries)
+    |> Enum.uniq_by(& &1.name)
+  end
+
+  defp accepted_attribute_argument(resource, attribute_name) do
+    case Ash.Resource.Info.attribute(resource, attribute_name) do
+      nil -> nil
+      attribute -> %Argument{name: attribute.name, type: attribute.type}
+    end
   end
 
   # Repository-native default consequence per real Ash action type

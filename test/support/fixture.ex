@@ -338,6 +338,73 @@ defmodule AshA2A.Test.Fixture.EchoWithArgumentDomain do
   end
 end
 
+defmodule AshA2A.Test.Fixture.TypedArguments do
+  @moduledoc """
+  Real fixture resource proving
+  `AshA2A.CapabilityIndex.Compiler.project/3` actually derives
+  `%AshA2A.Skill{}.arguments` from real Ash action-argument introspection
+  (`Ash.Resource.Actions.Argument.t()`), not the hardcoded `[]` that field
+  used to carry regardless of what the real action declared.
+
+  A genuine `Ash.Resource` with `extensions: [AshA2A]` and one real generic
+  `:action` declaring two real `argument ...` entries via Ash's own
+  action-argument DSL (`deps/ash/lib/ash/resource/dsl.ex` `@action_argument`
+  -- `argument :name, :type, opts`), distinct from
+  `AshA2A.Test.Fixture.EchoWithArgument`'s `a2a do skill ... do argument ...
+  end end`, which declares a residual `AshA2A.Argument` DSL-override entity
+  that is never copied into the compiled capability index (`AshA2A.Skill`'s
+  own moduledoc). The two `argument` DSLs share a keyword but are genuinely
+  different entities from different extensions; this fixture exercises the
+  real Ash one that `derive_arguments/2` actually introspects.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.TypedArgumentsDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+  end
+
+  actions do
+    defaults([:read])
+
+    action :search, :string do
+      argument(:query, :string, allow_nil?: false)
+      argument(:limit, :integer, default: 10)
+
+      run(fn _input, _context -> {:ok, "ok"} end)
+    end
+  end
+
+  a2a do
+    skill(:search, :search)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.TypedArgumentsDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.TypedArguments` above.
+
+  `validate_config_inclusion?: false` -- same established pattern as
+  `AshA2A.ArchitectureVerifier`'s own fixture domain
+  (`lib/ash_a2a/architecture_verifier.ex`) and
+  `test/ash_a2a/semantic_synthesis_test.exs`'s inline domain: this is a
+  small, test-only fixture domain never meant to be registered in
+  `config :ash_a2a, ash_domains`, so it opts out of Ash's config-inclusion
+  warning rather than adding a 47th unaddressed instance of the same
+  pre-existing warning already emitted by most other fixture domains in
+  this file.
+  """
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.TypedArguments)
+  end
+end
+
 defmodule AshA2A.Test.Fixture.TenantedItemDomain do
   @moduledoc """
   Real fixture domain for `AshA2A.Test.Fixture.TenantedItem` above.
