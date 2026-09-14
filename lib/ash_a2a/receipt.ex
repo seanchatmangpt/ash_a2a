@@ -2,9 +2,9 @@ defmodule AshA2A.Receipt do
   @moduledoc """
   Replayable evidence for one AshA2A command attempt.
 
-  Receipt identity is distinct from command, task, agent, and execution
-  identity. The receipt records what was attempted and what reply shape was
-  observed; it does not infer success beyond the returned outcome.
+  Receipt identity is distinct from command, task, agent, semantic subject, and
+  execution identity. The receipt records what was attempted and what reply
+  shape was observed; it does not infer success beyond the returned outcome.
   """
 
   alias AshA2A.{Command, Identity}
@@ -30,6 +30,7 @@ defmodule AshA2A.Receipt do
     :agent_id,
     :principal_id,
     :capability_id,
+    :semantic_subject,
     :fingerprint,
     :consequence,
     :status,
@@ -57,6 +58,7 @@ defmodule AshA2A.Receipt do
       agent_id: command.agent_id,
       principal_id: command.principal_id,
       capability_id: command.capability_id,
+      semantic_subject: command.semantic_subject,
       fingerprint: command.fingerprint,
       consequence: consequence,
       status: status(reply),

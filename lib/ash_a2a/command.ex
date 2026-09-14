@@ -3,12 +3,13 @@ defmodule AshA2A.Command do
   Consequence-bearing command envelope for the AshA2A boundary.
 
   A command binds distinct machine identities, a canonical capability id, the
-  admitted input, and optional verified authority. `fingerprint` is derived
-  only from semantic command content, so retries may carry a fresh transport
-  timestamp while still proving they are the same command intent.
+  admitted input, optional exact semantic/manufacture subject, and optional
+  verified authority. `fingerprint` is derived only from semantic command
+  content, so retries may carry a fresh transport timestamp while still proving
+  they are the same command intent against the same manufactured subject.
   """
 
-  alias AshA2A.{Authority, Identity}
+  alias AshA2A.{Authority, Identity, SemanticSubject}
 
   @enforce_keys [
     :command_id,
@@ -27,6 +28,7 @@ defmodule AshA2A.Command do
     :capability_id,
     :input,
     :authority,
+    :semantic_subject,
     :submitted_at,
     :fingerprint,
     metadata: %{}
@@ -40,6 +42,7 @@ defmodule AshA2A.Command do
           capability_id: String.t(),
           input: term(),
           authority: Authority.t() | nil,
+          semantic_subject: SemanticSubject.t() | nil,
           submitted_at: DateTime.t(),
           fingerprint: String.t(),
           metadata: map()
@@ -53,6 +56,7 @@ defmodule AshA2A.Command do
     task_id = optional_identity(:task, Keyword.get(opts, :task_id))
     input = Keyword.get(opts, :input, %{})
     authority = Keyword.get(opts, :authority)
+    semantic_subject = Keyword.get(opts, :semantic_subject)
     submitted_at = Keyword.get(opts, :submitted_at, DateTime.utc_now())
     metadata = Map.new(Keyword.get(opts, :metadata, %{}))
 
@@ -64,6 +68,7 @@ defmodule AshA2A.Command do
       capability_id: capability_id,
       input: input,
       authority: authority,
+      semantic_subject: semantic_subject,
       submitted_at: submitted_at,
       fingerprint: "",
       metadata: metadata
@@ -86,7 +91,8 @@ defmodule AshA2A.Command do
       command.task_id && Identity.external(command.task_id),
       command.capability_id,
       command.input,
-      authority_token
+      authority_token,
+      SemanticSubject.fingerprint_token(command.semantic_subject)
     }
     |> :erlang.term_to_binary()
     |> then(&:crypto.hash(:sha256, &1))
