@@ -18,7 +18,17 @@ defmodule AshA2A.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"]
+      extras: [
+        "README.md",
+        "CHANGELOG.md",
+        "docs/tutorials/getting-started.md",
+        "docs/how-to/authenticate-agent-requests.md",
+        "docs/how-to/enable-semantic-requests.md",
+        "docs/how-to/observe-dispatch-with-ocel.md",
+        "docs/how-to/use-role-based-llm-resolution.md",
+        "docs/explanation/architecture.md",
+        "docs/reference/index.md"
+      ]
     ]
   end
 
