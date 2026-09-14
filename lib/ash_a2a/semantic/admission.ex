@@ -1,0 +1,74 @@
+defmodule AshA2A.Semantic.Admission do
+  @moduledoc "Deterministic admission for candidate semantic state."
+
+  alias AshA2A.Semantic.{IR, Source}
+
+  @required %{
+    entities: ~w(id kind type label source_quote),
+    relations: ~w(id kind subject predicate object source_quote),
+    goals: ~w(id kind description source_quote),
+    constraints: ~w(id kind description source_quote),
+    capabilities: ~w(id kind description source_quote),
+    authorities: ~w(id kind subject scope mode source_quote),
+    observations: ~w(id kind description source_quote),
+    uncertainties: ~w(id kind description source_quote),
+    exclusions: ~w(id kind description source_quote)
+  }
+
+  def admit(%Source{} = source, %IR{} = ir) do
+    with :ok <- fence(ir),
+         :ok <- source_match(source, ir),
+         :ok <- require_goal(ir),
+         :ok <- unique_ids(ir),
+         :ok <- validate_items(source, ir) do
+      {:ok, %{ir | standing: :admitted}}
+    end
+  end
+
+  defp fence(%IR{standing: :candidate, authority: :none}), do: :ok
+  defp fence(_), do: error(:semantic_authority_ceiling_violated)
+
+  defp source_match(%Source{id: id}, %IR{source_id: id}), do: :ok
+  defp source_match(_, _), do: error(:semantic_source_mismatch)
+
+  defp require_goal(%IR{goals: [_ | _]}), do: :ok
+  defp require_goal(_), do: error(:semantic_goal_missing)
+
+  defp unique_ids(ir) do
+    ids = Enum.map(IR.items(ir), fn {_field, item} -> Map.get(item, "id") end)
+
+    if Enum.all?(ids, &is_binary/1) and length(ids) == length(Enum.uniq(ids)) do
+      :ok
+    else
+      error(:semantic_identity_invalid)
+    end
+  end
+
+  defp validate_items(source, ir) do
+    Enum.reduce_while(IR.items(ir), :ok, fn {field, item}, :ok ->
+      case validate_item(source, field, item) do
+        :ok -> {:cont, :ok}
+        {:error, _} = result -> {:halt, result}
+      end
+    end)
+  end
+
+  defp validate_item(%Source{text: text}, field, item) when is_map(item) do
+    required = Map.get(@required, field, ~w(id kind source_quote))
+    missing = Enum.reject(required, &(is_binary(Map.get(item, &1)) and Map.get(item, &1) != ""))
+    quote = Map.get(item, "source_quote", "")
+
+    cond do
+      missing != [] -> error(:semantic_fields_missing, %{field: field, missing: missing})
+      not String.contains?(text, quote) -> error(:ungrounded_assertion, Map.get(item, "id"))
+      field == :authorities and Map.get(item, "mode") not in ["described", "denied", "unknown"] ->
+        error(:authority_grant_not_admissible)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_item(_, field, _), do: error(:semantic_item_invalid, field)
+  defp error(code, detail \\ nil), do: {:error, %{code: code, detail: detail}}
+end
