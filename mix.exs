@@ -84,6 +84,23 @@ defmodule AshA2A.MixProject do
       # capability, only observed provider evidence via RuntimeReceipt.
       {:flame, "~> 0.5"},
       {:durable_server, "~> 0.1.5"},
+      # v26.9.14: real provider implementations closing GAP D
+      # (AshA2A.Delivery.Oban, AshA2A.TaskLifecycle's AshStateMachine
+      # adapter). Same pattern as flame/durable_server above -- declaring
+      # them as resolvable deps makes each adapter's available?/0 true and
+      # its real call path reachable; the adapters themselves stay
+      # authority-free (queue acceptance is not an execution receipt; a
+      # state transition is not a DO -- both still funnel any real
+      # consequence through AshA2A.CommandBus).
+      {:oban, "~> 2.24"},
+      {:ash_oban, "~> 0.8"},
+      {:ash_state_machine, "~> 0.2"},
+      # Oban's real PostgreSQL storage engine driver, exercised for real
+      # against a real disposable local Postgres instance in this repo's
+      # own test suite. Cannot be `only: :test` -- `:ash_oban` itself
+      # requires `:postgrex` unconditionally (same real Mix dependency-only
+      # narrowing constraint the `:plug` comment above already documents).
+      {:postgrex, "~> 0.18"},
       # DurableServer.Backends.EKVStore's real local storage engine, used by
       # AshA2A.RuntimeProvidersIntegrationTest so Durability can be
       # exercised with a real local durable-KV backend instead of the
