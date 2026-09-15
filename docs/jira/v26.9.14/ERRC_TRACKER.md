@@ -23,7 +23,18 @@ sign-off. The user then explicitly resolved the parked `ash_oban` direction
       `desktop-linux` context dead and `colima` live at that moment; by execution
       time both were live again, confirming the fix must detect at runtime, not
       hardcode one observation). Verified for real: `./bin/ci-local.sh --list`
-      resolves the job with zero architecture warnings.
+      resolves the job with zero architecture warnings. **Partial only, disclosed
+      in `bin/ci-local.sh`'s own comments**: a separate, dedicated validation run
+      (8 real configurations: native arm64, `--container-architecture linux/amd64`
+      under emulation, `-u root`, multiple runner-image tags) found that a full
+      `act push -j test` cannot complete end to end on this Apple-Silicon host --
+      every attempt failed inside the third-party `erlef/setup-beam@v1` action's
+      own OTP/Elixir install (arm64 images miss `libcrypto.so.1.1`; amd64
+      emulation hits an `erlexec` binary-format mismatch), before this repo's own
+      `mix test` ever ran. This shim fixes the Docker-context/Postgres-port
+      friction layer, not that deeper OTP-toolchain/image gap. Real hosted GitHub
+      Actions on the same SHA remains the authoritative local-parity signal until
+      an OpenSSL-1.1-capable runner image is found.
 - [x] RAISE: `ash_oban` declared-but-unexercised — resolved by EXERCISING it (the
       user's explicit direction), not removing it. `test/support/scheduled_sweep_fixture.ex`
       + `test/ash_a2a/scheduled_sweep_qualification_test.exs` (3 real tests, real
