@@ -42,7 +42,7 @@ defmodule AshA2A.TaskLifecycle do
   end
 
   @spec admit(struct(), atom(), atom() | nil) :: :ok | {:error, term()}
-  def admit(record, desired_state, action \\ nil)
+  def admit(record, desired_state, action)
 
   def admit(record, desired_state, action) when desired_state in @states do
     with {:ok, possible} <- possible_next_states(record, action),
