@@ -99,8 +99,17 @@ defmodule AshA2AAgentSemanticRequestTest do
   # probe genuinely exhausts the real ZAI API's rate limit (confirmed via
   # real 429 responses), and this test's own real, unseamed LLM round-trip
   # can then genuinely exceed ExUnit's 60s default before the real API
-  # recovers -- not a code defect. Does not affect the default `mix test`
-  # (excludes :external_api, so the concurrency probe never runs first).
+  # recovers -- not a code defect.
+  #
+  # Real, disclosed bug fixed in place (this session's own build/test-
+  # time optimization pass): this comment's own prior claim ("does not
+  # affect the default `mix test` -- excludes :external_api") was never
+  # actually true -- `@tag :external_api` was missing here, so this real,
+  # unseamed, ~90s live-LLM test ran on every single default `mix test`
+  # invocation regardless (confirmed via `mix test --slowest 20`: this
+  # one test alone cost ~93s of a ~315s total run). Adding the tag now
+  # makes the comment's own claim real.
+  @tag :external_api
   @tag timeout: 180_000
   test "both gates true: a real dispatch reaches the real semantic compiler and fails closed (not a crash) with no injected generate_object seam" do
     message =

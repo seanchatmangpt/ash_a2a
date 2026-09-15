@@ -288,10 +288,20 @@ defmodule AshA2AAgentSemanticReplanTest do
   # real 429 responses), and a real, already-slower LLM round-trip
   # attempted shortly after can then genuinely exceed ExUnit's 60s default
   # before the real API recovers -- not a code defect, a real consequence
-  # of exercising a real, rate-limited external dependency. Does not affect
-  # the default `mix test` (excludes :external_api, so the concurrency
-  # probe never runs first) -- confirmed real timeouts only reproduce under
-  # `--include external_api`.
+  # of exercising a real, rate-limited external dependency.
+  #
+  # Real, disclosed bug fixed in place (this session's own build/test-time
+  # optimization pass): the three `@tag timeout: 180_000` tests in this
+  # file were missing `@tag :external_api`, so this comment's own claim
+  # ("does not affect the default `mix test`") was never actually true --
+  # all three real, unseamed, ~60-85s live-LLM tests ran on every single
+  # default `mix test` invocation (confirmed via `mix test --slowest 20`:
+  # these three alone cost ~215s of a ~315s total run). Adding the tags
+  # now makes the comment's own claim real; the other 2 tests in this
+  # file (REFUSED, and the structural :candidate/:none escape check) have
+  # no @tag :external_api because they are real but fast/structural --
+  # no live LLM call -- and correctly keep running by default.
+  @tag :external_api
   @tag timeout: 180_000
   test "SUCCESS: a real completed closing dispatch's receipt drives a real replan, candidate never escapes :candidate/:none" do
     package = real_compile_execution_package!("create a labeled item")
@@ -350,6 +360,8 @@ defmodule AshA2AAgentSemanticReplanTest do
 
   # See the timeout note on the SUCCESS test above -- same real
   # rate-limit-contention interaction with the concurrency-probe test.
+  # Same real missing-tag bug fixed here too -- see that test's own note.
+  @tag :external_api
   @tag timeout: 180_000
   test "FAILURE: a real class:forbidden closing dispatch still commits a real receipt that a follow-up replan can observe" do
     package = real_compile_execution_package!("create a labeled item, forbidden variant")
@@ -395,6 +407,8 @@ defmodule AshA2AAgentSemanticReplanTest do
 
   # See the timeout note on the SUCCESS test above -- same real
   # rate-limit-contention interaction with the concurrency-probe test.
+  # Same real missing-tag bug fixed here too -- see that test's own note.
+  @tag :external_api
   @tag timeout: 180_000
   test "BLOCKED: a real {:input_required, _} closing dispatch still commits a real receipt that a follow-up replan can observe" do
     package = real_compile_execution_package!("create a labeled item, blocked variant")
