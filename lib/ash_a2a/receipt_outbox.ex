@@ -149,8 +149,12 @@ defmodule AshA2A.ReceiptOutbox do
 
   defp remove_and(result, receipt) do
     case File.rm(entry_path(receipt)) do
-      :ok -> result
-      {:error, :enoent} -> result
+      :ok ->
+        result
+
+      {:error, :enoent} ->
+        result
+
       {:error, reason} ->
         Logger.warning(
           "AshA2A.ReceiptOutbox: could not remove reconciled entry: #{inspect(reason)}"
@@ -164,12 +168,14 @@ defmodule AshA2A.ReceiptOutbox do
   @spec remove(Receipt.t()) :: :ok
   def remove(%Receipt{} = receipt) do
     case File.rm(entry_path(receipt)) do
-      :ok -> :ok
-      {:error, :enoent} -> :ok
+      :ok ->
+        :ok
+
+      {:error, :enoent} ->
+        :ok
+
       {:error, reason} ->
-        Logger.warning(
-          "AshA2A.ReceiptOutbox: could not remove journal entry: #{inspect(reason)}"
-        )
+        Logger.warning("AshA2A.ReceiptOutbox: could not remove journal entry: #{inspect(reason)}")
 
         :ok
     end
@@ -214,9 +220,7 @@ defmodule AshA2A.ReceiptOutbox do
       {:ok, receipt}
     else
       {:error, reason} = error ->
-        Logger.warning(
-          "AshA2A.ReceiptOutbox: unreadable entry #{path}: #{inspect(reason)}"
-        )
+        Logger.warning("AshA2A.ReceiptOutbox: unreadable entry #{path}: #{inspect(reason)}")
 
         error
 
