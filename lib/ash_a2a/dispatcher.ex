@@ -14,7 +14,7 @@ defmodule AshA2A.Dispatcher do
       passed straight into an Ash call (PRD §3.5 trust-boundary requirement).
       `actor`/`tenant` specifically come from the transport-verified
       `auth_identity` argument threaded through `dispatch/5` (sourced by
-      `AshA2A.Agent.__dispatch__/3` from `context.metadata["a2a.auth"][:identity]`,
+      `AshA2A.Agent.__dispatch__` from `context.metadata["a2a.auth"][:identity]`,
       the field `A2A.Plug.Auth` populates only after real credential
       verification, `~/xaas/deps/a2a/lib/a2a/plug/auth.ex:6-16,175-176,226-242`
       and `~/xaas/deps/a2a/lib/a2a/plug.ex:159`) — **never** from
@@ -120,7 +120,7 @@ defmodule AshA2A.Dispatcher do
   function -- fails closed instead of silently trusting the message. A
   correctly-wired `AshA2A.Agent`-generated agent sources this argument from
   `context.metadata["a2a.auth"][:identity]` for every real dispatch (see
-  `AshA2A.Agent.__dispatch__/3`).
+  `AshA2A.Agent.__dispatch__`).
   """
   @spec dispatch(skill_name(), Message.t(), resource_or_domain(), [Message.t()], term()) ::
           reply()
@@ -293,7 +293,7 @@ defmodule AshA2A.Dispatcher do
   # messages (no data part) dispatch with an empty input map so actions that
   # accept no arguments still work.
   #
-  # Public (not `defp`) so `AshA2A.Agent.__dispatch__/3` can extract the same
+  # Public (not `defp`) so `AshA2A.Agent.__dispatch__` can extract the same
   # real input to carry as `AshA2A.Command.input` for fingerprinting when it
   # routes a dispatch through `AshA2A.CommandBus.run/4` -- reusing this exact
   # extraction keeps the command's fingerprinted input identical to what the

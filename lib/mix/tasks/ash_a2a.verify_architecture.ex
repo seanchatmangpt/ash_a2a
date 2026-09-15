@@ -63,7 +63,7 @@ defmodule Mix.Tasks.AshA2a.VerifyArchitecture do
   resource's dispatch real-falling-through past a `:semantic_request` gate)
   -- both name real production symbols
   (`AshA2A.Info.semantic_requests_enabled?/1`, the `a2a do semantic_requests
-  ... end` DSL option, `AshA2A.Agent.__dispatch__/3`'s `dispatch_semantic/2`)
+  ... end` DSL option, `AshA2A.Agent.__dispatch__`'s `dispatch_semantic/2`)
   that do not exist on this worktree's branch: they were introduced by
   commit `95ce672` ("feat(semantic): explicit production A2A surface for
   semantic compilation"), which landed on the shared

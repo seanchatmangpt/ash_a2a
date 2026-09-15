@@ -16,7 +16,7 @@ The only path an actor/tenant can take into your action is:
 1. `A2A.Plug.Auth` verifies a real credential and stores the result in
    `conn.private[:a2a][:auth]`.
 2. `A2A.Plug` merges that into the call's `metadata["a2a.auth"]`.
-3. `AshA2A.Agent.__dispatch__/3` reads `metadata["a2a.auth"][:identity]` and passes it
+3. `AshA2A.Agent.__dispatch__` reads `metadata["a2a.auth"][:identity]` and passes it
    to `AshA2A.Dispatcher.dispatch/5` as `auth_identity`.
 4. `AshA2A.ContextResolver.from_a2a_message/4` sets `context.actor` to that
    `auth_identity` verbatim, and `context.tenant` to `auth_identity[:tenant]` (or the
@@ -96,7 +96,7 @@ by `test/ash_a2a_plug_auth_test.exs`.
 
 ## 4. The `:ambiguous_skill` gotcha
 
-`AshA2A.Agent.__dispatch__/3` picks a skill automatically only when the resource
+`AshA2A.Agent.__dispatch__` picks a skill automatically only when the resource
 exposes exactly one public action. `AshA2A.Info.capability_index/1` returning:
 
 * zero skills → `{:error, {:no_skill, resource_or_domain}}`

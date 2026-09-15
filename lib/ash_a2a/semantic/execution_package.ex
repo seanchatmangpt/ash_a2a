@@ -67,7 +67,7 @@ defmodule AshA2A.Semantic.ExecutionPackage do
   Converts an admitted `t()` into a real `AshA2A.Dispatcher.reply()` --
   the same reply-tuple contract the ordinary CRUD/generic-action dispatch
   path returns, so a caller of the explicit semantic-request A2A surface
-  (`AshA2A.Agent.__dispatch__/3`) sees one consistent reply shape regardless
+  (`AshA2A.Agent.__dispatch__`) sees one consistent reply shape regardless
   of which real path produced it.
 
   The reply carries only candidate-standing, `authority: :none` evidence --

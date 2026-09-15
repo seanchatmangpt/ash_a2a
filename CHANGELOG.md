@@ -9,6 +9,21 @@ once it reaches 1.0.
 ## [26.9.14] - 2026-09-14
 
 ### Added
+- **Real `ash_oban` `scheduled_actions` (cron) usage**: `mix.exs` declared
+  `{:ash_oban, "~> 0.8"}` with zero resource using it anywhere in this
+  repository until now. `AshA2A.Test.Fixture.ScheduledSweep`
+  (`test/support/scheduled_sweep_fixture.ex`) declares a real
+  `oban do scheduled_actions do schedule ... end end` cron entry, qualified
+  by `test/ash_a2a/scheduled_sweep_qualification_test.exs` against a real
+  Postgres-backed `oban_jobs` table via `AshOban.Test.schedule_and_run_triggers/2`
+  (Oban's own real, documented drain-queue test helper — no hand-rolled
+  scheduler, no mocked cron clock). Note for integrators: the installed
+  `ash_oban` version's generated worker invokes a scheduled action's `run/2`
+  purely through the generic-action path (`Ash.ActionInput`/
+  `Ash.run_action!`) regardless of whether the target is a `:create` or
+  generic `:action` — point `scheduled_actions`' `action:` at a real generic
+  `:action` that performs the create internally, not directly at a `:create`
+  action, or the job discards with `No such action ... of type :action`.
 - **`AshA2A.ReceiptStore.Ekv`**: a real, on-disk-persisted `ReceiptStore`
   implementation backed by the `:ekv` dependency (promoted out of
   `only: :test` — it is now a real, non-test collaborator, the same
@@ -194,7 +209,7 @@ once it reaches 1.0.
   defaulting to either safe-to-skip or safe-to-execute.
 
 ### Changed
-- **`CommandBus` is now on the default `AshA2A.Agent.__dispatch__/3` path**
+- **`CommandBus` is now on the default `AshA2A.Agent.__dispatch__` path**
   for every `:change`/`:external_do`-consequence skill — the gap the
   26.9.12 entry above flagged as "not yet wired." A real
   `AshA2A.Command` is built per dispatch (`command_id` is the real,
@@ -209,7 +224,7 @@ once it reaches 1.0.
   dispatch path (a streaming `:read` reply would otherwise have its real
   `Enumerable.t()` collapsed by `Receipt.from_reply/4`'s `summarize/1`).
 - `AshA2A.Telemetry.OcelForwarder.attach!/0` is now called from
-  `AshA2A.Application.start/2` — previously real and correct but never
+  `AshA2A.Application.start` — previously real and correct but never
   attached outside tests, so a host got no OCEL forwarding by default even
   after configuring `:ocel_ingest_url`. Idempotent and a no-op cost when
   `:ocel_ingest_url` is unconfigured.

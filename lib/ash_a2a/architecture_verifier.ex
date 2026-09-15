@@ -143,7 +143,7 @@ defmodule AshA2A.ArchitectureVerifier do
 
   Checks (1) and (2) name real production symbols
   (`AshA2A.Info.semantic_requests_enabled?/1`, the `a2a do semantic_requests
-  ... end` DSL option, `AshA2A.Agent.__dispatch__/3`'s private
+  ... end` DSL option, `AshA2A.Agent.__dispatch__`'s private
   `dispatch_semantic/2` gate) that do not exist in this worktree's branch.
   Verified, not assumed: `git merge-base HEAD 95ce672` (the commit titled
   "feat(semantic): explicit production A2A surface for semantic
@@ -349,7 +349,7 @@ defmodule AshA2A.ArchitectureVerifier do
   `command_id` and the same semantic content (`agent_id`/`principal_id`/
   `capability_id`/`input`/authority token) produce the same real
   `Command.fingerprint/1` value (the replay-safety invariant
-  `AshA2A.ReceiptStore.Memory.handle_call/3`'s `{:claim, ...}` clause relies
+  `AshA2A.ReceiptStore.Memory.handle_call`'s `{:claim, ...}` clause relies
   on to detect a genuine retry), while the same `command_id` with different
   `input` produces a different fingerprint (the conflict-safety invariant
   that same clause relies on to refuse `:command_conflict`).
@@ -590,7 +590,7 @@ defmodule AshA2A.ArchitectureVerifier do
   `true` for `Fixture.SemanticResource` (which declares `a2a do
   semantic_requests true end`) and real `false` for `Fixture.Resource`
   (which declares no `a2a do ... end` block at all) -- the first of the
-  two real production gates `AshA2A.Agent.__dispatch__/3`'s private
+  two real production gates `AshA2A.Agent.__dispatch__`'s private
   `semantic_request?/2` checks before ever routing to
   `AshA2A.Semantic.Compiler.compile/3`. This is real compiled DSL truth,
   not a runtime flag -- both resources are compiled once, at this
@@ -634,7 +634,7 @@ defmodule AshA2A.ArchitectureVerifier do
   `A2A.Message` carrying `:semantic_request` metadata set to `true`,
   dispatched against `Fixture.Resource` (which never declared `a2a do
   semantic_requests true end`), real-falls-through
-  `AshA2A.Agent.__dispatch__/3` to ordinary skill resolution --
+  `AshA2A.Agent.__dispatch__` to ordinary skill resolution --
   `AshA2A.Agent.semantic_request?/2` requires BOTH the resource's own
   compiled opt-in AND the caller's flag before ever calling
   `AshA2A.Semantic.Compiler.compile/3`; a caller flag alone must never be

@@ -49,7 +49,7 @@ real, dependency-satisfied, tested integration -- see
 
 ## Admission & receipts
 
-As of v26.9.14, `AshA2A.Agent.__dispatch__/3` routes every `:change`/`:external_do`
+As of v26.9.14, `AshA2A.Agent.__dispatch__` routes every `:change`/`:external_do`
 skill through this layer by default -- it is no longer a parallel, opt-in-only route.
 See [Architecture](../explanation/architecture.md).
 

@@ -39,6 +39,7 @@ defmodule AshA2A.RuntimeProvidersIntegrationTest do
       data_dir =
         Path.join(System.tmp_dir!(), "ash_a2a_ekv_test_#{System.unique_integer([:positive])}")
 
+      File.mkdir_p!(data_dir)
       on_exit(fn -> File.rm_rf!(data_dir) end)
 
       # cluster_size: 1 -- a real single-voter CAS quorum, sufficient for a

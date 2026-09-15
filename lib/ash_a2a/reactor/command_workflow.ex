@@ -4,7 +4,7 @@ defmodule AshA2A.Reactor.CommandWorkflow do
   the receipted `AshA2A.CommandBus` boundary end to end.
 
   Closes a real gap: `test/ash_a2a/lifecycle_reactor_test.exs` only ever
-  called `AshA2A.Reactor.ExecuteCommand.run/3` as a plain function
+  called `AshA2A.Reactor.ExecuteCommand.run` as a plain function
   (`grep -rn "Reactor.run\\|Reactor.Builder" test/ lib/` returned zero
   matches repo-wide before this module) -- so the real Reactor
   dependency-resolution/execution engine had never actually run in this

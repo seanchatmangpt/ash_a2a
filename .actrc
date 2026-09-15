@@ -1,0 +1,9 @@
+# Pins the runner image act uses for `ubuntu-latest` (matching
+# .github/workflows/ci.yml's own `runs-on: ubuntu-latest`) and the
+# container architecture, since this repo's CI images are amd64 and this
+# machine may be Apple Silicon -- act warns and can misbehave without this
+# pin. See bin/ci-local.sh for the real, working invocation; running bare
+# `act` still picks these flags up automatically (act reads .actrc from the
+# current directory), this file alone does not fix Docker-context selection.
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+--container-architecture linux/amd64

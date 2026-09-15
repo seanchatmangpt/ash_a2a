@@ -80,7 +80,7 @@ metadata key in this codebase uses (`AshA2A.MetadataKey.get/2`, the same helper
 
 ## What actually happens when both gates are true
 
-`AshA2A.Agent.__dispatch__/3` checks both gates (`AshA2A.Info.semantic_requests_enabled?/1`
+`AshA2A.Agent.__dispatch__` checks both gates (`AshA2A.Info.semantic_requests_enabled?/1`
 on the target resource/domain, and the message's `:semantic_request` metadata) before
 choosing a route:
 

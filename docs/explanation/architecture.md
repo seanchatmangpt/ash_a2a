@@ -11,12 +11,12 @@ and tested but sits beside the default path rather than inside it.
 `AshA2A.Info.agent_card/2` and `AshA2A.CapabilityIndex.Compiler` turn a
 resource or domain's `AshA2A` DSL entities into a compiled, persisted
 capability index, and `AshA2A.CapabilityIndex.AgentCardBuilder` projects that
-index into an `A2A.AgentCard` (name, skills). `AshA2A.Agent.__using__/1`
+index into an `A2A.AgentCard` (name, skills). `AshA2A.Agent.__using__`
 reads this same compiled card at macro-expansion time via
 `__card_opts__/2`, so the `A2A.Agent` GenServer generated for a resource can
 never advertise a skill the compiler didn't actually see.
 
-When a message arrives, `AshA2A.Agent.__dispatch__/3` resolves the skill name,
+When a message arrives, `AshA2A.Agent.__dispatch__` resolves the skill name,
 pulls `history` off the `A2A.Agent.context()` and `auth_identity` out of
 `context.metadata["a2a.auth"]` (populated only by `A2A.Plug.Auth` after real
 credential verification -- never from caller-controlled `A2A.Message.metadata`),
@@ -57,7 +57,7 @@ receipt instead of re-executing (a matching `command_id` with a *different*
 fingerprint is a real `:command_conflict` refusal). This is real idempotency
 and real evidence, not a sketch, and it is now the route both
 `AshA2A.Reactor.ExecuteCommand`/the Oban/FLAME adapters AND the default
-`AshA2A.Agent.__dispatch__/3` path use (see below) -- not a parallel,
+`AshA2A.Agent.__dispatch__` path use (see below) -- not a parallel,
 opt-in route only some callers happen to take.
 
 ## The ecosystem adapters are real integrations, not just seams (as of v26.9.14)
@@ -119,7 +119,7 @@ exercises a real `AshR2RML.Resource`-extended fixture through
 
 ## CommandBus on the default dispatch path
 
-`AshA2A.Agent.__dispatch__/3` now builds a real `AshA2A.Command` from the
+`AshA2A.Agent.__dispatch__` now builds a real `AshA2A.Command` from the
 inbound message and routes any skill whose real, compiled
 `AshA2A.Skill.consequence` is `:change`/`:external_do` through
 `AshA2A.CommandBus.run/4` (which itself calls the same
@@ -194,7 +194,7 @@ each consumer. Repository-native defaults: Ash `:read` -> `:observe`;
 unless a resource author explicitly overrides it
 (`a2a do skill :name, :action, consequence: :observe | :change | :external_do end`).
 An `:unknown` capability is refused closed by both enforcement points
-(`AshA2A.Agent.__dispatch__/3` before any dispatch attempt at all, and
+(`AshA2A.Agent.__dispatch__` before any dispatch attempt at all, and
 `CommandBus.admit/2` independently, for any caller reaching it directly) --
 never treated as either safe-to-skip or safe-to-execute by default. This
 exists because `action.type` alone is not a sufficient consequence calculus:
@@ -242,7 +242,7 @@ Two things remain real, disclosed gaps, not silently resolved by this work:
 
 The semantic-closed-loop pipeline (`Source -> SemanticIR -> Admission -> Ontology ->
 PlanningIR -> SemanticSynthesis -> ExecutionPackage`, `AshA2A.Semantic.Compiler.compile/3`)
-had zero non-test production caller until this surface. `AshA2A.Agent.__dispatch__/3` now
+had zero non-test production caller until this surface. `AshA2A.Agent.__dispatch__` now
 picks between two real routes before either the consequence-based `CommandBus` routing
 above or the ordinary skill-resolution path ever runs:
 
