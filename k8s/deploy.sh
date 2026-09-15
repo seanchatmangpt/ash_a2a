@@ -81,6 +81,39 @@ kubectl apply -f "$REPO_ROOT/k8s/deployment.yaml"
 echo "== Wait for real rollout ==" >&2
 kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=180s
 
+# Real egress falsifier (NIST SP 800-53 SC-7(5), deny-by-default egress):
+# a positive control (policy removed, real raw TCP connect to a public IP
+# succeeds) followed by a negative control (policy re-applied, the
+# identical call times out). Proves the NetworkPolicy actually changes
+# outcome rather than just existing on disk -- see
+# docs/AIRGAP_READINESS_REPORT.md test 1 for the original manual run this
+# operationalizes, and the ENTERPRISE_READINESS_REPORT.md correction this
+# same falsifier already forced once (an earlier draft wrongly assumed
+# kind's kindnet CNI does not enforce NetworkPolicy at all).
+echo "== Real egress falsifier: NetworkPolicy deny-by-default (positive control, then negative control) ==" >&2
+FALSIFIER_POD="$(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[0].metadata.name}')"
+
+echo "== Positive control: remove NetworkPolicy, expect real raw TCP connect to succeed ==" >&2
+kubectl -n ash-a2a-swarm delete -f "$REPO_ROOT/k8s/network-policy.yaml"
+POSITIVE="$(kubectl -n ash-a2a-swarm exec "$FALSIFIER_POD" -- /app/bin/swarm_node rpc \
+  'IO.inspect(:gen_tcp.connect(~c"8.8.8.8", 443, [], 5000))')"
+echo "$POSITIVE" >&2
+
+echo "== Negative control: re-apply NetworkPolicy, expect the identical call to time out ==" >&2
+kubectl apply -f "$REPO_ROOT/k8s/network-policy.yaml"
+# Give the re-applied policy a moment to actually be programmed by the
+# CNI before testing it -- policy enforcement is not instantaneous.
+sleep 3
+NEGATIVE="$(kubectl -n ash-a2a-swarm exec "$FALSIFIER_POD" -- /app/bin/swarm_node rpc \
+  'IO.inspect(:gen_tcp.connect(~c"8.8.8.8", 443, [], 5000))')"
+echo "$NEGATIVE" >&2
+
+if ! echo "$POSITIVE" | grep -q '{:ok,' || ! echo "$NEGATIVE" | grep -q '{:error, :timeout}'; then
+  echo "== FAILED: egress falsifier did not show the expected connect-without-policy / timeout-with-policy split (NetworkPolicy enforcement unverified) ==" >&2
+  exit 1
+fi
+echo "== REAL egress deny-by-default falsifier passed (NetworkPolicy enforcement confirmed, not assumed) ==" >&2
+
 echo "== Real swarm-dispatch probe (from pod 0, against real peer pods) ==" >&2
 PODS=($(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[*].metadata.name}'))
 echo "Real pods: ${PODS[*]}" >&2
@@ -105,6 +138,9 @@ if ! echo "$PROBE_OUTPUT" | grep -q '"swarm_dispatch_verified":true'; then
   exit 1
 fi
 echo "== REAL cross-pod A2A dispatch verified ==" >&2
+
+echo "== Real network isolation regression check (permanent -- was previously a manual one-off, see k8s/README.md) ==" >&2
+bash "$REPO_ROOT/k8s/verify_network_isolation.sh"
 
 echo "== Real resilience/chaos test: kill one pod, verify self-heal + swarm reformation ==" >&2
 VICTIM="${PODS[${#PODS[@]}-1]}"
