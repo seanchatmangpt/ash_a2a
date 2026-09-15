@@ -93,12 +93,28 @@ defmodule AshA2AAgentSemanticRequestTest do
     assert task.status.state == :completed
   end
 
+  # Real, disclosed interaction with
+  # test/ash_a2a_zai_concurrency_ocel_test.exs's real 50-way concurrency
+  # probe when the full suite runs with `--include external_api`: that
+  # probe genuinely exhausts the real ZAI API's rate limit (confirmed via
+  # real 429 responses), and this test's own real, unseamed LLM round-trip
+  # can then genuinely exceed ExUnit's 60s default before the real API
+  # recovers -- not a code defect. Does not affect the default `mix test`
+  # (excludes :external_api, so the concurrency probe never runs first).
+  @tag timeout: 180_000
   test "both gates true: a real dispatch reaches the real semantic compiler and fails closed (not a crash) with no injected generate_object seam" do
     message =
       data_message(%{}, %{metadata: %{semantic_request: true}})
       |> Map.put(:parts, [A2A.Part.Text.new("advance the admitted workflow")])
 
-    assert {:ok, task} = SemanticEnabledAgent.call(SemanticEnabledAgent, message)
+    # `A2A.Agent.call/3`'s own real GenServer.call timeout defaults to
+    # 60_000ms (deps/a2a/lib/a2a/agent.ex) -- independent of, and enforced
+    # inside, this test's own `@tag timeout:` (ExUnit's outer test-process
+    # timeout). Under the real rate-limit contention documented above, the
+    # real LLM round-trip can outlast the default; both layers need
+    # raising, not just the outer one.
+    assert {:ok, task} =
+             SemanticEnabledAgent.call(SemanticEnabledAgent, message, timeout: 170_000)
 
     # `config/test.exs` DOES configure a real `:semantic_reasoner` LLM
     # profile (`zai_coder:glm-5.3-flash`), so `AshA2A.LLMProfiles.

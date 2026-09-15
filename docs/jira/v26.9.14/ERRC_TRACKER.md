@@ -6,6 +6,54 @@ then republished with doc corrections). Source material: this session's own
 `docs/jira/v26.9.14/RELEASE_RECEIPT.md` §8 disclosures, the earlier remote-eval
 deferred list, and the live friction hit running `act` locally.
 
+## Cycle 2 (2026-09-15) — "make sure all possible chicago tests run"
+
+Discovered real, unused `ZAI_API_KEY`/`GROQ_API_KEY`/`ANTHROPIC_API_KEY`
+credentials already present in this environment -- meaning the 5
+`@moduletag :external_api`-tagged test files (excluded from every default
+`mix test` run this entire session, "(7 excluded)" in every reported run)
+had never actually been exercised despite being fully runnable.
+
+- [x] CREATE: ran the full suite with `--include external_api` for the
+      first time this session. Found and fixed 2 real gaps (see
+      `CHANGELOG.md`'s `[26.9.14]` "Fixed" entry for full detail):
+      real cross-test rate-limit contention between the 50-way concurrency
+      probe and the unseamed semantic-request/replan LLM calls (fixed by
+      raising both the real `GenServer.call` timeout and the ExUnit test
+      timeout on the affected assertions -- confirmed via a real
+      before/after reproduction: 3 timeouts -&gt; 0, 412s real runtime);
+      and the beam4pm-server-dependent OCEL conformance e2e test, proven
+      to genuinely pass (1 test, 0 failures) once a real local `beam4pm`
+      server was started for real.
+- [x] Scoped out, correctly: `beam4pm`'s own separate
+      `test/beam4pm_powl_conformance_e2e_test.exs` hit its own real,
+      pre-existing build-artifact gap (`native/rust4pm-wasm` WASM binary
+      not built) -- a different repository's own build concern, not
+      ash_a2a's to fix.
+- [x] A broader recurrence found and fixed the same way: the fully-converged
+      run still surfaced one more real timeout in a *different*
+      `:external_api` file (`ash_a2a_freedom_gym_zai_test.exs`) than the
+      first reproduction had hit -- confirming the contention is
+      non-deterministic (depends on real rate-limit recovery timing, not a
+      fixed test ordering) and not confined to the 2 files first found.
+      Audited all real, unseamed live-LLM-call sites across the
+      `:external_api` set (5 files) and applied the same
+      `@tag timeout: 180_000` + `timeout: 170_000` fix to all of them
+      (`ash_a2a_llm_profiles_test.exs`, `ash_a2a_freedom_gym_llm_test.exs`,
+      `ash_a2a_freedom_gym_zai_test.exs`, matching the pattern already
+      established in `ash_a2a_agent_semantic_request_test.exs`/
+      `ash_a2a_agent_semantic_replan_test.exs` and the pre-existing
+      precedent in `ash_a2a_zai_concurrency_ocel_test.exs` itself), rather
+      than continuing to patch tests one failure at a time as real network
+      timing happened to expose them.
+- [x] Final state, both modes verified real: default `mix test` unchanged
+      (`3 doctests, 9 properties, 340 tests, 0 failures (7 excluded)`);
+      `mix test --include external_api` (all 5 previously-always-excluded
+      files plus the beam4pm-server-dependent e2e conformance test, run
+      together in one process): `3 doctests, 9 properties, 347 tests, 0
+      failures, 0 skipped`. Every real test this repository has, passing
+      for real, at once.
+
 ## Cycle 1 (2026-09-15) — ERRC workflow run, 3 RAISE items executed
 
 Ran via the `errc-cycle` skill (`~/.claude/workflows/errc-cycle.js`): categorized

@@ -48,6 +48,16 @@ defmodule AshA2AFreedomGymZaiTest do
     :ok
   end
 
+  # Real, disclosed interaction with
+  # test/ash_a2a_zai_concurrency_ocel_test.exs's real 50-way concurrency
+  # probe when the full suite runs with `--include external_api`: real
+  # rate-limit exhaustion from that probe can make this real, unseamed live
+  # LLM call exceed the default 60s on both the ExUnit test process and
+  # A2A.Agent.call/3's own GenServer.call -- confirmed reproducing (this
+  # exact test timed out in a real full-suite `--include external_api` run)
+  # -- same fix as test/ash_a2a_agent_semantic_request_test.exs, not a code
+  # defect.
+  @tag timeout: 180_000
   test "a real Z.AI GLM-backed avatar responds over real A2A dispatch with a real structured shape" do
     {_sup, _registry_name} =
       AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [
@@ -61,7 +71,7 @@ defmodule AshA2AFreedomGymZaiTest do
           "This is the Trust God segment. Does anyone want to share where they've seen God at work this week?"
       })
 
-    assert {:ok, task} = ZaiLlmAvatarAgent.call(ZaiLlmAvatarAgent, message)
+    assert {:ok, task} = ZaiLlmAvatarAgent.call(ZaiLlmAvatarAgent, message, timeout: 170_000)
     assert task.status.state == :completed
 
     assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: response}]}] = task.artifacts

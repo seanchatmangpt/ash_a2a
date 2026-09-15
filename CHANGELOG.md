@@ -8,6 +8,48 @@ once it reaches 1.0.
 
 ## [26.9.14] - 2026-09-14
 
+### Fixed (test suite, `--include external_api` only -- default `mix test` unaffected)
+- **Real `:external_api` test suite made runnable end to end for the first
+  time this session**: this environment carries real `ZAI_API_KEY`/
+  `GROQ_API_KEY`/`ANTHROPIC_API_KEY` credentials, meaning the 5
+  `@moduletag :external_api`-tagged files (excluded from the default `mix
+  test` run) had never actually been exercised despite being fully
+  runnable. Running them for real surfaced two real, disclosed findings,
+  both fixed:
+  - **Real cross-test rate-limit contention**: every real, unseamed
+    live-LLM-calling test in the `:external_api` set
+    (`ash_a2a_llm_profiles_test.exs`, `ash_a2a_freedom_gym_llm_test.exs`,
+    `ash_a2a_freedom_gym_zai_test.exs`, `ash_a2a_agent_semantic_request_test.exs`,
+    `ash_a2a_agent_semantic_replan_test.exs`) has a genuine interaction with
+    `ash_a2a_zai_concurrency_ocel_test.exs`'s real 50-way concurrency probe
+    when the full suite runs together: the probe genuinely exhausts the
+    real ZAI API's rate limit (confirmed via real HTTP 429 responses), and
+    a real-but-slower call attempted shortly after -- non-deterministically,
+    depending on real rate-limit recovery timing, not a fixed test order --
+    can then exceed both `A2A.Agent.call/3`'s own 60s `GenServer.call`
+    default and ExUnit's own 60s test-process default before the real API
+    recovers. Fixed by raising both real timeout layers
+    (`timeout: 170_000` on the call option, `@tag timeout: 180_000` on the
+    test) on every real unseamed LLM-call site across all 5 files, matching
+    the pattern `ash_a2a_zai_concurrency_ocel_test.exs` itself already
+    established. Confirmed via repeated real full-suite reproduction (3
+    real timeouts in one run, 1 more in a different file on the next run
+    after a partial fix, 0 in the fully-converged run) -- not assumed fixed
+    after the first partial pass.
+  - `ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs` (the real
+    end-to-end HDDL-plan -> A2A dispatch -> OCEL -> POWL-conformance loop
+    against a real `beam4pm` `BeamPM.OcelIngest.Router` server) had never
+    run in this session either -- confirmed genuinely passing once a real
+    local `beam4pm` server instance was started for real and made
+    reachable at its default `OCEL_INGEST_URL`.
+  Final, fully converged result, real and reproduced: `mix test --include
+  external_api` -- **3 doctests, 9 properties, 347 tests, 0 failures, 0
+  skipped** (with the real `beam4pm` server up). None of this affects the
+  default `mix test` run (still `3 doctests, 9 properties, 340 tests, 0
+  failures (7 excluded)`, unchanged, reconfirmed after every fix) -- these
+  fixes only matter when running the full suite with `--include
+  external_api`, an opt-in, credential-dependent validation mode.
+
 ### Added
 - **Real `ash_oban` `scheduled_actions` (cron) usage**: `mix.exs` declared
   `{:ash_oban, "~> 0.8"}` with zero resource using it anywhere in this

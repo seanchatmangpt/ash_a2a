@@ -280,6 +280,19 @@ defmodule AshA2AAgentSemanticReplanTest do
 
   # -- SUCCESS ---------------------------------------------------------
 
+  # This file's own real-production-entrypoint calls (no generate_object
+  # seam -- see the file moduledoc) have a real, disclosed interaction with
+  # test/ash_a2a_zai_concurrency_ocel_test.exs's real 50-way concurrency
+  # probe when the full suite runs with `--include external_api`: that
+  # probe genuinely exhausts the real ZAI API's rate limit (confirmed via
+  # real 429 responses), and a real, already-slower LLM round-trip
+  # attempted shortly after can then genuinely exceed ExUnit's 60s default
+  # before the real API recovers -- not a code defect, a real consequence
+  # of exercising a real, rate-limited external dependency. Does not affect
+  # the default `mix test` (excludes :external_api, so the concurrency
+  # probe never runs first) -- confirmed real timeouts only reproduce under
+  # `--include external_api`.
+  @tag timeout: 180_000
   test "SUCCESS: a real completed closing dispatch's receipt drives a real replan, candidate never escapes :candidate/:none" do
     package = real_compile_execution_package!("create a labeled item")
     fingerprint = package.fingerprint
@@ -312,11 +325,15 @@ defmodule AshA2AAgentSemanticReplanTest do
     # its real committed `command_id` and real `Compiler.replan/4` was
     # actually reached (a distinct, later failure mode than
     # `:continuation_receipt_not_found`), never silently skipped.
+    # A2A.Agent.call/3's own real GenServer.call timeout defaults to
+    # 60_000ms (deps/a2a/lib/a2a/agent.ex), independent of this test's own
+    # `@tag timeout:` -- raising both layers, see the note on this test's
+    # own @tag above.
     assert {:ok, continuation_task} =
              SemanticReplanAgent.call(
                SemanticReplanAgent,
                semantic_continuation_message(fingerprint),
-               authenticated_call_opts("user-1")
+               authenticated_call_opts("user-1") ++ [timeout: 170_000]
              )
 
     assert continuation_task.status.state in [:completed, :failed]
@@ -331,6 +348,9 @@ defmodule AshA2AAgentSemanticReplanTest do
 
   # -- FAILURE -----------------------------------------------------------
 
+  # See the timeout note on the SUCCESS test above -- same real
+  # rate-limit-contention interaction with the concurrency-probe test.
+  @tag timeout: 180_000
   test "FAILURE: a real class:forbidden closing dispatch still commits a real receipt that a follow-up replan can observe" do
     package = real_compile_execution_package!("create a labeled item, forbidden variant")
     fingerprint = package.fingerprint
@@ -364,7 +384,7 @@ defmodule AshA2AAgentSemanticReplanTest do
              SemanticReplanAgent.call(
                SemanticReplanAgent,
                semantic_continuation_message(fingerprint),
-               authenticated_call_opts("user-1")
+               authenticated_call_opts("user-1") ++ [timeout: 170_000]
              )
 
     assert continuation_task.status.state in [:completed, :failed]
@@ -373,6 +393,9 @@ defmodule AshA2AAgentSemanticReplanTest do
 
   # -- BLOCKED -------------------------------------------------------------
 
+  # See the timeout note on the SUCCESS test above -- same real
+  # rate-limit-contention interaction with the concurrency-probe test.
+  @tag timeout: 180_000
   test "BLOCKED: a real {:input_required, _} closing dispatch still commits a real receipt that a follow-up replan can observe" do
     package = real_compile_execution_package!("create a labeled item, blocked variant")
     fingerprint = package.fingerprint
@@ -401,7 +424,7 @@ defmodule AshA2AAgentSemanticReplanTest do
              SemanticReplanAgent.call(
                SemanticReplanAgent,
                semantic_continuation_message(fingerprint),
-               authenticated_call_opts("user-1")
+               authenticated_call_opts("user-1") ++ [timeout: 170_000]
              )
 
     assert continuation_task.status.state in [:completed, :failed]
