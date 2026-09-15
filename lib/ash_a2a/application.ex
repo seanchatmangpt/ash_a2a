@@ -36,6 +36,7 @@ defmodule AshA2A.Application do
     children =
       receipt_store_children() ++
         [
+          {Task.Supervisor, name: AshA2A.Telemetry.TaskSupervisor},
           {AshA2A.Semantic.PackageStore, []},
           {A2A.AgentSupervisor, agents: agents}
         ]
