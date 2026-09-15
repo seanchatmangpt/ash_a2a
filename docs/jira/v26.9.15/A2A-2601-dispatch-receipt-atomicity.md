@@ -1,36 +1,40 @@
-# A2A-2601: Consequence can occur before receipt commit — dispatch↔receipt transaction is not closed
+# A2A-2601: consequence/receipt closure across CommandBus DO
 
-- **Status**: Closed — implemented + Chicago-validated (2026-09-15)
-- **Severity**: High
-- **Standing**: ALIVE for this fix (full suite: 382 tests, 0 failures, `fix/v26.9.15-commandbus-outbox` @ 1f60491/1e35c30, worktree `wt-v26915/ash_a2a`)
-- **Closure evidence**: new `AshA2A.ReceiptOutbox` (durable append-only journal: tmp+rename writes, version-tagged term format, fetch/re-claim/commit reconcile); `CommandBus.run/4` now implements the documented ADMITTED -> INTENT_DURABLE -> EXECUTING -> CONSEQUENCE_OBSERVED -> RECEIPT_DURABLE / RECEIPT_OUTBOXED state machine with bounded commit retries (`:receipt_commit_retry_delays_ms`, default `[50, 150]`), a typed `:receipt_commit_pending` error carrying the receipt, `reconcile_outboxed_receipts/2`, and an opportunistic pre-claim drain. Chicago suite `test/ash_a2a_command_bus_outbox_chicago_test.exs` proves the exact review falsifier with a real mutating `:next_phase` command, a real flaky-commit store, a real killed-Memory re-claim recovery, and replay-after-reconcile performing no second consequence.
-- **Found by**: 14-hour cross-repo code review, window 2026-09-14 9:40 PM → 2026-09-15 11:40 AM PDT (inspection, not execution)
+- **Status**: Implemented; exact-head verification required before merge.
+- **Severity**: High.
+- **Standing**: `BUILD_UNVERIFIED` for the current PR head. No publication, production, runtime-standing, or `ALIVE` claim.
+- **Found by**: 14-hour cross-repo review, 2026-09-14 9:40 PM → 2026-09-15 11:40 AM PDT.
 
-## Evidence
+## Boundary
 
-The current `CommandBus` sequence (`lib/ash_a2a/command_bus.ex`) is effectively:
+A post-consequence outbox alone is insufficient for zero-untracked actuation: the primary receipt store and the fallback outbox can both fail after the consequence already exists.
 
-**claim → dispatch consequence → construct receipt → commit receipt**
+The repaired sequence is therefore:
 
-This window's change correctly catches dispatcher crashes and receipt-store crashes instead of allowing the agent GenServer to die. But if the real `:change`/`:external_do` dispatch **succeeds** and `store.commit/2` subsequently fails, the consequence has already happened. `commit_receipt/3` then returns `receipt_store_unavailable` (`lib/ash_a2a/command_bus.ex:74-89`) and there is no durable outcome receipt for that consequence.
+`ADMITTED → CLAIMED → RECEIPT_ANCHORED(:pending) → EXECUTING → CONSEQUENCE_OBSERVED → RECEIPT_DURABLE | RECEIPT_OUTBOXED`
 
-The gap existed structurally before the window — the pre-window version also dispatched before `store.commit` — but this window explicitly modified that exact failure boundary without closing the transaction.
+For `:change` and `:external_do`, dispatch is refused unless a pending receipt with the exact command id, execution id, fingerprint, capability, and receipt identity has already been persisted by `AshA2A.ReceiptOutbox`. The finalized receipt preserves that same receipt id.
 
-## Impact
+If primary commit fails and final outbox replacement also fails, the pending receipt remains. Reconciliation may commit that pending receipt to the primary store; replay then returns pending evidence instead of executing a second consequence. The system does **not** infer whether the interrupted consequence succeeded or failed.
 
-This is the highest architectural priority of the review window (closure order #1) because it contradicts **zero unreceipted actuation**, not merely availability: an actual consequence can exist in the world with no committed outcome receipt.
+This is host-local filesystem evidence. It is not a claim of transactional atomicity with an arbitrary external system, replicated storage, or power-loss durability.
 
-## Fix
+## Retry semantics
 
-Close the transaction with something equivalent to a durable execution/outbox state machine:
+`:receipt_commit_retry_delays_ms` is interpreted as true retries: one immediate commit attempt, followed by one additional attempt after each configured delay. Default `[50, 150]` therefore means at most three primary commit attempts.
 
-`ADMITTED → INTENT_DURABLE → EXECUTING → CONSEQUENCE_OBSERVED → RECEIPT_DURABLE`
+## Chicago falsifiers
 
-with crash recovery/reconciliation between the latter states, so a failure at any boundary leaves a recoverable, reconcilable state rather than an unreceipted consequence.
+`test/ash_a2a_command_bus_outbox_chicago_test.exs` now defines these acceptance falsifiers:
 
-## Falsifier (acceptance)
+1. A real `:next_phase` mutation plus primary-store failure must leave one finalized outboxed receipt and later reconcile without a second DO.
+2. An unavailable receipt anchor must refuse before the real mutation occurs.
+3. If primary commit and finalized outbox replacement fail after the real mutation, the pre-dispatch receipt must remain `:pending`; reconcile + replay must not execute a second mutation.
+4. A killed in-memory primary store must recover through the re-claim reconcile path.
+5. Default-shaped `[5, 5]` test delays must produce exactly three commit attempts: initial + two retries.
 
-Make `claim/2` succeed, execute a real idempotently-observable mutation, then make `commit/2` fail. After `run/4`, ask the durable store for the command.
+## Evidence boundary
 
-- Current expected result: consequence exists, committed receipt does not.
-- Required result after fix: no unreceipted consequence is observable — the state machine either reconciles the receipt durably or rolls the intent into a typed recovery/refusal path.
+The predecessor head `429246c` had local evidence reported as 382 tests / 0 failures, but hosted CI stopped at `mix format --check-formatted`; compile and tests did not run there. That evidence does not qualify the current head.
+
+Current-head admission requires repository-native exact-head CI to pass checkout identity, formatter, warnings-as-errors compile, and the full test suite including the falsifiers above.
