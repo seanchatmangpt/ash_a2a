@@ -51,7 +51,7 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
 
   use ExUnit.Case, async: false
 
-  alias AshA2A.{Authority, Command, Delivery, Identity}
+  alias AshA2A.{Authority, Command, Delivery, Identity, SemanticSubject}
   alias AshA2A.Test.Fixture.{Item, ItemDomain}
   alias AshA2A.Test.Support.CommandWorker
 
@@ -181,6 +181,73 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
       |> Enum.filter(&(&1.label == label))
 
     assert [%Item{id: ^created_id}] = items_after_second
+  end
+
+  test "a command carrying a real semantic_subject round-trips its fingerprint through real Oban delivery + real CommandWorker reconstruction",
+       %{suffix: suffix, label: label} do
+    command = build_command_with_semantic_subject("cmd-sem-#{suffix}", label)
+
+    assert {:ok, %Delivery{provider_ref: job_id}} = enqueue(command)
+
+    job = AshA2A.Test.Repo.get!(Oban.Job, job_id)
+
+    # The real, DB-persisted job args carry the semantic_subject fields --
+    # confirmed directly against the real oban_jobs row, not by trusting
+    # payload/1's return value alone.
+    assert job.args["semantic_subject_graph_digest"] == command.semantic_subject.graph_digest
+
+    assert job.args["semantic_subject_projection_digest"] ==
+             command.semantic_subject.projection_digest
+
+    assert job.args["semantic_subject_manufacturer_digest"] ==
+             command.semantic_subject.manufacturer_digest
+
+    assert job.args["semantic_subject_ephemeral"] == command.semantic_subject.ephemeral?
+
+    job = dequeue!(job)
+    assert :ok = Oban.Testing.perform_job(job, repo: AshA2A.Test.Repo)
+
+    assert {:ok, receipt} = AshA2A.ReceiptStore.Memory.fetch(command.command_id)
+
+    # The real regression this closes: AshA2A.Test.Support.CommandWorker's
+    # real reconstruct_command/1, run through a real Oban job round-trip,
+    # must recompute the SAME fingerprint the original command carried --
+    # exactly the discriminator AshA2A.ReceiptStore's claim logic uses to
+    # tell a legitimate replay apart from a :command_conflict.
+    assert receipt.fingerprint == command.fingerprint
+
+    created =
+      Item
+      |> Ash.read!(domain: ItemDomain)
+      |> Enum.filter(&(&1.label == label))
+
+    assert [%Item{label: ^label}] = created
+  end
+
+  # Same shape as build_command/2, plus a real, validated
+  # AshA2A.SemanticSubject -- exercising the documented WF-5 continuation
+  # flow this fix targets, where a command carries exact
+  # semantic/manufacture identity through delivery.
+  defp build_command_with_semantic_subject(command_id, label) do
+    principal = Identity.principal("subject-#{command_id}")
+    authority = Authority.new(principal, @capability_id, token_id: "auth-#{command_id}")
+
+    {:ok, semantic_subject} =
+      SemanticSubject.new(
+        graph_digest: "sha256:" <> String.duplicate("1", 64),
+        projection_digest: "sha256:" <> String.duplicate("2", 64),
+        manufacturer_digest: "sha256:" <> String.duplicate("3", 64),
+        ephemeral?: false
+      )
+
+    Command.new(@capability_id,
+      command_id: command_id,
+      agent_id: "agent-#{command_id}",
+      principal_id: principal,
+      authority: authority,
+      semantic_subject: semantic_subject,
+      input: %{"label" => label}
+    )
   end
 
   # Real dequeue-claim step, replicating what a live Oban queue producer's
