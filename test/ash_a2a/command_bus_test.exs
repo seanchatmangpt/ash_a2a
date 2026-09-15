@@ -107,4 +107,82 @@ defmodule AshA2A.CommandBusTest do
     assert {:ok, stored} = ReceiptStore.Memory.fetch(command.command_id, store_opts)
     assert stored.receipt_id == receipt.receipt_id
   end
+
+  test "claiming against a receipt store whose backing process is already down fails closed instead of crashing the caller" do
+    # A deliberately UNSUPERVISED store instance (plain `GenServer.start/3`,
+    # not `start_supervised!`) -- `AshA2A.ReceiptStore.Memory`'s `use
+    # GenServer` gives it a `restart: :permanent` child_spec by default, so
+    # a store started under the shared `setup` block's real ExUnit
+    # supervisor would be transparently restarted under the same registered
+    # name within milliseconds of being killed, masking the exact
+    # transient-unavailability window this test exists to exercise.
+    name = Module.concat(__MODULE__, "CrashClaimStore#{System.unique_integer([:positive])}")
+    {:ok, pid} = GenServer.start(AshA2A.ReceiptStore.Memory, %{}, name: name)
+    store_opts = [name: name]
+
+    ref = Process.monitor(pid)
+    Process.exit(pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
+    assert GenServer.whereis(name) == nil
+
+    command =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "crash-claim-1",
+        agent_id: "agent-1",
+        principal_id: "anonymous",
+        input: %{}
+      )
+
+    message = data_message(%{})
+    test_pid = self()
+
+    {caller_pid, caller_ref} =
+      spawn_monitor(fn ->
+        send(test_pid, {:result, CommandBus.run(command, message, Echo, store_opts: store_opts)})
+      end)
+
+    assert_receive {:result, result}
+    assert_receive {:DOWN, ^caller_ref, :process, ^caller_pid, :normal}
+    assert {:error, %{code: :receipt_store_unavailable}} = result
+  end
+
+  test "receipt store crashing between claim and commit fails closed instead of crashing the caller" do
+    # Same reasoning as the claim-path test above: an UNSUPERVISED store so
+    # the real kill this test performs (inside
+    # `AshA2A.Test.CrashingReceiptStoreFixture.commit/2`) is not
+    # transparently healed by ExUnit's real supervisor before the final
+    # "really is gone" assertion below runs.
+    name = Module.concat(__MODULE__, "CrashCommitStore#{System.unique_integer([:positive])}")
+    {:ok, _pid} = GenServer.start(AshA2A.ReceiptStore.Memory, %{}, name: name)
+    store_opts = [name: name]
+
+    command =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "crash-commit-1",
+        agent_id: "agent-1",
+        principal_id: "anonymous",
+        input: %{}
+      )
+
+    message = data_message(%{})
+    test_pid = self()
+
+    {caller_pid, caller_ref} =
+      spawn_monitor(fn ->
+        result =
+          CommandBus.run(command, message, Echo,
+            store: AshA2A.Test.CrashingReceiptStoreFixture,
+            store_opts: store_opts
+          )
+
+        send(test_pid, {:result, result})
+      end)
+
+    assert_receive {:result, result}
+    assert_receive {:DOWN, ^caller_ref, :process, ^caller_pid, :normal}
+    assert {:error, %{code: :receipt_store_unavailable}} = result
+
+    # The backing process really did go down as part of this test.
+    assert GenServer.whereis(Keyword.fetch!(store_opts, :name)) == nil
+  end
 end
