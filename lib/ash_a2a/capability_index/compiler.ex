@@ -62,7 +62,8 @@ defmodule AshA2A.CapabilityIndex.Compiler do
       tags: override_value(override, :tags, nil),
       expose?: true,
       consequence: override_value(override, :consequence, default_consequence(action.type)),
-      arguments: derive_arguments(resource, action)
+      arguments: derive_arguments(resource, action),
+      hddl_operators: override_value(override, :hddl_operators, [])
     }
   end
 

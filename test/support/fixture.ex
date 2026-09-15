@@ -405,6 +405,153 @@ defmodule AshA2A.Test.Fixture.TypedArgumentsDomain do
   end
 end
 
+defmodule AshA2A.Test.Fixture.EchoWithHddlOperator do
+  @moduledoc """
+  Real fixture resource proving the `:skill` entity's `entities:
+  [hddl_operators: [@hddl_operator]]` (`lib/ash_a2a/dsl.ex`) actually accepts
+  a nested `hddl_operator do ... end` block, backed by a real
+  `AshA2A.HddlOperator` entity target (`lib/ash_a2a/hddl_operator.ex`) -- and,
+  distinct from `AshA2A.Test.Fixture.EchoWithArgument`'s deprecated `argument`
+  block, that the declared facts are actually copied through by
+  `AshA2A.CapabilityIndex.Compiler.project/3` into the real compiled
+  `AshA2A.Skill.hddl_operators`, not silently dropped the way `arguments` is.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.EchoWithHddlOperatorDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:phase, :string, public?: true)
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    skill :advance, :read do
+      hddl_operator do
+        parameters([:from, :to])
+        preconditions([{:current_phase, [:from]}])
+        add_effects([{:current_phase, [:to]}])
+        delete_effects([{:current_phase, [:from]}])
+      end
+    end
+  end
+end
+
+defmodule AshA2A.Test.Fixture.EchoWithHddlOperatorDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.EchoWithHddlOperator` above.
+
+  `validate_config_inclusion?: false` -- same established pattern as
+  `AshA2A.Test.Fixture.TypedArgumentsDomain` above: a small, test-only
+  fixture domain never meant to be registered in `config :ash_a2a,
+  ash_domains`.
+  """
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.EchoWithHddlOperator)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.HddlDeterministicFixture do
+  @moduledoc """
+  Real, tiny fixture resource for
+  `test/ash_a2a_hddl_deterministic_planning_test.exs` -- Task 2 of the
+  deterministic (non-LLM) HDDL planning path (`AshA2A.Planning.HddlRenderer`
+  / `AshA2A.Planning.HddlSolver`). Two real skills, each declaring one real
+  `hddl_operator` block (`lib/ash_a2a/hddl_operator.ex`) on its own distinct
+  real Ash `:action`, form a real two-step STRIPS domain:
+
+    * `:advance` -- `current_phase(?from)` -> `current_phase(?to)`.
+    * `:unlock` -- once `current_phase(?who)` holds, asserts `has_key(?who)`.
+
+  `AshA2A.Planning.HddlRenderer.domain_text/2` renders both as real HDDL
+  `:action`s from this resource's real compiled capability index
+  (`AshA2A.Info.capability_index/1`) -- nothing here is a hand-typed `.hddl`
+  fixture file the way `test/support/hddl/freedom_gym_meeting/domain.hddl`
+  is; the `.hddl` text under test is machine-rendered by the module under
+  test, then handed to the real `hddl_cli` binary via
+  `AshA2A.Planning.HddlSolver.solve/3`.
+
+  Two distinct real generic `:action`s (rather than two `skill` overrides on
+  one shared `:read`) are required here: `AshA2A.CapabilityIndex.Compiler
+  .compile_resource/2` keys its override map by real action name
+  (`Map.new(fn override -> {override.action, override} end)`), so two
+  `skill` overrides naming the same underlying action would collide into a
+  single compiled skill -- this fixture needs two real, independent compiled
+  skills to exercise `domain_text/2`'s multi-action, multi-predicate
+  rendering path for real.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.HddlDeterministicFixtureDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+  end
+
+  actions do
+    defaults([:read])
+
+    action :advance, :string do
+      argument(:from, :string, allow_nil?: false)
+      argument(:to, :string, allow_nil?: false)
+
+      run(fn _input, _context -> {:ok, "ok"} end)
+    end
+
+    action :unlock, :string do
+      argument(:who, :string, allow_nil?: false)
+
+      run(fn _input, _context -> {:ok, "ok"} end)
+    end
+  end
+
+  a2a do
+    skill :advance, :advance do
+      hddl_operator do
+        parameters([:from, :to])
+        preconditions([{:current_phase, [:from]}])
+        add_effects([{:current_phase, [:to]}])
+        delete_effects([{:current_phase, [:from]}])
+      end
+    end
+
+    skill :unlock, :unlock do
+      hddl_operator do
+        parameters([:who])
+        preconditions([{:current_phase, [:who]}])
+        add_effects([{:has_key, [:who]}])
+      end
+    end
+  end
+end
+
+defmodule AshA2A.Test.Fixture.HddlDeterministicFixtureDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.HddlDeterministicFixture`
+  above. `validate_config_inclusion?: false` -- same established pattern as
+  `AshA2A.Test.Fixture.EchoWithHddlOperatorDomain`: a small, test-only
+  fixture domain never meant to be registered in `config :ash_a2a,
+  ash_domains`.
+  """
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.HddlDeterministicFixture)
+  end
+end
+
 defmodule AshA2A.Test.Fixture.TenantedItemDomain do
   @moduledoc """
   Real fixture domain for `AshA2A.Test.Fixture.TenantedItem` above.
