@@ -21,8 +21,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # The Dockerfile layer reorder (deps.get before COPY lib/) only lets a single
+      # build reuse its own layers; this GHA cache additionally lets that cache
+      # survive ACROSS separate CI runs, so a workflow_dispatch rerun with an
+      # unchanged mix.lock hits cached deps/compile layers instead of rebuilding cold.
       - name: Build swarm-node image
-        run: docker build -f swarm/Dockerfile -t ash-a2a-swarm-node:local .
+        run: |
+          docker buildx build \
+            -f swarm/Dockerfile \
+            -t ash-a2a-swarm-node:local \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            .
 
       - name: Create kind cluster
         uses: helm/kind-action@v1
