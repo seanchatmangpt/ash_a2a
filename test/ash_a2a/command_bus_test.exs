@@ -4,7 +4,7 @@ defmodule AshA2A.CommandBusTest do
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, ReceiptStore}
-  alias AshA2A.Test.Fixture.{Echo, Item}
+  alias AshA2A.Test.Fixture.{Crashy, Echo, Item}
 
   setup do
     name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
@@ -184,5 +184,51 @@ defmodule AshA2A.CommandBusTest do
 
     # The backing process really did go down as part of this test.
     assert GenServer.whereis(Keyword.fetch!(store_opts, :name)) == nil
+  end
+
+  test "an exception raised inside the real dispatch path is caught, receipted as :failed, and closes the claim instead of crashing the caller",
+       %{store_opts: store_opts} do
+    command =
+      Command.new("AshA2A.Test.Fixture.Crashy.detonate",
+        command_id: "dispatch-crash-1",
+        agent_id: "agent-1",
+        principal_id: "anonymous",
+        input: %{}
+      )
+
+    message = data_message(%{})
+    test_pid = self()
+
+    {caller_pid, caller_ref} =
+      spawn_monitor(fn ->
+        send(
+          test_pid,
+          {:result, CommandBus.run(command, message, Crashy, store_opts: store_opts)}
+        )
+      end)
+
+    assert_receive {:result, result}
+    assert_receive {:DOWN, ^caller_ref, :process, ^caller_pid, :normal}
+
+    # The caller got back an ordinary, receipted `:failed` outcome -- not a
+    # propagated exception and not the outer `{:error, refusal}` shape
+    # `claim_receipt/3`/`commit_receipt/3` fail-closed errors use.
+    assert {:ok, receipt} = result
+    assert receipt.status == :failed
+    assert receipt.consequence == :observe
+    assert {:error, %{code: :dispatch_crashed, detail: detail}} = receipt.reply
+    assert detail =~ "AshA2A.Test.Fixture.Crashy: real dispatch crash fixture"
+
+    # The claim `claim_receipt/3` wrote before dispatch is closed by the
+    # commit above -- fetchable now, not stuck at `receipt: nil`.
+    assert {:ok, fetched} = ReceiptStore.Memory.fetch(command.command_id, store_opts)
+    assert fetched.receipt_id == receipt.receipt_id
+
+    # A retry with the same command (same fingerprint) replays the closed
+    # receipt instead of hitting the permanent `{:error, :in_flight}` a
+    # still-open (`receipt: nil`) claim would produce.
+    assert {:ok, replay} = CommandBus.run(command, message, Crashy, store_opts: store_opts)
+    assert replay.replayed?
+    assert replay.receipt_id == receipt.receipt_id
   end
 end
