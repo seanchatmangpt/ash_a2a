@@ -115,7 +115,13 @@ step, sidestepping this repo's own previously-disclosed
 `bin/ci-local.sh` limitation, which was specifically about installing
 OTP directly on an act runner image):
 
-    act workflow_dispatch -W .github/workflows/swarm-test.yml -P ubuntu-latest=catthehacker/ubuntu:act-latest
+    act workflow_dispatch -W .github/workflows/swarm-test.yml \
+      --container-daemon-socket unix:///var/run/docker.sock
+
+(`--container-daemon-socket unix:///var/run/docker.sock` is required on
+this class of host -- see the real, disclosed `act` findings below;
+without it, or with the macOS-side forwarding socket path, the runner
+container fails to start at all.)
 
 See `docs/ENTERPRISE_READINESS_REPORT.md` (security posture + resilience
 evidence) and `docs/AIRGAP_READINESS_REPORT.md` (zero-outbound-
@@ -123,6 +129,54 @@ connectivity evidence, with an honest correction of this file's own
 earlier NetworkPolicy-enforcement claim -- see that report's "Correction"
 section) for real, reproducible evidence gathered against this exact
 manifest set.
+
+### Real, disclosed `act` findings (this session, run on this machine)
+
+Running this workflow through `act` (not just `ci.yml`) surfaced two
+real, distinct limitations, neither a defect in the swarm test itself --
+both confirmed by directly `docker exec`-ing into the still-running
+runner container after the job reported failure and re-running the
+exact same real commands by hand:
+
+1. **Docker-socket bind-mount path.** `act`'s default behavior of
+   bind-mounting `$DOCKER_HOST`'s own socket path into the runner
+   container fails on this host's Colima setup with `mkdir ...: operation
+   not supported`, because that path (`~/.colima/default/docker.sock`) is
+   a macOS-side forwarding proxy, not a real path from the Docker
+   daemon's own (Linux VM-side) filesystem perspective. Passing
+   `--container-daemon-socket -` (disable entirely) instead breaks the
+   *opposite* way: no docker.sock is mounted at all, so any step needing
+   Docker (this workflow's own `docker build`) fails immediately with
+   `connect: no such file or directory`. The real fix is
+   `--container-daemon-socket unix:///var/run/docker.sock` -- the
+   daemon's own real, internal socket path (confirmed via `colima ssh --
+   ls -la /var/run/docker.sock`), valid as a bind-mount source because
+   it's already local to the daemon's own host, not proxied from macOS.
+2. **A real, narrower `act`-runner instability under forced amd64
+   emulation** (`.actrc`'s own `--container-architecture linux/amd64`,
+   needed because `catthehacker/ubuntu:act-latest` ships no arm64
+   variant): with the socket fix above, the full job ran for real --
+   image build (3m40s), kind cluster creation, image load, every
+   manifest apply, and Deployment rollout all **succeeded** -- but the
+   "Real cross-pod swarm-dispatch probe" step's multi-line bash (an
+   array index, a `sleep`, a `kubectl exec`) crashed with a bare
+   `exitcode '139'` (SIGSEGV) and zero captured output; the next step
+   (kubeconform, a separately-built Go binary) crashed the same way with
+   an explicit `unexpected fault address`. Both are consistent with
+   genuine QEMU/amd64-emulation instability for certain subprocess/shell
+   patterns on this Apple-Silicon host, not a defect in the workflow's
+   own commands: the exact same real `kubectl exec ... swarm_node rpc
+   "SwarmNode.Probe.run()"` command, run by hand against the still-live
+   runner container and its still-live kind cluster right after the
+   crash, returned the real, correct
+   `{"swarm_dispatch_verified":true,...}` result -- and a real,
+   additional pod-kill performed the same way reconfirmed the resilience
+   test too. The underlying capability is proven; `act`'s own shell
+   execution under this host's forced emulation is the disclosed, narrow
+   limitation, matching this repo's own established pattern
+   (`bin/ci-local.sh`'s comments) of treating real hosted GitHub Actions
+   as the authoritative signal on this class of machine rather than
+   assuming `act` reproduces it perfectly.
 
 ## Cleanup
 

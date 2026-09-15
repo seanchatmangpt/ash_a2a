@@ -21,28 +21,23 @@ FROM hexpm/elixir:1.19.5-erlang-27.2.4-debian-bookworm-20260824-slim AS builder
 # compilation when no matching precompiled target is fetched -- a real,
 # disclosed requirement, not a defensive guess.
 #
-# Real, disclosed finding this session: ash_a2a's mix.exs declares
-# `{:ggen_igniter, "~> 26.9"}` with NO `:only` env restriction, and
-# ggen_igniter itself compiles a real Rustler NIF (`native/ggen_graph_nif`,
-# via `lib/ggen_igniter/native/graph_nif.ex`) as an unconditional part of
-# its own `mix compile` -- so ANY consumer building a release with
-# ash_a2a as a dependency (not just this swarm-test app) needs a real
-# Rust/cargo toolchain at build time, not just Elixir/Erlang. rustup
-# (not Debian's own, older packaged rustc/cargo) to get a toolchain the
-# pinned rustler/ggen_graph_nif crate edition actually builds under.
-# That same crate links a vendored RocksDB (`oxrocksdb-sys`) and uses
-# `bindgen` to generate its C bindings, which genuinely needs a real
-# `libclang` shared library at build time (confirmed real, not a
-# defensive guess: the first build attempt without it failed with
-# bindgen's own "Unable to find libclang" panic) plus a C++ toolchain
-# for the RocksDB C++ sources themselves.
+# No Rust/libclang/cmake needed here (real, verified, not assumed):
+# ash_a2a's mix.exs originally declared `{:ggen_igniter, "~> 26.9"}` with
+# no `:only` restriction, and ggen_igniter compiles a real Rustler NIF
+# (native/ggen_graph_nif, linking a vendored RocksDB via oxrocksdb-sys,
+# using bindgen -- a real Rust+libclang+C++ toolchain cost this Dockerfile
+# used to pay unconditionally, confirmed by two real build failures
+# before that was understood). ash_a2a's own mix.exs now scopes that
+# dependency to `only: :dev` -- confirmed here by `MIX_ENV=prod mix deps`
+# (both from ash_a2a's own root and from this swarm/ subproject) showing
+# zero rustler/ggen_igniter entries in the prod dependency tree, so a
+# release build never fetches or compiles it. Only build-essential (for
+# ekv's C NIF) is needed.
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \
-       build-essential git ca-certificates curl clang libclang-dev cmake \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+       build-essential git ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/root/.cargo/bin:${PATH}"
 ENV MIX_ENV=prod
 
 WORKDIR /build
