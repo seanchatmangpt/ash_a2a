@@ -22,3 +22,5 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 ash_a2a-*.tar
 
+# Local ULTRACODE receipts/logs are runtime evidence, not repository source.
+/.ultracode/state/

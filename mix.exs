@@ -4,7 +4,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.9.13",
+      version: "26.9.14",
       elixir: "~> 1.19",
       description: description(),
       package: package(),
@@ -88,7 +88,13 @@ defmodule AshA2A.MixProject do
       # AshA2A.RuntimeProvidersIntegrationTest so Durability can be
       # exercised with a real local durable-KV backend instead of the
       # default ObjectStore/S3 backend (which needs cloud credentials).
-      {:ekv, "~> 0.4", only: :test},
+      # Promoted out of `only: :test`: AshA2A.ReceiptStore.Ekv (a real
+      # durable receipt store, not a test double) and
+      # AshA2A.Application.receipt_store_children/0's automatic EKV wiring
+      # both call the :ekv package directly outside of Mix.env() == :test,
+      # the same reason :plug was promoted out of only: :test earlier in
+      # this repo's history.
+      {:ekv, "~> 0.4"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
