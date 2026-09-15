@@ -3,6 +3,31 @@ defmodule AshA2A.Semantic.Admission do
 
   alias AshA2A.Semantic.{IR, Source}
 
+  # Real, deterministic, conservative defense-in-depth check (not the
+  # primary safety mechanism -- that is `source_quote` grounding below,
+  # which already structurally prevents an entity referencing anything not
+  # verbatim present in the caller's own source text; a caller whose own
+  # scenario text never names a real company cannot have one admitted
+  # regardless of this list). Catches the common real corporate legal-entity
+  # suffix patterns (`X Corp`, `X Inc`, `X LLC`, ...) as a whole-word
+  # boundary match against `entities[].label` -- a deliberately narrow,
+  # explainable, real pattern, not an attempt at fuzzy real-company
+  # classification (`AshA2A.BoardPersona`'s own moduledoc names the same
+  # boundary). Does not attempt to enumerate specific real company names
+  # (a list like "the current Fortune 5" would itself be a stale,
+  # unverifiable claim to hardcode) -- a bare famous brand name with no
+  # legal-entity suffix is not caught by this list alone.
+  # Deliberately narrow to unambiguous formal-registration suffixes only --
+  # "Group"/"Holdings"/"Co." were considered and excluded as too generic
+  # (real risk of false-positive against ordinary English, e.g. a persona's
+  # own "Activist-Pressured" framing or "working group" language).
+  @real_entity_suffix_pattern ~r/\b(Inc\.?|Corp\.?|Corporation|LLC|L\.L\.C\.|Ltd\.?|PLC|N\.V\.|S\.A\.|AG|GmbH)\b/
+
+  defp real_named_entity_suffix?(label) when is_binary(label),
+    do: Regex.match?(@real_entity_suffix_pattern, label)
+
+  defp real_named_entity_suffix?(_), do: false
+
   @required %{
     entities: ~w(id kind type label source_quote),
     relations: ~w(id kind subject predicate object source_quote),
@@ -71,6 +96,9 @@ defmodule AshA2A.Semantic.Admission do
 
       field == :authorities and Map.get(item, "mode") not in ["described", "denied", "unknown"] ->
         error(:authority_grant_not_admissible)
+
+      field == :entities and real_named_entity_suffix?(Map.get(item, "label")) ->
+        error(:real_named_entity_not_admissible, Map.get(item, "id"))
 
       true ->
         :ok

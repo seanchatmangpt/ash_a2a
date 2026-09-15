@@ -38,8 +38,10 @@ defmodule AshA2A.Semantic.Compiler do
     generate = Keyword.get(opts, :generate_object, &ReqLLM.generate_object/4)
     model_spec = LLMProfiles.model_spec!(role)
     llm_opts = LLMProfiles.req_llm_opts!(role)
+    persona_context = Keyword.get(opts, :persona_context)
 
-    with {:ok, proposed} <- generate.(model_spec, prompt(source), Schema.extraction(), llm_opts),
+    with {:ok, proposed} <-
+           generate.(model_spec, prompt(source, persona_context), Schema.extraction(), llm_opts),
          {:ok, candidate_ir} <- IR.from_map(source.id, proposed),
          {:ok, admitted_ir} <- Admission.admit(source, candidate_ir),
          {:ok, ontology} <- Ontology.from_ir(admitted_ir),
@@ -111,6 +113,7 @@ defmodule AshA2A.Semantic.Compiler do
   defp synthesize(resource_or_domain, planning_ir, role, opts) do
     synth_opts = [role: Keyword.get(opts, :planning_role, role)]
     synth_opts = maybe_put(synth_opts, :generate_object, Keyword.get(opts, :plan_generate_object))
+    synth_opts = maybe_put(synth_opts, :persona_context, Keyword.get(opts, :persona_context))
 
     SemanticSynthesis.synthesize(
       resource_or_domain,
@@ -120,15 +123,37 @@ defmodule AshA2A.Semantic.Compiler do
     )
   end
 
-  defp prompt(source) do
+  # `persona_context`, when present, is a caller-supplied decision-making
+  # LENS (e.g. `AshA2A.BoardPersona.*`'s real, cited governance framing) --
+  # it never introduces new factual content the model could ground an entity
+  # against: `Admission.validate_item/3`'s `source_quote` check
+  # (`lib/ash_a2a/semantic/admission.ex`) verifies every extracted item
+  # against `source.text` alone (the real `%Source{}` struct passed to
+  # `Admission.admit/2` unchanged, never a reconstruction of this prompt),
+  # so appending persona framing here cannot weaken that real grounding
+  # guarantee. `nil` (the default) reproduces the exact prior prompt text
+  # byte-for-byte -- every existing caller is unaffected.
+  defp prompt(source, persona_context) do
     prefixes = Vocabulary.prefixes() |> Map.keys() |> Enum.sort() |> Enum.join(", ")
 
     """
     Extract candidate semantics from the source text. Reuse public ontology prefixes when exact semantics fit: #{prefixes}.
     Every assertion must include a verbatim source_quote from the text. Preserve uncertainty and exclusions. Do not grant execution authority; authority must be none.
-
+    #{persona_context_block(persona_context)}
     SOURCE:
     #{source.text}
+    """
+  end
+
+  defp persona_context_block(nil), do: ""
+
+  defp persona_context_block(persona_context) when is_binary(persona_context) do
+    """
+
+    DECISION-MAKING PERSPECTIVE (a lens for interpreting the source below --
+    not itself source material; do not extract entities/quotes from this
+    block, only from SOURCE):
+    #{persona_context}
     """
   end
 

@@ -47,7 +47,9 @@ defmodule AshA2A.Planning.SemanticSynthesis do
 
       generate_object = Keyword.get(opts, :generate_object, &ReqLLM.generate_object/4)
       schema = output_schema(capability_ids)
-      prompt = build_prompt(goal, observation, capability_ids)
+
+      prompt =
+        build_prompt(goal, observation, capability_ids, Keyword.get(opts, :persona_context))
 
       with {:ok, proposed} <- generate_object.(model_spec, prompt, schema, llm_opts),
            {:ok, envelope} <- normalize_proposal(proposed, role),
@@ -107,10 +109,18 @@ defmodule AshA2A.Planning.SemanticSynthesis do
   defp normalize_proposal(other, _role),
     do: {:error, refusal(:invalid_semantic_plan_shape, other)}
 
-  defp build_prompt(goal, observation, capability_ids) do
+  # `persona_context`, when present, is a caller-supplied decision-making lens
+  # (real, cited governance framing -- see AshA2A.BoardPersona.*) that shapes
+  # WHICH of the closed, already-admitted `capability_ids` the synthesis
+  # favors. It never widens `capability_ids` itself -- that set is computed
+  # once, above, from the real compiled capability index
+  # (`capability_ids/1`) before this prompt is even built, and the output
+  # schema's `"enum" => capability_ids` (see `output_schema/1`) still
+  # structurally rejects anything outside it regardless of persona framing.
+  defp build_prompt(goal, observation, capability_ids, persona_context) do
     """
     Manufacture a candidate web-surface plan from admitted semantic state.
-
+    #{persona_context_block(persona_context)}
     Goal:
     #{goal}
 
@@ -147,6 +157,18 @@ defmodule AshA2A.Planning.SemanticSynthesis do
       },
       "required" => ["request_id", "authority", "capability_ids", "hddl", "fond"]
     }
+  end
+
+  defp persona_context_block(nil), do: ""
+
+  defp persona_context_block(persona_context) when is_binary(persona_context) do
+    """
+
+    DECISION-MAKING PERSPECTIVE (a lens for choosing among the real, already-
+    admitted capability ids below -- never a reason to propose one outside
+    the closed set):
+    #{persona_context}
+    """
   end
 
   defp field(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
