@@ -152,6 +152,51 @@ defmodule AshA2A.Semantic.AdmissionTest do
     assert {:error, %{code: :semantic_identity_invalid}} = Admission.admit(source, ir)
   end
 
+  test "validate_item rejects an entities item whose label carries a real corporate legal-entity suffix, admits an equivalent one without" do
+    text = "The board discussed a partnership with Example Corp as a potential vendor."
+    source = Source.new(text)
+
+    entity_with_suffix = [
+      %{
+        "id" => "vendor-1",
+        "kind" => "entity",
+        "type" => "organization",
+        "label" => "Example Corp",
+        "source_quote" => "Example Corp"
+      }
+    ]
+
+    {:ok, ir_with_suffix} =
+      proposal(text)
+      |> Map.put("entities", entity_with_suffix)
+      |> then(&IR.from_map(source.id, &1))
+
+    assert {:error, %{code: :real_named_entity_not_admissible, detail: "vendor-1"}} =
+             Admission.admit(source, ir_with_suffix)
+
+    text2 =
+      "The board discussed a partnership with a generic external vendor as a potential option."
+
+    source2 = Source.new(text2)
+
+    entity_without_suffix = [
+      %{
+        "id" => "vendor-2",
+        "kind" => "entity",
+        "type" => "organization",
+        "label" => "a generic external vendor",
+        "source_quote" => "a generic external vendor"
+      }
+    ]
+
+    {:ok, ir_without_suffix} =
+      proposal(text2)
+      |> Map.put("entities", entity_without_suffix)
+      |> then(&IR.from_map(source2.id, &1))
+
+    assert {:ok, %{standing: :admitted}} = Admission.admit(source2, ir_without_suffix)
+  end
+
   defp proposal(quote) do
     IR.fields()
     |> Map.new(&{Atom.to_string(&1), []})
