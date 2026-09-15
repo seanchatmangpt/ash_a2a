@@ -8,9 +8,37 @@ defmodule AshA2A.CommandBus do
   `AshA2A.ReceiptStore`'s moduledoc), not process-mining trace
   replay/conformance checking -- no ordered event trace or reference process
   model is involved.
+
+  ## Consequence/receipt state machine (A2A-2601)
+
+  `run/4` advances one command through an explicit outbox-shaped sequence:
+
+      ADMITTED -> INTENT_DURABLE -> EXECUTING -> CONSEQUENCE_OBSERVED
+                                                          |
+                                     RECEIPT_DURABLE <----+----> RECEIPT_OUTBOXED
+                                     (store.commit ok)          (commit failed after
+                                                                   the consequence; the
+                                                                   receipt is journaled
+                                                                   durably by
+                                                                   `AshA2A.ReceiptOutbox`
+                                                                   and the caller gets a
+                                                                   typed
+                                                                   `:receipt_commit_pending`
+                                                                   error CARRYING the
+                                                                   receipt)
+
+  ADMITTED is `inspect_target/2` + `admit/2`. INTENT_DURABLE is the store's
+  own claim entry. EXECUTING crashes are already converted to `:failed`
+  receipts by `safe_dispatch/4`. The CONSEQUENCE_OBSERVED ->
+  RECEIPT_DURABLE edge is the one this state machine closes: a commit that
+  keeps failing after bounded retries (`:receipt_commit_retry_delays_ms`,
+  default `[50, 150]`) lands the receipt in the outbox instead of
+  discarding the outcome, and a later `reconcile_outboxed_receipts/2` (or
+  the opportunistic drain `run/4` performs before every claim, when the
+  journal is non-empty) repairs the store once it recovers.
   """
 
-  alias AshA2A.{Authority, Command, Identity, Receipt}
+  alias AshA2A.{Authority, Command, Identity, Receipt, ReceiptOutbox}
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
 
@@ -26,10 +54,26 @@ defmodule AshA2A.CommandBus do
   @spec default_store() :: module()
   def default_store, do: Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory)
 
+  @doc """
+  Drains the `AshA2A.ReceiptOutbox` journal into `store` (default:
+  `default_store/0`) -- the crash-recovery/reconciliation half of the
+  consequence/receipt state machine above. Operators call this after a store
+  outage; `run/4` also calls it opportunistically (best-effort, never
+  blocking) whenever the journal is non-empty, so the next command through
+  the bus repairs the previous one's pending receipt.
+  """
+  @spec reconcile_outboxed_receipts(module(), keyword()) ::
+          {:ok, %{committed: non_neg_integer(), remaining: non_neg_integer()}}
+  def reconcile_outboxed_receipts(store \\ default_store(), store_opts \\ []) do
+    ReceiptOutbox.reconcile(store, store_opts)
+  end
+
   @spec run(Command.t(), A2A.Message.t(), module(), keyword()) :: result()
   def run(%Command{} = command, %A2A.Message{} = message, resource_or_domain, opts \\ []) do
     store = Keyword.get(opts, :store, default_store())
     store_opts = Keyword.get(opts, :store_opts, [])
+
+    maybe_reconcile_outbox(store, store_opts)
 
     with {:ok, skill, _action, consequence} <- inspect_target(command, resource_or_domain),
          :ok <- admit(command, consequence),
@@ -79,14 +123,111 @@ defmodule AshA2A.CommandBus do
   # Same fail-closed contract as `claim_receipt/3` above, for the identical
   # reason: `store.commit/2` also resolves its backing process/config fresh
   # by name on every call and can crash the same two ways.
+  #
+  # A2A-2601: this is no longer the end of the line for a commit failure.
+  # By the time `commit_receipt/3` runs, the consequence has ALREADY
+  # happened (`safe_dispatch/4` returned) -- returning a bare
+  # `:receipt_store_unavailable` error here used to discard the observed
+  # outcome entirely, leaving a real consequence with no durable receipt
+  # anywhere (the zero-unreceipted-DO break). Now: bounded retries for
+  # transient restart windows, then a durable `AshA2A.ReceiptOutbox.append/1`
+  # and a typed `:receipt_commit_pending` error that CARRIES the receipt,
+  # with reconciliation (`reconcile_outboxed_receipts/2`) repairing the
+  # store later. Only a simultaneous outbox failure returns the terminal
+  # `:receipt_commit_failed` error (still carrying the receipt).
   defp commit_receipt(store, receipt, store_opts) do
-    :ok = store.commit(receipt, store_opts)
-    emit_receipt(receipt)
-    {:ok, receipt}
+    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+
+    case commit_with_retries(store, receipt, store_opts, delays) do
+      :ok ->
+        emit_receipt(receipt)
+        {:ok, receipt}
+
+      {:error, reason} ->
+        outbox_after_consequence(receipt, reason)
+    end
+  end
+
+  defp commit_with_retries(store, receipt, store_opts, delays, last_reason \\ nil)
+
+  defp commit_with_retries(_store, _receipt, _store_opts, [], last_reason), do: {:error, last_reason}
+
+  defp commit_with_retries(store, receipt, store_opts, [delay | rest], _last_reason) do
+    case commit_once(store, receipt, store_opts) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Process.sleep(delay)
+        commit_with_retries(store, receipt, store_opts, rest, reason)
+    end
+  end
+
+  defp commit_once(store, receipt, store_opts) do
+    case store.commit(receipt, store_opts) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   rescue
-    _error -> {:error, refusal(:receipt_store_unavailable)}
+    _error -> {:error, :receipt_store_unavailable}
   catch
-    :exit, _reason -> {:error, refusal(:receipt_store_unavailable)}
+    :exit, _reason -> {:error, :receipt_store_unavailable}
+  end
+
+  # RECEIPT_OUTBOXED: the consequence is observed, the store is not taking
+  # the receipt, so the receipt itself becomes the durable evidence. The
+  # `[:ash_a2a, :receipt, :outboxed]` telemetry event carries the same
+  # `%{receipt: receipt}` metadata `emit_receipt/1` uses, so observational
+  # consumers (e.g. the OCEL forwarder) keep their evidence for a
+  # consequence whose primary receipt commit is still pending.
+  defp outbox_after_consequence(receipt, reason) do
+    case ReceiptOutbox.append(receipt) do
+      :ok ->
+        :telemetry.execute(
+          [:ash_a2a, :receipt, :outboxed],
+          %{},
+          %{receipt: receipt}
+        )
+
+        {:error,
+         %{
+           code: :receipt_commit_pending,
+           detail:
+             "consequence observed but store commit failed (#{inspect(reason)}); " <>
+               "receipt durably outboxed pending reconciliation",
+           original_reason: reason,
+           receipt: receipt
+         }}
+
+      {:error, outbox_reason} ->
+        {:error,
+         %{
+           code: :receipt_commit_failed,
+           detail:
+             "consequence observed; store commit failed (#{inspect(reason)}) AND outbox " <>
+               "append failed (#{inspect(outbox_reason)}) -- receipt NOT durably recorded",
+           original_reason: reason,
+           outbox_reason: outbox_reason,
+           receipt: receipt
+         }}
+    end
+  end
+
+  # Opportunistic reconciliation: when the outbox holds receipts, the next
+  # `run/4` drains them into the (possibly recovered) store before claiming.
+  # Best-effort by construction -- every `ReceiptOutbox` store call is
+  # no-raise, and this wrapper guards even unexpected crashes so a broken
+  # reconciliation can never block new commands from flowing.
+  defp maybe_reconcile_outbox(store, store_opts) do
+    if ReceiptOutbox.count() > 0 do
+      ReceiptOutbox.reconcile(store, store_opts)
+    end
+
+    :ok
+  rescue
+    _error -> :ok
+  catch
+    :exit, _reason -> :ok
   end
 
   # `skill.consequence` -- computed once at compile time
