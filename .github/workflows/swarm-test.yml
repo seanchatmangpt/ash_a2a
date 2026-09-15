@@ -52,6 +52,21 @@ jobs:
       - name: Wait for rollout
         run: kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=180s
 
+      - name: Real egress falsifier (NetworkPolicy deny-by-default, positive then negative control)
+        run: |
+          POD="$(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n ash-a2a-swarm delete -f k8s/network-policy.yaml
+          POSITIVE="$(kubectl -n ash-a2a-swarm exec "$POD" -- /app/bin/swarm_node rpc \
+            'IO.inspect(:gen_tcp.connect(~c"8.8.8.8", 443, [], 5000))')"
+          echo "$POSITIVE"
+          kubectl apply -f k8s/network-policy.yaml
+          sleep 3
+          NEGATIVE="$(kubectl -n ash-a2a-swarm exec "$POD" -- /app/bin/swarm_node rpc \
+            'IO.inspect(:gen_tcp.connect(~c"8.8.8.8", 443, [], 5000))')"
+          echo "$NEGATIVE"
+          echo "$POSITIVE" | grep -q '{:ok,'
+          echo "$NEGATIVE" | grep -q '{:error, :timeout}'
+
       - name: Real cross-pod swarm-dispatch probe
         run: |
           sleep 8
