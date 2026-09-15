@@ -6,6 +6,121 @@ then republished with doc corrections). Source material: this session's own
 `docs/jira/v26.9.14/RELEASE_RECEIPT.md` §8 disclosures, the earlier remote-eval
 deferred list, and the live friction hit running `act` locally.
 
+## Cycle 3 (2026-09-15) — Zach Daniel / Chris McCord adversarial review + ERRC refactor
+(workflow `wlnyxcjht`, 15 agents), part of the standing 1-hour autonomous
+ERRC innovation loop (cron `3630974d`, personas: Ash/Spark idiom, Phoenix/OTP
+idiom, process-mining/Dr. Wil van der Aalst lens for later cycles)
+
+9 review dimensions (4 Ash/Spark-idiom, 4 Phoenix/OTP-idiom) produced 26
+findings; ERRC-synthesized into 10 ELIMINATE (confirmed non-issues, see
+below), 7 REDUCE (deferred, listed below), 0 RAISE, 0 CREATE, and 5
+top-severity items selected for immediate bounded execution.
+
+- [x] CREATE (executed): OCEL telemetry POST made async (`Task.Supervisor`
+      offload in `lib/ash_a2a/telemetry/ocel_forwarder.ex` +
+      `lib/ash_a2a/application.ex`) — a stalled/slow OCEL ingest endpoint
+      previously blocked the single-mailbox `A2A.Agent` GenServer that also
+      serves the inbound HTTP request. Additive, zero success-path behavior
+      change. +1 test.
+- [x] CREATE (executed): `AshA2A.ReceiptStore.Ekv.claim/2`/`commit/2` made
+      atomic via EKV's own CAS (`if_vsn:`) instead of a racy
+      read-then-write — the module's own moduledoc self-diagnosed this TOCTOU
+      gap; without the fix two concurrent claims on one fresh `command_id`
+      could both succeed, double-dispatching a consequence-bearing command.
+      New test: 25 real `Task.async` racers, exactly one wins. This item's
+      own refactor agent paused mid-task on an unrelated plan-mode interrupt
+      (edits made, uncommitted); completed, independently re-verified, and
+      committed by the orchestrating session per the standing "do not stop"
+      directive. +1 test.
+- [x] CREATE (executed): `CommandBus.run/4` now fails closed
+      (`{:error, refusal(:receipt_store_unavailable)}`) instead of crashing
+      the shared caller process when the backing receipt store is
+      transiently unavailable (`ReceiptStore.Memory` GenServer killed, or
+      `ReceiptStore.Ekv`'s `:persistent_term` config missing). Verified via
+      falsifier: reverting the lib change made the new tests genuinely fail.
+      +2 tests.
+- [x] CREATE (executed): `Delivery.Oban.payload/1` now round-trips
+      `Command.semantic_subject` — it was being dropped entirely, so
+      `Command.fingerprint/1` (which folds the semantic-subject token into
+      its hash) could not round-trip for continuation-flow commands
+      delivered via Oban. Real Postgres/`oban_jobs` end-to-end test added.
+      +2 tests.
+- [x] CREATE (executed): `TaskLifecycle.admit/3`'s `action` argument no
+      longer silently defaults to `nil` — the default routed to
+      `AshStateMachine.possible_next_states/1` (any-action reachability, a
+      materially weaker check) instead of the per-action legality check.
+      Both real call sites already passed `action` explicitly, so this is
+      behavior-preserving; it only removes a footgun. This item's refactor
+      agent also paused on the same plan-mode interrupt; completed the same
+      way as the EKV item above.
+- Verified after all 5 CREATE fixes, on `main` (base `5cb3837` → `ea955f6`,
+  pushed): `mix format` clean, `mix compile --warnings-as-errors` clean,
+  full suite `3 doctests, 9 properties, 346 tests, 0 failures (7 excluded)`
+  (+6 from the pre-cycle 340 baseline), `mix ash_a2a.verify_architecture`
+  9/9, `grep -rn "Mox\|:meck\|Mock(" test/` zero real matches. 5 worktrees
+  (`refactor/*`) merged sequentially with real per-branch verification,
+  then removed as redundant once confirmed fully merged.
+- [x] ELIMINATE (10 confirmed non-issues, no fix applied): `resource_dsl?/1`'s
+      raw `Module.get_attribute(:spark_is)` reflection (correct idiom for
+      its self-referential mid-compile position, not a duplication of
+      `Spark.Dsl.is?/2`); `Authority.admits?/2` correctly not modeled as
+      `Ash.Policy.Authorizer` (answers a structurally earlier question);
+      `dispatcher.ex`'s direct `Changeset`/`Query`/`ActionInput` calls are
+      the documented low-level API, not a framework-fighting shortcut;
+      `AshA2A.Delivery.Oban`'s plain `Oban.Job.new/2` is AshOban's own
+      doc-sanctioned escape hatch for ephemeral non-persisted structs; Req's
+      default retry policy never fires for the POST `ocel_forwarder.ex`
+      uses (`:safe_transient` is GET/HEAD-only, confirmed from Req source);
+      cold-boot child-start ordering in `application.ex` has no race
+      (OTP starts static children strictly in order); a proposed switch to
+      `rest_for_one` supervision was rejected (would widen blast radius
+      without fixing the real gap, which the async-OCEL/fail-closed items
+      above already cover); `Vocabulary`'s RDF/SKOS/OWL-Time prefix table's
+      3-entry overlap with vendored `ash_r2rml` has no clean mechanical
+      extraction available; the 7-module hand-copied fingerprint-hashing
+      routine is a real but purely cosmetic DRY violation, deprioritized;
+      `TaskLifecycle.possible_next_states/2`'s latent nil-action
+      arity-probing branch is confirmed unreachable with the pinned
+      `ash_state_machine ~> 0.2`.
+
+## Remaining REDUCE from Cycle 3 (deferred past the 5-fix cap this cycle)
+
+- [ ] `AshA2A.Dsl`'s nested `argument` DSL entity is accepted and persisted
+      but never consulted by the real capability-compilation pipeline
+      (`lib/ash_a2a/dsl.ex`, `lib/ash_a2a/verify.ex`) — silent no-op.
+      `bounded_and_safe: true`, ready to execute: add a `{:warn, ...}` to
+      `AshA2A.Verify.verify/1` for any override with non-empty `arguments`.
+- [ ] Semantic pipeline (`Compiler.compile_source/3`, `Compiler.replan/4`)
+      emits zero telemetry, bypassing the repo's own `:telemetry.span` idiom
+      and already-wired OCEL forwarder. `bounded_and_safe: true`, purely
+      additive.
+- [ ] `AshA2A.Agent` moduledoc's "one mailbox, not a worker pool" disclosure
+      predates the semantic-compile feature's measured 170s+ latency —
+      needs a doc update reflecting real observed behavior.
+- [ ] Group adapter (`lib/ash_a2a/topology/group.ex`) omits monitor/demonitor,
+      the only mechanism to observe a later conflict-resolution kill of a
+      "completed" register/join receipt.
+- [ ] Group adapter never threads `opts` through, silently forcing every call
+      onto the default cluster.
+- [ ] Group adapter's `available?/0` only confirms the module is compiled,
+      not that a Group instance is running under the registry name in use —
+      misconfiguration crashes instead of the adapter's own documented
+      fail-closed error.
+- [ ] Req's connect-phase timeout is never configured in `ocel_forwarder.ex`,
+      so the effective worst-case block is ~30s+ despite the configured
+      `ocel_ingest_timeout_ms` implying ~2s.
+
+## Not auto-executed — needs explicit human sign-off (Cycle 3, carried from wlnyxcjht)
+
+- Spark-Persister-based caching for `AshA2A.Info`'s capability index
+  (`lib/ash_a2a/info.ex`) — fully recomputed via Ash introspection on every
+  call, with real Spark/`AshJsonApi` precedent for precomputing it. Marked
+  `bounded_and_safe: false` by the reviewing workflow: needs design sign-off
+  on staleness/consistency across resource-vs-domain subject kinds before
+  any caching is added. Parked, not executed, per this session's standing
+  discipline that architecture-level items get parked with a stated reason,
+  never unilaterally executed even under a "do not ask questions" directive.
+
 ## Cycle 2 (2026-09-15) — "make sure all possible chicago tests run"
 
 Discovered real, unused `ZAI_API_KEY`/`GROQ_API_KEY`/`ANTHROPIC_API_KEY`
