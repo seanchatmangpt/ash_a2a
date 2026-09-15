@@ -1,34 +1,27 @@
-# A2A-2602: OCEL async forwarding is unbounded supervised-task fan-out
+# A2A-2602: bounded OCEL forwarding fan-out
 
-- **Status**: Closed — implemented + Chicago-validated (2026-09-15)
-- **Severity**: Medium
-- **Standing**: ALIVE for this fix (full suite: 382 tests, 0 failures, `fix/v26.9.15-commandbus-outbox` @ 1e35c30, worktree `wt-v26915/ash_a2a`)
-- **Closure evidence**: `AshA2A.Application` starts the telemetry `Task.Supervisor` with `max_children` (`:ocel_max_in_flight`, default 256); beyond the ceiling the forwarder accounts an explicit shed (`:counters` total via `shed_count/0` + one `[:ash_a2a, :ocel, :shed]` telemetry per drop, no log flood). Chicago suite `test/ash_a2a_telemetry_ocel_forwarder_bounded_test.exs` bursts 12 real dispatches against a real slow Bandit ingest with `max_children: 2` and proves observed concurrency stays <= 2 and `served + shed == burst` (every drop accounted).
-- **Found by**: 14-hour cross-repo code review, window 2026-09-14 9:40 PM → 2026-09-15 11:40 AM PDT (inspection, not execution)
+- **Status**: Implemented; exact-head verification required before merge.
+- **Severity**: Medium.
+- **Standing**: `BUILD_UNVERIFIED` for the current PR head. No publication, production, runtime-standing, or `ALIVE` claim.
+- **Found by**: 14-hour cross-repo review, 2026-09-14 9:40 PM → 2026-09-15 11:40 AM PDT.
 
-## Evidence
+## Boundary
 
-OCEL egress was correctly moved out of the single agent mailbox this window. But the forwarder starts one supervised task per event (`lib/ash_a2a/telemetry/ocel_forwarder.ex:97`, supervisor declared at `lib/ash_a2a/application.ex:39` as `AshA2A.Telemetry.TaskSupervisor`) with:
+`AshA2A.Application` starts `AshA2A.Telemetry.TaskSupervisor` with `max_children` from `:ocel_max_in_flight` (default 256). That supervisor admission limit is the hard concurrency ceiling for asynchronous OCEL HTTP forwarding.
 
-- no `max_children`,
-- no queue,
-- no shedding policy,
-- no bounded buffer.
+An event that cannot enter the supervisor is shed rather than spawning outside the budget. `AshA2A.Telemetry.OcelForwarder.shed_count/0` increments once per shed and one `[:ash_a2a, :ocel, :shed]` telemetry event is emitted with the admission-failure reason.
 
-The HTTP timeout merely bounds each task's lifetime.
+The accounting applies to `:max_children` and to other task-admission failures such as an unavailable task supervisor. HTTP failures *after* a task has been admitted remain best-effort observational delivery failures; they do not increase task concurrency beyond the supervisor bound.
 
-## Impact
+## Chicago falsifiers
 
-A sufficiently large telemetry burst can turn an observational subsystem into BEAM resource pressure — process count and in-flight HTTP connections grow with the event burst, not with a configured budget. Ranked #5 in the cross-repo closure order.
+`test/ash_a2a_telemetry_ocel_forwarder_bounded_test.exs` defines two acceptance falsifiers:
 
-## Fix
+1. Burst 12 real dispatch events against a real slow Bandit ingest with `max_children: 2`; observed HTTP concurrency and supervised workers must stay `<= 2`, and `served + shed == 12`.
+2. Route an event to a missing task supervisor; the dispatch caller must not crash and the event must increment the shed counter and emit shed telemetry.
 
-Bound the fan-out: set `max_children` on the `Task.Supervisor`, add a bounded queue/buffer with explicit overflow policy, and shed/backpressure excess events with a typed refusal or shed-counter so dropped telemetry is observable rather than silent.
+## Evidence boundary
 
-## Falsifier (acceptance)
+The predecessor head `429246c` had a hosted CI run that admitted the exact SHA but failed at `mix format --check-formatted`; compile and tests were skipped. The earlier local 382-test report therefore does not qualify the current head.
 
-Burst N ≫ max events at the forwarder. Assert:
-
-- observed concurrency never exceeds the configured bound,
-- process count does not grow unboundedly with the burst,
-- shed events are accounted (counter/refusal), not silently lost.
+Current-head admission requires repository-native exact-head CI to pass checkout identity, formatter, warnings-as-errors compile, and the full test suite including both bounded-fan-out falsifiers.
