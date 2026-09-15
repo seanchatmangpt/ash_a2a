@@ -6,6 +6,78 @@ then republished with doc corrections). Source material: this session's own
 `docs/jira/v26.9.14/RELEASE_RECEIPT.md` §8 disclosures, the earlier remote-eval
 deferred list, and the live friction hit running `act` locally.
 
+## Cycle 5 (2026-09-15) — loop wrap-up: dead-argument-DSL warning executed
+directly (standing 1-hour autonomous loop's final cycle)
+
+With ~11 minutes left before the loop's own stop time, launching a fresh
+multi-agent Workflow batch (prior batches took 30-45 min end to end) risked
+leaving real, uncommitted work stranded with no future fire left to
+integrate it. Skipped the Workflow this cycle and executed one
+already-identified, ready-to-execute REDUCE item directly instead, so
+nothing was left dangling.
+
+- [x] REDUCE → executed: `AshA2A.Verify.verify/1` now returns a real Spark
+      `{:warn, ...}` whenever an `a2a do skill ... do argument ... end end`
+      override declares non-empty `arguments` — capability compilation
+      never consults them (arguments always derive from the referenced Ash
+      action), so this was previously a silent no-op. New test compiles
+      two real DSL modules through `Spark.Test`'s warning collector
+      (`assert_dsl_warning/2`, `refute_dsl_warnings/1`).
+      Real debugging note: the first test draft defined the Resource module
+      before its Domain inside the same inline block, which silently lost
+      the `:ash_a2a_skill_overrides` persisted data at verify time for a
+      runtime-compiled (non-top-level) module — root-caused via temporary
+      instrumentation (confirmed the transformer persisted the argument
+      correctly, but the verifier read back `[]`), fixed by defining the
+      Domain module first; not a defect in the shipped fix itself, both
+      instrumentation additions were removed before commit.
+- Verified on `main` (`3914a99` → `d2ecf46`, pushed): `mix format` clean,
+  `mix compile --warnings-as-errors` clean, full suite `3 doctests, 9
+  properties, 356 tests, 0 failures (8 excluded)` (+2 from the pre-cycle
+  354 baseline), `mix ash_a2a.verify_architecture` 9/9, zero real mock
+  matches. Worktree/branch removed once confirmed merged.
+
+## Loop summary (cron `3630974d`, 2026-09-14 23:47 → 2026-09-15 00:53 PDT)
+
+Real totals across all 5 cycles of the standing 1-hour autonomous ERRC
+loop (3 expert lenses: Ash/Spark idiom — Zach Daniel framing; Phoenix/OTP
+idiom — Chris McCord framing; process-mining discipline — Dr. Wil van der
+Aalst framing, all grounded in vendored framework source/docs or published,
+cited literature, never a fabricated quote attributed to a real person):
+
+- **2 Workflow batches run** (`wlnyxcjht`, 15 agents; `w66f0froy`, 9 agents)
+  plus 1 direct bounded fix executed without a Workflow in the loop's final
+  cycle — 24 agent-equivalents of real work total.
+- **10 real commits merged into `main`** across 5 sequential, individually
+  re-verified merges (`5cb3837 → d2ecf46`): async OCEL dispatch, EKV
+  CAS-atomic claim/commit, CommandBus fail-closed on store crash, Oban
+  payload semantic-subject round-trip, `TaskLifecycle.admit/3` required
+  action, the completed board-persona archetype feature (3 personas +
+  `Deliberation` fan-out), CommandBus dispatch-call crash guard, OCEL
+  `relationships` default, replay-terminology docstring clarification, and
+  the dead-argument-DSL verifier warning.
+- **Test suite grew from 340/0 to 356/0** (16 new real tests), `9/9`
+  architecture checks and zero real mock matches held at every single merge
+  point, not just at the end.
+- **2 refactor agents stalled on a plan-mode interrupt mid-task** (EKV CAS,
+  `TaskLifecycle`); both were completed and independently re-verified by
+  the orchestrating session rather than left uncommitted, per the standing
+  "do not leave dangling work" discipline.
+- **Real architectural question answered, not assumed**: is `CommandBus`
+  reinventing BRCE? No — it structurally exceeds BRCE's `admit/2` in
+  routing, 3-way consequence classification, and typed subject/capability/
+  expiry `Authority`; the one real gap found this way (an unguarded dispatch
+  crash) was fixed same-cycle.
+- **3 real architecture-level items parked for explicit human sign-off**
+  (never auto-executed): Spark-Persister capability-index caching;
+  `AshA2A.Receipt` hash/parent_hash + independent replay verification (a
+  receipt schema change); emitted-OCEL-event standard-2.0-wire-format
+  conformance (a cross-repo ash_a2a↔beam4pm contract decision). Plus 7
+  smaller REDUCE items logged in Cycle 3/4 above, still open.
+- **5 worktrees + branches cleaned up** after each confirmed-merged batch;
+  zero destructive git operations (no reset --hard, no forced conflict
+  resolution) at any point.
+
 ## Cycle 4 (2026-09-15) — board-persona feature completion + process-mining
 (Dr. Wil van der Aalst) lens review + ERRC refactor
 (workflow `w66f0froy`, batch 1 of the standing 1-hour autonomous loop,
