@@ -84,7 +84,22 @@ defmodule AshA2A.SemanticProjection do
         "status" => to_string(semantic.status),
         "standing" => to_string(semantic.standing),
         "replayed" => semantic.replayed?
-      }
+      },
+      # Always present, defaulting to `[]`, so every emitted event carries
+      # the OCEL 2.0 E2O relationships field key -- matching
+      # `AshA2A.Telemetry.OcelForwarder.build_dispatch_event/2`'s own
+      # `"relationships" => relationships(metadata)` (ocel_forwarder.ex:168),
+      # which always includes the key too. Without this default,
+      # `OcelForwarder.receipt_event/1`'s nil-dispatch branch
+      # (ocel_forwarder.ex:157-158, taken whenever no CommandBus-routed
+      # dispatch span was stashed ahead of this receipt commit) returned
+      # this base event unmodified, so the key was absent entirely rather
+      # than present-and-empty. beam4pm's `decode_relationships/1` already
+      # treats a missing key as `{:ok, []}`, so this is behavior-preserving
+      # for the current deployed consumer -- it only closes the gap for a
+      # stricter OCEL 2.0 parser that requires the field key to always be
+      # present.
+      "relationships" => []
     }
   end
 

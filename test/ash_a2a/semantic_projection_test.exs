@@ -43,6 +43,21 @@ defmodule AshA2A.SemanticProjectionTest do
     assert event["attributes"]["execution_id"] == "execution:exec-2"
   end
 
+  test "OCEL event always carries a relationships key, defaulting to an empty list, even when no relationships data is supplied" do
+    command =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "semantic-3",
+        agent_id: "agent-1",
+        principal_id: "principal-1"
+      )
+
+    receipt = Receipt.from_reply(command, Identity.execution("exec-3"), :observe, {:reply, []})
+    event = SemanticProjection.ocel_event(receipt)
+
+    assert Map.has_key?(event, "relationships")
+    assert event["relationships"] == []
+  end
+
   test "capability projection joins Ash capability identity to ash_r2rml inspection without executing RDF" do
     assert {:ok, projection} =
              SemanticProjection.capability(Echo, "AshA2A.Test.Fixture.Echo.read")

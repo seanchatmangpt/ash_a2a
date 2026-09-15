@@ -26,6 +26,7 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
 
   alias A2A.Message
   alias A2A.Part
+  alias AshA2A.{Command, Identity, Receipt}
   alias AshA2A.Test.Fixture.FreedomGym.Facilitator
 
   defmodule MicroBeamOcelIngest do
@@ -236,6 +237,44 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     events = wait_for_events(1, 2_000)
 
     assert [event] = events
+    assert event["relationships"] == []
+  end
+
+  test "a real receipt-committed event reached without a preceding CommandBus-routed dispatch span (receipt_event/1's nil-dispatch branch) still carries the relationships key" do
+    # `AshA2A.Telemetry.OcelForwarder.receipt_event/1`'s nil branch is taken
+    # whenever `[:ash_a2a, :receipt, :committed]` fires and
+    # `Process.delete(:ash_a2a_ocel_pending_dispatch)` finds nothing stashed
+    # -- exactly what `AshA2A.CommandBus.run/4`'s `emit_receipt/1` call is
+    # real production shape of, and exactly what a direct (non-CommandBus)
+    # committer of a receipt would also produce. Firing the exact same real
+    # `:telemetry.execute/3` call `emit_receipt/1` makes, with a real
+    # `%AshA2A.Receipt{}` built the same way
+    # `AshA2A.SemanticProjectionTest` builds one, exercises this real branch
+    # directly without going through CommandBus -- no mock, a real telemetry
+    # dispatch to the real attached handler, landing at the real Bandit
+    # ingest fixture.
+    command =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "nil-dispatch-branch-1",
+        agent_id: "agent-1",
+        principal_id: "principal-1"
+      )
+
+    receipt =
+      Receipt.from_reply(
+        command,
+        Identity.execution("exec-nil-dispatch-1"),
+        :observe,
+        {:reply, []}
+      )
+
+    :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})
+
+    events = wait_for_events(1, 2_000)
+
+    assert [event] = events
+    assert event["attributes"]["command_id"] == Identity.external(receipt.command_id)
+    assert Map.has_key?(event, "relationships")
     assert event["relationships"] == []
   end
 
