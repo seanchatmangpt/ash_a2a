@@ -9,15 +9,21 @@ defmodule AshA2A.CommandBus do
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
 
+  @doc """
+  The real, configured default `AshA2A.ReceiptStore` implementation --
+  `Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory)`,
+  the exact same resolution `run/4` below uses when a caller passes no
+  `:store` opt. Exposed so any other real caller needing the SAME default
+  store `run/4` itself would have used (e.g. `AshA2A.Agent`'s
+  receipt-driven-replanning continuation lookup, GAP B) resolves it identically
+  rather than re-deriving or drifting from this one real source of truth.
+  """
+  @spec default_store() :: module()
+  def default_store, do: Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory)
+
   @spec run(Command.t(), A2A.Message.t(), module(), keyword()) :: result()
   def run(%Command{} = command, %A2A.Message{} = message, resource_or_domain, opts \\ []) do
-    store =
-      Keyword.get(
-        opts,
-        :store,
-        Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory)
-      )
-
+    store = Keyword.get(opts, :store, default_store())
     store_opts = Keyword.get(opts, :store_opts, [])
 
     with {:ok, skill, _action, consequence} <- inspect_target(command, resource_or_domain),

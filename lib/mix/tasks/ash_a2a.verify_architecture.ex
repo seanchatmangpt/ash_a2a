@@ -43,6 +43,36 @@ defmodule Mix.Tasks.AshA2a.VerifyArchitecture do
        `command_id` and identical semantic content, and diverges for two
        commands sharing a `command_id` but carrying different `input`
        (replay-safety and conflict-safety invariants).
+    5. `AshA2A.Command.fingerprint/1` stays stable for two commands sharing
+       a `command_id` and identical semantic content even across a real,
+       explicit multi-hour `submitted_at` gap (the transport-timestamp
+       exclusion `AshA2A.Command`'s own moduledoc claims, proven here for
+       real rather than only implied).
+    6. A `:change`-consequence skill dispatched with a real, matching
+       `AshA2A.Authority` is really admitted, dispatched, and committed to
+       `AshA2A.ReceiptStore.Memory` by `AshA2A.CommandBus.run/4` (the
+       positive-admission counterpart to check 3).
+    7. `AshA2A.CommandBus.run/4` really refuses, with `:command_conflict`,
+       a second command that reuses a `command_id` already committed under
+       check 6 but carries genuinely different `input` -- exercised end to
+       end through `AshA2A.ReceiptStore.Memory`'s real conflict branch, not
+       just a `Command.fingerprint/1` comparison in isolation.
+
+  Checks 5-7 replace two checks this task's own brief originally specified
+  (a `semantic_requests` DSL opt-in gate real-compiling, and an unopted-in
+  resource's dispatch real-falling-through past a `:semantic_request` gate)
+  -- both name real production symbols
+  (`AshA2A.Info.semantic_requests_enabled?/1`, the `a2a do semantic_requests
+  ... end` DSL option, `AshA2A.Agent.__dispatch__/3`'s `dispatch_semantic/2`)
+  that do not exist on this worktree's branch: they were introduced by
+  commit `95ce672` ("feat(semantic): explicit production A2A surface for
+  semantic compilation"), which landed on the shared
+  `v26.9.14/release-closure` branch strictly after this worktree was
+  branched from it (`git merge-base HEAD 95ce672` equals this worktree's own
+  `HEAD`; `grep -rn "semantic_requests" lib/ test/` is a real zero-hit in
+  this tree). See `AshA2A.ArchitectureVerifier`'s moduledoc for the full,
+  verified account of that dependency and what real checks were substituted
+  instead.
   """
 
   use Mix.Task

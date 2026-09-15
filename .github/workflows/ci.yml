@@ -8,6 +8,31 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Real PostgreSQL for AshA2A.Test.Repo (config/test.exs) --
+    # test/ash_a2a/oban_delivery_qualification_test.exs (GAP D real Oban
+    # integration) needs a real, reachable Postgres to create and query
+    # Oban's real `oban_jobs` table against; its own setup_all raises a
+    # clear diagnostic (rather than failing opaquely) when none is
+    # reachable, which is exactly what a hosted-CI run without this
+    # service produced: 0 failures, 4 invalid ("failure on setup_all
+    # callback, all tests have been invalidated"), exit code 2. Host port
+    # 55432 and the postgres/postgres/ash_a2a_test credentials match
+    # config/test.exs's `AshA2A.Test.Repo` config exactly -- the same
+    # values this repo's own local development Postgres container uses.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ash_a2a_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:

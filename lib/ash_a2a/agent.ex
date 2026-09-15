@@ -178,6 +178,18 @@ defmodule AshA2A.Agent do
   #     `{:error, {:action_resolution, _}}` shapes unchanged, rather than
   #     this function inventing a second, differently shaped error for the
   #     same failure.
+  # v26.9.14: the explicit semantic-compilation A2A surface. Two independent
+  # gates, both real capability truth or real caller-supplied signal --
+  # never a content sniff of unstructured text, never a fallback for an
+  # unrecognized skill name: (1) the target resource/domain declared
+  # `a2a do semantic_requests true end` (`AshA2A.Info.
+  # semantic_requests_enabled?/1`, compiled DSL truth); (2) the caller's own
+  # inbound message sets `:semantic_request`/`"semantic_request"` metadata
+  # to `true` (`AshA2A.MetadataKey`'s existing atom-then-string convention,
+  # the same one `:skill` metadata already uses). A message missing either
+  # gate falls straight through to the ordinary skill-resolution path below
+  # exactly as before this feature existed -- this branch adds a new,
+  # explicit route, it does not change the meaning of any existing message.
   @doc false
   @spec __dispatch__(module(), A2A.Message.t(), A2A.Agent.context() | map()) ::
           AshA2A.Dispatcher.reply()
@@ -185,6 +197,176 @@ defmodule AshA2A.Agent do
     history = task_history(context)
     auth_identity = verified_auth_identity(context)
 
+    if semantic_request?(resource_or_domain, message) do
+      dispatch_semantic(resource_or_domain, message)
+    else
+      dispatch_skill(resource_or_domain, message, history, auth_identity)
+    end
+  end
+
+  defp semantic_request?(resource_or_domain, %A2A.Message{metadata: metadata}) do
+    AshA2A.Info.semantic_requests_enabled?(resource_or_domain) and
+      AshA2A.MetadataKey.get(metadata || %{}, :semantic_request) == true
+  end
+
+  # GAP B: receipt -> feedback -> replan closure. A `:semantic_request`
+  # message that ALSO carries `:continuation_fingerprint`/
+  # `"continuation_fingerprint"` metadata (same `AshA2A.MetadataKey`
+  # atom-then-string convention as `:skill`/`:semantic_request`) names a
+  # PRIOR `AshA2A.Semantic.ExecutionPackage`'s own
+  # `"execution_package_fingerprint"` (the fingerprint that package's own
+  # `to_reply/1` handed back to whichever caller compiled or last replanned
+  # it) that the caller wants a NEW candidate replanned from -- real
+  # observation folded in, never a fresh, context-blind `Compiler.compile/3`.
+  # Replanning is automatic ONLY for a fingerprint that resolves to BOTH a
+  # real, previously-stored `ExecutionPackage` (`AshA2A.Semantic.
+  # PackageStore.fetch/2`) AND a real, previously-committed `AshA2A.Receipt`
+  # correlated to it (`build_command/4` below records exactly how a Command
+  # continues a package) -- see `dispatch_semantic_replan/2`. A missing
+  # `:continuation_fingerprint` falls through to a fresh compile, unchanged
+  # from before this feature existed.
+  defp dispatch_semantic(resource_or_domain, %A2A.Message{metadata: metadata} = message) do
+    case AshA2A.MetadataKey.get(metadata || %{}, :continuation_fingerprint) do
+      nil ->
+        dispatch_semantic_compile(resource_or_domain, message)
+
+      fingerprint when is_binary(fingerprint) and fingerprint != "" ->
+        dispatch_semantic_replan(resource_or_domain, fingerprint)
+
+      _invalid ->
+        {:error, %{code: :continuation_fingerprint_invalid}}
+    end
+  end
+
+  # `A2A.Message.text/1` returns the first real `A2A.Part.Text` part's
+  # string, or `nil` if the message carries none (~/xaas/deps/a2a/lib/
+  # a2a/message.ex) -- a caller opting into this explicit surface must
+  # actually send text to compile; a flagged message with no text is a real
+  # caller error, refused closed rather than compiling an empty string.
+  #
+  # Wrapped in `rescue`: `AshA2A.Semantic.Compiler.compile/3` calls
+  # `AshA2A.LLMProfiles.model_spec!/1`, which genuinely `raise`s
+  # `ArgumentError` when the required LLM role is unconfigured (a real,
+  # deliberate fail-closed design in that module) -- every OTHER dispatch
+  # path in this codebase (`AshA2A.Dispatcher`) is careful to never raise,
+  # resolving each step through a non-bang API specifically so one caller's
+  # malformed/misconfigured request can never crash the real, shared
+  # `A2A.Agent` GenServer process (which would terminate every other
+  # in-flight task that process happens to be managing, not just this
+  # request). This branch is held to the identical contract: a
+  # misconfigured LLM profile becomes a real, typed `{:error, ...}` reply,
+  # never an uncaught exception reaching the caller's mailbox.
+  #
+  # A freshly compiled package is stored in `AshA2A.Semantic.PackageStore`,
+  # keyed by its own real `fingerprint`, before its reply is returned -- the
+  # same real store `dispatch_semantic_replan/2` below reads from, so a
+  # caller that later presents this package's `"execution_package_fingerprint"`
+  # back as a `:continuation_fingerprint` can resolve it for real.
+  defp dispatch_semantic_compile(resource_or_domain, %A2A.Message{} = message) do
+    case A2A.Message.text(message) do
+      nil ->
+        {:error, %{code: :semantic_request_missing_text}}
+
+      text ->
+        try do
+          case AshA2A.Semantic.Compiler.compile(resource_or_domain, text) do
+            {:ok, package} ->
+              :ok = AshA2A.Semantic.PackageStore.put(package)
+              AshA2A.Semantic.ExecutionPackage.to_reply(package)
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+        rescue
+          error ->
+            {:error, %{code: :semantic_compilation_failed, detail: Exception.message(error)}}
+        end
+    end
+  end
+
+  # Real, concrete GAP B correlation mechanism: `AshA2A.ReceiptStore`
+  # (`receipt_store.ex`) only supports lookup by `command_id`, not by an
+  # arbitrary correlation field, so `build_command/4` below deliberately uses
+  # the caller-supplied `continuation_fingerprint` itself AS the closing
+  # command's `command_id` whenever one is present -- no second, parallel
+  # index is invented; the EXISTING command_id-keyed `ReceiptStore.fetch/2`
+  # does the whole job once the correlation key is chosen this way. Fetching
+  # `AshA2A.Identity.command(fingerprint)` here is therefore the real,
+  # already-existing lookup path every other receipt retrieval in this
+  # codebase uses, not a new one.
+  #
+  # Two real, independent lookups gate replanning, both fail closed with a
+  # distinct typed code rather than ever falling back to a fresh compile:
+  # (1) a receipt must have actually been committed under this fingerprint
+  # (a REFUSED closing dispatch -- `CommandBus.admit/2` failing -- never
+  # reaches `store.claim`/`store.commit`, so no receipt exists to find, and
+  # this real absence IS the refusal signal, not a special case); (2) the
+  # real `ExecutionPackage` this fingerprint names must still be resolvable
+  # in `AshA2A.Semantic.PackageStore`.
+  defp dispatch_semantic_replan(resource_or_domain, fingerprint) do
+    case fetch_continuation_receipt(fingerprint) do
+      {:error, _reason} = error ->
+        error
+
+      {:ok, receipt} ->
+        case AshA2A.Semantic.PackageStore.fetch(fingerprint) do
+          :error ->
+            {:error,
+             %{code: :continuation_package_not_found, execution_package_fingerprint: fingerprint}}
+
+          {:ok, package} ->
+            replan(resource_or_domain, package, receipt)
+        end
+    end
+  end
+
+  defp fetch_continuation_receipt(fingerprint) do
+    store = AshA2A.CommandBus.default_store()
+
+    case store.fetch(AshA2A.Identity.command(fingerprint), []) do
+      {:ok, receipt} ->
+        {:ok, receipt}
+
+      :error ->
+        {:error,
+         %{code: :continuation_receipt_not_found, execution_package_fingerprint: fingerprint}}
+    end
+  end
+
+  # Real re-synthesis, never a fresh `Compiler.compile/3`: `Compiler.
+  # replan/4` internally runs `Feedback.from_receipt/2` (projects the real
+  # committed receipt into typed, authority-`:none` observation evidence)
+  # -> `PlanningIR.with_observation/2` (folds that observation into the
+  # PRIOR admitted planning IR, not a blank one) -> real re-synthesis against
+  # the resource/domain's real canonical capability index. The resulting
+  # `next` package is fenced by `ExecutionPackage.new/6` exactly like a fresh
+  # compile's package -- `standing: :candidate, authority: :none` always,
+  # structurally, never overridable via any opt this function passes -- so a
+  # replanned candidate can no more auto-DO than a first-compile candidate
+  # can. `next` is stored under its own fingerprint the same way a fresh
+  # compile's package is, so a caller may chain a further real closing
+  # dispatch -> receipt -> replan indefinitely.
+  #
+  # Held to the identical no-raise contract as `dispatch_semantic_compile/2`
+  # above, for the identical reason (a misconfigured/failing LLM role must
+  # become a typed reply, never crash the shared `A2A.Agent` process).
+  defp replan(resource_or_domain, package, receipt) do
+    try do
+      case AshA2A.Semantic.Compiler.replan(resource_or_domain, package, receipt) do
+        {:ok, next, _feedback} ->
+          :ok = AshA2A.Semantic.PackageStore.put(next)
+          AshA2A.Semantic.ExecutionPackage.to_reply(next)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    rescue
+      error ->
+        {:error, %{code: :semantic_replan_failed, detail: Exception.message(error)}}
+    end
+  end
+
+  defp dispatch_skill(resource_or_domain, message, history, auth_identity) do
     case resolve_skill_name(resource_or_domain, message) do
       {:ok, skill_name} ->
         case consequence(resource_or_domain, skill_name) do
@@ -254,6 +436,33 @@ defmodule AshA2A.Agent do
   # instead of re-executing; same `message_id` with different semantic
   # content is a real `:command_conflict` refusal, never a silent
   # double-execution or a silently accepted divergent retry.
+  #
+  # GAP B real linkage: a caller may mark this dispatch as the real,
+  # consequence-bearing "closing" command for a prior `AshA2A.Semantic.
+  # ExecutionPackage` by ALSO setting `:continuation_fingerprint`/
+  # `"continuation_fingerprint"` metadata (same `AshA2A.MetadataKey`
+  # atom-then-string convention as `:skill`/`:semantic_request`) on this
+  # ordinary skill-dispatch message, to that package's own
+  # `"execution_package_fingerprint"`. When present, THAT fingerprint --
+  # not `message.message_id` -- becomes this command's `command_id`, and is
+  # also recorded in `Command.metadata["execution_package_fingerprint"]` for
+  # auditability. This is the whole real correlation mechanism `AshA2A.Agent.
+  # dispatch_semantic_replan/2` depends on: `AshA2A.ReceiptStore` only
+  # supports lookup by `command_id` (`receipt_store.ex`), so choosing the
+  # command_id to equal the fingerprint lets the EXISTING command_id-keyed
+  # `store.fetch/2` resolve "the receipt for this execution package" with no
+  # second, parallel index. `Command.fingerprint/1` (the real replay/conflict
+  # digest) is computed from `agent_id`/`principal_id`/`task_id`/
+  # `capability_id`/`input`/`authority_token` only -- never from
+  # `command_id` -- so this override changes nothing about what counts as
+  # "the same real command" for replay/conflict purposes; it only changes
+  # WHERE that command's eventual receipt is filed. A real consequence falls
+  # out of this for free, correctly: two genuinely different real closing
+  # commands sent under the same `continuation_fingerprint` collide on this
+  # same `command_id` and hit `CommandBus`'s existing same-id/different-
+  # fingerprint `:command_conflict` refusal above -- only one real closing
+  # dispatch may claim a given execution package this way, exactly the
+  # single-writer semantics the correlation depends on.
   @spec build_command(module(), AshA2A.Dispatcher.skill_name(), A2A.Message.t(), term()) ::
           AshA2A.Command.t()
   defp build_command(resource_or_domain, skill_name, message, auth_identity) do
@@ -262,12 +471,34 @@ defmodule AshA2A.Agent do
     {:ok, input} = AshA2A.Dispatcher.fetch_input(message)
 
     AshA2A.Command.new(capability_id,
-      command_id: message.message_id,
+      command_id: command_id(message),
       agent_id: to_string(resource_or_domain),
       principal_id: principal,
       authority: AshA2A.Authority.from_verified_identity(auth_identity, capability_id),
-      input: input
+      input: input,
+      metadata: command_metadata(message)
     )
+  end
+
+  defp command_id(%A2A.Message{metadata: metadata} = message) do
+    case continuation_fingerprint(metadata) do
+      nil -> message.message_id
+      fingerprint -> fingerprint
+    end
+  end
+
+  defp command_metadata(%A2A.Message{metadata: metadata}) do
+    case continuation_fingerprint(metadata) do
+      nil -> %{}
+      fingerprint -> %{"execution_package_fingerprint" => fingerprint}
+    end
+  end
+
+  defp continuation_fingerprint(metadata) do
+    case AshA2A.MetadataKey.get(metadata || %{}, :continuation_fingerprint) do
+      fingerprint when is_binary(fingerprint) and fingerprint != "" -> fingerprint
+      _other -> nil
+    end
   end
 
   # Extracts the transport-verified caller identity from

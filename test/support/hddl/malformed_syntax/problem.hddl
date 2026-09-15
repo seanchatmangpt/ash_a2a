@@ -1,0 +1,5 @@
+(define (problem malformed-syntax-p1)
+  (:domain malformed-syntax)
+  (:objects a b - phase
+  (:init (current-phase a))
+  (:goal (and (current-phase b))))

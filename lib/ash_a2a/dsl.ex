@@ -84,7 +84,29 @@ defmodule AshA2A.Dsl do
     name: :a2a,
     describe:
       "Optional residual A2A overrides. Public Ash actions are exposed without declarations.",
-    entities: [@skill]
+    entities: [@skill],
+    schema: [
+      semantic_requests: [
+        type: :boolean,
+        default: false,
+        doc: """
+        Explicitly opts this resource/domain into the semantic-compilation A2A
+        surface (`AshA2A.Semantic.Compiler`). This is deliberately NOT a
+        silent fallback for an unrecognized skill name or arbitrary free
+        text -- v26.9.14's design decision is that semantic compilation is
+        an explicit production A2A surface, never a surprise LLM invocation
+        a caller stumbles into. Two gates must both be true before a real
+        dispatch reaches `Compiler.compile/3`: (1) this option is `true` on
+        the target resource/domain, and (2) the caller's inbound
+        `A2A.Message.metadata` sets `:semantic_request`/`"semantic_request"`
+        to `true` (the same atom-then-string caller-facing convention
+        `:skill` metadata already uses, via `AshA2A.MetadataKey`) -- a
+        normal skill-targeted or unflagged free-text message never reaches
+        the semantic compiler
+        regardless of this setting.
+        """
+      ]
+    ]
   }
 
   def sections, do: [@a2a]

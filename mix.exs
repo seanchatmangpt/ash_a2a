@@ -18,7 +18,17 @@ defmodule AshA2A.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"]
+      extras: [
+        "README.md",
+        "CHANGELOG.md",
+        "docs/tutorials/getting-started.md",
+        "docs/how-to/authenticate-agent-requests.md",
+        "docs/how-to/enable-semantic-requests.md",
+        "docs/how-to/observe-dispatch-with-ocel.md",
+        "docs/how-to/use-role-based-llm-resolution.md",
+        "docs/explanation/architecture.md",
+        "docs/reference/index.md"
+      ]
     ]
   end
 
@@ -84,6 +94,23 @@ defmodule AshA2A.MixProject do
       # capability, only observed provider evidence via RuntimeReceipt.
       {:flame, "~> 0.5"},
       {:durable_server, "~> 0.1.5"},
+      # v26.9.14: real provider implementations closing GAP D
+      # (AshA2A.Delivery.Oban, AshA2A.TaskLifecycle's AshStateMachine
+      # adapter). Same pattern as flame/durable_server above -- declaring
+      # them as resolvable deps makes each adapter's available?/0 true and
+      # its real call path reachable; the adapters themselves stay
+      # authority-free (queue acceptance is not an execution receipt; a
+      # state transition is not a DO -- both still funnel any real
+      # consequence through AshA2A.CommandBus).
+      {:oban, "~> 2.24"},
+      {:ash_oban, "~> 0.8"},
+      {:ash_state_machine, "~> 0.2"},
+      # Oban's real PostgreSQL storage engine driver, exercised for real
+      # against a real disposable local Postgres instance in this repo's
+      # own test suite. Cannot be `only: :test` -- `:ash_oban` itself
+      # requires `:postgrex` unconditionally (same real Mix dependency-only
+      # narrowing constraint the `:plug` comment above already documents).
+      {:postgrex, "~> 0.18"},
       # DurableServer.Backends.EKVStore's real local storage engine, used by
       # AshA2A.RuntimeProvidersIntegrationTest so Durability can be
       # exercised with a real local durable-KV backend instead of the
@@ -95,6 +122,17 @@ defmodule AshA2A.MixProject do
       # the same reason :plug was promoted out of only: :test earlier in
       # this repo's history.
       {:ekv, "~> 0.4"},
+      # Real property/fuzz testing (test/ash_a2a_property_fuzz_test.exs).
+      # Already a required, unrestricted (non-`only:`) transitive dep of
+      # `:ash` itself (mix.lock: "stream_data": {:hex, :stream_data,
+      # "1.4.0", ...}; deps/ash/mix.exs declares it with no `:only`) --
+      # promoted to an explicit direct dep here so this repo's own property
+      # tests declare their real dependency instead of relying on an
+      # incidental transitive pin ash could drop or relax in a future
+      # version. Cannot be narrowed to `only: :test` -- Mix rejects a
+      # narrower `:only` than a transitive dependency requires, the same
+      # real constraint already documented above for `:plug`/`:postgrex`.
+      {:stream_data, "~> 1.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},

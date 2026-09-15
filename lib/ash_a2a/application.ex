@@ -1,10 +1,17 @@
 defmodule AshA2A.Application do
   @moduledoc """
-  Starts the A2A agent supervisor and the default replay receipt store.
+  Starts the A2A agent supervisor, the default replay receipt store, and the
+  default semantic `AshA2A.Semantic.PackageStore` (GAP B: receipt -> feedback
+  -> replan closure needs a real, addressable place to resolve a caller's
+  `:continuation_fingerprint` back to the full `AshA2A.Semantic.
+  ExecutionPackage` it names -- see that module's `@moduledoc` for why this is
+  a separate store from `:receipt_store`, not a field on it).
 
   Host applications may replace `:receipt_store` with another
   `AshA2A.ReceiptStore` implementation; non-default stores own their own
-  supervision lifecycle.
+  supervision lifecycle. `AshA2A.Semantic.PackageStore` is always started
+  under its own default registered name -- it has no swappable-behaviour
+  config today (no host has needed a second implementation yet).
   """
 
   use Application
@@ -29,6 +36,7 @@ defmodule AshA2A.Application do
     children =
       receipt_store_children() ++
         [
+          {AshA2A.Semantic.PackageStore, []},
           {A2A.AgentSupervisor, agents: agents}
         ]
 
