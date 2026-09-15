@@ -24,6 +24,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Real, disclosed requirement (confirmed against docs.docker.com/build/cache/backends/gha/):
+      # a bare `docker buildx build` shell step does NOT automatically see
+      # ACTIONS_CACHE_URL/ACTIONS_RESULTS_URL/ACTIONS_RUNTIME_TOKEN the way
+      # docker/build-push-action does internally -- without exposing them,
+      # `--cache-from/--cache-to type=gha` below would silently fail to
+      # authenticate (no cache hit, no error) on github.com-hosted runners.
+      - name: Expose GitHub Runtime for buildx gha cache
+        uses: crazy-max/ghaction-github-runtime@v4
+
       # The Dockerfile layer reorder (deps.get before COPY lib/) only lets a single
       # build reuse its own layers; this GHA cache additionally lets that cache
       # survive ACROSS separate CI runs, so a workflow_dispatch rerun with an
