@@ -36,7 +36,16 @@ defmodule AshA2A.Application do
     children =
       receipt_store_children() ++
         [
-          {Task.Supervisor, name: AshA2A.Telemetry.TaskSupervisor},
+          # A2A-2602: the OCEL forwarder's per-event supervised tasks are
+          # BOUNDED. `max_children` is the hard concurrency ceiling for the
+          # observational egress; beyond it `Task.Supervisor.start_child/2`
+          # returns `{:error, :max_children}`, which the forwarder accounts
+          # as an explicit shed (counter + telemetry), never as an unbounded
+          # process fan-out. Default 256 concurrent in-flight HTTP POSTs;
+          # tune per host via `config :ash_a2a, :ocel_max_in_flight, n`.
+          {Task.Supervisor,
+           name: AshA2A.Telemetry.TaskSupervisor,
+           max_children: Application.get_env(:ash_a2a, :ocel_max_in_flight, 256)},
           {AshA2A.Semantic.PackageStore, []},
           {A2A.AgentSupervisor, agents: agents}
         ]

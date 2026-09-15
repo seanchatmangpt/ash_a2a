@@ -12,11 +12,14 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
   @dispatch_handler_id {__MODULE__, :dispatch_stop}
   @receipt_handler_id {__MODULE__, :receipt_committed}
+  @outboxed_handler_id {__MODULE__, :receipt_outboxed}
+  @shed_counter_key {__MODULE__, :shed_counter}
 
   @spec attach!() :: :ok
   def attach! do
     :ok = attach(@dispatch_handler_id, [:ash_a2a, :dispatch, :stop])
     :ok = attach(@receipt_handler_id, [:ash_a2a, :receipt, :committed])
+    :ok = attach(@outboxed_handler_id, [:ash_a2a, :receipt, :outboxed])
     :ok
   end
 
@@ -24,24 +27,26 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   def detach do
     results = [
       :telemetry.detach(@dispatch_handler_id),
-      :telemetry.detach(@receipt_handler_id)
+      :telemetry.detach(@receipt_handler_id),
+      :telemetry.detach(@outboxed_handler_id)
     ]
 
     if :ok in results, do: :ok, else: {:error, :not_found}
   end
 
-  # `AshA2A.CommandBus.run/4` marks the calling process with
-  # `:ash_a2a_ocel_command_bus_dispatch` for the duration of its internal
-  # `AshA2A.Dispatcher.dispatch/5` call (see that module's
-  # `dispatch_with_ocel_correlation/4`). When present, this dispatch-stop
-  # event did NOT originate from a standalone direct-dispatch caller -- it is
-  # the internal span inside a CommandBus-routed command that will also emit
-  # its own `[:ash_a2a, :receipt, :committed]` event moments later. Stashing
-  # `{measurements, metadata}` here (instead of posting immediately) and
-  # merging them into that single receipt event below is what eliminates the
-  # duplicate OCEL v2 POST for one logical CommandBus-routed dispatch, while
-  # a direct `AshA2A.Dispatcher.dispatch/5` call (no marker present) keeps
-  # posting immediately exactly as before.
+  @doc """
+  Total OCEL events that could not be admitted to the bounded forwarding task
+  supervisor. Every such drop increments this counter and emits one
+  `[:ash_a2a, :ocel, :shed]` telemetry event.
+  """
+  @spec shed_count() :: non_neg_integer()
+  def shed_count do
+    case :persistent_term.get(@shed_counter_key, nil) do
+      nil -> 0
+      ref -> :counters.get(ref, 1)
+    end
+  end
+
   @doc false
   def handle_event([:ash_a2a, :dispatch, :stop], measurements, metadata, _config) do
     if Process.get(:ash_a2a_ocel_command_bus_dispatch) do
@@ -67,6 +72,18 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     end
   end
 
+  def handle_event(
+        [:ash_a2a, :receipt, :outboxed],
+        _measurements,
+        %{receipt: %AshA2A.Receipt{} = receipt},
+        _config
+      ) do
+    case ingest_url() do
+      nil -> :ok
+      url -> async_post_event(url, receipt_event(receipt))
+    end
+  end
+
   def handle_event(_event, _measurements, _metadata, _config), do: :ok
 
   defp attach(handler_id, event) do
@@ -78,27 +95,48 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
   defp ingest_url, do: Application.get_env(:ash_a2a, :ocel_ingest_url)
 
-  # Offloads the actual HTTP POST onto a supervised `Task` so a stalled or
-  # slow OCEL ingest endpoint can never block the calling process. `:telemetry`
-  # handlers execute synchronously, in-process, with no spawn
-  # (`telemetry.erl`'s `do_execute/4`) -- and for every real AshA2A dispatch
-  # that calling process is the single-mailbox `A2A.Agent` GenServer that also
-  # serves the inbound HTTP request for that agent (`agent.ex`'s "one mailbox"
-  # disclosure). `handle_event/4`'s return value is already discarded by
-  # `:telemetry` itself in every branch, so fire-and-forget here changes no
-  # observable behavior on the success path -- only removes the worst-case
-  # blocking window. This must never wrap the `Process.put`/`Process.delete`
-  # correlation-id bookkeeping in `handle_event/4` itself -- that logic is
-  # required to run synchronously, in the calling process, per
-  # `command_bus.ex`'s documented invariant (the process-dictionary flag is
-  # only safe because `:telemetry.span/3` executes synchronously in the same
-  # process) -- only the network call below is deferred.
   defp async_post_event(url, event) do
-    Task.Supervisor.start_child(AshA2A.Telemetry.TaskSupervisor, fn ->
-      post_event(url, event)
-    end)
+    result =
+      try do
+        Task.Supervisor.start_child(task_supervisor(), fn ->
+          post_event(url, event)
+        end)
+      rescue
+        error -> {:error, {:task_supervisor_error, error}}
+      catch
+        :exit, reason -> {:error, {:task_supervisor_exit, reason}}
+      end
 
+    case result do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, reason} ->
+        shed_event(url, reason)
+        :ok
+    end
+  end
+
+  defp task_supervisor do
+    Application.get_env(:ash_a2a, :ocel_task_supervisor, AshA2A.Telemetry.TaskSupervisor)
+  end
+
+  defp shed_event(url, reason) do
+    :counters.add(shed_counter(), 1, 1)
+    :telemetry.execute([:ash_a2a, :ocel, :shed], %{}, %{url: url, reason: reason})
     :ok
+  end
+
+  defp shed_counter do
+    case :persistent_term.get(@shed_counter_key, nil) do
+      nil ->
+        ref = :counters.new(1, [])
+        :persistent_term.put(@shed_counter_key, ref)
+        ref
+
+      ref ->
+        ref
+    end
   end
 
   defp post_event(url, event) do
@@ -133,18 +171,6 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       :ok
   end
 
-  # Builds the single OCEL v2 event posted for a `[:ash_a2a, :receipt,
-  # :committed]` event. When this receipt was reached via a CommandBus-routed
-  # dispatch, `handle_event/4`'s dispatch-stop clause above left the raw
-  # dispatch span's `{measurements, metadata}` behind under
-  # `:ash_a2a_ocel_pending_dispatch` -- read and cleared here (never left
-  # stale across calls) and merged in, via the same real `dispatch_attributes/2`
-  # and `relationships/1` helpers a direct dispatch event already uses, so no
-  # evidence from the raw dispatch span (duration, reply_type, object_id
-  # relationships) is lost -- only the duplicate POST is eliminated. A direct
-  # `AshA2A.Dispatcher.dispatch/5` call never sets that key, so
-  # `Process.delete/1` returns `nil` and the receipt-only event is emitted
-  # unchanged.
   defp receipt_event(receipt) do
     event = AshA2A.SemanticProjection.ocel_event(receipt)
 
@@ -169,16 +195,6 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     }
   end
 
-  # Real E2O relationship, present exactly when `AshA2A.Dispatcher` resolved
-  # a real object identity for this dispatch (`dispatcher.ex`'s `object_id/2`
-  # -- a persisted Ash record's own primary key, or, for a generic `:action`
-  # skill with no data-layer record at all, a real `plan_name` argument
-  # naming a specific stateful instance). `[]` (never a fabricated id) when
-  # the dispatch had no real object to relate to (e.g. a pure stateless echo
-  # skill like `:run_phase`). Field name matches beam4pm's real
-  # `BeamPM.OcelIngest.Router` wire contract exactly (`lib/beam4pm_ocel_ingest.ex`
-  # `decode_relationships/1`: `"qualifier"` / `"object_id"`, snake_case --
-  # not `"objectId"`).
   defp relationships(%{object_id: object_id}) when is_binary(object_id) and object_id != "" do
     [%{"qualifier" => "acted_on", "object_id" => object_id}]
   end
