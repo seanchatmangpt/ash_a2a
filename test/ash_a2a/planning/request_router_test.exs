@@ -1,24 +1,43 @@
 defmodule AshA2A.Planning.RequestRouterTest do
   @moduledoc """
-  Real, Chicago-style coverage for `AshA2A.Planning.RequestRouter`'s task-1
-  scope: the core tier-detection heuristic, plus the facts-tier branch of
-  `route/3` (the only tier this task wires to a real backend). No test
-  double of any kind is declared or used in this file -- a real
-  `A2A.Message.t()` (real `A2A.Part.Data`/`A2A.Part.Text` structs), a real
-  compiled fixture resource (`AshA2A.Test.Fixture.HddlDeterministicFixture`,
-  the same one `test/ash_a2a/semantic_nonllm_hddl_test.exs` uses), and a
-  real OS subprocess invocation of the real `native/hddl_cli` binary via
-  `AshA2A.Planning.HddlDeterministicSynthesis.synthesize/3` for the one
-  assertion that exercises the facts tier end to end. The real repo-wide
-  banned-pattern sweep (`grep -rn "Mock\\|mox\\|patch("`, expect zero
-  matches over this file) is part of this task's own reported verification
-  evidence, not asserted here.
+  Real, Chicago-style coverage for `AshA2A.Planning.RequestRouter`: the core
+  tier-detection heuristic (task 1), plus `route/3`'s two now-wired tiers
+  (task 2) -- facts tier to the real, unchanged
+  `AshA2A.Planning.HddlDeterministicSynthesis.synthesize/3`, text tier to
+  the real, unchanged `AshA2A.Semantic.Compiler.compile_source/3`. Both
+  downstream functions are exercised for real, never asserted to be
+  reachable by code inspection alone.
+
+  A real `A2A.Message.t()` (real `A2A.Part.Data`/`A2A.Part.Text` structs)
+  and a real compiled fixture resource
+  (`AshA2A.Test.Fixture.HddlDeterministicFixture`, the same one
+  `test/ash_a2a/semantic_nonllm_hddl_test.exs` uses) drive every test. The
+  facts tier is exercised end to end through a real OS subprocess
+  invocation of the real `native/hddl_cli` binary
+  (`AshA2A.Planning.HddlDeterministicSynthesis.synthesize/3`). The text
+  tier is exercised end to end through `Compiler.compile_source/3`'s real
+  IR/Admission/Ontology/PlanningIR/ExecutionPackage pipeline, with a real,
+  fixed-response anonymous function injected at `Compiler`'s own
+  `:generate_object`/`:plan_generate_object` dependency-injection seam
+  (`lib/ash_a2a/semantic/compiler.ex`'s documented test seam around
+  `ReqLLM.generate_object/4`) standing in for the live network LLM call --
+  this proves the router's text tier actually reaches and runs the real
+  compiler pipeline, rather than merely asserting from reading the code
+  that an LLM "would" be called. Symmetrically, the facts-tier tests inject
+  `raise`-on-call functions at those same option keys: since
+  `HddlDeterministicSynthesis.synthesize/3` never reads them, a passing
+  test is real (not inspected) proof the facts tier never reaches the LLM
+  tier. No test double of any kind is declared or used in this file -- the
+  real repo-wide banned-pattern sweep (`grep -rn "Mock\\|mox\\|patch("`,
+  expect zero matches over this file) is part of this task's own reported
+  verification evidence, not asserted here.
   """
 
   use ExUnit.Case, async: true
 
   alias AshA2A.Planning.RequestRouter
   alias AshA2A.Semantic.ExecutionPackage
+  alias AshA2A.Semantic.IR
   alias AshA2A.Test.Fixture.HddlDeterministicFixture
 
   @advance_id "AshA2A.Test.Fixture.HddlDeterministicFixture.advance"
@@ -51,6 +70,48 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
   defp text_message(text) do
     A2A.Message.new_user(text)
+  end
+
+  # A real, fixed-response `:generate_object` seam function (schema-valid
+  # extraction output, `source_quote` a verbatim substring of `text` so
+  # `Admission.admit/2`'s real grounding check passes) -- see
+  # `AshA2A.Semantic.CompilerTest`'s identical pattern.
+  defp fixed_extraction(text) do
+    fn _model_spec, _prompt, _schema, _llm_opts ->
+      {:ok,
+       IR.fields()
+       |> Map.new(&{Atom.to_string(&1), []})
+       |> Map.put("authority", "none")
+       |> Map.put("goals", [
+         %{
+           "id" => "advance-and-unlock",
+           "kind" => "goal",
+           "description" => "advance and unlock the gate",
+           "source_quote" => text
+         }
+       ])}
+    end
+  end
+
+  # A real, fixed-response `:plan_generate_object` seam function proposing
+  # the fixture's two real capability ids with `authority: "none"`.
+  defp fixed_plan(request_id) do
+    fn _model_spec, _prompt, _schema, _llm_opts ->
+      {:ok,
+       %{
+         "request_id" => request_id,
+         "authority" => "none",
+         "capability_ids" => [@advance_id, @unlock_id],
+         "hddl" => "(:task advance-and-unlock)",
+         "fond" => "(:policy observe-or-replan)"
+       }}
+    end
+  end
+
+  defp raise_on_call(label) do
+    fn _model_spec, _prompt, _schema, _llm_opts ->
+      raise "#{label} must never be invoked for this tier"
+    end
   end
 
   describe "detect_tier/1 -- facts tier" do
@@ -132,14 +193,70 @@ defmodule AshA2A.Planning.RequestRouterTest do
       assert package.authority == :none
       assert package.plan_candidate.capability_ids == [@advance_id, @unlock_id]
     end
+
+    test "a facts-tier request never invokes an injected LLM seam, proving it never reaches the text/LLM tier" do
+      envelope = goal_facts_envelope()
+
+      assert {:ok, %ExecutionPackage{} = package} =
+               RequestRouter.route(HddlDeterministicFixture, facts_message(envelope),
+                 generate_object: raise_on_call("generate_object"),
+                 plan_generate_object: raise_on_call("plan_generate_object")
+               )
+
+      # `HddlDeterministicSynthesis.synthesize/3` never reads either opt
+      # key -- if the facts tier somehow reached `Compiler.compile_source/3`
+      # instead, one of the two injected functions above would have raised
+      # and this test would fail. It doesn't: real, executed proof of
+      # non-invocation, not an inspection-only claim.
+      assert package.standing == :candidate
+      assert package.plan_candidate.capability_ids == [@advance_id, @unlock_id]
+    end
   end
 
-  describe "route/3 -- text tier (deliberately not wired in this task)" do
-    test "a real free-text message returns a typed, not-yet-wired error rather than guessing at a tier" do
-      message = text_message("advance the admitted workflow")
+  describe "route/3 -- text tier (real, wired end to end)" do
+    test "a real free-text message routes through the real semantic compiler to a candidate ExecutionPackage" do
+      text = "The goal is to advance and unlock the gate."
+      request_id = "request-router-text-tier-test-#{System.unique_integer([:positive])}"
 
-      assert {:error, %{code: :request_router_text_tier_not_wired}} =
-               RequestRouter.route(HddlDeterministicFixture, message)
+      assert {:ok, %ExecutionPackage{} = package} =
+               RequestRouter.route(HddlDeterministicFixture, text_message(text),
+                 generate_object: fixed_extraction(text),
+                 plan_generate_object: fixed_plan(request_id)
+               )
+
+      # These fields only exist if the real `Compiler.compile_source/3`
+      # pipeline actually ran -- `IR.from_map`, `Admission.admit`,
+      # `Ontology.from_ir`, `PlanningIR.from_ir`, `SemanticSynthesis
+      # .synthesize` (via `Planning.from_envelope`), and
+      # `ExecutionPackage.new` all executed for real against the injected
+      # fixed responses. A facts-tier-only implementation, or one that
+      # merely echoed the text back, could not produce this shape.
+      assert package.standing == :candidate
+      assert package.authority == :none
+      assert package.semantic_ir.standing == :admitted
+      assert package.plan_candidate.formalism == :hddl_fond
+      assert package.plan_candidate.capability_ids == [@advance_id, @unlock_id]
+      assert package.source.text == text
+      assert package.source.media_type == "text/plain"
+    end
+
+    test "a distinct free-text message with distinct fixed responses grounds its own real, distinct ExecutionPackage" do
+      text = "The goal is to unlock and then re-advance the gate."
+      request_id = "request-router-text-tier-test-distinct-#{System.unique_integer([:positive])}"
+
+      assert {:ok, %ExecutionPackage{} = package} =
+               RequestRouter.route(HddlDeterministicFixture, text_message(text),
+                 generate_object: fixed_extraction(text),
+                 plan_generate_object: fixed_plan(request_id)
+               )
+
+      # A distinct real source text produces a distinct real fingerprint
+      # and a distinct real admitted goal quote -- state this test's own
+      # injected values actually flowed through the real pipeline, rather
+      # than some memoized/hard-coded result from the prior test.
+      assert package.source.text == text
+      assert Enum.any?(package.semantic_ir.goals, &(&1["source_quote"] == text))
+      assert package.fingerprint =~ ~r/^[0-9a-f]{64}$/
     end
   end
 

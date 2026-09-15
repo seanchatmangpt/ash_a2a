@@ -7,23 +7,33 @@ defmodule AshA2A.Planning.RequestRouter do
   invariant this router is built to respect: "never a content sniff of
   unstructured text, never a fallback for an unrecognized skill name").
 
-  ## Scope of this task (first task; do not extend without a design update)
+  ## Scope of this task (second task; do not extend without a design update)
 
-  This task implements only the **core tier-detection heuristic** plus a
-  module skeleton for the eventual tri-modal `route/3`. Explicitly NOT
-  wired in yet, both left to later tasks:
+  Task 1 (prior commit) added the core tier-detection heuristic plus a
+  `route/3` skeleton whose text tier deliberately returned a typed
+  "not wired" error. This task wires that text tier to its real backend.
+  Both tiers `route/3` can detect are now real, wired, production
+  behavior (neither is a placeholder):
+
+    * **Facts tier** -> `AshA2A.Planning.HddlDeterministicSynthesis.synthesize/3`
+      (zero-LLM deterministic solver path). Unchanged from task 1.
+    * **Text tier** -> `AshA2A.Semantic.Compiler.compile_source/3` (the
+      real LLM-driven semantic-compilation pipeline), called the same way
+      `Compiler.compile/3` calls it internally: a real `%Source{}` is
+      built from the text first (`AshA2A.Semantic.Source.new/2`), then
+      passed to `compile_source/3` unchanged. Neither `Compiler` nor
+      `HddlDeterministicSynthesis` is modified by this task -- both are
+      called exactly as they already exist.
+
+  Still explicitly NOT wired in, left to a later task:
 
     * The phrasing parser -- `AshA2A.Planning.PhraseParser` does not exist
-      yet. A detected `:text` tier request is not further parsed or routed
-      to an LLM by this module.
+      yet, so there is no phrase-tier disambiguation between a templated
+      short phrase and genuinely free text: every detected `:text` tier
+      request goes straight to the LLM tier. This is a real, coarser
+      two-tier router (facts vs. text), not the design plan's eventual
+      tri-modal (facts / phrase / LLM) split.
     * Telemetry -- no `[:ash_a2a, :router, ...]` events are emitted here.
-
-  `route/3`'s facts-tier branch below is real, wired, production behavior
-  (not a placeholder): the facts tier already has a real, existing,
-  zero-LLM deterministic backend
-  (`AshA2A.Planning.HddlDeterministicSynthesis.synthesize/3`), so
-  delegating to it is genuine functionality, unlike the text tier, which
-  has no backend to delegate to yet.
 
   ## Detection heuristic
 
@@ -54,6 +64,8 @@ defmodule AshA2A.Planning.RequestRouter do
   alias AshA2A.Dispatcher
   alias AshA2A.MetadataKey
   alias AshA2A.Planning.HddlDeterministicSynthesis
+  alias AshA2A.Semantic.Compiler
+  alias AshA2A.Semantic.Source
 
   @type tier_detection :: {:facts, map()} | {:text, String.t()} | :error
 
@@ -78,18 +90,26 @@ defmodule AshA2A.Planning.RequestRouter do
   end
 
   @doc """
-  Module skeleton for the full tri-modal router (design plan's
-  `RequestRouter` task). `opts`:
+  Two-tier router: facts tier -> the real deterministic solver, text tier
+  -> the real LLM-driven semantic compiler. `opts`:
 
-    * `:solver_opts` -- forwarded verbatim to
-      `HddlDeterministicSynthesis.synthesize/3` for the facts tier.
-      Default `[]`.
+    * `:solver_opts` -- facts tier only. Forwarded verbatim to
+      `HddlDeterministicSynthesis.synthesize/3`. Default `[]`.
+    * `:source_opts` -- text tier only. Forwarded verbatim to
+      `AshA2A.Semantic.Source.new/2` when building the `%Source{}` for the
+      detected text. Default `[]`.
+    * Everything else (e.g. `:generate_object`, `:plan_generate_object`,
+      `:role`, `:planning_role`, `:persona_context`) -- text tier only.
+      Forwarded verbatim to `Compiler.compile_source/3`, which is where
+      each of those opts is actually documented and consumed; `route/3`
+      does not inspect or default any of them itself.
 
-  Only the facts tier is wired to a real synthesis backend in this task.
-  The text tier deliberately returns a typed
-  `:request_router_text_tier_not_wired` error until a later task adds the
-  phrase parser (checked first) and the LLM tier (checked second) --
-  returning this now rather than guessing at either.
+  Neither downstream function is modified by this router: the facts tier
+  calls the real, unchanged `HddlDeterministicSynthesis.synthesize/3`; the
+  text tier calls the real, unchanged `Compiler.compile_source/3` (via a
+  real `%Source{}` built the same way `Compiler.compile/3` builds one
+  internally). A message with neither typed facts nor text fails closed
+  with a typed error rather than guessing at a tier.
   """
   @spec route(module(), A2A.Message.t(), keyword()) ::
           {:ok, AshA2A.Semantic.ExecutionPackage.t()} | {:error, map()}
@@ -102,8 +122,9 @@ defmodule AshA2A.Planning.RequestRouter do
           solver_opts: Keyword.get(opts, :solver_opts, [])
         )
 
-      {:text, _text} ->
-        {:error, %{code: :request_router_text_tier_not_wired}}
+      {:text, text} ->
+        source = Source.new(text, Keyword.get(opts, :source_opts, []))
+        Compiler.compile_source(resource_or_domain, source, opts)
 
       :error ->
         {:error, %{code: :request_router_missing_input}}
