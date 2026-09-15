@@ -23,14 +23,17 @@ defmodule AshA2A.Planning.RequestRouterTest do
   `ReqLLM.generate_object/4`) standing in for the live network LLM call --
   this proves the router's text tier actually reaches and runs the real
   compiler pipeline, rather than merely asserting from reading the code
-  that an LLM "would" be called. Symmetrically, the facts-tier tests inject
-  `raise`-on-call functions at those same option keys: since
-  `HddlDeterministicSynthesis.synthesize/3` never reads them, a passing
-  test is real (not inspected) proof the facts tier never reaches the LLM
-  tier. No test double of any kind is declared or used in this file -- the
-  real repo-wide banned-pattern sweep (`grep -rn "Mock\\|mox\\|patch("`,
-  expect zero matches over this file) is part of this task's own reported
-  verification evidence, not asserted here.
+  that an LLM "would" be called. No test double of any kind is declared or
+  used in this file -- the real repo-wide banned-pattern sweep
+  (`grep -rn "Mock\\|mox\\|patch("`, expect zero matches over this file) is
+  part of this task's own reported verification evidence, not asserted
+  here.
+
+  The dedicated, standalone "LLM never called" structural proof for the
+  facts tier (impossible-item #2's "by default" claim) lives in its own
+  file, `request_router_llm_never_called_test.exs`, so it stands as an
+  individually citable, re-runnable artifact rather than one assertion
+  among many here.
   """
 
   use ExUnit.Case, async: true
@@ -105,12 +108,6 @@ defmodule AshA2A.Planning.RequestRouterTest do
          "hddl" => "(:task advance-and-unlock)",
          "fond" => "(:policy observe-or-replan)"
        }}
-    end
-  end
-
-  defp raise_on_call(label) do
-    fn _model_spec, _prompt, _schema, _llm_opts ->
-      raise "#{label} must never be invoked for this tier"
     end
   end
 
@@ -194,23 +191,9 @@ defmodule AshA2A.Planning.RequestRouterTest do
       assert package.plan_candidate.capability_ids == [@advance_id, @unlock_id]
     end
 
-    test "a facts-tier request never invokes an injected LLM seam, proving it never reaches the text/LLM tier" do
-      envelope = goal_facts_envelope()
-
-      assert {:ok, %ExecutionPackage{} = package} =
-               RequestRouter.route(HddlDeterministicFixture, facts_message(envelope),
-                 generate_object: raise_on_call("generate_object"),
-                 plan_generate_object: raise_on_call("plan_generate_object")
-               )
-
-      # `HddlDeterministicSynthesis.synthesize/3` never reads either opt
-      # key -- if the facts tier somehow reached `Compiler.compile_source/3`
-      # instead, one of the two injected functions above would have raised
-      # and this test would fail. It doesn't: real, executed proof of
-      # non-invocation, not an inspection-only claim.
-      assert package.standing == :candidate
-      assert package.plan_candidate.capability_ids == [@advance_id, @unlock_id]
-    end
+    # The dedicated "facts tier never invokes the LLM path" structural
+    # proof lives in request_router_llm_never_called_test.exs, paired with
+    # its own adversarial-completeness check. Not duplicated here.
   end
 
   describe "route/3 -- text tier (real, wired end to end)" do
