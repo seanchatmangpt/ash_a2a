@@ -1,17 +1,8 @@
 defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
   @moduledoc """
-  Chicago-school proof closing A2A-2602 (docs/jira/v26.9.15): the OCEL
-  forwarder's per-event supervised-task fan-out must be BOUNDED, and every
-  event beyond the bound must be an ACCOUNTED shed -- never an unbounded
-  process spawn and never a silent drop.
-
-  Everything real: a real Bandit HTTP listener whose `/ocel/events` handler
-  really sleeps (holding each forwarding task's real `Req.post` in flight
-  while measuring true observed concurrency), a real `Task.Supervisor`
-  started with `max_children: 2`, real `AshA2A.Dispatcher.dispatch/5` calls
-  firing the real `[:ash_a2a, :dispatch, :stop]` telemetry events, and the
-  forwarder's real `:counters`-backed shed accounting plus real
-  `[:ash_a2a, :ocel, :shed]` telemetry.
+  Chicago-school evidence for A2A-2602: OCEL forwarding has a hard concurrent
+  task ceiling, and every event that cannot enter that bounded task supervisor
+  is explicitly accounted as a shed.
   """
 
   use ExUnit.Case, async: false
@@ -25,12 +16,6 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
   @slow_ms 400
 
   defmodule SlowOcelIngest do
-    @moduledoc """
-    Real Plug router that REALLY sleeps per request while tracking the
-    maximum number of concurrently-served requests -- the cross-process
-    observation of actual forwarding concurrency. Same duplicated-not-
-    -shared module shape as the sibling OcelForwarder test files.
-    """
     use Plug.Router
 
     @slow_ms 400
@@ -39,14 +24,19 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     plug(:dispatch)
 
     post "/ocel/events" do
-      Agent.update(SlowOcelIngest.Store, fn %{active: active, max: max} = s ->
-        %{s | active: active + 1, max: max(max, active + 1)}
+      Agent.update(SlowOcelIngest.Store, fn %{active: active, max: max} = state ->
+        %{state | active: active + 1, max: max(max, active + 1)}
       end)
 
       Process.sleep(@slow_ms)
 
-      Agent.update(SlowOcelIngest.Store, fn %{active: active} = s -> %{s | active: active - 1} end)
-      Agent.update(SlowOcelIngest.Store, fn %{served: served} = s -> %{s | served: served + 1} end)
+      Agent.update(SlowOcelIngest.Store, fn %{active: active} = state ->
+        %{state | active: active - 1}
+      end)
+
+      Agent.update(SlowOcelIngest.Store, fn %{served: served} = state ->
+        %{state | served: served + 1}
+      end)
 
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
@@ -54,7 +44,7 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     end
 
     match(_) do
-      conn |> Plug.Conn.send_resp(404, "not found")
+      Plug.Conn.send_resp(conn, 404, "not found")
     end
   end
 
@@ -75,10 +65,10 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     :ok =
       :telemetry.attach_many(
         {__MODULE__, :shed_probe},
-        [
-          [:ash_a2a, :ocel, :shed]
-        ],
-        fn _event, _measurements, _meta, _config -> send(parent, :shed_telemetry) end,
+        [[:ash_a2a, :ocel, :shed]],
+        fn _event, _measurements, metadata, _config ->
+          send(parent, {:shed_telemetry, metadata})
+        end,
         nil
       )
 
@@ -98,20 +88,15 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     {:ok, supervisor_name: supervisor_name}
   end
 
-  test "a real dispatch burst against a slow real ingest never exceeds max_children and every excess event is an accounted shed",
+  test "a real dispatch burst never exceeds max_children and every excess event is accounted",
        %{supervisor_name: supervisor_name} do
     baseline_sheds = AshA2A.Telemetry.OcelForwarder.shed_count()
 
-    # Fire the burst: each real dispatch's `[:ash_a2a, :dispatch, :stop]`
-    # span synchronously invokes the forwarder handler, which starts at
-    # most @max_children supervised tasks and sheds the rest.
     for i <- 1..@burst do
       message = data_message(%{phase: :"bounded_probe_#{i}", prompt_text: "burst #{i}"})
       assert {:reply, _} = AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator, [], nil)
     end
 
-    # While the admitted tasks are still really sleeping, the supervised
-    # child count is already bounded at the ceiling (2) -- not 12.
     assert %{active: active, max: observed_max} = Agent.get(SlowOcelIngest.Store, & &1)
     assert active <= @max_children
     assert observed_max <= @max_children
@@ -122,12 +107,8 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
 
     shed_delta = AshA2A.Telemetry.OcelForwarder.shed_count() - baseline_sheds
     assert shed_delta > 0
+    assert_receive {:shed_telemetry, %{reason: :max_children}}, 1_000
 
-    # Every shed event was observable telemetry, not a silent drop.
-    assert_receive :shed_telemetry, 1_000
-
-    # Accounting closes over the whole burst: every dispatched event is
-    # either eventually served by the real endpoint or explicitly shed.
     wait_until(fn ->
       Agent.get(SlowOcelIngest.Store, & &1).served + shed_delta == @burst
     end)
@@ -135,6 +116,21 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     final = Agent.get(SlowOcelIngest.Store, & &1)
     assert final.max <= @max_children
     assert final.served + shed_delta == @burst
+  end
+
+  test "a missing task supervisor is also an accounted shed rather than a synchronous crash" do
+    missing =
+      Module.concat(__MODULE__, "MissingTaskSupervisor#{System.unique_integer([:positive])}")
+
+    Application.put_env(:ash_a2a, :ocel_task_supervisor, missing)
+    baseline_sheds = AshA2A.Telemetry.OcelForwarder.shed_count()
+
+    message = data_message(%{phase: :missing_supervisor, prompt_text: "missing supervisor"})
+    assert {:reply, _} = AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator, [], nil)
+
+    assert AshA2A.Telemetry.OcelForwarder.shed_count() - baseline_sheds == 1
+
+    assert_receive {:shed_telemetry, %{reason: {:task_supervisor_exit, _reason}}}, 1_000
   end
 
   defp wait_until(fun) do
