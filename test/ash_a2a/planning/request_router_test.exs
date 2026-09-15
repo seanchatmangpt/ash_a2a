@@ -154,14 +154,24 @@ defmodule AshA2A.Planning.RequestRouterTest do
       assert {:text, "The goal is to read the people."} = RequestRouter.detect_tier(message)
     end
 
-    test "a non-map goal_facts value is rejected as the facts tier and falls through to text" do
+    test "a non-map goal_facts value fails closed with :invalid_goal_facts, never silently falls through to the LLM tier" do
+      # Real, adversarially-found robustness gap, fixed in place: this
+      # used to silently downgrade to the text/LLM tier (a real
+      # correctness gap this session's own adversarial verify pass
+      # flagged -- a malformed structured payload should never be a
+      # quiet excuse to fall back to a looser admission model). Real
+      # text is present alongside the malformed goal_facts value
+      # specifically to prove detection does not merely fall through
+      # because "no text" -- it refuses even though a text tier would
+      # otherwise be reachable.
       message =
         A2A.Message.new_user([
           A2A.Part.Data.new(%{"goal_facts" => "not-a-map"}),
           A2A.Part.Text.new("advance the admitted workflow")
         ])
 
-      assert {:text, "advance the admitted workflow"} = RequestRouter.detect_tier(message)
+      assert :invalid_goal_facts = RequestRouter.detect_tier(message)
+      assert {:error, %{code: :invalid_goal_facts}} = RequestRouter.route(nil, message)
     end
   end
 

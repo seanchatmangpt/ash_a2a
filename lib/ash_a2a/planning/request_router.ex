@@ -111,11 +111,20 @@ defmodule AshA2A.Planning.RequestRouter do
   alias AshA2A.Semantic.Compiler
   alias AshA2A.Semantic.Source
 
-  @type tier_detection :: {:facts, map()} | {:text, String.t()} | :error
+  @type tier_detection :: {:facts, map()} | {:text, String.t()} | :error | :invalid_goal_facts
 
   @doc """
   Classifies a real inbound `A2A.Message.t()` into a routing tier. See the
   moduledoc for the exact heuristic.
+
+  A `goal_facts` key that is genuinely *absent* falls through to text
+  detection, same as always. A `goal_facts` key that is *present* but not
+  a map (a real, adversarially-found robustness gap: a caller sending
+  `"goal_facts" => "not an object"` alongside real text was previously
+  silently downgraded to the LLM tier instead of refused) now fails
+  closed with `:invalid_goal_facts` instead -- a malformed structured
+  payload is a caller error to surface, never a silent excuse to fall
+  back to a different, less strict admission model.
   """
   @spec detect_tier(A2A.Message.t()) :: tier_detection()
   def detect_tier(%A2A.Message{} = message) do
@@ -125,7 +134,10 @@ defmodule AshA2A.Planning.RequestRouter do
       {:ok, envelope} when is_map(envelope) ->
         {:facts, envelope}
 
-      _no_facts_envelope ->
+      {:ok, _not_a_map} ->
+        :invalid_goal_facts
+
+      :error ->
         case A2A.Message.text(message) do
           text when is_binary(text) and text != "" -> {:text, text}
           _no_text -> :error
@@ -191,6 +203,9 @@ defmodule AshA2A.Planning.RequestRouter do
 
       {:text, text} ->
         route_text(resource_or_domain, text, opts)
+
+      :invalid_goal_facts ->
+        {:error, %{code: :invalid_goal_facts}}
 
       :error ->
         {:error, %{code: :request_router_missing_input}}

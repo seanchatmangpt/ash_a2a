@@ -62,6 +62,27 @@ defmodule AshA2A.Planning.PhraseParser do
   This module never calls a solver, a compiler, or an LLM -- it only
   matches text and builds a plain map. `AshA2A.Planning.RequestRouter`
   is the sole caller that gives that map real, executable meaning.
+
+  ## Real hazard for template authors: greedy quantifiers before a
+  repeated delimiter can select the wrong capability
+
+  This module's own adversarial verification (this session) constructed
+  and ran, end to end through the real solver, a caller-authored template
+  `~r/^run (?<action>.+) with (?<capability>[A-Za-z0-9_.]+)$/` against
+  `"run advance with X.advance with X.unlock"`. Regex backtracking on the
+  greedy `(?<action>.+)` resolved `capability` to `X.unlock`, not the
+  `X.advance` a plain-English reading names as the operative one -- a
+  real capability *substitution* within the caller's own legitimately-
+  admitted set (never a closed-set bypass: the resulting capability id is
+  still independently re-verified against the real compiled index the
+  same as every other path), but still not what a human author intended.
+  This is caller-template authorship risk, not a bug in `parse/2` itself
+  -- `parse/2` faithfully applies whatever regex a caller registers.
+  **Template authors: prefer non-greedy quantifiers (`.+?`) or a
+  precisely bounded character class over a bare `.+` whenever a
+  delimiter your own template matches on could plausibly repeat in real
+  caller text**, and test your own template against adversarial inputs
+  containing that delimiter more than once before registering it.
   """
 
   @typedoc "A single caller-registered structured-phrase template."
