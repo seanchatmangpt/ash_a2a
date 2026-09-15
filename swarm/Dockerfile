@@ -42,18 +42,41 @@ ENV MIX_ENV=prod
 
 WORKDIR /build
 
-# ash_a2a itself first (the `path:` dependency `swarm/mix.exs` resolves
-# against), then swarm/ -- real relative layout, not a synthetic one.
-COPY mix.exs mix.lock ./
-COPY lib ./lib
-COPY swarm ./swarm
-
 RUN mix local.hex --force \
     && mix local.rebar --force
+
+# Real Docker layer-cache fix (measured this session: this image was
+# rebuilt 5+ times, each paying a full re-fetch/recompile because the
+# ORIGINAL ordering copied ash_a2a's own lib/ -- which changes on nearly
+# every commit -- before `mix deps.get`, invalidating that step's cache
+# layer on every unrelated lib/ change even though `deps.get` only reads
+# mix.exs/mix.lock, never lib/ content). Copy only the manifest files
+# first (ash_a2a's own mix.exs/mix.lock, the real `path:` dependency
+# swarm/mix.exs resolves against, plus swarm's own manifest), fetch
+# deps against those alone, THEN copy the real source. `deps.get`'s own
+# Docker layer now only invalidates when a manifest file actually
+# changes, not on every unrelated ash_a2a lib/ edit.
+#
+# `mix deps.compile`/`mix compile` still correctly re-run on every
+# build regardless (ash_a2a is a real `path:` dependency here, not a
+# Hex package -- its own compiled output must reflect whatever lib/
+# contains right now; that recompilation cost is real and unavoidable
+# without ash_a2a's own release story, not something this reordering
+# claims to remove).
+COPY mix.exs mix.lock ./
+COPY swarm/mix.exs swarm/mix.lock ./swarm/
 
 WORKDIR /build/swarm
 
 RUN mix deps.get --only prod
+
+WORKDIR /build
+
+COPY lib ./lib
+COPY swarm ./swarm
+
+WORKDIR /build/swarm
+
 RUN mix deps.compile
 RUN mix compile
 RUN mix release swarm_node
