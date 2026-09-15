@@ -6,5 +6,8 @@ ExUnit.start(exclude: [:external_api])
 Application.put_env(
   :ash_a2a,
   :receipt_outbox_dir,
-  Path.join(System.tmp_dir!(), "ash_a2a_receipt_outbox_test_#{System.unique_integer([:positive])}")
+  Path.join(
+    System.tmp_dir!(),
+    "ash_a2a_receipt_outbox_test_#{System.unique_integer([:positive])}"
+  )
 )
