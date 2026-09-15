@@ -28,7 +28,7 @@ defmodule AshA2A.CommandBus do
 
     with {:ok, skill, _action, consequence} <- inspect_target(command, resource_or_domain),
          :ok <- admit(command, consequence),
-         claim <- store.claim(command, store_opts) do
+         claim <- claim_receipt(store, command, store_opts) do
       case claim do
         {:replay, receipt} ->
           {:ok, receipt}
@@ -41,14 +41,47 @@ defmodule AshA2A.CommandBus do
             |> Receipt.from_reply(execution_id, consequence, reply)
             |> mark_standing(store)
 
-          :ok = store.commit(receipt, store_opts)
-          emit_receipt(receipt)
-          {:ok, receipt}
+          commit_receipt(store, receipt, store_opts)
 
         {:error, reason} ->
           {:error, refusal(reason)}
       end
     end
+  end
+
+  # Both concrete `AshA2A.ReceiptStore` implementations resolve their backing
+  # process/config fresh by name on every call -- `GenServer.call` to a
+  # registered name for `AshA2A.ReceiptStore.Memory`, `:persistent_term.get/1`
+  # (via `EKV.get/2`) for `AshA2A.ReceiptStore.Ekv`. If that name/config is
+  # momentarily gone (a restart window), the resulting crash (`:noproc` exit,
+  # or `ArgumentError`) would otherwise propagate uncaught through `run/4`
+  # into the calling `A2A.Agent` GenServer's `handle_call`, killing it and
+  # discarding every task/history it held for that resource. Fail closed
+  # instead, through the SAME `refusal/1`-shaped `{:error, reason}` path
+  # ordinary store claim errors (`:command_conflict`, `:in_flight`) already
+  # flow through in `run/4`'s `case` above -- rather than inventing a new
+  # error shape. Mirrors the identical no-raise contract
+  # `AshA2A.Agent.replan/2` already holds its own external (LLM-role) call
+  # to, for the identical availability reason.
+  defp claim_receipt(store, command, store_opts) do
+    store.claim(command, store_opts)
+  rescue
+    _error -> {:error, :receipt_store_unavailable}
+  catch
+    :exit, _reason -> {:error, :receipt_store_unavailable}
+  end
+
+  # Same fail-closed contract as `claim_receipt/3` above, for the identical
+  # reason: `store.commit/2` also resolves its backing process/config fresh
+  # by name on every call and can crash the same two ways.
+  defp commit_receipt(store, receipt, store_opts) do
+    :ok = store.commit(receipt, store_opts)
+    emit_receipt(receipt)
+    {:ok, receipt}
+  rescue
+    _error -> {:error, refusal(:receipt_store_unavailable)}
+  catch
+    :exit, _reason -> {:error, refusal(:receipt_store_unavailable)}
   end
 
   # `skill.consequence` -- computed once at compile time
