@@ -1,0 +1,19 @@
+# Keeps the real swarm-test Docker build context (swarm/Dockerfile,
+# built with the repo root as context) small and reproducible -- none of
+# these are inputs the build actually needs; deps/_build get rebuilt
+# fresh inside the image, native/ contains a Rust artifact unrelated to
+# swarm_node's own build, and .git/test/docs are dead weight for a build
+# context.
+.git
+_build
+deps
+native
+test
+doc
+docs
+cover
+.elixir_ls
+.tool-versions
+*.md
+swarm/_build
+swarm/deps

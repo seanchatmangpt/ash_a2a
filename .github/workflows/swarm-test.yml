@@ -1,0 +1,81 @@
+name: Swarm test (kind)
+
+# Real, on-demand distributed-agent swarm test -- see k8s/README.md for
+# the full design. Deliberately `workflow_dispatch`-only (not wired to
+# every push/PR): this job builds a full Elixir+Rust release image from
+# scratch (no dependency cache yet) and stands up a real kind cluster,
+# genuinely heavier than the fast per-commit `ci.yml` job.
+#
+# This workflow never needs `erlef/setup-beam` on the *runner* itself --
+# every Elixir/OTP/Rust build step happens INSIDE `swarm/Dockerfile`'s own
+# build stage, which is why it can run under `act` on this Apple-Silicon
+# host even though `bin/ci-local.sh`'s own real, disclosed limitation
+# (arm64 OTP needing libcrypto.so.1.1, amd64-under-emulation hitting an
+# erlexec binary-format mismatch) blocks `ci.yml` from completing there.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  swarm-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build swarm-node image
+        run: docker build -f swarm/Dockerfile -t ash-a2a-swarm-node:local .
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ash-a2a-swarm
+          wait: 90s
+
+      - name: Load image into kind
+        run: kind load docker-image ash-a2a-swarm-node:local --name ash-a2a-swarm
+
+      - name: Apply namespace + quota + ServiceAccount + headless Service + NetworkPolicy
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/resource-quota.yaml
+          kubectl apply -f k8s/service-account.yaml
+          kubectl apply -f k8s/headless-service.yaml
+          kubectl apply -f k8s/network-policy.yaml
+
+      - name: Create real distribution cookie Secret (random, never committed)
+        run: |
+          kubectl -n ash-a2a-swarm create secret generic ash-a2a-swarm-cookie \
+            --from-literal=cookie="$(openssl rand -hex 32)"
+
+      - name: Apply Deployment
+        run: kubectl apply -f k8s/deployment.yaml
+
+      - name: Wait for rollout
+        run: kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=180s
+
+      - name: Real cross-pod swarm-dispatch probe
+        run: |
+          sleep 8
+          POD="$(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[0].metadata.name}')"
+          OUT="$(kubectl -n ash-a2a-swarm exec "$POD" -- /app/bin/swarm_node rpc "SwarmNode.Probe.run()")"
+          echo "$OUT"
+          echo "$OUT" | grep -q '"swarm_dispatch_verified":true'
+
+      - name: Real resilience/chaos test (kill one pod, verify self-heal + swarm reformation)
+        run: |
+          PODS=($(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[*].metadata.name}'))
+          kubectl -n ash-a2a-swarm delete pod "${PODS[${#PODS[@]}-1]}" --wait=false
+          kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=90s
+          sleep 8
+          OUT="$(kubectl -n ash-a2a-swarm exec "${PODS[0]}" -- /app/bin/swarm_node rpc "SwarmNode.Probe.run()")"
+          echo "$OUT"
+          echo "$OUT" | grep -q '"swarm_dispatch_verified":true'
+
+      - name: Orthogonal manifest security scan (kubeconform)
+        if: always()
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary k8s/*.yaml
+
+      - name: Describe pods (debug on failure)
+        if: failure()
+        run: kubectl -n ash-a2a-swarm describe pods
