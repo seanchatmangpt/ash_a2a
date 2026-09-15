@@ -34,7 +34,7 @@ defmodule AshA2A.CommandBus do
           {:ok, receipt}
 
         {:execute, %Identity{kind: :execution} = execution_id} ->
-          reply = dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts)
+          reply = safe_dispatch(skill, message, resource_or_domain, opts)
 
           receipt =
             command
@@ -173,5 +173,39 @@ defmodule AshA2A.CommandBus do
     after
       Process.delete(:ash_a2a_ocel_command_bus_dispatch)
     end
+  end
+
+  # Same fail-closed, no-raise contract `claim_receipt/3` and
+  # `commit_receipt/3` above already hold for the receipt store, applied to
+  # the real dispatch path instead: an exception, throw, or exit raised
+  # anywhere inside `dispatch_with_ocel_correlation/4` (resource-owned
+  # action code, a data-layer failure, `AshA2A.Dispatcher` itself, ...)
+  # must never propagate uncaught through `run/4` into the calling
+  # `A2A.Agent` GenServer's `handle_call`. Left unguarded, such a crash
+  # would both kill that GenServer AND leave the pre-dispatch claim
+  # `claim_receipt/3` already wrote (a `%{fingerprint, execution_id,
+  # receipt: nil}` reservation, `AshA2A.ReceiptStore.Memory.handle_call/3`'s
+  # `{:claim, _}` clause) stuck at `receipt: nil` forever -- any retry with
+  # the same fingerprint then matches that nil-receipt entry and returns
+  # `{:error, :in_flight}` permanently, with no receipt ever committed for
+  # the crash.
+  #
+  # Converts the crash into an ordinary `{:error, reason}` reply instead,
+  # so it flows through the exact same `Receipt.from_reply/4` ->
+  # `status/1` `{:error, _} -> :failed` clause every other dispatch error
+  # reply already uses (no new receipt vocabulary needed) -- `run/4`'s
+  # `{:execute, _}` branch then commits that receipt through the normal
+  # commit path exactly as the success path does, closing the claim with a
+  # typed, receipted `:failed` outcome instead of leaving it in-flight.
+  defp safe_dispatch(skill, message, resource_or_domain, opts) do
+    dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts)
+  rescue
+    exception -> {:error, dispatch_crash_reason(:error, exception, __STACKTRACE__)}
+  catch
+    kind, reason -> {:error, dispatch_crash_reason(kind, reason, __STACKTRACE__)}
+  end
+
+  defp dispatch_crash_reason(kind, reason, stacktrace) do
+    %{code: :dispatch_crashed, detail: Exception.format_banner(kind, reason, stacktrace)}
   end
 end
