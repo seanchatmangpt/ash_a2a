@@ -1,0 +1,68 @@
+# SEC-NET-001 (kubernetes-workload-pack's control-map.md): default-deny
+# NetworkPolicy + explicit allowed flows. This was this session's one
+# disclosed NAMESPACE_CONTROL gap (kubescape's NSA scan of
+# k8s/deployment.yaml alone failed exactly one control here:
+# "Ingress and Egress blocked" -- 19/20 controls passed otherwise).
+# Closed here since a real enterprise/regulated-buyer security review is
+# exactly what would gate on this control's presence, not just document
+# its absence.
+#
+# Egress: DNS (kube-dns, needed for libcluster's own Kubernetes.DNS
+# strategy to resolve the headless Service) + pod-to-pod on the real
+# distribution ports this swarm needs (epmd 4369, the fixed inet_dist
+# port 9000 from swarm/rel/vm.args.eex). Ingress: the same two ports,
+# from other pods carrying this workload's own label only -- no ingress
+# from any other namespace/workload.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ash-a2a-swarm-default-deny
+  namespace: ash-a2a-swarm
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ash-a2a-swarm-allow-cluster-traffic
+  namespace: ash-a2a-swarm
+spec:
+  podSelector:
+    matchLabels:
+      app: ash-a2a-swarm
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ash-a2a-swarm
+      ports:
+        - port: 4369
+          protocol: TCP
+        - port: 9000
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ash-a2a-swarm
+      ports:
+        - port: 4369
+          protocol: TCP
+        - port: 9000
+          protocol: TCP
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

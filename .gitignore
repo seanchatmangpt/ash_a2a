@@ -24,3 +24,9 @@ ash_a2a-*.tar
 
 # Local ULTRACODE receipts/logs are runtime evidence, not repository source.
 /.ultracode/state/
+
+# swarm/ is its own real, separate Mix project (see swarm/mix.exs's
+# moduledoc) -- its own build/deps/lock artifacts, same reasoning as the
+# root-level entries above.
+/swarm/_build/
+/swarm/deps/

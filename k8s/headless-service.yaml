@@ -1,0 +1,34 @@
+# Headless Service (spec.clusterIP: None) -- the real DNS shape
+# libcluster's Cluster.Strategy.Kubernetes.DNS strategy requires: its own
+# real docs describe fetching "IP addresses of all pods under a headless
+# Kubernetes service." A normal ClusterIP Service's DNS name resolves to
+# one virtual service IP; only a headless Service's DNS name returns one
+# A record per real, ready pod.
+#
+# This is the exact real gap `ash_a2a`'s own `k8s:serviceClusterIP`
+# extension to `kubernetes-workload-pack` (v0.1.1, this session) exists
+# to close -- hand-authored here rather than rendered by `ggen sync run`
+# only because of the real docker-mount path-resolution friction
+# disclosed in this repo's own commit history and k8s/README.md, not
+# because the pack lacks the field.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ash-a2a-swarm-headless
+  namespace: ash-a2a-swarm
+spec:
+  clusterIP: None
+  selector:
+    app: ash-a2a-swarm
+  ports:
+    # EPMD (Erlang Port Mapper Daemon) -- real distributed-Erlang node
+    # discovery/handshake port, standard 4369. Distribution data itself
+    # flows over the ephemeral inet_dist port range configured on the
+    # release (deployment.yaml's ERL_DIST_PORT_RANGE env / vm.args.eex),
+    # not a fixed Service port -- a headless Service only needs to exist
+    # and select the right Pods for DNS A-record discovery to work; it
+    # does not need to proxy the distribution traffic itself (that is
+    # real direct pod-to-pod TCP, which kind's default CNI already routes).
+    - name: epmd
+      port: 4369
+      targetPort: 4369

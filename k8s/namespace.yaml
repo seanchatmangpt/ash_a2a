@@ -1,0 +1,15 @@
+# Hand-authored (see k8s/README.md for why -- a real, disclosed ggen CLI
+# docker-mount path-resolution limitation, not a shortcut). Pod Security
+# Admission set to `restricted`, matching the same live-cluster posture
+# ~/ggen-marketplace/packs/kubernetes-workload-pack/examples/
+# control-mapping/control-map.md's SEC-ADM-001 row and its own "Live
+# cluster verification" section already proved real (this pack's own
+# minimal/high-assurance workloads admitted cleanly under this exact
+# label; a privileged fixture's Pod-level creation would be rejected).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ash-a2a-swarm
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -1,0 +1,91 @@
+# Hand-authored (see k8s/README.md). Security posture matches
+# ~/ggen-marketplace/packs/kubernetes-workload-pack/examples/
+# high-assurance-workload/facts.ttl field-for-field (control-map.md's
+# WORKLOAD_CONTROL rows SEC-POD-001/002/003, SEC-CTR-001/002/003,
+# SEC-RES-001, SEC-AVAIL-001, SEC-ID-001/002), applied to this real
+# distributed-Erlang swarm-test workload instead of that example's
+# illustrative ledger-reconciliation payload.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ash-a2a-swarm
+  namespace: ash-a2a-swarm
+  labels:
+    app: ash-a2a-swarm
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ash-a2a-swarm
+  template:
+    metadata:
+      labels:
+        app: ash-a2a-swarm
+    spec:
+      serviceAccountName: ash-a2a-swarm
+      # SEC-ID-002: libcluster's Kubernetes.DNS strategy talks to plain
+      # DNS, never the Kubernetes API server -- no token is ever needed.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: swarm-node
+          image: ash-a2a-swarm-node:local
+          # Never (not IfNotPresent, which can still silently reach for a
+          # registry on a cache miss): real air-gap/offline-provenance
+          # test (NIST SP 800-53 SA-9, external system services) --
+          # proves this workload schedules from a kind-loaded local image
+          # alone, with the kubelet never attempting any registry pull.
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: epmd
+              containerPort: 4369
+            - name: dist
+              containerPort: 9000
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: RELEASE_DISTRIBUTION
+              value: "name"
+            - name: RELEASE_NODE
+              value: "swarm_node@$(POD_IP)"
+            - name: RELEASE_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: ash-a2a-swarm-cookie
+                  key: cookie
+            - name: RELEASE_TMP
+              value: "/tmp"
+            - name: SWARM_K8S_SERVICE
+              value: "ash-a2a-swarm-headless"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 512Mi
+          # readOnlyRootFilesystem: true (above) needs a real writable
+          # location for the release's own runtime tmp dir (RELEASE_TMP)
+          # and Erlang's default tmp usage -- an ephemeral emptyDir, not a
+          # persistent volume, since nothing here needs to survive a pod
+          # restart.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

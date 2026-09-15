@@ -1,0 +1,13 @@
+## Real, minimal vm.args for the swarm-test release. A Mix release picks
+## this up automatically from rel/vm.args.eex (no extra config wiring
+## needed). Fixes the inet_dist port to a single, known value (rather
+## than the OTP default ephemeral range) so k8s/deployment.yaml can
+## declare a real, fixed containerPort for it instead of an unbounded
+## range -- the same reasoning k8s/headless-service.yaml's own comment
+## gives for why EPMD (4369) is the only Service port needed.
+-kernel inet_dist_listen_min 9000
+-kernel inet_dist_listen_max 9000
+
+## RELEASE_NODE/RELEASE_DISTRIBUTION/RELEASE_COOKIE (set via k8s/deployment.yaml
+## env, using RELEASE_NODE=swarm_node@$(POD_IP)) already configure -name/-setcookie
+## through the release's own boot script; nothing further needed here.

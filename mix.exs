@@ -63,7 +63,23 @@ defmodule AshA2A.MixProject do
     [
       {:ash, "~> 3.0"},
       {:igniter, "~> 0.6"},
-      {:ggen_igniter, "~> 26.9"},
+      # `only: :dev`: real, disclosed finding (swarm-test Docker build,
+      # this session) -- zero references to `GgenIgniter`/`ggen_igniter`
+      # anywhere in this repo's own lib/ or test/ (confirmed via a real
+      # grep across both), yet it was declared with no `:only`
+      # restriction, so every consumer's `MIX_ENV=prod` release build
+      # (not just interactive dev use) unconditionally paid its real,
+      # heavy transitive cost: a Rustler NIF (`ggen_graph_nif`) linking a
+      # vendored RocksDB via `oxrocksdb-sys` and using `bindgen`, which
+      # needs a real Rust toolchain, `libclang`, and a C++ toolchain at
+      # build time -- confirmed by two real, disclosed Docker build
+      # failures before this fix (missing Rust toolchain, then missing
+      # libclang) in swarm/Dockerfile's own commit history. Scoping to
+      # `:dev` keeps `mix ggen_igniter.doctor`/interactive use fully
+      # available; a real `MIX_ENV=prod mix deps.get` for this repo (and
+      # this feature's own swarm-test release) simply no longer fetches
+      # or compiles it.
+      {:ggen_igniter, "~> 26.9", only: :dev},
       {:a2a, "~> 0.2"},
       {:ash_ai, "~> 1.0"},
       # AshA2A.Telemetry.OcelForwarder's real HTTP POST to beam4pm's real

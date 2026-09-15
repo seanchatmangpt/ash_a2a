@@ -1,0 +1,16 @@
+# NAMESPACE_CONTROL layer (control-map.md's SEC-QUOTA-001): the aggregate
+# DoS/OOM boundary this Deployment's per-container requests (deployment.yaml)
+# feed into. control-map.md's own "Live cluster verification" proved this
+# mechanism real: a bare Pod requesting more CPU than a namespace quota
+# allows is genuinely rejected by the API server, not merely documented.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ash-a2a-swarm-quota
+  namespace: ash-a2a-swarm
+spec:
+  hard:
+    requests.cpu: "3"
+    requests.memory: 3Gi
+    limits.cpu: "6"
+    limits.memory: 6Gi
