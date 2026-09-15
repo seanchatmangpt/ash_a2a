@@ -75,12 +75,14 @@ defmodule AshA2A.Planning.GoalFacts do
        `:undeclared_predicate`.
 
   Also fails closed (before any of the three checks above run their real
-  logic) on structurally malformed wire input: an empty/missing
-  `task_sequence` (`:empty_task_sequence`), a task-call entry with no
-  resolvable name (`:invalid_task_sequence_entry`), a fact entry with no
-  resolvable predicate (`:invalid_fact_entry`), or an object entry with no
-  resolvable id (`:invalid_object_entry`) -- input hygiene, not a fourth
-  semantic admission rule.
+  logic) on structurally malformed wire input: a non-nil/non-string
+  `request_id` (`:invalid_request_id` -- closes a real, adversarially
+  found smuggling vector, see `validate_request_id/1`'s own comment), an
+  empty/missing `task_sequence` (`:empty_task_sequence`), a task-call
+  entry with no resolvable name (`:invalid_task_sequence_entry`), a fact
+  entry with no resolvable predicate (`:invalid_fact_entry`), or an object
+  entry with no resolvable id (`:invalid_object_entry`) -- input hygiene,
+  not a fourth semantic admission rule.
 
   Returns `{:ok, admitted}` where `admitted` is a normalized, atom-keyed map
   ready for both `AshA2A.Planning.HddlRenderer.domain_text/2`+`problem_text/3`
@@ -102,7 +104,8 @@ defmodule AshA2A.Planning.GoalFacts do
   def admit(resource_or_domain, envelope) when is_map(envelope) do
     objects = fetch_objects(envelope)
 
-    with {:ok, task_calls} <- fetch_task_calls(envelope),
+    with :ok <- validate_request_id(envelope),
+         {:ok, task_calls} <- fetch_task_calls(envelope),
          {:ok, _skills} <- resolve_capability_ids(resource_or_domain, task_calls),
          {:ok, init} <- fetch_facts(envelope, "init", :init),
          {:ok, goal} <- fetch_facts(envelope, "goal", :goal),
@@ -298,6 +301,30 @@ defmodule AshA2A.Planning.GoalFacts do
       :ok
     else
       {:error, %{code: :invalid_object_entry, message: "objects contains an entry with no id"}}
+    end
+  end
+
+  # Real, run-confirmed adversarial finding (this session's own verify
+  # phase): `request_id` was passed through unconstrained into the final
+  # envelope `HddlDeterministicSynthesis.build_envelope/3` builds
+  # (`"request_id" => admitted.request_id`), which `AshA2A.Planning.
+  # from_envelope/3` -> `collect/2` deep-walks looking for nested
+  # "capability_id" keys anywhere in the envelope -- a caller submitting a
+  # MAP (not a string/nil) for request_id could smuggle an extra,
+  # otherwise-undeclared-but-still-in-the-closed-set capability id into
+  # the final `capability_ids`/reply, never verified reachable by the
+  # solver for this request. Authority never escalated and no id outside
+  # the real compiled set could pass (both independently re-checked by
+  # `Info.skill/2`/`resolve_all/2`), but the "already-admitted, never
+  # re-derived" completeness claim this module's own moduledoc makes was
+  # not accurate for this one field. Closed at the source: request_id may
+  # only ever be nil or a plain string, so it structurally cannot carry a
+  # nested key for collect/2 to harvest.
+  defp validate_request_id(envelope) do
+    case fetch(envelope, "request_id", :request_id) do
+      nil -> :ok
+      value when is_binary(value) -> :ok
+      _ -> {:error, %{code: :invalid_request_id, message: "request_id must be nil or a string"}}
     end
   end
 

@@ -188,6 +188,35 @@ defmodule AshA2A.Semantic.NonllmHddlTest do
     end
   end
 
+  describe "negative control: request_id cannot smuggle an unverified capability id (real adversarial finding, closed)" do
+    test "a non-string request_id is refused before any admission check runs" do
+      envelope = base_envelope(%{"request_id" => %{"capability_id" => @unlock_id}})
+
+      assert {:error, %{code: :invalid_request_id}} =
+               HddlDeterministicSynthesis.synthesize(HddlDeterministicFixture, envelope)
+    end
+
+    test "the exact adversarial envelope constructed against this fixture during review no longer smuggles unlock into capability_ids" do
+      # This session's own adversarial verification pass constructed exactly
+      # this envelope by hand (task_sequence names only :advance; :unlock is
+      # named nowhere except a nested "capability_id" key inside request_id)
+      # and confirmed, via a real run, that AshA2A.Planning.collect/2's
+      # whole-envelope deep-walk harvested the unlock id into the final
+      # package's capability_ids even though it was never admitted or
+      # solver-verified for this request. validate_request_id/1 closes this
+      # at the source: request_id may only be nil or a plain string now.
+      envelope =
+        base_envelope(%{
+          "request_id" => %{"capability_id" => @unlock_id},
+          "task_sequence" => [%{"capability_id" => @advance_id, "args" => ["on", "off"]}],
+          "goal" => [%{"predicate" => "current_phase", "args" => ["off"]}]
+        })
+
+      assert {:error, %{code: :invalid_request_id}} =
+               HddlDeterministicSynthesis.synthesize(HddlDeterministicFixture, envelope)
+    end
+  end
+
   describe "negative control: referential and predicate closure" do
     test "a goal fact referencing an undeclared object id is refused" do
       envelope =
