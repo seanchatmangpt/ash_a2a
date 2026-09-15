@@ -31,7 +31,7 @@ defmodule AshA2A.Test.Support.CommandWorker do
 
   use Oban.Worker, queue: :commands, max_attempts: 3
 
-  alias AshA2A.{Authority, Command, CommandBus, Identity}
+  alias AshA2A.{Authority, Command, CommandBus, Identity, SemanticSubject}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
@@ -71,6 +71,7 @@ defmodule AshA2A.Test.Support.CommandWorker do
       task_id: args["task_id"] && raw_value(args["task_id"]),
       input: args["input"] || %{},
       authority: reconstruct_authority(args, principal_value),
+      semantic_subject: reconstruct_semantic_subject(args),
       metadata: args["metadata"] || %{}
     )
   end
@@ -95,6 +96,31 @@ defmodule AshA2A.Test.Support.CommandWorker do
   end
 
   defp reconstruct_authority(_args, _principal_value), do: nil
+
+  # `AshA2A.Delivery.Oban.payload/1` carries the same four fields
+  # `AshA2A.Command.fingerprint/1` folds into its hash via
+  # `SemanticSubject.fingerprint_token/1` (graph_digest, projection_digest,
+  # manufacturer_digest, ephemeral?), omitting all four keys entirely when
+  # the original command's `semantic_subject` was nil. Rebuilding a real
+  # `AshA2A.SemanticSubject` here (never a bare map) is what lets a
+  # continuation-flow command's reconstructed `Command.fingerprint` agree
+  # with the fingerprint computed by the original caller, which is exactly
+  # the discriminator `AshA2A.ReceiptStore`'s claim logic uses to
+  # distinguish a legitimate replay from a `:command_conflict`.
+  defp reconstruct_semantic_subject(%{"semantic_subject_graph_digest" => graph_digest} = args)
+       when is_binary(graph_digest) do
+    {:ok, subject} =
+      SemanticSubject.new(
+        graph_digest: graph_digest,
+        projection_digest: args["semantic_subject_projection_digest"],
+        manufacturer_digest: args["semantic_subject_manufacturer_digest"],
+        ephemeral?: Map.get(args, "semantic_subject_ephemeral", true)
+      )
+
+    subject
+  end
+
+  defp reconstruct_semantic_subject(_args), do: nil
 
   defp raw_value(external) when is_binary(external) do
     case String.split(external, ":", parts: 2) do

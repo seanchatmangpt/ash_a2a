@@ -8,7 +8,7 @@ defmodule AshA2A.Delivery.Oban do
   execution receipt.
   """
 
-  alias AshA2A.{Authority, Command, Delivery, Identity}
+  alias AshA2A.{Authority, Command, Delivery, Identity, SemanticSubject}
 
   @spec available?() :: boolean()
   def available?, do: Code.ensure_loaded?(Oban) and Code.ensure_loaded?(Oban.Job)
@@ -26,6 +26,7 @@ defmodule AshA2A.Delivery.Oban do
       "authority_token_id" => authority_token(command.authority),
       "metadata" => command.metadata
     }
+    |> Map.merge(semantic_subject_fields(command.semantic_subject))
   end
 
   @spec enqueue(module(), Command.t(), keyword()) :: {:ok, Delivery.t()} | {:error, term()}
@@ -62,4 +63,26 @@ defmodule AshA2A.Delivery.Oban do
 
   defp authority_token(%Authority{token_id: token_id}), do: Identity.external(token_id)
   defp authority_token(_), do: nil
+
+  # Additive-only: when `semantic_subject` is nil (the already-tested,
+  # already-shipped case), this returns %{} and `Map.merge/2` leaves the
+  # base payload map byte-identical to before this field existed. When
+  # non-nil, every field `AshA2A.Command.fingerprint/1` actually folds in
+  # via `SemanticSubject.fingerprint_token/1` (graph_digest,
+  # projection_digest, manufacturer_digest, ephemeral?) rides along on the
+  # wire, so a worker reconstructing the command (e.g.
+  # `AshA2A.Test.Support.CommandWorker.reconstruct_command/1`) can rebuild
+  # the exact same `AshA2A.SemanticSubject` and therefore recompute the
+  # exact same fingerprint -- never trusting the carried `"fingerprint"`
+  # string itself as executable truth (see that module's own moduledoc).
+  defp semantic_subject_fields(nil), do: %{}
+
+  defp semantic_subject_fields(%SemanticSubject{} = subject) do
+    %{
+      "semantic_subject_graph_digest" => subject.graph_digest,
+      "semantic_subject_projection_digest" => subject.projection_digest,
+      "semantic_subject_manufacturer_digest" => subject.manufacturer_digest,
+      "semantic_subject_ephemeral" => subject.ephemeral?
+    }
+  end
 end
