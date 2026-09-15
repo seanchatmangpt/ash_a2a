@@ -7,6 +7,13 @@ defmodule AshA2A.CommandBusTest do
   alias AshA2A.Test.Fixture.{Crashy, Echo, Item}
 
   setup do
+    # A2A-2601: commit retries default to [50, 150] ms -- real production
+    # transient-window recovery, but slow for this suite's 100ms
+    # assert_receive windows. Shrink them here; the outbox Chicago suite
+    # exercises the production-shaped delays explicitly.
+    Application.put_env(:ash_a2a, :receipt_commit_retry_delays_ms, [1, 1])
+    on_exit(fn -> Application.delete_env(:ash_a2a, :receipt_commit_retry_delays_ms) end)
+
     name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
     start_supervised!({AshA2A.ReceiptStore.Memory, name: name})
     %{store_opts: [name: name]}
@@ -180,9 +187,19 @@ defmodule AshA2A.CommandBusTest do
 
     assert_receive {:result, result}
     assert_receive {:DOWN, ^caller_ref, :process, ^caller_pid, :normal}
-    assert {:error, %{code: :receipt_store_unavailable}} = result
 
-    # The backing process really did go down as part of this test.
+    # A2A-2601: the consequence HAS happened by the time the store dies
+    # between claim and commit, so the old bare
+    # `:receipt_store_unavailable` outcome (which discarded the observed
+    # reply) is now a typed `:receipt_commit_pending` error that CARRIES
+    # the receipt, with the receipt durably journaled in the
+    # `AshA2A.ReceiptOutbox` pending reconciliation.
+    assert {:error, %{code: :receipt_commit_pending, receipt: %AshA2A.Receipt{} = receipt}} =
+             result
+
+    assert receipt.status == :completed
+    assert [%AshA2A.Receipt{receipt_id: receipt_id}] = AshA2A.ReceiptOutbox.entries()
+    assert receipt_id == receipt.receipt_id
     assert GenServer.whereis(Keyword.fetch!(store_opts, :name)) == nil
   end
 
