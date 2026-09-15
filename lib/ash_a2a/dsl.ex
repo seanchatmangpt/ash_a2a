@@ -69,6 +69,41 @@ defmodule AshA2A.Dsl do
     identifier: :name
   }
 
+  @hddl_fact_schema {:tuple, [:atom, {:list, :atom}]}
+
+  @hddl_operator_schema [
+    parameters: [
+      type: {:list, :atom},
+      default: [],
+      doc: "Ordered HDDL parameter variable names for this operator's :parameters."
+    ],
+    preconditions: [
+      type: {:list, @hddl_fact_schema},
+      default: [],
+      doc: "Facts required before this operator, as {predicate, args} tuples."
+    ],
+    add_effects: [
+      type: {:list, @hddl_fact_schema},
+      default: [],
+      doc: "Facts asserted true after this operator runs, as {predicate, args} tuples."
+    ],
+    delete_effects: [
+      type: {:list, @hddl_fact_schema},
+      default: [],
+      doc: "Facts retracted after this operator runs, as {predicate, args} tuples."
+    ]
+  ]
+
+  @hddl_operator %Spark.Dsl.Entity{
+    name: :hddl_operator,
+    describe:
+      "Declares this skill's HDDL :action operator (parameters/precondition/effect) for " <>
+        "the deterministic, non-LLM planning path.",
+    target: AshA2A.HddlOperator,
+    schema: @hddl_operator_schema,
+    identifier: {:auto, :unique_integer}
+  }
+
   @skill %Spark.Dsl.Entity{
     name: :skill,
     describe: "Overrides A2A projection metadata for an existing public Ash action.",
@@ -77,7 +112,7 @@ defmodule AshA2A.Dsl do
     schema: @skill_schema,
     args: [:name, {:optional, :resource}, :action],
     identifier: :name,
-    entities: [arguments: [@argument]]
+    entities: [arguments: [@argument], hddl_operators: [@hddl_operator]]
   }
 
   @a2a %Spark.Dsl.Section{

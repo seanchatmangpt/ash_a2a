@@ -12,6 +12,12 @@ defmodule AshA2A.Skill do
   entity, but they are never copied into the canonical capability index.
   Action arguments are always derived from Ash introspection.
 
+  `hddl_operators` is a different kind of override field: it has no Ash-
+  native equivalent to derive instead, so unlike `arguments` it IS copied
+  through into the compiled capability index by
+  `AshA2A.CapabilityIndex.Compiler.project/3` -- see that function and
+  `AshA2A.HddlOperator`'s own @moduledoc.
+
   ## `consequence`
 
   `Ash.Resource.Actions.*{}.type` alone is not a sufficient consequence
@@ -53,7 +59,8 @@ defmodule AshA2A.Skill do
           tags: [String.t()] | nil,
           expose?: boolean(),
           consequence: consequence() | nil,
-          arguments: [AshA2A.Argument.t()]
+          arguments: [AshA2A.Argument.t()],
+          hddl_operators: [AshA2A.HddlOperator.t()]
         }
 
   defstruct [
@@ -68,6 +75,7 @@ defmodule AshA2A.Skill do
     :consequence,
     expose?: true,
     arguments: [],
+    hddl_operators: [],
     __spark_metadata__: nil
   ]
 end

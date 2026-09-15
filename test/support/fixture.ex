@@ -405,6 +405,61 @@ defmodule AshA2A.Test.Fixture.TypedArgumentsDomain do
   end
 end
 
+defmodule AshA2A.Test.Fixture.EchoWithHddlOperator do
+  @moduledoc """
+  Real fixture resource proving the `:skill` entity's `entities:
+  [hddl_operators: [@hddl_operator]]` (`lib/ash_a2a/dsl.ex`) actually accepts
+  a nested `hddl_operator do ... end` block, backed by a real
+  `AshA2A.HddlOperator` entity target (`lib/ash_a2a/hddl_operator.ex`) -- and,
+  distinct from `AshA2A.Test.Fixture.EchoWithArgument`'s deprecated `argument`
+  block, that the declared facts are actually copied through by
+  `AshA2A.CapabilityIndex.Compiler.project/3` into the real compiled
+  `AshA2A.Skill.hddl_operators`, not silently dropped the way `arguments` is.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.EchoWithHddlOperatorDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:phase, :string, public?: true)
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    skill :advance, :read do
+      hddl_operator do
+        parameters([:from, :to])
+        preconditions([{:current_phase, [:from]}])
+        add_effects([{:current_phase, [:to]}])
+        delete_effects([{:current_phase, [:from]}])
+      end
+    end
+  end
+end
+
+defmodule AshA2A.Test.Fixture.EchoWithHddlOperatorDomain do
+  @moduledoc """
+  Real fixture domain for `AshA2A.Test.Fixture.EchoWithHddlOperator` above.
+
+  `validate_config_inclusion?: false` -- same established pattern as
+  `AshA2A.Test.Fixture.TypedArgumentsDomain` above: a small, test-only
+  fixture domain never meant to be registered in `config :ash_a2a,
+  ash_domains`.
+  """
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.EchoWithHddlOperator)
+  end
+end
+
 defmodule AshA2A.Test.Fixture.TenantedItemDomain do
   @moduledoc """
   Real fixture domain for `AshA2A.Test.Fixture.TenantedItem` above.
