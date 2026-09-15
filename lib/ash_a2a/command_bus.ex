@@ -3,6 +3,11 @@ defmodule AshA2A.CommandBus do
   Canonical receipted route from an admitted `AshA2A.Command` to the existing
   Ash dispatcher. Planning and provider adapters may call this module; they do
   not bypass its capability, identity, replay, or evidence checks.
+
+  "Replay" is idempotent command re-submission / command dedup (see
+  `AshA2A.ReceiptStore`'s moduledoc), not process-mining trace
+  replay/conformance checking -- no ordered event trace or reference process
+  model is involved.
   """
 
   alias AshA2A.{Authority, Command, Identity, Receipt}
