@@ -106,6 +106,9 @@ if ! echo "$PROBE_OUTPUT" | grep -q '"swarm_dispatch_verified":true'; then
 fi
 echo "== REAL cross-pod A2A dispatch verified ==" >&2
 
+echo "== Real network isolation regression check (permanent -- was previously a manual one-off, see k8s/README.md) ==" >&2
+bash "$REPO_ROOT/k8s/verify_network_isolation.sh"
+
 echo "== Real resilience/chaos test: kill one pod, verify self-heal + swarm reformation ==" >&2
 VICTIM="${PODS[${#PODS[@]}-1]}"
 echo "Killing pod: $VICTIM" >&2

@@ -50,6 +50,10 @@ dependency, exactly the way any other host app would.
   cluster, loads the image, applies every manifest, waits for rollout,
   execs the real probe, and greps its real JSON output for
   `"swarm_dispatch_verified":true`.
+- **`k8s/verify_network_isolation.sh`** -- real, permanent NetworkPolicy
+  egress-isolation regression check (positive+negative control), run
+  automatically by `k8s/deploy.sh` after the swarm-dispatch probe and
+  before the resilience/chaos test -- see the dedicated section below.
 
 ## Security posture: grounded in `~/ggen-marketplace/packs/kubernetes-workload-pack`
 
@@ -103,11 +107,40 @@ or vendor a copy of the pack under this repo) rather than assume the
 bare `cd <dir> && ggen sync run` invocation this pack's own
 `qualification/orthogonal_scan.sh` uses will work unmodified.
 
+## Network isolation verification is now automated, not a manual one-off
+
+Earlier evidence-gathering for this workload (see
+`docs/AIRGAP_READINESS_REPORT.md`'s "1. Egress falsifier" and
+`docs/ENTERPRISE_READINESS_REPORT.md`'s "Correction (re-derived from a
+real falsifier, not assumed)") confirmed egress isolation by hand:
+delete `k8s/network-policy.yaml`, confirm a real
+`:gen_tcp.connect/4` to a public IP succeeds (positive control),
+re-apply the policy, confirm the identical call now times out (negative
+control). That was a real result, but a manual one -- nothing re-ran it
+on the next deploy, so a future regression (someone loosens or deletes
+the egress-deny rule) would have gone unnoticed until someone thought to
+repeat the manual steps.
+
+**`k8s/verify_network_isolation.sh` closes that gap permanently.** It
+automates the exact same positive/negative control against a real
+running pod and exits non-zero if either control fails to produce its
+expected result (egress succeeds with the policy removed; egress times
+out with the policy re-applied). `k8s/deploy.sh` now runs it
+automatically on every deploy, right after the swarm-dispatch probe and
+before the resilience/chaos test -- this is a standing regression check
+now, not a one-off manual finding that could go stale silently.
+
+Run it standalone against an already-deployed cluster:
+
+    bash k8s/verify_network_isolation.sh [namespace] [app-label]
+    # defaults: namespace=ash-a2a-swarm, app-label=ash-a2a-swarm
+
 ## Running it
 
     bash k8s/deploy.sh                    # creates/reuses a kind cluster named ash-a2a-swarm,
-                                           # deploys, probes cross-pod dispatch, then runs a
-                                           # real pod-kill resilience test
+                                           # deploys, probes cross-pod dispatch, verifies real
+                                           # NetworkPolicy egress isolation (permanent regression
+                                           # check), then runs a real pod-kill resilience test
 
 Or via `act` (this new workflow never needs `erlef/setup-beam` on the
 *host* runner -- all Elixir/OTP work happens inside the Docker build
