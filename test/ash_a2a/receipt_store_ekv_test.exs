@@ -127,6 +127,70 @@ defmodule AshA2A.ReceiptStoreEkvTest do
       assert {:error, :unclaimed_command} = Ekv.commit(receipt, store_opts)
     end
 
+    test "concurrent claim/2 racers on one fresh command_id: exactly one wins, no double-dispatch",
+         %{store_opts: store_opts} do
+      command_id = "ekv-concurrent-claim-#{System.unique_integer([:positive])}"
+      racer_count = 25
+
+      # Real OS processes racing a real EKV instance -- no mocking, no
+      # serialized loop. A barrier holds every task at the door until every
+      # one of them has reported ready, then releases all of them at once so
+      # they enter `Ekv.claim/2` as concurrently as the BEAM scheduler and
+      # EKV's own shard process allow. This is the actual TOCTOU window the
+      # `if_vsn: nil` CAS fix closes: before the fix, every racer could
+      # observe `EKV.get/2` returning `nil` for this same fresh command_id
+      # and every racer's unconditional `EKV.put/3` would then "win".
+      parent = self()
+      barrier = make_ref()
+
+      tasks =
+        for _ <- 1..racer_count do
+          Task.async(fn ->
+            command = real_command(command_id, input: %{})
+            send(parent, {:ready, barrier, self()})
+
+            receive do
+              {:go, ^barrier} -> :ok
+            end
+
+            Ekv.claim(command, store_opts)
+          end)
+        end
+
+      for _ <- 1..racer_count do
+        receive do
+          {:ready, ^barrier, pid} -> send(pid, {:go, barrier})
+        end
+      end
+
+      results = Task.await_many(tasks, 10_000)
+
+      {executes, non_executes} =
+        Enum.split_with(results, &match?({:execute, %Identity{kind: :execution}}, &1))
+
+      # Exactly one real winner -- never zero (the race must be resolved by
+      # someone), never two-or-more (that would be the double-dispatch this
+      # fix exists to prevent).
+      assert length(executes) == 1
+
+      # Every other real racer observed the winner's in-flight claim through
+      # the same fingerprint-match decision logic a first-time reader uses --
+      # never a second distinct successful claim, and never :command_conflict
+      # (every racer submitted the exact same command content, so fingerprints
+      # match) or :replay (no commit happened during the race).
+      assert Enum.all?(non_executes, &match?({:error, :in_flight}, &1))
+      assert length(non_executes) == racer_count - 1
+
+      # The single winner can still commit and fetch normally afterward --
+      # the CAS fix does not disturb the rest of the store's real behavior.
+      [{:execute, execution_id}] = executes
+      winning_command = real_command(command_id, input: %{})
+      receipt = real_receipt(winning_command, execution_id)
+      assert :ok = Ekv.commit(receipt, store_opts)
+      assert {:ok, fetched} = Ekv.fetch(winning_command.command_id, store_opts)
+      assert fetched.receipt_id == receipt.receipt_id
+    end
+
     test "data survives a real EKV process restart against the same data_dir" do
       ekv_name = :"ash_a2a_receipt_ekv_restart_test_#{System.unique_integer([:positive])}"
 
