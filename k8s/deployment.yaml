@@ -35,7 +35,40 @@ spec:
           type: RuntimeDefault
       containers:
         - name: swarm-node
-          image: ash-a2a-swarm-node:local
+          # --- Digest-pinning readiness (PREP ONLY -- not yet executed) ---
+          # The `image:` value below is a clearly-marked PLACEHOLDER, not
+          # a real registry digest. Digest-pinning (SEC-IMG-001 in
+          # docs/ENTERPRISE_READINESS_REPORT.md; SEC-COSIGN-001 in
+          # ~/ggen-marketplace/packs/kubernetes-workload-pack's
+          # control-map.md) is NOT done -- this workload has never been
+          # pushed to a real registry this session, so there is no real
+          # digest to pin to and no real image for `cosign` to verify.
+          # See k8s/README.md's "Digest-pinning readiness (prep only)"
+          # section for the full recipe and rationale. Exact real
+          # command sequence to close this for real, in a later session:
+          #   1. docker run -d --restart=always -p 5000:5000 \
+          #        --name ash-a2a-local-registry registry:2
+          #   2. docker tag ash-a2a-swarm-node:local \
+          #        localhost:5000/ash-a2a-swarm-node:local
+          #   3. docker push localhost:5000/ash-a2a-swarm-node:local
+          #   4. docker inspect --format='{{index .RepoDigests 0}}' \
+          #        localhost:5000/ash-a2a-swarm-node:local
+          #      (capture the real sha256:<digest> this prints)
+          #   5. cosign generate-key-pair   # once; never commit cosign.key
+          #   6. cosign sign --key cosign.key \
+          #        localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+          #   7. cosign verify --key cosign.pub \
+          #        localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+          #   8. Replace the `image:` line below with:
+          #        image: localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+          #      then:
+          #        kind load docker-image \
+          #          localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST> \
+          #          --name ash-a2a-swarm
+          #      (imagePullPolicy stays Never -- see comment below; this
+          #      avoids wiring a containerd registry-mirror into every
+          #      kind node just for this ephemeral test workload.)
+          image: ash-a2a-swarm-node:local  # PLACEHOLDER -- unpinned, real digest not yet substituted
           # Never (not IfNotPresent, which can still silently reach for a
           # registry on a cache miss): real air-gap/offline-provenance
           # test (NIST SP 800-53 SA-9, external system services) --

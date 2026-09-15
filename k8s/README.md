@@ -211,6 +211,91 @@ exact same real commands by hand:
    as the authoritative signal on this class of machine rather than
    assuming `act` reproduces it perfectly.
 
+## Digest-pinning readiness (prep only -- not yet executed)
+
+Real gap disclosed in `docs/ENTERPRISE_READINESS_REPORT.md`'s caveat
+(SEC-IMG-001) and `~/ggen-marketplace/packs/kubernetes-workload-pack`'s
+`control-map.md` SEC-COSIGN-001 row: this workload's image has never
+been pushed to a real registry, so there is no real digest to pin
+`k8s/deployment.yaml`'s `image:` field to, and running `cosign verify`
+against a non-pushed image would fabricate a result. This section
+documents the exact real command sequence to close that gap for real,
+in a later session -- **nothing below has been run this session**.
+`k8s/deployment.yaml`'s `image:` field now carries a clearly-commented
+`PLACEHOLDER` value (see that file), not a real digest. Do not read
+this section as digest-pinning being done; it is prep only, real
+execution pending.
+
+### Exact real steps (to run for real, not simulated)
+
+1. **Start a real local OCI registry** (Docker's own reference registry
+   image, not a mock):
+
+       docker run -d --restart=always -p 5000:5000 --name ash-a2a-local-registry registry:2
+
+2. **Tag the already-built real local image for that registry** (reuses
+   the exact image `k8s/deploy.sh` already builds -- no rebuild needed):
+
+       docker tag ash-a2a-swarm-node:local localhost:5000/ash-a2a-swarm-node:local
+
+3. **Push it for real:**
+
+       docker push localhost:5000/ash-a2a-swarm-node:local
+
+4. **Capture the real digest** the registry assigned (do not hand-write
+   one):
+
+       docker inspect --format='{{index .RepoDigests 0}}' localhost:5000/ash-a2a-swarm-node:local
+
+   This prints `localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>`.
+
+5. **Generate a real cosign keypair, once** (interactive password
+   prompt -- never script the password, never commit `cosign.key`):
+
+       cosign generate-key-pair
+
+6. **Sign the real, pushed, digest-referenced image:**
+
+       cosign sign --key cosign.key localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+
+7. **Verify the real signature** (the actual falsifiable check --
+   SEC-COSIGN-001 only closes if this exits 0 against the real pushed
+   digest, never a placeholder):
+
+       cosign verify --key cosign.pub localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+
+8. **Substitute the real digest into `k8s/deployment.yaml`**, replacing
+   the `PLACEHOLDER` `image:` line (see the comment block already in
+   place there) with:
+
+       image: localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+
+   `imagePullPolicy: Never` stays unchanged -- load the same
+   digest-referenced image into `kind` directly rather than wiring a
+   containerd registry-mirror config (kind's own
+   [local-registry pattern](https://kind.sigs.k8s.io/docs/user/local-registry/))
+   into every node, which is real extra surface this ephemeral test
+   workload doesn't need:
+
+       kind load docker-image localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST> --name ash-a2a-swarm
+
+9. **Re-run `bash k8s/deploy.sh`** and re-confirm the same real
+   `"swarm_dispatch_verified":true` probe result against the now
+   digest-pinned + cosign-verified image, then re-run `kyverno apply`
+   (the one prior failing control in
+   `docs/ENTERPRISE_READINESS_REPORT.md`'s scanner table) to confirm the
+   digest-pinning control now passes for real.
+
+### Why this is prep, not execution
+
+None of the 9 steps above have been run this session. `k8s/deployment.yaml`
+still deploys real, verified, working swarm pods today via the unpinned
+`ash-a2a-swarm-node:local` tag -- this section only makes the next real
+step ready to execute (exact commands, no ambiguity, no placeholder
+digest hand-waved into a manifest), matching this repo's own standing
+discipline of never fabricating a Cosign result against an image that
+was never really pushed.
+
 ## Cleanup
 
     kind delete cluster --name ash-a2a-swarm
@@ -227,7 +312,12 @@ exact same real commands by hand:
 - Image signing/provenance (Sigstore/cosign), SBOM -- this is a local
   `kind`-loaded image, never pushed to a registry; control-map.md's own
   SEC-COSIGN-001 row already documents why running Cosign against a
-  non-pushed image would fabricate a result.
+  non-pushed image would fabricate a result. **Prep-only readiness for
+  closing this real gap** (parameterized `image:` placeholder in
+  `k8s/deployment.yaml` + the exact real command sequence, not yet
+  executed) is now documented in "Digest-pinning readiness (prep only)"
+  above -- still not run this session, do not read this bullet or that
+  section as the gap being closed.
 - `AshA2A.Topology.Group`-based identity registration/lookup across the
   swarm (richer than the plain `{module, node}` GenServer addressing
   `SwarmNode.Probe` uses) -- a real, valuable follow-on, not bundled into
