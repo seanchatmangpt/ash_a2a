@@ -6,6 +6,91 @@ then republished with doc corrections). Source material: this session's own
 `docs/jira/v26.9.14/RELEASE_RECEIPT.md` §8 disclosures, the earlier remote-eval
 deferred list, and the live friction hit running `act` locally.
 
+## Cycle 4 (2026-09-15) — board-persona feature completion + process-mining
+(Dr. Wil van der Aalst) lens review + ERRC refactor
+(workflow `w66f0froy`, batch 1 of the standing 1-hour autonomous loop,
+cron `3630974d`, 9 agents)
+
+Completed the board-persona-deliberation plan
+(`/Users/sac/.claude/plans/ultracode-it-needs-to-tingly-book.md`): 2 remaining
+generic archetypal personas (GrowthFocusedFounderLed, cited to Wasserman
+2012 "The Founder's Dilemmas"; ActivistPressured, cited to Brav/Jiang/Partnoy/
+Thomas 2008, *Journal of Finance*) plus the `Deliberation` fan-out module
+(`Task.async_stream/3` across all 3 personas, real `%{approve_shaped, other,
+errored}` count, no fabricated consensus) and Chicago-style tests. Then ran
+4 real process-mining-lens review dimensions targeting ash_a2a's own
+OCEL/BRCE-adjacent code, grounded in van der Aalst's published process-mining/
+conformance-checking literature and a direct comparison against the real
+canonical `Ex4pm.Evidence.BRCE.execute/5` implementation in `~/ex4pm` — this
+closes the "is CommandBus reinventing BRCE" investigation flagged as
+highest-priority after Cycle 3.
+
+- [x] CREATE (executed): board-persona feature completed and merged (5 files,
+      667 insertions) — independently re-verified by the orchestrating
+      session before merge (not just the batch agent's self-report):
+      `mix test` 345/0 (8 excluded), `mix ash_a2a.verify_architecture` 9/9,
+      zero real mock matches.
+- [x] CREATE (executed): `CommandBus.run/4`'s dispatch call now fails closed
+      instead of crashing — an exception/throw/exit inside
+      `dispatch_with_ocel_correlation/4` previously propagated uncaught
+      through `run/4` into the calling `A2A.Agent` GenServer, killing it and
+      leaving the pre-dispatch claim permanently stuck at `receipt: nil`.
+      New `safe_dispatch/4` mirrors the exact rescue/catch pattern already
+      used by `claim_receipt/3`/`commit_receipt/3` in the same file. +2 tests.
+- [x] CREATE (executed): `SemanticProjection.ocel_event/1` now defaults
+      `relationships` to `[]` instead of omitting the key entirely on the
+      nil-dispatch-correlation branch. Additive, no behavior change on the
+      branch that already set the key. +1 test.
+- [x] CREATE (executed): moduledoc clarification in `CommandBus`/
+      `ReceiptStore` — this codebase's "replay" is Stripe-style
+      idempotency-key command dedup, not process-mining trace-replay/
+      conformance-checking (cites Rozinat & van der Aalst 2008). Docs-only,
+      no behavior change.
+- Verified after all 4 CREATE fixes, on `main` (base `84302d4` → `f486f3e`,
+  pushed, board-persona merge `08fa9bf` included): `mix format` clean,
+  `mix compile --warnings-as-errors` clean, full suite `3 doctests, 9
+  properties, 354 tests, 0 failures (8 excluded)` (+8 from the pre-cycle
+  346 baseline), `mix ash_a2a.verify_architecture` 9/9, zero real mock
+  matches. 4 worktrees (`loop1/*`) merged sequentially with real per-branch
+  verification (one real, clean auto-merge conflict in `command_bus.ex`
+  between the crash-guard and docstring-clarification branches, resolved
+  by git itself — both touched non-overlapping regions), then removed as
+  redundant once confirmed fully merged.
+
+## Cycle 4 process-mining findings parked — needs explicit human sign-off
+
+The CommandBus-vs-BRCE architectural question (flagged after Cycle 3) is now
+answered with real evidence, not assumption:
+
+- **CommandBus genuinely does more than BRCE in some respects** (compiled
+  routing via `AshA2A.Info.skill/2`, three-way fail-closed consequence
+  classification with no default-safe fallback for `:unknown`, a typed
+  subject/capability/expiry-bound `Authority` struct) — confirmed real,
+  intentional design, not a gap. No fix needed.
+- **`AshA2A.Receipt` has no `hash`/`parent_hash` and no independent
+  recompute-and-compare replay verification** — `Ex4pm.Evidence.Receipt`'s
+  `Replay.verify/1` is genuine tamper-evidence (recompute + compare against
+  a stored hash); `AshA2A.Receipt.replay/1` is idempotency-caching only, a
+  structurally different property. `bounded_and_safe: false` — adding
+  hash/parent_hash would change `Receipt`'s field contract and every
+  `from_reply/4` call site plus any external wire consumer. Needs explicit
+  human sign-off on the receipt schema change.
+- **Emitted OCEL event shape uses ad hoc flat keys, not real OCEL 2.0's
+  `ocel:`-prefixed wire vocabulary** — confirmed this is an intentional,
+  disclosed design choice targeting beam4pm's specific ingest contract
+  (`docs/jira/v26.9.11/ocel-v2-telemetry-forwarder.md`), not a bug, but the
+  divergence from the actual OCEL 2.0 standard is real. `bounded_and_safe:
+  false` — cross-repo (ash_a2a ↔ beam4pm) wire-contract decision. Options:
+  dual emission (standard + beam4pm-specific) or getting beam4pm's router
+  to translate; at minimum rename away from implying standard-OCEL-2.0
+  conformance if the current contract is kept.
+- No object catalog / event-type-attribute-schema catalog ever emitted; no
+  process-discovery/conformance-checking step ever runs over accumulated
+  receipts; `task_id` never reaches OCEL relationships/objects (only a flat
+  attribute); per-lineage observation list grows unbounded, re-serialized
+  in full into every replan prompt. All real, all architecture-level,
+  parked without action this cycle.
+
 ## Cycle 3 (2026-09-15) — Zach Daniel / Chris McCord adversarial review + ERRC refactor
 (workflow `wlnyxcjht`, 15 agents), part of the standing 1-hour autonomous
 ERRC innovation loop (cron `3630974d`, personas: Ash/Spark idiom, Phoenix/OTP
