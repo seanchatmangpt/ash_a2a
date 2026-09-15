@@ -154,6 +154,35 @@ capability") must be idempotent for the same pair, or every retry's
 differ from the last and permanently defeat replay detection -- a real,
 reproduced-and-fixed regression, not a hypothetical.
 
+## Other real additions this release
+
+- **`AshA2A.SemanticSubject`** binds A2A command/receipt identity to a
+  semantic graph digest, a generated-projection digest, and a manufacturer
+  digest, folded into `Command.fingerprint/1` and copied into `Receipt`
+  (`lib/ash_a2a/semantic_subject.ex`, `test/ash_a2a_semantic_subject_command_test.exs`).
+  It is identity/evidence only: `CommandBus` remains the only DO path, and
+  `SemanticSubject` grants no authority and never promotes `Receipt.standing`
+  past `:observed` on its own.
+- **Typed per-skill arguments**: `AshA2A.CapabilityIndex.Compiler.project/3`
+  derives real `AshA2A.Argument` entries from `Ash.Resource.Info.action/2`'s
+  real `arguments` (plus, for `:create`/`:update`, `action.accept`-derived
+  attributes) instead of the previous hardcoded `arguments: []`. Consumed via
+  `AshA2A.Info.capability_index/1`/`AshA2A.Info.skill/2` -- the wire
+  `A2A.AgentCard` projection still cannot carry per-argument schema data (no
+  such field on that vendored struct).
+- **OCEL: one event per dispatch, not two.** A CommandBus-routed dispatch
+  used to fire both `[:ash_a2a, :dispatch, :stop]` and
+  `[:ash_a2a, :receipt, :committed]` as two separate HTTP-posted events for
+  one logical action. `CommandBus.run/4` now correlates its internal
+  `Dispatcher.dispatch/5` call so `AshA2A.Telemetry.OcelForwarder` merges the
+  dispatch span's fields into the single receipt-derived event instead of
+  posting both -- a direct (non-CommandBus) `Dispatcher.dispatch/5` caller is
+  unaffected.
+- **`mix ash_a2a.install` merges into an existing `extensions:` list** (via
+  `Spark.Igniter.add_extension/5`, matching `ash_r2rml.install.ex`'s own
+  pattern) instead of adding a second, separate `extensions:` option when the
+  target module already declares one.
+
 ## Consequence semantics: not `action.type`
 
 `AshA2A.Skill.consequence` (`:observe` / `:change` / `:external_do` /
@@ -197,9 +226,17 @@ Two things remain real, disclosed gaps, not silently resolved by this work:
   `consequence:` for it to be reachable through the default agent path at
   all.
 - The default `ReceiptStore` is still the in-memory one
-  (`AshA2A.ReceiptStore.Memory`); a host wanting durable receipts across
-  restarts still configures `:receipt_store` to a real implementation, as
-  before.
+  (`AshA2A.ReceiptStore.Memory`, no persistence across a restart). A host
+  wanting durable receipts across restarts can now configure a real,
+  shipped alternative instead of writing their own:
+  `AshA2A.ReceiptStore.Ekv` (`lib/ash_a2a/receipt_store/ekv.ex`), a real
+  on-disk-persisted store backed by the `:ekv` dependency, auto-wired by
+  `AshA2A.Application.receipt_store_children/0` when configured via
+  `config :ash_a2a, :receipt_store, AshA2A.ReceiptStore.Ekv`. `CommandBus`
+  marks a receipt's `standing: :durable` (vs. `:observed`) whenever the
+  configured store declares itself durable (`durable?/0`), checked the same
+  `Code.ensure_loaded?`/`function_exported?` way every other provider
+  adapter in this file is detected -- no hardcoded module allowlist.
 
 ## The explicit semantic-request surface (v26.9.14)
 
@@ -246,8 +283,22 @@ GenServer and taking down every other in-flight task it is managing.
 See [Enable semantic requests](../how-to/enable-semantic-requests.md) for the concrete
 DSL declaration, the exact caller-side message shape, and the real reply field names.
 
-Two things remain real, disclosed gaps here too, matching this file's existing "not
-silently resolved" convention: committed runtime evidence (a `Receipt`) does not yet
-automatically reach `AshA2A.Semantic.Feedback`/`Compiler.replan/4` for a semantic-compiled
-task's continuation, and there is no architecture-verifier gate yet asserting this surface
-is production-reachable.
+Both gaps disclosed in an earlier revision of this section are now closed, real, and
+tested -- corrected here rather than left stale:
+
+- **Receipt -> feedback -> replan closure** is real: a follow-up `:semantic_request`
+  message that also carries `:continuation_fingerprint` metadata (same
+  `AshA2A.MetadataKey` atom-then-string convention as `:skill`/`:semantic_request`)
+  correlates back to the real committed `AshA2A.Receipt` via the configured
+  `AshA2A.ReceiptStore` and routes through `AshA2A.Semantic.Compiler.replan/4` for real
+  (`Feedback.from_receipt/2` -> `PlanningIR.with_observation/2` -> re-synthesis) --
+  `lib/ash_a2a/agent.ex`'s `dispatch_semantic_replan/2`,
+  `test/ash_a2a_agent_semantic_replan_test.exs`. A missing/unresolvable continuation
+  fingerprint falls through to a fresh compile rather than replanning silently against
+  the wrong evidence. This closure is caller-triggered (a message must carry the
+  fingerprint), not a background process that replans every receipt on its own.
+- **Architecture-verifier coverage exists**: `mix ash_a2a.verify_architecture` (9/9 real
+  checks) includes `check_semantic_requests_gate_compiles` (the DSL opt-in real-compiles
+  as real capability truth) and `check_unopted_semantic_request_falls_through` (an
+  unopted-in resource's `:semantic_request`-flagged dispatch real-falls-through to
+  ordinary skill resolution, never silently routing to `Semantic.Compiler.compile/3`).

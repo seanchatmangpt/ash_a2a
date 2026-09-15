@@ -24,7 +24,7 @@ Add `ash_a2a` and the `:a2a` SDK to `mix.exs`:
 def deps do
   [
     {:ash_a2a, "~> 26.9"},
-    {:a2a, "~> 0.1"}
+    {:a2a, "~> 0.2"}
   ]
 end
 ```
@@ -100,11 +100,18 @@ reference for lookup, and explanation for understanding.
   - [Use role-based LLM resolution](docs/how-to/use-role-based-llm-resolution.md)
     — add an LLM-backed action that declares an abstract role instead of
     hardcoding a provider/model string.
+  - [Enable semantic requests](docs/how-to/enable-semantic-requests.md) —
+    let a caller send free text instead of a `:skill`-targeted message and
+    have it real-compile through the semantic closed-loop pipeline
+    (`AshA2A.Semantic.Compiler`), opt-in on both the resource and the caller.
 - **Reference** — [Reference index](docs/reference/index.md): module and
   DSL lookup.
 - **Explanation** — [Architecture](docs/explanation/architecture.md): how
   the capability index, verifier, dispatcher, and agent process fit together
-  and why they're designed that way.
+  and why they're designed that way. See also the
+  [Phoenix runtime prior-art audit](docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md)
+  for the reuse/compose/extend decision behind each ecosystem adapter
+  (`DurableServer`/`Group`/`Presence`/`FLAME`).
 
 ## Installer
 

@@ -7,10 +7,11 @@ OCEL v2 event to an external process-mining ingest endpoint, using the real
 Before you start: this is **best-effort observational telemetry riding the
 existing dispatch span**, not a mandatory receipt or admission boundary. If
 you need a receipt that participates in identity/authority/replay/standing,
-that is `AshA2A.CommandBus` (see the explanation doc on Authority/CommandBus)
-— a separate, opt-in path that is *not* wired into `AshA2A.Agent`'s default
-`call/2` dispatch. `OcelForwarder` never blocks, never raises into the caller,
-and never affects what a dispatch returns.
+that is `AshA2A.CommandBus` (see [Architecture](../explanation/architecture.md))
+— and as of v26.9.14 it **is** the default route `AshA2A.Agent`'s `call/2`
+dispatch takes for any `:change`/`:external_do`-consequence skill (only
+`:observe`/`:read` skills stay off it). `OcelForwarder` never blocks, never
+raises into the caller, and never affects what a dispatch returns.
 
 ## 1. Configure an ingest URL
 
@@ -48,17 +49,38 @@ end
   exists in `dispatcher.ex`.
 - `[:ash_a2a, :receipt, :committed]` — fired when a `CommandBus`-mediated
   command commits a real `AshA2A.Receipt`, forwarded via
-  `AshA2A.SemanticProjection.ocel_event/1`. This only fires on the
-  `CommandBus` path, so a plain `AshA2A.Agent.call/2` dispatch will never
-  emit it.
+  `AshA2A.SemanticProjection.ocel_event/1`. As of v26.9.14 this is the
+  default `AshA2A.Agent.call/2` route for any `:change`/`:external_do` skill
+  (not opt-in-only anymore) — a plain agent call for a mutating skill emits
+  this event.
 
 Call `AshA2A.Telemetry.OcelForwarder.detach/0` to remove both handlers (e.g.
 in test `on_exit/1` callbacks).
 
-## 3. What a forwarded dispatch event looks like
+## 3. One event per dispatch, not two (deduplication)
 
-For a plain skill dispatch (e.g. `AshA2A.Dispatcher.dispatch(:run_phase,
-message, Facilitator)`), the forwarded JSON event has this shape:
+A `CommandBus`-routed dispatch internally still calls
+`AshA2A.Dispatcher.dispatch/5` (the same function a direct, non-CommandBus
+caller uses), which still carries the `[:ash_a2a, :dispatch, :stop]` span.
+Rather than posting that span as a second, separate OCEL event, `CommandBus`
+marks the calling process for the duration of that internal call, and
+`OcelForwarder` merges the dispatch span's fields
+(`skill_name`/`reply_type`/`duration_native`/`relationships`) into the single
+`[:ash_a2a, :receipt, :committed]` event instead of posting both — you get
+exactly one real HTTP-posted event per logical CommandBus-routed dispatch,
+carrying both receipt-derived fields (`capability_id`, `consequence`,
+`status`, `command_id`, `execution_id`, `fingerprint`, `principal_id`,
+`replayed`) and the dispatch-derived ones. A direct, non-CommandBus
+`AshA2A.Dispatcher.dispatch/5` call (e.g. a `:observe`/`:read` skill, or a
+caller that bypasses the default agent path entirely) is unaffected and
+still posts its own single dispatch event exactly as before.
+
+## 4. What a forwarded dispatch event looks like
+
+For a plain, non-CommandBus skill dispatch (e.g.
+`AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator)`, or any
+`:observe` skill through the default agent path), the forwarded JSON event
+has this shape:
 
 ```json
 {
@@ -90,17 +112,25 @@ looks like:
 On a dispatch `:exception` stage, `attributes` also carries `"stage"` and
 `"error"` (an `inspect/1` of the raised error).
 
-## 4. Verifying it works
+## 5. Verifying it works
 
-The real integration test,
-`test/ash_a2a_telemetry_ocel_forwarder_test.exs`, spins up a real local
-Bandit HTTP listener mirroring the ingest contract, dispatches a real
-`AshA2A.Dispatcher.dispatch/5` call against the `FreedomGym.Facilitator`
-fixture, and asserts on the actual captured HTTP body — no mocks. Run it
-directly to confirm forwarding works in your environment:
+Two real integration tests, no mocks:
+
+- `test/ash_a2a_telemetry_ocel_forwarder_test.exs` — a real local Bandit HTTP
+  listener mirroring the ingest contract, a direct
+  `AshA2A.Dispatcher.dispatch/5` call against the `FreedomGym.Facilitator`
+  fixture, asserting on the actual captured HTTP body for the single
+  dispatch-only event.
+- `test/ash_a2a_telemetry_ocel_forwarder_command_bus_test.exs` and
+  `test/ash_a2a_ocel_default_path_sink_test.exs` — the same real pattern
+  through `AshA2A.CommandBus.run/4` and the default `AshA2A.Agent` path,
+  asserting exactly one merged event reaches the sink (proving the
+  deduplication in step 3 above).
+
+Run them directly to confirm forwarding works in your environment:
 
 ```
-mix test test/ash_a2a_telemetry_ocel_forwarder_test.exs
+mix test test/ash_a2a_telemetry_ocel_forwarder_test.exs test/ash_a2a_telemetry_ocel_forwarder_command_bus_test.exs test/ash_a2a_ocel_default_path_sink_test.exs
 ```
 
 Any non-2xx ingest response or a network failure is logged via

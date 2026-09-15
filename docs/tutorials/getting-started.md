@@ -17,7 +17,7 @@ Add `ash_a2a` and the vendored `:a2a` SDK to your `mix.exs`:
 def deps do
   [
     {:ash_a2a, "~> 26.9"},
-    {:a2a, "~> 0.1"}
+    {:a2a, "~> 0.2"}
   ]
 end
 ```
@@ -154,8 +154,11 @@ direct dispatch call, and a supervised `AshA2A.Agent` process you called with
 From here, the how-to guides cover specific problems you'll hit next:
 handling actions that take arguments or mutate data (`:create`/`:update`/
 `:destroy` skills, not just `:read`), resolving LLM-backed actions to a
-provider by role instead of hardcoding one (`AshA2A.LLMProfiles`), and
-wiring in admission/receipts (`AshA2A.Authority` / `AshA2A.CommandBus`) for
-paths that need them. See `docs/how-to/` for those, and
+provider by role instead of hardcoding one (`AshA2A.LLMProfiles`), and how
+`AshA2A.Authority`/`AshA2A.CommandBus` admission and receipting works (as of
+v26.9.14 this is the automatic default route for any `:change`/
+`:external_do` skill your resource declares -- there's nothing extra to wire
+in for the common case). See `docs/how-to/` and
+[Architecture](../explanation/architecture.md) for those, and
 `test/support/fixture.ex` for further real, compiling fixture resources
 covering each of those shapes.
