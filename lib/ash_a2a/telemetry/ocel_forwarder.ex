@@ -50,7 +50,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     else
       case ingest_url() do
         nil -> :ok
-        url -> post_event(url, build_dispatch_event(measurements, metadata))
+        url -> async_post_event(url, build_dispatch_event(measurements, metadata))
       end
     end
   end
@@ -63,7 +63,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       ) do
     case ingest_url() do
       nil -> :ok
-      url -> post_event(url, receipt_event(receipt))
+      url -> async_post_event(url, receipt_event(receipt))
     end
   end
 
@@ -77,6 +77,29 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   end
 
   defp ingest_url, do: Application.get_env(:ash_a2a, :ocel_ingest_url)
+
+  # Offloads the actual HTTP POST onto a supervised `Task` so a stalled or
+  # slow OCEL ingest endpoint can never block the calling process. `:telemetry`
+  # handlers execute synchronously, in-process, with no spawn
+  # (`telemetry.erl`'s `do_execute/4`) -- and for every real AshA2A dispatch
+  # that calling process is the single-mailbox `A2A.Agent` GenServer that also
+  # serves the inbound HTTP request for that agent (`agent.ex`'s "one mailbox"
+  # disclosure). `handle_event/4`'s return value is already discarded by
+  # `:telemetry` itself in every branch, so fire-and-forget here changes no
+  # observable behavior on the success path -- only removes the worst-case
+  # blocking window. This must never wrap the `Process.put`/`Process.delete`
+  # correlation-id bookkeeping in `handle_event/4` itself -- that logic is
+  # required to run synchronously, in the calling process, per
+  # `command_bus.ex`'s documented invariant (the process-dictionary flag is
+  # only safe because `:telemetry.span/3` executes synchronously in the same
+  # process) -- only the network call below is deferred.
+  defp async_post_event(url, event) do
+    Task.Supervisor.start_child(AshA2A.Telemetry.TaskSupervisor, fn ->
+      post_event(url, event)
+    end)
+
+    :ok
+  end
 
   defp post_event(url, event) do
     Req.post(url <> "/ocel/events",
