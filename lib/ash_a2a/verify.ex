@@ -24,7 +24,7 @@ defmodule AshA2A.Verify do
       overrides ->
         case AshA2A.CapabilityIndex.validate(overrides) do
           :ok ->
-            :ok
+            dead_argument_warning(overrides)
 
           {:error, refusals} ->
             {:error,
@@ -41,5 +41,28 @@ defmodule AshA2A.Verify do
 
   defp override_location(dsl, []) do
     Spark.Dsl.Transformer.get_section_anno(dsl, [:a2a])
+  end
+
+  # `AshA2A.Dsl`'s nested `argument` entity (`a2a do skill ... do argument
+  # ... end end`) is parsed and persisted onto each `AshA2A.Skill` override's
+  # `arguments` field, but real capability compilation
+  # (`AshA2A.CapabilityIndex.Compiler.derive_arguments/2`) always derives
+  # arguments from the referenced Ash action's own `arguments`/`accept`
+  # instead -- the override struct's `arguments` are never consulted. A
+  # declaration there compiles silently and does nothing; this surfaces
+  # that as a real Spark compile-time warning instead of a silent no-op.
+  defp dead_argument_warning(overrides) do
+    case Enum.filter(overrides, &(&1.arguments != [])) do
+      [] ->
+        :ok
+
+      dead ->
+        names = dead |> Enum.map(& &1.name) |> Enum.map_join(", ", &inspect/1)
+
+        {:warn,
+         "a2a do skill ... do argument ... end end is accepted but ignored by capability " <>
+           "compilation -- arguments are always derived from the referenced Ash action, " <>
+           "never from this declaration. Remove the argument block(s) on: #{names}."}
+    end
   end
 end
