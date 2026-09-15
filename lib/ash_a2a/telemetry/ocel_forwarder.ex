@@ -12,11 +12,14 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
   @dispatch_handler_id {__MODULE__, :dispatch_stop}
   @receipt_handler_id {__MODULE__, :receipt_committed}
+  @outboxed_handler_id {__MODULE__, :receipt_outboxed}
+  @shed_counter_key {__MODULE__, :shed_counter}
 
   @spec attach!() :: :ok
   def attach! do
     :ok = attach(@dispatch_handler_id, [:ash_a2a, :dispatch, :stop])
     :ok = attach(@receipt_handler_id, [:ash_a2a, :receipt, :committed])
+    :ok = attach(@outboxed_handler_id, [:ash_a2a, :receipt, :outboxed])
     :ok
   end
 
@@ -24,10 +27,25 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   def detach do
     results = [
       :telemetry.detach(@dispatch_handler_id),
-      :telemetry.detach(@receipt_handler_id)
+      :telemetry.detach(@receipt_handler_id),
+      :telemetry.detach(@outboxed_handler_id)
     ]
 
     if :ok in results, do: :ok, else: {:error, :not_found}
+  end
+
+  @doc """
+  Total OCEL events shed by the bounded fan-out (A2A-2602): events that
+  exceeded the task supervisor's `max_children` ceiling and were dropped
+  with an accounted shed (counter + `[:ash_a2a, :ocel, :shed]` telemetry),
+  never silently.
+  """
+  @spec shed_count() :: non_neg_integer()
+  def shed_count do
+    case :persistent_term.get(@shed_counter_key, nil) do
+      nil -> 0
+      ref -> :counters.get(ref, 1)
+    end
   end
 
   # `AshA2A.CommandBus.run/4` marks the calling process with
@@ -56,7 +74,25 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   end
 
   def handle_event(
-        [:ash_a2a, :receipt, :committed],
+       [:ash_a2a, :receipt, :committed],
+       _measurements,
+       %{receipt: %AshA2A.Receipt{} = receipt},
+       _config
+     ) do
+    case ingest_url() do
+      nil -> :ok
+      url -> async_post_event(url, receipt_event(receipt))
+    end
+  end
+
+  # A2A-2601: a receipt whose primary store commit is pending (the
+  # consequence HAPPENED, the receipt is durably outboxed) still forwards
+  # its OCEL evidence -- the event carries the same receipt metadata the
+  # committed event does. The later outbox reconciliation intentionally
+  # emits NO `:committed` telemetry, so this outboxed event is the ONE
+  # OCEL event for such a command, not a duplicate.
+  def handle_event(
+        [:ash_a2a, :receipt, :outboxed],
         _measurements,
         %{receipt: %AshA2A.Receipt{} = receipt},
         _config
@@ -93,12 +129,56 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   # `command_bus.ex`'s documented invariant (the process-dictionary flag is
   # only safe because `:telemetry.span/3` executes synchronously in the same
   # process) -- only the network call below is deferred.
+  #
+  # A2A-2602: the fan-out is BOUNDED. The supervisor is started with
+  # `max_children` (`AshA2A.Application`), and a start beyond that ceiling
+  # returns `{:error, :max_children}` -- accounted here as an explicit,
+  # counted shed (see `shed_count/0`) instead of silently spawning one
+  # process per event. The supervisor name is resolved through
+  # `task_supervisor/0` so a host (or test) can substitute its own bounded
+  # supervisor instance without touching this module.
   defp async_post_event(url, event) do
-    Task.Supervisor.start_child(AshA2A.Telemetry.TaskSupervisor, fn ->
-      post_event(url, event)
-    end)
+    case Task.Supervisor.start_child(task_supervisor(), fn ->
+           post_event(url, event)
+         end) do
+      {:ok, _pid} ->
+        :ok
 
+      {:error, :max_children} ->
+        shed_event(url)
+        :ok
+
+      {:error, _other_reason} ->
+        :ok
+    end
+  end
+
+  defp task_supervisor do
+    Application.get_env(:ash_a2a, :ocel_task_supervisor, AshA2A.Telemetry.TaskSupervisor)
+  end
+
+  # The accounted drop: a `:counters`-backed total (readable via
+  # `shed_count/0`) plus one `[:ash_a2a, :ocel, :shed]` telemetry event per
+  # shed, so observability consumers can alert on OCEL evidence loss under
+  # burst rather than discovering it silently. Deliberately no per-event
+  # `Logger` call: a burst that trips the ceiling must not turn into a log
+  # flood of its own.
+  defp shed_event(url) do
+    :counters.add(shed_counter(), 1, 1)
+    :telemetry.execute([:ash_a2a, :ocel, :shed], %{}, %{url: url})
     :ok
+  end
+
+  defp shed_counter do
+    case :persistent_term.get(@shed_counter_key, nil) do
+      nil ->
+        ref = :counters.new(1, [])
+        :persistent_term.put(@shed_counter_key, ref)
+        ref
+
+      ref ->
+        ref
+    end
   end
 
   defp post_event(url, event) do
