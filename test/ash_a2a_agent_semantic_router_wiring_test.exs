@@ -205,7 +205,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
     # to whichever real downstream tier it selected -- a regression that
     # silently routed this goal_facts dispatch to the LLM tier would show
     # up here as `llm: 1`, not as a silent pass.
-    assert RouterCounters.counts(ref) == %{deterministic: 1, llm: 0}
+    assert RouterCounters.counts(ref) == %{deterministic: 1, llm: 0, phrase: 0}
   end
 
   test "3a: no goal_facts and no text still falls through to dispatch_semantic_compile/2's unchanged typed refusal (no network)" do

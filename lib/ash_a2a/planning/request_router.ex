@@ -59,13 +59,16 @@ defmodule AshA2A.Planning.RequestRouter do
   directly and emits no `:tier_selected` event for it, the same fail-closed
   treatment the pre-existing no-input branch already gets.
 
-  `AshA2A.Telemetry.RouterCounters` (task 4) is unmodified by this task: it
-  already ignores any `tier:` value other than `:facts`/`:text` rather than
-  crashing (its own `handle_event/4`'s documented catch-all clause), so a
-  `:phrase` event is safely, silently uncounted by that specific instrument
-  today -- extending it to also count the phrase tier under the
-  `:deterministic` slot is a natural, separate follow-on, not attempted
-  here to keep this task's diff scoped to the router + parser wiring.
+  `AshA2A.Telemetry.RouterCounters` (task 4) was, at the time this router
+  task shipped, unmodified: it ignored any `tier:` value other than
+  `:facts`/`:text` rather than crashing (its own `handle_event/4`'s
+  documented catch-all clause), so a `:phrase` event was safely, silently
+  uncounted by that specific instrument. A later task closed that gap with
+  a genuinely new, additive `:phrase` slot (never folded into
+  `:deterministic` -- see `RouterCounters`' own moduledoc) -- this router's
+  `emit_tier_selected/2` call site is unchanged by that follow-on; only
+  `RouterCounters` itself grew a third slot to count the event this router
+  already emitted.
 
   Still explicitly NOT attempted here:
 
