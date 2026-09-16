@@ -642,11 +642,20 @@ defmodule AshA2A.Agent do
   # that hasn't wired `A2A.Plug.Auth` at all -- both fall through to `nil`,
   # so dispatch fails closed (unauthenticated: no actor, no tenant) instead
   # of fabricating an identity out of unverified input.
+  #
+  # ATOM KEY ONLY (RFC-SA2A-002 §66, court SA2A-AUTH-014/-015). `A2A.Plug.Auth`
+  # stores `%{scheme: _, identity: _}` with atom keys, but `A2A.Plug` merges the
+  # client's own JSON-RPC `params["metadata"]` OVER the call metadata, so a
+  # caller can overwrite `"a2a.auth"` with any JSON map. JSON decodes to string
+  # keys only, so the atom-keyed shape is the one a remote caller cannot forge.
+  # A string-keyed `%{"identity" => _}` used to be accepted too, which let a
+  # caller with a valid bearer token rebind it to another principal -- or a
+  # caller with no credential at all name any principal -- and act with that
+  # principal's grants. An overwritten entry now reads as unauthenticated.
   @spec verified_auth_identity(A2A.Agent.context() | map()) :: term()
   defp verified_auth_identity(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "a2a.auth") do
       %{identity: identity} -> identity
-      %{"identity" => identity} -> identity
       _other -> nil
     end
   end

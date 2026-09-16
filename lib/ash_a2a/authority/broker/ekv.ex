@@ -146,17 +146,34 @@ defmodule AshA2A.Authority.Broker.Ekv do
     # `Map.get/2` yields `nil`, which reads as "no time bound" -- the exact
     # behaviour that entry was issued under, so an existing durable grant
     # keeps working rather than silently becoming unusable.
-    case EKV.get(ekv_name(opts), key) do
-      %{status: :issued, capability_id: ^capability_id} = entry ->
-        not past?(Map.get(entry, :expires_at))
+    status =
+      case EKV.get(ekv_name(opts), key) do
+        %{status: :issued, capability_id: ^capability_id} = entry ->
+          if past?(Map.get(entry, :expires_at)), do: :expired, else: :standing
 
-      _other ->
-        false
-    end
+        %{status: :revoked} ->
+          :revoked
+
+        _other ->
+          :absent
+      end
+
+    AshA2A.Authority.Broker.emit_lookup(__MODULE__, subject, capability_id, status) == :standing
+  rescue
+    # A stopped EKV instance RAISES (its reader connections live in
+    # `:persistent_term`, erased on shutdown -> `ArgumentError`) rather than
+    # exiting. Uncaught, that crashed the calling `A2A.Agent` process on the
+    # dispatch path instead of refusing (RFC-SA2A-002 §67/§130, court
+    # SA2A-AUTH-GRANT-008).
+    _exception ->
+      AshA2A.Authority.Broker.emit_lookup(__MODULE__, subject, capability_id, :unavailable)
+      false
   catch
     # An EKV instance that is not running, or any other storage failure, is
     # an unanswerable grant question -- refuse, never admit.
-    :exit, _reason -> false
+    :exit, _reason ->
+      AshA2A.Authority.Broker.emit_lookup(__MODULE__, subject, capability_id, :unavailable)
+      false
   end
 
   @impl AshA2A.Authority.Broker
@@ -174,6 +191,8 @@ defmodule AshA2A.Authority.Broker.Ekv do
       _other ->
         :error
     end
+  rescue
+    _exception -> :error
   catch
     :exit, _reason -> :error
   end

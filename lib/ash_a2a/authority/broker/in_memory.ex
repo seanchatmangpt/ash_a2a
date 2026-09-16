@@ -89,9 +89,12 @@ defmodule AshA2A.Authority.Broker.InMemory do
     # Fails closed on a broker process that is not running (or has died):
     # `GenServer.call/2` exits, and an unanswerable grant question is a
     # refusal, never an admission.
-    GenServer.call(server(opts), {:granted?, key})
+    status = GenServer.call(server(opts), {:grant_status, key})
+    AshA2A.Authority.Broker.emit_lookup(__MODULE__, subject, capability_id, status) == :standing
   catch
-    :exit, _reason -> false
+    :exit, _reason ->
+      AshA2A.Authority.Broker.emit_lookup(__MODULE__, subject, capability_id, :unavailable)
+      false
   end
 
   @impl AshA2A.Authority.Broker
@@ -125,7 +128,7 @@ defmodule AshA2A.Authority.Broker.InMemory do
     {:reply, :ok, %{state | revoked: MapSet.put(state.revoked, key)}}
   end
 
-  def handle_call({:granted?, key}, _from, state) do
+  def handle_call({:grant_status, key}, _from, state) do
     # A pure read of the exact `issued`/`revoked` state `handle_call({:issue,
     # ...})` and `handle_call({:revoke, ...})` above already maintain -- this
     # clause records nothing.
@@ -137,7 +140,7 @@ defmodule AshA2A.Authority.Broker.InMemory do
     # own contract already said this clause answers whether a grant stands
     # "right now" and "must FAIL CLOSED" -- a grant whose `expires_at` has
     # passed does not stand right now.
-    {:reply, standing?(state, key), state}
+    {:reply, grant_status(state, key), state}
   end
 
   def handle_call({:verify, %Authority{} = authority}, _from, state) do
@@ -177,12 +180,17 @@ defmodule AshA2A.Authority.Broker.InMemory do
   # A grant stands only if it was issued, has not been revoked, AND has not
   # expired. `expires_at: nil` means "no time bound", which is what
   # `Authority.new/3` produces when no `:expires_at` is supplied.
-  defp standing?(state, key) do
+  defp standing?(state, key), do: grant_status(state, key) == :standing
+
+  defp grant_status(state, key) do
     case Map.fetch(state.issued, key) do
-      {:ok, entry} -> not MapSet.member?(state.revoked, key) and not past?(entry.expires_at)
-      :error -> false
+      :error -> :absent
+      {:ok, entry} -> entry_status(MapSet.member?(state.revoked, key), entry.expires_at)
     end
   end
+
+  defp entry_status(true = _revoked, _expires_at), do: :revoked
+  defp entry_status(false, expires_at), do: if(past?(expires_at), do: :expired, else: :standing)
 
   defp past?(nil), do: false
 

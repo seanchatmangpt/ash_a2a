@@ -108,7 +108,12 @@ defmodule AshA2A.Chicago.Runner do
       end)
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
-    mappings = SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
+    # Courts sharing a SUT boundary may declare the same mapping; one
+    # (event, activity) interpretation must yield one OCEL event, never two
+    # records carrying the same sequence id.
+    mappings =
+      (SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings()))
+      |> Enum.uniq_by(&{&1.event, &1.activity})
 
     {:ok, observer} = Observer.start_link(run_id: run_id, mappings: mappings)
 

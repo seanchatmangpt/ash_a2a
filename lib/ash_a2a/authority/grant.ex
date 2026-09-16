@@ -110,10 +110,46 @@ defmodule AshA2A.Authority.Grant do
   @spec authorize(term(), String.t(), keyword()) :: Authority.t() | nil
   def authorize(auth_identity, capability_id, opts \\ [])
 
-  def authorize(nil, _capability_id, _opts), do: nil
+  def authorize(nil, capability_id, opts) do
+    emit_decision(nil, nil, capability_id, :unauthenticated, policy(opts), opts)
+  end
 
   def authorize(auth_identity, capability_id, opts) when is_binary(capability_id) do
-    case policy(opts) do
+    policy = policy(opts)
+    {authority, reason} = decide(policy, auth_identity, capability_id, opts)
+    emit_decision(auth_identity, authority, capability_id, reason, policy, opts)
+  end
+
+  # RFC-SA2A-002 §64/§67 decision evidence: every grant decision -- granted or
+  # refused, and why -- is emitted at this boundary as
+  # `[:ash_a2a, :authority, :decision]`, so an independent observer can see
+  # that a request reached the authority boundary (§12) rather than inferring
+  # it from the absence of a consequence. Observation only: the returned
+  # authority is exactly what the decision produced.
+  defp emit_decision(auth_identity, authority, capability_id, reason, policy, opts) do
+    :telemetry.execute([:ash_a2a, :authority, :decision], %{system_time: System.system_time()}, %{
+      outcome: if(authority, do: :granted, else: :refused),
+      reason: reason,
+      policy: policy,
+      broker: broker_label(opts),
+      authenticated: not is_nil(auth_identity),
+      principal_id: auth_identity && Identity.principal(auth_identity).value,
+      capability_id: capability_id,
+      token_id: authority && authority.token_id.value
+    })
+
+    authority
+  end
+
+  defp broker_label(opts) do
+    case resolve_broker(opts) do
+      {:ok, module, _broker_opts} -> inspect(module)
+      :error -> nil
+    end
+  end
+
+  defp decide(policy, auth_identity, capability_id, opts) do
+    case policy do
       :transport_verified_grants_capability ->
         warn_once(
           :legacy_policy,
@@ -126,7 +162,7 @@ defmodule AshA2A.Authority.Grant do
             ":authority_broker with real grants (see AshA2A.Authority.Grant)."
         )
 
-        Authority.from_verified_identity(auth_identity, capability_id)
+        {Authority.from_verified_identity(auth_identity, capability_id), :legacy_transport_policy}
 
       :broker ->
         broker_authorize(auth_identity, capability_id, opts)
@@ -164,11 +200,65 @@ defmodule AshA2A.Authority.Grant do
           |> Keyword.merge(Keyword.drop(opts, [:policy, :broker, :broker_opts]))
           |> Keyword.put(:token_id, Authority.grant_token_id(subject, capability_id))
 
-        module.issue(subject, capability_id, issue_opts)
+        subject
+        |> module.issue(capability_id, issue_opts)
+        |> emit_lifecycle(:issue, module, subject, capability_id)
 
       :error ->
         {:error, %{reason: :no_authority_broker_configured, capability_id: capability_id}}
+        |> emit_lifecycle(:issue, nil, subject, capability_id)
     end
+  end
+
+  @doc """
+  Revokes the standing grant of `capability_id` to `subject` through the
+  configured broker -- the counterpart of `grant/3`, keyed on the same
+  `AshA2A.Authority.grant_token_id/2`, so the grant `authorize/3` looks up is
+  exactly the one torn down. Returns the broker's own `revoke/2` result.
+  """
+  @spec revoke(Identity.t(), String.t(), keyword()) ::
+          :ok | {:error, AshA2A.Authority.Broker.refusal()}
+  def revoke(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    case resolve_broker(opts) do
+      {:ok, module, broker_opts} ->
+        subject
+        |> Authority.new(capability_id,
+          token_id: Authority.grant_token_id(subject, capability_id)
+        )
+        |> module.revoke(broker_opts)
+        |> emit_lifecycle(:revoke, module, subject, capability_id)
+
+      :error ->
+        {:error, %{reason: :no_authority_broker_configured, capability_id: capability_id}}
+        |> emit_lifecycle(:revoke, nil, subject, capability_id)
+    end
+  end
+
+  # `[:ash_a2a, :authority, :grant, :issue | :revoke]` -- grant lifecycle
+  # evidence (RFC-SA2A-002 §67), emitted where the broker's answer is known.
+  defp emit_lifecycle(result, action, module, subject, capability_id) do
+    {outcome, reason} =
+      case {action, result} do
+        {:issue, {:ok, _authority}} -> {:issued, nil}
+        {:revoke, :ok} -> {:revoked, nil}
+        {_action, {:error, refusal}} -> {:refused, refusal[:reason]}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :authority, :grant, action],
+      %{system_time: System.system_time()},
+      %{
+        outcome: outcome,
+        reason: reason,
+        broker: module && inspect(module),
+        principal_id: subject.value,
+        capability_id: capability_id,
+        token_id: Authority.grant_token_id(subject, capability_id)
+      }
+    )
+
+    result
   end
 
   @doc """
@@ -242,11 +332,13 @@ defmodule AshA2A.Authority.Grant do
           # dispatch path -- a time bound that could never fail. Expiry is
           # ENFORCED by `granted?/3` above; carrying it here is defence in
           # depth, and it keeps the token id untouched so replay is unaffected.
-          Authority.from_verified_identity(
-            auth_identity,
-            capability_id,
-            grant_expires_at(module, subject, capability_id, broker_opts)
-          )
+          {Authority.from_verified_identity(
+             auth_identity,
+             capability_id,
+             grant_expires_at(module, subject, capability_id, broker_opts)
+           ), :grant_standing}
+        else
+          {nil, :no_standing_grant}
         end
 
       :error ->
@@ -260,7 +352,7 @@ defmodule AshA2A.Authority.Grant do
             "AshA2A.Authority.Grant.grant/3."
         )
 
-        nil
+        {nil, :no_authority_broker_configured}
     end
   end
 
