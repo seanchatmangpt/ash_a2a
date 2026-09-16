@@ -41,10 +41,20 @@ defmodule AshA2A.CommandBus do
     * `[:prepare]` -- `:prepared | :not_required | :failed` (+ `:receipt_id`)
     * `[:actuate, :start]` / `[:actuate, :stop]` -- around the one dispatch
       (+ `:execution_id`, `:receipt_id`, stop `:outcome` `:ok | :error`)
+    * `[:postcondition]` -- `:verified | :contradicted | :unverified` after DO
+      (+ `:reason`, `:postcondition_id`, `:verifier`, `:independent`); not
+      emitted for an `:observe` command with no `:postcondition` option
     * `[:commit]` -- `:committed | :outboxed | :failed` (+ `:receipt_id`)
+
+  ## Independent postcondition
+
+  `opts[:postcondition]` (an `AshA2A.Postcondition`) declares the intended
+  effect. The observation lands in `receipt.metadata.postcondition`; a
+  `:contradicted` one sets status `:postcondition_contradicted` and returns
+  `{:error, %{code: :postcondition_contradicted}}`. See `AshA2A.Postcondition`.
   """
 
-  alias AshA2A.{Authority, Command, Identity, KillSwitch, Receipt, ReceiptOutbox}
+  alias AshA2A.{Authority, Command, Identity, KillSwitch, Postcondition, Receipt, ReceiptOutbox}
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
 
@@ -117,14 +127,20 @@ defmodule AshA2A.CommandBus do
             safe_dispatch(skill, message, resource_or_domain, opts)
           end)
 
+        postcondition =
+          observe_postcondition(command, execution_id, anchor, consequence, reply, opts)
+
         receipt =
           case anchor do
             %Receipt{} -> Receipt.finalize(anchor, reply)
             nil -> Receipt.from_reply(command, execution_id, consequence, reply)
           end
+          |> Postcondition.apply_to_receipt(postcondition)
           |> mark_standing(store)
 
-        commit_receipt(store, receipt, store_opts)
+        store
+        |> commit_receipt(receipt, store_opts)
+        |> Postcondition.consequence_result(postcondition)
 
       {:error, reason} ->
         refuse_unanchored_execution(
@@ -469,6 +485,41 @@ defmodule AshA2A.CommandBus do
 
     emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome))
     reply
+  end
+
+  # Independent postcondition observation (RFC-SA2A-002 §39, §73): evaluated
+  # after DO by a verifier reading post-state through its own path, never by
+  # trusting `reply`. See `AshA2A.Postcondition`.
+  defp observe_postcondition(command, execution_id, anchor, consequence, reply, opts) do
+    probe = %Postcondition.Probe{
+      command_id: identity_value(command.command_id),
+      capability_id: command.capability_id,
+      execution_id: identity_value(execution_id),
+      receipt_id: anchor && identity_value(anchor.receipt_id),
+      consequence: consequence,
+      command_input: command.input,
+      actuator_report: reply
+    }
+
+    case Postcondition.evaluate(Keyword.get(opts, :postcondition), probe, opts) do
+      nil ->
+        nil
+
+      observation ->
+        emit_boundary(
+          [:postcondition],
+          command,
+          observation
+          |> Postcondition.telemetry_metadata()
+          |> Map.merge(%{
+            execution_id: probe.execution_id,
+            receipt_id: probe.receipt_id,
+            consequence: consequence
+          })
+        )
+
+        observation
+    end
   end
 
   defp emit_boundary(suffix, %{command_id: command_id} = subject, extra) do
