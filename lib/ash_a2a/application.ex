@@ -33,6 +33,14 @@ defmodule AshA2A.Application do
     # instead of requiring every host to remember to call `attach!/0` itself.
     :ok = AshA2A.Telemetry.OcelForwarder.attach!()
 
+    # Seeds this runtime's standing-ledger key before any envelope can be
+    # sealed, so two concurrent first-transitions cannot race on generating it.
+    # `AshA2A.Semantic.Standing` seals every standing transition under this key
+    # and re-verifies the seal on the next one -- that chain is what makes
+    # `%AshA2A.Semantic.Envelope{standing: :admitted}` a refusal rather than a
+    # standing. See that module's "Standing cannot be forged" section.
+    :ok = AshA2A.Semantic.Standing.ensure_ledger_key()
+
     children =
       receipt_store_children() ++
         [
