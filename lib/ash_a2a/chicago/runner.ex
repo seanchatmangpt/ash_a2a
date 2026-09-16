@@ -165,6 +165,9 @@ defmodule AshA2A.Chicago.Runner do
       end)
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
+    # Two courts that rely on the same SUT event each declare its mapping;
+    # `ocel_mappings/1` admits a shared mapping once, so the observer records
+    # one emission once however many selected courts declare it.
     mappings = ocel_mappings(courts)
 
     observer_opts = observer_opts(run_id, mappings, evidence_dir, opts)
@@ -214,8 +217,10 @@ defmodule AshA2A.Chicago.Runner do
   @doc """
   The admitted OCEL mapping set a run over `courts` observes with (§17): the
   SUT mappings plus every court's `ocel_mappings/0`. A mapping several courts
-  share (same event, activity and source, e.g. `stop_mapping/0`) is admitted
-  once: one emission, one OCEL event. Fresh consumers recompute the receipt's
+  share (same event, activity and source, e.g. `stop_mapping/0`, or a shared
+  fixture's `mappings/0` such as `AshA2A.Chicago.Fixtures.HooksCascade`) is
+  admitted once: one emission, one OCEL event. Mappings that differ in
+  activity or source stay distinct and each yields its own record. Fresh consumers recompute the receipt's
   `ocel_mapping_digest` from this, so the dedup must live here.
   """
   @spec ocel_mappings([module()]) :: [AshA2A.Chicago.Ocel.Mapping.t()]
