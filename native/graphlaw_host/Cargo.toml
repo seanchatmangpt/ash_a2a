@@ -1,0 +1,43 @@
+[package]
+name = "graphlaw_host"
+version = "0.1.0"
+edition = "2021"
+description = """
+Runtime B: a small, standalone, NON-BEAM host that executes the *identical*
+praxis-graphlaw WebAssembly artifact the BEAM side loads, through the Wasmtime
+engine instead of through any BEAM/wasmex embedding.
+
+This crate deliberately contains NO GraphLaw logic of its own. It does not
+parse RDF, canonicalize graphs, validate SHACL/ShEx, or hash anything except
+the .wasm file itself (for artifact-identity attestation). Every semantic
+answer it prints came out of the vendored praxis-graphlaw wasm module. That is
+the whole point: RFC-SA2A-001 S51 transport/host independence is only a real
+experiment if Runtime A and Runtime B execute the SAME bytes, so the variable
+under test is the host, not the implementation.
+
+Why a subprocess binary rather than a second in-BEAM embedding: the same
+reasoning as native/hddl_cli -- ash_a2a is a published, general-purpose Ash
+extension library and must not carry a hard BEAM-side dependency on a specific
+wasm embedder. It also guarantees genuine host independence: this process has
+no BEAM in it at all.
+
+Why not the bare `wasmtime` CLI (evaluated and rejected, measured):
+  $ wasmtime run --invoke graphlaw_version praxis_graphlaw_wasm_bg.wasm
+  Error: failed to instantiate ...
+    unknown import: `./praxis_graphlaw_wasm_bg.js::__wbindgen_object_drop_ref`
+                    has not been defined
+The module is a wasm-bindgen (bundler-target) artifact with two JS host
+imports and a pointer/length string ABI. The bare CLI cannot supply arbitrary
+host imports nor marshal Rust `String` returns, so a real host program is
+required.
+"""
+license = "MIT"
+
+[[bin]]
+name = "graphlaw_host"
+path = "src/main.rs"
+
+[dependencies]
+wasmtime = "=48.0.1"
+serde_json = "1"
+sha2 = "0.10"

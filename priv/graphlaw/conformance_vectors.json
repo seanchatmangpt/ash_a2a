@@ -1,0 +1,94 @@
+{
+  "suite": "sa2a-portable-semantic-execution/v26.9.16",
+  "rfc": "RFC-SA2A-001 v26.9.16 sections S12, S27, S51",
+  "claim_scope": "These vectors are the FINITE conformance suite for the portable-semantic-execution claim only: Runtime_A != Runtime_B, WASM_A = WASM_B, O*_input identical => identical admission, output and refusal. They establish nothing about universal semantic equivalence, production readiness, security, or cross-IMPLEMENTATION equivalence.",
+  "wasm_sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+  "wasm_bytes": 3249361,
+  "produced_by": {
+    "runtime": "wasmtime",
+    "runtime_version": "48.0.1",
+    "host": "graphlaw_host/0.1.0"
+  },
+  "vectors": [
+    {
+      "id": "S12-canonical-base",
+      "fn": "graph_hash",
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\nex:b ex:p ex:c .\n"
+      ],
+      "expect": "9b8180962a93910d17c51d029626f393d65ac2f724b9ffc657c90bc4f3b5939d",
+      "note": "Canonical BLAKE3 identity of a two-triple graph."
+    },
+    {
+      "id": "S12-prefix-label-and-order-invariance",
+      "fn": "graph_hash",
+      "args": [
+        "@prefix zz: <http://example.org/> .\nzz:b zz:p zz:c .\nzz:a zz:p zz:b .\n"
+      ],
+      "expect": "9b8180962a93910d17c51d029626f393d65ac2f724b9ffc657c90bc4f3b5939d",
+      "note": "Same graph as S12-canonical-base with a different prefix LABEL and reversed triple order; MUST hash identically."
+    },
+    {
+      "id": "S12-one-term-changed",
+      "fn": "graph_hash",
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\nex:b ex:p ex:ZZZ .\n"
+      ],
+      "expect": "610ccbcd4ed4b23cf4179fde360625da286557d18a15403f76797e28c1c68f66",
+      "note": "One object term differs from S12-canonical-base; MUST hash differently."
+    },
+    {
+      "id": "S12-empty-graph",
+      "fn": "graph_hash",
+      "args": [
+        ""
+      ],
+      "expect": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+      "note": "Empty graph: canonical N-Quads form is the empty string."
+    },
+    {
+      "id": "S12-lenient-parse-determinism",
+      "fn": "graph_hash",
+      "args": [
+        "this is not turtle <<<"
+      ],
+      "expect": "2cc8f1359d47b0dd6a2a2b3ba83566e53c8aad429c858f40ce8da71255ed4005",
+      "note": "MEASURED: graph_hash does not report syntax errors; it hashes whatever it recovered. Pinned so leniency cannot drift silently."
+    },
+    {
+      "id": "blake3-abc",
+      "fn": "blake3_hex",
+      "args": [
+        "abc"
+      ],
+      "expect": "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+      "note": "Published BLAKE3 test vector for the input \"abc\"."
+    },
+    {
+      "id": "blake3-empty",
+      "fn": "blake3_hex",
+      "args": [
+        ""
+      ],
+      "expect": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+      "note": "Published BLAKE3 test vector for the empty input."
+    },
+    {
+      "id": "S27-run-hooks-admitted",
+      "fn": "run_hooks",
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\nex:b ex:p ex:c .\n",
+        "@prefix ex: <http://example.org/> .\nex:c ex:p ex:d .\n"
+      ],
+      "expect": "{\"status\":\"ADMITTED\",\"verdicts\":[],\"receipts\":[],\"schedule\":[]}",
+      "note": "Admission vocabulary already present in-wasm; raw JSON HookRunResult."
+    },
+    {
+      "id": "engine-version",
+      "fn": "graphlaw_version",
+      "args": [],
+      "expect": "praxis-graphlaw v26.7.5",
+      "note": "Engine self-report; identifies which GraphLaw build is inside the artifact."
+    }
+  ]
+}
