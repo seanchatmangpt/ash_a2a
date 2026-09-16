@@ -108,7 +108,7 @@ defmodule AshA2A.Chicago.Runner do
       end)
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
-    mappings = SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
+    mappings = ocel_mappings(courts)
 
     {:ok, observer} = Observer.start_link(run_id: run_id, mappings: mappings)
 
@@ -131,6 +131,15 @@ defmodule AshA2A.Chicago.Runner do
       if Process.alive?(observer), do: Observer.stop(observer)
     end
   end
+
+  @doc """
+  The admitted OCEL mapping set a run over `courts` observes with (§17): the
+  SUT mappings plus every court's `ocel_mappings/0`. Fresh consumers recompute
+  the receipt's `ocel_mapping_digest` from this.
+  """
+  @spec ocel_mappings([module()]) :: [AshA2A.Chicago.Ocel.Mapping.t()]
+  def ocel_mappings(courts),
+    do: SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
 
   defp finish(profile, courts, subject, results, ocel, evidence_dir, run_id, opts) do
     validation = validate_ocel(ocel.path, Keyword.get(opts, :ocel_validator, @default_validator))

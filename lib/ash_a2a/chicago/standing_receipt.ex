@@ -43,10 +43,19 @@ defmodule AshA2A.Chicago.StandingReceipt do
           results: results
         } = run
       ) do
-    gates = gate_table(profile, courts, results)
-    standing = standing(results, gates, run.ocel, run.ocel_validation)
     subject_digest = Subject.digest(subject)
     court_revision = court_revision(courts)
+
+    computed =
+      recompute(%{
+        profile: profile,
+        courts: Enum.map(courts, &%{id: &1.id(), gate: &1.gate()}),
+        results: results,
+        ocel_validation_status: run.ocel_validation.status,
+        ocel_dropped: run.ocel.dropped,
+        source_revision: subject.source_revision,
+        court_revision: court_revision
+      })
 
     receipt = %{
       "specification" => @specification,
@@ -74,23 +83,21 @@ defmodule AshA2A.Chicago.StandingReceipt do
         "query_set_digest" => query_set_digest(falsifiers),
         "ocel_mapping_digest" => run.ocel.mapping_digest
       },
-      "results" => tallies(results, gates),
-      "gates" => Enum.map(gates, fn {gate, info} -> Map.put(info, "gate", gate) end),
-      "evidence" => %{
-        "ocel_digest" => run.ocel.sha256,
-        "ocel_bytes" => run.ocel.bytes,
-        "ocel_events" => run.ocel.events,
-        "ocel_objects" => run.ocel.objects,
-        "ocel_dropped_records" => run.ocel.dropped,
-        "ocel_valid" => run.ocel_validation.status == :valid,
-        "ocel_validation" => Atom.to_string(run.ocel_validation.status),
-        "ocel_validator" => run.ocel_validation.validator,
-        "independent_postcondition" => gate_evidence(gates, 8),
-        "receipt_binding" => gate_evidence(gates, 9),
-        "replay" => gate_evidence(gates, 10),
-        "fresh_consumer" => gate_evidence(gates, 11),
-        "evidence_classes_observed" => ["local_execution"]
-      },
+      "results" => computed.tallies,
+      "gates" => computed.gate_rows,
+      "evidence" =>
+        %{
+          "ocel_digest" => run.ocel.sha256,
+          "ocel_bytes" => run.ocel.bytes,
+          "ocel_events" => run.ocel.events,
+          "ocel_objects" => run.ocel.objects,
+          "ocel_dropped_records" => run.ocel.dropped,
+          "ocel_valid" => run.ocel_validation.status == :valid,
+          "ocel_validation" => Atom.to_string(run.ocel_validation.status),
+          "ocel_validator" => run.ocel_validation.validator,
+          "evidence_classes_observed" => ["local_execution"]
+        }
+        |> Map.merge(computed.gate_evidence),
       "excluded" =>
         results
         |> Enum.filter(&(&1.verdict in [:unsupported, :not_applicable]))
@@ -101,11 +108,66 @@ defmodule AshA2A.Chicago.StandingReceipt do
             "detail" => &1.detail
           }
         ),
-      "standing" => FailureClass.wire(standing),
-      "claim" => claim(standing, profile, subject, court_revision, results, gates, run)
+      "standing" => FailureClass.wire(computed.standing),
+      "claim" => computed.claim
     }
 
     Map.put(receipt, "receipt_digest", digest(receipt))
+  end
+
+  @doc """
+  Pure standing recomputation: the gate table, tallies, standing, per-gate
+  evidence verdicts and claim, derived only from court descriptors
+  (`%{id, gate}`), results and OCEL facts -- no court module is invoked.
+
+  `build/1` issues standing through this function and fresh consumers
+  (`AshA2A.Chicago.FreshConsumer`, Gate 11 §42) reconstruct it through the
+  same function, so a reproduced standing is computed by exactly the logic
+  that issued it.
+  """
+  @spec recompute(%{
+          profile: Profile.t(),
+          courts: [%{id: String.t(), gate: 1..12 | nil}],
+          results: [Result.t()],
+          ocel_validation_status: atom() | String.t(),
+          ocel_dropped: non_neg_integer() | nil,
+          source_revision: String.t() | nil,
+          court_revision: String.t()
+        }) :: %{
+          gates: [{pos_integer(), map()}],
+          gate_rows: [map()],
+          tallies: map(),
+          standing: atom(),
+          gate_evidence: %{String.t() => String.t()},
+          claim: String.t()
+        }
+  def recompute(%{profile: profile, courts: courts, results: results} = facts) do
+    gates = gate_table(profile, courts, results)
+    validation = facts.ocel_validation_status
+    standing = standing(results, gates, validation == :valid and facts.ocel_dropped == 0)
+
+    %{
+      gates: gates,
+      gate_rows: Enum.map(gates, fn {gate, info} -> Map.put(info, "gate", gate) end),
+      tallies: tallies(results, gates),
+      standing: standing,
+      gate_evidence: %{
+        "independent_postcondition" => gate_evidence(gates, 8),
+        "receipt_binding" => gate_evidence(gates, 9),
+        "replay" => gate_evidence(gates, 10),
+        "fresh_consumer" => gate_evidence(gates, 11)
+      },
+      claim:
+        claim(
+          standing,
+          profile,
+          facts.source_revision,
+          facts.court_revision,
+          results,
+          gates,
+          validation
+        )
+    }
   end
 
   @doc "sha256 over the canonical JSON of the receipt without `receipt_digest`."
@@ -144,7 +206,9 @@ defmodule AshA2A.Chicago.StandingReceipt do
     |> Base.encode16(case: :lower)
   end
 
-  defp corpus_digest(falsifiers) do
+  @doc "Falsifier-corpus digest bound by the receipt (§137)."
+  @spec corpus_digest([Falsifier.t()]) :: String.t()
+  def corpus_digest(falsifiers) do
     falsifiers
     |> Enum.sort_by(& &1.id)
     |> Enum.map(&Falsifier.to_map/1)
@@ -153,7 +217,9 @@ defmodule AshA2A.Chicago.StandingReceipt do
     |> Base.encode16(case: :lower)
   end
 
-  defp query_set_digest(falsifiers) do
+  @doc "Conformance query-set digest bound by the receipt (§21, §137)."
+  @spec query_set_digest([Falsifier.t()]) :: String.t()
+  def query_set_digest(falsifiers) do
     falsifiers
     |> Enum.sort_by(& &1.id)
     |> Enum.map(fn f ->
@@ -172,7 +238,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
 
   defp gate_table(profile, courts, results) do
     required = Profile.required_gates(profile)
-    present = courts |> Enum.map(& &1.gate()) |> Enum.reject(&is_nil/1)
+    present = courts |> Enum.map(& &1.gate) |> Enum.reject(&is_nil/1)
 
     (required ++ present)
     |> Enum.uniq()
@@ -194,14 +260,13 @@ defmodule AshA2A.Chicago.StandingReceipt do
          "required" => gate in required,
          "status" => status,
          "attempted" => Enum.any?(gate_results, &(&1.attempt_observed? == true)),
-         "courts" =>
-           courts |> Enum.filter(&(&1.gate() == gate)) |> Enum.map(& &1.id()) |> Enum.sort()
+         "courts" => courts |> Enum.filter(&(&1.gate == gate)) |> Enum.map(& &1.id) |> Enum.sort()
        }}
     end)
     |> Enum.sort_by(&elem(&1, 0))
   end
 
-  defp standing(results, gates, ocel, validation) do
+  defp standing(results, gates, ocel_admitted?) do
     counted = Enum.reject(results, &(&1.verdict in [:unsupported, :not_applicable]))
 
     required_passed =
@@ -217,7 +282,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
         :nonconformant
 
       counted != [] and Enum.all?(counted, &Result.counts_as_pass?/1) and required_passed and
-        validation.status == :valid and ocel.dropped == 0 ->
+          ocel_admitted? ->
         :conformant
 
       Enum.any?(counted, &Result.counts_as_pass?/1) ->
@@ -277,9 +342,9 @@ defmodule AshA2A.Chicago.StandingReceipt do
     end
   end
 
-  defp claim(standing, profile, subject, court_revision, results, gates, run) do
+  defp claim(standing, profile, source_revision, court_revision, results, gates, validation) do
     name = Profile.name(profile)
-    rev = subject.source_revision || "unknown-revision"
+    rev = source_revision || "unknown-revision"
     court = String.slice(court_revision, 0, 12)
 
     case standing do
@@ -299,10 +364,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
           |> Enum.filter(fn {_g, i} -> i["required"] and i["status"] != "PASSED" end)
           |> Enum.map_join(", ", fn {g, i} -> "gate #{g} #{i["status"]}" end)
 
-        ocel =
-          if run.ocel_validation.status == :valid,
-            do: "",
-            else: "; OCEL validation #{run.ocel_validation.status}"
+        ocel = if validation == :valid, do: "", else: "; OCEL validation #{validation}"
 
         "#{name} #{FailureClass.wire(other)} for subject #{rev}: #{Enum.count(results, &Result.counts_as_pass?/1)}/#{length(results)} corroborated passes" <>
           if(open == "", do: "", else: "; open: " <> open) <> ocel
