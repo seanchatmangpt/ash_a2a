@@ -241,6 +241,37 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
             IO.puts("skipped: in-BEAM runtime unavailable: #{inspect(reason)}")
         end
       end
+
+      test "the SA2A court refuses a relabelled native host before any vector runs (S126)" do
+        # Both delegates really open, call and close the real native host; only
+        # their caller-controlled labels differ. A whitespace-only relabel is
+        # refused on the normalized label, an entirely different label on the
+        # identity observed from the open sessions (the same session resource
+        # is started by WasmtimeRuntime itself, whatever the module says).
+        assert {:error, padded} =
+                 AshA2A.SA2A.Conformance.run(
+                   runtime_a: WasmtimeRuntime,
+                   runtime_b: __MODULE__.PaddedNativeRuntime
+                 )
+
+        assert padded.code == :sa2a_identical_runtimes
+        assert padded.basis == :label
+
+        assert Runtime.identity(__MODULE__.PaddedNativeRuntime) !=
+                 Runtime.identity(WasmtimeRuntime)
+
+        assert {:error, relabelled} =
+                 AshA2A.SA2A.Conformance.run(
+                   runtime_a: WasmtimeRuntime,
+                   runtime_b: __MODULE__.RelabelledNativeRuntime
+                 )
+
+        assert relabelled.code == :sa2a_identical_runtimes
+        assert relabelled.basis == :observed_executable
+
+        assert [%{"engine_module" => "AshA2A.GraphLaw.WasmtimeRuntime"}] =
+                 relabelled.observed_identity
+      end
     end
 
     describe "the native host executes the vendored artifact under Wasmtime" do
@@ -465,5 +496,51 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
 
       assert {:error, %{code: :graphlaw_host_not_built}} = WasmtimeRuntime.available?()
     end
+  end
+
+  defmodule PaddedNativeRuntime do
+    @moduledoc """
+    A real runtime that IS `AshA2A.GraphLaw.WasmtimeRuntime` (every call runs
+    the real native host) whose host id carries one trailing space -- the
+    one-space relabel RFC-SA2A-002 S126 refuses. Records no interaction.
+    """
+    @behaviour AshA2A.GraphLaw.Runtime
+    alias AshA2A.GraphLaw.WasmtimeRuntime
+
+    @impl true
+    def host_id, do: WasmtimeRuntime.host_id() <> " "
+    @impl true
+    def engine_id, do: WasmtimeRuntime.engine_id()
+    @impl true
+    def available?(opts \\ []), do: WasmtimeRuntime.available?(opts)
+    @impl true
+    def open(opts \\ []), do: WasmtimeRuntime.open(opts)
+    @impl true
+    def call(session, fun, args), do: WasmtimeRuntime.call(session, fun, args)
+    @impl true
+    def close(session), do: WasmtimeRuntime.close(session)
+  end
+
+  defmodule RelabelledNativeRuntime do
+    @moduledoc """
+    A real runtime that IS `AshA2A.GraphLaw.WasmtimeRuntime` under entirely
+    different caller-controlled labels (`"WASI/StandaloneHost"`, `"wasm3"`).
+    Only identity observed from the open session (S126) tells it apart.
+    """
+    @behaviour AshA2A.GraphLaw.Runtime
+    alias AshA2A.GraphLaw.WasmtimeRuntime
+
+    @impl true
+    def host_id, do: "WASI/StandaloneHost"
+    @impl true
+    def engine_id, do: "wasm3"
+    @impl true
+    def available?(opts \\ []), do: WasmtimeRuntime.available?(opts)
+    @impl true
+    def open(opts \\ []), do: WasmtimeRuntime.open(opts)
+    @impl true
+    def call(session, fun, args), do: WasmtimeRuntime.call(session, fun, args)
+    @impl true
+    def close(session), do: WasmtimeRuntime.close(session)
   end
 end

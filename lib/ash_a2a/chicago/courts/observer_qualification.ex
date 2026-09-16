@@ -116,26 +116,29 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
       {[:ocel, :load], "ocel.load",
        [:outcome, :code, :digest_verified, :identity_unique, :array_ordered, :events]},
       {[:ocel, :fresh_read], "ocel.fresh_read",
-       [:outcome, :os_exit, :digest_match, :events_match, :objects_match, :ordered]},
-      {[:run, :stop], "chicago.run.stop",
-       [:standing, :ocel_dropped, :ocel_gaps, :ocel_corroborated, :results]}
+       [:outcome, :os_exit, :digest_match, :events_match, :objects_match, :ordered]}
     ]
 
-    for {suffix, activity, keys} <- boundary do
-      Mapping.new!(
-        event: [:ash_a2a, :chicago | suffix],
-        activity: activity,
-        source: __MODULE__,
-        objects: fn _m, meta ->
-          [
-            {"observer", meta[:observer_run_id], "observer"},
-            {"ocel_artifact", meta[:sha256], "artifact"},
-            {"qualification_run", meta[:run_id], "run"}
-          ]
-        end,
-        attributes: fn _m, meta -> Map.take(meta, keys) end
-      )
-    end
+    observer_boundary =
+      for {suffix, activity, keys} <- boundary do
+        Mapping.new!(
+          event: [:ash_a2a, :chicago | suffix],
+          activity: activity,
+          source: __MODULE__,
+          objects: fn _m, meta ->
+            [
+              {"observer", meta[:observer_run_id], "observer"},
+              {"ocel_artifact", meta[:sha256], "artifact"},
+              {"qualification_run", meta[:run_id], "run"}
+            ]
+          end,
+          attributes: fn _m, meta -> Map.take(meta, keys) end
+        )
+      end
+
+    # `chicago.run.stop` is the runner's one standing-issued event, shared
+    # with the identity court (CHI-ID); the runner admits it once.
+    observer_boundary ++ [Runner.stop_mapping()]
   end
 
   # --- declarations ----------------------------------------------------------

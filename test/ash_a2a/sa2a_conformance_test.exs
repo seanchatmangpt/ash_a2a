@@ -343,9 +343,14 @@ defmodule AshA2A.SA2AConformanceTest do
       else
         # A real, genuinely degraded host: real wasm for every call except
         # graph_hash, which it really refuses. See its @moduledoc.
+        #
+        # Paired with the out-of-BEAM host: the degraded host executes in the
+        # same in-BEAM Wasmtime engine as WasmexSession, so pairing those two
+        # is refused on observed runtime identity (RFC-SA2A-002 S126) before
+        # any assertion could be computed.
         assert {:error, receipt} =
                  Conformance.run(
-                   runtime_a: WasmexSession,
+                   runtime_a: RuntimeB,
                    runtime_b: AshA2A.Test.DegradedGraphLawRuntime
                  )
 

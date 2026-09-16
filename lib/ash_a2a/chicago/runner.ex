@@ -37,7 +37,7 @@ defmodule AshA2A.Chicago.Runner do
     Subject
   }
 
-  alias AshA2A.Chicago.Ocel.{SutEvents, SutMappings}
+  alias AshA2A.Chicago.Ocel.{Mapping, SutEvents, SutMappings}
 
   defmodule Run do
     @moduledoc "A completed Chicago run: results, evidence and standing receipt."
@@ -58,6 +58,52 @@ defmodule AshA2A.Chicago.Runner do
 
   @default_validator AshA2A.Chicago.Ocel.Validator
 
+  @stop_event [:ash_a2a, :chicago, :run, :stop]
+
+  @doc """
+  The one boundary event a run emits after its standing receipt and package
+  are written: `[:ash_a2a, :chicago, :run, :stop]`, measurement `system_time`,
+  metadata `run_id`, `standing`, `ocel_sha256`, `ocel_dropped`, `ocel_gaps`,
+  `ocel_corroborated`, `results`, `claimed_profile`, `subject_identity`,
+  `subject_verification` and `receipt_digest`.
+  """
+  @spec stop_event() :: [atom()]
+  def stop_event, do: @stop_event
+
+  @doc """
+  The single admitted OCEL mapping of `stop_event/0` (activity
+  `chicago.run.stop`). Every court whose falsifiers read the event declares
+  this mapping in its `ocel_mappings/0`; the runner admits it once, so one
+  emission is one OCEL event however many selected courts declare it.
+  """
+  @spec stop_mapping() :: Mapping.t()
+  def stop_mapping do
+    Mapping.new!(
+      event: @stop_event,
+      activity: "chicago.run.stop",
+      source: __MODULE__,
+      objects: fn _m, meta ->
+        [
+          {"qualification_run", meta[:run_id], "run"},
+          {"subject", meta[:subject_identity], "subject"},
+          {"standing_receipt", meta[:receipt_digest], "receipt"}
+        ]
+      end,
+      attributes: fn _m, meta ->
+        Map.take(meta, [
+          :run_id,
+          :standing,
+          :ocel_dropped,
+          :ocel_gaps,
+          :ocel_corroborated,
+          :results,
+          :claimed_profile,
+          :subject_verification
+        ])
+      end
+    )
+  end
+
   @doc """
   Runs the court.
 
@@ -69,6 +115,9 @@ defmodule AshA2A.Chicago.Runner do
     * `:court_ids` -- restrict to these court ids
     * `:evidence_dir` -- output directory (default a fresh tmp dir)
     * `:subject_opts` -- passed to `Subject.capture/1`
+    * `:claimed_subject` -- the `AshA2A.Chicago.Subject` (or its JSON map)
+      the standing is claimed for; verified against the captured subject
+      before any court runs, and a mismatch issues `REFUSED` standing (§32)
     * `:ocel_validator` -- module exporting `validate_file/1`
       (default `AshA2A.Chicago.Ocel.Validator` when compiled; otherwise
       validation is recorded as not run and standing cannot be CONFORMANT)
@@ -116,12 +165,27 @@ defmodule AshA2A.Chicago.Runner do
       end)
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
-    mappings = SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
+    # A mapping several courts share (same event, activity and source, e.g.
+    # `stop_mapping/0`) is admitted once: one emission, one OCEL event.
+    mappings =
+      (SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings()))
+      |> Enum.uniq_by(&{&1.event, &1.activity, &1.source})
+
     observer_opts = observer_opts(run_id, mappings, evidence_dir, opts)
 
     # Unlinked and owner-monitored: an observer outage must degrade evidence
     # standing, never take the run down with it (§108, §138).
     {:ok, observer} = Observer.start(observer_opts)
+
+    # §32: a claimed subject is verified against the executed one before any
+    # court runs; a mismatch is carried to the receipt as REFUSED standing.
+    # Always recomputed here -- a caller cannot pass a verification in.
+    opts =
+      Keyword.put(
+        opts,
+        :subject_verification,
+        Subject.verify_claim(Keyword.get(opts, :claimed_subject), subject)
+      )
 
     try do
       ctx = %Context{
@@ -189,7 +253,8 @@ defmodule AshA2A.Chicago.Runner do
         results: results,
         ocel: ocel,
         ocel_validation: validation,
-        run_id: run_id
+        run_id: run_id,
+        subject_verification: Keyword.fetch!(opts, :subject_verification)
       })
 
     run = %Run{
@@ -206,14 +271,21 @@ defmodule AshA2A.Chicago.Runner do
 
     write_package!(run)
 
-    :telemetry.execute([:ash_a2a, :chicago, :run, :stop], %{system_time: System.system_time()}, %{
+    # One boundary event for the one decision -- the standing this run issued
+    # -- carrying both the evidence accounting the observer court corroborates
+    # and the subject verification the identity court corroborates.
+    :telemetry.execute(@stop_event, %{system_time: System.system_time()}, %{
       run_id: run_id,
       standing: receipt["standing"],
       ocel_sha256: ocel.sha256,
       ocel_dropped: ocel.dropped,
       ocel_gaps: Map.get(ocel, :gaps, 0),
       ocel_corroborated: Enum.count(results, &(&1.ocel_corroborated? == true)),
-      results: length(results)
+      results: length(results),
+      claimed_profile: receipt["subject"]["claimed_profile"],
+      subject_identity: receipt["subject"]["identity"],
+      subject_verification: receipt["subject"]["verification"]["outcome"],
+      receipt_digest: receipt["receipt_digest"]
     })
 
     {:ok, run}
