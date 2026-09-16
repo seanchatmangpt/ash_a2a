@@ -150,6 +150,25 @@ defmodule AshA2A.MixProject do
       # narrower `:only` than a transitive dependency requires, the same
       # real constraint already documented above for `:plug`/`:postgrex`.
       {:stream_data, "~> 1.0"},
+      # RFC S12 canonical graph identity (AshA2A.Semantic.CanonicalGraph):
+      # real RDFC-1.0 dataset canonicalization plus N-Quads/Turtle
+      # serialization, in-BEAM. Already a required, unrestricted (non-`only:`)
+      # transitive dep via `:ash_r2rml` (mix.lock: "rdf": {:hex, :rdf,
+      # "3.0.1", ...}; deps/ash_r2rml/mix.exs:122 declares `{:rdf, "~> 3.0"}`
+      # with no `:only`) -- promoted to an explicit direct dep here for the
+      # same reason `:stream_data` above was: `lib/` code now depends on it
+      # directly, so this repo declares its real dependency instead of
+      # relying on an incidental transitive pin `ash_r2rml` could drop or
+      # relax in a future version. Cannot be narrowed to `only: :test` --
+      # `AshA2A.Semantic.CanonicalGraph` is `lib/` code, and Mix rejects a
+      # narrower `:only` than a transitive dependency requires anyway, the
+      # same real constraint already documented above for
+      # `:plug`/`:postgrex`. Scope is deliberately CANONICALIZATION AND
+      # SERIALIZATION ONLY: `:sparql`, `:json_ld` and `:shex` are NOT added
+      # and must not be -- all graph-shaped validation and reasoning stays in
+      # the vendored praxis-graphlaw wasm law package (S14-S18). See
+      # docs/explanation/canonical-graph-identity.md.
+      {:rdf, "~> 3.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
       # v26.9.16: real libcluster + Horde proof-of-concept (real node
