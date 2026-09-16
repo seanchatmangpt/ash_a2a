@@ -51,6 +51,11 @@ defmodule AshA2A.GraphLaw.WasmexSession do
     blake3_hex: 1
   }
 
+  @doc false
+  # RFC-SA2A-001 S42 classes for the transport codes a bounded call can return.
+  def __sa2a_refusal_codes__,
+    do: %{graphlaw_call_trapped: :blocked_resource, graphlaw_call_exited: :blocked_resource}
+
   @impl true
   def host_id, do: "BEAM/Wasmex"
 
@@ -90,14 +95,22 @@ defmodule AshA2A.GraphLaw.WasmexSession do
       path = Runtime.wasm_path(opts)
       bytes = File.read!(path)
 
-      case Wasmex.start_link(%{bytes: bytes, imports: imports()}) do
-        {:ok, pid} ->
+      case start_instance(bytes, opts) do
+        {:ok, pid, import_names} ->
           {:ok, store} = Wasmex.store(pid)
           {:ok, memory} = Wasmex.memory(pid)
 
           {:ok,
            %{
-             session: %{pid: pid, store: store, memory: memory, wasm_path: path},
+             session: %{
+               pid: pid,
+               store: store,
+               memory: memory,
+               wasm_path: path,
+               bounded?: bounded?(opts),
+               call_timeout_ms: Keyword.get(opts, :call_timeout_ms, 5_000),
+               module_imports: import_names
+             },
              wasm_digest: Runtime.bytes_digest(bytes)
            }}
 
@@ -106,6 +119,63 @@ defmodule AshA2A.GraphLaw.WasmexSession do
       end
     end
   end
+
+  # Bounded sessions (RFC-SA2A-002 §47 finite termination): `:fuel` meters
+  # every executed wasm instruction deterministically (a trap when it runs
+  # out), `:memory_limit_bytes` caps linear-memory growth, and
+  # `:call_timeout_ms` bounds wall time via Wasmex's native interrupt. Without
+  # any of them the session is built exactly as before.
+  defp bounded?(opts),
+    do: Enum.any?([:fuel, :memory_limit_bytes], &Keyword.has_key?(opts, &1))
+
+  defp start_instance(bytes, opts) do
+    if bounded?(opts) do
+      config = Wasmex.EngineConfig.consume_fuel(%Wasmex.EngineConfig{}, true)
+      limits = %Wasmex.StoreLimits{memory_size: Keyword.get(opts, :memory_limit_bytes)}
+
+      with {:ok, engine} <- Wasmex.Engine.new(config),
+           {:ok, store} <- Wasmex.Store.new(limits, engine),
+           :ok <- Wasmex.StoreOrCaller.set_fuel(store, Keyword.get(opts, :fuel, 0)),
+           {:ok, module} <- Wasmex.Module.compile(store, bytes),
+           {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}) do
+        {:ok, pid, module |> Wasmex.Module.imports() |> import_names()}
+      end
+    else
+      with {:ok, pid} <- Wasmex.start_link(%{bytes: bytes, imports: imports()}),
+           do: {:ok, pid, nil}
+    end
+  end
+
+  defp import_names(imports) when is_map(imports) do
+    imports
+    |> Enum.flat_map(fn {namespace, fns} ->
+      fns |> Map.keys() |> Enum.map(&"#{namespace}::#{&1}")
+    end)
+    |> Enum.sort()
+  end
+
+  @doc """
+  The two host imports every session supplies, as `"module::name"`. A module
+  whose import surface is anything else can reach the host some other way.
+  """
+  @spec pinned_imports() :: [String.t()]
+  def pinned_imports,
+    do: Enum.sort(["#{@import_module}::#{@drop_import}", "#{@import_module}::#{@random_import}"])
+
+  @doc "Fuel left in a bounded session's store (`nil` for an unbounded one)."
+  @spec fuel_remaining(map()) :: non_neg_integer() | nil
+  def fuel_remaining(%{bounded?: true, store: store}) do
+    case Wasmex.StoreOrCaller.get_fuel(store) do
+      {:ok, fuel} -> fuel
+      _ -> nil
+    end
+  end
+
+  def fuel_remaining(_session), do: nil
+
+  @doc "Current (= peak: wasm linear memory never shrinks) linear-memory size in bytes."
+  @spec memory_bytes(map()) :: non_neg_integer() | nil
+  def memory_bytes(%{store: store, memory: memory}), do: Wasmex.Memory.size(store, memory)
 
   @impl true
   def call(session, fun, args) when is_atom(fun) and is_list(args) do
@@ -129,7 +199,9 @@ defmodule AshA2A.GraphLaw.WasmexSession do
 
   # -- real wasm-bindgen ABI ------------------------------------------------
 
-  defp do_call(%{pid: pid, store: store, memory: memory}, fun, args) do
+  defp do_call(%{pid: pid, store: store, memory: memory} = session, fun, args) do
+    timeout = Map.get(session, :call_timeout_ms, 5_000)
+
     {:ok, [retptr]} = Wasmex.call_function(pid, "__wbindgen_add_to_stack_pointer", [-16])
 
     ptr_lens =
@@ -140,8 +212,19 @@ defmodule AshA2A.GraphLaw.WasmexSession do
         [ptr, len]
       end)
 
-    {:ok, []} = Wasmex.call_function(pid, fun, [retptr | ptr_lens])
+    case Wasmex.call_function(pid, fun, [retptr | ptr_lens], timeout) do
+      {:ok, []} -> read_result(pid, store, memory, retptr)
+      {:error, reason} -> {:error, %{code: :graphlaw_call_trapped, function: fun, reason: reason}}
+    end
+  rescue
+    error ->
+      {:error, %{code: :graphlaw_call_raised, function: fun, error: Exception.message(error)}}
+  catch
+    :exit, reason ->
+      {:error, %{code: :graphlaw_call_exited, function: fun, reason: inspect(reason)}}
+  end
 
+  defp read_result(pid, store, memory, retptr) do
     <<result_ptr::little-signed-32, result_len::little-signed-32>> =
       Wasmex.Memory.read_binary(store, memory, retptr, 8)
 
@@ -151,9 +234,6 @@ defmodule AshA2A.GraphLaw.WasmexSession do
     {:ok, []} = Wasmex.call_function(pid, "__wbindgen_export4", [result_ptr, result_len, 1])
 
     {:ok, out}
-  rescue
-    error ->
-      {:error, %{code: :graphlaw_call_raised, function: fun, error: Exception.message(error)}}
   end
 
   defp imports do
