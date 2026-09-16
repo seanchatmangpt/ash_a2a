@@ -276,17 +276,21 @@ defmodule AshA2A.CommandBus do
       |> mark_standing(store)
       |> Map.put(:replayed?, true)
       |> then(fn receipt ->
-        %{
-          receipt
-          | terminal_status: prior.terminal_status,
-            status: prior.status,
-            metadata:
-              Map.merge(receipt.metadata, %{
-                outcome: :deduplicated,
-                deduplicated_from_receipt_id: Identity.external(prior.receipt_id),
-                deduplicated_from_command_id: Identity.external(prior.command_id)
-              })
-        }
+        Receipt.Binding.transition(
+          receipt,
+          %{
+            receipt
+            | terminal_status: prior.terminal_status,
+              status: prior.status,
+              metadata:
+                Map.merge(receipt.metadata, %{
+                  outcome: :deduplicated,
+                  deduplicated_from_receipt_id: Identity.external(prior.receipt_id),
+                  deduplicated_from_command_id: Identity.external(prior.command_id)
+                })
+          },
+          :deduplicated
+        )
       end)
 
     case commit_with_retries(

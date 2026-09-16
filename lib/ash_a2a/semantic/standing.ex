@@ -117,6 +117,13 @@ defmodule AshA2A.Semantic.Standing do
   passed. The refusal detail now names the full path to each forbidden key
   (`forbidden_inference_paths`), not just the key.
 
+  Alternate encodings are the same ban (RFC-SA2A-002 §128, falsified by
+  `CHI-RECEIPT-019..021`, which survived before this): a `{name, value}` pair
+  in a keyword list, a list of string-keyed pairs or a tagged tuple is checked
+  like a map key, and names compare normalized (downcased, separators
+  removed), so `[llm_output: ...]`, `[{"llm_output", ...}]`, `"llmOutput"`
+  and `"LLM-Output"` all refuse `:standing_inferred`.
+
   Evidence nested deeper than `max_evidence_depth/0` refuses
   `:standing_evidence_too_deep` rather than being scanned partially -- an
   un-scannable term is an un-cleared term (S43 again).
@@ -198,10 +205,14 @@ defmodule AshA2A.Semantic.Standing do
     :asserted_by
   ]
 
-  # Both spellings, so an evidence map using string keys cannot slip past the
-  # scan. Compared by name rather than by term so that `:llm_output` and
-  # `"llm_output"` are the same ban at every depth.
-  @forbidden_inference_names Enum.map(@forbidden_inference_keys, &Atom.to_string/1)
+  # Every spelling, so an evidence map using string keys cannot slip past the
+  # scan. Compared by *normalized* name (downcased, separators removed) so
+  # that `:llm_output`, `"llm_output"`, `"llmOutput"` and `"LLM-Output"` are
+  # the same ban at every depth (RFC-SA2A-002 §128).
+  @forbidden_inference_names Enum.map(
+                               @forbidden_inference_keys,
+                               &(&1 |> Atom.to_string() |> String.replace("_", ""))
+                             )
 
   @evidence_class %{
     received: :refused_structure,
@@ -295,10 +306,46 @@ defmodule AshA2A.Semantic.Standing do
   """
   @spec transition(Envelope.t(), state(), map()) ::
           {:ok, Envelope.t()} | {:error, Refusal.t()}
-  def transition(envelope, next, evidence \\ %{})
+  def transition(envelope, next, evidence \\ %{}) do
+    result = do_transition(envelope, next, evidence)
+    emit_transition(envelope, next, result)
+    result
+  end
 
-  def transition(%Envelope{standing: current} = envelope, next, evidence)
-      when is_atom(next) and is_map(evidence) do
+  # RFC-SA2A-002 §128 boundary decision (observational only): every attempt,
+  # whatever its outcome, with the refusal code when refused.
+  defp emit_transition(envelope, next, result) do
+    {outcome, code, sources} =
+      case result do
+        {:ok, _envelope} ->
+          {:transitioned, nil, nil}
+
+        {:error, %Refusal{code: code, detail: detail}} ->
+          sources =
+            case detail do
+              %{forbidden_inference_sources: sources} -> Enum.map_join(sources, ",", &to_string/1)
+              _ -> nil
+            end
+
+          {:refused, code, sources}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :standing, :transition],
+      %{system_time: System.system_time()},
+      %{
+        envelope_id: envelope.envelope_id,
+        from: envelope.standing,
+        to: next,
+        outcome: outcome,
+        code: code,
+        forbidden_inference_sources: sources
+      }
+    )
+  end
+
+  defp do_transition(%Envelope{standing: current} = envelope, next, evidence)
+       when is_atom(next) and is_map(evidence) do
     with :ok <- verify_ledger(envelope, next) do
       cond do
         terminal?(current) ->
@@ -321,7 +368,7 @@ defmodule AshA2A.Semantic.Standing do
     end
   end
 
-  def transition(%Envelope{} = _envelope, next, evidence) do
+  defp do_transition(%Envelope{} = _envelope, next, evidence) do
     {:error,
      refuse(:refused_structure, :standing_evidence_invalid, next, %{
        to: next,
@@ -402,12 +449,7 @@ defmodule AshA2A.Semantic.Standing do
 
   defp scan_evidence(map, path, depth, acc) when is_map(map) do
     Enum.reduce_while(map, acc, fn {key, value}, acc ->
-      name = key_name(key)
-      here = [name | path]
-
-      acc = if name in @forbidden_inference_names, do: [Enum.reverse(here) | acc], else: acc
-
-      case scan_evidence(value, here, depth + 1, acc) do
+      case scan_pair(key, value, path, depth, acc) do
         {:error, {:evidence_scan, :too_deep}} -> {:halt, {:error, {:evidence_scan, :too_deep}}}
         next -> {:cont, next}
       end
@@ -425,17 +467,44 @@ defmodule AshA2A.Semantic.Standing do
     end)
   end
 
+  # A `{name, value}` pair is a key/value binding whatever collection holds
+  # it: keyword lists, lists of string-keyed pairs and tagged tuples are
+  # alternate encodings of a map entry (RFC-SA2A-002 §128), so the name is
+  # checked exactly as a map key is.
+  defp scan_evidence({key, value}, path, depth, acc) when is_atom(key) or is_binary(key),
+    do: scan_pair(key, value, path, depth, acc)
+
   defp scan_evidence(tuple, path, depth, acc) when is_tuple(tuple) do
     tuple |> Tuple.to_list() |> scan_evidence(path, depth, acc)
   end
 
   defp scan_evidence(_other, _path, _depth, acc), do: acc
 
+  defp scan_pair(key, value, path, depth, acc) do
+    name = key_name(key)
+    here = [name | path]
+
+    acc =
+      if normalized_name(name) in @forbidden_inference_names,
+        do: [Enum.reverse(here) | acc],
+        else: acc
+
+    scan_evidence(value, here, depth + 1, acc)
+  end
+
+  defp normalized_name(name), do: name |> String.downcase() |> String.replace(~r/[^a-z0-9]/u, "")
+
   # The scan compares by name so `:llm_output` and `"llm_output"` are one ban,
   # but the refusal reports the canonical atom -- the same value
   # `forbidden_inference_keys/0` publishes -- so callers match on one shape.
   defp canonical_inference_key(name) do
-    Enum.find(@forbidden_inference_keys, name, &(Atom.to_string(&1) == name))
+    normalized = normalized_name(name)
+
+    Enum.find(
+      @forbidden_inference_keys,
+      name,
+      &(&1 |> Atom.to_string() |> String.replace("_", "") == normalized)
+    )
   end
 
   defp key_name(key) when is_atom(key), do: Atom.to_string(key)

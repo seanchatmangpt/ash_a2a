@@ -67,6 +67,7 @@ defmodule AshA2A.Receipt do
   """
 
   alias AshA2A.{Actuation, Authority, Command, Evidence, Identity, SemanticSubject}
+  alias AshA2A.Receipt.Binding
 
   @typedoc """
   How durably a receipt has actually been persisted.
@@ -145,6 +146,9 @@ defmodule AshA2A.Receipt do
     :logical_clock,
     :terminal_status,
     :evidence_class,
+    # RFC-SA2A-002 §40 identity binding (`AshA2A.Receipt.Binding`); `nil` on
+    # literals, which therefore carry no binding standing.
+    :binding,
     reconciliation: %{state: :not_required, attempts: 0},
     replayed?: false,
     metadata: %{}
@@ -204,6 +208,8 @@ defmodule AshA2A.Receipt do
       `AshA2A.Evidence.Class.default/0`, which is the *weakest* class.
     * `:intended_effect` -- extra intent recorded before DO; merged over the
       capability/consequence pair this function always records.
+    * `:chain_predecessor` -- the receipt chain predecessor digest bound into
+      the prepared link (`AshA2A.Receipt.Binding.bind/2`).
   """
   @spec pending(Command.t(), Identity.t(), atom(), keyword()) :: t()
   def pending(command, execution_id, consequence, opts \\ [])
@@ -245,6 +251,7 @@ defmodule AshA2A.Receipt do
       reconciliation: %{state: reconciliation_state(consequence), attempts: 0},
       metadata: %{outcome: :pending}
     }
+    |> Binding.bind(predecessor: Keyword.get(opts, :chain_predecessor))
   end
 
   @doc """
@@ -257,15 +264,19 @@ defmodule AshA2A.Receipt do
   """
   @spec finalize(t(), term()) :: t()
   def finalize(%__MODULE__{status: :pending} = receipt, reply) do
-    %{
-      receipt
-      | status: status(reply),
-        terminal_status: terminal_status(reply),
-        reply: summarize(reply),
-        recorded_at: DateTime.utc_now(),
-        logical_clock: logical_clock(),
-        metadata: Map.put(receipt.metadata, :outcome, :observed)
-    }
+    Binding.transition(
+      receipt,
+      %{
+        receipt
+        | status: status(reply),
+          terminal_status: terminal_status(reply),
+          reply: summarize(reply),
+          recorded_at: DateTime.utc_now(),
+          logical_clock: logical_clock(),
+          metadata: Map.put(receipt.metadata, :outcome, :observed)
+      },
+      :final
+    )
   end
 
   @spec from_reply(Command.t(), Identity.t(), atom(), term(), keyword()) :: t()
@@ -299,17 +310,21 @@ defmodule AshA2A.Receipt do
   def reconcile(%__MODULE__{} = receipt, detail \\ %{}) do
     attempts = Map.get(receipt.reconciliation || %{}, :attempts, 0)
 
-    %{
-      receipt
-      | terminal_status: :reconciled,
-        reconciliation:
-          Map.merge(receipt.reconciliation || %{}, %{
-            state: :reconciled,
-            attempts: attempts + 1,
-            reconciled_at: DateTime.utc_now(),
-            detail: detail
-          })
-    }
+    receipt
+    |> Binding.transition(
+      %{
+        receipt
+        | terminal_status: :reconciled,
+          reconciliation:
+            Map.merge(receipt.reconciliation || %{}, %{
+              state: :reconciled,
+              attempts: attempts + 1,
+              reconciled_at: DateTime.utc_now(),
+              detail: detail
+            })
+      },
+      :reconciled
+    )
   end
 
   @doc """
@@ -321,16 +336,20 @@ defmodule AshA2A.Receipt do
   """
   @spec compensate(t(), map()) :: t()
   def compensate(%__MODULE__{} = receipt, detail) when is_map(detail) do
-    %{
-      receipt
-      | terminal_status: :compensated,
-        reconciliation:
-          Map.merge(receipt.reconciliation || %{}, %{
-            state: :compensated,
-            compensated_at: DateTime.utc_now(),
-            detail: detail
-          })
-    }
+    receipt
+    |> Binding.transition(
+      %{
+        receipt
+        | terminal_status: :compensated,
+          reconciliation:
+            Map.merge(receipt.reconciliation || %{}, %{
+              state: :compensated,
+              compensated_at: DateTime.utc_now(),
+              detail: detail
+            })
+      },
+      :compensated
+    )
   end
 
   @doc """
@@ -342,15 +361,19 @@ defmodule AshA2A.Receipt do
   """
   @spec mark_unknown_outcome(t(), term()) :: t()
   def mark_unknown_outcome(%__MODULE__{} = receipt, reason \\ nil) do
-    %{
-      receipt
-      | terminal_status: :unknown_outcome,
-        reconciliation:
-          Map.merge(receipt.reconciliation || %{}, %{
-            state: :unknown_outcome,
-            reason: reason
-          })
-    }
+    receipt
+    |> Binding.transition(
+      %{
+        receipt
+        | terminal_status: :unknown_outcome,
+          reconciliation:
+            Map.merge(receipt.reconciliation || %{}, %{
+              state: :unknown_outcome,
+              reason: reason
+            })
+      },
+      :unknown_outcome
+    )
   end
 
   @doc "Whether this receipt has reached a terminal status."

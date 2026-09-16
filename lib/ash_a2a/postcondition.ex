@@ -163,15 +163,24 @@ defmodule AshA2A.Postcondition do
   def apply_to_receipt(%Receipt{} = receipt, nil), do: receipt
 
   def apply_to_receipt(%Receipt{} = receipt, %{status: :contradicted} = observation) do
-    %{
-      receipt
-      | status: :postcondition_contradicted,
-        metadata: Map.put(receipt.metadata, :postcondition, observation)
-    }
+    AshA2A.Receipt.Binding.transition(
+      receipt,
+      %{
+        receipt
+        | status: :postcondition_contradicted,
+          metadata: Map.put(receipt.metadata, :postcondition, observation)
+      },
+      :postcondition
+    )
   end
 
   def apply_to_receipt(%Receipt{} = receipt, observation),
-    do: %{receipt | metadata: Map.put(receipt.metadata, :postcondition, observation)}
+    do:
+      AshA2A.Receipt.Binding.transition(
+        receipt,
+        %{receipt | metadata: Map.put(receipt.metadata, :postcondition, observation)},
+        :postcondition
+      )
 
   @doc """
   Shapes the consequence result: a committed receipt whose postcondition was

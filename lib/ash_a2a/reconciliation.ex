@@ -326,20 +326,24 @@ defmodule AshA2A.Reconciliation do
   end
 
   defp mark_reconciled(%Receipt{} = receipt, resolved_as, evidence) do
-    %{
-      receipt
-      | status: if(resolved_as == :executed, do: :completed, else: :failed),
-        recorded_at: DateTime.utc_now(),
-        metadata:
-          receipt.metadata
-          |> Map.put(:outcome, :reconciled)
-          |> Map.put(:reconciliation, %{
-            resolved_as: resolved_as,
-            prior_status: receipt.status,
-            evidence: evidence,
-            reconciled_at: DateTime.utc_now()
-          })
-    }
+    receipt
+    |> AshA2A.Receipt.Binding.transition(
+      %{
+        receipt
+        | status: if(resolved_as == :executed, do: :completed, else: :failed),
+          recorded_at: DateTime.utc_now(),
+          metadata:
+            receipt.metadata
+            |> Map.put(:outcome, :reconciled)
+            |> Map.put(:reconciliation, %{
+              resolved_as: resolved_as,
+              prior_status: receipt.status,
+              evidence: evidence,
+              reconciled_at: DateTime.utc_now()
+            })
+      },
+      :reconciled
+    )
   end
 
   defp safe_probe(probe, receipt) do
@@ -381,20 +385,24 @@ defmodule AshA2A.Reconciliation do
   end
 
   defp mark_compensated(%Receipt{} = receipt, %Receipt{} = compensation) do
-    %{
-      receipt
-      | status: :compensated,
-        recorded_at: DateTime.utc_now(),
-        metadata:
-          receipt.metadata
-          |> Map.put(:outcome, :compensated)
-          |> Map.put(:compensation, %{
-            receipt_id: compensation.receipt_id,
-            command_id: compensation.command_id,
-            prior_status: receipt.status,
-            compensated_at: DateTime.utc_now()
-          })
-    }
+    receipt
+    |> AshA2A.Receipt.Binding.transition(
+      %{
+        receipt
+        | status: :compensated,
+          recorded_at: DateTime.utc_now(),
+          metadata:
+            receipt.metadata
+            |> Map.put(:outcome, :compensated)
+            |> Map.put(:compensation, %{
+              receipt_id: compensation.receipt_id,
+              command_id: compensation.command_id,
+              prior_status: receipt.status,
+              compensated_at: DateTime.utc_now()
+            })
+      },
+      :compensated
+    )
   end
 
   defp refuse_compensation(command_id, code, label) do
