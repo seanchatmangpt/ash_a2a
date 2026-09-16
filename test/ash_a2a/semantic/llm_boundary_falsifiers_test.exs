@@ -161,6 +161,74 @@ defmodule AshA2A.Semantic.LlmBoundaryFalsifiersTest do
   end
 
   # --------------------------------------------------------------------
+  # DEFECT 5 regression (RFC S40): scan_claim/1 raised on structs.
+  #
+  # The `is_map(value)` guard is TRUE for a struct, but a struct is not
+  # Enumerable, so `Enum.find_value/2` raised Protocol.UndefinedError --
+  # despite the docstring claiming the scan "never raises on arbitrary
+  # decoded JSON". Worse, the crash PRE-EMPTED a real claim refusal
+  # order-dependently: a payload carrying both a struct and a forged
+  # `"authority"` key crashed instead of refusing whenever map iteration
+  # reached the struct first.
+  # --------------------------------------------------------------------
+
+  test "S40 regression: a struct value does not raise, and does not pre-empt a real refusal" do
+    # The verifier's exact minimal repro: a DateTime value. `"aaa_..."`
+    # sorts before `"authority"`, so the struct is reached FIRST -- which
+    # is precisely the ordering that used to crash.
+    payload = %{"aaa_observed_at" => ~U[2026-01-01 00:00:00Z], "authority" => "admin"}
+
+    assert {"authority", :grant_authority} = LlmBoundary.scan_claim(payload)
+
+    assert {:error,
+            %{code: :llm_standing_claim_refused, effect: :grant_authority, key: "authority"}} =
+             LlmBoundary.candidate(unknown(), :llm, payload)
+
+    # The refusal is now order-INdependent: the other key ordering agrees.
+    reordered = %{"authority" => "admin", "zzz_observed_at" => ~U[2026-01-01 00:00:00Z]}
+    assert {"authority", :grant_authority} = LlmBoundary.scan_claim(reordered)
+
+    # A bare struct, and a struct nested at depth, are leaves -- not
+    # containers, and never a raise.
+    assert LlmBoundary.scan_claim(~U[2026-01-01 00:00:00Z]) == nil
+    assert LlmBoundary.scan_claim(%{"at" => ~U[2026-01-01 00:00:00Z]}) == nil
+    assert LlmBoundary.scan_claim(%{"a" => %{"b" => [~U[2026-01-01 00:00:00Z]]}}) == nil
+    assert LlmBoundary.scan_claim(%{"a" => [%{"at" => Date.utc_today()}]}) == nil
+
+    # Several other struct shapes the same guard used to crash on.
+    for struct_value <- [
+          ~U[2026-01-01 00:00:00Z],
+          ~D[2026-01-01],
+          ~T[10:00:00],
+          ~N[2026-01-01 00:00:00],
+          MapSet.new([1, 2]),
+          %URI{},
+          unknown()
+        ] do
+      assert LlmBoundary.scan_claim(struct_value) == nil
+      assert LlmBoundary.scan_claim(%{"v" => struct_value}) == nil
+
+      assert {"root_manifest", :modify_root_manifest} =
+               LlmBoundary.scan_claim(%{"aaa" => struct_value, "root_manifest" => "edited"})
+    end
+
+    # A struct is not decoded model output at all, so it is not a payload.
+    assert {:error, %{code: :llm_output_not_a_map}} =
+             LlmBoundary.candidate(unknown(), :llm, ~U[2026-01-01 00:00:00Z])
+
+    # And a clean payload carrying a struct still becomes a real candidate:
+    # this is a leaf rule, not a blanket refusal.
+    assert {:ok, %Resolution{standing: :candidate, authority: :none} = resolution} =
+             LlmBoundary.candidate(unknown("clean-with-struct"), :llm, %{
+               "answer" => "42",
+               "at" => ~U[2026-01-01 00:00:00Z]
+             })
+
+    assert resolution.payload["at"] == ~U[2026-01-01 00:00:00Z]
+    assert :ok = LlmBoundary.fence(resolution)
+  end
+
+  # --------------------------------------------------------------------
   # Effect 7, end to end, through the REAL CommandBus
   # --------------------------------------------------------------------
 

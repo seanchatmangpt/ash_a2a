@@ -67,6 +67,19 @@ defmodule AshA2A.Semantic.CanonicalTermDigestTest do
     }
 
     refute CanonicalTermDigest.digest(projection) == CanonicalTermDigest.digest(plain)
+
+    # feat/sa2a-bounds-evidence-fixes-v26.9.16 ported this test without
+    # `CapabilityProfile` in its closure and substituted
+    # `Allocator.Budget`, a real struct with the same property. Both are
+    # on main, so both are asserted.
+    budget = AshA2A.Semantic.Allocator.new!([tokens: 10], issued_by: {:host, :digest_test})
+
+    refute CanonicalTermDigest.digest(budget) ==
+             CanonicalTermDigest.digest(Map.from_struct(budget))
+
+    # And two different struct modules never share a digest.
+    refute CanonicalTermDigest.digest(%URI{path: "/x"}) ==
+             CanonicalTermDigest.digest(%Version.Requirement{source: "/x", lexed: []})
   end
 
   test "encode/1's bytes are inspectable, so a digest mismatch is debuggable" do

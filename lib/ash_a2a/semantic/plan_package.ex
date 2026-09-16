@@ -42,6 +42,26 @@ defmodule AshA2A.Semantic.PlanPackage do
   it must be a map carrying non-nil `#{inspect([:max_wall_ms, :max_memory_bytes, :max_invocations])}`.
   A present-but-empty envelope is not a bound.
 
+  ## A bound is its CONTENTS, not its container
+
+  Presence alone is not a bound. `[nil]` is a one-element list, so a
+  container-only test ("is it non-empty?") accepts it while correctly
+  rejecting `[]` -- a plan declaring one nil capability would clear a
+  gate a plan declaring no capabilities fails. `enforce_profile/1`
+  therefore validates the *contents* of every list-shaped and
+  atom-shaped production bound and refuses with
+  `:plan_package_bound_contents_invalid`:
+
+    * `required_capabilities` -- every element a non-empty binary
+    * `authority_requirements` -- every element a non-empty map
+    * `receipt_obligations` -- every element an atom other than `nil`,
+      `true`, or `false`
+    * `consequence_class` -- an atom other than `nil`/`true`/`false`
+
+  The four ceiling bounds (`max_fan_out`, `max_depth`, `max_parallelism`,
+  `resource_envelope`) already validated their contents via
+  `positive_bounds/1` and `envelope/1` and are unchanged.
+
   ## Authority
 
   `standing: :candidate, authority: :none`, unconditionally -- the same
@@ -57,6 +77,14 @@ defmodule AshA2A.Semantic.PlanPackage do
   field (everything except the digest itself). It is a value-level digest:
   two packages built in different processes, with map fields inserted in
   different orders, digest identically.
+
+  `:standing` and `:authority` -- the two fields that *assert* the
+  plan-is-not-authority fence -- are content fields like any other. They
+  have to be: leaving the fence out of the digest that the tamper check
+  (`verify/1`) is computed over would make the fence the one part of the
+  package an editor could rewrite without detection. With them included,
+  `%{package | standing: :admitted, authority: :full}` fails `verify/1`
+  with `:plan_package_manual_edit_not_canonical`.
   """
 
   alias AshA2A.Semantic.{CanonicalTermDigest, PlanProjection}
@@ -173,7 +201,9 @@ defmodule AshA2A.Semantic.PlanPackage do
     :nondeterministic_outcomes,
     :required_capabilities,
     :authority_requirements,
-    :receipt_obligations
+    :receipt_obligations,
+    :standing,
+    :authority
   ]
 
   @doc "The exact fields `:strict` requires. Public so a test names them once."
@@ -212,6 +242,8 @@ defmodule AshA2A.Semantic.PlanPackage do
   its own S27 self-check; detail carries the projection refusal),
   `:plan_package_semantic_goal_missing` (the projection has no goal to
   package), `:plan_package_production_bounds_missing`,
+  `:plan_package_bound_contents_invalid` (a bound present as a non-empty
+  container whose *elements* are not real bounds -- `[nil]`),
   `:plan_package_resource_envelope_incomplete`,
   `:plan_package_invalid_bound` (a bound present but not a positive
   integer).
@@ -277,7 +309,8 @@ defmodule AshA2A.Semantic.PlanPackage do
     missing = Enum.filter(@production_bounds, &blank?(Map.fetch!(package, &1)))
 
     if missing == [] do
-      with :ok <- positive_bounds(package) do
+      with :ok <- bound_contents(package),
+           :ok <- positive_bounds(package) do
         envelope(package.resource_envelope)
       end
     else
@@ -326,6 +359,42 @@ defmodule AshA2A.Semantic.PlanPackage do
     do: {:ok, goal}
 
   defp semantic_goal(_projection), do: error(:plan_package_semantic_goal_missing)
+
+  # A bound is its contents. `blank?/1` above only rules out an empty
+  # container; `[nil]` is a non-empty container holding nothing, and a
+  # plan declaring one nil capability must not clear a gate that a plan
+  # declaring no capabilities fails.
+  defp bound_contents(package) do
+    invalid =
+      Enum.reject(
+        [
+          {:consequence_class, real_atom?(package.consequence_class)},
+          {:required_capabilities,
+           every?(package.required_capabilities, &(is_binary(&1) and &1 != ""))},
+          {:authority_requirements,
+           every?(package.authority_requirements, &(is_map(&1) and map_size(&1) > 0))},
+          {:receipt_obligations, every?(package.receipt_obligations, &real_atom?/1)}
+        ],
+        fn {_field, valid?} -> valid? end
+      )
+
+    case invalid do
+      [] ->
+        :ok
+
+      _ ->
+        error(:plan_package_bound_contents_invalid, %{
+          fields: Enum.map(invalid, fn {field, _} -> field end),
+          detail: "a bound is its contents, not its container: an element-level check failed"
+        })
+    end
+  end
+
+  defp every?(list, predicate) when is_list(list), do: Enum.all?(list, predicate)
+  defp every?(_other, _predicate), do: false
+
+  defp real_atom?(value) when value in [nil, true, false], do: false
+  defp real_atom?(value), do: is_atom(value)
 
   defp positive_bounds(package) do
     bad =

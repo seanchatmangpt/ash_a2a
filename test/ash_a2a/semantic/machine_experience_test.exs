@@ -55,7 +55,7 @@ defmodule AshA2A.Semantic.MachineExperienceTest do
 
   test "Allocation_LLM(class, t+1) <= Allocation_LLM(class, t) is measured by a real attached counter" do
     tid = AllocationCounters.new()
-    handler = AllocationCounters.attach!(tid)
+    handler = AllocationCounters.attach!(tid, make_ref(), owner: self())
     on_exit(fn -> AllocationCounters.detach(handler) end)
 
     store = MachineExperience.new_store()
@@ -124,7 +124,7 @@ defmodule AshA2A.Semantic.MachineExperienceTest do
     # class, and the same route DO accumulate real LLM allocations when
     # no machinery was compiled back.
     tid = AllocationCounters.new()
-    handler = AllocationCounters.attach!(tid)
+    handler = AllocationCounters.attach!(tid, make_ref(), owner: self())
     on_exit(fn -> AllocationCounters.detach(handler) end)
 
     for days <- 1..10 do

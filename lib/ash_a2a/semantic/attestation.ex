@@ -126,6 +126,13 @@ defmodule AshA2A.Semantic.Attestation do
   This is what makes `:unobserved` load-bearing: an attestation cannot be
   edited to assert a semantic revision the receipts never carried and still
   verify.
+
+  A non-nil `:evidence_class` must also be an *earned* class:
+  `AshA2A.Evidence.Class.verify_chain/1` runs on it, so a forged class -- the
+  right struct module built by hand, or via `new/1` above rank 1, with no
+  real promotion chain behind it -- refuses with that function's typed code
+  (`:evidence_chain_broken` / `:evidence_class_not_earned`) instead of
+  riding into a verifying attestation (RFC S70).
   """
   @spec verify(t(), [Receipt.t()]) :: :ok | refusal()
   def verify(%__MODULE__{} = attestation, receipts) when is_list(receipts) do
@@ -133,7 +140,8 @@ defmodule AshA2A.Semantic.Attestation do
          {:ok, rebuilt} <- from_receipts(receipts),
          :ok <- same_receipt_set(attestation, rebuilt),
          :ok <- no_unbacked_claims(attestation, rebuilt),
-         :ok <- unobserved_really_absent(attestation) do
+         :ok <- unobserved_really_absent(attestation),
+         :ok <- earned_evidence_class(attestation) do
       :ok
     end
   end
@@ -267,6 +275,11 @@ defmodule AshA2A.Semantic.Attestation do
     |> Enum.map(&receipt_reference/1)
     |> Actuation.digest()
   end
+
+  defp earned_evidence_class(%__MODULE__{evidence_class: nil}), do: :ok
+
+  defp earned_evidence_class(%__MODULE__{evidence_class: class}),
+    do: Evidence.Class.verify_chain(class)
 
   # Weakest, not strongest -- see moduledoc.
   defp weakest_evidence_class(receipts) do

@@ -161,6 +161,81 @@ defmodule AshA2A.Semantic.AttestationTest do
              Attestation.verify(forged_plan, [receipt])
   end
 
+  test "S70: a receipt carrying an UNEARNED evidence class does not yield a verifying attestation",
+       %{store_opts: store_opts} do
+    alias AshA2A.Evidence.{
+      Class,
+      HostedCI,
+      LocalTest,
+      Merge,
+      Production,
+      Publication,
+      RuntimeAlive
+    }
+
+    command =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "attest-evidence-chain-1",
+        agent_id: "attest-agent",
+        principal_id: "anonymous",
+        input: %{}
+      )
+
+    assert {:ok, receipt} =
+             CommandBus.run(command, data_message(%{}), Echo, store_opts: store_opts)
+
+    # The receipt the real CommandBus wrote carries the default root class,
+    # which is earned at rank 1, so the honest attestation verifies.
+    assert {:ok, honest} = Attestation.from_receipts([receipt])
+    assert honest.evidence_class.__struct__ == LocalTest
+    assert :ok = Attestation.verify(honest, [receipt])
+
+    # `Merge.new/1` builds an unlinked root at rank 6: the right struct, no
+    # promotion chain behind it.
+    forged_receipt = %{receipt | evidence_class: Merge.new(%{pr: 9})}
+    assert {:ok, forged} = Attestation.from_receipts([forged_receipt])
+    assert forged.evidence_class.__struct__ == Merge
+
+    assert {:error, %{code: :evidence_class_not_earned}} =
+             Attestation.verify(forged, [forged_receipt])
+
+    # A hand-built struct with a made-up link is refused as a broken chain.
+    hand_built = %Merge{
+      evidence_digest: Class.digest(%{pr: 9}),
+      observed_at: DateTime.utc_now(),
+      chain_digest: "sha256:whatever"
+    }
+
+    hand_built_receipt = %{receipt | evidence_class: hand_built}
+    assert {:ok, hand_built_attestation} = Attestation.from_receipts([hand_built_receipt])
+
+    assert {:error, %{code: :evidence_chain_broken}} =
+             Attestation.verify(hand_built_attestation, [hand_built_receipt])
+
+    # The same rank, EARNED by real promotions with distinct evidence per
+    # step, verifies.
+    earned =
+      Enum.reduce(
+        [
+          {HostedCI, %{job: "ci-1"}},
+          {Production, %{deploy: "d-1"}},
+          {RuntimeAlive, %{probe: "p-1"}},
+          {Publication, %{release: "r-1"}},
+          {Merge, %{pr: 9}}
+        ],
+        LocalTest.new(%{suite: "mix test", run: 1}),
+        fn {target, basis}, current ->
+          {:ok, next} = Class.promote(current, target, basis)
+          next
+        end
+      )
+
+    earned_receipt = %{receipt | evidence_class: earned}
+    assert {:ok, earned_attestation} = Attestation.from_receipts([earned_receipt])
+    assert earned_attestation.evidence_class.__struct__ == Merge
+    assert :ok = Attestation.verify(earned_attestation, [earned_receipt])
+  end
+
   test "an attestation verified against a different receipt set is refused", %{
     store_opts: store_opts
   } do

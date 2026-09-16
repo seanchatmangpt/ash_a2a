@@ -262,5 +262,169 @@ defmodule AshA2A.Semantic.PlanPackageTest do
       assert detail.recorded == pkg.plan_digest
       refute detail.recomputed == detail.recorded
     end
+
+    # ----------------------------------------------------------------
+    # DEFECT 4 regression (RFC S34/S35): the plan fence was not
+    # tamper-evident. `:standing` and `:authority` -- the two fields that
+    # ASSERT the plan-is-not-authority fence -- were the ONLY struct
+    # fields excluded from `@content_fields`, so the fence itself was not
+    # covered by the tamper digest and could be rewritten silently.
+    # ----------------------------------------------------------------
+
+    test "S34 regression: the plan fence itself is covered by the tamper digest" do
+      {:ok, pkg} = package()
+
+      assert pkg.standing == :candidate
+      assert pkg.authority == :none
+
+      # The verifier's exact minimal repro: forge the fence in place.
+      forged = %{pkg | standing: :admitted, authority: :full}
+
+      assert {:error, %{code: :plan_package_manual_edit_not_canonical, detail: detail}} =
+               PlanPackage.verify(forged)
+
+      assert detail.recorded == pkg.plan_digest
+      refute detail.recomputed == pkg.plan_digest
+      refute PlanPackage.content_digest(forged) == pkg.plan_digest
+
+      # Each half of the fence is separately covered, not just the pair.
+      refute PlanPackage.content_digest(%{pkg | standing: :admitted}) == pkg.plan_digest
+      refute PlanPackage.content_digest(%{pkg | authority: :full}) == pkg.plan_digest
+
+      assert {:error, %{code: :plan_package_manual_edit_not_canonical}} =
+               PlanPackage.verify(%{pkg | standing: :admitted})
+
+      assert {:error, %{code: :plan_package_manual_edit_not_canonical}} =
+               PlanPackage.verify(%{pkg | authority: :full})
+
+      # Restoring the fence restores the digest -- the digest is a function
+      # of the value, so this is a real content check and not a nonce.
+      assert {:ok, ^pkg} = PlanPackage.verify(%{forged | standing: :candidate, authority: :none})
+    end
+  end
+
+  # ------------------------------------------------------------------
+  # DEFECT 3 regression (RFC S24/S38): bounds tested containers, not
+  # contents. `blank?/1` treated nil, [] and %{} as blank, so a
+  # ONE-ELEMENT LIST HOLDING NIL satisfied a bound that [] correctly
+  # failed. 3 of the 8 production bounds were affected.
+  # ------------------------------------------------------------------
+
+  describe "S24 regression -- a bound is its contents, not its container" do
+    test "[nil] does not satisfy a bound that [] correctly fails" do
+      for field <- [:required_capabilities, :authority_requirements, :receipt_obligations] do
+        assert {:error,
+                %{code: :plan_package_production_bounds_missing, detail: %{missing: [^field]}}} =
+                 package([{field, []}]),
+               "#{field}: [] must be refused"
+
+        # The verifier's exact minimal repro: a one-element list of nil.
+        assert {:error, %{code: :plan_package_bound_contents_invalid, detail: detail}} =
+                 package([{field, [nil]}]),
+               "#{field}: [nil] must be refused too"
+
+        assert detail.fields == [field]
+      end
+    end
+
+    test "each affected bound rejects its own element-level garbage" do
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:required_capabilities]}
+              }} =
+               package(required_capabilities: [""])
+
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:required_capabilities]}
+              }} =
+               package(required_capabilities: [:advance])
+
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:authority_requirements]}
+              }} =
+               package(authority_requirements: [%{}])
+
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:authority_requirements]}
+              }} =
+               package(authority_requirements: ["advance"])
+
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:receipt_obligations]}
+              }} =
+               package(receipt_obligations: ["do_receipt"])
+
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:receipt_obligations]}
+              }} =
+               package(receipt_obligations: [true])
+
+      assert {:error,
+              %{
+                code: :plan_package_bound_contents_invalid,
+                detail: %{fields: [:consequence_class]}
+              }} =
+               package(consequence_class: true)
+
+      # Several bad bounds are reported together, not one refusal at a time.
+      assert {:error, %{code: :plan_package_bound_contents_invalid, detail: %{fields: fields}}} =
+               package(required_capabilities: [nil], receipt_obligations: [nil])
+
+      assert fields == [:required_capabilities, :receipt_obligations]
+    end
+
+    test "the four CEILING bounds are unchanged by the contents check" do
+      # These four survived 43/43 adversarial checks before this fix and
+      # must behave identically after it.
+      assert {:error, %{code: :plan_package_invalid_bound, detail: %{fields: [:max_fan_out]}}} =
+               package(max_fan_out: 0)
+
+      assert {:error, %{code: :plan_package_invalid_bound, detail: %{fields: [:max_depth]}}} =
+               package(max_depth: -1)
+
+      assert {:error, %{code: :plan_package_invalid_bound, detail: %{fields: [:max_parallelism]}}} =
+               package(max_parallelism: :many)
+
+      assert {:error,
+              %{
+                code: :plan_package_resource_envelope_incomplete,
+                detail: %{missing: [:max_wall_ms]}
+              }} =
+               package(resource_envelope: %{max_memory_bytes: 1, max_invocations: 1})
+
+      assert {:error, %{code: :plan_package_production_bounds_missing}} =
+               package(resource_envelope: %{})
+
+      assert {:error, %{code: :plan_package_resource_envelope_incomplete}} =
+               package(
+                 resource_envelope: %{max_wall_ms: 0, max_memory_bytes: 1, max_invocations: 1}
+               )
+
+      # And a fully valid strict package still builds.
+      assert {:ok, pkg} = package()
+      assert :ok = PlanPackage.enforce_profile(pkg)
+    end
+
+    test "permissive is still permissive: the contents gate is a strict-profile gate" do
+      assert {:ok, pkg} =
+               package(profile: :permissive, required_capabilities: [nil], consequence_class: nil)
+
+      assert :ok = PlanPackage.enforce_profile(pkg)
+
+      # But a strict receiver of that same package refuses it.
+      assert {:error, %{code: :plan_package_production_bounds_missing}} =
+               PlanPackage.enforce_profile(%{pkg | profile: :strict})
+    end
   end
 end

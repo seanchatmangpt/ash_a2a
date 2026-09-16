@@ -16,10 +16,20 @@ defmodule AshA2A.Semantic.Allocator.Budget do
   consumption is `System.monotonic_time(:millisecond)` minus
   `started_at_ms`, recomputed on every allocation attempt. A caller
   cannot under-report elapsed time by declining to allocate against it.
+
+  ## `minimums`: the spender does not set the price of its own calls
+
+  Every budgeted dimension carries an **issuer-set** minimum charge
+  (default 1, never below 1). `AshA2A.Semantic.Allocator.allocate/3`
+  charges `max(amount, minimum)`, so a caller cannot request `0` and be
+  admitted against a budget with zero headroom. Minimums are supplied at
+  `new/2`/`reissue/4` time by the same non-model issuer that set the
+  limits; there is no path by which the spender changes them, exactly as
+  there is no path by which the spender raises a ceiling.
   """
 
-  @enforce_keys [:limits, :consumed, :started_at_ms, :issued_by, :fingerprint]
-  defstruct [:limits, :consumed, :started_at_ms, :issued_by, :fingerprint]
+  @enforce_keys [:limits, :minimums, :consumed, :started_at_ms, :issued_by, :fingerprint]
+  defstruct [:limits, :minimums, :consumed, :started_at_ms, :issued_by, :fingerprint]
 
   @type dimension ::
           :inference_calls
@@ -36,6 +46,7 @@ defmodule AshA2A.Semantic.Allocator.Budget do
 
   @type t :: %__MODULE__{
           limits: %{optional(dimension()) => non_neg_integer()},
+          minimums: %{optional(dimension()) => pos_integer()},
           consumed: %{optional(dimension()) => non_neg_integer()},
           started_at_ms: integer(),
           issued_by: issuer(),
@@ -72,6 +83,18 @@ defmodule AshA2A.Semantic.Allocator do
   `AshA2A.Semantic.LlmBoundary.attempt/2` refuses to let model output
   produce one.
 
+  ## A zero-cost call is not a call the spender may price
+
+  Every dimension carries an issuer-set minimum charge (`:minimums`,
+  default 1). `allocate/3` charges `max(amount, minimum)`, never the
+  raw `amount`. Without that, `allocate(exhausted_budget, dim, 0)`
+  passes a `consumed + 0 > limit` test forever, and RFC S73 is nullified
+  through an unguarded door: the spender sets the price of its own
+  calls and an exhausted budget admits unlimited further calls. The
+  minimum is set by the same non-model issuer that sets the limits, so
+  there is no self-pricing path any more than there is a self-granting
+  one.
+
   ## The three refusals that make S73 real
 
     1. `request_increase/2` **always** refuses, with
@@ -92,6 +115,9 @@ defmodule AshA2A.Semantic.Allocator do
 
       {:ok, budget} = Allocator.allocate(budget, :inference_calls, 1)
       {:error, %{code: :budget_exhausted}} = Allocator.allocate(budget, :inference_calls, 1)
+      # a zero-amount call is charged the issuer's minimum, so it is
+      # refused too -- the exhausted budget has no unguarded door:
+      {:error, %{code: :budget_exhausted}} = Allocator.allocate(budget, :inference_calls, 0)
       {:error, %{code: :self_grant_refused}} = Allocator.request_increase(budget, %{})
   """
 
@@ -110,9 +136,19 @@ defmodule AshA2A.Semantic.Allocator do
     wall_time_ms
   )a
 
+  @default_minimum 1
+
   @doc "The nine real budget dimensions. `:authority` is deliberately absent."
   @spec dimensions() :: [Budget.dimension()]
   def dimensions, do: @dimensions
+
+  @doc """
+  The floor every issuer-set minimum charge is clamped to. A minimum of
+  zero would reopen the self-pricing door this module exists to shut, so
+  it is not representable.
+  """
+  @spec default_minimum() :: pos_integer()
+  def default_minimum, do: @default_minimum
 
   @doc """
   Builds a bounded budget. Every limit key must be one of `dimensions/0`
@@ -121,16 +157,24 @@ defmodule AshA2A.Semantic.Allocator do
 
   `:issued_by` (default `{:host, :unspecified}`) must be a `{:host, _}`
   tuple or a real `%AshA2A.Authority{}` whose `source` is not `:model`.
+
+  `:minimums` (default `%{}`) is the issuer's per-dimension minimum
+  charge. Any budgeted dimension the issuer does not name gets
+  `default_minimum/0`; a named minimum must be a positive integer, so a
+  zero-cost dimension is not representable.
   """
   @spec new(keyword() | map(), keyword()) :: {:ok, Budget.t()} | {:error, map()}
   def new(limits, opts \\ []) do
     limits = Map.new(limits)
     issued_by = Keyword.get(opts, :issued_by, {:host, :unspecified})
+    given_minimums = Map.new(Keyword.get(opts, :minimums, %{}))
 
     with :ok <- validate_limits(limits),
-         :ok <- validate_issuer(issued_by) do
+         :ok <- validate_issuer(issued_by),
+         :ok <- validate_minimums(given_minimums) do
       budget = %Budget{
         limits: limits,
+        minimums: materialize_minimums(limits, given_minimums),
         consumed: Map.new(limits, fn {dimension, _limit} -> {dimension, 0} end),
         started_at_ms: Keyword.get(opts, :started_at_ms, System.monotonic_time(:millisecond)),
         issued_by: issued_by,
@@ -138,6 +182,19 @@ defmodule AshA2A.Semantic.Allocator do
       }
 
       {:ok, %{budget | fingerprint: fingerprint(budget)}}
+    end
+  end
+
+  @doc """
+  The issuer-set minimum charge for `dimension` on `budget`. Never below
+  `default_minimum/0`, including for a dimension the budget does not
+  carry at all (which `allocate/3` refuses anyway).
+  """
+  @spec minimum(Budget.t(), Budget.dimension()) :: pos_integer()
+  def minimum(%Budget{minimums: minimums}, dimension) do
+    case Map.get(minimums, dimension) do
+      value when is_integer(value) and value >= @default_minimum -> value
+      _ -> @default_minimum
     end
   end
 
@@ -162,11 +219,17 @@ defmodule AshA2A.Semantic.Allocator do
       dimension is a zero ceiling, not an unlimited one.
     * `:invalid_allocation_amount` -- a negative or non-integer amount
       (a negative allocation would be a budget increase in disguise).
-    * `:budget_exhausted` -- the request would exceed the ceiling, or
+    * `:budget_exhausted` -- the charge would exceed the ceiling, or
       the measured wall clock already has.
 
   Wall time is re-measured on *every* call, so a long-running resolver
   cannot outlive its `:wall_time_ms` ceiling simply by not allocating.
+
+  The amount actually charged is `max(amount, minimum(budget, dimension))`
+  and is reported as `:charged` on both success (via the returned
+  budget's `consumed`) and refusal. `amount` is a floor the caller may
+  raise, never a price the caller may set: `allocate(budget, dim, 0)`
+  against a budget with zero headroom is `:budget_exhausted`, not `:ok`.
   """
   @spec allocate(Budget.t(), Budget.dimension() | :authority, integer()) ::
           {:ok, Budget.t()} | {:error, map()}
@@ -184,18 +247,20 @@ defmodule AshA2A.Semantic.Allocator do
     with :ok <- check_wall_time(budget),
          {:ok, limit} <- fetch_limit(budget, dimension) do
       consumed = Map.get(budget.consumed, dimension, 0)
+      charged = max(amount, minimum(budget, dimension))
 
-      if consumed + amount > limit do
+      if consumed + charged > limit do
         {:error,
          %{
            code: :budget_exhausted,
            dimension: dimension,
            limit: limit,
            consumed: consumed,
-           requested: amount
+           requested: amount,
+           charged: charged
          }}
       else
-        next = %{budget | consumed: Map.put(budget.consumed, dimension, consumed + amount)}
+        next = %{budget | consumed: Map.put(budget.consumed, dimension, consumed + charged)}
         {:ok, %{next | fingerprint: fingerprint(next)}}
       end
     end
@@ -273,18 +338,36 @@ defmodule AshA2A.Semantic.Allocator do
   at least the already-consumed amount in every dimension (a reissue
   that would retroactively put the budget over its own ceiling is
   refused with `:reissue_below_consumed`).
+
+  Minimum charges carry forward too, unless the new issuer sets its own
+  via `reissue/4`'s `:minimums` option. A reissue cannot lower a
+  dimension's minimum below `default_minimum/0` any more than `new/2`
+  can.
   """
   @spec reissue(Budget.t(), Budget.issuer(), keyword() | map()) ::
           {:ok, Budget.t()} | {:error, map()}
-  def reissue(%Budget{} = budget, issuer, new_limits) do
+  def reissue(budget, issuer, new_limits), do: reissue(budget, issuer, new_limits, [])
+
+  @doc "`reissue/3` with issuer options (`:minimums`)."
+  @spec reissue(Budget.t(), Budget.issuer(), keyword() | map(), keyword()) ::
+          {:ok, Budget.t()} | {:error, map()}
+  def reissue(%Budget{} = budget, issuer, new_limits, opts) do
     new_limits = Map.new(new_limits)
+
+    given_minimums =
+      case Keyword.fetch(opts, :minimums) do
+        {:ok, minimums} -> Map.new(minimums)
+        :error -> Map.take(budget.minimums, Map.keys(new_limits))
+      end
 
     with :ok <- validate_limits(new_limits),
          :ok <- validate_issuer(issuer),
+         :ok <- validate_minimums(given_minimums),
          :ok <- validate_reissue_covers_consumed(budget, new_limits) do
       next = %{
         budget
         | limits: new_limits,
+          minimums: materialize_minimums(new_limits, given_minimums),
           consumed: Map.merge(Map.new(new_limits, fn {d, _} -> {d, 0} end), budget.consumed),
           issued_by: issuer
       }
@@ -319,6 +402,33 @@ defmodule AshA2A.Semantic.Allocator do
       [] -> :ok
       _ -> {:error, %{code: :invalid_budget_limits, invalid: Map.new(invalid)}}
     end
+  end
+
+  defp validate_minimums(minimums) do
+    invalid =
+      Enum.reject(minimums, fn {dimension, minimum} ->
+        dimension in @dimensions and is_integer(minimum) and minimum >= @default_minimum
+      end)
+
+    case invalid do
+      [] ->
+        :ok
+
+      _ ->
+        {:error,
+         %{
+           code: :invalid_budget_minimums,
+           invalid: Map.new(invalid),
+           detail:
+             "a minimum charge below #{@default_minimum} would let the spender price its own calls"
+         }}
+    end
+  end
+
+  defp materialize_minimums(limits, given) do
+    Map.new(limits, fn {dimension, _limit} ->
+      {dimension, Map.get(given, dimension, @default_minimum)}
+    end)
   end
 
   defp validate_issuer({:host, _}), do: :ok
@@ -368,7 +478,7 @@ defmodule AshA2A.Semantic.Allocator do
   end
 
   defp fingerprint(%Budget{} = budget) do
-    {budget.limits, budget.consumed, budget.issued_by}
+    {budget.limits, budget.minimums, budget.consumed, budget.issued_by}
     |> :erlang.term_to_binary()
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)

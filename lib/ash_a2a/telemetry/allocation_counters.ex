@@ -54,13 +54,29 @@ defmodule AshA2A.Telemetry.AllocationCounters do
   `handler_id_suffix` defaults to a fresh `make_ref/0` so two independent
   attaches never collide -- same convention as
   `AshA2A.Telemetry.RouterCounters.attach!/2`.
+
+  ## `:owner` -- which emitters this instrument counts
+
+  `:telemetry` handlers are attached to an event *name*, globally, and
+  run inside whichever process emitted it. Threading the table through
+  `config` therefore isolates the *storage* but not the *source*: two
+  concurrent `async: true` tests both routing real UNKNOWNs each see the
+  other's events in their own table. `:owner` closes that:
+
+    * `:any` (default) -- count every emitter. The right behaviour for a
+      long-lived production instrument, where the emitting process is not
+      the attaching one.
+    * a pid -- count only events emitted by that process. A test that
+      calls `AshA2A.Semantic.Unknown.route/3` inline passes `self()` and
+      then owns a genuinely private measurement.
   """
-  @spec attach!(tid(), term()) :: term()
-  def attach!(tid, handler_id_suffix \\ make_ref()) do
+  @spec attach!(tid(), term(), keyword()) :: term()
+  def attach!(tid, handler_id_suffix \\ make_ref(), opts \\ []) do
     handler_id = {__MODULE__, handler_id_suffix}
+    config = %{tid: tid, owner: Keyword.get(opts, :owner, :any)}
 
     :ok =
-      case :telemetry.attach(handler_id, @event, &__MODULE__.handle_event/4, tid) do
+      case :telemetry.attach(handler_id, @event, &__MODULE__.handle_event/4, config) do
         :ok -> :ok
         {:error, :already_exists} -> :ok
       end
@@ -73,17 +89,23 @@ defmodule AshA2A.Telemetry.AllocationCounters do
   def detach(handler_id), do: :telemetry.detach(handler_id)
 
   @doc false
-  @spec handle_event(:telemetry.event_name(), :telemetry.event_measurements(), map(), tid()) ::
+  @spec handle_event(:telemetry.event_name(), :telemetry.event_measurements(), map(), map()) ::
           :ok
-  def handle_event(@event, _measurements, %{class: class, resolver: resolver}, tid)
+  def handle_event(@event, _measurements, %{class: class, resolver: resolver}, %{
+        tid: tid,
+        owner: owner
+      })
       when is_binary(class) and is_atom(resolver) do
-    :ets.update_counter(tid, {class, resolver}, {2, 1}, {{class, resolver}, 0})
+    if owner == :any or owner == self() do
+      :ets.update_counter(tid, {class, resolver}, {2, 1}, {{class, resolver}, 0})
+    end
+
     :ok
   end
 
   # Fails closed rather than crashing the emitting process, same as
   # `RouterCounters.handle_event/4`'s documented catch-all clause.
-  def handle_event(@event, _measurements, _metadata, _tid), do: :ok
+  def handle_event(@event, _measurements, _metadata, _config), do: :ok
 
   @doc """
   Real count for one `{class, resolver}` pair. `0` for a pair never

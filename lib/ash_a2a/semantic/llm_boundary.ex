@@ -136,7 +136,8 @@ defmodule AshA2A.Semantic.LlmBoundary do
   """
   @spec candidate(Unknown.t(), Unknown.resolver_kind(), map()) ::
           {:ok, Resolution.t()} | {:error, map()}
-  def candidate(%Unknown{} = unknown, resolver, payload) when is_map(payload) do
+  def candidate(%Unknown{} = unknown, resolver, payload)
+      when is_map(payload) and not is_struct(payload) do
     case scan_claim(payload) do
       nil ->
         Resolution.new(unknown, resolver, payload)
@@ -181,11 +182,26 @@ defmodule AshA2A.Semantic.LlmBoundary do
   walked key-first so the shallowest claim wins deterministically for a
   single-level payload), or `nil`.
 
-  Only ever walks maps and lists; any other term is not a container and
-  not a match, so the scan never raises on arbitrary decoded JSON.
+  Only ever walks **plain** maps and lists; any other term -- structs
+  included -- is not a container and not a match, so the scan never
+  raises on arbitrary decoded input.
+
+  A struct is deliberately a leaf, not a container: `is_map/1` is true
+  for a struct but `Enumerable` is not implemented for most of them
+  (`DateTime`, `Decimal`, `AshA2A.Authority`, ...), so walking one with
+  `Enum.find_value/2` raises `Protocol.UndefinedError`. A raise here is
+  strictly worse than a miss, because it *pre-empts* the refusal the
+  scan exists to produce: a payload carrying both a struct value and a
+  forged `"authority"` key would crash instead of refusing whenever map
+  iteration reached the struct first, making the refusal
+  order-dependent. Struct fields are never model-decoded JSON anyway --
+  a decoder produces plain maps -- so treating a struct as a leaf loses
+  no real claim.
   """
   @spec scan_claim(term()) :: {String.t(), atom()} | nil
-  def scan_claim(value) when is_map(value) do
+  def scan_claim(value) when is_struct(value), do: nil
+
+  def scan_claim(value) when is_map(value) and not is_struct(value) do
     Enum.find_value(value, fn {key, nested} ->
       case Map.fetch(@claim_keys, normalize_key(key)) do
         {:ok, effect} -> {normalize_key(key), effect}

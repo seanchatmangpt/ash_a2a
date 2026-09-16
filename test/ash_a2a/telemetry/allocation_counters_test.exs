@@ -13,9 +13,14 @@ defmodule AshA2A.Telemetry.AllocationCountersTest do
   alias AshA2A.Semantic.{Allocator, Unknown}
   alias AshA2A.Telemetry.AllocationCounters
 
+  # `owner: self()` makes the measurement genuinely this test's own.
+  # `:telemetry` handlers attach to an event NAME globally and run in the
+  # emitting process, so without it a concurrent `async: true` test that
+  # also routes a real UNKNOWN lands its allocations in this table and the
+  # whole-table `counts/1` assertion below becomes order-dependent.
   defp attached do
     tid = AllocationCounters.new()
-    handler = AllocationCounters.attach!(tid)
+    handler = AllocationCounters.attach!(tid, make_ref(), owner: self())
     on_exit(fn -> AllocationCounters.detach(handler) end)
     tid
   end

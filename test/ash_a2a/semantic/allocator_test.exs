@@ -178,6 +178,123 @@ defmodule AshA2A.Semantic.AllocatorTest do
              Allocator.reissue(spent, {:host, __MODULE__}, inference_calls: 5)
   end
 
+  # --------------------------------------------------------------------
+  # DEFECT 1 regression (RFC S73): an exhausted budget admitted unlimited
+  # calls through an unguarded door.
+  #
+  # `allocate/3` guarded `is_integer(amount) and amount >= 0` and then
+  # tested `consumed + amount > limit`. With `amount == 0` at exhaustion,
+  # `1 + 0 > 1` is false, so allocate returned `{:ok, budget}` on a budget
+  # with ZERO headroom, unlimited times: the spender set the price of its
+  # own calls. The verifier's minimal repro is the 1000-iteration loop
+  # below, which admitted 1000 calls against a one-call budget.
+  # --------------------------------------------------------------------
+
+  test "S73 regression: a zero-amount call against an exhausted budget is refused, every time" do
+    budget = Allocator.new!([inference_calls: 1], issued_by: {:host, __MODULE__})
+    {:ok, spent} = Allocator.allocate(budget, :inference_calls, 1)
+
+    assert Allocator.remaining(spent) == %{inference_calls: 0}
+
+    # The exact verifier repro: 1000 zero-amount calls on zero headroom.
+    {final, admitted} =
+      Enum.reduce(1..1_000, {spent, 0}, fn _, {budget, admitted} ->
+        case Allocator.allocate(budget, :inference_calls, 0) do
+          {:ok, next} -> {next, admitted + 1}
+          {:error, _} -> {budget, admitted}
+        end
+      end)
+
+    assert admitted == 0
+    assert final.consumed == %{inference_calls: 1}
+    assert Allocator.remaining(final) == %{inference_calls: 0}
+
+    assert {:error,
+            %{
+              code: :budget_exhausted,
+              dimension: :inference_calls,
+              limit: 1,
+              consumed: 1,
+              requested: 0,
+              charged: 1
+            }} = Allocator.allocate(spent, :inference_calls, 0)
+  end
+
+  test "S73 regression: a resolver call consumes a real issuer-set minimum, not a spender-set zero" do
+    budget = Allocator.new!([inference_calls: 3], issued_by: {:host, __MODULE__})
+
+    # Asking for zero still costs the issuer's minimum.
+    assert Allocator.minimum(budget, :inference_calls) == Allocator.default_minimum()
+    {:ok, after_one} = Allocator.allocate(budget, :inference_calls, 0)
+    assert after_one.consumed == %{inference_calls: 1}
+
+    # So a three-call budget affords exactly three zero-amount calls.
+    {:ok, after_two} = Allocator.allocate(after_one, :inference_calls, 0)
+    {:ok, after_three} = Allocator.allocate(after_two, :inference_calls, 0)
+    assert after_three.consumed == %{inference_calls: 3}
+
+    assert {:error, %{code: :budget_exhausted, charged: 1}} =
+             Allocator.allocate(after_three, :inference_calls, 0)
+  end
+
+  test "S73 regression: the minimum is ISSUER-set and cannot be priced down to zero" do
+    {:ok, budget} =
+      Allocator.new([tokens: 100],
+        issued_by: {:host, __MODULE__},
+        minimums: %{tokens: 25}
+      )
+
+    assert Allocator.minimum(budget, :tokens) == 25
+
+    # A request below the issuer's minimum is charged the minimum.
+    {:ok, spent} = Allocator.allocate(budget, :tokens, 1)
+    assert spent.consumed == %{tokens: 25}
+
+    # A request above it is charged what it asked for.
+    {:ok, spent} = Allocator.allocate(spent, :tokens, 40)
+    assert spent.consumed == %{tokens: 65}
+
+    # And a minimum of zero is simply not representable.
+    assert {:error, %{code: :invalid_budget_minimums, invalid: %{tokens: 0}}} =
+             Allocator.new([tokens: 100], issued_by: {:host, :x}, minimums: %{tokens: 0})
+
+    assert {:error, %{code: :invalid_budget_minimums}} =
+             Allocator.new([tokens: 100], issued_by: {:host, :x}, minimums: %{tokens: -1})
+
+    assert {:error, %{code: :invalid_budget_minimums}} =
+             Allocator.new([tokens: 100], issued_by: {:host, :x}, minimums: %{not_a_dim: 5})
+  end
+
+  test "S73 regression: a zero-limit dimension affords nothing at all, including a zero request" do
+    budget = Allocator.new!([inference_calls: 0], issued_by: {:host, __MODULE__})
+
+    assert {:error, %{code: :budget_exhausted, limit: 0, consumed: 0, charged: 1}} =
+             Allocator.allocate(budget, :inference_calls, 0)
+
+    assert {:error, %{code: :budget_exhausted}} = Allocator.allocate(budget, :inference_calls, 1)
+  end
+
+  test "S73 regression: reissue carries the issuer's minimums forward and never lowers them" do
+    {:ok, budget} =
+      Allocator.new([tokens: 100], issued_by: {:host, __MODULE__}, minimums: %{tokens: 10})
+
+    {:ok, spent} = Allocator.allocate(budget, :tokens, 0)
+    assert spent.consumed == %{tokens: 10}
+
+    {:ok, reissued} = Allocator.reissue(spent, {:host, :ops}, tokens: 200)
+    assert Allocator.minimum(reissued, :tokens) == 10
+    assert reissued.consumed == %{tokens: 10}
+
+    # A new issuer may set new minimums, but still not a zero one.
+    assert {:ok, tightened} =
+             Allocator.reissue(spent, {:host, :ops}, [tokens: 200], minimums: %{tokens: 50})
+
+    assert Allocator.minimum(tightened, :tokens) == 50
+
+    assert {:error, %{code: :invalid_budget_minimums}} =
+             Allocator.reissue(spent, {:host, :ops}, [tokens: 200], minimums: %{tokens: 0})
+  end
+
   test "the budget fingerprint moves with real spend and is stable for identical state" do
     a = Allocator.new!([tokens: 10], issued_by: {:host, :same})
     b = Allocator.new!([tokens: 10], issued_by: {:host, :same})
