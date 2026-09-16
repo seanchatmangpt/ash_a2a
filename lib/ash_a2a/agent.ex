@@ -642,11 +642,19 @@ defmodule AshA2A.Agent do
   # that hasn't wired `A2A.Plug.Auth` at all -- both fall through to `nil`,
   # so dispatch fails closed (unauthenticated: no actor, no tenant) instead
   # of fabricating an identity out of unverified input.
+  #
+  # ONLY the atom-keyed `%{identity: _}` shape `A2A.Plug.Auth.build_identity/2`
+  # produces is accepted. `A2A.Plug` merges the caller's JSON-RPC
+  # `params.metadata` OVER the plug metadata (later wins), so a remote caller
+  # can send `"a2a.auth": {"identity": "<any principal>"}` -- JSON decoding
+  # can only ever yield that string-keyed shape. Accepting it let an
+  # authenticated, ungranted caller impersonate a granted principal and
+  # actuate (RFC-SA2A-002 SA2A-TRANSPORT-004, reproduced over a real Bandit
+  # listener). A string-keyed `"a2a.auth"` now yields no identity: fail closed.
   @spec verified_auth_identity(A2A.Agent.context() | map()) :: term()
   defp verified_auth_identity(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "a2a.auth") do
       %{identity: identity} -> identity
-      %{"identity" => identity} -> identity
       _other -> nil
     end
   end

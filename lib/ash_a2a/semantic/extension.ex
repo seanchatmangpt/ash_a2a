@@ -129,20 +129,60 @@ defmodule AshA2A.Semantic.Extension do
   end
 
   @doc """
-  Whether a real `A2A.AgentCard` advertises this profile.
+  Whether a real `A2A.AgentCard` advertises this profile at a compatible
+  version.
 
   Accepts a decoded card struct or the raw decoded JSON map, so a peer can
   check a card it fetched over HTTP without first deciding which
-  representation it holds.
+  representation it holds. Anything else (including `nil`) is `false`.
+
+  An entry naming this profile's binding at a different (or absent)
+  `protocolVersion` is NOT an advertisement: assuming compatibility from the
+  binding name alone is silent profile assumption (RFC-SA2A-002 §55,
+  `SA2A-NEG-002`). See `advertisement/1` for the three-way answer.
   """
-  @spec advertised?(A2A.AgentCard.t() | map()) :: boolean()
-  def advertised?(%A2A.AgentCard{supported_interfaces: interfaces}),
-    do: Enum.any?(interfaces, &(Map.get(&1, :protocol_binding) == @profile_id))
+  @spec advertised?(A2A.AgentCard.t() | map() | nil) :: boolean()
+  def advertised?(card), do: advertisement(card) == :compatible
 
-  def advertised?(%{"supportedInterfaces" => interfaces}) when is_list(interfaces),
-    do: Enum.any?(interfaces, &(Map.get(&1, "protocolBinding") == @profile_id))
+  @doc """
+  What a card advertises for this profile: `:compatible`, `:absent`, or
+  `{:incompatible, versions}` when the binding is present only at other
+  `protocolVersion`s.
+  """
+  @spec advertisement(term()) :: :compatible | :absent | {:incompatible, [term()]}
+  def advertisement(%A2A.AgentCard{supported_interfaces: interfaces}) when is_list(interfaces) do
+    classify_advertisement(
+      for %{} = i <- interfaces,
+          Map.get(i, :protocol_binding) == @profile_id,
+          do: Map.get(i, :protocol_version)
+    )
+  end
 
-  def advertised?(%{}), do: false
+  def advertisement(%{"supportedInterfaces" => interfaces}) when is_list(interfaces) do
+    classify_advertisement(
+      for %{} = i <- interfaces,
+          Map.get(i, "protocolBinding") == @profile_id,
+          do: Map.get(i, "protocolVersion")
+    )
+  end
+
+  def advertisement(_card), do: :absent
+
+  defp classify_advertisement([]), do: :absent
+
+  defp classify_advertisement(versions) do
+    if @profile_version in versions, do: :compatible, else: {:incompatible, versions}
+  end
+
+  @doc false
+  def __sa2a_refusal_codes__ do
+    %{
+      unsupported_profile: :unsupported_profile,
+      profile_version_incompatible: :unsupported_profile,
+      profile_not_activated: :unsupported_profile,
+      profile_payload_invalid: :refused_structure
+    }
+  end
 
   @doc """
   Explicit two-sided negotiation (S9).
@@ -152,24 +192,65 @@ defmodule AshA2A.Semantic.Extension do
   says a consequence-bearing task must not proceed.
 
   Returns `{:ok, profile_id}` or `{:error, refusal}` with code
-  `:unsupported_profile`.
+  `:unsupported_profile` (an advertisement is absent) or
+  `:profile_version_incompatible` (present only at another version).
   """
   @spec negotiate(A2A.AgentCard.t() | map(), A2A.AgentCard.t() | map()) ::
           {:ok, String.t()} | {:error, refusal()}
   def negotiate(local_card, remote_card) do
-    case {advertised?(local_card), advertised?(remote_card)} do
-      {true, true} ->
+    local = advertisement(local_card)
+    remote = advertisement(remote_card)
+    result = decide_negotiation(local, remote)
+
+    {outcome, code} =
+      case result do
+        {:ok, _} -> {:ok, nil}
+        {:error, %{code: code}} -> {:refused, code}
+      end
+
+    # Boundary telemetry (RFC-SA2A-002 §12, §18): the negotiation decision.
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :extension, :negotiate],
+      %{system_time: System.system_time()},
+      %{
+        outcome: outcome,
+        code: code,
+        local_advertised: local == :compatible,
+        remote_advertised: remote == :compatible,
+        profile_id: @profile_id
+      }
+    )
+
+    result
+  end
+
+  defp decide_negotiation(local, remote) do
+    case {local, remote} do
+      {:compatible, :compatible} ->
         {:ok, @profile_id}
 
-      {false, true} ->
+      {:absent, :absent} ->
+        {:error, refusal(:unsupported_profile, "neither peer advertises #{@profile_id}")}
+
+      {:absent, _} ->
         {:error, refusal(:unsupported_profile, "local peer does not advertise #{@profile_id}")}
 
-      {true, false} ->
+      {_, :absent} ->
         {:error, refusal(:unsupported_profile, "remote peer does not advertise #{@profile_id}")}
 
-      {false, false} ->
-        {:error, refusal(:unsupported_profile, "neither peer advertises #{@profile_id}")}
+      {{:incompatible, versions}, _} ->
+        {:error, incompatible("local", versions)}
+
+      {_, {:incompatible, versions}} ->
+        {:error, incompatible("remote", versions)}
     end
+  end
+
+  defp incompatible(side, versions) do
+    refusal(
+      :profile_version_incompatible,
+      "#{side} peer advertises #{@profile_id} only at #{inspect(versions)}, not #{@profile_version}"
+    )
   end
 
   @doc """

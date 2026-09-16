@@ -53,15 +53,32 @@ defmodule AshA2A.Semantic.Peer do
   If the engine cannot be reached, admission returns standing `:unsupported`
   with code `:graphlaw_unavailable`. It does not return `:admitted`. A peer
   that cannot check does not get to agree.
+
+  ## Boundary telemetry
+
+  The decision points emit `[:ash_a2a, :semantic, :peer, ...]` events at the
+  boundary itself (RFC-SA2A-002 §12, §18). Metadata always carries `:peer`
+  and `:mode`.
+
+    * `[:receive]` -- an inbound `A2A.Message` reached `receive_message/3`
+      (+ `:activated`, `:message_id`)
+    * `[:admission, :start]` -- a parsed envelope reached admission
+      (+ `:envelope_id`, `:standing`, `:profile`, `:consequence_class`,
+      `:authority_requirement`)
+    * `[:decision]` -- the outcome this peer decided (+ `:path`
+      `:semantic | :bridge | :admission`, `:envelope_id`, `:standing`,
+      `:code`, `:class`, `:graph_digest`)
   """
 
-  alias AshA2A.Semantic.{Envelope, Extension, GraphLaw, Standing}
+  alias AshA2A.Semantic.{Envelope, Extension, GraphLaw, Refusal, Standing}
   alias AshA2A.Semantic.Standing.Ledger
 
   defstruct [
     :name,
     :ledger,
     :capabilities,
+    :agent_card,
+    :receipt_store,
     shapes: "",
     mode: :strict,
     graph_law: nil
@@ -73,6 +90,8 @@ defmodule AshA2A.Semantic.Peer do
           name: String.t(),
           ledger: Agent.agent() | nil,
           capabilities: module() | nil,
+          agent_card: A2A.AgentCard.t() | map() | nil,
+          receipt_store: {module(), keyword()} | nil,
           shapes: String.t(),
           mode: mode(),
           graph_law: module() | nil
@@ -111,6 +130,15 @@ defmodule AshA2A.Semantic.Peer do
       carrying the real `AshA2A` capability surface. This is the only source
       S76's consequence classification is read from. See
       `consequence_bearing?/2`.
+    * `:agent_card` -- the agent card THIS peer serves (struct or decoded
+      JSON). Semantic standing crosses the boundary only when it advertises
+      `AshA2A.Semantic.Extension.profile_id/0` at a compatible version; with
+      no card, or a card that does not advertise, activated traffic is
+      `:unsupported` / `:profile_not_advertised` (RFC-SA2A-002 §55).
+    * `:receipt_store` -- `{store_module, store_opts}`, this peer's own
+      `AshA2A.ReceiptStore`. An envelope's `receipts` references are admitted
+      only when each resolves to a matching receipt there; without a store,
+      any receipt reference is unverifiable and refused (RFC-SA2A-002 §54).
   """
   @spec new(keyword()) :: t()
   def new(opts) do
@@ -118,6 +146,8 @@ defmodule AshA2A.Semantic.Peer do
       name: Keyword.fetch!(opts, :name),
       ledger: Keyword.get(opts, :ledger),
       capabilities: Keyword.get(opts, :capabilities),
+      agent_card: Keyword.get(opts, :agent_card),
+      receipt_store: Keyword.get(opts, :receipt_store),
       shapes: Keyword.get(opts, :shapes, ""),
       mode: Keyword.get(opts, :mode, :strict),
       graph_law: Keyword.get(opts, :graph_law)
@@ -142,10 +172,18 @@ defmodule AshA2A.Semantic.Peer do
   """
   @spec receive_message(t(), A2A.Message.t(), keyword()) :: outcome()
   def receive_message(%__MODULE__{} = peer, %A2A.Message{} = message, _opts \\ []) do
-    if Extension.activated?(message) do
-      semantic_path(peer, message)
-    else
-      bridge_path(peer, message)
+    activated? = Extension.activated?(message)
+    emit(peer, [:receive], %{activated: activated?, message_id: message.message_id})
+
+    cond do
+      not activated? ->
+        peer |> bridge_path(message) |> emit_decision(peer, :bridge)
+
+      not Extension.advertised?(peer.agent_card) ->
+        peer |> unadvertised_path(message) |> emit_decision(peer, :semantic)
+
+      true ->
+        peer |> semantic_path(message) |> emit_decision(peer, :semantic)
     end
   end
 
@@ -245,6 +283,24 @@ defmodule AshA2A.Semantic.Peer do
     }
   end
 
+  # RFC-SA2A-002 §55: a peer that does not itself advertise a compatible
+  # profile has negotiated nothing, so no semantic standing may cross its
+  # boundary -- even for a perfectly admissible envelope (SA2A-NEG-005).
+  defp unadvertised_path(%__MODULE__{} = peer, message) do
+    envelope_id = bridge_envelope_id(message)
+    record(peer, envelope_id, {:received, :unsupported}, :profile_not_advertised)
+
+    %{
+      standing: :unsupported,
+      envelope_id: envelope_id,
+      code: :profile_not_advertised,
+      detail:
+        "peer #{peer.name} does not advertise #{Extension.profile_id()} at " <>
+          "#{Extension.profile_version()} on its own agent card; semantic standing " <>
+          "cannot cross a boundary this peer never negotiated"
+    }
+  end
+
   # Reconciled against the round-2-fixed `AshA2A.Semantic.Envelope`, which
   # dropped its own `parse/1` (an `A2A.Message`-taking convenience) --
   # `Extension.payload/1` + `Envelope.from_map/1` is the same real two-step
@@ -256,14 +312,15 @@ defmodule AshA2A.Semantic.Peer do
     |> case do
       {:ok, envelope} ->
         record(peer, envelope.envelope_id, {:received, :candidate}, :envelope_parsed)
-        admit(peer, envelope)
+        do_admit(peer, envelope)
 
       {:error, refusal} ->
         envelope_id = bridge_envelope_id(message)
-        record(peer, envelope_id, {:received, :refused}, refusal.code)
+        standing = parse_refusal_standing(refusal)
+        record(peer, envelope_id, {:received, standing}, refusal.code)
 
         %{
-          standing: :refused,
+          standing: standing,
           envelope_id: envelope_id,
           code: refusal.code,
           detail: refusal.detail
@@ -278,7 +335,23 @@ defmodule AshA2A.Semantic.Peer do
   `:candidate -> :admitted` edge and nothing else.
   """
   @spec admit(t(), Envelope.t()) :: outcome()
-  def admit(%__MODULE__{} = peer, %Envelope{standing: :candidate} = envelope) do
+  def admit(%__MODULE__{} = peer, %Envelope{} = envelope) do
+    peer |> do_admit(envelope) |> emit_decision(peer, :admission)
+  end
+
+  defp do_admit(%__MODULE__{} = peer, %Envelope{} = envelope) do
+    emit(peer, [:admission, :start], %{
+      envelope_id: envelope.envelope_id,
+      standing: envelope.standing,
+      profile: envelope.profile,
+      consequence_class: envelope.consequence_class,
+      authority_requirement: envelope.authority_requirement
+    })
+
+    admit_candidate(peer, envelope)
+  end
+
+  defp admit_candidate(%__MODULE__{} = peer, %Envelope{standing: :candidate} = envelope) do
     opts = graph_law_opts(peer)
 
     # Reconciled against the round-2-fixed `AshA2A.Semantic.Envelope`: the
@@ -296,9 +369,13 @@ defmodule AshA2A.Semantic.Peer do
     # Reconciled the same way: the old `Envelope.graph` field was a bare
     # Turtle string; the round-2-fixed struct carries the real RFC S11 shape
     # (`%{media_type:, digest:, content:}`), so the engine gets `.content`.
-    graph_ttl = envelope.graph.content
-
-    with {:ok, digest} <- GraphLaw.graph_hash(graph_ttl, opts),
+    with :ok <- check_graph_present(envelope),
+         :ok <- check_semantic_basis(envelope),
+         :ok <- check_provenance(envelope),
+         :ok <- check_authority_requirement(envelope),
+         :ok <- check_receipt_references(peer, envelope),
+         graph_ttl = envelope.graph.content,
+         {:ok, digest} <- GraphLaw.graph_hash(graph_ttl, opts),
          :ok <- check_claimed_digest(envelope, digest),
          {:ok, report} <- GraphLaw.validate(graph_ttl, peer.shapes, opts) do
       case GraphLaw.verdict(report) do
@@ -356,7 +433,7 @@ defmodule AshA2A.Semantic.Peer do
     end
   end
 
-  def admit(%__MODULE__{} = peer, %Envelope{standing: standing} = envelope) do
+  defp admit_candidate(%__MODULE__{} = peer, %Envelope{standing: standing} = envelope) do
     record(peer, envelope.envelope_id, {standing, :admitted}, :admission_out_of_order)
 
     %{
@@ -430,6 +507,187 @@ defmodule AshA2A.Semantic.Peer do
          detail: "sender claimed #{claimed}, this peer computed #{digest}"
        }}
     end
+  end
+
+  # A `%AshA2A.Semantic.Refusal{}` carries its own S42 class; its terminal
+  # standing is that class's (UNSUPPORTED_PROFILE -> :unsupported, never
+  # collapsed into :refused, RFC-SA2A-002 §101 / SA2A-ENV-007).
+  defp parse_refusal_standing(%Refusal{} = refusal), do: Refusal.terminal_standing(refusal)
+  defp parse_refusal_standing(_refusal), do: :refused
+
+  # --- RFC-SA2A-001 S6 / RFC-SA2A-002 §54 admission pre-checks ---------------
+  #
+  # Standing(x) => Identity /\ Structure /\ Semantics /\ Provenance /\
+  # AdmissionReceipt. These run before the engine: an envelope that cannot
+  # say what it is to be read against, where it came from, what authority its
+  # consequence needs, or whose receipt claims this peer cannot verify has no
+  # standing to earn, however conforming its graph.
+
+  defp check_graph_present(%Envelope{graph: %{content: content}}) when is_binary(content),
+    do: :ok
+
+  defp check_graph_present(%Envelope{}),
+    do: {:error, %{code: :semantic_graph_missing, detail: "envelope carries no graph to admit"}}
+
+  defp check_semantic_basis(%Envelope{semantic_basis: [_ | _] = basis}) do
+    if Enum.all?(basis, &(is_binary(&1) and String.trim(&1) != "")),
+      do: :ok,
+      else: semantic_basis_missing(basis)
+  end
+
+  defp check_semantic_basis(%Envelope{semantic_basis: basis}), do: semantic_basis_missing(basis)
+
+  defp semantic_basis_missing(basis) do
+    {:error,
+     %{
+       code: :semantic_basis_missing,
+       detail:
+         "semanticBasis #{inspect(basis)} names no semantic basis the graph is to be read against"
+     }}
+  end
+
+  defp check_provenance(%Envelope{provenance: provenance}) when is_map(provenance) do
+    grounded? =
+      Enum.any?(provenance, fn
+        {_key, value} when is_binary(value) -> String.trim(value) != ""
+        {_key, value} when is_map(value) -> map_size(value) > 0
+        {_key, value} when is_list(value) -> value != []
+        _ -> false
+      end)
+
+    if grounded?,
+      do: :ok,
+      else:
+        {:error,
+         %{
+           code: :provenance_missing,
+           detail: "provenance #{inspect(provenance)} does not say where the envelope came from"
+         }}
+  end
+
+  @consequence_bearing ["change", "external_do"]
+
+  defp check_authority_requirement(%Envelope{
+         consequence_class: class,
+         authority_requirement: "none"
+       })
+       when class in @consequence_bearing do
+    {:error,
+     %{
+       code: :consequence_without_authority_requirement,
+       detail:
+         "consequenceClass #{class} declares authorityRequirement none; a consequence " <>
+           "never has no authority requirement"
+     }}
+  end
+
+  defp check_authority_requirement(%Envelope{}), do: :ok
+
+  defp check_receipt_references(_peer, %Envelope{receipts: []}), do: :ok
+
+  defp check_receipt_references(%__MODULE__{receipt_store: nil} = peer, %Envelope{}) do
+    {:error,
+     %{
+       code: :receipt_reference_unverified,
+       detail:
+         "peer #{peer.name} has no receipt store to verify the envelope's receipt " <>
+           "references against; an unverifiable receipt establishes nothing"
+     }}
+  end
+
+  defp check_receipt_references(%__MODULE__{receipt_store: {store, store_opts}}, envelope) do
+    Enum.reduce_while(envelope.receipts, :ok, fn reference, :ok ->
+      case verify_receipt_reference(store, store_opts, reference) do
+        :ok ->
+          {:cont, :ok}
+
+        {:error, detail} ->
+          {:halt, {:error, %{code: :receipt_reference_unverified, detail: detail}}}
+      end
+    end)
+  end
+
+  defp verify_receipt_reference(
+         store,
+         store_opts,
+         %{"receiptId" => receipt_id, "commandId" => "command:" <> command, "fingerprint" => fp} =
+           reference
+       )
+       when is_binary(receipt_id) and command != "" and is_binary(fp) do
+    case store.fetch(AshA2A.Identity.command(command), store_opts) do
+      {:ok, %AshA2A.Receipt{} = receipt} ->
+        cond do
+          AshA2A.Identity.external(receipt.receipt_id) != receipt_id ->
+            {:error,
+             "receipt #{receipt_id} is not the receipt this peer holds for command:#{command}"}
+
+          receipt.fingerprint != fp ->
+            {:error, "receipt #{receipt_id} fingerprint does not match this peer's receipt"}
+
+          Map.has_key?(reference, "status") and
+              reference["status"] != Atom.to_string(receipt.status) ->
+            {:error,
+             "receipt #{receipt_id} status #{inspect(reference["status"])} is not #{receipt.status}"}
+
+          true ->
+            :ok
+        end
+
+      _ ->
+        {:error, "no receipt for command:#{command} in this peer's receipt store"}
+    end
+  catch
+    kind, reason ->
+      {:error, "receipt store unavailable (#{kind}: #{inspect(reason, limit: 5)})"}
+  end
+
+  defp verify_receipt_reference(_store, _store_opts, reference) do
+    {:error,
+     "receipt reference #{inspect(reference, limit: 5)} is not a verifiable " <>
+       "{receiptId, commandId: \"command:...\", fingerprint} reference"}
+  end
+
+  @doc false
+  def __sa2a_refusal_codes__ do
+    %{
+      semantic_graph_missing: :refused_structure,
+      semantic_basis_missing: :refused_structure,
+      provenance_missing: :refused_provenance,
+      consequence_without_authority_requirement: :refused_authority,
+      receipt_reference_unverified: :refused_receipt,
+      profile_not_advertised: :unsupported_profile,
+      profile_not_negotiated: :unsupported_profile,
+      unsupported_profile: :unsupported_profile,
+      semantic_digest_mismatch: :refused_identity,
+      semantic_shape_violation: :refused_shacl,
+      semantic_replay_divergence: :refused_identity,
+      semantic_graph_unhashable: :refused_identity,
+      illegal_standing_transition: :refused_meta_rigor,
+      graphlaw_unavailable: :blocked_resource
+    }
+  end
+
+  defp emit(%__MODULE__{} = peer, suffix, metadata) do
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :peer | suffix],
+      %{system_time: System.system_time()},
+      Map.merge(%{peer: peer.name, mode: peer.mode}, metadata)
+    )
+  end
+
+  defp emit_decision(outcome, %__MODULE__{} = peer, path) do
+    code = Map.get(outcome, :code)
+
+    emit(peer, [:decision], %{
+      path: path,
+      envelope_id: outcome.envelope_id,
+      standing: outcome.standing,
+      code: code,
+      class: if(is_atom(code) and not is_nil(code), do: Refusal.classify(code)),
+      graph_digest: Map.get(outcome, :graph_digest)
+    })
+
+    outcome
   end
 
   defp graph_law_opts(%__MODULE__{graph_law: nil}), do: []
