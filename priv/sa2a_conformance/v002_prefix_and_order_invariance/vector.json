@@ -1,0 +1,7 @@
+{
+  "id": "v002_prefix_and_order_invariance",
+  "title": "Prefix relabelling and triple reordering",
+  "intent": "Serialises the same abstract RDF graph as v001 with a different prefix label and reversed triple order. RFC S12 requires the canonical graph identity to be invariant to both, so this vector's input_graph_hash must equal v001's in every runtime.",
+  "rfc_sections": ["S12"],
+  "same_input_graph_hash_as": "v001_minimal_admit"
+}

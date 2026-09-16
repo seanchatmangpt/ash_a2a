@@ -1,0 +1,4 @@
+@prefix ex: <http://example.org/> .
+
+ex:sensor ex:state ex:idle .
+ex:sensor ex:threshold 30 .

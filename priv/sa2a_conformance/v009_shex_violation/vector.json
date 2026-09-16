@@ -1,0 +1,6 @@
+{
+  "id": "v009_shex_violation",
+  "title": "ShEx datatype constraint violated",
+  "intent": "Same ShExJ schema as v007, but ex:alice's ex:name is an xsd:integer where the NodeConstraint requires xsd:string. Pairs with v004 (a SHACL refusal) so the same_admission falsifier is exercised on both validators: a refusal that is reached at a different S41 state, or carries a different typed reason, in one runtime than the other is as much a conformance failure as a divergent admission.",
+  "rfc_sections": ["S41", "S51", "S61"]
+}

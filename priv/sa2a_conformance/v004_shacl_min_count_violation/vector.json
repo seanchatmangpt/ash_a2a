@@ -1,0 +1,6 @@
+{
+  "id": "v004_shacl_min_count_violation",
+  "title": "SHACL minCount violated",
+  "intent": "ex:mallory is an ex:Person with no ex:name, violating sh:minCount 1. The refusal must be reached at the same S41 state with the same typed reason in both runtimes -- a divergent refusal is as much a conformance failure as a divergent admission.",
+  "rfc_sections": ["S41", "S51", "S61"]
+}
