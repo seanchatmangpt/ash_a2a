@@ -273,6 +273,14 @@ defmodule AshA2A.Chicago.Courts.SparqlFalsifiers do
     pipeline =
       case AshA2A.GraphLaw.Wasm.availability(pipeline_opts) do
         :ok ->
+          # The host's admitted pipeline law (RFC-SA2A-001 S20/S21).
+          pipeline_opts =
+            Keyword.put(
+              pipeline_opts,
+              :root_manifest,
+              F.law_manifest!(Path.join(ctx.evidence_dir, "sa2a-sparql"))
+            )
+
           [
             pipeline_negative(
               ctx,

@@ -51,7 +51,8 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
         # ADMITTED, and the pipeline's blankness guard read that as a pass.
         garbage = Fixtures.candidate(profile_ttl: "@@@ not turtle at all ;;; <<<")
 
-        assert {:error, %Refusal{} = refusal} = AdmissionPipeline.admit(garbage)
+        assert {:error, %Refusal{} = refusal} =
+                 AdmissionPipeline.admit(garbage, Fixtures.law_opts())
 
         assert refusal.stage == :profile_checks
         assert refusal.code == :turtle_not_parseable
@@ -65,7 +66,10 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
       if engine_available?() do
         for vacuous <- ["#", "@prefix ex: <http://example.org/> .", "   \n\n  "] do
           assert {:error, %Refusal{stage: :profile_checks} = refusal} =
-                   AdmissionPipeline.admit(Fixtures.candidate(profile_ttl: vacuous))
+                   AdmissionPipeline.admit(
+                     Fixtures.candidate(profile_ttl: vacuous),
+                     Fixtures.law_opts()
+                   )
 
           assert refusal.code in [:profile_vacuous, :profile_not_supplied]
           assert refusal.determinacy == :undetermined
@@ -77,7 +81,7 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
     test "the same candidate with the real profile still reaches :admitted" do
       if engine_available?() do
         assert {:ok, %Result{standing: :admitted} = result} =
-                 AdmissionPipeline.admit(Fixtures.candidate())
+                 AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
 
         # The real profile is not the empty-graph digest.
         refute result.profile_hash ==
@@ -94,7 +98,8 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
         # set: ex:b a ex:Forbidden fires { ?s a ex:Forbidden } => false .
         assert {:error, %Refusal{stage: :sparql_falsifiers} = determined} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_with_forbidden())
+                   Fixtures.candidate(graph_ttl: Fixtures.graph_with_forbidden()),
+                   Fixtures.law_opts()
                  )
 
         assert determined.code == :falsifier_violated
@@ -103,13 +108,29 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
         # Change the falsifiers to a lone comment and nothing else. Measured
         # before the fix: {:ok, %Result{standing: :admitted}} -- the very graph
         # the law refuses, admitted, because zero rules found zero violations.
+        # The host admits "#" as law here, so the vacuity guard -- not law
+        # standing -- is what refuses.
         assert {:error, %Refusal{stage: :sparql_falsifiers} = vacuous} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_with_forbidden(), falsifiers: "#")
+                   Fixtures.candidate(
+                     graph_ttl: Fixtures.graph_with_forbidden(),
+                     falsifiers: "#"
+                   ),
+                   Fixtures.law_opts([{"n3_rules", "#"}])
                  )
 
         assert vacuous.code == :falsifiers_vacuous
         assert vacuous.determinacy == :undetermined
+
+        # Without the host admitting it, the same document has no standing.
+        assert {:error, %Refusal{stage: :rule_closure, code: :law_without_standing}} =
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(
+                     graph_ttl: Fixtures.graph_with_forbidden(),
+                     falsifiers: "#"
+                   ),
+                   Fixtures.law_opts()
+                 )
       end
     end
 
@@ -118,7 +139,8 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
       if engine_available?() do
         assert {:error, %Refusal{stage: :shacl} = determined} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_owner())
+                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_owner()),
+                   Fixtures.law_opts()
                  )
 
         assert determined.code == :shacl_nonconformant
@@ -129,7 +151,8 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
                    Fixtures.candidate(
                      graph_ttl: Fixtures.graph_missing_owner(),
                      shacl_shapes: "#"
-                   )
+                   ),
+                   Fixtures.law_opts()
                  )
 
         assert vacuous.code == :shacl_shapes_vacuous
@@ -141,13 +164,19 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
     test "third instance -- a ShEx schema declaring zero shapes" do
       if engine_available?() do
         assert {:error, %Refusal{stage: :shex} = vacuous} =
-                 AdmissionPipeline.admit(Fixtures.candidate(shex_schema: ~s({"shapes":[]})))
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(shex_schema: ~s({"shapes":[]})),
+                   Fixtures.law_opts()
+                 )
 
         assert vacuous.code == :shex_schema_vacuous
         assert vacuous.determinacy == :undetermined
 
         assert {:error, %Refusal{stage: :shex} = empty_map} =
-                 AdmissionPipeline.admit(Fixtures.candidate(shex_shape_map: "[]"))
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(shex_shape_map: "[]"),
+                   Fixtures.law_opts()
+                 )
 
         assert empty_map.code == :shex_shape_map_vacuous
       end
@@ -164,7 +193,8 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
                      profile_ttl: "#",
                      shacl_shapes: "#",
                      falsifiers: "#"
-                   )
+                   ),
+                   Fixtures.law_opts()
                  )
       end
     end
@@ -174,7 +204,8 @@ defmodule AshA2A.SemanticAdmissionVacuityTest do
     @tag :graphlaw
     test "an admitted result carries a real RDFC-1.0 canonical hash alongside the engine digest" do
       if engine_available?() do
-        assert {:ok, %Result{} = result} = AdmissionPipeline.admit(Fixtures.candidate())
+        assert {:ok, %Result{} = result} =
+                 AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
 
         assert result.canonical_graph_hash =~ ~r/\A[0-9a-f]{64}\z/
 

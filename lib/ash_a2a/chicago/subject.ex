@@ -18,8 +18,11 @@ defmodule AshA2A.Chicago.Subject do
     * `artifact_digests` -- sha256 of each executable artifact (wasm engines,
       host scripts) given via `:artifacts` or discovered under `priv/`
     * `root_manifest_digest` -- sha256 of the `:root_manifest` file, or an
-      explicit `:root_manifest_digest`; `nil` when unbound (recorded, never
-      invented)
+      explicit `:root_manifest_digest`; by default the content address of the
+      committed `AshA2A.Semantic.RootManifest` in effect for this runtime,
+      read only after it loads with its self-address and every pin verified
+      (`RootManifest.load/2`, `require_engine: false`); `nil` when it does not
+      load (recorded, never invented)
     * `validator_digests` -- sha256 of each validator / rule-set file
       (`:validators`; default: the SHACL/ShEx/N3/SPARQL files under `priv/`
       plus the GraphLaw wasm the admission boundary loads)
@@ -306,9 +309,16 @@ defmodule AshA2A.Chicago.Subject do
 
       :error ->
         case Keyword.get(opts, :root_manifest) do
-          nil -> nil
+          nil -> admitted_root_manifest_digest()
           path -> file_sha256(path)
         end
+    end
+  end
+
+  defp admitted_root_manifest_digest do
+    case AshA2A.Semantic.RootManifest.load(nil, require_engine: false) do
+      {:ok, manifest} -> manifest.digest
+      {:error, _refusal} -> nil
     end
   end
 

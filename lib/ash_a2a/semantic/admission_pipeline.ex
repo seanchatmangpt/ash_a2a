@@ -127,6 +127,37 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   with a warning still refuses; an unpartitionable shapes graph, or an engine
   error on the partition run, keeps full-report semantics and refuses.
 
+  ## Law standing: a validator without standing cannot validate (RFC-SA2A-001 S20)
+
+  Non-vacuity proves a law document asserts something; it does not prove the
+  document is ADMITTED law. A candidate carries its own law documents, so
+  without a standing check a candidate could bring the judge: a self-serving
+  shapes graph admits a SHACL-invalid DO step, and an extra N3 rule appended to
+  the falsifier set derives the missing obligation (both measured, CHI-ADM-005
+  and CHI-ADM-006 in `AshA2A.Chicago.Courts.ExecutableWorld`).
+
+  Every law-bearing stage therefore requires, once the engine has reported
+  `ADMITTED`, that each document it was judged under has standing through
+  `AshA2A.Semantic.MetaAdmission.document_standing/4` against the verified
+  Root Manifest (`opts[:root_manifest]`, default the committed manifest):
+
+  | stage             | documents (kind)                                   |
+  |-------------------|----------------------------------------------------|
+  | `:shex`           | `shex_schema` (`shex_schema`), `shex_shape_map` (`shex_shape_map`) |
+  | `:shacl`          | `shacl_shapes` (`shacl_shapes`)                    |
+  | `:rule_closure`   | `falsifiers`, when non-blank (`n3_rules`)          |
+  | `:profile_checks` | `profile_ttl` (`semantic_profile`)                 |
+
+  A document without standing refuses that stage `:law_without_standing`
+  (`determinacy: :undetermined` -- an unadmitted judge determines nothing); a
+  manifest that cannot be loaded refuses `:root_manifest_unavailable`. A
+  REFUSED verdict stays a refusal whatever the law's standing. The admission
+  digest binds the Root Manifest digest (`Result.root_manifest_digest`).
+
+  The Root Manifest is host configuration, like `:wasm_path`: a candidate
+  cannot supply it, and it is re-verified against its pinned files, engine and
+  components at every use (`AshA2A.Semantic.RootManifest.verify_use/2`).
+
   ## Telemetry
 
     * `[:ash_a2a, :semantic, :admission, :start]` -- metadata `%{candidate_digest: ...}`
@@ -137,7 +168,18 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   """
 
   alias AshA2A.GraphLaw.Wasm
-  alias AshA2A.Semantic.{Admission, CanonicalGraph, IR, LawDocument, ShaclSeverity, Source}
+
+  alias AshA2A.Semantic.{
+    Admission,
+    CanonicalGraph,
+    IR,
+    LawDocument,
+    MetaAdmission,
+    RootManifest,
+    ShaclSeverity,
+    Source
+  }
+
   alias AshA2A.Semantic.AdmissionRefusal, as: Refusal
   alias AshA2A.Semantic.AdmissionStanding, as: Standing
 
@@ -155,6 +197,14 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   ]
 
   @required_stages Keyword.keys(@stage_standing)
+
+  @refusal_codes %{
+    law_without_standing: :refused_meta_rigor,
+    root_manifest_unavailable: :refused_meta_rigor
+  }
+
+  @doc false
+  def __sa2a_refusal_codes__, do: @refusal_codes
 
   defmodule Candidate do
     @moduledoc """
@@ -208,6 +258,7 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
       :admission_digest,
       :engine_version,
       :ir,
+      :root_manifest_digest,
       authority: :none
     ]
 
@@ -221,6 +272,7 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
             admission_digest: String.t(),
             engine_version: String.t(),
             ir: AshA2A.Semantic.IR.t() | nil,
+            root_manifest_digest: String.t() | nil,
             authority: :none
           }
   end
@@ -253,7 +305,10 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   exact stage that refused and whether it was `:violated` or `:undetermined`.
 
   `opts` are passed through to `AshA2A.GraphLaw.Wasm` (`:wasm_path`,
-  `:host_script`, `:node`, `:tmp_dir`).
+  `:host_script`, `:node`, `:tmp_dir`). `:root_manifest` is the verified
+  `AshA2A.Semantic.RootManifest` whose pins give the candidate's law documents
+  standing (see "Law standing" in the moduledoc); default: the committed
+  manifest, `RootManifest.load(RootManifest.default_path(), require_engine: false)`.
   """
   @spec admit(Candidate.t(), keyword()) :: {:ok, Result.t()} | {:error, Refusal.t()}
   def admit(%Candidate{} = candidate, opts \\ []) do
@@ -265,8 +320,11 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
 
     result =
       case engine_report(candidate, opts) do
-        {:ok, engine} -> run_stages(candidate, engine, opts)
-        {:error, %Refusal{} = refusal} -> {:error, emit_refusal(refusal)}
+        {:ok, engine} ->
+          run_stages(candidate, Map.merge(engine, %{law: law_manifest(opts), opts: opts}), opts)
+
+        {:error, %Refusal{} = refusal} ->
+          {:error, emit_refusal(refusal)}
       end
 
     :telemetry.execute(
@@ -458,7 +516,12 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
              LawDocument.shex_shape_map_count(candidate.shex_shape_map),
              :shex_shape_map_vacuous
            ) do
-      require_dialect(engine.report, "SHEX", :shex, standing, :shex_nonconformant)
+      engine.report
+      |> require_dialect("SHEX", :shex, standing, :shex_nonconformant)
+      |> with_law_standing(:shex, engine, standing, [
+        {candidate.shex_schema, "shex_schema"},
+        {candidate.shex_shape_map, "shex_shape_map"}
+      ])
     end
   end
 
@@ -476,18 +539,31 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
              LawDocument.shacl_shape_count(candidate.shacl_shapes),
              :shacl_shapes_vacuous
            ) do
-      if warning_only?(engine) do
-        {:ok, nil}
-      else
-        require_dialect(engine.report, "SHACL", :shacl, standing, :shacl_nonconformant)
-      end
+      verdict =
+        if warning_only?(engine) do
+          {:ok, nil}
+        else
+          require_dialect(engine.report, "SHACL", :shacl, standing, :shacl_nonconformant)
+        end
+
+      with_law_standing(verdict, :shacl, engine, standing, [
+        {candidate.shacl_shapes, "shacl_shapes"}
+      ])
     end
   end
 
   # Stage 5 -- RuleClosure. The engine's Datalog/N3 forward closure must have
   # been computed and terminated; `triples_out` is recorded as evidence.
-  defp run_stage(:rule_closure, _candidate, engine, standing) do
-    require_dialect(engine.report, "DATALOG", :rule_closure, standing, :rule_closure_refused)
+  #
+  # The rules closed here are the candidate's `falsifiers` document; a rule
+  # without standing cannot derive canonical facts (RFC-SA2A-001 S20), so a
+  # non-blank rule document must be pinned under `n3_rules`.
+  defp run_stage(:rule_closure, candidate, engine, standing) do
+    rules = if blank?(candidate.falsifiers), do: [], else: [{candidate.falsifiers, "n3_rules"}]
+
+    engine.report
+    |> require_dialect("DATALOG", :rule_closure, standing, :rule_closure_refused)
+    |> with_law_standing(:rule_closure, engine, standing, rules)
   end
 
   # Stage 6 -- SPARQLFalsifiers. The candidate's falsifier rules are carried as
@@ -563,9 +639,64 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
              LawDocument.owl_axiom_count(candidate.profile_ttl),
              :profile_vacuous
            ) do
-      require_dialect(engine.report, "OWL_RL", :profile_checks, standing, :profile_nonconformant)
+      engine.report
+      |> require_dialect("OWL_RL", :profile_checks, standing, :profile_nonconformant)
+      |> with_law_standing(:profile_checks, engine, standing, [
+        {candidate.profile_ttl, "semantic_profile"}
+      ])
     end
   end
+
+  # --- law standing (meta-admission) -------------------------------------
+
+  defp law_manifest(opts) do
+    case Keyword.fetch(opts, :root_manifest) do
+      {:ok, %RootManifest{} = manifest} ->
+        {:ok, manifest}
+
+      {:ok, other} ->
+        {:error, %{code: :REFUSED_MANIFEST_MALFORMED, detail: %{got: inspect(other, limit: 5)}}}
+
+      :error ->
+        RootManifest.load(RootManifest.default_path(), require_engine: false)
+    end
+  end
+
+  # A stage's engine verdict is only a determination when every law document
+  # it was judged under has standing. Checked after the verdict so a refusal by
+  # the law stays a refusal (an unadmitted judge can take standing away, never
+  # confer it); checked before `:ok` is returned so an unadmitted judge's
+  # "admitted" never advances standing.
+  defp with_law_standing({:ok, _} = passed, stage, engine, standing, documents) do
+    Enum.reduce_while(documents, passed, fn {document, kind}, acc ->
+      case law_document_standing(engine, document, kind) do
+        {:ok, _pin} ->
+          {:cont, acc}
+
+        {:error, {code, refusal}} ->
+          {:halt,
+           {:error,
+            Refusal.undetermined(stage, code, standing,
+              detail: refusal,
+              evidence: %{kind: kind, artifact_digest: RootManifest.digest_bytes(document)}
+            )}}
+      end
+    end)
+  end
+
+  defp with_law_standing(refused, _stage, _engine, _standing, _documents), do: refused
+
+  defp law_document_standing(%{law: {:ok, manifest}, opts: opts}, document, kind) do
+    opts = Keyword.put(opts, :consumer, inspect(__MODULE__))
+
+    case MetaAdmission.document_standing(manifest, document, kind, opts) do
+      {:ok, pin} -> {:ok, pin}
+      {:error, refusal} -> {:error, {:law_without_standing, refusal}}
+    end
+  end
+
+  defp law_document_standing(%{law: {:error, refusal}}, _document, _kind),
+    do: {:error, {:root_manifest_unavailable, refusal}}
 
   # --- stage helpers ----------------------------------------------------
 
@@ -736,8 +867,9 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
     digest_input =
       Enum.join(
         [
-          "sa2a-admission-v2",
+          "sa2a-admission-v3",
           engine.version,
+          root_manifest_digest(engine),
           engine.graph_hash,
           canonical_graph_hash(passed) || "",
           Map.get(report, "graph_hash", ""),
@@ -763,7 +895,8 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
            stages: passed_stages,
            admission_digest: digest,
            engine_version: engine.version,
-           ir: provenance_ir(passed)
+           ir: provenance_ir(passed),
+           root_manifest_digest: root_manifest_digest(engine)
          }}
 
       {:error, detail} ->
@@ -775,6 +908,9 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
          )}
     end
   end
+
+  defp root_manifest_digest(%{law: {:ok, %RootManifest{digest: digest}}}), do: digest
+  defp root_manifest_digest(_engine), do: ""
 
   defp law_digest_input(%Candidate{} = candidate) do
     Enum.join(

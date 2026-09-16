@@ -39,17 +39,18 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
                          {:error, detail} -> "real GraphLaw wasm unavailable: #{inspect(detail)}"
                        end)
 
-  # Observed on the real SUT at this revision. The three survivals are open
-  # defects (meta-admission absent; named receipt accepted), never weakened.
+  # Observed on the real SUT at this revision. CHI-ADM-005/006/008 survived at
+  # 46e522f (meta-admission absent; named receipt accepted) and are killed by
+  # the law-standing and held-receipt repairs -- the falsifiers are unchanged.
   @expected %{
     "CHI-ADM-001" => :falsifier_killed,
     "CHI-ADM-002" => :falsifier_killed,
     "CHI-ADM-003" => :falsifier_killed,
     "CHI-ADM-004" => :falsifier_killed,
-    "CHI-ADM-005" => :falsifier_survived,
-    "CHI-ADM-006" => :falsifier_survived,
+    "CHI-ADM-005" => :falsifier_killed,
+    "CHI-ADM-006" => :falsifier_killed,
     "CHI-ADM-007" => :falsifier_killed,
-    "CHI-ADM-008" => :falsifier_survived,
+    "CHI-ADM-008" => :falsifier_killed,
     "CHI-ADM-009" => :falsifier_killed,
     "CHI-ADM-010" => :falsifier_killed,
     "CHI-ADM-011" => :positive_control_passed,
@@ -107,14 +108,21 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
       assert by_id["CHI-ADM-010"].evidence["canonical_before"] ==
                by_id["CHI-ADM-010"].evidence["canonical_after"]
 
-      # The laundering survivals are real standing, not an evidence artefact.
-      assert by_id["CHI-ADM-005"].evidence["outcome"] == "admitted"
-      assert by_id["CHI-ADM-006"].evidence["outcome"] == "admitted"
+      # The laundering attempts are refused by law standing, at the stage whose
+      # law lacked it -- not by an unrelated stage.
+      assert by_id["CHI-ADM-005"].evidence["outcome"] == "refused"
+
+      assert by_id["CHI-ADM-005"].evidence["refusal"] =~
+               "stage=rule_closure code=law_without_standing"
+
+      assert by_id["CHI-ADM-006"].evidence["outcome"] == "refused"
+      assert by_id["CHI-ADM-006"].evidence["refusal"] =~ "stage=shacl code=law_without_standing"
+      assert by_id["CHI-ADM-008"].evidence["reply"] =~ "semantic_mapping_receipt_not_held"
 
       receipt = JSON.decode!(File.read!(Path.join(dir, "standing_receipt.json")))
-      assert receipt["standing"] == "NONCONFORMANT"
-      assert receipt["results"]["survived_ids"] == ~w(CHI-ADM-005 CHI-ADM-006 CHI-ADM-008)
-      assert receipt["results"]["falsifiers_killed"] == 19
+      refute receipt["standing"] in ["NONCONFORMANT", "CONFORMANT"]
+      assert receipt["results"]["survived_ids"] == []
+      assert receipt["results"]["falsifiers_killed"] == 22
       assert receipt["results"]["positive_controls_passed"] == 7
       assert receipt["results"]["unresolved_ids"] == []
       assert run.ocel.dropped == 0
@@ -277,6 +285,20 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
       corpus = Path.join(to_string(:code.priv_dir(:ash_a2a)), "sa2a_conformance")
       read = &File.read!(Path.join(corpus, &1))
 
+      law = fn name -> read.(name) end
+
+      {:ok, manifest} =
+        AshA2A.Semantic.RootManifest.LawCorpus.build(Path.join(dir, "corpus-law"), [
+          {"semantic_profile", law.("profile.ttl")},
+          {"shacl_shapes", law.("shapes.shacl.ttl")},
+          {"shex_schema", law.("schema.shex")},
+          {"shex_shape_map", law.("shape_map.json")},
+          {"n3_rules", law.("rules/denials.n3")}
+        ])
+
+      scratch = Path.join(dir, "scratch")
+      File.mkdir_p!(scratch)
+
       candidate = fn vector ->
         %AdmissionPipeline.Candidate{
           graph_ttl: read.(vector),
@@ -298,7 +320,10 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
           ] do
         expected = JSON.decode!(read.(sidecar))["expected"]["sa2a_admission"]
 
-        case AdmissionPipeline.admit(candidate.(vector), tmp_dir: dir) do
+        case AdmissionPipeline.admit(candidate.(vector),
+               tmp_dir: scratch,
+               root_manifest: manifest
+             ) do
           {:ok, result} ->
             assert expected == "ADMITTED", vector
             assert result.standing == :admitted
@@ -310,7 +335,7 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
         end
       end
 
-      assert File.ls!(dir) == []
+      assert File.ls!(scratch) == []
     end
   end
 

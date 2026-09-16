@@ -84,7 +84,12 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
         "implementation" => "oxrdf",
         "feature" => "rdfc-10",
         "executed_by" => "praxis-graphlaw-wasm",
-        "note" => "Graph canonicalization is never implemented in Elixir."
+        "graph_identity" => AshA2A.Semantic.CanonicalGraph.algorithm_id(),
+        "graph_identity_manufacturer" => "ash_a2a",
+        "note" =>
+          "The engine's graph_hash is computed by the pinned praxis-graphlaw engine; the " <>
+            "RFC S12 canonical graph identity admission binds is graph_identity, computed " <>
+            "by AshA2A.Semantic.CanonicalGraph (RDFC-1.0 over RDF.ex)."
       },
       hash_algorithms: %{
         "manifest_content" => "sha256",
@@ -163,7 +168,8 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
             "authority",
             "receipts",
             "admission_orchestration",
-            "a2a_boundary"
+            "a2a_boundary",
+            "canonical_graph_identity"
           ]
         }
       ],
@@ -177,7 +183,7 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
       },
       brce_contract: %{
         "module" => "Elixir.AshA2A.CommandBus",
-        "admission" => "admit/2",
+        "boundary" => "run/4",
         "principle" => "zero unreceipted actuation"
       },
       receipt_law: %{
