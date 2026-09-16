@@ -78,15 +78,25 @@ defmodule AshA2A.ReceiptStore.Ekv do
         {:execute, execution_id}
 
       {:error, reason} when reason in [:conflict, :unconfirmed] ->
-        case EKV.get(name, key) do
+        case reread_after_cas(name, key, reason) do
           # The winning entry vanished between the lost race and this
           # re-read (for example a TTL/delete on that key) -- treat as
           # in-flight so the caller retries, rather than crash.
           nil -> {:error, :in_flight}
+          # `:unconfirmed` means this very write may have committed. The
+          # stored entry carrying this attempt's own execution id proves it
+          # did: reporting a lost race here would leave the command claimed
+          # with zero executors, forever `:in_flight` (RFC-SA2A-002 §71).
+          %{execution_id: ^execution_id} -> {:execute, execution_id}
           entry -> decide_claim(entry, command)
         end
     end
   end
+
+  # EKV's documented resolution for `:unconfirmed` is a consistent read of
+  # the committed value; a plain `:conflict` keeps the local read.
+  defp reread_after_cas(name, key, :unconfirmed), do: EKV.get(name, key, consistent: true)
+  defp reread_after_cas(name, key, :conflict), do: EKV.get(name, key)
 
   defp decide_claim(
          %{fingerprint: fingerprint, receipt: %Receipt{} = receipt},
