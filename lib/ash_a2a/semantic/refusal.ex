@@ -257,6 +257,10 @@ defmodule AshA2A.Semantic.Refusal do
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
     authority_mismatch: :refused_authority,
+    # `AshA2A.Authority.Decision.verdict/1`: a declared consequence that
+    # contradicts (or lacks) the DSL attestation stays in the authority branch
+    # (test/support/hosts/authority_decision_conformance.json: REFUSED_AUTHORITY).
+    consequence_unattested: :refused_authority,
     authority_grant_not_admissible: :refused_authority,
     semantic_authority_ceiling_violated: :refused_authority,
     semantic_package_authority_ceiling_violated: :refused_authority,

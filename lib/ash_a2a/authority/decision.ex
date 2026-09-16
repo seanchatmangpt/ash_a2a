@@ -167,7 +167,10 @@ defmodule AshA2A.Authority.Decision do
   end
 
   @doc """
-  Evaluates the envelope against the deciding host's own clock.
+  Evaluates the envelope against the deciding host's own clock, and emits
+  `[:ash_a2a, :authority, :decision_envelope, :verdict]` (`:outcome`, `:code`
+  and the envelope's own principal/capability/consequence fields) for every
+  verdict it returns.
 
   Mirrors `AshA2A.CommandBus`'s admission rules:
 
@@ -201,7 +204,29 @@ defmodule AshA2A.Authority.Decision do
       {:refused, %{code: :envelope_incomplete, detail: "envelope_incomplete"}}
   """
   @spec verdict(map()) :: verdict()
-  def verdict(%{"envelope_version" => @envelope_version} = envelope) do
+  def verdict(envelope) do
+    result = decide(envelope)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the verdict is made.
+    # Every value is read off the envelope as presented; nothing here feeds
+    # back into the verdict.
+    {outcome, %{code: code}} = result
+
+    :telemetry.execute([:ash_a2a, :authority, :decision_envelope, :verdict], %{}, %{
+      outcome: outcome,
+      code: code,
+      envelope_version: envelope_field(envelope, "envelope_version"),
+      principal_id: envelope_field(envelope, "principal"),
+      capability_id: envelope_field(envelope, "capability_id"),
+      consequence: envelope_field(envelope, "consequence"),
+      capability_consequence: envelope_field(envelope, "capability_consequence"),
+      command_fingerprint: envelope_field(envelope, "command_fingerprint")
+    })
+
+    result
+  end
+
+  defp decide(%{"envelope_version" => @envelope_version} = envelope) do
     with :ok <- require_present(envelope, "principal"),
          :ok <- require_present(envelope, "capability_id"),
          {:ok, consequence} <- classify(envelope) do
@@ -215,7 +240,16 @@ defmodule AshA2A.Authority.Decision do
     end
   end
 
-  def verdict(_envelope), do: refused(:decision_envelope_unrecognized)
+  defp decide(_envelope), do: refused(:decision_envelope_unrecognized)
+
+  defp envelope_field(envelope, key) when is_map(envelope) do
+    case Map.get(envelope, key) do
+      value when is_binary(value) or is_integer(value) -> value
+      _ -> nil
+    end
+  end
+
+  defp envelope_field(_envelope, _key), do: nil
 
   defp require_present(envelope, key) do
     if present?(Map.get(envelope, key)), do: :ok, else: refused(:envelope_incomplete)

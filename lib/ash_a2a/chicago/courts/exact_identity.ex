@@ -29,12 +29,19 @@ defmodule AshA2A.Chicago.Courts.ExactIdentity do
       (in-BEAM Wasmtime vs out-of-BEAM JavaScript engine) are admitted on
       observed executable identity and judged; an unchanged subject reuses its
       prior standing.
+    * CHI-ID-013 -- a byte-identical copy of the committed SA2A trust root
+      (`priv/sa2a`: `root_manifest.json` + its pinned corpus) whose pinned
+      SHACL validator is then appended to is loaded by the real
+      `AshA2A.Semantic.RootManifest.load/2`: killed only when the load is
+      refused `REFUSED_MANIFEST_DRIFT` (RFC-SA2A-001 S20/S21). CHI-ID-014 is
+      its positive control over the unaltered copy.
 
   Attempt evidence always comes from telemetry the deciding boundary emits
   (`[:ash_a2a, :chicago, :subject, :verified]`,
   `[:ash_a2a, :chicago, :run, :stop]` (`AshA2A.Chicago.Runner.stop_event/0`),
   `[:ash_a2a, :sa2a, :conformance, :runtime_identity | :judged]`,
-  `[:ash_a2a, :chicago, :requalification, :decided]`), never from this court.
+  `[:ash_a2a, :chicago, :requalification, :decided]`,
+  `[:ash_a2a, :semantic, :root_manifest, :verify]`), never from this court.
   """
 
   use AshA2A.Chicago.Court
@@ -44,6 +51,8 @@ defmodule AshA2A.Chicago.Courts.ExactIdentity do
   alias AshA2A.Chicago.Ocel.Mapping
   alias AshA2A.GraphLaw.{RuntimeB, WasmexSession}
   alias AshA2A.SA2A.Conformance
+  alias AshA2A.Semantic.RootManifest
+  alias AshA2A.Semantic.RootManifest.ConformanceCorpus
 
   @court "CHI-ID"
 
@@ -52,6 +61,9 @@ defmodule AshA2A.Chicago.Courts.ExactIdentity do
 
   @runtime_boundary "AshA2A.SA2A.Conformance degenerate-run refusal (runtime identity)"
   @requalification_boundary "AshA2A.Chicago.Requalification.decide/3"
+  @manifest_boundary "AshA2A.Semantic.RootManifest.load/2 pin verification"
+  @manifest_activity "sa2a.root_manifest.verify"
+  @drifted_pin "conformance/shapes/command_envelope.shacl.ttl"
 
   @impl true
   def id, do: @court
@@ -264,6 +276,57 @@ defmodule AshA2A.Chicago.Courts.ExactIdentity do
         attempt_predicate: {:observed, "chicago.requalification.decided"},
         outcome_predicate:
           {:observed, "chicago.requalification.decided", %{"outcome" => "reuse", "fields" => ""}}
+      ),
+      Falsifier.new!(
+        id: "CHI-ID-013",
+        court_id: @court,
+        kind: :negative,
+        invariant:
+          "A root manifest whose pinned component bytes drifted confers no identity: the " <>
+            "trust root is refused, never verified over different bytes (§5 root-manifest " <>
+            "identity, RFC-SA2A-001 S20/S21)",
+        stimulus:
+          "byte-identical copy of the committed priv/sa2a trust root; the pinned " <>
+            "#{@drifted_pin} appended to; RootManifest.load(copy, require_engine: false)",
+        boundary: @manifest_boundary,
+        forbidden_outcome: "manifest verified over drifted component bytes",
+        attempt_evidence: "#{@manifest_activity} operation=load observed for the stimulus",
+        survival_evidence:
+          "#{@manifest_activity} outcome=verified, or no REFUSED_MANIFEST_DRIFT refusal naming " <>
+            "the drifted pin",
+        guard: "AshA2A.Semantic.RootManifest.verify_pins/1 (REFUSED_MANIFEST_DRIFT)",
+        failure_class: :identity_failure,
+        rfc_sections: ["§5", "§53"],
+        attempt_predicate: {:observed, @manifest_activity, %{"operation" => "load"}},
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, @manifest_activity, %{"outcome" => "verified"}},
+             {:not_observed, @manifest_activity,
+              %{"code" => "REFUSED_MANIFEST_DRIFT", "pin_path" => @drifted_pin}}
+           ]}
+      ),
+      Falsifier.new!(
+        id: "CHI-ID-014",
+        court_id: @court,
+        kind: :positive_control,
+        invariant:
+          "An unaltered copy of the committed trust root verifies: the root-manifest drift " <>
+            "refusal discriminates rather than refusing every manifest (§100)",
+        stimulus:
+          "byte-identical copy of the committed priv/sa2a trust root, nothing altered; " <>
+            "RootManifest.load(copy, require_engine: false)",
+        boundary: @manifest_boundary,
+        attempt_evidence: "#{@manifest_activity} operation=load observed for the stimulus",
+        survival_evidence: "#{@manifest_activity} outcome=verified with no refusal code",
+        rfc_sections: ["§5", "§100"],
+        attempt_predicate: {:observed, @manifest_activity, %{"operation" => "load"}},
+        outcome_predicate:
+          {:all,
+           [
+             {:observed, @manifest_activity, %{"operation" => "load", "outcome" => "verified"}},
+             {:not_observed, @manifest_activity, %{"outcome" => "refused"}}
+           ]}
       )
     ]
   end
@@ -397,6 +460,21 @@ defmodule AshA2A.Chicago.Courts.ExactIdentity do
           |> Map.merge(Map.new(fields, &{"field." <> &1, true}))
           |> Map.merge(Map.new(gates, &{"gate.#{&1}", true}))
         end
+      ),
+      Mapping.new!(
+        event: RootManifest.verify_event(),
+        activity: @manifest_activity,
+        source: __MODULE__,
+        objects: fn _m, meta ->
+          uniq_refs([
+            {"root_manifest", meta[:manifest_digest], "verified_manifest"},
+            {"root_manifest_file", meta[:path], "manifest_file"},
+            {"manifest_pin", meta[:pin_id], "refused_pin"}
+          ])
+        end,
+        attributes: fn _m, meta ->
+          Map.take(meta, [:operation, :outcome, :code, :pin_kind, :pin_path, :engine_verified])
+        end
       )
     ]
   end
@@ -481,8 +559,78 @@ defmodule AshA2A.Chicago.Courts.ExactIdentity do
       guarded(f["CHI-ID-009"], fn -> run_heterogeneous_runtimes(ctx, f["CHI-ID-009"], root) end),
       guarded(f["CHI-ID-010"], fn -> run_newer_calver(ctx, f["CHI-ID-010"], root) end),
       guarded(f["CHI-ID-011"], fn -> run_changed_validator(ctx, f["CHI-ID-011"], root) end),
-      guarded(f["CHI-ID-012"], fn -> run_unchanged_reuse(ctx, f["CHI-ID-012"], root) end)
+      guarded(f["CHI-ID-012"], fn -> run_unchanged_reuse(ctx, f["CHI-ID-012"], root) end),
+      guarded(f["CHI-ID-013"], fn -> run_manifest_drift(ctx, f["CHI-ID-013"], root) end),
+      guarded(f["CHI-ID-014"], fn -> run_manifest_unaltered(ctx, f["CHI-ID-014"], root) end)
     ]
+  end
+
+  # CHI-ID-013
+  defp run_manifest_drift(ctx, f, root) do
+    copy = copy_trust_root!(root, "manifest-drift")
+    drifted = Path.join(copy, @drifted_pin)
+    File.write!(drifted, File.read!(drifted) <> "\n# chicago CHI-ID-013 drift\n")
+
+    reply =
+      Context.stimulus(ctx, f, fn ->
+        RootManifest.load(Path.join(copy, "root_manifest.json"), require_engine: false)
+      end)
+
+    refused_drift? =
+      match?({:error, %{code: :REFUSED_MANIFEST_DRIFT, detail: %{path: @drifted_pin}}}, reply)
+
+    Result.negative(f,
+      attempt_observed?: Context.observed?(ctx, f, @manifest_activity),
+      forbidden_outcome_observed?: not refused_drift?,
+      evidence: manifest_evidence(reply)
+    )
+  end
+
+  # CHI-ID-014
+  defp run_manifest_unaltered(ctx, f, root) do
+    copy = copy_trust_root!(root, "manifest-unaltered")
+
+    reply =
+      Context.stimulus(ctx, f, fn ->
+        RootManifest.load(Path.join(copy, "root_manifest.json"), require_engine: false)
+      end)
+
+    Result.positive(f,
+      attempt_observed?: Context.observed?(ctx, f, @manifest_activity),
+      expected_outcome_observed?: match?({:ok, %RootManifest{}}, reply),
+      evidence: manifest_evidence(reply)
+    )
+  end
+
+  # The real committed trust root, copied byte for byte so the attack never
+  # touches the checkout's own priv/sa2a.
+  defp copy_trust_root!(root, name) do
+    copy = Path.join(root, name)
+    File.rm_rf!(copy)
+    File.mkdir_p!(copy)
+    File.cp!(ConformanceCorpus.manifest_path(), Path.join(copy, "root_manifest.json"))
+
+    File.cp_r!(
+      Path.join(ConformanceCorpus.root(), "conformance"),
+      Path.join(copy, "conformance")
+    )
+
+    copy
+  end
+
+  defp manifest_evidence({:ok, %RootManifest{} = manifest}),
+    do: %{"outcome" => "verified", "manifest_digest" => manifest.digest}
+
+  defp manifest_evidence({:error, %{code: code} = refusal}) do
+    detail = Map.get(refusal, :detail)
+
+    %{
+      "outcome" => "refused",
+      "code" => to_string(code),
+      "pin_path" => if(is_map(detail), do: Map.get(detail, :path)),
+      "pinned" => if(is_map(detail), do: Map.get(detail, :pinned)),
+      "actual" => if(is_map(detail), do: Map.get(detail, :actual))
+    }
   end
 
   # One broken edge must not take the other falsifiers with it (§129-§130):

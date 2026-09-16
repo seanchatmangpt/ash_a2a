@@ -199,7 +199,7 @@ defmodule AshA2A.Chicago.Courts.Brce do
           "§69: if durable preparation cannot be established, consequence MUST NOT begin",
         stimulus:
           "authorized CommandBus.run of Ledger.record with :receipt_outbox_dir pointed under a regular file (real ENOTDIR)",
-        boundary: "AshA2A.CommandBus prepare_receipt_anchor/3 (AshA2A.ReceiptOutbox.append/1)",
+        boundary: "AshA2A.CommandBus prepare_receipt_anchor/4 (AshA2A.ReceiptOutbox.append/1)",
         forbidden_outcome: "any actuation or Ledger row after a failed preparation",
         attempt_evidence: "brce.admission admitted and brce.prepare failed for this stimulus",
         survival_evidence:

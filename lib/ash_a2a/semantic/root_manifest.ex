@@ -445,14 +445,17 @@ defmodule AshA2A.Semantic.RootManifest do
     path = path || default_path()
     root = Keyword.get(opts, :root, Path.dirname(path))
 
-    with {:ok, raw} <- read_file(path),
-         {:ok, decoded} <- decode_json(raw, path),
-         {:ok, manifest} <- from_map(decoded, root),
-         :ok <- verify_self_address(manifest, decoded),
-         :ok <- verify_pins(manifest),
-         {:ok, manifest} <- verify_engine(manifest, opts) do
-      {:ok, %{manifest | verified_at: DateTime.utc_now()}}
-    end
+    result =
+      with {:ok, raw} <- read_file(path),
+           {:ok, decoded} <- decode_json(raw, path),
+           {:ok, manifest} <- from_map(decoded, root),
+           :ok <- verify_self_address(manifest, decoded),
+           :ok <- verify_pins(manifest),
+           {:ok, manifest} <- verify_engine(manifest, opts) do
+        {:ok, %{manifest | verified_at: DateTime.utc_now()}}
+      end
+
+    emit_verify(:load, path, root, result)
   end
 
   @doc """
@@ -462,10 +465,56 @@ defmodule AshA2A.Semantic.RootManifest do
   """
   @spec verify(t(), keyword()) :: {:ok, t()} | {:error, refusal()}
   def verify(%__MODULE__{} = manifest, opts \\ []) do
-    with :ok <- verify_pins(manifest),
-         {:ok, manifest} <- verify_engine(manifest, opts) do
-      {:ok, %{manifest | verified_at: DateTime.utc_now()}}
-    end
+    result =
+      with :ok <- verify_pins(manifest),
+           {:ok, manifest} <- verify_engine(manifest, opts) do
+        {:ok, %{manifest | verified_at: DateTime.utc_now()}}
+      end
+
+    emit_verify(:verify, nil, manifest.root, result)
+  end
+
+  @doc """
+  Telemetry event `load/2` and `verify/2` emit for every verification
+  decision, where the decision is made (RFC-SA2A-002 §12 attempt evidence).
+
+  Metadata: `:operation` (`:load | :verify`), `:outcome`
+  (`:verified | :refused`), `:code` (the refusal code, else `nil`),
+  `:path`, `:root`, `:manifest_digest` (verified manifests only),
+  `:engine_verified`, and for a refusal naming one pin, `:pin_id`,
+  `:pin_kind` and `:pin_path`.
+  """
+  @spec verify_event() :: [atom()]
+  def verify_event, do: [:ash_a2a, :semantic, :root_manifest, :verify]
+
+  defp emit_verify(operation, path, root, result) do
+    {outcome, code, digest, engine_verified, detail} =
+      case result do
+        {:ok, %__MODULE__{} = manifest} ->
+          {:verified, nil, manifest.digest, manifest.engine_verified?, %{}}
+
+        {:error, %{code: code} = refusal} ->
+          # Only a refusal about one pin (it carries the pin's `:kind`) names
+          # a pin; e.g. `:REFUSED_MANIFEST_NOT_FOUND` carries the manifest path.
+          detail = Map.get(refusal, :detail)
+          pin = if is_map(detail) and Map.has_key?(detail, :kind), do: detail, else: %{}
+          {:refused, code, nil, nil, pin}
+      end
+
+    :telemetry.execute([:ash_a2a, :semantic, :root_manifest, :verify], %{}, %{
+      operation: operation,
+      outcome: outcome,
+      code: code,
+      path: path,
+      root: root,
+      manifest_digest: digest,
+      engine_verified: engine_verified,
+      pin_id: Map.get(detail, :id),
+      pin_kind: Map.get(detail, :kind),
+      pin_path: Map.get(detail, :path)
+    })
+
+    result
   end
 
   defp read_file(path) do

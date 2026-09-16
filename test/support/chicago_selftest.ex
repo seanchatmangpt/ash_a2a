@@ -41,7 +41,12 @@ defmodule AshA2A.Test.ChicagoSelfTest do
       command_id: "chicago-" <> label,
       agent_id: "chicago-agent",
       principal_id: principal,
-      authority: authority && Authority.new(principal, @capability, token_id: "tok-" <> label),
+      # `nil` -- never `false` -- is "no authority" (`Command.t()`): a `false`
+      # authority reaches `AshA2A.Receipt.authority_grant/1` whenever admission
+      # is bypassed (e.g. under a mutant) and crashes the court instead of
+      # letting the forbidden actuation be observed.
+      authority:
+        if(authority, do: Authority.new(principal, @capability, token_id: "tok-" <> label)),
       input: %{label: label}
     )
   end

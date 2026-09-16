@@ -28,7 +28,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, Planning}
   alias AshA2A.Authority.Broker.InMemory
-  alias AshA2A.Authority.Grant
+  alias AshA2A.Authority.{Decision, Grant}
   alias AshA2A.Chicago.{Context, Falsifier, Result}
   alias AshA2A.Chicago.Courts.AuthorityHarness, as: H
   alias AshA2A.Chicago.Fixtures.Authority, as: Fixtures
@@ -244,6 +244,53 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
              {:observed, "brce.admission", %{"outcome" => "admitted"}},
              {:observed, "brce.actuate.start"}
            ]}
+      ),
+      negative(20,
+        invariant:
+          "Caller-controlled consequence (§64, RFC-001 S29): a portable decision envelope whose " <>
+            "request declares observe while the resource DSL attests external_do is not admitted " <>
+            "without authority",
+        stimulus:
+          "Decision.envelope(real Probe.actuate command, Probe) with no authority, its " <>
+            "\"consequence\" rewritten to observe; Decision.verdict/1",
+        boundary: "AshA2A.Authority.Decision.verdict/1",
+        forbidden_outcome: "authority.decision_envelope.verdict admitted",
+        attempt_evidence: "authority.decision_envelope.verdict attributed to the stimulus",
+        survival_evidence:
+          "authority.decision_envelope.verdict outcome=admitted, or no consequence_unattested refusal",
+        guard:
+          "Authority.Decision classification: declared consequence must match the DSL attestation",
+        attempt_predicate:
+          {:observed, "authority.decision_envelope.verdict",
+           %{"consequence" => "observe", "capability_consequence" => "external_do"}},
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, "authority.decision_envelope.verdict", %{"outcome" => "admitted"}},
+             {:not_observed, "authority.decision_envelope.verdict",
+              %{"code" => "consequence_unattested"}}
+           ]}
+      ),
+      control(21,
+        invariant:
+          "An attested external_do envelope carrying a real broker grant bound to the same " <>
+            "principal and capability is admitted: the envelope verdict discriminates (§100)",
+        stimulus:
+          "Decision.envelope(real Probe.actuate command carrying Grant.authorize(principal, " <>
+            "\"actuate\"), Probe); Decision.verdict/1",
+        boundary: "AshA2A.Authority.Decision.verdict/1",
+        attempt_evidence: "authority.decision_envelope.verdict attributed to the stimulus",
+        survival_evidence:
+          "authority.decision_envelope.verdict outcome=admitted with consequence and " <>
+            "capability_consequence external_do",
+        attempt_predicate: {:observed, "authority.decision_envelope.verdict"},
+        outcome_predicate:
+          {:observed, "authority.decision_envelope.verdict",
+           %{
+             "outcome" => "admitted",
+             "consequence" => "external_do",
+             "capability_consequence" => "external_do"
+           }}
       )
     ]
   end
@@ -328,7 +375,9 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
           deputy(env),
           capability_substitution(env),
           r18,
-          widening(env, child)
+          widening(env, child),
+          self_declared_consequence(env),
+          attested_envelope_control(env)
         ])
       end)
     after
@@ -831,6 +880,66 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   end
 
   # --- helpers ------------------------------------------------------------------------
+
+  # SA2A-AUTH-020
+  defp self_declared_consequence(%{ctx: ctx, fs: fs}) do
+    f = fs[fid(20)]
+    principal = H.principal("self-declared")
+    nonce = H.nonce("auth-020")
+    attested = Decision.envelope(envelope_command(principal, nonce, nil), Probe)
+    forged = Map.put(attested, "consequence", "observe")
+
+    verdict = Context.stimulus(ctx, f, fn -> Decision.verdict(forged) end)
+
+    Result.negative(f,
+      attempt_observed?: H.saw?(ctx, f, "authority.decision_envelope.verdict"),
+      forbidden_outcome_observed?:
+        not match?({:refused, %{code: :consequence_unattested}}, verdict) or
+          H.saw?(ctx, f, "authority.decision_envelope.verdict", %{"outcome" => "admitted"}),
+      evidence: %{
+        "verdict" => verdict_code(verdict),
+        "attested" => attested["capability_consequence"],
+        "declared" => forged["consequence"],
+        "observed" => H.seen(ctx, f)
+      }
+    )
+  end
+
+  # SA2A-AUTH-021
+  defp attested_envelope_control(%{ctx: ctx, fs: fs}) do
+    f = fs[fid(21)]
+    principal = H.principal("attested-envelope")
+    grant!(principal, "actuate")
+    nonce = H.nonce("auth-021")
+    authority = Grant.authorize(principal, "actuate")
+    envelope = Decision.envelope(envelope_command(principal, nonce, authority), Probe)
+
+    verdict = Context.stimulus(ctx, f, fn -> Decision.verdict(envelope) end)
+
+    Result.positive(f,
+      attempt_observed?: H.saw?(ctx, f, "authority.decision_envelope.verdict"),
+      expected_outcome_observed?:
+        match?({:admitted, _}, verdict) and
+          H.saw?(ctx, f, "authority.decision_envelope.verdict", %{"outcome" => "admitted"}),
+      evidence: %{
+        "verdict" => verdict_code(verdict),
+        "authority" => inspect(authority && authority.token_id),
+        "observed" => H.seen(ctx, f)
+      }
+    )
+  end
+
+  defp envelope_command(principal, nonce, authority) do
+    Command.new("actuate",
+      command_id: "chicago-" <> nonce,
+      agent_id: inspect(Probe),
+      principal_id: Identity.principal(principal),
+      authority: authority,
+      input: %{"nonce" => nonce}
+    )
+  end
+
+  defp verdict_code({outcome, %{code: code}}), do: "#{outcome}:#{code}"
 
   defp grant!(identity, capability_id) do
     subject = Identity.principal(identity)

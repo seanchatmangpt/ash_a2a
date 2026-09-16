@@ -53,7 +53,9 @@ defmodule AshA2A.Chicago.IdentityGate1Test do
           "CHI-ID-009" => :positive_control_passed,
           "CHI-ID-010" => :falsifier_killed,
           "CHI-ID-011" => :falsifier_killed,
-          "CHI-ID-012" => :positive_control_passed
+          "CHI-ID-012" => :positive_control_passed,
+          "CHI-ID-013" => :falsifier_killed,
+          "CHI-ID-014" => :positive_control_passed
         }
 
       assert Enum.sort(Map.keys(by_id)) == Enum.sort(Map.keys(expected))

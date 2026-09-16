@@ -50,7 +50,9 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
     # so a grant for Probe's `actuate` authorizes Vault's `actuate`.
     "SA2A-AUTH-017" => :falsifier_survived,
     "SA2A-AUTH-018" => :positive_control_passed,
-    "SA2A-AUTH-019" => :falsifier_killed
+    "SA2A-AUTH-019" => :falsifier_killed,
+    "SA2A-AUTH-020" => :falsifier_killed,
+    "SA2A-AUTH-021" => :positive_control_passed
   }
 
   @grant_verdicts %{

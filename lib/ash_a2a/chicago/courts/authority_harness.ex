@@ -24,6 +24,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   | `[:ash_a2a, :authority, :grant, :issue]`           | `authority.grant.issue`   |
   | `[:ash_a2a, :authority, :grant, :revoke]`          | `authority.grant.revoke`  |
   | `[:ash_a2a, :semantic, :bounds, :delegate]`        | `bounds.delegate`         |
+  | `[:ash_a2a, :authority, :decision_envelope, :verdict]` | `authority.decision_envelope.verdict` |
 
   The source is this harness module -- it defines the closures -- so the
   identical set declared by both `SA2A-AUTH` and `SA2A-AUTH-GRANT` is admitted
@@ -79,6 +80,29 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
           source: source,
           attributes: fn _m, meta ->
             Map.take(meta, [:outcome, :code, :parent_capabilities, :requested_capabilities])
+          end
+        ),
+        # The portable decision envelope's verdict (`AshA2A.Authority.Decision.verdict/1`):
+        # a different decision from the broker grant above, so its own event.
+        Mapping.new!(
+          event: [:ash_a2a, :authority, :decision_envelope, :verdict],
+          activity: "authority.decision_envelope.verdict",
+          source: source,
+          objects: fn _m, meta ->
+            [
+              {"principal", meta[:principal_id], "principal"},
+              {"capability", meta[:capability_id], "capability"},
+              {"command", meta[:command_fingerprint], "command"}
+            ]
+          end,
+          attributes: fn _m, meta ->
+            Map.take(meta, [
+              :outcome,
+              :code,
+              :consequence,
+              :capability_consequence,
+              :envelope_version
+            ])
           end
         )
       ]
