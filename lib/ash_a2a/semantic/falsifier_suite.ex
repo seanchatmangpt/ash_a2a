@@ -864,8 +864,9 @@ defmodule AshA2A.Semantic.FalsifierSuite do
 
   This is **not** a canonicalization in the RDFC-1.0 sense and must not be
   used as one -- it has no blank-node handling at all, because this suite's
-  graphs are ground. RFC S12 canonical graph identity is GraphLaw's
-  `graph_hash` (oxrdf `rdfc-10`), not this.
+  graphs are ground. RFC S12 canonical graph identity is
+  `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0), not this -- and not GraphLaw's
+  wasm `graph_hash` either, which is not blank-node-relabel invariant.
   """
   @spec to_ntriples([tuple()]) :: binary()
   def to_ntriples(graph) when is_list(graph) do

@@ -85,8 +85,9 @@ defmodule AshA2A.Semantic.AdmissionHash do
   that to `[:graph]` (pinned by the "MEASURED ENGINE LIMITATION" test in
   `test/ash_a2a/semantic_admission_hash_test.exs`).
 
-  The in-BEAM RDFC-1.0 identity `AshA2A.Semantic.AdmissionPipeline` uses
-  (RDF.ex `RDF.Graph.canonical_hash/1`) is deliberately not substituted here:
+  The in-BEAM RFC S12 RDFC-1.0 identity `AshA2A.Semantic.AdmissionPipeline`
+  uses (`AshA2A.Semantic.CanonicalGraph.canonical_digest/1`, algorithm id
+  `"RDFC-1.0/SHA-256/n-quads-sorted"`) is deliberately not substituted here:
   this hash's contract is that every digest in it comes from the same wasm
   bytes a non-BEAM peer can execute, and its malformed-input and N-Triples
   agreement tests pin the engine's behaviour specifically. The

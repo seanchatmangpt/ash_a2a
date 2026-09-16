@@ -17,10 +17,14 @@ hosts can be shown to run *the same bytes*.
 
 `praxis-graphlaw` self-describes as a law-state engine providing native N3,
 Datalog, SPARQL 1.1, SHACL and ShEx, with RDFC-1.0 canonicalization via
-`oxrdf`. No Elixir reimplementation of any of that exists or should exist in
-this repository: the BEAM side owns the envelope, standing, refusal typing,
-authority, receipts, admission orchestration, and the A2A boundary — and calls
-this artifact for semantics.
+`oxrdf` inside the engine. That RDFC-1.0 is **not** wired to any export of this
+artifact: `graph_hash` is prefix- and triple-order-invariant but not
+blank-node-relabel invariant, so it is not RDFC-1.0. RFC S12 canonical graph
+identity is `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 via RDF.ex, in-BEAM; see
+`docs/explanation/canonical-graph-identity.md`). No Elixir reimplementation of
+the engine exists or should exist in this repository: the BEAM side owns the
+envelope, standing, refusal typing, authority, receipts, admission
+orchestration, and the A2A boundary — and calls this artifact for semantics.
 
 ## Exported functions
 

@@ -2,7 +2,7 @@
   "manifest_version": "1",
   "digest_algorithm": "sha256",
   "network_dereference": "refused",
-  "note": "RFC-SA2A-001 S46. Every entry is explicit, version-pinned and content-addressed. Production admission never dereferences a mutable web resource; objects/ holds the exact bytes and content_digest is re-verified on every load (fail closed on drift). canonical_digest is a PINNED field only -- graph canonicalization (RDFC-1.0) is owned by praxis-graphlaw, never recomputed in Elixir.",
+  "note": "RFC-SA2A-001 S46. Every entry is explicit, version-pinned and content-addressed. Production admission never dereferences a mutable web resource; objects/ holds the exact bytes and content_digest is re-verified on every load (fail closed on drift). canonical_digest is a PINNED field only, never recomputed by the cache -- RFC S12 canonical graph identity (RDFC-1.0) is AshA2A.Semantic.CanonicalGraph; praxis-graphlaw's wasm graph_hash is not RDFC-1.0.",
   "entries": [
     {
       "iri": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",

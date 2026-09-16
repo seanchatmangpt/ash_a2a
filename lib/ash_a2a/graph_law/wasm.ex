@@ -12,7 +12,8 @@ defmodule AshA2A.GraphLaw.Wasm do
   `graph_hash/2` export is prefix- and order-invariant but **not**
   blank-node-relabel invariant, so it is not RDFC-1.0 (see that function's
   docs for the measured digests). RFC S12 canonical graph identity is
-  RDF.ex's in-BEAM `RDF.Graph.canonical_hash/1` instead.
+  `AshA2A.Semantic.CanonicalGraph.canonical_digest/1` instead (RDFC-1.0 over
+  RDF.ex, in-BEAM).
 
   ## Why a subprocess host
 
@@ -148,9 +149,9 @@ defmodule AshA2A.GraphLaw.Wasm do
 
   So a caller must never read "a hash came back" as "the document parsed", and
   must never read "the hashes match" as "these are the same RDF graph under
-  RDFC-1.0". RFC S12 canonical graph identity in this codebase is RDF.ex's
-  in-BEAM `RDF.Graph.canonical_hash/1` (see
-  `AshA2A.Semantic.AdmissionPipeline`'s Identity stage), which is
+  RDFC-1.0". RFC S12 canonical graph identity in this codebase is
+  `AshA2A.Semantic.CanonicalGraph.canonical_digest/1` (RDFC-1.0 over RDF.ex,
+  in-BEAM; used by `AshA2A.Semantic.AdmissionPipeline`'s Identity stage), which is
   blank-node-relabel invariant and whose Turtle reader fails closed. This
   export is retained as the engine's own digest of what the engine judged --
   which is exactly what the admission receipt needs to record.

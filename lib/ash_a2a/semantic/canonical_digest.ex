@@ -47,7 +47,9 @@ defmodule AshA2A.Semantic.CanonicalDigest do
   Those last two are named explicitly because the SA2A conformance claim is
   about two runtimes agreeing on the same engine, not about universal RDF
   graph-isomorphism equivalence. Overstating what `graph_hash/1` does would
-  overstate the qualification.
+  overstate the qualification. RFC S12 canonical graph identity (RDFC-1.0,
+  blank-node-relabel invariant) is `AshA2A.Semantic.CanonicalGraph`; this
+  module's digest is the engine digest and must not be substituted for it.
   """
 
   alias AshA2A.Semantic.{GraphLawBridge, Ontology, Serialize}

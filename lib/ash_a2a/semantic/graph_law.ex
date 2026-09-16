@@ -4,10 +4,14 @@ defmodule AshA2A.Semantic.GraphLaw do
 
   `ash_a2a` deliberately owns no SHACL/ShEx/Datalog/N3/SPARQL implementation
   and no RDF canonicalization. Those already exist, in Rust, in
-  `praxis-graphlaw` (native N3, Datalog, SPARQL 1.1, SHACL, ShEx, RDFC-1.0
-  canonicalization via `oxrdf` `rdfc-10`). Elixir's job at this boundary is
-  envelope, standing, refusal typing, authority, receipts and admission
-  orchestration -- not validation. This module is the seam between the two.
+  `praxis-graphlaw` (native N3, Datalog, SPARQL 1.1, SHACL, ShEx; its RDFC-1.0
+  via `oxrdf` `rdfc-10` exists in the engine but is not wired to any wasm
+  export). Elixir's job at this boundary is envelope, standing, refusal
+  typing, authority, receipts and admission orchestration -- not validation.
+  This module is the seam between the two. RFC S12 canonical graph identity
+  is taken in-BEAM from the RDF.ex dependency by
+  `AshA2A.Semantic.CanonicalGraph`, because the engine's wasm `graph_hash` is
+  not RDFC-1.0.
 
   The engine is reached as a real WebAssembly module
   (`praxis_graphlaw_wasm_bg.wasm`, wasm-bindgen bundler target) instantiated

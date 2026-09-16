@@ -24,12 +24,15 @@ defmodule AshA2A.Semantic.OntologyCache do
 
   ## Canonicalization is pinned, never recomputed here
 
-  `canonical_digest` is a *pinned manifest field*. Graph canonicalization
-  (RDFC-1.0) is owned by `praxis-graphlaw` (`oxrdf` feature `rdfc-10`, exposed
-  through the `graph_hash/1` wasm export). Elixir does not, and must not,
-  implement canonicalization. When an entry carries no pinned
+  `canonical_digest` is a *pinned manifest field*; this cache never recomputes
+  it. RFC S12 canonical graph identity (RDFC-1.0) is
+  `AshA2A.Semantic.CanonicalGraph`, over RDF.ex -- not `praxis-graphlaw`'s
+  `graph_hash/1` wasm export, which is not RDFC-1.0 (the engine's `oxrdf`
+  `rdfc-10` canonicalization is not wired to any wasm export; see
+  `docs/explanation/canonical-graph-identity.md`). This repository implements
+  no canonicalization algorithm of its own. When an entry carries no pinned
   `canonical_digest`, `canonical_digest/2` returns a typed
-  `:canonicalization_not_local` refusal naming GraphLaw as the owner rather
+  `:canonicalization_not_local` refusal naming the identity primitive rather
   than substituting a locally computed pseudo-canonical value. The four seeded
   entries are honestly marked `"canonicalization": "not_canonicalized"`.
 
@@ -153,8 +156,9 @@ defmodule AshA2A.Semantic.OntologyCache do
   Returns the pinned canonical (RDFC-1.0) digest for an entry.
 
   Never computes one locally. An entry with no pinned canonical digest returns
-  a `:canonicalization_not_local` refusal naming `praxis-graphlaw` as the owner
-  of canonicalization.
+  a `:canonicalization_not_local` refusal naming the RFC S12 identity
+  primitive, `AshA2A.Semantic.CanonicalGraph`, and stating that
+  `praxis-graphlaw`'s wasm `graph_hash/1` is not an RDFC-1.0 substitute.
   """
   @spec canonical_digest(String.t(), keyword()) :: {:ok, String.t()} | {:error, refusal()}
   def canonical_digest(iri, opts \\ []) do
@@ -167,9 +171,10 @@ defmodule AshA2A.Semantic.OntologyCache do
           {:error,
            refusal(
              :canonicalization_not_local,
-             "no canonical_digest pinned for #{iri}; RDFC-1.0 graph canonicalization is owned by " <>
-               "praxis-graphlaw (oxrdf feature rdfc-10, wasm export graph_hash/1) and is never " <>
-               "recomputed in Elixir -- pin the GraphLaw-produced digest in manifest.json"
+             "no canonical_digest pinned for #{iri}; this cache never recomputes graph identity. " <>
+               "RFC S12 RDFC-1.0 identity is AshA2A.Semantic.CanonicalGraph " <>
+               "(RDFC-1.0/SHA-256/n-quads-sorted); praxis-graphlaw's wasm export graph_hash/1 " <>
+               "is not RDFC-1.0 and is no substitute -- pin the digest in manifest.json"
            )}
       end
     end

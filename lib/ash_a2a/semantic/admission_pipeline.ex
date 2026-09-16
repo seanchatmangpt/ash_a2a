@@ -14,9 +14,10 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   fail-closed, and emitting telemetry.
 
   Two things it *does* do with real RDF, both of them prerequisites for reading
-  an engine verdict rather than substitutes for one: it canonicalizes the
-  candidate graph with RDF.ex's real RDFC-1.0 `RDF.Graph.canonical_hash/1` for
-  RFC S12 identity (see the Identity stage), and it parses each law document to
+  an engine verdict rather than substitutes for one: it takes the candidate
+  graph's RFC S12 identity from `AshA2A.Semantic.CanonicalGraph` -- the one
+  authoritative RDFC-1.0/SHA-256 primitive, over RDF.ex -- (see the Identity
+  stage), and it parses each law document to
   count the obligations it declares (see non-vacuity below, and
   `AshA2A.Semantic.LawDocument`).
 
@@ -126,7 +127,7 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   """
 
   alias AshA2A.GraphLaw.Wasm
-  alias AshA2A.Semantic.{Admission, IR, LawDocument, Source}
+  alias AshA2A.Semantic.{Admission, CanonicalGraph, IR, LawDocument, Source}
   alias AshA2A.Semantic.AdmissionRefusal, as: Refusal
   alias AshA2A.Semantic.AdmissionStanding, as: Standing
 
@@ -375,8 +376,10 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   # invariant under prefix relabeling and triple reordering but *not* under
   # blank-node relabeling, and it returns the empty-graph digest
   # (`af1349b9...`, i.e. `blake3("")`) for input it could not parse at all.
-  # RFC S12 canonical graph identity therefore comes from RDF.ex's real
-  # RDFC-1.0 `RDF.Graph.canonical_hash/1`, which *is* blank-node-relabel
+  # RFC S12 canonical graph identity therefore comes from
+  # `AshA2A.Semantic.CanonicalGraph.canonical_digest/1` (RDFC-1.0 over RDF.ex,
+  # SHA-256 over code-point-sorted N-Quads, `algorithm_id/0`
+  # "RDFC-1.0/SHA-256/n-quads-sorted"), which *is* blank-node-relabel
   # invariant and whose reader fails closed on garbage. Both are recorded: the
   # engine digest is what the engine judged, the canonical hash is the RFC S12
   # identity.
@@ -608,16 +611,18 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
     end
   end
 
-  # RFC S12 canonical graph identity, in-BEAM, from RDF.ex's real RDFC-1.0
-  # implementation. Unlike the wasm export this is blank-node-relabel invariant
-  # and its reader refuses malformed Turtle rather than digesting the empty
-  # graph, so a graph that cannot be canonicalized has no identity and the
-  # stage refuses instead of inventing one.
+  # RFC S12 canonical graph identity, in-BEAM, through the ONE authoritative
+  # primitive `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 over RDF.ex). Unlike
+  # the wasm export this is blank-node-relabel invariant and its reader
+  # refuses malformed Turtle rather than digesting the empty graph, so a graph
+  # that cannot be canonicalized has no identity and the stage refuses instead
+  # of inventing one. The parse stays on `LawDocument.turtle_graph/1` so the
+  # refusal detail keeps its existing `%{code: :turtle_not_parseable}` shape.
   defp canonical_identity(%Candidate{graph_ttl: ttl}, standing) do
-    case LawDocument.turtle_graph(ttl) do
-      {:ok, graph} ->
-        {:ok, %{canonical_graph_hash: RDF.Graph.canonical_hash(graph)}}
-
+    with {:ok, graph} <- LawDocument.turtle_graph(ttl),
+         {:ok, digest} <- CanonicalGraph.canonical_digest(graph) do
+      {:ok, %{canonical_graph_hash: digest}}
+    else
       {:error, failure} ->
         {:error,
          Refusal.undetermined(:identity, :graph_not_canonicalizable, standing, detail: failure)}

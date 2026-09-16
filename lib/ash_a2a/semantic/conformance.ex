@@ -33,10 +33,13 @@ defmodule AshA2A.Semantic.Conformance do
 
   ## Where the missing validation machinery is expected to come from
 
-  ShEx, SHACL, SPARQL, Datalog, N3 closure, and RDFC-1.0 canonical graph
-  hashing are deliberately NOT implemented in Elixir here, and the checks for
-  them do not pretend otherwise. They are expected to be provided by an
-  external engine module configured as:
+  ShEx, SHACL, SPARQL, Datalog and N3 closure are deliberately NOT
+  implemented in Elixir here, and the checks for them do not pretend
+  otherwise. (RFC S12 RDFC-1.0 canonical graph identity is also not
+  implemented here: `AshA2A.Semantic.CanonicalGraph` takes it from the RDF.ex
+  dependency; see `check_canonical_graph_identity/0` for what that check does
+  and does not cover.) They are expected to be provided by an external engine
+  module configured as:
 
       config :ash_a2a, semantic_engine: MyApp.GraphLawEngine
 
@@ -293,9 +296,12 @@ defmodule AshA2A.Semantic.Conformance do
   `AshA2A.Semantic.Ontology.fingerprint/1` is additionally a SHA-256 over
   `:erlang.term_to_binary/1` of a sorted Elixir term, not an RDF
   canonicalization (RDFC-1.0): it has no blank-node labeling algorithm, no IRI
-  normalization, and no literal/datatype normalization. Canonical graph
-  identity is what `praxis-graphlaw`'s `graph_hash/1` (oxrdf, `rdfc-10`)
-  provides; nothing in this repo does.
+  normalization, and no literal/datatype normalization. RFC S12 canonical
+  graph identity is `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 over RDF.ex);
+  `praxis-graphlaw`'s wasm `graph_hash/1` is not RDFC-1.0 (not
+  blank-node-relabel invariant). This check still measures
+  `Ontology.fingerprint/1`, which uses neither, so it stays `:unmet` until the
+  fingerprint itself is re-derived.
   """
   @spec check_canonical_graph_identity() :: requirement_status()
   def check_canonical_graph_identity do

@@ -333,8 +333,10 @@ defmodule AshA2A.SemanticCrossPeerTest do
       assert data_2["standing"] == "admitted"
 
       # Different prefix labels, different triple order, different bytes --
-      # one graph identity. This is RDFC-1.0 canonicalization inside the real
-      # engine, not a sort-then-hash approximation.
+      # one engine graph digest. This is the real engine's prefix- and
+      # triple-order-invariant `graph_hash`, not a sort-then-hash
+      # approximation -- and not RDFC-1.0 (it is not blank-node-relabel
+      # invariant; RFC S12 identity is AshA2A.Semantic.CanonicalGraph).
       refute Graphs.conforming_order() == Graphs.conforming_order_reordered()
       assert data_1["graph_digest"] == data_2["graph_digest"]
     end

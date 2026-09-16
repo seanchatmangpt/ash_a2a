@@ -170,15 +170,28 @@ defmodule AshA2A.MixProject do
       # narrowing reasoning already documented above for `:bandit`.
       {:libcluster, "~> 3.5", only: :test},
       {:horde, "~> 0.10.0", only: :test},
-      # v26.9.16 (RFC-SA2A-001 S12/S79): SERIALIZATION/PARSING ONLY. Used by
-      # `AshA2A.Semantic.Serialize.verify/3` as an *independent* real parser
-      # to gate the canonical-digest path -- never for validation, reasoning,
-      # entailment, or canonicalization, all of which stay in the native
-      # praxis-graphlaw engine.
+      # v26.9.16 (RFC-SA2A-001 S12/S79): CANONICALIZATION AND
+      # SERIALIZATION/PARSING ONLY. ONE declaration, two real `lib/` uses:
       #
-      # The gate is not optional decoration. A real probe of the real
-      # prebuilt praxis-graphlaw wasm established that its `graph_hash/1`
-      # has no parse-error channel and reports no parsed-triple count:
+      #   * `AshA2A.Semantic.CanonicalGraph` -- the single authoritative RFC
+      #     S12 canonical graph identity: RDFC-1.0 (`RDF.Canonicalization`)
+      #     -> code-point-sorted N-Quads -> SHA-256, pinned as
+      #     `"RDFC-1.0/SHA-256/n-quads-sorted"`. The praxis-graphlaw wasm
+      #     `graph_hash` export is NOT RDFC-1.0 (not blank-node-relabel
+      #     invariant; see docs/explanation/canonical-graph-identity.md), so
+      #     S12 identity is taken in-BEAM here.
+      #   * `AshA2A.Semantic.Serialize.verify/3` -- an *independent* real
+      #     parser gating the engine canonical-digest path.
+      #
+      # Never for validation, reasoning or entailment, all of which stay in
+      # the praxis-graphlaw law package (S14 ShEx, S15 SHACL, S16 Datalog,
+      # S17 N3, S18 SPARQL); `:sparql`, `:json_ld` and `:shex` are NOT added
+      # and must not be.
+      #
+      # The `Serialize.verify/3` gate is not optional decoration. A real
+      # probe of the real prebuilt praxis-graphlaw wasm established that its
+      # `graph_hash/1` has no parse-error channel and reports no parsed-triple
+      # count:
       # `graph_hash(good <> "GARBAGE !!!")` returned bit-for-bit the same
       # digest as `graph_hash(good)`, and `graph_hash("GARBAGE !!!")`
       # returned `af1349b9f5f9a1a6...` == `BLAKE3("")` == `graph_hash("")`.
@@ -194,8 +207,9 @@ defmodule AshA2A.MixProject do
       # Promoted to an explicit direct dep for exactly the reason `:stream_data`
       # above already documents: declare the real dependency instead of
       # relying on an incidental transitive pin. Cannot be narrowed to
-      # `only: :test` -- `lib/ash_a2a/semantic/serialize.ex` calls it outside
-      # the test env, the same real constraint documented for `:plug`/`:ekv`.
+      # `only: :test` -- `lib/ash_a2a/semantic/serialize.ex` and
+      # `lib/ash_a2a/semantic/canonical_graph.ex` call it outside the test
+      # env, the same real constraint documented for `:plug`/`:ekv`.
       {:rdf, "~> 3.0"},
       # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
       # runtime. ONE declaration shared by two independent hosts of the same

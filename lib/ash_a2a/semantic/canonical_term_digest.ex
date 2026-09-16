@@ -25,8 +25,9 @@ defmodule AshA2A.Semantic.CanonicalTermDigest do
 
   This module is NOT an RDF canonicalization. It does not implement RDFC-1.0
   and must never be described as doing so -- canonical graph identity for
-  RFC S12 belongs to `praxis-graphlaw`'s real `graph_hash` (oxrdf
-  `rdfc-10`), never to Elixir. This encodes plain Elixir planning terms
+  RFC S12 belongs to `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 over RDF.ex;
+  `praxis-graphlaw`'s wasm `graph_hash` is not RDFC-1.0), never to this
+  module. This encodes plain Elixir planning terms
   (maps, lists, tuples, atoms, binaries, numbers) only.
 
   ## The encoding

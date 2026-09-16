@@ -27,22 +27,30 @@ GraphLaw (`praxis-graphlaw`) is the user's own prior Rust work: a law-state engi
 N3, Datalog, SPARQL 1.1, SHACL and ShEx, forked from `pbonte/roxi`. It carries real modules for
 SHACL validation, closure and equivalence, ShEx and ShExC parsing, Datalog, N3 `log:` builtins,
 SPARQL, OWL-RL, DRed, RSP, and the `chatman` admission/router/compensation/quarantine stack. It
-depends on `oxrdf` with the `rdfc-10` feature, which is where canonical graph identity
-(RDFC-1.0) actually comes from.
+depends on `oxrdf` with the `rdfc-10` feature and contains real RDFC-1.0, but that
+canonicalization is **not wired to any wasm export**: the exported `graph_hash` is prefix- and
+triple-order-invariant but not blank-node-relabel invariant, so it is not RDFC-1.0 (measured;
+see `docs/explanation/canonical-graph-identity.md`).
 
 `ash_a2a` **calls** that engine. It does not reimplement any part of it, and it must not start
 to. This repository contains no SHACL engine, no ShEx engine, no Datalog evaluator, no N3
-reasoner, no SPARQL implementation, and no RDF canonicalization algorithm. The division is:
+reasoner, no SPARQL implementation, and no RDF canonicalization algorithm of its own. The
+division is:
 
-- **GraphLaw (Rust, compiled to WASM)** owns every graph-shaped judgement: canonical graph
-  identity, SHACL/ShEx validation, hook evaluation, admission verdicts.
+- **GraphLaw (Rust, compiled to WASM)** owns every graph-shaped judgement: SHACL/ShEx
+  validation, hook evaluation, admission verdicts, and its own engine `graph_hash` digest.
+- **RFC S12 canonical graph identity** is `AshA2A.Semantic.CanonicalGraph`: RDFC-1.0 from the
+  RDF.ex dependency, in-BEAM, SHA-256 over sorted N-Quads (canonicalization and serialization
+  only, no validation or reasoning).
 - **Elixir** owns envelope, standing, refusal typing, authority, receipts, admission
   orchestration, and the A2A boundary.
 
 This is not only a design preference, it is also what the Elixir dependency set can actually
 support. Measured on Hex: there is no `shacl`, `n3`, `rdf_canon`, or `rdf_canonicalization`
 package, and `shex` 0.1.4 pins `rdf ~> 0.9`, which cannot resolve against the `rdf ~> 3.0` this
-project's graph stack already uses. Writing that machinery by hand in Elixir would mean
+project's graph stack already uses. (RDF.ex 3.0 itself ships `RDF.Canonicalization`, an
+RDFC-1.0 implementation, which is what `AshA2A.Semantic.CanonicalGraph` uses; no separate
+package is needed for that.) Writing that machinery by hand in Elixir would mean
 reimplementing, in a second language, an engine the user already wrote and already tests.
 
 ## Why raw instantiation instead of wasm-pack's JS glue

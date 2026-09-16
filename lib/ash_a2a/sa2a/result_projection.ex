@@ -9,14 +9,16 @@ defmodule AshA2A.SA2A.ResultProjection do
   hash of the *result*, not of its printed form. `run_hooks/2` returns JSON,
   and hashing that JSON text would compare serialisations rather than
   semantics. So the parsed result is projected into a small RDF graph and
-  handed back to GraphLaw's own RDFC-1.0 canonical hash. Two runtimes that
-  produced the same hook result then agree on `output_graph_hash` no matter
-  how either one printed it; two runtimes that produced different results
-  cannot agree, whatever the printing.
+  handed back to GraphLaw's own `graph_hash` (prefix- and
+  triple-order-invariant; not RDFC-1.0, because it is not blank-node-relabel
+  invariant -- RFC S12 identity is `AshA2A.Semantic.CanonicalGraph`). Two
+  runtimes that produced the same hook result then agree on
+  `output_graph_hash` no matter how either one printed it; two runtimes that
+  produced different results cannot agree, whatever the printing.
 
-  This module builds *input* for the canonical hash. It does not canonicalize
-  RDF, and it must never be mistaken for doing so -- canonicalization happens
-  inside `praxis-graphlaw`, reached through
+  This module builds *input* for the engine hash. It does not canonicalize
+  RDF, and it must never be mistaken for doing so -- the engine digest is
+  computed inside `praxis-graphlaw`, reached through
   `AshA2A.GraphLaw.Runtime.call/3`.
 
   ## The one real nondeterminism source, and how it is neutralised

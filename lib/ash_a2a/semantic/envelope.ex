@@ -81,7 +81,8 @@ defmodule AshA2A.Semantic.Envelope do
 
   The evidence digest is a local SHA-256 over a sorted key=value rendering.
   It is deliberately **not** an RDF canonicalization: canonical graph
-  identity (RFC S12) is `praxis-graphlaw`'s `graph_hash/1` (RDFC-1.0), and
+  identity (RFC S12) is `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 over
+  RDF.ex; `praxis-graphlaw`'s wasm `graph_hash/1` is not RDFC-1.0), and
   nothing in this module attempts to substitute for it. This digest
   identifies an evidence *map*, which is a plain Elixir term, not a graph.
 
@@ -328,8 +329,9 @@ defmodule AshA2A.Semantic.Envelope do
   Deterministic SHA-256 digest of an evidence map.
 
   Local evidence identity only. This is **not** RDF canonicalization --
-  RFC S12 canonical graph identity is `praxis-graphlaw`'s RDFC-1.0
-  `graph_hash/1`, and this function makes no claim about graphs.
+  RFC S12 canonical graph identity is
+  `AshA2A.Semantic.CanonicalGraph.canonical_digest/1` (RDFC-1.0), and this
+  function makes no claim about graphs.
 
       iex> AshA2A.Semantic.Envelope.evidence_digest(%{a: 1, b: 2}) ==
       ...>   AshA2A.Semantic.Envelope.evidence_digest(%{b: 2, a: 1})

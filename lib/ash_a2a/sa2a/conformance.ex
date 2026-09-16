@@ -39,7 +39,11 @@ defmodule AshA2A.SA2A.Conformance do
 
   The fifth call hashes the *result* of the fourth, not its printed form:
   `AshA2A.SA2A.ResultProjection.hook_result_turtle/2` projects the parsed
-  result into RDF, and GraphLaw's own RDFC-1.0 canonical hash does the rest.
+  result into RDF, and GraphLaw's own `graph_hash` does the rest. That is the
+  engine's prefix- and triple-order-invariant BLAKE3 digest, not RDFC-1.0 (it
+  is not blank-node-relabel invariant; RFC S12 identity is
+  `AshA2A.Semantic.CanonicalGraph`) -- the court compares runtimes on the same
+  engine digest, not on RDF isomorphism.
   The sixth is computed inside each runtime over that runtime's own
   observations, so evidence identity is a real agreement rather than a
   restatement of one runtime's view.

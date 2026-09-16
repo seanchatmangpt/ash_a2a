@@ -7,18 +7,24 @@ defmodule AshA2A.GraphLaw.WasmexHost do
 
   ## What this module is, and what it deliberately is not
 
-  This repository does **not** own — and must never grow — an RDF
+  This repository does **not** own — and must never grow — its own RDF
   canonicalization, SHACL, ShEx, Datalog, N3 or SPARQL implementation.
   `praxis-graphlaw` already is one (`praxis-graphlaw v26.7.9` self-describes
   as "law-state engine: native N3, Datalog, SPARQL 1.1, SHACL, ShEx", built
-  over `oxrdf` with the `rdfc-10` feature, i.e. real RDFC-1.0 canonical
-  N-Quads, and `blake3`). It is compiled to a single content-addressed
-  WebAssembly artifact, vendored at `priv/graphlaw/praxis_graphlaw.wasm`
-  (resolved through `AshA2A.GraphLaw.wasm_path/0`, the one canonical
-  vendored copy that `mix ash_a2a.vendor_graphlaw` writes and
-  `mix ash_a2a.verify_graphlaw` verifies against
-  `priv/graphlaw/MANIFEST.json`). This host's own measured record of those
-  bytes lives in `priv/graphlaw/WASMEX_HOST_MANIFEST.json`.
+  over `oxrdf` with the `rdfc-10` feature, and `blake3`). The engine's real
+  RDFC-1.0 (`oxrdf` `Rdfc10`) is **not** wired to any wasm export: the
+  `graph_hash` export this module calls is prefix- and triple-order-invariant
+  but not blank-node-relabel invariant, so it is not RDFC-1.0. RFC S12
+  canonical graph identity is `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 via
+  the RDF.ex dependency, in-BEAM); see
+  `docs/explanation/canonical-graph-identity.md`.
+
+  The engine is compiled to a single content-addressed WebAssembly artifact,
+  vendored at `priv/graphlaw/praxis_graphlaw.wasm` (resolved through
+  `AshA2A.GraphLaw.wasm_path/0`, the one canonical vendored copy that
+  `mix ash_a2a.vendor_graphlaw` writes and `mix ash_a2a.verify_graphlaw`
+  verifies against `priv/graphlaw/MANIFEST.json`). This host's own measured
+  record of those bytes lives in `priv/graphlaw/WASMEX_HOST_MANIFEST.json`.
 
   Elixir's job at this boundary is envelope, standing, refusal typing,
   authority, receipts, admission orchestration and the A2A boundary —
@@ -143,10 +149,11 @@ defmodule AshA2A.GraphLaw.WasmexHost do
 
   `ensure_utf8/1` guards every such argument up front and returns a typed
   `{:error, {:invalid_encoding, byte_offset}}` without ever reaching
-  `transact/4`. This is the same idiom, same typed contract, independently
-  confirmed working on `AshA2A.Semantic.CanonicalGraph.ensure_utf8/1` for the
-  same class of boundary (a sibling module guarding its own call into this
-  same wasm export) -- ported here rather than reinvented.
+  `transact/4`. `ensure_utf8/1` delegates to
+  `AshA2A.Semantic.CanonicalGraph.ensure_utf8/1`, so the encoding guard and its
+  typed contract have exactly one implementation in this repository -- the
+  guard `docs/explanation/canonical-graph-identity.md` specified for this wasm
+  string boundary.
   """
 
   use GenServer
@@ -376,6 +383,9 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   `AshA2A.Semantic.CanonicalGraph.ensure_utf8/1` is public: any other Elixir
   caller of a wasm string export should run this first too.
 
+  Delegates to `AshA2A.Semantic.CanonicalGraph.ensure_utf8/1`: one encoding
+  guard, one typed contract, one byte-offset scanner in this repository.
+
       iex> AshA2A.GraphLaw.WasmexHost.ensure_utf8("ok")
       :ok
 
@@ -383,13 +393,8 @@ defmodule AshA2A.GraphLaw.WasmexHost do
       {:error, {:invalid_encoding, 2}}
   """
   @spec ensure_utf8(binary()) :: :ok | {:error, encoding_error()}
-  def ensure_utf8(binary) when is_binary(binary) do
-    if String.valid?(binary) do
-      :ok
-    else
-      {:error, {:invalid_encoding, first_invalid_byte_offset(binary)}}
-    end
-  end
+  def ensure_utf8(binary) when is_binary(binary),
+    do: AshA2A.Semantic.CanonicalGraph.ensure_utf8(binary)
 
   @doc """
   Returns the real current size, in bytes, of the engine's linear memory.
@@ -445,27 +450,6 @@ defmodule AshA2A.GraphLaw.WasmexHost do
     case JSON.decode(raw) do
       {:ok, %{"error" => detail}} -> {:error, %{code: :graphlaw_error, detail: detail}}
       _ -> :none
-    end
-  end
-
-  # ---------------------------------------------------------------------
-  # Encoding guard (see the module doc: non-UTF-8 input never reaches the
-  # engine). Same scanning idiom as
-  # `AshA2A.Semantic.CanonicalGraph.first_invalid_byte_offset/1`, ported not
-  # imported -- this module has no dependency on that one.
-  # ---------------------------------------------------------------------
-
-  defp first_invalid_byte_offset(binary), do: scan_utf8(binary, 0)
-
-  defp scan_utf8(<<>>, offset), do: offset
-
-  defp scan_utf8(binary, offset) do
-    case binary do
-      <<_::utf8, rest::binary>> ->
-        scan_utf8(rest, offset + (byte_size(binary) - byte_size(rest)))
-
-      _ ->
-        offset
     end
   end
 
