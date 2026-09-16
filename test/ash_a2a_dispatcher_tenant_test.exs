@@ -27,12 +27,13 @@ defmodule AshA2ADispatcherTenantTest do
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Test.Fixture.TenantedItem
+  alias AshA2A.Test.ReceiptedDispatch
 
   test "dispatch/3 maps a real missing-tenant :create error to a class-tagged :invalid_config error, not :input_required" do
     message = data_message(%{"label" => "widget"})
 
     assert {:error, {:execution, reason}} =
-             AshA2A.Dispatcher.dispatch(:create_tenanted_item, message, TenantedItem)
+             ReceiptedDispatch.dispatch(:create_tenanted_item, message, TenantedItem)
 
     assert reason =~ "invalid_config:"
     assert reason =~ "tenant"
@@ -48,7 +49,7 @@ defmodule AshA2ADispatcherTenantTest do
       data_message(%{"id" => record.id, "label" => "after"})
 
     assert {:error, {:execution, reason}} =
-             AshA2A.Dispatcher.dispatch(:update_tenanted_item, message, TenantedItem)
+             ReceiptedDispatch.dispatch(:update_tenanted_item, message, TenantedItem)
 
     assert reason =~ "invalid_config:"
     assert reason =~ "tenant"
@@ -63,7 +64,7 @@ defmodule AshA2ADispatcherTenantTest do
     message = data_message(%{"id" => record.id})
 
     assert {:error, {:execution, reason}} =
-             AshA2A.Dispatcher.dispatch(:destroy_tenanted_item, message, TenantedItem)
+             ReceiptedDispatch.dispatch(:destroy_tenanted_item, message, TenantedItem)
 
     assert reason =~ "invalid_config:"
     assert reason =~ "tenant"
@@ -77,6 +78,6 @@ defmodule AshA2ADispatcherTenantTest do
     message = data_message(%{})
 
     assert {:input_required, _parts} =
-             AshA2A.Dispatcher.dispatch(:create_item, message, AshA2A.Test.Fixture.Item)
+             ReceiptedDispatch.dispatch(:create_item, message, AshA2A.Test.Fixture.Item)
   end
 end

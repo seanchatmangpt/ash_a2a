@@ -41,12 +41,13 @@ defmodule AshA2ADispatcherSkillsTest do
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Test.Fixture.Item
+  alias AshA2A.Test.ReceiptedDispatch
 
   test "dispatch/3 runs a real :create skill end to end" do
     message = data_message(%{"label" => "widget"})
 
     assert {:reply, [%A2A.Part.Data{data: %{label: "widget", id: id}}]} =
-             AshA2A.Dispatcher.dispatch(:create_item, message, Item)
+             ReceiptedDispatch.dispatch(:create_item, message, Item)
 
     refute is_nil(id)
     assert {:ok, record} = Ash.get(Item, id, domain: AshA2A.Test.Fixture.ItemDomain)
@@ -57,7 +58,7 @@ defmodule AshA2ADispatcherSkillsTest do
     message = data_message(%{"label" => "no id here"})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
-             AshA2A.Dispatcher.dispatch(:update_item, message, Item)
+             ReceiptedDispatch.dispatch(:update_item, message, Item)
 
     assert text =~ "id"
   end
@@ -66,7 +67,7 @@ defmodule AshA2ADispatcherSkillsTest do
     message = data_message(%{label: "no id here either"})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
-             AshA2A.Dispatcher.dispatch(:update_item, message, Item)
+             ReceiptedDispatch.dispatch(:update_item, message, Item)
 
     assert text =~ "id"
   end
@@ -75,7 +76,7 @@ defmodule AshA2ADispatcherSkillsTest do
     message = data_message(%{})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
-             AshA2A.Dispatcher.dispatch(:destroy_item, message, Item)
+             ReceiptedDispatch.dispatch(:destroy_item, message, Item)
 
     assert text =~ "id"
   end
@@ -94,7 +95,7 @@ defmodule AshA2ADispatcherSkillsTest do
     message = data_message(%{})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
-             AshA2A.Dispatcher.dispatch(:create_item, message, Item)
+             ReceiptedDispatch.dispatch(:create_item, message, Item)
 
     assert is_binary(text)
   end

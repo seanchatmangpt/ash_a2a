@@ -200,6 +200,7 @@ defmodule AshA2A.Agent do
     auth_identity = verified_auth_identity(context)
 
     if semantic_request?(resource_or_domain, message) do
+      emit_route(resource_or_domain, %{route: :semantic})
       dispatch_semantic(resource_or_domain, message)
     else
       dispatch_skill(resource_or_domain, message, history, auth_identity)
@@ -470,7 +471,15 @@ defmodule AshA2A.Agent do
   defp dispatch_skill(resource_or_domain, message, history, auth_identity) do
     case resolve_skill_name(resource_or_domain, message) do
       {:ok, skill_name} ->
-        case consequence(resource_or_domain, skill_name) do
+        consequence = consequence(resource_or_domain, skill_name)
+
+        emit_route(resource_or_domain, %{
+          skill_name: skill_name,
+          consequence: consequence,
+          route: route_for(consequence)
+        })
+
+        case consequence do
           :observe ->
             AshA2A.Dispatcher.dispatch(
               skill_name,
@@ -499,6 +508,21 @@ defmodule AshA2A.Agent do
         {:error, reason}
     end
   end
+
+  # `[:ash_a2a, :agent, :dispatch]`: the A2A task handler's routing decision,
+  # emitted at the handler boundary itself (RFC-SA2A-002 §12 attempt evidence
+  # for the CHI-BRCE A2A-handler and generated-artifact falsifiers).
+  defp emit_route(resource_or_domain, meta) do
+    :telemetry.execute(
+      [:ash_a2a, :agent, :dispatch],
+      %{system_time: System.system_time()},
+      Map.put(meta, :resource_or_domain, resource_or_domain)
+    )
+  end
+
+  defp route_for(:observe), do: :dispatcher
+  defp route_for(consequence) when consequence in [:change, :external_do], do: :command_bus
+  defp route_for(_consequence), do: :refused
 
   @spec consequence(module(), AshA2A.Dispatcher.skill_name()) :: AshA2A.Skill.consequence()
   defp consequence(resource_or_domain, skill_name) do

@@ -197,7 +197,7 @@ defmodule AshA2A.CommandBus do
       {:ok, anchor} ->
         reply =
           actuate(command, execution_id, anchor, consequence, fn ->
-            safe_dispatch(skill, message, resource_or_domain, opts)
+            safe_dispatch(skill, message, resource_or_domain, opts, anchor)
           end)
 
         receipt =
@@ -768,8 +768,11 @@ defmodule AshA2A.CommandBus do
     :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})
   end
 
-  defp dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts) do
+  # `anchor` is the durably prepared `:pending` receipt (nil for `:observe`);
+  # `AshA2A.BrceAnchor` hands it to exactly this one dispatch.
+  defp dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts, anchor) do
     Process.put(:ash_a2a_ocel_command_bus_dispatch, true)
+    :ok = AshA2A.BrceAnchor.put(anchor)
 
     try do
       AshA2A.Dispatcher.dispatch(
@@ -781,11 +784,12 @@ defmodule AshA2A.CommandBus do
       )
     after
       Process.delete(:ash_a2a_ocel_command_bus_dispatch)
+      AshA2A.BrceAnchor.clear()
     end
   end
 
-  defp safe_dispatch(skill, message, resource_or_domain, opts) do
-    dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts)
+  defp safe_dispatch(skill, message, resource_or_domain, opts, anchor) do
+    dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts, anchor)
   rescue
     exception -> {:error, dispatch_crash_reason(:error, exception, __STACKTRACE__)}
   catch

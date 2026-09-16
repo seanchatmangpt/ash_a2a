@@ -229,6 +229,9 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     refute Map.has_key?(event["attributes"], "stage")
   end
 
+  # `:next_phase` is a `:change` skill, so it reaches the dispatcher only
+  # through the real `AshA2A.CommandBus` (sole-DO fence, `AshA2A.BrceAnchor`);
+  # the forwarder merges the dispatch span into the one receipt event.
   test "a real :next_phase dispatch forwards a real, non-empty OCEL relationships entry naming the real plan instance" do
     plan_name = :"ocel_forwarder_relationships_test_#{System.unique_integer([:positive])}"
 
@@ -238,7 +241,7 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
       ])
 
     assert {:reply, _parts} =
-             AshA2A.Dispatcher.dispatch(
+             AshA2A.Test.ReceiptedDispatch.dispatch(
                :next_phase,
                message,
                Facilitator,
@@ -249,7 +252,7 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     events = wait_for_events(1, 2_000)
 
     assert [event] = events
-    assert event["event_type"] == "ash_a2a.dispatch.facilitator.next_phase"
+    assert event["attributes"]["skill_name"] == "next_phase"
     assert [%{"qualifier" => "acted_on", "object_id" => object_id}] = event["relationships"]
     assert object_id == Atom.to_string(plan_name)
   end
