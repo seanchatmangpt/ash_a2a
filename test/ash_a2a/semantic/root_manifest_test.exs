@@ -320,7 +320,9 @@ defmodule AshA2A.Semantic.RootManifestTest do
                  manifest,
                  %{manufacturers: []},
                  nil,
-                 Identity.principal("whoever"), require_engine: false)
+                 Identity.principal("whoever"),
+                 require_engine: false
+               )
     end
 
     test "a non-principal identity is refused", %{manifest: manifest} do
@@ -331,7 +333,9 @@ defmodule AshA2A.Semantic.RootManifestTest do
                  manifest,
                  %{manufacturers: []},
                  authority,
-                 Identity.agent("not-a-principal"), require_engine: false)
+                 Identity.agent("not-a-principal"),
+                 require_engine: false
+               )
     end
 
     test "an unknown field is refused and no new atom is created", %{manifest: manifest} do
