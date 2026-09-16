@@ -37,7 +37,7 @@ defmodule AshA2A.GraphLaw.WasmexSession do
 
   @behaviour AshA2A.GraphLaw.Runtime
 
-  alias AshA2A.GraphLaw.Runtime
+  alias AshA2A.GraphLaw.{EngineLoad, EngineTelemetry, Runtime}
 
   @import_module "./praxis_graphlaw_wasm_bg.js"
   @random_import "__wbg_getRandomValues_3f44b700395062e5"
@@ -94,6 +94,7 @@ defmodule AshA2A.GraphLaw.WasmexSession do
     with :ok <- available?(opts) do
       path = Runtime.wasm_path(opts)
       bytes = File.read!(path)
+      digest = Runtime.bytes_digest(bytes)
 
       case start_instance(bytes, opts) do
         {:ok, pid, import_names} ->
@@ -109,10 +110,15 @@ defmodule AshA2A.GraphLaw.WasmexSession do
                wasm_path: path,
                bounded?: bounded?(opts),
                call_timeout_ms: Keyword.get(opts, :call_timeout_ms, 5_000),
-               module_imports: import_names
+               module_imports: import_names,
+               wasm_sha256: digest
              },
-             wasm_digest: Runtime.bytes_digest(bytes)
+             wasm_digest: digest
            }}
+
+        {:error, %{code: code} = refused}
+        when code in [:graphlaw_import_surface_mismatch, :graphlaw_wasm_invalid] ->
+          {:error, Map.put(refused, :path, path)}
 
         {:error, reason} ->
           {:error, %{code: :wasmex_instantiate_failed, reason: inspect(reason), path: path}}
@@ -136,22 +142,18 @@ defmodule AshA2A.GraphLaw.WasmexSession do
       with {:ok, engine} <- Wasmex.Engine.new(config),
            {:ok, store} <- Wasmex.Store.new(limits, engine),
            :ok <- Wasmex.StoreOrCaller.set_fuel(store, Keyword.get(opts, :fuel, 0)),
-           {:ok, module} <- Wasmex.Module.compile(store, bytes),
+           {:ok, module} <- EngineLoad.admit(host_id(), bytes, store),
            {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}) do
-        {:ok, pid, module |> Wasmex.Module.imports() |> import_names()}
+        {:ok, pid, module |> Wasmex.Module.imports() |> EngineLoad.import_names()}
       end
     else
-      with {:ok, pid} <- Wasmex.start_link(%{bytes: bytes, imports: imports()}),
+      # The surface is admitted before `Wasmex.start_link/1`: a foreign import
+      # surface otherwise crashes the linked caller from Wasmex's `init/1`.
+      with {:ok, store} <- Wasmex.Store.new(),
+           {:ok, module} <- EngineLoad.admit(host_id(), bytes, store),
+           {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}),
            do: {:ok, pid, nil}
     end
-  end
-
-  defp import_names(imports) when is_map(imports) do
-    imports
-    |> Enum.flat_map(fn {namespace, fns} ->
-      fns |> Map.keys() |> Enum.map(&"#{namespace}::#{&1}")
-    end)
-    |> Enum.sort()
   end
 
   @doc """
@@ -185,7 +187,10 @@ defmodule AshA2A.GraphLaw.WasmexSession do
       {:error,
        %{code: :graphlaw_arity_mismatch, function: fun, expected: expected, got: length(args)}}
     else
-      do_call(session, Atom.to_string(fun), args)
+      name = Atom.to_string(fun)
+      result = do_call(session, name, args)
+      EngineTelemetry.emit(host_id(), Map.get(session, :wasm_sha256), name, result)
+      result
     end
   end
 

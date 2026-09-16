@@ -1,0 +1,275 @@
+{
+  "cases": [
+    {
+      "args": [
+        "@prefix e: <http://example.org/e#> .\ne:a e:edge e:b .\n{ ?x e:edge ?y } => { ?x e:related ?w } .\n{ e:a e:related ?any } => false .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "unsafe_rule",
+      "observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 1 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 1
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 1 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "REFUSED",
+              "triples_out": 1
+            }
+          ],
+          "graph_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "second_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "status": "ADMITTED"
+          }
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 1 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 1
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 1 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "REFUSED",
+              "triples_out": 1
+            }
+          ],
+          "graph_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "second_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "status": "ADMITTED"
+          }
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix e: <http://example.org/e#> .\ne:a e:edge e:b .\n{ ?x e:edge ?y } => { ?x e:related ?y } .\n{ e:a e:related ?any } => false .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "control_range_restricted_rule",
+      "observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 1 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 1
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 1 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "REFUSED",
+              "triples_out": 1
+            }
+          ],
+          "graph_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "second_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "status": "ADMITTED"
+          }
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 1 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 1
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 1 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "REFUSED",
+              "triples_out": 1
+            }
+          ],
+          "graph_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "second_hash": "1745e6a4c733e8eaaba80cb350cf19a3c47e47e1c8ef722b59612ef6d3d984ff",
+            "status": "ADMITTED"
+          }
+        }
+      }
+    }
+  ],
+  "court": {
+    "court_id": "SA2A-ENGINE",
+    "falsifier_ids": [
+      "SA2A-ENGINE-004",
+      "SA2A-ENGINE-010"
+    ]
+  },
+  "engine": {
+    "artifact": "priv/graphlaw/praxis_graphlaw.wasm",
+    "bytes": 3249361,
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
+  },
+  "id": "GL-DEFECT-003",
+  "law": "Range restriction: every head variable occurs in a positive body literal; an unsafe rule is refused and derives nothing.",
+  "praxis_head_build": {
+    "artifact_sha256": "5903ea9d96d45ff04c05935643ef548be9312eb3375a1c3e83901936f697ff55",
+    "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9",
+    "record": "priv/graphlaw/defects/praxis-head-refresh.json"
+  },
+  "root_cause": [
+    {
+      "evidence": "executed: native probe validate_rules -> Err(Rule 0 is unsafe: variable w in head is not bound by any positive body literal)",
+      "finding": "TripleStore::from computes strata with `if let Ok(..) = datalog::validate_rules(..)` and discards the safety error",
+      "lines": "254-256",
+      "path": "crates/praxis-graphlaw/src/lib.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    },
+    {
+      "evidence": "executed: native probe materialize -> Ok(1 inferred): <http://example.org/e#a> <http://example.org/e#related> w",
+      "finding": "materialize() then fires the unsafe rule",
+      "lines": "337",
+      "path": "crates/praxis-graphlaw/src/lib.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    }
+  ],
+  "schema": "ash_a2a.graphlaw.defect/v1",
+  "status": "BLOCKED_ON_PRAXIS",
+  "title": "validate_all/5 reports DATALOG ADMITTED for a non-range-restricted rule and materialises a triple with an unbound variable"
+}

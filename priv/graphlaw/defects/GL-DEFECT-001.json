@@ -1,0 +1,416 @@
+{
+  "cases": [
+    {
+      "args": [
+        "@prefix kh: <http://seanchatmangpt.github.io/praxis/kh#> .\n@prefix ex: <http://example.org/> .\nex:hook1 a kh:Hook ; kh:name \"fire_hook\" ; kh:kind \"delta\" ; kh:var \"http://example.org/status\" ; kh:on \"assert\" ; kh:effect \"emit-delta\" .\n",
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/status> \"active\" .\n"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "hook_in_base_matching_event",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:entity0 <http://example.org/normal> \"baseline\" .\n",
+        "@prefix kh: <http://seanchatmangpt.github.io/praxis/kh#> .\n@prefix ex: <http://example.org/> .\nex:hook1 a kh:Hook ; kh:name \"fire_hook\" ; kh:kind \"delta\" ; kh:var \"http://example.org/status\" ; kh:on \"assert\" ; kh:effect \"emit-delta\" .\n@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/status> \"active\" .\n"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "hook_in_event_matching_event",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix kh: <http://seanchatmangpt.github.io/praxis/kh#> .\n@prefix ex: <http://example.org/> .\nex:hook1 a kh:Hook ; kh:name <fire_hook> ; kh:kind <delta> ; kh:var <http://example.org/status> ; kh:on <assert> ; kh:effect <emit-delta> .\n",
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/status> \"active\" .\n"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "iri_valued_hook_matching_event",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix kh: <http://seanchatmangpt.github.io/praxis/kh#> .\n@prefix ex: <http://example.org/> .\nex:hook2 a kh:Hook ; kh:name \"sparql_hook\" ; kh:kind \"sparql\" ; kh:query \"ASK { ?s <http://example.org/status> ?o }\" ; kh:effect \"emit-delta\" .\n",
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/status> \"active\" .\n"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "sparql_hook_matching_event",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix kh: <http://seanchatmangpt.github.io/praxis/kh#> .\n@prefix ex: <http://example.org/> .\nex:hook1 a kh:Hook ; kh:name \"fire_hook\" ; kh:kind \"delta\" ; kh:var \"http://example.org/status\" ; kh:on \"assert\" ; kh:effect \"emit-delta\" .\n",
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/normal> \"safe\" .\n"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "control_hook_non_matching_event",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/status> \"active\" .\n{ ?s <http://example.org/status> ?o } => false .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "control_condition_witness_matching",
+      "observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 0 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 1 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "REFUSED",
+              "triples_out": 1
+            }
+          ],
+          "graph_hash": "280589c103300dd48373f290a845ed15fcdd49358ad170e6e744925fd167df26",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "280589c103300dd48373f290a845ed15fcdd49358ad170e6e744925fd167df26",
+            "second_hash": "280589c103300dd48373f290a845ed15fcdd49358ad170e6e744925fd167df26",
+            "status": "ADMITTED"
+          }
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 0 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 1 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "REFUSED",
+              "triples_out": 1
+            }
+          ],
+          "graph_hash": "280589c103300dd48373f290a845ed15fcdd49358ad170e6e744925fd167df26",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "280589c103300dd48373f290a845ed15fcdd49358ad170e6e744925fd167df26",
+            "second_hash": "280589c103300dd48373f290a845ed15fcdd49358ad170e6e744925fd167df26",
+            "status": "ADMITTED"
+          }
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/normal> \"safe\" .\n{ ?s <http://example.org/status> ?o } => false .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "control_condition_witness_non_matching",
+      "observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 0 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 0 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "ADMITTED",
+              "triples_out": 0
+            }
+          ],
+          "graph_hash": "dd8dbf2068d198440083a25fe4b2eaa6a1dbb4fce4c655c72e1b1793e98a7c01",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "dd8dbf2068d198440083a25fe4b2eaa6a1dbb4fce4c655c72e1b1793e98a7c01",
+            "second_hash": "dd8dbf2068d198440083a25fe4b2eaa6a1dbb4fce4c655c72e1b1793e98a7c01",
+            "status": "ADMITTED"
+          }
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 0 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 0 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "ADMITTED",
+              "triples_out": 0
+            }
+          ],
+          "graph_hash": "dd8dbf2068d198440083a25fe4b2eaa6a1dbb4fce4c655c72e1b1793e98a7c01",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "dd8dbf2068d198440083a25fe4b2eaa6a1dbb4fce4c655c72e1b1793e98a7c01",
+            "second_hash": "dd8dbf2068d198440083a25fe4b2eaa6a1dbb4fce4c655c72e1b1793e98a7c01",
+            "status": "ADMITTED"
+          }
+        }
+      }
+    }
+  ],
+  "court": {
+    "court_id": "SA2A-ENGINE",
+    "falsifier_ids": [
+      "SA2A-ENGINE-001",
+      "SA2A-ENGINE-002",
+      "SA2A-ENGINE-007",
+      "SA2A-ENGINE-008"
+    ]
+  },
+  "engine": {
+    "artifact": "priv/graphlaw/praxis_graphlaw.wasm",
+    "bytes": 3249361,
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
+  },
+  "id": "GL-DEFECT-001",
+  "law": "A kh:Hook admitted by the engine whose trigger matches the event delta yields a verdict; an engine that extracted no hook must not report ADMITTED as if hooks were evaluated.",
+  "praxis_head_build": {
+    "artifact_sha256": "5903ea9d96d45ff04c05935643ef548be9312eb3375a1c3e83901936f697ff55",
+    "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9",
+    "record": "priv/graphlaw/defects/praxis-head-refresh.json"
+  },
+  "root_cause": [
+    {
+      "evidence": "executed: native probe TripleStore::from(preprocess_turtle(hook pack)) -> triples=6 hooks=0",
+      "finding": "TripleStore::from discards every hook extraction/compilation error: validate_and_extract_hooks(..).and_then(compile_hooks).unwrap_or_default() -> post_store.hooks is empty",
+      "lines": "257-259",
+      "path": "crates/praxis-graphlaw/src/lib.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    },
+    {
+      "evidence": "executed: validate_and_extract_hooks -> Err(hook:on must be assert, retract, or any, got: \"assert\"^^<http://www.w3.org/2001/XMLSchema#string>)",
+      "finding": "preprocess_turtle always prepends @prefix, so TripleStore::from takes the pest N3 path (lib.rs:194-219), which yields typed literals \"assert\"^^<xsd:string>; HookProps::new keeps clean_term(object), and clean_term strips quotes only when the term also ends with a quote, so kh:on is rejected",
+      "lines": "16-24, 78, 278-283",
+      "path": "crates/praxis-graphlaw/src/hooks/parsing.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    },
+    {
+      "evidence": "executed: iri variant -> Err(SHACL validation failed: 5x sh:DatatypeConstraintComponent)",
+      "finding": "IRI-valued hook properties pass clean_term but fail the hook SHACL law pack, so no spelling of a hook is extractable on this path",
+      "lines": "13 (SHACL_LAW_PACK, sh:datatype xsd:string)",
+      "path": "crates/praxis-graphlaw/src/hooks/mod.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    },
+    {
+      "evidence": "read-only source inspection",
+      "finding": "run_hooks_core_impl returns status: Status::Admitted unconditionally",
+      "lines": "505-517",
+      "path": "crates/praxis-graphlaw-wasm/src/core.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    }
+  ],
+  "schema": "ash_a2a.graphlaw.defect/v1",
+  "status": "BLOCKED_ON_PRAXIS",
+  "title": "run_hooks/2 never fires a kh:Hook: ADMITTED with zero verdicts for a matching hook pack"
+}

@@ -37,9 +37,12 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   `run_hooks_core_impl` builds its store with `TripleStore::from/1`; hook
   extraction at the time lived only in `TripleStore::load_triples/2`, so
   `post_store.hooks` is always empty and `evaluate_hooks/4` has nothing to
-  evaluate. (The v26.7.9 *source* of `TripleStore::from/1` does compile
-  hooks, via `validate_and_extract_hooks |> compile_hooks |>
-  unwrap_or_default` -- but the shipped wasm predates that.)
+  evaluate. The v26.7.9 *source* of `TripleStore::from/1` calls
+  `validate_and_extract_hooks |> compile_hooks |> unwrap_or_default`, but a
+  wasm built from praxis HEAD `31f149d` (2026-09-16) still returns zero
+  verdicts: extraction fails on the typed literal `"assert"^^xsd:string` and
+  `unwrap_or_default` discards the error (reproducer
+  `priv/graphlaw/defects/GL-DEFECT-001.json`, court `SA2A-ENGINE`).
 
   Additionally `ash_a2a` has no `wasmex` dependency, so no Elixir process in
   this build can reach that wasm at all.
@@ -54,9 +57,10 @@ defmodule AshA2A.Semantic.FalsifierSuite do
        `TripleStore::query/1` returns `Vec<Vec<Binding>>`, so an `ASK` must
        be reduced to `!results.is_empty()`, exactly as
        `hooks/condition.rs`'s `HookCondition::Sparql` arm already does; or
-    2. A rebuild of `praxis-graphlaw-wasm` from >= v26.7.9 so `run_hooks/2`
-       actually compiles in-graph `kh:kind "sparql"` hooks, plus a `wasmex`
-       dependency here to call it.
+    2. A `praxis-graphlaw-wasm` build whose `run_hooks/2` actually extracts
+       in-graph `kh:kind "sparql"` hooks (not true of praxis HEAD `31f149d`,
+       measured: `priv/graphlaw/defects/praxis-head-refresh.json`), plus a
+       `wasmex` dependency here to call it.
 
   Neither is done in this change: (1) is a Praxis-side export and (2) would
   overwrite a shared build artifact other concurrent work has already

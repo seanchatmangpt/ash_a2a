@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "args": [
+        "@prefix kh: <broken .\n this is not turtle {{{",
+        "also ] not turtle"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "malformed_base_and_event",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    },
+    {
+      "args": [
+        "@prefix ex: <http://example.org/> .\nex:entity0 <http://example.org/normal> \"baseline\" .\n",
+        "@prefix ex: <http://example.org/> .\nex:entity1 <http://example.org/normal> \"safe\" .\n"
+      ],
+      "call": "run_hooks",
+      "host": "AshA2A.GraphLaw.WasmexHost (Wasmtime via wasmex)",
+      "name": "control_wellformed_hook_free",
+      "observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "receipts": [],
+          "schedule": [],
+          "status": "ADMITTED",
+          "verdicts": []
+        }
+      }
+    }
+  ],
+  "court": {
+    "court_id": "SA2A-ENGINE",
+    "falsifier_ids": [
+      "SA2A-ENGINE-003",
+      "SA2A-ENGINE-009"
+    ]
+  },
+  "engine": {
+    "artifact": "priv/graphlaw/praxis_graphlaw.wasm",
+    "bytes": 3249361,
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
+  },
+  "id": "GL-DEFECT-002",
+  "law": "Input the engine cannot parse is never ADMITTED.",
+  "praxis_head_build": {
+    "artifact_sha256": "5903ea9d96d45ff04c05935643ef548be9312eb3375a1c3e83901936f697ff55",
+    "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9",
+    "record": "priv/graphlaw/defects/praxis-head-refresh.json"
+  },
+  "root_cause": [
+    {
+      "evidence": "read-only source inspection",
+      "finding": "TripleStore::from falls back to the legacy line parser when the pest N3 parse fails, returning whatever parsed (possibly nothing) with no error",
+      "lines": "219-223, 238-243",
+      "path": "crates/praxis-graphlaw/src/lib.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    },
+    {
+      "evidence": "read-only source inspection",
+      "finding": "run_hooks_core_impl has no fallible parse step and returns status: Status::Admitted unconditionally",
+      "lines": "448-517",
+      "path": "crates/praxis-graphlaw-wasm/src/core.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    }
+  ],
+  "schema": "ash_a2a.graphlaw.defect/v1",
+  "status": "BLOCKED_ON_PRAXIS",
+  "title": "run_hooks/2 reports ADMITTED for input that is not Turtle"
+}

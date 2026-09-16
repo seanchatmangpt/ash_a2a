@@ -1,0 +1,107 @@
+{
+  "abi": {
+    "compatible": false,
+    "exports_added": 307,
+    "exports_added_origin": "bcinr #[no_mangle] kernels linked into the cdylib",
+    "exports_added_sample": [
+      "aabb_intersect_branchless",
+      "abs_diff_i64",
+      "abs_diff_u64",
+      "add_sat_i32",
+      "adler32_branchless"
+    ],
+    "exports_praxis_head": 322,
+    "exports_removed": [],
+    "exports_vendored": 15,
+    "host_effects_measured": [
+      "priv/graphlaw/host/graphlaw_host.mjs: graphlaw_version -> RuntimeError unreachable (calls export4 as free, now realloc)",
+      "AshA2A.GraphLaw.WasmexSession.open/1 before EngineLoad: caller EXIT (MatchError {:error, \"unknown import: `./praxis_graphlaw_wasm_bg.js::__wbg_new_227d7c05414eb861` has not been defined\"}) from Wasmex.init/1",
+      "AshA2A.GraphLaw.WasmexSession.open/1 after EngineLoad: {:error, %{code: :graphlaw_import_surface_mismatch}} (SA2A-ENGINE-012/013)"
+    ],
+    "imports_praxis_head": [
+      "./praxis_graphlaw_wasm_bg.js::__wbg_new_227d7c05414eb861",
+      "./praxis_graphlaw_wasm_bg.js::__wbg_stack_3b0d974bbf31e44f",
+      "./praxis_graphlaw_wasm_bg.js::__wbg_error_a6fa202b58aa1cd3",
+      "./praxis_graphlaw_wasm_bg.js::__wbindgen_object_drop_ref",
+      "./praxis_graphlaw_wasm_bg.js::__wbg_getRandomValues_3f44b700395062e5",
+      "./praxis_graphlaw_wasm_bg.js::__wbg___wbindgen_throw_344f42d3211c4765"
+    ],
+    "imports_vendored": [
+      "./praxis_graphlaw_wasm_bg.js::__wbindgen_object_drop_ref",
+      "./praxis_graphlaw_wasm_bg.js::__wbg_getRandomValues_3f44b700395062e5"
+    ],
+    "string_abi_praxis_head": {
+      "exn_store": "__wbindgen_export2",
+      "free": "__wbindgen_export",
+      "malloc": "__wbindgen_export3",
+      "realloc": "__wbindgen_export4"
+    },
+    "string_abi_vendored": {
+      "exn_store": "__wbindgen_export",
+      "free": "__wbindgen_export4",
+      "malloc": "__wbindgen_export2",
+      "realloc": "__wbindgen_export3"
+    }
+  },
+  "build": {
+    "overlay": {
+      "effect": "#[cfg(not(target_arch = \"wasm32\"))] on ChatmanEngine::open (oxigraph Store::open has no wasm32 backend); no other change",
+      "file": "priv/graphlaw/defects/praxis-head-wasm32-overlay.patch",
+      "sha256": "b75f6e6f4725ad7c045399375490eec5297de0562a01e08f40fa600de80a7589"
+    },
+    "patched": {
+      "artifact_blake3": "41c931444845a6b362d4c13d5903bffd1fce555ac31c246286de703a58885d9a",
+      "artifact_bytes": 3354148,
+      "artifact_sha256": "5903ea9d96d45ff04c05935643ef548be9312eb3375a1c3e83901936f697ff55",
+      "command": "mix ash_a2a.vendor_graphlaw --praxis <clone> --out-dir <scratch> --target-dir <scratch> --dry-run",
+      "graphlaw_version": "praxis-graphlaw v26.7.5 (graphlaw_version() reports the wasm crate version, so it cannot distinguish this build from the vendored one; only the digest can)",
+      "status": "BUILT",
+      "vendor_pipeline_probe": "** (Mix) [host_failed] graphlaw wasm host failed: graphlaw_version: unreachable"
+    },
+    "unpatched": {
+      "command": "cargo build -p praxis-graphlaw-wasm --target wasm32-unknown-unknown --release --locked",
+      "error": "error[E0599]: no associated function or constant named `open` found for struct `Store` in the current scope --> crates/praxis-graphlaw/src/chatman/engine.rs:597:28",
+      "status": "BLOCKED_ON_PRAXIS"
+    }
+  },
+  "decision": {
+    "host_hardening": "AshA2A.GraphLaw.EngineLoad refuses a foreign import surface with a typed error before instantiation",
+    "hosts_adapted": false,
+    "manifest_mutated": false,
+    "reason": "every measured defect persists in current praxis source, the source does not build for wasm32 without an overlay, and the build is ABI-incompatible with every host; re-vendoring would change identity without fixing a defect",
+    "root_manifest_mutated": false,
+    "vendored_artifact": "KEPT"
+  },
+  "defects_remeasured_on_praxis_head_build": {
+    "GL-DEFECT-001": "PERSISTS (run_hooks ADMITTED, verdicts [] for base, event, IRI-valued and SPARQL hook packs)",
+    "GL-DEFECT-002": "PERSISTS (malformed input ADMITTED)",
+    "GL-DEFECT-003": "PERSISTS (DATALOG ADMITTED, Materialized 1 triples; denial over the unbound-variable triple REFUSED)",
+    "GL-DEFECT-004": "PERSISTS (list-term head and math:sum recursion: no return within 20 s under V8 without fuel)"
+  },
+  "engine": {
+    "artifact": "priv/graphlaw/praxis_graphlaw.wasm",
+    "bytes": 3249361,
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
+  },
+  "measured_at": "2026-09-16",
+  "praxis_edges": [
+    "crates/praxis-graphlaw/src/chatman/engine.rs:597 cfg-gate ChatmanEngine::open for wasm32",
+    "crates/praxis-graphlaw/src/lib.rs:254-259 propagate datalog::validate_rules and hook extraction errors from TripleStore::from",
+    "crates/praxis-graphlaw/src/hooks/parsing.rs:16-24,78 strip ^^xsd:string typed-literal suffix before hook property checks",
+    "crates/praxis-graphlaw-wasm/src/core.rs:448-517 fallible parse and a status derived from extraction/evaluation",
+    "crates/praxis-graphlaw/src/datalog.rs:53-66 function-free / finite-closure check",
+    "crates/praxis-graphlaw-wasm: keep the host import surface and string-ABI export order stable, or version the host ABI explicitly"
+  ],
+  "schema": "ash_a2a.graphlaw.refresh/v1",
+  "source": {
+    "graphlaw_crate_version": "26.7.9",
+    "isolation": "~/praxis was never modified: the build ran on an APFS clone of the checkout in a scratch directory with CARGO_TARGET_DIR outside it",
+    "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9",
+    "praxis_worktree_dirty": "Cargo.lock only (path deps bcinr-cmca/logic/mfw-ir/pddl/powl 26.7.28 -> 26.9.15); crates/praxis-graphlaw and crates/praxis-graphlaw-wasm clean",
+    "rustc": "rustc 1.98.0-nightly (91fe22da8 2026-06-21) (praxis rust-toolchain.toml nightly-2026-06-22)",
+    "wasm_bindgen": "0.2.126 (Cargo.lock)",
+    "wasm_crate_version": "26.7.5",
+    "wasm_pack": "wasm-pack 0.13.1"
+  }
+}

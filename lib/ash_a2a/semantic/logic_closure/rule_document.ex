@@ -25,7 +25,10 @@ defmodule AshA2A.Semantic.LogicClosure.RuleDocument do
       `unreachable`.
 
   So function-freeness, range restriction and builtin admissibility cannot
-  be read back from the engine; they are checked here, fail-closed.
+  be read back from the engine; they are checked here, fail-closed. A build
+  of praxis HEAD `31f149d` (2026-09-16) behaves the same (reproducers
+  `priv/graphlaw/defects/GL-DEFECT-003.json` / `-004.json`, pinned by
+  `SA2A-ENGINE-004`..`-006`).
 
   ## Inverted burden
 

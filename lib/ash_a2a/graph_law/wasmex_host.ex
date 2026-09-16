@@ -491,10 +491,20 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   defp load(path) do
     with true <- File.exists?(path) or {:error, %{code: :graphlaw_wasm_not_vendored, path: path}},
          {:ok, bytes} <- read_wasm(path),
-         {:ok, pid} <- Wasmex.start_link(%{bytes: bytes, imports: imports()}),
+         {:ok, store} <- Wasmex.Store.new(),
+         {:ok, module} <- AshA2A.GraphLaw.EngineLoad.admit("BEAM/WasmexHost", bytes, store),
+         {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}),
          {:ok, store} <- Wasmex.store(pid),
          {:ok, memory} <- Wasmex.memory(pid) do
-      {:ok, %{status: :loaded, pid: pid, store: store, memory: memory, path: path}}
+      {:ok,
+       %{
+         status: :loaded,
+         pid: pid,
+         store: store,
+         memory: memory,
+         path: path,
+         wasm_sha256: AshA2A.GraphLaw.Runtime.bytes_digest(bytes)
+       }}
     else
       {:error, _} = err -> err
       other -> {:error, %{code: :graphlaw_instantiation_failed, detail: other, path: path}}
@@ -570,7 +580,9 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   end
 
   def handle_call({:transact, fun, args, timeout}, _from, %{status: :loaded} = state) do
-    {:reply, do_transact(state, fun, args, timeout), state}
+    result = do_transact(state, fun, args, timeout)
+    AshA2A.GraphLaw.EngineTelemetry.emit("BEAM/WasmexHost", state.wasm_sha256, fun, result)
+    {:reply, result, state}
   end
 
   def handle_call(
