@@ -1,0 +1,321 @@
+{
+  "_comment": [
+    "SHARED SPECIFICATION for the SA2A authority decision rule (RFC-SA2A-001 S28, S29, S54, S60).",
+    "",
+    "This file -- not either implementation -- is the specification. It is executed by BOTH",
+    "hosts: AshA2A.Authority.Decision.verdict/1 on the BEAM, and",
+    "test/support/hosts/authority_host.mjs --spec in a separate Node process that shares no",
+    "code with ash_a2a. test/ash_a2a_authority_decision_failclosed_test.exs asserts",
+    "BEAM == expected, node == expected, and BEAM == node for every case, and asserts the",
+    "node host's REAL actuator (a file append) fired exactly as many times as there are",
+    "ADMITTED cases here. Two independent implementations cannot be MADE identical without a",
+    "codegen step across the BEAM/Node boundary; they are instead PINNED identical, and any",
+    "drift fails the suite.",
+    "",
+    "Cases whose name begins REPRO- are the verifier's exact minimal reproducing inputs for",
+    "the three reproduced fail-OPEN defects. Before the fix all three returned ADMITTED and",
+    "fired a real actuator. Timestamps are absolute and far from any real clock so the",
+    "vectors are deterministic on any host at any time."
+  ],
+  "envelope_version": "sa2a-authority-decision/1",
+  "cases": [
+    {
+      "name": "REPRO-1 absent fields must not bind (nil == nil / undefined === undefined)",
+      "was_before_fix": "ADMITTED, actuator_calls 1",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "authority": {}
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "envelope_incomplete" }
+    },
+    {
+      "name": "REPRO-1b empty authority against a fully-specified envelope still must not bind",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {}
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "REPRO-1c blank-string principal and subject are absence with punctuation",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "   ",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {
+          "subject": "   ",
+          "capability_id": "probe.actuate",
+          "expires_at": null,
+          "source": "authority_broker",
+          "token": "t"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "envelope_incomplete" }
+    },
+    {
+      "name": "REPRO-2 caller self-declaring observe must not skip the authority branch",
+      "was_before_fix": "ADMITTED, actuator_calls 1",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "observe",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "consequence_unattested" }
+    },
+    {
+      "name": "REPRO-2b declared observe contradicting the DSL attestation is refused",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "observe",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "consequence_unattested" }
+    },
+    {
+      "name": "REPRO-3 caller-chosen evaluated_at must not resurrect an expired authority",
+      "was_before_fix": "ADMITTED, actuator_calls 1",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "1999-01-01T00:00:00Z",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.actuate",
+          "expires_at": "2000-01-01T00:00:00Z",
+          "source": "authority_broker",
+          "token": "t"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "REPRO-3b a missing evaluated_at is unjudgeable and fails closed",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.actuate",
+          "expires_at": "2999-01-01T00:00:00Z",
+          "source": "authority_broker",
+          "token": "t"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "REPRO-3c an unparseable evaluated_at fails closed",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "whenever",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.actuate",
+          "expires_at": "2999-01-01T00:00:00Z",
+          "source": "authority_broker",
+          "token": "t"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "unparseable expires_at fails closed (pre-existing, must not regress)",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.actuate",
+          "expires_at": "not-a-timestamp",
+          "source": "authority_broker",
+          "token": "t"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "no authority at all on a consequence-bearing capability",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_required" }
+    },
+    {
+      "name": "someone else's valid grant is not authority",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {
+          "subject": "principal:someone-else",
+          "capability_id": "probe.actuate",
+          "expires_at": null,
+          "source": "authority_broker",
+          "token": "borrowed"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "a grant for another capability is not authority for this one",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.peek",
+          "expires_at": null,
+          "source": "authority_broker",
+          "token": "wrong-cap"
+        }
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "an authority that is not an object cannot bind",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": "principal:operator-1"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "authority_mismatch" }
+    },
+    {
+      "name": "the DSL's fail-closed :unknown classification is not admissible",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "unknown",
+        "capability_consequence": "unknown",
+        "capability_id": "probe.mystery",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "consequence_unclassified" }
+    },
+    {
+      "name": "a capability that did not resolve through the DSL yields no classification",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": null,
+        "capability_consequence": null,
+        "capability_id": "probe.does-not-exist",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "consequence_unclassified" }
+    },
+    {
+      "name": "a foreign envelope version is not judged at all",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/99",
+        "consequence": "observe",
+        "capability_consequence": "observe",
+        "capability_id": "probe.peek",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "REFUSED_AUTHORITY", "code": "decision_envelope_unrecognized" }
+    },
+    {
+      "name": "CONTROL an attested observe capability needs no authority",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "observe",
+        "capability_consequence": "observe",
+        "capability_id": "probe.peek",
+        "principal": "principal:operator-1",
+        "authority": null,
+        "evaluated_at": "2026-09-16T00:00:00Z"
+      },
+      "expect": { "verdict": "ADMITTED", "code": "authority_admitted" }
+    },
+    {
+      "name": "CONTROL a correctly bound, unexpiring authority really is admitted",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.actuate",
+          "expires_at": null,
+          "source": "authority_broker",
+          "token": "ok"
+        }
+      },
+      "expect": { "verdict": "ADMITTED", "code": "authority_admitted" }
+    },
+    {
+      "name": "CONTROL a correctly bound authority with a future expiry is admitted",
+      "envelope": {
+        "envelope_version": "sa2a-authority-decision/1",
+        "consequence": "external_do",
+        "capability_consequence": "external_do",
+        "capability_id": "probe.actuate",
+        "principal": "principal:operator-1",
+        "evaluated_at": "2026-09-16T00:00:00Z",
+        "authority": {
+          "subject": "principal:operator-1",
+          "capability_id": "probe.actuate",
+          "expires_at": "2999-01-01T00:00:00Z",
+          "source": "authority_broker",
+          "token": "ok-future"
+        }
+      },
+      "expect": { "verdict": "ADMITTED", "code": "authority_admitted" }
+    }
+  ]
+}

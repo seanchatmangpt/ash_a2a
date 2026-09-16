@@ -9,6 +9,16 @@
 //
 // Usage:
 //   node authority_host.mjs <envelope.json> <actuator_log_path>
+//   node authority_host.mjs --spec <conformance.json> <actuator_log_path>
+//
+// In --spec mode the host evaluates every case in the shared conformance
+// vector file (authority_decision_conformance.json) with the SAME verdict()
+// function and prints one JSON object per line: {"name":...,"verdict":...,
+// "code":...,"actuator_calls":...}. That file is the single specification
+// both hosts are held to; the BEAM runs the identical vectors through
+// AshA2A.Authority.Decision.verdict/1 and the test asserts all three agree
+// (BEAM == expected, node == expected, BEAM == node), so the two independent
+// implementations cannot silently drift apart again.
 //
 // The actuator is REAL: on an ADMITTED verdict this host appends one line to
 // <actuator_log_path>, creating it. The negative test asserts that file never
@@ -48,74 +58,152 @@ function digest(value) {
   return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
 }
 
-// Fails closed on anything unparseable.
+const CLASSIFIED = ["observe", "change", "external_do"];
+const CONSEQUENCE_BEARING = ["change", "external_do"];
+
+// Absence never satisfies anything; a blank string is absence with
+// punctuation. Mirrors AshA2A.Authority.Decision's present?/1.
+function present(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+// `undefined === undefined` is not a match, it is two absences. Mirrors same?/2.
+function same(left, right) {
+  return present(left) && present(right) && left === right;
+}
+
+// Fails closed on anything unparseable, INCLUDING a missing/unparseable
+// evaluated_at: an envelope that does not say when it was evaluated is
+// unjudgeable. Expiry is measured against this host's real clock; the
+// envelope's own instant is consulted only when it is LATER, so the
+// constrained party can close the gate on itself but never hold it open by
+// naming a convenient past. Mirrors expired?/2 + expired_at?/2.
 function expired(expiresAt, evaluatedAt) {
+  if (!present(evaluatedAt)) return true;
+  const evaluated = Date.parse(evaluatedAt);
+  if (Number.isNaN(evaluated)) return true;
   if (expiresAt === null || expiresAt === undefined) return false;
-  if (typeof expiresAt !== "string" || typeof evaluatedAt !== "string") return true;
+  if (!present(expiresAt)) return true;
   const expires = Date.parse(expiresAt);
-  const now = Date.parse(evaluatedAt);
-  if (Number.isNaN(expires) || Number.isNaN(now)) return true;
-  return now > expires;
+  if (Number.isNaN(expires)) return true;
+  return Date.now() > expires || evaluated > expires;
 }
 
 function binds(authority, envelope) {
   return (
-    authority.subject === envelope.principal &&
-    authority.capability_id === envelope.capability_id &&
+    same(authority.subject, envelope.principal) &&
+    same(authority.capability_id, envelope.capability_id) &&
     !expired(authority.expires_at, envelope.evaluated_at)
   );
+}
+
+// The real enforcement point (AshA2A.CommandBus) reads the classification off
+// the resource DSL, never off the request. Here it must at minimum agree with
+// the DSL-derived attestation the BEAM stamped into the envelope, and an
+// UNATTESTED "observe" -- the only classification that skips the authority
+// branch entirely -- is never taken on the request's word. Mirrors classify/1.
+function classify(envelope) {
+  const declared = envelope.consequence;
+  const attested = envelope.capability_consequence;
+
+  if (!present(declared) || !CLASSIFIED.includes(declared)) {
+    return { code: "consequence_unclassified" };
+  }
+  if (present(attested) && attested !== declared) {
+    return { code: "consequence_unattested" };
+  }
+  if (!CONSEQUENCE_BEARING.includes(declared) && attested !== declared) {
+    return { code: "consequence_unattested" };
+  }
+  return { consequence: declared };
 }
 
 // The whole rule set. Note what is NOT consulted even though the envelope
 // carries it: agent, task, command_fingerprint, and the authority's own
 // `source` (i.e. how the caller authenticated). RFC S29.
 function verdict(envelope) {
-  if (!envelope || envelope.envelope_version !== ENVELOPE_VERSION) {
+  if (!envelope || typeof envelope !== "object" || envelope.envelope_version !== ENVELOPE_VERSION) {
     return { verdict: "REFUSED_AUTHORITY", code: "decision_envelope_unrecognized" };
   }
-  const consequence = envelope.consequence;
-  if (consequence === "observe") {
-    return { verdict: "ADMITTED", code: "authority_admitted" };
+  if (!present(envelope.principal) || !present(envelope.capability_id)) {
+    return { verdict: "REFUSED_AUTHORITY", code: "envelope_incomplete" };
   }
-  if (consequence !== "change" && consequence !== "external_do") {
-    return { verdict: "REFUSED_AUTHORITY", code: "consequence_unclassified" };
+  const classification = classify(envelope);
+  if (classification.code) {
+    return { verdict: "REFUSED_AUTHORITY", code: classification.code };
+  }
+  if (!CONSEQUENCE_BEARING.includes(classification.consequence)) {
+    return { verdict: "ADMITTED", code: "authority_admitted" };
   }
   const authority = envelope.authority;
   if (authority === null || authority === undefined) {
     return { verdict: "REFUSED_AUTHORITY", code: "authority_required" };
   }
-  if (typeof authority !== "object" || !binds(authority, envelope)) {
+  if (typeof authority !== "object" || Array.isArray(authority) || !binds(authority, envelope)) {
     return { verdict: "REFUSED_AUTHORITY", code: "authority_mismatch" };
   }
   return { verdict: "ADMITTED", code: "authority_admitted" };
 }
 
-const [envelopePath, actuatorLogPath] = process.argv.slice(2);
-if (!envelopePath || !actuatorLogPath) {
-  process.stderr.write("usage: authority_host.mjs <envelope.json> <actuator_log_path>\n");
-  process.exit(2);
-}
-
-const envelope = JSON.parse(readFileSync(envelopePath, "utf8"));
-const decision = verdict(envelope);
-
-let actuatorCalls = 0;
-if (decision.verdict === "ADMITTED") {
-  // The real actuator. Only ever reached past the authority gate.
+// The real actuator. Only ever reached past the authority gate.
+function actuate(actuatorLogPath, envelope) {
   appendFileSync(
     actuatorLogPath,
     JSON.stringify({ host: "node", capability_id: envelope.capability_id ?? null }) + "\n",
     "utf8",
   );
-  actuatorCalls = 1;
 }
 
-process.stdout.write(
-  JSON.stringify({
-    host: "node",
-    verdict: decision.verdict,
-    code: decision.code,
-    envelope_digest: digest(envelope),
-    actuator_calls: actuatorCalls,
-  }) + "\n",
-);
+const argv = process.argv.slice(2);
+
+if (argv[0] === "--spec") {
+  const [, specPath, actuatorLogPath] = argv;
+  if (!specPath || !actuatorLogPath) {
+    process.stderr.write("usage: authority_host.mjs --spec <conformance.json> <actuator_log>\n");
+    process.exit(2);
+  }
+
+  const spec = JSON.parse(readFileSync(specPath, "utf8"));
+  for (const testCase of spec.cases) {
+    const decision = verdict(testCase.envelope);
+    let actuatorCalls = 0;
+    if (decision.verdict === "ADMITTED") {
+      actuate(actuatorLogPath, testCase.envelope);
+      actuatorCalls = 1;
+    }
+    process.stdout.write(
+      JSON.stringify({
+        host: "node",
+        name: testCase.name,
+        verdict: decision.verdict,
+        code: decision.code,
+        actuator_calls: actuatorCalls,
+      }) + "\n",
+    );
+  }
+} else {
+  const [envelopePath, actuatorLogPath] = argv;
+  if (!envelopePath || !actuatorLogPath) {
+    process.stderr.write("usage: authority_host.mjs <envelope.json> <actuator_log_path>\n");
+    process.exit(2);
+  }
+
+  const envelope = JSON.parse(readFileSync(envelopePath, "utf8"));
+  const decision = verdict(envelope);
+
+  let actuatorCalls = 0;
+  if (decision.verdict === "ADMITTED") {
+    actuate(actuatorLogPath, envelope);
+    actuatorCalls = 1;
+  }
+
+  process.stdout.write(
+    JSON.stringify({
+      host: "node",
+      verdict: decision.verdict,
+      code: decision.code,
+      envelope_digest: digest(envelope),
+      actuator_calls: actuatorCalls,
+    }) + "\n",
+  );
+}

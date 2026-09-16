@@ -193,7 +193,7 @@ defmodule AshA2A.AuthorityKillerNegativeTest do
     assert ActuatorCounter.count() == 1
 
     # Independent host
-    envelope = Decision.envelope(cmd, :external_do)
+    envelope = Decision.envelope(cmd, AuthorityProbe)
     result = run_independent_host(envelope, dir, actuator_log, "control")
 
     assert result["verdict"] == "ADMITTED"
@@ -257,7 +257,7 @@ defmodule AshA2A.AuthorityKillerNegativeTest do
     assert ActuatorCounter.count() == 0
 
     # --- independent host terminates at REFUSED_AUTHORITY ---------------
-    envelope = Decision.envelope(cmd, :external_do)
+    envelope = Decision.envelope(cmd, AuthorityProbe)
     result = run_independent_host(envelope, dir, actuator_log, "refused")
 
     assert result["host"] == "node"
@@ -302,7 +302,7 @@ defmodule AshA2A.AuthorityKillerNegativeTest do
     assert {:error, %{code: :authority_mismatch}} =
              CommandBus.run(cmd, data_message(%{}), AuthorityProbe, store_opts: store_opts)
 
-    envelope = Decision.envelope(cmd, :external_do)
+    envelope = Decision.envelope(cmd, AuthorityProbe)
     result = run_independent_host(envelope, dir, actuator_log, "mismatch")
 
     assert result["verdict"] == "REFUSED_AUTHORITY"
@@ -313,7 +313,7 @@ defmodule AshA2A.AuthorityKillerNegativeTest do
     refute File.exists?(actuator_log)
   end
 
-  test "an EXPIRED authority terminates at REFUSED_AUTHORITY identically on both hosts, decided against the envelope's own instant (no clock skew between hosts)",
+  test "an EXPIRED authority terminates at REFUSED_AUTHORITY identically on both hosts, each deciding against its OWN real clock (the constrained party does not pick the clock)",
        %{store_opts: store_opts, dir: dir, actuator_log: actuator_log} do
     if not node_available?() do
       flunk("node is not available on this machine; the independent host cannot be exercised")
@@ -338,9 +338,14 @@ defmodule AshA2A.AuthorityKillerNegativeTest do
     assert {:error, %{code: :authority_mismatch}} =
              CommandBus.run(cmd, data_message(%{}), AuthorityProbe, store_opts: store_opts)
 
-    # The independent host decides expiry from the envelope's own
-    # `evaluated_at`, so it needs no synchronized clock to agree.
-    envelope = Decision.envelope(cmd, :external_do)
+    # The independent host decides expiry from its OWN real clock, the same
+    # way `AshA2A.Authority.expired?/1` does on the BEAM. It deliberately does
+    # NOT take the instant from the envelope it is judging: that let the party
+    # being constrained choose the clock, and was a reproduced fail-open
+    # defect (see `AshA2A.AuthorityDecisionFailClosedTest`). The envelope's
+    # own `evaluated_at` is still consulted, but only when it is LATER than
+    # expiry -- it can close the gate further, never hold it open.
+    envelope = Decision.envelope(cmd, AuthorityProbe)
     result = run_independent_host(envelope, dir, actuator_log, "expired")
 
     assert result["verdict"] == "REFUSED_AUTHORITY"

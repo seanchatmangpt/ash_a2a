@@ -171,8 +171,8 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
     # byte-identical with and without the task binding.
     without_task = command(command_id: "task-2", authority: nil)
 
-    assert Decision.verdict(Decision.envelope(cmd, :external_do)) ==
-             Decision.verdict(Decision.envelope(without_task, :external_do))
+    assert Decision.verdict(Decision.envelope(cmd, AuthorityProbe)) ==
+             Decision.verdict(Decision.envelope(without_task, AuthorityProbe))
   end
 
   # --------------------------------------------------------------------
@@ -275,8 +275,8 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
 
     assert certain.metadata != unsure.metadata
 
-    assert Decision.digest(Decision.envelope(certain, :external_do, evaluated_at: at)) ==
-             Decision.digest(Decision.envelope(unsure, :external_do, evaluated_at: at))
+    assert Decision.digest(Decision.envelope(certain, AuthorityProbe, evaluated_at: at)) ==
+             Decision.digest(Decision.envelope(unsure, AuthorityProbe, evaluated_at: at))
   end
 
   # --------------------------------------------------------------------
@@ -330,7 +330,7 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
 
       for {expected, cmd} <- cases do
         bus = run(cmd, store_opts)
-        portable = Decision.verdict(Decision.envelope(cmd, :external_do))
+        portable = Decision.verdict(Decision.envelope(cmd, AuthorityProbe))
 
         case expected do
           :admitted ->
@@ -350,7 +350,7 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
 
       assert {:ok, receipt} = run(cmd, store_opts)
       assert receipt.consequence == :observe
-      assert {:admitted, _} = Decision.verdict(Decision.envelope(cmd, :observe))
+      assert {:admitted, _} = Decision.verdict(Decision.envelope(cmd, AuthorityProbe))
     end
   end
 
