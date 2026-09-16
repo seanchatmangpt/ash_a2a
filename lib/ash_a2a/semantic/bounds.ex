@@ -183,6 +183,43 @@ defmodule AshA2A.Semantic.Bounds do
   @spec delegate(t(), keyword()) ::
           {:ok, %{child: t(), parent: t()}} | {:error, refusal()}
   def delegate(%__MODULE__{} = parent, request) when is_list(request) do
+    result = do_delegate(parent, request)
+
+    # RFC-SA2A-002 §66 delegated-envelope evidence: every delegation decision
+    # is emitted at this boundary. Observation only; `result` is unchanged.
+    {outcome, code} =
+      case result do
+        {:ok, _} -> {:delegated, nil}
+        {:error, %{code: code}} -> {:refused, code}
+        _other -> {:refused, nil}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :bounds, :delegate],
+      %{system_time: System.system_time()},
+      %{
+        outcome: outcome,
+        code: code,
+        parent_capabilities: capability_label(parent.capabilities),
+        requested_capabilities: capability_label(Keyword.get(request, :capabilities, []))
+      }
+    )
+
+    result
+  end
+
+  defp capability_label(%MapSet{} = capabilities),
+    do: capabilities |> MapSet.to_list() |> capability_label()
+
+  defp capability_label(capabilities) do
+    capabilities
+    |> List.wrap()
+    |> Enum.map(&if(is_binary(&1), do: &1, else: inspect(&1)))
+    |> Enum.sort()
+    |> Enum.join(",")
+  end
+
+  defp do_delegate(parent, request) do
     with :ok <- fence(parent),
          :ok <- depth_available(parent),
          {:ok, fan_out} <- narrowed(request, :fan_out, parent.fan_out),

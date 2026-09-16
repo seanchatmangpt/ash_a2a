@@ -133,4 +133,29 @@ defmodule AshA2A.Authority.Broker do
             ) :: {:ok, DateTime.t() | nil} | :error
 
   @optional_callbacks grant_expires_at: 3
+
+  @typedoc "What a `granted?/3` lookup found (RFC-SA2A-002 §67 evidence)."
+  @type lookup_status :: :standing | :absent | :expired | :revoked | :unavailable
+
+  @doc false
+  # Emits `[:ash_a2a, :authority, :broker, :lookup]` from inside a broker's
+  # `granted?/3`, naming WHY the answer was what it was -- so a refusal caused
+  # by an unavailable broker is distinguishable from one caused by an absent,
+  # expired or revoked grant (RFC-SA2A-002 §12: the request must be shown to
+  # have reached the broker). Observation only; returns `status`.
+  @spec emit_lookup(module(), Identity.t(), String.t(), lookup_status()) :: lookup_status()
+  def emit_lookup(broker, %Identity{} = subject, capability_id, status) do
+    :telemetry.execute(
+      [:ash_a2a, :authority, :broker, :lookup],
+      %{system_time: System.system_time()},
+      %{
+        outcome: status,
+        broker: inspect(broker),
+        principal_id: subject.value,
+        capability_id: capability_id
+      }
+    )
+
+    status
+  end
 end

@@ -167,7 +167,8 @@ defmodule AshA2A.Chicago.Runner do
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
     # Two courts that rely on the same SUT event each declare its mapping;
     # `ocel_mappings/1` admits a shared mapping once, so the observer records
-    # one emission once however many selected courts declare it.
+    # one emission once however many selected courts declare it -- never two
+    # records carrying the same sequence id.
     mappings = ocel_mappings(courts)
 
     observer_opts = observer_opts(run_id, mappings, evidence_dir, opts)
