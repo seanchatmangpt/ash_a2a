@@ -119,9 +119,42 @@ defmodule AshA2A.SA2A.Conformance do
   would report five green assertions and mean nothing at all. The module
   check runs first, so a module that cannot report its own identity still
   cannot be run against itself.
+
+  The pair is compared after `AshA2A.RuntimeIdentity.label_key/1`
+  normalization (Unicode NFKC, whitespace / separator / format characters
+  removed, case folded): changing only a whitespace-normalized host label is
+  not evidence of heterogeneity (RFC-SA2A-002 §126). Measured before this
+  rule, a runtime reporting `"BEAM/Wasmex "` -- one trailing space -- over
+  the very same Wasmtime instance ran to `{:ok, receipt}` with
+  `"result" => "PASS"`.
+
+  Labels are caller-controlled, so they are necessary but not sufficient.
+  Once both sessions are open, and still before any vector executes, the
+  court observes each session's real executing resources
+  (`AshA2A.RuntimeIdentity.observe_session/1`: the emulator + engine
+  module/NIF digests of an in-BEAM process, the executable digest of an OS
+  process) and refuses with `:sa2a_identical_runtimes` when both observed
+  identities are equal, or with `:sa2a_runtime_identity_unobservable` when
+  either cannot be observed. A module relabelled `"WASI/StandaloneHost"` /
+  `"wasm3"` that executes in the same in-BEAM Wasmtime engine is refused on
+  what it executes, not on what it says.
+
+  Each decision emits `[:ash_a2a, :sa2a, :conformance, :runtime_identity]`
+  (`outcome: :identical | :distinct | :unobservable`, `basis: :module |
+  :label | :observed_executable`) and every judged run emits
+  `[:ash_a2a, :sa2a, :conformance, :judged]`, so an independent observer can
+  establish that the refusal was attempted before any verdict.
   """
 
+  @doc false
+  def __sa2a_refusal_codes__,
+    do: %{
+      sa2a_identical_runtimes: :refused_identity,
+      sa2a_runtime_identity_unobservable: :refused_identity
+    }
+
   alias AshA2A.GraphLaw.Runtime
+  alias AshA2A.RuntimeIdentity
   alias AshA2A.SA2A.{ResultProjection, StateMachine, Vector}
 
   @profile "SA2A-STRICT-v26.9.16"
@@ -161,10 +194,33 @@ defmodule AshA2A.SA2A.Conformance do
     with :ok <- refuse_identical(runtime_a, runtime_b),
          :ok <- check_available(runtime_a, opts),
          :ok <- check_available(runtime_b, opts),
-         {:ok, vectors} <- Vector.load_all(opts),
-         {:ok, observed_a} <- observe(runtime_a, vectors, opts),
-         {:ok, observed_b} <- observe(runtime_b, vectors, opts) do
-      judge(observed_a, observed_b, vectors)
+         {:ok, vectors} <- Vector.load_all(opts) do
+      # Both sessions are opened before any vector executes, so the observed
+      # runtime identities can be compared first (RFC-SA2A-002 §126).
+      with_open(runtime_a, opts, fn opened_a ->
+        with_open(runtime_b, opts, fn opened_b ->
+          with {:ok, identity_a, identity_b} <-
+                 refuse_same_executable(runtime_a, opened_a, runtime_b, opened_b),
+               {:ok, observed_a} <- observe(runtime_a, opened_a, identity_a, vectors),
+               {:ok, observed_b} <- observe(runtime_b, opened_b, identity_b, vectors) do
+            judge(observed_a, observed_b, vectors)
+          end
+        end)
+      end)
+    end
+  end
+
+  defp with_open(mod, opts, fun) do
+    case mod.open(opts) do
+      {:ok, %{session: session} = opened} ->
+        try do
+          fun.(opened)
+        after
+          mod.close(session)
+        end
+
+      {:error, reason} ->
+        {:error, Map.put(reason, :runtime, inspect(mod))}
     end
   end
 
@@ -174,6 +230,8 @@ defmodule AshA2A.SA2A.Conformance do
   # {host_id, engine_id} must still not be runnable against itself, so the
   # cheaper and stricter check does not depend on the runtime answering.
   defp refuse_identical(mod, mod) do
+    emit_identity(:identical, :module, mod, mod)
+
     {:error,
      %{
        code: :sa2a_identical_runtimes,
@@ -192,21 +250,101 @@ defmodule AshA2A.SA2A.Conformance do
     identity_a = Runtime.identity(mod_a)
     identity_b = Runtime.identity(mod_b)
 
-    if identity_a == identity_b do
+    # Caller-controlled strings: compared after whitespace/case/Unicode
+    # normalization, so "BEAM/Wasmex " is not a second host (§126).
+    if label_keys(identity_a) == label_keys(identity_b) do
+      emit_identity(:identical, :label, mod_a, mod_b)
+
       {:error,
        %{
          code: :sa2a_identical_runtimes,
          same_module: false,
+         basis: :label,
          runtime_a: inspect(mod_a),
          runtime_b: inspect(mod_b),
          identity: inspect(identity_a),
+         identity_b: inspect(identity_b),
          message:
-           "both runtimes report the same {host_id, engine_id}. Running one runtime " <>
+           "both runtimes report the same {host_id, engine_id} (compared after " <>
+             "whitespace/case normalization, RFC-SA2A-002 S126). Running one runtime " <>
              "twice cannot establish cross-runtime conformance."
        }}
     else
       :ok
     end
+  end
+
+  defp label_keys({host, engine}),
+    do: {RuntimeIdentity.label_key(host), RuntimeIdentity.label_key(engine)}
+
+  # Labels passed; the executing resources decide. Observed from the open
+  # sessions, never from what either module reports about itself.
+  defp refuse_same_executable(mod_a, %{session: session_a}, mod_b, %{session: session_b}) do
+    case {RuntimeIdentity.observe_session(session_a), RuntimeIdentity.observe_session(session_b)} do
+      {{:ok, same}, {:ok, same}} ->
+        digest = RuntimeIdentity.digest(same)
+
+        emit_identity(:identical, :observed_executable, mod_a, mod_b, %{
+          observed_a: digest,
+          observed_b: digest
+        })
+
+        {:error,
+         %{
+           code: :sa2a_identical_runtimes,
+           same_module: false,
+           basis: :observed_executable,
+           runtime_a: inspect(mod_a),
+           runtime_b: inspect(mod_b),
+           identity: inspect(Runtime.identity(mod_a)),
+           identity_b: inspect(Runtime.identity(mod_b)),
+           observed_identity: same,
+           message:
+             "the two runtimes report different {host_id, engine_id} labels but execute on " <>
+               "the same observed runtime (#{String.slice(digest, 0, 12)}). Running one runtime " <>
+               "twice cannot establish cross-runtime conformance (RFC-SA2A-002 S126)."
+         }}
+
+      {{:ok, identity_a}, {:ok, identity_b}} ->
+        emit_identity(:distinct, :observed_executable, mod_a, mod_b, %{
+          observed_a: RuntimeIdentity.digest(identity_a),
+          observed_b: RuntimeIdentity.digest(identity_b)
+        })
+
+        {:ok, identity_a, identity_b}
+
+      {observed_a, observed_b} ->
+        emit_identity(:unobservable, :observed_executable, mod_a, mod_b)
+
+        {:error,
+         %{
+           code: :sa2a_runtime_identity_unobservable,
+           runtime_a: inspect(mod_a),
+           runtime_b: inspect(mod_b),
+           observed_a: inspect(observed_a),
+           observed_b: inspect(observed_b),
+           message:
+             "a runtime's executing identity could not be observed, so heterogeneity " <>
+               "cannot be established (RFC-SA2A-002 S126)."
+         }}
+    end
+  end
+
+  @identity_event [:ash_a2a, :sa2a, :conformance, :runtime_identity]
+  @judged_event [:ash_a2a, :sa2a, :conformance, :judged]
+
+  # Boundary telemetry (RFC-SA2A-002 §12): the decision this court makes about
+  # whether two runtimes are heterogeneous, observable by an independent
+  # process observer. Behaviour-preserving; it records, it decides nothing.
+  defp emit_identity(outcome, basis, mod_a, mod_b, extra \\ %{}) do
+    :telemetry.execute(
+      @identity_event,
+      %{},
+      Map.merge(
+        %{outcome: outcome, basis: basis, runtime_a: inspect(mod_a), runtime_b: inspect(mod_b)},
+        extra
+      )
+    )
   end
 
   defp check_available(mod, opts) do
@@ -218,36 +356,27 @@ defmodule AshA2A.SA2A.Conformance do
 
   # -- observation ----------------------------------------------------------
 
-  defp observe(mod, vectors, opts) do
+  defp observe(mod, %{session: session, wasm_digest: wasm_digest}, observed_identity, vectors) do
     root_manifest = Vector.root_manifest(vectors)
 
-    case mod.open(opts) do
-      {:ok, %{session: session, wasm_digest: wasm_digest}} ->
-        try do
-          with {:ok, version} <- mod.call(session, :graphlaw_version, []),
-               {:ok, root_digest} <- mod.call(session, :blake3_hex, [root_manifest]) do
-            vector_results = Enum.map(vectors, &observe_vector(mod, session, &1, version))
+    with {:ok, version} <- mod.call(session, :graphlaw_version, []),
+         {:ok, root_digest} <- mod.call(session, :blake3_hex, [root_manifest]) do
+      vector_results = Enum.map(vectors, &observe_vector(mod, session, &1, version))
 
-            {:ok,
-             %{
-               runtime: mod,
-               host: mod.host_id(),
-               engine: engine_of(mod, session),
-               wasm_digest: wasm_digest,
-               digest_algorithm: Runtime.digest_algorithm(),
-               graphlaw_version: version,
-               root_manifest_digest: root_digest,
-               vectors: vector_results
-             }
-             |> with_rollups(mod, session)}
-          else
-            {:error, reason} ->
-              {:error, Map.put(reason, :runtime, inspect(mod))}
-          end
-        after
-          mod.close(session)
-        end
-
+      {:ok,
+       %{
+         runtime: mod,
+         host: mod.host_id(),
+         engine: engine_of(mod, session),
+         observed_identity: observed_identity,
+         wasm_digest: wasm_digest,
+         digest_algorithm: Runtime.digest_algorithm(),
+         graphlaw_version: version,
+         root_manifest_digest: root_digest,
+         vectors: vector_results
+       }
+       |> with_rollups(mod, session)}
+    else
       {:error, reason} ->
         {:error, Map.put(reason, :runtime, inspect(mod))}
     end
@@ -457,6 +586,12 @@ defmodule AshA2A.SA2A.Conformance do
       end)
 
     receipt = receipt(a, b, vectors, assertions, passed?)
+
+    :telemetry.execute(@judged_event, %{vector_count: length(vectors)}, %{
+      result: receipt["result"],
+      runtime_a: inspect(a.runtime),
+      runtime_b: inspect(b.runtime)
+    })
 
     if passed?, do: {:ok, receipt}, else: {:error, receipt}
   end
@@ -716,6 +851,7 @@ defmodule AshA2A.SA2A.Conformance do
       "host" => observation.host,
       "engine" => observation.engine,
       "runtime_module" => inspect(observation.runtime),
+      "observed_identity" => observation.observed_identity,
       "observations_complete" => observation.observations_complete,
       "wasm_digest" => observation.wasm_digest,
       "graphlaw_version" => observation.graphlaw_version,

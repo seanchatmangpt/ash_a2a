@@ -21,7 +21,10 @@ defmodule AshA2A.Test.DegradedGraphLawRuntime do
   path. A genuinely partially-broken host can.
 
   Its `host_id/0` and `engine_id/0` are distinct from both shipped runtimes,
-  so the court's identical-runtime refusal does not fire on it.
+  but it executes in the same in-BEAM Wasmtime engine as
+  `AshA2A.GraphLaw.WasmexSession`, so the court refuses that pairing on
+  observed runtime identity (RFC-SA2A-002 §126); pair it with the
+  out-of-BEAM `AshA2A.GraphLaw.RuntimeB`.
   """
 
   @behaviour AshA2A.GraphLaw.Runtime

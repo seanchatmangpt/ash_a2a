@@ -67,6 +67,9 @@ defmodule AshA2A.Chicago.Runner do
     * `:court_ids` -- restrict to these court ids
     * `:evidence_dir` -- output directory (default a fresh tmp dir)
     * `:subject_opts` -- passed to `Subject.capture/1`
+    * `:claimed_subject` -- the `AshA2A.Chicago.Subject` (or its JSON map)
+      the standing is claimed for; verified against the captured subject
+      before any court runs, and a mismatch issues `REFUSED` standing (§32)
     * `:ocel_validator` -- module exporting `validate_file/1`
       (default `AshA2A.Chicago.Ocel.Validator` when compiled; otherwise
       validation is recorded as not run and standing cannot be CONFORMANT)
@@ -111,6 +114,16 @@ defmodule AshA2A.Chicago.Runner do
     mappings = SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
 
     {:ok, observer} = Observer.start_link(run_id: run_id, mappings: mappings)
+
+    # §32: a claimed subject is verified against the executed one before any
+    # court runs; a mismatch is carried to the receipt as REFUSED standing.
+    # Always recomputed here -- a caller cannot pass a verification in.
+    opts =
+      Keyword.put(
+        opts,
+        :subject_verification,
+        Subject.verify_claim(Keyword.get(opts, :claimed_subject), subject)
+      )
 
     try do
       ctx = %Context{
@@ -160,7 +173,8 @@ defmodule AshA2A.Chicago.Runner do
         results: results,
         ocel: ocel,
         ocel_validation: validation,
-        run_id: run_id
+        run_id: run_id,
+        subject_verification: Keyword.fetch!(opts, :subject_verification)
       })
 
     run = %Run{
@@ -176,6 +190,16 @@ defmodule AshA2A.Chicago.Runner do
     }
 
     write_package!(run)
+
+    :telemetry.execute([:ash_a2a, :chicago, :standing, :issued], %{}, %{
+      run_id: run_id,
+      standing: receipt["standing"],
+      claimed_profile: receipt["subject"]["claimed_profile"],
+      subject_identity: receipt["subject"]["identity"],
+      subject_verification: receipt["subject"]["verification"]["outcome"],
+      receipt_digest: receipt["receipt_digest"]
+    })
+
     {:ok, run}
   end
 

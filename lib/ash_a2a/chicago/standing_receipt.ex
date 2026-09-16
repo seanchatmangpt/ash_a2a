@@ -5,6 +5,8 @@ defmodule AshA2A.Chicago.StandingReceipt do
 
   Standing is computed, never asserted:
 
+    * a `:claimed_subject` that does not verify against the executed subject
+      -> `REFUSED` (§32), whatever the results
     * any `:build_broken` result -> `BUILD_BROKEN`
     * any survived falsifier or failed positive control -> `NONCONFORMANT`
     * every applicable result corroborated as passed, every required gate of
@@ -44,7 +46,14 @@ defmodule AshA2A.Chicago.StandingReceipt do
         } = run
       ) do
     gates = gate_table(profile, courts, results)
-    standing = standing(results, gates, run.ocel, run.ocel_validation)
+    verification = Map.get(run, :subject_verification, :not_claimed)
+
+    # §32: a claimed subject that does not verify never receives standing.
+    standing =
+      if match?({:mismatch, _, _}, verification),
+        do: :refused,
+        else: standing(results, gates, run.ocel, run.ocel_validation)
+
     subject_digest = Subject.digest(subject)
     court_revision = court_revision(courts)
 
@@ -56,7 +65,11 @@ defmodule AshA2A.Chicago.StandingReceipt do
         subject
         |> Subject.to_map()
         |> Map.delete("repo")
-        |> Map.merge(%{"identity" => subject_digest, "claimed_profile" => Profile.name(profile)}),
+        |> Map.merge(%{
+          "identity" => subject_digest,
+          "claimed_profile" => Profile.name(profile),
+          "verification" => verification_map(verification)
+        }),
       "court" => %{
         "revision" => court_revision,
         "courts" =>
@@ -267,6 +280,19 @@ defmodule AshA2A.Chicago.StandingReceipt do
     }
   end
 
+  defp verification_map(:not_claimed), do: %{"outcome" => "not_claimed"}
+
+  defp verification_map({:match, claimed}),
+    do: %{"outcome" => "match", "claimed_identity" => claimed, "fields" => []}
+
+  defp verification_map({:mismatch, claimed, fields}),
+    do: %{
+      "outcome" => "mismatch",
+      "claimed_identity" => claimed,
+      "fields" => Enum.map(fields, &Atom.to_string/1),
+      "failure_class" => "IDENTITY_FAILURE"
+    }
+
   defp gate_evidence(gates, gate) do
     case List.keyfind(gates, gate, 0) do
       nil -> "NOT_OBSERVED"
@@ -283,6 +309,12 @@ defmodule AshA2A.Chicago.StandingReceipt do
     court = String.slice(court_revision, 0, 12)
 
     case standing do
+      :refused ->
+        {:mismatch, claimed, fields} = run.subject_verification
+
+        "#{name} REFUSED: claimed subject #{String.slice(claimed || "unreadable", 0, 12)} " <>
+          "does not verify against executed subject #{rev} (#{Enum.join(fields, ", ")})"
+
       :conformant ->
         "#{name} CONFORMANT for exact subject #{rev} under court revision #{court}"
 
