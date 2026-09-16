@@ -1,0 +1,7 @@
+@prefix a2a:  <urn:ash-a2a:vocab:> .
+@prefix ex:   <urn:ash-a2a:conformance:> .
+
+ex:command-002
+    a                 a2a:Command ;
+    a2a:capabilityId  "conformance:echo" ;
+    a2a:payloadDigest "sha256:0000000000000000000000000000000000000000000000000000000000000002" .

@@ -1,0 +1,28 @@
+{
+  "shapes": [
+    {
+      "id": "urn:ash-a2a:conformance:schema:CommandEnvelope",
+      "shapeExpr": {
+        "type": "Shape",
+        "closed": false,
+        "expression": {
+          "type": "EachOf",
+          "expressions": [
+            { "type": "TripleConstraint",
+              "predicate": "urn:ash-a2a:vocab:capabilityId",
+              "valueExpr": { "type": "NodeConstraint", "datatype": "http://www.w3.org/2001/XMLSchema#string" },
+              "min": 1, "max": 1 },
+            { "type": "TripleConstraint",
+              "predicate": "urn:ash-a2a:vocab:principalId",
+              "valueExpr": { "type": "NodeConstraint", "datatype": "http://www.w3.org/2001/XMLSchema#string" },
+              "min": 1, "max": 1 },
+            { "type": "TripleConstraint",
+              "predicate": "urn:ash-a2a:vocab:payloadDigest",
+              "valueExpr": { "type": "NodeConstraint", "datatype": "http://www.w3.org/2001/XMLSchema#string" },
+              "min": 1, "max": 1 }
+          ]
+        }
+      }
+    }
+  ]
+}

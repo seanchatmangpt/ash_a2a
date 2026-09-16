@@ -108,12 +108,21 @@ defmodule AshA2A.SemanticConformanceDynamicCallSitesTest do
 
       # Before the fix: met 15, unmet 19, unverifiable 0. The DO-path
       # requirement moves out of :met and into :unverifiable.
+      #
+      # Since the feat/sa2a-root-manifest merge, `AshA2A.Semantic.RootManifest`
+      # is a real loaded module, so `check_admitted_root_manifest/0` moves
+      # from :unmet to :unverifiable by its own documented rule (a surface
+      # exists; this check does not establish that it is admitted). Hence
+      # unmet 18 and unverifiable 2, with :met unchanged.
       assert length(Map.get(grouped, :met, [])) == 14
-      assert length(Map.get(grouped, :unmet, [])) == 19
-      assert length(Map.get(grouped, :unverifiable, [])) == 1
+      assert length(Map.get(grouped, :unmet, [])) == 18
+      assert length(Map.get(grouped, :unverifiable, [])) == 2
 
       unverifiable = Map.get(grouped, :unverifiable, [])
       assert Enum.any?(unverifiable, &(&1.detail =~ "not decidable by AST inspection"))
+
+      assert unverifiable |> Enum.map(& &1.id) |> Enum.sort() ==
+               [:admitted_root_manifest, :no_llm_on_production_do_path]
 
       # An :unverifiable requirement blocks conformance exactly as hard as an
       # :unmet one, so nothing here buys a level.

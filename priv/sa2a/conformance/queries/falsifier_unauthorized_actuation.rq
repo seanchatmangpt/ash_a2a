@@ -1,0 +1,8 @@
+PREFIX a2a: <urn:ash-a2a:vocab:>
+
+# Falsifier: any actuation lacking a receipt refutes the BRCE receipt law.
+# A non-empty result set means the claim is FALSIFIED.
+SELECT ?actuation WHERE {
+  ?actuation a a2a:Actuation .
+  FILTER NOT EXISTS { ?actuation a2a:hasReceipt ?r }
+}

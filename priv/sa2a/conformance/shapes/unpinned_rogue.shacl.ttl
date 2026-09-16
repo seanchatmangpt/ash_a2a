@@ -1,0 +1,11 @@
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix a2a:  <urn:ash-a2a:vocab:> .
+@prefix ex:   <urn:ash-a2a:conformance:shapes:rogue:> .
+
+# Structurally valid SHACL. Semantically it asserts almost nothing, so any
+# data graph "passes" it. It is not pinned in the Root Manifest, so
+# AshA2A.Semantic.MetaAdmission must refuse to USE it at all --
+# NOT Standing(v) => NOT Validates(v, x) -- regardless of the data.
+ex:PermissiveShape
+    a               sh:NodeShape ;
+    sh:targetClass  a2a:Command .
