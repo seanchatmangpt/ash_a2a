@@ -108,7 +108,11 @@ defmodule AshA2A.Chicago.Runner do
       end)
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
-    mappings = SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
+    # Two courts that rely on the same SUT event each declare its mapping;
+    # without the dedupe the observer would record that event once per copy.
+    mappings =
+      (SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings()))
+      |> Enum.uniq_by(&{&1.event, &1.activity})
 
     {:ok, observer} = Observer.start_link(run_id: run_id, mappings: mappings)
 
