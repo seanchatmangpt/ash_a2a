@@ -43,6 +43,32 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
     Enum.find(result.dialects, &(Map.get(&1, "dialect") == name))
   end
 
+  # Appends a real, spec-legal WebAssembly custom section (section id 0) to
+  # an existing wasm module's raw bytes. A custom section is defined by the
+  # WebAssembly binary format to be ignorable by any conforming engine and
+  # is legal at the very end of a module, so the result really loads and
+  # really executes identically to the original -- only its bytes (and
+  # therefore its SHA-256) differ. This is a real, functional adversarial
+  # artifact, not a mock: `node priv/graphlaw/graphlaw_host.mjs version`
+  # against the result reports the identical `graphlaw_version()` string.
+  defp append_functional_custom_section(bytes) when is_binary(bytes) do
+    name = "ash_a2a_regression_probe"
+    payload = :crypto.strong_rand_bytes(32)
+    content = leb128(byte_size(name)) <> name <> payload
+    section = <<0>> <> leb128(byte_size(content)) <> content
+    bytes <> section
+  end
+
+  # Unsigned LEB128, the integer encoding the WebAssembly binary format uses
+  # for section/name lengths.
+  defp leb128(n) when n < 0x80, do: <<n>>
+
+  defp leb128(n) do
+    low = rem(n, 0x80)
+    rest = div(n, 0x80)
+    <<low + 0x80>> <> leb128(rest)
+  end
+
   describe "standing/3 -- what counts as an admitted judge" do
     setup do
       staged = stage()
@@ -364,6 +390,92 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
         # And a genuinely different graph hashes differently.
         assert {:ok, c} = EngineProbe.graph_hash(RootManifest.resolve(manifest, @invalid_data))
         refute a == c
+      end
+    end
+
+    describe "engine standing is bound to USE time, not just load time" do
+      setup do
+        wasm_copy =
+          Path.join(
+            System.tmp_dir!(),
+            "graphlaw_engine_copy_#{System.unique_integer([:positive, :monotonic])}.wasm"
+          )
+
+        File.cp!(EngineProbe.wasm_path([]), wasm_copy)
+        on_exit(fn -> File.rm(wasm_copy) end)
+
+        staged = Sa2aCorpus.stage!(engine_path: wasm_copy)
+        on_exit(fn -> Sa2aCorpus.cleanup(staged.root) end)
+
+        {:ok, manifest} = RootManifest.load(staged.path, wasm_path: wasm_copy)
+        assert manifest.engine_verified?
+        assert {:ok, expected_digest} = RootManifest.artifact_digest(wasm_copy)
+        assert manifest.engine_verified_digest == expected_digest
+
+        machinery = Keyword.put(@pinned_machinery, :wasm_path, wasm_copy)
+
+        %{staged: staged, manifest: manifest, wasm_copy: wasm_copy, machinery: machinery}
+      end
+
+      test "(b) an unchanged engine artifact continues to authorize every call",
+           %{manifest: manifest, machinery: machinery} do
+        assert {:ok, first} = MetaAdmission.validate(manifest, @valid_data, machinery)
+        assert first.admitted?
+
+        assert {:ok, second} = MetaAdmission.validate(manifest, @valid_data, machinery)
+        assert second.admitted?
+
+        assert {:ok, derived} =
+                 MetaAdmission.canonical_derivation(
+                   manifest,
+                   @valid_data,
+                   "conformance/rules/derivation.n3",
+                   wasm_path: machinery[:wasm_path]
+                 )
+
+        assert derived.status == "ADMITTED"
+      end
+
+      test "(a) a byte-altered, same-version engine swapped in after load is refused at use time",
+           %{manifest: manifest, machinery: machinery, wasm_copy: wasm_copy} do
+        # Baseline: the load-time-verified engine authorizes normally before any swap.
+        assert {:ok, baseline} = MetaAdmission.validate(manifest, @valid_data, machinery)
+        assert baseline.admitted?
+
+        original_bytes = File.read!(wasm_copy)
+        altered_bytes = append_functional_custom_section(original_bytes)
+        refute altered_bytes == original_bytes
+
+        # Swap the artifact AFTER load-time verification succeeded, BEFORE use.
+        # This is the exact TOCTOU repro: load-time verification passed once,
+        # against artifact A; execution now re-resolves the SAME path and must
+        # not go on trusting it.
+        File.write!(wasm_copy, altered_bytes)
+
+        # The altered artifact is real and FUNCTIONAL -- it reports the
+        # IDENTICAL version string the manifest expects. A version check
+        # alone would not catch this swap; the bare `engine_verified?`
+        # boolean this branch used to gate on would not either. Only a
+        # real digest re-check at use time catches it.
+        assert {:ok, "praxis-graphlaw v26.7.5"} = EngineProbe.version(wasm_path: wasm_copy)
+        refute manifest.engine_verified_digest == RootManifest.digest_bytes(altered_bytes)
+
+        assert {:error, %{code: :REFUSED_META_RIGOR, detail: detail}} =
+                 MetaAdmission.validate(manifest, @valid_data, machinery)
+
+        assert detail.reason == :engine_digest_drift
+        assert detail.expected == manifest.engine_verified_digest
+        refute detail.expected == detail.observed
+
+        assert {:error, %{code: :REFUSED_META_RIGOR, detail: derivation_detail}} =
+                 MetaAdmission.canonical_derivation(
+                   manifest,
+                   @valid_data,
+                   "conformance/rules/derivation.n3",
+                   wasm_path: wasm_copy
+                 )
+
+        assert derivation_detail.reason == :engine_digest_drift
       end
     end
   else

@@ -38,6 +38,17 @@ defmodule AshA2A.Semantic.MetaAdmission do
     yields `REFUSED_META_RIGOR` with reason `:engine_unverified` for every
     engine-backed operation. Meta-admission that exempted its own executor
     would not be recursive.
+  * Engine standing is itself re-checked at USE time, not just load time.
+    `RootManifest.load/2` records the exact digest it verified
+    (`manifest.engine_verified_digest`); every call into this module
+    independently re-resolves the CURRENT wasm artifact's digest
+    (`RootManifest.current_engine_digest/1`, the same resolution order
+    `load/2` used) and refuses with reason `:engine_digest_drift` if it no
+    longer matches. A manifest verified once against artifact A must not
+    go on authorizing operations once the artifact backing later calls has
+    been silently swapped for artifact B -- the load-time engine check
+    alone would be exactly the same time-of-check/time-of-use hole the
+    per-artifact standing check above already closes for shapes/schemas.
 
   ## Why this is not paranoia: a real, measured laundering attack
 
@@ -192,7 +203,7 @@ defmodule AshA2A.Semantic.MetaAdmission do
       {Keyword.fetch!(opts, :shape_map), "shex_shape_map"}
     ]
 
-    with :ok <- require_verified_engine(manifest),
+    with :ok <- require_verified_engine(manifest, opts),
          {:ok, pins} <- standing_all(manifest, machinery),
          {:ok, data_path} <- resolve_existing(manifest, data_relative_path) do
       paths = [
@@ -240,7 +251,7 @@ defmodule AshA2A.Semantic.MetaAdmission do
         rules_relative_path,
         opts \\ []
       ) do
-    with :ok <- require_verified_engine(manifest),
+    with :ok <- require_verified_engine(manifest, opts),
          {:ok, rule_pin} <- standing(manifest, rules_relative_path, "n3_rules"),
          {:ok, base_path} <- resolve_existing(manifest, base_relative_path) do
       rules_path = RootManifest.resolve(manifest, rules_relative_path)
@@ -292,9 +303,32 @@ defmodule AshA2A.Semantic.MetaAdmission do
 
   # The engine is machinery. Meta-admission that exempted its own executor
   # would not be recursive -- so an unverified engine refuses here too.
-  defp require_verified_engine(%RootManifest{engine_verified?: true}), do: :ok
+  #
+  # Load-time verification alone is not enough: `engine_verified?: true`
+  # only proves SOME artifact was verified once, not that it is the SAME
+  # artifact backing THIS call. So every call re-resolves the current wasm
+  # artifact's real digest and compares it against the digest that was
+  # actually verified at load time -- a mismatch means the artifact was
+  # swapped after verification and fails closed with `:engine_digest_drift`,
+  # never silently continuing on the stale load-time boolean alone.
+  defp require_verified_engine(
+         %RootManifest{engine_verified?: true, engine_verified_digest: expected},
+         opts
+       )
+       when is_binary(expected) do
+    case RootManifest.current_engine_digest(opts) do
+      {:ok, ^expected} ->
+        :ok
 
-  defp require_verified_engine(%RootManifest{engine: engine}) do
+      {:ok, observed} ->
+        refuse(:engine_digest_drift, %{expected: expected, observed: observed})
+
+      {:error, failure} ->
+        refuse(:engine_digest_drift, %{expected: expected, observed: nil, detail: failure})
+    end
+  end
+
+  defp require_verified_engine(%RootManifest{engine: engine}, _opts) do
     refuse(:engine_unverified, %{
       engine: Map.get(engine, "id"),
       expected_version: Map.get(engine, "expected_version"),

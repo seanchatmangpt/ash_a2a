@@ -20,8 +20,9 @@ defmodule AshA2A.Semantic.RootManifest do
   The address deliberately EXCLUDES every machine-local value: `:root` (the
   absolute directory the relative pin paths resolve against), the engine
   pin's `"path_hint"`, and the transient verification results
-  (`:engine_verified?`, `:verified_at`). This is not an oversight -- the
-  qualification this manifest serves is about two DIFFERENT runtimes
+  (`:engine_verified?`, `:engine_verified_digest`, `:verified_at`). This is
+  not an oversight -- the qualification this manifest serves is about two
+  DIFFERENT runtimes
   agreeing, and two runtimes never agree on absolute paths. Pin paths are
   stored relative to `:root` so the same corpus checked out at two different
   locations yields the identical manifest digest.
@@ -132,7 +133,13 @@ defmodule AshA2A.Semantic.RootManifest do
   ]
 
   # Deliberately outside the content address: machine-local or transient.
-  @unaddressed_fields [:digest, :root, :engine_verified?, :verified_at]
+  @unaddressed_fields [
+    :digest,
+    :root,
+    :engine_verified?,
+    :engine_verified_digest,
+    :verified_at
+  ]
 
   @engine_unaddressed_keys ["path_hint"]
 
@@ -151,6 +158,7 @@ defmodule AshA2A.Semantic.RootManifest do
             digest: nil,
             root: nil,
             engine_verified?: false,
+            engine_verified_digest: nil,
             verified_at: nil
 
   @type pin :: %{required(String.t()) => String.t()}
@@ -383,6 +391,30 @@ defmodule AshA2A.Semantic.RootManifest do
     File.write!(path, to_json(manifest))
   end
 
+  @doc """
+  The REAL SHA-256 of the engine artifact resolved right now via
+  `EngineProbe.wasm_path/1` -- the same resolution order (`opts[:wasm_path]`
+  -> app env -> `GRAPHLAW_WASM` -> default) `do_verify_engine/2` used at
+  load time.
+
+  This is deliberately independent of `engine_verified_digest`: it re-reads
+  the file off disk at the moment of the call rather than trusting anything
+  recorded on the manifest struct. Callers that must bind a load-time
+  verification to a specific later use (`AshA2A.Semantic.MetaAdmission`'s
+  use-time engine check) call this at that later moment and compare the
+  result against `manifest.engine_verified_digest` themselves -- comparing
+  two independently-obtained values, never trusting one alone.
+  """
+  @spec current_engine_digest(keyword()) :: {:ok, String.t()} | {:error, refusal()}
+  def current_engine_digest(opts \\ []) do
+    path = EngineProbe.wasm_path(opts)
+
+    case artifact_digest(path) do
+      {:ok, digest} -> {:ok, digest}
+      {:error, _} = error -> error
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Loading -- fails closed
   # ---------------------------------------------------------------------------
@@ -514,7 +546,7 @@ defmodule AshA2A.Semantic.RootManifest do
     if Keyword.get(opts, :require_engine, true) do
       do_verify_engine(manifest, opts)
     else
-      {:ok, %{manifest | engine_verified?: false}}
+      {:ok, %{manifest | engine_verified?: false, engine_verified_digest: nil}}
     end
   end
 
@@ -527,7 +559,7 @@ defmodule AshA2A.Semantic.RootManifest do
          :ok <- match_engine_digest(pinned, actual, path),
          {:ok, version} <- engine_version(opts),
          :ok <- match_engine_version(expected_version, version) do
-      {:ok, %{manifest | engine_verified?: true}}
+      {:ok, %{manifest | engine_verified?: true, engine_verified_digest: actual}}
     end
   end
 
@@ -675,7 +707,14 @@ defmodule AshA2A.Semantic.RootManifest do
 
     if unknown == [] do
       mutated = Enum.reduce(normalized, manifest, fn {k, v}, acc -> Map.put(acc, k, v) end)
-      mutated = %{mutated | digest: content_digest(mutated), engine_verified?: false}
+
+      mutated = %{
+        mutated
+        | digest: content_digest(mutated),
+          engine_verified?: false,
+          engine_verified_digest: nil
+      }
+
       verify(mutated, opts)
     else
       refuse(:REFUSED_MANIFEST_MALFORMED, %{unmutable_or_unknown_fields: unknown})
