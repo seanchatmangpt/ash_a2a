@@ -98,6 +98,11 @@ defmodule AshA2A.ReceiptOutbox do
     {:ok, %{committed: committed, remaining: remaining}}
   end
 
+  defp mark_reconciled(%Receipt{status: :pending} = receipt), do: receipt
+
+  defp mark_reconciled(%Receipt{} = receipt),
+    do: Receipt.reconcile(receipt, %{source: :receipt_outbox})
+
   defp reconcile_entry(store, store_opts, %Receipt{} = receipt) do
     case safe(store, :fetch, [receipt.command_id, store_opts]) do
       {:ok, _stored} ->
@@ -109,6 +114,13 @@ defmodule AshA2A.ReceiptOutbox do
   end
 
   defp commit_or_reclaim(store, store_opts, receipt) do
+    # RFC-SA2A-001 S31: a receipt that only reaches the primary store via this
+    # drain is `:reconciled`, not plainly `:executed` -- the distinction is the
+    # whole point of having a separate terminal status for it. A still-pending
+    # anchor is left alone: `Receipt.reconcile/2` would claim an outcome that
+    # was never observed.
+    receipt = mark_reconciled(receipt)
+
     case safe(store, :commit, [receipt, store_opts]) do
       :ok ->
         remove_and(:committed, receipt)

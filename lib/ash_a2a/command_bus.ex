@@ -26,9 +26,36 @@ defmodule AshA2A.CommandBus do
 
   The configured retry delays are true retries: there is one immediate primary
   commit attempt plus one additional attempt after each configured delay.
+
+  ## RFC-SA2A-001 S55 actuation identity
+
+  The command claim above dedups *requests*. A client that retries by minting
+  a fresh `command_id` defeats it and crosses the consequence boundary twice.
+  S55 closes that with a second, effect-keyed index:
+
+      ADMITTED
+        -> CLAIMED                     (command_id, existing)
+        -> ACTUATION_CLAIMED           (AshA2A.Actuation effect identity, S55)
+        -> RECEIPT_ANCHORED
+        -> EXECUTING
+        -> ...
+        -> ACTUATION_COMMITTED
+
+  `ACTUATION_CLAIMED` runs only for `:change`/`:external_do`, and only when the
+  configured store implements the optional
+  `c:AshA2A.ReceiptStore.claim_actuation/3` (checked with
+  `function_exported?/3`, the same idiom `mark_standing/2` already uses for
+  `durable?/0`). A store without it behaves exactly as before. When the claim
+  reports `{:duplicate, prior}`, the bus commits a *dedup receipt* under the
+  new command id -- closing that claim rather than leaving it dangling at
+  `receipt: nil` -- and returns the prior outcome without dispatching.
+
+  Every receipt now also carries the S31 prepared-receipt fields (see
+  `AshA2A.Receipt`), including the actuation and idempotency identities, for
+  `:observe` commands too; only the *enforcement* is scoped to consequence.
   """
 
-  alias AshA2A.{Authority, Command, Identity, KillSwitch, Receipt, ReceiptOutbox}
+  alias AshA2A.{Actuation, Authority, Command, Identity, KillSwitch, Receipt, ReceiptOutbox}
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
 
@@ -89,34 +116,273 @@ defmodule AshA2A.CommandBus do
          store_opts,
          opts
        ) do
-    case prepare_receipt_anchor(command, execution_id, consequence) do
+    actuation = Actuation.identity(command, opts)
+    receipt_opts = receipt_opts(actuation, opts)
+
+    case claim_actuation(store, actuation, command, consequence, store_opts, opts) do
+      :proceed ->
+        dispatch_actuation_claimed(
+          command,
+          execution_id,
+          consequence,
+          skill,
+          message,
+          resource_or_domain,
+          store,
+          store_opts,
+          opts,
+          actuation,
+          receipt_opts
+        )
+
+      {:duplicate, prior} ->
+        close_claim_as_duplicate(
+          store,
+          command,
+          execution_id,
+          consequence,
+          store_opts,
+          receipt_opts,
+          prior
+        )
+
+      {:error, reason} when reason in [:actuation_in_flight, :actuation_conflict] ->
+        refuse_actuation(
+          store,
+          command,
+          execution_id,
+          consequence,
+          store_opts,
+          receipt_opts,
+          reason
+        )
+    end
+  end
+
+  defp dispatch_actuation_claimed(
+         command,
+         execution_id,
+         consequence,
+         skill,
+         message,
+         resource_or_domain,
+         store,
+         store_opts,
+         opts,
+         actuation,
+         receipt_opts
+       ) do
+    case prepare_receipt_anchor(command, execution_id, consequence, receipt_opts) do
       {:ok, anchor} ->
         reply = safe_dispatch(skill, message, resource_or_domain, opts)
 
         receipt =
           case anchor do
-            %Receipt{} -> Receipt.finalize(anchor, reply)
-            nil -> Receipt.from_reply(command, execution_id, consequence, reply)
+            %Receipt{} ->
+              Receipt.finalize(anchor, reply)
+
+            nil ->
+              Receipt.from_reply(command, execution_id, consequence, reply, receipt_opts)
           end
           |> mark_standing(store)
 
+        commit_actuation(store, actuation, receipt, consequence, store_opts, opts)
         commit_receipt(store, receipt, store_opts)
 
       {:error, reason} ->
+        release_actuation(store, actuation, consequence, store_opts, opts)
+
         refuse_unanchored_execution(
           store,
           command,
           execution_id,
           consequence,
           store_opts,
+          receipt_opts,
           reason
         )
     end
   end
 
-  defp prepare_receipt_anchor(command, execution_id, consequence)
+  # The command-id claim is already open (`receipt: nil`) by the time an
+  # actuation duplicate is detected, so it must be closed with a real receipt
+  # or a later retry of this same command id would hit a permanent
+  # `{:error, :in_flight}`. The dedup receipt is a genuine receipt for THIS
+  # command: same terminal status as the prior outcome, and metadata naming
+  # the prior receipt it deduplicated against. It does NOT claim a second
+  # execution occurred.
+  defp close_claim_as_duplicate(
+         store,
+         command,
+         execution_id,
+         consequence,
+         store_opts,
+         receipt_opts,
+         %Receipt{} = prior
+       ) do
+    receipt =
+      command
+      |> Receipt.from_reply(execution_id, consequence, prior.reply, receipt_opts)
+      |> mark_standing(store)
+      |> Map.put(:replayed?, true)
+      |> then(fn receipt ->
+        %{
+          receipt
+          | terminal_status: prior.terminal_status,
+            status: prior.status,
+            metadata:
+              Map.merge(receipt.metadata, %{
+                outcome: :deduplicated,
+                deduplicated_from_receipt_id: Identity.external(prior.receipt_id),
+                deduplicated_from_command_id: Identity.external(prior.command_id)
+              })
+        }
+      end)
+
+    case commit_with_retries(
+           store,
+           receipt,
+           store_opts,
+           Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+         ) do
+      :ok ->
+        emit_receipt(receipt)
+        {:ok, receipt}
+
+      {:error, _reason} ->
+        {:ok, receipt}
+    end
+  end
+
+  defp refuse_actuation(
+         store,
+         command,
+         execution_id,
+         consequence,
+         store_opts,
+         receipt_opts,
+         reason
+       ) do
+    reply =
+      {:error,
+       %{
+         code: reason,
+         detail:
+           "actuation identity is already claimed for this effect; refusing to repeat the consequence"
+       }}
+
+    receipt =
+      command
+      |> Receipt.from_reply(execution_id, consequence, reply, receipt_opts)
+      |> mark_standing(store)
+
+    commit_with_retries(
+      store,
+      receipt,
+      store_opts,
+      Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    )
+
+    {:error, %{code: reason, detail: "actuation identity already claimed", receipt: receipt}}
+  end
+
+  defp receipt_opts(%Actuation{} = actuation, opts) do
+    [actuation: actuation]
+    |> maybe_put(:plan_digest, Keyword.get(opts, :plan_digest))
+    |> maybe_put(:evidence_class, Keyword.get(opts, :evidence_class))
+    |> maybe_put(:intended_effect, Keyword.get(opts, :intended_effect))
+  end
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  @doc """
+  The RFC-SA2A-001 S55 actuation dedup mode currently in force.
+
+    * `:declared` (default) -- enforce only for a command that carries an
+      explicit idempotency token (`metadata[:idempotency_key]`, the authority's
+      `:external_idempotency_token` constraint, or `opts[:idempotency_key]`).
+    * `:strict` -- enforce on the derived effect digest alone, so two distinct
+      command ids naming the same effect deduplicate even with no declared
+      token.
+    * `:off` -- never actuation-claim; command-id claiming only.
+
+  `:declared` is the default deliberately. With no client-declared key, "same
+  capability, same principal, same input, again" is genuinely ambiguous between
+  a dropped-response retry and a second intentional request -- creating two
+  identically-labelled records is a real, legitimate operation. Silently
+  collapsing those would refuse real work on the strength of a guess. S55's
+  requirement is met the way S55 words it: the identities are always derived
+  and always recorded on the receipt, and BRCE detects and refuses a repeat
+  whenever the caller has actually declared the effect idempotent. `:strict` is
+  available for a deployment whose capabilities are all genuinely idempotent.
+  """
+  @spec actuation_dedup_mode(keyword()) :: :declared | :strict | :off
+  def actuation_dedup_mode(opts \\ []) do
+    Keyword.get(opts, :actuation_dedup) ||
+      Application.get_env(:ash_a2a, :actuation_dedup, :declared)
+  end
+
+  defp claim_actuation(store, actuation, command, consequence, store_opts, opts)
        when consequence in [:change, :external_do] do
-    receipt = Receipt.pending(command, execution_id, consequence)
+    if enforce_actuation?(store, actuation, opts) do
+      store.claim_actuation(actuation, command, store_opts)
+    else
+      :proceed
+    end
+  rescue
+    _error -> :proceed
+  catch
+    :exit, _reason -> :proceed
+  end
+
+  defp claim_actuation(_store, _actuation, _command, _consequence, _store_opts, _opts),
+    do: :proceed
+
+  defp enforce_actuation?(store, %Actuation{} = actuation, opts) do
+    actuation_aware?(store) and
+      case actuation_dedup_mode(opts) do
+        :strict -> true
+        :declared -> actuation.external_token?
+        _ -> false
+      end
+  end
+
+  defp commit_actuation(store, actuation, receipt, consequence, store_opts, opts)
+       when consequence in [:change, :external_do] do
+    if enforce_actuation?(store, actuation, opts),
+      do: store.commit_actuation(actuation, receipt, store_opts),
+      else: :ok
+  rescue
+    _error -> :ok
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp commit_actuation(_store, _actuation, _receipt, _consequence, _store_opts, _opts), do: :ok
+
+  defp release_actuation(store, actuation, consequence, store_opts, opts)
+       when consequence in [:change, :external_do] do
+    if enforce_actuation?(store, actuation, opts),
+      do: store.release_actuation(actuation, store_opts),
+      else: :ok
+  rescue
+    _error -> :ok
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp release_actuation(_store, _actuation, _consequence, _store_opts, _opts), do: :ok
+
+  defp actuation_aware?(store) do
+    Code.ensure_loaded?(store) and function_exported?(store, :claim_actuation, 3) and
+      function_exported?(store, :commit_actuation, 3) and
+      function_exported?(store, :release_actuation, 2)
+  end
+
+  defp prepare_receipt_anchor(command, execution_id, consequence, receipt_opts)
+       when consequence in [:change, :external_do] do
+    receipt = Receipt.pending(command, execution_id, consequence, receipt_opts)
 
     case ReceiptOutbox.append(receipt) do
       :ok -> {:ok, receipt}
@@ -124,7 +390,7 @@ defmodule AshA2A.CommandBus do
     end
   end
 
-  defp prepare_receipt_anchor(_command, _execution_id, :observe), do: {:ok, nil}
+  defp prepare_receipt_anchor(_command, _execution_id, :observe, _receipt_opts), do: {:ok, nil}
 
   defp refuse_unanchored_execution(
          store,
@@ -132,6 +398,7 @@ defmodule AshA2A.CommandBus do
          execution_id,
          consequence,
          store_opts,
+         receipt_opts,
          anchor_reason
        ) do
     reply =
@@ -144,7 +411,7 @@ defmodule AshA2A.CommandBus do
 
     receipt =
       command
-      |> Receipt.from_reply(execution_id, consequence, reply)
+      |> Receipt.from_reply(execution_id, consequence, reply, receipt_opts)
       |> mark_standing(store)
 
     delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])

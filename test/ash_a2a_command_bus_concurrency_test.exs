@@ -50,6 +50,28 @@ defmodule AshA2ACommandBusConcurrencyTest do
 
   @concurrency 30
 
+  # `Ash.DataLayer.Ets.TableManager.start/3` (deps/ash) registers the manager's
+  # name before its `init/1` has created the public ETS table. When the
+  # VM's *first* `Item` write is two different command_ids racing (the second
+  # test below, whenever the seed orders it before any other `Item` create),
+  # the loser sees `{:already_started, pid}`, calls `wrap_existing/1` before
+  # the table exists, and its real `Ash.create` returns `:table_not_found` --
+  # a `:failed` executor receipt that has nothing to do with the command bus
+  # (reproduced on main 82237eb with `--seed 603047`, 6/6 runs). One real,
+  # serialized create before any race makes the table exist; the assertions
+  # below count rows by test-unique label, so this warm-up row is invisible
+  # to them.
+  setup_all do
+    {:ok, _warmup} =
+      Item
+      |> Ash.Changeset.for_create(:create, %{
+        label: "concurrency-warmup-#{System.unique_integer([:positive])}"
+      })
+      |> Ash.create(domain: AshA2A.Test.Fixture.ItemDomain)
+
+    :ok
+  end
+
   setup do
     name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
     start_supervised!({AshA2A.ReceiptStore.Memory, name: name})
