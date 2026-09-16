@@ -1,0 +1,19 @@
+# SA2A conformance -- semantic profile graph (2nd argument of validate_all/5).
+#
+# A non-empty profile is what switches graphlaw's OWL RL stage on; with an empty
+# profile the OWL_RL dialect reports PROFILE_NOT_ADMITTED. Kept deliberately
+# inside OWL RL's supported fragment (rdfs:subClassOf / rdfs:domain /
+# rdfs:range / owl:TransitiveProperty), because graphlaw surfaces unsupported
+# OWL features (owl:sameAs, cardinality restrictions, owl:propertyChainAxiom,
+# owl:imports) as a REFUSED dialect rather than silently ignoring them.
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex:   <http://example.org/sa2a/> .
+
+ex:Agent      rdfs:subClassOf ex:Party .
+ex:Capability rdfs:subClassOf ex:Affordance .
+
+ex:capability a owl:ObjectProperty ;
+    rdfs:domain ex:Agent ;
+    rdfs:range  ex:Capability .

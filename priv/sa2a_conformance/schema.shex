@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "SA2A conformance -- ShEx schema (4th argument of validate_all/5).",
+    "MEASURED: the wasm boundary calls TripleStore::validate_shex/2, which is the",
+    "ShExJ (JSON-LD) path (praxis-graphlaw src/lib.rs:542). ShExC compact syntax is",
+    "a DIFFERENT entry point (validate_shex_c/2, an 80/20 subset parser) that the",
+    "wasm's validate_all does NOT reach. This file is therefore ShExJ, not ShExC,",
+    "despite the .shex extension the RFC names.",
+    "The max:1 cardinality on ex:label is deliberate: it is a STRUCTURAL constraint",
+    "that shapes.shacl.ttl does not express (no sh:maxCount on ex:label), so the",
+    "ShEx-structure negative vector fails ShEx ALONE and stays separable from the",
+    "SHACL vectors."
+  ],
+  "@context": "http://www.w3.org/ns/shex.jsonld",
+  "type": "Schema",
+  "shapes": [
+    {
+      "type": "ShapeDecl",
+      "id": "http://example.org/sa2a/AgentShexShape",
+      "shapeExpr": {
+        "type": "Shape",
+        "expression": {
+          "type": "EachOf",
+          "expressions": [
+            {
+              "type": "TripleConstraint",
+              "predicate": "http://example.org/sa2a/version",
+              "valueExpr": {
+                "type": "NodeConstraint",
+                "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+              },
+              "min": 1,
+              "max": 1
+            },
+            {
+              "type": "TripleConstraint",
+              "predicate": "http://example.org/sa2a/label",
+              "min": 1,
+              "max": 1
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

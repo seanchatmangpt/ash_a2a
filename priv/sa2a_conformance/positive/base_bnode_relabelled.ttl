@@ -1,0 +1,42 @@
+# SA2A conformance -- POSITIVE vector: blank-node relabelling + triple
+# reordering + prefix renaming, isomorphic to base.ttl.
+#
+# This is a falsifier aimed at the CANONICALIZER, not at the data: it MUST hash
+# byte-identically to base.ttl under graph_hash/1. A "canonicalization" that is
+# really sort-then-hash over serialized text (the shape AshA2A.Semantic.Ontology's
+# own fingerprint/1 currently has) diverges here, because the blank node label,
+# the prefix label, and the statement order all changed while the graph did not.
+#
+# Differences from base.ttl, all semantically vacuous:
+#   * prefix `ex:` renamed to `sa2a:`; `xsd:` renamed to `dt:`
+#   * blank node `_:capRouteNode` relabelled `_:b7f3e91a`
+#   * every statement reordered, predicates within a subject reordered
+#   * different whitespace and comment layout
+
+@prefix sa2a: <http://example.org/sa2a/> .
+@prefix dt:   <http://www.w3.org/2001/XMLSchema#> .
+
+sa2a:capPlan a sa2a:Capability ;
+    sa2a:tier "1"^^dt:integer ;
+    sa2a:label "planning"@en .
+
+_:b7f3e91a
+    sa2a:tier "2"^^dt:integer ;
+    a sa2a:Capability ;
+    sa2a:label "routing"@en .
+
+sa2a:agentB
+    sa2a:capability _:b7f3e91a ;
+    sa2a:admittedAt "2026-01-02T00:00:00Z"^^dt:dateTime ;
+    sa2a:version "2"^^dt:integer ;
+    sa2a:description "Routing agent for the conformance corpus." ;
+    sa2a:label "Agent B"@en ;
+    a sa2a:Agent .
+
+sa2a:agentA
+    sa2a:capability sa2a:capPlan ;
+    sa2a:admittedAt "2026-01-01T00:00:00Z"^^dt:dateTime ;
+    sa2a:version "1"^^dt:integer ;
+    sa2a:description "Planning agent for the conformance corpus." ;
+    sa2a:label "Agent A"@en ;
+    a sa2a:Agent .

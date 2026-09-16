@@ -1,0 +1,67 @@
+# SA2A conformance -- SHACL shapes PARTITIONED BY SEVERITY: sh:Violation only.
+#
+# WHY THIS FILE EXISTS (measured, not stylistic):
+# The pinned graphlaw wasm is v26.7.5 (built 2026-07-08). Its validate_all
+# SHACL dialect reports only `"Report: N violations"` in `detail` -- the
+# per-result structured JSON carrying `severity` was added to
+# praxis-graphlaw-wasm/src/core.rs AFTER that build (source mtime 2026-07-14,
+# lines 291-306 of the current core.rs) and is NOT in the pinned artifact.
+# So a host consuming the pinned wasm CANNOT read result severities directly.
+#
+# RFC S15 ("a sh:Warning MUST NOT override a failing sh:Violation") is still
+# decidable on the pinned artifact by running validate_all TWICE against
+# severity-partitioned shape graphs and comparing the two SHACL dialect
+# statuses:
+#
+#   violations REFUSED                  -> SA2A admission REFUSED  (a real Violation)
+#   violations ADMITTED, full REFUSED   -> SA2A admission ADMITTED (Warning-only)
+#   violations ADMITTED, full ADMITTED  -> SA2A admission ADMITTED (clean)
+#
+# That derivation needs no severity field at all, only set difference over two
+# real engine runs, and it stays correct when a severity-exposing wasm lands.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:AgentShape a sh:NodeShape ;
+    sh:targetClass ex:Agent ;
+
+    # --- sh:Violation severity (explicit, not defaulted) ---
+    sh:property [
+        sh:path ex:version ;
+        sh:datatype xsd:integer ;
+        sh:severity sh:Violation ;
+        sh:message "ex:version must be an xsd:integer"
+    ] ;
+    sh:property [
+        sh:path ex:label ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "ex:Agent requires at least one ex:label"
+    ] .
+
+# Closed shape: the ONLY expressible form of "unadmitted / hallucinated
+# predicate" in this stack. graphlaw implements sh:closed by taking the union of
+# this shape's own sh:property paths plus sh:ignoredProperties as the admitted
+# predicate set, and emitting a ClosedConstraintComponent result for every other
+# predicate on a focus node (praxis-graphlaw src/shacl/validate.rs:1137-1162).
+# Scoped to ex:Capability rather than ex:Agent so that a hallucinated-predicate
+# vector fails on exactly ONE dialect and stays separable from the others.
+ex:CapabilityShape a sh:NodeShape ;
+    sh:targetClass ex:Capability ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type ) ;
+    sh:property [
+        sh:path ex:tier ;
+        sh:datatype xsd:integer ;
+        sh:severity sh:Violation ;
+        sh:message "ex:tier must be an xsd:integer"
+    ] ;
+    sh:property [
+        sh:path ex:label ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "ex:Capability requires at least one ex:label"
+    ] .

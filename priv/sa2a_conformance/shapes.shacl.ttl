@@ -1,0 +1,68 @@
+# SA2A conformance -- SHACL shapes (3rd argument of validate_all/5).
+#
+# RFC S15 severity rule: a sh:Warning MUST NOT override a failing sh:Violation,
+# and a Warning-only report MUST still ADMIT at the SA2A admission layer.
+#
+# MEASURED, and the whole reason this file carries both severities:
+# praxis-graphlaw follows SHACL Core 1.0 literally -- `sh:conforms` is false
+# whenever ANY result exists, regardless of severity
+# (praxis/crates/praxis-graphlaw/src/shacl/report.rs:241-251,
+#  `let conforms = results.is_empty();`). So the wasm's SHACL dialect status is
+# REFUSED even for a Warning-only graph. The S15 rule therefore CANNOT be
+# delegated to `conforms`; the SA2A admission layer must read the per-result
+# `severity` field. This corpus encodes both the real graphlaw dialect status
+# and the SA2A-expected admission, so a runtime that conflates them fails.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:AgentShape a sh:NodeShape ;
+    sh:targetClass ex:Agent ;
+
+    # --- sh:Violation severity (explicit, not defaulted) ---
+    sh:property [
+        sh:path ex:version ;
+        sh:datatype xsd:integer ;
+        sh:severity sh:Violation ;
+        sh:message "ex:version must be an xsd:integer"
+    ] ;
+    sh:property [
+        sh:path ex:label ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "ex:Agent requires at least one ex:label"
+    ] ;
+
+    # --- sh:Warning severity ---
+    sh:property [
+        sh:path ex:description ;
+        sh:minCount 1 ;
+        sh:severity sh:Warning ;
+        sh:message "ex:Agent should carry an ex:description"
+    ] .
+
+# Closed shape: the ONLY expressible form of "unadmitted / hallucinated
+# predicate" in this stack. graphlaw implements sh:closed by taking the union of
+# this shape's own sh:property paths plus sh:ignoredProperties as the admitted
+# predicate set, and emitting a ClosedConstraintComponent result for every other
+# predicate on a focus node (praxis-graphlaw src/shacl/validate.rs:1137-1162).
+# Scoped to ex:Capability rather than ex:Agent so that a hallucinated-predicate
+# vector fails on exactly ONE dialect and stays separable from the others.
+ex:CapabilityShape a sh:NodeShape ;
+    sh:targetClass ex:Capability ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type ) ;
+    sh:property [
+        sh:path ex:tier ;
+        sh:datatype xsd:integer ;
+        sh:severity sh:Violation ;
+        sh:message "ex:tier must be an xsd:integer"
+    ] ;
+    sh:property [
+        sh:path ex:label ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "ex:Capability requires at least one ex:label"
+    ] .

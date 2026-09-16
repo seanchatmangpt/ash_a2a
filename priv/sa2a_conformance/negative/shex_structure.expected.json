@@ -1,0 +1,51 @@
+{
+  "vector": "shex_structure",
+  "file": "negative/shex_structure.ttl",
+  "class": "shex_invalid_structure",
+  "rfc_sections": [
+    "S61",
+    "S77"
+  ],
+  "description": "ex:agentB carries two ex:label values; schema.shex constrains ex:label to max 1. SHACL has no maxCount on ex:label, so this isolates the ShEx dialect.",
+  "expected": {
+    "sa2a_admission": "REFUSED",
+    "refusal": {
+      "code": "sa2a_shex_nonconformant",
+      "dialect": "SHEX"
+    },
+    "graph_digest_blake3": "8b1dc48ba6f7f71b4c785670e5eb2eef33948aec6295066d46ec4b38bc46ce6a",
+    "law_graph_digest_blake3": "a771ce64ddf14c78d80a8df6dcff26d227a533669bccf8975e7590b2fbfdf5e5"
+  },
+  "measured_on_pinned_engine": {
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "wasm_sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+    "dialects": {
+      "OWL_RL": "ADMITTED",
+      "DATALOG": "ADMITTED",
+      "SHACL": "ADMITTED",
+      "SHEX": "REFUSED",
+      "N3_DENIAL": "ADMITTED"
+    },
+    "shacl_by_severity_partition": {
+      "full": {
+        "status": "ADMITTED",
+        "results": 0
+      },
+      "violations_only": {
+        "status": "ADMITTED",
+        "results": 0
+      },
+      "warnings_only": {
+        "status": "ADMITTED",
+        "results": 0
+      }
+    },
+    "run_hooks": {
+      "status": "ADMITTED",
+      "verdicts": 0,
+      "receipts": 0,
+      "schedule": []
+    }
+  },
+  "conformance": "HOLDS"
+}

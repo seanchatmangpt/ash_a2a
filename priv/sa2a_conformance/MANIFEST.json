@@ -1,0 +1,231 @@
+{
+  "package": "sa2a-conformance-corpus",
+  "rfc": "RFC-SA2A-001 v26.9.16 (Semantic A2A)",
+  "rfc_sections": [
+    "S12",
+    "S15",
+    "S46",
+    "S61",
+    "S77"
+  ],
+  "qualification": "SA2A Portable Semantic Execution Conformance",
+  "qualification_claim": "Runtime_A != Runtime_B, WASM_A = WASM_B, O*_input,A = O*_input,B => Admission_A = Admission_B, O*_output,A = O*_output,B, Refusal_A = Refusal_B, over THIS finite suite. It does not establish universal semantic equivalence, production ALIVE, security completeness, or cross-IMPLEMENTATION equivalence.",
+  "engine": {
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "wasm_path": "praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm",
+    "wasm_bytes": 3249361,
+    "wasm_sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+    "blake3_self_test": {
+      "input": "abc",
+      "digest": "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+      "note": "Equals the published BLAKE3 test vector for \"abc\"; proves the pinned wasm computes real BLAKE3."
+    }
+  },
+  "determinism": {
+    "graph_hash_run2": "27c0a088b48b6aa2f9a9873c3402c884096d65585f1064c27e63903d2e4cf4f4",
+    "graph_hash_run3": "27c0a088b48b6aa2f9a9873c3402c884096d65585f1064c27e63903d2e4cf4f4",
+    "validate_all_replay": {
+      "status": "ADMITTED",
+      "first_hash": "43735abca8e7be0f702a2ae98db3a45cf4a5d165f512aa8904b9671e2d893b7c",
+      "second_hash": "43735abca8e7be0f702a2ae98db3a45cf4a5d165f512aa8904b9671e2d893b7c"
+    }
+  },
+  "digest_algorithms": {
+    "sha256": "over raw file bytes (node:crypto at emit time; :crypto.hash(:sha256, ...) at load time)",
+    "blake3": "over the file decoded as UTF-8, computed BY the pinned wasm export blake3_hex/1"
+  },
+  "composition": {
+    "law_graph": [
+      "<subject graph>",
+      "rules/denials.n3",
+      "hooks/admitted_hooks.ttl"
+    ],
+    "note": "validate_all/5 and run_hooks/2 consume the law graph (subject graph concatenated with the admitted rules and hooks, joined by \"\\n\"). graph_hash/1 identity vectors hash the SUBJECT graph alone. Both digests are recorded per vector."
+  },
+  "validate_all_arguments": {
+    "1": "law graph (Turtle)",
+    "2": "profile.ttl",
+    "3": "shapes.shacl.ttl (or shapes.violations.shacl.ttl / shapes.warnings.shacl.ttl for the S15 partition)",
+    "4": "schema.shex (ShExJ JSON -- the wasm reaches TripleStore::validate_shex/2, NOT the ShExC parser)",
+    "5": "shape_map.json ([[node, shape], ...])"
+  },
+  "deferred": [
+    {
+      "id": "hooks_never_register_through_wasm_run_hooks",
+      "status": "BLOCKED_ON_PINNED_ENGINE",
+      "measured": "run_hooks(law_graph, event.ttl) returns {\"status\":\"ADMITTED\",\"verdicts\":[],\"receipts\":[],\"schedule\":[]} for EVERY vector, and also for a minimal hook pack copied verbatim from a passing praxis-graphlaw test (tests/knowledge_hooks_e2e_tier2.rs's kh:kind \"delta\" hook). Bisected across delta/count kinds, with and without kh:on, with kh:k as a bare integer and as a string: schedule is empty in all five variants.",
+      "consequence": "Hook FIRING is not exercisable through this artifact. run_hooks/2 itself is ALIVE and deterministic (it returns a stable ADMITTED envelope), but no hook in hooks/admitted_hooks.ttl is registered, so no verdict or receipt can be asserted. The hook pack is pinned and digested here so it becomes a live falsifier the moment a build that registers graph-declared hooks lands.",
+      "unblocks_when": "A wasm build whose run_hooks/2 returns a non-empty schedule for hooks/admitted_hooks.ttl."
+    },
+    {
+      "id": "shacl_result_severity_not_exposed_by_pinned_wasm",
+      "status": "WORKED_AROUND",
+      "measured": "The pinned wasm (v26.7.5, built 2026-07-08) reports the SHACL dialect detail as \"Report: N violations\". The per-result structured JSON carrying `severity` exists only in praxis-graphlaw-wasm/src/core.rs as of its 2026-07-14 mtime (lines 291-306) and is NOT in the pinned artifact.",
+      "consequence": "RFC S15 is still decided on the pinned artifact WITHOUT a severity field, by running validate_all twice over severity-partitioned shape graphs (shapes.violations.shacl.ttl and shapes.warnings.shacl.ttl) and comparing SHACL dialect statuses. The measured partition results per vector are recorded in each sidecar under shacl_by_severity_partition."
+    },
+    {
+      "id": "malformed_turtle_is_not_refused_by_the_engine",
+      "status": "HOST_GATE_REQUIRED",
+      "measured": "graph_hash(negative/malformed.ttl) returns a real digest rather than {\"error\": ...}. graph_hash(\"<<<< not turtle at all @@@ ;;;\") also returns a digest, and graph_hash(\"\") returns af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262 -- the published BLAKE3 digest of the empty string -- i.e. unparseable input degrades to an EMPTY graph, not to a refusal.",
+      "consequence": "A SA2A runtime MUST own a syntactic gate before the engine boundary. If it does not, a malformed payload is silently admitted as a partial or empty graph, which is a worse failure than refusing it. This vector cannot be satisfied by graphlaw alone."
+    },
+    {
+      "id": "profile_graph_axioms_are_not_applied_to_the_data_graph",
+      "status": "OBSERVED",
+      "measured": "With profile.ttl supplied, the OWL_RL dialect reports ADMITTED with detail \"OWL RL Daily Profile\" and the DATALOG dialect reports \"Materialized 0 triples\" for every vector. validate_all_core hashes profile_ttl into profile_hash and uses its non-emptiness only to gate OWL RL on the BASE store; it never adds the profile triples to that store.",
+      "consequence": "No vector in this corpus may depend on an entailment derived from profile.ttl. The profile is pinned and digested as part of the package identity, and gates OWL_RL out of PROFILE_NOT_ADMITTED, but it derives nothing here."
+    }
+  ],
+  "files": {
+    "README.md": {
+      "bytes": 6084,
+      "sha256": "ac281157425ae05ceaaad5ffe366a4f8720aa79d101b4b17553395777757bfa7",
+      "blake3": "6f37babf42493dafcf5e5609b81d643534916e3f713887ebe83c5763c9aea043"
+    },
+    "base.expected.json": {
+      "bytes": 1292,
+      "sha256": "68b25f421297dd5834a09547d5c317095e88379a64a6bc7db758e4abff6e93d0",
+      "blake3": "de225884ce0f8fd60483ee90688890370bb7b8dfb92ead7e321a5e65ad3926b7"
+    },
+    "base.ttl": {
+      "bytes": 1792,
+      "sha256": "d912e0ffbf210a00889e69d8d817d6c9166ccefcbc9c648a076d60ddbf5840e1",
+      "blake3": "663590ac4ed442d5621f0ba96ebb540cf4d70127c1921f6832959026cb534387"
+    },
+    "event.ttl": {
+      "bytes": 777,
+      "sha256": "a46e0c1bc57950661d22d8fb382e26eb23e1ad52814d341b1dc96478fb03e7d1",
+      "blake3": "ca633730602ec7696ba83682e37fb28b2b708e5259bf7c78a5153e1c74d863bd"
+    },
+    "hooks/admitted_hooks.ttl": {
+      "bytes": 1072,
+      "sha256": "aa6a9cb7499d2b3c2466120d8f3151bfb7cb399bf944dbd19cfda7d3b9021152",
+      "blake3": "49afc78c48ed34ece115ff368629a51525916317e9bec099ffdd7cd62eb854a4"
+    },
+    "negative/falsifier_positive.expected.json": {
+      "bytes": 1444,
+      "sha256": "a372dfe57bf5ea7fdd458bb01621273db4c4a689671d0d5e40fc6a3eb8831900",
+      "blake3": "a0be42413355f0010f2d8af03292b6795f8649d83c2893cf4c2600c513356946"
+    },
+    "negative/falsifier_positive.ttl": {
+      "bytes": 1350,
+      "sha256": "6199c2a99e3780baa9f717820f3cb26cbf11d53a392befab1c9541dfab6f5e86",
+      "blake3": "e1bc3135a0e0d45d8cc338e1fe07d8fc7b1d244b17ed04c34ac5cc9ef95b7b4e"
+    },
+    "negative/malformed.expected.json": {
+      "bytes": 1580,
+      "sha256": "0257f68deb2dbb973ec0fe978d6c5ad65470b06be93bce072ef9449d1060998f",
+      "blake3": "d6d68d47083dafcf9e17fc34b875b18e650b333070a3baccc8672b71cc190141"
+    },
+    "negative/malformed.ttl": {
+      "bytes": 736,
+      "sha256": "0e26354fccd60726fd279ceea7ab5bfd9ce716ed2faa6ca9c9538029661d680a",
+      "blake3": "d5d6892248711fabfcdee2aa5feb11970e051f6497d4cd542dc7bb68d41993b9"
+    },
+    "negative/one_triple_changed.expected.json": {
+      "bytes": 1441,
+      "sha256": "e6d6672f7d14531d0255e4a93a30bc9ba14ef7974b2d5c206d6a92193540ba98",
+      "blake3": "e6b702608b9cc046e43574a7882377ac98827a00c834a97e7ca1508cfd4b44fe"
+    },
+    "negative/one_triple_changed.ttl": {
+      "bytes": 1463,
+      "sha256": "874bed4979cc48ec1eb9e21581845f353f57f797661537e0ce8f381795f2a0eb",
+      "blake3": "fba4184e924b4555d6b26b76693d63b185159ca8906a52d220b657dd7fdb6afe"
+    },
+    "negative/shacl_violation.expected.json": {
+      "bytes": 1469,
+      "sha256": "cc30b23c7d00e95a18a5fdd1bebc3640393342acc86443214c9464460bc081a5",
+      "blake3": "e9602d533df8e9838f7030a9f1df536588b96cf8cb1c8e8ca2a79362edd88c09"
+    },
+    "negative/shacl_violation.ttl": {
+      "bytes": 1236,
+      "sha256": "319cc54d139e31cbdefecef0d742262440aeeeff2187a333c66f6e11e1e421b9",
+      "blake3": "2a85026940d374a2d3d219e51c094169b3c0b4afbb6eabde2bf0175495903569"
+    },
+    "negative/shacl_violation_and_warning.expected.json": {
+      "bytes": 1514,
+      "sha256": "10e8172c8f8cfc679cbbc1856b8d247859b1087a4f80da4fdb3b5ce9732198a6",
+      "blake3": "2c4beed57ab2e657a5c2e33353b11fbf40b9effa85aa0b4b460b6f8c0ca0b3a1"
+    },
+    "negative/shacl_violation_and_warning.ttl": {
+      "bytes": 1159,
+      "sha256": "2f56a9480b12d5703aceeeb84767e1cee0a08a556683090abebf47bcdaa2f02e",
+      "blake3": "f88b76eab795e4dddb43f512d45bd13cd7144c8487026910c923f3d771a30c74"
+    },
+    "negative/shacl_warning_only.expected.json": {
+      "bytes": 1507,
+      "sha256": "97df73a6e28fe3dc9e49333b16aac2eb73925e13fbefade4d132f3324a3bfca9",
+      "blake3": "66ff3e95f48d0c86e2d4571d7fdbc78cca6fdb4b791b17e2a256bd07ddc83234"
+    },
+    "negative/shacl_warning_only.ttl": {
+      "bytes": 1368,
+      "sha256": "e56ac115cd6915c15dbd203b6119b79d239fd4cf1e3c39212765b22b2fed9fba",
+      "blake3": "145780a089cddaaed6015531be5c9a8cf3e76eb76ab7128f409d6727c16e2d38"
+    },
+    "negative/shex_structure.expected.json": {
+      "bytes": 1437,
+      "sha256": "f15b1e6cf6c0417ff6c1533e1e428fcf7e48c759445afbc0f3cb69847fb7c653",
+      "blake3": "b060cfad1d815248198ea7cbf0d877723a4f649ba715c42ab5a1828094d1da2f"
+    },
+    "negative/shex_structure.ttl": {
+      "bytes": 1251,
+      "sha256": "e1bb877bd5d26241b315f9887919156a34b63614575a0825e9d18642a5501f62",
+      "blake3": "f92d90979d6134f391c963e7fe90986a8c391315d4f521ed54daaeecf8c0fd3e"
+    },
+    "negative/unadmitted_predicate.expected.json": {
+      "bytes": 1564,
+      "sha256": "27ae1f85f39c5d4f6b200fafbe2d5dae9ef894aac5034ef3211334e1403f51e3",
+      "blake3": "c445e936d21d7bda6cfd71b031a900ce72827d9939bec5d23e3d3dcf6f6f27d1"
+    },
+    "negative/unadmitted_predicate.ttl": {
+      "bytes": 1541,
+      "sha256": "4a19ef383adef556e7edc44bf36d682b0ec7f7e10647f563d7c3c519f38bd4c1",
+      "blake3": "26a68c5bd2918a06e724650b2ac78b3fbbf31d036535d70f4956a7515c80ec35"
+    },
+    "positive/base_bnode_relabelled.expected.json": {
+      "bytes": 2026,
+      "sha256": "53aa33049979711857f6cf46ac57884b85a3555dbbea3f541ffe7381fcc0998d",
+      "blake3": "b3a87d05c737febcad3aa9fab3e6093dad20bbf3fa7e6e8a9a5351e2b5a42859"
+    },
+    "positive/base_bnode_relabelled.ttl": {
+      "bytes": 1632,
+      "sha256": "15c6e632e804af42ecd598b9574162ac64cf7a6120ebe6d54c767ebc22ff51ac",
+      "blake3": "964fc0e56e5ac0e5523eaf34353c21d91b1d61e54bce4ee2bcf26b15e0625dad"
+    },
+    "profile.ttl": {
+      "bytes": 871,
+      "sha256": "83f088307d1f9049c437623fe9fccfb7630d846f54cbd5635b8e9ad21db09162",
+      "blake3": "169506fe43c06c9406ab600043870920dfaff24a387ad69ccf5baf92a7653738"
+    },
+    "rules/denials.n3": {
+      "bytes": 1051,
+      "sha256": "c9e3dab9ff87b9d08dd819c13a2b9ae43914f8964594d570e5725296ca0b997a",
+      "blake3": "bf2f7738601c468e39eb39c51fd8b12b97c2a74edc4d307fb7f8b142f04d55d8"
+    },
+    "schema.shex": {
+      "bytes": 1612,
+      "sha256": "144065da265e974d78f1742147cd7a4258eda41297b1be1ed0c9883f30da8b0a",
+      "blake3": "4c3d703c6894a52b56d2e2524629713ab434990c17c32a5848637068391505cc"
+    },
+    "shape_map.json": {
+      "bytes": 163,
+      "sha256": "453d066a95a4917228801bfed57d1dfeb692123cc910b5f90cff20f89b6f6897",
+      "blake3": "4edfef04a8388e587b6c12512fafca8b1a5d63eea28e4dce5a89acdc3aed0746"
+    },
+    "shapes.shacl.ttl": {
+      "bytes": 2795,
+      "sha256": "7ca364acfef90dda02e7bf76dfe8b141f8c366ca459460c50aa29dfc1ede33b8",
+      "blake3": "af829970746e9f80b81139ff6dfc24a56ddd97a1b4d7828b4ecff152aea0d650"
+    },
+    "shapes.violations.shacl.ttl": {
+      "bytes": 2924,
+      "sha256": "82a9e639b87472406cb0b35a622ecb19a90a336000c1e0ea5721ce37547b4fb4",
+      "blake3": "16625ae4dbbb38156023bec2698ae86f409e62eb168b526754b9eb848febc40c"
+    },
+    "shapes.warnings.shacl.ttl": {
+      "bytes": 1539,
+      "sha256": "d1612ca97b9346dc9cdb577fd7909191166d5e42b3802027c0a0802d36ad1a81",
+      "blake3": "6488efb646578ac7addb0e5cab3b816e0325909cd4db20781efd12bdaddcad1d"
+    }
+  }
+}

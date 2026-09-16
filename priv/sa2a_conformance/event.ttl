@@ -1,0 +1,18 @@
+# SA2A conformance -- event delta applied against base.ttl.
+#
+# Consumed as the second argument of graphlaw's `run_hooks(base_ttl, event_ttl)`.
+# The engine materializes base alone, materializes base+event, diffs the two
+# canonical forms, and evaluates the admitted hooks against that GraphDelta.
+#
+# This delta asserts a THIRD agent, so any delta/count/threshold hook keyed on
+# ex:Agent membership sees a real, non-empty addition set.
+
+@prefix ex:  <http://example.org/sa2a/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:agentC a ex:Agent ;
+    ex:label "Agent C"@en ;
+    ex:description "Late-joining agent asserted by the event delta." ;
+    ex:version "3"^^xsd:integer ;
+    ex:admittedAt "2026-01-03T00:00:00Z"^^xsd:dateTime ;
+    ex:capability ex:capPlan .

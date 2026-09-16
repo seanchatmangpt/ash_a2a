@@ -1,0 +1,21 @@
+# SA2A conformance -- graph-global falsifier (N3 denial rule).
+#
+# graphlaw parses `{ BODY } => false .` into a denial rule
+# (praxis-graphlaw src/parser/n3.pest:302-303 `DenyHead = { "false" }`,
+#  src/rule.rs:45 DENIAL_HEAD_MARKER). `TripleStore::check_denials/0`
+# (src/lib.rs:407) queries every denial body and reports one
+# `DENIED: {...} => false.` string per body that has ANY binding. The wasm's
+# validate_all surfaces this as the N3_DENIAL dialect: ADMITTED when the
+# violation list is empty, REFUSED otherwise.
+#
+# This is a GRAPH-GLOBAL constraint, not a per-node shape: no SHACL shape or
+# ShEx triple constraint expresses "no agent anywhere may be simultaneously
+# admitted and revoked", because the falsifier is about the co-occurrence of
+# two independent memberships rather than about one focus node's properties.
+#
+# base.ttl asserts no ex:Revoked, so this denial is NOT tripped by the base
+# graph. negative/falsifier_positive.ttl trips it.
+
+@prefix ex: <http://example.org/sa2a/> .
+
+{ ?a a ex:Agent . ?a a ex:Revoked } => false .

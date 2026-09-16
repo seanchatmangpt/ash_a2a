@@ -1,0 +1,33 @@
+# SA2A conformance -- SHACL shapes PARTITIONED BY SEVERITY: sh:Warning only.
+#
+# WHY THIS FILE EXISTS (measured, not stylistic):
+# The pinned graphlaw wasm is v26.7.5 (built 2026-07-08). Its validate_all
+# SHACL dialect reports only `"Report: N violations"` in `detail` -- the
+# per-result structured JSON carrying `severity` was added to
+# praxis-graphlaw-wasm/src/core.rs AFTER that build (source mtime 2026-07-14,
+# lines 291-306 of the current core.rs) and is NOT in the pinned artifact.
+# So a host consuming the pinned wasm CANNOT read result severities directly.
+#
+# RFC S15 ("a sh:Warning MUST NOT override a failing sh:Violation") is still
+# decidable on the pinned artifact by running validate_all TWICE against
+# severity-partitioned shape graphs and comparing the two SHACL dialect
+# statuses:
+#
+#   violations REFUSED                  -> SA2A admission REFUSED  (a real Violation)
+#   violations ADMITTED, full REFUSED   -> SA2A admission ADMITTED (Warning-only)
+#   violations ADMITTED, full ADMITTED  -> SA2A admission ADMITTED (clean)
+#
+# That derivation needs no severity field at all, only set difference over two
+# real engine runs, and it stays correct when a severity-exposing wasm lands.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix ex:   <http://example.org/sa2a/> .
+
+ex:AgentShape a sh:NodeShape ;
+    sh:targetClass ex:Agent ;
+    sh:property [
+        sh:path ex:description ;
+        sh:minCount 1 ;
+        sh:severity sh:Warning ;
+        sh:message "ex:Agent should carry an ex:description"
+    ] .

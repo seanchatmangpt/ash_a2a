@@ -1,0 +1,53 @@
+{
+  "vector": "shacl_violation_and_warning",
+  "file": "negative/shacl_violation_and_warning.ttl",
+  "class": "shacl_violation_over_warning",
+  "rfc_sections": [
+    "S15",
+    "S61",
+    "S77"
+  ],
+  "description": "A sh:Violation and a sh:Warning together. The Warning MUST NOT override the Violation: admission is REFUSED and the refusal is attributed to the Violation.",
+  "expected": {
+    "sa2a_admission": "REFUSED",
+    "refusal": {
+      "code": "sa2a_shacl_violation",
+      "dialect": "SHACL",
+      "severity": "sh:Violation"
+    },
+    "graph_digest_blake3": "45838eb7a241c3a8dbf64f2bd7dc3f8d1ae8f065e39f3644811efbd1bd327dbc",
+    "law_graph_digest_blake3": "5ab37eb213fc5b40f79bac9bdc30dd7788c5c138916797369798d65f19e4254b"
+  },
+  "measured_on_pinned_engine": {
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "wasm_sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+    "dialects": {
+      "OWL_RL": "ADMITTED",
+      "DATALOG": "ADMITTED",
+      "SHACL": "REFUSED",
+      "SHEX": "ADMITTED",
+      "N3_DENIAL": "ADMITTED"
+    },
+    "shacl_by_severity_partition": {
+      "full": {
+        "status": "REFUSED",
+        "results": 2
+      },
+      "violations_only": {
+        "status": "REFUSED",
+        "results": 1
+      },
+      "warnings_only": {
+        "status": "REFUSED",
+        "results": 1
+      }
+    },
+    "run_hooks": {
+      "status": "ADMITTED",
+      "verdicts": 0,
+      "receipts": 0,
+      "schedule": []
+    }
+  },
+  "conformance": "HOLDS"
+}
