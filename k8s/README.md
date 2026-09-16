@@ -256,13 +256,65 @@ execution pending.
 
 6. **Sign the real, pushed, digest-referenced image:**
 
-       cosign sign --key cosign.key localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+       cosign sign --key cosign.key \
+         --allow-http-registry=true \
+         --tlog-upload=false --use-signing-config=false \
+         localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
 
 7. **Verify the real signature** (the actual falsifiable check --
    SEC-COSIGN-001 only closes if this exits 0 against the real pushed
    digest, never a placeholder):
 
-       cosign verify --key cosign.pub localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+       cosign verify --key cosign.pub \
+         --allow-http-registry=true \
+         --insecure-ignore-tlog=true \
+         localhost:5000/ash-a2a-swarm-node@sha256:<REAL_DIGEST>
+
+   **Why the extra flags (confirmed against the real, installed
+   `cosign v3.1.3` -- `cosign sign --help` / `cosign verify --help` --
+   plain `cosign sign`/`cosign verify` against `localhost:5000` fails
+   without them):**
+
+   - `--allow-http-registry=true` (`sign` and `verify`) -- "whether to
+     allow using HTTP protocol while connecting to registries." The
+     local registry (`registry:2`, step 1) speaks plain HTTP on
+     `localhost:5000`, no TLS at all -- distinct from
+     `--allow-insecure-registry`, which is for HTTPS registries with
+     *expired or self-signed* certs. Without this flag `cosign` still
+     probes `https://localhost:5000/v2/` first (and can succeed via an
+     unrelated cert-less HTTP fallback purely because the host is
+     `localhost`), but the flag is the documented, explicit way to
+     declare HTTP intent rather than rely on that undocumented
+     loopback special-case.
+   - `--tlog-upload=false` (`sign` only) -- skip uploading the
+     signature to the Rekor transparency log. A local `registry:2`
+     instance has no real Rekor deployment reachable from it, so a
+     tlog upload would either hang or hit the public Sigstore Rekor
+     for an image nobody can look up there. **Real, version-specific
+     wrinkle found live on this host's installed `cosign v3.1.3`:**
+     `--tlog-upload` is deprecated as of cosign v3.0.3 ("Deprecate
+     tlog-upload flag") and, run alone, now errors outright --
+     `--tlog-upload=false is not supported with --signing-config or
+     --use-signing-config` -- because `cosign sign` defaults to
+     `--use-signing-config=true` (a TUF-provided signing config that
+     still names a tlog service). It must be paired with
+     `--use-signing-config=false` below; confirmed live by running both
+     commands against an unreachable local port and reading the real
+     error text (flag-parse errors disappeared, only a real "connection
+     refused" network error remained).
+   - `--use-signing-config=false` (`sign` only) -- disables cosign's
+     default TUF-provided signing config so `--tlog-upload=false` above
+     is actually honored instead of rejected. (The non-deprecated
+     replacement path is a hand-built `--signing-config` file with no
+     transparency-log service entries; this recipe uses the simpler,
+     still-functional deprecated flag pair since it is a one-off local
+     test registry, not a production signing pipeline.)
+   - `--insecure-ignore-tlog=true` (`verify` only) -- the verify-side
+     counterpart: don't require or check transparency-log inclusion,
+     since step 6 never uploaded to one. `cosign verify` prints its own
+     real warning when this is set ("Skipping tlog verification is an
+     insecure practice...") -- expected and correct for this local,
+     non-public registry, not a sign of misconfiguration.
 
 8. **Substitute the real digest into `k8s/deployment.yaml`**, replacing
    the `PLACEHOLDER` `image:` line (see the comment block already in
