@@ -1,0 +1,21 @@
+@prefix a2a:  <urn:ash-a2a:vocab:> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Admitted ontology root for the SA2A conformance corpus. Pinned by digest
+# in priv/sa2a/root_manifest.json; nothing in the corpus may reference a
+# term outside an admitted root.
+
+<urn:ash-a2a:vocab:> a owl:Ontology ;
+    rdfs:label "AshA2A semantic execution vocabulary" .
+
+a2a:Command            a owl:Class ; rdfs:label "Command" .
+a2a:Actuation          a owl:Class ; rdfs:label "Actuation" .
+a2a:Receipt            a owl:Class ; rdfs:label "Receipt" .
+a2a:WellFormedEnvelope a owl:Class ; rdfs:label "Well-formed envelope" .
+
+a2a:capabilityId   a owl:DatatypeProperty ; rdfs:domain a2a:Command .
+a2a:principalId    a owl:DatatypeProperty ; rdfs:domain a2a:Command .
+a2a:payloadDigest  a owl:DatatypeProperty ; rdfs:domain a2a:Command .
+a2a:hasReceipt     a owl:ObjectProperty   ; rdfs:domain a2a:Actuation ; rdfs:range a2a:Receipt .

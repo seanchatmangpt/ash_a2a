@@ -1,0 +1,14 @@
+@prefix a2a: <urn:ash-a2a:vocab:> .
+@prefix log: <http://www.w3.org/2000/10/swap/log#> .
+
+# A real N3 derivation rule: a Command carrying all three envelope fields is
+# a well-formed envelope. Pinned in the Root Manifest; MetaAdmission refuses
+# canonical derivation from any rule set that is not.
+{
+  ?c a a2a:Command .
+  ?c a2a:capabilityId ?cap .
+  ?c a2a:principalId ?p .
+  ?c a2a:payloadDigest ?d .
+} => {
+  ?c a a2a:WellFormedEnvelope .
+} .

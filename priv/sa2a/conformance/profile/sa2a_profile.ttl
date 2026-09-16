@@ -1,0 +1,8 @@
+@prefix a2a:  <urn:ash-a2a:vocab:> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+a2a:Command        a rdfs:Class ; rdfs:label "A2A Command" .
+a2a:capabilityId   a owl:DatatypeProperty ; rdfs:domain a2a:Command .
+a2a:principalId    a owl:DatatypeProperty ; rdfs:domain a2a:Command .
+a2a:payloadDigest  a owl:DatatypeProperty ; rdfs:domain a2a:Command .

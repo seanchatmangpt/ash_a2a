@@ -1,0 +1,10 @@
+@prefix a2a: <urn:ash-a2a:vocab:> .
+
+# Structurally valid N3 that would grant every Command an authority claim.
+# NOT pinned in the Root Manifest. MetaAdmission must refuse to derive with
+# it: NOT Standing(r) => NOT CanonicalDerivation(r).
+{
+  ?c a a2a:Command .
+} => {
+  ?c a2a:hasAuthority a2a:RootAuthority .
+} .
