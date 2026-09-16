@@ -263,10 +263,19 @@ defmodule AshA2A.Agent do
   #     is not a map (a real caller error: a malformed structured payload),
   #     fails closed immediately with a typed error rather than silently
   #     downgrading to the LLM tier.
-  #   * `{:text, _text}` -- no `goal_facts`, but the message carries real
-  #     text. Falls through to `dispatch_semantic_compile/2` UNCHANGED --
-  #     the exact same LLM-compilation call every text-only caller reached
-  #     before this release existed.
+  #   * `:ambiguous_goal_facts_shape` -- no top-level `goal_facts` key, but
+  #     the real structured Data-part payload has one nested under some
+  #     wrapper key (a real, adversarially-found caller-shape footgun: a
+  #     caller sending `{"payload" => {"goal_facts" => ...}}` alongside
+  #     real text was previously silently downgraded to the LLM tier
+  #     instead of refused). Fails closed immediately, same treatment as
+  #     `:invalid_goal_facts` above -- see `RequestRouter.detect_tier/1`'s
+  #     own doc for the exact, bounded nested-scan condition.
+  #   * `{:text, _text}` -- no `goal_facts` anywhere in the structured
+  #     payload, but the message carries real text. Falls through to
+  #     `dispatch_semantic_compile/2` UNCHANGED -- the exact same
+  #     LLM-compilation call every text-only caller reached before this
+  #     release existed.
   #   * `:error` -- neither a `goal_facts` map nor real text. Also falls
   #     through to `dispatch_semantic_compile/2` UNCHANGED, which is what
   #     produces the pre-existing, still-real
@@ -284,6 +293,9 @@ defmodule AshA2A.Agent do
 
       :invalid_goal_facts ->
         {:error, %{code: :invalid_goal_facts}}
+
+      :ambiguous_goal_facts_shape ->
+        {:error, %{code: :ambiguous_goal_facts_shape}}
 
       {:text, _text} ->
         dispatch_semantic_compile(resource_or_domain, message)

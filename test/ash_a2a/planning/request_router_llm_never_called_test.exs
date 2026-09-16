@@ -115,4 +115,32 @@ defmodule AshA2A.Planning.RequestRouterLLMNeverCalledTest do
       )
     end
   end
+
+  test "no new false positive from the ambiguous-nested-goal_facts-shape refusal: a real structured payload with unrelated nested keys (no goal_facts anywhere) still reaches the real LLM path" do
+    # Same raise-on-call idiom as the adversarial-completeness test above,
+    # but with a real `A2A.Part.Data` part present (unlike `text_message/1`,
+    # which carries no data part at all) -- this is the shape the new
+    # `detect_tier/1` nested scan actually walks. A caller sending genuinely
+    # unrelated structured metadata alongside real text (no `goal_facts` key
+    # at the top level or nested anywhere) must still reach the real text
+    # tier and invoke `generate_object` -- proven here by the real raise
+    # actually firing, not by reading the scan's code and assuming it's
+    # scoped correctly.
+    text = "The goal is to advance and unlock the gate."
+
+    message =
+      A2A.Message.new_user([
+        A2A.Part.Data.new(%{
+          "request_metadata" => %{"trace_id" => "abc-123", "tags" => [%{"name" => "priority"}]}
+        }),
+        A2A.Part.Text.new(text)
+      ])
+
+    assert_raise RuntimeError, ~r/generate_object was invoked/, fn ->
+      RequestRouter.route(HddlDeterministicFixture, message,
+        generate_object: raise_on_call("generate_object"),
+        plan_generate_object: raise_on_call("plan_generate_object")
+      )
+    end
+  end
 end

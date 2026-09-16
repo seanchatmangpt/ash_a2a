@@ -175,6 +175,80 @@ defmodule AshA2A.Planning.RequestRouterTest do
     end
   end
 
+  describe "detect_tier/1 -- ambiguous nested goal_facts shape" do
+    test "a goal_facts key nested under a wrapper key, absent at the top level, fails closed with :ambiguous_goal_facts_shape" do
+      # Real, adversarially-found caller-shape footgun this task closes: a
+      # caller who nests `goal_facts` one level under a wrapper key (here,
+      # `"payload"`) alongside real text previously fell straight through
+      # to the LLM tier, because the top-level lookup alone genuinely
+      # finds nothing -- a confusing, expensive, silent behavior change
+      # instead of a clear refusal. Real text is present specifically to
+      # prove this refusal fires even though a text tier would otherwise
+      # be reachable (same "prove it isn't just 'no text'" shape as the
+      # `:invalid_goal_facts` test above).
+      envelope = goal_facts_envelope()
+
+      message =
+        A2A.Message.new_user([
+          A2A.Part.Data.new(%{"payload" => %{"goal_facts" => envelope}}),
+          A2A.Part.Text.new("advance the admitted workflow")
+        ])
+
+      assert :ambiguous_goal_facts_shape = RequestRouter.detect_tier(message)
+
+      assert {:error, %{code: :ambiguous_goal_facts_shape}} =
+               RequestRouter.route(nil, message)
+    end
+
+    test "a goal_facts key nested inside a list of wrapper objects also fails closed" do
+      envelope = goal_facts_envelope()
+
+      message =
+        A2A.Message.new_user([
+          A2A.Part.Data.new(%{
+            "items" => [%{"unrelated" => 1}, %{"goal_facts" => envelope}]
+          }),
+          A2A.Part.Text.new("advance the admitted workflow")
+        ])
+
+      assert :ambiguous_goal_facts_shape = RequestRouter.detect_tier(message)
+    end
+
+    test "an atom-keyed nested :goal_facts is detected identically to the string-keyed form" do
+      envelope = goal_facts_envelope()
+
+      message =
+        A2A.Message.new_user([
+          A2A.Part.Data.new(%{payload: %{goal_facts: envelope}}),
+          A2A.Part.Text.new("advance the admitted workflow")
+        ])
+
+      assert :ambiguous_goal_facts_shape = RequestRouter.detect_tier(message)
+    end
+
+    test "a nested structured payload with no goal_facts key anywhere is never flagged (no new false positive for a real structured request)" do
+      message =
+        A2A.Message.new_user([
+          A2A.Part.Data.new(%{"payload" => %{"unrelated_key" => "value"}}),
+          A2A.Part.Text.new("The goal is to read the people.")
+        ])
+
+      assert {:text, "The goal is to read the people."} = RequestRouter.detect_tier(message)
+    end
+
+    test "ordinary free text that merely mentions \"goal facts\" in prose is never flagged -- the scan never inspects text content" do
+      # No `A2A.Part.Data` part at all here (`text_message/1` builds a
+      # text-only message), so `Dispatcher.fetch_input/1` returns `%{}`
+      # and the nested scan trivially finds nothing -- proving the scan is
+      # bounded to the real structured Data-part payload, never message
+      # text, is what makes this refusal safe against false positives on
+      # legitimate prose.
+      text = "Please compute the goal facts for this workflow manually."
+
+      assert {:text, ^text} = RequestRouter.detect_tier(text_message(text))
+    end
+  end
+
   describe "detect_tier/1 -- no input" do
     test "a message with neither goal_facts nor text is refused as :error" do
       message = A2A.Message.new_user([A2A.Part.Data.new(%{"unrelated_key" => "value"})])

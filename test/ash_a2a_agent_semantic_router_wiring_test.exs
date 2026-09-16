@@ -90,7 +90,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
   `RequestRouter`'s own dedicated unit/structural tests. No Mock/mox/patch/
   monkeypatch anywhere in this file.
 
-  Four falsifiers, matching this task's own required verification bar:
+  Five falsifiers, matching this task's own required verification bar:
 
     1. A real `goal_facts` message dispatched through the real top-level
        Agent entry point produces a real, solver-synthesized
@@ -131,6 +131,12 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
        inventing a new seam this task's design does not call for).
     4. An invalid (non-map) `goal_facts` value fails closed with
        `:invalid_goal_facts` through the full wired agent-level path.
+    5. A `goal_facts` key genuinely absent at the top level, but present
+       nested under a wrapper key in the real structured Data-part payload
+       (the real footgun this file's own task closes -- a caller-shape
+       mistake that previously fell through to the LLM tier silently),
+       fails closed with `:ambiguous_goal_facts_shape` through the full
+       wired agent-level path.
   """
 
   use ExUnit.Case, async: false
@@ -253,5 +259,32 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :failed
     assert A2A.Message.text(task.status.message) =~ "invalid_goal_facts"
+  end
+
+  test "5: a goal_facts key nested one level under a wrapper key (absent at the top level), alongside real text, fails closed with :ambiguous_goal_facts_shape through the full wired agent-level path" do
+    # The real adversarial reproduction case this task closes: this
+    # session's earlier router-wiring merge left a genuine caller-shape
+    # footgun -- a Data-part payload like `{"payload": {"goal_facts": ...}}`
+    # has no top-level `goal_facts` key, so `RequestRouter.detect_tier/1`
+    # used to fall straight through to real text (present here too, same
+    # as this file's own `test "4"` above proves for the sibling
+    # `:invalid_goal_facts` refusal) and silently reach the expensive LLM
+    # tier instead of surfacing any error. Routed through the real,
+    # supervised `SemanticRouterWiredAgent` process -- not
+    # `RequestRouter.route/3` directly -- so this is real, executed
+    # evidence the new refusal is reachable end to end through
+    # `AshA2A.Agent.dispatch_semantic_route/2`, not just at the
+    # `RequestRouter` layer.
+    envelope = goal_facts_envelope()
+
+    message =
+      data_message(%{"payload" => %{"goal_facts" => envelope}}, %{
+        metadata: %{semantic_request: true}
+      })
+      |> Map.update!(:parts, &(&1 ++ [A2A.Part.Text.new("advance the admitted workflow")]))
+
+    assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
+    assert task.status.state == :failed
+    assert A2A.Message.text(task.status.message) =~ "ambiguous_goal_facts_shape"
   end
 end
