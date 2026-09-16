@@ -113,7 +113,29 @@ defmodule AshA2A.Authority.Grant do
   def authorize(nil, _capability_id, _opts), do: nil
 
   def authorize(auth_identity, capability_id, opts) when is_binary(capability_id) do
-    case policy(opts) do
+    policy = policy(opts)
+    authority = decide(policy, auth_identity, capability_id, opts)
+
+    # Boundary telemetry (RFC-SA2A-002 §12/§18): the grant decision is observed
+    # where it is made, so a court can prove an authority probe really reached
+    # this boundary. Observational only -- the returned authority is unchanged.
+    :telemetry.execute(
+      [:ash_a2a, :authority, :grant, :decision],
+      %{system_time: System.system_time()},
+      %{
+        policy: policy,
+        broker: broker_module(opts),
+        capability_id: capability_id,
+        principal_id: Identity.principal(auth_identity).value,
+        outcome: if(authority, do: :granted, else: :denied)
+      }
+    )
+
+    authority
+  end
+
+  defp decide(policy, auth_identity, capability_id, opts) do
+    case policy do
       :transport_verified_grants_capability ->
         warn_once(
           :legacy_policy,
@@ -261,6 +283,13 @@ defmodule AshA2A.Authority.Grant do
         )
 
         nil
+    end
+  end
+
+  defp broker_module(opts) do
+    case resolve_broker(opts) do
+      {:ok, module, _broker_opts} -> module
+      :error -> nil
     end
   end
 

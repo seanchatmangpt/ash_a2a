@@ -118,11 +118,25 @@ defmodule AshA2A.GraphLaw.Wasm do
   """
   @spec batch([call()], keyword()) :: {:ok, [String.t()]} | {:error, map()}
   def batch(calls, opts \\ []) when is_list(calls) do
-    with :ok <- availability(opts),
-         {:ok, request} <- encode_request(calls, opts) do
-      run_host(request, opts)
-    end
+    result =
+      with :ok <- availability(opts),
+           {:ok, request} <- encode_request(calls, opts) do
+        run_host(request, opts)
+      end
+
+    # Boundary telemetry (RFC-SA2A-002 §12/§18): which wasm path the real host
+    # was handed and whether it answered. Observational only.
+    :telemetry.execute(
+      [:ash_a2a, :graph_law, :wasm, :batch],
+      %{calls: length(calls)},
+      %{wasm_path: wasm_path(opts), outcome: elem(result, 0), code: error_code(result)}
+    )
+
+    result
   end
+
+  defp error_code({:error, %{code: code}}), do: code
+  defp error_code(_result), do: nil
 
   @doc "Real `graphlaw_version()` from the wasm (e.g. `\"praxis-graphlaw v26.7.5\"`)."
   @spec version(keyword()) :: {:ok, String.t()} | {:error, map()}
