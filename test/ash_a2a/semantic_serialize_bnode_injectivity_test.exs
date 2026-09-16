@@ -143,7 +143,16 @@ defmodule AshA2A.SemanticSerializeBnodeInjectivityTest do
     end
 
     property "two distinct labels always survive as two triples through the real parser" do
-      check all(a <- label_generator(), b <- label_generator(), a != b) do
+      # Distinctness is constructed, not filtered: at small generation sizes
+      # both draws are frequently "", so a `a != b` filter exhausts
+      # StreamData's consecutive-filter budget (FilterTooNarrowError, seed
+      # 327629). An equal draw becomes the adversarial prefix pair `a`/`a_`;
+      # every distinct pair the filter admitted is still generated.
+      check all(
+              a <- label_generator(),
+              b0 <- label_generator(),
+              b = if(a == b0, do: a <> "_", else: b0)
+            ) do
         triples = [triple(a), triple(b)]
         {:ok, nt} = Serialize.to_ntriples(triples)
 

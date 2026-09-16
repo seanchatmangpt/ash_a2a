@@ -117,6 +117,16 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   `test/ash_a2a/semantic_admission_pipeline_test.exs` proves with a real
   before/after canonical digest comparison rather than by inspection.
 
+  ## SHACL severity: warnings never override, and never masquerade as, a violation (RFC S15)
+
+  The pinned engine reports SHACL `REFUSED` for *any* result, whatever its
+  `sh:severity`. When the shapes graph declares `sh:Warning`/`sh:Info` shapes,
+  the one engine batch also validates against the violations-only partition
+  from `AshA2A.Semantic.ShaclSeverity`: the SHACL stage passes a full-law
+  `REFUSED` only when the violations-only run `ADMITTED`. A violation together
+  with a warning still refuses; an unpartitionable shapes graph, or an engine
+  error on the partition run, keeps full-report semantics and refuses.
+
   ## Telemetry
 
     * `[:ash_a2a, :semantic, :admission, :start]` -- metadata `%{candidate_digest: ...}`
@@ -127,7 +137,7 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   """
 
   alias AshA2A.GraphLaw.Wasm
-  alias AshA2A.Semantic.{Admission, CanonicalGraph, IR, LawDocument, Source}
+  alias AshA2A.Semantic.{Admission, CanonicalGraph, IR, LawDocument, ShaclSeverity, Source}
   alias AshA2A.Semantic.AdmissionRefusal, as: Refusal
   alias AshA2A.Semantic.AdmissionStanding, as: Standing
 
@@ -276,21 +286,28 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   defp engine_report(%Candidate{} = candidate, opts) do
     law_graph = law_graph(candidate)
 
+    validate = fn shapes ->
+      {:validate_all,
+       [law_graph, candidate.profile_ttl, shapes, candidate.shex_schema, candidate.shex_shape_map]}
+    end
+
     calls = [
       {:validate_all, [candidate.graph_ttl <> @parse_witness, "", "", "", ""]},
       {:graph_hash, [candidate.graph_ttl]},
-      {:validate_all,
-       [
-         law_graph,
-         candidate.profile_ttl,
-         candidate.shacl_shapes,
-         candidate.shex_schema,
-         candidate.shex_shape_map
-       ]},
+      validate.(candidate.shacl_shapes),
       {:graphlaw_version, []}
     ]
 
-    with {:ok, [witness_raw, graph_hash, report_raw, version]} <- Wasm.batch(calls, opts),
+    # RFC S15 severity partition (see `AshA2A.Semantic.ShaclSeverity`): only
+    # issued when the shapes declare a partitionable sh:Warning/sh:Info shape.
+    severity_calls =
+      case blank?(candidate.shacl_shapes) || ShaclSeverity.violations_only(candidate.shacl_shapes) do
+        {:ok, %{violations_only: shapes}} -> [validate.(shapes)]
+        _ -> []
+      end
+
+    with {:ok, [witness_raw, graph_hash, report_raw, version | severity_raw]} <-
+           Wasm.batch(calls ++ severity_calls, opts),
          {:ok, witness} <- Wasm.decode_json(witness_raw),
          {:ok, report} <- Wasm.decode_json(report_raw) do
       {:ok,
@@ -298,6 +315,7 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
          witness: witness,
          graph_hash: graph_hash,
          report: report,
+         violations_only_report: violations_only_report(severity_raw),
          version: version
        }}
     else
@@ -308,6 +326,17 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
          )}
     end
   end
+
+  # An engine error on the partition run leaves no violations-only report, so
+  # the SHACL stage keeps full-report semantics (refuses): fail-closed.
+  defp violations_only_report([raw]) do
+    case Wasm.decode_json(raw) do
+      {:ok, report} -> report
+      {:error, _} -> nil
+    end
+  end
+
+  defp violations_only_report(_), do: nil
 
   defp law_graph(%Candidate{graph_ttl: graph, falsifiers: falsifiers}) do
     if blank?(falsifiers), do: graph, else: graph <> "\n" <> falsifiers
@@ -447,7 +476,11 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
              LawDocument.shacl_shape_count(candidate.shacl_shapes),
              :shacl_shapes_vacuous
            ) do
-      require_dialect(engine.report, "SHACL", :shacl, standing, :shacl_nonconformant)
+      if warning_only?(engine) do
+        {:ok, nil}
+      else
+        require_dialect(engine.report, "SHACL", :shacl, standing, :shacl_nonconformant)
+      end
     end
   end
 
@@ -535,6 +568,17 @@ defmodule AshA2A.Semantic.AdmissionPipeline do
   end
 
   # --- stage helpers ----------------------------------------------------
+
+  # RFC S15: every full-law SHACL result came from a sh:Warning/sh:Info shape
+  # iff the full run REFUSED and the violations-only run of the same engine
+  # over the same graph ADMITTED. Anything else -- no partition, an engine
+  # error, a violations-only REFUSED -- keeps full-report semantics.
+  defp warning_only?(%{report: report, violations_only_report: %{} = violations_only}) do
+    match?({:ok, %{"status" => "REFUSED"}}, Wasm.dialect(report, "SHACL")) and
+      match?({:ok, %{"status" => "ADMITTED"}}, Wasm.dialect(violations_only, "SHACL"))
+  end
+
+  defp warning_only?(_engine), do: false
 
   defp require_supplied(stage, standing, code, document) do
     if blank?(document) do

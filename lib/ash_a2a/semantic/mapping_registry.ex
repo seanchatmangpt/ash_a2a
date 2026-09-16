@@ -58,8 +58,30 @@ defmodule AshA2A.Semantic.MappingRegistry do
   Requires: two valid, distinct IRIs, a SKOS-aligned kind, and an admission
   receipt. Returns `{:ok, registry}` or a typed refusal.
   """
-  @spec register(t(), map()) :: {:ok, t()} | {:error, refusal()}
-  def register(%__MODULE__{} = registry, %{} = mapping) do
+  @spec register(t(), term()) :: {:ok, t()} | {:error, refusal()}
+  def register(%__MODULE__{} = registry, mapping) do
+    result = decide_register(registry, mapping)
+
+    # Boundary evidence for independent observers (RFC-SA2A-002 §12): the
+    # decision this function just made, never an input to it.
+    fields = if is_map(mapping), do: mapping, else: %{}
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :mapping, :register],
+      %{system_time: System.system_time()},
+      %{
+        source: fields[:source] || fields["source"],
+        target: fields[:target] || fields["target"],
+        kind: fields[:kind] || fields["kind"],
+        outcome: if(match?({:ok, _}, result), do: :admitted, else: :refused),
+        code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+      }
+    )
+
+    result
+  end
+
+  defp decide_register(%__MODULE__{} = registry, %{} = mapping) do
     source = mapping[:source] || mapping["source"]
     target = mapping[:target] || mapping["target"]
     kind = mapping[:kind] || mapping["kind"]
@@ -92,7 +114,7 @@ defmodule AshA2A.Semantic.MappingRegistry do
     end
   end
 
-  def register(%__MODULE__{}, other),
+  defp decide_register(%__MODULE__{}, other),
     do:
       {:error,
        refusal(
