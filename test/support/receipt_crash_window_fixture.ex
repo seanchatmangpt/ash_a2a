@@ -76,9 +76,7 @@ defmodule AshA2A.Test.Fixture.ReceiptCrashWindow.Runner do
     principal = Identity.principal("receipt-crash-window-subject")
 
     authority =
-      Authority.new(principal, capability_id(),
-        token_id: "receipt-crash-window-authority"
-      )
+      Authority.new(principal, capability_id(), token_id: "receipt-crash-window-authority")
 
     Command.new(capability_id(),
       command_id: command_id,
