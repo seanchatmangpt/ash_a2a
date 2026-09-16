@@ -1,0 +1,88 @@
+{
+  "artifact": {
+    "blake3": "4724fbf950599642f898175319790bb35f192a60189e7b19963195fc3106cd36",
+    "bytes": 3249361,
+    "name": "praxis_graphlaw.wasm",
+    "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
+  },
+  "content_digest": "d895a3422d394a54c05f1c2e365ec90499933d8928c31bdd6c12a988e9e62696",
+  "graphlaw_version": "praxis-graphlaw v26.7.5",
+  "host_abi": {
+    "exports": [
+      "memory",
+      "blake3_hex",
+      "graph_hash",
+      "graphlaw_version",
+      "init_panic_hook",
+      "run_hooks",
+      "validate_all",
+      "__abort_handler",
+      "__instance_terminated",
+      "__wbindgen_export",
+      "__wbindgen_add_to_stack_pointer",
+      "__wbindgen_export2",
+      "__wbindgen_export3",
+      "__wbindgen_export4",
+      "__wbindgen_start"
+    ],
+    "imports": [
+      "./praxis_graphlaw_wasm_bg.js::__wbindgen_object_drop_ref",
+      "./praxis_graphlaw_wasm_bg.js::__wbg_getRandomValues_3f44b700395062e5"
+    ],
+    "note": "The module is instantiated directly; wasm-pack's JS glue is not used. See docs/explanation/graphlaw-wasm-integration.md.",
+    "string_abi": {
+      "call": "fn(retptr, ptr0, len0, ...) then read two LE i32 at retptr+0/+4 => (ptr, len)",
+      "free": "__wbindgen_export4(ptr, len, align) -> ()",
+      "malloc": "__wbindgen_export2(len, align) -> ptr",
+      "realloc": "__wbindgen_export3(ptr, old_len, new_len, align) -> ptr",
+      "ret_area": "__wbindgen_add_to_stack_pointer(-16) -> retptr, +16 to restore"
+    }
+  },
+  "provenance": {
+    "built_at": "2026-07-08T23:31:00Z",
+    "graphlaw_crate": "praxis-graphlaw",
+    "graphlaw_crate_version": "26.7.5",
+    "praxis_git_describe": null,
+    "praxis_git_dirty": null,
+    "praxis_git_sha": "bf96ea56d4055b5accd3f5124e559805f6502e2f",
+    "praxis_root_at_build": null,
+    "provenance_confidence": "praxis_git_sha is INFERRED from the artifact mtime falling between bf96ea5 (15:47) and 7765777 (17:40) on 2026-07-08, and corroborated by both crate versions being 26.7.5 at that SHA, matching graphlaw_version(). rustc_version and the original wasm-pack version were not recorded at build time and are NOT guessed here.",
+    "rust_target": "wasm32-unknown-unknown",
+    "rustc_version": null,
+    "vendored_by": "hand-copied Jul 8 2026; re-registered by mix ash_a2a.vendor_graphlaw's own pipeline code",
+    "wasm_crate": "praxis-graphlaw-wasm",
+    "wasm_crate_version": "26.7.5",
+    "wasm_pack_target": "bundler",
+    "wasm_pack_version": "wasm-pack 0.13.1 (measured at vendor time; the Jul 8 build's own wasm-pack version was not recorded)"
+  },
+  "rebuild": {
+    "note": "Measured this session. The three wasm-pack targets bundler/web/nodejs produce a BYTE-IDENTICAL core module; only the JS glue differs, and this repository does not use the glue.",
+    "pinned_sha_rebuild": {
+      "byte_reproducible_vs_committed": false,
+      "bytes": 3248401,
+      "evidence": "All three rebuilt targets and the committed artifact return identical graphlaw_version() and identical graph_hash over all three committed fixtures.",
+      "praxis_sha": "bf96ea56d4055b5accd3f5124e559805f6502e2f",
+      "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+      "semantically_equivalent_to_committed": true,
+      "sha256": "0582d595cd0d474fad90d67f1918509281067e6b8dc315df6048d8967edbec1a",
+      "wasm_bindgen": "wasm-bindgen 0.2.126",
+      "wasm_pack": "wasm-pack 0.13.1"
+    },
+    "praxis_head_wasm32_build": "BLOCKED: praxis-graphlaw does not compile for wasm32-unknown-unknown at praxis HEAD (31f149d) -- E0599 no associated function `open` for oxigraph `Store` at crates/praxis-graphlaw/src/chatman/engine.rs:597"
+  },
+  "schema": "ash_a2a.graphlaw.manifest/v1",
+  "verification": {
+    "blake3_hex_abc": "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+    "blake3_hex_abc_matches_published_vector": true,
+    "canonical_order_invariant": true,
+    "distinct_graph_distinct_hash": true,
+    "fixtures": {
+      "base.ttl": "9b8180962a93910d17c51d029626f393d65ac2f724b9ffc657c90bc4f3b5939d",
+      "mutated.ttl": "610ccbcd4ed4b23cf4179fde360625da286557d18a15403f76797e28c1c68f66",
+      "reordered.ttl": "9b8180962a93910d17c51d029626f393d65ac2f724b9ffc657c90bc4f3b5939d"
+    },
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "method": "real WebAssembly instantiation and execution via priv/graphlaw/host/graphlaw_host.mjs",
+    "verified_at": "2026-09-16T08:36:08.647342Z"
+  }
+}

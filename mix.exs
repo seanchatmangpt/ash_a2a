@@ -27,6 +27,7 @@ defmodule AshA2A.MixProject do
         "docs/how-to/observe-dispatch-with-ocel.md",
         "docs/how-to/use-role-based-llm-resolution.md",
         "docs/explanation/architecture.md",
+        "docs/explanation/graphlaw-wasm-integration.md",
         "docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md",
         "docs/reference/index.md"
       ]
