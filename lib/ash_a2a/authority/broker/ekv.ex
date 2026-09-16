@@ -1,0 +1,161 @@
+defmodule AshA2A.Authority.Broker.Ekv do
+  @moduledoc """
+  Durable, single-node-or-cluster reference implementation of
+  `AshA2A.Authority.Broker`, backed by the same real, on-disk `EKV` instance
+  (`:ekv`, hex `~> 0.4`) already integrated for
+  `AshA2A.ReceiptStore.Ekv` (`lib/ash_a2a/receipt_store/ekv.ex`) -- not a new
+  Postgres/Ecto dependency. This library is deliberately a "pure library"
+  with no owned production database (see `swarm/Dockerfile`'s own comments
+  and `test/support/repo.ex`, which is explicitly test-only); introducing
+  Postgres/Ecto ownership here would be architecturally wrong. Reusing the
+  already-integrated `:ekv` dependency, and its exact `EKV.get/EKV.put`
+  `if_vsn:` CAS idiom from `AshA2A.ReceiptStore.Ekv`, is the real, consistent
+  choice.
+
+  Where `AshA2A.Authority.Broker.InMemory` keeps issued/revoked token ids in
+  one `GenServer`'s process state -- gone the moment that process or its BEAM
+  node dies -- this module keeps per-`token_id` revocation state in a real
+  `EKV` entry on disk, keyed by `Identity.external(authority.token_id)`. That
+  state survives both a process restart (a fresh `EKV.get`/`EKV.put` against
+  the same `data_dir` sees the same entry) and a real node restart, which is
+  the concrete advantage over `InMemory` this module exists to provide.
+
+  Like `AshA2A.ReceiptStore.Ekv`, this module does not start or supervise
+  `EKV` itself -- a real, already-running `EKV` instance under the configured
+  `:name` must already exist (started via a supervision tree, or
+  `start_supervised!/1` in tests) before `issue/3`, `revoke/2`, or `verify/2`
+  are called. Every call accepts a `:name` option (default `__MODULE__`),
+  matching the same named-process convention `InMemory` and
+  `AshA2A.ReceiptStore.Ekv` both already use, so more than one independently
+  configured `Ekv` broker can run against distinct `EKV` instances without
+  colliding on revocation state.
+
+  NOT Sybil-resistant. NOT distributed identity issuance. Exactly like
+  `InMemory`, this module has no notion of a principal being who they claim
+  to be beyond whatever the caller already decided before invoking `issue/3`,
+  and it has no way to detect one real actor presenting as many distinct
+  principals -- Sybil-resistant identity issuance across untrusted,
+  decentralized participants is a genuinely unsolved, published-
+  impossible-in-general problem (Douceur, "The Sybil Attack," IPTPS 2002).
+  "Durable" here means exactly one thing: previously recorded issue/revoke
+  state for a `token_id` survives a process or node restart. It does not mean
+  this broker is a trustworthy identity source, and it must never be read
+  that way -- the identity/principal question is entirely out of scope,
+  exactly as `InMemory`'s own moduledoc says of itself.
+
+  `issue/3`, `revoke/2`, and `verify/2` reuse `AshA2A.Authority.new/3` and
+  `AshA2A.Authority.expired?/1` exactly as `InMemory` does -- this module
+  reimplements neither authority construction nor expiry logic, only durable
+  storage of issue/revoke state.
+  """
+
+  @behaviour AshA2A.Authority.Broker
+
+  alias AshA2A.{Authority, Identity}
+
+  # Revocation's terminal state (`status: :revoked`) is the same regardless
+  # of which racing attempt wins the CAS -- unlike
+  # `AshA2A.ReceiptStore.Ekv.claim/2`, which has a definite alternative
+  # terminal state (`:command_conflict`) for a losing racer to land on
+  # instead. A revoke racer that loses a CAS round simply re-reads the
+  # current entry and retries the exact same write it already intended,
+  # bounded here so a pathological, unceasing write storm on one `token_id`
+  # fails closed with a typed refusal instead of looping forever.
+  @max_cas_attempts 10
+
+  @impl AshA2A.Authority.Broker
+  @spec issue(Identity.t(), String.t(), keyword()) ::
+          {:ok, Authority.t()} | {:error, AshA2A.Authority.Broker.refusal()}
+  def issue(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    authority =
+      Authority.new(subject, capability_id, Keyword.put_new(opts, :source, :authority_broker))
+
+    name = ekv_name(opts)
+    key = Identity.external(authority.token_id)
+    entry = %{status: :issued, capability_id: capability_id}
+
+    # Insert-if-absent CAS (`if_vsn: nil`), the same idiom
+    # `AshA2A.ReceiptStore.Ekv.attempt_fresh_claim/3` uses for a fresh
+    # command id: only one `if_vsn: nil` put wins for a given key. A losing
+    # `issue/3` here means the caller-supplied (or, vanishingly unlikely for
+    # the default `Ash.UUIDv7.generate()` token_id, freshly generated)
+    # `token_id` was already durably recorded by a prior real `issue/3` --
+    # the same `:token_id_taken` refusal shape `InMemory` returns for its own
+    # in-process equivalent.
+    case EKV.put(name, key, entry, if_vsn: nil) do
+      {:ok, _vsn} ->
+        {:ok, authority}
+
+      {:error, reason} when reason in [:conflict, :unconfirmed] ->
+        {:error, %{reason: :token_id_taken, token_id: authority.token_id}}
+    end
+  end
+
+  @impl AshA2A.Authority.Broker
+  @spec revoke(Authority.t(), keyword()) :: :ok | {:error, AshA2A.Authority.Broker.refusal()}
+  def revoke(%Authority{} = authority, opts \\ []) do
+    name = ekv_name(opts)
+    key = Identity.external(authority.token_id)
+    mark_revoked(name, key, authority.token_id, 0)
+  end
+
+  @impl AshA2A.Authority.Broker
+  @spec verify(Authority.t(), keyword()) ::
+          {:ok, Authority.t()} | {:error, AshA2A.Authority.Broker.refusal()}
+  def verify(%Authority{} = authority, opts \\ []) do
+    cond do
+      # Reuses `AshA2A.Authority.expired?/1` -- never reimplemented here,
+      # exactly as `AshA2A.Authority.Broker`'s own `@callback` doc requires.
+      Authority.expired?(authority) ->
+        {:error, %{reason: :expired, token_id: authority.token_id}}
+
+      revoked?(ekv_name(opts), Identity.external(authority.token_id)) ->
+        {:error, %{reason: :revoked, token_id: authority.token_id}}
+
+      true ->
+        {:ok, authority}
+    end
+  end
+
+  defp revoked?(name, key) do
+    case EKV.get(name, key) do
+      %{status: :revoked} -> true
+      _ -> false
+    end
+  end
+
+  defp mark_revoked(_name, _key, token_id, attempt) when attempt >= @max_cas_attempts do
+    {:error, %{reason: :revoke_conflict, token_id: token_id}}
+  end
+
+  defp mark_revoked(name, key, token_id, attempt) do
+    case EKV.lookup(name, key) do
+      nil ->
+        # No prior durable entry for this token_id (an authority revoked
+        # without ever having been `issue/3`-d through this same broker, for
+        # example one minted via `Authority.new/3` directly, or issued by a
+        # different broker instance) -- still recorded durably and fail
+        # closed, matching `InMemory.revoke/2`'s own unconditional
+        # `MapSet.put/2` regardless of prior `issued` membership.
+        case EKV.put(name, key, %{status: :revoked}, if_vsn: nil) do
+          {:ok, _vsn} ->
+            :ok
+
+          {:error, reason} when reason in [:conflict, :unconfirmed] ->
+            mark_revoked(name, key, token_id, attempt + 1)
+        end
+
+      {entry, vsn} ->
+        case EKV.put(name, key, Map.put(entry, :status, :revoked), if_vsn: vsn) do
+          {:ok, _vsn} ->
+            :ok
+
+          {:error, reason} when reason in [:conflict, :unconfirmed] ->
+            mark_revoked(name, key, token_id, attempt + 1)
+        end
+    end
+  end
+
+  defp ekv_name(opts), do: Keyword.get(opts, :name, __MODULE__)
+end
