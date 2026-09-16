@@ -33,7 +33,16 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
 
   alias AshA2A.Chicago.Ocel.Mapping
 
-  @auth_attrs [:outcome, :reason, :policy, :broker, :authenticated, :capability_id, :principal_id]
+  @auth_attrs [
+    :outcome,
+    :reason,
+    :code,
+    :policy,
+    :broker,
+    :authenticated,
+    :capability_id,
+    :principal_id
+  ]
 
   @doc "Admitted OCEL mappings for authority-boundary telemetry, shared by both authority courts."
   @spec mappings() :: [Mapping.t()]

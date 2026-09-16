@@ -125,18 +125,32 @@ defmodule AshA2A.Authority.Grant do
   # `[:ash_a2a, :authority, :decision]`, so an independent observer can see
   # that a request reached the authority boundary (§12) rather than inferring
   # it from the absence of a consequence. Observation only: the returned
-  # authority is exactly what the decision produced.
+  # authority is exactly what the decision produced, and building/emitting the
+  # evidence never raises into the caller.
+  #
+  # This is the ONE decision event (RFC-SA2A-002 §12/§18/§64/§67): `:reason`
+  # says why for both outcomes; `:code` is the refusal code (`nil` when
+  # granted) -- the field the SA2A-BENCH B5 timeline and court read.
   defp emit_decision(auth_identity, authority, capability_id, reason, policy, opts) do
-    :telemetry.execute([:ash_a2a, :authority, :decision], %{system_time: System.system_time()}, %{
-      outcome: if(authority, do: :granted, else: :refused),
-      reason: reason,
-      policy: policy,
-      broker: broker_label(opts),
-      authenticated: not is_nil(auth_identity),
-      principal_id: auth_identity && Identity.principal(auth_identity).value,
-      capability_id: capability_id,
-      token_id: authority && authority.token_id.value
-    })
+    try do
+      :telemetry.execute(
+        [:ash_a2a, :authority, :decision],
+        %{system_time: System.system_time()},
+        %{
+          outcome: if(authority, do: :granted, else: :refused),
+          reason: reason,
+          code: if(authority, do: nil, else: reason),
+          policy: policy,
+          broker: broker_label(opts),
+          authenticated: not is_nil(auth_identity),
+          principal_id: auth_identity && Identity.principal(auth_identity).value,
+          capability_id: capability_id,
+          token_id: authority && authority.token_id.value
+        }
+      )
+    rescue
+      _ -> :ok
+    end
 
     authority
   end
