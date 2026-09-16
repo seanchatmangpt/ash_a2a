@@ -563,3 +563,114 @@ defmodule AshA2A.Test.Fixture.TenantedItemDomain do
     resource(AshA2A.Test.Fixture.TenantedItem)
   end
 end
+
+defmodule AshA2A.Test.Fixture.CapabilityChangelogShared do
+  @moduledoc """
+  Real fixture resource for `AshA2A.CapabilityIndex.ChangelogTest`'s
+  end-to-end demo: the capability present in both the "old" and "new"
+  simulated revision.
+
+  A genuine `Ash.Resource` with one real public `:read` action -- its own
+  `AshA2A.Info.capability_index/1` (resource-level) stands in for a
+  single-capability "old" revision. Deliberately declared with its own
+  `AshA2A.Test.Fixture.CapabilityChangelogSharedDomain`
+  (`verify_accepted_by_domain` requires a resource's declared `domain:` to
+  list it), but this same compiled module is ALSO listed inside
+  `AshA2A.Test.Fixture.CapabilityChangelogNewDomain`'s `resources do ... end`
+  below -- Ash's own `Ash.Domain.Transformers.DedupResources`/
+  `Ash.Resource.Verifiers.VerifyAcceptedByDomain` only ever check a
+  resource's OWN declared domain includes it, never that a domain's listed
+  resources declare it as theirs, so a resource module can legitimately be
+  aggregated by more than one real domain. That is exactly what this
+  fixture pair exploits: `AshA2A.Info.capability_index/1` on this resource
+  module directly, and via `CapabilityChangelogNewDomain` below, both derive
+  the real `AshA2A.Skill.id` `"AshA2A.Test.Fixture.CapabilityChangelogShared.read"`
+  from the same real compiled action -- a genuinely overlapping id between
+  two real compiled capability indices, not a hand-typed string.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.CapabilityChangelogSharedDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    skill(:list, :read)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.CapabilityChangelogSharedDomain do
+  @moduledoc """
+  Real, single-resource fixture domain for
+  `AshA2A.Test.Fixture.CapabilityChangelogShared` above --
+  `AshA2A.Info.capability_index/1` on the resource module directly is used
+  as the "old" (one-capability) revision by
+  `AshA2A.CapabilityIndex.ChangelogTest`, so this domain exists only to
+  satisfy `VerifyAcceptedByDomain`, not because the demo compiles the index
+  through it.
+  """
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.CapabilityChangelogShared)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.CapabilityChangelogExtra do
+  @moduledoc """
+  Real fixture resource for `AshA2A.CapabilityIndex.ChangelogTest`'s
+  end-to-end demo: the capability that exists ONLY in the simulated "new"
+  revision (`AshA2A.Test.Fixture.CapabilityChangelogNewDomain` below), never
+  in the "old" one
+  (`AshA2A.Test.Fixture.CapabilityChangelogShared`/`CapabilityChangelogSharedDomain`).
+  A genuine `Ash.Resource` with one real public `:read` action, distinct
+  from `CapabilityChangelogShared`'s.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.CapabilityChangelogNewDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+  end
+
+  actions do
+    defaults([:read])
+  end
+
+  a2a do
+    skill(:ping, :read)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.CapabilityChangelogNewDomain do
+  @moduledoc """
+  Real, two-resource fixture domain standing in for the "new" revision in
+  `AshA2A.CapabilityIndex.ChangelogTest`'s end-to-end demo: it aggregates
+  BOTH `AshA2A.Test.Fixture.CapabilityChangelogShared` (the same resource
+  module the "old" revision compiles alone) and
+  `AshA2A.Test.Fixture.CapabilityChangelogExtra` (the capability added since
+  the "old" revision) -- "a fixture with one capability, and a second
+  fixture with that one plus an extra," built from two real, independently
+  compiled `Ash.Resource` modules rather than any hand-typed capability-id
+  string.
+  """
+
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.CapabilityChangelogShared)
+    resource(AshA2A.Test.Fixture.CapabilityChangelogExtra)
+  end
+end
