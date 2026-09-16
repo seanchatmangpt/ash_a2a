@@ -9,7 +9,8 @@ defmodule AshA2A.Chicago.StandingReceipt do
     * any survived falsifier or failed positive control -> `NONCONFORMANT`
     * every applicable result corroborated as passed, every required gate of
       the claimed profile covered and passed (§31, §145), the OCEL artifact
-      independently validated with zero dropped records (§106, §138) ->
+      independently validated with zero dropped records and zero observer
+      restart gaps (§106, §138) ->
       `CONFORMANT`
     * at least one corroborated pass otherwise -> `PARTIAL_ALIVE`
     * nothing corroborated -> `UNKNOWN`
@@ -82,6 +83,10 @@ defmodule AshA2A.Chicago.StandingReceipt do
         "ocel_events" => run.ocel.events,
         "ocel_objects" => run.ocel.objects,
         "ocel_dropped_records" => run.ocel.dropped,
+        "ocel_gaps" => Map.get(run.ocel, :gaps, 0),
+        "ocel_late_records" => Map.get(run.ocel, :late, 0),
+        "ocel_unmapped_events" => Map.get(run.ocel, :unmapped, 0),
+        "ocel_rejected_refs" => Map.get(run.ocel, :rejected_refs, 0),
         "ocel_valid" => run.ocel_validation.status == :valid,
         "ocel_validation" => Atom.to_string(run.ocel_validation.status),
         "ocel_validator" => run.ocel_validation.validator,
@@ -217,7 +222,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
         :nonconformant
 
       counted != [] and Enum.all?(counted, &Result.counts_as_pass?/1) and required_passed and
-        validation.status == :valid and ocel.dropped == 0 ->
+        validation.status == :valid and ocel.dropped == 0 and Map.get(ocel, :gaps, 0) == 0 ->
         :conformant
 
       Enum.any?(counted, &Result.counts_as_pass?/1) ->

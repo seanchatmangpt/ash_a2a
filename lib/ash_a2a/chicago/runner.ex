@@ -6,6 +6,8 @@ defmodule AshA2A.Chicago.Runner do
 
     1. capture the exact subject (`AshA2A.Chicago.Subject`)
     2. start the independent observer with the admitted, digested OCEL mappings
+       and a durable journal; a dead observer is replaced by a recovery
+       incarnation that records the gap
     3. run every selected court, one at a time, capturing crashes/timeouts as
        `:unknown` and filling in any declared falsifier a court failed to
        report (§129-§130)
@@ -35,7 +37,7 @@ defmodule AshA2A.Chicago.Runner do
     Subject
   }
 
-  alias AshA2A.Chicago.Ocel.SutMappings
+  alias AshA2A.Chicago.Ocel.{SutEvents, SutMappings}
 
   defmodule Run do
     @moduledoc "A completed Chicago run: results, evidence and standing receipt."
@@ -71,6 +73,12 @@ defmodule AshA2A.Chicago.Runner do
       (default `AshA2A.Chicago.Ocel.Validator` when compiled; otherwise
       validation is recorded as not run and standing cannot be CONFORMANT)
     * `:court_timeout_ms` -- per court (default 600_000)
+    * `:observer_watch_events` -- events the observer records without a
+      mapping (default: discovered SUT events with no admitted mapping,
+      `AshA2A.Chicago.Ocel.SutEvents.unmapped/1`)
+    * `:observer_delivery_timeout_ms`, `:observer_journal_sync` -- passed to
+      the observer (`AshA2A.Chicago.Observer.start/1`); the observer journal
+      is written to `evidence_dir`
     * `:run_id`
     * any other option is carried in `Context.opts` for courts
   """
@@ -109,8 +117,11 @@ defmodule AshA2A.Chicago.Runner do
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
     mappings = SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings())
+    observer_opts = observer_opts(run_id, mappings, evidence_dir, opts)
 
-    {:ok, observer} = Observer.start_link(run_id: run_id, mappings: mappings)
+    # Unlinked and owner-monitored: an observer outage must degrade evidence
+    # standing, never take the run down with it (§108, §138).
+    {:ok, observer} = Observer.start(observer_opts)
 
     try do
       ctx = %Context{
@@ -122,34 +133,52 @@ defmodule AshA2A.Chicago.Runner do
         opts: opts
       }
 
-      results = Enum.flat_map(courts, &run_court(&1, %{ctx | court: &1}, opts))
+      # A dead observer is replaced by a recovery incarnation (journal restore
+      # + recorded gap) before the next court and before the flush.
+      {results, observer} =
+        Enum.flat_map_reduce(courts, observer, fn court, observer ->
+          observer = Observer.ensure_running(observer, observer_opts)
+          {run_court(court, %{ctx | court: court, observer: observer}, opts), observer}
+        end)
+
+      observer = Observer.ensure_running(observer, observer_opts)
 
       with {:ok, ocel} <- Observer.flush(observer, evidence_dir) do
         finish(profile, courts, subject, results, ocel, evidence_dir, run_id, opts)
       end
     after
-      if Process.alive?(observer), do: Observer.stop(observer)
+      Observer.stop_run(run_id)
     end
+  end
+
+  defp observer_opts(run_id, mappings, evidence_dir, opts) do
+    [
+      run_id: run_id,
+      mappings: mappings,
+      watch_events:
+        Keyword.get_lazy(opts, :observer_watch_events, fn -> SutEvents.unmapped(mappings) end),
+      journal: Observer.journal_path(evidence_dir, run_id),
+      owner: self()
+    ] ++
+      Enum.flat_map(
+        [
+          observer_delivery_timeout_ms: :delivery_timeout_ms,
+          observer_journal_sync: :journal_sync
+        ],
+        fn {from, to} ->
+          case Keyword.fetch(opts, from) do
+            {:ok, value} -> [{to, value}]
+            :error -> []
+          end
+        end
+      )
   end
 
   defp finish(profile, courts, subject, results, ocel, evidence_dir, run_id, opts) do
     validation = validate_ocel(ocel.path, Keyword.get(opts, :ocel_validator, @default_validator))
     falsifiers = courts |> Enum.flat_map(& &1.falsifiers()) |> Map.new(&{&1.id, &1})
 
-    results =
-      case Query.load(ocel.path, ocel.sha256) do
-        {:ok, index} ->
-          Enum.map(results, &corroborate(&1, Map.get(falsifiers, &1.falsifier_id), index))
-
-        {:error, reason} ->
-          Enum.map(results, fn r ->
-            %{
-              r
-              | ocel_corroborated?: false,
-                ocel_detail: "independent consumer could not load OCEL: #{inspect(reason)}"
-            }
-          end)
-      end
+    results = corroborate_all(results, falsifiers, ocel)
 
     receipt =
       StandingReceipt.build(%{
@@ -176,7 +205,41 @@ defmodule AshA2A.Chicago.Runner do
     }
 
     write_package!(run)
+
+    :telemetry.execute([:ash_a2a, :chicago, :run, :stop], %{system_time: System.system_time()}, %{
+      run_id: run_id,
+      standing: receipt["standing"],
+      ocel_sha256: ocel.sha256,
+      ocel_dropped: ocel.dropped,
+      ocel_gaps: Map.get(ocel, :gaps, 0),
+      ocel_corroborated: Enum.count(results, &(&1.ocel_corroborated? == true)),
+      results: length(results)
+    })
+
     {:ok, run}
+  end
+
+  @doc """
+  Loads the durable OCEL artifact by its digest in the independent consumer
+  and corroborates every result against its falsifier (§104). When the bytes
+  cannot be loaded -- missing, corrupted, digest mismatch -- no result is
+  corroborated.
+  """
+  @spec corroborate_all([Result.t()], %{String.t() => Falsifier.t()}, map()) :: [Result.t()]
+  def corroborate_all(results, falsifiers, %{path: path, sha256: sha256}) do
+    case Query.load(path, sha256) do
+      {:ok, index} ->
+        Enum.map(results, &corroborate(&1, Map.get(falsifiers, &1.falsifier_id), index))
+
+      {:error, reason} ->
+        Enum.map(results, fn r ->
+          %{
+            r
+            | ocel_corroborated?: false,
+              ocel_detail: "independent consumer could not load OCEL: #{inspect(reason)}"
+          }
+        end)
+    end
   end
 
   # --- court execution ------------------------------------------------------
