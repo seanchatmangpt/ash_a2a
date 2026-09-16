@@ -21,7 +21,14 @@ defmodule AshA2A.SA2A.StateMachine do
   `validate_all/5` or `run_hooks/2` payload the runtime returned:
 
     * `PARSED` -- `graph_hash(base)` returned a 64-char hex digest rather
-      than the `{"error": ...}` JSON GraphLaw returns instead of raising.
+      than the `{"error": ...}` JSON GraphLaw returns instead of raising,
+      and, when the input text is supplied (`evaluate/4` `:base`), the RFC S12
+      primitive (`AshA2A.Semantic.CanonicalGraph.parse/1`) parses it as RDF
+      1.1 Turtle. The engine digest alone is not evidence of a parse: measured
+      against praxis-graphlaw v26.7.5, `graph_hash` hashes unparseable bytes
+      and `validate_all`/`run_hooks` then ADMIT them, identically in every
+      host -- agreement on a degenerate result (RFC-SA2A-002 S76), which the
+      S12 parse refuses at this hop instead.
     * `IDENTIFIED` -- the `graph_hash` field *inside* the `validate_all/5`
       result equals that digest. Two independent paths through the engine
       identified the same graph.
@@ -76,9 +83,22 @@ defmodule AshA2A.SA2A.StateMachine do
   """
   @spec evaluate(String.t(), {:ok, map()} | {:error, term()}, {:ok, map()} | {:error, term()}) ::
           t()
-  def evaluate(input_graph_hash, validation, hooks) do
+  def evaluate(input_graph_hash, validation, hooks),
+    do: evaluate(input_graph_hash, validation, hooks, [])
+
+  @doc """
+  `evaluate/3` with options. `:base` -- the input Turtle text; when given,
+  PARSED additionally requires the S12 primitive to parse it.
+  """
+  @spec evaluate(
+          String.t(),
+          {:ok, map()} | {:error, term()},
+          {:ok, map()} | {:error, term()},
+          keyword()
+        ) :: t()
+  def evaluate(input_graph_hash, validation, hooks, opts) do
     steps = [
-      {:parsed, fn -> parsed(input_graph_hash) end},
+      {:parsed, fn -> parsed(input_graph_hash, Keyword.get(opts, :base)) end},
       {:identified, fn -> identified(input_graph_hash, validation) end},
       {:structurally_valid, fn -> dialect(validation, "SHACL") end},
       {:semantically_valid, fn -> dialect(validation, "SHEX") end},
@@ -115,11 +135,21 @@ defmodule AshA2A.SA2A.StateMachine do
     Enum.at(@order, max(index - 1, 0))
   end
 
-  defp parsed(hash) do
-    if hex64?(hash) do
-      {:ok, "hex64"}
-    else
-      {:refused, "GRAPH_HASH_NOT_HEX:#{truncate(hash)}"}
+  defp parsed(hash, base) do
+    cond do
+      not hex64?(hash) ->
+        {:refused, "GRAPH_HASH_NOT_HEX:#{truncate(hash)}"}
+
+      is_nil(base) ->
+        {:ok, "hex64"}
+
+      true ->
+        case AshA2A.Semantic.CanonicalGraph.parse(base) do
+          {:ok, _graph} -> {:ok, "hex64;s12_turtle"}
+          {:error, {:parse_error, _}} -> {:refused, "NOT_RDF11_TURTLE"}
+          {:error, {:invalid_encoding, offset}} -> {:refused, "INVALID_ENCODING:#{offset}"}
+          {:error, other} -> {:refused, "UNPARSEABLE:#{truncate(inspect(other))}"}
+        end
     end
   end
 
