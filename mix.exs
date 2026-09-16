@@ -152,6 +152,23 @@ defmodule AshA2A.MixProject do
       {:stream_data, "~> 1.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
+      # v26.9.16: real libcluster + Horde proof-of-concept (real node
+      # discovery + a real CRDT-backed distributed process registry),
+      # named as prior art for the compute/coordination lenses in this
+      # session's requirements synthesis. `libcluster` is already a real
+      # dep of the separate `swarm/` mix project (`swarm/mix.exs`,
+      # `Cluster.Strategy.Kubernetes.DNS`) -- this declares it (and the
+      # new `Horde.Registry`/`Horde.DynamicSupervisor` pair) directly on
+      # the root `:ash_a2a` app instead, scoped to `:test` because the
+      # whole PoC lives in
+      # `test/ash_a2a/libcluster_horde_poc_test.exs` (real `:peer`-spawned
+      # second BEAM node, same pattern as
+      # `test/ash_a2a/distributed_node_loss_test.exs`) -- nothing in
+      # `lib/` references either module yet, so `only: :test` keeps a real
+      # `MIX_ENV=prod mix deps.get` from paying their cost, the same
+      # narrowing reasoning already documented above for `:bandit`.
+      {:libcluster, "~> 3.5", only: :test},
+      {:horde, "~> 0.10.0", only: :test},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
