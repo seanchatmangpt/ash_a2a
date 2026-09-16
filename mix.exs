@@ -150,6 +150,18 @@ defmodule AshA2A.MixProject do
       # narrower `:only` than a transitive dependency requires, the same
       # real constraint already documented above for `:plug`/`:postgrex`.
       {:stream_data, "~> 1.0"},
+      # v26.9.16 (RFC-SA2A-001 S12/S79): the real WebAssembly host runtime
+      # (a Wasmtime wrapper) backing `AshA2A.GraphLaw.Wasm`. This repo does
+      # NOT own an RDF canonicalization / SHACL / ShEx / Datalog / N3
+      # implementation and must not grow one -- `praxis-graphlaw` already is
+      # one, compiled to the content-addressed
+      # `priv/graphlaw/praxis_graphlaw_wasm.wasm` law package this dep
+      # executes. Elixir's job at this boundary is envelope, standing,
+      # refusal typing, authority, receipts and admission orchestration --
+      # never the derivation itself. Unrestricted (not `only:`) because
+      # `lib/ash_a2a/graph_law/wasm.ex` is real runtime library code, not a
+      # test fixture.
+      {:wasmex, "~> 0.15.1"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
       # v26.9.16: real libcluster + Horde proof-of-concept (real node

@@ -1,0 +1,39 @@
+{
+  "artifact": "praxis_graphlaw_wasm.wasm",
+  "role": "GraphLaw law package (RDF canonicalization, SHACL, ShEx, Datalog, N3, SPARQL)",
+  "size_bytes": 3249361,
+  "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+  "blake3": "4724fbf950599642f898175319790bb35f192a60189e7b19963195fc3106cd36",
+  "engine_version_reported": "praxis-graphlaw v26.7.5",
+  "source_path": "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm",
+  "source_crate": "praxis-graphlaw-wasm",
+  "source_build_target": "wasm-bindgen bundler target",
+  "vendored_at": "2026-09-16",
+  "rfc": "RFC-SA2A-001 v26.9.16 S12, S27, S79",
+  "host": {
+    "module": "AshA2A.GraphLaw.Wasm",
+    "runtime": "wasmtime via wasmex ~> 0.15.1",
+    "imports_required": [
+      "./praxis_graphlaw_wasm_bg.js::__wbindgen_object_drop_ref",
+      "./praxis_graphlaw_wasm_bg.js::__wbg_getRandomValues_3f44b700395062e5"
+    ]
+  },
+  "exports_used": [
+    "graphlaw_version",
+    "graph_hash",
+    "blake3_hex",
+    "run_hooks",
+    "validate_all",
+    "memory",
+    "__wbindgen_add_to_stack_pointer",
+    "__wbindgen_export2",
+    "__wbindgen_export4"
+  ],
+  "measurement_provenance": {
+    "sha256_command": "shasum -a 256 priv/graphlaw/praxis_graphlaw_wasm.wasm",
+    "blake3_command": "b3sum priv/graphlaw/praxis_graphlaw_wasm.wasm",
+    "engine_version_command": "AshA2A.GraphLaw.Wasm.version/0 against this artifact",
+    "note": "sha256 and blake3 are of the artifact bytes on disk, measured with real external tools; engine_version_reported is the artifact's own self-report, which may lag the praxis-graphlaw crate version it was built from."
+  },
+  "not_a_root_manifest": "This is the honest per-artifact record only. The RFC S21 Root Manifest is a separate module and is not defined here."
+}
