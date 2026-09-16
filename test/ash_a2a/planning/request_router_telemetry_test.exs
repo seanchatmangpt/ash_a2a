@@ -11,6 +11,11 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
   codebase cannot know a real Fortune-5 deployment's actual
   deterministic-vs-LLM request split, but it can build, and this test
   proves working, the real in-process instrument that would measure it.
+  A later task extended `RouterCounters` with a third, genuinely additive
+  `:phrase` slot (`AshA2A.Planning.RequestRouter`'s structured-phrase
+  middle tier); this file's own `counts/1` assertions are updated to that
+  three-key shape throughout, and this describe block gains dedicated
+  phrase-slot coverage alongside the original two-tier coverage.
 
   Real collaborators throughout, no test doubles: a real `:telemetry.attach/4`
   handler forwarding to `self()` (the same pattern
@@ -119,6 +124,22 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
     )
   end
 
+  # Real, test-local structured-phrase template (same fully-anchored shape
+  # as `request_router_phrase_tier_test.exs`'s own `labeled_item_template/0`)
+  # -- reused here only to drive real phrase-tier dispatches for
+  # `RouterCounters`' new phrase-slot coverage, zero LLM call.
+  @phrase_regex ~r/^create a labeled item$/
+
+  defp phrase_template do
+    %{regex: @phrase_regex, to_envelope: fn _captures -> goal_facts_envelope() end}
+  end
+
+  defp route_phrase_tier!(text) do
+    RequestRouter.route(HddlDeterministicFixture, text_message(text),
+      phrase_templates: [phrase_template()]
+    )
+  end
+
   describe "[:ash_a2a, :router, :tier_selected] telemetry" do
     test "fires with tier: :facts at the facts branch point, tier: :text at the text branch point" do
       handler_id = {__MODULE__, make_ref()}
@@ -179,7 +200,7 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
       handler_id = RouterCounters.attach!(ref)
       on_exit(fn -> RouterCounters.detach(handler_id) end)
 
-      assert RouterCounters.counts(ref) == %{deterministic: 0, llm: 0}
+      assert RouterCounters.counts(ref) == %{deterministic: 0, llm: 0, phrase: 0}
 
       assert {:ok, _} =
                RequestRouter.route(HddlDeterministicFixture, facts_message(goal_facts_envelope()))
@@ -189,7 +210,34 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
 
       assert {:ok, _} = route_text_tier!("The goal is to advance and unlock the gate.")
 
-      assert RouterCounters.counts(ref) == %{deterministic: 2, llm: 1}
+      assert RouterCounters.counts(ref) == %{deterministic: 2, llm: 1, phrase: 0}
+    end
+
+    test "increments the phrase slot for a real phrase-tier dispatch, leaves deterministic and llm slots unchanged" do
+      ref = RouterCounters.new()
+      handler_id = RouterCounters.attach!(ref)
+      on_exit(fn -> RouterCounters.detach(handler_id) end)
+
+      assert RouterCounters.counts(ref) == %{deterministic: 0, llm: 0, phrase: 0}
+
+      assert {:ok, _} = route_phrase_tier!("create a labeled item")
+      assert {:ok, _} = route_phrase_tier!("create a labeled item")
+
+      assert RouterCounters.counts(ref) == %{deterministic: 0, llm: 0, phrase: 2}
+    end
+
+    test "counts all three tiers independently under one real mixed dispatch sequence" do
+      ref = RouterCounters.new()
+      handler_id = RouterCounters.attach!(ref)
+      on_exit(fn -> RouterCounters.detach(handler_id) end)
+
+      assert {:ok, _} =
+               RequestRouter.route(HddlDeterministicFixture, facts_message(goal_facts_envelope()))
+
+      assert {:ok, _} = route_phrase_tier!("create a labeled item")
+      assert {:ok, _} = route_text_tier!("The goal is to advance and unlock the gate.")
+
+      assert RouterCounters.counts(ref) == %{deterministic: 1, llm: 1, phrase: 1}
     end
 
     test "two independently-attached instances never interfere with each other's counts" do
@@ -205,8 +253,8 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
 
       assert {:ok, _} = route_text_tier!("The goal is to advance and unlock the gate.")
 
-      assert RouterCounters.counts(ref_a) == %{deterministic: 1, llm: 1}
-      assert RouterCounters.counts(ref_b) == %{deterministic: 1, llm: 1}
+      assert RouterCounters.counts(ref_a) == %{deterministic: 1, llm: 1, phrase: 0}
+      assert RouterCounters.counts(ref_b) == %{deterministic: 1, llm: 1, phrase: 0}
     end
 
     test "an unattached, freshly-created reference never observes events from a real dispatch" do
@@ -215,7 +263,7 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
       assert {:ok, _} =
                RequestRouter.route(HddlDeterministicFixture, facts_message(goal_facts_envelope()))
 
-      assert RouterCounters.counts(unattached_ref) == %{deterministic: 0, llm: 0}
+      assert RouterCounters.counts(unattached_ref) == %{deterministic: 0, llm: 0, phrase: 0}
     end
   end
 end
