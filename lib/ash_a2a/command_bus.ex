@@ -28,7 +28,7 @@ defmodule AshA2A.CommandBus do
   commit attempt plus one additional attempt after each configured delay.
   """
 
-  alias AshA2A.{Authority, Command, Identity, Receipt, ReceiptOutbox}
+  alias AshA2A.{Authority, Command, Identity, KillSwitch, Receipt, ReceiptOutbox}
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
 
@@ -53,6 +53,7 @@ defmodule AshA2A.CommandBus do
 
     with {:ok, skill, _action, consequence} <- inspect_target(command, resource_or_domain),
          :ok <- admit(command, consequence),
+         :ok <- check_kill_switch(opts),
          claim <- claim_receipt(store, command, store_opts) do
       case claim do
         {:replay, receipt} ->
@@ -296,6 +297,25 @@ defmodule AshA2A.CommandBus do
   end
 
   defp admit(_command, :unknown), do: {:error, refusal(:consequence_unclassified)}
+
+  # Strictly opt-in: `opts[:kill_switch_class]` is absent (`nil`) for every
+  # existing caller today, so this always short-circuits to `:ok` and `run/4`
+  # is byte-for-byte unchanged for them. A caller that explicitly names a
+  # class is checked against the real `AshA2A.KillSwitch.tripped?/1` state
+  # for that class, refusing before `claim_receipt/3` (and therefore before
+  # any receipt is claimed or DO ever runs) when it is tripped.
+  defp check_kill_switch(opts) do
+    case Keyword.get(opts, :kill_switch_class) do
+      nil ->
+        :ok
+
+      class ->
+        case KillSwitch.tripped?(class) do
+          {true, reason} -> {:error, %{code: :kill_switch_tripped, detail: reason}}
+          false -> :ok
+        end
+    end
+  end
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
 
