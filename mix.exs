@@ -170,6 +170,33 @@ defmodule AshA2A.MixProject do
       # narrowing reasoning already documented above for `:bandit`.
       {:libcluster, "~> 3.5", only: :test},
       {:horde, "~> 0.10.0", only: :test},
+      # v26.9.16 (RFC-SA2A-001 S12/S79): SERIALIZATION/PARSING ONLY. Used by
+      # `AshA2A.Semantic.Serialize.verify/3` as an *independent* real parser
+      # to gate the canonical-digest path -- never for validation, reasoning,
+      # entailment, or canonicalization, all of which stay in the native
+      # praxis-graphlaw engine.
+      #
+      # The gate is not optional decoration. A real probe of the real
+      # prebuilt praxis-graphlaw wasm established that its `graph_hash/1`
+      # has no parse-error channel and reports no parsed-triple count:
+      # `graph_hash(good <> "GARBAGE !!!")` returned bit-for-bit the same
+      # digest as `graph_hash(good)`, and `graph_hash("GARBAGE !!!")`
+      # returned `af1349b9f5f9a1a6...` == `BLAKE3("")` == `graph_hash("")`.
+      # A malformed serialization therefore yields a confident, valid-looking
+      # digest of a *smaller or empty* graph. Parsing our own output back
+      # with a second real implementation is the only way to detect it.
+      #
+      # Zero marginal dependency weight: `rdf` 3.0.1 is ALREADY a required,
+      # unrestricted transitive dep of `:ash_r2rml` (a direct dep of this
+      # project) and is already pinned in `mix.lock` and present in `deps/` --
+      # adding `{:rdf, "~> 3.0"}` here left `mix.lock` byte-for-byte
+      # unchanged (verified with a real `mix deps.get` + `git diff mix.lock`).
+      # Promoted to an explicit direct dep for exactly the reason `:stream_data`
+      # above already documents: declare the real dependency instead of
+      # relying on an incidental transitive pin. Cannot be narrowed to
+      # `only: :test` -- `lib/ash_a2a/semantic/serialize.ex` calls it outside
+      # the test env, the same real constraint documented for `:plug`/`:ekv`.
+      {:rdf, "~> 3.0"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
