@@ -36,7 +36,7 @@ defmodule AshA2A.ReceiptStore.Ekv do
 
   @behaviour AshA2A.ReceiptStore
 
-  alias AshA2A.{Command, Identity, Receipt}
+  alias AshA2A.{Actuation, Command, Identity, Receipt}
 
   @doc """
   Declares this store genuinely durable.
@@ -140,6 +140,109 @@ defmodule AshA2A.ReceiptStore.Ekv do
       _ -> :error
     end
   end
+
+  @doc """
+  RFC-SA2A-001 S55 actuation claim, cluster-wide.
+
+  Uses the same insert-if-absent CAS (`if_vsn: nil`) discipline as `claim/2`:
+  two nodes racing to actuate one effect can both read `nil`, but only one
+  `if_vsn: nil` put wins. The loser re-reads whichever entry actually won and
+  re-dispatches through the same decision logic, so it gets a real
+  `{:duplicate, receipt}` or `:actuation_in_flight` rather than proceeding on
+  the strength of its own stale read.
+  """
+  @impl true
+  def claim_actuation(%Actuation{} = actuation, %Command{} = command, opts \\ []) do
+    name = ekv_name(opts)
+    key = actuation_key(actuation)
+
+    case EKV.get(name, key) do
+      nil -> attempt_fresh_actuation_claim(name, key, actuation, command)
+      entry -> decide_actuation(entry, actuation)
+    end
+  end
+
+  defp attempt_fresh_actuation_claim(name, key, actuation, command) do
+    entry = %{
+      idempotency_key: Identity.external(actuation.idempotency_key),
+      command_id: Identity.external(command.command_id),
+      receipt: nil
+    }
+
+    case EKV.put(name, key, entry, if_vsn: nil) do
+      {:ok, _vsn} ->
+        :proceed
+
+      {:error, reason} when reason in [:conflict, :unconfirmed] ->
+        case EKV.get(name, key) do
+          nil -> {:error, :actuation_in_flight}
+          winner -> decide_actuation(winner, actuation)
+        end
+    end
+  end
+
+  defp decide_actuation(%{idempotency_key: idempotency} = entry, %Actuation{} = actuation) do
+    cond do
+      idempotency != Identity.external(actuation.idempotency_key) ->
+        {:error, :actuation_conflict}
+
+      match?(%{receipt: %Receipt{}}, entry) ->
+        {:duplicate, Receipt.replay(entry.receipt)}
+
+      true ->
+        {:error, :actuation_in_flight}
+    end
+  end
+
+  defp decide_actuation(_entry, _actuation), do: {:error, :actuation_conflict}
+
+  @impl true
+  def commit_actuation(%Actuation{} = actuation, %Receipt{} = receipt, opts \\ []) do
+    name = ekv_name(opts)
+    key = actuation_key(actuation)
+
+    case EKV.lookup(name, key) do
+      {entry, vsn} when is_map(entry) ->
+        case EKV.put(name, key, %{entry | receipt: receipt}, if_vsn: vsn) do
+          {:ok, _new_vsn} ->
+            :ok
+
+          {:error, reason} when reason in [:conflict, :unconfirmed] ->
+            {:error, :actuation_conflict}
+        end
+
+      _ ->
+        {:error, :unclaimed_actuation}
+    end
+  end
+
+  @impl true
+  def release_actuation(%Actuation{} = actuation, opts \\ []) do
+    name = ekv_name(opts)
+    key = actuation_key(actuation)
+
+    # Only an unexecuted claim is releasable -- see the same reasoning in
+    # `AshA2A.ReceiptStore.Memory.handle_call({:release_actuation, ...})`.
+    case EKV.lookup(name, key) do
+      {%{receipt: nil}, vsn} -> release(name, key, vsn)
+      _ -> :ok
+    end
+  end
+
+  defp release(name, key, vsn) do
+    if function_exported?(EKV, :delete, 3) do
+      EKV.delete(name, key, if_vsn: vsn)
+    else
+      EKV.delete(name, key)
+    end
+
+    :ok
+  rescue
+    _error -> :ok
+  end
+
+  defp actuation_key(%Actuation{actuation_id: actuation_id}),
+    do: "actuation:" <> Identity.external(actuation_id)
 
   defp ekv_name(opts), do: Keyword.get(opts, :name, __MODULE__)
 end

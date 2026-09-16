@@ -9,11 +9,32 @@ defmodule AshA2A.Identity do
   manufacturing a second identity system.
   """
 
-  @kinds [:principal, :agent, :task, :command, :execution, :runtime]
+  @kinds [:principal, :agent, :task, :command, :execution, :runtime, :actuation, :idempotency]
   @enforce_keys [:kind, :value]
   defstruct [:kind, :value]
 
-  @type kind :: :principal | :agent | :task | :command | :execution | :runtime
+  @typedoc """
+  Identity kinds.
+
+    * `:actuation` -- RFC-SA2A-001 S55 stable actuation identity. Derived from
+      the *intended effect* (capability, principal, semantic subject, input
+      digest, external idempotency token), NOT from `:command`. Two distinct
+      command ids naming the same effect share one actuation identity; that is
+      the point -- it is what lets BRCE detect a previously prepared or
+      executed effect before repeating it.
+    * `:idempotency` -- RFC-SA2A-001 S55 idempotency identity. Binds to the
+      external system's own idempotency token when the caller supplies one, so
+      the local dedup key and the remote dedup key are the same string.
+  """
+  @type kind ::
+          :principal
+          | :agent
+          | :task
+          | :command
+          | :execution
+          | :runtime
+          | :actuation
+          | :idempotency
   @type t :: %__MODULE__{kind: kind(), value: String.t()}
 
   @spec new(kind(), term()) :: t()
