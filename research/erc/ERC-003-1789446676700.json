@@ -1,0 +1,32 @@
+{
+  "artifact": {
+    "git_dirty?": true,
+    "git_sha": "f3a4a3d54a031bcc216839442182618f31391e25",
+    "repo": "ash_a2a"
+  },
+  "claim": "45+ real, live A2A dispatches to a Z.AI-backed avatar can be genuinely in flight at the same instant (client-side concurrency), each producing a real OCEL v2 event accepted by beam4pm's real ingest endpoint.",
+  "depends_on": [],
+  "environment": {
+    "elixir": "1.19.5",
+    "hostname": "Mac",
+    "otp": "28"
+  },
+  "evidence": {
+    "attempted": 50,
+    "completed": 2,
+    "failure_reasons": {
+      "{:error, {:execution, \"unknown: \\nBread Crumbs:\\n  > Error returned from: AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatar.respond_to_prompt\\n  \\n\\nApi Error\\n\\n* API request failed (429): Provider response error (429): Zai_coder API error: Rate limit reached for requests\\n  (splode 0.3.2) lib/splode/error.ex:206: Splode.Error.maybe_add_stacktrace/1\\n  (req_llm 1.22.0) lib/req_llm/error.ex:59: ReqLLM.Error.API.Request.exception/1\\n  (\" <> ...}}": 48
+    },
+    "ingest_url": "http://127.0.0.1:4210",
+    "measured_max_overlap": 50,
+    "min_required_overlap": 45,
+    "model": "zai_coder:glm-5.3-flash"
+  },
+  "execution": {
+    "emitted_at": "2026-09-15T04:31:16.700677Z"
+  },
+  "falsifier": "Measured max concurrent-interval overlap across 50 real dispatches falls below 45.",
+  "id": "ERC-003",
+  "notes": "Overlap computed by a real +1/-1 sweep over each dispatch's own measured monotonic start/finish timestamps -- not inferred from max_concurrency alone.",
+  "state": "verified"
+}

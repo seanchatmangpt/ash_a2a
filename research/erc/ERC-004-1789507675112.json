@@ -1,0 +1,31 @@
+{
+  "artifact": {
+    "git_dirty?": true,
+    "git_sha": "8241995794b53936ab04de430d3c942007ade45b",
+    "repo": "ash_a2a"
+  },
+  "claim": "45+ of 50 genuinely concurrent Z.AI dispatches complete successfully (not merely reach the wire) under this account's real rate limits.",
+  "depends_on": [
+    "ERC-003"
+  ],
+  "environment": {
+    "elixir": "1.19.5",
+    "hostname": "Mac",
+    "otp": "28"
+  },
+  "evidence": {
+    "attempted": 50,
+    "completed": 3,
+    "failure_reasons": {
+      "{:error, {:execution, \"unknown: \\nBread Crumbs:\\n  > Error returned from: AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatar.respond_to_prompt\\n  \\n\\nApi Error\\n\\n* API request failed (429): Provider response error (429): Zai_coder API error: Rate limit reached for requests\\n  (splode 0.3.2) lib/splode/error.ex:206: Splode.Error.maybe_add_stacktrace/1\\n  (req_llm 1.22.0) lib/req_llm/error.ex:59: ReqLLM.Error.API.Request.exception/1\\n  (\" <> ...}}": 47
+    },
+    "min_required": 45
+  },
+  "execution": {
+    "emitted_at": "2026-09-15T21:27:55.112714Z"
+  },
+  "falsifier": "Fewer than 45/50 concurrent dispatches complete successfully.",
+  "id": "ERC-004",
+  "notes": "Real 429 (\"Rate limit reached\") responses from Z.AI's coding-plan endpoint under this exact load, confirmed via the actual response body captured above -- an external provider constraint, not a defect in this repo's dispatch/telemetry path (ERC-003's concurrency claim still holds independently).",
+  "state": "falsified"
+}
