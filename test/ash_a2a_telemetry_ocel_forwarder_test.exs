@@ -79,10 +79,41 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
 
     on_exit(fn ->
       Process.exit(pid, :normal)
-      if Process.whereis(MicroBeamOcelIngest.Store), do: Agent.stop(MicroBeamOcelIngest.Store)
+      stop_named_agent(MicroBeamOcelIngest.Store)
     end)
 
     "http://127.0.0.1:#{port}"
+  end
+
+  # The Agents above are `start_link`ed to the test process, so they begin
+  # dying the moment the test process exits -- concurrently with this
+  # `on_exit/1` callback, which ExUnit runs in a separate process afterwards.
+  # A bare `if Process.whereis(name), do: Agent.stop(name)` is therefore a
+  # real time-of-check/time-of-use race: `whereis` can see the dying Agent
+  # and `Agent.stop/1` then exits with `:noproc` (observed, reproducible under
+  # `mix test --seed 162937`). Stop by pid, tolerate it already being gone,
+  # and wait for the real `:DOWN` so the name is unregistered before the next
+  # test's `Agent.start_link(name: ...)` can run.
+  defp stop_named_agent(name) do
+    case Process.whereis(name) do
+      nil ->
+        :ok
+
+      agent ->
+        ref = Process.monitor(agent)
+
+        try do
+          Agent.stop(agent)
+        catch
+          :exit, _already_gone -> :ok
+        end
+
+        receive do
+          {:DOWN, ^ref, :process, ^agent, _reason} -> :ok
+        after
+          5_000 -> :ok
+        end
+    end
   end
 
   defmodule SlowMicroBeamOcelIngest do
@@ -131,11 +162,8 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     on_exit(fn ->
       Process.exit(pid, :normal)
 
-      if Process.whereis(SlowMicroBeamOcelIngest.Store),
-        do: Agent.stop(SlowMicroBeamOcelIngest.Store)
-
-      if Process.whereis(SlowMicroBeamOcelIngest.Delay),
-        do: Agent.stop(SlowMicroBeamOcelIngest.Delay)
+      stop_named_agent(SlowMicroBeamOcelIngest.Store)
+      stop_named_agent(SlowMicroBeamOcelIngest.Delay)
     end)
 
     "http://127.0.0.1:#{port}"

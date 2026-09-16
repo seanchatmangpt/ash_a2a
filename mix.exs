@@ -197,18 +197,29 @@ defmodule AshA2A.MixProject do
       # `only: :test` -- `lib/ash_a2a/semantic/serialize.ex` calls it outside
       # the test env, the same real constraint documented for `:plug`/`:ekv`.
       {:rdf, "~> 3.0"},
-      # v26.9.16 SA2A conformance court: the real in-BEAM WebAssembly host
-      # (`AshA2A.GraphLaw.Wasm`) for runtime A of
-      # `AshA2A.SA2A.Conformance`. `:wasmex` wraps a real Wasmtime engine via
-      # a Rustler NIF; on aarch64-apple-darwin (and the other tier-1 targets)
+      # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
+      # runtime. ONE declaration shared by two independent hosts of the same
+      # vendored `priv/graphlaw/praxis_graphlaw.wasm` law package:
+      #
+      #   * `AshA2A.GraphLaw.WasmexSession` -- runtime A of
+      #     `AshA2A.SA2A.Conformance` (the SA2A conformance court). It checks
+      #     `Code.ensure_loaded?(Wasmex)` and returns a typed
+      #     `:wasmex_unavailable` refusal rather than raising.
+      #   * `AshA2A.GraphLaw.WasmexHost` -- the application-supervised,
+      #     long-lived Wasmtime instance (started in `AshA2A.Application`).
+      #
+      # `:wasmex` wraps a real Wasmtime engine via a Rustler NIF; on
+      # aarch64-apple-darwin (and the other tier-1 targets)
       # `rustler_precompiled` downloads a prebuilt NIF, so this does NOT
       # require a Rust toolchain at build time -- unlike `:ggen_igniter`
       # above, which is why that one is `only: :dev` and this one is not
-      # similarly restricted. It is nevertheless a real native dependency of
-      # a real optional subsystem: every call site
-      # (`AshA2A.GraphLaw.Wasm`) checks `Code.ensure_loaded?(Wasmex)` and
-      # returns a typed `:wasmex_unavailable` refusal rather than raising, so
-      # a consumer that never runs the conformance court never touches it.
+      # similarly restricted. Unrestricted (not `only:`) also because
+      # `lib/ash_a2a/graph_law/wasmex_host.ex` is real runtime library code,
+      # not a test fixture. This repo does NOT own an RDF canonicalization /
+      # SHACL / ShEx / Datalog / N3 implementation and must not grow one --
+      # `praxis-graphlaw` already is one; Elixir's job at this boundary is
+      # envelope, standing, refusal typing, authority, receipts and admission
+      # orchestration, never the derivation itself.
       {:wasmex, "~> 0.15.1"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}

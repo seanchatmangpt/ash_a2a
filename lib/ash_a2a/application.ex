@@ -63,6 +63,21 @@ defmodule AshA2A.Application do
           # admission/fencing behavior; it is simply available for a host
           # (or a future, separately-scoped change) to call.
           {AshA2A.KillSwitch, []},
+          # RFC-SA2A-001 S12/S79: the real `praxis-graphlaw` WebAssembly
+          # law package, hosted by `AshA2A.GraphLaw.WasmexHost`. A Wasmtime
+          # instance over a 3.2 MB module is not free to create, so it is
+          # created once here and reused; that GenServer also serializes
+          # the multi-step wasm-bindgen ABI transactions, which is what
+          # makes the single shared instance safe for concurrent BEAM
+          # callers (see its moduledoc). Starting it is safe with the
+          # artifact absent -- `init/1` degrades to a typed-error state and
+          # logs a warning rather than crashing the supervision tree, the
+          # same "missing native artifact is a typed error, not a crash"
+          # convention `AshA2A.Planning.HddlSolver` already follows. It
+          # carries NO authority: GraphLaw derives and validates, it never
+          # authorizes and never actuates (RFC S4.4/S17), so starting it
+          # changes no existing admission or dispatch behavior.
+          {AshA2A.GraphLaw.WasmexHost, []},
           {A2A.AgentSupervisor, agents: agents}
         ]
 
