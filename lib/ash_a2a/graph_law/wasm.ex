@@ -111,6 +111,24 @@ defmodule AshA2A.GraphLaw.Wasm do
   binary, an absent `.wasm` is a typed error, never a crash: the GenServer
   still starts (so the supervision tree is unaffected) and every call
   returns `{:error, %{code: :graphlaw_wasm_not_vendored, ...}}`.
+
+  ## Non-UTF-8 input is refused BEFORE the engine, not after
+
+  Every public function below that takes a string argument marshals it into
+  the vendored `praxis-graphlaw` engine's Rust `&str` export. A single
+  invalid UTF-8 byte is not a recoverable condition on that boundary: it was
+  measured (real repro, `AshA2A.GraphLaw.Wasm.graph_hash(<<0xFF>>)`) to
+  commit 2,148,270,080 bytes of linear memory in ONE call and permanently
+  poison the instance -- a second call on the poisoned instance committed a
+  further 1,073,807,360 bytes. That is a real, reproducible denial-of-service
+  on any input path that reaches this module with untrusted bytes.
+
+  `ensure_utf8/1` guards every such argument up front and returns a typed
+  `{:error, {:invalid_encoding, byte_offset}}` without ever reaching
+  `transact/4`. This is the same idiom, same typed contract, independently
+  confirmed working on `AshA2A.Semantic.CanonicalGraph.ensure_utf8/1` for the
+  same class of boundary (a sibling module guarding its own call into this
+  same wasm export) -- ported here rather than reinvented.
   """
 
   use GenServer
@@ -127,6 +145,12 @@ defmodule AshA2A.GraphLaw.Wasm do
 
   @typedoc "Every error this module returns carries a `:code`."
   @type error :: %{required(:code) => atom(), optional(atom()) => term()}
+
+  @typedoc """
+  The encoding-guard error: the input is not valid UTF-8. `byte_offset` is
+  the index of the first invalid byte.
+  """
+  @type encoding_error :: {:invalid_encoding, non_neg_integer()}
 
   # ---------------------------------------------------------------------
   # Artifact resolution
@@ -224,9 +248,10 @@ defmodule AshA2A.GraphLaw.Wasm do
   validate the input.
   """
   @spec graph_hash(String.t(), GenServer.server(), timeout()) ::
-          {:ok, String.t()} | {:error, error()}
+          {:ok, String.t()} | {:error, error()} | {:error, encoding_error()}
   def graph_hash(ttl, server \\ __MODULE__, timeout \\ @default_timeout) when is_binary(ttl) do
-    with {:ok, raw} <- transact(server, "graph_hash", [ttl], timeout) do
+    with :ok <- ensure_utf8(ttl),
+         {:ok, raw} <- transact(server, "graph_hash", [ttl], timeout) do
       as_plain_string(raw)
     end
   end
@@ -237,9 +262,10 @@ defmodule AshA2A.GraphLaw.Wasm do
   hash algorithm end to end.
   """
   @spec blake3_hex(String.t(), GenServer.server(), timeout()) ::
-          {:ok, String.t()} | {:error, error()}
+          {:ok, String.t()} | {:error, error()} | {:error, encoding_error()}
   def blake3_hex(data, server \\ __MODULE__, timeout \\ @default_timeout) when is_binary(data) do
-    with {:ok, raw} <- transact(server, "blake3_hex", [data], timeout) do
+    with :ok <- ensure_utf8(data),
+         {:ok, raw} <- transact(server, "blake3_hex", [data], timeout) do
       as_plain_string(raw)
     end
   end
@@ -254,10 +280,12 @@ defmodule AshA2A.GraphLaw.Wasm do
   admission decision and not authority — see the NO AUTHORITY section.
   """
   @spec run_hooks(String.t(), String.t(), GenServer.server(), timeout()) ::
-          {:ok, map()} | {:error, error()}
+          {:ok, map()} | {:error, error()} | {:error, encoding_error()}
   def run_hooks(base_ttl, event_ttl, server \\ __MODULE__, timeout \\ @default_timeout)
       when is_binary(base_ttl) and is_binary(event_ttl) do
-    with {:ok, raw} <- transact(server, "run_hooks", [base_ttl, event_ttl], timeout) do
+    with :ok <- ensure_utf8(base_ttl),
+         :ok <- ensure_utf8(event_ttl),
+         {:ok, raw} <- transact(server, "run_hooks", [base_ttl, event_ttl], timeout) do
       as_json_map(raw)
     end
   end
@@ -284,7 +312,7 @@ defmodule AshA2A.GraphLaw.Wasm do
           String.t(),
           GenServer.server(),
           timeout()
-        ) :: {:ok, map()} | {:error, error()}
+        ) :: {:ok, map()} | {:error, error()} | {:error, encoding_error()}
   def validate_all(
         ttl,
         profile_ttl,
@@ -298,7 +326,12 @@ defmodule AshA2A.GraphLaw.Wasm do
              is_binary(shex_schema) and is_binary(shex_shape_map) do
     args = [ttl, profile_ttl, shacl_shapes, shex_schema, shex_shape_map]
 
-    with {:ok, raw} <- transact(server, "validate_all", args, timeout) do
+    with :ok <- ensure_utf8(ttl),
+         :ok <- ensure_utf8(profile_ttl),
+         :ok <- ensure_utf8(shacl_shapes),
+         :ok <- ensure_utf8(shex_schema),
+         :ok <- ensure_utf8(shex_shape_map),
+         {:ok, raw} <- transact(server, "validate_all", args, timeout) do
       as_json_map(raw)
     end
   end
@@ -314,6 +347,48 @@ defmodule AshA2A.GraphLaw.Wasm do
     end
   catch
     :exit, _ -> false
+  end
+
+  @doc """
+  Returns `:ok` when `binary` is valid UTF-8, or
+  `{:error, {:invalid_encoding, byte_offset}}` naming the first invalid byte.
+
+  Every public function above that takes a string argument calls this BEFORE
+  any wasm transaction -- see the module doc's "Non-UTF-8 input is refused
+  BEFORE the engine, not after" section for why a single invalid byte cannot
+  be allowed to reach `transact/4`. Public (not private) for the same reason
+  `AshA2A.Semantic.CanonicalGraph.ensure_utf8/1` is public: any other Elixir
+  caller of a wasm string export should run this first too.
+
+      iex> AshA2A.GraphLaw.Wasm.ensure_utf8("ok")
+      :ok
+
+      iex> AshA2A.GraphLaw.Wasm.ensure_utf8(<<"ok", 0xFF>>)
+      {:error, {:invalid_encoding, 2}}
+  """
+  @spec ensure_utf8(binary()) :: :ok | {:error, encoding_error()}
+  def ensure_utf8(binary) when is_binary(binary) do
+    if String.valid?(binary) do
+      :ok
+    else
+      {:error, {:invalid_encoding, first_invalid_byte_offset(binary)}}
+    end
+  end
+
+  @doc """
+  Returns the real current size, in bytes, of the engine's linear memory.
+
+  Exposed for verification: the regression test for the non-UTF-8
+  memory-bomb defect (see the module doc) reads this before and after a
+  rejected call to assert the guard actually stops the commit, not just that
+  it returns a typed error. Not needed for production use of this module.
+  """
+  @spec memory_size(GenServer.server(), timeout()) :: {:ok, non_neg_integer()} | {:error, error()}
+  def memory_size(server \\ __MODULE__, timeout \\ @default_timeout) do
+    GenServer.call(server, :memory_size, timeout)
+  catch
+    :exit, {:noproc, _} -> {:error, %{code: :graphlaw_not_started, server: server}}
+    :exit, {:timeout, _} -> {:error, %{code: :graphlaw_timeout, function: :memory_size}}
   end
 
   # ---------------------------------------------------------------------
@@ -354,6 +429,27 @@ defmodule AshA2A.GraphLaw.Wasm do
     case JSON.decode(raw) do
       {:ok, %{"error" => detail}} -> {:error, %{code: :graphlaw_error, detail: detail}}
       _ -> :none
+    end
+  end
+
+  # ---------------------------------------------------------------------
+  # Encoding guard (see the module doc: non-UTF-8 input never reaches the
+  # engine). Same scanning idiom as
+  # `AshA2A.Semantic.CanonicalGraph.first_invalid_byte_offset/1`, ported not
+  # imported -- this module has no dependency on that one.
+  # ---------------------------------------------------------------------
+
+  defp first_invalid_byte_offset(binary), do: scan_utf8(binary, 0)
+
+  defp scan_utf8(<<>>, offset), do: offset
+
+  defp scan_utf8(binary, offset) do
+    case binary do
+      <<_::utf8, rest::binary>> ->
+        scan_utf8(rest, offset + (byte_size(binary) - byte_size(rest)))
+
+      _ ->
+        offset
     end
   end
 
@@ -475,6 +571,18 @@ defmodule AshA2A.GraphLaw.Wasm do
 
   def handle_call({:transact, fun, args, timeout}, _from, %{status: :loaded} = state) do
     {:reply, do_transact(state, fun, args, timeout), state}
+  end
+
+  def handle_call(
+        :memory_size,
+        _from,
+        %{status: :loaded, store: store, memory: memory} = state
+      ) do
+    {:reply, {:ok, Wasmex.Memory.size(store, memory)}, state}
+  end
+
+  def handle_call(:memory_size, _from, %{status: {:unavailable, reason}} = state) do
+    {:reply, {:error, reason}, state}
   end
 
   # ---------------------------------------------------------------------

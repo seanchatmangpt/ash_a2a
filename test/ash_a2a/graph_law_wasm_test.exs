@@ -347,6 +347,93 @@ defmodule AshA2A.GraphLawWasmTest do
     end
   end
 
+  describe "encoding guard -- non-UTF-8 input never reaches the engine" do
+    # CONFIRMED DEFECT, real repro (this session, before this fix):
+    # `Wasm.graph_hash(<<0xFF>>)` committed 2,148,270,080 bytes of the
+    # engine's linear memory in ONE call and PERMANENTLY POISONED the
+    # instance -- a second call on the poisoned instance committed a
+    # further 1,073,807,360 bytes. `ensure_utf8/1` must stop every public
+    # function below before any wasm transaction, so memory must not grow
+    # at all across these calls, and the instance must keep serving real
+    # requests afterward.
+    @invalid <<0xFF>>
+
+    test "ensure_utf8/1 itself: valid input is :ok, invalid names the real first offset" do
+      assert Wasm.ensure_utf8("ok") == :ok
+      assert Wasm.ensure_utf8(@base_ttl) == :ok
+      assert Wasm.ensure_utf8(@invalid) == {:error, {:invalid_encoding, 0}}
+      assert Wasm.ensure_utf8(<<"ok", 0xFF>>) == {:error, {:invalid_encoding, 2}}
+    end
+
+    test "graph_hash/3 rejects non-UTF-8 input without committing any engine memory" do
+      assert {:ok, before} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert {:error, {:invalid_encoding, 0}} = Wasm.graph_hash(@invalid, :graphlaw_wasm_test)
+
+      assert {:ok, after_bytes} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert after_bytes == before,
+             "engine memory grew from #{before} to #{after_bytes} bytes -- " <>
+               "the guard let a non-UTF-8 call reach the wasm instance"
+
+      # The instance is not poisoned: it still serves the real, previously
+      # measured cross-runtime digest.
+      assert {:ok, @base_digest} = Wasm.graph_hash(@base_ttl, :graphlaw_wasm_test)
+    end
+
+    test "blake3_hex/3 rejects non-UTF-8 input without committing any engine memory" do
+      assert {:ok, before} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert {:error, {:invalid_encoding, 0}} = Wasm.blake3_hex(@invalid, :graphlaw_wasm_test)
+
+      assert {:ok, after_bytes} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert after_bytes == before,
+             "engine memory grew from #{before} to #{after_bytes} bytes -- " <>
+               "the guard let a non-UTF-8 call reach the wasm instance"
+
+      assert {:ok, @blake3_abc} = Wasm.blake3_hex("abc", :graphlaw_wasm_test)
+    end
+
+    test "run_hooks/4 rejects non-UTF-8 input on either argument without committing any engine memory" do
+      assert {:ok, before} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert {:error, {:invalid_encoding, 0}} =
+               Wasm.run_hooks(@invalid, @event_ttl, :graphlaw_wasm_test)
+
+      assert {:error, {:invalid_encoding, 0}} =
+               Wasm.run_hooks(@base_ttl, @invalid, :graphlaw_wasm_test)
+
+      assert {:ok, after_bytes} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert after_bytes == before,
+             "engine memory grew from #{before} to #{after_bytes} bytes -- " <>
+               "the guard let a non-UTF-8 call reach the wasm instance"
+
+      assert {:ok, result} = Wasm.run_hooks(@base_ttl, @event_ttl, :graphlaw_wasm_test)
+      assert result["status"] == "ADMITTED"
+    end
+
+    test "validate_all/7 rejects non-UTF-8 input on any of its five arguments without committing any engine memory" do
+      assert {:ok, before} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert {:error, {:invalid_encoding, 0}} =
+               Wasm.validate_all(@invalid, "", "", "", "", :graphlaw_wasm_test)
+
+      assert {:error, {:invalid_encoding, 0}} =
+               Wasm.validate_all(@base_ttl, "", "", "", @invalid, :graphlaw_wasm_test)
+
+      assert {:ok, after_bytes} = Wasm.memory_size(:graphlaw_wasm_test)
+
+      assert after_bytes == before,
+             "engine memory grew from #{before} to #{after_bytes} bytes -- " <>
+               "the guard let a non-UTF-8 call reach the wasm instance"
+
+      assert {:ok, result} = Wasm.validate_all(@base_ttl, "", "", "", "", :graphlaw_wasm_test)
+      assert result["graph_hash"] == @base_digest
+    end
+  end
+
   describe "graceful degradation when the artifact is absent" do
     test "starts anyway and returns a typed error on every call" do
       missing =
