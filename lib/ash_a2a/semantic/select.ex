@@ -124,6 +124,35 @@ defmodule AshA2A.Semantic.Select do
 
       {:ok, %{selection | selection_digest: selection_digest(selection)}}
     end
+    |> emit_decision(length(candidates))
+  end
+
+  # `[:ash_a2a, :semantic, :select]`: the SELECT decision (RFC-SA2A-002 §35
+  # SELECTED-standing evidence). Observational only; the result passes through.
+  defp emit_decision(result, candidate_count) do
+    meta =
+      case result do
+        {:ok, %Selection{} = s} ->
+          %{
+            outcome: :selected,
+            chosen_digest: s.chosen_digest,
+            selection_digest: s.selection_digest,
+            selector_identity: s.selector_identity,
+            standing: s.standing,
+            authority: s.authority
+          }
+
+        {:error, %{code: code}} ->
+          %{outcome: :refused, code: code}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :select],
+      %{system_time: System.system_time(), candidates: candidate_count},
+      meta
+    )
+
+    result
   end
 
   @doc """
