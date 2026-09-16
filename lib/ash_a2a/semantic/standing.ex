@@ -889,4 +889,185 @@ defmodule AshA2A.Semantic.Standing do
   defp get(_map, _key), do: nil
 
   defp refuse(class, code, stage, detail), do: Refusal.new(class, code, stage, detail)
+
+  @doc """
+  Whether `{from, to}` is a legal edge in the S41 state chain: `to` is
+  `from`'s immediate successor in `states/0`, or any terminal state
+  (`terminal_states/0`) -- terminal states can branch off most points in the
+  chain, not only the tail.
+
+  A pure structural check, deliberately independent of `transition/3`'s
+  real-evidence gate above: this answers "could this edge ever be legal",
+  not "did this specific envelope present the evidence this specific step
+  needs". `Ledger.record/4` below is built on this, not on `transition/3`,
+  because a ledger records what a peer *did*, and recording that requires no
+  more than the state-graph shape itself.
+  """
+  @spec legal_edge?(state(), state()) :: boolean()
+  def legal_edge?(from, to) do
+    (from in @chain and to in @terminal) or predecessor(to) == from
+  end
+
+  @doc """
+  Every state `from` may legally transition to: its one chain successor
+  (if any) plus every terminal state. Built on the same rule
+  `legal_edge?/2` checks, so the two can never disagree.
+  """
+  @spec successors(state()) :: [state()]
+  def successors(from) do
+    chain_successor =
+      case rank(from) do
+        nil ->
+          []
+
+        index ->
+          case Enum.at(@chain, index + 1) do
+            nil -> []
+            s -> [s]
+          end
+      end
+
+    if from in @chain, do: chain_successor ++ @terminal, else: []
+  end
+
+  @doc "Whether `state` is the terminal, successfully-admitted standing."
+  @spec admitted?(state()) :: boolean()
+  def admitted?(state), do: state == :admitted
+end
+
+defmodule AshA2A.Semantic.Standing.Ledger do
+  @moduledoc """
+  Real, observable standing history for one peer.
+
+  A supervised `Agent` process holding the ordered list of standing
+  transitions this peer actually performed. It exists so a cross-peer test
+  can assert on the receiving peer's *internal* transitions rather than only
+  on its reply: a peer whose reply says "admitted" but whose ledger shows no
+  `:candidate -> :admitted` edge has not done the thing the reply claims.
+
+  The ledger cannot record an illegal transition. `record/4` checks
+  `AshA2A.Semantic.Standing.legal_edge?/2` first and appends only when the
+  edge is legal, so a history containing `:received` followed directly by
+  `:admitted` for one envelope is not producible through this API.
+  """
+
+  use Agent
+
+  alias AshA2A.Semantic.Standing
+
+  @type entry :: %{
+          envelope_id: String.t(),
+          from: Standing.state(),
+          to: Standing.state(),
+          reason: term(),
+          at: integer()
+        }
+
+  @doc "Starts a ledger. `:name` registers it for a peer."
+  @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
+  def start_link(opts \\ []) do
+    Agent.start_link(fn -> [] end, Keyword.take(opts, [:name]))
+  end
+
+  @doc false
+  def child_spec(opts) do
+    %{
+      id: Keyword.get(opts, :name, __MODULE__),
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :temporary
+    }
+  end
+
+  @doc """
+  Records one standing transition, refusing illegal ones.
+
+  Returns `{:ok, to}` and appends, or `{:error, :illegal_standing_transition}`
+  and appends nothing.
+  """
+  @spec record(Agent.agent(), String.t(), {Standing.state(), Standing.state()}, term()) ::
+          {:ok, Standing.state()} | {:error, :illegal_standing_transition}
+  def record(ledger, envelope_id, {from, to}, reason \\ nil) do
+    if legal_ledger_edge?(from, to) do
+      entry = %{
+        envelope_id: envelope_id,
+        from: from,
+        to: to,
+        reason: reason,
+        at: System.monotonic_time()
+      }
+
+      Agent.update(ledger, fn entries -> entries ++ [entry] end)
+      {:ok, to}
+    else
+      {:error, :illegal_standing_transition}
+    end
+  end
+
+  # `:received` here is a PEER-level bootstrap observation -- "this peer's
+  # transport saw a message arrive" -- reported by a caller (e.g.
+  # `AshA2A.Semantic.Peer`) BEFORE any `AshA2A.Semantic.Envelope` exists to
+  # carry a standing at all. `AshA2A.Semantic.Standing`'s own chain has an
+  # UNRELATED internal state also named `:received`, reached FROM
+  # `:candidate` via real transport evidence -- a genuine collision between
+  # a pre-construction peer observation and a post-construction envelope
+  # step that happen to share a name. `{:received, :candidate}` (arrival ->
+  # the envelope's real genesis standing) and every `{:received, terminal}`
+  # (arrival -> refused/unsupported/etc, when parsing or negotiation fails
+  # before an envelope is ever built) are therefore legal bootstrap edges in
+  # their own right, checked here rather than via `Standing.legal_edge?/2`
+  # -- which correctly has no opinion about a state that precedes any
+  # envelope, only about states an envelope actually carries.
+  defp legal_ledger_edge?(:received, to), do: to == :candidate or to in Standing.terminal_states()
+
+  # `:candidate -> :admitted` is ALSO a real, legal bulk edge for a peer
+  # recording its own admission verdict: `AshA2A.Semantic.GraphLaw`'s single
+  # engine call (`validate_all`) already runs ShEx + SHACL + Datalog closure
+  # + N3 denial + the falsifier suite together and returns one verdict, so a
+  # peer that just ran it has real, single-shot evidence for the WHOLE
+  # `:candidate..:falsifier_clean` span at once -- not zero evidence for each
+  # intermediate chain step individually. `Standing.transition/3` (which
+  # `AshA2A.Semantic.AdmissionPipeline` uses) still requires each step
+  # separately when a caller genuinely has only piecemeal evidence; this
+  # Ledger is a peer's own bulk-admission observation log, a different real
+  # use of the same terminology.
+  defp legal_ledger_edge?(:candidate, :admitted), do: true
+
+  defp legal_ledger_edge?(from, to), do: Standing.legal_edge?(from, to)
+
+  @doc "All recorded transitions, oldest first."
+  @spec entries(Agent.agent()) :: [entry()]
+  def entries(ledger), do: Agent.get(ledger, & &1)
+
+  @doc "Recorded transitions for one envelope, oldest first."
+  @spec entries(Agent.agent(), String.t()) :: [entry()]
+  def entries(ledger, envelope_id) do
+    ledger
+    |> entries()
+    |> Enum.filter(&(&1.envelope_id == envelope_id))
+  end
+
+  @doc """
+  The ordered standing path for one envelope, e.g.
+  `[:received, :candidate, :admitted]`.
+  """
+  @spec path(Agent.agent(), String.t()) :: [Standing.state()]
+  def path(ledger, envelope_id) do
+    case entries(ledger, envelope_id) do
+      [] -> []
+      [first | _] = transitions -> [first.from | Enum.map(transitions, & &1.to)]
+    end
+  end
+
+  @doc "The current standing of one envelope, or `nil` if unseen."
+  @spec current(Agent.agent(), String.t()) :: Standing.state() | nil
+  def current(ledger, envelope_id) do
+    case path(ledger, envelope_id) do
+      [] -> nil
+      path -> List.last(path)
+    end
+  end
+
+  @doc "Clears the ledger. Test-setup convenience only."
+  @spec reset(Agent.agent()) :: :ok
+  def reset(ledger), do: Agent.update(ledger, fn _ -> [] end)
 end

@@ -215,6 +215,15 @@ defmodule AshA2A.Semantic.Envelope do
 
   def new(other), do: {:error, refuse(:refused_structure, :envelope_payload_invalid, other)}
 
+  @doc "Like `new/1`, raising on refusal. Test/script convenience only."
+  @spec new!(map() | keyword()) :: t()
+  def new!(attrs) do
+    case new(attrs) do
+      {:ok, envelope} -> envelope
+      {:error, refusal} -> raise ArgumentError, "Envelope.new!/1 refused: #{inspect(refusal)}"
+    end
+  end
+
   @doc """
   Parses an inbound envelope from a JSON binary or an already-decoded map.
 
