@@ -34,7 +34,9 @@ defmodule AshA2A.Semantic.Peer do
     * **S76 (no silent downgrade)** -- a peer in `:strict` mode receiving a
       consequence-bearing task without the negotiated profile returns the
       typed refusal `:unsupported_profile` rather than quietly handling it as
-      ordinary A2A.
+      ordinary A2A. Whether the task is consequence-bearing is decided by
+      *this* peer's own capability DSL (`consequence_bearing?/2`), never by
+      the counterparty the rule constrains.
 
   ## What "its own engine" means operationally
 
@@ -59,6 +61,7 @@ defmodule AshA2A.Semantic.Peer do
   defstruct [
     :name,
     :ledger,
+    :capabilities,
     shapes: "",
     mode: :strict,
     graph_law: nil
@@ -69,6 +72,7 @@ defmodule AshA2A.Semantic.Peer do
   @type t :: %__MODULE__{
           name: String.t(),
           ledger: Agent.agent() | nil,
+          capabilities: module() | nil,
           shapes: String.t(),
           mode: mode(),
           graph_law: module() | nil
@@ -103,12 +107,17 @@ defmodule AshA2A.Semantic.Peer do
       sender's.
     * `:mode` -- `:strict` (default) or `:permissive`, governing S76.
     * `:graph_law` -- the `AshA2A.Semantic.GraphLaw` implementation module.
+    * `:capabilities` -- this peer's **own** `Ash.Resource` or `Ash.Domain`
+      carrying the real `AshA2A` capability surface. This is the only source
+      S76's consequence classification is read from. See
+      `consequence_bearing?/2`.
   """
   @spec new(keyword()) :: t()
   def new(opts) do
     %__MODULE__{
       name: Keyword.fetch!(opts, :name),
       ledger: Keyword.get(opts, :ledger),
+      capabilities: Keyword.get(opts, :capabilities),
       shapes: Keyword.get(opts, :shapes, ""),
       mode: Keyword.get(opts, :mode, :strict),
       graph_law: Keyword.get(opts, :graph_law)
@@ -118,32 +127,107 @@ defmodule AshA2A.Semantic.Peer do
   @doc """
   The full boundary crossing for a real inbound `A2A.Message`.
 
-  `consequence_bearing?` in `opts` (default `false`) tells S76 whether the
-  requested task would have a consequence. A strict peer refuses an
-  unnegotiated consequence-bearing task with `:unsupported_profile` instead
-  of silently downgrading it.
+  Whether the requested task is consequence-bearing -- the input S76 turns
+  on -- is derived by `consequence_bearing?/2` from **this peer's own**
+  capability DSL. It is never read from `opts` and never read from the
+  message's metadata. See `consequence_bearing?/2` for why.
+
+  `opts` is still accepted (and `:graph_law` still honoured through the
+  struct) but carries no S76 input. A `:consequence_bearing?` key is ignored
+  rather than obeyed; passing one cannot move the boundary in either
+  direction.
 
   Returns an `outcome/0` whose `:standing` is the only thing a caller may
   treat as decided.
   """
   @spec receive_message(t(), A2A.Message.t(), keyword()) :: outcome()
-  def receive_message(%__MODULE__{} = peer, %A2A.Message{} = message, opts \\ []) do
-    consequence_bearing? = Keyword.get(opts, :consequence_bearing?, false)
-
+  def receive_message(%__MODULE__{} = peer, %A2A.Message{} = message, _opts \\ []) do
     if Extension.activated?(message) do
       semantic_path(peer, message)
     else
-      bridge_path(peer, message, consequence_bearing?)
+      bridge_path(peer, message)
+    end
+  end
+
+  @doc """
+  RFC S76's input: is the task this message requests consequence-bearing?
+
+  ## Why the counterparty may not answer this
+
+  S76 exists to constrain the *counterparty*: a peer that did not negotiate
+  the profile must not get a consequence-bearing task quietly downgraded to
+  ordinary A2A. A guard whose controlling input is supplied by the party it
+  constrains is not a guard. An earlier revision read this from
+  `message.metadata["consequenceBearing"]`, so the sender decided whether
+  S76's typed refusal applied to the sender -- setting the flag to `false`
+  (or simply omitting it) turned the check off from the outside.
+
+  The classification is therefore read from exactly the source
+  `AshA2A.CommandBus` already treats as authoritative: the receiving side's
+  own `AshA2A` DSL, `skill.consequence`, resolved through
+  `AshA2A.Info.skill/2`. The counterparty still says *which* capability it
+  wants -- that is a request, and requests are what a message is for -- but
+  the consequence class of that capability is local truth.
+
+  ## Fail-closed resolution
+
+    * no `:capabilities` module configured -- this peer fronts no capability
+      surface, so there is no consequence-bearing task to downgrade:
+      `false`.
+    * a skill named in metadata that resolves, with an explicit
+      `consequence` -- `true` for `:change`/`:external_do`, `false` for
+      `:observe`.
+    * no skill named and the surface has exactly one capability -- that
+      capability's consequence.
+    * skill named but not found, no skill named and the surface is
+      ambiguous, or a capability whose `consequence` is `nil`/`:unknown` --
+      **`true`**. The request cannot be shown to be harmless, and
+      `AshA2A.CommandBus` already refuses an unclassified consequence
+      (`:consequence_unclassified`) rather than assuming `:observe`. Here the
+      matching fail-closed outcome is to treat it as consequence-bearing, so
+      a strict peer issues S76's typed refusal instead of downgrading.
+
+  Returns a boolean.
+  """
+  @spec consequence_bearing?(t(), A2A.Message.t()) :: boolean()
+  def consequence_bearing?(%__MODULE__{capabilities: nil}, %A2A.Message{}), do: false
+
+  def consequence_bearing?(%__MODULE__{capabilities: capabilities}, %A2A.Message{} = message) do
+    case requested_consequence(capabilities, message) do
+      :observe -> false
+      consequence when consequence in [:change, :external_do] -> true
+      _unresolved_or_unknown -> true
+    end
+  end
+
+  defp requested_consequence(capabilities, %A2A.Message{metadata: metadata}) do
+    case AshA2A.MetadataKey.get(metadata || %{}, :skill) do
+      nil -> sole_capability_consequence(capabilities)
+      name -> named_capability_consequence(capabilities, name)
+    end
+  end
+
+  defp named_capability_consequence(capabilities, name) do
+    case AshA2A.Info.skill(capabilities, name) do
+      {:ok, %AshA2A.Skill{consequence: consequence}} when not is_nil(consequence) -> consequence
+      _ -> :unknown
+    end
+  end
+
+  defp sole_capability_consequence(capabilities) do
+    case AshA2A.Info.capability_index(capabilities) do
+      [%AshA2A.Skill{consequence: consequence}] when not is_nil(consequence) -> consequence
+      _ -> :unknown
     end
   end
 
   # S75 / S76: a message from a peer that did not negotiate the profile.
-  defp bridge_path(%__MODULE__{} = peer, message, consequence_bearing?) do
+  defp bridge_path(%__MODULE__{} = peer, message) do
     envelope_id = bridge_envelope_id(message)
     record(peer, envelope_id, {:received, :unsupported}, :profile_not_negotiated)
 
     {code, detail} =
-      if consequence_bearing? and peer.mode == :strict do
+      if consequence_bearing?(peer, message) and peer.mode == :strict do
         {:unsupported_profile,
          "peer #{peer.name} is strict and will not downgrade a consequence-bearing task to " <>
            "ordinary A2A; #{Extension.profile_id()} was not negotiated"}

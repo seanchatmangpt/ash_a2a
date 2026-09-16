@@ -1,0 +1,64 @@
+{
+  "manifest_version": "1",
+  "digest_algorithm": "sha256",
+  "network_dereference": "refused",
+  "note": "RFC-SA2A-001 S46. Every entry is explicit, version-pinned and content-addressed. Production admission never dereferences a mutable web resource; objects/ holds the exact bytes and content_digest is re-verified on every load (fail closed on drift). canonical_digest is a PINNED field only -- graph canonicalization (RDFC-1.0) is owned by praxis-graphlaw, never recomputed in Elixir.",
+  "entries": [
+    {
+      "iri": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+      "prefix": "rdf",
+      "version": "hex:rdf@3.0.1",
+      "object": "objects/e080887affda033f5d780fa0404fb81a67c7bd366032ba1a5da59541507a5ee6.ttl",
+      "content_digest": "e080887affda033f5d780fa0404fb81a67c7bd366032ba1a5da59541507a5ee6",
+      "byte_size": 7522,
+      "media_type": "text/turtle",
+      "canonical_digest": null,
+      "canonicalization": "not_canonicalized",
+      "provenance": "deps/rdf/priv/vocabs/rdf.ttl, vendored by hex package rdf 3.0.1 (hexpm sha256 948cf9eb37897b0392bed3de9a033f582737066655e96bb9db4e01f1b2bc4865)",
+      "admitted_at": "2026-09-16",
+      "compatibility": {"compatible_with": []}
+    },
+    {
+      "iri": "http://www.w3.org/2000/01/rdf-schema#",
+      "prefix": "rdfs",
+      "version": "hex:rdf@3.0.1",
+      "object": "objects/e37c6e2fc986c1258048741baafc6658d5836761ab1743ab01b60eb23643f12b.ttl",
+      "content_digest": "e37c6e2fc986c1258048741baafc6658d5836761ab1743ab01b60eb23643f12b",
+      "byte_size": 3871,
+      "media_type": "text/turtle",
+      "canonical_digest": null,
+      "canonicalization": "not_canonicalized",
+      "provenance": "deps/rdf/priv/vocabs/rdfs.ttl, vendored by hex package rdf 3.0.1 (hexpm sha256 948cf9eb37897b0392bed3de9a033f582737066655e96bb9db4e01f1b2bc4865)",
+      "admitted_at": "2026-09-16",
+      "compatibility": {"compatible_with": []}
+    },
+    {
+      "iri": "http://www.w3.org/2002/07/owl#",
+      "prefix": "owl",
+      "version": "hex:rdf@3.0.1",
+      "object": "objects/ef54c97537a831c733dec32f3f510a9a772918026aff97206367afc307541e0d.ttl",
+      "content_digest": "ef54c97537a831c733dec32f3f510a9a772918026aff97206367afc307541e0d",
+      "byte_size": 23994,
+      "media_type": "text/turtle",
+      "canonical_digest": null,
+      "canonicalization": "not_canonicalized",
+      "provenance": "deps/rdf/priv/vocabs/owl.ttl, vendored by hex package rdf 3.0.1 (hexpm sha256 948cf9eb37897b0392bed3de9a033f582737066655e96bb9db4e01f1b2bc4865)",
+      "admitted_at": "2026-09-16",
+      "compatibility": {"compatible_with": []}
+    },
+    {
+      "iri": "http://www.w3.org/2004/02/skos/core#",
+      "prefix": "skos",
+      "version": "hex:rdf@3.0.1",
+      "object": "objects/1d7b360c673f95d8d4e2a5b981e1d02dcb06217b715dc72bd8ec868d0389719b.ttl",
+      "content_digest": "1d7b360c673f95d8d4e2a5b981e1d02dcb06217b715dc72bd8ec868d0389719b",
+      "byte_size": 15551,
+      "media_type": "text/turtle",
+      "canonical_digest": null,
+      "canonicalization": "not_canonicalized",
+      "provenance": "deps/rdf/priv/vocabs/skos.ttl, vendored by hex package rdf 3.0.1 (hexpm sha256 948cf9eb37897b0392bed3de9a033f582737066655e96bb9db4e01f1b2bc4865)",
+      "admitted_at": "2026-09-16",
+      "compatibility": {"compatible_with": []}
+    }
+  ]
+}

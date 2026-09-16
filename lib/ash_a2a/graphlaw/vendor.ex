@@ -244,9 +244,33 @@ defmodule AshA2A.GraphLaw.Vendor do
 
   Every field is measured by actually running the tool or reading the real
   file; unavailable fields are `nil`, never guessed.
+
+  ## Tool versions are measured in the build's own directory
+
+  `rustup` is a shim: `rustc --version` reports whichever toolchain
+  `rustup` resolves for the **current working directory**, walking up from
+  it looking for a `rust-toolchain`/`rust-toolchain.toml` pin. `build/1`
+  really does run `wasm-pack` with `cd: crate_dir` inside the praxis
+  checkout, where `rust-toolchain.toml` pins a specific nightly.
+
+  An earlier revision called `System.cmd/3` here with no `:cd`, so the
+  probes inherited the `ash_a2a` working directory instead -- a directory
+  with no toolchain pin, where `rustup` falls back to the user default. The
+  manifest then recorded a compiler that did not build the artifact, which
+  is worse than recording nothing: a provenance field that is confidently
+  wrong is read as evidence.
+
+  `provenance/2` therefore measures in the same directory `build/1` builds
+  in. `:cd` may be passed explicitly; otherwise it is derived from
+  `praxis_root` exactly as `build/1` derives `crate_dir`, and falls back to
+  the current directory only when there is no praxis root to derive from.
+  The directory actually used is recorded as `tool_version_cwd` so a reader
+  can check the claim instead of trusting it.
   """
   @spec provenance(String.t() | nil, keyword()) :: map()
   def provenance(praxis_root, opts \\ []) do
+    cwd = tool_version_cwd(praxis_root, opts)
+
     %{
       "praxis_root_at_build" => praxis_root,
       "praxis_git_sha" => git(praxis_root, ["rev-parse", "HEAD"]),
@@ -256,9 +280,10 @@ defmodule AshA2A.GraphLaw.Vendor do
       "wasm_crate_version" => crate_version(praxis_root, @wasm_crate),
       "graphlaw_crate" => "praxis-graphlaw",
       "graphlaw_crate_version" => crate_version(praxis_root, @graphlaw_crate),
-      "wasm_pack_version" => tool_version(Keyword.get(opts, :wasm_pack, "wasm-pack")),
+      "wasm_pack_version" => tool_version(Keyword.get(opts, :wasm_pack, "wasm-pack"), cwd),
       "wasm_pack_target" => Keyword.get(opts, :target, @default_target),
-      "rustc_version" => tool_version(Keyword.get(opts, :rustc, "rustc")),
+      "rustc_version" => tool_version(Keyword.get(opts, :rustc, "rustc"), cwd),
+      "tool_version_cwd" => cwd,
       "rust_target" => "wasm32-unknown-unknown",
       "built_at" => Keyword.get(opts, :built_at) || DateTime.utc_now() |> DateTime.to_iso8601(),
       "vendored_by" => "mix ash_a2a.vendor_graphlaw"
@@ -352,13 +377,43 @@ defmodule AshA2A.GraphLaw.Vendor do
     end
   end
 
-  defp tool_version(exe) do
+  @doc """
+  The directory tool versions are measured in: the same one `build/1` builds
+  in.
+
+  `:cd` wins if given. Otherwise it is `<praxis_root>/#{@wasm_crate}` --
+  byte-for-byte how `build/1` computes `crate_dir` -- when that directory
+  really exists, and `File.cwd!/0` only when there is no praxis root or the
+  crate directory is absent.
+  """
+  @spec tool_version_cwd(String.t() | nil, keyword()) :: String.t()
+  def tool_version_cwd(praxis_root, opts \\ []) do
+    explicit = Keyword.get(opts, :cd)
+
+    derived =
+      case praxis_root do
+        root when is_binary(root) -> Path.join(root, @wasm_crate)
+        _ -> nil
+      end
+
+    cond do
+      is_binary(explicit) -> explicit
+      is_binary(derived) and File.dir?(derived) -> derived
+      is_binary(praxis_root) and File.dir?(praxis_root) -> praxis_root
+      true -> File.cwd!()
+    end
+  end
+
+  # `cd` is not optional. rustup resolves the toolchain from the working
+  # directory upward, so measuring here in a different directory than
+  # `build/1` built in records the wrong compiler. See `provenance/2`.
+  defp tool_version(exe, cwd) do
     case System.find_executable(exe) do
       nil ->
         nil
 
       path ->
-        case System.cmd(path, ["--version"], stderr_to_stdout: true) do
+        case System.cmd(path, ["--version"], cd: cwd, stderr_to_stdout: true) do
           {out, 0} -> String.trim(out)
           _ -> nil
         end

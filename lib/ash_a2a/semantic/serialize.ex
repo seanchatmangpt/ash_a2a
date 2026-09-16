@@ -85,8 +85,54 @@ defmodule AshA2A.Semantic.Serialize do
       Non-ASCII printable text (accents, CJK, emoji, astral-plane
       codepoints) is emitted raw, which RDF 1.1 requires -- N-Triples is
       UTF-8.
-    * `BLANK_NODE_LABEL` -- sanitized to `[A-Za-z0-9_]+`, never empty.
+    * `BLANK_NODE_LABEL` -- **injectively escaped**, never sanitized. See
+      "Blank node labels" below; this is load-bearing, not cosmetic.
     * `LANGTAG` -- validated `[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*`.
+
+  ## Blank node labels: injective escaping, and why a lossy map is a bug
+
+  Blank node identity *is* graph structure. Two distinct blank nodes are two
+  distinct RDF terms, and a triple whose subject is `_:p` is a different
+  triple from the one whose subject is `_:q`. Any encoder that maps two
+  distinct labels onto one label therefore does not "clean up" a graph -- it
+  **merges two nodes and destroys triples**, and then hands the smaller graph
+  to `graph_hash/1`, which (see above) has no way to complain.
+
+  An earlier revision of this module did exactly that: it replaced every
+  character outside `[A-Za-z0-9_]` with `_` and mapped the empty label to
+  `"b"`. That map is many-to-one by construction --
+
+      "x-1"  "x.1"  "x 1"  "x!1"   all -> "x_1"
+      ""     "b"                   both -> "b"
+
+  -- so a two-triple graph collapsed to one triple, and because `term/2`
+  applied the same lossy map on *both* sides of `verify/3` (through
+  `canonical_triple/1`), the parse-back gate that exists to catch precisely
+  this reported `{:ok, 1}` and saw nothing wrong. Two different graphs
+  produced byte-identical N-Triples and therefore one canonical digest.
+
+  The sanitization was also unnecessary: `_:x-1` and `_:x.1` are already
+  legal RDF 1.1 `BLANK_NODE_LABEL`s.
+
+  What this module does instead, in `encode_bnode_label/1`:
+
+    * A character that is legal *at its position* under the real
+      `BLANK_NODE_LABEL` production is emitted verbatim (so `x-1`, `x.1`,
+      `a.b.c`, `日本`, `7` all survive unchanged).
+    * `_` is always emitted as `__`, which reserves `_` as the escape
+      introducer.
+    * Any other character is emitted as `_uXXXX` / `_UXXXXXXXX`.
+    * The empty label -- illegal in the grammar, and the one input with no
+      characters to escape -- is emitted as `_e`, a sequence no non-empty
+      input can produce (a real `_` always doubles).
+
+  `decode_bnode_label/1` is its exact left inverse, and `verify/3` applies it
+  when reading labels back out of the independent parser. So the round trip
+  is `label -> wire -> label`, the comparison in `verify/3` is between the
+  *original* labels rather than two copies of the same lossy image, and the
+  parse-back gate is no longer blind to a merge. `decode(encode(x)) == x`
+  holds for every binary `x`, which is what makes `encode_bnode_label/1`
+  injective; it is asserted as a real property test, not claimed here.
 
   ## Turtle
 
@@ -233,11 +279,26 @@ defmodule AshA2A.Semantic.Serialize do
     end
   end
 
+  # The label is carried through *unchanged*. Escaping happens once, at the
+  # writer (`encode_term/1` / `turtle_term/3`), and is undone at the reader
+  # (`rdf_ex_term/1`), so `canonical_triple/1` compares the labels the caller
+  # actually supplied rather than two copies of an encoder artefact.
   def term({:bnode, label}, position) when is_binary(label) do
-    if position == :predicate do
-      {:error, %{code: :serialize_bnode_in_predicate, detail: label}}
-    else
-      {:ok, {:bnode, sanitize_bnode(label)}}
+    cond do
+      position == :predicate ->
+        {:error, %{code: :serialize_bnode_in_predicate, detail: label}}
+
+      not String.valid?(label) ->
+        {:error,
+         %{
+           code: :serialize_invalid_bnode_label,
+           reason: :not_utf8,
+           position: position,
+           detail: label
+         }}
+
+      true ->
+        {:ok, {:bnode, label}}
     end
   end
 
@@ -302,7 +363,7 @@ defmodule AshA2A.Semantic.Serialize do
   @spec encode_term({:iri, binary()} | {:bnode, binary()} | {:literal, binary(), keyword()}) ::
           binary()
   def encode_term({:iri, iri}), do: "<" <> escape_iri(iri) <> ">"
-  def encode_term({:bnode, label}), do: "_:" <> label
+  def encode_term({:bnode, label}), do: "_:" <> encode_bnode_label(label)
 
   def encode_term({:literal, value, opts}) do
     quoted = "\"" <> escape_literal(value) <> "\""
@@ -441,7 +502,9 @@ defmodule AshA2A.Semantic.Serialize do
     do: {:error, %{code: :serialize_malformed_triple, detail: other}}
 
   defp turtle_term({:iri, iri}, prefixes, compact?), do: turtle_iri(iri, prefixes, compact?)
-  defp turtle_term({:bnode, label}, _prefixes, _compact?), do: {"_:" <> label, MapSet.new()}
+
+  defp turtle_term({:bnode, label}, _prefixes, _compact?),
+    do: {"_:" <> encode_bnode_label(label), MapSet.new()}
 
   defp turtle_term({:literal, value, opts}, prefixes, compact?) do
     quoted = "\"" <> escape_literal(value) <> "\""
@@ -521,9 +584,125 @@ defmodule AshA2A.Semantic.Serialize do
   defp uchar(c),
     do: "\\U" <> (c |> Integer.to_string(16) |> String.pad_leading(8, "0") |> String.upcase())
 
-  defp sanitize_bnode(label) do
-    cleaned = String.replace(label, ~r/[^A-Za-z0-9_]/u, "_")
-    if cleaned == "", do: "b", else: cleaned
+  # -- blank node labels ---------------------------------------------------
+  #
+  # See the "Blank node labels" section of this module's @moduledoc for why
+  # this must be injective and what the previous lossy map destroyed.
+
+  @doc """
+  Escapes an arbitrary binary into a legal RDF 1.1 `BLANK_NODE_LABEL`,
+  injectively.
+
+  `decode_bnode_label/1` is the exact left inverse:
+  `decode_bnode_label(encode_bnode_label(x)) == x` for every binary `x`,
+  which is what makes this injective. A character legal at its own position
+  in the grammar survives verbatim.
+
+      iex> AshA2A.Semantic.Serialize.encode_bnode_label("x-1")
+      "x-1"
+
+      iex> AshA2A.Semantic.Serialize.encode_bnode_label("x.1")
+      "x.1"
+
+      iex> AshA2A.Semantic.Serialize.encode_bnode_label("x 1")
+      "x_u00201"
+
+      iex> AshA2A.Semantic.Serialize.encode_bnode_label("")
+      "_e"
+  """
+  @spec encode_bnode_label(binary()) :: binary()
+  def encode_bnode_label(""), do: "_e"
+
+  def encode_bnode_label(label) when is_binary(label) do
+    chars = String.to_charlist(label)
+    last = length(chars) - 1
+
+    chars
+    |> Enum.with_index()
+    |> Enum.map_join(fn
+      {?_, _index} -> "__"
+      {c, index} -> if pn_ok?(c, index, last), do: <<c::utf8>>, else: bnode_uchar(c)
+    end)
+  end
+
+  # NOT `uchar/1`: that emits the N-Triples `\uXXXX` form, and a backslash is
+  # not a legal BLANK_NODE_LABEL character. The escape introducer here has to
+  # be `_`, which is.
+  defp bnode_uchar(c) when c <= 0xFFFF,
+    do: "_u" <> (c |> Integer.to_string(16) |> String.pad_leading(4, "0") |> String.upcase())
+
+  defp bnode_uchar(c),
+    do: "_U" <> (c |> Integer.to_string(16) |> String.pad_leading(8, "0") |> String.upcase())
+
+  @doc """
+  The exact left inverse of `encode_bnode_label/1`.
+
+  Total: an unrecognised escape sequence decodes to its own literal
+  characters rather than raising, so a label this module did not write can
+  still be read back without crashing the parse-back gate.
+
+      iex> AshA2A.Semantic.Serialize.decode_bnode_label("x_u00201")
+      "x 1"
+
+      iex> AshA2A.Semantic.Serialize.decode_bnode_label("_e")
+      ""
+  """
+  @spec decode_bnode_label(binary()) :: binary()
+  def decode_bnode_label("_e"), do: ""
+
+  def decode_bnode_label(label) when is_binary(label),
+    do: label |> String.to_charlist() |> decode_bnode([])
+
+  defp decode_bnode([], acc), do: acc |> Enum.reverse() |> List.to_string()
+
+  defp decode_bnode([?_, ?_ | rest], acc), do: decode_bnode(rest, [?_ | acc])
+
+  defp decode_bnode([?_, ?u, a, b, c, d | rest], acc) do
+    case unhex([a, b, c, d]) do
+      {:ok, code} -> decode_bnode(rest, [code | acc])
+      :error -> decode_bnode([?u, a, b, c, d | rest], [?_ | acc])
+    end
+  end
+
+  defp decode_bnode([?_, ?U, a, b, c, d, e, f, g, h | rest], acc) do
+    case unhex([a, b, c, d, e, f, g, h]) do
+      {:ok, code} -> decode_bnode(rest, [code | acc])
+      :error -> decode_bnode([?U, a, b, c, d, e, f, g, h | rest], [?_ | acc])
+    end
+  end
+
+  defp decode_bnode([c | rest], acc), do: decode_bnode(rest, [c | acc])
+
+  defp unhex(digits) do
+    case digits |> List.to_string() |> Integer.parse(16) do
+      {code, ""} when code >= 0 and code <= 0x10FFFF -> {:ok, code}
+      _ -> :error
+    end
+  end
+
+  # BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
+  # -- legality is position-dependent: '.' is legal in the middle but not at
+  # either end, and a digit is legal first but no other PN_CHARS_BASE
+  # exclusion applies. `?_` never reaches here (it is always doubled).
+  defp pn_ok?(c, index, last) do
+    first_ok = index != 0 or pn_chars_base?(c) or c in ?0..?9
+    last_ok = index != last or pn_chars?(c)
+    mid_ok = index == 0 or index == last or pn_chars?(c) or c == ?.
+
+    first_ok and last_ok and mid_ok
+  end
+
+  defp pn_chars_base?(c) do
+    c in ?A..?Z or c in ?a..?z or c in 0xC0..0xD6 or c in 0xD8..0xF6 or
+      c in 0xF8..0x2FF or c in 0x370..0x37D or c in 0x37F..0x1FFF or
+      c in 0x200C..0x200D or c in 0x2070..0x218F or c in 0x2C00..0x2FEF or
+      c in 0x3001..0xD7FF or c in 0xF900..0xFDCF or c in 0xFDF0..0xFFFD or
+      c in 0x10000..0xEFFFF
+  end
+
+  defp pn_chars?(c) do
+    pn_chars_base?(c) or c == ?_ or c == ?- or c in ?0..?9 or c == 0xB7 or
+      c in 0x300..0x36F or c in 0x203F..0x2040
   end
 
   # Splits IRI rejection into a named reason so a refusal receipt says *why*
@@ -590,8 +769,12 @@ defmodule AshA2A.Semantic.Serialize do
 
   defp rdf_ex_term(%RDF.IRI{value: value}), do: {:iri, value}
 
+  # The independent parser hands back the *wire* label; undo this module's
+  # escaping so the comparison in `verify/3` is against the label the caller
+  # supplied. Without this the gate would compare encoder output to encoder
+  # output and could never witness a merge.
   defp rdf_ex_term(%RDF.BlankNode{} = bnode),
-    do: {:bnode, bnode |> to_string() |> String.replace_prefix("_:", "")}
+    do: {:bnode, bnode |> to_string() |> String.replace_prefix("_:", "") |> decode_bnode_label()}
 
   defp rdf_ex_term(%RDF.Literal{} = literal) do
     value = RDF.Literal.lexical(literal)

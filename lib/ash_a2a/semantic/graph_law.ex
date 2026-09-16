@@ -77,6 +77,29 @@ defmodule AshA2A.Semantic.GraphLaw do
   caller rather than silently collapsed, because `UNSUPPORTED != REFUSED`.
 
   Returns `{:admitted, graph_hash}` or `{:refused, code, detail}`.
+
+  ## Replay divergence: the token the engine really emits
+
+  The replay branch is gated on the engine's *own* vocabulary, read out of
+  the real vendored artifact rather than out of prose. `praxis_graphlaw.wasm`
+  (3,249,361 bytes) carries exactly one contiguous status-enum string table:
+
+      ADMITTEDREFUSEDUNSUPPORTEDREPLAY_MISMATCHHASH_MISMATCHPROFILE_NOT_ADMITTED
+
+  The Rust side assigns the replay slot `Admitted` or `ReplayMismatch`, and
+  the DTO serializes `SCREAMING_SNAKE_CASE`, so a real replay divergence
+  arrives as `"REPLAY_MISMATCH"` -- never as `"REFUSED"`. An earlier revision
+  of this function tested `replay_status == "REFUSED"`, a token the engine
+  never emits for replay: the branch was unreachable and real replay
+  divergence was admitted silently.
+
+  This is now written fail-closed rather than as a list of known-bad tokens.
+  Only `"ADMITTED"` (checked and agreed), `"UNSUPPORTED"` /
+  `"PROFILE_NOT_ADMITTED"` (not exercised) and an absent replay section pass.
+  Anything else -- `"REPLAY_MISMATCH"`, `"HASH_MISMATCH"`, `"REFUSED"`, or a
+  token a future engine build introduces that this module has never seen --
+  refuses. A status this module cannot interpret is not evidence of
+  agreement.
   """
   @spec verdict(report()) :: {:admitted, String.t()} | {:refused, atom(), String.t()}
   def verdict(%{} = report) do
@@ -96,9 +119,10 @@ defmodule AshA2A.Semantic.GraphLaw do
 
         {:refused, :semantic_shape_violation, detail}
 
-      replay_status == "REFUSED" ->
+      not replay_ok?(replay_status) ->
         {:refused, :semantic_replay_divergence,
-         "replay hashes diverged: #{inspect(Map.get(report, "replay"))}"}
+         "engine replay status #{inspect(replay_status)} is not an agreement: " <>
+           "#{inspect(Map.get(report, "replay"))}"}
 
       not is_binary(Map.get(report, "graph_hash")) ->
         {:refused, :semantic_graph_unhashable, "engine returned no graph_hash"}
@@ -107,6 +131,23 @@ defmodule AshA2A.Semantic.GraphLaw do
         {:admitted, Map.fetch!(report, "graph_hash")}
     end
   end
+
+  # Absent replay section: this engine build ran no replay, which is not a
+  # divergence. Every other value must be an explicit agreement token.
+  @replay_agreement ["ADMITTED", "UNSUPPORTED", "PROFILE_NOT_ADMITTED"]
+
+  defp replay_ok?(nil), do: true
+  defp replay_ok?(status) when is_binary(status), do: status in @replay_agreement
+  defp replay_ok?(_other), do: false
+
+  @doc """
+  The engine status tokens this module accepts as a replay *agreement*.
+
+  Exposed so a test can assert the accepted set against the real vendored
+  wasm's own status-enum string table rather than against a comment.
+  """
+  @spec replay_agreement_tokens() :: [String.t()]
+  def replay_agreement_tokens, do: @replay_agreement
 
   @doc """
   Lists the dialects the engine reported as not exercised.

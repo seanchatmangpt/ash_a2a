@@ -213,19 +213,39 @@ defmodule AshA2A.Semantic.SerializeTest do
     end
   end
 
+  # SUPERSEDED (v26.9.16 serialization-misc fixes): the two expectations here
+  # previously pinned the lossy `[^A-Za-z0-9_] -> _` sanitization, i.e. they
+  # encoded the non-injectivity defect as the specification -- `"weird
+  # label!"` was asserted to become `weird_label_`, which is the same image
+  # as `"weird_label_"`, `"weird-label-"` and `"weird.label."`, and the empty
+  # label was asserted to become `b`, colliding with a real label `b`. They
+  # now pin the injective escaping that replaced it. Injectivity itself is
+  # proved in
+  # `test/ash_a2a/semantic_serialize_bnode_injectivity_test.exs`.
   describe "blank nodes" do
-    test "a blank node label is sanitized to the BLANK_NODE_LABEL grammar and parses back" do
+    test "a blank node label is injectively escaped to the BLANK_NODE_LABEL grammar and parses back" do
       triples = [triple({:bnode, "weird label!"}, "http://e/p", {:bnode, "b0"})]
       assert {:ok, nt} = Serialize.to_ntriples(triples)
-      assert nt == "_:weird_label_ <http://e/p> _:b0 .\n"
+      assert nt == "_:weird_u0020label_u0021 <http://e/p> _:b0 .\n"
       assert {:ok, 1} = Serialize.verify(triples, nt, format: :ntriples)
+
+      # The labels the old map merged onto `weird_label_` stay distinct.
+      others = ["weird_label_", "weird-label-", "weird.label.", "weird_u0020label_u0021"]
+
+      encodings = Enum.map(["weird label!" | others], &Serialize.encode_bnode_label/1)
+      assert length(Enum.uniq(encodings)) == length(encodings)
     end
 
-    test "an empty blank node label never emits the illegal bare `_:`" do
+    test "an empty blank node label never emits the illegal bare `_:`, and never collides" do
       triples = [triple({:bnode, ""}, "http://e/p", {:literal, "v"})]
       assert {:ok, nt} = Serialize.to_ntriples(triples)
-      assert nt == "_:b <http://e/p> \"v\" .\n"
+      assert nt == "_:_e <http://e/p> \"v\" .\n"
       assert {:ok, 1} = Serialize.verify(triples, nt, format: :ntriples)
+
+      # `_e` is unreachable from any non-empty label, so the empty label
+      # cannot collide with a real one -- including the literal label "_e".
+      refute Serialize.encode_bnode_label("_e") == Serialize.encode_bnode_label("")
+      refute Serialize.encode_bnode_label("b") == Serialize.encode_bnode_label("")
     end
 
     test "a blank node is refused in predicate position" do

@@ -918,19 +918,49 @@ defmodule AshA2A.Semantic.Conformance do
   `AshA2A.Planning.SemanticSynthesis`).
 
   Unlike the witnessed checks, this one really does quantify over every call
-  site in the scanned modules -- not over one executed case. It reports
-  `{:unverifiable, _}` if abstract code is unavailable (stripped beams).
+  site in the scanned modules -- **provided every call site names its module
+  literally**. It reports `{:unverifiable, _}` if abstract code is
+  unavailable (stripped beams), and equally if any scanned module contains a
+  call site whose callee module is a runtime value.
+
+  ## Why a dynamic call site makes this unverifiable rather than met
+
+  `remote_call_targets/1` reads module atoms out of the AST. A call written
+  `mod.run(x)`, or `apply(mod, :run, [x])`, names no module in the AST: the
+  target is a runtime value. An earlier revision collected only the literal
+  form and then concluded "none is an LLM module" from the targets it could
+  see -- so a DO-path module could reach an LLM through a variable and the
+  check would still report `:met`.
+
+  This is not hypothetical on the real DO path. A real scan of the real
+  compiled beams found `AshA2A.CommandBus` carrying 3 variable-module call
+  sites and `AshA2A.ReceiptOutbox` 1 `:erlang.apply/3` site, and the check
+  returned `{:met, "...covering 75 distinct remote-call target(s); none is
+  an LLM module"}` over them.
+
+  Resolving a dynamic target is not soundly decidable by AST inspection -- it
+  would require knowing every value that reaches the module position at
+  runtime. So the honest answer is `:unverifiable` with the real sites named,
+  not `:met`. A vacuously-true structural check is worse than an absent one:
+  it spends the reader's trust and returns nothing for it.
   """
   @spec check_no_llm_on_production_do_path() :: requirement_status()
   def check_no_llm_on_production_do_path do
-    scanned = Enum.map(@do_path_modules, &{&1, remote_call_targets(&1)})
-    failures = for {module, {:error, reason}} <- scanned, do: {module, reason}
+    scanned = Enum.map(@do_path_modules, &{&1, remote_call_targets(&1), dynamic_call_sites(&1)})
+
+    failures =
+      for {module, targets, sites} <- scanned,
+          {:error, reason} <- [targets, sites],
+          do: {module, reason}
 
     offenders =
-      for {module, {:ok, targets}} <- scanned,
+      for {module, {:ok, targets}, _sites} <- scanned,
           target <- targets,
           llm_module?(target),
           do: {module, target}
+
+    dynamic =
+      for {module, _targets, {:ok, sites}} <- scanned, sites != [], do: {module, sites}
 
     cond do
       failures != [] ->
@@ -939,13 +969,23 @@ defmodule AshA2A.Semantic.Conformance do
       offenders != [] ->
         {:unmet, "LLM call targets found on the DO path: #{inspect(offenders)}"}
 
+      dynamic != [] ->
+        count = Enum.sum(for {_module, sites} <- dynamic, do: length(sites))
+
+        {:unverifiable,
+         "no LITERALLY NAMED call target on the DO path is an LLM module, but #{count} call " <>
+           "site(s) across #{length(dynamic)} module(s) dispatch on a module that is a runtime " <>
+           "value, so the scan does not quantify over them: #{inspect(dynamic)}. Resolving a " <>
+           "dynamic callee is not decidable by AST inspection; this requirement is therefore " <>
+           "unverifiable by static analysis, not met"}
+
       true ->
-        total = Enum.sum(for {_module, {:ok, targets}} <- scanned, do: length(targets))
+        total = Enum.sum(for {_module, {:ok, targets}, _sites} <- scanned, do: length(targets))
 
         {:met,
          "scanned the real BEAM abstract code of #{length(@do_path_modules)} DO-path module(s) " <>
            "(#{Enum.map_join(@do_path_modules, ", ", &inspect/1)}) covering #{total} distinct " <>
-           "remote-call target(s); none is an LLM module"}
+           "remote-call target(s) with no dynamically dispatched call site; none is an LLM module"}
     end
   end
 
@@ -1793,18 +1833,58 @@ defmodule AshA2A.Semantic.Conformance do
   # -- static analysis over real compiled BEAM abstract code --
 
   @doc """
-  Every remote-call target module appearing in `module`'s real compiled BEAM
-  abstract code, sorted and deduplicated.
+  Every **literally named** remote-call target module appearing in `module`'s
+  real compiled BEAM abstract code, sorted and deduplicated.
 
   Returns `{:error, reason}` when abstract code is unavailable (a stripped
   beam, a preloaded module, a cover-compiled module) -- never a guess.
+
+  This function sees only call sites whose module is an atom literal in the
+  AST. A call whose module is a variable, or an `apply/3` whose module
+  argument is computed, names no module here and contributes nothing. That is
+  a real blind spot, not a rounding error, so it is reported separately
+  rather than left implicit -- see `dynamic_call_sites/1`.
   """
   @spec remote_call_targets(module()) :: {:ok, [module()]} | {:error, term()}
   def remote_call_targets(module) do
+    with {:ok, forms} <- abstract_code(module) do
+      {:ok, forms |> collect_remote_modules() |> Enum.uniq() |> Enum.sort()}
+    end
+  end
+
+  @doc """
+  Every call site in `module`'s real compiled BEAM abstract code whose callee
+  module is **not** decidable by reading the AST.
+
+  Returns `{:ok, [{kind, line}]}` where `kind` is:
+
+    * `:variable_module` -- `Mod.fun(...)` where `Mod` is a variable or any
+      other non-literal expression.
+    * `:dynamic_apply` -- `apply(M, F, A)` (`:erlang.apply/3`, which is what
+      `Kernel.apply/3` compiles to) whose module argument is not an atom
+      literal. `apply/2` on a fun value is included for the same reason.
+    * `:dynamic_make_fun` -- `:erlang.make_fun/3` with a non-literal module,
+      the shape a captured `&Mod.fun/1` takes when `Mod` is computed.
+
+  Returns `{:error, reason}` when abstract code is unavailable.
+
+  Resolving these targets is **not** soundly decidable by AST inspection --
+  the module is a runtime value. Detecting that they *exist* is, which is
+  what this does, and is what lets `check_no_llm_on_production_do_path/0`
+  answer `:unverifiable` instead of a false `:met`.
+  """
+  @spec dynamic_call_sites(module()) :: {:ok, [{atom(), non_neg_integer()}]} | {:error, term()}
+  def dynamic_call_sites(module) do
+    with {:ok, forms} <- abstract_code(module) do
+      {:ok, forms |> collect_dynamic_sites() |> Enum.uniq() |> Enum.sort()}
+    end
+  end
+
+  defp abstract_code(module) do
     with path when is_list(path) <- :code.which(module),
          {:ok, {^module, [abstract_code: {:raw_abstract_v1, forms}]}} <-
            :beam_lib.chunks(path, [:abstract_code]) do
-      {:ok, forms |> collect_remote_modules() |> Enum.uniq() |> Enum.sort()}
+      {:ok, forms}
     else
       other -> {:error, other}
     end
@@ -1820,6 +1900,49 @@ defmodule AshA2A.Semantic.Conformance do
     do: Enum.flat_map(list, &collect_remote_modules/1)
 
   defp collect_remote_modules(_other), do: []
+
+  # `:erlang.apply/3` with a literal module is just a literal remote call
+  # written the long way, and `collect_remote_modules/1` already sees the
+  # `:erlang` target; it is the non-literal module argument that is opaque.
+  defp collect_dynamic_sites(
+         {:call, anno, {:remote, _, {:atom, _, :erlang}, {:atom, _, :apply}}, [m | _] = args}
+       ) do
+    sites = if literal_module?(m), do: [], else: [{:dynamic_apply, line(anno)}]
+    sites ++ collect_dynamic_sites(args)
+  end
+
+  defp collect_dynamic_sites(
+         {:call, anno, {:remote, _, {:atom, _, :erlang}, {:atom, _, :apply}}, args}
+       ),
+       do: [{:dynamic_apply, line(anno)} | collect_dynamic_sites(args)]
+
+  defp collect_dynamic_sites(
+         {:call, anno, {:remote, _, {:atom, _, :erlang}, {:atom, _, :make_fun}}, [m | _] = args}
+       ) do
+    sites = if literal_module?(m), do: [], else: [{:dynamic_make_fun, line(anno)}]
+    sites ++ collect_dynamic_sites(args)
+  end
+
+  defp collect_dynamic_sites({:call, anno, {:remote, _, mod, _fun}, args}) do
+    sites = if literal_module?(mod), do: [], else: [{:variable_module, line(anno)}]
+    sites ++ collect_dynamic_sites(args)
+  end
+
+  defp collect_dynamic_sites(tuple) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> collect_dynamic_sites()
+
+  defp collect_dynamic_sites(list) when is_list(list),
+    do: Enum.flat_map(list, &collect_dynamic_sites/1)
+
+  defp collect_dynamic_sites(_other), do: []
+
+  defp literal_module?({:atom, _, _}), do: true
+  defp literal_module?(_other), do: false
+
+  defp line(anno) when is_integer(anno), do: anno
+  defp line(anno) when is_list(anno), do: Keyword.get(anno, :location, 0)
+  defp line({line, _column}), do: line
+  defp line(_other), do: 0
 
   @doc "Whether a module atom names an LLM-bearing module, for the DO-path scan."
   @spec llm_module?(module()) :: boolean()

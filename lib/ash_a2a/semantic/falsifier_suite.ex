@@ -596,6 +596,78 @@ defmodule AshA2A.Semantic.FalsifierSuite do
     "COPY"
   ]
 
+  # Every graph-naming keyword in SPARQL 1.1 Update (§3.1/§3.2). `GRAPH`
+  # covers quad templates and quad patterns; `WITH` scopes a whole
+  # INSERT/DELETE operation; `INTO`/`TO`/`FROM` are the LOAD and
+  # ADD/MOVE/COPY operands.
+  @graph_keywords "GRAPH|WITH|INTO|FROM|TO"
+
+  @graph_target_regex ~r/\b(?:#{@graph_keywords})\s+<([^>]*)>/i
+
+  # Rule 1: a keyword operand naming something other than one specific graph.
+  # `MOVE DEFAULT TO <s>` destroys the default graph; `COPY <s> TO DEFAULT`
+  # overwrites it; `DROP ALL` / `CLEAR NAMED` reach canonical state too.
+  @keyword_operand_regex ~r/\b(?:DEFAULT|ALL|NAMED)\b/i
+
+  # Rule 2: a graph-naming keyword whose operand is not an <IRIREF>. The
+  # `GRAPH` lookahead keeps `INTO GRAPH <s>` / `TO GRAPH <s>` legal; the
+  # `DATA`/`WHERE`/`SILENT` lookaheads keep `INSERT DATA`, `DELETE WHERE`
+  # and `LOAD SILENT` from being read as graph operands.
+  @unresolvable_operand_regex ~r/\b(?:#{@graph_keywords})\s+(?!<)(?!GRAPH\b)(?!DATA\b)(?!WHERE\b)(?!SILENT\b)\S+/i
+
+  # Rule 3: an INSERT/DELETE quad template not opened by GRAPH writes the
+  # default graph. A leading `WITH <iri>` names the target graph for the
+  # whole operation, so a bare template is scoped by it (and that IRI still
+  # has to clear rule 5).
+  @with_scoped_regex ~r/\AWITH\s+</i
+  # The whitespace run after `{` is ATOMIC (`(?>\s*)`). With a plain `\s*`
+  # the engine backtracks it to zero width, parking the lookahead on the
+  # space before `GRAPH` -- where `(?!GRAPH\b)` trivially succeeds -- so
+  # `INSERT DATA { GRAPH <staging> { ... } }` matched as an "unqualified"
+  # write and every legitimate staging update was refused.
+  @unqualified_template_regex ~r/\b(?:INSERT|DELETE)(?:\s+DATA|\s+WHERE)?\s*\{(?>\s*)(?!GRAPH\b)/i
+
+  defp unqualified_write?(scrubbed) do
+    not Regex.match?(@with_scoped_regex, String.trim_leading(scrubbed)) and
+      Regex.match?(@unqualified_template_regex, scrubbed)
+  end
+
+  # Removes `#` comments and `"..."`/`'...'` string literal *content* so
+  # neither can create evidence (a commented-out staging IRI) nor mask it (an
+  # `INSERT` hidden inside a literal). Replaced with a space rather than
+  # deleted, so token boundaries survive.
+  #
+  # This is a real three-state scanner rather than a regex because `#` is a
+  # comment introducer only *outside* an `<IRIREF>`. A fragment-bearing graph
+  # IRI such as `<http://example.org/fixture#stagingGraph1>` -- entirely
+  # ordinary, and what the S18.4 fixtures really use -- would otherwise be
+  # truncated at the `#`, erasing the graph name and refusing every
+  # legitimate staging update as an unnamed default-graph write.
+  #
+  # An unterminated `<` leaves the scanner in IRI state, which only ever
+  # *preserves* text. Since every rule downstream refuses on what it finds,
+  # preserving more text can add a refusal but never remove one.
+  defp scrub_update(update), do: scrub(String.to_charlist(update), :text, [])
+
+  defp scrub([], _state, acc), do: acc |> Enum.reverse() |> List.to_string()
+
+  defp scrub([?# | rest], :text, acc),
+    do: scrub(Enum.drop_while(rest, &(&1 != ?\n)), :text, [?\s | acc])
+
+  defp scrub([?< | rest], :text, acc), do: scrub(rest, :iri, [?< | acc])
+
+  defp scrub([q | rest], :text, acc) when q in [?", ?'],
+    do: scrub(rest, {:string, q}, [?\s | acc])
+
+  defp scrub([c | rest], :text, acc), do: scrub(rest, :text, [c | acc])
+
+  defp scrub([?> | rest], :iri, acc), do: scrub(rest, :text, [?> | acc])
+  defp scrub([c | rest], :iri, acc), do: scrub(rest, :iri, [c | acc])
+
+  defp scrub([?\\, _escaped | rest], {:string, _q} = state, acc), do: scrub(rest, state, acc)
+  defp scrub([q | rest], {:string, q}, acc), do: scrub(rest, :text, [?\s | acc])
+  defp scrub([_c | rest], {:string, _q} = state, acc), do: scrub(rest, state, acc)
+
   @doc """
   RFC S18.4: direct SPARQL Update against canonical admitted state is
   PROHIBITED in Strict.
@@ -613,42 +685,128 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   refused. An update naming an IRI the graph does not classify is also
   refused -- unclassified is not staging.
 
+  ## Why this is an allow-list and not a target scan
+
+  There is no SPARQL Update parse export on the vendored engine. The real
+  `praxis_graphlaw.wasm` artifact exports `graph_hash`, `graphlaw_version`,
+  `run_hooks` and `validate_all` and nothing that parses Update syntax, so
+  the check is textual and Elixir must not grow a parser to replace it.
+
+  A textual check can be written two ways, and only one of them is sound in
+  the direction that matters. An earlier revision *scanned for target IRIs*
+  and admitted when the IRIs it happened to find were all staging. That is
+  unsound by construction -- anything the scan cannot see is silently absent
+  from the evidence rather than fatal to it -- and it really did admit three
+  distinct mutations of canonical state:
+
+      INSERT { GRAPH c:canonical { ?s ?p ?o } } WHERE { GRAPH <staging> {...} }
+        -- the canonical write target is a prefixed name, invisible to a
+           regex that only matches `<...>`; the staging IRI in the read
+           clause was the only "target" found, so it was admitted.
+
+      INSERT { ?s ?p ?o } WHERE { GRAPH <staging> { ?s ?p ?o } }
+        -- the write template is unqualified, so it writes the DEFAULT graph
+           (canonical in Strict); again the staging IRI in the read clause
+           masked it.
+
+      MOVE DEFAULT TO <staging>
+        -- `MOVE` *removes* its source, so this destroys the default graph.
+           `DEFAULT` is a keyword operand, not an IRIREF, so the scan saw
+           only the staging IRI and admitted.
+
+  This revision inverts the burden: a mutating update is refused unless it
+  positively demonstrates that it writes nowhere but staging. Every rule
+  below refuses; none admits. The update must clear all of them.
+
+    1. No `DEFAULT` / `ALL` / `NAMED` keyword operand anywhere (`CLEAR
+       DEFAULT`, `DROP ALL`, `COPY ... TO DEFAULT`, `MOVE DEFAULT TO ...`).
+    2. No graph-naming operand that is not an `<IRIREF>` -- a prefixed name
+       or a `?variable` cannot be resolved without a parser, and unresolvable
+       is not staging.
+    3. No unqualified `INSERT`/`DELETE` quad template. A template not opened
+       by `GRAPH` writes the default graph, unless the operation carries
+       `WITH <iri>`, which names the target graph for the whole operation.
+    4. At least one graph IRI must be named at all (a mutating update naming
+       none targets the default graph).
+    5. Every graph IRI named must be typed `sa:StagingGraph` in `graph`.
+
+  Comments and string literals are removed before rules 1-3 are applied, so
+  a `# GRAPH <staging>` comment or a `"GRAPH <staging>"` literal can neither
+  create nor mask evidence. The mutating-form test itself runs over *both*
+  the raw and the scrubbed text, so scrubbing can only ever add a refusal,
+  never remove one.
+
   ## Honest limitation
 
-  This extracts the operation form and the `GRAPH`/`WITH`/`INTO`/`FROM` IRIs
-  by pattern match over the update text. It is **not** a SPARQL Update
-  parser, and Elixir must not grow one. A real implementation routes the text
-  through `spargebra::Update::parse` behind a wasm export (see this module's
-  moduledoc); until such an export exists this check is deliberately
-  conservative -- it refuses on ambiguity rather than admitting on it.
+  Rule 5 quantifies over every graph IRI in the text, including ones that
+  appear only in a read clause. So `INSERT { GRAPH <staging> {...} } WHERE {
+  GRAPH <canonical> {...} }` -- reading canonical state to write staging, a
+  legitimate operation -- is **refused**. That is a known over-refusal, kept
+  deliberately: distinguishing read position from write position is exactly
+  the parser-shaped work this module must not do, and a false refusal is a
+  recoverable annoyance where a false admission is a silent mutation of
+  canonical state.
   """
   @spec check_update([tuple()], binary()) :: :ok | {:error, map()}
   def check_update(graph, update) when is_list(graph) and is_binary(update) do
     g = Enum.uniq(graph)
-    form = mutating_form(update)
+    scrubbed = scrub_update(update)
 
-    cond do
-      is_nil(form) ->
-        :ok
-
-      true ->
-        targets = update_targets(update)
-        classify_targets(g, form, targets)
+    case mutating_form(update) || mutating_form(scrubbed) do
+      nil -> :ok
+      form -> refuse_unless_staging_only(g, form, scrubbed)
     end
   end
 
-  defp classify_targets(_g, form, []) do
+  defp refuse_unless_staging_only(g, form, scrubbed) do
+    cond do
+      match = Regex.run(@keyword_operand_regex, scrubbed) ->
+        refuse_update(form, :keyword_graph_operand, hd(match),
+          reason:
+            "mutating SPARQL Update names the graph operand #{inspect(String.trim(hd(match)))}; " <>
+              "DEFAULT/ALL/NAMED reach canonical consequential state and are never staging"
+        )
+
+      match = Regex.run(@unresolvable_operand_regex, scrubbed) ->
+        refuse_update(form, :unresolvable_graph_operand, hd(match),
+          reason:
+            "mutating SPARQL Update names a graph as #{inspect(String.trim(hd(match)))} rather " <>
+              "than an <IRIREF>; a prefixed name or variable cannot be resolved without a real " <>
+              "SPARQL parser, and unresolvable is not staging"
+        )
+
+      unqualified_write?(scrubbed) ->
+        refuse_update(form, :default_graph, :default_graph,
+          reason:
+            "mutating SPARQL Update carries an INSERT/DELETE template that is not opened by " <>
+              "GRAPH and is not scoped by WITH <iri>; it writes the default graph, which in " <>
+              "Strict is canonical consequential state"
+        )
+
+      true ->
+        classify_targets(g, form, update_targets(scrubbed))
+    end
+  end
+
+  defp refuse_update(form, target_kind, target, reason: reason) do
     {:error,
      %{
        code: :refused_sparql_update_on_canonical,
        detail: %{
          rfc: "S18.4",
          form: form,
-         target: :default_graph,
-         reason:
-           "mutating SPARQL Update names no graph; the default graph is canonical consequential state in Strict"
+         target: target,
+         target_kind: target_kind,
+         reason: reason
        }
      }}
+  end
+
+  defp classify_targets(_g, form, []) do
+    refuse_update(form, :default_graph, :default_graph,
+      reason:
+        "mutating SPARQL Update names no graph; the default graph is canonical consequential state in Strict"
+    )
   end
 
   defp classify_targets(g, form, targets) do
@@ -667,6 +825,7 @@ defmodule AshA2A.Semantic.FalsifierSuite do
              rfc: "S18.4",
              form: form,
              target: first,
+             target_kind: :graph_iri,
              targets: offending,
              reason:
                if(type?(g, first, sa("CanonicalGraph")),
@@ -682,8 +841,6 @@ defmodule AshA2A.Semantic.FalsifierSuite do
     upcased = String.upcase(update)
     Enum.find(@mutating_forms, fn form -> String.contains?(upcased, form) end)
   end
-
-  @graph_target_regex ~r/\b(?:GRAPH|WITH|INTO\s+GRAPH|FROM\s+GRAPH|INTO|FROM|TO)\s+<([^>]+)>/i
 
   defp update_targets(update) do
     @graph_target_regex
