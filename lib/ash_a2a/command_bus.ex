@@ -53,6 +53,22 @@ defmodule AshA2A.CommandBus do
   Every receipt now also carries the S31 prepared-receipt fields (see
   `AshA2A.Receipt`), including the actuation and idempotency identities, for
   `:observe` commands too; only the *enforcement* is scoped to consequence.
+
+  ## Boundary telemetry
+
+  Each transition emits a real `[:ash_a2a, :command_bus, ...]` event at the
+  boundary itself (RFC-SA2A-002 §18: evidence from a surface distinct from the
+  actuator's return value). Metadata always carries `:command_id`,
+  `:capability_id`, `:principal_id`; `:outcome` names what the boundary decided.
+
+    * `[:target]` -- `:resolved | :refused` (+ `:code`, `:consequence`)
+    * `[:admission]` -- `:admitted | :refused` (+ `:code`, `:consequence`)
+    * `[:kill_switch]` -- `:clear | :tripped`
+    * `[:claim]` -- `:execute | :replay | :refused` (+ `:execution_id`)
+    * `[:prepare]` -- `:prepared | :not_required | :failed` (+ `:receipt_id`)
+    * `[:actuate, :start]` / `[:actuate, :stop]` -- around the one dispatch
+      (+ `:execution_id`, `:receipt_id`, stop `:outcome` `:ok | :error`)
+    * `[:commit]` -- `:committed | :outboxed | :failed` (+ `:receipt_id`)
   """
 
   alias AshA2A.{Actuation, Authority, Command, Identity, KillSwitch, Receipt, ReceiptOutbox}
@@ -78,10 +94,11 @@ defmodule AshA2A.CommandBus do
 
     maybe_reconcile_outbox(store, store_opts)
 
-    with {:ok, skill, _action, consequence} <- inspect_target(command, resource_or_domain),
-         :ok <- admit(command, consequence),
-         :ok <- check_kill_switch(opts),
-         claim <- claim_receipt(store, command, store_opts) do
+    with {:ok, skill, _action, consequence} <-
+           observe_target(command, inspect_target(command, resource_or_domain)),
+         :ok <- observe_admission(command, consequence, admit(command, consequence)),
+         :ok <- observe_kill_switch(command, check_kill_switch(opts)),
+         claim <- observe_claim(command, claim_receipt(store, command, store_opts)) do
       case claim do
         {:replay, receipt} ->
           {:ok, receipt}
@@ -172,9 +189,16 @@ defmodule AshA2A.CommandBus do
          actuation,
          receipt_opts
        ) do
-    case prepare_receipt_anchor(command, execution_id, consequence, receipt_opts) do
+    case observe_prepare(
+           command,
+           execution_id,
+           prepare_receipt_anchor(command, execution_id, consequence, receipt_opts)
+         ) do
       {:ok, anchor} ->
-        reply = safe_dispatch(skill, message, resource_or_domain, opts)
+        reply =
+          actuate(command, execution_id, anchor, consequence, fn ->
+            safe_dispatch(skill, message, resource_or_domain, opts)
+          end)
 
         receipt =
           case anchor do
@@ -447,10 +471,29 @@ defmodule AshA2A.CommandBus do
       :ok ->
         ReceiptOutbox.remove(receipt)
         emit_receipt(receipt)
+
+        emit_boundary([:commit], receipt, %{
+          outcome: :committed,
+          receipt_id: identity_value(receipt.receipt_id)
+        })
+
         {:ok, receipt}
 
       {:error, reason} ->
-        outbox_after_consequence(receipt, reason)
+        result = outbox_after_consequence(receipt, reason)
+
+        outcome =
+          case result do
+            {:error, %{code: :receipt_commit_pending}} -> :outboxed
+            _ -> :failed
+          end
+
+        emit_boundary([:commit], receipt, %{
+          outcome: outcome,
+          receipt_id: identity_value(receipt.receipt_id)
+        })
+
+        result
     end
   end
 
@@ -585,6 +628,133 @@ defmodule AshA2A.CommandBus do
   end
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
+
+  # --- boundary telemetry (see moduledoc) -----------------------------------
+
+  defp observe_target(command, {:ok, _skill, _action, consequence} = ok) do
+    emit_boundary([:target], command, %{outcome: :resolved, consequence: consequence})
+    ok
+  end
+
+  defp observe_target(command, {:error, %{code: code}} = error) do
+    emit_boundary([:target], command, %{outcome: :refused, code: code})
+    error
+  end
+
+  defp observe_admission(command, consequence, :ok) do
+    emit_boundary([:admission], command, %{outcome: :admitted, consequence: consequence})
+    :ok
+  end
+
+  defp observe_admission(command, consequence, {:error, %{code: code}} = error) do
+    emit_boundary([:admission], command, %{
+      outcome: :refused,
+      code: code,
+      consequence: consequence
+    })
+
+    error
+  end
+
+  defp observe_kill_switch(command, :ok) do
+    emit_boundary([:kill_switch], command, %{outcome: :clear})
+    :ok
+  end
+
+  defp observe_kill_switch(command, {:error, %{code: code}} = error) do
+    emit_boundary([:kill_switch], command, %{outcome: :tripped, code: code})
+    error
+  end
+
+  defp observe_claim(command, {:execute, execution_id} = claim) do
+    emit_boundary([:claim], command, %{
+      outcome: :execute,
+      execution_id: identity_value(execution_id)
+    })
+
+    claim
+  end
+
+  defp observe_claim(command, {:replay, receipt} = claim) do
+    emit_boundary([:claim], command, %{
+      outcome: :replay,
+      receipt_id: identity_value(receipt.receipt_id)
+    })
+
+    claim
+  end
+
+  defp observe_claim(command, {:error, reason} = claim) do
+    emit_boundary([:claim], command, %{outcome: :refused, code: reason})
+    claim
+  end
+
+  defp observe_claim(_command, other), do: other
+
+  defp observe_prepare(command, execution_id, {:ok, anchor} = ok) do
+    {outcome, receipt_id} =
+      case anchor do
+        %Receipt{receipt_id: id} -> {:prepared, identity_value(id)}
+        nil -> {:not_required, nil}
+      end
+
+    emit_boundary([:prepare], command, %{
+      outcome: outcome,
+      receipt_id: receipt_id,
+      execution_id: identity_value(execution_id)
+    })
+
+    ok
+  end
+
+  defp observe_prepare(command, execution_id, {:error, reason} = error) do
+    emit_boundary([:prepare], command, %{
+      outcome: :failed,
+      code: :receipt_anchor_unavailable,
+      reason: inspect(reason),
+      execution_id: identity_value(execution_id)
+    })
+
+    error
+  end
+
+  defp actuate(command, execution_id, anchor, consequence, fun) do
+    meta = %{
+      execution_id: identity_value(execution_id),
+      receipt_id: anchor && identity_value(anchor.receipt_id),
+      consequence: consequence
+    }
+
+    emit_boundary([:actuate, :start], command, meta)
+    reply = fun.()
+
+    outcome =
+      case reply do
+        {:error, _} -> :error
+        _ -> :ok
+      end
+
+    emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome))
+    reply
+  end
+
+  defp emit_boundary(suffix, %{command_id: command_id} = subject, extra) do
+    :telemetry.execute(
+      [:ash_a2a, :command_bus | suffix],
+      %{system_time: System.system_time()},
+      Map.merge(
+        %{
+          command_id: identity_value(command_id),
+          capability_id: Map.get(subject, :capability_id),
+          principal_id: identity_value(Map.get(subject, :principal_id))
+        },
+        extra
+      )
+    )
+  end
+
+  defp identity_value(%Identity{value: value}), do: value
+  defp identity_value(value), do: value
 
   defp mark_standing(%Receipt{} = receipt, store) do
     if Code.ensure_loaded?(store) and function_exported?(store, :durable?, 0) and store.durable?() do

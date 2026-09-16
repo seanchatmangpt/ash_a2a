@@ -371,9 +371,15 @@ defmodule AshA2A.Semantic.Refusal do
   Exposed so a drift test can assert that every refusal code actually
   present in `lib/` is explicitly classified rather than silently falling
   through to `:blocked_unknown`.
+
+  The table above is merged over codes contributed by provider modules: any
+  compiled `:ash_a2a` module exporting `__sa2a_refusal_codes__/0` (every
+  `AshA2A.Chicago.Court` does, via its `refusal_codes/0` callback). New
+  subsystems classify their own codes without editing this table; entries
+  naming a non-taxonomy class are ignored, and this table wins on conflict.
   """
   @spec mapping() :: %{atom() => class()}
-  def mapping, do: @mapping
+  def mapping, do: Map.merge(provided_mapping(), @mapping)
 
   @doc """
   Total classification of a native refusal code into its S42 class.
@@ -391,7 +397,37 @@ defmodule AshA2A.Semantic.Refusal do
       :blocked_unknown
   """
   @spec classify(atom()) :: class()
-  def classify(code) when is_atom(code), do: Map.get(@mapping, code, :blocked_unknown)
+  def classify(code) when is_atom(code) do
+    case Map.fetch(@mapping, code) do
+      {:ok, class} -> class
+      :error -> Map.get(provided_mapping(), code, :blocked_unknown)
+    end
+  end
+
+  # Provider codes, cached per compiled module set (a recompile that adds or
+  # removes modules changes the key and refreshes the cache).
+  defp provided_mapping do
+    modules = List.wrap(Application.spec(:ash_a2a, :modules))
+    key = {__MODULE__, :provided_mapping, :erlang.phash2(modules)}
+
+    case :persistent_term.get(key, nil) do
+      nil ->
+        provided =
+          modules
+          |> Enum.filter(
+            &(Code.ensure_loaded?(&1) and function_exported?(&1, :__sa2a_refusal_codes__, 0))
+          )
+          |> Enum.flat_map(&Map.to_list(&1.__sa2a_refusal_codes__()))
+          |> Enum.filter(fn {code, class} -> is_atom(code) and class in @classes end)
+          |> Map.new()
+
+        :persistent_term.put(key, provided)
+        provided
+
+      provided ->
+        provided
+    end
+  end
 
   @doc """
   Builds a refusal with an explicit class.
