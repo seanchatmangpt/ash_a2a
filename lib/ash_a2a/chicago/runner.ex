@@ -165,11 +165,7 @@ defmodule AshA2A.Chicago.Runner do
       end)
 
     subject = Subject.capture(Keyword.get(opts, :subject_opts, []))
-    # A mapping several courts share (same event, activity and source, e.g.
-    # `stop_mapping/0`) is admitted once: one emission, one OCEL event.
-    mappings =
-      (SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings()))
-      |> Enum.uniq_by(&{&1.event, &1.activity, &1.source})
+    mappings = ocel_mappings(courts)
 
     observer_opts = observer_opts(run_id, mappings, evidence_dir, opts)
 
@@ -213,6 +209,19 @@ defmodule AshA2A.Chicago.Runner do
     after
       Observer.stop_run(run_id)
     end
+  end
+
+  @doc """
+  The admitted OCEL mapping set a run over `courts` observes with (§17): the
+  SUT mappings plus every court's `ocel_mappings/0`. A mapping several courts
+  share (same event, activity and source, e.g. `stop_mapping/0`) is admitted
+  once: one emission, one OCEL event. Fresh consumers recompute the receipt's
+  `ocel_mapping_digest` from this, so the dedup must live here.
+  """
+  @spec ocel_mappings([module()]) :: [AshA2A.Chicago.Ocel.Mapping.t()]
+  def ocel_mappings(courts) do
+    (SutMappings.mappings() ++ Enum.flat_map(courts, & &1.ocel_mappings()))
+    |> Enum.uniq_by(&{&1.event, &1.activity, &1.source})
   end
 
   defp observer_opts(run_id, mappings, evidence_dir, opts) do
