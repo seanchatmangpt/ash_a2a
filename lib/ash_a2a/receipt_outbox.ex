@@ -105,13 +105,29 @@ defmodule AshA2A.ReceiptOutbox do
 
   defp reconcile_entry(store, store_opts, %Receipt{} = receipt) do
     case safe(store, :fetch, [receipt.command_id, store_opts]) do
-      {:ok, _stored} ->
-        remove_and(:already_present, receipt)
+      {:ok, stored} ->
+        if supersedes?(receipt, stored),
+          do: commit_or_reclaim(store, store_opts, receipt),
+          else: remove_and(:already_present, receipt)
 
       _not_present ->
         commit_or_reclaim(store, store_opts, receipt)
     end
   end
+
+  # A finalized entry supersedes its own pending anchor already drained into
+  # the primary store (e.g. by a concurrent reconcile while the executor was
+  # still inside DO): discarding it would erase the observed outcome and
+  # leave the command permanently "prepared, outcome unknown"
+  # (RFC-SA2A-002 §70; SA2A-CHAOS-012).
+  defp supersedes?(%Receipt{receipt_id: id, status: status}, %Receipt{
+         receipt_id: id,
+         status: :pending
+       })
+       when status != :pending,
+       do: true
+
+  defp supersedes?(_entry, _stored), do: false
 
   defp commit_or_reclaim(store, store_opts, receipt) do
     # RFC-SA2A-001 S31: a receipt that only reaches the primary store via this
