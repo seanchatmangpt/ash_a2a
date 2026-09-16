@@ -1,4 +1,4 @@
-ExUnit.start(exclude: [:external_api])
+ExUnit.start(exclude: [:external_api, :benchmark])
 
 # A2A-2601: point the receipt outbox at a fresh per-run directory so tests
 # that exercise the outbox never read (or opportunistically reconcile) a
