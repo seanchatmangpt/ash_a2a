@@ -97,7 +97,11 @@ defmodule AshA2A.SemanticRefusalTest do
              "extracted only #{length(codes)} codes from lib/ -- extraction is probably broken"
 
       mapping = Refusal.mapping()
-      unmapped = Enum.reject(codes, &Map.has_key?(mapping, &1))
+
+      unmapped =
+        codes
+        |> Enum.reject(&Map.has_key?(mapping, &1))
+        |> Enum.reject(&(&1 in Refusal.non_refusal_codes()))
 
       assert unmapped == [],
              "these real refusal codes in lib/ have no explicit S42 class: #{inspect(unmapped)}"
