@@ -22,6 +22,8 @@ defmodule AshA2A.Chicago.Query do
       {:count, activity, :eq | :gte | :lte, n}
       {:precedes, activity_a, activity_b}             # every b has an earlier a (by chicago_seq)
       {:precedes, activity_a, activity_b, object_type} # ... sharing an object of object_type
+      {:distinct_objects, activity, object_type, :eq | :gte | :lte, n}
+                                                      # distinct object_type objects related to activity
       {:all, [predicate]}
       {:any, [predicate]}
       {:not, predicate}
@@ -36,6 +38,7 @@ defmodule AshA2A.Chicago.Query do
           | {:count, String.t(), :eq | :gte | :lte, non_neg_integer()}
           | {:precedes, String.t(), String.t()}
           | {:precedes, String.t(), String.t(), String.t()}
+          | {:distinct_objects, String.t(), String.t(), :eq | :gte | :lte, non_neg_integer()}
           | {:all, [predicate()]}
           | {:any, [predicate()]}
           | {:not, predicate()}
@@ -291,6 +294,17 @@ defmodule AshA2A.Chicago.Query do
      "#{length(bs)} #{b}; #{length(violations)} without an earlier #{a} sharing a #{object_type}"}
   end
 
+  defp do_eval({:distinct_objects, activity, object_type, op, n}, events, index) do
+    distinct =
+      events
+      |> Enum.filter(&(&1.type == activity))
+      |> Enum.reduce(MapSet.new(), &MapSet.union(&2, typed_objects(&1, object_type, index)))
+      |> MapSet.size()
+
+    {compare(distinct, op, n),
+     "#{activity} relates to #{distinct} distinct #{object_type} #{op} #{n}"}
+  end
+
   defp do_eval({:all, ps}, events, i) do
     results = Enum.map(ps, &do_eval(&1, events, i))
 
@@ -309,6 +323,10 @@ defmodule AshA2A.Chicago.Query do
     {v, d} = do_eval(p, events, i)
     {not v, "not(#{d})"}
   end
+
+  defp compare(value, :eq, n), do: value == n
+  defp compare(value, :gte, n), do: value >= n
+  defp compare(value, :lte, n), do: value <= n
 
   defp count(events, activity, attrs) do
     Enum.count(events, fn e ->
@@ -335,6 +353,10 @@ defmodule AshA2A.Chicago.Query do
 
   def validate_predicate({:count, a, op, n})
       when is_binary(a) and op in [:eq, :gte, :lte] and is_integer(n) and n >= 0,
+      do: :ok
+
+  def validate_predicate({:distinct_objects, a, t, op, n})
+      when is_binary(a) and is_binary(t) and op in [:eq, :gte, :lte] and is_integer(n) and n >= 0,
       do: :ok
 
   def validate_predicate({:precedes, a, b}) when is_binary(a) and is_binary(b), do: :ok

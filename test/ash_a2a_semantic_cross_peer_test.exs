@@ -70,22 +70,33 @@ defmodule AshA2A.SemanticCrossPeerTest do
     {:ok, ledger} = start_supervised({Ledger, name: ledger_name})
     {:ok, agent_pid} = start_supervised({PeerB, name: agent_name})
 
-    :ok =
-      PeerB.configure(agent_name,
-        name: @peer_b,
-        ledger: ledger_name,
-        shapes: Graphs.peer_b_shapes(),
-        mode: :strict
-      )
-
-    on_exit(fn -> PeerB.deconfigure(agent_name) end)
-
     plug_opts =
       A2A.Plug.init(
         agent: agent_name,
         base_url: @base_url,
         agent_card_opts: Extension.advertise(url: @base_url)
       )
+
+    # Peer B's own advertisement is the card its real A2A.Plug serves
+    # (RFC-SA2A-002 §55: semantic standing crosses only a boundary this peer
+    # itself advertises -- SA2A-NEG-005).
+    served_card =
+      :get
+      |> Plug.Test.conn("/.well-known/agent-card.json")
+      |> A2A.Plug.call(plug_opts)
+      |> Map.fetch!(:resp_body)
+      |> Jason.decode!()
+
+    :ok =
+      PeerB.configure(agent_name,
+        name: @peer_b,
+        ledger: ledger_name,
+        shapes: Graphs.peer_b_shapes(),
+        mode: :strict,
+        agent_card: served_card
+      )
+
+    on_exit(fn -> PeerB.deconfigure(agent_name) end)
 
     %{
       agent: agent_name,
@@ -139,6 +150,9 @@ defmodule AshA2A.SemanticCrossPeerTest do
       [
         envelope_id: "urn:uuid:sa2a-cross-peer-" <> Ash.UUIDv7.generate(),
         kind: "sa2a:Request",
+        # RFC-SA2A-002 §54: an envelope with no semantic basis has no standing
+        # to earn (SA2A-ENV-004).
+        semantic_basis: ["urn:sa2a:basis:peer-b-order-shapes:v1"],
         provenance: %{"agent" => @peer_a},
         graph: %{media_type: "text/turtle", digest: digest, content: graph}
       ] ++ Keyword.take(opts, [:consequence_class, :capability_iri])
@@ -392,7 +406,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
       assert reply_data(response)["standing"] == "unsupported"
     end
 
-    test "an envelope declaring a DIFFERENT profile is refused, not downgraded", %{
+    test "an envelope declaring a DIFFERENT profile is typed UNSUPPORTED, not downgraded", %{
       plug_opts: plug_opts
     } do
       {envelope, message} = peer_a_message(Graphs.conforming_order())
@@ -405,7 +419,11 @@ defmodule AshA2A.SemanticCrossPeerTest do
       {200, response} = send_over_real_transport(plug_opts, message)
       data = reply_data(response)
 
-      assert data["standing"] == "refused"
+      # UNSUPPORTED_PROFILE is its own S42 class and terminal standing
+      # (`Refusal.terminal_standing/1`), never collapsed into REFUSED
+      # (RFC-SA2A-002 §101, SA2A-ENV-007). Still not admitted, still not
+      # downgraded.
+      assert data["standing"] == "unsupported"
       assert data["code"] == "unknown_profile"
     end
   end
