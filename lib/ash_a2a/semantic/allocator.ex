@@ -165,6 +165,14 @@ defmodule AshA2A.Semantic.Allocator do
   """
   @spec new(keyword() | map(), keyword()) :: {:ok, Budget.t()} | {:error, map()}
   def new(limits, opts \\ []) do
+    limits
+    |> do_new(opts)
+    |> emit_decision(:new, %{
+      issuer: issuer_kind(Keyword.get(opts, :issued_by, {:host, :unspecified}))
+    })
+  end
+
+  defp do_new(limits, opts) do
     limits = Map.new(limits)
     issued_by = Keyword.get(opts, :issued_by, {:host, :unspecified})
     given_minimums = Map.new(Keyword.get(opts, :minimums, %{}))
@@ -233,7 +241,18 @@ defmodule AshA2A.Semantic.Allocator do
   """
   @spec allocate(Budget.t(), Budget.dimension() | :authority, integer()) ::
           {:ok, Budget.t()} | {:error, map()}
-  def allocate(%Budget{}, :authority, _amount) do
+  def allocate(%Budget{} = budget, dimension, amount) do
+    budget
+    |> do_allocate(dimension, amount)
+    |> emit_decision(:allocate, %{
+      dimension: dimension,
+      requested: amount,
+      budget: budget.fingerprint,
+      issuer: issuer_kind(budget.issued_by)
+    })
+  end
+
+  defp do_allocate(%Budget{}, :authority, _amount) do
     {:error,
      %{
        code: :authority_not_allocatable,
@@ -242,8 +261,8 @@ defmodule AshA2A.Semantic.Allocator do
      }}
   end
 
-  def allocate(%Budget{} = budget, dimension, amount)
-      when dimension in @dimensions and is_integer(amount) and amount >= 0 do
+  defp do_allocate(%Budget{} = budget, dimension, amount)
+       when dimension in @dimensions and is_integer(amount) and amount >= 0 do
     with :ok <- check_wall_time(budget),
          {:ok, limit} <- fetch_limit(budget, dimension) do
       consumed = Map.get(budget.consumed, dimension, 0)
@@ -266,11 +285,11 @@ defmodule AshA2A.Semantic.Allocator do
     end
   end
 
-  def allocate(%Budget{}, dimension, amount) when dimension in @dimensions do
+  defp do_allocate(%Budget{}, dimension, amount) when dimension in @dimensions do
     {:error, %{code: :invalid_allocation_amount, dimension: dimension, requested: amount}}
   end
 
-  def allocate(%Budget{}, dimension, _amount) do
+  defp do_allocate(%Budget{}, dimension, _amount) do
     {:error, %{code: :unknown_dimension, dimension: dimension}}
   end
 
@@ -317,16 +336,23 @@ defmodule AshA2A.Semantic.Allocator do
   """
   @spec request_increase(Budget.t(), term()) :: {:error, map()}
   def request_increase(%Budget{} = budget, request) do
-    {:error,
-     %{
-       code: :self_grant_refused,
-       detail:
-         "NeedMoreResources does not imply GrantMoreResources (RFC S73): " <>
-           "a budget increase requires a non-model issuer via reissue/3",
-       requested: request,
-       current_limits: budget.limits,
-       current_consumed: budget.consumed
-     }}
+    {:error, request_increase_refusal(budget, request)}
+    |> emit_decision(:request_increase, %{
+      budget: budget.fingerprint,
+      issuer: issuer_kind(budget.issued_by)
+    })
+  end
+
+  defp request_increase_refusal(budget, request) do
+    %{
+      code: :self_grant_refused,
+      detail:
+        "NeedMoreResources does not imply GrantMoreResources (RFC S73): " <>
+          "a budget increase requires a non-model issuer via reissue/3",
+      requested: request,
+      current_limits: budget.limits,
+      current_consumed: budget.consumed
+    }
   end
 
   @doc """
@@ -352,6 +378,12 @@ defmodule AshA2A.Semantic.Allocator do
   @spec reissue(Budget.t(), Budget.issuer(), keyword() | map(), keyword()) ::
           {:ok, Budget.t()} | {:error, map()}
   def reissue(%Budget{} = budget, issuer, new_limits, opts) do
+    budget
+    |> do_reissue(issuer, new_limits, opts)
+    |> emit_decision(:reissue, %{budget: budget.fingerprint, issuer: issuer_kind(issuer)})
+  end
+
+  defp do_reissue(budget, issuer, new_limits, opts) do
     new_limits = Map.new(new_limits)
 
     given_minimums =
@@ -375,6 +407,36 @@ defmodule AshA2A.Semantic.Allocator do
       {:ok, %{next | fingerprint: fingerprint(next)}}
     end
   end
+
+  # `[:ash_a2a, :semantic, :allocator, :decision]`: every allocation-boundary
+  # decision (`op` = :new | :allocate | :request_increase | :reissue) and its
+  # outcome, so "the request reached the allocator" is observable whatever
+  # the allocator decided (RFC-SA2A-002 §80). Observational only.
+  defp emit_decision(result, op, meta) do
+    outcome_meta =
+      case result do
+        {:ok, %Budget{} = next} ->
+          %{outcome: :granted, next_budget: next.fingerprint}
+
+        {:error, reason} ->
+          Map.merge(
+            %{outcome: :refused, code: Map.get(reason, :code)},
+            Map.take(reason, [:limit, :consumed, :charged])
+          )
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :allocator, :decision],
+      %{count: 1},
+      meta |> Map.merge(outcome_meta) |> Map.put(:op, op)
+    )
+
+    result
+  end
+
+  defp issuer_kind({kind, _}) when is_atom(kind), do: kind
+  defp issuer_kind(%Authority{source: source}), do: {:authority, source}
+  defp issuer_kind(_other), do: :unspecified
 
   @doc "Remaining headroom per dimension (`:wall_time_ms` is measured, not accumulated)."
   @spec remaining(Budget.t()) :: %{optional(Budget.dimension()) => integer()}

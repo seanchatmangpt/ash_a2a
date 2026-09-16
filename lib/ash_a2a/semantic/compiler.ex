@@ -36,6 +36,18 @@ defmodule AshA2A.Semantic.Compiler do
   def compile_source(resource_or_domain, %Source{} = source, opts \\ []) do
     role = Keyword.get(opts, :role, @default_role)
     generate = Keyword.get(opts, :generate_object, &ReqLLM.generate_object/4)
+
+    # `[:ash_a2a, :llm, :invoke]`: this path allocates exploratory model
+    # inference. Emitted on entry, before role resolution, so a misconfigured
+    # role or a raising model call still counts as an allocation attempt
+    # (RFC-SA2A-002 §43 Allocation_LLM measurement). Observational only.
+    :telemetry.execute([:ash_a2a, :llm, :invoke], %{count: 1}, %{
+      site: :semantic_compiler,
+      role: role,
+      source_id: source.id,
+      resource_or_domain: resource_or_domain
+    })
+
     model_spec = LLMProfiles.model_spec!(role)
     llm_opts = LLMProfiles.req_llm_opts!(role)
     persona_context = Keyword.get(opts, :persona_context)

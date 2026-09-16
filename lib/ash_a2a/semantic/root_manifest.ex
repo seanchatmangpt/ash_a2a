@@ -714,16 +714,34 @@ defmodule AshA2A.Semantic.RootManifest do
   """
   @spec mutate(t(), map(), Authority.t() | nil, Identity.t() | nil, keyword()) ::
           {:ok, t()} | {:error, refusal()}
-  def mutate(manifest, changes, authority, expected_principal, opts \\ [])
+  def mutate(manifest, changes, authority, expected_principal, opts \\ []) do
+    result = do_mutate(manifest, changes, authority, expected_principal, opts)
 
-  def mutate(
-        %__MODULE__{} = manifest,
-        changes,
-        %Authority{} = authority,
-        %Identity{kind: :principal} = expected_principal,
-        opts
-      )
-      when is_map(changes) do
+    # `[:ash_a2a, :semantic, :root_manifest, :mutate]`: the custody decision
+    # over a proposed trust-root change (RFC-SA2A-002 §53/§81). Observational.
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :root_manifest, :mutate],
+      %{count: 1},
+      %{
+        manifest_digest: match?(%__MODULE__{}, manifest) && manifest.digest,
+        authority_source: match?(%Authority{}, authority) && authority.source,
+        outcome: if(match?({:ok, _}, result), do: :mutated, else: :refused),
+        code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+        next_digest: with({:ok, %__MODULE__{digest: d}} <- result, do: d, else: (_ -> nil))
+      }
+    )
+
+    result
+  end
+
+  defp do_mutate(
+         %__MODULE__{} = manifest,
+         changes,
+         %Authority{} = authority,
+         %Identity{kind: :principal} = expected_principal,
+         opts
+       )
+       when is_map(changes) do
     admitted? =
       Authority.admits?(authority, %{
         principal_id: expected_principal,
@@ -745,7 +763,7 @@ defmodule AshA2A.Semantic.RootManifest do
     end
   end
 
-  def mutate(%__MODULE__{}, _changes, _authority, _expected_principal, _opts),
+  defp do_mutate(%__MODULE__{}, _changes, _authority, _expected_principal, _opts),
     do: refuse(:authority_mismatch, %{reason: :malformed_authority_or_principal})
 
   defp apply_changes(manifest, changes, opts) do

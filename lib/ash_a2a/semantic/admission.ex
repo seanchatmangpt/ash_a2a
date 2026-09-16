@@ -1,7 +1,7 @@
 defmodule AshA2A.Semantic.Admission do
   @moduledoc "Deterministic admission for candidate semantic state."
 
-  alias AshA2A.Semantic.{IR, Source}
+  alias AshA2A.Semantic.{IR, Source, Vocabulary}
 
   # Real, deterministic, conservative defense-in-depth check (not the
   # primary safety mechanism -- that is `source_quote` grounding below,
@@ -48,6 +48,29 @@ defmodule AshA2A.Semantic.Admission do
          :ok <- validate_items(source, ir) do
       {:ok, %{ir | standing: :admitted}}
     end
+    |> emit_admission(source, ir)
+  end
+
+  # `[:ash_a2a, :semantic, :ir_admission]`: the deterministic admission
+  # decision over candidate (typically model-extracted) semantic IR, with the
+  # standing the result carries (RFC-SA2A-002 §81 evidence). Observational.
+  defp emit_admission(result, source, ir) do
+    meta =
+      case result do
+        {:ok, %IR{} = admitted} ->
+          %{outcome: :admitted, standing: admitted.standing, authority: admitted.authority}
+
+        {:error, reason} ->
+          %{outcome: :refused, code: Map.get(reason, :code), standing: ir.standing}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :ir_admission],
+      %{items: length(IR.items(ir))},
+      Map.merge(meta, %{source_id: source.id})
+    )
+
+    result
   end
 
   defp fence(%IR{standing: :candidate, authority: :none}), do: :ok
@@ -100,11 +123,35 @@ defmodule AshA2A.Semantic.Admission do
       field == :entities and real_named_entity_suffix?(Map.get(item, "label")) ->
         error(:real_named_entity_not_admissible, Map.get(item, "id"))
 
+      invented = invented_namespace_term(field, item) ->
+        error(:ontology_term_not_admitted, %{id: Map.get(item, "id"), term: invented})
+
       true ->
         :ok
     end
   end
 
   defp validate_item(_, field, _), do: error(:semantic_item_invalid, field)
+
+  # RFC-SA2A-002 §81 (SA2A-LLM-003): the ontology terms `Ontology.from_ir/1`
+  # expands -- an entity `type` and a relation `predicate` -- must not name a
+  # namespace no admission ever saw. A prefixed term (`acme:Widget`, a full
+  # IRI) whose prefix is not in `Vocabulary.prefixes/0` would otherwise be
+  # silently minted into `urn:ash-a2a:semantic:` inside admitted semantics.
+  # Unprefixed local terms are unchanged (they stay private, see
+  # `AshA2A.Semantic.Iri`).
+  defp invented_namespace_term(field, item) when field in [:entities, :relations] do
+    term = Map.get(item, if(field == :entities, do: "type", else: "predicate"))
+
+    with term when is_binary(term) <- term,
+         [prefix, _local] <- String.split(term, ":", parts: 2),
+         false <- Map.has_key?(Vocabulary.prefixes(), prefix) do
+      term
+    else
+      _ -> nil
+    end
+  end
+
+  defp invented_namespace_term(_field, _item), do: nil
   defp error(code, detail \\ nil), do: {:error, %{code: code, detail: detail}}
 end

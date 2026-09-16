@@ -125,6 +125,26 @@ defmodule AshA2A.Semantic.MetaAdmission do
   @spec standing(RootManifest.t(), String.t(), String.t()) :: {:ok, map()} | {:error, refusal()}
   def standing(%RootManifest{} = manifest, relative_path, kind)
       when is_binary(relative_path) and is_binary(kind) do
+    result = decide_standing(manifest, relative_path, kind)
+
+    # `[:ash_a2a, :semantic, :meta_admission, :standing]`: the standing
+    # decision for one piece of machinery (RFC-SA2A-002 §52/§81 evidence).
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :meta_admission, :standing],
+      %{count: 1},
+      %{
+        artifact: relative_path,
+        kind: kind,
+        manifest_digest: manifest.digest,
+        outcome: if(match?({:ok, _}, result), do: :standing, else: :refused),
+        reason: with({:error, %{detail: %{reason: r}}} <- result, do: r, else: (_ -> nil))
+      }
+    )
+
+    result
+  end
+
+  defp decide_standing(manifest, relative_path, kind) do
     case RootManifest.find_pin(manifest, relative_path, kind) do
       :error ->
         refuse(:not_pinned, %{

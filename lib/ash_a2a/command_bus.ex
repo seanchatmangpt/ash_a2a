@@ -621,6 +621,14 @@ defmodule AshA2A.CommandBus do
 
   defp admit(_command, :observe), do: :ok
 
+  # RFC-SA2A-001 S40 / RFC-SA2A-002 §81: an authority whose provenance is model
+  # output is a candidate claim, never DO authority -- even when it names the
+  # exact principal and capability (SA2A-LLM-010).
+  defp admit(%Command{authority: %Authority{source: :model}}, consequence)
+       when consequence in [:change, :external_do] do
+    {:error, refusal(:model_authority_refused)}
+  end
+
   defp admit(%Command{authority: %Authority{} = authority} = command, consequence)
        when consequence in [:change, :external_do] do
     if Authority.admits?(authority, command),

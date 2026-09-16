@@ -33,11 +33,26 @@ defmodule AshA2A.Planning.SemanticSynthesis do
   def synthesize(resource_or_domain, goal, observation, opts \\ [])
       when is_binary(goal) and is_map(observation) do
     role = Keyword.get(opts, :role, @default_role)
+
+    resource_or_domain
+    |> do_synthesize(goal, observation, role, opts)
+    |> emit_planner_invoke(resource_or_domain, role)
+  end
+
+  defp do_synthesize(resource_or_domain, goal, observation, role, opts) do
     capability_ids = capability_ids(resource_or_domain)
 
     if capability_ids == [] do
       {:error, refusal(:no_canonical_capabilities)}
     else
+      # Exploratory model inference is allocated from here on (RFC-SA2A-002
+      # §43); emitted before role resolution so a raising call still counts.
+      :telemetry.execute([:ash_a2a, :llm, :invoke], %{count: 1}, %{
+        site: :semantic_synthesis,
+        role: role,
+        resource_or_domain: resource_or_domain
+      })
+
       model_spec = LLMProfiles.model_spec!(role)
 
       llm_opts =
@@ -64,6 +79,31 @@ defmodule AshA2A.Planning.SemanticSynthesis do
         {:error, reason} -> {:error, refusal(:semantic_synthesis_failed, reason)}
       end
     end
+  end
+
+  # `[:ash_a2a, :planner, :invoke]`: the planner decision this function just
+  # made (candidate or typed refusal), with the standing the result carries.
+  # Observational only; the result passes through unchanged.
+  defp emit_planner_invoke(result, resource_or_domain, role) do
+    {outcome, refusal_code, candidate} =
+      case result do
+        {:ok, %Planning.Candidate{} = candidate} -> {:candidate, nil, candidate}
+        {:error, %{code: code}} -> {:refused, code, nil}
+        {:error, _other} -> {:refused, nil, nil}
+      end
+
+    :telemetry.execute([:ash_a2a, :planner, :invoke], %{count: 1}, %{
+      planner: :semantic_synthesis,
+      role: role,
+      resource_or_domain: resource_or_domain,
+      outcome: outcome,
+      code: refusal_code,
+      standing: candidate && candidate.standing,
+      authority: candidate && candidate.authority,
+      fingerprint: candidate && candidate.fingerprint
+    })
+
+    result
   end
 
   @doc "Returns the canonical capability ids eligible for semantic synthesis."

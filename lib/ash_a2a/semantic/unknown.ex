@@ -130,13 +130,27 @@ defmodule AshA2A.Semantic.Unknown do
   """
   @spec admit_for_do(t()) :: {:error, map()}
   def admit_for_do(%__MODULE__{} = unknown) do
-    {:error,
-     %{
-       code: :unknown_not_executable,
-       detail: "UNKNOWN must not silently become DO; resolve it to a candidate first (RFC S36)",
-       class: unknown.class,
-       reason: unknown.reason
-     }}
+    result =
+      {:error,
+       %{
+         code: :unknown_not_executable,
+         detail: "UNKNOWN must not silently become DO; resolve it to a candidate first (RFC S36)",
+         class: unknown.class,
+         reason: unknown.reason
+       }}
+
+    # `[:ash_a2a, :semantic, :unknown, :admit_for_do]`: the DO-admission
+    # decision for an UNKNOWN subject, whatever it was (RFC-SA2A-002 §79
+    # attempt evidence). Observational only.
+    :telemetry.execute([:ash_a2a, :semantic, :unknown, :admit_for_do], %{count: 1}, %{
+      class: unknown.class,
+      reason: unknown.reason,
+      fingerprint: unknown.fingerprint,
+      outcome: if(match?({:error, _}, result), do: :refused, else: :admitted),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+    })
+
+    result
   end
 
   @doc """

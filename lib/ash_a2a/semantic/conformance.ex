@@ -305,12 +305,16 @@ defmodule AshA2A.Semantic.Conformance do
   """
   @spec check_canonical_graph_identity() :: requirement_status()
   def check_canonical_graph_identity do
-    with {:ok, a} <- sample_ontology(predicate: "acme:widget"),
+    # Both predicates are admissible local terms: the namespaced variant
+    # ("acme:widget") is refused by Admission's admitted-namespace gate
+    # (RFC-SA2A-002 SA2A-LLM-003), but the local-term collision still reaches
+    # Ontology.fingerprint/1.
+    with {:ok, a} <- sample_ontology(predicate: "acme_widget"),
          {:ok, b} <- sample_ontology(predicate: "acme/widget") do
       if a.fingerprint == b.fingerprint do
         {:unmet,
-         "graph identity is NOT injective: predicates \"acme:widget\" and \"acme/widget\" both " <>
-           "expand to #{Vocabulary.expand("acme:widget")}, so two distinct RDF graphs share one " <>
+         "graph identity is NOT injective: predicates \"acme_widget\" and \"acme/widget\" both " <>
+           "expand to #{Vocabulary.expand("acme/widget")}, so two distinct RDF graphs share one " <>
            "fingerprint (#{a.fingerprint}). Ontology.fingerprint/1 is a SHA-256 over " <>
            ":erlang.term_to_binary/1 of a sorted Elixir term, not RDFC-1.0 canonicalization " <>
            "(no blank-node labeling, no IRI/literal normalization)."}
