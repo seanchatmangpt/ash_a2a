@@ -139,20 +139,32 @@ replay/conflict detection through this default path too: the same
 receipt instead of re-executing; the same `command_id` with genuinely
 different content is a real `:command_conflict` refusal.
 
-`Authority` is synthesized per call via
-`AshA2A.Authority.from_verified_identity/2` from the already-verified
-`auth_identity` (`nil` for an unauthenticated caller, which fails
-`:change`/`:external_do` admission closed with `:authority_required` before
-the Ash action ever runs); this authority always admits for its own
-principal/capability pair -- it does not replace or tighten Ash's own
-actor/policy authorization, which still runs exactly as before inside the
-wrapped `dispatch/5` call. Its `token_id` is deterministic (a stable hash of
-`{subject, capability_id}`), not a fresh random one per call: a synthesized
-*standing* claim ("this already-verified principal may act with this
-capability") must be idempotent for the same pair, or every retry's
-`Command.fingerprint/1` (which hashes the authority's `token_id`) would
-differ from the last and permanently defeat replay detection -- a real,
-reproduced-and-fixed regression, not a hypothetical.
+`Authority` is decided per call by `AshA2A.Authority.Grant.authorize/3`,
+which consults the configured `AshA2A.Authority.Broker` for a real standing
+grant of this capability to this principal. It is `nil` both for an
+unauthenticated caller and for an authenticated caller holding no grant, and
+either fails `:change`/`:external_do` admission closed with
+`:authority_required` before the Ash action ever runs. Authentication alone
+does NOT confer it (RFC-SA2A-001 S29): `capability_id` here is
+caller-supplied (it comes off the inbound message's own `skill` metadata), so
+routing it through `AshA2A.Authority.from_verified_identity/2` directly --
+that function is a pure constructor and mints authority for whatever
+capability id it is handed -- made `admits?/2` pass by construction for every
+skill on the agent card. That was a real, reproduced privilege escalation;
+`Grant` is the decision that closes it. `:observe` skills are unaffected
+(`admit/2` admits them unconditionally). This gate does not replace or
+tighten Ash's own actor/policy authorization, which still runs exactly as
+before inside the wrapped `dispatch/5` call.
+
+When a grant does stand, the authority is still built through
+`from_verified_identity/2`, so its `token_id` remains deterministic (a stable
+hash of `{subject, capability_id}` -- `AshA2A.Authority.grant_token_id/2`)
+rather than a fresh random one per call: a *standing* claim must be
+idempotent for the same pair, or every retry's `Command.fingerprint/1` (which
+hashes the authority's `token_id`) would differ from the last and permanently
+defeat replay detection -- a real, reproduced-and-fixed regression, not a
+hypothetical. The grant decision changes whether an authority is produced,
+never which one, so replay is unaffected.
 
 ## Other real additions this release
 

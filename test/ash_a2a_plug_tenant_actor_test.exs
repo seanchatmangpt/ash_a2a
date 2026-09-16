@@ -48,6 +48,25 @@ defmodule AshA2APlugTenantActorTest do
 
   setup do
     {:ok, _pid} = start_supervised({TenantActorNoteAgent, name: TenantActorNoteAgent})
+
+    # RFC-SA2A-001 S29: `:create_note` is a real `:change` skill, so the
+    # verified identity needs a real `AshA2A.Authority.Broker` grant, not just
+    # a valid Bearer token -- see `AshA2A.Authority.Grant`. The grant subject
+    # is the SAME term `A2A.Plug.Auth`'s verify callback returns and
+    # `A2A.Plug` threads through as `auth_identity` (the whole identity map),
+    # since `AshA2A.Identity.principal/1` normalizes it identically on both
+    # the grant side and the dispatch side.
+    #
+    # `"no-tenant-token"`'s identity is deliberately granted too: the
+    # fail-closed behavior that test asserts must come from real Ash
+    # multitenancy enforcement, which is what it is actually about -- not
+    # from a missing capability grant masking it.
+    AshA2A.Test.AuthorityGrantCase.grant!([
+      {%{id: "user-acme-1", tenant: "acme"}, ["create_note"]},
+      {%{id: "user-beta-1", tenant: "beta"}, ["create_note"]},
+      {%{id: "user-no-tenant"}, ["create_note"]}
+    ])
+
     :ok
   end
 

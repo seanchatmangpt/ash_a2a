@@ -73,7 +73,15 @@ defmodule AshA2A.Authority.Broker.Ekv do
 
     name = ekv_name(opts)
     key = Identity.external(authority.token_id)
-    entry = %{status: :issued, capability_id: capability_id}
+    # `expires_at` is stored, not discarded: without it the durable record
+    # cannot represent a time-bounded grant at all, so `granted?/3` below
+    # could never enforce one and an hour-expired grant still authorized a
+    # real `:external_do` actuation.
+    entry = %{
+      status: :issued,
+      capability_id: capability_id,
+      expires_at: authority.expires_at
+    }
 
     # Insert-if-absent CAS (`if_vsn: nil`), the same idiom
     # `AshA2A.ReceiptStore.Ekv.attempt_fresh_claim/3` uses for a fresh
@@ -117,6 +125,67 @@ defmodule AshA2A.Authority.Broker.Ekv do
         {:ok, authority}
     end
   end
+
+  @impl AshA2A.Authority.Broker
+  @spec granted?(Identity.t(), String.t(), keyword()) :: boolean()
+  def granted?(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+
+    # A pure read of the exact durable entry `issue/3` writes
+    # (`%{status: :issued, capability_id: capability_id}`) and `revoke/2`
+    # rewrites (`status: :revoked`). `capability_id` is re-checked against the
+    # stored entry as well as being folded into the key, so a grant durably
+    # recorded for a different capability can never satisfy this one even if
+    # the key derivation were ever weakened.
+    # Expiry is enforced HERE, not only in `verify/2`: `granted?/3` is the
+    # only callback the real dispatch path asks, so an expiry honoured
+    # elsewhere is an expiry never enforced on a real request.
+    #
+    # An entry written before this fix has no `:expires_at` key at all;
+    # `Map.get/2` yields `nil`, which reads as "no time bound" -- the exact
+    # behaviour that entry was issued under, so an existing durable grant
+    # keeps working rather than silently becoming unusable.
+    case EKV.get(ekv_name(opts), key) do
+      %{status: :issued, capability_id: ^capability_id} = entry ->
+        not past?(Map.get(entry, :expires_at))
+
+      _other ->
+        false
+    end
+  catch
+    # An EKV instance that is not running, or any other storage failure, is
+    # an unanswerable grant question -- refuse, never admit.
+    :exit, _reason -> false
+  end
+
+  @impl AshA2A.Authority.Broker
+  @spec grant_expires_at(Identity.t(), String.t(), keyword()) ::
+          {:ok, DateTime.t() | nil} | :error
+  def grant_expires_at(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+
+    case EKV.get(ekv_name(opts), key) do
+      %{status: :issued, capability_id: ^capability_id} = entry ->
+        expires_at = Map.get(entry, :expires_at)
+        if past?(expires_at), do: :error, else: {:ok, expires_at}
+
+      _other ->
+        :error
+    end
+  catch
+    :exit, _reason -> :error
+  end
+
+  defp past?(nil), do: false
+
+  defp past?(%DateTime{} = expires_at),
+    do: DateTime.compare(DateTime.utc_now(), expires_at) != :lt
+
+  # An `expires_at` this module cannot interpret is an unanswerable grant
+  # question -- refuse, never admit.
+  defp past?(_other), do: true
 
   defp revoked?(name, key) do
     case EKV.get(name, key) do

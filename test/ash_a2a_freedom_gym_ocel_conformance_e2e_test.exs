@@ -86,6 +86,13 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
                    "start it separately before running with --include external_api"
 
   setup do
+    # RFC-SA2A-001 S29: a transport-authenticated caller holds authority for
+    # a `:change`/`:external_do` capability only when a real
+    # `AshA2A.Authority.Broker` grant stands for that exact (principal,
+    # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
+    # real pairs this file's own dispatches use.
+    AshA2A.Test.AuthorityGrantCase.grant!([{"ocel-conformance-test-caller", ["next_phase"]}])
+
     {_sup, _registry_name} =
       AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [FacilitatorAgent])
 

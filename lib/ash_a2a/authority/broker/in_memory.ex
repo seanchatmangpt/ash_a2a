@@ -37,7 +37,13 @@ defmodule AshA2A.Authority.Broker.InMemory do
 
   @doc false
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, %{issued: MapSet.new(), revoked: MapSet.new()},
+    # `issued` is a MAP (key -> `expires_at`), not a `MapSet`. A set can only
+    # record THAT a grant was issued, never UNTIL WHEN -- which is exactly how
+    # an expired grant was still authorizing a real `:external_do` actuation
+    # (`granted?/3` consulted only set membership, while this module's own
+    # `verify/2` correctly checked `Authority.expired?/1`). The grant's
+    # `expires_at` has to be stored to be enforceable, so it is stored.
+    GenServer.start_link(__MODULE__, %{issued: %{}, revoked: MapSet.new()},
       name: Keyword.get(opts, :name, __MODULE__)
     )
   end
@@ -66,6 +72,31 @@ defmodule AshA2A.Authority.Broker.InMemory do
     GenServer.call(server(opts), {:verify, authority})
   end
 
+  @impl AshA2A.Authority.Broker
+  @spec granted?(Identity.t(), String.t(), keyword()) :: boolean()
+  def granted?(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+
+    # Fails closed on a broker process that is not running (or has died):
+    # `GenServer.call/2` exits, and an unanswerable grant question is a
+    # refusal, never an admission.
+    GenServer.call(server(opts), {:granted?, key})
+  catch
+    :exit, _reason -> false
+  end
+
+  @impl AshA2A.Authority.Broker
+  @spec grant_expires_at(Identity.t(), String.t(), keyword()) ::
+          {:ok, DateTime.t() | nil} | :error
+  def grant_expires_at(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+    GenServer.call(server(opts), {:grant_expires_at, key})
+  catch
+    :exit, _reason -> :error
+  end
+
   @impl GenServer
   def handle_call({:issue, subject, capability_id, opts}, _from, state) do
     authority =
@@ -73,16 +104,32 @@ defmodule AshA2A.Authority.Broker.InMemory do
 
     key = Identity.external(authority.token_id)
 
-    if MapSet.member?(state.issued, key) do
+    if Map.has_key?(state.issued, key) do
       {:reply, {:error, %{reason: :token_id_taken, token_id: authority.token_id}}, state}
     else
-      {:reply, {:ok, authority}, %{state | issued: MapSet.put(state.issued, key)}}
+      {:reply, {:ok, authority},
+       %{state | issued: Map.put(state.issued, key, authority.expires_at)}}
     end
   end
 
   def handle_call({:revoke, %Authority{} = authority}, _from, state) do
     key = Identity.external(authority.token_id)
     {:reply, :ok, %{state | revoked: MapSet.put(state.revoked, key)}}
+  end
+
+  def handle_call({:granted?, key}, _from, state) do
+    # A pure read of the exact `issued`/`revoked` state `handle_call({:issue,
+    # ...})` and `handle_call({:revoke, ...})` above already maintain -- this
+    # clause records nothing.
+    #
+    # Expiry is checked HERE, not only in `verify/2`: `granted?/3` is the only
+    # callback the real dispatch path asks
+    # (`AshA2A.Authority.Grant.authorize/3`), so an expiry honoured only by
+    # `verify/2` is an expiry never enforced on a real request. The behaviour's
+    # own contract already said this clause answers whether a grant stands
+    # "right now" and "must FAIL CLOSED" -- a grant whose `expires_at` has
+    # passed does not stand right now.
+    {:reply, standing?(state, key), state}
   end
 
   def handle_call({:verify, %Authority{} = authority}, _from, state) do
@@ -99,6 +146,30 @@ defmodule AshA2A.Authority.Broker.InMemory do
         {:reply, {:ok, authority}, state}
     end
   end
+
+  def handle_call({:grant_expires_at, key}, _from, state) do
+    reply = if standing?(state, key), do: {:ok, Map.get(state.issued, key)}, else: :error
+    {:reply, reply, state}
+  end
+
+  # A grant stands only if it was issued, has not been revoked, AND has not
+  # expired. `expires_at: nil` means "no time bound", which is what
+  # `Authority.new/3` produces when no `:expires_at` is supplied.
+  defp standing?(state, key) do
+    Map.has_key?(state.issued, key) and
+      not MapSet.member?(state.revoked, key) and
+      not past?(Map.get(state.issued, key))
+  end
+
+  defp past?(nil), do: false
+
+  defp past?(%DateTime{} = expires_at),
+    do: DateTime.compare(DateTime.utc_now(), expires_at) != :lt
+
+  # An `expires_at` this module cannot interpret is an unanswerable grant
+  # question, and an unanswerable grant question is a refusal, never an
+  # admission -- so an unrecognized term is treated as already past.
+  defp past?(_other), do: true
 
   defp server(opts), do: Keyword.get(opts, :name, __MODULE__)
 end
