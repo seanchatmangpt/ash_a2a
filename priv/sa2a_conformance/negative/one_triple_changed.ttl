@@ -1,0 +1,36 @@
+# SA2A conformance -- NEGATIVE vector: differs from base.ttl by EXACTLY ONE
+# triple. `ex:capPlan ex:tier "1"^^xsd:integer` becomes `"9"^^xsd:integer`.
+#
+# Everything else -- every prefix, every other statement, the blank node, the
+# statement order -- is byte-identical to base.ttl. The graph is still fully
+# valid against every shape, every ShEx constraint, and the denial rule; the
+# ONLY thing that may differ is the canonical digest. A canonicalizer that
+# collides here (e.g. one that hashes only subject/predicate structure, or that
+# normalizes literals lossily) is broken.
+
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:agentA a ex:Agent ;
+    ex:label "Agent A"@en ;
+    ex:description "Planning agent for the conformance corpus." ;
+    ex:version "1"^^xsd:integer ;
+    ex:admittedAt "2026-01-01T00:00:00Z"^^xsd:dateTime ;
+    ex:capability ex:capPlan .
+
+ex:agentB a ex:Agent ;
+    ex:label "Agent B"@en ;
+    ex:description "Routing agent for the conformance corpus." ;
+    ex:version "2"^^xsd:integer ;
+    ex:admittedAt "2026-01-02T00:00:00Z"^^xsd:dateTime ;
+    ex:capability _:capRouteNode .
+
+_:capRouteNode a ex:Capability ;
+    ex:label "routing"@en ;
+    ex:tier "2"^^xsd:integer .
+
+ex:capPlan a ex:Capability ;
+    ex:label "planning"@en ;
+    ex:tier "9"^^xsd:integer .

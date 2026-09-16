@@ -1,0 +1,36 @@
+# SA2A conformance -- NEGATIVE-SHAPED vector that MUST STILL ADMIT (RFC S15).
+#
+# ex:agentB has no ex:description, tripping ONLY the sh:Warning-severity
+# constraint in ex:AgentShape. No sh:Violation anywhere.
+#
+# MEASURED graphlaw behaviour: sh:conforms is false (SHACL Core 1.0 counts ANY
+# result), so the wasm's SHACL dialect status is REFUSED. The SA2A admission
+# layer MUST NOT copy that: with every result at sh:Warning severity, SA2A
+# admission is ADMITTED. This vector is the falsifier for a runtime that
+# shortcuts admission to `conforms`.
+
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:agentA a ex:Agent ;
+    ex:label "Agent A"@en ;
+    ex:description "Planning agent for the conformance corpus." ;
+    ex:version "1"^^xsd:integer ;
+    ex:admittedAt "2026-01-01T00:00:00Z"^^xsd:dateTime ;
+    ex:capability ex:capPlan .
+
+ex:agentB a ex:Agent ;
+    ex:label "Agent B"@en ;
+    ex:version "2"^^xsd:integer ;
+    ex:admittedAt "2026-01-02T00:00:00Z"^^xsd:dateTime ;
+    ex:capability _:capRouteNode .
+
+_:capRouteNode a ex:Capability ;
+    ex:label "routing"@en ;
+    ex:tier "2"^^xsd:integer .
+
+ex:capPlan a ex:Capability ;
+    ex:label "planning"@en ;
+    ex:tier "1"^^xsd:integer .

@@ -1,0 +1,17 @@
+# SA2A conformance -- NEGATIVE vector: malformed Turtle.
+#
+# Three independent syntax faults, so no single lenient recovery path rescues it:
+#   1. an unterminated IRI  (`<http://example.org/sa2a/agentA` -- no closing `>`)
+#   2. an unclosed string literal
+#   3. a statement with no terminating `.`
+#
+# The expected outcome is a PARSE-TIME refusal, distinct in kind from every
+# other vector here (which are semantically well-formed graphs that fail a law).
+# graphlaw's wasm boundary returns refusals as a JSON `{"error": "..."}` object
+# rather than throwing, so the host MUST check for the "error" key.
+
+@prefix ex: <http://example.org/sa2a/> .
+
+<http://example.org/sa2a/agentA a ex:Agent ;
+    ex:label "Agent A ;
+    ex:version 1

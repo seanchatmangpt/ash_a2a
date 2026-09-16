@@ -1,0 +1,52 @@
+{
+  "vector": "unadmitted_predicate",
+  "file": "negative/unadmitted_predicate.ttl",
+  "class": "unadmitted_predicate",
+  "rfc_sections": [
+    "S61",
+    "S77"
+  ],
+  "description": "ex:hallucinatedProperty appears in no shape, no ShEx constraint and no rule. Detected ONLY because ex:CapabilityShape is sh:closed true: RDF is open-world, so without an explicit closed shape an invented predicate is silently legal.",
+  "expected": {
+    "sa2a_admission": "REFUSED",
+    "refusal": {
+      "code": "sa2a_unadmitted_predicate",
+      "dialect": "SHACL",
+      "severity": "sh:Violation"
+    },
+    "graph_digest_blake3": "a561e166016f8fcfaed68d495ac00f59aab21fbeb927b167e7c38a02a0a40489",
+    "law_graph_digest_blake3": "04daf62f4087847d1c4dabd9e3a2b816a2e1464a123091c7e92f20aca156ab26"
+  },
+  "measured_on_pinned_engine": {
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "wasm_sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+    "dialects": {
+      "OWL_RL": "ADMITTED",
+      "DATALOG": "ADMITTED",
+      "SHACL": "REFUSED",
+      "SHEX": "ADMITTED",
+      "N3_DENIAL": "ADMITTED"
+    },
+    "shacl_by_severity_partition": {
+      "full": {
+        "status": "REFUSED",
+        "results": 1
+      },
+      "violations_only": {
+        "status": "REFUSED",
+        "results": 1
+      },
+      "warnings_only": {
+        "status": "ADMITTED",
+        "results": 0
+      }
+    },
+    "run_hooks": {
+      "status": "ADMITTED",
+      "verdicts": 0,
+      "receipts": 0,
+      "schedule": []
+    }
+  },
+  "conformance": "HOLDS"
+}

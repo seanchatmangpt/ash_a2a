@@ -1,0 +1,43 @@
+# SA2A Portable Semantic Execution Conformance -- base graph.
+#
+# RFC-SA2A-001 v26.9.16 S12 (canonical graph identity), S46 (pinned,
+# content-addressed corpus), S61 (minimum falsifier suite), S77 (test vectors).
+#
+# Deliberately non-trivial so canonicalization is actually exercised:
+#   * one blank node (ex:agentB's capability) -- a sorted-text "canonicalization"
+#     that leaks blank-node labels cannot hash this identically to an
+#     isomorphic relabelling (see positive/base_bnode_relabelled.ttl).
+#   * datatyped literals (xsd:integer, xsd:dateTime) -- a canonicalizer that
+#     drops or normalizes datatypes differently across runtimes diverges here.
+#   * a language-tagged literal.
+#
+# Every agent carries ex:description so this graph CONFORMS to shapes.shacl.ttl
+# at BOTH severities: the sh:Warning-severity constraint is satisfied here, and
+# is tripped only by the dedicated negative vectors.
+
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:agentA a ex:Agent ;
+    ex:label "Agent A"@en ;
+    ex:description "Planning agent for the conformance corpus." ;
+    ex:version "1"^^xsd:integer ;
+    ex:admittedAt "2026-01-01T00:00:00Z"^^xsd:dateTime ;
+    ex:capability ex:capPlan .
+
+ex:agentB a ex:Agent ;
+    ex:label "Agent B"@en ;
+    ex:description "Routing agent for the conformance corpus." ;
+    ex:version "2"^^xsd:integer ;
+    ex:admittedAt "2026-01-02T00:00:00Z"^^xsd:dateTime ;
+    ex:capability _:capRouteNode .
+
+_:capRouteNode a ex:Capability ;
+    ex:label "routing"@en ;
+    ex:tier "2"^^xsd:integer .
+
+ex:capPlan a ex:Capability ;
+    ex:label "planning"@en ;
+    ex:tier "1"^^xsd:integer .

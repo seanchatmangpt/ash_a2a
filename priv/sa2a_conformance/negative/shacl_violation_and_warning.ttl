@@ -1,0 +1,32 @@
+# SA2A conformance -- NEGATIVE vector: sh:Violation AND sh:Warning together.
+#
+# ex:agentB is missing ex:description (Warning) AND ex:capPlan ex:tier is a
+# plain string (Violation). RFC S15: a Warning MUST NOT override a failing
+# Violation. SA2A admission is REFUSED, and the refusal must be attributed to
+# the Violation, never softened to a warning.
+
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:agentA a ex:Agent ;
+    ex:label "Agent A"@en ;
+    ex:description "Planning agent for the conformance corpus." ;
+    ex:version "1"^^xsd:integer ;
+    ex:admittedAt "2026-01-01T00:00:00Z"^^xsd:dateTime ;
+    ex:capability ex:capPlan .
+
+ex:agentB a ex:Agent ;
+    ex:label "Agent B"@en ;
+    ex:version "2"^^xsd:integer ;
+    ex:admittedAt "2026-01-02T00:00:00Z"^^xsd:dateTime ;
+    ex:capability _:capRouteNode .
+
+_:capRouteNode a ex:Capability ;
+    ex:label "routing"@en ;
+    ex:tier "2"^^xsd:integer .
+
+ex:capPlan a ex:Capability ;
+    ex:label "planning"@en ;
+    ex:tier "high" .

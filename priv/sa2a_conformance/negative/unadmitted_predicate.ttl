@@ -1,0 +1,38 @@
+# SA2A conformance -- NEGATIVE vector: unadmitted / hallucinated predicate.
+#
+# ex:capPlan carries ex:hallucinatedProperty, which appears in NO shape, NO ShEx
+# triple constraint, and NO rule. ex:CapabilityShape is sh:closed true with
+# sh:ignoredProperties ( rdf:type ), so graphlaw's ClosedConstraintComponent
+# (src/shacl/validate.rs:1137-1162) reports it.
+#
+# This is the only mechanism in this stack that detects an unadmitted predicate:
+# RDF is open-world by default, so without an explicit sh:closed shape a
+# hallucinated triple is silently legal. That is itself the finding.
+
+@prefix ex:   <http://example.org/sa2a/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:agentA a ex:Agent ;
+    ex:label "Agent A"@en ;
+    ex:description "Planning agent for the conformance corpus." ;
+    ex:version "1"^^xsd:integer ;
+    ex:admittedAt "2026-01-01T00:00:00Z"^^xsd:dateTime ;
+    ex:capability ex:capPlan .
+
+ex:agentB a ex:Agent ;
+    ex:label "Agent B"@en ;
+    ex:description "Routing agent for the conformance corpus." ;
+    ex:version "2"^^xsd:integer ;
+    ex:admittedAt "2026-01-02T00:00:00Z"^^xsd:dateTime ;
+    ex:capability _:capRouteNode .
+
+_:capRouteNode a ex:Capability ;
+    ex:label "routing"@en ;
+    ex:tier "2"^^xsd:integer .
+
+ex:capPlan a ex:Capability ;
+    ex:hallucinatedProperty "invented by a generator, admitted by nobody" ;
+    ex:label "planning"@en ;
+    ex:tier "1"^^xsd:integer .

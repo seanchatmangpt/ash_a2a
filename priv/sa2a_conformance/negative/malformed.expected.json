@@ -1,0 +1,51 @@
+{
+  "vector": "malformed",
+  "file": "negative/malformed.ttl",
+  "class": "malformed_turtle",
+  "rfc_sections": [
+    "S61",
+    "S77"
+  ],
+  "description": "Three independent Turtle syntax faults. The refusal must come from a HOST-SIDE syntactic gate: measured, the pinned engine does NOT refuse malformed Turtle -- graph_hash returns a digest of whatever partial graph it recovered, and the only downstream signal is an incidental ShEx failure.",
+  "expected": {
+    "sa2a_admission": "REFUSED",
+    "refusal": {
+      "code": "sa2a_malformed_graph",
+      "dialect": "HOST_PARSE_GATE"
+    },
+    "graph_digest_blake3": "425da17c909acaabb886853bbc87eda4fa6642ef0301e2b6910b32124b47920b",
+    "law_graph_digest_blake3": "39c4c490bc0ee697559dfb96d75a5188fe74bff0aa077ee5e48d5d660ae78943"
+  },
+  "measured_on_pinned_engine": {
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "wasm_sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28",
+    "dialects": {
+      "OWL_RL": "ADMITTED",
+      "DATALOG": "ADMITTED",
+      "SHACL": "ADMITTED",
+      "SHEX": "REFUSED",
+      "N3_DENIAL": "ADMITTED"
+    },
+    "shacl_by_severity_partition": {
+      "full": {
+        "status": "ADMITTED",
+        "results": 0
+      },
+      "violations_only": {
+        "status": "ADMITTED",
+        "results": 0
+      },
+      "warnings_only": {
+        "status": "ADMITTED",
+        "results": 0
+      }
+    },
+    "run_hooks": {
+      "status": "ADMITTED",
+      "verdicts": 0,
+      "receipts": 0,
+      "schedule": []
+    }
+  },
+  "conformance": "HOST_GATE_REQUIRED"
+}
