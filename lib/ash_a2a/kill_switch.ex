@@ -21,16 +21,36 @@ defmodule AshA2A.KillSwitch do
   that can reach this `GenServer` can trip any class, on purpose, the same
   way a physical emergency-stop button is never behind a lock.
 
-  `reset/3` is the opposite direction: resuming a halted class is the
+  `reset/4` is the opposite direction: resuming a halted class is the
   consequential one (workers immediately resume taking new work), so it is
-  real-authority-gated exactly the way `AshA2A.CommandBus.admit/2` gates a
-  `:change`/`:external_do` command -- by reusing the same
-  `AshA2A.Authority.admits?/2` this codebase already uses for command
-  admission, against the documented capability convention
-  `"kill_switch:reset:\#{class}"` (see `reset_capability_id/1`). A caller
-  without a real, unexpired `AshA2A.Authority` whose `capability_id` matches
-  that convention cannot resume a class, full stop, and a failed reset
-  attempt never partially clears the tripped state.
+  real-authority-gated using the same `AshA2A.Authority.admits?/2` this
+  codebase already uses for command admission, against the documented
+  capability convention `"kill_switch:reset:\#{class}"` (see
+  `reset_capability_id/1`). A caller without a real, unexpired
+  `AshA2A.Authority` whose `capability_id` matches that convention cannot
+  resume a class, full stop, and a failed reset attempt never partially
+  clears the tripped state.
+
+  ## A real, independently-sourced expected principal is required (not optional)
+
+  `AshA2A.CommandBus.admit/2` checks `Authority.admits?/2` against a
+  `principal_id` sourced INDEPENDENTLY of the authority struct being
+  checked (`Command.principal_id`, bound at command-construction time from
+  the real caller's own verified identity -- `command.ex`,
+  `command_bus.ex`). An earlier version of `reset/4` (real, adversarially
+  found and fixed before this module ever shipped) compared
+  `authority.subject` against itself
+  (`principal_id: authority.subject`) -- a tautology: any caller able to
+  construct an `AshA2A.Authority.t()` naming the right (public, exported)
+  `reset_capability_id/1` string passed this check regardless of whose
+  identity that authority actually names, because nothing independent was
+  ever compared against. `reset/4` now REQUIRES the caller to separately
+  supply `expected_principal` (the real, independently-known identity of
+  whoever is attempting the reset -- e.g. a transport-verified session
+  identity, never derived from the authority argument itself) and checks
+  `authority.subject == expected_principal` for real, the same
+  independent-source discipline `Command.principal_id` already gives
+  `admit/2`.
 
   ## Scope: a real, isolated primitive -- not wired into dispatch
 
@@ -50,7 +70,7 @@ defmodule AshA2A.KillSwitch do
 
   ## One global switchboard by default
 
-  `trip/3` and `reset/3` accept `opts[:name]` (default `__MODULE__`),
+  `trip/3` and `reset/4` accept `opts[:name]` (default `__MODULE__`),
   matching this codebase's existing `AshA2A.ReceiptStore.Memory` idiom for a
   swappable server target. `tripped?/1`'s fixed single-argument signature
   always checks the default `__MODULE__`-registered instance -- the common
@@ -58,21 +78,21 @@ defmodule AshA2A.KillSwitch do
   classes in a single process's state (a `class` is just a map key), which
   is exactly what `tripped?/1`'s deliberately minimal signature and the
   demo/tests below exercise. A host that starts a second, independently
-  named instance via `opts[:name]` on `trip/3`/`reset/3` is responsible for
+  named instance via `opts[:name]` on `trip/3`/`reset/4` is responsible for
   checking that instance's state itself (e.g. `GenServer.call(name,
   ...)`) -- `tripped?/1` does not discover it.
   """
 
   use GenServer
 
-  alias AshA2A.Authority
+  alias AshA2A.{Authority, Identity}
 
   @type class :: String.t() | atom()
   @type reason :: term()
   @type trip_info :: %{reason: reason(), tripped_at: DateTime.t()}
 
   @doc """
-  The `AshA2A.Authority.t()` `capability_id` convention `reset/3` checks
+  The `AshA2A.Authority.t()` `capability_id` convention `reset/4` checks
   authority against for a given `class`. Documented and exported so a host
   minting authorities for kill-switch operators has one real source of
   truth for the string, rather than reconstructing it by hand at each call
@@ -117,24 +137,29 @@ defmodule AshA2A.KillSwitch do
 
   @doc """
   Resumes `class`. REQUIRES a real, valid `AshA2A.Authority.t()` whose
-  `capability_id` matches `reset_capability_id(class)` and has not expired
-  -- checked via `AshA2A.Authority.admits?/2`, the same admission function
-  `AshA2A.CommandBus.admit/2` uses for real command authority-fencing.
+  `capability_id` matches `reset_capability_id(class)`, has not expired,
+  AND whose `subject` real-matches `expected_principal` -- a real,
+  independently-sourced identity the caller supplies separately from
+  `authority` itself (see the moduledoc's "independently-sourced expected
+  principal" section for why this independence is the whole point: an
+  authority struct's own self-reported `subject` field is never trusted
+  as its own proof of identity).
 
-  A missing, wrong-capability, expired, or non-`AshA2A.Authority.t()`
-  second argument real-fails closed with `{:error, :authority_mismatch}`
-  and leaves the class exactly as tripped as it was -- never a partial
-  reset.
+  A missing, wrong-capability, expired, subject-mismatched, or
+  non-`AshA2A.Authority.t()` authority real-fails closed with
+  `{:error, :authority_mismatch}` and leaves the class exactly as tripped
+  as it was -- never a partial reset.
   """
-  @spec reset(class(), Authority.t() | nil, keyword()) :: :ok | {:error, :authority_mismatch}
-  def reset(class, authority, opts \\ [])
+  @spec reset(class(), Authority.t() | nil, Identity.t() | nil, keyword()) ::
+          :ok | {:error, :authority_mismatch}
+  def reset(class, authority, expected_principal, opts \\ [])
 
-  def reset(class, %Authority{} = authority, opts) do
+  def reset(class, %Authority{} = authority, %Identity{} = expected_principal, opts) do
     class = normalize(class)
 
     admitted =
       Authority.admits?(authority, %{
-        principal_id: authority.subject,
+        principal_id: expected_principal,
         capability_id: reset_capability_id(class)
       })
 
@@ -145,7 +170,7 @@ defmodule AshA2A.KillSwitch do
     end
   end
 
-  def reset(_class, _not_a_valid_authority, _opts), do: {:error, :authority_mismatch}
+  def reset(_class, _authority, _expected_principal, _opts), do: {:error, :authority_mismatch}
 
   @impl true
   def handle_call({:trip, class, reason, tripped_at}, _from, state) do

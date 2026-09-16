@@ -44,7 +44,7 @@ defmodule AshA2A.KillSwitchTest do
     assert status.refused == 2
   end
 
-  test "reset/3 with a valid, matching Authority real-succeeds and real workers resume" do
+  test "reset/4 with a valid, matching Authority and matching expected_principal real-succeeds and real workers resume" do
     class = unique_class("worker-resume")
     {:ok, worker} = Worker.start_link(class)
 
@@ -56,13 +56,13 @@ defmodule AshA2A.KillSwitchTest do
     principal = Identity.principal("kill-switch-operator")
     authority = Authority.new(principal, KillSwitch.reset_capability_id(class))
 
-    assert :ok = KillSwitch.reset(class, authority)
+    assert :ok = KillSwitch.reset(class, authority, principal)
     refute KillSwitch.tripped?(class)
 
     assert {:ok, 2} = Worker.perform_work(worker)
   end
 
-  test "reset/3 with a missing or wrong-capability Authority real-fails and class stays tripped" do
+  test "reset/4 with a missing, wrong-capability, or expired Authority real-fails and class stays tripped" do
     class = unique_class("worker-refuse-reset")
     {:ok, worker} = Worker.start_link(class)
 
@@ -71,11 +71,11 @@ defmodule AshA2A.KillSwitchTest do
     principal = Identity.principal("kill-switch-operator")
     wrong_authority = Authority.new(principal, "Example.Resource.read")
 
-    assert {:error, :authority_mismatch} = KillSwitch.reset(class, wrong_authority)
+    assert {:error, :authority_mismatch} = KillSwitch.reset(class, wrong_authority, principal)
     assert {true, :incident} = KillSwitch.tripped?(class)
     assert {:refused, :incident} = Worker.perform_work(worker)
 
-    assert {:error, :authority_mismatch} = KillSwitch.reset(class, nil)
+    assert {:error, :authority_mismatch} = KillSwitch.reset(class, nil, principal)
     assert {true, :incident} = KillSwitch.tripped?(class)
 
     expired_authority =
@@ -83,11 +83,37 @@ defmodule AshA2A.KillSwitchTest do
         expires_at: DateTime.add(DateTime.utc_now(), -60, :second)
       )
 
-    assert {:error, :authority_mismatch} = KillSwitch.reset(class, expired_authority)
+    assert {:error, :authority_mismatch} = KillSwitch.reset(class, expired_authority, principal)
     assert {true, :incident} = KillSwitch.tripped?(class)
 
     # no partial reset ever happened -- the worker never resumed.
     assert Worker.status(worker).completed == 0
+  end
+
+  test "reset/4 real-refuses a genuine, unexpired, correctly-capabilitied Authority whose subject does not match the independently-supplied expected_principal" do
+    # Closes a real, adversarially-found gap: an earlier version of this
+    # module compared authority.subject against itself, which any caller
+    # able to construct an Authority naming the right (public) capability
+    # id could satisfy regardless of whose identity it actually named.
+    # This test proves the fix: a real, valid, correctly-capabilitied,
+    # unexpired Authority whose subject genuinely differs from the
+    # independently-supplied expected_principal is refused, not admitted.
+    class = unique_class("worker-refuse-subject-mismatch")
+    {:ok, worker} = Worker.start_link(class)
+
+    assert :ok = KillSwitch.trip(class, :incident)
+
+    real_operator = Identity.principal("kill-switch-operator")
+    different_caller = Identity.principal("someone-else-entirely")
+
+    authority_minted_for_real_operator =
+      Authority.new(real_operator, KillSwitch.reset_capability_id(class))
+
+    assert {:error, :authority_mismatch} =
+             KillSwitch.reset(class, authority_minted_for_real_operator, different_caller)
+
+    assert {true, :incident} = KillSwitch.tripped?(class)
+    assert {:refused, :incident} = Worker.perform_work(worker)
   end
 
   test "two different classes are real-independent" do
@@ -107,7 +133,7 @@ defmodule AshA2A.KillSwitchTest do
 
     principal = Identity.principal("kill-switch-operator")
     authority = Authority.new(principal, KillSwitch.reset_capability_id(class_a))
-    assert :ok = KillSwitch.reset(class_a, authority)
+    assert :ok = KillSwitch.reset(class_a, authority, principal)
 
     assert {:ok, 1} = Worker.perform_work(worker_a)
     refute KillSwitch.tripped?(class_b)
