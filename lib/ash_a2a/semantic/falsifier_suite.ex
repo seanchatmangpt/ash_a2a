@@ -441,6 +441,25 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   """
   @spec admit([tuple()]) :: :ok | {:error, map()}
   def admit(graph) when is_list(graph) do
+    result = do_admit(graph)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :falsifier_suite, :admit], %{}, %{
+      outcome: if(result == :ok, do: :admitted, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      tripped:
+        with(
+          {:error, %{detail: %{falsifiers: ids}}} <- result,
+          do: Enum.map_join(ids, ",", &Atom.to_string/1),
+          else: (_ -> "")
+        ),
+      falsifier_count: length(@ids)
+    })
+
+    result
+  end
+
+  defp do_admit(graph) do
     case run(graph) do
       %{tripped: []} ->
         :ok
@@ -615,58 +634,215 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   # and `LOAD SILENT` from being read as graph operands.
   @unresolvable_operand_regex ~r/\b(?:#{@graph_keywords})\s+(?!<)(?!GRAPH\b)(?!DATA\b)(?!WHERE\b)(?!SILENT\b)\S+/i
 
-  # Rule 3: an INSERT/DELETE quad template not opened by GRAPH writes the
-  # default graph. A leading `WITH <iri>` names the target graph for the
-  # whole operation, so a bare template is scoped by it (and that IRI still
-  # has to clear rule 5).
-  @with_scoped_regex ~r/\AWITH\s+</i
-  # The whitespace run after `{` is ATOMIC (`(?>\s*)`). With a plain `\s*`
-  # the engine backtracks it to zero width, parking the lookahead on the
-  # space before `GRAPH` -- where `(?!GRAPH\b)` trivially succeeds -- so
-  # `INSERT DATA { GRAPH <staging> { ... } }` matched as an "unqualified"
-  # write and every legitimate staging update was refused.
-  @unqualified_template_regex ~r/\b(?:INSERT|DELETE)(?:\s+DATA|\s+WHERE)?\s*\{(?>\s*)(?!GRAPH\b)/i
+  # Rule 3: a quad written outside a `GRAPH <iri> { ... }` block writes the
+  # default graph. Checked structurally, per top-level operation, over every
+  # INSERT/DELETE template body (RFC-SA2A-002 SA2A-SPARQL-013/014/015 found
+  # that a first-token check admitted `{ GRAPH <staging> {..} <s> <p> <o> }`
+  # and let one leading `WITH` exempt every later operation):
+  #
+  #   * every top-level item of a template body must be a `GRAPH <iri> { ... }`
+  #     block (`.` separators allowed); anything else is a bare quad;
+  #   * `WITH <iri>` names the graph of the one Modify operation it opens, so
+  #     only that operation's DELETE/INSERT templates may be bare (the IRI
+  #     still has to clear rule 5); INSERT DATA / DELETE DATA / DELETE WHERE
+  #     cannot be WITH-scoped;
+  #   * a request whose braces do not balance is not classifiable and counts
+  #     as a bare write.
+  @with_scoped_regex ~r/\AWITH\s+<[^<>"{}|^`\\\x00-\x20]*>/i
+  @template_regex ~r/\b(INSERT\s+DATA|DELETE\s+DATA|DELETE\s+WHERE|INSERT|DELETE)\s*\{/i
+  @graph_block_regex ~r/\AGRAPH\s+<[^<>"{}|^`\\\x00-\x20]*>\s*\{/i
 
   defp unqualified_write?(scrubbed) do
-    not Regex.match?(@with_scoped_regex, String.trim_leading(scrubbed)) and
-      Regex.match?(@unqualified_template_regex, scrubbed)
+    case top_level_operations(scrubbed) do
+      :unbalanced ->
+        true
+
+      operations ->
+        Enum.any?(operations, fn operation ->
+          with_scoped? = Regex.match?(@with_scoped_regex, String.trim_leading(operation))
+
+          Enum.any?(template_bodies(operation), fn
+            :unbalanced -> true
+            {:modify, body} -> not with_scoped? and bare_quads?(body)
+            {:data, body} -> bare_quads?(body)
+          end)
+        end)
+    end
   end
 
-  # Removes `#` comments and `"..."`/`'...'` string literal *content* so
-  # neither can create evidence (a commented-out staging IRI) nor mask it (an
-  # `INSERT` hidden inside a literal). Replaced with a space rather than
-  # deleted, so token boundaries survive.
+  defp template_bodies(operation) do
+    @template_regex
+    |> Regex.scan(operation, return: :index)
+    |> Enum.map(fn [{start, length}, {kw_start, kw_length}] ->
+      keyword = binary_part(operation, kw_start, kw_length)
+      open = start + length
+      rest = binary_part(operation, open, byte_size(operation) - open)
+      kind = if Regex.match?(~r/\s/, keyword), do: :data, else: :modify
+
+      case balanced(rest, 1, []) do
+        {:ok, body, _after} -> {kind, body}
+        :unbalanced -> :unbalanced
+      end
+    end)
+  end
+
+  defp bare_quads?(body) do
+    case String.trim_leading(body) do
+      "" ->
+        false
+
+      "." <> rest ->
+        bare_quads?(rest)
+
+      text ->
+        case Regex.run(@graph_block_regex, text) do
+          [opening] ->
+            inner = binary_part(text, byte_size(opening), byte_size(text) - byte_size(opening))
+
+            case balanced(inner, 1, []) do
+              {:ok, _block, rest} -> bare_quads?(rest)
+              :unbalanced -> true
+            end
+
+          nil ->
+            true
+        end
+    end
+  end
+
+  # Content up to the brace that closes depth `depth`, and the text after it.
+  # `<IRIREF>` tokens are copied whole (they cannot contain braces).
+  defp balanced(<<>>, _depth, _acc), do: :unbalanced
+
+  defp balanced(<<?<, _::binary>> = text, depth, acc) do
+    case iri_token(text) do
+      {iri, rest} -> balanced(rest, depth, [iri | acc])
+      nil -> balanced(binary_part(text, 1, byte_size(text) - 1), depth, ["<" | acc])
+    end
+  end
+
+  defp balanced(<<?{, rest::binary>>, depth, acc), do: balanced(rest, depth + 1, ["{" | acc])
+
+  defp balanced(<<?}, rest::binary>>, 1, acc),
+    do: {:ok, acc |> Enum.reverse() |> IO.iodata_to_binary(), rest}
+
+  defp balanced(<<?}, rest::binary>>, depth, acc), do: balanced(rest, depth - 1, ["}" | acc])
+  defp balanced(<<c, rest::binary>>, depth, acc), do: balanced(rest, depth, [c | acc])
+
+  # SPARQL Update requests are `;`-separated operations at brace depth 0.
+  defp top_level_operations(text), do: split_operations(text, 0, [], [])
+
+  defp split_operations(<<>>, 0, current, operations),
+    do: Enum.reverse([current |> Enum.reverse() |> IO.iodata_to_binary() | operations])
+
+  defp split_operations(<<>>, _depth, _current, _operations), do: :unbalanced
+
+  defp split_operations(<<?<, _::binary>> = text, depth, current, operations) do
+    case iri_token(text) do
+      {iri, rest} ->
+        split_operations(rest, depth, [iri | current], operations)
+
+      nil ->
+        split_operations(
+          binary_part(text, 1, byte_size(text) - 1),
+          depth,
+          ["<" | current],
+          operations
+        )
+    end
+  end
+
+  defp split_operations(<<?{, rest::binary>>, depth, current, operations),
+    do: split_operations(rest, depth + 1, ["{" | current], operations)
+
+  defp split_operations(<<?}, _rest::binary>>, 0, _current, _operations), do: :unbalanced
+
+  defp split_operations(<<?}, rest::binary>>, depth, current, operations),
+    do: split_operations(rest, depth - 1, ["}" | current], operations)
+
+  defp split_operations(<<?;, rest::binary>>, 0, current, operations),
+    do:
+      split_operations(rest, 0, [], [
+        current |> Enum.reverse() |> IO.iodata_to_binary() | operations
+      ])
+
+  defp split_operations(<<c, rest::binary>>, depth, current, operations),
+    do: split_operations(rest, depth, [c | current], operations)
+
+  @iri_token_regex ~r/\A<[^<>"{}|^`\\\x00-\x20]*>/
+
+  defp iri_token(text) do
+    case Regex.run(@iri_token_regex, text) do
+      [iri] -> {iri, binary_part(text, byte_size(iri), byte_size(text) - byte_size(iri))}
+      nil -> nil
+    end
+  end
+
+  # SPARQL 1.1 Query §19.2 (shared by Update): `\uXXXX` / `\UXXXXXXXX`
+  # codepoint escapes are processed before the grammar, anywhere in the
+  # request. `INSERT DATA { ... }` IS `INSERT DATA { ... }`
+  # (SA2A-SPARQL-011/012), so every rule runs over the decoded text. An escape
+  # naming no Unicode scalar value is left as written.
+  @codepoint_escape_regex ~r/\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/
+
+  defp decode_codepoint_escapes(update) do
+    Regex.replace(@codepoint_escape_regex, update, fn whole, short, long ->
+      codepoint = String.to_integer(if(short == "", do: long, else: short), 16)
+
+      if codepoint <= 0x10FFFF and codepoint not in 0xD800..0xDFFF,
+        do: <<codepoint::utf8>>,
+        else: whole
+    end)
+  end
+
+  # Removes `#` comments and string literal *content* (`"..."`, `'...'`,
+  # `"""..."""`, `'''...'''`) so neither can create evidence (a commented-out
+  # staging IRI) nor mask it (an `INSERT` hidden inside a literal). Replaced
+  # with a space rather than deleted, so token boundaries survive.
   #
-  # This is a real three-state scanner rather than a regex because `#` is a
-  # comment introducer only *outside* an `<IRIREF>`. A fragment-bearing graph
-  # IRI such as `<http://example.org/fixture#stagingGraph1>` -- entirely
-  # ordinary, and what the S18.4 fixtures really use -- would otherwise be
-  # truncated at the `#`, erasing the graph name and refusing every
-  # legitimate staging update as an unnamed default-graph write.
-  #
-  # An unterminated `<` leaves the scanner in IRI state, which only ever
-  # *preserves* text. Since every rule downstream refuses on what it finds,
-  # preserving more text can add a refusal but never remove one.
-  defp scrub_update(update), do: scrub(String.to_charlist(update), :text, [])
+  # A real scanner rather than a regex because `#` is a comment introducer only
+  # *outside* an `<IRIREF>`: a fragment-bearing graph IRI such as
+  # `<http://example.org/fixture#stagingGraph1>` must survive intact. An IRI is
+  # recognised only as a complete IRIREF token (no spaces, braces or quotes
+  # before its `>`), so a `<` comparison operator cannot switch the scanner
+  # into a state that preserves comments and literals. Long strings have their
+  # own state: without it, `"""x" { "y"""` was read as two short strings with a
+  # bare `{` between them, which let brace structure inside literals disguise
+  # default-graph triples as staging-scoped (SA2A-SPARQL-018).
+  defp scrub_update(update), do: scrub(update, :text, [])
 
-  defp scrub([], _state, acc), do: acc |> Enum.reverse() |> List.to_string()
+  defp scrub(<<>>, _state, acc), do: acc |> Enum.reverse() |> IO.iodata_to_binary()
 
-  defp scrub([?# | rest], :text, acc),
-    do: scrub(Enum.drop_while(rest, &(&1 != ?\n)), :text, [?\s | acc])
+  defp scrub(<<?#, rest::binary>>, :text, acc) do
+    case :binary.split(rest, "\n") do
+      [_comment, more] -> scrub(more, :text, ["\n", " " | acc])
+      [_comment] -> scrub(<<>>, :text, [" " | acc])
+    end
+  end
 
-  defp scrub([?< | rest], :text, acc), do: scrub(rest, :iri, [?< | acc])
+  defp scrub(<<?<, _::binary>> = text, :text, acc) do
+    case iri_token(text) do
+      {iri, rest} -> scrub(rest, :text, [iri | acc])
+      nil -> scrub(binary_part(text, 1, byte_size(text) - 1), :text, ["<" | acc])
+    end
+  end
 
-  defp scrub([q | rest], :text, acc) when q in [?", ?'],
-    do: scrub(rest, {:string, q}, [?\s | acc])
+  defp scrub(<<q, q, q, rest::binary>>, :text, acc) when q in [?", ?'],
+    do: scrub(rest, {:long_string, q}, [" " | acc])
 
-  defp scrub([c | rest], :text, acc), do: scrub(rest, :text, [c | acc])
+  defp scrub(<<q, rest::binary>>, :text, acc) when q in [?", ?'],
+    do: scrub(rest, {:string, q}, [" " | acc])
 
-  defp scrub([?> | rest], :iri, acc), do: scrub(rest, :text, [?> | acc])
-  defp scrub([c | rest], :iri, acc), do: scrub(rest, :iri, [c | acc])
+  defp scrub(<<c, rest::binary>>, :text, acc), do: scrub(rest, :text, [c | acc])
 
-  defp scrub([?\\, _escaped | rest], {:string, _q} = state, acc), do: scrub(rest, state, acc)
-  defp scrub([q | rest], {:string, q}, acc), do: scrub(rest, :text, [?\s | acc])
-  defp scrub([_c | rest], {:string, _q} = state, acc), do: scrub(rest, state, acc)
+  defp scrub(<<?\\, _escaped, rest::binary>>, {_kind, _q} = state, acc),
+    do: scrub(rest, state, acc)
+
+  defp scrub(<<q, q, q, rest::binary>>, {:long_string, q}, acc),
+    do: scrub(rest, :text, [" " | acc])
+
+  defp scrub(<<q, rest::binary>>, {:string, q}, acc), do: scrub(rest, :text, [" " | acc])
+  defp scrub(<<_c, rest::binary>>, {_kind, _q} = state, acc), do: scrub(rest, state, acc)
 
   @doc """
   RFC S18.4: direct SPARQL Update against canonical admitted state is
@@ -723,18 +899,28 @@ defmodule AshA2A.Semantic.FalsifierSuite do
     2. No graph-naming operand that is not an `<IRIREF>` -- a prefixed name
        or a `?variable` cannot be resolved without a parser, and unresolvable
        is not staging.
-    3. No unqualified `INSERT`/`DELETE` quad template. A template not opened
-       by `GRAPH` writes the default graph, unless the operation carries
-       `WITH <iri>`, which names the target graph for the whole operation.
+    3. No bare quad in any `INSERT`/`DELETE` template: every top-level item of
+       a template body must be a `GRAPH <iri> { ... }` block. Only the
+       DELETE/INSERT templates of the one Modify operation a `WITH <iri>`
+       opens may be bare; each `;`-separated operation is judged on its own,
+       and a request whose braces do not balance is refused.
     4. At least one graph IRI must be named at all (a mutating update naming
        none targets the default graph).
     5. Every graph IRI named must be typed `sa:StagingGraph` in `graph`.
 
-  Comments and string literals are removed before rules 1-3 are applied, so
-  a `# GRAPH <staging>` comment or a `"GRAPH <staging>"` literal can neither
-  create nor mask evidence. The mutating-form test itself runs over *both*
-  the raw and the scrubbed text, so scrubbing can only ever add a refusal,
-  never remove one.
+  SPARQL 1.1 `\\uXXXX`/`\\UXXXXXXXX` codepoint escapes are decoded first (they
+  are processed before the grammar, so `\\u0049NSERT DATA` is `INSERT DATA`).
+  Comments and string literals -- short and triple-quoted -- are then removed
+  before rules 1-3 are applied, so a `# GRAPH <staging>` comment or a
+  `"GRAPH <staging>"` literal can neither create nor mask evidence, and brace
+  characters inside a literal cannot change the template structure. The
+  mutating-form test runs over the raw, decoded and scrubbed text, so neither
+  decoding nor scrubbing can remove a refusal.
+
+  Each of the escape, mixed-template, multi-operation `WITH` and long-literal
+  rules was added after the `SA2A-SPARQL` Chicago court
+  (`AshA2A.Chicago.Courts.SparqlFalsifiers`) observed the update being admitted
+  while rdflib 7.6.0's independent SPARQL 1.1 algebra read default-graph writes.
 
   ## Honest limitation
 
@@ -750,12 +936,27 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   @spec check_update([tuple()], binary()) :: :ok | {:error, map()}
   def check_update(graph, update) when is_list(graph) and is_binary(update) do
     g = Enum.uniq(graph)
-    scrubbed = scrub_update(update)
+    decoded = decode_codepoint_escapes(update)
+    scrubbed = scrub_update(decoded)
+    form = mutating_form(update) || mutating_form(decoded) || mutating_form(scrubbed)
 
-    case mutating_form(update) || mutating_form(scrubbed) do
-      nil -> :ok
-      form -> refuse_unless_staging_only(g, form, scrubbed)
-    end
+    result =
+      case form do
+        nil -> :ok
+        form -> refuse_unless_staging_only(g, form, scrubbed)
+      end
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :sparql_update, :decision], %{}, %{
+      outcome: if(result == :ok, do: :admitted, else: :refused),
+      mutating: form != nil,
+      form: form,
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      target_kind:
+        with({:error, %{detail: %{target_kind: kind}}} <- result, do: kind, else: (_ -> nil))
+    })
+
+    result
   end
 
   defp refuse_unless_staging_only(g, form, scrubbed) do
