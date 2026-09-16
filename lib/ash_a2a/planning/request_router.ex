@@ -72,10 +72,11 @@ defmodule AshA2A.Planning.RequestRouter do
 
   Still explicitly NOT attempted here:
 
-    * No telemetry is emitted on the `:error` (no-input or
-      invalid-phrase-template, fail-closed) branches -- only the three real
-      tier-dispatch branch points. A refusal counter remains a natural,
-      separate follow-on (unchanged scope note from task 4).
+    * The fail-closed `:error` branches (no input, invalid/ambiguous
+      goal_facts, invalid phrase template) emit a separate
+      `[:ash_a2a, :router, :tier_refused]` event (`%{resource_or_domain:,
+      code:}`), never `:tier_selected` -- added for RFC-SA2A-002 CHI-KNOWN
+      attempt evidence. A refusal counter remains a separate follow-on.
     * This router ships zero built-in phrase templates. Every template
       exercised by this task's own tests is test-local, registered via
       `opts[:phrase_templates]` the same way a real host application would.
@@ -275,14 +276,28 @@ defmodule AshA2A.Planning.RequestRouter do
         route_text(resource_or_domain, text, opts)
 
       :invalid_goal_facts ->
-        {:error, %{code: :invalid_goal_facts}}
+        refuse_tier(resource_or_domain, :invalid_goal_facts)
 
       :ambiguous_goal_facts_shape ->
-        {:error, %{code: :ambiguous_goal_facts_shape}}
+        refuse_tier(resource_or_domain, :ambiguous_goal_facts_shape)
 
       :error ->
-        {:error, %{code: :request_router_missing_input}}
+        refuse_tier(resource_or_domain, :request_router_missing_input)
     end
+  end
+
+  # `[:ash_a2a, :router, :tier_refused]`: the fail-closed routing decision
+  # (no tier dispatched), the refusal sibling of `:tier_selected`, so an
+  # observer can tell "refused at the router" from "never reached the router"
+  # (RFC-SA2A-002 §12, §134). Observational only.
+  defp refuse_tier(resource_or_domain, code) do
+    :telemetry.execute(
+      [:ash_a2a, :router, :tier_refused],
+      %{},
+      %{resource_or_domain: resource_or_domain, code: code}
+    )
+
+    {:error, %{code: code}}
   end
 
   # Tier 2 (phrase) vs. tier 3 (LLM) split for a message real `detect_tier/1`
@@ -305,8 +320,8 @@ defmodule AshA2A.Planning.RequestRouter do
         source = Source.new(text, Keyword.get(opts, :source_opts, []))
         Compiler.compile_source(resource_or_domain, source, opts)
 
-      {:error, %{code: :invalid_phrase_template}} = error ->
-        error
+      {:error, %{code: :invalid_phrase_template}} ->
+        refuse_tier(resource_or_domain, :invalid_phrase_template)
     end
   end
 

@@ -53,17 +53,38 @@ defmodule AshA2A.Planning.HddlSolver do
       when is_binary(domain_text) and is_binary(problem_text) do
     path = cli_path(opts)
 
-    if File.exists?(path) do
-      run(path, domain_text, problem_text, opts)
-    else
-      {:error,
-       %{
-         code: :hddl_cli_not_built,
-         message:
-           "hddl_cli binary not built at #{path}. " <>
-             "Run: cd native/hddl_cli && cargo build --release"
-       }}
-    end
+    result =
+      if File.exists?(path) do
+        run(path, domain_text, problem_text, opts)
+      else
+        {:error,
+         %{
+           code: :hddl_cli_not_built,
+           message:
+             "hddl_cli binary not built at #{path}. " <>
+               "Run: cd native/hddl_cli && cargo build --release"
+         }}
+      end
+
+    emit_planner_invoke(result)
+  end
+
+  # `[:ash_a2a, :planner, :invoke]`: one planner invocation and its outcome
+  # (RFC-SA2A-002 §43 PlannerInvocations). Observational only.
+  defp emit_planner_invoke(result) do
+    {outcome, refusal_code} =
+      case result do
+        {:ok, _decoded} -> {:solved, nil}
+        {:error, %{code: code}} -> {:refused, code}
+      end
+
+    :telemetry.execute([:ash_a2a, :planner, :invoke], %{count: 1}, %{
+      planner: :hddl_cli,
+      outcome: outcome,
+      code: refusal_code
+    })
+
+    result
   end
 
   defp run(path, domain_text, problem_text, opts) do

@@ -152,10 +152,45 @@ defmodule AshA2A.Semantic.LlmBoundary do
            class: unknown.class
          }}
     end
+    |> emit_candidate(unknown, resolver)
   end
 
-  def candidate(%Unknown{}, _resolver, payload) do
+  def candidate(%Unknown{} = unknown, resolver, payload) do
     {:error, %{code: :llm_output_not_a_map, payload: payload}}
+    |> emit_candidate(unknown, resolver)
+  end
+
+  # `[:ash_a2a, :semantic, :llm_boundary, :candidate]`: the boundary's
+  # decision over one piece of resolver output -- the candidate it built
+  # (with the standing/authority that candidate actually carries) or the
+  # typed refusal (RFC-SA2A-002 §79/§81 evidence). Observational only.
+  defp emit_candidate(result, %Unknown{} = unknown, resolver) do
+    meta =
+      case result do
+        {:ok, %Resolution{} = resolution} ->
+          %{
+            outcome: :candidate,
+            standing: resolution.standing,
+            authority: resolution.authority,
+            fingerprint: resolution.fingerprint
+          }
+
+        {:error, reason} ->
+          %{
+            outcome: :refused,
+            code: Map.get(reason, :code),
+            effect: Map.get(reason, :effect),
+            key: Map.get(reason, :key)
+          }
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :llm_boundary, :candidate],
+      %{count: 1},
+      Map.merge(meta, %{class: unknown.class, resolver: resolver})
+    )
+
+    result
   end
 
   @doc """

@@ -120,15 +120,19 @@ defmodule AshA2A.Semantic.MachineExperience do
           keyword()
         ) ::
           {:ok, Machinery.t()} | {:error, map()}
-  def compile_back(resolution, kind, apply_fun, opts \\ [])
+  def compile_back(resolution, kind, apply_fun, opts \\ []) do
+    resolution
+    |> do_compile_back(kind, apply_fun, opts)
+    |> emit_compile_back(resolution, kind)
+  end
 
-  def compile_back(
-        %Resolution{standing: :candidate, authority: :none} = resolution,
-        kind,
-        apply_fun,
-        opts
-      )
-      when kind in @kinds and is_function(apply_fun, 1) do
+  defp do_compile_back(
+         %Resolution{standing: :candidate, authority: :none} = resolution,
+         kind,
+         apply_fun,
+         opts
+       )
+       when kind in @kinds and is_function(apply_fun, 1) do
     provenance = %{
       "resolution_fingerprint" => resolution.fingerprint,
       "unknown_fingerprint" => resolution.unknown_fingerprint,
@@ -147,7 +151,7 @@ defmodule AshA2A.Semantic.MachineExperience do
     {:ok, machinery}
   end
 
-  def compile_back(%Resolution{} = resolution, kind, apply_fun, _opts) do
+  defp do_compile_back(%Resolution{} = resolution, kind, apply_fun, _opts) do
     cond do
       kind not in @kinds ->
         {:error, %{code: :unknown_machinery_kind, kind: kind}}
@@ -165,8 +169,39 @@ defmodule AshA2A.Semantic.MachineExperience do
     end
   end
 
-  def compile_back(other, _kind, _apply_fun, _opts) do
+  defp do_compile_back(other, _kind, _apply_fun, _opts) do
     {:error, %{code: :compile_back_requires_resolution, got: other}}
+  end
+
+  # `[:ash_a2a, :semantic, :machine_experience, :compile_back]`: the decision
+  # to turn (or refuse to turn) a resolution into reusable machinery
+  # (RFC-SA2A-002 §81/§82 evidence). Observational only.
+  defp emit_compile_back(result, resolution, kind) do
+    source =
+      case resolution do
+        %Resolution{} = r ->
+          %{class: r.class, resolver: r.resolver, standing: r.standing, authority: r.authority}
+
+        _other ->
+          %{}
+      end
+
+    outcome =
+      case result do
+        {:ok, %Machinery{} = machinery} ->
+          %{outcome: :compiled, fingerprint: machinery.fingerprint}
+
+        {:error, reason} ->
+          %{outcome: :refused, code: Map.get(reason, :code)}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :machine_experience, :compile_back],
+      %{count: 1},
+      source |> Map.merge(outcome) |> Map.put(:kind, kind)
+    )
+
+    result
   end
 
   @doc """
@@ -183,6 +218,19 @@ defmodule AshA2A.Semantic.MachineExperience do
   def register(%Store{} = store, %Machinery{} = machinery) do
     before_classes = classes(store)
     next = %{store | entries: Map.put(store.entries, machinery.class, machinery)}
+
+    # `[:ash_a2a, :semantic, :machine_experience, :register]`: the closed
+    # deterministic set grew (or was replaced) for `class`. Observational.
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :machine_experience, :register],
+      %{classes: length(classes(next))},
+      %{
+        class: machinery.class,
+        kind: machinery.kind,
+        fingerprint: machinery.fingerprint,
+        added: machinery.class not in before_classes
+      }
+    )
 
     {:ok, next, Changelog.build(before_classes, classes(next))}
   end
