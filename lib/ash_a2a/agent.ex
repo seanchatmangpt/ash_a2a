@@ -223,18 +223,105 @@ defmodule AshA2A.Agent do
   # PackageStore.fetch/2`) AND a real, previously-committed `AshA2A.Receipt`
   # correlated to it (`build_command/4` below records exactly how a Command
   # continues a package) -- see `dispatch_semantic_replan/2`. A missing
-  # `:continuation_fingerprint` falls through to a fresh compile, unchanged
-  # from before this feature existed.
+  # `:continuation_fingerprint` no longer jumps straight to a fresh compile
+  # -- as of v26.9.16 (`docs/jira/v26.9.16/PRFAQ.md` item 1) it falls
+  # through to `dispatch_semantic_route/2` below, which decides for real,
+  # per-message, whether a fresh compile is even the right tier. Every
+  # existing caller's *behavior* is still unchanged: a message with no
+  # `goal_facts` still ends up at the exact same `dispatch_semantic_compile/2`
+  # call it always did (see that function's own routing below), just via
+  # one extra real dispatch hop instead of a direct call.
   defp dispatch_semantic(resource_or_domain, %A2A.Message{metadata: metadata} = message) do
     case AshA2A.MetadataKey.get(metadata || %{}, :continuation_fingerprint) do
       nil ->
-        dispatch_semantic_compile(resource_or_domain, message)
+        dispatch_semantic_route(resource_or_domain, message)
 
       fingerprint when is_binary(fingerprint) and fingerprint != "" ->
         dispatch_semantic_replan(resource_or_domain, fingerprint)
 
       _invalid ->
         {:error, %{code: :continuation_fingerprint_invalid}}
+    end
+  end
+
+  # NEW in v26.9.16 (`docs/jira/v26.9.16/PRFAQ.md` item 1): the real,
+  # production call site for `AshA2A.Planning.RequestRouter` -- previously
+  # a fully built, 39-test-covered, adversarially-verified module with zero
+  # callers anywhere in this library's own real dispatch surface
+  # (`git diff` against this module was empty before this release).
+  # `RequestRouter.detect_tier/1` inspects the message's real input
+  # (`AshA2A.Dispatcher.fetch_input/1` under the hood, so it sees a
+  # `goal_facts` key on a `Data` part, not just top-level `metadata`) and
+  # classifies it into exactly one of four real outcomes:
+  #
+  #   * `{:facts, _envelope}` -- a real, well-formed `goal_facts` map is
+  #     present. Routed to the new `dispatch_semantic_goal_facts/2` below,
+  #     which reaches the zero-LLM deterministic solver tier
+  #     (`HddlDeterministicSynthesis.synthesize/3` via `RequestRouter.route/3`)
+  #     instead of the LLM compiler.
+  #   * `:invalid_goal_facts` -- a `goal_facts` key is present but its value
+  #     is not a map (a real caller error: a malformed structured payload),
+  #     fails closed immediately with a typed error rather than silently
+  #     downgrading to the LLM tier.
+  #   * `{:text, _text}` -- no `goal_facts`, but the message carries real
+  #     text. Falls through to `dispatch_semantic_compile/2` UNCHANGED --
+  #     the exact same LLM-compilation call every text-only caller reached
+  #     before this release existed.
+  #   * `:error` -- neither a `goal_facts` map nor real text. Also falls
+  #     through to `dispatch_semantic_compile/2` UNCHANGED, which is what
+  #     produces the pre-existing, still-real
+  #     `{:error, %{code: :semantic_request_missing_text}}` refusal for a
+  #     flagged message with no usable input -- this router-wiring diff
+  #     does not touch that refusal's code path or its typed reason.
+  #
+  # `detect_tier/1` itself is never modified by this wiring -- it is called
+  # exactly as it already existed and is already tested.
+  @spec dispatch_semantic_route(module(), A2A.Message.t()) :: AshA2A.Dispatcher.reply()
+  defp dispatch_semantic_route(resource_or_domain, %A2A.Message{} = message) do
+    case AshA2A.Planning.RequestRouter.detect_tier(message) do
+      {:facts, _envelope} ->
+        dispatch_semantic_goal_facts(resource_or_domain, message)
+
+      :invalid_goal_facts ->
+        {:error, %{code: :invalid_goal_facts}}
+
+      {:text, _text} ->
+        dispatch_semantic_compile(resource_or_domain, message)
+
+      :error ->
+        dispatch_semantic_compile(resource_or_domain, message)
+    end
+  end
+
+  # NEW in v26.9.16, the deterministic-tier sibling of
+  # `dispatch_semantic_compile/2` below: reached only when
+  # `dispatch_semantic_route/2` above has already confirmed (via
+  # `RequestRouter.detect_tier/1`) that this message carries a real,
+  # well-formed `goal_facts` envelope. `RequestRouter.route/3` re-derives
+  # the same tier internally (it is the router's own single real entry
+  # point, never re-implemented here) and, for a facts-tier message,
+  # dispatches straight to `HddlDeterministicSynthesis.synthesize/3` --
+  # `AshA2A.Semantic.Compiler`/`ReqLLM.generate_object/4` is never on this
+  # call path, structurally, not just by convention (see
+  # `test/ash_a2a/planning/request_router_llm_never_called_test.exs` and
+  # this task's own agent-level mirror of that same falsifier).
+  #
+  # On success, the resulting `AshA2A.Semantic.ExecutionPackage` is stored
+  # in `AshA2A.Semantic.PackageStore` and replied via `to_reply/1` -- the
+  # identical pattern `dispatch_semantic_compile/2` already uses for its
+  # own freshly compiled packages, so a goal-facts-routed package is just
+  # as replan-able later (`dispatch_semantic_replan/2` above) as an
+  # LLM-compiled one; the two tiers converge on one real, shared package
+  # lifecycle from this point on.
+  @spec dispatch_semantic_goal_facts(module(), A2A.Message.t()) :: AshA2A.Dispatcher.reply()
+  defp dispatch_semantic_goal_facts(resource_or_domain, %A2A.Message{} = message) do
+    case AshA2A.Planning.RequestRouter.route(resource_or_domain, message) do
+      {:ok, package} ->
+        :ok = AshA2A.Semantic.PackageStore.put(package)
+        AshA2A.Semantic.ExecutionPackage.to_reply(package)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
