@@ -43,3 +43,16 @@ config :ash_a2a, AshA2A.Test.Repo,
   password: "postgres",
   database: "ash_a2a_test",
   pool_size: 4
+
+# RFC-SA2A-001 S29 capability grants. `AshA2A.Authority.Grant`'s default
+# policy is the fail-closed `:broker` -- a transport-authenticated caller
+# holds authority for a `:change`/`:external_do` capability only when a real
+# broker grant for that exact (principal, capability) pair stands. Named
+# explicitly here rather than relying on the default, so this suite states
+# which policy it is actually exercising.
+#
+# The broker process itself is started in `test/test_helper.exs`; tests issue
+# their own real grants into it via
+# `AshA2A.Test.AuthorityGrantCase.grant!/1`.
+config :ash_a2a, :authority_policy, :broker
+config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.InMemory

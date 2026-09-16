@@ -21,18 +21,21 @@ defmodule AshA2A.Authority.Broker do
   whether one should be issued, should continue to stand, or should be
   torn down.
 
-  This behaviour is additive and, as of the release that introduces it,
-  unreachable from `AshA2A.CommandBus`, `AshA2A.Planning.candidate_fence/1`,
-  or `AshA2A.Semantic.Admission.fence/1` -- wiring a `Broker`
-  implementation into any real dispatch or admission path is explicitly
-  out of scope here (see `docs/jira/v26.9.16/PRFAQ.md`, item 2). Nothing in
-  this codebase calls `issue/3`, `revoke/2`, or `verify/2` yet; this module
-  exists so a caller (or a future ash_a2a release) has a real contract to
-  implement against instead of guessing at the `:authority_broker` atom.
+  This behaviour IS now reachable from the real, default `AshA2A.Agent`
+  dispatch path: `AshA2A.Agent.build_command/4` calls
+  `AshA2A.Authority.Grant.authorize/3`, which calls `granted?/3` on the
+  configured broker to decide whether the authenticated principal may hold
+  the caller-supplied capability at all, before any authority struct reaches
+  `AshA2A.CommandBus.admit/2`. (Earlier releases described this behaviour as
+  deliberately unreachable; that is no longer true, and the unreachability
+  was itself the RFC-SA2A-001 S29 escalation -- see
+  `AshA2A.Authority.Grant`.) `AshA2A.Planning.candidate_fence/1` and
+  `AshA2A.Semantic.Admission.fence/1` remain unwired.
 
   See `AshA2A.Authority.Broker.InMemory` for a single-node reference
   implementation suitable for development and tests -- explicitly NOT a
-  production identity system.
+  production identity system -- and `AshA2A.Authority.Broker.Ekv` for a
+  durable one.
   """
 
   alias AshA2A.{Authority, Identity}
@@ -83,4 +86,27 @@ defmodule AshA2A.Authority.Broker do
   """
   @callback verify(authority :: Authority.t(), opts :: keyword()) ::
               {:ok, Authority.t()} | {:error, refusal()}
+
+  @doc """
+  Answers whether this broker holds a STANDING grant of `capability_id` to
+  `subject` right now: one previously issued through `issue/3` under
+  `AshA2A.Authority.grant_token_id(subject, capability_id)`, and not since
+  revoked through `revoke/2`.
+
+  This is a pure read of state the implementation already keeps for
+  `issue/3`/`revoke/2` -- it must never issue, mint, or record anything. It
+  is the question the real dispatch path asks
+  (`AshA2A.Authority.Grant.authorize/3`), and it must FAIL CLOSED: return
+  `false` for an unknown subject, an unknown capability, a revoked grant, or
+  any storage/transport error the implementation cannot resolve. Returning
+  `true` on uncertainty reintroduces exactly the RFC-SA2A-001 S29 escalation
+  this callback exists to close.
+
+  `issue/3` is deliberately not usable as a substitute: it has a real
+  recording side effect and is not idempotent (a second `issue/3` under the
+  same token id refuses with `:token_id_taken`), so calling it per dispatch
+  would both mutate broker state on every request and refuse every retry.
+  """
+  @callback granted?(subject :: Identity.t(), capability_id :: String.t(), opts :: keyword()) ::
+              boolean()
 end

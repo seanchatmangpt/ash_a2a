@@ -118,6 +118,28 @@ defmodule AshA2A.Authority.Broker.Ekv do
     end
   end
 
+  @impl AshA2A.Authority.Broker
+  @spec granted?(Identity.t(), String.t(), keyword()) :: boolean()
+  def granted?(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+
+    # A pure read of the exact durable entry `issue/3` writes
+    # (`%{status: :issued, capability_id: capability_id}`) and `revoke/2`
+    # rewrites (`status: :revoked`). `capability_id` is re-checked against the
+    # stored entry as well as being folded into the key, so a grant durably
+    # recorded for a different capability can never satisfy this one even if
+    # the key derivation were ever weakened.
+    case EKV.get(ekv_name(opts), key) do
+      %{status: :issued, capability_id: ^capability_id} -> true
+      _other -> false
+    end
+  catch
+    # An EKV instance that is not running, or any other storage failure, is
+    # an unanswerable grant question -- refuse, never admit.
+    :exit, _reason -> false
+  end
+
   defp revoked?(name, key) do
     case EKV.get(name, key) do
       %{status: :revoked} -> true

@@ -66,6 +66,20 @@ defmodule AshA2A.Authority.Broker.InMemory do
     GenServer.call(server(opts), {:verify, authority})
   end
 
+  @impl AshA2A.Authority.Broker
+  @spec granted?(Identity.t(), String.t(), keyword()) :: boolean()
+  def granted?(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+
+    # Fails closed on a broker process that is not running (or has died):
+    # `GenServer.call/2` exits, and an unanswerable grant question is a
+    # refusal, never an admission.
+    GenServer.call(server(opts), {:granted?, key})
+  catch
+    :exit, _reason -> false
+  end
+
   @impl GenServer
   def handle_call({:issue, subject, capability_id, opts}, _from, state) do
     authority =
@@ -83,6 +97,14 @@ defmodule AshA2A.Authority.Broker.InMemory do
   def handle_call({:revoke, %Authority{} = authority}, _from, state) do
     key = Identity.external(authority.token_id)
     {:reply, :ok, %{state | revoked: MapSet.put(state.revoked, key)}}
+  end
+
+  def handle_call({:granted?, key}, _from, state) do
+    # A pure read of the exact `issued`/`revoked` state `handle_call({:issue,
+    # ...})` and `handle_call({:revoke, ...})` above already maintain -- this
+    # clause records nothing.
+    granted? = MapSet.member?(state.issued, key) and not MapSet.member?(state.revoked, key)
+    {:reply, granted?, state}
   end
 
   def handle_call({:verify, %Authority{} = authority}, _from, state) do

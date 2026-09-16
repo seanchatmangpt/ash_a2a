@@ -139,16 +139,18 @@ defmodule AshA2A.Agent do
   # default-path dispatch here are: (1) a persisted `AshA2A.Receipt` for
   # every consequence-bearing outcome, where none existed before; (2) a
   # real, fail-closed `AshA2A.Authority` admission gate ahead of `:change`/
-  # `:external_do` consequences -- synthesized from the already-verified
-  # `auth_identity` via
-  # `AshA2A.Authority.from_verified_identity/2` (`nil` for an unauthenticated
-  # caller, so an unauthenticated write is refused with `:authority_required`
+  # `:external_do` consequences -- decided from the already-verified
+  # `auth_identity` by `AshA2A.Authority.Grant.authorize/3` (`nil` for an
+  # unauthenticated caller, AND `nil` for an authenticated caller holding no
+  # real capability grant, so either is refused with `:authority_required`
   # before ever reaching the Ash action, matching this module's existing
-  # fail-closed convention elsewhere). This synthesized authority always
-  # admits for its own principal/capability pair -- it does not replace or
-  # tighten Ash's own actor/policy authorization, which still runs exactly as
-  # before inside the wrapped `Dispatcher.dispatch/5` call; it only adds a
-  # receipted admission gate ahead of it.
+  # fail-closed convention elsewhere). Authentication alone does NOT confer
+  # this authority -- see `build_command/4` below and
+  # `AshA2A.Authority.Grant` for the RFC-SA2A-001 S29 escalation that
+  # behavior was. This gate does not replace or tighten Ash's own
+  # actor/policy authorization, which still runs exactly as before inside
+  # the wrapped `Dispatcher.dispatch/5` call; it only adds a receipted
+  # admission gate ahead of it.
   #
   # Routing is by `skill.consequence` -- real capability truth computed once
   # at compile time (`AshA2A.CapabilityIndex.Compiler`, `AshA2A.Skill`'s
@@ -516,8 +518,27 @@ defmodule AshA2A.Agent do
   # `nil`) still gets a `:principal` identity for the command (`"anonymous"`,
   # matching the literal value real `CommandBus` tests already use for an
   # unauthenticated `:read` command) but no `Authority` --
-  # `Authority.from_verified_identity/2` returns `nil` for `nil`, which fails
+  # `Authority.Grant.authorize/3` returns `nil` for `nil`, which fails
   # `:change` admission closed as intended.
+  #
+  # AUTHORITY, NOT MERELY AUTHENTICATION (RFC-SA2A-001 S29). `capability_id`
+  # below is CALLER-SUPPLIED -- it is `to_string(skill_name)`, taken off the
+  # inbound message's own `skill` metadata. It is therefore routed through
+  # `AshA2A.Authority.Grant.authorize/3`, which consults the configured
+  # `AshA2A.Authority.Broker` for a real standing grant of THIS capability to
+  # THIS principal, and NOT through `Authority.from_verified_identity/2`
+  # directly. That function is a pure constructor: handed a caller-supplied
+  # capability id it mints authority for exactly that capability, so
+  # `CommandBus.admit/2`'s `Authority.admits?/2` check passed by
+  # construction and every authenticated caller held authority for every
+  # consequential skill on the agent card. `Grant.authorize/3` returns `nil`
+  # when no grant stands, and `CommandBus.admit/2`'s existing
+  # `:authority_required` refusal then fails the dispatch closed before any
+  # actuation. `:observe` skills are unaffected (`admit/2` returns `:ok` for
+  # them regardless of authority), and replay is unaffected: `authorize/3`
+  # still builds the authority through `from_verified_identity/2`, whose
+  # token id is the deterministic `Authority.grant_token_id/2` that
+  # `Command.fingerprint/1` depends on.
   #
   # `command_id` is the real, canonical, protocol-native `A2A.Message.
   # message_id` (`~/xaas/deps/a2a/lib/a2a/message.ex:10-22,41,57` --
@@ -573,7 +594,7 @@ defmodule AshA2A.Agent do
       command_id: command_id(message),
       agent_id: to_string(resource_or_domain),
       principal_id: principal,
-      authority: AshA2A.Authority.from_verified_identity(auth_identity, capability_id),
+      authority: AshA2A.Authority.Grant.authorize(auth_identity, capability_id),
       input: input,
       metadata: command_metadata(message)
     )

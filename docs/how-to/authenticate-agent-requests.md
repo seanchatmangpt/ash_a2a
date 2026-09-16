@@ -25,6 +25,99 @@ The only path an actor/tenant can take into your action is:
 If you skip `A2A.Plug.Auth`, `context.actor` and `context.tenant` are always `nil` —
 dispatch fails closed rather than trusting anything from the wire.
 
+## Authentication is NOT authority (RFC-SA2A-001 S29)
+
+Everything above establishes *who* the caller is. It says nothing about *what* that
+caller may do — and in ash_a2a those are two separate, separately-configured
+decisions.
+
+A skill's real, compiled `AshA2A.Skill.consequence` decides which decision applies:
+
+| consequence | what `AshA2A.CommandBus.admit/2` requires |
+|---|---|
+| `:observe` | nothing — admitted unconditionally, no authority needed |
+| `:change`, `:external_do` | a real `AshA2A.Authority` that admits for this exact principal and capability |
+| `:unknown` | refused (`:consequence_unclassified`) regardless of authority |
+
+For the consequential classes, that `AshA2A.Authority` comes from
+`AshA2A.Authority.Grant.authorize/3`, which asks the configured
+`AshA2A.Authority.Broker` whether this principal holds a **standing grant for this
+specific capability**. A verified Bearer token is necessary and not sufficient. Grants
+are per `(principal, capability_id)` pair: granting `"create_note"` grants exactly
+`"create_note"`, never `"destroy_note"`.
+
+> Earlier releases had no grant step: the dispatch path synthesized an authority for
+> whatever capability id the inbound message named, so any authenticated caller held
+> authority for every skill on the agent card. That was a real privilege escalation
+> and is what this model closes.
+
+### Configure a broker and issue grants
+
+```elixir
+# config/config.exs — :broker is already the default, named here for clarity.
+config :ash_a2a, :authority_policy, :broker
+config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.Ekv
+```
+
+`AshA2A.Authority.Broker` is a behaviour with three shipped-in reference points:
+`AshA2A.Authority.Broker.InMemory` (a real `GenServer`, single node, development and
+tests), `AshA2A.Authority.Broker.Ekv` (durable across process and node restarts), and
+your own implementation backed by whatever real identity system you already run.
+Neither shipped broker is a production identity system or Sybil-resistant — read
+their moduledocs before deploying one.
+
+Start the broker in your supervision tree, then issue grants:
+
+```elixir
+subject = AshA2A.Identity.principal(%{id: "user-42", tenant: "acme"})
+{:ok, _authority} = AshA2A.Authority.Grant.grant(subject, "create_note")
+
+AshA2A.Authority.Grant.granted?(subject, "create_note")
+#=> true
+AshA2A.Authority.Grant.granted?(subject, "destroy_note")
+#=> false
+```
+
+The grant subject must be built from the **same term** your `verify_callback/3`
+returns as the identity — that whole term is what reaches the dispatch path as
+`auth_identity`, and `AshA2A.Identity.principal/1` normalizes it identically on both
+sides.
+
+To take a grant away, revoke it through the broker; the next dispatch fails closed
+with `:authority_required`:
+
+```elixir
+:ok = AshA2A.Authority.Broker.Ekv.revoke(authority)
+```
+
+### What an ungranted consequential call looks like
+
+`AshA2A.CommandBus.admit/2` refuses before the Ash action runs at all — no record is
+written, no external effect happens, and no receipt is committed. The refusal surfaces
+the same way any dispatch failure does: a real `A2A.Task` whose own
+`status.state` is `failed` (not a JSON-RPC-level error), carrying the typed
+`:authority_required` refusal.
+
+### Migrating an existing deployment
+
+If you are upgrading an agent that relied on the old behavior and cannot wire a broker
+yet, the pre-fix behavior is still available, explicitly:
+
+```elixir
+config :ash_a2a, :authority_policy, :transport_verified_grants_capability
+```
+
+This mode **violates RFC-SA2A-001 S29**: it gives every transport-authenticated caller
+authority for every capability they name, including every `:change`/`:external_do`
+skill. It logs a real warning naming the escalation on first use. Treat it as a
+migration window, not a configuration.
+
+Leaving `:authority_policy` at its `:broker` default with no `:authority_broker`
+configured is the safe failure: every consequential dispatch is refused with
+`:authority_required`, and a real warning names the missing configuration so the
+refusals are never mysterious.
+
+
 ## 1. Define a `:verify` callback
 
 `A2A.Plug.Auth.init/1` takes the security schemes your agent declares and a `:verify`
@@ -117,3 +210,13 @@ falling back to the single-skill default, so an explicit skill name always
 disambiguates regardless of how many public actions the resource has. Note that
 `"skill"` here is a routing directive read from message metadata deliberately — it is
 not `actor`/`tenant`, and `ContextResolver` never touches it.
+
+## See also
+
+* `AshA2A.Authority.Grant` — the grant decision, both policy modes, and why the
+  fail-closed one is the default
+* `AshA2A.Authority.Broker` — the broker behaviour, including the `granted?/3`
+  contract a custom implementation must satisfy fail-closed
+* `test/ash_a2a_authority_capability_grant_test.exs` — the real end-to-end tests this
+  section is based on (ungranted refusal, granted actuation, per-capability scoping,
+  revocation, `:observe` unaffected, replay preserved)

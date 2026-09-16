@@ -101,6 +101,17 @@ defmodule AshA2AAgentCommandBusTest do
         UnclassifiedActionAgent
       ])
 
+    # RFC-SA2A-001 S29: authentication alone no longer confers authority for
+    # a `:change`/`:external_do` capability (see `AshA2A.Authority.Grant`);
+    # a real broker grant must stand. Granted here for the exact
+    # (principal, capability) pairs this file's own consequential dispatches
+    # use. Deliberately NOT granted: `"ping"` (`:observe`, must stay
+    # reachable without a grant) and `"mystery"` (`:unknown`, must stay
+    # refused for a reason that has nothing to do with authority).
+    AshA2A.Test.AuthorityGrantCase.grant!([
+      {"user-1", ["create_item", "update_item", "destroy_item", "next_phase"]}
+    ])
+
     handler_id = {:command_bus_test, System.unique_integer([:positive])}
     test_pid = self()
 

@@ -6,6 +6,22 @@ defmodule AshA2A.Authority do
   Construct it only after a transport or host authority broker has admitted
   the caller. `source: :transport_verified` is used by the A2A adapter for the
   identity already verified by `A2A.Plug.Auth`.
+
+  ## `from_verified_identity/2` is NOT a grant decision
+
+  `from_verified_identity/2` is a pure *constructor*: it synthesizes the
+  authority struct that a caller who HAS been granted `capability_id` would
+  hold. It performs no admission of its own -- hand it any capability id and
+  it returns an authority for that capability id. It must therefore never be
+  called with a caller-supplied capability id on a dispatch path without a
+  real grant decision in front of it.
+
+  That grant decision lives in `AshA2A.Authority.Grant`, which consults the
+  configured `AshA2A.Authority.Broker` before calling this constructor. The
+  real `AshA2A.Agent` dispatch path (`AshA2A.Agent.build_command/4`) goes
+  through `AshA2A.Authority.Grant.authorize/3`, never through this function
+  directly. See `AshA2A.Authority.Grant` for the policy modes and the
+  RFC-SA2A-001 S29 escalation this separation closes.
   """
 
   alias AshA2A.Identity
@@ -68,13 +84,35 @@ defmodule AshA2A.Authority do
       # (a genuine client retry through the default `AshA2A.Agent` dispatch
       # path was hitting `:command_conflict` instead of a real replay, even
       # with 100% identical semantic command content).
-      token_id: deterministic_token_id(subject, capability_id),
+      token_id: grant_token_id(subject, capability_id),
       source: :transport_verified,
       evidence: %{transport_identity: identity}
     )
   end
 
-  defp deterministic_token_id(%Identity{} = subject, capability_id) do
+  @doc """
+  The deterministic token id identifying the standing grant of
+  `capability_id` to `subject`.
+
+  Public because it is the shared key three independent parties must agree
+  on: `from_verified_identity/2` (which stamps it onto the synthesized
+  authority, so `AshA2A.Command.fingerprint/1` stays stable across retries),
+  `AshA2A.Authority.Grant.grant/3` (which issues a broker grant under exactly
+  this token id), and every `AshA2A.Authority.Broker` implementation's
+  `granted?/3` (which looks up its own issued/revoked state under it). A
+  broker keying grants on anything else would silently never match a real
+  dispatch.
+
+      iex> subject = AshA2A.Identity.principal("user-1")
+      iex> AshA2A.Authority.grant_token_id(subject, "create_item") ==
+      ...>   AshA2A.Authority.grant_token_id(subject, "create_item")
+      true
+      iex> AshA2A.Authority.grant_token_id(subject, "create_item") ==
+      ...>   AshA2A.Authority.grant_token_id(subject, "destroy_item")
+      false
+  """
+  @spec grant_token_id(Identity.t(), String.t()) :: String.t()
+  def grant_token_id(%Identity{} = subject, capability_id) when is_binary(capability_id) do
     {subject.value, capability_id}
     |> :erlang.term_to_binary()
     |> then(&:crypto.hash(:sha256, &1))

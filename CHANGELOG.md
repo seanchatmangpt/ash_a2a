@@ -6,6 +6,113 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [Unreleased]
+
+### Security -- BREAKING (fail-closed default change)
+
+- **Authority escalation on the default `AshA2A.Agent` dispatch path closed
+  (RFC-SA2A-001 S28/S29/S30/S60).** `AshA2A.Agent.build_command/4` took
+  `capability_id` from the inbound message's own `skill` metadata -- a
+  caller-supplied value -- and handed it straight to
+  `AshA2A.Authority.from_verified_identity/2`, which is a pure *constructor*
+  that mints a full `%AshA2A.Authority{}` for whatever capability id it is
+  given (`source: :transport_verified`). `AshA2A.CommandBus.admit/2` then
+  checked `AshA2A.Authority.admits?/2`, which compares the authority's own
+  `capability_id` against the command's -- and so passed by construction,
+  every time. Net effect: **any transport-authenticated caller held authority
+  for every skill on the agent card**, including every `:change` and
+  `:external_do` skill. RFC-SA2A-001 S29 ("Authentication does NOT imply
+  Authority") was false on the real production dispatch path.
+
+  Reproduced before the fix against a real `A2A.Agent` process and a real
+  actuation counter: an authenticated principal holding no grant of any kind
+  actuated both an `:external_do` and a `:change` skill (2 real actuations).
+  After the fix the identical run produces 0 actuations and two `failed`
+  tasks. Regression coverage:
+  `test/ash_a2a_authority_capability_grant_test.exs`.
+
+  The fix introduces `AshA2A.Authority.Grant` -- the real capability-GRANT
+  decision that sits between "identity verified by the transport" and
+  "authority held for this capability" -- wired into `agent.ex` in place of
+  the direct `from_verified_identity/2` call. It consults the configured
+  `AshA2A.Authority.Broker` (the seam RFC S28 names, which already existed in
+  this codebase with two real implementations and had never been reachable
+  from any dispatch path). No grant means no authority, and
+  `CommandBus.admit/2`'s existing `:authority_required` refusal fails the
+  dispatch closed before the Ash action runs, before any record is written,
+  and before any receipt is committed.
+
+  **`:observe` skills are unaffected** -- `admit/2` admits them
+  unconditionally, by design, and they need no grant.
+
+  **Replay is preserved.** `AshA2A.Command.fingerprint/1` hashes
+  `authority.token_id`, and a fresh token id per dispatch was a real,
+  previously reproduced regression that broke `CommandBus` replay detection
+  for every authenticated caller. `Grant.authorize/3` therefore still builds
+  the authority through `from_verified_identity/2`, whose token id is the
+  deterministic `AshA2A.Authority.grant_token_id/2`: the grant decision
+  changes *whether* an authority is produced, never *which* one. Proven by a
+  real regression test that dispatches the same real message twice as a
+  granted caller and asserts the action body ran exactly once.
+
+### Added
+
+- `AshA2A.Authority.Grant` -- `authorize/3` (the dispatch-path grant
+  decision), `grant/3`, `granted?/3`, and `policy/1`.
+- `AshA2A.Authority.Broker.granted?/3` -- a new callback on the existing
+  behaviour: "does a standing, unrevoked grant of this capability to this
+  subject exist right now". Implemented in both shipped brokers as a pure
+  read of the issued/revoked state each one already maintained for
+  `issue/3`/`revoke/2`, and required to fail closed (return `false`) on any
+  uncertainty. `issue/3` is deliberately not usable in its place: it has a
+  real recording side effect and refuses a second call under the same grant
+  token id, so per-dispatch use would both mutate broker state on every
+  request and refuse every retry.
+- `AshA2A.Authority.grant_token_id/2` -- the previously private deterministic
+  `(subject, capability_id)` token id, made public because it is the shared
+  key the authority constructor, `Grant.grant/3`, and every broker's
+  `granted?/3` must all agree on.
+- `AshA2A.Test.AuthorityGrantCase` -- real test-support helper that issues
+  real grants into the real run-wide broker (no mocks, no policy bypass).
+
+### Changed -- MIGRATION REQUIRED
+
+- New config `config :ash_a2a, :authority_policy, mode`, defaulting to
+  **`:broker`** (fail-closed). The pre-fix behavior remains available,
+  explicitly, as `:transport_verified_grants_capability`, which logs a real
+  warning naming the escalation on first use.
+- New config `config :ash_a2a, :authority_broker, MyBroker` (or
+  `{MyBroker, opts}`). Under the `:broker` policy with no broker configured,
+  no grant can be proven, so **every `:change`/`:external_do` dispatch is
+  refused** with `:authority_required`; a real warning names the missing
+  configuration so the refusals are never silent.
+
+  **Why fail-closed is the default, deliberately, despite being the more
+  disruptive choice:** the alternative is shipping a library whose documented
+  security property (S29) is known to be false while the default is in
+  effect. A deployment that upgrades and changes nothing gets loud, typed,
+  diagnosable refusals on consequential skills instead of a silent,
+  invisible privilege escalation. Both modes are named, documented, and
+  warned about, and switching is one config line in either direction.
+
+  **To migrate:** configure a broker, start it in your supervision tree, and
+  issue a real grant per `(principal, capability_id)` pair your callers
+  legitimately need -- see `docs/how-to/authenticate-agent-requests.md`
+  ("Authentication is NOT authority"). Or set
+  `:authority_policy` to `:transport_verified_grants_capability` for a
+  migration window, accepting the documented escalation.
+- This repository's own test suite was migrated accordingly, not weakened:
+  `config/test.exs` names the `:broker` policy and a real broker,
+  `test/test_helper.exs` starts it, and each affected test issues its own
+  real grants for exactly the capabilities it dispatches
+  (`ash_a2a_agent_command_bus_test.exs`, `ash_a2a_ocel_default_path_sink_test.exs`,
+  `ash_a2a_plug_tenant_actor_test.exs`, `ash_a2a_freedom_gym_hddl_plan_test.exs`,
+  `ash_a2a_freedom_gym_phase_admission_test.exs`,
+  `ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs`,
+  `ash_a2a_agent_semantic_replan_test.exs`). `:observe` and `:unknown`
+  capabilities were deliberately left ungranted so the tests that assert on
+  those paths still prove what they claim.
+
 ## [26.9.14] - 2026-09-14
 
 ### Fixed (test suite, `--include external_api` only -- default `mix test` unaffected)

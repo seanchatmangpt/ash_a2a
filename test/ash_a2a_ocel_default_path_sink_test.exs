@@ -151,6 +151,17 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
 
   setup do
     base_url = start_micro_beam_ocel_ingest!()
+
+    # RFC-SA2A-001 S29: a transport-authenticated caller holds authority for
+    # a `:change`/`:external_do` capability only when a real
+    # `AshA2A.Authority.Broker` grant stands for that exact (principal,
+    # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
+    # real pairs this file's own dispatches use.
+    AshA2A.Test.AuthorityGrantCase.grant!([
+      {"user-1", ["create_item"]},
+      {"user-2", ["create_item", "update_item"]}
+    ])
+
     Application.put_env(:ash_a2a, :ocel_ingest_url, base_url)
 
     # Idempotent-safe (`{:error, :already_exists} -> :ok` inside `attach/2`).
