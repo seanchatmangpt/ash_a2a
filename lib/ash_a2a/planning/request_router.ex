@@ -93,12 +93,21 @@ defmodule AshA2A.Planning.RequestRouter do
        Returns `{:text, text}`.
     3. **No input.** Neither of the above. Returns `:error`.
 
-  `detect_tier/1` itself is unchanged since task 1 -- it still only
-  discriminates facts vs. "has text" vs. neither. The phrase-vs-LLM split
-  inside "has text" is a second, later step `route/3` performs itself
-  (via `PhraseParser.parse/2`), not part of `detect_tier/1`'s own
-  classification, so `detect_tier/1`'s return type and existing callers
-  (including its own test suite) are unaffected by this task.
+  Two later, narrower fail-closed refusals were added after task 5 (see
+  `detect_tier/1`'s own doc for the exact conditions): a top-level
+  `goal_facts` key whose value isn't a map returns `:invalid_goal_facts`
+  instead of falling through to step 2/3 above, and a top-level-absent
+  `goal_facts` key that is nevertheless found nested under a wrapper key
+  in the real structured Data-part payload returns
+  `:ambiguous_goal_facts_shape` instead of falling through to step 2.
+  Neither changes the three-tier split above for the cases it already
+  covered (a genuinely well-formed top-level envelope, or a payload with
+  no `goal_facts` key anywhere).
+
+  `detect_tier/1`'s facts/text/no-input classification itself is
+  unchanged since task 1. The phrase-vs-LLM split inside "has text" is a
+  second, later step `route/3` performs itself (via `PhraseParser.parse/2`),
+  not part of `detect_tier/1`'s own classification.
 
   Detection never raises and never calls the solver, the phrase parser, or
   an LLM -- it only inspects the message.
@@ -111,18 +120,41 @@ defmodule AshA2A.Planning.RequestRouter do
   alias AshA2A.Semantic.Compiler
   alias AshA2A.Semantic.Source
 
-  @type tier_detection :: {:facts, map()} | {:text, String.t()} | :error | :invalid_goal_facts
+  @type tier_detection ::
+          {:facts, map()}
+          | {:text, String.t()}
+          | :error
+          | :invalid_goal_facts
+          | :ambiguous_goal_facts_shape
 
   @doc """
   Classifies a real inbound `A2A.Message.t()` into a routing tier. See the
   moduledoc for the exact heuristic.
 
-  A `goal_facts` key that is genuinely *absent* falls through to text
-  detection, same as always. A `goal_facts` key that is *present* but not
-  a map (a real, adversarially-found robustness gap: a caller sending
+  A `goal_facts` key that is genuinely *absent* at the top level normally
+  falls through to text detection, same as always -- UNLESS the real
+  structured Data-part payload (`Dispatcher.fetch_input/1`, the same real
+  input this function already inspects) itself contains a `"goal_facts"`/
+  `:goal_facts` key nested one or more levels *below* the top level (a
+  real, adversarially-found caller-shape footgun: a caller sending
+  `{"payload" => {"goal_facts" => ...}}` alongside real text was
+  previously silently downgraded to the LLM tier instead of refused,
+  because the top-level lookup alone genuinely finds nothing). That shape
+  now fails closed with `:ambiguous_goal_facts_shape` instead of silently
+  falling through -- a caller almost certainly meant to send a top-level
+  `goal_facts` envelope and nested it under a wrapper key by mistake, so
+  silently reinterpreting the whole message as free text (and paying for
+  an LLM call) is the wrong failure mode. This nested scan only ever
+  inspects the real structured Data-part payload -- never the message's
+  free-text content -- so a legitimate text message whose prose happens to
+  contain the words "goal facts" can never trigger it: free text is never
+  a map with a `"goal_facts"` key, structurally.
+
+  A `goal_facts` key that is *present* at the top level but not a map (a
+  separate, earlier-found robustness gap: a caller sending
   `"goal_facts" => "not an object"` alongside real text was previously
-  silently downgraded to the LLM tier instead of refused) now fails
-  closed with `:invalid_goal_facts` instead -- a malformed structured
+  silently downgraded to the LLM tier instead of refused) still fails
+  closed with `:invalid_goal_facts`, unchanged -- a malformed structured
   payload is a caller error to surface, never a silent excuse to fall
   back to a different, less strict admission model.
   """
@@ -138,12 +170,47 @@ defmodule AshA2A.Planning.RequestRouter do
         :invalid_goal_facts
 
       :error ->
-        case A2A.Message.text(message) do
-          text when is_binary(text) and text != "" -> {:text, text}
-          _no_text -> :error
+        if nested_goal_facts_key?(input) do
+          :ambiguous_goal_facts_shape
+        else
+          case A2A.Message.text(message) do
+            text when is_binary(text) and text != "" -> {:text, text}
+            _no_text -> :error
+          end
         end
     end
   end
+
+  # Real, bounded recursive scan of the real structured Data-part payload
+  # only (never message text -- callers of this function only ever pass it
+  # `input`, the real `Dispatcher.fetch_input/1` map, or a value reached by
+  # recursing into that same map's own real values). Looks for a
+  # `"goal_facts"`/`:goal_facts` key at ANY depth, including the top level
+  # (safe to re-check the top level here: this is only ever called from the
+  # `:error` branch above, where the top-level lookup has already, genuinely,
+  # come back empty, so a true match can only come from a nested level).
+  # Descends through maps (checking every key, recursing into every value)
+  # and lists (recursing into every element) -- a caller could equally well
+  # nest the mistaken key under a list of wrapper objects, not just a single
+  # wrapper map. Never raises: any other term (string, number, boolean,
+  # `nil`, atom) is simply not a match and not a container to recurse into.
+  @spec nested_goal_facts_key?(term()) :: boolean()
+  defp nested_goal_facts_key?(value) when is_map(value) do
+    Enum.any?(value, fn {key, nested_value} ->
+      goal_facts_key?(key) or nested_goal_facts_key?(nested_value)
+    end)
+  end
+
+  defp nested_goal_facts_key?(value) when is_list(value) do
+    Enum.any?(value, &nested_goal_facts_key?/1)
+  end
+
+  defp nested_goal_facts_key?(_other), do: false
+
+  @spec goal_facts_key?(term()) :: boolean()
+  defp goal_facts_key?(:goal_facts), do: true
+  defp goal_facts_key?("goal_facts"), do: true
+  defp goal_facts_key?(_other), do: false
 
   @doc """
   Tri-modal router: facts tier -> the real deterministic solver, phrase
@@ -206,6 +273,9 @@ defmodule AshA2A.Planning.RequestRouter do
 
       :invalid_goal_facts ->
         {:error, %{code: :invalid_goal_facts}}
+
+      :ambiguous_goal_facts_shape ->
+        {:error, %{code: :ambiguous_goal_facts_shape}}
 
       :error ->
         {:error, %{code: :request_router_missing_input}}
