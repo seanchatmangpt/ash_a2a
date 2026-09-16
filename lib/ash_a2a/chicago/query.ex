@@ -53,22 +53,66 @@ defmodule AshA2A.Chicago.Query do
           path: Path.t(),
           sha256: String.t(),
           events: [event()],
-          object_types: %{String.t() => String.t()}
+          object_types: %{String.t() => String.t()},
+          identity_unique: boolean(),
+          array_ordered: boolean()
         }
 
   @doc """
   Loads and indexes an OCEL JSON artifact. When `expected_sha256` is given the
-  bytes on disk must hash to it.
+  bytes on disk must hash to it. An artifact repeating an event id or a
+  `chicago_seq` is refused (`:ocel_duplicate_event_identity`). Emits
+  `[:ash_a2a, :chicago, :ocel, :load]` with the outcome.
   """
   @spec load(Path.t(), String.t() | nil) :: {:ok, index()} | {:error, term()}
   def load(path, expected_sha256 \\ nil) do
-    with {:ok, bytes} <- File.read(path),
-         sha <- :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower),
-         :ok <- check_digest(sha, expected_sha256),
-         {:ok, doc} <- decode(bytes),
-         {:ok, index} <- index(doc) do
-      {:ok, Map.merge(index, %{path: path, sha256: sha})}
-    end
+    result =
+      with {:ok, bytes} <- File.read(path),
+           sha <- :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower),
+           :ok <- check_digest(sha, expected_sha256),
+           {:ok, doc} <- decode(bytes),
+           {:ok, index} <- index(doc) do
+        {:ok, Map.merge(index, %{path: path, sha256: sha})}
+      end
+
+    emit_load(result, expected_sha256)
+    result
+  end
+
+  # Consumer-boundary telemetry (RFC-SA2A-002 §138): whether the independent
+  # consumer admitted or refused the bytes, and why. Observational only.
+  defp emit_load({:ok, index}, expected) do
+    :telemetry.execute(
+      [:ash_a2a, :chicago, :ocel, :load],
+      %{system_time: System.system_time()},
+      %{
+        outcome: :loaded,
+        sha256: index.sha256,
+        digest_verified: expected != nil,
+        events: length(index.events),
+        identity_unique: index.identity_unique,
+        array_ordered: index.array_ordered
+      }
+    )
+  end
+
+  defp emit_load({:error, reason}, expected) do
+    code =
+      case reason do
+        {code, _} when is_atom(code) -> code
+        code when is_atom(code) -> code
+        _ -> :ocel_unreadable
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :chicago, :ocel, :load],
+      %{system_time: System.system_time()},
+      %{
+        outcome: :refused,
+        code: code,
+        digest_verified: expected != nil
+      }
+    )
   end
 
   defp check_digest(_sha, nil), do: :ok
@@ -106,12 +150,69 @@ defmodule AshA2A.Chicago.Query do
           objects: Enum.map(List.wrap(e["relationships"]), &{&1["objectId"], &1["qualifier"]})
         }
       end)
-      |> Enum.sort_by(& &1.seq)
 
-    {:ok, %{events: indexed, object_types: object_types}}
+    with :ok <- unique_identities(indexed) do
+      array_ordered = indexed |> Enum.map(& &1.seq) |> then(&(&1 == Enum.sort(&1)))
+
+      {:ok,
+       %{
+         events: Enum.sort_by(indexed, & &1.seq),
+         object_types: object_types,
+         identity_unique: true,
+         array_ordered: array_ordered
+       }}
+    end
   end
 
   defp index(_), do: {:error, :ocel_missing_events_or_objects}
+
+  # Event identity (RFC-SA2A-002 §138 duplicated events, §20 ordering): OCEL
+  # event ids are unique, and a `chicago_seq` names exactly one observation.
+  # An artifact that repeats either is a duplicated or replayed serialization
+  # and is refused rather than silently deduplicated or double counted.
+  defp unique_identities(events) do
+    duplicate_ids = events |> Enum.map(& &1.id) |> duplicates_of()
+
+    duplicate_seqs =
+      events
+      |> Enum.filter(&Map.has_key?(&1.attributes, "chicago_seq"))
+      |> Enum.map(& &1.seq)
+      |> duplicates_of()
+
+    if duplicate_ids == [] and duplicate_seqs == [],
+      do: :ok,
+      else:
+        {:error,
+         {:ocel_duplicate_event_identity,
+          ids: Enum.take(duplicate_ids, 10), chicago_seqs: Enum.take(duplicate_seqs, 10)}}
+  end
+
+  defp duplicates_of(values) do
+    values
+    |> Enum.frequencies()
+    |> Enum.filter(fn {_v, n} -> n > 1 end)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.sort()
+  end
+
+  @doc """
+  Content-duplicate detector: groups of distinct events (distinct ids and
+  `chicago_seq`) whose type, attributes (other than `chicago_seq`) and object
+  relationships are identical -- e.g. the same telemetry delivered twice.
+  Duplicated deliveries are evidence to report, never to collapse.
+  """
+  @spec duplicates(index()) :: [%{type: String.t(), count: pos_integer(), seqs: [integer()]}]
+  def duplicates(index) do
+    index.events
+    |> Enum.group_by(fn e ->
+      {e.type, Map.delete(e.attributes, "chicago_seq"), Enum.sort(e.objects)}
+    end)
+    |> Enum.filter(fn {_key, events} -> length(events) > 1 end)
+    |> Enum.map(fn {{type, _attrs, _objects}, events} ->
+      %{type: type, count: length(events), seqs: Enum.map(events, & &1.seq)}
+    end)
+    |> Enum.sort_by(&{&1.type, hd(&1.seqs)})
+  end
 
   defp seq(%{"chicago_seq" => s}) when is_integer(s), do: s
   defp seq(_), do: 0
