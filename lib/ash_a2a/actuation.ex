@@ -97,12 +97,19 @@ defmodule AshA2A.Actuation do
     }
   end
 
-  @doc "SHA-256 of any term, prefixed `sha256:` to match `AshA2A.SemanticSubject`."
+  @doc """
+  SHA-256 of any term, prefixed `sha256:` to match `AshA2A.SemanticSubject`.
+
+  Encoded with `[:deterministic]`: plain `:erlang.term_to_binary/1` writes
+  atom-keyed map entries in the VM's atom-table order, so the same value
+  digested on another node (or a fresh replay process) would differ
+  (RFC-SA2A-002 §41, CHI-REPLAY-001).
+  """
   @spec digest(term()) :: String.t()
   def digest(term) do
     "sha256:" <>
       (term
-       |> :erlang.term_to_binary()
+       |> :erlang.term_to_binary([:deterministic])
        |> then(&:crypto.hash(:sha256, &1))
        |> Base.encode16(case: :lower))
   end
