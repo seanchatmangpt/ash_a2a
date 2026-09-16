@@ -1,0 +1,6 @@
+{
+  "id": "v005_typed_literals",
+  "title": "Datatyped and language-tagged literals",
+  "intent": "Every literal form whose canonical N-Quads encoding is a known divergence source between RDF implementations: xsd:dateTime, xsd:decimal, xsd:integer, xsd:boolean, two language tags on one predicate, and a plain literal.",
+  "rfc_sections": ["S12"]
+}

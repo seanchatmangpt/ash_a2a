@@ -1,0 +1,8 @@
+{
+  "id": "v006_blank_nodes",
+  "title": "Nested blank node structures (open falsifier)",
+  "intent": "Two structurally similar nested blank-node subtrees. Blank node labelling is the part of RDF canonicalization (RDFC-1.0) with real freedom in it, so this is the strongest available falsifier for the claim that input graph identity is well defined at all. It currently FAILS against praxis-graphlaw v26.7.5: repeated graph_hash/1 calls on this identical graph in one session return different digests (dac3b497.., 725c2598.., bb3ebb85.., 47bc5f5f..), while graphs with no blank nodes are perfectly stable. Both runtimes reproduce the same unstable sequence, so this is a deterministic engine property rather than a portability defect -- but an input identity that is not a function of the input makes the cross-runtime equality vacuous, which is why same_input_identity also checks within-runtime stability. This vector stays in the corpus, and the court stays red, until the engine makes blank node identity canonical.",
+  "rfc_sections": ["S12"],
+  "status": "OPEN_FALSIFIER",
+  "falsifies": "same_input_identity"
+}

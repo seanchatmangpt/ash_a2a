@@ -1,0 +1,6 @@
+{
+  "id": "v008_hook_event_delta",
+  "title": "Hook execution over a real event delta",
+  "intent": "Drives run_hooks/2 with a non-empty event delta rather than the empty-event default, so the CLOSED hop of the S41 prefix is exercised with real hook scheduling input and the output graph hash is taken over a non-trivial hook result.",
+  "rfc_sections": ["S41", "S60", "S70"]
+}

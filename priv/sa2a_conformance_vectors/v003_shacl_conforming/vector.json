@@ -1,0 +1,6 @@
+{
+  "id": "v003_shacl_conforming",
+  "title": "SHACL node shape satisfied",
+  "intent": "Real SHACL NodeShape with a minCount and datatype constraint that the data satisfies. Exercises the STRUCTURALLY_VALID hop of the S41 prefix with a real shapes graph rather than an empty one.",
+  "rfc_sections": ["S41", "S51"]
+}

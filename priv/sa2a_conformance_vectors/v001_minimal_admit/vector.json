@@ -1,0 +1,6 @@
+{
+  "id": "v001_minimal_admit",
+  "title": "Minimal admitted graph",
+  "intent": "Smallest real graph that must parse, identify, close and admit in every runtime. Establishes the baseline canonical graph identity reused by v002.",
+  "rfc_sections": ["S12", "S41"]
+}

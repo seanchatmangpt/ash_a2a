@@ -1,0 +1,6 @@
+{
+  "id": "v007_shex_conforming",
+  "title": "ShEx schema satisfied",
+  "intent": "Real ShEx schema plus a real shape map, exercising the SEMANTICALLY_VALID hop of the S41 prefix. Both files use the encodings praxis-graphlaw's wasm path actually accepts, established by reading the engine rather than assuming: the schema is ShExJ (validate_shex_native/3 does serde_json::from_str into its own ShExJ AST, so the ShExC front end is not reachable from the wasm boundary) and the shape map is the JSON array-of-pairs form parse_shape_map/1 requires. Two earlier revisions of this vector used ShExC and the compact shapemap syntax; both runtimes agreed on the resulting parse-error refusals, which was real conformance evidence but tested the error path rather than ShEx.",
+  "rfc_sections": ["S41", "S51"]
+}

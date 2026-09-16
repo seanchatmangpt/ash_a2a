@@ -197,6 +197,19 @@ defmodule AshA2A.MixProject do
       # `only: :test` -- `lib/ash_a2a/semantic/serialize.ex` calls it outside
       # the test env, the same real constraint documented for `:plug`/`:ekv`.
       {:rdf, "~> 3.0"},
+      # v26.9.16 SA2A conformance court: the real in-BEAM WebAssembly host
+      # (`AshA2A.GraphLaw.Wasm`) for runtime A of
+      # `AshA2A.SA2A.Conformance`. `:wasmex` wraps a real Wasmtime engine via
+      # a Rustler NIF; on aarch64-apple-darwin (and the other tier-1 targets)
+      # `rustler_precompiled` downloads a prebuilt NIF, so this does NOT
+      # require a Rust toolchain at build time -- unlike `:ggen_igniter`
+      # above, which is why that one is `only: :dev` and this one is not
+      # similarly restricted. It is nevertheless a real native dependency of
+      # a real optional subsystem: every call site
+      # (`AshA2A.GraphLaw.Wasm`) checks `Code.ensure_loaded?(Wasmex)` and
+      # returns a typed `:wasmex_unavailable` refusal rather than raising, so
+      # a consumer that never runs the conformance court never touches it.
+      {:wasmex, "~> 0.15.1"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]

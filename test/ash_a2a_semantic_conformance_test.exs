@@ -340,12 +340,26 @@ defmodule AshA2ASemanticConformanceTest do
       assert targets == Enum.sort(Enum.uniq(targets))
     end
 
-    test "no LLM module is reachable by a direct remote call from the DO path" do
-      assert {:met, detail} = Conformance.check_no_llm_on_production_do_path()
-      assert detail =~ "none is an LLM module"
+    test "no LITERALLY NAMED call target on the DO path is an LLM module -- and real dynamic dispatch sites make the requirement honestly unverifiable, not falsely met" do
+      # Tightened by a real round-2 fix: an earlier revision of this check
+      # only collected literal `Mod.fun(...)` targets and concluded
+      # `:met` from what it could see, even though `AshA2A.CommandBus`
+      # and `AshA2A.ReceiptOutbox` genuinely dispatch some calls through a
+      # variable module / `apply/3` -- targets an AST scan cannot resolve.
+      # A vacuously-true structural check is worse than an absent one, so
+      # `check_no_llm_on_production_do_path/0` now reports `:unverifiable`
+      # whenever such a site exists, naming exactly where.
+      assert {:unverifiable, detail} = Conformance.check_no_llm_on_production_do_path()
+      assert detail =~ "no LITERALLY NAMED call target"
+      assert detail =~ "dispatch on a module that is a runtime value"
+      assert detail =~ "AshA2A.CommandBus"
 
       assert {:ok, targets} = Conformance.remote_call_targets(AshA2A.CommandBus)
       refute Enum.any?(targets, &Conformance.llm_module?/1)
+
+      # The real dynamic sites this requirement is honestly blind to.
+      assert {:ok, dynamic} = Conformance.dynamic_call_sites(AshA2A.CommandBus)
+      assert dynamic != []
     end
 
     test "llm_module?/1 really classifies the real module names it is meant to catch" do

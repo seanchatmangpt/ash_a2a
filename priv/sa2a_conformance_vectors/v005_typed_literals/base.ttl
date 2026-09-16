@@ -1,0 +1,10 @@
+@prefix ex: <http://example.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:reading ex:observedAt "2026-09-16T00:00:00Z"^^xsd:dateTime ;
+  ex:celsius "21.5"^^xsd:decimal ;
+  ex:count "7"^^xsd:integer ;
+  ex:active "true"^^xsd:boolean ;
+  ex:label "temperature"@en ;
+  ex:label "Temperatur"@de ;
+  ex:note "plain literal" .

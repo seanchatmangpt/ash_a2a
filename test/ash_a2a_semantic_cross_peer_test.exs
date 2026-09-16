@@ -410,13 +410,32 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
   describe "S76 -- a Strict peer MUST NOT silently downgrade a consequence-bearing task" do
     test "strict + consequence-bearing + unnegotiated => UNSUPPORTED_PROFILE", %{
+      agent: agent_name,
+      ledger_name: ledger_name,
       plug_opts: plug_opts,
       ledger: ledger
     } do
-      message = %{
-        A2A.Message.new_user("place an order for 3 widgets")
-        | metadata: %{"consequenceBearing" => true}
-      }
+      # The old `message.metadata["consequenceBearing"]` flag this test used
+      # to set is now ignored on purpose (see AshA2A.Semantic.Peer's real
+      # S76 fix -- the counterparty may not answer its own downgrade
+      # question). Consequence-bearing-ness is now read from THIS peer's own
+      # capability surface, so this test configures one here (scoped to this
+      # test only -- other tests in this module must not see it, since a
+      # configured capability surface changes the bridge-path S75 tests'
+      # outcome too): the real AshA2A.Test.SemanticPeerFixture.Domain
+      # fixture already used by test/ash_a2a_semantic_agent_card_test.exs,
+      # whose sole real skill (place_order, via :create) is
+      # consequence-bearing -- exactly what this test needs to exercise.
+      :ok =
+        PeerB.configure(agent_name,
+          name: @peer_b,
+          ledger: ledger_name,
+          shapes: Graphs.peer_b_shapes(),
+          mode: :strict,
+          capabilities: AshA2A.Test.SemanticPeerFixture.Domain
+        )
+
+      message = A2A.Message.new_user("place an order for 3 widgets")
 
       {200, response} = send_over_real_transport(plug_opts, message)
       data = reply_data(response)

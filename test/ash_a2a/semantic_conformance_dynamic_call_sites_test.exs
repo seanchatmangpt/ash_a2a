@@ -22,7 +22,7 @@ defmodule AshA2A.SemanticConformanceDynamicCallSitesTest do
   the real `:beam_lib`, exactly as the production check does.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias AshA2A.Semantic.Conformance
   alias AshA2A.Test.{DynamicCallSiteFixture, StaticCallSiteFixture}

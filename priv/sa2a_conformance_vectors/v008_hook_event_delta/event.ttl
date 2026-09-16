@@ -1,0 +1,4 @@
+@prefix ex: <http://example.org/> .
+
+ex:sensor ex:reading 42 .
+ex:sensor ex:state ex:firing .

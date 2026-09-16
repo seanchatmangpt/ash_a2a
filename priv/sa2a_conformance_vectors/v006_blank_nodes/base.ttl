@@ -1,0 +1,13 @@
+@prefix ex: <http://example.org/> .
+
+ex:order ex:hasLine [
+  ex:sku "A-1" ;
+  ex:qty 2 ;
+  ex:ships [ ex:carrier "acme" ]
+] .
+
+ex:order ex:hasLine [
+  ex:sku "B-2" ;
+  ex:qty 5 ;
+  ex:ships [ ex:carrier "acme" ]
+] .
