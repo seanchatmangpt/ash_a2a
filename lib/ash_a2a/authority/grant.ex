@@ -131,6 +131,34 @@ defmodule AshA2A.Authority.Grant do
       :broker ->
         broker_authorize(auth_identity, capability_id, opts)
     end
+    |> tap(&emit_decision(&1, auth_identity, capability_id, opts))
+  end
+
+  # RFC-SA2A-002 §12/§18: the grant decision emits evidence at its own boundary,
+  # `[:ash_a2a, :authority, :grant]` with `outcome: :granted | :refused` (+
+  # `:code`, `:policy`, `:principal_id`, `:capability_id`). Observation only:
+  # the return value above is unchanged and this never raises into the caller.
+  defp emit_decision(authority, auth_identity, capability_id, opts) do
+    {outcome, code} =
+      cond do
+        authority != nil -> {:granted, nil}
+        resolve_broker(opts) == :error -> {:refused, :no_authority_broker_configured}
+        true -> {:refused, :no_standing_grant}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :authority, :grant],
+      %{system_time: System.system_time()},
+      %{
+        outcome: outcome,
+        code: code,
+        policy: policy(opts),
+        capability_id: capability_id,
+        principal_id: Identity.principal(auth_identity).value
+      }
+    )
+  rescue
+    _ -> :ok
   end
 
   @doc """
