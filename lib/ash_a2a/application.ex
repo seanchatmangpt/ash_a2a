@@ -47,6 +47,14 @@ defmodule AshA2A.Application do
            name: AshA2A.Telemetry.TaskSupervisor,
            max_children: Application.get_env(:ash_a2a, :ocel_max_in_flight, 256)},
           {AshA2A.Semantic.PackageStore, []},
+          # `AshA2A.KillSwitch`: a real, standalone class-level halt
+          # primitive (see its moduledoc). Started here as a node-wide
+          # singleton, the same idiom as `AshA2A.Semantic.PackageStore`
+          # above -- NOT consulted by `AshA2A.CommandBus.admit/2` or any
+          # other dispatch path today, so starting it changes no existing
+          # admission/fencing behavior; it is simply available for a host
+          # (or a future, separately-scoped change) to call.
+          {AshA2A.KillSwitch, []},
           {A2A.AgentSupervisor, agents: agents}
         ]
 
