@@ -289,6 +289,28 @@ defmodule AshA2A.SA2AConformanceTest do
       assert {:error, reason} = Conformance.run(runtime_a: Wasm, runtime_b: Wasm)
       assert reason.code == :sa2a_identical_runtimes
       assert reason.message =~ "cannot establish cross-runtime conformance"
+
+      # The two runtimes resolved to the same module, and the refusal says so
+      # by name rather than inferring it from a matching identity pair.
+      assert reason.same_module
+      assert reason.message =~ "resolve to the same module"
+
+      # It refuses before any vector executes, so there is no receipt and
+      # therefore no trivially-passing 5/5 to misread.
+      refute is_map_key(reason, :assertions)
+    end
+
+    test "refuses two distinct modules that report the same host and engine identity" do
+      # AshA2A.Test.EchoHostRuntime is a different module from Wasm and really
+      # delegates every call to it, but reports Wasm's own {host_id,
+      # engine_id}. That is one runtime wearing two names, and it is refused
+      # on identity even though the module check does not fire.
+      assert {:error, reason} =
+               Conformance.run(runtime_a: Wasm, runtime_b: AshA2A.Test.EchoHostRuntime)
+
+      assert reason.code == :sa2a_identical_runtimes
+      refute reason.same_module
+      assert reason.message =~ "same {host_id, engine_id}"
     end
 
     test "refuses an empty corpus rather than passing vacuously" do
@@ -326,17 +348,253 @@ defmodule AshA2A.SA2AConformanceTest do
         output = assertion(receipt, :same_output_semantics)
 
         refute input["computed"]
-        refute input["value"]
-        assert input["detail"] =~ "produced no input_graph_hash"
+        assert input["value"] == nil
+        assert input["detail"] =~ "could not be computed"
+
+        # The refusal names the real call that failed, in the real runtime
+        # that failed it, rather than reporting a blanket absence.
+        failed = Enum.flat_map(input["divergences"], & &1["failed_steps"])
+        assert "graph_hash_input" in failed
+        assert "BEAM/Wasmex(degraded)" in Enum.map(input["divergences"], & &1["runtime"])
 
         refute output["computed"]
-        refute output["value"]
+        assert output["value"] == nil
 
         assert receipt["result"] == "FAIL"
 
         # The degraded host still really executed everything else, so the
         # failure is attributable rather than blanket.
         assert assertion(receipt, :same_wasm)["value"]
+      end
+    end
+  end
+
+  describe "an engine error is never projected into a comparable value" do
+    # The corpus minus v006_blank_nodes. v006 carries a real, separate, open
+    # praxis-graphlaw defect (unstable blank-node graph_hash), which makes the
+    # full corpus FAIL for a reason that has nothing to do with these tests.
+    # On this subset two healthy runtimes really do return {:ok, "PASS"} --
+    # asserted below as the control -- so a FAIL here is attributable to the
+    # degradation under test and to nothing else.
+    defp corpus_without_v006 do
+      dir = Path.join(System.tmp_dir!(), "sa2a_no_v006_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(dir)
+
+      for source <- Path.wildcard("priv/sa2a_conformance/*"),
+          File.dir?(source),
+          Path.basename(source) != "v006_blank_nodes" do
+        File.cp_r!(source, Path.join(dir, Path.basename(source)))
+      end
+
+      dir
+    end
+
+    test "control: two healthy runtimes really do PASS on this corpus", %{} = context do
+      if skip = context[:skip] do
+        IO.puts("skipped: #{skip}")
+      else
+        dir = corpus_without_v006()
+
+        try do
+          assert {:ok, receipt} = Conformance.run(corpus_dir: dir)
+          assert receipt["result"] == "PASS"
+        after
+          File.rm_rf!(dir)
+        end
+      end
+    end
+
+    @tag :falsifier
+    test "two runtimes whose run_hooks both failed must not be reported as agreeing",
+         %{} = context do
+      if skip = context[:skip] do
+        IO.puts("skipped: #{skip}")
+      else
+        dir = corpus_without_v006()
+
+        try do
+          # The verifier's exact scenario. Two real, genuinely different hosts
+          # -- a real :wasmex instance and a real out-of-BEAM JS subprocess --
+          # each running the real wasm module for every call except
+          # run_hooks/2, the one call that decides ADMITTED, which each really
+          # refuses. See AshA2A.Test.HooksDegradedRuntimeA's @moduledoc.
+          #
+          # Before the fix this returned {:ok, receipt} with "result" =>
+          # "PASS" and all five assertions computed=true value=true: both
+          # hosts' failures were projected into the identical well-formed
+          # %{"status" => "ABSENT"} graph, hashed to the identical digest
+          # d8d7d578.., and the match was called conformance. Two hosts
+          # agreeing that they both failed is not conformance.
+          assert {:error, receipt} =
+                   Conformance.run(
+                     runtime_a: AshA2A.Test.HooksDegradedRuntimeA,
+                     runtime_b: AshA2A.Test.HooksDegradedRuntimeB,
+                     corpus_dir: dir
+                   )
+
+          assert receipt["result"] == "FAIL"
+
+          for name <- [
+                :same_admission,
+                :same_output_semantics,
+                :same_evidence_identity,
+                :same_input_identity
+              ] do
+            result = assertion(receipt, name)
+
+            refute result["computed"],
+                   "#{name} claimed to be computed in a run where run_hooks never executed"
+
+            # Not merely falsy: genuinely absent, so "could not tell" can
+            # never be read back as "checked and it held".
+            assert result["value"] == nil, "#{name} reported a truth value it never computed"
+          end
+
+          # The failure stays attributable rather than blanket: the two hosts
+          # really did load the identical module, and the court still says so.
+          assert assertion(receipt, :same_wasm)["computed"]
+          assert assertion(receipt, :same_wasm)["value"] == true
+        after
+          File.rm_rf!(dir)
+        end
+      end
+    end
+
+    @tag :falsifier
+    test "the ABSENT projection digest appears nowhere in the receipt", %{} = context do
+      if skip = context[:skip] do
+        IO.puts("skipped: #{skip}")
+      else
+        dir = corpus_without_v006()
+
+        try do
+          {:error, receipt} =
+            Conformance.run(
+              runtime_a: AshA2A.Test.HooksDegradedRuntimeA,
+              runtime_b: AshA2A.Test.HooksDegradedRuntimeB,
+              corpus_dir: dir
+            )
+
+          # The exact digest the old code manufactured, computed live here by
+          # the real wasm module over the real ABSENT projection rather than
+          # pasted in as a constant.
+          {:ok, %{session: session}} = Wasm.open([])
+
+          absent_digest =
+            try do
+              vector = hd(receipt["runtime_a"]["vectors"])["vector"]
+              turtle = ResultProjection.hook_result_turtle(vector, %{"status" => "ABSENT"})
+              {:ok, digest} = Wasm.call(session, :graph_hash, [turtle])
+              digest
+            after
+              Wasm.close(session)
+            end
+
+          assert String.match?(absent_digest, ~r/\A[0-9a-f]{64}\z/)
+
+          for side <- ["runtime_a", "runtime_b"], vector <- receipt[side]["vectors"] do
+            refute vector["computed"],
+                   "#{vector["vector"]} claimed a complete observation without run_hooks"
+
+            assert vector["output_graph_hash"] == nil,
+                   "#{side}/#{vector["vector"]} manufactured an output hash from a failure"
+
+            refute vector["evidence_hash"] == absent_digest
+            assert vector["evidence_hash"] == nil
+          end
+
+          # Nor at the rollup level: a digest over an incomplete observation
+          # set is a well-formed digest of a failure.
+          for side <- ["runtime_a", "runtime_b"] do
+            refute receipt[side]["observations_complete"]
+            assert receipt[side]["output_graph_hash"] == nil
+            assert receipt[side]["evidence_hash"] == nil
+            assert receipt[side]["admission_digest"] == nil
+          end
+
+          # And the whole receipt still round-trips, nulls included.
+          assert {:ok, decoded} = JSON.decode(JSON.encode!(receipt))
+          assert decoded["result"] == "FAIL"
+        after
+          File.rm_rf!(dir)
+        end
+      end
+    end
+
+    @tag :falsifier
+    test "a failure in one runtime alone is enough; agreement is not required to fail",
+         %{} = context do
+      if skip = context[:skip] do
+        IO.puts("skipped: #{skip}")
+      else
+        dir = corpus_without_v006()
+
+        try do
+          # Only runtime B's hooks are broken. The court must refuse to
+          # compare, not report a divergence it did not actually observe.
+          assert {:error, receipt} =
+                   Conformance.run(
+                     runtime_a: Wasm,
+                     runtime_b: AshA2A.Test.HooksDegradedRuntimeB,
+                     corpus_dir: dir
+                   )
+
+          assert receipt["result"] == "FAIL"
+          refute assertion(receipt, :same_admission)["computed"]
+          assert assertion(receipt, :same_admission)["value"] == nil
+
+          # The healthy side is still reported as healthy, per vector.
+          assert Enum.all?(receipt["runtime_a"]["vectors"], & &1["computed"])
+          refute Enum.any?(receipt["runtime_b"]["vectors"], & &1["computed"])
+          assert receipt["runtime_a"]["observations_complete"]
+          refute receipt["runtime_b"]["observations_complete"]
+        after
+          File.rm_rf!(dir)
+        end
+      end
+    end
+
+    test "the moduledoc claim and the real behaviour agree", %{} = context do
+      # The claim, read out of the compiled module rather than out of the
+      # source file, so weakening it is what breaks this test.
+      {:docs_v1, _, :elixir, _, %{"en" => doc}, _, _} = Code.fetch_docs(Conformance)
+
+      assert doc =~ "An assertion that could not be computed is a **failure**, never a skip"
+      assert doc =~ ~s(`run/1` returns `{:error, receipt}` when any of the five is absent or)
+
+      if skip = context[:skip] do
+        IO.puts("skipped: #{skip}")
+      else
+        dir = corpus_without_v006()
+
+        try do
+          # The behaviour that claim describes, measured: an absent assertion
+          # really does produce {:error, _}, and the returned tuple really
+          # does agree with the receipt's own verdict field.
+          result =
+            Conformance.run(
+              runtime_a: AshA2A.Test.HooksDegradedRuntimeA,
+              runtime_b: AshA2A.Test.HooksDegradedRuntimeB,
+              corpus_dir: dir
+            )
+
+          assert {:error, receipt} = result
+          assert receipt["result"] == "FAIL"
+
+          all_true? =
+            Enum.all?(Conformance.assertion_names(), fn name ->
+              a = assertion(receipt, name)
+              a["computed"] == true and a["value"] == true
+            end)
+
+          refute all_true?
+
+          assert Enum.any?(Conformance.assertion_names(), fn name ->
+                   assertion(receipt, name)["computed"] == false
+                 end)
+        after
+          File.rm_rf!(dir)
+        end
       end
     end
   end

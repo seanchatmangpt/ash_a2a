@@ -44,6 +44,27 @@ defmodule AshA2A.SA2A.Conformance do
   observations, so evidence identity is a real agreement rather than a
   restatement of one runtime's view.
 
+  ## An engine error is never projected into a comparable value
+
+  This is the court's load-bearing rule and it is enforced structurally, not
+  by convention. If any call in a vector's sequence fails -- a transport
+  error, or the `{"error": ...}` JSON GraphLaw returns instead of raising --
+  that vector's observation is marked `computed: false` in both runtimes'
+  receipt sections, every downstream call is **skipped rather than issued
+  over a substitute input**, and every per-vector assertion reports
+  `computed: false, value: nil`.
+
+  The alternative was measured and is the reason the rule is structural. An
+  earlier revision of this module projected a failed `run_hooks/2` into a
+  well-formed `%{"status" => "ABSENT"}` graph and hashed *that*. Two hosts
+  whose hook path was broken then produced the identical ABSENT digest
+  `d8d7d578..`, `same_admission`, `same_output_semantics` and
+  `same_evidence_identity` all reported `computed: true, value: true`, and
+  `run/1` returned `{:ok, receipt}` with `"result" => "PASS"` for a run in
+  which `run_hooks/2` -- the call that decides ADMITTED -- never executed in
+  either runtime. Two hosts agreeing that they both failed is not
+  conformance. A failure has no canonical form and must not be given one.
+
   ## Stability: why `graph_hash(base)` is called twice
 
   The conformance claim's premise is `O*_input,A = O*_input,B` -- an equality
@@ -83,12 +104,21 @@ defmodule AshA2A.SA2A.Conformance do
   `run/1` returns `{:error, receipt}` when any of the five is absent or
   false, and `mix ash_a2a.sa2a_conformance` exits non-zero on it.
 
+  `computed` and `value` are genuinely distinct in the receipt and are not
+  two spellings of the same bit. An assertion the court could not compute
+  carries `"computed" => false, "value" => null`; one it computed and
+  falsified carries `"computed" => true, "value" => false`; only
+  `"computed" => true, "value" => true` counts toward a pass, for all five.
+  There is no third state in which absence satisfies the pass condition.
+
   ## Refusing a degenerate run
 
-  Two runtimes sharing a `{host_id, engine_id}` pair are refused with
-  `:sa2a_identical_runtimes` before any vector executes. A court that
-  silently ran one runtime twice would report five green assertions and mean
-  nothing at all.
+  Two runtimes that are the same module, or that share a
+  `{host_id, engine_id}` pair, are refused with `:sa2a_identical_runtimes`
+  before any vector executes. A court that silently ran one runtime twice
+  would report five green assertions and mean nothing at all. The module
+  check runs first, so a module that cannot report its own identity still
+  cannot be run against itself.
   """
 
   alias AshA2A.GraphLaw.Runtime
@@ -140,6 +170,24 @@ defmodule AshA2A.SA2A.Conformance do
 
   # -- refusals -------------------------------------------------------------
 
+  # Two checks, module identity first. A module that cannot report its own
+  # {host_id, engine_id} must still not be runnable against itself, so the
+  # cheaper and stricter check does not depend on the runtime answering.
+  defp refuse_identical(mod, mod) do
+    {:error,
+     %{
+       code: :sa2a_identical_runtimes,
+       same_module: true,
+       runtime_a: inspect(mod),
+       runtime_b: inspect(mod),
+       identity: inspect(Runtime.identity(mod)),
+       message:
+         "runtime_a and runtime_b resolve to the same module (#{inspect(mod)}). Running " <>
+           "one runtime twice cannot establish cross-runtime conformance; it would " <>
+           "report five trivially-passing assertions about a single host."
+     }}
+  end
+
   defp refuse_identical(mod_a, mod_b) do
     identity_a = Runtime.identity(mod_a)
     identity_b = Runtime.identity(mod_b)
@@ -148,6 +196,7 @@ defmodule AshA2A.SA2A.Conformance do
       {:error,
        %{
          code: :sa2a_identical_runtimes,
+         same_module: false,
          runtime_a: inspect(mod_a),
          runtime_b: inspect(mod_b),
          identity: inspect(identity_a),
@@ -217,45 +266,90 @@ defmodule AshA2A.SA2A.Conformance do
     input_graph_hash = call(mod, session, :graph_hash, [vector.base])
     hooks_raw = call(mod, session, :run_hooks, [vector.base, vector.event])
 
+    # Decoded, not raw: GraphLaw answers `{"error": ...}` JSON instead of
+    # raising, so a transport-level `{:ok, body}` can still carry an engine
+    # failure. Both count as failures here.
     validation = decode(validation_raw)
     hooks = decode(hooks_raw)
 
     state = StateMachine.evaluate(value(input_graph_hash), validation, hooks)
 
-    projection =
+    # A failed `run_hooks/2` has no canonical form. The projection call is
+    # SKIPPED rather than issued over a substitute graph -- projecting the
+    # failure into `%{"status" => "ABSENT"}` and hashing it is what let two
+    # broken hosts agree digit-for-digit on a digest neither had earned.
+    output_graph_hash =
       case hooks do
-        {:ok, decoded} -> ResultProjection.hook_result_turtle(vector.id, decoded)
-        {:error, _} -> ResultProjection.hook_result_turtle(vector.id, %{"status" => "ABSENT"})
+        {:ok, decoded} ->
+          call(mod, session, :graph_hash, [
+            ResultProjection.hook_result_turtle(vector.id, decoded)
+          ])
+
+        {:error, reason} ->
+          not_computed(:run_hooks, reason)
       end
 
-    output_graph_hash = call(mod, session, :graph_hash, [projection])
-
-    validation_summary =
+    # Same rule one call over: a failed `validate_all/5` is not summarised
+    # into `"validation_unavailable=..."` and hashed. Two hosts that failed
+    # identically would otherwise agree on that digest too.
+    validation_digest =
       case validation do
-        {:ok, decoded} -> ResultProjection.validation_summary(decoded)
-        {:error, reason} -> "validation_unavailable=#{inspect(reason)}\n"
+        {:ok, decoded} ->
+          call(mod, session, :blake3_hex, [ResultProjection.validation_summary(decoded)])
+
+        {:error, reason} ->
+          not_computed(:validate_all, reason)
       end
-
-    validation_digest = call(mod, session, :blake3_hex, [validation_summary])
-
-    evidence_package =
-      evidence_package(vector, version, %{
-        input_graph_hash: value(input_graph_hash),
-        state: state,
-        validation_digest: value(validation_digest),
-        output_graph_hash: value(output_graph_hash)
-      })
-
-    evidence_hash = call(mod, session, :blake3_hex, [evidence_package])
 
     # Repeat of the third call. See the "Stability" section of the module
     # doc: without it, `same_input_identity` can report agreement about a
     # quantity that is not a function of the graph.
     input_graph_hash_repeat = call(mod, session, :graph_hash, [vector.base])
 
+    # The evidence package is a fixed-order rendering of the four quantities
+    # above. If any of them is absent the package would render an empty field
+    # -- and two runtimes missing the same field would produce the identical
+    # evidence digest. So the sixth call is skipped too.
+    evidence_hash =
+      case {input_graph_hash, validation_digest, output_graph_hash} do
+        {{:ok, input}, {:ok, validation_hash}, {:ok, output}} ->
+          call(mod, session, :blake3_hex, [
+            evidence_package(vector, version, %{
+              input_graph_hash: input,
+              state: state,
+              validation_digest: validation_hash,
+              output_graph_hash: output
+            })
+          ])
+
+        _ ->
+          not_computed(:evidence_package, %{
+            code: :sa2a_upstream_not_computed,
+            message: "an earlier call in this vector's sequence did not produce a value"
+          })
+      end
+
+    errors =
+      Enum.reject(
+        [
+          error_of(validation, :validate_all),
+          error_of(input_graph_hash, :graph_hash_input),
+          error_of(hooks, :run_hooks),
+          error_of(output_graph_hash, :graph_hash_output),
+          error_of(validation_digest, :blake3_validation),
+          error_of(evidence_hash, :blake3_evidence),
+          error_of(input_graph_hash_repeat, :graph_hash_input_repeat)
+        ],
+        &is_nil/1
+      )
+
     %{
       vector: vector.id,
       vector_digest: vector.digest,
+      # One failed call anywhere in the sequence poisons the whole
+      # observation. Every per-vector assertion refuses to compare a vector
+      # whose observation is not complete, in either runtime.
+      computed: errors == [],
       input_graph_hash: value(input_graph_hash),
       input_graph_hash_repeat: value(input_graph_hash_repeat),
       validation_digest: value(validation_digest),
@@ -265,21 +359,14 @@ defmodule AshA2A.SA2A.Conformance do
       state_trace: state.trace,
       output_graph_hash: value(output_graph_hash),
       evidence_hash: value(evidence_hash),
-      errors:
-        Enum.reject(
-          [
-            error_of(validation_raw, :validate_all),
-            error_of(input_graph_hash, :graph_hash_input),
-            error_of(hooks_raw, :run_hooks),
-            error_of(output_graph_hash, :graph_hash_output),
-            error_of(validation_digest, :blake3_validation),
-            error_of(evidence_hash, :blake3_evidence),
-            error_of(input_graph_hash_repeat, :graph_hash_input_repeat)
-          ],
-          &is_nil/1
-        )
+      errors: errors
     }
   end
+
+  # A call that was deliberately not issued, because issuing it would have
+  # required inventing an input the engine never produced.
+  defp not_computed(step, cause),
+    do: {:error, %{code: :sa2a_not_computed, skipped_after: step, cause: cause}}
 
   @doc """
   The canonical evidence package for one vector in one runtime: the exact
@@ -307,13 +394,22 @@ defmodule AshA2A.SA2A.Conformance do
     """
   end
 
+  # Rollups summarise per-vector observations, so a rollup over an incomplete
+  # set is a well-formed digest of a failure -- exactly the shape this court
+  # must never produce. When any vector's observation is incomplete the
+  # runtime-level digests are `nil`, and the receipt says so by name in
+  # `observations_complete`.
   defp with_rollups(observation, mod, session) do
-    rollup = fn field ->
-      payload =
-        observation.vectors
-        |> Enum.map_join("", fn v -> "#{v.vector}=#{Map.get(v, field)}\n" end)
+    complete? = Enum.all?(observation.vectors, & &1.computed)
 
-      value(call(mod, session, :blake3_hex, [payload]))
+    rollup = fn field ->
+      if complete? do
+        payload =
+          observation.vectors
+          |> Enum.map_join("", fn v -> "#{v.vector}=#{Map.get(v, field)}\n" end)
+
+        value(call(mod, session, :blake3_hex, [payload]))
+      end
     end
 
     admission_payload =
@@ -325,11 +421,13 @@ defmodule AshA2A.SA2A.Conformance do
     all_admitted? = Enum.all?(observation.vectors, &(&1.admission == "ADMITTED"))
 
     Map.merge(observation, %{
+      observations_complete: complete?,
       input_graph_hash: rollup.(:input_graph_hash),
       output_graph_hash: rollup.(:output_graph_hash),
       evidence_hash: rollup.(:evidence_hash),
-      admission: if(all_admitted?, do: "ADMITTED", else: "REFUSED"),
-      admission_digest: value(call(mod, session, :blake3_hex, [admission_payload]))
+      admission: if(complete? and all_admitted?, do: "ADMITTED", else: "REFUSED"),
+      admission_digest:
+        if(complete?, do: value(call(mod, session, :blake3_hex, [admission_payload])))
     })
   end
 
@@ -349,10 +447,13 @@ defmodule AshA2A.SA2A.Conformance do
       same_evidence_identity: same_evidence(a, b)
     }
 
+    # `computed` and `value` are separate bits and both must be exactly
+    # `true`. An assertion the court could not compute carries
+    # `value: nil`, which can never satisfy this and is never a skip.
     passed? =
       Enum.all?(@assertions, fn name ->
         assertion = Map.fetch!(assertions, name)
-        assertion.computed and assertion.value
+        assertion.computed == true and assertion.value == true
       end)
 
     receipt = receipt(a, b, vectors, assertions, passed?)
@@ -410,8 +511,26 @@ defmodule AshA2A.SA2A.Conformance do
     end
   end
 
+  # Every incomplete observation, in either runtime, with the steps that
+  # failed. A vector listed here is never compared: an engine error is not a
+  # value, so two runtimes carrying the same error are not in agreement.
+  defp incomplete(a, b) do
+    for observation <- [a, b],
+        vector <- observation.vectors,
+        not vector.computed do
+      %{
+        "vector" => vector.vector,
+        "runtime" => observation.host,
+        "reason" => "the engine did not compute this observation; it cannot be compared",
+        "failed_steps" => Enum.map(vector.errors, &to_string(&1.step)),
+        "errors" => Enum.map(vector.errors, &inspect/1)
+      }
+    end
+  end
+
   defp per_vector(a, b, field) do
     pairs = Enum.zip(a.vectors, b.vectors)
+    incomplete = incomplete(a, b)
 
     absent =
       Enum.filter(pairs, fn {va, vb} ->
@@ -424,6 +543,12 @@ defmodule AshA2A.SA2A.Conformance do
     cond do
       pairs == [] ->
         absent("no vectors were observed")
+
+      incomplete != [] ->
+        absent(
+          "#{length(incomplete)} vector observation(s) could not be computed",
+          incomplete
+        )
 
       absent != [] ->
         absent(
@@ -452,6 +577,7 @@ defmodule AshA2A.SA2A.Conformance do
 
   defp same_admission(a, b) do
     pairs = Enum.zip(a.vectors, b.vectors)
+    incomplete = incomplete(a, b)
 
     divergent =
       Enum.filter(pairs, fn {va, vb} ->
@@ -462,6 +588,12 @@ defmodule AshA2A.SA2A.Conformance do
     cond do
       pairs == [] ->
         absent("no vectors were observed")
+
+      # `run_hooks/2` is the call that decides ADMITTED. If it did not run,
+      # there is no admission to agree about, however identically the two
+      # state machines described its absence.
+      incomplete != [] ->
+        absent("#{length(incomplete)} vector observation(s) could not be computed", incomplete)
 
       a.admission_digest == nil or b.admission_digest == nil ->
         absent("a runtime produced no admission rollup digest")
@@ -519,13 +651,17 @@ defmodule AshA2A.SA2A.Conformance do
     end
   end
 
+  # Three genuinely distinct outcomes, not two. `value` is a truth value only
+  # where one was actually computed; where none was, it is `nil` rather than
+  # `false`, so "the court could not tell" can never be read as "the court
+  # checked and it held", nor be counted toward a pass.
   defp passed, do: %{computed: true, value: true, detail: nil, divergences: []}
 
   defp failed(detail, divergences),
     do: %{computed: true, value: false, detail: detail, divergences: divergences}
 
   defp absent(detail, divergences \\ []),
-    do: %{computed: false, value: false, detail: detail, divergences: divergences}
+    do: %{computed: false, value: nil, detail: detail, divergences: divergences}
 
   # -- receipt --------------------------------------------------------------
 
@@ -580,6 +716,7 @@ defmodule AshA2A.SA2A.Conformance do
       "host" => observation.host,
       "engine" => observation.engine,
       "runtime_module" => inspect(observation.runtime),
+      "observations_complete" => observation.observations_complete,
       "wasm_digest" => observation.wasm_digest,
       "graphlaw_version" => observation.graphlaw_version,
       "root_manifest_digest" => observation.root_manifest_digest,
@@ -593,6 +730,7 @@ defmodule AshA2A.SA2A.Conformance do
           %{
             "vector" => v.vector,
             "vector_digest" => v.vector_digest,
+            "computed" => v.computed,
             "input_graph_hash" => v.input_graph_hash,
             "input_graph_hash_repeat" => v.input_graph_hash_repeat,
             "validation_digest" => v.validation_digest,
