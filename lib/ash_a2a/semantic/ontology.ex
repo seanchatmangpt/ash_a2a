@@ -60,7 +60,20 @@ defmodule AshA2A.Semantic.Ontology do
 
   @type t :: %__MODULE__{}
 
-  def from_ir(%IR{standing: :admitted, authority: :none} = ir) do
+  def from_ir(ir) do
+    result = project(ir)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where canonical O* is manufactured.
+    :telemetry.execute([:ash_a2a, :semantic, :ontology, :project], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :projected, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      input_standing: with(%IR{standing: standing} <- ir, do: standing, else: (_ -> nil))
+    })
+
+    result
+  end
+
+  defp project(%IR{standing: :admitted, authority: :none} = ir) do
     ids =
       ir |> IR.items() |> Enum.map(fn {_field, item} -> Map.get(item, "id") end) |> MapSet.new()
 
@@ -71,7 +84,7 @@ defmodule AshA2A.Semantic.Ontology do
      %__MODULE__{source_id: ir.source_id, triples: triples, fingerprint: fingerprint(triples)}}
   end
 
-  def from_ir(_), do: {:error, %{code: :ontology_requires_admitted_semantics}}
+  defp project(_), do: {:error, %{code: :ontology_requires_admitted_semantics}}
 
   defp base_triples(ir) do
     Enum.flat_map(IR.items(ir), fn {field, item} ->
@@ -106,6 +119,10 @@ defmodule AshA2A.Semantic.Ontology do
 
   defp triple(subject, predicate, object),
     do: %{subject: subject, predicate: predicate, object: object}
+
+  @doc "The IRI of the ontology node for IR item `id` (what `from_ir/1` emits)."
+  @spec node_iri(String.t()) :: String.t()
+  def node_iri(id), do: semantic_node(id)
 
   defp semantic_node(id), do: "urn:ash-a2a:semantic:node:#{id}"
   defp source(id), do: "urn:ash-a2a:source:#{id}"

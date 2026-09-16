@@ -41,13 +41,23 @@ defmodule AshA2A.Semantic.Admission do
   }
 
   def admit(%Source{} = source, %IR{} = ir) do
-    with :ok <- fence(ir),
-         :ok <- source_match(source, ir),
-         :ok <- require_goal(ir),
-         :ok <- unique_ids(ir),
-         :ok <- validate_items(source, ir) do
-      {:ok, %{ir | standing: :admitted}}
-    end
+    result =
+      with :ok <- fence(ir),
+           :ok <- source_match(source, ir),
+           :ok <- require_goal(ir),
+           :ok <- unique_ids(ir),
+           :ok <- validate_items(source, ir) do
+        {:ok, %{ir | standing: :admitted}}
+      end
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where IR admission is decided.
+    :telemetry.execute([:ash_a2a, :semantic, :ir_admission, :decision], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :admitted, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      source_id: source.id
+    })
+
+    result
   end
 
   defp fence(%IR{standing: :candidate, authority: :none}), do: :ok

@@ -21,6 +21,9 @@ defmodule AshA2A.Semantic.OntologyCache do
       returned to the caller.
     * An IRI absent from the manifest is `:ontology_cache_miss`. The cache
       never falls back to a fetch.
+    * `manifest.json` itself must hash to an admitted digest
+      (`admitted_manifest_digests/0`, pinned in source outside the datastore),
+      or every read fails closed with `:ontology_manifest_unadmitted`.
 
   ## Canonicalization is pinned, never recomputed here
 
@@ -60,6 +63,14 @@ defmodule AshA2A.Semantic.OntologyCache do
         }
 
   @digest_algorithm :sha256
+
+  # RFC-SA2A-002 §78 (SA2A-CANONMUT-002): the manifest lives inside the datastore
+  # it pins, so a direct write that rewrites a document AND its manifest entry
+  # would re-pin itself. The admitted manifest bytes are therefore pinned here,
+  # outside the datastore, in reviewed source: admitting a new cache manifest is
+  # a code change, never a file write. A copy of the admitted cache at another
+  # root carries the same bytes and still loads.
+  @admitted_manifest_sha256 ["7a98d50e98fb533c4c3b3f2d125b89d6d764263bb1b75ef905856c14ca781c1e"]
   @unpinned_versions ["", "latest", "LATEST", "head", "HEAD", "main", "master", "*"]
 
   @doc "Default on-disk cache root shipped with the application."
@@ -78,6 +89,7 @@ defmodule AshA2A.Semantic.OntologyCache do
     path = Path.join(root, "manifest.json")
 
     with {:ok, raw} <- read_file(path),
+         :ok <- admitted_manifest(raw, path),
          {:ok, decoded} <- decode_json(raw, path),
          {:ok, list} <- fetch_entries(decoded, path) do
       Enum.reduce_while(list, {:ok, []}, fn raw_entry, {:ok, acc} ->
@@ -143,13 +155,23 @@ defmodule AshA2A.Semantic.OntologyCache do
   def load(iri, opts \\ []) do
     root = Keyword.get(opts, :root, default_root())
 
-    with {:ok, entry} <- entry(iri, Keyword.put(opts, :root, root)),
-         object_path = Path.join(root, entry.object),
-         {:ok, body} <- read_object(object_path, entry),
-         :ok <- verify_size(body, entry, object_path),
-         {:ok, digest} <- verify_digest(body, entry, object_path) do
-      {:ok, %{entry: entry, body: body, digest: digest}}
-    end
+    result =
+      with {:ok, entry} <- entry(iri, Keyword.put(opts, :root, root)),
+           object_path = Path.join(root, entry.object),
+           {:ok, body} <- read_object(object_path, entry),
+           :ok <- verify_size(body, entry, object_path),
+           {:ok, digest} <- verify_digest(body, entry, object_path) do
+        {:ok, %{entry: entry, body: body, digest: digest}}
+      end
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the load decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :ontology_cache, :load], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :loaded, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      iri: iri
+    })
+
+    result
   end
 
   @doc """
@@ -255,6 +277,13 @@ defmodule AshA2A.Semantic.OntologyCache do
     |> Enum.sort_by(& &1.prefix)
   end
 
+  @doc "SHA-256 digests of the cache manifests admitted as canonical vocabulary datastores."
+  @spec admitted_manifest_digests() :: [String.t()]
+  def admitted_manifest_digests, do: @admitted_manifest_sha256
+
+  @doc false
+  def __sa2a_refusal_codes__, do: %{ontology_manifest_unadmitted: :refused_meta_rigor}
+
   @doc "SHA-256 hex digest of the given bytes."
   @spec digest(binary()) :: String.t()
   def digest(bytes) when is_binary(bytes),
@@ -269,6 +298,22 @@ defmodule AshA2A.Semantic.OntologyCache do
 
       {:error, reason} ->
         {:error, refusal(:ontology_manifest_unreadable, "#{path}: #{:file.format_error(reason)}")}
+    end
+  end
+
+  defp admitted_manifest(raw, path) do
+    actual = digest(raw)
+
+    if actual in @admitted_manifest_sha256 do
+      :ok
+    else
+      {:error,
+       refusal(
+         :ontology_manifest_unadmitted,
+         "#{path} has sha256 #{actual}, which is not an admitted cache manifest " <>
+           "(#{Enum.join(@admitted_manifest_sha256, ", ")}); a manifest rewritten in place does " <>
+           "not re-pin its own documents -- failing closed"
+       )}
     end
   end
 

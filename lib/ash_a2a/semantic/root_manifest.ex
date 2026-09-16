@@ -41,10 +41,13 @@ defmodule AshA2A.Semantic.RootManifest do
   whatever digest made itself look admitted. Digesting it with an
   independent, in-BEAM implementation breaks the circularity.
 
-  BLAKE3 and RDFC-1.0 are still pinned as the algorithms the ENGINE uses for
-  graph identity (`hash_algorithms`, `canonicalization`) -- those are claims
-  about the pinned machinery's semantics, recorded here, and separate from
-  how this document checks itself.
+  `canonicalization` pins the RFC S12 graph identity actually executed --
+  `AshA2A.Semantic.CanonicalGraph.identity/0` (RDFC-1.0 over RDF.ex, SHA-256
+  over sorted N-Quads) -- and `load/2` refuses a pin that names anything else.
+  `hash_algorithms` records BLAKE3 as the ENGINE's graph digest
+  (`engine_graph_digest`), which is not RDFC-1.0. Both are claims about the
+  pinned machinery's semantics, separate from how this document checks
+  itself.
 
   ## Loading fails closed on any drift
 
@@ -427,6 +430,9 @@ defmodule AshA2A.Semantic.RootManifest do
   1. the file exists and decodes as a JSON object with the expected fields;
   2. the recomputed content address equals the recorded `digest`
      (`:REFUSED_MANIFEST_DIGEST_MISMATCH`);
+  2a. the `canonicalization` pin names exactly the executing RFC S12
+     identity, `AshA2A.Semantic.CanonicalGraph.identity/0`
+     (`:REFUSED_MANIFEST_CANONICALIZATION_DRIFT`);
   3. every pinned artifact exists at `Path.join(root, path)`
      (`:REFUSED_MANIFEST_ARTIFACT_MISSING`);
   4. every pinned artifact's real SHA-256 equals its pin
@@ -445,14 +451,25 @@ defmodule AshA2A.Semantic.RootManifest do
     path = path || default_path()
     root = Keyword.get(opts, :root, Path.dirname(path))
 
-    with {:ok, raw} <- read_file(path),
-         {:ok, decoded} <- decode_json(raw, path),
-         {:ok, manifest} <- from_map(decoded, root),
-         :ok <- verify_self_address(manifest, decoded),
-         :ok <- verify_pins(manifest),
-         {:ok, manifest} <- verify_engine(manifest, opts) do
-      {:ok, %{manifest | verified_at: DateTime.utc_now()}}
-    end
+    result =
+      with {:ok, raw} <- read_file(path),
+           {:ok, decoded} <- decode_json(raw, path),
+           {:ok, manifest} <- from_map(decoded, root),
+           :ok <- verify_self_address(manifest, decoded),
+           :ok <- verify_canonicalization(manifest),
+           :ok <- verify_pins(manifest),
+           {:ok, manifest} <- verify_engine(manifest, opts) do
+        {:ok, %{manifest | verified_at: DateTime.utc_now()}}
+      end
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the load decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :root_manifest, :load], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :loaded, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      digest: with({:ok, %__MODULE__{digest: digest}} <- result, do: digest, else: (_ -> nil))
+    })
+
+    result
   end
 
   @doc """
@@ -462,7 +479,8 @@ defmodule AshA2A.Semantic.RootManifest do
   """
   @spec verify(t(), keyword()) :: {:ok, t()} | {:error, refusal()}
   def verify(%__MODULE__{} = manifest, opts \\ []) do
-    with :ok <- verify_pins(manifest),
+    with :ok <- verify_canonicalization(manifest),
+         :ok <- verify_pins(manifest),
          {:ok, manifest} <- verify_engine(manifest, opts) do
       {:ok, %{manifest | verified_at: DateTime.utc_now()}}
     end
@@ -512,6 +530,17 @@ defmodule AshA2A.Semantic.RootManifest do
         recorded: manifest.digest,
         recomputed: recomputed
       })
+    end
+  end
+
+  # RFC-SA2A-002 §50: the canonicalization algorithm and digest function are
+  # pinned by this manifest. A pin naming anything other than the identity
+  # actually executed (`CanonicalGraph.identity/0`) is drift, refused even when
+  # the content address was recomputed consistently.
+  defp verify_canonicalization(%__MODULE__{canonicalization: pin}) do
+    case AshA2A.Semantic.CanonicalGraph.verify_pin(pin) do
+      :ok -> :ok
+      {:error, drift} -> refuse(:REFUSED_MANIFEST_CANONICALIZATION_DRIFT, drift)
     end
   end
 

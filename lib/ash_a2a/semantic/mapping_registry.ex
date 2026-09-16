@@ -59,7 +59,19 @@ defmodule AshA2A.Semantic.MappingRegistry do
   receipt. Returns `{:ok, registry}` or a typed refusal.
   """
   @spec register(t(), map()) :: {:ok, t()} | {:error, refusal()}
-  def register(%__MODULE__{} = registry, %{} = mapping) do
+  def register(%__MODULE__{} = registry, mapping) do
+    result = do_register(registry, mapping)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where mapping admission is decided.
+    :telemetry.execute([:ash_a2a, :semantic, :mapping_registry, :register], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :registered, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+    })
+
+    result
+  end
+
+  defp do_register(registry, %{} = mapping) do
     source = mapping[:source] || mapping["source"]
     target = mapping[:target] || mapping["target"]
     kind = mapping[:kind] || mapping["kind"]
@@ -92,7 +104,7 @@ defmodule AshA2A.Semantic.MappingRegistry do
     end
   end
 
-  def register(%__MODULE__{}, other),
+  defp do_register(_registry, other),
     do:
       {:error,
        refusal(
@@ -136,6 +148,19 @@ defmodule AshA2A.Semantic.MappingRegistry do
   """
   @spec reconcile(t(), map(), map()) :: {:ok, map()} | {:error, refusal()}
   def reconcile(%__MODULE__{} = registry, %{} = peer_a, %{} = peer_b) do
+    result = do_reconcile(registry, peer_a, peer_b)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the S47 decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :mapping_registry, :reconcile], %{}, %{
+      outcome: with({:ok, %{outcome: outcome}} <- result, do: outcome, else: (_ -> :refused)),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      labels_match: labels_match?(peer_a, peer_b)
+    })
+
+    result
+  end
+
+  defp do_reconcile(registry, peer_a, peer_b) do
     with {:ok, iri_a} <- peer_iri(peer_a, :a),
          {:ok, iri_b} <- peer_iri(peer_b, :b) do
       cond do

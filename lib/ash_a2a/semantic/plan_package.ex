@@ -251,6 +251,10 @@ defmodule AshA2A.Semantic.PlanPackage do
   @spec from_projection(PlanProjection.t(), String.t(), keyword()) :: {:ok, t()} | refusal()
   def from_projection(%PlanProjection{} = projection, planner_identity, opts \\ [])
       when is_binary(planner_identity) and is_list(opts) do
+    projection |> build_package(planner_identity, opts) |> emit(:build)
+  end
+
+  defp build_package(projection, planner_identity, opts) do
     profile = Keyword.get(opts, :profile, :strict)
 
     with {:ok, projection} <- verify_projection(projection),
@@ -281,15 +285,29 @@ defmodule AshA2A.Semantic.PlanPackage do
   """
   @spec verify(t()) :: {:ok, t()} | refusal()
   def verify(%__MODULE__{} = package) do
+    package |> check_package() |> emit(:verify)
+  end
+
+  defp check_package(package) do
     recomputed = content_digest(package)
 
-    if recomputed == package.plan_digest do
-      {:ok, package}
-    else
-      error(:plan_package_manual_edit_not_canonical, %{
-        recorded: package.plan_digest,
-        recomputed: recomputed
-      })
+    cond do
+      recomputed != package.plan_digest ->
+        error(:plan_package_manual_edit_not_canonical, %{
+          recorded: package.plan_digest,
+          recomputed: recomputed
+        })
+
+      # A package whose fence was rewritten AND re-digested is self-consistent,
+      # but no package is ever anything but a candidate (SA2A-PROJECTION-006).
+      {package.standing, package.authority} != {:candidate, :none} ->
+        error(:plan_package_manual_edit_not_canonical, %{
+          forged_fence: %{standing: package.standing, authority: package.authority},
+          required: %{standing: :candidate, authority: :none}
+        })
+
+      true ->
+        {:ok, package}
     end
   end
 
@@ -433,6 +451,26 @@ defmodule AshA2A.Semantic.PlanPackage do
   defp blank?(map) when is_map(map) and map_size(map) == 0, do: true
   defp blank?(""), do: true
   defp blank?(_value), do: false
+
+  # RFC-SA2A-002 §12 attempt evidence, emitted where the package decision is made.
+  defp emit(result, :build) do
+    :telemetry.execute([:ash_a2a, :semantic, :plan_package, :build], %{}, emit_meta(result))
+    result
+  end
+
+  defp emit(result, :verify) do
+    :telemetry.execute([:ash_a2a, :semantic, :plan_package, :verify], %{}, emit_meta(result))
+    result
+  end
+
+  defp emit_meta(result) do
+    %{
+      outcome: if(match?({:ok, _}, result), do: :accepted, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      standing:
+        with({:ok, %__MODULE__{standing: standing}} <- result, do: standing, else: (_ -> nil))
+    }
+  end
 
   defp error(code, detail \\ nil), do: {:error, %{code: code, detail: detail}}
 end
