@@ -112,7 +112,12 @@ defmodule AshA2A.Chicago.Observer do
         _ ->
           by_event
           |> Map.get(event, [])
-          |> Enum.map(&mapped_record(&1, event, measurements, metadata, seq, time_us))
+          |> Enum.with_index()
+          |> Enum.map(fn {mapping, ordinal} ->
+            mapping
+            |> mapped_record(event, measurements, metadata, seq, time_us)
+            |> Map.put(:ordinal, ordinal)
+          end)
       end
 
     for record <- records do
@@ -327,13 +332,22 @@ defmodule AshA2A.Chicago.Observer do
         |> Map.put("telemetry_event", Enum.map_join(record.event, ".", &Atom.to_string/1))
 
       Log.add_event(log, %{
-        id: "e-#{record.seq}",
+        id: event_id(record),
         type: record.activity,
         time: record.time_us,
         attributes: attributes,
         relationships: Enum.reverse([{run_oid, "observed_in"} | rels])
       })
     end)
+  end
+
+  # One telemetry event interpreted by N admitted mappings yields N records
+  # sharing one `seq`; OCEL 2.0 event ids must stay unique (SA2A-OCEL-021).
+  defp event_id(%{seq: seq} = record) do
+    case Map.get(record, :ordinal, 0) do
+      0 -> "e-#{seq}"
+      ordinal -> "e-#{seq}.#{ordinal}"
+    end
   end
 
   @doc "Globally-unique OCEL object id for `(type, id)`."
