@@ -183,7 +183,30 @@ defmodule AshA2A.Semantic.TermRegistry do
   def admit_operational_use(%__MODULE__{} = registry, iri, opts \\ []) do
     profile = Keyword.get(opts, :profile, registry.profile)
     consequential? = Keyword.get(opts, :consequential?, true)
+    result = decide_operational_use(registry, iri, profile, consequential?)
 
+    # Boundary evidence for independent observers (RFC-SA2A-002 §12): the
+    # decision this function just made, never an input to it.
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :term, :operational_use],
+      %{system_time: System.system_time()},
+      %{
+        iri: if(is_binary(iri), do: iri),
+        profile: profile,
+        consequential: consequential?,
+        outcome:
+          case result do
+            {:ok, {standing, _iri}} -> standing
+            {:error, _} -> :refused
+          end,
+        code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+      }
+    )
+
+    result
+  end
+
+  defp decide_operational_use(registry, iri, profile, consequential?) do
     with :ok <- check_profile(profile),
          {:ok, iri} <- Iri.validate(iri) do
       cond do
