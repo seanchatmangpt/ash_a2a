@@ -109,4 +109,28 @@ defmodule AshA2A.Authority.Broker do
   """
   @callback granted?(subject :: Identity.t(), capability_id :: String.t(), opts :: keyword()) ::
               boolean()
+
+  @doc """
+  The `expires_at` of the standing grant `granted?/3` would answer `true` for,
+  so the authority synthesized on the dispatch path can carry the grant's real
+  time bound instead of being silently permanent.
+
+  `{:ok, nil}` means a standing grant with no time bound. `:error` means no
+  standing grant (or an unanswerable question) -- the same fail-closed reading
+  `granted?/3` uses.
+
+  OPTIONAL: a broker that does not implement it is treated as `{:ok, nil}`,
+  which is exactly the pre-existing behaviour, so no third-party implementation
+  breaks. Implementing it is what makes `Authority.admits?/2`'s own
+  `not expired?(authority)` check reachable on the real dispatch path --
+  defence in depth behind `granted?/3`, which is where expiry is actually
+  enforced.
+  """
+  @callback grant_expires_at(
+              subject :: Identity.t(),
+              capability_id :: String.t(),
+              opts :: keyword()
+            ) :: {:ok, DateTime.t() | nil} | :error
+
+  @optional_callbacks grant_expires_at: 3
 end

@@ -218,6 +218,97 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
     end
   end
 
+  describe "(e) an EXPIRED capability grant" do
+    # Found by adversarial re-verification of the first fix for this defect:
+    # closing the escalation was not enough, because the broker recorded only
+    # THAT a grant existed, never UNTIL WHEN. `granted?/3` -- the only callback
+    # the real dispatch path asks -- consulted bare set membership, so a grant
+    # that expired an hour ago still authorized a real `:external_do`
+    # actuation (real counter 0 -> 1, task `:completed`). Three independent
+    # layers each dropped the expiry, so each is asserted separately below.
+    test "does NOT authorize a real :external_do actuation -- zero actuations", ctx do
+      subject = AshA2A.Identity.principal(@principal)
+
+      assert {:ok, %Authority{}} =
+               InMemory.issue(
+                 subject,
+                 "touch",
+                 ctx.broker_opts ++
+                   [
+                     token_id: Authority.grant_token_id(subject, "touch"),
+                     expires_at: DateTime.add(DateTime.utc_now(), -3600, :second)
+                   ]
+               )
+
+      # Layer (a): the broker itself must not report an expired grant standing.
+      refute InMemory.granted?(subject, "touch", ctx.broker_opts)
+
+      # Layer (b): the dispatch-path authorizer must mint no authority.
+      assert Authority.Grant.authorize(@principal, "touch") == nil
+
+      # End to end through the real supervised agent and real counter.
+      assert {:ok, task} = call("touch", %{"note" => "expired"})
+      assert task.status.state == :failed
+      assert ActuationCounter.count() == 0
+    end
+
+    test "a grant expiring in the FUTURE still authorizes -- the check discriminates", ctx do
+      subject = AshA2A.Identity.principal(@principal)
+
+      assert {:ok, %Authority{}} =
+               InMemory.issue(
+                 subject,
+                 "touch",
+                 ctx.broker_opts ++
+                   [
+                     token_id: Authority.grant_token_id(subject, "touch"),
+                     expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
+                   ]
+               )
+
+      assert InMemory.granted?(subject, "touch", ctx.broker_opts)
+      assert {:ok, task} = call("touch", %{"note" => "not-yet-expired"})
+      assert task.status.state == :completed
+      assert ActuationCounter.count() == 1
+    end
+
+    test "Grant.grant/3 can actually issue a time-bounded grant" do
+      # Layer (c): `grant/3` dropped the caller's own opts entirely, so the
+      # only in-library grant-issuing API silently produced a PERMANENT grant
+      # no matter what `expires_at:` the caller passed.
+      subject = AshA2A.Identity.principal(@principal)
+      expires_at = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+      assert {:ok, %Authority{} = authority} =
+               Authority.Grant.grant(subject, "touch", expires_at: expires_at)
+
+      assert authority.expires_at != nil
+      assert DateTime.compare(authority.expires_at, expires_at) == :eq
+
+      # And the grant's real bound reaches the synthesized dispatch authority,
+      # so `Authority.admits?/2`'s own expiry check is reachable rather than
+      # structurally dead.
+      assert %Authority{expires_at: ^expires_at} = Authority.Grant.authorize(@principal, "touch")
+    end
+
+    test "the synthesized authority keeps the deterministic grant token id" do
+      # Carrying `expires_at` must not perturb `token_id`, because
+      # `AshA2A.Command.fingerprint/1` hashes it and CommandBus replay
+      # detection for authenticated callers depends on its stability.
+      subject = AshA2A.Identity.principal(@principal)
+
+      assert {:ok, _} =
+               Authority.Grant.grant(subject, "touch",
+                 expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
+               )
+
+      assert %Authority{} = authority = Authority.Grant.authorize(@principal, "touch")
+
+      assert authority.token_id ==
+               AshA2A.Identity.runtime(Authority.grant_token_id(subject, "touch"))
+    end
+  end
+
   describe "legacy :transport_verified_grants_capability policy" do
     setup do
       Application.put_env(:ash_a2a, :authority_policy, :transport_verified_grants_capability)

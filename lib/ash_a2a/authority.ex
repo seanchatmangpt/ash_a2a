@@ -64,13 +64,19 @@ defmodule AshA2A.Authority do
     }
   end
 
-  @spec from_verified_identity(term(), String.t()) :: t() | nil
-  def from_verified_identity(nil, _capability_id), do: nil
+  @spec from_verified_identity(term(), String.t(), DateTime.t() | nil) :: t() | nil
+  def from_verified_identity(identity, capability_id, expires_at \\ nil)
 
-  def from_verified_identity(identity, capability_id) do
+  def from_verified_identity(nil, _capability_id, _expires_at), do: nil
+
+  def from_verified_identity(identity, capability_id, expires_at) do
     subject = Identity.principal(identity)
 
     new(subject, capability_id,
+      # The issuing grant's real time bound, when the broker can report one.
+      # Defaults to `nil` (no bound), which is what every caller got before
+      # time-bounded grants were enforceable -- so this is additive.
+      expires_at: expires_at,
       # Deterministic, not a fresh `Ash.UUIDv7.generate()` per call (unlike
       # `new/3`'s own default): this authority is a synthesized STANDING
       # claim ("this already-verified principal may act with this

@@ -152,11 +152,19 @@ defmodule AshA2A.Authority.Grant do
       when is_binary(capability_id) do
     case resolve_broker(opts) do
       {:ok, module, broker_opts} ->
-        module.issue(
-          subject,
-          capability_id,
-          Keyword.put(broker_opts, :token_id, Authority.grant_token_id(subject, capability_id))
-        )
+        # The CALLER's `opts` are merged over the configured broker opts, not
+        # discarded: dropping them meant `grant(subject, cap, expires_at: t)`
+        # silently produced a PERMANENT grant, so the only in-library
+        # grant-issuing API could not express a time bound at all.
+        # `:token_id` stays last and non-overridable -- `authorize/3` looks the
+        # grant up by exactly `grant_token_id/2`, and a caller-chosen token id
+        # would file the grant where nothing ever reads it.
+        issue_opts =
+          broker_opts
+          |> Keyword.merge(Keyword.drop(opts, [:policy, :broker, :broker_opts]))
+          |> Keyword.put(:token_id, Authority.grant_token_id(subject, capability_id))
+
+        module.issue(subject, capability_id, issue_opts)
 
       :error ->
         {:error, %{reason: :no_authority_broker_configured, capability_id: capability_id}}
@@ -201,6 +209,21 @@ defmodule AshA2A.Authority.Grant do
     end
   end
 
+  # `grant_expires_at/3` is an OPTIONAL broker callback. A broker that does not
+  # implement it is read as "standing grant, no time bound" -- exactly the
+  # pre-existing behaviour -- so no third-party implementation breaks. The same
+  # `Code.ensure_loaded?/1` + `function_exported?/3` idiom this repo already
+  # uses for `AshA2A.ReceiptStore.Ekv.durable?/0` and
+  # `AshA2A.Execution.FLAME.available?/0`.
+  defp grant_expires_at(module, subject, capability_id, broker_opts) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :grant_expires_at, 3) do
+      case module.grant_expires_at(subject, capability_id, broker_opts) do
+        {:ok, expires_at} -> expires_at
+        :error -> nil
+      end
+    end
+  end
+
   defp broker_authorize(auth_identity, capability_id, opts) do
     subject = Identity.principal(auth_identity)
 
@@ -211,7 +234,19 @@ defmodule AshA2A.Authority.Grant do
           # deterministic `grant_token_id/2` token id, as before this fix --
           # `AshA2A.Command.fingerprint/1` stability, and with it CommandBus
           # replay detection for authenticated callers, depends on it.
-          Authority.from_verified_identity(auth_identity, capability_id)
+          #
+          # The grant's real `expires_at` is carried onto the synthesized
+          # authority. Without it the minted authority was always
+          # `expires_at: nil`, which made `Authority.admits?/2`'s own
+          # `not expired?(authority)` check structurally unreachable on the
+          # dispatch path -- a time bound that could never fail. Expiry is
+          # ENFORCED by `granted?/3` above; carrying it here is defence in
+          # depth, and it keeps the token id untouched so replay is unaffected.
+          Authority.from_verified_identity(
+            auth_identity,
+            capability_id,
+            grant_expires_at(module, subject, capability_id, broker_opts)
+          )
         end
 
       :error ->
