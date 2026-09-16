@@ -56,6 +56,36 @@ defmodule AshA2A.Planning do
          {:ok, skills} <- resolve_all(resource_or_domain, candidate.capability_ids) do
       {:ok, %{candidate | admitted_skills: skills}}
     end
+    |> emit_admit(resource_or_domain, candidate)
+  end
+
+  # `[:ash_a2a, :planning, :admit]`: the planning admission decision, emitted
+  # at this boundary (RFC-SA2A-002 §12 attempt evidence for the CHI-BRCE
+  # planner falsifier). Observational only; the result passes through.
+  defp emit_admit(result, resource_or_domain, %Candidate{} = candidate) do
+    {outcome, code} =
+      case result do
+        {:ok, _admitted} -> {:admitted, nil}
+        {:error, %{code: code}} -> {:refused, code}
+        {:error, _other} -> {:refused, nil}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :planning, :admit],
+      %{capability_count: length(candidate.capability_ids)},
+      %{
+        resource_or_domain: resource_or_domain,
+        outcome: outcome,
+        code: code,
+        planner: candidate.planner,
+        formalism: candidate.formalism,
+        fingerprint: candidate.fingerprint,
+        standing: candidate.standing,
+        authority: candidate.authority
+      }
+    )
+
+    result
   end
 
   @spec from_envelope(module(), map(), keyword()) :: {:ok, Candidate.t()} | {:error, map()}

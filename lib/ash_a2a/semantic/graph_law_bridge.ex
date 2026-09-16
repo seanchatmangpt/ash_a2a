@@ -134,7 +134,34 @@ defmodule AshA2A.Semantic.GraphLawBridge do
   """
   @spec run_hooks(binary(), binary(), keyword()) :: {:ok, map()} | {:error, map()}
   def run_hooks(base, event, opts \\ []) when is_binary(base) and is_binary(event) do
-    with {:ok, raw} <- call_one("run_hooks", [base, event], opts), do: Serialize.from_json(raw)
+    with({:ok, raw} <- call_one("run_hooks", [base, event], opts), do: Serialize.from_json(raw))
+    |> emit_hooks_run(opts)
+  end
+
+  # `[:ash_a2a, :semantic, :hooks, :run]`: the knowledge-hook evaluation
+  # boundary (RFC-SA2A-002 §12 attempt evidence for the CHI-BRCE hook
+  # falsifier). Observational only; hooks are intent, never authority.
+  defp emit_hooks_run(result, opts) do
+    {outcome, status, code} =
+      case result do
+        {:ok, %{} = decoded} -> {:evaluated, Map.get(decoded, "status"), nil}
+        {:error, %{code: code}} -> {:failed, nil, code}
+        _other -> {:failed, nil, nil}
+      end
+
+    host =
+      case host(opts) do
+        {:unavailable, _reason} -> :unavailable
+        host -> host
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :hooks, :run],
+      %{system_time: System.system_time()},
+      %{outcome: outcome, status: status, code: code, host: host}
+    )
+
+    result
   end
 
   @doc """

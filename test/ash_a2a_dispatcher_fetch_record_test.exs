@@ -129,6 +129,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
 
   alias AshA2ADispatcherFetchRecordTest.LineItem
   alias AshA2ADispatcherFetchRecordTest.Ticket
+  alias AshA2A.Test.ReceiptedDispatch
 
   test "update dispatch resolves a non-`id`-named single primary key by its real attribute name" do
     ticket =
@@ -142,7 +143,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
       ])
 
     assert {:reply, [%A2A.Part.Data{data: %{status: "closed"}}]} =
-             AshA2A.Dispatcher.dispatch(:close, message, Ticket)
+             ReceiptedDispatch.dispatch(:close, message, Ticket)
 
     assert Ash.get!(Ticket, ticket.ticket_ref).status == "closed"
   end
@@ -159,14 +160,14 @@ defmodule AshA2ADispatcherFetchRecordTest do
       ])
 
     assert {:reply, [%A2A.Part.Data{data: %{status: "closed"}}]} =
-             AshA2A.Dispatcher.dispatch(:close, message, Ticket)
+             ReceiptedDispatch.dispatch(:close, message, Ticket)
   end
 
   test "update dispatch still fails closed (missing_argument) when the real primary key is absent" do
     message = data_message(%{"status" => "closed"})
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
-             AshA2A.Dispatcher.dispatch(:close, message, Ticket)
+             ReceiptedDispatch.dispatch(:close, message, Ticket)
 
     assert text =~ "ticket_ref"
   end
@@ -179,7 +180,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
 
     message = data_message(%{"ticket_ref" => ticket.ticket_ref})
 
-    assert {:reply, [%A2A.Part.Data{}]} = AshA2A.Dispatcher.dispatch(:remove, message, Ticket)
+    assert {:reply, [%A2A.Part.Data{}]} = ReceiptedDispatch.dispatch(:remove, message, Ticket)
 
     assert match?({:error, _}, Ash.get(Ticket, ticket.ticket_ref))
   end
@@ -200,7 +201,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
       ])
 
     assert {:reply, [%A2A.Part.Data{data: %{sku: "WIDGET-B"}}]} =
-             AshA2A.Dispatcher.dispatch(:update_sku, message, LineItem)
+             ReceiptedDispatch.dispatch(:update_sku, message, LineItem)
 
     assert Ash.get!(LineItem, %{order_id: line_item.order_id, line_no: line_item.line_no}).sku ==
              "WIDGET-B"
@@ -213,7 +214,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
       ])
 
     assert {:input_required, [%A2A.Part.Text{text: text}]} =
-             AshA2A.Dispatcher.dispatch(:update_sku, message, LineItem)
+             ReceiptedDispatch.dispatch(:update_sku, message, LineItem)
 
     assert text =~ "order_id"
     assert text =~ "line_no"

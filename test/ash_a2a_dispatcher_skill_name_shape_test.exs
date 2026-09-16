@@ -39,17 +39,20 @@ defmodule AshA2ADispatcherSkillNameShapeTest do
     end
   end
 
+  # Name-shape resolution is exercised on `Item`'s `:observe` skill: a
+  # `:change` skill dispatched directly is refused by the sole-DO fence
+  # (`AshA2A.BrceAnchor`) after -- and independently of -- skill lookup.
   test "dispatch/5 still resolves a real atom skill_name to a normal reply" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "widget"})])
+    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
 
-    assert {:reply, [%A2A.Part.Data{data: %{label: "widget"}}]} =
-             AshA2A.Dispatcher.dispatch(:create_item, message, Item)
+    assert {:reply, [%A2A.Part.Data{data: %{result: "pong"}}]} =
+             AshA2A.Dispatcher.dispatch(:ping, message, Item)
   end
 
   test "dispatch/5 still resolves a real binary skill_name to a normal reply" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "widget"})])
+    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
 
-    assert {:reply, [%A2A.Part.Data{data: %{label: "widget"}}]} =
-             AshA2A.Dispatcher.dispatch("create_item", message, Item)
+    assert {:reply, [%A2A.Part.Data{data: %{result: "pong"}}]} =
+             AshA2A.Dispatcher.dispatch("ping", message, Item)
   end
 end

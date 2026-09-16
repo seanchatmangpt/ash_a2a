@@ -160,7 +160,13 @@ defmodule AshA2A.Dispatcher do
     Map.put(meta, :object_id, object_id)
   end
 
+  # Sole-DO fence (RFC-SA2A-002 §38/§68, `AshA2A.BrceAnchor`): the prepared
+  # receipt anchor is taken first (single use), and a consequence-bearing
+  # skill is refused before its Ash action runs unless `AshA2A.CommandBus`
+  # handed over a pending anchor bound to this exact capability.
   defp do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity) do
+    anchor = AshA2A.BrceAnchor.take()
+
     with {:ok, skill} <- tag_stage(fetch_skill(resource_or_domain, skill_name), :skill_lookup),
          %AshA2A.ExecutionContext{} = exec_context <-
            AshA2A.ContextResolver.from_a2a_message(
@@ -170,7 +176,10 @@ defmodule AshA2A.Dispatcher do
              auth_identity
            ),
          {:ok, input} <- fetch_input(a2a_message),
-         {:ok, action} <- tag_stage(fetch_action(skill), :action_resolution) do
+         {:ok, action} <- tag_stage(fetch_action(skill), :action_resolution),
+         {:ok, admitted_anchor} <-
+           tag_stage(AshA2A.BrceAnchor.admit(skill, anchor), :brce_gate) do
+      :ok = AshA2A.BrceAnchor.actuating(skill, admitted_anchor)
       {reply, object_id} = run_skill(skill, action, input, exec_context)
       {tag_stage(reply, :execution), object_id}
     else
@@ -199,7 +208,7 @@ defmodule AshA2A.Dispatcher do
   defp stop_meta({:stream, _}), do: %{reply_type: :stream}
 
   defp stop_meta({:error, {stage, reason}})
-       when stage in [:skill_lookup, :action_resolution, :execution] do
+       when stage in [:skill_lookup, :action_resolution, :brce_gate, :execution] do
     %{stage: stage, error: reason}
   end
 
