@@ -8,6 +8,35 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Verified -- v26.9.17 FOND/HDDL Self-Improvement Domain
+
+- **`test/ash_a2a/chicago/sa2a_v26_9_17_fond_qualification_test.exs`**: the
+  v26.9.17 FOND/HDDL model of the cross-repo SA2A self-improvement
+  qualification loop (`test/support/hddl/sa2a_v26_9_17_dogfood/{domain,problem}.hddl`)
+  was verified against the real `native/hddl_cli` (ferroplan, strong-cyclic
+  FOND) solver, not asserted from description. The real, disclosed outcome
+  is `solved: false` -- genuine `NoPlan`, quoted precisely from the real
+  solver run: `{"error":"planner error: NoPlan"}`. This is a semantic
+  `NoPlan`, not a parse/grounding error (the fixture grounds cleanly; a
+  separate test asserts this). Per-branch ablation isolates the exact
+  irreducible cause to a small set of predicates left deliberately terminal
+  (no repair method added because one would fabricate confidence or bypass
+  a real invariant): `unsupported`, `candidate-unsupported`,
+  `verification-failed`/`process-nonconformant` (both episodes),
+  `candidate-refused` on the knowledge-promotion court, `equivalence-failed`,
+  `receipt-reconcile-blocked` (both episodes), and episode 2's
+  replay-specific `authority-refused`/`actuation-failed` occurrences.
+  Restoring every other, genuinely recoverable branch in combination still
+  reports real `solved: true`, so no other latent modeling defect remains.
+- The `receipt-reconcile-blocked` terminal branches confirm a real,
+  unresolved tension between BRCE's zero-unreceipted-actuation "NEVER
+  replay automatically" invariant (`AshA2A.CommandBus`) and this pinned
+  ferroplan revision's `PlanningType::Fond` universal-coverage requirement:
+  there is no HDDL syntax in this rev to declare an accepted non-goal
+  terminal state, so a domain that faithfully models the invariant cannot
+  also report a strong-cyclic solve for the predicates that invariant
+  touches. An honest `NoPlan` is the correct report here, not a defect.
+
 ### Added -- RFC-SA2A-002 Chicago Conformance Court
 
 - **`AshA2A.Chicago`**: a falsification-based conformance court for
