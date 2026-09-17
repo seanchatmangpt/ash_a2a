@@ -1,0 +1,1113 @@
+(define (domain sa2a-v26-9-17)
+
+  (:requirements
+    :typing
+    :negative-preconditions
+    :hierarchy
+    :method-preconditions
+    :conditional-effects
+    :non-deterministic)
+
+  (:types
+    release episode subject repo capability candidate
+    plan artifact command receipt experience)
+
+  ;; ============================================================
+  ;; STATE
+  ;; ============================================================
+
+  (:predicates
+
+    ;; Repository / capability topology
+    (owns ?r - repo ?c - capability)
+    (critical ?c - capability)
+    (qualified ?r - repo ?c - capability)
+    (build-broken ?r - repo ?c - capability)
+    (blocked ?r - repo ?c - capability)
+    (unsupported ?r - repo ?c - capability)
+
+    ;; Exact subject identity
+    (heads-pinned ?rel - release)
+    (world-reconstructed ?e - episode ?s - subject)
+
+    ;; Classification
+    (classified ?e - episode)
+    (unknown ?e - episode)
+    (known ?e - episode)
+
+    ;; Exploration
+    (frontier-clean ?e - episode)
+    (candidate-produced ?e - episode ?c - candidate)
+
+    ;; Admission
+    (admitted ?c - candidate)
+    (candidate-refused ?c - candidate)
+    (candidate-blocked ?c - candidate)
+    (candidate-unsupported ?c - candidate)
+
+    ;; Planning / allocation
+    (plan-built ?e - episode ?p - plan)
+    (allocation-bounded ?p - plan)
+    (allocation-blocked ?p - plan)
+
+    ;; Manufacture
+    (manufactured ?e - episode ?a - artifact)
+    (manufacture-failed ?e - episode)
+
+    ;; Authority
+    (authority-admitted ?e - episode)
+    (authority-refused ?e - episode)
+
+    ;; DO / receipt
+    (command-issued ?e - episode ?cmd - command)
+    (actuated ?cmd - command)
+    (actuation-failed ?cmd - command)
+    (receipt-pending ?cmd - command)
+    (receipt-durable ?cmd - command ?r - receipt)
+    (receipt-reconcile-blocked ?cmd - command)
+
+    ;; Independent verification
+    (verified ?e - episode)
+    (verification-failed ?e - episode)
+    (process-conformant ?e - episode)
+    (process-nonconformant ?e - episode)
+
+    ;; Feedback / learning
+    (feedback-recorded ?e - episode)
+    (experience-created ?e - episode ?x - experience)
+    (experience-admitted ?x - experience)
+    (replay-contract ?x - experience)
+
+    ;; Equivalence / replay
+    (equivalent ?new - episode ?old - episode)
+    (equivalence-failed ?new - episode ?old - episode)
+    (replayed ?e - episode ?x - experience)
+
+    ;; Evidence / standing
+    (affidavit-issued ?e - episode)
+    (episode-alive ?e - episode)
+    (release-qualified ?rel - release)
+  )
+
+  ;; ============================================================
+  ;; TOP TASK
+  ;; ============================================================
+
+  (:task qualify-v26-9-17
+    :parameters
+      (?rel - release
+       ?e1 ?e2 - episode
+       ?s - subject
+       ?x - experience))
+
+  (:method m-qualify-v26-9-17
+    :parameters
+      (?rel - release
+       ?e1 ?e2 - episode
+       ?s - subject
+       ?x - experience)
+
+    :task (qualify-v26-9-17 ?rel ?e1 ?e2 ?s ?x)
+
+    :ordered-subtasks
+      (and
+        (t1 (orient-release ?rel))
+        (t2 (close-critical-repo-boundaries))
+        (t3 (run-discovery-episode ?e1 ?s ?x))
+        (t4 (run-known-replay-episode ?e2 ?e1 ?s ?x))
+        (t5 (certify-release ?rel ?e1 ?e2))))
+
+  ;; ============================================================
+  ;; 1. Repository closure
+  ;; ============================================================
+
+  (:task orient-release
+    :parameters (?rel - release))
+
+  (:method m-orient-release
+    :parameters (?rel - release)
+    :task (orient-release ?rel)
+    :ordered-subtasks
+      (and
+        (p1 (pin-exact-heads ?rel))))
+
+  (:action pin-exact-heads
+    :parameters (?rel - release)
+    :precondition ()
+    :effect (heads-pinned ?rel))
+
+
+  (:task close-critical-repo-boundaries
+    :parameters ())
+
+  (:method m-close-critical-repo-boundaries
+    :parameters ()
+    :task (close-critical-repo-boundaries)
+    :ordered-subtasks
+      (and
+        ;; admission + SA2A transport
+        (r1 (qualify-boundary ash-a2a cap-orchestration))
+        (r2 (qualify-boundary ash-r2rml cap-semantic-feedback))
+
+        ;; bounded SELECT
+        (r3 (qualify-boundary bcinr cap-bounded-select))
+
+        ;; CONSTRUCT
+        (r4 (qualify-boundary ggen cap-manufacture))
+        (r5 (qualify-boundary ggen-igniter cap-framework-projection))
+
+        ;; Authority + DO
+        (r6 (qualify-boundary xaas cap-system-authority))
+
+        ;; Evidence courts
+        (r7 (qualify-boundary affidavit cap-standing))
+        (r8 (qualify-boundary beam4pm cap-process-court))
+
+        ;; Crown
+        (r9 (qualify-boundary autofde-lab cap-crown))))
+
+
+  (:task qualify-boundary
+    :parameters (?r - repo ?c - capability))
+
+
+  ;; Already qualifies
+  (:method m-boundary-already-qualified
+    :parameters (?r - repo ?c - capability)
+    :task (qualify-boundary ?r ?c)
+    :precondition (qualified ?r ?c)
+    :subtasks ())
+
+
+  ;; Otherwise observe exact boundary
+  (:method m-boundary-observe
+    :parameters (?r - repo ?c - capability)
+    :task (qualify-boundary ?r ?c)
+    :precondition
+      (and
+        (owns ?r ?c)
+        (not (qualified ?r ?c)))
+    :ordered-subtasks
+      (and
+        (v1 (verify-boundary ?r ?c))
+        (v2 (resolve-boundary-result ?r ?c))))
+
+
+  (:action verify-boundary
+    :parameters (?r - repo ?c - capability)
+    :precondition (owns ?r ?c)
+
+    :effect
+      (oneof
+
+        ;; exact subject passed its court
+        (qualified ?r ?c)
+
+        ;; implementation exists but does not build
+        (build-broken ?r ?c)
+
+        ;; lawful path exists but cannot currently execute
+        (blocked ?r ?c)
+
+        ;; capability does not exist -- deliberately has NO repair
+        ;; method in resolve-boundary-result below (a capability that
+        ;; genuinely doesn't exist yet should not be silently
+        ;; re-explored forever; confirmed fatal-when-uncovered,
+        ;; real ablation-a in repo-topology-grounding's sibling work).
+        (unsupported ?r ?c)))
+
+  (:task resolve-boundary-result
+    :parameters (?r - repo ?c - capability))
+
+
+  (:method m-boundary-success
+    :parameters (?r - repo ?c - capability)
+    :task (resolve-boundary-result ?r ?c)
+    :precondition (qualified ?r ?c)
+    :subtasks ())
+
+
+  (:method m-repair-build
+    :parameters (?r - repo ?c - capability)
+    :task (resolve-boundary-result ?r ?c)
+    :precondition (build-broken ?r ?c)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-build ?r ?c))
+        (d2 (repair-build ?r ?c))
+        (d3 (verify-boundary ?r ?c))
+        (d4 (resolve-boundary-result ?r ?c))))
+
+
+  (:method m-reroute-blocked
+    :parameters (?r - repo ?c - capability)
+    :task (resolve-boundary-result ?r ?c)
+    :precondition (blocked ?r ?c)
+    :ordered-subtasks
+      (and
+        (b1 (discover-lawful-alternate ?r ?c))
+        (b2 (verify-boundary ?r ?c))
+        (b3 (resolve-boundary-result ?r ?c))))
+
+
+  (:action diagnose-build
+    :parameters (?r - repo ?c - capability)
+    :precondition (build-broken ?r ?c)
+    :effect ())
+
+  (:action repair-build
+    :parameters (?r - repo ?c - capability)
+    :precondition (build-broken ?r ?c)
+    :effect (not (build-broken ?r ?c)))
+
+  (:action discover-lawful-alternate
+    :parameters (?r - repo ?c - capability)
+    :precondition (blocked ?r ?c)
+    :effect (not (blocked ?r ?c)))
+
+  ;; ============================================================
+  ;; 2. Episode 1 -- UNKNOWN -> Machine Experience
+  ;; ============================================================
+
+  (:task run-discovery-episode
+    :parameters
+      (?e - episode
+       ?s - subject
+       ?x - experience))
+
+  (:method m-run-discovery-episode
+    :parameters
+      (?e - episode
+       ?s - subject
+       ?x - experience)
+
+    :task (run-discovery-episode ?e ?s ?x)
+
+    :ordered-subtasks
+      (and
+        (e1 (reconstruct-world ?e ?s))
+        (e2 (classify-episode ?e))
+        (e3 (solve-classified-problem ?e))
+        (e4 (construct-plan ?e plan-episode-1))
+        (e5 (bound-allocation plan-episode-1))
+        (e5b (resolve-allocation-result plan-episode-1))
+        (e6 (manufacture ?e artifact-episode-1))
+        (e6b (resolve-manufacture-result ?e artifact-episode-1))
+        (e7 (admit-authority ?e))
+        (e7b (resolve-authority-result ?e))
+        (e8 (dispatch-command ?e command-episode-1))
+        (e9 (execute-command command-episode-1))
+        (e9b (resolve-actuation-result command-episode-1))
+        (e10 (close-receipt command-episode-1 receipt-episode-1))
+        (e11 (independent-verify ?e))
+        (e12 (observe-process ?e))
+        (e13 (record-feedback ?e))
+        (e14 (create-machine-experience ?e ?x))
+        (e15 (admit-machine-experience ?x))
+        (e16 (issue-affidavit ?e))))
+
+  (:action reconstruct-world
+    :parameters (?e - episode ?s - subject)
+    :precondition ()
+    :effect (world-reconstructed ?e ?s))
+
+
+  ;; RECONCILIATION FIX (real, previously-undiscovered pre-existing gap
+  ;; in the domain as pasted, independent of and prior to the whole
+  ;; recoverable/terminal predicate analysis this file otherwise
+  ;; documents): the domain declared TWO competing actions here --
+  ;; classify-problem (precondition (classified ?e), :effect () -- a
+  ;; pass-through for the "already classified" case) and
+  ;; observe-classification (precondition (not (classified ?e)), the
+  ;; real observation court that actually produces `classified`) -- but
+  ;; only wired classify-problem into run-discovery-episode's e2 slot.
+  ;; Since nothing ever calls observe-classification, `classified` can
+  ;; never become true, so e2's own precondition (classified ?e) could
+  ;; never be satisfied and the WHOLE domain was unconditionally
+  ;; NoPlan for this reason alone -- confirmed empirically: stripping
+  ;; every other oneof in the ORIGINAL pasted domain down to its
+  ;; success-only branch (a maximal positive control) STILL returned
+  ;; real NoPlan, isolating this as the sole remaining cause; a minimal
+  ;; isolated repro of exactly this shape confirmed both the baseline
+  ;; NoPlan and the fix below flipping it to real solved:true.
+  ;;
+  ;; The fix mirrors the domain's OWN already-established
+  ;; qualify-boundary/verify-boundary/resolve-boundary-result pattern
+  ;; exactly (task wrapping an "already done" method and an "observe it
+  ;; for real" method) using the domain's own two pre-declared actions
+  ;; -- nothing new invented. e2 above now calls (classify-episode ?e)
+  ;; instead of (classify-problem ?e); classify-problem itself is left
+  ;; declared below (unused, superseded) rather than deleted, since it
+  ;; was part of the originally pasted text.
+  (:task classify-episode
+    :parameters (?e - episode))
+
+  (:method m-classify-already
+    :parameters (?e - episode)
+    :task (classify-episode ?e)
+    :precondition (classified ?e)
+    :subtasks ())
+
+  (:method m-classify-observe
+    :parameters (?e - episode)
+    :task (classify-episode ?e)
+    :precondition (not (classified ?e))
+    :ordered-subtasks
+      (and
+        (o1 (observe-classification ?e))))
+
+  ;; Superseded by classify-episode/m-classify-already above -- kept
+  ;; declared (unused) rather than deleted; see the comment above.
+  (:action classify-problem
+    :parameters (?e - episode)
+    :precondition (classified ?e)
+    :effect ())
+
+
+  ;; Concrete observation court.
+  ;; Outcome is not assumed in advance.
+  (:action observe-classification
+    :parameters (?e - episode)
+    :precondition (not (classified ?e))
+    :effect
+      (oneof
+        (and (classified ?e) (known ?e))
+        (and (classified ?e) (unknown ?e))))
+
+  (:task solve-classified-problem
+    :parameters (?e - episode))
+
+
+  (:method m-solve-known
+    :parameters (?e - episode)
+    :task (solve-classified-problem ?e)
+    :precondition (known ?e)
+    :subtasks ())
+
+
+  (:method m-solve-unknown
+    :parameters (?e - episode)
+    :task (solve-classified-problem ?e)
+    :precondition
+      (and
+        (unknown ?e)
+        (frontier-clean ?e))
+    :ordered-subtasks
+      (and
+        (u1 (explore-unknown ?e candidate-1))
+        (u2 (admit-candidate candidate-1))))
+
+
+  (:action explore-unknown
+    :parameters (?e - episode ?c - candidate)
+    :precondition
+      (and
+        (unknown ?e)
+        (frontier-clean ?e))
+
+    :effect
+      (and
+        (candidate-produced ?e ?c)
+
+        ;; records that frontier reasoning was purchased
+        (not (frontier-clean ?e))))
+
+
+  ;; admit-candidate is restructured below into a compound task so a
+  ;; refused/blocked candidate can be diagnosed, revised, and
+  ;; resubmitted through the SAME admission gate -- exactly like the
+  ;; repo-boundary section's build-broken/blocked pattern. The call
+  ;; site above, (u2 (admit-candidate candidate-1)), needs NO change:
+  ;; the compound task below is deliberately given the SAME name
+  ;; admit-candidate, so it grounds identically. Its own primitive
+  ;; action is renamed attempt-admit-candidate (body unchanged).
+  (:task admit-candidate
+    :parameters (?c - candidate))
+
+  (:method m-admit-candidate
+    :parameters (?c - candidate)
+    :task (admit-candidate ?c)
+    :ordered-subtasks
+      (and
+        (v1 (attempt-admit-candidate ?c))
+        (v2 (resolve-candidate-result ?c))))
+
+  (:action attempt-admit-candidate
+    :parameters (?c - candidate)
+    :precondition ()
+
+    :effect
+      (oneof
+        (admitted ?c)
+        (candidate-refused ?c)
+        (candidate-blocked ?c)
+        (candidate-unsupported ?c)))
+
+  (:task resolve-candidate-result
+    :parameters (?c - candidate))
+
+  (:method m-candidate-success
+    :parameters (?c - candidate)
+    :task (resolve-candidate-result ?c)
+    :precondition (admitted ?c)
+    :subtasks ())
+
+  ;; candidate-refused / candidate-blocked at the admission layer are
+  ;; revisable and resubmittable through the SAME already-produced
+  ;; candidate object (frontier-clean is already consumed by
+  ;; explore-unknown and nothing restores it -- retry here is NOT
+  ;; re-exploring, it is revising and resubmitting the same proposal,
+  ;; cheaper than fresh exploration and consistent with the domain's
+  ;; own "no repeated frontier reasoning" goal predicate).
+  (:method m-candidate-refused-retry
+    :parameters (?c - candidate)
+    :task (resolve-candidate-result ?c)
+    :precondition (candidate-refused ?c)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-candidate-refusal ?c))
+        (d2 (revise-refused-candidate ?c))
+        (d3 (attempt-admit-candidate ?c))
+        (d4 (resolve-candidate-result ?c))))
+
+  (:method m-candidate-blocked-retry
+    :parameters (?c - candidate)
+    :task (resolve-candidate-result ?c)
+    :precondition (candidate-blocked ?c)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-candidate-blockage ?c))
+        (d2 (revise-blocked-candidate ?c))
+        (d3 (attempt-admit-candidate ?c))
+        (d4 (resolve-candidate-result ?c))))
+
+  ;; candidate-unsupported deliberately has NO method here -- matching
+  ;; resolve-boundary-result's own missing "unsupported" case exactly.
+  ;; A capability that genuinely doesn't exist yet should not be
+  ;; silently re-explored/re-admitted forever. Confirmed empirically:
+  ;; on an otherwise-fully-repaired candidate path, leaving only
+  ;; candidate-unsupported uncovered reproduces real NoPlan, and a
+  ;; REJECTED "pretend the capability now exists" method flips it to
+  ;; solved:true -- confirming the mechanism while showing why that
+  ;; method is not adopted (it would fabricate a capability into
+  ;; existence rather than report its real absence).
+
+  (:action diagnose-candidate-refusal
+    :parameters (?c - candidate)
+    :precondition (candidate-refused ?c)
+    :effect ())
+
+  (:action revise-refused-candidate
+    :parameters (?c - candidate)
+    :precondition (candidate-refused ?c)
+    :effect (not (candidate-refused ?c)))
+
+  (:action diagnose-candidate-blockage
+    :parameters (?c - candidate)
+    :precondition (candidate-blocked ?c)
+    :effect ())
+
+  (:action revise-blocked-candidate
+    :parameters (?c - candidate)
+    :precondition (candidate-blocked ?c)
+    :effect (not (candidate-blocked ?c)))
+
+  ;; ============================================================
+  ;; 3. Plan -> bounded SELECT -> CONSTRUCT
+  ;; ============================================================
+
+  (:action construct-plan
+    :parameters (?e - episode ?p - plan)
+    :precondition ()
+    :effect (plan-built ?e ?p))
+
+
+  (:action bound-allocation
+    :parameters (?p - plan)
+    :precondition ()
+
+    :effect
+      (oneof
+        (allocation-bounded ?p)
+        (allocation-blocked ?p)))
+
+  ;; allocation-blocked is a plain resource-bounding constraint, the
+  ;; same shape as the repo-boundary section's "blocked" (a lawful
+  ;; path exists but cannot currently execute) -- diagnose, revise
+  ;; the bound, retry. Not a security/evidence court, so retry is
+  ;; legitimate here (verified empirically: uncovered = real NoPlan,
+  ;; repaired = real solved:true, same ablation technique as the
+  ;; repo-boundary section).
+  (:task resolve-allocation-result
+    :parameters (?p - plan))
+
+  (:method m-allocation-success
+    :parameters (?p - plan)
+    :task (resolve-allocation-result ?p)
+    :precondition (allocation-bounded ?p)
+    :subtasks ())
+
+  (:method m-repair-allocation-blocked
+    :parameters (?p - plan)
+    :task (resolve-allocation-result ?p)
+    :precondition (allocation-blocked ?p)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-allocation-blockage ?p))
+        (d2 (revise-allocation-bounds ?p))
+        (d3 (bound-allocation ?p))
+        (d4 (resolve-allocation-result ?p))))
+
+  (:action diagnose-allocation-blockage
+    :parameters (?p - plan)
+    :precondition (allocation-blocked ?p)
+    :effect ())
+
+  (:action revise-allocation-bounds
+    :parameters (?p - plan)
+    :precondition (allocation-blocked ?p)
+    :effect (not (allocation-blocked ?p)))
+
+
+  (:action manufacture
+    :parameters (?e - episode ?a - artifact)
+    :precondition (allocation-bounded plan-episode-1)
+
+    :effect
+      (oneof
+        (manufactured ?e ?a)
+        (manufacture-failed ?e)))
+
+  ;; manufacture-failed is the CONSTRUCT/mu step of BRCE. No comment
+  ;; anywhere marks it terminal, and a failed manufacture leaves no
+  ;; external consequence to reconcile -- structurally identical to
+  ;; the repo-boundary section's build-broken. Mirrored 1:1.
+  (:task resolve-manufacture-result
+    :parameters (?e - episode ?a - artifact))
+
+  (:method m-manufacture-success
+    :parameters (?e - episode ?a - artifact)
+    :task (resolve-manufacture-result ?e ?a)
+    :precondition (manufactured ?e ?a)
+    :subtasks ())
+
+  (:method m-repair-manufacture
+    :parameters (?e - episode ?a - artifact)
+    :task (resolve-manufacture-result ?e ?a)
+    :precondition (manufacture-failed ?e)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-manufacture-failure ?e))
+        (d2 (repair-manufacture-inputs ?e))
+        (d3 (manufacture ?e ?a))
+        (d4 (resolve-manufacture-result ?e ?a))))
+
+  (:action diagnose-manufacture-failure
+    :parameters (?e - episode)
+    :precondition (manufacture-failed ?e)
+    :effect ())
+
+  (:action repair-manufacture-inputs
+    :parameters (?e - episode)
+    :precondition (manufacture-failed ?e)
+    :effect (not (manufacture-failed ?e)))
+
+  ;; ============================================================
+  ;; 4. Authority -> DO -> Receipt
+  ;; ============================================================
+
+  (:action admit-authority
+    :parameters (?e - episode)
+    :precondition (manufactured ?e artifact-episode-1)
+
+    :effect
+      (oneof
+        (authority-admitted ?e)
+        (authority-refused ?e)))
+
+  ;; CLAUDE.md's own BRCE calculus names the pipeline explicitly as
+  ;; "admit/refuse -> diagnose/repair -> construct -> actuate ->
+  ;; receipt -> ..." -- diagnose/repair is the NAMED next phase after
+  ;; a refusal, not termination. No consequence has been actuated yet
+  ;; at THIS gate (dispatch-command hasn't run), so resubmitting after
+  ;; remediation carries none of close-receipt's double-actuation
+  ;; ambiguity. Scoped to episode 1's occurrence only -- episode 2's
+  ;; admit-authority-replay (below) deliberately has NO such wiring;
+  ;; see its own comment for why.
+  (:task resolve-authority-result
+    :parameters (?e - episode))
+
+  (:method m-authority-success
+    :parameters (?e - episode)
+    :task (resolve-authority-result ?e)
+    :precondition (authority-admitted ?e)
+    :subtasks ())
+
+  (:method m-repair-authority-refusal
+    :parameters (?e - episode)
+    :task (resolve-authority-result ?e)
+    :precondition (authority-refused ?e)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-authority-refusal ?e))
+        (d2 (remediate-for-authority ?e))
+        (d3 (admit-authority ?e))
+        (d4 (resolve-authority-result ?e))))
+
+  (:action diagnose-authority-refusal
+    :parameters (?e - episode)
+    :precondition (authority-refused ?e)
+    :effect ())
+
+  (:action remediate-for-authority
+    :parameters (?e - episode)
+    :precondition (authority-refused ?e)
+    :effect (not (authority-refused ?e)))
+
+
+  (:action dispatch-command
+    :parameters (?e - episode ?cmd - command)
+    :precondition (authority-admitted ?e)
+    :effect (command-issued ?e ?cmd))
+
+
+  ;; Critical BRCE invariant:
+  ;;
+  ;; There is NO possible successful actuation state that lacks
+  ;; a corresponding receipt-pending state.
+  ;;
+  (:action execute-command
+    :parameters (?cmd - command)
+    :precondition ()
+
+    :effect
+      (oneof
+
+        ;; successful consequence is born with receipt obligation
+        (and
+          (actuated ?cmd)
+          (receipt-pending ?cmd))
+
+        ;; no consequence occurred
+        (actuation-failed ?cmd)))
+
+  ;; execute-command's own comment above is explicit and load-bearing:
+  ;; the actuation-failed branch means "no consequence occurred" -- the
+  ;; one DO-step outcome the domain itself states carries zero external
+  ;; side effect (contrast close-receipt's receipt-reconcile-blocked
+  ;; below, where a consequence IS already known). Retrying is the
+  ;; safest recoverable case: no ambiguity, no double-actuation risk.
+  ;; Scoped to episode 1's occurrence only -- episode 2's
+  ;; execute-replay-command (below) deliberately has NO such wiring.
+  (:task resolve-actuation-result
+    :parameters (?cmd - command))
+
+  (:method m-actuation-success
+    :parameters (?cmd - command)
+    :task (resolve-actuation-result ?cmd)
+    :precondition (and (actuated ?cmd) (receipt-pending ?cmd))
+    :subtasks ())
+
+  (:method m-repair-actuation-failure
+    :parameters (?cmd - command)
+    :task (resolve-actuation-result ?cmd)
+    :precondition (actuation-failed ?cmd)
+    :ordered-subtasks
+      (and
+        (d1 (diagnose-actuation-failure ?cmd))
+        (d2 (retry-conditions-for-actuation ?cmd))
+        (d3 (execute-command ?cmd))
+        (d4 (resolve-actuation-result ?cmd))))
+
+  (:action diagnose-actuation-failure
+    :parameters (?cmd - command)
+    :precondition (actuation-failed ?cmd)
+    :effect ())
+
+  (:action retry-conditions-for-actuation
+    :parameters (?cmd - command)
+    :precondition (actuation-failed ?cmd)
+    :effect (not (actuation-failed ?cmd)))
+
+
+  (:action close-receipt
+    :parameters (?cmd - command ?r - receipt)
+    :precondition
+      (and
+        (actuated ?cmd)
+        (receipt-pending ?cmd))
+
+    :effect
+      (oneof
+
+        ;; durable receipt
+        (and
+          (receipt-durable ?cmd ?r)
+          (not (receipt-pending ?cmd)))
+
+        ;; consequence known, receipt still unresolved:
+        ;; NEVER replay automatically.
+        ;;
+        ;; TERMINAL BY DESIGN, deliberately given NO repair method: a
+        ;; retry here would risk double-actuation/double-receipt --
+        ;; the exact ambiguity the zero-unreceipted-actuation invariant
+        ;; exists to prevent. Real corroborating evidence in
+        ;; ash_a2a/lib/ash_a2a/command_bus.ex: reconciliation is a
+        ;; distinct, presumably operator-invoked function
+        ;; (reconcile_outboxed_receipts/2), never folded back into the
+        ;; automatic dispatch path. Confirmed empirically fatal when
+        ;; reachable (real NoPlan) with no HDDL syntax in this pinned
+        ;; ferroplan rev to declare it an acceptable non-goal terminal
+        ;; (adapt_problem in hddl.rs hardcodes unsafe_states/
+        ;; soft_goal_facts to Default::default(), and neither field is
+        ;; consulted by fond_policy_strong_cyclic in a way that would
+        ;; help even if it could be populated from HDDL).
+        (receipt-reconcile-blocked ?cmd)))
+
+  ;; ============================================================
+  ;; 5. Independent evidence -> learning
+  ;; ============================================================
+
+  (:action independent-verify
+    :parameters (?e - episode)
+    :precondition
+      (receipt-durable command-episode-1 receipt-episode-1)
+
+    :effect
+      (oneof
+        (verified ?e)
+
+        ;; TERMINAL BY DESIGN, deliberately given NO repair method.
+        ;; independent-verify is an INDEPENDENT court gated behind an
+        ;; already-durable receipt -- a "retry until it passes" method
+        ;; would convert the court into a rubber stamp, fabricating
+        ;; confidence rather than reporting a real finding (confirmed:
+        ;; a REJECTED such method DOES flip this to solved:true,
+        ;; proving the mechanism while showing why it is not adopted).
+        (verification-failed ?e)))
+
+
+  (:action observe-process
+    :parameters (?e - episode)
+    :precondition (verified ?e)
+
+    :effect
+      (oneof
+        (process-conformant ?e)
+
+        ;; TERMINAL BY DESIGN, same reasoning as verification-failed
+        ;; above: observe-process is the process-conformance court: a
+        ;; retry-until-conformant method would erase an adversarial
+        ;; finding rather than repair a fixable fact. No repair method
+        ;; added (confirmed via the same reject-after-confirm
+        ;; technique as verification-failed).
+        (process-nonconformant ?e)))
+
+
+  (:action record-feedback
+    :parameters (?e - episode)
+    :precondition
+      (and
+        (verified ?e)
+        (process-conformant ?e))
+    :effect (feedback-recorded ?e))
+
+
+  (:action create-machine-experience
+    :parameters (?e - episode ?x - experience)
+    :precondition
+      (and
+        (feedback-recorded ?e)
+        (verified ?e))
+
+    :effect
+      (experience-created ?e ?x))
+
+
+  ;; Knowledge promotion is its own admission.
+  (:action admit-machine-experience
+    :parameters (?x - experience)
+    :precondition (experience-created episode-1 ?x)
+
+    :effect
+      (oneof
+
+        (and
+          (experience-admitted ?x)
+          (replay-contract ?x))
+
+        ;; failed knowledge admission does not retroactively
+        ;; invalidate the execution receipt.
+        ;;
+        ;; TERMINAL BY DESIGN, deliberately given NO repair method:
+        ;; this is itself an independent admission court over the
+        ;; derived experience (same class as verification-failed /
+        ;; process-nonconformant above), and the domain's own comment
+        ;; states the correct, honest consequence of failing it --
+        ;; episode 1's real receipt stands regardless, but the
+        ;; knowledge-promotion goal predicates (experience-admitted,
+        ;; replay-contract) are correctly left unreachable, and with
+        ;; them run-known-replay-episode's own :precondition. A retry
+        ;; here would fabricate a promotion the court just refused.
+        (candidate-refused candidate-experience)))
+
+
+  (:action issue-affidavit
+    :parameters (?e - episode)
+    :precondition
+      (and
+        (verified ?e)
+        (process-conformant ?e))
+    :effect (affidavit-issued ?e))
+
+  ;; ============================================================
+  ;; 6. Episode 2 -- prove the reinforcement
+  ;; ============================================================
+
+  (:task run-known-replay-episode
+    :parameters
+      (?e2 ?e1 - episode
+       ?s - subject
+       ?x - experience))
+
+  (:method m-run-known-replay-episode
+    :parameters
+      (?e2 ?e1 - episode
+       ?s - subject
+       ?x - experience)
+
+    :task (run-known-replay-episode ?e2 ?e1 ?s ?x)
+
+    :precondition
+      (and
+        (experience-admitted ?x)
+        (replay-contract ?x))
+
+    :ordered-subtasks
+      (and
+        (k1 (reconstruct-world ?e2 ?s))
+        (k2 (prove-semantic-equivalence ?e2 ?e1))
+        (k3 (route-known-replay ?e2 ?x))
+        (k4 (replay-known-transition ?e2 ?x))
+        (k5 (admit-authority-replay ?e2))
+        (k6 (dispatch-replay-command ?e2 command-episode-2))
+        (k7 (execute-replay-command command-episode-2))
+        (k8 (close-replay-receipt
+              command-episode-2
+              receipt-episode-2))
+        (k9 (verify-replay ?e2))
+        (k10 (observe-replay-process ?e2))
+        (k11 (issue-affidavit ?e2))))
+
+  (:action prove-semantic-equivalence
+    :parameters (?new ?old - episode)
+    :precondition ()
+
+    :effect
+      (oneof
+        (equivalent ?new ?old)
+
+        ;; TERMINAL BY DESIGN, deliberately given NO repair method.
+        ;; This action's precondition is empty and its oneof names no
+        ;; separately-fixable state predicate (unlike build-broken/
+        ;; blocked, which have dedicated repair actions that really
+        ;; negate a concrete fact before re-verifying) -- a recovery
+        ;; method here could only be a bare re-roll of the same check,
+        ;; the same "NEVER replay automatically" anti-pattern the
+        ;; domain forbids for close-receipt, generalized to an
+        ;; equivalence court.
+        (equivalence-failed ?new ?old)))
+
+  ;; NOTE (ash_a2a manufacturing note, not in the original pasted text):
+  ;; k5-k10 of run-known-replay-episode's :ordered-subtasks referenced six
+  ;; actions -- admit-authority-replay, dispatch-replay-command,
+  ;; execute-replay-command, close-replay-receipt, verify-replay,
+  ;; observe-replay-process -- that were never declared anywhere in the
+  ;; pasted domain. Confirmed by running the real hddl_cli/ferroplan solver
+  ;; against the text exactly as given first: it grounds-failed with
+  ;; "'admit-authority-replay' is neither a declared task nor an action"
+  ;; before this note was added. The six definitions below are the minimal,
+  ;; non-inventive close: each mirrors its Episode-1 counterpart
+  ;; (admit-authority / dispatch-command / execute-command / close-receipt /
+  ;; independent-verify / observe-process) verbatim, substituting the
+  ;; episode-2/command-episode-2/receipt-episode-2 identifiers the replay
+  ;; method's own subtask calls already named. No new predicates, no new
+  ;; oneof branches, no new recovery paths invented -- same shape, same
+  ;; dead-end structure as the originals.
+
+  ;; admit-authority-replay's authority-refused branch is TERMINAL BY
+  ;; DESIGN here, deliberately NOT wired to resolve-authority-result
+  ;; above (that task is reachable only from episode 1's admit-
+  ;; authority call site). Real evidence in
+  ;; ash_a2a/lib/ash_a2a/command_bus.ex: a model/authority refusal
+  ;; produces refusal(:model_authority_refused) from "a candidate
+  ;; claim, never DO authority" -- a real security control, never
+  ;; silently retried in place. Auto-bypassing it here would fabricate
+  ;; away the same BRCE invariant episode 1's own repair honors by
+  ;; only ever resubmitting a NOT-YET-consequential authority request.
+  (:action admit-authority-replay
+    :parameters (?e - episode)
+    :precondition (replayed ?e experience-1)
+
+    :effect
+      (oneof
+        (authority-admitted ?e)
+        (authority-refused ?e)))
+
+
+  (:action dispatch-replay-command
+    :parameters (?e - episode ?cmd - command)
+    :precondition (authority-admitted ?e)
+    :effect (command-issued ?e ?cmd))
+
+
+  ;; actuation-failed here is TERMINAL BY DESIGN, deliberately NOT
+  ;; wired to resolve-actuation-result above (reachable only from
+  ;; episode 1's execute-command call site). Checked real evidence
+  ;; rather than assuming "nothing happened yet, so safe to retry":
+  ;; command_bus.ex's refuse_actuation/refuse_unanchored_execution
+  ;; both terminate every such case in a recorded refused receipt, not
+  ;; a re-attempt of the same step -- the only real retries anywhere
+  ;; in that module are bounded RECEIPT-COMMIT persistence retries, a
+  ;; different, later step (close-receipt/close-replay-receipt), never
+  ;; execute-command/execute-replay-command itself. A genuinely new
+  ;; attempt in the real system requires a new command/execution id,
+  ;; out of scope for automatic in-episode recovery.
+  (:action execute-replay-command
+    :parameters (?cmd - command)
+    :precondition ()
+
+    :effect
+      (oneof
+        (and
+          (actuated ?cmd)
+          (receipt-pending ?cmd))
+        (actuation-failed ?cmd)))
+
+
+  ;; receipt-reconcile-blocked here is TERMINAL BY DESIGN -- same
+  ;; invariant as episode 1's close-receipt above ("NEVER replay
+  ;; automatically"): the consequence already happened for real
+  ;; (actuated=true); auto-retrying close-replay-receipt risks the
+  ;; same double-actuation/double-receipt ambiguity the invariant
+  ;; exists to prevent. Deliberately given NO repair method.
+  (:action close-replay-receipt
+    :parameters (?cmd - command ?r - receipt)
+    :precondition
+      (and
+        (actuated ?cmd)
+        (receipt-pending ?cmd))
+
+    :effect
+      (oneof
+        (and
+          (receipt-durable ?cmd ?r)
+          (not (receipt-pending ?cmd)))
+        (receipt-reconcile-blocked ?cmd)))
+
+
+  ;; verification-failed here is TERMINAL BY DESIGN, same reasoning as
+  ;; episode 1's independent-verify above: verify-replay is an
+  ;; independent postcondition check (real evidence: command_bus.ex
+  ;; documents postcondition observation evaluated once, after DO, "by
+  ;; a verifier reading post-state through its own path, never by
+  ;; trusting reply" -- no retry loop anywhere in that module). No
+  ;; separately-repairable intervening fact exists, so any recovery
+  ;; method would be a bare, illegitimate reroll.
+  (:action verify-replay
+    :parameters (?e - episode)
+    :precondition
+      (receipt-durable command-episode-2 receipt-episode-2)
+
+    :effect
+      (oneof
+        (verified ?e)
+        (verification-failed ?e)))
+
+
+  ;; process-nonconformant here is TERMINAL BY DESIGN, same family as
+  ;; verification-failed above -- both trace to the same single-shot
+  ;; real postcondition observation in command_bus.ex, applied once,
+  ;; no retry.
+  (:action observe-replay-process
+    :parameters (?e - episode)
+    :precondition (verified ?e)
+
+    :effect
+      (oneof
+        (process-conformant ?e)
+        (process-nonconformant ?e)))
+
+  (:action route-known-replay
+    :parameters (?e - episode ?x - experience)
+
+    :precondition
+      (and
+        (equivalent ?e episode-1)
+        (experience-admitted ?x)
+        (replay-contract ?x)
+        (frontier-clean ?e))
+
+    :effect
+      (known ?e))
+
+
+  (:action replay-known-transition
+    :parameters (?e - episode ?x - experience)
+
+    :precondition
+      (and
+        (known ?e)
+        (frontier-clean ?e)
+        (replay-contract ?x))
+
+    :effect
+      (replayed ?e ?x))
+
+  ;; ============================================================
+  ;; 7. Release certification
+  ;; ============================================================
+
+  (:task certify-release
+    :parameters
+      (?rel - release
+       ?e1 ?e2 - episode))
+
+  (:method m-certify-release
+    :parameters
+      (?rel - release
+       ?e1 ?e2 - episode)
+
+    :task (certify-release ?rel ?e1 ?e2)
+
+    :precondition
+      (and
+        ;; Episode 1 actually happened
+        (verified ?e1)
+        (process-conformant ?e1)
+        (affidavit-issued ?e1)
+
+        ;; Experience exists and has standing
+        (experience-admitted experience-1)
+        (replay-contract experience-1)
+
+        ;; Episode 2 used it
+        (equivalent ?e2 ?e1)
+        (replayed ?e2 experience-1)
+        (verified ?e2)
+        (process-conformant ?e2)
+        (affidavit-issued ?e2)
+
+        ;; No repeated frontier reasoning
+        (frontier-clean ?e2))
+
+    :ordered-subtasks
+      (and
+        (c1 (mark-release-qualified ?rel))))
+
+
+  (:action mark-release-qualified
+    :parameters (?rel - release)
+    :precondition ()
+    :effect (release-qualified ?rel))
+)
