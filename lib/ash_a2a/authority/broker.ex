@@ -132,7 +132,46 @@ defmodule AshA2A.Authority.Broker do
               opts :: keyword()
             ) :: {:ok, DateTime.t() | nil} | :error
 
-  @optional_callbacks grant_expires_at: 3
+  @doc """
+  Renews a STANDING grant of `capability_id` to `subject` IN PLACE: rewrites
+  its `expires_at` to `new_expires_at`, without a revoke-then-reissue round
+  trip.
+
+  This closes the real non-standing window a caller hits with the two-call
+  alternative: between a `revoke/2` and the following `grant/3` (via
+  `AshA2A.Authority.Grant.grant/3`), `granted?/3` and `verify/2` legitimately
+  answer "absent" for a grant the caller believes is merely being extended --
+  a long-lived, continuously-operating caller can be refused mid-flight for
+  no reason but scheduling. `renew/4` never removes the grant: `granted?/3`
+  observes it standing before, during, and after a successful call.
+
+  `new_expires_at` of `nil` means "no time bound" (permanent), matching
+  `AshA2A.Authority.new/3`'s own convention -- a renewal MAY convert a
+  time-bounded grant to permanent, or vice versa.
+
+  MUST fail closed with `{:error, refusal()}` (a `:reason` naming why, e.g.
+  `:grant_not_standing`) when no STANDING grant exists to renew for
+  `(subject, capability_id)` -- an absent, already-revoked, or already-expired
+  grant is not something `renew/4` may resurrect or originate; that remains
+  `issue/3`'s job alone. `renew/4` only ever mutates the `expires_at` of a
+  grant that is standing at the moment of the call.
+
+  OPTIONAL: a broker that does not implement it is read by
+  `AshA2A.Authority.Grant.renew/3` as "renewal unsupported" --
+  `{:error, %{reason: :renew_unsupported}}` -- never as a silent fallback to
+  a revoke-then-reissue round trip, since that round trip is exactly the
+  non-standing window this callback exists to close. Matches the same
+  optional-callback precedent `grant_expires_at/3` already set: a broker
+  written before this callback existed keeps working exactly as before.
+  """
+  @callback renew(
+              subject :: Identity.t(),
+              capability_id :: String.t(),
+              new_expires_at :: DateTime.t() | nil,
+              opts :: keyword()
+            ) :: :ok | {:error, refusal()}
+
+  @optional_callbacks grant_expires_at: 3, renew: 4
 
   @typedoc "What a `granted?/3` lookup found (RFC-SA2A-002 §67 evidence)."
   @type lookup_status :: :standing | :absent | :expired | :revoked | :unavailable

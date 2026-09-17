@@ -191,7 +191,9 @@ defmodule AshA2A.Authority.Grant do
   `authorize/3` will later look for -- so a grant issued here is the grant
   found there. A second `grant/3` for the same `(subject, capability_id)`
   legitimately refuses with the broker's own `:token_id_taken`, because the
-  grant already stands; use `granted?/3` to ask rather than re-issuing.
+  grant already stands; use `granted?/3` to ask rather than re-issuing, and
+  `renew/3` to extend or shorten a standing grant's `expires_at` in place
+  rather than a `revoke/3` + `grant/3` round trip.
 
       subject = AshA2A.Identity.principal("user-1")
       {:ok, _authority} = AshA2A.Authority.Grant.grant(subject, "create_item")
@@ -256,6 +258,7 @@ defmodule AshA2A.Authority.Grant do
       case {action, result} do
         {:issue, {:ok, _authority}} -> {:issued, nil}
         {:revoke, :ok} -> {:revoked, nil}
+        {:renew, :ok} -> {:renewed, nil}
         {_action, {:error, refusal}} -> {:refused, refusal[:reason]}
       end
 
@@ -273,6 +276,66 @@ defmodule AshA2A.Authority.Grant do
     )
 
     result
+  end
+
+  @doc """
+  Renews the caller's own standing grant of `capability_id` to `subject` IN
+  PLACE -- extends (or shortens) its `expires_at` through the configured
+  broker's optional `AshA2A.Authority.Broker.renew/4` callback, without a
+  revoke-then-reissue round trip.
+
+  ## The window this closes
+
+  Before this function, the only way to change a standing grant's expiry was
+  `revoke/3` followed by a fresh `grant/3` -- two separate broker calls with
+  a real gap between them. A long-lived, continuously-operating caller whose
+  grant is merely being extended (not actually torn down) could be refused
+  by `granted?/3` or `verify/2` during exactly that gap, for no reason but
+  routine renewal timing. `renew/3` is one broker call: the grant is standing
+  before, during, and after it, or the call refuses outright and the
+  original grant is untouched.
+
+  `opts[:expires_at]` is the new `expires_at` (`DateTime.t() | nil`; `nil`
+  means "no time bound", matching `AshA2A.Authority.new/3`'s own convention)
+  -- defaults to `nil` when omitted, so an unqualified `renew/3` call renews
+  to permanent, matching `grant/3`'s own default when no `:expires_at` is
+  given.
+
+  Refuses `{:error, %{reason: :renew_unsupported, capability_id: capability_id}}`
+  when the configured broker does not implement the optional `renew/4`
+  callback -- deliberately never falls back to a silent `revoke/3` +
+  `grant/3` pair, since that pair is exactly the non-standing window this
+  function exists to close. Otherwise returns the broker's own `renew/4`
+  result verbatim (typically `:ok`, or `{:error, %{reason: :grant_not_standing, ...}}`
+  for a grant that is absent, revoked, or already expired -- `renew/4` never
+  originates a grant that was not already standing; that remains `grant/3`'s
+  job alone).
+
+      subject = AshA2A.Identity.principal("user-1")
+      {:ok, _authority} = AshA2A.Authority.Grant.grant(subject, "create_item")
+      later = DateTime.add(DateTime.utc_now(), 3600, :second)
+      :ok = AshA2A.Authority.Grant.renew(subject, "create_item", expires_at: later)
+  """
+  @spec renew(Identity.t(), String.t(), keyword()) ::
+          :ok | {:error, AshA2A.Authority.Broker.refusal()}
+  def renew(%Identity{kind: :principal} = subject, capability_id, opts \\ [])
+      when is_binary(capability_id) do
+    new_expires_at = Keyword.get(opts, :expires_at)
+
+    case resolve_broker(opts) do
+      {:ok, module, broker_opts} ->
+        if Code.ensure_loaded?(module) and function_exported?(module, :renew, 4) do
+          module.renew(subject, capability_id, new_expires_at, broker_opts)
+          |> emit_lifecycle(:renew, module, subject, capability_id)
+        else
+          {:error, %{reason: :renew_unsupported, capability_id: capability_id}}
+          |> emit_lifecycle(:renew, module, subject, capability_id)
+        end
+
+      :error ->
+        {:error, %{reason: :no_authority_broker_configured, capability_id: capability_id}}
+        |> emit_lifecycle(:renew, nil, subject, capability_id)
+    end
   end
 
   @doc """
