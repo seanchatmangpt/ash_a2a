@@ -29,6 +29,34 @@ def deps do
 end
 ```
 
+## Local Development Setup
+
+Running `mix test` in a fresh checkout requires two native Rust CLI binaries
+to be built first; CI (`.github/workflows/ci.yml`) builds these
+automatically, but a local clone or worktree does not, so this is a real,
+one-time manual step:
+
+```sh
+cd native/hddl_cli && cargo build --release --locked && cd -
+cd native/graphlaw_host && cargo build --release --locked && cd -
+```
+
+- `native/hddl_cli` is the sole integration surface for the real FOND/HTN
+  planner (`ferroplan`) — dozens of tests (deterministic HDDL synthesis,
+  the FreedomGym facilitator fixture, request-router phase dispatch,
+  Chicago qualification courts) invoke this binary as a subprocess and
+  raise a clear, actionable error (`hddl_cli_not_built` /
+  `test/support/freedom_gym_meeting_plan.ex`'s own raise) if it is missing
+  — never a silent skip. Without it, `mix test` reports real test
+  *failures* (not skips), which is easy to mistake for a code regression.
+- `native/graphlaw_host` backs the optional GraphLaw WASM runtime
+  (`AshA2A.GraphLaw.WasmtimeRuntime`); if left unbuilt, the one test that
+  needs it reports a named, correctly-handled skip (`"graphlaw_host is not
+  built"`) rather than a failure.
+
+Both `target/` directories are build artifacts (gitignored, per
+`native/*/.gitignore`) and are never committed.
+
 ## Usage
 
 Declare the DSL on a resource (or domain):
