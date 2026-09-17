@@ -587,6 +587,7 @@ defmodule AshA2A.Chicago.FreshConsumer do
       ocel_gaps: Map.get(evidence, "ocel_gaps", 0),
       subject_verification:
         StandingReceipt.verification_from_map(receipt["subject"]["verification"]),
+      court_admission: AshA2A.Chicago.CourtManifest.from_map(court["manifest"]),
       source_revision: subject["source_revision"],
       court_revision: court["revision"]
     }

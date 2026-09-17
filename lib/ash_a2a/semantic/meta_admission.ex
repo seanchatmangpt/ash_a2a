@@ -98,7 +98,11 @@ defmodule AshA2A.Semantic.MetaAdmission do
     authority_policy
     receipt_schema
     semantic_mapping
+    hook
   )
+
+  @standing_event [:ash_a2a, :semantic, :meta_admission, :standing]
+  @confer_event [:ash_a2a, :semantic, :meta_admission, :confer]
 
   @type refusal :: %{required(:code) => atom(), required(:detail) => map()}
 
@@ -107,7 +111,9 @@ defmodule AshA2A.Semantic.MetaAdmission do
   def refusal_code, do: @refusal_code
 
   @doc """
-  The semantic-artifact kinds that require standing (RFC S20's enumeration).
+  The semantic-artifact kinds that require standing (RFC S20's enumeration,
+  plus the ontology roots / profiles / shape maps the Root Manifest pins, plus
+  knowledge `hook`s -- RFC-SA2A-002 §61 hooks are machinery that fires).
   Every one of these is machinery, not data.
   """
   @spec artifact_kinds() :: [String.t()]
@@ -125,37 +131,210 @@ defmodule AshA2A.Semantic.MetaAdmission do
   @spec standing(RootManifest.t(), String.t(), String.t()) :: {:ok, map()} | {:error, refusal()}
   def standing(%RootManifest{} = manifest, relative_path, kind)
       when is_binary(relative_path) and is_binary(kind) do
-    result = decide_standing(manifest, relative_path, kind)
+    result =
+      case RootManifest.find_pin(manifest, relative_path, kind) do
+        :error ->
+          refuse(:not_pinned, %{
+            artifact: relative_path,
+            kind: kind,
+            invariant: "NOT Standing(v) => NOT Validates(v, x)"
+          })
 
-    # `[:ash_a2a, :semantic, :meta_admission, :standing]`: the standing
-    # decision for one piece of machinery (RFC-SA2A-002 §52/§81 evidence).
-    :telemetry.execute(
-      [:ash_a2a, :semantic, :meta_admission, :standing],
-      %{count: 1},
-      %{
-        artifact: relative_path,
-        kind: kind,
-        manifest_digest: manifest.digest,
-        outcome: if(match?({:ok, _}, result), do: :standing, else: :refused),
-        reason: with({:error, %{detail: %{reason: r}}} <- result, do: r, else: (_ -> nil))
-      }
+        {:ok, pin} ->
+          verify_pin_now(manifest, pin, relative_path, kind)
+      end
+
+    digest =
+      case RootManifest.artifact_digest(RootManifest.resolve(manifest, relative_path)) do
+        {:ok, d} -> d
+        _ -> nil
+      end
+
+    # `ok_outcome: :standing` (not the shared `:admitted`) preserves the
+    # pre-existing path-based contract `AshA2A.Chicago.Courts.LlmBoundary`
+    # observes on this same event; `extra: %{artifact: relative_path}`
+    # preserves the pre-existing `meta_admission.standing` OCEL mapping's
+    # object identity (`inference_mappings.ex` reads `meta[:artifact]`).
+    emit_standing(kind, digest, manifest.digest, "path", result,
+      ok_outcome: :standing,
+      extra: %{artifact: relative_path}
     )
 
     result
   end
 
-  defp decide_standing(manifest, relative_path, kind) do
-    case RootManifest.find_pin(manifest, relative_path, kind) do
-      :error ->
-        refuse(:not_pinned, %{
-          artifact: relative_path,
-          kind: kind,
-          invariant: "NOT Standing(v) => NOT Validates(v, x)"
-        })
+  @doc "Telemetry event of every standing decision (`standing/3`, `document_standing/4`)."
+  @spec standing_event() :: [atom()]
+  def standing_event, do: @standing_event
 
-      {:ok, pin} ->
-        verify_pin_now(manifest, pin, relative_path, kind)
+  @doc "Telemetry event of every production-standing decision (`confer/5`)."
+  @spec confer_event() :: [atom()]
+  def confer_event, do: @confer_event
+
+  @doc """
+  `Standing(document)` for machinery a consumer holds IN MEMORY (a law
+  document carried as a string), required to be pinned under `kind`.
+
+  Standing holds iff, at the moment of this call:
+
+    1. `manifest` passes `AshA2A.Semantic.RootManifest.verify_use/2` -- its
+       content address, its pinned files, its engine artifact and its
+       component identities are re-checked NOW, and when
+       `opts[:expected_digest]` is given the manifest is the one the consumer
+       bound earlier (reason `:manifest_unverified` otherwise);
+    2. `kind` is an `artifact_kinds/0` kind (`:unknown_kind`);
+    3. the SHA-256 of `bytes` is pinned under `kind` (`:not_pinned`). Being
+       well-formed, non-vacuous, or accepted by the engine is not standing.
+
+  Because (1) re-digests every pinned file, a pin whose file changed after
+  the manifest was built has no standing, whatever bytes the consumer holds.
+
+  Emits `standing_event/0` with `kind`, `artifact_digest`, `outcome`
+  (`:admitted | :refused`), `reason`, `manifest_digest` and `consumer`
+  (`opts[:consumer]`).
+  """
+  @spec document_standing(RootManifest.t() | term(), binary(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, refusal()}
+  def document_standing(manifest, bytes, kind, opts \\ [])
+      when is_binary(bytes) and is_binary(kind) do
+    digest = RootManifest.digest_bytes(bytes)
+
+    result =
+      with :ok <- known_kind(kind),
+           :ok <- manifest_verified(manifest, opts) do
+        case RootManifest.find_pin_by_digest(manifest, digest, kind) do
+          {:ok, pin} ->
+            {:ok, pin}
+
+          :error ->
+            refuse(:not_pinned, %{
+              artifact_digest: digest,
+              kind: kind,
+              invariant: "NOT Standing(m) => NOT Validates(m, x)"
+            })
+        end
+      end
+
+    emit_standing(kind, digest, manifest_digest(manifest), opts[:consumer], result)
+    result
+  end
+
+  @doc """
+  The production-standing gate (RFC-SA2A-001 S20/S58, RFC-SA2A-002 §52):
+  machinery output becomes a production object only through here.
+
+  `apparent` is what the machinery itself reported -- a validator's
+  admission, a solver's plan, a closure, a rendered artifact, a policy's
+  grant, a hook's acceptance -- as `{:ok, object}` or anything else. The
+  apparent result is never enough:
+
+    * a negative apparent result is refused (`:apparent_result_negative`):
+      admitted machinery that says no is a no;
+    * a positive apparent result is refused unless `document_standing/4`
+      admits the machinery `bytes` under `kind` -- an unadmitted validator's
+      "valid", an unadmitted domain's plan, an unadmitted generator's
+      artifact confer nothing.
+
+  Returns `{:ok, %{standing: :production, kind:, artifact_digest:, pin_id:,
+  manifest_digest:, object_digest:}}`. Emits `confer_event/0` with `kind`,
+  `outcome` (`:production | :refused`), `reason`, `artifact_digest`,
+  `manifest_digest` and `consumer`.
+  """
+  @spec confer(RootManifest.t() | term(), String.t(), binary(), term(), keyword()) ::
+          {:ok, map()} | {:error, refusal()}
+  def confer(manifest, kind, bytes, apparent, opts \\ [])
+      when is_binary(kind) and is_binary(bytes) do
+    digest = RootManifest.digest_bytes(bytes)
+
+    result =
+      case apparent do
+        {:ok, object} ->
+          with {:ok, pin} <- document_standing(manifest, bytes, kind, opts) do
+            {:ok,
+             %{
+               standing: :production,
+               kind: kind,
+               artifact_digest: digest,
+               pin_id: Map.get(pin, "id"),
+               manifest_digest: manifest.digest,
+               object_digest:
+                 RootManifest.digest_bytes(:erlang.term_to_binary(object, [:deterministic]))
+             }}
+          end
+
+        other ->
+          refuse(:apparent_result_negative, %{
+            kind: kind,
+            artifact_digest: digest,
+            apparent: inspect(other, limit: 10, printable_limit: 256)
+          })
+      end
+
+    {outcome, reason} =
+      case result do
+        {:ok, _} -> {:production, nil}
+        {:error, %{detail: detail}} -> {:refused, Map.get(detail, :reason)}
+      end
+
+    :telemetry.execute(@confer_event, %{system_time: System.system_time()}, %{
+      kind: kind,
+      outcome: outcome,
+      reason: reason,
+      artifact_digest: digest,
+      manifest_digest: manifest_digest(manifest),
+      consumer: opts[:consumer]
+    })
+
+    result
+  end
+
+  defp known_kind(kind) do
+    if kind in @artifact_kinds,
+      do: :ok,
+      else: refuse(:unknown_kind, %{kind: kind, known: @artifact_kinds})
+  end
+
+  defp manifest_verified(%RootManifest{} = manifest, opts) do
+    case RootManifest.verify_use(manifest, opts) do
+      {:ok, _} ->
+        :ok
+
+      {:error, root_refusal} ->
+        refuse(:manifest_unverified, %{root_refusal: root_refusal})
     end
+  end
+
+  defp manifest_verified(other, _opts),
+    do: refuse(:manifest_unverified, %{root_refusal: :no_root_manifest, got: inspect(other)})
+
+  defp manifest_digest(%RootManifest{digest: digest}), do: digest
+  defp manifest_digest(_), do: nil
+
+  defp emit_standing(kind, digest, manifest_digest, consumer, result, opts \\ []) do
+    ok_outcome = Keyword.get(opts, :ok_outcome, :admitted)
+    extra = Keyword.get(opts, :extra, %{})
+
+    {outcome, reason} =
+      case result do
+        {:ok, _} -> {ok_outcome, nil}
+        {:error, %{detail: detail}} -> {:refused, Map.get(detail, :reason)}
+      end
+
+    :telemetry.execute(
+      @standing_event,
+      %{system_time: System.system_time()},
+      Map.merge(
+        %{
+          kind: kind,
+          artifact_digest: digest,
+          outcome: outcome,
+          reason: reason,
+          manifest_digest: manifest_digest,
+          consumer: consumer
+        },
+        extra
+      )
+    )
   end
 
   defp verify_pin_now(manifest, pin, relative_path, kind) do

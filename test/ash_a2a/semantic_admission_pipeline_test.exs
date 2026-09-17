@@ -42,7 +42,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     @tag :graphlaw
     test "a conforming candidate reaches :admitted with a real engine-computed receipt identity" do
       if engine_available?() do
-        assert {:ok, %Result{} = result} = AdmissionPipeline.admit(Fixtures.candidate())
+        assert {:ok, %Result{} = result} =
+                 AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
 
         assert result.standing == :admitted
         assert Standing.admitted?(result.standing)
@@ -72,8 +73,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     @tag :graphlaw
     test "admission is replayable: the same candidate yields the same digests" do
       if engine_available?() do
-        assert {:ok, first} = AdmissionPipeline.admit(Fixtures.candidate())
-        assert {:ok, second} = AdmissionPipeline.admit(Fixtures.candidate())
+        assert {:ok, first} = AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
+        assert {:ok, second} = AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
 
         assert first.graph_hash == second.graph_hash
         assert first.admission_digest == second.admission_digest
@@ -91,20 +92,25 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
         zz:a sc:description "ship the admission pipeline" .
         """
 
-        assert {:ok, base} = AdmissionPipeline.admit(Fixtures.candidate())
-        assert {:ok, same} = AdmissionPipeline.admit(Fixtures.candidate(graph_ttl: relabelled))
+        assert {:ok, base} = AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
+
+        assert {:ok, same} =
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(graph_ttl: relabelled),
+                   Fixtures.law_opts()
+                 )
 
         assert base.graph_hash == same.graph_hash
 
+        # Different lawful content under the same admitted law. (A candidate
+        # carrying its own permissive falsifier set is refused: law standing.)
         assert {:ok, other} =
                  AdmissionPipeline.admit(
                    Fixtures.candidate(
-                     graph_ttl: Fixtures.graph_with_forbidden(),
-                     falsifiers: """
-                     @prefix ex: <http://example.org/> .
-                     { ?s a ex:NeverPresent } => false .
-                     """
-                   )
+                     graph_ttl:
+                       Fixtures.conforming_graph() <> ~s(ex:c ex:note "another lawful fact" .\n)
+                   ),
+                   Fixtures.law_opts()
                  )
 
         refute base.graph_hash == other.graph_hash
@@ -114,10 +120,13 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     @tag :graphlaw
     test "pinning the expected graph identity admits when it matches" do
       if engine_available?() do
-        assert {:ok, base} = AdmissionPipeline.admit(Fixtures.candidate())
+        assert {:ok, base} = AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
 
         assert {:ok, pinned} =
-                 AdmissionPipeline.admit(Fixtures.candidate(expected_graph_hash: base.graph_hash))
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(expected_graph_hash: base.graph_hash),
+                   Fixtures.law_opts()
+                 )
 
         assert pinned.graph_hash == base.graph_hash
       end
@@ -129,7 +138,10 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     test "Parse: non-Turtle input refuses at :parse, not silently as 0 SHACL violations" do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
-                 AdmissionPipeline.admit(Fixtures.candidate(graph_ttl: Fixtures.not_turtle()))
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(graph_ttl: Fixtures.not_turtle()),
+                   Fixtures.law_opts()
+                 )
 
         assert refusal.stage == :parse
         assert refusal.code == :parse_yielded_no_triples
@@ -155,7 +167,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(expected_graph_hash: String.duplicate("0", 64))
+                   Fixtures.candidate(expected_graph_hash: String.duplicate("0", 64)),
+                   Fixtures.law_opts()
                  )
 
         assert refusal.stage == :identity
@@ -172,7 +185,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_description())
+                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_description()),
+                   Fixtures.law_opts()
                  )
 
         assert refusal.stage == :shex
@@ -188,7 +202,10 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     test "ShEx: an absent schema refuses as undetermined, never as a pass (RFC S43)" do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
-                 AdmissionPipeline.admit(Fixtures.candidate(shex_schema: "", shex_shape_map: ""))
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(shex_schema: "", shex_shape_map: ""),
+                   Fixtures.law_opts()
+                 )
 
         assert refusal.stage == :shex
         assert refusal.code == :shex_schema_not_supplied
@@ -201,7 +218,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_owner())
+                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_owner()),
+                   Fixtures.law_opts()
                  )
 
         assert refusal.stage == :shacl
@@ -216,7 +234,10 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     test "SHACL: absent shapes refuse as undetermined (RFC S43)" do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
-                 AdmissionPipeline.admit(Fixtures.candidate(shacl_shapes: ""))
+                 AdmissionPipeline.admit(
+                   Fixtures.candidate(shacl_shapes: ""),
+                   Fixtures.law_opts()
+                 )
 
         assert refusal.stage == :shacl
         assert refusal.code == :shacl_shapes_not_supplied
@@ -229,7 +250,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_with_forbidden())
+                   Fixtures.candidate(graph_ttl: Fixtures.graph_with_forbidden()),
+                   Fixtures.law_opts()
                  )
 
         assert refusal.stage == :sparql_falsifiers
@@ -245,7 +267,7 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     test "SPARQLFalsifiers: an empty falsifier set determines nothing and refuses" do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
-                 AdmissionPipeline.admit(Fixtures.candidate(falsifiers: ""))
+                 AdmissionPipeline.admit(Fixtures.candidate(falsifiers: ""), Fixtures.law_opts())
 
         assert refusal.stage == :sparql_falsifiers
         assert refusal.code == :falsifiers_not_supplied
@@ -258,7 +280,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(provenance: Fixtures.ungrounded_provenance())
+                   Fixtures.candidate(provenance: Fixtures.ungrounded_provenance()),
+                   Fixtures.law_opts()
                  )
 
         assert refusal.stage == :provenance
@@ -275,7 +298,7 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     test "Provenance: a missing witness refuses rather than skipping the check" do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
-                 AdmissionPipeline.admit(Fixtures.candidate(provenance: nil))
+                 AdmissionPipeline.admit(Fixtures.candidate(provenance: nil), Fixtures.law_opts())
 
         assert refusal.stage == :provenance
         assert refusal.code == :provenance_witness_missing
@@ -287,7 +310,7 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
     test "ProfileChecks: an absent profile refuses as undetermined (RFC S43)" do
       if engine_available?() do
         assert {:error, %Refusal{} = refusal} =
-                 AdmissionPipeline.admit(Fixtures.candidate(profile_ttl: ""))
+                 AdmissionPipeline.admit(Fixtures.candidate(profile_ttl: ""), Fixtures.law_opts())
 
         assert refusal.stage == :profile_checks
         assert refusal.code == :profile_not_supplied
@@ -315,7 +338,7 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
         ]
 
         for candidate <- refusing_candidates do
-          assert {:error, %Refusal{}} = AdmissionPipeline.admit(candidate)
+          assert {:error, %Refusal{}} = AdmissionPipeline.admit(candidate, Fixtures.law_opts())
         end
 
         # Real after-state, recomputed by the real engine -- not an inspection
@@ -325,7 +348,9 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
 
         # And the conforming candidate still admits afterwards with the same
         # identity it had before the refusals ran.
-        assert {:ok, %Result{} = result} = AdmissionPipeline.admit(Fixtures.candidate())
+        assert {:ok, %Result{} = result} =
+                 AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
+
         assert result.graph_hash == before_digest
       end
     end
@@ -353,7 +378,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
 
         on_exit(fn -> :telemetry.detach(handler_id) end)
 
-        assert {:ok, %Result{}} = AdmissionPipeline.admit(Fixtures.candidate())
+        assert {:ok, %Result{}} =
+                 AdmissionPipeline.admit(Fixtures.candidate(), Fixtures.law_opts())
 
         assert_receive {:telemetry, [:ash_a2a, :semantic, :admission, :start], _, _}
 
@@ -386,7 +412,8 @@ defmodule AshA2A.SemanticAdmissionPipelineEngineTest do
 
         assert {:error, %Refusal{}} =
                  AdmissionPipeline.admit(
-                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_owner())
+                   Fixtures.candidate(graph_ttl: Fixtures.graph_missing_owner()),
+                   Fixtures.law_opts()
                  )
 
         assert_receive {:telemetry, [:ash_a2a, :semantic, :admission, :stage], _,
@@ -459,8 +486,9 @@ defmodule AshA2A.SemanticAdmissionPipelineTest do
   describe "engine unavailability is a refusal, never a pass" do
     test "a wrong wasm path refuses at :parse as undetermined" do
       assert {:error, %Refusal{} = refusal} =
-               AdmissionPipeline.admit(Fixtures.candidate(),
-                 wasm_path: "/nonexistent/graphlaw.wasm"
+               AdmissionPipeline.admit(
+                 Fixtures.candidate(),
+                 Keyword.merge(Fixtures.law_opts(), wasm_path: "/nonexistent/graphlaw.wasm")
                )
 
       assert refusal.stage == :parse

@@ -28,6 +28,7 @@ defmodule AshA2A.Chicago.Runner do
   alias AshA2A.Chicago.{
     Context,
     Court,
+    CourtManifest,
     Falsifier,
     Observer,
     Profile,
@@ -65,7 +66,7 @@ defmodule AshA2A.Chicago.Runner do
   are written: `[:ash_a2a, :chicago, :run, :stop]`, measurement `system_time`,
   metadata `run_id`, `standing`, `ocel_sha256`, `ocel_dropped`, `ocel_gaps`,
   `ocel_corroborated`, `results`, `claimed_profile`, `subject_identity`,
-  `subject_verification` and `receipt_digest`.
+  `subject_verification`, `court_admission` and `receipt_digest`.
   """
   @spec stop_event() :: [atom()]
   def stop_event, do: @stop_event
@@ -98,7 +99,8 @@ defmodule AshA2A.Chicago.Runner do
           :ocel_corroborated,
           :results,
           :claimed_profile,
-          :subject_verification
+          :subject_verification,
+          :court_admission
         ])
       end
     )
@@ -118,6 +120,10 @@ defmodule AshA2A.Chicago.Runner do
     * `:claimed_subject` -- the `AshA2A.Chicago.Subject` (or its JSON map)
       the standing is claimed for; verified against the captured subject
       before any court runs, and a mismatch issues `REFUSED` standing (§32)
+    * `:court_manifest` -- the admitted court manifest (§137): a path or a
+      decoded document (default `AshA2A.Chicago.CourtManifest.default_path/0`).
+      The selected courts and OCEL validator are checked against it before any
+      court runs; drift is bound into the receipt and bars `CONFORMANT`
     * `:ocel_validator` -- module exporting `validate_file/1`
       (default `AshA2A.Chicago.Ocel.Validator` when compiled; otherwise
       validation is recorded as not run and standing cannot be CONFORMANT)
@@ -181,10 +187,20 @@ defmodule AshA2A.Chicago.Runner do
     # court runs; a mismatch is carried to the receipt as REFUSED standing.
     # Always recomputed here -- a caller cannot pass a verification in.
     opts =
-      Keyword.put(
-        opts,
+      opts
+      |> Keyword.put(
         :subject_verification,
         Subject.verify_claim(Keyword.get(opts, :claimed_subject), subject)
+      )
+      # §137: the machinery about to run is checked against the admitted court
+      # manifest before any court runs. Always recomputed here.
+      |> Keyword.put(
+        :court_admission,
+        CourtManifest.admission(
+          courts,
+          [ocel_validator: Keyword.get(opts, :ocel_validator, @default_validator)],
+          Keyword.get(opts, :court_manifest)
+        )
       )
 
     try do
@@ -269,7 +285,8 @@ defmodule AshA2A.Chicago.Runner do
         ocel: ocel,
         ocel_validation: validation,
         run_id: run_id,
-        subject_verification: Keyword.fetch!(opts, :subject_verification)
+        subject_verification: Keyword.fetch!(opts, :subject_verification),
+        court_admission: Keyword.fetch!(opts, :court_admission)
       })
 
     run = %Run{
@@ -300,6 +317,7 @@ defmodule AshA2A.Chicago.Runner do
       claimed_profile: receipt["subject"]["claimed_profile"],
       subject_identity: receipt["subject"]["identity"],
       subject_verification: receipt["subject"]["verification"]["outcome"],
+      court_admission: receipt["court"]["manifest"]["verification"],
       receipt_digest: receipt["receipt_digest"]
     })
 
@@ -530,9 +548,14 @@ defmodule AshA2A.Chicago.Runner do
 
   defp validate_ocel(path, validator) do
     if Code.ensure_loaded?(validator) and function_exported?(validator, :validate_file, 1) do
+      identity = validator_identity(validator)
+
       case validator.validate_file(path) do
-        {:ok, report} -> %{status: :valid, validator: inspect(validator), report: report}
-        {:error, report} -> %{status: :invalid, validator: inspect(validator), report: report}
+        {:ok, report} ->
+          %{status: :valid, validator: inspect(validator), report: report, identity: identity}
+
+        {:error, report} ->
+          %{status: :invalid, validator: inspect(validator), report: report, identity: identity}
       end
     else
       %{
@@ -548,6 +571,14 @@ defmodule AshA2A.Chicago.Runner do
         validator: inspect(validator),
         report: "validator raised: " <> Exception.message(exception)
       }
+  end
+
+  # §137: the validator identity bound into the receipt -- its declared
+  # identity plus the BEAM md5 of the module that really ran.
+  defp validator_identity(validator) do
+    validator
+    |> CourtManifest.validator_identity()
+    |> Map.put("beam_md5", Base.encode16(validator.module_info(:md5), case: :lower))
   end
 
   # --- package ---------------------------------------------------------------

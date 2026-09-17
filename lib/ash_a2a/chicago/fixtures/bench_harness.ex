@@ -163,6 +163,51 @@ defmodule AshA2A.Chicago.Fixtures.BenchHarness.AdmissionCorpus do
         }
 
   @doc """
+  Pipeline options carrying a Root Manifest that pins this corpus's own law
+  (ShEx schema, ShEx shape map, SHACL shapes, OWL profile, falsifier set)
+  with standing (RFC-SA2A-001 S20/S21, RFC-SA2A-002 SA2A-META): every
+  candidate in `cases/0` is judged under exactly this law, so one manifest
+  covers the whole corpus. Built once per VM, over real files in a fresh
+  directory, by `AshA2A.Semantic.RootManifest.LawCorpus.build/3` -- the same
+  primitive `AshA2A.Test.SA2AAdmissionFixtures.law_opts/1` uses for the
+  admission-pipeline unit tests. Without this, `AshA2A.Semantic.
+  AdmissionPipeline.admit/2` falls back to the committed Root Manifest, which
+  never pinned this benchmark's ad hoc law, and every case refuses at `:shex`
+  with `:law_without_standing` before its own expected stage is ever reached.
+  """
+  @spec law_opts() :: keyword()
+  def law_opts do
+    key = {__MODULE__, :law_manifest}
+
+    manifest =
+      case :persistent_term.get(key, nil) do
+        nil ->
+          root =
+            Path.join(
+              System.tmp_dir!(),
+              "ash_a2a-bench-b1-law-#{System.unique_integer([:positive])}"
+            )
+
+          {:ok, manifest} =
+            AshA2A.Semantic.RootManifest.LawCorpus.build(root, [
+              {"shex_schema", @shex_schema},
+              {"shex_shape_map", @shex_shape_map},
+              {"shacl_shapes", @shacl_shapes},
+              {"semantic_profile", @profile},
+              {"n3_rules", @falsifiers}
+            ])
+
+          :persistent_term.put(key, manifest)
+          manifest
+
+        manifest ->
+          manifest
+      end
+
+    [root_manifest: manifest]
+  end
+
+  @doc """
   The corpus. `expect` is `:admitted` or `{:refused, stage}` -- the stage the
   real pipeline must refuse at.
   """

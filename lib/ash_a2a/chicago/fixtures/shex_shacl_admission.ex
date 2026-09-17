@@ -459,6 +459,36 @@ defmodule AshA2A.Chicago.Fixtures.ShexShaclAdmission do
     {source, %{ir | standing: :admitted}}
   end
 
+  @doc """
+  The world's admitted law as `{kind, document}` machinery: exactly the
+  documents a lawful candidate is judged under.
+  """
+  @spec law_documents() :: [{String.t(), String.t()}]
+  def law_documents do
+    [
+      {"shex_schema", shex_schema()},
+      {"shex_shape_map", shex_shape_map()},
+      {"shacl_shapes", shacl_shapes()},
+      {"n3_rules", falsifiers()},
+      {"semantic_profile", profile()}
+    ]
+  end
+
+  @doc """
+  The Root Manifest admitting `law_documents/0` (RFC-SA2A-001 S20/S21), built
+  over real files under `dir/world-law` by
+  `AshA2A.Semantic.RootManifest.LawCorpus.build/3`. This is the host's
+  admitted law the pipeline is configured with; a candidate's own documents
+  are judged against it, never added to it.
+  """
+  @spec law_manifest!(Path.t()) :: AshA2A.Semantic.RootManifest.t()
+  def law_manifest!(dir) do
+    {:ok, manifest} =
+      AshA2A.Semantic.RootManifest.LawCorpus.build(Path.join(dir, "world-law"), law_documents())
+
+    manifest
+  end
+
   @doc "A lawful candidate over the world graph; `overrides` replaces any field."
   @spec candidate(keyword()) :: Candidate.t()
   def candidate(overrides \\ []) do

@@ -181,6 +181,32 @@ defmodule AshA2A.Chicago.Fixtures.LogicSparql do
   @source_text "The team agreed to ship the admission pipeline this week, with sean as owner.\n"
 
   @doc """
+  The Root Manifest admitting this fixture's pipeline law -- the ShEx schema
+  and shape map, SHACL shapes, OWL profile and all three falsifier sets --
+  built over real files under `dir/sparql-law`
+  (`AshA2A.Semantic.RootManifest.LawCorpus.build/3`).
+  """
+  @spec law_manifest!(Path.t()) :: AshA2A.Semantic.RootManifest.t()
+  def law_manifest!(dir) do
+    documents =
+      [
+        {"shex_schema", @shex},
+        {"shex_shape_map", @shape_map},
+        {"shacl_shapes", @shacl},
+        {"semantic_profile", @profile}
+      ] ++
+        for(
+          variant <- [:asserted, :derived, :derived_absent],
+          do: {"n3_rules", falsifiers(variant)}
+        )
+
+    {:ok, manifest} =
+      AshA2A.Semantic.RootManifest.LawCorpus.build(Path.join(dir, "sparql-law"), documents)
+
+    manifest
+  end
+
+  @doc """
   A lawful admission candidate. `:falsifiers` is the mandatory graph-global
   falsifier set (N3 denials the engine evaluates over the closure).
   """

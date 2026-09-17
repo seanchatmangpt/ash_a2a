@@ -80,7 +80,12 @@ defmodule AshA2A.Chicago.Bench.B1Admission do
   """
   @spec run(keyword()) :: {:ok, map()} | {:blocked, String.t()}
   def run(opts \\ []) do
-    engine_opts = Keyword.get(opts, :graphlaw_opts, [])
+    # `AdmissionCorpus.law_opts/0` pins the corpus's own law (RFC-SA2A-001
+    # S20/S21) with standing under a fresh Root Manifest; an explicit
+    # `:root_manifest` in `:graphlaw_opts` still wins (`Keyword.merge/2`
+    # keeps the second list's value on a key collision).
+    engine_opts =
+      Keyword.merge(AdmissionCorpus.law_opts(), Keyword.get(opts, :graphlaw_opts, []))
 
     case Wasm.availability(engine_opts) do
       :ok -> {:ok, measure(Keyword.get(opts, :cases, AdmissionCorpus.cases()), engine_opts, opts)}

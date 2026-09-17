@@ -23,19 +23,25 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
   mapping boundaries emit `[:ash_a2a, :semantic, :term, :operational_use]` and
   `[:ash_a2a, :semantic, :mapping, :register]`, mapped by `ocel_mappings/0`.
 
-  ## Open defects this court reports (falsifiers survive; not weakened)
+  ## Defects this court found, and the SUT repairs that killed them
 
-    * `CHI-ADM-005` unadmitted rule, `CHI-ADM-006` unadmitted validator: the
-      pipeline judges a candidate under whatever law documents the candidate
-      carries. Nothing gives a law document standing (no meta-admission, no
-      root manifest -- `AshA2A.Semantic.Conformance.check_meta_admission/0`
-      already self-reports `:unmet`), so an unadmitted N3 rule that derives the
+    * `CHI-ADM-005` unadmitted rule, `CHI-ADM-006` unadmitted validator
+      (survived at 46e522f): the pipeline judged a candidate under whatever law
+      documents the candidate carried, so an unadmitted N3 rule deriving the
       missing `sa:preparedReceipt`, or an unadmitted self-serving shapes graph,
-      launders a SHACL-invalid DO step into `:admitted`.
-    * `CHI-ADM-008` named receipt: `MappingRegistry.register/2` accepts any map
-      carrying non-empty `:receipt_id`/`:fingerprint`, so a receipt that no
-      admission ever issued and no store holds admits a semantic mapping
-      (RFC-SA2A-001 S6: a named receipt is not a receipt).
+      laundered a SHACL-invalid DO step into `:admitted`. Repair: every
+      law-bearing stage requires standing of its documents through
+      `AshA2A.Semantic.MetaAdmission.document_standing/4` against the host's
+      verified Root Manifest (the world's admitted law,
+      `AshA2A.Chicago.Fixtures.ShexShaclAdmission.law_manifest!/1`); the rule
+      is refused at `:rule_closure`, the shapes at `:shacl`, both
+      `:law_without_standing`.
+    * `CHI-ADM-008` named receipt (survived at 46e522f):
+      `MappingRegistry.register/2` accepted any map carrying non-empty
+      `:receipt_id`/`:fingerprint`. Repair: the receipt must be an
+      `%AshA2A.Receipt{}` the registry's receipt store really holds, executed,
+      and bound to this mapping's admission input
+      (`:semantic_mapping_receipt_not_held` / `:semantic_mapping_receipt_unbound`).
 
   When the real engine is unavailable the pipeline falsifiers are `:blocked`
   with the measured reason -- never killed.
@@ -161,7 +167,8 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
         stimulus:
           "AdmissionPipeline.admit/2 of the world graph whose sa:DoStep lacks sa:preparedReceipt, carrying as law the admitted falsifiers plus an unadmitted rule `{ ?d a sa:DoStep } => { ?d sa:preparedReceipt sa:Derived }`",
         boundary: "AshA2A.Semantic.AdmissionPipeline (law standing / meta-admission)",
-        guard: "none present: no stage checks that a law document has standing",
+        guard:
+          "AdmissionPipeline :rule_closure law standing: MetaAdmission.document_standing/4 (n3_rules) against the host Root Manifest",
         class: :meta_admission_failure
       ),
       standing_falsifier("006", :shacl,
@@ -170,7 +177,8 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
         stimulus:
           "AdmissionPipeline.admit/2 of the world graph whose sa:DoStep lacks sa:preparedReceipt, judged by a non-vacuous self-serving shapes graph in place of the admitted SHACL law",
         boundary: "AshA2A.Semantic.AdmissionPipeline (law standing / meta-admission)",
-        guard: "none present: no stage checks that a law document has standing",
+        guard:
+          "AdmissionPipeline :shacl law standing: MetaAdmission.document_standing/4 (shacl_shapes) against the host Root Manifest",
         class: :meta_admission_failure
       ),
       mapping_falsifier("007",
@@ -185,7 +193,8 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
           "A named receipt is not a receipt (RFC-SA2A-001 S6): a mapping backed by a receipt no admission issued MUST NOT reconcile two peer identities",
         stimulus:
           "MappingRegistry.register/2 of the same mapping carrying %{receipt_id, fingerprint} that no admission issued and no receipt store holds",
-        guard: "MappingRegistry.check_receipt/1 (checks receipt shape only)",
+        guard:
+          "MappingRegistry.check_held/3: receipt fetched back from the registry's receipt store, identity + executed + admission-input binding",
         peer: peer_a
       ),
       stage_falsifier("009", :provenance,
@@ -259,7 +268,7 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
         invariant:
           "A mapping backed by a receipt really committed to a receipt store is admitted and reconciles: the mapping fence discriminates",
         stimulus:
-          "MappingRegistry.register/2 of the colliding-peer exact_match with a receipt claimed, committed and fetched back from a real AshA2A.ReceiptStore.Memory",
+          "MappingRegistry.register/2, on a registry bound to a real AshA2A.ReceiptStore.Memory, of the colliding-peer exact_match with a receipt for exactly its admission input, claimed, committed and fetched back from that store",
         boundary: "AshA2A.Semantic.MappingRegistry.register/2",
         attempt_evidence: "semantic.mapping.register event for the source identity",
         survival_evidence:
@@ -526,11 +535,12 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
     {:ok, store} = AshA2A.ReceiptStore.Memory.start_link(name: name)
 
     try do
-      receipt = committed_receipt(name)
+      receipt = committed_receipt(name, peer_a.iri, peer_b.iri)
+      registry = MappingRegistry.new(receipt_store: {AshA2A.ReceiptStore.Memory, name: name})
 
       reply =
         Context.stimulus(ctx, f, fn ->
-          MappingRegistry.register(MappingRegistry.new(), World.mapping(receipt))
+          MappingRegistry.register(registry, World.mapping(receipt))
         end)
 
       reconciled =
@@ -554,14 +564,15 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
     end
   end
 
-  # A receipt claimed, committed and read back from a real receipt store: present, not named.
-  defp committed_receipt(store) do
+  # A receipt claimed, committed and read back from a real receipt store for
+  # exactly this mapping's admission input: present and bound, not named.
+  defp committed_receipt(store, source, target) do
     command =
       Command.new("AshA2A.Chicago.Courts.ExecutableWorld.admit_mapping",
         command_id: "chicago-adm-mapping-#{System.unique_integer([:positive])}",
         agent_id: "chicago-adm-agent",
         principal_id: "chicago-adm-principal",
-        input: %{mapping: "peerA/berthWindow exact_match peerB/berthWindow"}
+        input: MappingRegistry.admission_input(source, target, :exact_match)
       )
 
     {:execute, %Identity{} = execution_id} =
@@ -590,12 +601,13 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
       profile_checks: World.candidate(profile_ttl: "")
     ]
 
+    opts = Evidence.pipeline_opts(scratch)
     before = Evidence.canonical_snapshot(scratch)
 
     replies =
       Context.stimulus(ctx, f, fn ->
         for {stage, candidate} <- candidates do
-          {stage, AdmissionPipeline.admit(candidate, tmp_dir: scratch)}
+          {stage, AdmissionPipeline.admit(candidate, opts)}
         end
       end)
 

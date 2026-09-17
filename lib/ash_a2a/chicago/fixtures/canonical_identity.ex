@@ -16,8 +16,8 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
 
   alias AshA2A.Chicago.Courts.InferenceMappings
   alias AshA2A.Chicago.Ocel.Mapping
-  alias AshA2A.Semantic.{Admission, CanonicalGraph, IR, Ontology, OntologyCache, PlanningIR}
-  alias AshA2A.Semantic.{PlanPackage, PlanProjection, RootManifest, Serialize, Source}
+  alias AshA2A.Semantic.{Admission, CanonicalGraph, IR, MappingRegistry, Ontology, OntologyCache}
+  alias AshA2A.Semantic.{PlanningIR, PlanPackage, PlanProjection, RootManifest, Serialize, Source}
   alias AshA2A.Semantic.RootManifest.ConformanceCorpus
 
   # --- OCEL mappings ----------------------------------------------------------
@@ -600,6 +600,56 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
   @spec receipt(String.t()) :: map()
   def receipt(tag),
     do: %{receipt_id: "rcpt-chicago-ns-#{tag}", fingerprint: "fp-chicago-ns-#{tag}"}
+
+  @doc """
+  Runs `fun` with a fresh, real `AshA2A.ReceiptStore.Memory` (named,
+  process-linked) and stops it afterward. Mirrors
+  `AshA2A.Chicago.Fixtures.RootManifestMeta.with_store/1` -- the SAME real
+  collaborator a `MappingRegistry.register/2` positive control needs a
+  genuinely held receipt against (RFC-SA2A-001 S6, CHI-ADM-008).
+  """
+  @spec with_store((term() -> result)) :: result when result: term()
+  def with_store(fun) do
+    name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
+    {:ok, pid} = AshA2A.ReceiptStore.Memory.start_link(name: name)
+
+    try do
+      fun.(name)
+    after
+      if Process.alive?(pid), do: GenServer.stop(pid)
+    end
+  end
+
+  @doc """
+  A real `%AshA2A.Receipt{}`, actually held by `store` (an
+  `AshA2A.ReceiptStore.Memory` name from `with_store/1`), that really admits
+  `source -> target` of `kind` -- the receipt
+  `AshA2A.Semantic.MappingRegistry.register/2` requires since CHI-ADM-008 (a
+  map merely carrying `:receipt_id`/`:fingerprint`, as `receipt/1` returns,
+  is not held by any store and is correctly refused).
+  """
+  @spec held_mapping_receipt(term(), String.t(), String.t(), MappingRegistry.kind()) ::
+          AshA2A.Receipt.t()
+  def held_mapping_receipt(store, source, target, kind \\ :exact_match) do
+    command =
+      AshA2A.Command.new("AshA2A.Chicago.Fixtures.CanonicalIdentity.admit_mapping",
+        command_id: "ns-mapping-#{System.unique_integer([:positive])}",
+        agent_id: "ns-agent",
+        principal_id: "ns-principal",
+        input: MappingRegistry.admission_input(source, target, kind)
+      )
+
+    {:execute, execution_id} = AshA2A.ReceiptStore.Memory.claim(command, name: store)
+
+    receipt =
+      command
+      |> AshA2A.Receipt.pending(execution_id, :none)
+      |> AshA2A.Receipt.finalize({:reply, %{admitted: true}})
+
+    :ok = AshA2A.ReceiptStore.Memory.commit(receipt, name: store)
+    {:ok, held} = AshA2A.ReceiptStore.Memory.fetch(command.command_id, name: store)
+    held
+  end
 
   @doc "Complete private term attributes (RFC S7.2), with `overrides` merged."
   @spec private_term(map()) :: map()

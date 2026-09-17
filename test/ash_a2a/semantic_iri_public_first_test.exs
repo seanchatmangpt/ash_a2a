@@ -34,6 +34,35 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
     %{index: index}
   end
 
+  # A real admission receipt for exactly `source -> target` of `kind`: claimed,
+  # executed, committed to and fetched back from a real receipt store, plus a
+  # registry bound to that store (RFC-SA2A-001 S6: a named receipt is not a
+  # receipt).
+  defp admitted_mapping(source, target, kind) do
+    name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
+    start_supervised!({AshA2A.ReceiptStore.Memory, name: name}, id: name)
+
+    command =
+      Command.new("AshA2A.Test.Fixture.Echo.admit_mapping",
+        command_id: "mapping-admission-#{System.unique_integer([:positive])}",
+        agent_id: "agent-iri-test",
+        principal_id: "principal-iri-test",
+        input: MappingRegistry.admission_input(source, target, kind)
+      )
+
+    {:execute, execution_id} = AshA2A.ReceiptStore.Memory.claim(command, name: name)
+
+    receipt =
+      command
+      |> Receipt.pending(execution_id, :none)
+      |> Receipt.finalize({:reply, %{admitted: true}})
+
+    :ok = AshA2A.ReceiptStore.Memory.commit(receipt, name: name)
+    {:ok, held} = AshA2A.ReceiptStore.Memory.fetch(command.command_id, name: name)
+
+    {MappingRegistry.new(receipt_store: {AshA2A.ReceiptStore.Memory, name: name}), held}
+  end
+
   defp real_receipt do
     command =
       Command.new("AshA2A.Test.Fixture.Echo.read",
@@ -417,12 +446,19 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
     end
 
     test "an explicitly admitted mapping reconciles the same pair" do
+      {registry, receipt} =
+        admitted_mapping(
+          "https://a.test/vocab#Settlement",
+          "https://b.test/vocab#Settlement",
+          :close_match
+        )
+
       assert {:ok, registry} =
-               MappingRegistry.register(MappingRegistry.new(), %{
+               MappingRegistry.register(registry, %{
                  source: "https://a.test/vocab#Settlement",
                  target: "https://b.test/vocab#Settlement",
                  kind: :close_match,
-                 admission_receipt: %{receipt_id: "rcpt-map-1", fingerprint: "fp-map-1"}
+                 admission_receipt: receipt
                })
 
       assert {:ok, %{outcome: :admitted_mapping, kind: :close_match}} =
@@ -438,12 +474,15 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
     end
 
     test "a mapping is directional-aware: broad one way is narrow the other" do
+      {registry, receipt} =
+        admitted_mapping("https://a.test/vocab#Vessel", "https://b.test/vocab#Ship", :broad_match)
+
       assert {:ok, registry} =
-               MappingRegistry.register(MappingRegistry.new(), %{
+               MappingRegistry.register(registry, %{
                  source: "https://a.test/vocab#Vessel",
                  target: "https://b.test/vocab#Ship",
                  kind: :broad_match,
-                 admission_receipt: %{receipt_id: "rcpt-map-2", fingerprint: "fp-map-2"}
+                 admission_receipt: receipt
                })
 
       assert {:ok, %{kind: :broad_match}} =
@@ -488,14 +527,56 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
                })
     end
 
-    test "a real %AshA2A.Receipt{} admits a mapping" do
+    test "a real %AshA2A.Receipt{} held by a receipt store admits a mapping" do
+      {registry, receipt} =
+        admitted_mapping(
+          "https://a.test/vocab#Settlement",
+          "https://b.test/vocab#Settlement",
+          :exact_match
+        )
+
       assert {:ok, _registry} =
-               MappingRegistry.register(MappingRegistry.new(), %{
+               MappingRegistry.register(registry, %{
                  source: "https://a.test/vocab#Settlement",
                  target: "https://b.test/vocab#Settlement",
                  kind: :exact_match,
-                 admission_receipt: real_receipt()
+                 admission_receipt: receipt
                })
+    end
+
+    test "a named, unheld, or unbound receipt admits nothing (RFC-SA2A-001 S6)" do
+      mapping = %{
+        source: "https://a.test/vocab#Settlement",
+        target: "https://b.test/vocab#Settlement",
+        kind: :exact_match
+      }
+
+      {registry, receipt} = admitted_mapping(mapping.source, mapping.target, :exact_match)
+
+      named = Map.put(mapping, :admission_receipt, %{receipt_id: "r", fingerprint: "f"})
+
+      assert {:error, %{code: :semantic_mapping_receipt_not_held}} =
+               MappingRegistry.register(registry, named)
+
+      # A real receipt that was never committed to the registry's store.
+      assert {:error, %{code: :semantic_mapping_receipt_not_held}} =
+               MappingRegistry.register(
+                 registry,
+                 Map.put(mapping, :admission_receipt, real_receipt())
+               )
+
+      # The held receipt, but for a different mapping kind.
+      assert {:error, %{code: :semantic_mapping_receipt_unbound}} =
+               MappingRegistry.register(
+                 registry,
+                 %{mapping | kind: :close_match} |> Map.put(:admission_receipt, receipt)
+               )
+
+      assert AshA2A.Semantic.Refusal.classify(:semantic_mapping_receipt_not_held) ==
+               :refused_receipt
+
+      assert AshA2A.Semantic.Refusal.classify(:semantic_mapping_receipt_unbound) ==
+               :refused_receipt
     end
 
     test "a capability claimed with a label but no semantic identity is refused" do

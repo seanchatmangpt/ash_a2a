@@ -136,16 +136,34 @@ defmodule AshA2A.Chicago.Fixtures.ShexShaclAdmission.Evidence do
   Drives the real pipeline with `candidate` as `f`'s stimulus, bracketed by
   canonical snapshots taken outside the stimulus. Returns
   `{result, before, after}`.
+
+  The pipeline is configured with the world's admitted law
+  (`pipeline_opts/1`): the host's Root Manifest, never anything the candidate
+  carries.
   """
   @spec admit(Context.t(), Falsifier.t(), Candidate.t(), Path.t()) ::
           {{:ok, AdmissionPipeline.Result.t()} | {:error, AdmissionRefusal.t()}, map(), map()}
   def admit(ctx, f, %Candidate{} = candidate, scratch) do
+    opts = pipeline_opts(scratch)
     before = canonical_snapshot(scratch)
 
-    result =
-      Context.stimulus(ctx, f, fn -> AdmissionPipeline.admit(candidate, tmp_dir: scratch) end)
+    result = Context.stimulus(ctx, f, fn -> AdmissionPipeline.admit(candidate, opts) end)
 
     {result, before, canonical_snapshot(scratch)}
+  end
+
+  @doc """
+  Pipeline options for a court-owned engine scratch directory: `:tmp_dir` and
+  the world's admitted law manifest, materialized beside the scratch
+  directory (outside it, so scratch residue stays an independent reading).
+  """
+  @spec pipeline_opts(Path.t()) :: keyword()
+  def pipeline_opts(scratch) do
+    [
+      tmp_dir: scratch,
+      root_manifest:
+        AshA2A.Chicago.Fixtures.ShexShaclAdmission.law_manifest!(Path.dirname(scratch))
+    ]
   end
 
   @doc """

@@ -22,19 +22,33 @@ defmodule AshA2A.Chicago.StandingReceipt do
   implies not conformant). `:unsupported` and `:not_applicable` results are
   listed as exclusions and neither pass nor fail.
 
-  The receipt binds the court revision, falsifier-corpus digest, query-set
-  digest, OCEL mapping digest and standing-schema identity (§137), and is
-  itself content-addressed (`receipt_digest`, computed over the receipt
-  without that field).
+  The receipt binds the court revision, court version, falsifier-corpus
+  digest, query-set digest, OCEL mapping digest, OCEL validator identity and
+  standing-schema identity (§137), and is itself content-addressed
+  (`receipt_digest`, computed over the receipt without that field).
+
+  ## Court meta-admission (§136, §137)
+
+  `:court_admission` (`AshA2A.Chicago.CourtManifest.admission/3`, computed by
+  the runner before any court runs) is bound under `court.manifest`. When the
+  running court machinery drifted from the admitted court manifest, standing
+  that would otherwise be `CONFORMANT` is issued as `PARTIAL_ALIVE` and the
+  claim names the drift: evidence from unadmitted court machinery is kept,
+  never crowned. Absent (a receipt built outside the runner) it is
+  `:not_evaluated` and blocks nothing.
   """
 
-  alias AshA2A.Chicago.{FailureClass, Falsifier, Profile, Query, Result, Subject}
+  alias AshA2A.Chicago.{CourtManifest, FailureClass, Falsifier, Profile, Query, Result, Subject}
 
   @specification "RFC-SA2A-002-v26.9.16"
   @schema "ash_a2a.chicago.standing_receipt/1"
 
   @spec specification() :: String.t()
   def specification, do: @specification
+
+  @doc "Standing receipt schema identity (§137)."
+  @spec schema() :: String.t()
+  def schema, do: @schema
 
   @spec build(map()) :: map()
   def build(
@@ -47,6 +61,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
         } = run
       ) do
     verification = Map.get(run, :subject_verification, :not_claimed)
+    court_admission = Map.get(run, :court_admission, :not_evaluated)
     subject_digest = Subject.digest(subject)
     court_revision = court_revision(courts)
 
@@ -59,6 +74,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
         ocel_dropped: run.ocel.dropped,
         ocel_gaps: Map.get(run.ocel, :gaps, 0),
         subject_verification: verification,
+        court_admission: court_admission,
         source_revision: subject.source_revision,
         court_revision: court_revision
       })
@@ -78,6 +94,9 @@ defmodule AshA2A.Chicago.StandingReceipt do
         }),
       "court" => %{
         "revision" => court_revision,
+        "version" => CourtManifest.version(),
+        "manifest" => CourtManifest.to_map(court_admission),
+        "ocel_validator_identity" => Map.get(run.ocel_validation, :identity),
         "courts" =>
           courts
           |> Enum.map(
@@ -150,6 +169,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
           required(:ocel_dropped) => non_neg_integer() | nil,
           optional(:ocel_gaps) => non_neg_integer() | nil,
           optional(:subject_verification) => subject_verification(),
+          optional(:court_admission) => CourtManifest.admission(),
           required(:source_revision) => String.t() | nil,
           required(:court_revision) => String.t()
         }) :: %{
@@ -168,11 +188,20 @@ defmodule AshA2A.Chicago.StandingReceipt do
     ocel_admitted? =
       validation == :valid and facts.ocel_dropped == 0 and Map.get(facts, :ocel_gaps, 0) == 0
 
+    court_admission = Map.get(facts, :court_admission, :not_evaluated)
+
     # §32: a claimed subject that does not verify never receives standing.
+    # §137: evidence from court machinery that is not the admitted court
+    # manifest is never crowned CONFORMANT.
     standing =
       if match?({:mismatch, _, _}, verification),
         do: :refused,
         else: standing(results, gates, ocel_admitted?)
+
+    {standing, court_blocked?} =
+      if standing == :conformant and match?({:drift, _, _}, court_admission),
+        do: {:partial_alive, true},
+        else: {standing, false}
 
     %{
       gates: gates,
@@ -186,16 +215,24 @@ defmodule AshA2A.Chicago.StandingReceipt do
         "fresh_consumer" => gate_evidence(gates, 11)
       },
       claim:
-        claim(
-          standing,
-          profile,
-          facts.source_revision,
-          facts.court_revision,
-          results,
-          gates,
-          validation,
-          verification
-        )
+        if court_blocked? do
+          {:drift, _, fields} = court_admission
+
+          "#{Profile.name(profile)} PARTIAL_ALIVE for subject " <>
+            "#{facts.source_revision || "unknown-revision"}: court machinery not admitted " <>
+            "(court manifest drift: #{Enum.join(fields, ", ")})"
+        else
+          claim(
+            standing,
+            profile,
+            facts.source_revision,
+            facts.court_revision,
+            results,
+            gates,
+            validation,
+            verification
+          )
+        end
     }
   end
 

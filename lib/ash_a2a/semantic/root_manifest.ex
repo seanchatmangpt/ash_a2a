@@ -113,12 +113,32 @@ defmodule AshA2A.Semantic.RootManifest do
   """
 
   alias AshA2A.{Authority, Identity}
+  alias AshA2A.Semantic.CanonicalGraph
   alias AshA2A.Semantic.RootManifest.EngineProbe
 
   @manifest_version "sa2a/1"
   @mutation_capability_id "root_manifest:mutate"
   @custody_source :root_custodian
   @default_relative_path "sa2a/root_manifest.json"
+
+  @verify_event [:ash_a2a, :semantic, :root_manifest, :verify]
+  @mutate_event [:ash_a2a, :semantic, :root_manifest, :mutate]
+
+  # The algorithms this running implementation really executes. The manifest's
+  # `hash_algorithms` claims are checked against these at use time (§53).
+  # `"graph_identity"` names the RDFC-1.0/RDF.ex (in-BEAM) canonicalization
+  # hash (SHA-256, ConformanceCorpus.spec/1's `hash_algorithms."graph_identity"`
+  # via `CanonicalGraph.hash_function/0`) -- never the pinned praxis-graphlaw
+  # wasm engine's own graph_hash, which is the separate `"engine_graph_digest"`
+  # (BLAKE3, an engine digest: not blank-node invariant and not RDFC-1.0).
+  @running_hash_algorithms %{
+    "manifest_content" => "sha256",
+    "artifact_pin" => "sha256",
+    "graph_identity" => "SHA-256",
+    "engine_graph_digest" => "BLAKE3"
+  }
+
+  @host_manufacturer "ash_a2a"
 
   @addressed_fields [
     :manifest_version,
@@ -462,10 +482,9 @@ defmodule AshA2A.Semantic.RootManifest do
         {:ok, %{manifest | verified_at: DateTime.utc_now()}}
       end
 
-    result = emit_verify(:load, path, root, result)
+    emit_verify(:load, recorded_digest(path), result, %{path: path, root: root})
 
-    # RFC-SA2A-002 §12 attempt evidence, emitted where the load decision is
-    # made -- a sibling event to `emit_verify/4`'s
+    # RFC-SA2A-002 §12 attempt evidence, a sibling event to `emit_verify/4`'s
     # `root_manifest.verify{operation: :load}` above: exact_identity.ex
     # observes that one, canonical_graph_identity.ex/generated_projection.ex
     # observe this one. Both are real projections of this same `result`.
@@ -477,6 +496,429 @@ defmodule AshA2A.Semantic.RootManifest do
 
     result
   end
+
+  @doc "The telemetry event `mutate/5` emits for every decision."
+  @spec mutate_event() :: [atom()]
+  def mutate_event, do: @mutate_event
+
+  @doc "The hash algorithms this implementation really executes (`hash_algorithms` must agree)."
+  @spec running_hash_algorithms() :: %{String.t() => String.t()}
+  def running_hash_algorithms, do: @running_hash_algorithms
+
+  @doc """
+  USE-time verification of a manifest a consumer already holds (RFC-SA2A-002
+  §53: "a use-time component substitution that leaves the earlier manifest
+  receipt untouched MUST be detected").
+
+  Nothing recorded on the struct is trusted. Every check compares a manifest
+  claim against the live component, in order, refusing on the first failure
+  (`detail.component` names it):
+
+    1. `:content_address` -- the address recomputed from the held contents
+       equals the recorded `digest` (an in-memory edit that kept the old
+       address is caught);
+    2. `:receipt` -- when `opts[:expected_digest]` is given (the manifest
+       receipt the consumer bound earlier), the recorded address equals it
+       (`:REFUSED_MANIFEST_RECEIPT_MISMATCH`);
+    3. `:pins` -- every pinned ontology root / profile / validator file is
+       re-read and re-digested NOW;
+    4. `:engine` -- the engine artifact resolved NOW (`opts[:wasm_path]`, app
+       env, `GRAPHLAW_WASM`, default) has the pinned artifact digest;
+    5. `:canonicalization` -- the pinned canonical graph identity is the one
+       `AshA2A.Semantic.CanonicalGraph` really computes, executed by the
+       pinned engine id;
+    6. `:hash_algorithms` -- every algorithm claim equals
+       `running_hash_algorithms/0`;
+    7. `:manufacturers` -- unique, non-empty manufacturer ids, a
+       `semantic_engine` manufacturer, the running host (`ash_a2a`) as
+       `semantic_host`, and the canonical-identity manufacturer declared;
+    8. `:authority_broker` -- the behaviour module is loaded and defines
+       callbacks, every implementation is loaded and declares that
+       behaviour, and the authority struct is a loaded struct module;
+    9. `:brce_contract` -- the BRCE module is loaded and really exports the
+       pinned sole-DO `boundary` function (`"run/4"`);
+    10. `:receipt_law` -- the receipt struct, store behaviour and outbox
+        modules are loaded;
+    11. `:version_policy` -- the pinned custody source and mutation
+        capability equal the ones `mutate/5` really enforces, ordinary
+        transport agents may not mutate, and mutation moves the address.
+
+  The engine's self-reported version is verified by `load/2`
+  (`require_engine: true`), not here -- that requires executing the engine.
+
+  Emits `verify_event/0` with `phase: :use`.
+  """
+  @spec verify_use(t(), keyword()) :: {:ok, t()} | {:error, refusal()}
+  def verify_use(manifest, opts \\ [])
+
+  def verify_use(%__MODULE__{} = manifest, opts) do
+    checks = [
+      content_address: fn -> verify_self_address(manifest, nil) end,
+      receipt: fn -> verify_receipt(manifest, Keyword.get(opts, :expected_digest)) end,
+      pins: fn -> verify_pins(manifest) end,
+      engine: fn -> verify_engine_identity(manifest, opts) end,
+      canonicalization: fn -> check_canonicalization(manifest) end,
+      hash_algorithms: fn -> check_hash_algorithms(manifest) end,
+      manufacturers: fn -> check_manufacturers(manifest) end,
+      authority_broker: fn -> check_authority_broker(manifest.authority_broker) end,
+      brce_contract: fn -> check_brce_contract(manifest.brce_contract) end,
+      receipt_law: fn -> check_receipt_law(manifest.receipt_law) end,
+      version_policy: fn -> check_version_policy(manifest.version_policy) end
+    ]
+
+    result =
+      Enum.reduce_while(checks, :ok, fn {component, check}, :ok ->
+        case safe_check(check) do
+          :ok ->
+            {:cont, :ok}
+
+          {:error, %{code: code, detail: detail}} ->
+            {:halt,
+             {:error, %{code: code, detail: Map.put(as_map(detail), :component, component)}}}
+        end
+      end)
+      |> case do
+        :ok -> {:ok, manifest}
+        error -> error
+      end
+
+    emit_verify(:use, manifest.digest, result)
+    result
+  end
+
+  def verify_use(other, _opts) do
+    result = refuse(:REFUSED_MANIFEST_MALFORMED, %{component: :document, got: inspect(other)})
+    emit_verify(:use, nil, result)
+    result
+  end
+
+  defp safe_check(check) do
+    check.()
+  rescue
+    exception ->
+      refuse(:REFUSED_MANIFEST_COMPONENT_DRIFT, %{raised: Exception.message(exception)})
+  end
+
+  defp as_map(detail) when is_map(detail), do: detail
+  defp as_map(detail), do: %{detail: detail}
+
+  defp verify_receipt(_manifest, nil), do: :ok
+
+  defp verify_receipt(%__MODULE__{digest: digest}, expected) do
+    if digest == expected do
+      :ok
+    else
+      refuse(:REFUSED_MANIFEST_RECEIPT_MISMATCH, %{expected: expected, recorded: digest})
+    end
+  end
+
+  defp verify_engine_identity(%__MODULE__{engine: engine}, opts) do
+    pinned = Map.get(engine, "artifact_digest")
+
+    case current_engine_digest(opts) do
+      {:ok, ^pinned} when is_binary(pinned) ->
+        :ok
+
+      {:ok, actual} ->
+        refuse(:REFUSED_MANIFEST_ENGINE_DRIFT, %{
+          reason: :artifact_digest_mismatch,
+          pinned: pinned,
+          actual: actual
+        })
+
+      {:error, failure} ->
+        refuse(:REFUSED_MANIFEST_ENGINE_DRIFT, %{
+          reason: :engine_artifact_missing,
+          detail: failure
+        })
+    end
+  end
+
+  # RFC S12: RDFC-1.0 canonicalization is executed in-BEAM by RDF.ex
+  # (`CanonicalGraph.identity/0`'s `"executed_by"`), never by the pinned
+  # praxis-graphlaw wasm engine -- `verify_canonicalization/1` (load/verify
+  # time) already pins that whole identity exactly. This use-time check
+  # re-derives the SAME running identity (never a second, hand-maintained
+  # one) and additionally catches a drifted `"graph_identity"` alias
+  # (SA2A-ROOT-004).
+  defp check_canonicalization(%__MODULE__{canonicalization: c}) do
+    identity = CanonicalGraph.identity()
+    running = CanonicalGraph.algorithm_id()
+
+    cond do
+      not is_map(c) ->
+        component_drift(%{reason: :not_declared})
+
+      Map.get(c, "graph_identity") != running ->
+        component_drift(%{
+          reason: :graph_identity_mismatch,
+          pinned: Map.get(c, "graph_identity"),
+          running: running
+        })
+
+      Map.get(c, "executed_by") != Map.get(identity, "executed_by") ->
+        component_drift(%{
+          reason: :executor_drift,
+          pinned: Map.get(c, "executed_by"),
+          running: Map.get(identity, "executed_by")
+        })
+
+      true ->
+        :ok
+    end
+  end
+
+  defp check_hash_algorithms(%__MODULE__{hash_algorithms: declared}) when is_map(declared) do
+    mismatched =
+      for {key, running} <- @running_hash_algorithms, Map.get(declared, key) != running, do: key
+
+    if mismatched == [],
+      do: :ok,
+      else:
+        component_drift(%{
+          reason: :algorithm_mismatch,
+          keys: Enum.sort(mismatched),
+          running: @running_hash_algorithms
+        })
+  end
+
+  defp check_hash_algorithms(_), do: component_drift(%{reason: :not_declared})
+
+  defp check_manufacturers(%__MODULE__{manufacturers: list, canonicalization: c})
+       when is_list(list) do
+    ids = Enum.map(list, &(is_map(&1) && Map.get(&1, "id")))
+    roles = Map.new(list, &{is_map(&1) && Map.get(&1, "id"), is_map(&1) && Map.get(&1, "role")})
+    identity_manufacturer = is_map(c) && Map.get(c, "graph_identity_manufacturer")
+
+    cond do
+      list == [] or Enum.any?(ids, &(not (is_binary(&1) and &1 != ""))) ->
+        component_drift(%{reason: :manufacturer_identity_invalid, ids: ids})
+
+      length(Enum.uniq(ids)) != length(ids) ->
+        component_drift(%{reason: :manufacturer_identity_duplicated, ids: ids})
+
+      "semantic_engine" not in Map.values(roles) ->
+        component_drift(%{reason: :engine_manufacturer_missing, ids: ids})
+
+      Map.get(roles, @host_manufacturer) != "semantic_host" ->
+        component_drift(%{reason: :host_manufacturer_missing, ids: ids})
+
+      identity_manufacturer not in ids ->
+        component_drift(%{
+          reason: :canonical_identity_manufacturer_undeclared,
+          manufacturer: identity_manufacturer
+        })
+
+      true ->
+        :ok
+    end
+  end
+
+  defp check_manufacturers(_), do: component_drift(%{reason: :not_declared})
+
+  defp check_authority_broker(%{} = broker) do
+    behaviour = existing_module(Map.get(broker, "behaviour"))
+    implementations = Enum.map(List.wrap(Map.get(broker, "implementations")), &existing_module/1)
+    struct_module = existing_module(Map.get(broker, "authority_struct"))
+
+    cond do
+      is_nil(behaviour) or not function_exported?(behaviour, :behaviour_info, 1) ->
+        component_drift(%{
+          reason: :broker_behaviour_unloaded,
+          pinned: Map.get(broker, "behaviour")
+        })
+
+      implementations == [] ->
+        component_drift(%{reason: :broker_implementations_missing})
+
+      Enum.any?(implementations, &(not implements?(&1, behaviour))) ->
+        component_drift(%{
+          reason: :broker_implementation_not_conforming,
+          pinned: Map.get(broker, "implementations")
+        })
+
+      is_nil(struct_module) or not function_exported?(struct_module, :__struct__, 0) ->
+        component_drift(%{
+          reason: :authority_struct_unloaded,
+          pinned: Map.get(broker, "authority_struct")
+        })
+
+      true ->
+        :ok
+    end
+  end
+
+  defp check_authority_broker(_), do: component_drift(%{reason: :not_declared})
+
+  defp check_brce_contract(%{} = contract) do
+    module = existing_module(Map.get(contract, "module"))
+
+    case {module, parse_function(Map.get(contract, "boundary"))} do
+      {nil, _} ->
+        component_drift(%{reason: :brce_module_unloaded, pinned: Map.get(contract, "module")})
+
+      {_module, :error} ->
+        component_drift(%{
+          reason: :brce_boundary_malformed,
+          pinned: Map.get(contract, "boundary")
+        })
+
+      {module, {:ok, name, arity}} ->
+        if function_exported?(module, name, arity),
+          do: :ok,
+          else:
+            component_drift(%{
+              reason: :brce_boundary_not_exported,
+              pinned: Map.get(contract, "boundary")
+            })
+    end
+  end
+
+  defp check_brce_contract(_), do: component_drift(%{reason: :not_declared})
+
+  defp check_receipt_law(%{} = law) do
+    receipt = existing_module(Map.get(law, "receipt"))
+    store = existing_module(Map.get(law, "store"))
+    outbox = existing_module(Map.get(law, "outbox"))
+
+    cond do
+      is_nil(receipt) or not function_exported?(receipt, :__struct__, 0) ->
+        component_drift(%{reason: :receipt_struct_unloaded, pinned: Map.get(law, "receipt")})
+
+      is_nil(store) or not function_exported?(store, :behaviour_info, 1) ->
+        component_drift(%{reason: :receipt_store_unloaded, pinned: Map.get(law, "store")})
+
+      is_nil(outbox) ->
+        component_drift(%{reason: :receipt_outbox_unloaded, pinned: Map.get(law, "outbox")})
+
+      true ->
+        :ok
+    end
+  end
+
+  defp check_receipt_law(_), do: component_drift(%{reason: :not_declared})
+
+  defp check_version_policy(%{} = policy) do
+    expected = %{
+      "mutation_capability_id" => @mutation_capability_id,
+      "custody_source" => Atom.to_string(@custody_source),
+      "mutation_moves_content_address" => true,
+      "ordinary_transport_agents_may_mutate" => false
+    }
+
+    mismatched = for {key, value} <- expected, Map.get(policy, key) != value, do: key
+
+    if mismatched == [],
+      do: :ok,
+      else: component_drift(%{reason: :policy_not_enforced, keys: Enum.sort(mismatched)})
+  end
+
+  defp check_version_policy(_), do: component_drift(%{reason: :not_declared})
+
+  defp component_drift(detail), do: refuse(:REFUSED_MANIFEST_COMPONENT_DRIFT, detail)
+
+  # Never creates an atom from manifest content: an unknown module name is
+  # simply not loaded.
+  defp existing_module("Elixir." <> _ = name) do
+    module = String.to_existing_atom(name)
+    if Code.ensure_loaded?(module), do: module, else: nil
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp existing_module(_), do: nil
+
+  defp implements?(nil, _behaviour), do: false
+
+  defp implements?(module, behaviour) do
+    module.module_info(:attributes)
+    |> Keyword.get_values(:behaviour)
+    |> List.flatten()
+    |> Enum.member?(behaviour)
+  end
+
+  defp parse_function(spec) when is_binary(spec) do
+    with [name, arity] <- String.split(spec, "/"),
+         {arity, ""} <- Integer.parse(arity) do
+      {:ok, String.to_existing_atom(name), arity}
+    else
+      _ -> :error
+    end
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp parse_function(_), do: :error
+
+  defp recorded_digest(path) do
+    with {:ok, raw} <- File.read(path),
+         {:ok, %{"digest" => digest}} when is_binary(digest) <- JSON.decode(raw) do
+      digest
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Telemetry event `load/2`, `verify/2` and `verify_use/2` emit for every
+  verification decision, where the decision is made (RFC-SA2A-002 §12
+  attempt evidence).
+
+  Metadata (union of both consumers' contracts -- `AshA2A.Chicago.Courts.
+  ExactIdentity` reads the `:operation`-keyed fields below over `phase: :load`,
+  `AshA2A.Chicago.Courts.RootManifest` reads `:phase` over both `:load` and
+  `:use`): `:phase` and `:operation` (same value: `:load | :verify | :use`),
+  `:outcome` (`:verified | :refused`), `:code` (the refusal code, else
+  `nil`), `:component` (the drifted `verify_use/2` component, else `nil`),
+  `:manifest_digest`, `:engine_verified` (verified manifests only), and for
+  a refusal naming one pin, `:pin_id`, `:pin_kind` and `:pin_path`. `load/2`
+  additionally emits `:path` and `:root`.
+  """
+  @spec verify_event() :: [atom()]
+  def verify_event, do: @verify_event
+
+  defp emit_verify(phase, digest, result, extra \\ %{}) do
+    {outcome, code, component, engine_verified, detail} =
+      case result do
+        {:ok, %__MODULE__{} = manifest} ->
+          {:verified, nil, nil, manifest.engine_verified?, %{}}
+
+        {:error, %{code: code, detail: raw_detail}} ->
+          detail = as_map(raw_detail)
+          {:refused, code, component_of(code, detail), nil, detail}
+      end
+
+    pin = if Map.has_key?(detail, :kind), do: detail, else: %{}
+
+    :telemetry.execute(
+      @verify_event,
+      %{system_time: System.system_time()},
+      Map.merge(
+        %{
+          phase: phase,
+          operation: phase,
+          outcome: outcome,
+          code: code,
+          component: component,
+          manifest_digest: digest,
+          engine_verified: engine_verified,
+          pin_id: Map.get(pin, :id),
+          pin_kind: Map.get(pin, :kind),
+          pin_path: Map.get(pin, :path)
+        },
+        extra
+      )
+    )
+
+    result
+  end
+
+  defp component_of(_code, %{component: component}), do: component
+  defp component_of(:REFUSED_MANIFEST_DIGEST_MISMATCH, _), do: :content_address
+  defp component_of(:REFUSED_MANIFEST_DRIFT, _), do: :pins
+  defp component_of(:REFUSED_MANIFEST_ARTIFACT_MISSING, _), do: :pins
+  defp component_of(:REFUSED_MANIFEST_ENGINE_DRIFT, _), do: :engine
+  defp component_of(_code, _detail), do: :document
 
   @doc """
   Re-runs every pin check of `load/2` against an already-built manifest,
@@ -492,50 +934,7 @@ defmodule AshA2A.Semantic.RootManifest do
         {:ok, %{manifest | verified_at: DateTime.utc_now()}}
       end
 
-    emit_verify(:verify, nil, manifest.root, result)
-  end
-
-  @doc """
-  Telemetry event `load/2` and `verify/2` emit for every verification
-  decision, where the decision is made (RFC-SA2A-002 §12 attempt evidence).
-
-  Metadata: `:operation` (`:load | :verify`), `:outcome`
-  (`:verified | :refused`), `:code` (the refusal code, else `nil`),
-  `:path`, `:root`, `:manifest_digest` (verified manifests only),
-  `:engine_verified`, and for a refusal naming one pin, `:pin_id`,
-  `:pin_kind` and `:pin_path`.
-  """
-  @spec verify_event() :: [atom()]
-  def verify_event, do: [:ash_a2a, :semantic, :root_manifest, :verify]
-
-  defp emit_verify(operation, path, root, result) do
-    {outcome, code, digest, engine_verified, detail} =
-      case result do
-        {:ok, %__MODULE__{} = manifest} ->
-          {:verified, nil, manifest.digest, manifest.engine_verified?, %{}}
-
-        {:error, %{code: code} = refusal} ->
-          # Only a refusal about one pin (it carries the pin's `:kind`) names
-          # a pin; e.g. `:REFUSED_MANIFEST_NOT_FOUND` carries the manifest path.
-          detail = Map.get(refusal, :detail)
-          pin = if is_map(detail) and Map.has_key?(detail, :kind), do: detail, else: %{}
-          {:refused, code, nil, nil, pin}
-      end
-
-    :telemetry.execute([:ash_a2a, :semantic, :root_manifest, :verify], %{}, %{
-      operation: operation,
-      outcome: outcome,
-      code: code,
-      path: path,
-      root: root,
-      manifest_digest: digest,
-      engine_verified: engine_verified,
-      pin_id: Map.get(detail, :id),
-      pin_kind: Map.get(detail, :kind),
-      pin_path: Map.get(detail, :path)
-    })
-
-    result
+    emit_verify(:verify, manifest.digest, result, %{root: manifest.root})
   end
 
   defp read_file(path) do
@@ -717,6 +1116,24 @@ defmodule AshA2A.Semantic.RootManifest do
     end
   end
 
+  @doc """
+  Finds the pin of `kind` whose pinned digest is `digest` -- how in-memory
+  machinery (a law document carried as a string) is matched to a pinned file.
+  Standing still requires `verify_use/2`: a pin's digest is only as good as
+  the file it was re-read from.
+  """
+  @spec find_pin_by_digest(t(), String.t(), String.t()) :: {:ok, pin()} | :error
+  def find_pin_by_digest(%__MODULE__{} = manifest, digest, kind)
+      when is_binary(digest) and is_binary(kind) do
+    manifest
+    |> all_pins()
+    |> Enum.find(&(Map.get(&1, "digest") == digest and Map.get(&1, "kind") == kind))
+    |> case do
+      nil -> :error
+      pin -> {:ok, pin}
+    end
+  end
+
   @doc "Resolves a manifest-relative path against this manifest's `:root`."
   @spec resolve(t(), String.t()) :: String.t()
   def resolve(%__MODULE__{root: root}, relative_path), do: Path.join(root, relative_path)
@@ -746,57 +1163,73 @@ defmodule AshA2A.Semantic.RootManifest do
   """
   @spec mutate(t(), map(), Authority.t() | nil, Identity.t() | nil, keyword()) ::
           {:ok, t()} | {:error, refusal()}
-  def mutate(manifest, changes, authority, expected_principal, opts \\ []) do
-    result = do_mutate(manifest, changes, authority, expected_principal, opts)
+  def mutate(manifest, changes, authority, expected_principal, opts \\ [])
 
-    # `[:ash_a2a, :semantic, :root_manifest, :mutate]`: the custody decision
-    # over a proposed trust-root change (RFC-SA2A-002 §53/§81). Observational.
-    :telemetry.execute(
-      [:ash_a2a, :semantic, :root_manifest, :mutate],
-      %{count: 1},
-      %{
-        manifest_digest: match?(%__MODULE__{}, manifest) && manifest.digest,
-        authority_source: match?(%Authority{}, authority) && authority.source,
-        outcome: if(match?({:ok, _}, result), do: :mutated, else: :refused),
-        code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
-        next_digest: with({:ok, %__MODULE__{digest: d}} <- result, do: d, else: (_ -> nil))
-      }
-    )
-
-    result
-  end
-
-  defp do_mutate(
-         %__MODULE__{} = manifest,
-         changes,
-         %Authority{} = authority,
-         %Identity{kind: :principal} = expected_principal,
-         opts
-       )
-       when is_map(changes) do
+  def mutate(
+        %__MODULE__{} = manifest,
+        changes,
+        %Authority{} = authority,
+        %Identity{kind: :principal} = expected_principal,
+        opts
+      )
+      when is_map(changes) do
     admitted? =
       Authority.admits?(authority, %{
         principal_id: expected_principal,
         capability_id: @mutation_capability_id
       })
 
-    cond do
-      not admitted? ->
-        refuse(:authority_mismatch, %{capability_id: @mutation_capability_id})
+    result =
+      cond do
+        not admitted? ->
+          refuse(:authority_mismatch, %{capability_id: @mutation_capability_id})
 
-      authority.source != @custody_source ->
-        refuse(:REFUSED_ROOT_CUSTODY, %{
-          required_source: @custody_source,
-          actual_source: authority.source
-        })
+        authority.source != @custody_source ->
+          refuse(:REFUSED_ROOT_CUSTODY, %{
+            required_source: @custody_source,
+            actual_source: authority.source
+          })
 
-      true ->
-        apply_changes(manifest, changes, opts)
-    end
+        true ->
+          apply_changes(manifest, changes, opts)
+      end
+
+    emit_mutate(manifest, authority.source, result)
   end
 
-  defp do_mutate(%__MODULE__{}, _changes, _authority, _expected_principal, _opts),
-    do: refuse(:authority_mismatch, %{reason: :malformed_authority_or_principal})
+  def mutate(%__MODULE__{} = manifest, _changes, authority, _expected_principal, _opts) do
+    source = if is_map(authority), do: Map.get(authority, :source)
+
+    emit_mutate(
+      manifest,
+      source,
+      refuse(:authority_mismatch, %{reason: :malformed_authority_or_principal})
+    )
+  end
+
+  defp emit_mutate(%__MODULE__{} = manifest, source, result) do
+    {outcome, code, new_digest} =
+      case result do
+        {:ok, %__MODULE__{digest: digest}} -> {:mutated, nil, digest}
+        {:error, %{code: code}} -> {:refused, code, nil}
+      end
+
+    # `new_manifest_digest` (SA2A-ROOT/SA2A-META's `RootManifestMeta.mappings/0`)
+    # and `next_digest` (the pre-existing `inference_mappings.ex`
+    # `root_manifest_mutate/0` LLM-boundary mapping) name the same value --
+    # both keys are emitted so neither already-admitted OCEL projection loses
+    # its object identity.
+    :telemetry.execute(@mutate_event, %{system_time: System.system_time()}, %{
+      outcome: outcome,
+      code: code,
+      authority_source: source,
+      manifest_digest: manifest.digest,
+      new_manifest_digest: new_digest,
+      next_digest: new_digest
+    })
+
+    result
+  end
 
   defp apply_changes(manifest, changes, opts) do
     normalized =

@@ -153,6 +153,52 @@ defmodule AshA2A.Test.SA2AAdmissionFixtures do
   end
 
   @doc """
+  Pipeline options carrying the host's admitted law for these fixtures: a
+  Root Manifest pinning the fixture ShEx schema, shape map, SHACL shapes, OWL
+  profile and falsifier set (RFC-SA2A-001 S20/S21), built once per VM over
+  real files in a fresh directory by
+  `AshA2A.Semantic.RootManifest.LawCorpus.build/3`. Candidate law documents
+  that differ from these have no standing.
+
+  `extra` pins additional `{kind, document}` law -- used where a test isolates
+  a guard that runs after standing (e.g. non-vacuity of an ADMITTED document).
+  """
+  @spec law_opts([{String.t(), String.t()}]) :: keyword()
+  def law_opts(extra \\ []) do
+    documents =
+      [
+        {"shex_schema", @shex_schema},
+        {"shex_shape_map", @shex_shape_map},
+        {"shacl_shapes", @shacl_shapes},
+        {"semantic_profile", @profile},
+        {"n3_rules", @falsifiers}
+      ] ++ extra
+
+    key = {__MODULE__, :law_manifest, :erlang.phash2(documents)}
+
+    manifest =
+      case :persistent_term.get(key, nil) do
+        nil ->
+          # A fresh directory per build: concurrent first callers never write
+          # into (and never read half-written) files another build pinned.
+          root =
+            Path.join(
+              System.tmp_dir!(),
+              "ash_a2a-sa2a-admission-law-#{System.unique_integer([:positive])}"
+            )
+
+          {:ok, manifest} = AshA2A.Semantic.RootManifest.LawCorpus.build(root, documents)
+          :persistent_term.put(key, manifest)
+          manifest
+
+        manifest ->
+          manifest
+      end
+
+    [root_manifest: manifest]
+  end
+
+  @doc """
   A fully-lawful candidate over the conforming graph. `overrides` replaces any
   field, so a negative case differs from the positive case by exactly the one
   thing under test.

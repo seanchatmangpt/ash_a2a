@@ -79,14 +79,24 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
   @spec spec(keyword()) :: keyword()
   def spec(opts \\ []) do
     [
+      # `CanonicalGraph.identity/0` is the real executing identity --
+      # `AshA2A.Semantic.RootManifest.verify_canonicalization/1` (load/verify
+      # time) requires an exact pin of every one of its keys. `graph_identity`
+      # is an additional alias of its `"algorithm_id"` value, under the key
+      # name `RootManifest.verify_use/2`'s `check_canonicalization/1`
+      # (use-time, RFC-SA2A-002 §53 SA2A-ROOT-004) reads -- both checks pin
+      # the SAME running identity, never a hand-maintained second one.
       canonicalization:
-        Map.put(
-          CanonicalGraph.identity(),
-          "note",
-          "RFC S12 canonical graph identity is executed in-BEAM by RDF.ex's RDFC-1.0. " <>
-            "praxis-graphlaw's wasm graph_hash (BLAKE3) is an engine digest: not " <>
-            "blank-node invariant and not RDFC-1.0, so it is not pinned as canonicalization."
-        ),
+        Map.merge(CanonicalGraph.identity(), %{
+          "graph_identity" => CanonicalGraph.algorithm_id(),
+          "graph_identity_manufacturer" => "ash_a2a",
+          "note" =>
+            "RFC S12 canonical graph identity is executed in-BEAM by RDF.ex's RDFC-1.0. " <>
+              "praxis-graphlaw's wasm graph_hash (BLAKE3) is an engine digest: not " <>
+              "blank-node invariant and not RDFC-1.0, so it is not pinned as the engine's " <>
+              "own canonicalization. `graph_identity` restates `algorithm_id` for " <>
+              "RootManifest.verify_use/2's use-time canonicalization check."
+        }),
       hash_algorithms: %{
         "manifest_content" => "sha256",
         "artifact_pin" => "sha256",
@@ -166,7 +176,8 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
             "authority",
             "receipts",
             "admission_orchestration",
-            "a2a_boundary"
+            "a2a_boundary",
+            "canonical_graph_identity"
           ]
         }
       ],
@@ -180,7 +191,7 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
       },
       brce_contract: %{
         "module" => "Elixir.AshA2A.CommandBus",
-        "admission" => "admit/2",
+        "boundary" => "run/4",
         "principle" => "zero unreceipted actuation"
       },
       receipt_law: %{

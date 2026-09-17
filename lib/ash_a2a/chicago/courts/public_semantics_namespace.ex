@@ -488,12 +488,17 @@ defmodule AshA2A.Chicago.Courts.PublicSemanticsNamespace do
 
     {registered17, r17} =
       Context.stimulus(ctx, f.(17), fn ->
-        admitted = Map.put(mapping, :admission_receipt, F.receipt("mapping"))
+        F.with_store(fn store ->
+          admitted =
+            Map.put(mapping, :admission_receipt, F.held_mapping_receipt(store, a.iri, b.iri))
 
-        case MappingRegistry.register(MappingRegistry.new(), admitted) do
-          {:ok, registry} -> {:registered, MappingRegistry.reconcile(registry, a, b)}
-          {:error, _} = refused -> {refused, refused}
-        end
+          registry = MappingRegistry.new(receipt_store: {AshA2A.ReceiptStore.Memory, name: store})
+
+          case MappingRegistry.register(registry, admitted) do
+            {:ok, registry} -> {:registered, MappingRegistry.reconcile(registry, a, b)}
+            {:error, _} = refused -> {refused, refused}
+          end
+        end)
       end)
 
     {same_a, same_b} = F.peers(:same_identity)

@@ -12,11 +12,31 @@ defmodule AshA2A.Semantic.MappingRegistry do
   `:semantic_label_collision_unmapped`. Matching labels are never taken as
   evidence of matching meaning.
 
-  A mapping is only usable once it has been **admitted**: `register/2` requires
-  an admission receipt (an `%AshA2A.Receipt{}` or a map carrying `:receipt_id`
-  and `:fingerprint`), so a mapping cannot be asserted into existence at
-  runtime any more than a vocabulary term can (see
-  `AshA2A.Semantic.TermRegistry` for the S7.3 sibling rule).
+  A mapping is only usable once it has been **admitted**, so a mapping cannot
+  be asserted into existence at runtime any more than a vocabulary term can
+  (see `AshA2A.Semantic.TermRegistry` for the S7.3 sibling rule).
+
+  ## A named receipt is not a receipt (RFC-SA2A-001 S6)
+
+  `register/2` requires the mapping's `admission_receipt` to be an
+  `%AshA2A.Receipt{}` that a receipt store really holds, and that admits
+  THIS mapping:
+
+    1. the receipt is fetched back from the registry's receipt store
+       (`new/1`'s `:receipt_store`, default the configured
+       `config :ash_a2a, :receipt_store`) by its command id -- a receipt no
+       store holds is refused `:semantic_mapping_receipt_not_held`, as is a
+       map merely carrying a `:receipt_id` and `:fingerprint`;
+    2. the held receipt has the same receipt id and fingerprint and a
+       terminal status of `:executed` -- the admission really ran
+       (`:semantic_mapping_receipt_not_held` otherwise);
+    3. the held receipt's `input_digest` is the digest of
+       `admission_input/3` for this exact source, target and kind -- a real
+       receipt that admitted some OTHER mapping is refused
+       `:semantic_mapping_receipt_unbound`.
+
+  Measured before this rule: `register/2` accepted any map with a non-empty
+  `:receipt_id` and `:fingerprint` (`CHI-ADM-008`).
 
   Mapping kinds are SKOS-aligned prior art (`skos:exactMatch`,
   `skos:closeMatch`, `skos:broadMatch`, `skos:narrowMatch`,
@@ -29,13 +49,14 @@ defmodule AshA2A.Semantic.MappingRegistry do
   `:close_match` as insufficient for its own purposes.
   """
 
+  alias AshA2A.{Actuation, Receipt}
   alias AshA2A.Semantic.Iri
 
   @type refusal :: %{code: atom(), detail: String.t()}
   @type kind :: :exact_match | :close_match | :broad_match | :narrow_match | :related_match
 
   @enforce_keys [:mappings]
-  defstruct mappings: %{}
+  defstruct mappings: %{}, receipt_store: nil
 
   @type t :: %__MODULE__{}
 
@@ -48,9 +69,35 @@ defmodule AshA2A.Semantic.MappingRegistry do
     narrow_match: :broad_match
   }
 
-  @doc "An empty registry -- with no admitted mappings, only identical IRIs reconcile."
-  @spec new() :: t()
-  def new, do: %__MODULE__{mappings: %{}}
+  @refusal_codes %{
+    semantic_mapping_receipt_not_held: :refused_receipt,
+    semantic_mapping_receipt_unbound: :refused_receipt
+  }
+
+  @doc false
+  def __sa2a_refusal_codes__, do: @refusal_codes
+
+  @doc """
+  An empty registry -- with no admitted mappings, only identical IRIs
+  reconcile.
+
+  `:receipt_store` -- `module` or `{module, opts}` implementing
+  `AshA2A.ReceiptStore`, where admission receipts are looked up; default the
+  configured `config :ash_a2a, :receipt_store`
+  (`AshA2A.ReceiptStore.Memory`).
+  """
+  @spec new(keyword()) :: t()
+  def new(opts \\ []),
+    do: %__MODULE__{mappings: %{}, receipt_store: Keyword.get(opts, :receipt_store)}
+
+  @doc """
+  The command input an admission of the mapping `source -> target` of `kind`
+  carries. A receipt admits a mapping only when its `input_digest` is
+  `AshA2A.Actuation.digest/1` of exactly this term.
+  """
+  @spec admission_input(String.t(), String.t(), kind()) :: map()
+  def admission_input(source, target, kind),
+    do: %{semantic_mapping: %{source: source, target: target, kind: kind}}
 
   @doc """
   Registers one explicitly admitted mapping between two semantic identities.
@@ -108,7 +155,8 @@ defmodule AshA2A.Semantic.MappingRegistry do
          {:ok, target} <- Iri.validate(target),
          :ok <- check_distinct(source, target),
          :ok <- check_kind(kind),
-         :ok <- check_receipt(receipt) do
+         :ok <- check_receipt(receipt),
+         :ok <- check_held(registry, receipt, admission_input(source, target, kind)) do
       record = %{
         source: source,
         target: target,
@@ -295,6 +343,79 @@ defmodule AshA2A.Semantic.MappingRegistry do
          "a cross-peer mapping is only usable once admitted: expected an %AshA2A.Receipt{} or a " <>
            "map with :receipt_id and :fingerprint, got #{inspect(receipt)}"
        )}
+
+  # A receipt the store does not hold -- or holds for another admission -- is a
+  # name, not a receipt.
+  defp check_held(_registry, %{} = receipt, _input) when not is_struct(receipt, Receipt),
+    do:
+      {:error,
+       refusal(
+         :semantic_mapping_receipt_not_held,
+         "a named receipt is not a receipt (RFC-SA2A-001 S6): #{inspect(receipt)} is not an " <>
+           "%AshA2A.Receipt{} any receipt store can be asked for"
+       )}
+
+  defp check_held(registry, %Receipt{} = receipt, input) do
+    {module, store_opts} = receipt_store(registry)
+
+    case fetch_held(module, receipt.command_id, store_opts) do
+      {:ok, %Receipt{} = held} ->
+        cond do
+          held.receipt_id != receipt.receipt_id or held.fingerprint != receipt.fingerprint ->
+            {:error,
+             refusal(
+               :semantic_mapping_receipt_not_held,
+               "the receipt store #{inspect(module)} holds a different receipt for command " <>
+                 "#{inspect(receipt.command_id)}"
+             )}
+
+          held.terminal_status != :executed ->
+            {:error,
+             refusal(
+               :semantic_mapping_receipt_not_held,
+               "the held admission receipt is not executed (terminal status " <>
+                 "#{inspect(held.terminal_status)})"
+             )}
+
+          held.input_digest != Actuation.digest(input) ->
+            {:error,
+             refusal(
+               :semantic_mapping_receipt_unbound,
+               "the held receipt #{inspect(held.receipt_id)} admits a different input than " <>
+                 "this mapping (#{inspect(input)})"
+             )}
+
+          true ->
+            :ok
+        end
+
+      other ->
+        {:error,
+         refusal(
+           :semantic_mapping_receipt_not_held,
+           "no receipt store holds receipt #{inspect(receipt.receipt_id)} for command " <>
+             "#{inspect(receipt.command_id)} (#{inspect(module)}: #{inspect(other, limit: 5)})"
+         )}
+    end
+  end
+
+  defp receipt_store(%__MODULE__{receipt_store: {module, opts}}) when is_atom(module),
+    do: {module, opts}
+
+  defp receipt_store(%__MODULE__{receipt_store: module}) when is_atom(module) and module != nil,
+    do: {module, []}
+
+  defp receipt_store(%__MODULE__{}),
+    do: {Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory), []}
+
+  # A store that is not running holds nothing: fail closed, never raise.
+  defp fetch_held(module, command_id, opts) do
+    module.fetch(command_id, opts)
+  rescue
+    exception -> {:unavailable, Exception.message(exception)}
+  catch
+    :exit, reason -> {:unavailable, reason}
+  end
 
   defp refusal(code, detail), do: %{code: code, detail: detail}
 end
