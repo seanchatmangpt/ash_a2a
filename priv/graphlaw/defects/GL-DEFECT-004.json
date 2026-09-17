@@ -1,0 +1,193 @@
+{
+  "cases": [
+    {
+      "args": [
+        "@prefix e: <http://example.org/e#> .\ne:a e:edge e:b .\n{ ?x e:edge ?y } => { ?x e:edge (?y) } .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexSession (Wasmtime, fuel 500000000)",
+      "name": "list_term_head_recursion",
+      "observed": {
+        "error_code": "graphlaw_call_trapped",
+        "trap": "all fuel consumed by WebAssembly"
+      },
+      "praxis_head_build_observed": {
+        "host": "node V8, unbounded (no fuel)",
+        "no_return_within_s": 20
+      }
+    },
+    {
+      "args": [
+        "@prefix e: <http://example.org/e#> .\n@prefix math: <http://www.w3.org/2000/10/swap/math#> .\ne:counter e:n 1 .\n{ ?x e:n ?n . (?n 1) math:sum ?m } => { ?x e:n ?m } .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexSession (Wasmtime, fuel 500000000)",
+      "name": "math_sum_recursion",
+      "observed": {
+        "error_code": "graphlaw_call_trapped",
+        "trap": "all fuel consumed by WebAssembly"
+      },
+      "praxis_head_build_observed": {
+        "host": "node V8, unbounded (no fuel)",
+        "no_return_within_s": 20
+      }
+    },
+    {
+      "args": [
+        "@prefix e: <http://example.org/e#> .\ne:a e:edge e:b . e:b e:edge e:c . e:c e:edge e:d .\n{ ?x e:edge ?y . ?y e:edge ?z } => { ?x e:edge ?z } .\n",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "call": "validate_all",
+      "host": "AshA2A.GraphLaw.WasmexSession (Wasmtime, fuel 500000000)",
+      "name": "control_terminating_transitive_closure",
+      "observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 3 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 3
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 0 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "ADMITTED",
+              "triples_out": 0
+            }
+          ],
+          "graph_hash": "678af5af96cf7e800e545d2469bd54f734b2d32ec25b1e6ff61de82a81a0aee5",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "678af5af96cf7e800e545d2469bd54f734b2d32ec25b1e6ff61de82a81a0aee5",
+            "second_hash": "678af5af96cf7e800e545d2469bd54f734b2d32ec25b1e6ff61de82a81a0aee5",
+            "status": "ADMITTED"
+          }
+        }
+      },
+      "praxis_head_build_observed": {
+        "returned": {
+          "dialects": [
+            {
+              "detail": "No profile provided",
+              "dialect": "OWL_RL",
+              "status": "PROFILE_NOT_ADMITTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Materialized 3 triples",
+              "dialect": "DATALOG",
+              "status": "ADMITTED",
+              "triples_out": 3
+            },
+            {
+              "detail": "No shapes provided",
+              "dialect": "SHACL",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "No schema provided",
+              "dialect": "SHEX",
+              "status": "UNSUPPORTED",
+              "triples_out": 0
+            },
+            {
+              "detail": "Found 0 denial violations",
+              "dialect": "N3_DENIAL",
+              "status": "ADMITTED",
+              "triples_out": 0
+            }
+          ],
+          "graph_hash": "678af5af96cf7e800e545d2469bd54f734b2d32ec25b1e6ff61de82a81a0aee5",
+          "hash_algorithms": {
+            "BLAKE3": "1.0"
+          },
+          "hooks": {
+            "receipts": [],
+            "schedule": [],
+            "status": "ADMITTED",
+            "verdicts": []
+          },
+          "profile_hash": "",
+          "replay": {
+            "first_hash": "678af5af96cf7e800e545d2469bd54f734b2d32ec25b1e6ff61de82a81a0aee5",
+            "second_hash": "678af5af96cf7e800e545d2469bd54f734b2d32ec25b1e6ff61de82a81a0aee5",
+            "status": "ADMITTED"
+          }
+        }
+      }
+    }
+  ],
+  "court": {
+    "court_id": "SA2A-ENGINE",
+    "falsifier_ids": [
+      "SA2A-ENGINE-005",
+      "SA2A-ENGINE-006",
+      "SA2A-ENGINE-011"
+    ]
+  },
+  "engine": {
+    "artifact": "priv/graphlaw/praxis_graphlaw.wasm",
+    "bytes": 3249361,
+    "graphlaw_version": "praxis-graphlaw v26.7.5",
+    "sha256": "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
+  },
+  "id": "GL-DEFECT-004",
+  "law": "A rule set whose closure is not finite (non-function-free head, arithmetic term creation under recursion) is refused by the engine, not left to exhaust the execution budget.",
+  "praxis_head_build": {
+    "artifact_sha256": "5903ea9d96d45ff04c05935643ef548be9312eb3375a1c3e83901936f697ff55",
+    "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9",
+    "record": "priv/graphlaw/defects/praxis-head-refresh.json"
+  },
+  "root_cause": [
+    {
+      "evidence": "read-only source inspection (not isolated by an executed probe: UNVERIFIED)",
+      "finding": "validate_rules enforces only head-variable safety and negation range restriction; no function-free / finite-closure check exists, and its error is discarded anyway (lib.rs:254-256)",
+      "lines": "53-66",
+      "path": "crates/praxis-graphlaw/src/datalog.rs",
+      "praxis_git_sha": "31f149dd8a6d6b4ff25f27ba24b53759c20954c9"
+    }
+  ],
+  "schema": "ash_a2a.graphlaw.defect/v1",
+  "status": "BLOCKED_ON_PRAXIS",
+  "title": "validate_all/5 does not refuse recursion that creates unbounded terms (list-term head, math:sum); it runs until the host bound is exhausted"
+}

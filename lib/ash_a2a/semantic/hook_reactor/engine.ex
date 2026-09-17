@@ -11,7 +11,10 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
   graph -- and with malformed input -- it returns
   `{"status":"ADMITTED","verdicts":[],"receipts":[],"schedule":[]}` every
   time (see `AshA2A.Semantic.FalsifierSuite`'s moduledoc for the root cause).
-  Calling it would be theatre.
+  Calling it would be theatre. Re-measured 2026-09-16 on a build of praxis
+  HEAD `31f149d`: unchanged (root cause, inputs and outputs in
+  `priv/graphlaw/defects/GL-DEFECT-001.json`; pinned against the vendored
+  digest by `SA2A-ENGINE-001`/`-002`).
 
   The same build's `validate_all/5` N3_DENIAL dialect *does* evaluate rule
   bodies: `{ BODY } => false .` reports `"REFUSED"` iff BODY has at least one

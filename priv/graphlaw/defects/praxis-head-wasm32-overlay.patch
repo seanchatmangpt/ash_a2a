@@ -1,0 +1,12 @@
+diff --git a/crates/praxis-graphlaw/src/chatman/engine.rs b/crates/praxis-graphlaw/src/chatman/engine.rs
+index b5aa80bc..6f9889bc 100644
+--- a/crates/praxis-graphlaw/src/chatman/engine.rs
++++ b/crates/praxis-graphlaw/src/chatman/engine.rs
+@@ -589,6 +589,7 @@ impl ChatmanEngine {
+     ///
+     /// # Complexity
+     /// O(256) plus storage-open cost.
++    #[cfg(not(target_arch = "wasm32"))]
+     pub fn open(
+         path: impl AsRef<std::path::Path>,
+         profile: EngineProfile,

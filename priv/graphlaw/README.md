@@ -92,6 +92,19 @@ execution claim and nothing broader: not universal semantic equivalence, not
 production readiness, not security completeness, and not cross-implementation
 equivalence.
 
+## Known engine defects
+
+`defects/` holds minimal reproducers (exact inputs, call, observed output,
+responsible praxis source lines) for defects of this artifact that are
+BLOCKED on praxis: `run_hooks` never fires a hook (`GL-DEFECT-001`) and admits
+non-Turtle input (`-002`); DATALOG admits a non-range-restricted rule
+(`-003`) and does not refuse unbounded term creation (`-004`). Court
+`SA2A-ENGINE` pins each against this artifact's digest and re-runs every
+recorded case. `defects/praxis-head-refresh.json` records the 2026-09-16
+attempt to refresh from praxis HEAD `31f149d`: the source needs a wasm32
+overlay to build, every defect persists, and the build's host ABI differs
+(6 imports, renumbered string-ABI exports), so this artifact was kept.
+
 ## See Also
 
 - `lib/ash_a2a/graph_law/wasmtime_runtime.ex` — the BEAM-side subprocess wrapper
