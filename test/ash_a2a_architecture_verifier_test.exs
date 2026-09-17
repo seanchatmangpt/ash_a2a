@@ -21,6 +21,12 @@ defmodule AshA2AArchitectureVerifierTest do
   those originally-briefed checks, added once this branch's merge brought
   both commits together -- see `AshA2A.ArchitectureVerifier`'s moduledoc
   for the full account.
+
+  `checks/0` additively appends a seven-court Chicago rollup after these
+  nine (`AshA2A.ArchitectureVerifier.ChicagoRollup.checks/0`, ARD §23's
+  single-entry-point gap); this file still exercises the original nine
+  individually below. The rollup itself is tested in isolation, in its own
+  dedicated file, `test/ash_a2a_architecture_verifier_chicago_rollup_test.exs`.
   """
 
   use ExUnit.Case, async: true
@@ -29,12 +35,25 @@ defmodule AshA2AArchitectureVerifierTest do
   alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
   alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
 
-  test "checks/0 reports all nine real architecture invariants as passing" do
+  test "checks/0 reports all nine original architecture invariants as passing, plus the Chicago rollup" do
     results = ArchitectureVerifier.checks()
 
-    assert length(results) == 9
-    assert Enum.all?(results, &(&1.status == :pass)), inspect(results)
-    assert Enum.all?(results, &(&1.detail != ""))
+    # The original nine checks this file's other tests below exercise
+    # individually, by position -- untouched by the additive Chicago
+    # rollup appended after them.
+    original_nine = Enum.take(results, 9)
+    assert length(original_nine) == 9
+    assert Enum.all?(original_nine, &(&1.status == :pass)), inspect(original_nine)
+    assert Enum.all?(original_nine, &(&1.detail != ""))
+
+    # `checks/0` additively rolls up seven real Chicago court checks
+    # (`AshA2A.ArchitectureVerifier.ChicagoRollup.checks/0`, ARD §23's
+    # single-entry-point gap) after the original nine -- see that module
+    # and `test/ash_a2a_architecture_verifier_chicago_rollup_test.exs` for
+    # their own dedicated coverage; asserted here only so this file's own
+    # "how many checks does the one CI-gate entry point report" claim
+    # stays true rather than silently going stale.
+    assert length(results) == 16
   end
 
   test "check 1: AshA2A.Info.capability_index/1 returns a real, non-nil list for the fixture resource" do
