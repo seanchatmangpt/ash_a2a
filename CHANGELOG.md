@@ -61,6 +61,25 @@ once it reaches 1.0.
   also report a strong-cyclic solve for the predicates that invariant
   touches. An honest `NoPlan` is the correct report here, not a defect.
 
+### Added -- v26.9.17 FOND/HDDL planning: ash_a2a-side completion
+
+- The v26.9.17 FOND/HDDL planning work's remaining ash_a2a-side pieces were
+  finished via four orthogonal, independently-committed additions: a
+  source-fidelity audit recovering and mechanically verifying the original
+  domain/problem paste (`test/ash_a2a/chicago/sa2a_v26_9_17_source_fidelity_test.exs`),
+  a permanent cross-repo topology-existence court
+  (`AshA2A.Chicago.Courts.SA2AV269_17Topology`, confirming 11 repos alive),
+  a reachability-analysis doc re-running `hddl_analyze` independently
+  (`docs/explanation/sa2a-v26-9-17-hddl-reachability-analysis.md`), and a
+  capability-coverage sweep comparing ash_a2a's own 42+ Chicago courts
+  against the 9 v26.9.17 capability categories
+  (`docs/explanation/sa2a-v26-9-17-capability-coverage-sweep.md`): 4
+  categories fully covered, 4 partially covered, 1 with no matching court
+  (`cap-framework-projection`, a disclosed real gap, not force-mapped).
+  All four merged to `main` with a full-suite regression run afterward
+  (1923 tests, 0 failures, 8 invalid -- no local Postgres -- matching the
+  pre-existing baseline).
+
 ### Added -- RFC-SA2A-002 Chicago Conformance Court
 
 - **`AshA2A.Chicago`**: a falsification-based conformance court for
