@@ -61,14 +61,46 @@ once it reaches 1.0.
   of these ~15 files is left to whichever cluster owns
   `ir_admission_seal.ex` / the affected test files; it is out of this
   task's assigned scope.
-- Honest overall standing for this pass: the version bump is real and
-  committed; the named architecture-verifier test is real and green; the
-  `hex.publish --dry-run` output is real and shows a correctly-versioned,
-  correctly-built package with no actual publish; the full-suite baseline
-  is **not** currently clean -- there is a real, confirmed, reproducible
-  24-test regression from the new `IrAdmissionSeal` gate hitting stale
-  hand-built-IR test fixtures, which should be resolved before this release
-  is genuinely gate-clean.
+- Honest overall standing for this pass, at the time it landed: the version
+  bump was real and committed; the named architecture-verifier test was
+  real and green; the `hex.publish --dry-run` output was real; the
+  full-suite baseline was **not** clean -- see the immediately following
+  entry for the real fix that closed this out.
+
+### Fixed -- IrAdmissionSeal regression from the v26.9.17 50-agent pass (closed)
+
+- The 24-test regression named in the entry above is now closed for real,
+  not by weakening `IrAdmissionSeal.verify/1`. Root causes: (1)
+  `AshA2A.Planning.GoalFacts.to_semantic_structs/2` is a pre-existing,
+  legitimate SECOND real admission chain (typed facts, no free text, so
+  `Admission.admit/2`'s substring check is a category error there) that set
+  `standing: :admitted` without minting a seal -- now mints one for real via
+  `IrAdmissionSeal.mint/1` after its own real checks pass. (2)
+  `lib/ash_a2a/chicago/courts/authority_non_implication.ex`'s
+  `plan_package/2` hand-built an unsealed `%IR{standing: :admitted}` with no
+  real admission chain at all -- a genuine gap the seal correctly caught;
+  routed through real `IR.from_map/2` + `Admission.admit/2`. (3) the 8 new
+  refusal codes this pass introduced had no S42 classification -- added
+  (`semantic_ir_unsealed`/`semantic_ir_seal_invalid` -> `refused_identity`,
+  `peer_b_unavailable` -> `blocked_resource`, 5 `evidence_bounds_*`/
+  `evidence_fan_out_exceeded` codes -> `refused_bounds`). (4) two test files
+  (`semantic_feedback_test.exs`,
+  `ash_a2a_authority_non_implications_test.exs`) had genuine hand-forged
+  unsealed IR literals -- fixed via real `IR.from_map/2` +
+  `Admission.admit/2`, matching `semantic_execution_package_test.exs`'s
+  established pattern. (5) `unknown_llm_gate12_test.exs`'s hardcoded
+  `@expected` verdict map was missing the real `SA2A-MX-006` falsifier this
+  same pass added to `machine_experience.ex` -- added the entry.
+- Checked, not changed: `AshA2A.Chicago.Fixtures.ShexShaclAdmission.
+  premarked_canonical_provenance/0` also hand-sets `standing: :admitted` --
+  confirmed this is a deliberate negative-control forgery witness for a
+  real gate-2 falsifier, not a bug.
+- Real, current verification: `mix format --check-formatted` and
+  `mix compile --warnings-as-errors` clean; mock grep clean across every
+  changed file; architecture verifier + Chicago rollup test 15/15; full
+  suite (`mix test --max-cases 6`): 58 doctests, 19 properties, 2036 tests,
+  **0 failures**, 8 invalid (known no-local-Postgres baseline, unchanged),
+  1 skipped -- the known-stable baseline is restored.
 
 ### Fixed -- Local dev-setup gap misread as a board-persona regression
 
