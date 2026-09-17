@@ -96,6 +96,61 @@ defmodule AshA2A.AuthorityBrokerInMemoryTest do
     assert {:ok, ^authority} = InMemory.verify(authority, name: broker)
   end
 
+  describe "list_grants/2" do
+    test "reports every standing grant for a subject, and none for another" do
+      broker = start_broker!()
+      subject = Identity.principal("list-grants-subject")
+      other = Identity.principal("list-grants-other-subject")
+
+      {:ok, read} = InMemory.issue(subject, "widgets:read", name: broker)
+      {:ok, write} = InMemory.issue(subject, "widgets:write", name: broker)
+      {:ok, _other_grant} = InMemory.issue(other, "widgets:read", name: broker)
+
+      assert {:ok, grants} = InMemory.list_grants(subject, name: broker)
+
+      assert MapSet.new(grants) ==
+               MapSet.new([
+                 %{capability_id: "widgets:read", expires_at: read.expires_at},
+                 %{capability_id: "widgets:write", expires_at: write.expires_at}
+               ])
+
+      assert {:ok, other_grants} = InMemory.list_grants(other, name: broker)
+      assert other_grants == [%{capability_id: "widgets:read", expires_at: nil}]
+    end
+
+    test "excludes a revoked grant and an expired grant, includes an unexpired one" do
+      broker = start_broker!()
+      subject = Identity.principal("list-grants-mixed-subject")
+
+      {:ok, revoked} = InMemory.issue(subject, "widgets:revoked", name: broker)
+      :ok = InMemory.revoke(revoked, name: broker)
+
+      {:ok, _expired} =
+        InMemory.issue(subject, "widgets:expired",
+          name: broker,
+          expires_at: DateTime.add(DateTime.utc_now(), -3600, :second)
+        )
+
+      {:ok, standing} = InMemory.issue(subject, "widgets:standing", name: broker)
+
+      assert {:ok, grants} = InMemory.list_grants(subject, name: broker)
+      assert grants == [%{capability_id: "widgets:standing", expires_at: standing.expires_at}]
+    end
+
+    test "an unknown subject with no issued grants reports an empty list, not an error" do
+      broker = start_broker!()
+      subject = Identity.principal("list-grants-unknown-subject")
+
+      assert {:ok, []} = InMemory.list_grants(subject, name: broker)
+    end
+
+    test "fails closed (:error) when the broker process is not running" do
+      subject = Identity.principal("list-grants-down-subject")
+
+      assert :error = InMemory.list_grants(subject, name: :list_grants_never_started_broker)
+    end
+  end
+
   test "two independently-started InMemory processes do not share revocation state" do
     broker_a = start_broker!()
     broker_b = start_broker!()

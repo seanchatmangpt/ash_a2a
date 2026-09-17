@@ -325,6 +325,37 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
     end
   end
 
+  describe "(f) Grant.list_grants/2 -- enumeration surface for admin tooling" do
+    test "reports every standing grant for the subject through the configured broker" do
+      subject = AshA2A.Identity.principal(@principal)
+      assert {:ok, _} = Authority.Grant.grant(subject, capability_id("touch"))
+      assert {:ok, _} = Authority.Grant.grant(subject, capability_id("mutate"))
+
+      assert {:ok, grants} = Authority.Grant.list_grants(subject)
+
+      assert MapSet.new(grants, & &1.capability_id) ==
+               MapSet.new([capability_id("touch"), capability_id("mutate")])
+    end
+
+    test "a revoked grant no longer appears in the enumeration", ctx do
+      subject = AshA2A.Identity.principal(@principal)
+      assert {:ok, authority} = Authority.Grant.grant(subject, capability_id("touch"))
+
+      assert {:ok, [_one]} = Authority.Grant.list_grants(subject)
+
+      assert :ok = InMemory.revoke(authority, ctx.broker_opts)
+
+      assert {:ok, []} = Authority.Grant.list_grants(subject)
+    end
+
+    test "returns :error when no broker is configured" do
+      Application.delete_env(:ash_a2a, :authority_broker)
+      subject = AshA2A.Identity.principal(@principal)
+
+      assert :error = Authority.Grant.list_grants(subject)
+    end
+  end
+
   describe "legacy :transport_verified_grants_capability policy" do
     setup do
       Application.put_env(:ash_a2a, :authority_policy, :transport_verified_grants_capability)

@@ -108,6 +108,15 @@ defmodule AshA2A.Authority.Broker.InMemory do
     :exit, _reason -> :error
   end
 
+  @impl AshA2A.Authority.Broker
+  @spec list_grants(Identity.t(), keyword()) ::
+          {:ok, [AshA2A.Authority.Broker.grant_entry()]} | :error
+  def list_grants(%Identity{kind: :principal} = subject, opts \\ []) do
+    GenServer.call(server(opts), {:list_grants, Identity.external(subject)})
+  catch
+    :exit, _reason -> :error
+  end
+
   @impl GenServer
   def handle_call({:issue, subject, capability_id, opts}, _from, state) do
     authority =
@@ -175,6 +184,26 @@ defmodule AshA2A.Authority.Broker.InMemory do
         else: :error
 
     {:reply, reply, state}
+  end
+
+  def handle_call({:list_grants, subject_external}, _from, state) do
+    # A pure read of the exact `issued`/`revoked` state `handle_call({:issue,
+    # ...})` and `handle_call({:revoke, ...})` above already maintain -- this
+    # clause records nothing, matching the `{:grant_status, ...}` and
+    # `{:grant_expires_at, ...}` clauses above it. `entry.binding` already
+    # carries `{subject_external, capability_id}` (see `token_binding/1`), so
+    # no additional per-entry state is needed to answer "every capability
+    # this subject holds a standing grant for".
+    grants =
+      state.issued
+      |> Enum.filter(fn {key, %{binding: {bound_subject, _capability_id}}} ->
+        bound_subject == subject_external and standing?(state, key)
+      end)
+      |> Enum.map(fn {_key, %{binding: {_subject, capability_id}, expires_at: expires_at}} ->
+        %{capability_id: capability_id, expires_at: expires_at}
+      end)
+
+    {:reply, {:ok, grants}, state}
   end
 
   # A grant stands only if it was issued, has not been revoked, AND has not
