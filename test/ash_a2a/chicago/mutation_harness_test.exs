@@ -421,6 +421,80 @@ defmodule AshA2A.Chicago.MutationHarnessTest do
 
       assert Mutation.pristine?(CommandBus)
     end
+
+    test "CHI-SELFTEST-REPLAY-001 closes that vacuity: killed at baseline, survives under the mutant that lets replay re-actuate, killed again after restore",
+         %{tmp_dir: dir} do
+      # Baseline: the real replay guard is intact, so the falsifier is killed
+      # and corroborated by the independent OCEL consumer.
+      assert {:ok, baseline_run} =
+               Runner.run(
+                 profile: :core,
+                 courts: [ChicagoSelfTest.ReplayCourt],
+                 evidence_dir: Path.join(dir, "direct-baseline")
+               )
+
+      baseline_result =
+        Enum.find(baseline_run.results, &(&1.falsifier_id == "CHI-SELFTEST-REPLAY-001"))
+
+      assert baseline_result.verdict == :falsifier_killed
+      assert baseline_result.ocel_corroborated? == true
+
+      mutation = %{Catalog.fetch!("replay_calls_actuator") | killers: ["CHI-SELFTEST-REPLAY"]}
+
+      # Direct: inside the live mutant, the second (replay) submission now
+      # re-actuates -- the falsifier survives.
+      assert {:ok, {:ok, mutated_run}, %{restored: %{pristine: true} = restored}} =
+               Mutation.with_mutant(mutation, fn _ ->
+                 Runner.run(
+                   profile: :core,
+                   courts: [ChicagoSelfTest.ReplayCourt],
+                   evidence_dir: Path.join(dir, "direct-mutant")
+                 )
+               end)
+
+      mutated_result =
+        Enum.find(mutated_run.results, &(&1.falsifier_id == "CHI-SELFTEST-REPLAY-001"))
+
+      assert mutated_result.verdict == :falsifier_survived
+      assert mutated_result.failure_class == :replay_failure
+      assert restored.mutant_calls >= 2
+      assert Mutation.pristine?(CommandBus)
+
+      # Through qualify/2: judged from the durable packages on disk, not memory.
+      assert %Verdict{verdict: :mutant_killed} =
+               verdict =
+               Mutation.qualify(mutation,
+                 courts: [ChicagoSelfTest.ReplayCourt],
+                 evidence_dir: Path.join(dir, "qualify")
+               )
+
+      assert verdict.court_verdicts == %{"CHI-SELFTEST-REPLAY" => :killed}
+      assert "CHI-SELFTEST-REPLAY-001" in verdict.killed_by
+
+      mutant_results =
+        Path.join(verdict.mutant.dir, "results.json") |> File.read!() |> JSON.decode!()
+
+      assert %{"verdict" => "FALSIFIER_SURVIVED"} =
+               Enum.find(mutant_results, &(&1["falsifier_id"] == "CHI-SELFTEST-REPLAY-001"))
+
+      assert Mutation.pristine?(CommandBus)
+
+      # Restore is real (Mutation.with_mutant always restores, even here where
+      # the mutant ran only inside qualify/2's own with_mutant call): a fresh
+      # run against the pristine module is killed again, not left degraded.
+      assert {:ok, restored_run} =
+               Runner.run(
+                 profile: :core,
+                 courts: [ChicagoSelfTest.ReplayCourt],
+                 evidence_dir: Path.join(dir, "direct-restored")
+               )
+
+      restored_result =
+        Enum.find(restored_run.results, &(&1.falsifier_id == "CHI-SELFTEST-REPLAY-001"))
+
+      assert restored_result.verdict == :falsifier_killed
+      assert restored_result.ocel_corroborated? == true
+    end
   end
 
   describe "SA2A-MUTATION court end to end" do
