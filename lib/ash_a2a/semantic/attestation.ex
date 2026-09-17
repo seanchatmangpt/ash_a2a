@@ -29,6 +29,18 @@ defmodule AshA2A.Semantic.Attestation do
       %Attestation{semantic_revision: nil, plan_revision: nil,
                    unobserved: [:semantic_revision, :plan_revision, ...]}
 
+  ## Receipt binding (RFC-SA2A-002 §40, §72)
+
+  Every receipt carrying an identity binding must verify
+  (`AshA2A.Receipt.Binding.verify/2`); a tampered receipt refuses the whole
+  attestation (`:attestation_receipt_binding_refused`). `:receipt_binding` is
+  claimed only when *every* receipt is bound and verifies, and records the
+  observed keyed posture -- an attestation over an unbound receipt leaves it
+  unclaimed rather than implying tamper evidence it never had.
+
+  Decisions are emitted as `[:ash_a2a, :attestation, :build]` and
+  `[:ash_a2a, :attestation, :verify]`.
+
   ## Evidence class
 
   `:evidence_class` is the *weakest* class across the receipt set, not the
@@ -45,7 +57,8 @@ defmodule AshA2A.Semantic.Attestation do
     :manufacturer_revision,
     :projected_artifact_digest,
     :authority_decision,
-    :observed_post_state
+    :observed_post_state,
+    :receipt_binding
   ]
 
   @enforce_keys [:attestation_id, :receipt_set, :receipt_set_digest, :attested_at, :unobserved]
@@ -59,6 +72,7 @@ defmodule AshA2A.Semantic.Attestation do
     :receipt_set,
     :receipt_set_digest,
     :observed_post_state,
+    :receipt_binding,
     :evidence_class,
     :attested_at,
     :basis_digest,
@@ -67,6 +81,10 @@ defmodule AshA2A.Semantic.Attestation do
 
   @type t :: %__MODULE__{}
   @type refusal :: {:error, %{code: atom(), detail: term()}}
+
+  @doc false
+  # S42 class of the refusal code this module introduced for RFC-SA2A-002 §40.
+  def __sa2a_refusal_codes__, do: %{attestation_receipt_binding_refused: :refused_receipt}
 
   @doc "The fields an attestation may claim, each of which must be receipt-backed."
   @spec claimable_fields() :: [atom()]
@@ -84,12 +102,19 @@ defmodule AshA2A.Semantic.Attestation do
   @spec from_receipts([Receipt.t()], keyword()) :: {:ok, t()} | refusal()
   def from_receipts(receipts, opts \\ [])
 
-  def from_receipts([], _opts),
+  def from_receipts(receipts, opts) do
+    result = build(receipts, opts)
+    emit(:build, result, receipts)
+    result
+  end
+
+  defp build([], _opts),
     do: refuse(:attestation_without_receipts, "an attestation requires at least one receipt")
 
-  def from_receipts(receipts, opts) when is_list(receipts) do
+  defp build(receipts, opts) when is_list(receipts) do
     with :ok <- all_receipts(receipts),
-         :ok <- single_actuation(receipts) do
+         :ok <- single_actuation(receipts),
+         {:ok, binding} <- receipt_binding(receipts) do
       ordered = Enum.sort_by(receipts, &(&1.logical_clock || 0))
       latest = List.last(ordered)
       subject = Enum.find_value(ordered, & &1.semantic_subject)
@@ -106,6 +131,7 @@ defmodule AshA2A.Semantic.Attestation do
         receipt_set: Enum.map(ordered, &receipt_reference/1),
         receipt_set_digest: receipt_set_digest(ordered),
         observed_post_state: observed_post_state(latest),
+        receipt_binding: binding,
         evidence_class: weakest_evidence_class(ordered),
         attested_at: Keyword.get(opts, :attested_at, DateTime.utc_now()),
         basis_digest: basis_digest(latest),
@@ -127,7 +153,10 @@ defmodule AshA2A.Semantic.Attestation do
   edited to assert a semantic revision the receipts never carried and still
   verify.
 
-  A non-nil `:evidence_class` must also be an *earned* class:
+  A non-nil `:evidence_class` must be exactly the class value the receipts
+  carry (`:attestation_claims_unobserved_evidence` / `:evidence_class`
+  otherwise -- a chain earned for another subject does not attest these
+  receipts), and must also be an *earned* class:
   `AshA2A.Evidence.Class.verify_chain/1` runs on it, so a forged class -- the
   right struct module built by hand, or via `new/1` above rank 1, with no
   real promotion chain behind it -- refuses with that function's typed code
@@ -136,11 +165,18 @@ defmodule AshA2A.Semantic.Attestation do
   """
   @spec verify(t(), [Receipt.t()]) :: :ok | refusal()
   def verify(%__MODULE__{} = attestation, receipts) when is_list(receipts) do
+    result = verify_backed(attestation, receipts)
+    emit(:verify, result, receipts)
+    result
+  end
+
+  defp verify_backed(attestation, receipts) do
     with :ok <- all_receipts(receipts),
          {:ok, rebuilt} <- from_receipts(receipts),
          :ok <- same_receipt_set(attestation, rebuilt),
          :ok <- no_unbacked_claims(attestation, rebuilt),
          :ok <- unobserved_really_absent(attestation),
+         :ok <- evidence_class_backed(attestation, rebuilt),
          :ok <- earned_evidence_class(attestation) do
       :ok
     end
@@ -276,6 +312,22 @@ defmodule AshA2A.Semantic.Attestation do
     |> Actuation.digest()
   end
 
+  # RFC-SA2A-002 §72 (SA2A-ATTEST-009 survived before this): an earned chain
+  # is not enough -- the claimed class must be the very class value the
+  # receipts carry (same class, same chain link). A Merge chain genuinely
+  # earned for some other subject does not attest these receipts.
+  defp evidence_class_backed(%__MODULE__{evidence_class: nil}, _rebuilt), do: :ok
+
+  defp evidence_class_backed(%__MODULE__{evidence_class: claimed}, %__MODULE__{
+         evidence_class: observed
+       }) do
+    if Evidence.Class.value?(claimed) and Evidence.Class.value?(observed) and
+         Evidence.Class.module(claimed) == Evidence.Class.module(observed) and
+         claimed.chain_digest == observed.chain_digest,
+       do: :ok,
+       else: refuse(:attestation_claims_unobserved_evidence, :evidence_class)
+  end
+
   defp earned_evidence_class(%__MODULE__{evidence_class: nil}), do: :ok
 
   defp earned_evidence_class(%__MODULE__{evidence_class: class}),
@@ -287,6 +339,78 @@ defmodule AshA2A.Semantic.Attestation do
     |> Enum.map(& &1.evidence_class)
     |> Enum.filter(&Evidence.Class.value?/1)
     |> Enum.min_by(&Evidence.Class.rank/1, fn -> nil end)
+  end
+
+  # RFC-SA2A-002 §40/§72: every bound receipt must verify; the binding is
+  # claimed only when every receipt is bound (nil -> `:unobserved`).
+  defp receipt_binding(receipts) do
+    Enum.reduce_while(receipts, {:ok, []}, fn receipt, {:ok, acc} ->
+      case {Map.get(receipt, :binding), AshA2A.Receipt.Binding.verify(receipt)} do
+        {nil, _unbound} ->
+          {:cont, {:ok, [:unbound | acc]}}
+
+        {_bound, {:ok, report}} ->
+          {:cont, {:ok, [report | acc]}}
+
+        {_bound, {:error, %{code: code}}} ->
+          {:halt,
+           refuse(:attestation_receipt_binding_refused, %{
+             receipt_id: AshA2A.Identity.external(receipt.receipt_id),
+             code: code
+           })}
+      end
+    end)
+    |> case do
+      {:ok, reports} ->
+        reports = Enum.reverse(reports)
+
+        if reports != [] and Enum.all?(reports, &is_map/1),
+          do:
+            {:ok,
+             %{
+               keyed: Enum.all?(reports, & &1.keyed),
+               key_ids: reports |> Enum.map(& &1.key_id) |> Enum.uniq(),
+               digests: Enum.map(reports, & &1.digest)
+             }},
+          else: {:ok, nil}
+
+      error ->
+        error
+    end
+  end
+
+  defp emit(decision, result, receipts) do
+    {outcome, code, detail, attestation} =
+      case result do
+        {:ok, %__MODULE__{} = attestation} -> {:built, nil, nil, attestation}
+        :ok -> {:verified, nil, nil, nil}
+        {:error, %{code: code, detail: detail}} -> {:refused, code, detail, nil}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :attestation, decision],
+      %{system_time: System.system_time()},
+      %{
+        outcome: outcome,
+        code: code,
+        field: if(is_atom(detail) and not is_nil(detail), do: detail),
+        receipts: if(is_list(receipts), do: length(receipts)),
+        receipt_ids:
+          if(is_list(receipts),
+            do:
+              receipts
+              |> Enum.filter(&match?(%Receipt{}, &1))
+              |> Enum.map(&AshA2A.Identity.external(&1.receipt_id))
+          ),
+        receipt_binding:
+          attestation && if(attestation.receipt_binding, do: :claimed, else: :unclaimed),
+        binding_keyed:
+          attestation && attestation.receipt_binding && attestation.receipt_binding.keyed,
+        evidence_class:
+          attestation && attestation.evidence_class &&
+            Evidence.Class.label(attestation.evidence_class)
+      }
+    )
   end
 
   defp refuse(code, detail), do: {:error, %{code: code, detail: detail}}

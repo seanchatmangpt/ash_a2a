@@ -359,10 +359,22 @@ defmodule AshA2A.Evidence.Class do
       :promotion_without_new_evidence
   """
   @spec promote(t(), module(), map() | keyword()) :: {:ok, t()} | refusal()
-  def promote(current, target, new_basis \\ %{})
+  def promote(current, target, new_basis \\ %{}) do
+    result = do_promote(current, target, new_basis)
 
-  def promote(%from{} = current, target, new_basis)
-      when is_atom(target) and (is_map(new_basis) or is_list(new_basis)) do
+    # RFC-SA2A-002 §72 boundary decision (observational only).
+    emit(:promote, result, %{
+      from: class_label(current),
+      to: class_label(target),
+      prior_chain_digest: chain_of(current),
+      offered_evidence_digest: offered_digest(new_basis)
+    })
+
+    result
+  end
+
+  defp do_promote(%from{} = current, target, new_basis)
+       when is_atom(target) and (is_map(new_basis) or is_list(new_basis)) do
     cond do
       not class?(from) ->
         refuse(:not_an_evidence_class, "#{inspect(from)} is not an evidence class")
@@ -381,7 +393,7 @@ defmodule AshA2A.Evidence.Class do
     end
   end
 
-  def promote(_current, _target, _basis),
+  defp do_promote(_current, _target, _basis),
     do: refuse(:not_an_evidence_class, "promotion source is not an evidence class value")
 
   defp promote_verified(current, from, target, new_basis) do
@@ -428,7 +440,20 @@ defmodule AshA2A.Evidence.Class do
   that is checked on the way in.
   """
   @spec assert_at_least(t(), module()) :: :ok | refusal()
-  def assert_at_least(%from{} = value, required) when is_atom(required) do
+  def assert_at_least(value, required) when is_atom(required) do
+    result = do_assert_at_least(value, required)
+
+    emit(:assert, result, %{
+      from: class_label(value),
+      to: class_label(required),
+      prior_chain_digest: chain_of(value),
+      offered_evidence_digest: nil
+    })
+
+    result
+  end
+
+  defp do_assert_at_least(%from{} = value, required) do
     cond do
       not class?(from) or not class?(required) ->
         refuse(:not_an_evidence_class, "expected evidence classes")
@@ -445,6 +470,39 @@ defmodule AshA2A.Evidence.Class do
           "have #{from.label()} (#{rank(from)}), require #{required.label()} (#{rank(required)})"
         )
     end
+  end
+
+  defp class_label(%module{}), do: class_label(module)
+
+  defp class_label(module) when is_atom(module),
+    do: if(class?(module), do: module.label(), else: :not_an_evidence_class)
+
+  defp class_label(_other), do: :not_an_evidence_class
+
+  defp chain_of(%module{chain_digest: chain_digest}) when is_atom(module), do: chain_digest
+  defp chain_of(_other), do: nil
+
+  defp offered_digest(basis) when is_map(basis), do: digest(basis)
+
+  defp offered_digest(basis) when is_list(basis) do
+    if Enum.all?(basis, &match?({_, _}, &1)), do: digest(Map.new(basis))
+  end
+
+  defp offered_digest(_basis), do: nil
+
+  defp emit(decision, result, meta) do
+    {outcome, code, chain_digest} =
+      case result do
+        {:ok, value} -> {:promoted, nil, chain_of(value)}
+        :ok -> {:admitted, nil, meta.prior_chain_digest}
+        {:error, %{code: code}} -> {:refused, code, nil}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :evidence, decision],
+      %{system_time: System.system_time()},
+      Map.merge(meta, %{outcome: outcome, code: code, chain_digest: chain_digest})
+    )
   end
 
   defp via(from, target) do

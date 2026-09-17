@@ -31,6 +31,11 @@ defmodule AshA2A.Receipt.Replay do
      filling in a plausible one. S32 asks the receipt to *contain* enough
      identity; a receipt that does not, fails the check.
 
+  4. **Unbound or tampered identity refuses.** A receipt whose RFC-SA2A-002
+     §40 identity binding is absent or does not verify
+     (`AshA2A.Receipt.Binding.check/2`) has no standing to replay from, and
+     refuses with the binding's typed code.
+
   ## What the basis contains
 
   S32 names five things the receipt must be able to reconstruct:
@@ -116,7 +121,8 @@ defmodule AshA2A.Receipt.Replay do
   """
   @spec basis(Receipt.t()) :: {:ok, Basis.t()} | refusal()
   def basis(%Receipt{} = receipt) do
-    with :ok <- sufficient_identity(receipt) do
+    with :ok <- sufficient_identity(receipt),
+         {:ok, _binding} <- AshA2A.Receipt.Binding.check(receipt) do
       admission = %{
         consequence: receipt.consequence,
         outcome: receipt.status,
