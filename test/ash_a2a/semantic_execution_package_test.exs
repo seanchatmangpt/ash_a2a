@@ -2,27 +2,43 @@ defmodule AshA2A.Semantic.ExecutionPackageTest do
   use ExUnit.Case, async: true
 
   alias AshA2A.Planning.Candidate
-  alias AshA2A.Semantic.{ExecutionPackage, Ontology, PlanningIR, Source}
-  alias AshA2A.Semantic.IR
+
+  alias AshA2A.Semantic.{
+    Admission,
+    ExecutionPackage,
+    IR,
+    IrAdmissionSeal,
+    Ontology,
+    PlanningIR,
+    Source
+  }
 
   defp build_source(text \\ "The system shall greet the user.") do
     Source.new(text)
   end
 
+  # Real admission, not a hand-set `standing: :admitted`: `IR.from_map/2`
+  # builds a genuine `:candidate` IR and `Admission.admit/2` runs its full
+  # provenance/grounding/goal check chain for real, so the returned IR
+  # carries a real `AshA2A.Semantic.IrAdmissionSeal`-minted seal. See
+  # "new/6 fence rejections" below for the hand-built, unsealed counterpart
+  # this module's seal exists to refuse.
   defp build_admitted_ir(source) do
-    %IR{
-      source_id: source.id,
-      standing: :admitted,
-      authority: :none,
-      goals: [
+    payload = %{
+      "authority" => "none",
+      "goals" => [
         %{
           "id" => "goal-1",
           "kind" => "goal",
           "description" => "Greet the user",
-          "source_quote" => "The system shall greet the user."
+          "source_quote" => source.text
         }
       ]
     }
+
+    {:ok, candidate_ir} = IR.from_map(source.id, payload)
+    {:ok, ir} = Admission.admit(source, candidate_ir)
+    ir
   end
 
   defp build_ontology(ir) do
@@ -116,6 +132,54 @@ defmodule AshA2A.Semantic.ExecutionPackageTest do
       assert ExecutionPackage.new(source, ir, ontology, planning_ir, bad_candidate) ==
                {:error, %{code: :semantic_package_authority_ceiling_violated}}
     end
+
+    test "rejects a hand-built admitted ir carrying no admission seal" do
+      # This is the exact gap `AshA2A.Semantic.IrAdmissionSeal` closes: a
+      # struct literal claiming `standing: :admitted, authority: :none`
+      # without ever having run `AshA2A.Semantic.Admission.admit/2`. Before
+      # the seal existed, this was accepted by `ExecutionPackage.new/6`
+      # identically to a real admission.
+      {source, ir, ontology, planning_ir, candidate} = build_inputs()
+
+      forged_ir = %IR{
+        source_id: source.id,
+        standing: :admitted,
+        authority: :none,
+        goals: ir.goals
+      }
+
+      refute forged_ir.admission_seal
+      refute forged_ir.admission_receipt_id
+
+      assert ExecutionPackage.new(source, forged_ir, ontology, planning_ir, candidate) ==
+               {:error, %{code: :semantic_ir_unsealed, detail: %{source_id: source.id}}}
+    end
+
+    test "rejects a real admitted ir whose admission_seal has been tampered with" do
+      {source, ir, ontology, planning_ir, candidate} = build_inputs()
+      assert is_binary(ir.admission_seal)
+
+      tampered_ir = %{ir | admission_seal: "hmac-sha256:" <> String.duplicate("0", 64)}
+
+      assert ExecutionPackage.new(source, tampered_ir, ontology, planning_ir, candidate) ==
+               {:error, %{code: :semantic_ir_seal_invalid, detail: %{source_id: source.id}}}
+    end
+
+    test "rejects a real admitted ir whose content changed after sealing" do
+      {source, ir, ontology, planning_ir, candidate} = build_inputs()
+
+      [goal] = ir.goals
+      retitled_goal = %{goal | "description" => "Greet the user warmly"}
+      mutated_ir = %{ir | goals: [retitled_goal]}
+
+      assert ExecutionPackage.new(source, mutated_ir, ontology, planning_ir, candidate) ==
+               {:error, %{code: :semantic_ir_seal_invalid, detail: %{source_id: source.id}}}
+    end
+
+    test "IrAdmissionSeal.verify/1 accepts a real admitted ir directly" do
+      {_source, ir, _ontology, _planning_ir, _candidate} = build_inputs()
+      assert IrAdmissionSeal.verify(ir) == :ok
+    end
   end
 
   describe "new/6 opts threading" do
@@ -157,10 +221,18 @@ defmodule AshA2A.Semantic.ExecutionPackageTest do
       assert {:ok, package_a} = ExecutionPackage.new(source, ir, ontology, planning_ir, candidate)
 
       other_source = build_source("A completely different source statement.")
-      other_ir = %{ir | source_id: other_source.id}
+      other_ir = build_admitted_ir(other_source)
+      other_ontology = build_ontology(other_ir)
+      other_planning_ir = build_planning_ir(other_ir, other_ontology)
 
       assert {:ok, package_b} =
-               ExecutionPackage.new(other_source, other_ir, ontology, planning_ir, candidate)
+               ExecutionPackage.new(
+                 other_source,
+                 other_ir,
+                 other_ontology,
+                 other_planning_ir,
+                 candidate
+               )
 
       refute package_a.fingerprint == package_b.fingerprint
     end
