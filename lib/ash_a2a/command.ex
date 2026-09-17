@@ -77,6 +77,19 @@ defmodule AshA2A.Command do
     %{command | fingerprint: fingerprint(command)}
   end
 
+  @doc """
+  Stable command-identity digest keyed only on semantic command content.
+
+  Encoded with `[:deterministic]`: plain `:erlang.term_to_binary/1` writes
+  atom-keyed map entries in the VM's atom-table order, so the same logical
+  command (e.g. `input: %{effect_key: ...}` built with a different key
+  insertion order) digested on another node -- or a fresh replay process --
+  would otherwise fingerprint differently (RFC-SA2A-002 §41, CHI-REPLAY-001).
+  `ReceiptStore.claim/2` keys its replay/conflict decision on this value, so a
+  non-deterministic encoding here can either mask a genuine `:command_conflict`
+  or spuriously refuse a legitimate retry. Same fix already applied at
+  `AshA2A.Actuation.digest/1`.
+  """
   @spec fingerprint(t()) :: String.t()
   def fingerprint(%__MODULE__{} = command) do
     authority_token =
@@ -94,7 +107,7 @@ defmodule AshA2A.Command do
       authority_token,
       SemanticSubject.fingerprint_token(command.semantic_subject)
     }
-    |> :erlang.term_to_binary()
+    |> :erlang.term_to_binary([:deterministic])
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end
