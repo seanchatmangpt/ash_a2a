@@ -117,6 +117,17 @@ defmodule AshA2A.Authority.Broker.InMemory do
     :exit, _reason -> :error
   end
 
+  @impl AshA2A.Authority.Broker
+  @spec renew(Identity.t(), String.t(), DateTime.t() | nil, keyword()) ::
+          :ok | {:error, AshA2A.Authority.Broker.refusal()}
+  def renew(%Identity{kind: :principal} = subject, capability_id, new_expires_at, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+    GenServer.call(server(opts), {:renew, key, new_expires_at})
+  catch
+    :exit, _reason -> {:error, %{reason: :broker_unavailable}}
+  end
+
   @impl GenServer
   def handle_call({:issue, subject, capability_id, opts}, _from, state) do
     authority =
@@ -204,6 +215,22 @@ defmodule AshA2A.Authority.Broker.InMemory do
       end)
 
     {:reply, {:ok, grants}, state}
+  end
+
+  def handle_call({:renew, key, new_expires_at}, _from, state) do
+    # `renew/4`'s own contract: only a grant that is STANDING right now (not
+    # absent, not revoked, not already expired) may have its `expires_at`
+    # rewritten -- `grant_status/2` is the exact same read `granted?/3`
+    # already uses, so "renewable" and "currently granted" never diverge.
+    case grant_status(state, key) do
+      :standing ->
+        entry = Map.fetch!(state.issued, key)
+        updated = %{entry | expires_at: new_expires_at}
+        {:reply, :ok, %{state | issued: Map.put(state.issued, key, updated)}}
+
+      other ->
+        {:reply, {:error, %{reason: :grant_not_standing, status: other}}, state}
+    end
   end
 
   # A grant stands only if it was issued, has not been revoked, AND has not

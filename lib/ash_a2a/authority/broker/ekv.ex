@@ -264,6 +264,21 @@ defmodule AshA2A.Authority.Broker.Ekv do
     :exit, _reason -> :error
   end
 
+  @impl AshA2A.Authority.Broker
+  @spec renew(Identity.t(), String.t(), DateTime.t() | nil, keyword()) ::
+          :ok | {:error, AshA2A.Authority.Broker.refusal()}
+  def renew(%Identity{kind: :principal} = subject, capability_id, new_expires_at, opts \\ [])
+      when is_binary(capability_id) do
+    key = Identity.external(Identity.runtime(Authority.grant_token_id(subject, capability_id)))
+    mark_renewed(ekv_name(opts), key, capability_id, new_expires_at, 0)
+  rescue
+    # Same "stopped EKV instance raises" hazard `granted?/3` above already
+    # guards -- an unanswerable renewal is a refusal, never a silent no-op.
+    _exception -> {:error, %{reason: :broker_unavailable}}
+  catch
+    :exit, _reason -> {:error, %{reason: :broker_unavailable}}
+  end
+
   defp past?(nil), do: false
 
   defp past?(%DateTime{} = expires_at),
@@ -313,4 +328,47 @@ defmodule AshA2A.Authority.Broker.Ekv do
   end
 
   defp ekv_name(opts), do: Keyword.get(opts, :name, __MODULE__)
+
+  defp mark_renewed(_name, _key, _capability_id, _new_expires_at, attempt)
+       when attempt >= @max_cas_attempts do
+    {:error, %{reason: :renew_conflict}}
+  end
+
+  # Reuses the exact CAS-update-with-retry idiom `mark_revoked/4` above
+  # already uses for revocation: read the current versioned entry, rewrite
+  # only the field this call owns (`expires_at`, not `status`), and retry on
+  # a losing `if_vsn` race rather than clobbering a concurrent writer's
+  # result. Unlike `mark_revoked/4`, a MISSING or REVOKED entry is not
+  # written here at all -- `renew/4`'s own contract is that only a grant
+  # STANDING right now may be renewed; an absent or already-revoked grant is
+  # `issue/3`'s job to originate, never `renew/4`'s to paper over.
+  defp mark_renewed(name, key, capability_id, new_expires_at, attempt) do
+    case EKV.lookup(name, key) do
+      {%{status: :issued, capability_id: ^capability_id} = entry, vsn} ->
+        if past?(Map.get(entry, :expires_at)) do
+          {:error, %{reason: :grant_not_standing, status: :expired}}
+        else
+          case EKV.put(name, key, Map.put(entry, :expires_at, new_expires_at), if_vsn: vsn) do
+            {:ok, _vsn} ->
+              :ok
+
+            {:error, reason} when reason in [:conflict, :unconfirmed] ->
+              mark_renewed(name, key, capability_id, new_expires_at, attempt + 1)
+          end
+        end
+
+      {%{status: :revoked}, _vsn} ->
+        {:error, %{reason: :grant_not_standing, status: :revoked}}
+
+      {%{status: :issued}, _vsn} ->
+        # Issued, but for a DIFFERENT capability_id than this call names --
+        # same defence-in-depth re-check `granted?/3` already performs, so a
+        # renewal can never silently extend the wrong capability's grant even
+        # if key derivation were ever weakened.
+        {:error, %{reason: :grant_not_standing, status: :absent}}
+
+      nil ->
+        {:error, %{reason: :grant_not_standing, status: :absent}}
+    end
+  end
 end
