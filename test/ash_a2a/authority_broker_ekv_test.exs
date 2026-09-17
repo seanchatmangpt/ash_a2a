@@ -162,6 +162,91 @@ defmodule AshA2A.AuthorityBrokerEkvTest do
     end
   end
 
+  describe "list_grants/2" do
+    test "reports every standing grant for a subject, and none for another", %{
+      store_opts: store_opts
+    } do
+      subject = Identity.principal("list-grants-subject")
+      other = Identity.principal("list-grants-other-subject")
+
+      {:ok, read} = Ekv.issue(subject, "widgets:read", store_opts)
+      {:ok, write} = Ekv.issue(subject, "widgets:write", store_opts)
+      {:ok, _other_grant} = Ekv.issue(other, "widgets:read", store_opts)
+
+      assert {:ok, grants} = Ekv.list_grants(subject, store_opts)
+
+      assert MapSet.new(grants) ==
+               MapSet.new([
+                 %{capability_id: "widgets:read", expires_at: read.expires_at},
+                 %{capability_id: "widgets:write", expires_at: write.expires_at}
+               ])
+
+      assert {:ok, other_grants} = Ekv.list_grants(other, store_opts)
+      assert other_grants == [%{capability_id: "widgets:read", expires_at: nil}]
+    end
+
+    test "excludes a revoked grant and an expired grant, includes an unexpired one", %{
+      store_opts: store_opts
+    } do
+      subject = Identity.principal("list-grants-mixed-subject")
+
+      {:ok, revoked} = Ekv.issue(subject, "widgets:revoked", store_opts)
+      :ok = Ekv.revoke(revoked, store_opts)
+
+      {:ok, _expired} =
+        Ekv.issue(
+          subject,
+          "widgets:expired",
+          store_opts ++ [expires_at: DateTime.add(DateTime.utc_now(), -3600, :second)]
+        )
+
+      {:ok, standing} = Ekv.issue(subject, "widgets:standing", store_opts)
+
+      assert {:ok, grants} = Ekv.list_grants(subject, store_opts)
+      assert grants == [%{capability_id: "widgets:standing", expires_at: standing.expires_at}]
+    end
+
+    test "an unknown subject with no issued grants reports an empty list, not an error", %{
+      store_opts: store_opts
+    } do
+      subject = Identity.principal("list-grants-unknown-subject")
+
+      assert {:ok, []} = Ekv.list_grants(subject, store_opts)
+    end
+
+    test "a durable entry survives a real EKV process restart and is still enumerated" do
+      ekv_name =
+        :"authority_broker_ekv_list_grants_restart_test_#{System.unique_integer([:positive])}"
+
+      data_dir =
+        Path.join(
+          System.tmp_dir!(),
+          "ash_a2a_authority_broker_ekv_list_grants_restart_test_#{System.unique_integer([:positive])}"
+        )
+
+      on_exit(fn -> File.rm_rf!(data_dir) end)
+
+      ekv_opts = [name: ekv_name, data_dir: data_dir, cluster_size: 1]
+      store_opts = [name: ekv_name]
+      child_id = {EKV, ekv_name}
+
+      pid1 = start_supervised!({EKV, ekv_opts})
+
+      subject = Identity.principal("list-grants-restart-subject")
+      {:ok, standing} = Ekv.issue(subject, "widgets:restart-list", store_opts)
+
+      :ok = stop_supervised(child_id)
+      refute Process.alive?(pid1)
+
+      start_supervised!({EKV, ekv_opts})
+
+      assert {:ok, [%{capability_id: "widgets:restart-list", expires_at: expires_at}]} =
+               Ekv.list_grants(subject, store_opts)
+
+      assert expires_at == standing.expires_at
+    end
+  end
+
   describe "durability across a real EKV process restart" do
     test "a revocation survives stopping and restarting the real EKV process against the same data_dir" do
       ekv_name = :"authority_broker_ekv_restart_test_#{System.unique_integer([:positive])}"

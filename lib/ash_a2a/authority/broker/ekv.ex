@@ -77,10 +77,22 @@ defmodule AshA2A.Authority.Broker.Ekv do
     # cannot represent a time-bounded grant at all, so `granted?/3` below
     # could never enforce one and an hour-expired grant still authorized a
     # real `:external_do` actuation.
+    #
+    # `subject` is stored too, added for `list_grants/2`: the key itself is
+    # `Authority.grant_token_id/2`, a one-way SHA256 hash of
+    # `{subject.value, capability_id}` -- it cannot be reversed back into a
+    # subject to answer "every grant this principal holds" by inspecting
+    # keys alone. A durable entry written before this field existed simply
+    # has no `:subject` key and is invisible to `list_grants/2` (though
+    # `granted?/3`/`verify/2`, which key directly on `token_id`, are
+    # unaffected) -- the same forward-compatible-only trade-off
+    # `grant_expires_at/3`'s own `Map.get(entry, :expires_at)` already makes
+    # for entries written before that field existed.
     entry = %{
       status: :issued,
       capability_id: capability_id,
-      expires_at: authority.expires_at
+      expires_at: authority.expires_at,
+      subject: Identity.external(subject)
     }
 
     # Insert-if-absent CAS (`if_vsn: nil`), the same idiom
@@ -192,6 +204,61 @@ defmodule AshA2A.Authority.Broker.Ekv do
         :error
     end
   rescue
+    _exception -> :error
+  catch
+    :exit, _reason -> :error
+  end
+
+  @impl AshA2A.Authority.Broker
+  @spec list_grants(Identity.t(), keyword()) ::
+          {:ok, [AshA2A.Authority.Broker.grant_entry()]} | :error
+  def list_grants(%Identity{kind: :principal} = subject, opts \\ []) do
+    subject_external = Identity.external(subject)
+    name = ekv_name(opts)
+
+    # A real full scan of every durably-stored entry this broker itself
+    # wrote, not a targeted lookup: the key is a one-way hash the subject
+    # cannot be recovered from (see the comment on `issue/3`'s `entry`), so
+    # there is no key-prefix DERIVED FROM THE SUBJECT that would let this
+    # scan just the entries for one subject.
+    #
+    # `EKV.scan/2` genuinely cannot take an empty-string prefix -- verified
+    # directly against this dependency, not assumed: `EKV.Store.
+    # next_binary_prefix("")` pattern-matches `<<head::binary-size(-1),
+    # last_byte>> = ""` to compute the scan's exclusive upper bound, which
+    # raises a real `MatchError` for every caller, library-wide, not a
+    # defect specific to this broker. The real, always-true invariant this
+    # broker relies on instead: `AshA2A.Authority.new/3` wraps every
+    # `token_id` via `Identity.runtime/1` (`Keyword.get(opts, :token_id,
+    # Ash.UUIDv7.generate())` is the only source of the wrapped value, and
+    # it is always wrapped), so `Identity.external/1` on any authority this
+    # broker's own `issue/3` produced a key for is ALWAYS `"runtime:" <>
+    # something` -- verified empirically against this real EKV instance
+    # (fixed-random UUIDv7 token ids from a bare `issue/3` call and
+    # deterministic SHA256-hex token ids from `Authority.grant_token_id/2`
+    # both landed under the literal `"runtime:"` prefix). Scanning that
+    # fixed, non-empty prefix is therefore a real full scan of this
+    # broker's own key space, not a heuristic guess at one.
+    #
+    # Filters to `status: :issued` entries whose stored `:subject` matches
+    # AND have not expired -- the same fail-closed "standing" reading
+    # `granted?/3` uses, so a revoked or expired entry (or one written
+    # before `:subject` was recorded) is never reported.
+    grants =
+      name
+      |> EKV.scan("runtime:")
+      |> Enum.filter(fn {_key, entry, _vsn} ->
+        match?(%{status: :issued, subject: ^subject_external}, entry) and
+          not past?(Map.get(entry, :expires_at))
+      end)
+      |> Enum.map(fn {_key, entry, _vsn} ->
+        %{capability_id: entry.capability_id, expires_at: Map.get(entry, :expires_at)}
+      end)
+
+    {:ok, grants}
+  rescue
+    # Same rationale as `granted?/3`: a stopped EKV instance raises
+    # (`ArgumentError`) rather than exiting.
     _exception -> :error
   catch
     :exit, _reason -> :error

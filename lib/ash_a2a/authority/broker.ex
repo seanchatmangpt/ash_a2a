@@ -132,7 +132,36 @@ defmodule AshA2A.Authority.Broker do
               opts :: keyword()
             ) :: {:ok, DateTime.t() | nil} | :error
 
-  @optional_callbacks grant_expires_at: 3
+  @typedoc "One standing grant, as `list_grants/2` reports it."
+  @type grant_entry :: %{capability_id: String.t(), expires_at: DateTime.t() | nil}
+
+  @doc """
+  Lists every STANDING grant this broker currently holds for `subject` --
+  the enumeration `granted?/3` cannot provide, since `granted?/3` only
+  answers a single, caller-known `(subject, capability_id)` pair. Needed
+  for admin tooling, audit review, and proactive expiry sweeps, none of
+  which can enumerate every capability id in existence just to probe each
+  one with `granted?/3`.
+
+  Returns `{:ok, grants}` where each entry is a `grant_entry/0` -- MUST
+  include only grants that are currently standing (issued, not revoked,
+  not expired), the same fail-closed reading `granted?/3` uses, so a
+  caller cannot mistake a torn-down or expired grant for a real one. A
+  principal with zero standing grants is `{:ok, []}`, never `:error`.
+  `:error` means the question itself could not be answered (the broker's
+  storage is unavailable), matching `granted?/3`'s own `:unavailable`
+  lookup status.
+
+  OPTIONAL: a broker that does not implement it is treated as `:error` by
+  `AshA2A.Authority.Grant.list_grants/2` (the same
+  `Code.ensure_loaded?/1` + `function_exported?/3` idiom already used for
+  `grant_expires_at/3`), so no third-party implementation breaks by
+  gaining this callback.
+  """
+  @callback list_grants(subject :: Identity.t(), opts :: keyword()) ::
+              {:ok, [grant_entry()]} | :error
+
+  @optional_callbacks grant_expires_at: 3, list_grants: 2
 
   @typedoc "What a `granted?/3` lookup found (RFC-SA2A-002 §67 evidence)."
   @type lookup_status :: :standing | :absent | :expired | :revoked | :unavailable

@@ -289,6 +289,35 @@ defmodule AshA2A.Authority.Grant do
   end
 
   @doc """
+  Lists every standing grant the configured broker holds for `subject` --
+  the enumeration surface `granted?/3` cannot provide (see
+  `AshA2A.Authority.Broker.list_grants/2`), needed for admin tooling, audit
+  review, and proactive expiry sweeps rather than only a per-capability
+  `granted?/3` probe.
+
+  Returns `:error` when no broker is configured, or when the configured
+  broker does not implement the OPTIONAL `list_grants/2` callback -- the
+  same `Code.ensure_loaded?/1` + `function_exported?/3` idiom
+  `grant_expires_at/3` below already uses, so a third-party broker that
+  predates this callback degrades to a named `:error` instead of crashing.
+  """
+  @spec list_grants(Identity.t(), keyword()) ::
+          {:ok, [AshA2A.Authority.Broker.grant_entry()]} | :error
+  def list_grants(%Identity{kind: :principal} = subject, opts \\ []) do
+    case resolve_broker(opts) do
+      {:ok, module, broker_opts} ->
+        if Code.ensure_loaded?(module) and function_exported?(module, :list_grants, 2) do
+          module.list_grants(subject, broker_opts)
+        else
+          :error
+        end
+
+      :error ->
+        :error
+    end
+  end
+
+  @doc """
   The currently configured policy. Falls back to `#{inspect(@default_policy)}`
   and refuses an unrecognized value by falling back to it too (with a real
   warning) rather than admitting under a policy nobody defined.
