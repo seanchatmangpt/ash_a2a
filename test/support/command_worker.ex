@@ -31,7 +31,7 @@ defmodule AshA2A.Test.Support.CommandWorker do
 
   use Oban.Worker, queue: :commands, max_attempts: 3
 
-  alias AshA2A.{Authority, Command, CommandBus, Identity, SemanticSubject}
+  alias AshA2A.{Command, CommandBus, Delivery.ObanAuthority, SemanticSubject}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
@@ -76,26 +76,24 @@ defmodule AshA2A.Test.Support.CommandWorker do
     )
   end
 
-  # `AshA2A.Delivery.Oban.payload/1` carries only the authority's
-  # `token_id` external string (`authority_token(command.authority)`), not
-  # a full serialized `AshA2A.Authority` struct (source, issued_at,
+  # `AshA2A.Delivery.Oban.payload/1` carries the authority's `token_id`
+  # external string (`authority_token(command.authority)`) and its real
+  # `expires_at` (`authority_expires_at(command.authority)`), not a full
+  # serialized `AshA2A.Authority` struct (source, issued_at,
   # evidence/constraints are all real host-runtime state, not
   # wire-portable command content). What `AshA2A.CommandBus.admit/2`
   # actually checks via `AshA2A.Authority.admits?/2` is `subject ==
-  # command.principal_id` and `capability_id == command.capability_id` --
-  # both fully reconstructable from `args` -- so this real (not faked)
-  # `AshA2A.Authority` struct admits identically to the one the original
-  # caller held, without inventing unavailable evidence.
-  defp reconstruct_authority(%{"authority_token_id" => nil}, _principal_value), do: nil
-
-  defp reconstruct_authority(%{"authority_token_id" => external} = args, principal_value)
-       when is_binary(external) do
-    Authority.new(Identity.principal(principal_value), args["capability_id"],
-      token_id: raw_value(external)
-    )
+  # command.principal_id`, `capability_id == command.capability_id`, and
+  # `not expired?(authority)` -- all three fully reconstructable from
+  # `args` via `AshA2A.Delivery.ObanAuthority.reconstruct/2` -- so this real
+  # (not faked) `AshA2A.Authority` struct admits identically to the one the
+  # original caller held, without inventing unavailable evidence, AND
+  # honors the ORIGINAL time bound rather than always reconstructing an
+  # unbounded authority (see `AshA2A.Delivery.Oban`'s moduledoc for the
+  # enqueue-time-snapshot-vs-live-grant gap this closes).
+  defp reconstruct_authority(args, principal_value) do
+    ObanAuthority.reconstruct(args, principal_value)
   end
-
-  defp reconstruct_authority(_args, _principal_value), do: nil
 
   # `AshA2A.Delivery.Oban.payload/1` carries the same four fields
   # `AshA2A.Command.fingerprint/1` folds into its hash via
