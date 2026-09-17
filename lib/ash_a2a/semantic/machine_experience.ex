@@ -87,6 +87,14 @@ defmodule AshA2A.Semantic.MachineExperience do
   changelog module rather than inventing a second audit format, so a
   growth of the deterministic set is recorded the same way a change to
   the closed capability set already is.
+
+  ## Retraction is changelogged too
+
+  A compiled route is not permanent: `unregister/3` removes a class's
+  machinery (a court disproving it, or a dependency capability being
+  revoked, are both real reasons) and returns the same kind of
+  `Changelog` entry, so shrinkage of the deterministic set is exactly as
+  auditable as its growth.
   """
 
   alias AshA2A.CapabilityIndex.Changelog
@@ -230,6 +238,49 @@ defmodule AshA2A.Semantic.MachineExperience do
         fingerprint: machinery.fingerprint,
         added: machinery.class not in before_classes
       }
+    )
+
+    {:ok, next, Changelog.build(before_classes, classes(next))}
+  end
+
+  @doc """
+  Retracts a class's compiled machinery, returning the next store and a
+  real `AshA2A.CapabilityIndex.Changelog` entry over the class set.
+
+  RFC S65's audit discipline covers growth (`register/2`) but a compiled
+  route is not, on its own, permanent: a court can later prove the
+  compiled generator/rule/plan is wrong, or the capability it depends on
+  can be revoked. Without a supported retraction path the only way to
+  remove a class from `store.entries` would be reaching into the struct
+  directly, which bypasses this module's own telemetry/changelog
+  discipline entirely -- exactly the un-auditable mutation RFC S65 exists
+  to prevent. `unregister/3` closes that: after it returns, `resolve/3`
+  for `class` genuinely misses again (`:no_machinery`), so the semantic
+  class returns to UNKNOWN and must be re-resolved (and, if warranted,
+  re-compiled) rather than staying permanently and silently routed
+  through machinery a court has since disproved.
+
+  Unregistering a class nobody registered is not an error: it is a
+  no-op removal, and the changelog's `removed` list is simply empty (the
+  `removed` telemetry field distinguishes the two cases for the audit
+  trail). `opts[:reason]` is carried into the telemetry event only --
+  purely observational, never gating the removal itself, the same way
+  `register/2`'s telemetry never gates registration.
+  """
+  @spec unregister(Store.t(), String.t(), keyword()) :: {:ok, Store.t(), Changelog.t()}
+  def unregister(%Store{} = store, class, opts \\ []) when is_binary(class) do
+    before_classes = classes(store)
+    removed? = class in before_classes
+    next = %{store | entries: Map.delete(store.entries, class)}
+
+    # `[:ash_a2a, :semantic, :machine_experience, :unregister]`: a
+    # deliberate retraction decision for `class` -- the compiled route is
+    # being forced back to genuinely UNKNOWN. Observational only; the
+    # removal above already happened by the time this fires.
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :machine_experience, :unregister],
+      %{classes: length(classes(next))},
+      %{class: class, reason: Keyword.get(opts, :reason), removed: removed?}
     )
 
     {:ok, next, Changelog.build(before_classes, classes(next))}
