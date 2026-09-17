@@ -36,12 +36,18 @@ defmodule AshA2A.ReceiptStore.Ekv do
   :unclaimed_command}` instead of silently overwriting a newer entry.
   Cross-node claim races are covered the same way, since EKV's CAS is
   cluster-wide, not process-local.
+
+  An in-flight actuation (effect) claim is reclaimed the same way as the
+  primary command claim: see `AshA2A.ReceiptStore.ActuationClaimLease` for
+  why deferring to the claimant's own primary command claim's
+  `ClaimLease.abandoned?/2` verdict is a sound liveness guarantee one layer
+  down from the primary claim.
   """
 
   @behaviour AshA2A.ReceiptStore
 
   alias AshA2A.{Actuation, Command, Identity, Receipt}
-  alias AshA2A.ReceiptStore.ClaimLease
+  alias AshA2A.ReceiptStore.{ActuationClaimLease, ClaimLease}
 
   @doc """
   Declares this store genuinely durable.
@@ -241,14 +247,14 @@ defmodule AshA2A.ReceiptStore.Ekv do
 
     case EKV.get(name, key) do
       nil -> attempt_fresh_actuation_claim(name, key, actuation, command)
-      entry -> decide_actuation(entry, actuation)
+      entry -> decide_actuation(name, entry, actuation, command)
     end
   end
 
   defp attempt_fresh_actuation_claim(name, key, actuation, command) do
     entry = %{
       idempotency_key: Identity.external(actuation.idempotency_key),
-      command_id: Identity.external(command.command_id),
+      command_id: command.command_id,
       receipt: nil
     }
 
@@ -259,12 +265,17 @@ defmodule AshA2A.ReceiptStore.Ekv do
       {:error, reason} when reason in [:conflict, :unconfirmed] ->
         case EKV.get(name, key) do
           nil -> {:error, :actuation_in_flight}
-          winner -> decide_actuation(winner, actuation)
+          winner -> decide_actuation(name, winner, actuation, command)
         end
     end
   end
 
-  defp decide_actuation(%{idempotency_key: idempotency} = entry, %Actuation{} = actuation) do
+  defp decide_actuation(
+         name,
+         %{idempotency_key: idempotency} = entry,
+         %Actuation{} = actuation,
+         %Command{} = command
+       ) do
     cond do
       idempotency != Identity.external(actuation.idempotency_key) ->
         {:error, :actuation_conflict}
@@ -273,11 +284,59 @@ defmodule AshA2A.ReceiptStore.Ekv do
         {:duplicate, Receipt.replay(entry.receipt)}
 
       true ->
-        {:error, :actuation_in_flight}
+        reclaim_or_refuse_actuation(name, entry, actuation, command)
     end
   end
 
-  defp decide_actuation(_entry, _actuation), do: {:error, :actuation_conflict}
+  defp decide_actuation(_name, _entry, _actuation, _command), do: {:error, :actuation_conflict}
+
+  # Bounded actuation-claim lease + reconciliation (RFC-SA2A-001 S55, ARD S40's
+  # idempotency-store liveness requirement, one index below the primary
+  # command claim). `claim_actuation/3` always runs before this claimant's own
+  # receipt-anchor prepare, so if ITS primary command claim is abandoned per
+  # `ClaimLease.abandoned?/2`, DO never started for this effect either -- see
+  # `AshA2A.ReceiptStore.ActuationClaimLease` for the full argument and why a
+  # claim that DID reach the outbox is still never reclaimed.
+  defp reclaim_or_refuse_actuation(name, %{command_id: claimant_command_id}, actuation, command) do
+    primary_claim = EKV.get(name, Identity.external(claimant_command_id))
+
+    if ActuationClaimLease.abandoned?(primary_claim, claimant_command_id) do
+      reclaim_actuation(name, actuation, command)
+    else
+      {:error, :actuation_in_flight}
+    end
+  end
+
+  # Fresh CAS read-then-write immediately before the reclaiming write, the
+  # same discipline `reclaim/3` already uses for the primary claim: a
+  # claimant that committed between the abandonment decision and this write
+  # loses the CAS and is re-dispatched through `decide_actuation/4` against
+  # the real winning entry, never silently overwritten.
+  defp reclaim_actuation(name, %Actuation{} = actuation, %Command{} = command) do
+    key = actuation_key(actuation)
+
+    case EKV.lookup(name, key) do
+      {%{receipt: %Receipt{}} = current, _vsn} ->
+        {:duplicate, Receipt.replay(current.receipt)}
+
+      {current, vsn} when is_map(current) ->
+        fresh = %{current | command_id: command.command_id, receipt: nil}
+
+        case EKV.put(name, key, fresh, if_vsn: vsn) do
+          {:ok, _new_vsn} ->
+            :proceed
+
+          {:error, reason} when reason in [:conflict, :unconfirmed] ->
+            case EKV.get(name, key) do
+              nil -> {:error, :actuation_in_flight}
+              winner -> decide_actuation(name, winner, actuation, command)
+            end
+        end
+
+      nil ->
+        attempt_fresh_actuation_claim(name, key, actuation, command)
+    end
+  end
 
   @impl true
   def commit_actuation(%Actuation{} = actuation, %Receipt{} = receipt, opts \\ []) do
