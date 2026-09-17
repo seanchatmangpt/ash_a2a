@@ -69,6 +69,24 @@ defmodule AshA2A.SA2A.Conformance do
   either runtime. Two hosts agreeing that they both failed is not
   conformance. A failure has no canonical form and must not be given one.
 
+  ## Degenerate results are not values either
+
+  A call that *succeeds* can still answer nothing. Measured before this rule:
+  one content-addressed wasm artifact whose every GraphLaw export returns the
+  string `{}`, executed by the real in-BEAM host and the real V8 host, ran to
+  `{:ok, receipt}` with `"result" => "PASS"` -- both hosts agreed on `{}` for
+  every digest, every validation and every hook result. So every answer is
+  admitted by shape before it is comparable: digest calls (`graph_hash`,
+  `blake3_hex`, rollups, root manifest) must answer a 64-hex digest,
+  `validate_all/5` a `graph_hash` digest and a non-empty dialect list,
+  `run_hooks/2` a status and a verdict list. Anything else is recorded as
+  `:sa2a_degenerate_result` and the observation is not computed.
+
+  Engine-level degeneracy is fenced at the S41 PARSED hop: GraphLaw hashes
+  bytes that are not Turtle and then admits them, identically in every host,
+  so PARSED also requires the S12 primitive to parse the input
+  (`AshA2A.SA2A.StateMachine.evaluate/4`).
+
   ## Stability: why `graph_hash(base)` is called twice
 
   The conformance claim's premise is `O*_input,A = O*_input,B` -- an equality
@@ -99,8 +117,11 @@ defmodule AshA2A.SA2A.Conformance do
       every vector, and each runtime agreed with itself on repetition.
     * `same_admission` -- identical admission, identical typed refusal
       reason, and identical S41 state trace on every vector.
-    * `same_output_semantics` -- identical canonical hash of the projected
-      hook result on every vector.
+    * `same_output_semantics` -- identical engine hash of the projected hook
+      result on every vector, and identical canonical post-state identity
+      (`post_state_identity`: RFC S12 RDFC-1.0 digest of each host's own
+      projected result, computed by `AshA2A.Semantic.CanonicalGraph`, not by
+      the host under test).
     * `same_evidence_identity` -- identical per-vector evidence digest, and
       identical corpus `root_manifest_digest`.
 
@@ -143,23 +164,44 @@ defmodule AshA2A.SA2A.Conformance do
   `"wasm3"` that executes in the same in-BEAM Wasmtime engine is refused on
   what it executes, not on what it says.
 
+  Session terms are authored by the runtime module under test, so distinct
+  session identities are still not sufficient. Measured before the next
+  check: a `WasmexSession` wrapper whose session also named an idle decoy
+  process, and one running every call inside an `Agent` (a session naming no
+  engine at all), were each judged "PASS" against `WasmexSession`. The court
+  therefore issues one real `graphlaw_version` call per session under
+  execution tracing (`AshA2A.RuntimeIdentity.Execution.observe/2`) and
+  refuses with `:sa2a_identical_runtimes` (`basis: :executed_engine`) when the
+  engines those calls executed on intersect, or with
+  `:sa2a_runtime_identity_unobservable` when a call reached no observable
+  engine.
+
   Each decision emits `[:ash_a2a, :sa2a, :conformance, :runtime_identity]`
   (`outcome: :identical | :distinct | :unobservable`, `basis: :module |
-  :label | :observed_executable`) and every judged run emits
-  `[:ash_a2a, :sa2a, :conformance, :judged]`, so an independent observer can
-  establish that the refusal was attempted before any verdict.
+  :label | :observed_executable | :executed_engine`), every judged run emits
+  `[:ash_a2a, :sa2a, :conformance, :judged]` and one
+  `[:ash_a2a, :sa2a, :conformance, :vector_judged]` per vector (admission,
+  refusal class and post-state equivalence, derived from the judged
+  assertions), and `replay/2` emits `[:ash_a2a, :sa2a, :conformance,
+  :replayed]`, so an independent observer can establish that each decision
+  was reached before any verdict.
   """
 
   @doc false
   def __sa2a_refusal_codes__,
     do: %{
       sa2a_identical_runtimes: :refused_identity,
-      sa2a_runtime_identity_unobservable: :refused_identity
+      sa2a_runtime_identity_unobservable: :refused_identity,
+      sa2a_replay_subject_mismatch: :refused_identity,
+      sa2a_replay_prior_malformed: :refused_structure,
+      sa2a_degenerate_result: :refused_structure
     }
 
   alias AshA2A.GraphLaw.Runtime
   alias AshA2A.RuntimeIdentity
+  alias AshA2A.RuntimeIdentity.Execution
   alias AshA2A.SA2A.{ResultProjection, StateMachine, Vector}
+  alias AshA2A.Semantic.CanonicalGraph
 
   @profile "SA2A-STRICT-v26.9.16"
   @assertions [
@@ -212,6 +254,150 @@ defmodule AshA2A.SA2A.Conformance do
         end)
       end)
     end
+  end
+
+  @replayed_event [:ash_a2a, :sa2a, :conformance, :replayed]
+
+  @doc "Telemetry event emitted by every `replay/2` decision."
+  @spec replayed_event() :: [atom()]
+  def replayed_event, do: @replayed_event
+
+  # Semantic identities a replay compares (RFC-SA2A-002 §125). Latency,
+  # memory, observed host/executable identities and free-text details are
+  # non-semantic metadata: they MAY differ between two runs of identical
+  # admitted inputs and are deliberately not compared.
+  @semantic_top ~w(profile graphlaw_version wasm_digest wasm_digest_algorithm root_manifest_digest result corpus)
+  @semantic_runtime ~w(host engine runtime_module wasm_digest graphlaw_version root_manifest_digest
+                       observations_complete input_graph_hash admission admission_digest
+                       output_graph_hash evidence_hash)
+  @semantic_vector ~w(vector vector_digest computed input_graph_hash input_graph_hash_repeat
+                      validation_digest admission refusal_reason state_reached state_trace
+                      output_graph_hash post_state_identity evidence_hash)
+
+  @doc """
+  Determinism check (RFC-SA2A-002 §125): re-executes the court with `opts`
+  against the runtimes a durable `prior` receipt names, and compares the
+  semantic identities of the two receipts -- per-vector admission, typed
+  refusal, S41 trace, input/output/evidence identities, rollups and assertion
+  outcomes -- never raw pretty-printed output or non-semantic metadata.
+
+  `prior` is a receipt as read back from disk (string keys). Returns
+  `{:ok, %{outcome: :agreed, receipt: new}}`, `{:error, %{outcome: :diverged,
+  divergences: [path], receipt: new}}`, or `{:error, reason}` when the replay
+  is not comparable (malformed prior, different runtimes, a run that could
+  not start). Every decision emits `replayed_event/0`.
+  """
+  @spec replay(map(), keyword()) :: {:ok, map()} | {:error, map()}
+  def replay(prior, opts \\ []) when is_map(prior) do
+    runtime_a = Keyword.get(opts, :runtime_a, AshA2A.GraphLaw.WasmexSession)
+    runtime_b = Keyword.get(opts, :runtime_b, AshA2A.GraphLaw.RuntimeB)
+    prior = prior |> JSON.encode!() |> JSON.decode!()
+
+    cond do
+      not match?(
+        %{"runtime_a" => %{"runtime_module" => _}, "runtime_b" => %{"runtime_module" => _}},
+        prior
+      ) ->
+        emit_replay(:not_comparable, runtime_a, runtime_b, %{code: :sa2a_replay_prior_malformed})
+
+        {:error,
+         %{
+           code: :sa2a_replay_prior_malformed,
+           message: "the prior receipt names no runtime modules; there is nothing to replay"
+         }}
+
+      prior["runtime_a"]["runtime_module"] != inspect(runtime_a) or
+          prior["runtime_b"]["runtime_module"] != inspect(runtime_b) ->
+        emit_replay(:not_comparable, runtime_a, runtime_b, %{code: :sa2a_replay_subject_mismatch})
+
+        {:error,
+         %{
+           code: :sa2a_replay_subject_mismatch,
+           prior: [prior["runtime_a"]["runtime_module"], prior["runtime_b"]["runtime_module"]],
+           replay: [inspect(runtime_a), inspect(runtime_b)],
+           message: "a replay against different runtimes is not a determinism check"
+         }}
+
+      true ->
+        case run(opts) do
+          {_tag, %{"profile" => _} = receipt} ->
+            divergences =
+              diff(semantic(prior), semantic(receipt |> JSON.encode!() |> JSON.decode!()), [])
+
+            outcome = if divergences == [], do: :agreed, else: :diverged
+
+            emit_replay(outcome, runtime_a, runtime_b, %{
+              divergence_count: length(divergences),
+              divergences: divergences |> Enum.take(20) |> Enum.join(","),
+              prior_result: prior["result"],
+              result: receipt["result"]
+            })
+
+            if outcome == :agreed,
+              do: {:ok, %{outcome: :agreed, receipt: receipt}},
+              else: {:error, %{outcome: :diverged, divergences: divergences, receipt: receipt}}
+
+          {:error, reason} ->
+            emit_replay(:not_comparable, runtime_a, runtime_b, %{code: reason[:code]})
+            {:error, Map.put(reason, :replay, :not_comparable)}
+        end
+    end
+  end
+
+  defp semantic(receipt) do
+    receipt
+    |> Map.take(@semantic_top)
+    |> Map.put(
+      "assertions",
+      Map.new(receipt["assertions"] || %{}, fn {name, a} ->
+        {name, Map.take(a, ["computed", "value"])}
+      end)
+    )
+    |> Map.merge(
+      Map.new(["runtime_a", "runtime_b"], fn side ->
+        section = receipt[side] || %{}
+
+        {side,
+         section
+         |> Map.take(@semantic_runtime)
+         |> Map.put(
+           "vectors",
+           Enum.map(section["vectors"] || [], &Map.take(&1, @semantic_vector))
+         )}
+      end)
+    )
+  end
+
+  defp diff(same, same, _path), do: []
+
+  defp diff(%{} = a, %{} = b, path) do
+    (Map.keys(a) ++ Map.keys(b))
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.flat_map(&diff(Map.get(a, &1), Map.get(b, &1), path ++ [&1]))
+  end
+
+  defp diff(a, b, path) when is_list(a) and is_list(b) and length(a) == length(b) do
+    a
+    |> Enum.zip(b)
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {{x, y}, i} ->
+      label = if is_map(x) and is_binary(x["vector"]), do: x["vector"], else: Integer.to_string(i)
+      diff(x, y, path ++ [label])
+    end)
+  end
+
+  defp diff(_a, _b, path), do: [Enum.join(path, ".")]
+
+  defp emit_replay(outcome, runtime_a, runtime_b, extra) do
+    :telemetry.execute(
+      @replayed_event,
+      %{},
+      Map.merge(
+        %{outcome: outcome, runtime_a: inspect(runtime_a), runtime_b: inspect(runtime_b)},
+        extra
+      )
+    )
   end
 
   defp with_open(mod, opts, fun) do
@@ -310,12 +496,7 @@ defmodule AshA2A.SA2A.Conformance do
          }}
 
       {{:ok, identity_a}, {:ok, identity_b}} ->
-        emit_identity(:distinct, :observed_executable, mod_a, mod_b, %{
-          observed_a: RuntimeIdentity.digest(identity_a),
-          observed_b: RuntimeIdentity.digest(identity_b)
-        })
-
-        {:ok, identity_a, identity_b}
+        refuse_same_engine(mod_a, session_a, identity_a, mod_b, session_b, identity_b)
 
       {observed_a, observed_b} ->
         emit_identity(:unobservable, :observed_executable, mod_a, mod_b)
@@ -329,6 +510,71 @@ defmodule AshA2A.SA2A.Conformance do
            observed_b: inspect(observed_b),
            message:
              "a runtime's executing identity could not be observed, so heterogeneity " <>
+               "cannot be established (RFC-SA2A-002 S126)."
+         }}
+    end
+  end
+
+  # The session term is authored by the runtime module under test, so distinct
+  # session identities are necessary but not sufficient. Measured before this
+  # check: a WasmexSession wrapper whose session also named an idle decoy
+  # process, and one that ran every call inside an Agent (its session naming
+  # no engine at all), were each judged `{:ok, receipt}` "PASS" against
+  # WasmexSession itself. The engine each session's real call executed on
+  # decides (RFC-SA2A-002 S126): intersecting engine sets are one runtime.
+  defp refuse_same_engine(mod_a, session_a, identity_a, mod_b, session_b, identity_b) do
+    observed = %{
+      observed_a: RuntimeIdentity.digest(identity_a),
+      observed_b: RuntimeIdentity.digest(identity_b)
+    }
+
+    executed_a = Execution.observe(fn -> mod_a.call(session_a, :graphlaw_version, []) end)
+    executed_b = Execution.observe(fn -> mod_b.call(session_b, :graphlaw_version, []) end)
+
+    case {executed_a, executed_b} do
+      {{:ok, a}, {:ok, b}} ->
+        extra = Map.merge(observed, %{executed_a: a.digest, executed_b: b.digest})
+
+        if Execution.disjoint?(a.engines, b.engines) do
+          emit_identity(:distinct, :observed_executable, mod_a, mod_b, extra)
+
+          {:ok, %{session: identity_a, executed: a.engines},
+           %{session: identity_b, executed: b.engines}}
+        else
+          emit_identity(:identical, :executed_engine, mod_a, mod_b, extra)
+          shared = Enum.filter(a.engines, &(&1 in b.engines))
+
+          {:error,
+           %{
+             code: :sa2a_identical_runtimes,
+             same_module: false,
+             basis: :executed_engine,
+             runtime_a: inspect(mod_a),
+             runtime_b: inspect(mod_b),
+             identity: inspect(Runtime.identity(mod_a)),
+             identity_b: inspect(Runtime.identity(mod_b)),
+             observed_identity: identity_b,
+             executed_identity: shared,
+             message:
+               "the two runtimes present different labels and session resources but their " <>
+                 "calls execute on the same engine (#{String.slice(a.digest, 0, 12)}). Running " <>
+                 "one runtime twice cannot establish cross-runtime conformance (RFC-SA2A-002 S126)."
+           }}
+        end
+
+      _ ->
+        emit_identity(:unobservable, :executed_engine, mod_a, mod_b, observed)
+
+        {:error,
+         %{
+           code: :sa2a_runtime_identity_unobservable,
+           basis: :executed_engine,
+           runtime_a: inspect(mod_a),
+           runtime_b: inspect(mod_b),
+           executed_a: inspect(executed_a),
+           executed_b: inspect(executed_b),
+           message:
+             "the engine a runtime's call executed on could not be observed, so heterogeneity " <>
                "cannot be established (RFC-SA2A-002 S126)."
          }}
     end
@@ -360,24 +606,38 @@ defmodule AshA2A.SA2A.Conformance do
 
   # -- observation ----------------------------------------------------------
 
-  defp observe(mod, %{session: session, wasm_digest: wasm_digest}, observed_identity, vectors) do
+  defp observe(mod, %{session: session, wasm_digest: wasm_digest}, identity, vectors) do
     root_manifest = Vector.root_manifest(vectors)
 
+    started = System.monotonic_time(:microsecond)
+
     with {:ok, version} <- mod.call(session, :graphlaw_version, []),
-         {:ok, root_digest} <- mod.call(session, :blake3_hex, [root_manifest]) do
-      vector_results = Enum.map(vectors, &observe_vector(mod, session, &1, version))
+         {:ok, root_raw} <- mod.call(session, :blake3_hex, [root_manifest]) do
+      # A root digest that is not a digest is not computed (nil), never a
+      # value two degenerate hosts could agree on.
+      root_digest = value(admit_digest({:ok, root_raw}, :root_manifest))
+
+      vector_results =
+        Enum.map(vectors, fn vector ->
+          vector_started = System.monotonic_time(:microsecond)
+          observation = observe_vector(mod, session, vector, version)
+          Map.put(observation, :latency_us, System.monotonic_time(:microsecond) - vector_started)
+        end)
 
       {:ok,
        %{
          runtime: mod,
          host: mod.host_id(),
          engine: engine_of(mod, session),
-         observed_identity: observed_identity,
+         observed_identity: identity.session,
+         executed_identity: identity.executed,
          wasm_digest: wasm_digest,
          digest_algorithm: Runtime.digest_algorithm(),
          graphlaw_version: version,
          root_manifest_digest: root_digest,
-         vectors: vector_results
+         vectors: vector_results,
+         observe_us: System.monotonic_time(:microsecond) - started,
+         engine_memory: engine_memory(mod, session)
        }
        |> with_rollups(mod, session)}
     else
@@ -396,16 +656,18 @@ defmodule AshA2A.SA2A.Conformance do
         vector.shape_map
       ])
 
-    input_graph_hash = call(mod, session, :graph_hash, [vector.base])
+    input_graph_hash = digest_call(mod, session, :graph_hash, [vector.base], :graph_hash_input)
     hooks_raw = call(mod, session, :run_hooks, [vector.base, vector.event])
 
     # Decoded, not raw: GraphLaw answers `{"error": ...}` JSON instead of
     # raising, so a transport-level `{:ok, body}` can still carry an engine
-    # failure. Both count as failures here.
-    validation = decode(validation_raw)
-    hooks = decode(hooks_raw)
+    # failure. Both count as failures here. A payload that decodes but lacks
+    # the shape every real GraphLaw answer has is a degenerate result, and is
+    # not computed either (see "Degenerate results" in the module doc).
+    validation = validation_raw |> decode() |> admit_validation()
+    hooks = hooks_raw |> decode() |> admit_hooks()
 
-    state = StateMachine.evaluate(value(input_graph_hash), validation, hooks)
+    state = StateMachine.evaluate(value(input_graph_hash), validation, hooks, base: vector.base)
 
     # A failed `run_hooks/2` has no canonical form. The projection call is
     # SKIPPED rather than issued over a substitute graph -- projecting the
@@ -414,9 +676,39 @@ defmodule AshA2A.SA2A.Conformance do
     output_graph_hash =
       case hooks do
         {:ok, decoded} ->
-          call(mod, session, :graph_hash, [
-            ResultProjection.hook_result_turtle(vector.id, decoded)
-          ])
+          digest_call(
+            mod,
+            session,
+            :graph_hash,
+            [ResultProjection.hook_result_turtle(vector.id, decoded)],
+            :graph_hash_output
+          )
+
+        {:error, reason} ->
+          not_computed(:run_hooks, reason)
+      end
+
+    # The canonical post-state identity (RFC-SA2A-001 S12, RFC-SA2A-002 S76),
+    # computed by the S12 primitive from this host's own decoded result --
+    # not by the host under test, whose engine digest is lenient about
+    # unparseable input and is not RDFC-1.0.
+    post_state_identity =
+      case hooks do
+        {:ok, decoded} ->
+          case CanonicalGraph.canonical_digest(
+                 ResultProjection.hook_result_turtle(vector.id, decoded)
+               ) do
+            {:ok, digest} ->
+              {:ok, digest}
+
+            {:error, reason} ->
+              {:error,
+               %{
+                 code: :sa2a_degenerate_result,
+                 step: :post_state_identity,
+                 cause: CanonicalGraph.describe(reason)
+               }}
+          end
 
         {:error, reason} ->
           not_computed(:run_hooks, reason)
@@ -428,7 +720,13 @@ defmodule AshA2A.SA2A.Conformance do
     validation_digest =
       case validation do
         {:ok, decoded} ->
-          call(mod, session, :blake3_hex, [ResultProjection.validation_summary(decoded)])
+          digest_call(
+            mod,
+            session,
+            :blake3_hex,
+            [ResultProjection.validation_summary(decoded)],
+            :blake3_validation
+          )
 
         {:error, reason} ->
           not_computed(:validate_all, reason)
@@ -437,7 +735,8 @@ defmodule AshA2A.SA2A.Conformance do
     # Repeat of the third call. See the "Stability" section of the module
     # doc: without it, `same_input_identity` can report agreement about a
     # quantity that is not a function of the graph.
-    input_graph_hash_repeat = call(mod, session, :graph_hash, [vector.base])
+    input_graph_hash_repeat =
+      digest_call(mod, session, :graph_hash, [vector.base], :graph_hash_input_repeat)
 
     # The evidence package is a fixed-order rendering of the four quantities
     # above. If any of them is absent the package would render an empty field
@@ -446,14 +745,20 @@ defmodule AshA2A.SA2A.Conformance do
     evidence_hash =
       case {input_graph_hash, validation_digest, output_graph_hash} do
         {{:ok, input}, {:ok, validation_hash}, {:ok, output}} ->
-          call(mod, session, :blake3_hex, [
-            evidence_package(vector, version, %{
-              input_graph_hash: input,
-              state: state,
-              validation_digest: validation_hash,
-              output_graph_hash: output
-            })
-          ])
+          digest_call(
+            mod,
+            session,
+            :blake3_hex,
+            [
+              evidence_package(vector, version, %{
+                input_graph_hash: input,
+                state: state,
+                validation_digest: validation_hash,
+                output_graph_hash: output
+              })
+            ],
+            :blake3_evidence
+          )
 
         _ ->
           not_computed(:evidence_package, %{
@@ -469,6 +774,7 @@ defmodule AshA2A.SA2A.Conformance do
           error_of(input_graph_hash, :graph_hash_input),
           error_of(hooks, :run_hooks),
           error_of(output_graph_hash, :graph_hash_output),
+          error_of(post_state_identity, :post_state_identity),
           error_of(validation_digest, :blake3_validation),
           error_of(evidence_hash, :blake3_evidence),
           error_of(input_graph_hash_repeat, :graph_hash_input_repeat)
@@ -491,10 +797,61 @@ defmodule AshA2A.SA2A.Conformance do
       state_reached: state.reached |> Atom.to_string() |> String.upcase(),
       state_trace: state.trace,
       output_graph_hash: value(output_graph_hash),
+      post_state_identity: value(post_state_identity),
       evidence_hash: value(evidence_hash),
       errors: errors
     }
   end
+
+  # A call whose answer must be a digest. GraphLaw's digest entry points
+  # answer a 64-hex string; any other `{:ok, value}` is a degenerate result
+  # and is not computed.
+  defp digest_call(mod, session, fun, args, step),
+    do: mod |> call(session, fun, args) |> admit_digest(step)
+
+  defp admit_digest({:ok, value}, step) do
+    if hex64?(value), do: {:ok, value}, else: degenerate(step, value, "a 64-hex digest")
+  end
+
+  defp admit_digest(error, _step), do: error
+
+  defp admit_validation({:ok, %{"graph_hash" => hash, "dialects" => [_ | _] = dialects} = v}) do
+    if hex64?(hash) and Enum.all?(dialects, &dialect_shape?/1),
+      do: {:ok, v},
+      else: degenerate(:validate_all, v, "a graph_hash digest and a dialect list")
+  end
+
+  defp admit_validation({:ok, other}),
+    do: degenerate(:validate_all, other, "a graph_hash digest and a dialect list")
+
+  defp admit_validation(error), do: error
+
+  defp admit_hooks({:ok, %{"status" => status, "verdicts" => verdicts} = hooks})
+       when is_binary(status) and status != "" and is_list(verdicts),
+       do: {:ok, hooks}
+
+  defp admit_hooks({:ok, other}), do: degenerate(:run_hooks, other, "a status and a verdict list")
+  defp admit_hooks(error), do: error
+
+  defp dialect_shape?(%{"dialect" => dialect, "status" => status}),
+    do: is_binary(dialect) and dialect != "" and is_binary(status) and status != ""
+
+  defp dialect_shape?(_), do: false
+
+  defp degenerate(step, value, expected) do
+    {:error,
+     %{
+       code: :sa2a_degenerate_result,
+       step: step,
+       expected: expected,
+       got: value |> inspect(limit: 5, printable_limit: 80)
+     }}
+  end
+
+  defp hex64?(value) when is_binary(value),
+    do: byte_size(value) == 64 and String.match?(value, ~r/\A[0-9a-f]{64}\z/)
+
+  defp hex64?(_), do: false
 
   # A call that was deliberately not issued, because issuing it would have
   # required inventing an input the engine never produced.
@@ -541,7 +898,7 @@ defmodule AshA2A.SA2A.Conformance do
           observation.vectors
           |> Enum.map_join("", fn v -> "#{v.vector}=#{Map.get(v, field)}\n" end)
 
-        value(call(mod, session, :blake3_hex, [payload]))
+        value(digest_call(mod, session, :blake3_hex, [payload], :rollup))
       end
     end
 
@@ -560,8 +917,24 @@ defmodule AshA2A.SA2A.Conformance do
       evidence_hash: rollup.(:evidence_hash),
       admission: if(complete? and all_admitted?, do: "ADMITTED", else: "REFUSED"),
       admission_digest:
-        if(complete?, do: value(call(mod, session, :blake3_hex, [admission_payload])))
+        if(complete?,
+          do: value(digest_call(mod, session, :blake3_hex, [admission_payload], :rollup))
+        )
     })
+  end
+
+  # Wasm linear memory as the engine itself reports it, where the runtime
+  # module exposes that reading (RFC-SA2A-002 §91 memory per host). Never
+  # estimated: a runtime without the reading reports `nil`.
+  defp engine_memory(mod, session) do
+    if function_exported?(mod, :memory_bytes, 1) do
+      case mod.memory_bytes(session) do
+        bytes when is_integer(bytes) -> %{"wasm_linear_memory_bytes" => bytes}
+        _ -> nil
+      end
+    end
+  rescue
+    _ -> nil
   end
 
   defp engine_of(AshA2A.GraphLaw.RuntimeB = mod, session),
@@ -576,7 +949,7 @@ defmodule AshA2A.SA2A.Conformance do
       same_wasm: same_wasm(a, b),
       same_input_identity: same_input_identity(a, b),
       same_admission: same_admission(a, b),
-      same_output_semantics: per_vector(a, b, :output_graph_hash),
+      same_output_semantics: same_output(a, b),
       same_evidence_identity: same_evidence(a, b)
     }
 
@@ -591,14 +964,109 @@ defmodule AshA2A.SA2A.Conformance do
 
     receipt = receipt(a, b, vectors, assertions, passed?)
 
-    :telemetry.execute(@judged_event, %{vector_count: length(vectors)}, %{
-      result: receipt["result"],
-      runtime_a: inspect(a.runtime),
-      runtime_b: inspect(b.runtime)
-    })
+    emit_vectors(a, b, assertions)
+
+    :telemetry.execute(
+      @judged_event,
+      %{vector_count: length(vectors), observe_us_a: a.observe_us, observe_us_b: b.observe_us},
+      Map.merge(
+        %{
+          result: receipt["result"],
+          runtime_a: inspect(a.runtime),
+          runtime_b: inspect(b.runtime),
+          wasm_digest: a.wasm_digest,
+          wasm_digest_b: b.wasm_digest
+        },
+        Map.new(@assertions, fn name ->
+          {name, assertion_outcome(Map.fetch!(assertions, name))}
+        end)
+      )
+    )
 
     if passed?, do: {:ok, receipt}, else: {:error, receipt}
   end
+
+  @vector_event [:ash_a2a, :sa2a, :conformance, :vector_judged]
+
+  @doc "Telemetry event emitted once per judged vector (RFC-SA2A-002 §76, §91)."
+  @spec vector_event() :: [atom()]
+  def vector_event, do: @vector_event
+
+  defp assertion_outcome(%{computed: true, value: true}), do: "true"
+  defp assertion_outcome(%{computed: true}), do: "false"
+  defp assertion_outcome(_), do: "not_computed"
+
+  # One decision record per vector, derived from the very assertion results
+  # the court judged with (never recomputed here), so an independent observer
+  # can ask per-fixture questions (§76: Admission_A = Admission_B,
+  # CanonicalPostState_A = CanonicalPostState_B, equivalent refusal classes).
+  defp emit_vectors(a, b, assertions) do
+    incomplete = MapSet.new(incomplete(a, b), & &1["vector"])
+
+    diverged = fn name ->
+      assertions
+      |> Map.fetch!(name)
+      |> Map.get(:divergences, [])
+      |> Enum.map(& &1["vector"])
+      |> Enum.reject(&is_nil/1)
+      |> MapSet.new()
+    end
+
+    judged? = fn name -> Map.fetch!(assertions, name).computed == true end
+
+    admission_diverged = diverged.(:same_admission)
+    input_diverged = diverged.(:same_input_identity)
+    output_diverged = diverged.(:same_output_semantics)
+
+    for {va, vb} <- Enum.zip(a.vectors, b.vectors) do
+      id = va.vector
+      computed = va.computed and vb.computed and not MapSet.member?(incomplete, id)
+      class_a = refusal_class(va)
+      class_b = refusal_class(vb)
+
+      :telemetry.execute(
+        @vector_event,
+        %{latency_us_a: va.latency_us, latency_us_b: vb.latency_us},
+        %{
+          vector: id,
+          vector_digest: va.vector_digest,
+          runtime_a: inspect(a.runtime),
+          runtime_b: inspect(b.runtime),
+          wasm_digest: a.wasm_digest,
+          computed: computed,
+          admission_a: va.admission,
+          admission_b: vb.admission,
+          refusal_class_a: class_a,
+          refusal_class_b: class_b,
+          admission_equal:
+            computed and judged?.(:same_admission) and not MapSet.member?(admission_diverged, id),
+          refusal_equal: computed and va.admission == vb.admission and class_a == class_b,
+          input_identity_equal:
+            computed and judged?.(:same_input_identity) and
+              not MapSet.member?(input_diverged, id),
+          post_state_equal:
+            computed and judged?.(:same_output_semantics) and
+              not MapSet.member?(output_diverged, id),
+          post_state_a: va.post_state_identity,
+          post_state_b: vb.post_state_identity,
+          degenerate: Enum.any?(va.errors ++ vb.errors, &degenerate_error?/1)
+        }
+      )
+    end
+  end
+
+  defp degenerate_error?(%{reason: %{code: :sa2a_degenerate_result}}), do: true
+  defp degenerate_error?(_), do: false
+
+  # The S41 hop at which a vector was refused ("NONE" when admitted): the
+  # refusal class two hosts must agree on (§76), coarser than the full typed
+  # reason `same_admission` compares.
+  defp refusal_class(%{admission: "ADMITTED"}), do: "NONE"
+
+  defp refusal_class(%{refusal_reason: reason}) when is_binary(reason),
+    do: reason |> String.split(":", parts: 2) |> hd()
+
+  defp refusal_class(_), do: "UNKNOWN"
 
   defp same_wasm(a, b) do
     cond do
@@ -618,6 +1086,16 @@ defmodule AshA2A.SA2A.Conformance do
       true ->
         passed()
     end
+  end
+
+  # Canonical post-state (RFC-SA2A-002 S76): the engine's own output digest
+  # AND the S12 canonical identity of each host's decoded result must agree.
+  defp same_output(a, b) do
+    engine = per_vector(a, b, :output_graph_hash)
+
+    if engine.computed and engine.value,
+      do: per_vector(a, b, :post_state_identity),
+      else: engine
   end
 
   # Cross-runtime equality is necessary but not sufficient: an input identity
@@ -856,7 +1334,10 @@ defmodule AshA2A.SA2A.Conformance do
       "engine" => observation.engine,
       "runtime_module" => inspect(observation.runtime),
       "observed_identity" => observation.observed_identity,
+      "executed_identity" => observation.executed_identity,
       "observations_complete" => observation.observations_complete,
+      "observe_us" => observation.observe_us,
+      "engine_memory" => observation.engine_memory,
       "wasm_digest" => observation.wasm_digest,
       "graphlaw_version" => observation.graphlaw_version,
       "root_manifest_digest" => observation.root_manifest_digest,
@@ -879,7 +1360,9 @@ defmodule AshA2A.SA2A.Conformance do
             "state_reached" => v.state_reached,
             "state_trace" => v.state_trace,
             "output_graph_hash" => v.output_graph_hash,
+            "post_state_identity" => v.post_state_identity,
             "evidence_hash" => v.evidence_hash,
+            "latency_us" => v.latency_us,
             "errors" => Enum.map(v.errors, &inspect/1)
           }
         end)

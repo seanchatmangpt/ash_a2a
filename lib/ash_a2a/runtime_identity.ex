@@ -165,7 +165,14 @@ defmodule AshA2A.RuntimeIdentity do
 
   # --- observation ----------------------------------------------------------
 
-  defp observe_resource(pid) when is_pid(pid) do
+  @doc """
+  Observed identity of one real resource: a local BEAM process
+  (`"beam_process"`) or a port (`"os_process"`). Shared with
+  `AshA2A.RuntimeIdentity.Execution`, which observes the resources a live
+  call actually reached rather than the ones a session term names.
+  """
+  @spec observe_resource(pid() | port()) :: map()
+  def observe_resource(pid) when is_pid(pid) do
     if node(pid) == node() and Process.alive?(pid) do
       module = initial_module(pid)
       app = module && application(module)
@@ -183,7 +190,7 @@ defmodule AshA2A.RuntimeIdentity do
     end
   end
 
-  defp observe_resource(port) when is_port(port) do
+  def observe_resource(port) when is_port(port) do
     case Port.info(port, :os_pid) do
       {:os_pid, os_pid} ->
         %{"kind" => "os_process", "executable_sha256" => os_executable_sha256(os_pid)}
