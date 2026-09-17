@@ -160,6 +160,8 @@ defmodule AshA2A.Semantic.Refusal do
   @mapping %{
     # --- REFUSED_IDENTITY -------------------------------------------------
     semantic_identity_invalid: :refused_identity,
+    semantic_ir_unsealed: :refused_identity,
+    semantic_ir_seal_invalid: :refused_identity,
     semantic_source_mismatch: :refused_identity,
     invalid_request_id: :refused_identity,
     command_conflict: :refused_identity,
@@ -327,6 +329,7 @@ defmodule AshA2A.Semantic.Refusal do
     enoent: :blocked_resource,
     semantic_worker_exit: :blocked_resource,
     receipt_store_unavailable: :blocked_resource,
+    peer_b_unavailable: :blocked_resource,
     dispatch_crashed: :blocked_resource,
     # `AshA2A.GraphLaw.Wasm` transport: the real engine could not be reached
     # or did not run. A missing artifact, a missing host script, no `node`, a
@@ -454,6 +457,11 @@ defmodule AshA2A.Semantic.Refusal do
     bounds_depth_exhausted: :refused_bounds,
     bounds_fan_out_exceeded: :refused_bounds,
     bounds_parallelism_exceeded: :refused_bounds,
+    evidence_bounds_amount_invalid: :refused_bounds,
+    evidence_bounds_authority_ceiling_violated: :refused_bounds,
+    evidence_bounds_ceiling_invalid: :refused_bounds,
+    evidence_bounds_ceiling_missing: :refused_bounds,
+    evidence_fan_out_exceeded: :refused_bounds,
     bounds_resource_amount_invalid: :refused_bounds,
     bounds_resource_exhausted: :refused_bounds,
     bounds_resource_invalid: :refused_bounds,

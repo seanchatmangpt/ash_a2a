@@ -34,7 +34,7 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
   alias AshA2A.{Authority, Command, CommandBus, Identity, ReceiptStore}
   alias AshA2A.Authority.Decision
   alias AshA2A.Planning.Candidate
-  alias AshA2A.Semantic.{ExecutionPackage, Ontology, PlanningIR, Source}
+  alias AshA2A.Semantic.{Admission, ExecutionPackage, Ontology, PlanningIR, Source}
   alias AshA2A.Semantic.IR
   alias AshA2A.Test.ActuatorCounter
   alias AshA2A.Test.Fixture.AuthorityProbe
@@ -359,11 +359,13 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
   defp constructed_package do
     source = Source.new("The agent shall actuate the authority probe.")
 
-    ir = %IR{
-      source_id: source.id,
-      standing: :admitted,
-      authority: :none,
-      goals: [
+    # Real admission, not a hand-set `standing: :admitted`: IR.from_map/2
+    # builds a genuine :candidate IR and Admission.admit/2 runs its full
+    # check chain for real, so the returned IR carries a real
+    # AshA2A.Semantic.IrAdmissionSeal-minted seal (see that module's docs).
+    payload = %{
+      "authority" => "none",
+      "goals" => [
         %{
           "id" => "goal-1",
           "kind" => "goal",
@@ -372,6 +374,9 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
         }
       ]
     }
+
+    {:ok, candidate_ir} = IR.from_map(source.id, payload)
+    {:ok, ir} = Admission.admit(source, candidate_ir)
 
     {:ok, ontology} = Ontology.from_ir(ir)
     {:ok, planning_ir} = PlanningIR.from_ir(ir, ontology)

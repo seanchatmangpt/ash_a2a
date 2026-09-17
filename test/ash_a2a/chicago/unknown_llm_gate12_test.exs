@@ -64,7 +64,8 @@ defmodule AshA2A.Chicago.UnknownLlmGate12Test do
     "SA2A-MX-002" => :falsifier_killed,
     "SA2A-MX-003" => :positive_control_passed,
     "SA2A-MX-004" => :falsifier_killed,
-    "SA2A-MX-005" => :falsifier_killed
+    "SA2A-MX-005" => :falsifier_killed,
+    "SA2A-MX-006" => :falsifier_killed
   }
 
   describe "end-to-end qualification run" do

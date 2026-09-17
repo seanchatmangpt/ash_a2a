@@ -62,11 +62,18 @@ defmodule AshA2A.Semantic.IrAdmissionSeal do
   Mints an admission receipt id and seal for an IR already at
   `standing: :admitted, authority: :none`, returning the sealed IR.
 
-  Only meaningful when called on an IR that just passed `Admission.admit/2`'s
-  full check chain -- called on anything else, it seals whatever content it
-  is given, so it is `Admission.admit/2` running its checks first (not this
-  function) that makes the resulting seal mean anything. No other module in
-  this codebase calls it.
+  Only meaningful when called on an IR that just passed a real admission
+  chain's full check sequence -- called on anything else, it seals whatever
+  content it is given, so it is the caller's own checks running first (not
+  this function) that make the resulting seal mean anything. Two real call
+  sites exist in this codebase, both real independent admission chains, not
+  a forgery shortcut: `AshA2A.Semantic.Admission.admit/2` (the free-text/
+  `source_quote` grounding chain) and `AshA2A.Planning.GoalFacts.
+  to_semantic_structs/2` (the typed-facts closed-set/referential-closure/
+  predicate-closure chain run by `GoalFacts.admit/2` -- see that module's
+  moduledoc for why it cannot use `Admission.admit/2`'s substring check).
+  `verify/1` cannot and does not distinguish which of the two minted a given
+  seal; both represent content that genuinely passed a real check chain.
   """
   @spec mint(IR.t()) :: IR.t()
   def mint(%IR{standing: :admitted, authority: :none} = ir) do

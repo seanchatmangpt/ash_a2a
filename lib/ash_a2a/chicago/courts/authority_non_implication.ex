@@ -33,7 +33,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   alias AshA2A.Chicago.Courts.AuthorityHarness, as: H
   alias AshA2A.Chicago.Fixtures.Authority, as: Fixtures
   alias AshA2A.Chicago.Fixtures.Authority.{Probe, ProbeAgent, VaultAgent}
-  alias AshA2A.Semantic.{Bounds, ExecutionPackage, IR, Ontology, PlanningIR, Source}
+  alias AshA2A.Semantic.{Admission, Bounds, ExecutionPackage, IR, Ontology, PlanningIR, Source}
 
   @court "SA2A-AUTH"
   @probe_actuate "AshA2A.Chicago.Fixtures.Authority.Probe.actuate"
@@ -1033,11 +1033,13 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
     text = "Chicago authority court #{label}: the agent shall actuate the authority probe."
     source = Source.new(text)
 
-    ir = %IR{
-      source_id: source.id,
-      standing: :admitted,
-      authority: :none,
-      goals: [
+    # Real admission, not a hand-set `standing: :admitted`: IR.from_map/2
+    # builds a genuine :candidate IR and Admission.admit/2 runs its full
+    # check chain for real, so the returned IR carries a real
+    # AshA2A.Semantic.IrAdmissionSeal-minted seal (see that module's docs).
+    payload = %{
+      "authority" => "none",
+      "goals" => [
         %{
           "id" => "goal-1",
           "kind" => "goal",
@@ -1046,6 +1048,9 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
         }
       ]
     }
+
+    {:ok, candidate_ir} = IR.from_map(source.id, payload)
+    {:ok, ir} = Admission.admit(source, candidate_ir)
 
     {:ok, ontology} = Ontology.from_ir(ir)
     {:ok, planning_ir} = PlanningIR.from_ir(ir, ontology)

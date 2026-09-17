@@ -3,16 +3,18 @@ defmodule AshA2A.Semantic.FeedbackTest do
 
   alias AshA2A.{Identity, Receipt}
   alias AshA2A.Planning.Candidate
-  alias AshA2A.Semantic.{ExecutionPackage, Feedback, IR, Ontology, PlanningIR, Source}
+  alias AshA2A.Semantic.{Admission, ExecutionPackage, Feedback, IR, Ontology, PlanningIR, Source}
 
   test "projects runtime receipt evidence back into the loop without authority" do
     source = Source.new("Echo capability should read a record.")
 
-    ir = %IR{
-      source_id: source.id,
-      standing: :admitted,
-      authority: :none,
-      goals: [
+    # Real admission, not a hand-set `standing: :admitted`: IR.from_map/2
+    # builds a genuine :candidate IR and Admission.admit/2 runs its full
+    # check chain for real, so the returned IR carries a real
+    # AshA2A.Semantic.IrAdmissionSeal-minted seal (see that module's docs).
+    payload = %{
+      "authority" => "none",
+      "goals" => [
         %{
           "id" => "goal-1",
           "kind" => "goal",
@@ -21,6 +23,9 @@ defmodule AshA2A.Semantic.FeedbackTest do
         }
       ]
     }
+
+    {:ok, candidate_ir} = IR.from_map(source.id, payload)
+    {:ok, ir} = Admission.admit(source, candidate_ir)
 
     assert {:ok, ontology} = Ontology.from_ir(ir)
     assert {:ok, planning_ir} = PlanningIR.from_ir(ir, ontology)

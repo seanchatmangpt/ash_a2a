@@ -47,7 +47,7 @@ defmodule AshA2A.Planning.GoalFacts do
   """
 
   alias AshA2A.Info
-  alias AshA2A.Semantic.{IR, Ontology, PlanningIR, Source}
+  alias AshA2A.Semantic.{IR, IrAdmissionSeal, Ontology, PlanningIR, Source}
 
   @type fact :: {name :: String.t(), args :: [String.t()]}
 
@@ -127,12 +127,20 @@ defmodule AshA2A.Planning.GoalFacts do
   the LLM path builds (`@fields ~w(entities relations events goals
   constraints capabilities authorities observations uncertainties exclusions
   temporal_relations causal_hypotheses unresolved)a` plus `"authority" =>
-  "none"`), then a direct `%{ir | standing: :admitted}` replaces the
+  "none"`), then `%{ir | standing: :admitted}` replaces the
   `Admission.admit/2` call the LLM path makes -- this envelope was already
   admitted by real structural checks in `admit/2` above, which is a stronger
   guarantee for this path's data than a substring-quote check would be (a
   substring check couldn't even apply here). `Ontology.from_ir/1` and
   `PlanningIR.from_ir/2` run completely unchanged and for real after that.
+
+  The resulting IR is then sealed via `AshA2A.Semantic.IrAdmissionSeal.mint/1`
+  -- this module's `admit/2` above is the second real, independent admission
+  chain in this codebase (alongside `AshA2A.Semantic.Admission.admit/2`), so
+  minting here is equally legitimate: the seal's real guarantee is "this
+  content passed a real admission chain in this runtime," not "passed this
+  one specific function." `IrAdmissionSeal.verify/1` cannot and does not
+  distinguish which real chain produced the seal.
 
   ## Field mapping (this module's own, explicit design choice)
 
@@ -172,7 +180,7 @@ defmodule AshA2A.Planning.GoalFacts do
     }
 
     with {:ok, ir} <- IR.from_map(source.id, proposed) do
-      admitted_ir = %{ir | standing: :admitted}
+      admitted_ir = %{ir | standing: :admitted} |> IrAdmissionSeal.mint()
 
       with {:ok, ontology} <- Ontology.from_ir(admitted_ir),
            {:ok, planning_ir} <- PlanningIR.from_ir(admitted_ir, ontology) do
