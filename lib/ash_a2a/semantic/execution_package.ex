@@ -3,7 +3,7 @@ defmodule AshA2A.Semantic.ExecutionPackage do
 
   alias A2A.Part
   alias AshA2A.Planning.Candidate
-  alias AshA2A.Semantic.{IR, Ontology, PlanningIR, Source}
+  alias AshA2A.Semantic.{IR, IrAdmissionSeal, Ontology, PlanningIR, Source}
 
   @enforce_keys [:source, :semantic_ir, :ontology, :planning_ir, :plan_candidate, :fingerprint]
   defstruct [
@@ -47,12 +47,19 @@ defmodule AshA2A.Semantic.ExecutionPackage do
   end
 
   defp fence(
-         %IR{standing: :admitted, authority: :none},
+         %IR{standing: :admitted, authority: :none} = ir,
          %Ontology{authority: :none},
          %PlanningIR{authority: :none},
          %Candidate{standing: :candidate, authority: :none}
-       ),
-       do: :ok
+       ) do
+    # The bare standing/authority pattern above is necessary but not
+    # sufficient: it is exactly the shape a hand-built `%IR{standing:
+    # :admitted, ...}` struct literal also carries. `IrAdmissionSeal.verify/1`
+    # additionally requires a seal minted by `AshA2A.Semantic.Admission.
+    # admit/2`'s real check chain -- see `IrAdmissionSeal`'s moduledoc for the
+    # exact gap this closes.
+    IrAdmissionSeal.verify(ir)
+  end
 
   defp fence(_, _, _, _), do: {:error, %{code: :semantic_package_authority_ceiling_violated}}
 

@@ -1,7 +1,7 @@
 defmodule AshA2A.Semantic.Admission do
   @moduledoc "Deterministic admission for candidate semantic state."
 
-  alias AshA2A.Semantic.{IR, Source, Vocabulary}
+  alias AshA2A.Semantic.{IR, IrAdmissionSeal, Source, Vocabulary}
 
   # Real, deterministic, conservative defense-in-depth check (not the
   # primary safety mechanism -- that is `source_quote` grounding below,
@@ -46,7 +46,7 @@ defmodule AshA2A.Semantic.Admission do
          :ok <- require_goal(ir),
          :ok <- unique_ids(ir),
          :ok <- validate_items(source, ir) do
-      {:ok, %{ir | standing: :admitted}}
+      {:ok, IrAdmissionSeal.mint(%{ir | standing: :admitted})}
     end
     |> emit_admission(source, ir)
   end

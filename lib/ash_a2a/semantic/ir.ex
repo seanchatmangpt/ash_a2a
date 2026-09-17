@@ -3,7 +3,13 @@ defmodule AshA2A.Semantic.IR do
 
   @fields ~w(entities relations events goals constraints capabilities authorities observations uncertainties exclusions temporal_relations causal_hypotheses unresolved)a
   @enforce_keys [:source_id]
-  defstruct [:source_id, standing: :candidate, authority: :none] ++ Enum.map(@fields, &{&1, []})
+  defstruct [
+              :source_id,
+              standing: :candidate,
+              authority: :none,
+              admission_receipt_id: nil,
+              admission_seal: nil
+            ] ++ Enum.map(@fields, &{&1, []})
 
   @type t :: %__MODULE__{}
 
