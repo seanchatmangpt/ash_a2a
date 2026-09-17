@@ -8,6 +8,55 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Added -- RFC-SA2A-002 Chicago Conformance Court
+
+- **`AshA2A.Chicago`**: a falsification-based conformance court for
+  RFC-SA2A-002 v26.9.16 (`docs/rfc/RFC-SA2A-002-v26.9.16.md`). Conformance
+  is earned by attempted falsification, not green unit tests:
+  `Conformant(S) => ExactIdentity(S) ^ FalsifiersAttempted(S) ^
+  ForbiddenStandingAbsent(S) ^ RequiredConsequencesObserved(S) ^
+  IndependentEvidence(S)`. Pieces: `Court` (behaviour), `Falsifier` (S11),
+  `Result` (S12 verdict algebra), `Context`, `Subject` (S5 exact-subject
+  identity), `Observer` (independent OCEL 2.0 process observer), `Query`,
+  `Runner` (S104 execution order), `StandingReceipt` (S115), `Crown`
+  (release-facing assembly, S31/S98/S114/S145/Appendix C). Entry point:
+  `mix ash_a2a.chicago --profile core|logic|plan|do|strict [--court ID]
+  [--list] [--crown]` (`mix help ash_a2a.chicago` for the full option
+  reference).
+- **42 discoverable courts** (`lib/ash_a2a/chicago/courts/`), covering all
+  twelve RFC-SA2A-002 gates -- Gate 1 (Exact Identity Fenced) through
+  Gate 12 (Zero Runtime Inference on KNOWN) -- plus the admission-pipeline
+  courts (ShEx, SHACL, Safe Datalog, N3, SPARQL, canonical graph identity,
+  root manifest, semantic envelope, extension negotiation, and others).
+- **Mandatory falsifier corpus** (`priv/sa2a/chicago_mandatory_corpus.json`,
+  S98): the fourteen RFC-SA2A-001 counterexamples, each resolved against a
+  real, currently-declared court falsifier id by
+  `Crown.mandatory_corpus_coverage/2`. A member that fails to resolve is a
+  reported evidence gap, never silently dropped, and blocks a `:strict`
+  claim from reading CONFORMANT.
+- **Benchmarks**: `AshA2A.Chicago.Courts.Benchmarks` and
+  `mix ash_a2a.chicago.bench`, writing verifiable raw timing results and
+  refusing a tampered result file.
+- **Mutation testing**: `AshA2A.Chicago.Mutation.Catalog` plus
+  `mix ash_a2a.chicago.mutate` and the `SA2A-MUTATION` court, which proves
+  each catalog mutant is actually killed by a real court falsifier rather
+  than assumed killed. `AshA2A.Test.ChicagoSelfTest` (`CHI-SELFTEST`)
+  qualifies the qualification machinery itself against a deliberately
+  lying court fixture.
+- **Real defects the court found and fixed, not weakened around**:
+  - `SA2A-AUTH-017` -- capability substitution across agents: a standing
+    grant for one resource's skill authorized the same-named skill on any
+    other resource, because `Agent.build_command/4` authorized against the
+    caller-supplied wire skill selector instead of the canonical,
+    resource-qualified capability id. Fixed in `AshA2A.Agent.build_command/4`.
+  - `SA2A-CHAOS-019`/`SA2A-CHAOS-020` -- bounded claim-lease liveness gap:
+    a crash between `ReceiptStore.claim/2` and receipt-anchor preparation
+    left a command permanently `:in_flight`, with no live executor able to
+    resolve it. Fixed by `AshA2A.ReceiptStore.ClaimLease`.
+  - `CHI-SELFTEST-REPLAY-001` -- the self-test court never drove a replay,
+    so the `replay_calls_actuator` mutation could survive undetected.
+    Closed by `AshA2A.Test.ChicagoSelfTest.ReplayCourt`.
+
 ### Security -- BREAKING (fail-closed default change)
 
 - **Authority escalation on the default `AshA2A.Agent` dispatch path closed
