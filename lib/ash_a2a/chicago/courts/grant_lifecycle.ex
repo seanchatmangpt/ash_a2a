@@ -33,7 +33,16 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
   alias AshA2A.Chicago.Fixtures.Authority.ProbeAgent
 
   @court "SA2A-AUTH-GRANT"
-  @capability "actuate"
+  # SA2A-AUTH-017 (RFC-SA2A-002 S66, capability substitution): the real
+  # dispatch path (`AshA2A.Agent.build_command/4`) now resolves the
+  # dispatched skill's CANONICAL capability id (`AshA2A.Info.skill/2`,
+  # "#{inspect(resource)}.#{action}") before calling
+  # `AshA2A.Authority.Grant.authorize/3`, so a standing grant must be issued
+  # under that same canonical id to be found on the real dispatch path this
+  # court drives every falsifier through (`H.agent_call(ProbeAgent, ...)`,
+  # `"skill" => @capability` below). Kept as one constant, still bare
+  # "actuate", would silently stop matching post-fix.
+  @capability "AshA2A.Chicago.Fixtures.Authority.Probe.actuate"
   @expiry_ms 3_000
 
   @impl true

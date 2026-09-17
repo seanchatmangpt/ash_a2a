@@ -433,11 +433,23 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
 
   # --- helpers ---------------------------------------------------------------
 
+  # SA2A-AUTH-017 (RFC-SA2A-002 S66): `AshA2A.Agent.build_command/4` now
+  # resolves the dispatched skill's canonical capability id
+  # (`AshA2A.Info.skill/2`) before calling `Grant.authorize/3`, so the
+  # standing grant this court issues for the real `Ordering.place_order`
+  # dispatch must be keyed on that same canonical id, not `@capability`'s
+  # bare wire selector (still used, unchanged, for the message `"skill"`
+  # metadata below).
+  defp capability_id do
+    {:ok, skill} = AshA2A.Info.skill(Ordering, @capability)
+    skill.id
+  end
+
   defp issue_grant(principal) do
     subject = Identity.principal(principal)
-    _ = Grant.grant(subject, @capability)
+    _ = Grant.grant(subject, capability_id())
 
-    if Grant.authorize(principal, @capability),
+    if Grant.authorize(principal, capability_id()),
       do: :ok,
       else: {:blocked, "no real authority broker grant could be issued for #{principal}"}
   catch

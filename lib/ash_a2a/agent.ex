@@ -546,8 +546,12 @@ defmodule AshA2A.Agent do
   # `:change` admission closed as intended.
   #
   # AUTHORITY, NOT MERELY AUTHENTICATION (RFC-SA2A-001 S29). `capability_id`
-  # below is CALLER-SUPPLIED -- it is `to_string(skill_name)`, taken off the
-  # inbound message's own `skill` metadata. It is therefore routed through
+  # below is CALLER-SUPPLIED IN ORIGIN -- it starts as the inbound message's
+  # own `skill` metadata -- but `resolve_capability_id/2` (SA2A-AUTH-017,
+  # RFC-SA2A-002 S66) resolves it against `resource_or_domain` through
+  # `AshA2A.Info.skill/2` into the canonical, resource-qualified capability
+  # id before it reaches here, so it is never handed to authority as a bare,
+  # cross-resource-ambiguous selector. It is therefore routed through
   # `AshA2A.Authority.Grant.authorize/3`, which consults the configured
   # `AshA2A.Authority.Broker` for a real standing grant of THIS capability to
   # THIS principal, and NOT through `Authority.from_verified_identity/2`
@@ -610,7 +614,13 @@ defmodule AshA2A.Agent do
   @spec build_command(module(), AshA2A.Dispatcher.skill_name(), A2A.Message.t(), term()) ::
           AshA2A.Command.t()
   defp build_command(resource_or_domain, skill_name, message, auth_identity) do
-    capability_id = to_string(skill_name)
+    # Both the command's own `capability_id` (its DO/receipt/OCEL/fingerprint
+    # identity) and the id `Grant.authorize/3` looks the grant up under are
+    # the SAME canonical, resource-qualified id (SA2A-AUTH-017 below) -- so
+    # `AshA2A.CommandBus.admit/2`'s existing `Authority.admits?/2` comparison
+    # (`authority.capability_id == command.capability_id`) needs no change of
+    # its own: both sides of that comparison are canonical by construction.
+    capability_id = resolve_capability_id(resource_or_domain, skill_name)
     principal = AshA2A.Identity.principal(auth_identity || "anonymous")
     {:ok, input} = AshA2A.Dispatcher.fetch_input(message)
 
@@ -622,6 +632,48 @@ defmodule AshA2A.Agent do
       input: input,
       metadata: command_metadata(message)
     )
+  end
+
+  # SA2A-AUTH-017 (RFC-SA2A-002 S66, capability substitution). `skill_name`
+  # is the CALLER-SUPPLIED selector off the inbound message ("actuate") --
+  # ambiguous across resources, since more than one resource/agent may
+  # expose a same-named skill (`AshA2A.Chicago.Fixtures.Authority.Probe` and
+  # `.Vault` both declare `:actuate`). Resolving it here, against the REAL
+  # `resource_or_domain` this command is about to dispatch to, through
+  # `AshA2A.Info.skill/2` (the same canonical-id source
+  # `AshA2A.CapabilityIndex.Compiler.capability_id/2` derives from
+  # `Ash.Resource.Info.public_actions/1`) turns it into the one globally
+  # unique id for the capability ACTUALLY being exercised
+  # (`"#{inspect(resource)}.#{action}"`) before it ever reaches
+  # `AshA2A.Authority.Grant.authorize/3` or `AshA2A.Command.new/2`.
+  #
+  # This is what closes the substitution: `authorize/3` mints (and the
+  # broker looks up) authority for the resolved canonical id, and
+  # `AshA2A.Command.new/2` stamps the SAME canonical id as `capability_id`
+  # -- so `AshA2A.Authority.admits?/2`'s existing `authority.capability_id
+  # == command.capability_id` comparison at the `AshA2A.CommandBus.admit/2`
+  # boundary now discriminates by resource, not merely by selector name. A
+  # standing grant issued for `Probe.actuate` no longer satisfies a dispatch
+  # whose real target is `Vault.actuate`, even though both were requested
+  # under the identical wire selector "actuate".
+  #
+  # `AshA2A.Info.skill/2` accepts EITHER form as `selector` (`skill.id ==
+  # selector || skill.name == selector`), so this is transparent to every
+  # existing caller that already dispatches by canonical id (`AshA2A.Chicago.
+  # Courts.AuthorityNonImplication`'s `@probe_actuate`, SA2A-AUTH-010's
+  # agent-card-declared id) -- only the caller-supplied bare selector case
+  # changes, and only by becoming precise. An unresolvable selector falls
+  # back to its own string unchanged: `consequence/2` (called earlier in
+  # `dispatch_skill/4`, from the identical `AshA2A.Info.skill/2` lookup)
+  # already routes a truly unknown skill to `:observe`, so this branch is a
+  # defensive mirror of that lookup, never the live path for a genuinely
+  # unknown capability reaching a `:change`/`:external_do` dispatch.
+  @spec resolve_capability_id(module(), AshA2A.Dispatcher.skill_name()) :: String.t()
+  defp resolve_capability_id(resource_or_domain, skill_name) do
+    case AshA2A.Info.skill(resource_or_domain, skill_name) do
+      {:ok, %{id: id}} -> id
+      {:error, :skill_not_found} -> to_string(skill_name)
+    end
   end
 
   defp command_id(%A2A.Message{metadata: metadata} = message) do

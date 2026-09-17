@@ -911,7 +911,14 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
     principal = H.principal("attested-envelope")
     grant!(principal, "actuate")
     nonce = H.nonce("auth-021")
-    authority = Grant.authorize(principal, "actuate")
+    # SA2A-AUTH-017: `grant!/2` now issues its standing grant under `Probe`'s
+    # canonical capability id (see `probe_capability_id/1`), which is exactly
+    # what `AshA2A.Agent.build_command/4` resolves the real dispatch path's
+    # `Grant.authorize/3` call against. This direct call bypasses that real
+    # dispatch path (it mints the envelope's authority by hand), so it must
+    # look the grant up under the SAME canonical id itself, or the standing
+    # grant it just issued would never match.
+    authority = Grant.authorize(principal, @probe_actuate)
     envelope = Decision.envelope(envelope_command(principal, nonce, authority), Probe)
 
     verdict = Context.stimulus(ctx, f, fn -> Decision.verdict(envelope) end)
@@ -930,7 +937,13 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   end
 
   defp envelope_command(principal, nonce, authority) do
-    Command.new("actuate",
+    # `@probe_actuate` (the canonical id), matching what
+    # `AshA2A.Agent.build_command/4` now stamps as `capability_id` on the
+    # real dispatch path (SA2A-AUTH-017) -- so `Decision.verdict/1`'s own
+    # `binds?/2` (`authority["capability_id"] == envelope["capability_id"]`)
+    # is judging the same real-world comparison the bus itself now makes,
+    # not the pre-fix bare selector.
+    Command.new(@probe_actuate,
       command_id: "chicago-" <> nonce,
       agent_id: inspect(Probe),
       principal_id: Identity.principal(principal),
@@ -941,12 +954,32 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
 
   defp verdict_code({outcome, %{code: code}}), do: "#{outcome}:#{code}"
 
+  # SA2A-AUTH-017: every `grant!/2` call in this court is granting a
+  # capability the falsifiers dispatch to the real `ProbeAgent` (`Probe`
+  # actuate/mutate) -- so the standing grant it issues must be keyed on
+  # `Probe`'s own canonical capability id (`AshA2A.Info.skill/2`), the exact
+  # id `AshA2A.Agent.build_command/4` now resolves against before it ever
+  # calls `Grant.authorize/3`. Granting under the bare selector ("actuate")
+  # instead would issue a standing grant `AshA2A.Authority.Grant.authorize/3`
+  # can never again match post-fix -- every OTHER control in this court
+  # (SA2A-AUTH-001, -003, -008, -018, -021) would start refusing a real
+  # grant it holds. A capability with no real skill on `Probe` (SA2A-AUTH-012's
+  # `"drop_every_ledger_row"`) has no canonical id to resolve to and is
+  # granted verbatim, unchanged -- `AshA2A.Info.skill/2` returning
+  # `:skill_not_found` for it is exactly the point of that falsifier.
   defp grant!(identity, capability_id) do
     subject = Identity.principal(identity)
 
-    case Grant.grant(subject, capability_id) do
+    case Grant.grant(subject, probe_capability_id(capability_id)) do
       {:ok, %Authority{}} -> :ok
       {:error, %{reason: :token_id_taken}} -> :ok
+    end
+  end
+
+  defp probe_capability_id(selector) do
+    case AshA2A.Info.skill(Probe, selector) do
+      {:ok, %{id: id}} -> id
+      {:error, :skill_not_found} -> selector
     end
   end
 

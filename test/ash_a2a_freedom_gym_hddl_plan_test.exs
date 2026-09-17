@@ -42,7 +42,8 @@ defmodule AshA2AFreedomGymHddlPlanTest do
     # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
     # real pairs this file's own dispatches use.
     AshA2A.Test.AuthorityGrantCase.grant!([
-      {"hddl-plan-test-caller", ["next_phase", "reset_plan"]}
+      {"hddl-plan-test-caller", AshA2A.Test.Fixture.FreedomGym.Facilitator,
+       ["next_phase", "reset_plan"]}
     ])
 
     {_sup, _registry_name} =

@@ -278,8 +278,14 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
     test "SA2A-TRANSPORT-004: a string-keyed a2a.auth (the only shape JSON can carry) confers no identity" do
       principal = "guard-granted-#{System.unique_integer([:positive])}"
       subject = AshA2A.Identity.principal(principal)
-      _ = AshA2A.Authority.Grant.grant(subject, "place_order")
-      assert AshA2A.Authority.Grant.granted?(subject, "place_order")
+      # SA2A-AUTH-017 (RFC-SA2A-002 S66): the real dispatch path
+      # (`AshA2A.Agent.build_command/4`) resolves the dispatched skill's
+      # canonical capability id before calling `Grant.authorize/3`, so this
+      # grant must be issued under `Ordering`'s canonical id, not the bare
+      # wire selector "place_order".
+      {:ok, %{id: place_order_id}} = AshA2A.Info.skill(Ordering, "place_order")
+      _ = AshA2A.Authority.Grant.grant(subject, place_order_id)
+      assert AshA2A.Authority.Grant.granted?(subject, place_order_id)
 
       agent = :"guard_ordering_#{System.unique_integer([:positive])}"
       {:ok, pid} = OrderingAgent.start_link(name: agent)

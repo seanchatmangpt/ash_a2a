@@ -45,10 +45,12 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
     "SA2A-AUTH-014" => :falsifier_killed,
     "SA2A-AUTH-015" => :falsifier_killed,
     "SA2A-AUTH-016" => :falsifier_killed,
-    # OPEN DEFECT (not repaired in this slice): grants are keyed on the
-    # caller-supplied capability SELECTOR, not the canonical capability id,
-    # so a grant for Probe's `actuate` authorizes Vault's `actuate`.
-    "SA2A-AUTH-017" => :falsifier_survived,
+    # CLOSED (SA2A-AUTH-017): `AshA2A.Agent.build_command/4` now resolves the
+    # dispatched skill's canonical capability id (`AshA2A.Info.skill/2`)
+    # before calling `Grant.authorize/3`, so a grant for Probe's `actuate`
+    # no longer authorizes Vault's `actuate` merely because both are named
+    # "actuate" on the wire.
+    "SA2A-AUTH-017" => :falsifier_killed,
     "SA2A-AUTH-018" => :positive_control_passed,
     "SA2A-AUTH-019" => :falsifier_killed,
     "SA2A-AUTH-020" => :falsifier_killed,
