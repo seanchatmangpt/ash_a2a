@@ -8,6 +8,68 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Verified -- v26.9.17 PRD/ARD 50-agent pass: ash_a2a's own scope only
+
+- Scope note, stated plainly: this entry covers `ash_a2a`'s own portion of a
+  v26.9.17 requirements pass. It is **not** a full 11-repo RFC-SA2A-003
+  ecosystem CONFORMANT claim -- no other repo in that RFC was touched,
+  re-verified, or re-scored as part of this pass.
+- Real numbers from this pass: 83 requirements already implemented, 18 real
+  gaps found, 16 real gaps built and merged (see the `feat/sa2a-ard-*`
+  merge commits in `git log`), 0 gaps deferred to a follow-up (the deferred
+  list is empty for this pass).
+- CalVer bump to 26.9.17 committed (`mix.exs` version line only, single-line
+  diff, confirmed via `git diff` before commit).
+- Real `mix hex.publish --dry-run` outcome: built `ash_a2a 26.9.17` correctly
+  end to end -- all 20 declared deps resolved, full lib/priv/mix.exs/README/
+  CHANGELOG/LICENSE file manifest listed (several hundred files, including
+  every `chicago/*` court module and `semantic/*`, including the new
+  `ir_admission_seal.ex`, plus `priv/graphlaw` and `priv/sa2a_conformance`
+  fixtures). The prompt reached `Publishing package to public repository
+  hexpm. Proceed? [Yn]` and was answered `n` -- no publish occurred (and
+  `--dry-run` itself never calls hex.pm's publish endpoint regardless of the
+  answer given).
+- Architecture-verifier test named by this task
+  (`test/ash_a2a_architecture_verifier_test.exs`): 11 tests, 0 failures,
+  clean.
+- Real, reproducible full-suite regression found and root-caused, **not**
+  fixed in this pass (out of this task's assigned scope of bump + verify +
+  dry-run + report): `mix test --max-cases 6`, run twice for reproducibility
+  (515.8s and 586.3s), reported identical counts both runs -- 58 doctests,
+  19 properties, 2036 tests, **24 failures**, 8 invalid, 1 skipped (14
+  excluded). The 8 invalid match the known pre-existing baseline (no local
+  Postgres) and are not new. The 24 failures are new relative to the stated
+  0-failure baseline and are not a flake: every one returns
+  `{:error, %{code: :semantic_ir_unsealed, detail: %{source_id: ...}}}`.
+  Root cause, confirmed by reading source: the recently-merged
+  `lib/ash_a2a/semantic/ir_admission_seal.ex` now gates
+  `AshA2A.Semantic.Ontology.from_ir/1`, `PlanningIR.from_ir/2`,
+  `ExecutionPackage.new/6`, and `RequestRouter.route/3` behind
+  `IrAdmissionSeal.verify/1`, which rejects any IR lacking a real
+  `admission_seal`/`admission_receipt_id` minted by `Admission.admit/2`.
+  Roughly 15 pre-existing test files still hand-construct
+  `%IR{standing: :admitted, authority: :none, ...}` directly instead of
+  routing through `Admission.admit/2` -- exactly the forgery class
+  `ir_admission_seal.ex`'s own moduledoc names as the gap it closes (citing
+  only one already-fixed helper, in `semantic_execution_package_test.exs`).
+  Affected files include (non-exhaustive):
+  `test/ash_a2a/semantic_feedback_test.exs`,
+  `test/ash_a2a/planning/request_router_test.exs`,
+  `test/ash_a2a_agent_semantic_router_wiring_test.exs`,
+  `test/ash_a2a/chicago/*_test.exs`, and
+  `test/ash_a2a/planning/request_router_telemetry_test.exs`. Triage and fix
+  of these ~15 files is left to whichever cluster owns
+  `ir_admission_seal.ex` / the affected test files; it is out of this
+  task's assigned scope.
+- Honest overall standing for this pass: the version bump is real and
+  committed; the named architecture-verifier test is real and green; the
+  `hex.publish --dry-run` output is real and shows a correctly-versioned,
+  correctly-built package with no actual publish; the full-suite baseline
+  is **not** currently clean -- there is a real, confirmed, reproducible
+  24-test regression from the new `IrAdmissionSeal` gate hitting stale
+  hand-built-IR test fixtures, which should be resolved before this release
+  is genuinely gate-clean.
+
 ### Fixed -- Local dev-setup gap misread as a board-persona regression
 
 - Real defect found while independently verifying the board-persona
