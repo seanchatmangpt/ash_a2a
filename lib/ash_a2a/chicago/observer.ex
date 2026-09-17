@@ -61,7 +61,7 @@ defmodule AshA2A.Chicago.Observer do
   use GenServer
 
   alias AshA2A.Chicago.Context
-  alias AshA2A.Chicago.Observer.Journal
+  alias AshA2A.Chicago.Observer.{EvidenceBounds, Journal}
   alias AshA2A.Chicago.Ocel.{Log, Mapping}
 
   @type record :: %{
@@ -114,6 +114,17 @@ defmodule AshA2A.Chicago.Observer do
     * `:restart` -- start as a recovery incarnation even without a journal
     * `:owner` -- pid; the observer stops when it exits
     * `:name`
+    * `:evidence_bounds` -- an `AshA2A.Chicago.Observer.EvidenceBounds.t()`
+      (PRD §48 / ARD §51). Optional and strictly additive: omitted, the
+      observer is unbounded exactly as before. When given, the configured
+      `:watch_events` vocabulary is admitted against `max_watch_events` at
+      start (refusing startup, `{:stop, {:evidence_fan_out_exceeded, _}}`,
+      if the configured vocabulary itself is already too wide), and every
+      accepted record thereafter is charged against `max_records` and
+      `max_journal_bytes`; a record past either ceiling is refused rather
+      than accepted, and a typed
+      `[:ash_a2a, :chicago, :observer, :evidence_bounds_exceeded]` boundary
+      event is emitted in its place (never silently dropped).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, gen_opts(opts))
@@ -210,7 +221,14 @@ defmodule AshA2A.Chicago.Observer do
   @doc "Telemetry events the observer itself emits."
   @spec boundary_events() :: [[atom()]]
   def boundary_events do
-    for suffix <- [:dropped, :ref_rejected, :unmapped, :recovered, :flushed],
+    for suffix <- [
+          :dropped,
+          :ref_rejected,
+          :unmapped,
+          :recovered,
+          :flushed,
+          :evidence_bounds_exceeded
+        ],
         do: @boundary ++ [suffix]
   end
 
@@ -448,6 +466,50 @@ defmodule AshA2A.Chicago.Observer do
       |> Enum.reject(&(Map.has_key?(by_event, &1) or &1 in Context.stimulus_events()))
 
     events = Enum.uniq(Context.stimulus_events() ++ Map.keys(by_event) ++ watch)
+
+    case admit_watch_vocabulary(Keyword.get(opts, :evidence_bounds), watch) do
+      {:ok, evidence_bounds} ->
+        start_incarnation(
+          opts,
+          run_id,
+          journal_path,
+          recovered,
+          mappings,
+          by_event,
+          events,
+          evidence_bounds
+        )
+
+      {:error, reason} ->
+        {:stop, {:evidence_fan_out_exceeded, reason}}
+    end
+  end
+
+  # §48/§51 evidence-fan-out admission: the configured `:watch_events`
+  # vocabulary is fixed for the observer's whole lifetime (attached once,
+  # below), so it is admitted once, at start, rather than incrementally --
+  # fail-closed at construction, mirroring `AshA2A.Semantic.Bounds.new/1`.
+  defp admit_watch_vocabulary(nil, _watch), do: {:ok, nil}
+
+  defp admit_watch_vocabulary(%EvidenceBounds{} = bounds, watch) do
+    Enum.reduce_while(Enum.uniq(watch), {:ok, bounds}, fn event, {:ok, acc} ->
+      case EvidenceBounds.admit_watch_event(acc, dotted(event)) do
+        {:ok, acc} -> {:cont, {:ok, acc}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp start_incarnation(
+         opts,
+         run_id,
+         journal_path,
+         recovered,
+         mappings,
+         by_event,
+         events,
+         evidence_bounds
+       ) do
     stale = run_handlers(run_id)
     incarnation = Enum.max([recovered.incarnations | Enum.map(stale, &elem(&1.id, 2))]) + 1
     counters = :counters.new(1, [:write_concurrency])
@@ -496,7 +558,10 @@ defmodule AshA2A.Chicago.Observer do
       duplicate_seqs: 0,
       journal: nil,
       journal_failures: 0,
-      recovery: recovered |> Map.delete(:records) |> Map.put(:harvested_handlers, harvested.count)
+      recovery:
+        recovered |> Map.delete(:records) |> Map.put(:harvested_handlers, harvested.count),
+      evidence_bounds: evidence_bounds,
+      evidence_bounds_exceeded: 0
     }
 
     policy = Keyword.get(opts, :journal_sync, Journal.default_policy())
@@ -644,12 +709,18 @@ defmodule AshA2A.Chicago.Observer do
             do: %{record | attributes: Map.put(record.attributes, "chicago_late_delivery", true)},
             else: record
 
-        state = state |> accept(record) |> journal_drops()
+        case admit_evidence(state, record) do
+          {:ok, state} ->
+            state = state |> accept(record) |> journal_drops()
 
-        state =
-          if record.activity == "chicago.stimulus.stop", do: journal_sync(state), else: state
+            state =
+              if record.activity == "chicago.stimulus.stop", do: journal_sync(state), else: state
 
-        {:reply, :ok, state}
+            {:reply, :ok, state}
+
+          {:error, reason} ->
+            {:reply, :ok, evidence_exceeded(state, record, reason)}
+        end
     end
   end
 
@@ -680,7 +751,9 @@ defmodule AshA2A.Chicago.Observer do
       torn_journal_tail: state.recovery.torn_tail,
       harvested_handlers: state.recovery.harvested_handlers,
       journal: state.journal && state.journal.path,
-      journal_failures: state.journal_failures
+      journal_failures: state.journal_failures,
+      evidence_bounds_exceeded: state.evidence_bounds_exceeded,
+      evidence_bounds: state.evidence_bounds && EvidenceBounds.snapshot(state.evidence_bounds)
     }
 
     {:reply, stats, state}
@@ -716,6 +789,44 @@ defmodule AshA2A.Chicago.Observer do
   end
 
   # --- state helpers -------------------------------------------------------
+
+  # §48/§51 evidence-fan-out admission (PRD §48 / ARD §51): charges the
+  # about-to-be-accepted record against the run's `EvidenceBounds` envelope,
+  # if one was configured. `nil` means unbounded, unchanged from before this
+  # envelope existed. Journal-byte cost is measured from the exact canonical
+  # JSONL line the record would produce, so the ceiling tracks the real
+  # attribute payload rather than an estimate.
+  defp admit_evidence(%{evidence_bounds: nil} = state, _record), do: {:ok, state}
+
+  defp admit_evidence(%{evidence_bounds: bounds} = state, record) do
+    bytes = record |> Journal.record_entry() |> Journal.encode_line() |> IO.iodata_length()
+
+    with {:ok, bounds} <- EvidenceBounds.consume_record(bounds),
+         {:ok, bounds} <- EvidenceBounds.consume_journal_bytes(bounds, bytes) do
+      {:ok, %{state | evidence_bounds: bounds}}
+    end
+  end
+
+  # A record refused by the evidence envelope is never silently lost: it is
+  # counted (`evidence_bounds_exceeded`, visible in `stats/1`) and emitted as
+  # a typed boundary event, the same "no silent loss" discipline §138 applies
+  # to delivery drops -- just refused rather than accepted, since growing the
+  # OCEL artifact past an admitted ceiling is exactly what this envelope
+  # exists to fail closed against.
+  defp evidence_exceeded(state, record, %{code: code, detail: detail}) do
+    state = %{state | evidence_bounds_exceeded: state.evidence_bounds_exceeded + 1}
+
+    emit_boundary(state, :evidence_bounds_exceeded, %{
+      event: dotted(record.event),
+      activity: record.activity,
+      code: code,
+      resource: detail[:resource],
+      ceiling: detail[:ceiling],
+      consumed: detail[:consumed]
+    })
+
+    state
+  end
 
   defp accept(state, record) do
     state
