@@ -14,13 +14,18 @@ defmodule AshA2A.ReceiptStore.Memory do
   has elapsed AND no `AshA2A.ReceiptOutbox` anchor exists for it), in which
   case it is reclaimed as a fresh claim -- see that module for why this can
   never reclaim a claim that reached receipt preparation.
+
+  An in-flight actuation (effect) claim is reclaimed the same way: see
+  `AshA2A.ReceiptStore.ActuationClaimLease` for why deferring to the
+  claimant's own primary command claim's `ClaimLease.abandoned?/2` verdict is
+  a sound liveness guarantee one layer down from the primary claim.
   """
   use GenServer
 
   @behaviour AshA2A.ReceiptStore
 
   alias AshA2A.{Actuation, Command, Identity, Receipt}
-  alias AshA2A.ReceiptStore.ClaimLease
+  alias AshA2A.ReceiptStore.{ActuationClaimLease, ClaimLease}
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, name: Keyword.get(opts, :name, __MODULE__))
@@ -121,7 +126,7 @@ defmodule AshA2A.ReceiptStore.Memory do
       nil ->
         entry = %{
           idempotency_key: idempotency,
-          command_id: Identity.external(command_id),
+          command_id: command_id,
           receipt: nil
         }
 
@@ -130,8 +135,23 @@ defmodule AshA2A.ReceiptStore.Memory do
       %{idempotency_key: ^idempotency, receipt: %Receipt{} = receipt} ->
         {:reply, {:duplicate, Receipt.replay(receipt)}, state}
 
-      %{idempotency_key: ^idempotency} ->
-        {:reply, {:error, :actuation_in_flight}, state}
+      %{idempotency_key: ^idempotency, command_id: claimant_command_id} = entry ->
+        # Bounded actuation-claim lease + reconciliation (RFC-SA2A-001 S55,
+        # ARD S40's idempotency-store liveness requirement, one index below
+        # the primary command claim). `claim_actuation/3` always runs before
+        # this claimant's own receipt-anchor prepare, so if ITS primary
+        # command claim is abandoned per `ClaimLease.abandoned?/2`, DO never
+        # started for this effect either -- see
+        # `AshA2A.ReceiptStore.ActuationClaimLease` for the full argument and
+        # why a claim that DID reach the outbox is still never reclaimed.
+        primary_claim = Map.get(state, Identity.external(claimant_command_id))
+
+        if ActuationClaimLease.abandoned?(primary_claim, claimant_command_id) do
+          fresh = %{entry | command_id: command_id, receipt: nil}
+          {:reply, :proceed, Map.put(state, key, fresh)}
+        else
+          {:reply, {:error, :actuation_in_flight}, state}
+        end
 
       _ ->
         {:reply, {:error, :actuation_conflict}, state}
