@@ -133,13 +133,33 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
       assert resolution.step == 2
     end
 
-    test "step 3 reuses an equivalent public representation when step 2 declines", %{index: index} do
-      assert {:ok, resolution} =
+    test "step 3 reuses an equivalent public representation only through an admitted mapping", %{
+      index: index
+    } do
+      # Textual similarity alone is a candidate, never identity (RFC-SA2A-002
+      # SA2A-NS-003): without an admitted mapping step 3 refuses.
+      assert {:error, %{code: :equivalent_requires_admitted_mapping}} =
                Iri.resolve("Concept", index: index, sufficient?: false)
+
+      target = index |> TermRegistry.search_equivalent("Concept") |> List.last()
+
+      assert {:ok, resolution} =
+               Iri.resolve("Concept",
+                 index: index,
+                 sufficient?: false,
+                 mappings: [
+                   %{
+                     target: target,
+                     kind: :close_match,
+                     admission_receipt: %{receipt_id: "rcpt-eq", fingerprint: "fp-eq"}
+                   }
+                 ]
+               )
 
       assert resolution.step == 3
       assert resolution.outcome == :reused_equivalent_public_iri
       assert resolution.steps_attempted == [1, 2, 3]
+      assert resolution.iri == target
       assert String.starts_with?(resolution.iri, @skos_ns)
       refute resolution.iri == @skos_concept
     end
@@ -164,8 +184,16 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
                  accept_equivalent?: false,
                  composition: composition,
                  mappings: [
-                   %{target: @skos_concept, kind: :exact_match},
-                   %{target: "#{@owl_ns}Class", kind: :close_match}
+                   %{
+                     target: @skos_concept,
+                     kind: :exact_match,
+                     admission_receipt: %{receipt_id: "rcpt-c1", fingerprint: "fp-c1"}
+                   },
+                   %{
+                     target: "#{@owl_ns}Class",
+                     kind: :close_match,
+                     admission_receipt: %{receipt_id: "rcpt-c2", fingerprint: "fp-c2"}
+                   }
                  ]
                )
 

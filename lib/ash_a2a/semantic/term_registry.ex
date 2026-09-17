@@ -69,6 +69,19 @@ defmodule AshA2A.Semantic.TermRegistry do
   """
   @spec from_cache(keyword()) :: {:ok, t()} | {:error, refusal()}
   def from_cache(opts \\ []) do
+    result = build_from_cache(opts)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the admitted index is decided.
+    :telemetry.execute([:ash_a2a, :semantic, :term_registry, :build], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :built, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      size: with({:ok, registry} <- result, do: size(registry), else: (_ -> nil))
+    })
+
+    result
+  end
+
+  defp build_from_cache(opts) do
     root = Keyword.get(opts, :root, OntologyCache.default_root())
     profile = Keyword.get(opts, :profile, :strict)
     only = Keyword.get(opts, :only)
@@ -181,6 +194,20 @@ defmodule AshA2A.Semantic.TermRegistry do
   @spec admit_operational_use(t(), term(), keyword()) ::
           {:ok, {:admitted | :candidate, String.t()}} | {:error, map()}
   def admit_operational_use(%__MODULE__{} = registry, iri, opts \\ []) do
+    result = decide_operational_use(registry, iri, opts)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the S7.3 decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :term_registry, :operational_use], %{}, %{
+      outcome: with({:ok, {standing, _iri}} <- result, do: standing, else: (_ -> :refused)),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      profile: Keyword.get(opts, :profile, registry.profile),
+      consequential: Keyword.get(opts, :consequential?, true)
+    })
+
+    result
+  end
+
+  defp decide_operational_use(registry, iri, opts) do
     profile = Keyword.get(opts, :profile, registry.profile)
     consequential? = Keyword.get(opts, :consequential?, true)
     result = decide_operational_use(registry, iri, profile, consequential?)

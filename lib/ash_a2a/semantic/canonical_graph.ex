@@ -145,10 +145,128 @@ defmodule AshA2A.Semantic.CanonicalGraph do
   """
   @spec canonical_digest(input()) :: {:ok, String.t()} | {:error, error()}
   def canonical_digest(input) do
-    with {:ok, graph} <- to_graph(input) do
-      {:ok, RDF.Graph.canonical_hash(graph)}
+    result =
+      with {:ok, graph} <- to_graph(input) do
+        {:ok, RDF.Graph.canonical_hash(graph)}
+      end
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the identity decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :canonical_graph, :digest], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :digested, else: :refused),
+      code: error_code(result),
+      algorithm_id: algorithm_id()
+    })
+
+    result
+  end
+
+  @doc """
+  Compares the RFC S12 identity of two inputs: `{:ok, :same_identity}` when
+  their RDFC-1.0 digests are equal (the graphs are isomorphic),
+  `{:ok, :distinct_identity}` otherwise. An input that has no identity is a
+  typed refusal naming the side -- never "distinct" and never "same".
+  """
+  @spec compare(input(), input()) ::
+          {:ok, :same_identity | :distinct_identity} | {:error, {:left | :right, error()}}
+  def compare(left, right) do
+    result =
+      case {canonical_digest(left), canonical_digest(right)} do
+        {{:ok, digest}, {:ok, digest}} -> {:ok, :same_identity}
+        {{:ok, _}, {:ok, _}} -> {:ok, :distinct_identity}
+        {{:error, reason}, _} -> {:error, {:left, reason}}
+        {_, {:error, reason}} -> {:error, {:right, reason}}
+      end
+
+    :telemetry.execute([:ash_a2a, :semantic, :canonical_graph, :compare], %{}, %{
+      outcome: with({:ok, verdict} <- result, do: verdict, else: (_ -> :refused)),
+      code:
+        with(
+          {:error, {_side, reason}} <- result,
+          do: error_code({:error, reason}),
+          else: (_ -> nil)
+        ),
+      algorithm_id: algorithm_id()
+    })
+
+    result
+  end
+
+  @doc """
+  The executing S12 identity, in the exact shape the Root Manifest pins under
+  `"canonicalization"` (RFC-SA2A-002 §50: the canonicalization algorithm and
+  digest function MUST be pinned by the Root Manifest).
+  """
+  @spec identity() :: %{String.t() => String.t()}
+  def identity do
+    %{
+      "algorithm" => @algorithm,
+      "algorithm_id" => algorithm_id(),
+      "hash_function" => @hash_function,
+      "serialization" => @serialization,
+      "implementation" => inspect(__MODULE__),
+      "library" => "rdf " <> rdf_version(),
+      "executed_by" => "in-BEAM"
+    }
+  end
+
+  @doc """
+  Verifies a Root Manifest `"canonicalization"` pin against `identity/0`.
+
+  Every key of the executing identity must be pinned with exactly the same
+  value; a missing key, a different value, or a pin that is not a map is
+  `{:error, %{code: :refused_canonicalization_pin_drift, field: ...}}`. Keys
+  the pin carries beyond the identity (e.g. `"note"`) are not compared.
+  """
+  @spec verify_pin(term()) :: :ok | {:error, map()}
+  def verify_pin(pin) do
+    identity = identity()
+
+    drift =
+      if is_map(pin) do
+        Enum.find(Enum.sort(identity), fn {key, value} -> Map.get(pin, key) != value end)
+      else
+        {"canonicalization", :not_a_map}
+      end
+
+    result =
+      case drift do
+        nil ->
+          :ok
+
+        {field, executing} ->
+          {:error,
+           %{
+             code: :refused_canonicalization_pin_drift,
+             field: field,
+             pinned: if(is_map(pin), do: Map.get(pin, field), else: pin),
+             executing: executing
+           }}
+      end
+
+    :telemetry.execute([:ash_a2a, :semantic, :canonical_graph, :pin], %{}, %{
+      outcome: if(result == :ok, do: :verified, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      field: with({:error, %{field: field}} <- result, do: field, else: (_ -> nil))
+    })
+
+    result
+  end
+
+  @doc false
+  def __sa2a_refusal_codes__, do: %{refused_canonicalization_pin_drift: :refused_meta_rigor}
+
+  defp rdf_version do
+    _ = Application.load(:rdf)
+
+    case Application.spec(:rdf, :vsn) do
+      nil -> "unknown"
+      vsn -> to_string(vsn)
     end
   end
+
+  defp error_code({:ok, _}), do: nil
+  defp error_code({:error, {code, _}}) when is_atom(code), do: code
+  defp error_code({:error, _}), do: :unclassified
 
   @doc """
   Bang variant of `canonical_digest/1`.

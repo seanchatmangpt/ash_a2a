@@ -224,10 +224,14 @@ defmodule AshA2A.Semantic.Iri do
     * `:sufficient?` -- `true` (default) or `false`. Step 2's explicit
       sufficiency decision for an exact public match.
     * `:accept_equivalent?` -- `true` (default) or `false`. Step 3's decision.
+      Step 3 finds equivalents by textual similarity, which is never identity:
+      one equivalent is reused only when `:mappings` names exactly one of them
+      with an admission receipt; otherwise `:equivalent_requires_admitted_mapping`.
     * `:composition` -- a list of two or more public IRIs when the concept
       genuinely needs several public models. Triggers step 4, which requires an
-      explicit mapping for each composed IRI.
-    * `:mappings` -- explicit mappings used by step 4.
+      explicit, admitted mapping (carrying `:admission_receipt`) for each
+      composed IRI (`:composition_mapping_unadmitted` otherwise).
+    * `:mappings` -- explicit mappings used by steps 3 and 4.
     * `:private_term` -- an `%AshA2A.Semantic.Iri.PrivateTerm{}` (or the
       attribute map for one) used by step 5.
     * `:public_insufficient_reason` -- a non-empty written reason. Required
@@ -239,6 +243,20 @@ defmodule AshA2A.Semantic.Iri do
   def resolve(label, opts) when is_binary(label), do: resolve(%{label: label}, opts)
 
   def resolve(%{} = concept, opts) do
+    result = do_resolve(concept, opts)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the resolution is decided.
+    :telemetry.execute([:ash_a2a, :semantic, :iri, :resolve], %{}, %{
+      outcome:
+        with({:ok, %Resolution{outcome: outcome}} <- result, do: outcome, else: (_ -> :refused)),
+      step: with({:ok, %Resolution{step: step}} <- result, do: step, else: (_ -> nil)),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+    })
+
+    result
+  end
+
+  defp do_resolve(concept, opts) do
     label = concept[:label] || concept["label"]
 
     case Keyword.get(opts, :index) do
@@ -267,7 +285,19 @@ defmodule AshA2A.Semantic.Iri do
   get a typed refusal on the normal path.
   """
   @spec mint_private(PrivateTerm.t() | map()) :: {:ok, PrivateTerm.t()} | {:error, refusal()}
-  def mint_private(%PrivateTerm{} = term) do
+  def mint_private(term) do
+    result = do_mint_private(term)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the mint is decided.
+    :telemetry.execute([:ash_a2a, :semantic, :iri, :mint_private], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :minted, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+    })
+
+    result
+  end
+
+  defp do_mint_private(%PrivateTerm{} = term) do
     with {:ok, iri} <- validate(term.iri),
          :ok <- check_private_scope(term.scope),
          :ok <- check_owning_namespace(term, iri),
@@ -281,7 +311,7 @@ defmodule AshA2A.Semantic.Iri do
     end
   end
 
-  def mint_private(%{} = attrs) do
+  defp do_mint_private(%{} = attrs) do
     required = PrivateTerm.__struct__() |> Map.from_struct() |> Map.keys()
 
     missing =
@@ -295,7 +325,7 @@ defmodule AshA2A.Semantic.Iri do
           Map.put(acc, key, Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key)))
         end)
 
-      mint_private(struct!(PrivateTerm, normalized))
+      do_mint_private(struct!(PrivateTerm, normalized))
     else
       {:error,
        refusal(
@@ -308,7 +338,7 @@ defmodule AshA2A.Semantic.Iri do
     end
   end
 
-  def mint_private(other),
+  defp do_mint_private(other),
     do:
       {:error,
        refusal(
@@ -352,18 +382,49 @@ defmodule AshA2A.Semantic.Iri do
     cond do
       equivalent != [] and Keyword.get(opts, :accept_equivalent?, true) and
           Keyword.get(opts, :composition) == nil ->
-        {:ok,
-         %Resolution{
-           step: 3,
-           outcome: :reused_equivalent_public_iri,
-           iri: hd(equivalent),
-           steps_attempted: attempted,
-           exact_matches: exact,
-           equivalent_matches: equivalent
-         }}
+        adopt_equivalent(equivalent, Keyword.get(opts, :mappings, []), exact, attempted)
 
       true ->
         continue_after_equivalent(index, opts, exact, equivalent, attempted)
+    end
+  end
+
+  # Step 3 search is textual (label/local-name containment), so its results are
+  # candidates, never identity: `label_A ~ label_B` does not imply
+  # `meaning_A == meaning_B` (RFC S47, RFC-SA2A-002 §51 SA2A-NS-003). One
+  # equivalent is reused only when an explicit, admitted mapping names it.
+  defp adopt_equivalent(equivalent, mappings, exact, attempted) do
+    admitted =
+      Enum.filter(List.wrap(mappings), fn mapping ->
+        is_map(mapping) and (mapping[:target] || mapping["target"]) in equivalent and
+          check_receipt(mapping[:admission_receipt] || mapping["admission_receipt"]) == :ok
+      end)
+
+    case admitted |> Enum.map(&(&1[:target] || &1["target"])) |> Enum.uniq() do
+      [iri] ->
+        with :ok <- check_mappings(admitted) do
+          {:ok,
+           %Resolution{
+             step: 3,
+             outcome: :reused_equivalent_public_iri,
+             iri: iri,
+             mappings: admitted,
+             steps_attempted: attempted,
+             exact_matches: exact,
+             equivalent_matches: equivalent
+           }}
+        end
+
+      named ->
+        {:error,
+         refusal(
+           :equivalent_requires_admitted_mapping,
+           "step 3 found public terms only by textual similarity (" <>
+             Enum.join(equivalent, ", ") <>
+             "); similarity is not semantic identity, so exactly one of them must be named by " <>
+             "an explicit mapping carrying an admission receipt (admitted mappings named " <>
+             "#{length(named)}), or pass accept_equivalent?: false"
+         )}
     end
   end
 
@@ -432,7 +493,7 @@ defmodule AshA2A.Semantic.Iri do
          )}
 
       true ->
-        case mint_private(Keyword.fetch!(opts, :private_term)) do
+        case do_mint_private(Keyword.fetch!(opts, :private_term)) do
           {:ok, term} ->
             {:ok,
              %Resolution{
@@ -665,7 +726,7 @@ defmodule AshA2A.Semantic.Iri do
 
     case Enum.reject(composition, &MapSet.member?(covered, &1)) do
       [] ->
-        check_mappings(mappings)
+        with :ok <- check_mappings(mappings), do: mappings_admitted(mappings)
 
       uncovered ->
         {:error,
@@ -676,6 +737,34 @@ defmodule AshA2A.Semantic.Iri do
          )}
     end
   end
+
+  # RFC-SA2A-002 §51: explicit mappings are admitted before cross-identity
+  # composition -- a mapping without an admission receipt is an assertion.
+  defp mappings_admitted(mappings) do
+    case Enum.reject(
+           mappings,
+           &(check_receipt(&1[:admission_receipt] || &1["admission_receipt"]) == :ok)
+         ) do
+      [] ->
+        :ok
+
+      unadmitted ->
+        {:error,
+         refusal(
+           :composition_mapping_unadmitted,
+           "RFC S7.2 step 4 composes public models only through admitted mappings; no admission " <>
+             "receipt on the mapping(s) to " <>
+             Enum.map_join(unadmitted, ", ", &inspect(&1[:target] || &1["target"]))
+         )}
+    end
+  end
+
+  @doc false
+  def __sa2a_refusal_codes__,
+    do: %{
+      equivalent_requires_admitted_mapping: :refused_namespace,
+      composition_mapping_unadmitted: :refused_namespace
+    }
 
   defp written_reason?(reason), do: is_binary(reason) and String.trim(reason) != ""
 

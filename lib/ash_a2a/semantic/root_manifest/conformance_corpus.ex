@@ -40,7 +40,7 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
   really validates.
   """
 
-  alias AshA2A.Semantic.RootManifest
+  alias AshA2A.Semantic.{CanonicalGraph, RootManifest}
   alias AshA2A.Semantic.RootManifest.EngineProbe
 
   @expected_engine_version "praxis-graphlaw v26.7.5"
@@ -79,17 +79,19 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
   @spec spec(keyword()) :: keyword()
   def spec(opts \\ []) do
     [
-      canonicalization: %{
-        "algorithm" => "RDFC-1.0",
-        "implementation" => "oxrdf",
-        "feature" => "rdfc-10",
-        "executed_by" => "praxis-graphlaw-wasm",
-        "note" => "Graph canonicalization is never implemented in Elixir."
-      },
+      canonicalization:
+        Map.put(
+          CanonicalGraph.identity(),
+          "note",
+          "RFC S12 canonical graph identity is executed in-BEAM by RDF.ex's RDFC-1.0. " <>
+            "praxis-graphlaw's wasm graph_hash (BLAKE3) is an engine digest: not " <>
+            "blank-node invariant and not RDFC-1.0, so it is not pinned as canonicalization."
+        ),
       hash_algorithms: %{
         "manifest_content" => "sha256",
         "artifact_pin" => "sha256",
-        "graph_identity" => "BLAKE3",
+        "graph_identity" => CanonicalGraph.hash_function(),
+        "engine_graph_digest" => "BLAKE3",
         "note" =>
           "The manifest self-checks with sha256 via OTP :crypto, deliberately " <>
             "not with the BLAKE3 inside the engine artifact it pins -- that " <>
@@ -151,12 +153,13 @@ defmodule AshA2A.Semantic.RootManifest.ConformanceCorpus do
         %{
           "id" => "praxis-graphlaw",
           "role" => "semantic_engine",
-          "owns" => ["canonicalization", "shacl", "shex", "datalog", "n3", "sparql", "blake3"]
+          "owns" => ["engine_graph_digest", "shacl", "shex", "datalog", "n3", "sparql", "blake3"]
         },
         %{
           "id" => "ash_a2a",
           "role" => "semantic_host",
           "owns" => [
+            "canonical_graph_identity",
             "envelope",
             "standing",
             "refusal_typing",

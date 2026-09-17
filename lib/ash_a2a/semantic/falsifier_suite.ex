@@ -1011,8 +1011,13 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   end
 
   defp classify_targets(g, form, targets) do
+    # Staging must stay distinguishable from canonical admitted state
+    # (RFC-SA2A-002 §78, SA2A-CANONMUT-008): an IRI classified as canonical is
+    # canonical even when it is also typed staging.
     offending =
-      Enum.reject(targets, fn iri -> type?(g, iri, sa("StagingGraph")) end)
+      Enum.reject(targets, fn iri ->
+        type?(g, iri, sa("StagingGraph")) and not type?(g, iri, sa("CanonicalGraph"))
+      end)
 
     case offending do
       [] ->

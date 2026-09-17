@@ -46,7 +46,7 @@ defmodule AshA2A.Semantic.PlanProjection do
   not a grant; nothing here can be presented to `AshA2A.CommandBus`.
   """
 
-  alias AshA2A.Semantic.{CanonicalTermDigest, Ontology, PlanningIR}
+  alias AshA2A.Semantic.{CanonicalTermDigest, Ontology, PlanningIR, Vocabulary}
 
   @enforce_keys [
     :source_id,
@@ -176,31 +176,132 @@ defmodule AshA2A.Semantic.PlanProjection do
       `source_graph_digest` is not this ontology's fingerprint. Detail
       carries `%{recorded: ..., current: ...}`.
 
+    * `:projection_not_witnessed_by_graph` -- the projection is
+      self-consistent (for example edited AND re-digested) but its content is
+      not what the graph carries. Detail names the first unwitnessed field.
+
+  A projection whose `standing`/`authority` is not `:derived`/`:none` is
+  refused as `:projection_manual_edit_not_canonical` as well.
+
   Order matters: the tamper check runs first, because a hand-edited
   `source_graph_digest` would otherwise be able to masquerade as a
   legitimate drift (or, worse, as agreement).
   """
   @spec verify(t(), Ontology.t()) :: {:ok, t()} | refusal()
   def verify(%__MODULE__{} = projection, %Ontology{} = ontology) do
-    recomputed = content_digest(projection)
+    projection |> check_against_graph(ontology) |> emit_verify(:graph)
+  end
 
-    cond do
-      recomputed != projection.projection_digest ->
-        error(:projection_manual_edit_not_canonical, %{
-          recorded: projection.projection_digest,
-          recomputed: recomputed
-        })
-
-      projection.source_graph_digest != ontology.fingerprint ->
+  defp check_against_graph(projection, ontology) do
+    with {:ok, projection} <- check_self(projection) do
+      if projection.source_graph_digest != ontology.fingerprint do
         error(:projection_source_drift, %{
           recorded: projection.source_graph_digest,
           current: ontology.fingerprint
         })
-
-      true ->
-        {:ok, projection}
+      else
+        witnessed_by_graph(projection, ontology)
+      end
     end
   end
+
+  # RFC-SA2A-002 §77 (SA2A-PROJECTION-002): a projection edited AND re-digested
+  # passes the self-check, so the authoritative graph must witness the content.
+  # Every projected string field must equal, as a multiset, the
+  # `schema:description`s of the ontology nodes typed with the IR field it was
+  # derived from; objects must be exactly the entity nodes (and carry their
+  # `rdf:type`); predicates must be exactly the relation triples. Object labels
+  # are not in `O*` (the ontology records an entity's description), so they are
+  # the one projected value the graph cannot witness.
+  @witnessed_text [
+    goals: :goals,
+    constraints: :constraints,
+    task_candidates: :capabilities,
+    nondeterminism: :uncertainties,
+    exclusions: :exclusions
+  ]
+
+  defp witnessed_by_graph(projection, %Ontology{triples: triples}) do
+    rdf_type = Vocabulary.expand("rdf:type")
+    description = Vocabulary.expand("schema:description")
+
+    typed = fn field ->
+      for %{predicate: ^rdf_type, object: object, subject: s} <- triples,
+          object == Vocabulary.local(field),
+          into: MapSet.new(),
+          do: s
+    end
+
+    described = fn nodes ->
+      for %{predicate: ^description, subject: s, object: o} <- triples,
+          MapSet.member?(nodes, s),
+          do: o
+    end
+
+    mismatch =
+      Enum.find_value(@witnessed_text, fn {field, ir_field} ->
+        witnessed = described.(typed.(ir_field))
+        unless same_multiset?(Map.fetch!(projection, field), witnessed), do: {field, witnessed}
+      end) ||
+        objects_mismatch(projection.objects, typed.(:entities), triples, rdf_type) ||
+        predicates_mismatch(projection.predicates, typed.(:relations), triples)
+
+    case mismatch do
+      nil ->
+        {:ok, projection}
+
+      {field, witnessed} ->
+        error(:projection_not_witnessed_by_graph, %{
+          field: field,
+          projected: Map.fetch!(projection, field),
+          witnessed: witnessed,
+          source_graph_digest: projection.source_graph_digest
+        })
+    end
+  end
+
+  defp objects_mismatch(objects, entity_nodes, triples, rdf_type) do
+    witnessed_ids =
+      entity_nodes |> Enum.map(&String.replace_prefix(&1, Ontology.node_iri(""), ""))
+
+    typed? = fn
+      %{"id" => id, "type" => type} ->
+        %{subject: Ontology.node_iri(id), predicate: rdf_type, object: Vocabulary.expand(type)} in triples
+
+      %{"id" => _} ->
+        true
+
+      _ ->
+        false
+    end
+
+    ids = if is_list(objects), do: Enum.map(objects, &(is_map(&1) && &1["id"])), else: nil
+
+    unless same_multiset?(ids, witnessed_ids) and Enum.all?(objects, typed?),
+      do: {:objects, witnessed_ids}
+  end
+
+  defp predicates_mismatch(predicates, relation_nodes, triples) do
+    witnessed? = fn
+      %{"subject" => s, "predicate" => p, "object" => o} when is_binary(s) and is_binary(p) ->
+        Enum.any?(triples, fn t ->
+          t.subject == Ontology.node_iri(s) and t.predicate == Vocabulary.expand(p) and
+            t.object in [Ontology.node_iri(o), o]
+        end)
+
+      _ ->
+        false
+    end
+
+    unless is_list(predicates) and length(predicates) == MapSet.size(relation_nodes) and
+             Enum.all?(predicates, witnessed?),
+           do: {:predicates, MapSet.size(relation_nodes)}
+  end
+
+  defp same_multiset?(projected, witnessed) when is_list(projected),
+    do: Enum.sort(projected) == Enum.sort(witnessed)
+
+  defp same_multiset?(_projected, _witnessed), do: false
 
   @doc """
   Tamper check alone, with no ontology in hand.
@@ -211,17 +312,34 @@ defmodule AshA2A.Semantic.PlanProjection do
   """
   @spec verify_self(t()) :: {:ok, t()} | refusal()
   def verify_self(%__MODULE__{} = projection) do
+    projection |> check_self() |> emit_verify(:self)
+  end
+
+  defp check_self(projection) do
     recomputed = content_digest(projection)
 
-    if recomputed == projection.projection_digest do
-      {:ok, projection}
-    else
-      error(:projection_manual_edit_not_canonical, %{
-        recorded: projection.projection_digest,
-        recomputed: recomputed
-      })
+    cond do
+      recomputed != projection.projection_digest ->
+        error(:projection_manual_edit_not_canonical, %{
+          recorded: projection.projection_digest,
+          recomputed: recomputed
+        })
+
+      # `standing`/`authority` are structural constants outside the content
+      # digest; an edit to them is an edit, not a promotion (SA2A-PROJECTION-003).
+      {projection.standing, projection.authority} != {:derived, :none} ->
+        error(:projection_manual_edit_not_canonical, %{
+          forged_fence: %{standing: projection.standing, authority: projection.authority},
+          required: %{standing: :derived, authority: :none}
+        })
+
+      true ->
+        {:ok, projection}
     end
   end
+
+  @doc false
+  def __sa2a_refusal_codes__, do: %{projection_not_witnessed_by_graph: :refused_plan}
 
   defp fence(%PlanningIR{authority: :none}, %Ontology{standing: :admitted, authority: :none}),
     do: :ok
@@ -241,6 +359,17 @@ defmodule AshA2A.Semantic.PlanProjection do
       planning_ir_expects: planning.ontology_fingerprint,
       ontology_is: ontology.fingerprint
     })
+  end
+
+  # RFC-SA2A-002 §12 attempt evidence, emitted where the S27 decision is made.
+  defp emit_verify(result, mode) do
+    :telemetry.execute([:ash_a2a, :semantic, :plan_projection, :verify], %{}, %{
+      outcome: if(match?({:ok, _}, result), do: :verified, else: :refused),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      mode: mode
+    })
+
+    result
   end
 
   defp error(code, detail \\ nil), do: {:error, %{code: code, detail: detail}}

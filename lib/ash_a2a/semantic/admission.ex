@@ -53,15 +53,33 @@ defmodule AshA2A.Semantic.Admission do
 
   # `[:ash_a2a, :semantic, :ir_admission]`: the deterministic admission
   # decision over candidate (typically model-extracted) semantic IR, with the
-  # standing the result carries (RFC-SA2A-002 §81 evidence). Observational.
+  # standing the result carries (RFC-SA2A-002 §81 evidence) and, on refusal,
+  # the refusal `code` (RFC-SA2A-002 §12 attempt evidence -- a sibling branch
+  # had emitted this same decision under a second event name,
+  # `[:ash_a2a, :semantic, :ir_admission, :decision]`; collapsed here into
+  # this one canonical event so every court (llm_boundary.ex and
+  # canonical_mutation.ex alike) observes the same record for the same real
+  # decision -- see `InferenceMappings.ir_admission/0`'s `Map.take(meta,
+  # [:outcome, :code, :standing, :authority])`, which already anticipated
+  # `:code`). Observational.
   defp emit_admission(result, source, ir) do
     meta =
       case result do
         {:ok, %IR{} = admitted} ->
-          %{outcome: :admitted, standing: admitted.standing, authority: admitted.authority}
+          %{
+            outcome: :admitted,
+            standing: admitted.standing,
+            authority: admitted.authority,
+            code: nil
+          }
 
         {:error, reason} ->
-          %{outcome: :refused, code: Map.get(reason, :code), standing: ir.standing}
+          %{
+            outcome: :refused,
+            code: Map.get(reason, :code),
+            standing: ir.standing,
+            authority: ir.authority
+          }
       end
 
     :telemetry.execute(

@@ -58,9 +58,20 @@ defmodule AshA2A.Semantic.MappingRegistry do
   Requires: two valid, distinct IRIs, a SKOS-aligned kind, and an admission
   receipt. Returns `{:ok, registry}` or a typed refusal.
   """
+  # Two sibling courts observe this one decision under two independently
+  # admitted event names and outcome vocabularies --
+  # `executable_world.ex` / `shex_shacl_admission_test.exs` on
+  # `[:ash_a2a, :semantic, :mapping, :register]` with `outcome: :admitted |
+  # :refused`, `public_semantics_namespace.ex` on
+  # `[:ash_a2a, :semantic, :mapping_registry, :register]` with
+  # `outcome: :registered | :refused`. Both are real projections of the same
+  # `decide_register/2` result below, computed once; neither vocabulary is
+  # weakened or renamed to match the other.
   @spec register(t(), term()) :: {:ok, t()} | {:error, refusal()}
   def register(%__MODULE__{} = registry, mapping) do
     result = decide_register(registry, mapping)
+    admitted? = match?({:ok, _}, result)
+    code = with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
 
     # Boundary evidence for independent observers (RFC-SA2A-002 §12): the
     # decision this function just made, never an input to it.
@@ -73,10 +84,16 @@ defmodule AshA2A.Semantic.MappingRegistry do
         source: fields[:source] || fields["source"],
         target: fields[:target] || fields["target"],
         kind: fields[:kind] || fields["kind"],
-        outcome: if(match?({:ok, _}, result), do: :admitted, else: :refused),
-        code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil))
+        outcome: if(admitted?, do: :admitted, else: :refused),
+        code: code
       }
     )
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where mapping admission is decided.
+    :telemetry.execute([:ash_a2a, :semantic, :mapping_registry, :register], %{}, %{
+      outcome: if(admitted?, do: :registered, else: :refused),
+      code: code
+    })
 
     result
   end
@@ -158,6 +175,19 @@ defmodule AshA2A.Semantic.MappingRegistry do
   """
   @spec reconcile(t(), map(), map()) :: {:ok, map()} | {:error, refusal()}
   def reconcile(%__MODULE__{} = registry, %{} = peer_a, %{} = peer_b) do
+    result = do_reconcile(registry, peer_a, peer_b)
+
+    # RFC-SA2A-002 §12 attempt evidence, emitted where the S47 decision is made.
+    :telemetry.execute([:ash_a2a, :semantic, :mapping_registry, :reconcile], %{}, %{
+      outcome: with({:ok, %{outcome: outcome}} <- result, do: outcome, else: (_ -> :refused)),
+      code: with({:error, %{code: code}} <- result, do: code, else: (_ -> nil)),
+      labels_match: labels_match?(peer_a, peer_b)
+    })
+
+    result
+  end
+
+  defp do_reconcile(registry, peer_a, peer_b) do
     with {:ok, iri_a} <- peer_iri(peer_a, :a),
          {:ok, iri_b} <- peer_iri(peer_b, :b) do
       cond do
