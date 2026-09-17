@@ -1,0 +1,135 @@
+(define (problem dogfood-v26-9-17)
+  (:domain sa2a-v26-9-17)
+
+  (:objects
+
+    v26-9-17 - release
+
+    episode-1
+    episode-2 - episode
+
+    sa2a-self-improvement - subject
+
+    ;; Repositories
+    autofde-lab
+    ash-a2a
+    ash-r2rml
+    bcinr
+    ggen
+    ggen-igniter
+    xaas
+    affidavit
+    beam4pm
+    unrdf
+    wasm4pm
+      - repo
+
+    ;; Capability boundaries
+    cap-crown
+    cap-orchestration
+    cap-semantic-feedback
+    cap-bounded-select
+    cap-manufacture
+    cap-framework-projection
+    cap-system-authority
+    cap-standing
+    cap-process-court
+    cap-runtime
+    cap-portable-runtime
+      - capability
+
+    candidate-1
+    candidate-experience
+      - candidate
+
+    plan-episode-1 - plan
+
+    artifact-episode-1 - artifact
+
+    command-episode-1
+    command-episode-2
+      - command
+
+    receipt-episode-1
+    receipt-episode-2
+      - receipt
+
+    experience-1 - experience
+  )
+
+  (:htn
+    :tasks
+      (and
+        (top
+          (qualify-v26-9-17
+            v26-9-17
+            episode-1
+            episode-2
+            sa2a-self-improvement
+            experience-1))))
+
+  (:init
+
+    ;; ========================================================
+    ;; Repo responsibility graph
+    ;; ========================================================
+
+    (owns autofde-lab cap-crown)
+
+    (owns ash-a2a cap-orchestration)
+
+    (owns ash-r2rml cap-semantic-feedback)
+
+    (owns bcinr cap-bounded-select)
+
+    (owns ggen cap-manufacture)
+
+    (owns ggen-igniter cap-framework-projection)
+
+    (owns xaas cap-system-authority)
+
+    (owns affidavit cap-standing)
+
+    (owns beam4pm cap-process-court)
+
+    (owns unrdf cap-runtime)
+
+    (owns wasm4pm cap-portable-runtime)
+
+    ;; Critical release chain
+    (critical cap-crown)
+    (critical cap-orchestration)
+    (critical cap-semantic-feedback)
+    (critical cap-bounded-select)
+    (critical cap-manufacture)
+    (critical cap-framework-projection)
+    (critical cap-system-authority)
+    (critical cap-standing)
+    (critical cap-process-court)
+
+    ;; Both episodes begin without frontier use.
+    ;; Episode 1 is allowed to consume it.
+    ;; Episode 2 must preserve it.
+    (frontier-clean episode-1)
+    (frontier-clean episode-2)
+  )
+
+  (:goal
+    (and
+      (release-qualified v26-9-17)
+
+      ;; First episode acquired knowledge.
+      (experience-admitted experience-1)
+      (replay-contract experience-1)
+
+      ;; Second episode proved reuse.
+      (replayed episode-2 experience-1)
+      (frontier-clean episode-2)
+
+      ;; Both have independent evidence.
+      (affidavit-issued episode-1)
+      (affidavit-issued episode-2)
+
+      (process-conformant episode-1)
+      (process-conformant episode-2)))
+)
