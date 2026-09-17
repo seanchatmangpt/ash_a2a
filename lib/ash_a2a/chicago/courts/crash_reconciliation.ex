@@ -534,6 +534,71 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
              {:count, "reconciliation.reconciled", :gte, 5}
            ]},
         outcome_predicate: {:count, "brce.actuate.start", :lte, 3}
+      ),
+      negative(19,
+        invariant:
+          "An abandoned claim (crash before receipt preparation) becomes reclaimable once its configured claim lease elapses, and the resubmission after the lease succeeds with exactly one actuation",
+        stimulus:
+          "with a short claim_lease_ms configured: CommandBus.run killed at brce.claim(execute) (no anchor ever prepared, matching scenario 1's crash point); resubmit immediately (still in_flight); sleep past the lease; resubmit again",
+        boundary: "AshA2A.ReceiptStore.ClaimLease.abandoned?/2 inside ReceiptStore.Ekv.claim/2",
+        forbidden_outcome:
+          "the resubmission after the lease elapses is still refused in_flight, or more than one actuation or ledger row is ever observed",
+        attempt_evidence:
+          "brce.claim(execute), brce.claim(refused, in_flight) before the lease elapses, and a third brce.admission for the post-lease resubmission",
+        survival_evidence:
+          "the post-lease resubmission is still refused in_flight, or ledger rows != 1, or actuate.start count != 1, or the immediate replay of the resubmission is not replayed?: true",
+        guard:
+          "AshA2A.ReceiptStore.ClaimLease.abandoned?/2 lease+anchor test; ReceiptStore.Ekv.decide_claim/4 + reclaim/3",
+        failure_class: :receipt_failure,
+        attempt_predicate:
+          {:all,
+           [
+             {:observed, "brce.claim", %{"outcome" => "execute"}},
+             {:observed, "brce.claim", %{"outcome" => "refused", "code" => "in_flight"}},
+             {:count, "brce.admission", :gte, 3}
+           ]},
+        outcome_predicate:
+          {:any,
+           [
+             {:not_observed, "brce.commit", %{"outcome" => "committed"}},
+             {:not, {:count, "brce.actuate.start", :eq, 1}}
+           ]}
+      ),
+      negative(20,
+        invariant:
+          "A claim that reached receipt preparation is never reclaimed by the claim lease alone, no matter how long the lease window has passed; it remains recoverable only through the existing outbox reconciliation path, with zero actuations",
+        stimulus:
+          "with a short claim_lease_ms configured: CommandBus.run killed at brce.prepare(prepared) (anchor durably written, matching scenario 2's crash point); sleep well past the lease; a direct ReceiptStore.Ekv.claim/2 call (bypassing CommandBus.run's own outbox auto-drain) must still refuse in_flight; then run the real Reconciliation.reconcile(probe) recovery path and resubmit through CommandBus.run",
+        boundary:
+          "AshA2A.ReceiptStore.ClaimLease.abandoned?/2's outbox-anchor test inside ReceiptStore.Ekv.claim/2",
+        forbidden_outcome:
+          "any actuation or ledger row at any point, the direct post-lease store claim is anything other than refused in_flight, or the final reconciled state is not not_executed",
+        attempt_evidence:
+          "brce.prepare(prepared), reconciliation.classified(post_lease_wait), reconciliation.reconciled(recovery)",
+        survival_evidence:
+          "actuate.start observed at any point; ledger rows > 0; classified(final) != reconciled(not_executed)",
+        guard:
+          "AshA2A.ReceiptStore.ClaimLease.abandoned?/2 anchored?/1 clause; ReceiptOutbox.reconcile pending-commit recovery path",
+        failure_class: :receipt_failure,
+        attempt_predicate:
+          {:all,
+           [
+             {:observed, "brce.prepare", %{"outcome" => "prepared"}},
+             {:observed, "reconciliation.classified", %{"label" => "post_lease_wait"}},
+             {:observed, "reconciliation.reconciled", %{"label" => "recovery"}},
+             {:count, "brce.admission", :gte, 2}
+           ]},
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, "brce.actuate.start"},
+             {:not,
+              {:observed, "reconciliation.classified",
+               %{"label" => "post_lease_wait", "state" => "prepared_unknown_outcome"}}},
+             {:not,
+              {:observed, "reconciliation.classified",
+               %{"label" => "final", "state" => "reconciled", "resolved_as" => "not_executed"}}}
+           ]}
       )
     ]
   end
@@ -1242,6 +1307,150 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
         )
         | measurements: measurements
       }
+    end
+  end
+
+  # 019/020: bounded claim lease + reconciliation (closes the SA2A-CHAOS
+  # liveness gap where an abandoned in-flight claim, receipt: nil forever,
+  # blocked every resubmission). Both temporarily configure a short
+  # `:claim_lease_ms` and restore the previous value afterward.
+  defp scenario(19, ctx, f) do
+    with_env(ctx, f, fn env ->
+      cid = new_command_id(f)
+      input = input(cid)
+      lease_ms = 300
+
+      ev =
+        Context.stimulus(ctx, f, fn ->
+          with_claim_lease(lease_ms, fn ->
+            crash = Env.run_crashing(env, cid, input, {:at_event, @claim, %{outcome: :execute}})
+            still_in_flight = Env.run(env, cid, input)
+            Process.sleep(lease_ms * 3)
+            resubmission = Env.run(env, cid, input)
+            replay = Env.run(env, cid, input)
+
+            %{
+              crash: crash,
+              still_in_flight: still_in_flight,
+              resubmission: resubmission,
+              replay: replay
+            }
+          end)
+        end)
+
+      rows = Env.rows(cid)
+      actuations = count(ctx, f, "brce.actuate.start")
+
+      Result.negative(f,
+        attempt_observed?:
+          ev.crash.crash_point_reached? and
+            seen(ctx, f, "brce.claim", %{"outcome" => "execute"}) and
+            match?({:error, %{code: :in_flight}}, ev.still_in_flight) and
+            count(ctx, f, "brce.admission") >= 3,
+        forbidden_outcome_observed?:
+          rows != 1 or actuations != 1 or
+            not match?({:ok, %Receipt{status: :completed, replayed?: false}}, ev.resubmission) or
+            not match?({:ok, %Receipt{replayed?: true}}, ev.replay),
+        evidence: %{
+          "command_id" => cid,
+          "lease_ms" => lease_ms,
+          "crash" => crash_evidence(ev.crash),
+          "still_in_flight_before_lease" => reply(ev.still_in_flight),
+          "resubmission_after_lease" => reply(ev.resubmission),
+          "replay_after_resubmission" => reply(ev.replay),
+          "ledger_rows" => rows,
+          "actuations_observed" => actuations
+        }
+      )
+    end)
+  end
+
+  defp scenario(20, ctx, f) do
+    with_env(ctx, f, fn env ->
+      cid = new_command_id(f)
+      input = input(cid)
+      lease_ms = 300
+
+      ev =
+        Context.stimulus(ctx, f, fn ->
+          with_claim_lease(lease_ms, fn ->
+            crash =
+              Env.run_crashing(env, cid, input, {:at_event, @prepare, %{outcome: :prepared}})
+
+            env = Env.restart_store(env)
+            Process.sleep(lease_ms * 3)
+
+            # A DIRECT store-level claim (not `CommandBus.run/4`, whose own
+            # `maybe_reconcile_outbox/2` would drain this exact anchor into
+            # the primary store before any claim decision runs, confounding
+            # what is under test here): proves `ReceiptStore.Ekv.claim/2`'s
+            # own reclaim guard holds well past the lease, on its own, before
+            # any reconciliation ever touches this command id.
+            direct_claim_after_lease =
+              Env.store().claim(Env.command(cid, input), Env.store_opts(env))
+
+            rows_after_wait = Env.rows(cid)
+            post = classify(env, cid, "post_lease_wait")
+            recovery = reconcile(env, cid, label: "recovery", probe: &Env.probe/1)
+            resubmission = Env.run(env, cid, input)
+            final = classify(env, cid, "final")
+
+            %{
+              crash: crash,
+              direct_claim_after_lease: direct_claim_after_lease,
+              rows_after_wait: rows_after_wait,
+              post: post,
+              recovery: recovery,
+              resubmission: resubmission,
+              final: final
+            }
+          end)
+        end)
+
+      rows = Env.rows(cid)
+      actuations = count(ctx, f, "brce.actuate.start")
+
+      Result.negative(f,
+        attempt_observed?:
+          ev.crash.crash_point_reached? and
+            seen(ctx, f, "brce.prepare", %{"outcome" => "prepared"}) and
+            classified?(ev.post) and match?({:ok, _}, ev.recovery) and
+            count(ctx, f, "brce.admission") >= 2,
+        forbidden_outcome_observed?:
+          not match?({:error, :in_flight}, ev.direct_claim_after_lease) or
+            actuations > 0 or rows > 0 or ev.rows_after_wait > 0 or
+            state(ev.post) != :prepared_unknown_outcome or
+            not final?(ev.final, :reconciled, :not_executed),
+        evidence: %{
+          "command_id" => cid,
+          "lease_ms" => lease_ms,
+          "crash" => crash_evidence(ev.crash),
+          "direct_claim_after_lease" => inspect(ev.direct_claim_after_lease, limit: 5),
+          "post_lease_wait" => classification_evidence(ev.post),
+          "recovery" => recovery_evidence(ev.recovery),
+          "resubmission" => reply(ev.resubmission),
+          "final" => classification_evidence(ev.final),
+          "ledger_rows" => rows,
+          "actuations_observed" => actuations
+        }
+      )
+    end)
+  end
+
+  # Scopes a short `:claim_lease_ms` to `fun`, always restoring whatever was
+  # configured before (own `after` clause, not just `on_exit` -- this runs
+  # inside a court, not an ExUnit test).
+  defp with_claim_lease(lease_ms, fun) do
+    previous = Application.get_env(:ash_a2a, :claim_lease_ms)
+    Application.put_env(:ash_a2a, :claim_lease_ms, lease_ms)
+
+    try do
+      fun.()
+    after
+      case previous do
+        nil -> Application.delete_env(:ash_a2a, :claim_lease_ms)
+        value -> Application.put_env(:ash_a2a, :claim_lease_ms, value)
+      end
     end
   end
 

@@ -8,12 +8,19 @@ defmodule AshA2A.ReceiptStore.Memory do
   keys, so it inherits the same free serialization the command claim already
   gets from the process mailbox -- two concurrent claimants on one effect are
   ordered by the mailbox, not by a racy read-then-write.
+
+  A claimed-but-not-yet-committed command is `:in_flight` unless
+  `AshA2A.ReceiptStore.ClaimLease` judges it abandoned (its configured lease
+  has elapsed AND no `AshA2A.ReceiptOutbox` anchor exists for it), in which
+  case it is reclaimed as a fresh claim -- see that module for why this can
+  never reclaim a claim that reached receipt preparation.
   """
   use GenServer
 
   @behaviour AshA2A.ReceiptStore
 
   alias AshA2A.{Actuation, Command, Identity, Receipt}
+  alias AshA2A.ReceiptStore.ClaimLease
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, name: Keyword.get(opts, :name, __MODULE__))
@@ -58,16 +65,29 @@ defmodule AshA2A.ReceiptStore.Memory do
 
     case Map.get(state, key) do
       nil ->
-        execution_id = Identity.execution(Ash.UUIDv7.generate())
-        entry = %{fingerprint: command.fingerprint, execution_id: execution_id, receipt: nil}
+        {execution_id, entry} = fresh_claim_entry(command)
         {:reply, {:execute, execution_id}, Map.put(state, key, entry)}
 
       %{fingerprint: fingerprint, receipt: %Receipt{} = receipt}
       when fingerprint == command.fingerprint ->
         {:reply, {:replay, Receipt.replay(receipt)}, state}
 
-      %{fingerprint: fingerprint} when fingerprint == command.fingerprint ->
-        {:reply, {:error, :in_flight}, state}
+      %{fingerprint: fingerprint} = entry when fingerprint == command.fingerprint ->
+        # Bounded claim lease + reconciliation (closes the SA2A-CHAOS
+        # liveness gap): a crash after this claim recorded `receipt: nil`
+        # but before a receipt anchor was ever prepared leaves no live
+        # executor to ever clear it. The GenServer mailbox already
+        # serializes this decision the same way it serializes a fresh
+        # claim, so reclaiming here needs no separate CAS -- see
+        # `AshA2A.ReceiptStore.ClaimLease` for the abandonment test (lease
+        # elapsed AND no outbox anchor) and why a claim that DID reach the
+        # outbox is never reclaimed.
+        if ClaimLease.abandoned?(Map.get(entry, :claimed_at), command.command_id) do
+          {execution_id, fresh} = fresh_claim_entry(command)
+          {:reply, {:execute, execution_id}, Map.put(state, key, fresh)}
+        else
+          {:reply, {:error, :in_flight}, state}
+        end
 
       _ ->
         {:reply, {:error, :command_conflict}, state}
@@ -147,4 +167,17 @@ defmodule AshA2A.ReceiptStore.Memory do
     do: {:actuation, Identity.external(actuation_id)}
 
   defp server(opts), do: Keyword.get(opts, :name, __MODULE__)
+
+  defp fresh_claim_entry(%Command{} = command) do
+    execution_id = Identity.execution(Ash.UUIDv7.generate())
+
+    entry = %{
+      fingerprint: command.fingerprint,
+      execution_id: execution_id,
+      receipt: nil,
+      claimed_at: ClaimLease.now()
+    }
+
+    {execution_id, entry}
+  end
 end

@@ -42,7 +42,9 @@ defmodule AshA2A.Chicago.CrashReconciliationTest do
     "SA2A-CHAOS-015" => :positive_control_passed,
     "SA2A-CHAOS-016" => :positive_control_passed,
     "SA2A-CHAOS-017" => :positive_control_passed,
-    "SA2A-CHAOS-018" => :measured
+    "SA2A-CHAOS-018" => :measured,
+    "SA2A-CHAOS-019" => :falsifier_killed,
+    "SA2A-CHAOS-020" => :falsifier_killed
   }
 
   describe "the SA2A-CHAOS court over the real SUT" do
@@ -67,7 +69,7 @@ defmodule AshA2A.Chicago.CrashReconciliationTest do
       assert run.ocel.dropped == 0
 
       receipt = JSON.decode!(File.read!(Path.join(dir, "standing_receipt.json")))
-      assert receipt["results"]["falsifiers_killed"] == 13
+      assert receipt["results"]["falsifiers_killed"] == 15
       assert receipt["results"]["falsifiers_survived"] == 0
       assert receipt["results"]["positive_controls_passed"] == 4
       assert receipt["results"]["measured"] == 1
@@ -257,6 +259,82 @@ defmodule AshA2A.Chicago.CrashReconciliationTest do
         Env.close(env)
       end
     end
+  end
+
+  describe "ReceiptStore.Memory claim lease reclaim (closes the SA2A-CHAOS liveness gap)" do
+    setup do
+      previous = Application.get_env(:ash_a2a, :claim_lease_ms)
+
+      on_exit(fn ->
+        case previous do
+          nil -> Application.delete_env(:ash_a2a, :claim_lease_ms)
+          value -> Application.put_env(:ash_a2a, :claim_lease_ms, value)
+        end
+      end)
+
+      :ok
+    end
+
+    test "an abandoned claim (no outbox anchor) is reclaimable once the lease elapses" do
+      Application.put_env(:ash_a2a, :claim_lease_ms, 20)
+      name = :"claim_lease_memory_#{System.unique_integer([:positive])}"
+      start_supervised!({Memory, name: name})
+      opts = [name: name]
+      command = unit_command("lease-memory")
+
+      assert {:execute, first_execution_id} = Memory.claim(command, opts)
+      assert {:error, :in_flight} = Memory.claim(command, opts)
+
+      Process.sleep(60)
+
+      assert {:execute, second_execution_id} = Memory.claim(command, opts)
+      assert second_execution_id != first_execution_id
+
+      # The reclaimed execution commits normally, and the command id then
+      # replays -- reclaim behaves exactly like a fresh claim from here on.
+      receipt = Receipt.from_reply(command, second_execution_id, :external_do, {:reply, []}, [])
+      :ok = Memory.commit(receipt, opts)
+      assert {:replay, %Receipt{replayed?: true}} = Memory.claim(command, opts)
+    end
+
+    test "a claim that reached receipt preparation is never reclaimed, no matter how long the lease has passed",
+         %{tmp_dir: dir} do
+      Application.put_env(:ash_a2a, :claim_lease_ms, 20)
+      previous_outbox = Application.get_env(:ash_a2a, :receipt_outbox_dir)
+      Application.put_env(:ash_a2a, :receipt_outbox_dir, Path.join(dir, "lease_anchor_outbox"))
+
+      on_exit(fn ->
+        case previous_outbox do
+          nil -> Application.delete_env(:ash_a2a, :receipt_outbox_dir)
+          value -> Application.put_env(:ash_a2a, :receipt_outbox_dir, value)
+        end
+      end)
+
+      name = :"claim_lease_anchored_memory_#{System.unique_integer([:positive])}"
+      start_supervised!({Memory, name: name})
+      opts = [name: name]
+      command = unit_command("lease-anchored")
+
+      assert {:execute, execution_id} = Memory.claim(command, opts)
+      anchor = Receipt.pending(command, execution_id, :external_do)
+      :ok = ReceiptOutbox.append(anchor)
+
+      Process.sleep(60)
+
+      # Well past the lease, but a pending anchor exists: this claim may
+      # already have actuated, so it must stay in_flight -- the lease alone
+      # never reclaims it.
+      assert {:error, :in_flight} = Memory.claim(command, opts)
+    end
+  end
+
+  defp unit_command(prefix) do
+    Command.new("AshA2A.Chicago.Fixtures.ChaosReconciliation.Effect.apply_effect",
+      command_id: "#{prefix}-#{System.unique_integer([:positive])}",
+      agent_id: "unit-agent",
+      principal_id: "unit-principal",
+      input: %{}
+    )
   end
 
   defp claimed_anchor(opts) do

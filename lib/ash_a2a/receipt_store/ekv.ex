@@ -15,7 +15,11 @@ defmodule AshA2A.ReceiptStore.Ekv do
   `handle_call` clauses exactly: same command id + same fingerprint replays
   the already-committed receipt; same id + different fingerprint is a
   `:command_conflict`; a claimed-but-not-yet-committed command is
-  `:in_flight`.
+  `:in_flight` -- unless `AshA2A.ReceiptStore.ClaimLease` judges it abandoned
+  (its configured lease has elapsed AND no `AshA2A.ReceiptOutbox` anchor
+  exists for it), in which case it is reclaimed as a fresh claim. See
+  `AshA2A.ReceiptStore.ClaimLease` for why this can never reclaim a claim
+  that reached receipt preparation.
 
   Unlike `AshA2A.ReceiptStore.Memory` (whose GenServer mailbox happens to
   serialize concurrent claims for free within one process), this module has
@@ -37,6 +41,7 @@ defmodule AshA2A.ReceiptStore.Ekv do
   @behaviour AshA2A.ReceiptStore
 
   alias AshA2A.{Actuation, Command, Identity, Receipt}
+  alias AshA2A.ReceiptStore.ClaimLease
 
   @doc """
   Declares this store genuinely durable.
@@ -58,7 +63,7 @@ defmodule AshA2A.ReceiptStore.Ekv do
 
     case EKV.get(name, key) do
       nil -> attempt_fresh_claim(name, key, command)
-      entry -> decide_claim(entry, command)
+      entry -> decide_claim(name, key, entry, command)
     end
   end
 
@@ -67,28 +72,32 @@ defmodule AshA2A.ReceiptStore.Ekv do
   # returning `nil` for the same fresh command_id, but only one `if_vsn: nil`
   # put can win. The loser re-reads whichever entry actually won and
   # re-dispatches through the exact same fingerprint-match logic
-  # (`decide_claim/2`) a first-time reader would have used, instead of
+  # (`decide_claim/4`) a first-time reader would have used, instead of
   # trusting the not-found branch it already took.
   defp attempt_fresh_claim(name, key, command) do
-    execution_id = Identity.execution(Ash.UUIDv7.generate())
-    entry = %{fingerprint: command.fingerprint, execution_id: execution_id, receipt: nil}
+    entry = fresh_claim_entry(command)
 
     case EKV.put(name, key, entry, if_vsn: nil) do
       {:ok, _vsn} ->
-        {:execute, execution_id}
+        {:execute, entry.execution_id}
 
       {:error, reason} when reason in [:conflict, :unconfirmed] ->
         case reread_after_cas(name, key, reason) do
           # The winning entry vanished between the lost race and this
           # re-read (for example a TTL/delete on that key) -- treat as
           # in-flight so the caller retries, rather than crash.
-          nil -> {:error, :in_flight}
+          nil ->
+            {:error, :in_flight}
+
           # `:unconfirmed` means this very write may have committed. The
           # stored entry carrying this attempt's own execution id proves it
           # did: reporting a lost race here would leave the command claimed
           # with zero executors, forever `:in_flight` (RFC-SA2A-002 §71).
-          %{execution_id: ^execution_id} -> {:execute, execution_id}
-          entry -> decide_claim(entry, command)
+          %{execution_id: execution_id} when execution_id == entry.execution_id ->
+            {:execute, entry.execution_id}
+
+          winner ->
+            decide_claim(name, key, winner, command)
         end
     end
   end
@@ -99,6 +108,8 @@ defmodule AshA2A.ReceiptStore.Ekv do
   defp reread_after_cas(name, key, :conflict), do: EKV.get(name, key)
 
   defp decide_claim(
+         _name,
+         _key,
          %{fingerprint: fingerprint, receipt: %Receipt{} = receipt},
          %Command{} = command
        )
@@ -106,13 +117,75 @@ defmodule AshA2A.ReceiptStore.Ekv do
     {:replay, Receipt.replay(receipt)}
   end
 
-  defp decide_claim(%{fingerprint: fingerprint}, %Command{} = command)
+  # Bounded claim lease + reconciliation (closes the SA2A-CHAOS liveness
+  # gap): a crash after `claim/2` durably records `receipt: nil` but before
+  # a receipt anchor is ever prepared leaves no live executor to ever clear
+  # it -- `{:error, :in_flight}` forever. `AshA2A.ReceiptStore.ClaimLease`
+  # decides abandonment (lease elapsed AND no outbox anchor for this command
+  # id); a claim that DID reach the outbox is never reclaimed regardless of
+  # age. `reclaim/3` re-reads via `EKV.lookup/2` immediately before its own
+  # `if_vsn:` write -- the same fresh CAS read-then-write discipline
+  # `commit/2` already uses -- so a claimant that resumed and committed
+  # between this decision and the write below loses the CAS and is replayed,
+  # never double-executed.
+  defp decide_claim(name, key, %{fingerprint: fingerprint} = entry, %Command{} = command)
        when fingerprint == command.fingerprint do
-    {:error, :in_flight}
+    if ClaimLease.abandoned?(Map.get(entry, :claimed_at), command.command_id) do
+      reclaim(name, key, command)
+    else
+      {:error, :in_flight}
+    end
   end
 
-  defp decide_claim(_entry, _command) do
+  defp decide_claim(_name, _key, _entry, _command) do
     {:error, :command_conflict}
+  end
+
+  defp reclaim(name, key, %Command{} = command) do
+    case EKV.lookup(name, key) do
+      {%{fingerprint: fingerprint, receipt: %Receipt{} = receipt}, _vsn}
+      when fingerprint == command.fingerprint ->
+        {:replay, Receipt.replay(receipt)}
+
+      {%{fingerprint: fingerprint} = current, vsn} when fingerprint == command.fingerprint ->
+        if ClaimLease.abandoned?(Map.get(current, :claimed_at), command.command_id) do
+          entry = fresh_claim_entry(command)
+
+          case EKV.put(name, key, entry, if_vsn: vsn) do
+            {:ok, _new_vsn} ->
+              {:execute, entry.execution_id}
+
+            {:error, reason} when reason in [:conflict, :unconfirmed] ->
+              case reread_after_cas(name, key, reason) do
+                nil ->
+                  {:error, :in_flight}
+
+                %{execution_id: execution_id} when execution_id == entry.execution_id ->
+                  {:execute, entry.execution_id}
+
+                winner ->
+                  decide_claim(name, key, winner, command)
+              end
+          end
+        else
+          {:error, :in_flight}
+        end
+
+      {%{}, _vsn} ->
+        {:error, :command_conflict}
+
+      nil ->
+        attempt_fresh_claim(name, key, command)
+    end
+  end
+
+  defp fresh_claim_entry(%Command{} = command) do
+    %{
+      fingerprint: command.fingerprint,
+      execution_id: Identity.execution(Ash.UUIDv7.generate()),
+      receipt: nil,
+      claimed_at: ClaimLease.now()
+    }
   end
 
   @impl true
