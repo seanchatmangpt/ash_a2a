@@ -1,0 +1,77 @@
+{
+  "schema": "ash_a2a.chicago.mandatory_corpus/1",
+  "specification": "RFC-SA2A-002-v26.9.16 §98",
+  "source": "RFC-SA2A-001 v26.9.16 §61 Minimum Falsifier Suite, mirrored as the RFC-SA2A-002 §98 Mandatory RFC-SA2A-001 Falsifier Corpus",
+  "members": [
+    {
+      "id": "consequence_without_authority_requirement",
+      "description": "consequence without authority requirement",
+      "falsifier_id": "SA2A-AUTH-002"
+    },
+    {
+      "id": "do_without_prepared_receipt_requirement",
+      "description": "DO without prepared-receipt requirement",
+      "falsifier_id": "CHI-BRCE-001"
+    },
+    {
+      "id": "unknown_capability_referenced_by_plan",
+      "description": "unknown capability referenced by plan",
+      "falsifier_id": "SA2A-AUTH-012"
+    },
+    {
+      "id": "unadmitted_ontology_term",
+      "description": "unadmitted ontology term",
+      "falsifier_id": "SA2A-LLM-003"
+    },
+    {
+      "id": "unadmitted_rule",
+      "description": "unadmitted rule",
+      "falsifier_id": "SA2A-META-003"
+    },
+    {
+      "id": "unadmitted_validator",
+      "description": "unadmitted validator",
+      "falsifier_id": "SA2A-META-002"
+    },
+    {
+      "id": "plan_exceeding_fan_out_bound",
+      "description": "plan exceeding fan-out bound",
+      "falsifier_id": "SA2A-BOUNDS-002"
+    },
+    {
+      "id": "plan_exceeding_resource_envelope",
+      "description": "plan exceeding resource envelope",
+      "falsifier_id": "SA2A-BOUNDS-001"
+    },
+    {
+      "id": "semantic_artifact_lacking_provenance",
+      "description": "semantic artifact lacking provenance",
+      "falsifier_id": "SA2A-LLM-001"
+    },
+    {
+      "id": "semantic_artifact_lacking_canonical_identity",
+      "description": "semantic artifact lacking canonical identity",
+      "falsifier_id": "SA2A-CANON-008"
+    },
+    {
+      "id": "projection_attempting_to_become_canonical_source",
+      "description": "projection attempting to become canonical source",
+      "falsifier_id": "SA2A-CANONMUT-004"
+    },
+    {
+      "id": "authority_derived_from_agent_identity_alone",
+      "description": "authority derived from agent identity alone",
+      "falsifier_id": "SA2A-AUTH-010"
+    },
+    {
+      "id": "llm_output_marked_directly_as_admitted",
+      "description": "LLM output marked directly as ADMITTED",
+      "falsifier_id": "SA2A-CANONMUT-006"
+    },
+    {
+      "id": "canonical_mutation_outside_brce",
+      "description": "canonical mutation outside BRCE",
+      "falsifier_id": "SA2A-SPARQL-007"
+    }
+  ]
+}

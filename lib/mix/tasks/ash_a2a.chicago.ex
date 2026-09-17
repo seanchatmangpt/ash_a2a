@@ -7,6 +7,7 @@ defmodule Mix.Tasks.AshA2a.Chicago do
 
       mix ash_a2a.chicago --profile strict --evidence-dir tmp/chicago
       mix ash_a2a.chicago --profile do --court CHI-BRCE --court CHI-POST
+      mix ash_a2a.chicago --profile strict --crown
       mix ash_a2a.chicago --list
 
   Options:
@@ -16,9 +17,16 @@ defmodule Mix.Tasks.AshA2a.Chicago do
     * `--court` -- restrict to a court id (repeatable)
     * `--list` -- list discoverable courts and exit
     * `--require-conformant` -- exit non-zero unless standing is CONFORMANT
+    * `--crown` -- also assemble the RFC-SA2A-002 Chicago Crown package
+      (`AshA2A.Chicago.Crown.build/1`: §31 gate coverage, §98 mandatory-corpus
+      coverage, §145 compliance matrix, §114 package completeness, Appendix C
+      evidence questions) and write it to `crown.json` in the evidence
+      directory; the printed standing/claim become the crown's own (which
+      never exceeds, and can only be as good as or a documented downgrade
+      of, the plain run's standing)
 
   Package files: `ocel.json`, `ocel_validation.json`, `results.json`,
-  `subject.json`, `standing_receipt.json`.
+  `subject.json`, `standing_receipt.json`, plus `crown.json` with `--crown`.
 
   Courts that need test-only fixtures run under `MIX_ENV=test`.
   """
@@ -26,14 +34,15 @@ defmodule Mix.Tasks.AshA2a.Chicago do
   use Mix.Task
 
   alias AshA2A.Chicago
-  alias AshA2A.Chicago.Profile
+  alias AshA2A.Chicago.{Crown, Profile}
 
   @switches [
     profile: :string,
     evidence_dir: :string,
     court: :keep,
     list: :boolean,
-    require_conformant: :boolean
+    require_conformant: :boolean,
+    crown: :boolean
   ]
 
   @impl Mix.Task
@@ -66,6 +75,14 @@ defmodule Mix.Tasks.AshA2a.Chicago do
       |> put_if(:evidence_dir, opts[:evidence_dir] && Path.expand(opts[:evidence_dir]))
       |> put_if(:court_ids, empty_to_nil(Keyword.get_values(opts, :court)))
 
+    if opts[:crown] do
+      execute_crown(run_opts, opts)
+    else
+      execute_plain(run_opts, opts)
+    end
+  end
+
+  defp execute_plain(run_opts, opts) do
     case Chicago.run(run_opts) do
       {:ok, run} ->
         receipt = run.receipt
@@ -73,13 +90,48 @@ defmodule Mix.Tasks.AshA2a.Chicago do
         Mix.shell().info("standing: #{receipt["standing"]}")
         Mix.shell().info("results: #{inspect(receipt["results"], limit: :infinity)}")
         Mix.shell().info("evidence: #{run.evidence_dir}")
-
-        if opts[:require_conformant] && receipt["standing"] != "CONFORMANT" do
-          Mix.raise("standing #{receipt["standing"]} is not CONFORMANT")
-        end
+        require_conformant!(opts, receipt["standing"])
 
       {:error, reason} ->
         Mix.raise("chicago run failed: #{inspect(reason)}")
+    end
+  end
+
+  defp execute_crown(run_opts, opts) do
+    case Crown.run(run_opts) do
+      {:ok, %{run: run, crown: crown}} ->
+        Mix.shell().info(crown["claim"])
+        Mix.shell().info("standing: #{crown["standing"]}")
+        Mix.shell().info("run standing: #{run.receipt["standing"]}")
+
+        Mix.shell().info(
+          "gates: " <>
+            Enum.map_join(crown["gate_coverage"], " ", &"#{&1["gate"]}=#{&1["status"]}")
+        )
+
+        Mix.shell().info(
+          "mandatory corpus: #{if crown["mandatory_corpus"]["complete?"], do: "complete", else: "GAPS: #{inspect(Enum.map(crown["mandatory_corpus"]["gaps"], & &1["id"]))}"}"
+        )
+
+        Mix.shell().info(
+          "compliance matrix: #{length(crown["compliance_matrix"])} requirements, #{length(crown["compliance_matrix_open_gaps"])} open gap(s)"
+        )
+
+        Mix.shell().info(
+          "package completeness: #{if crown["package_completeness"]["complete?"], do: "complete", else: "missing: #{inspect(crown["package_completeness"]["missing"])}"}"
+        )
+
+        Mix.shell().info("evidence: #{run.evidence_dir} (crown.json)")
+        require_conformant!(opts, crown["standing"])
+
+      {:error, reason} ->
+        Mix.raise("chicago crown run failed: #{inspect(reason)}")
+    end
+  end
+
+  defp require_conformant!(opts, standing) do
+    if opts[:require_conformant] && standing != "CONFORMANT" do
+      Mix.raise("standing #{standing} is not CONFORMANT")
     end
   end
 
