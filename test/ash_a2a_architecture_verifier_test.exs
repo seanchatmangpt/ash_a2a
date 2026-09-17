@@ -1,15 +1,16 @@
 defmodule AshA2AArchitectureVerifierTest do
   @moduledoc """
-  Direct ExUnit coverage of `AshA2A.ArchitectureVerifier`'s nine real
+  Direct ExUnit coverage of `AshA2A.ArchitectureVerifier`'s ten real
   architecture checks -- the same production code `mix
   ash_a2a.verify_architecture` (`lib/mix/tasks/ash_a2a.verify_architecture.ex`)
   runs from a shell, called here directly so each check's real return value
   is asserted on individually rather than only trusting its own self-reported
   `:pass`/`:fail` summary. No Mock/mox/patch/monkeypatch anywhere in this
   file: every assertion below is against the real, unmodified
-  `AshA2A.Info`/`AshA2A.Command`/`AshA2A.CommandBus`/`AshA2A.Authority` API
-  and the real compiled `AshA2A.ArchitectureVerifier.Fixture.{Resource,
-  SemanticResource}` (`lib/ash_a2a/architecture_verifier.ex`).
+  `AshA2A.Info`/`AshA2A.Command`/`AshA2A.CommandBus`/`AshA2A.Authority`/
+  `AshA2A.Dispatcher`/`AshA2A.BrceAnchor` API and the real compiled
+  `AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}`
+  (`lib/ash_a2a/architecture_verifier.ex`).
 
   Checks 5-7 (added by Squad J / agent 47) real-substituted the two checks
   that unit's own task brief originally named (`semantic_requests` DSL
@@ -21,18 +22,26 @@ defmodule AshA2AArchitectureVerifierTest do
   those originally-briefed checks, added once this branch's merge brought
   both commits together -- see `AshA2A.ArchitectureVerifier`'s moduledoc
   for the full account.
+
+  Check 7b (`check_sole_do_fence_refuses_unanchored_dispatch/0`) is a later,
+  narrow, additive extension: this module's own check list previously had
+  no direct exercise of the RFC-SA2A-002 Gate 7 sole-DO fence
+  (`AshA2A.BrceAnchor`) -- that property was proven only inside the
+  `CHI-BRCE` Chicago court (`test/ash_a2a/chicago/brce_gate7_test.exs`), a
+  separate, slower verification surface. This check gives the faster
+  `mix ash_a2a.verify_architecture` surface the same property directly.
   """
 
   use ExUnit.Case, async: true
 
   alias AshA2A.ArchitectureVerifier
   alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
-  alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
+  alias AshA2A.{Authority, BrceAnchor, Command, CommandBus, Dispatcher, Identity, Info, Receipt}
 
-  test "checks/0 reports all nine real architecture invariants as passing" do
+  test "checks/0 reports all ten real architecture invariants as passing" do
     results = ArchitectureVerifier.checks()
 
-    assert length(results) == 9
+    assert length(results) == 10
     assert Enum.all?(results, &(&1.status == :pass)), inspect(results)
     assert Enum.all?(results, &(&1.detail != ""))
   end
@@ -217,6 +226,25 @@ defmodule AshA2AArchitectureVerifierTest do
 
     assert {:ok, %Receipt{status: :completed}} = CommandBus.run(first, message, Resource)
     assert {:error, %{code: :command_conflict}} = CommandBus.run(second, message, Resource)
+  end
+
+  test "check 7b: the sole-DO fence real-refuses a direct dispatch with no BrceAnchor" do
+    result = ArchitectureVerifier.check_sole_do_fence_refuses_unanchored_dispatch()
+    assert result.status == :pass
+
+    {:ok, create_skill} =
+      Resource
+      |> Info.capability_index()
+      |> Enum.find(&(&1.action == :create))
+      |> then(&{:ok, &1})
+
+    assert create_skill.consequence == :change
+
+    :ok = BrceAnchor.clear()
+    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+
+    assert {:error, {:brce_gate, %{code: :brce_prepared_receipt_required}}} =
+             Dispatcher.dispatch(create_skill.name, message, Resource)
   end
 
   test "check 8: the semantic_requests DSL gate real-compiles as real capability truth" do

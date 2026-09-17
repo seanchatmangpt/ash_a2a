@@ -213,6 +213,7 @@ defmodule AshA2A.ArchitectureVerifier do
       check_fingerprint_excludes_transport_timestamp(),
       check_change_consequence_succeeds_with_matching_authority(),
       check_command_bus_conflict_refused_on_reused_command_id(),
+      check_sole_do_fence_refuses_unanchored_dispatch(),
       check_semantic_requests_gate_compiles(),
       check_unopted_semantic_request_falls_through()
     ]
@@ -570,6 +571,71 @@ defmodule AshA2A.ArchitectureVerifier do
       else
         other ->
           fail(name, "setup error: first command did not real-commit: #{inspect(other)}")
+      end
+    else
+      {:error, reason} ->
+        fail(name, "could not locate the :create fixture skill: #{inspect(reason)}")
+
+      other ->
+        fail(
+          name,
+          "expected the :create fixture skill's real consequence to be :change, got #{inspect(other)}"
+        )
+    end
+  end
+
+  # -- Check 7b: the sole-DO fence real-refuses an unanchored direct dispatch --
+
+  @doc """
+  Real check: `AshA2A.Dispatcher.dispatch/5` -- the one function that
+  invokes a real Ash action for a skill -- real-refuses a direct dispatch
+  of a `:change`-consequence skill with
+  `{:error, {:brce_gate, %{code: :brce_prepared_receipt_required}}}` when no
+  `AshA2A.BrceAnchor` prepared-receipt anchor is present, before the real
+  Ash action ever runs (RFC-SA2A-002 Gate 7/§38, §68 BRCE Court -- the
+  sole-DO fence `AshA2A.BrceAnchor`'s moduledoc and
+  `AshA2A.Dispatcher.do_dispatch/5` both describe).
+
+  This exact property is already proven end to end by the `CHI-BRCE`
+  Chicago court (`test/ash_a2a/chicago/brce_gate7_test.exs`, falsifiers
+  CHI-BRCE-001/002 run through `AshA2A.Chicago.Runner.run/1`) -- a real,
+  separate, slower verification surface (the full falsifier suite plus its
+  OCEL/standing-receipt artifact) from this module's own check list. This
+  check gives `mix ash_a2a.verify_architecture`'s narrower, faster surface
+  a direct, additive smoke check for the same sole-DO fence property,
+  rather than relying solely on the Chicago court for it. It duplicates no
+  existing module: it only calls the real, already-compiled
+  `AshA2A.Dispatcher.dispatch/5` and `AshA2A.BrceAnchor.clear/0` public API.
+  """
+  @spec check_sole_do_fence_refuses_unanchored_dispatch() :: result()
+  def check_sole_do_fence_refuses_unanchored_dispatch do
+    name =
+      "AshA2A.Dispatcher.dispatch/5 real-refuses a :change skill with no BrceAnchor prepared-receipt anchor"
+
+    with {:ok, skill} <- find_skill(:create),
+         :change <- skill.consequence do
+      # Real-clear any anchor first: `AshA2A.BrceAnchor.take/0` is single-use
+      # (a prior dispatch in this same process would already have consumed
+      # its own anchor), but this check must prove the *unanchored* refusal
+      # path regardless of what ran immediately before it in the same
+      # process dictionary.
+      :ok = AshA2A.BrceAnchor.clear()
+
+      case AshA2A.Dispatcher.dispatch(skill.name, probe_message(), Resource) do
+        {:error, {:brce_gate, %{code: :brce_prepared_receipt_required}}} ->
+          pass(
+            name,
+            "Dispatcher.dispatch/5 real-refused capability #{skill.id} (real compiled " <>
+              "consequence: :change, no BrceAnchor) with " <>
+              "{:error, {:brce_gate, %{code: :brce_prepared_receipt_required}}} before any Ash action ran"
+          )
+
+        other ->
+          fail(
+            name,
+            "expected {:error, {:brce_gate, %{code: :brce_prepared_receipt_required}}}, " <>
+              "got #{inspect(other)}"
+          )
       end
     else
       {:error, reason} ->
