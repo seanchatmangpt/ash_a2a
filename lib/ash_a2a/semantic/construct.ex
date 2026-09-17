@@ -181,6 +181,34 @@ defmodule AshA2A.Semantic.Construct do
          construction_receipt: receipt
        }}
     end
+    |> emit_decision(package, identity)
+  end
+
+  # `[:ash_a2a, :semantic, :construct]`: the CONSTRUCT decision (RFC-SA2A-002
+  # §35 CONSTRUCTED-standing evidence). Observational only.
+  defp emit_decision(result, package, identity) do
+    meta =
+      case result do
+        {:ok, %Construction{} = c} ->
+          %{
+            outcome: :constructed,
+            artifact_digest: c.artifact_digest,
+            receipt_digest: c.construction_receipt.receipt_digest,
+            standing: c.standing,
+            authority: c.authority
+          }
+
+        {:error, %{code: code}} ->
+          %{outcome: :refused, code: code}
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :construct],
+      %{system_time: System.system_time()},
+      Map.merge(meta, %{plan_digest: package.plan_digest, manufacturer_identity: identity})
+    )
+
+    result
   end
 
   @doc """

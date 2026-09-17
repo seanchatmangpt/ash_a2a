@@ -405,6 +405,8 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
       profile: :strict,
       consequence_class: :change,
       required_capabilities: ["AshA2A.Chicago.Fixtures.CanonicalIdentity.advance"],
+      method_identities: ["m-advance-room"],
+      action_identities: ["advance"],
       max_fan_out: 1,
       max_depth: 4,
       max_parallelism: 1,
@@ -412,7 +414,8 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
       authority_requirements: [%{capability: "advance", scope: "room"}],
       receipt_obligations: [:prepared, :committed],
       preconditions: [{:at_phase, ["room", "open"]}],
-      effects: [{:at_phase, ["room", "closed"]}]
+      effects: [{:at_phase, ["room", "closed"]}],
+      nondeterministic_outcomes: []
     ]
   end
 

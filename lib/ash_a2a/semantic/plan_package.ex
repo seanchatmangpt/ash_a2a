@@ -42,6 +42,19 @@ defmodule AshA2A.Semantic.PlanPackage do
   it must be a map carrying non-nil `#{inspect([:max_wall_ms, :max_memory_bytes, :max_invocations])}`.
   A present-but-empty envelope is not a bound.
 
+  ## `:strict` also requires the §58 IDENTITIES
+
+  RFC-SA2A-002 §58 (RFC-SA2A-001 S24) requires a production package to
+  identify its plan, not only to bound it. Under `:strict`, after the bounds
+  pass, `enforce_profile/1` refuses with `:plan_package_identity_missing`
+  (`detail.missing` naming every absent one) unless the package carries a
+  non-blank `semantic_goal`, `initial_state_identity`,
+  `planning_domain_identity`, `planner_identity`, `source_graph_digest` and
+  `projection_digest`; at least one action/method identity (every element
+  non-blank); well-formed `{predicate, args}` preconditions and a non-empty
+  list of effects; and DECLARED `nondeterministic_outcomes` (`[]` for a
+  deterministic plan, never `nil`).
+
   ## A bound is its CONTENTS, not its container
 
   Presence alone is not a bound. `[nil]` is a one-element list, so a
@@ -116,7 +129,7 @@ defmodule AshA2A.Semantic.PlanPackage do
     action_identities: [],
     preconditions: [],
     effects: [],
-    nondeterministic_outcomes: [],
+    nondeterministic_outcomes: nil,
     required_capabilities: [],
     authority_requirements: [],
     receipt_obligations: [],
@@ -158,7 +171,7 @@ defmodule AshA2A.Semantic.PlanPackage do
           action_identities: [String.t()],
           preconditions: [fact()],
           effects: [fact()],
-          nondeterministic_outcomes: [map()],
+          nondeterministic_outcomes: [map()] | nil,
           required_capabilities: [String.t()],
           authority_requirements: [map()],
           receipt_obligations: [atom()],
@@ -229,8 +242,9 @@ defmodule AshA2A.Semantic.PlanPackage do
     * `:method_identities`, `:action_identities` -- `[String.t()]`
     * `:preconditions`, `:effects` -- `[fact()]`
     * `:nondeterministic_outcomes` -- `[map()]`, "where applicable": a fully
-      deterministic plan legitimately leaves this `[]`, which is why it is
-      not in `production_bounds/0`
+      deterministic plan legitimately DECLARES `[]`, which is why it is not
+      in `production_bounds/0`; omitting the option leaves it `nil`
+      (undeclared), which `:strict` refuses as `:plan_package_identity_missing`
     * `:consequence_class` -- `AshA2A.Skill.consequence()`
     * `:required_capabilities` -- `[String.t()]` canonical capability ids
     * `:max_fan_out`, `:max_depth`, `:max_parallelism` -- `pos_integer()`
@@ -265,6 +279,40 @@ defmodule AshA2A.Semantic.PlanPackage do
         {:ok, %{package | plan_digest: content_digest(package)}}
       end
     end
+    |> emit_decision(planner_identity, profile)
+  end
+
+  # `[:ash_a2a, :semantic, :plan_package]`: the package-manufacture decision,
+  # emitted at this boundary for every outcome (RFC-SA2A-002 §58 attempt and
+  # standing evidence). Observational only; the result passes through.
+  defp emit_decision(result, planner_identity, profile) do
+    {outcome, code, detail, digest} =
+      case result do
+        {:ok, %__MODULE__{plan_digest: digest}} -> {:built, nil, nil, digest}
+        {:error, %{code: code, detail: detail}} -> {:refused, code, detail, nil}
+      end
+
+    fields =
+      case detail do
+        %{missing: missing} when is_list(missing) -> missing
+        %{fields: fields} when is_list(fields) -> fields
+        _ -> []
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :semantic, :plan_package],
+      %{system_time: System.system_time()},
+      %{
+        outcome: outcome,
+        code: code,
+        profile: profile,
+        planner_identity: planner_identity,
+        plan_digest: digest,
+        fields: Enum.map_join(fields, ",", &to_string/1)
+      }
+    )
+
+    result
   end
 
   @doc """
@@ -328,8 +376,9 @@ defmodule AshA2A.Semantic.PlanPackage do
 
     if missing == [] do
       with :ok <- bound_contents(package),
-           :ok <- positive_bounds(package) do
-        envelope(package.resource_envelope)
+           :ok <- positive_bounds(package),
+           :ok <- envelope(package.resource_envelope) do
+        identities(package)
       end
     else
       error(:plan_package_production_bounds_missing, %{missing: missing, profile: :strict})
@@ -354,7 +403,7 @@ defmodule AshA2A.Semantic.PlanPackage do
       action_identities: Keyword.get(opts, :action_identities, []),
       preconditions: Keyword.get(opts, :preconditions, []),
       effects: Keyword.get(opts, :effects, []),
-      nondeterministic_outcomes: Keyword.get(opts, :nondeterministic_outcomes, []),
+      nondeterministic_outcomes: Keyword.get(opts, :nondeterministic_outcomes),
       required_capabilities: Keyword.get(opts, :required_capabilities, []),
       max_fan_out: Keyword.get(opts, :max_fan_out),
       max_depth: Keyword.get(opts, :max_depth),
@@ -407,6 +456,46 @@ defmodule AshA2A.Semantic.PlanPackage do
         })
     end
   end
+
+  # RFC-SA2A-002 §58 / RFC-SA2A-001 S24: under `:strict` the package must
+  # IDENTIFY its plan, not only bound it. Every identity below is checked by
+  # contents; the refusal names every absent one at once.
+  defp identities(package) do
+    missing =
+      [
+        semantic_goal: text?(package.semantic_goal),
+        initial_state_identity: text?(package.initial_state_identity),
+        planning_domain_identity: text?(package.planning_domain_identity),
+        planner_identity: text?(package.planner_identity),
+        source_graph_digest: text?(package.source_graph_digest),
+        projection_digest: text?(package.projection_digest),
+        action_identities:
+          every?(package.action_identities, &text?/1) and
+            every?(package.method_identities, &text?/1) and
+            package.action_identities ++ package.method_identities != [],
+        preconditions: every?(package.preconditions, &fact?/1),
+        effects: every?(package.effects, &fact?/1) and package.effects != [],
+        nondeterministic_outcomes:
+          every?(package.nondeterministic_outcomes, &(is_map(&1) and map_size(&1) > 0))
+      ]
+      |> Enum.reject(fn {_field, present?} -> present? end)
+      |> Enum.map(fn {field, _} -> field end)
+
+    if missing == [],
+      do: :ok,
+      else: error(:plan_package_identity_missing, %{missing: missing, profile: :strict})
+  end
+
+  defp text?(value), do: is_binary(value) and String.trim(value) != ""
+
+  defp fact?({predicate, args})
+       when (is_atom(predicate) or is_binary(predicate)) and is_list(args),
+       do: predicate not in [nil, true, false, ""]
+
+  defp fact?(_), do: false
+
+  @doc false
+  def __sa2a_refusal_codes__, do: %{plan_package_identity_missing: :refused_plan}
 
   defp every?(list, predicate) when is_list(list), do: Enum.all?(list, predicate)
   defp every?(_other, _predicate), do: false

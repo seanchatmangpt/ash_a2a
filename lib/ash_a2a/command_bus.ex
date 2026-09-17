@@ -62,6 +62,9 @@ defmodule AshA2A.CommandBus do
   `:capability_id`, `:principal_id`; `:outcome` names what the boundary decided.
 
     * `[:target]` -- `:resolved | :refused` (+ `:code`, `:consequence`)
+    * `[:preflight]` -- plan steps only (`opts[:plan]` / `opts[:preflight]`):
+      `:verified | :refused` (+ `:code`, `:fields`, `:plan_digest`,
+      `:preflight_digest`), see `AshA2A.Planning.Preflight.admit_step/3`
     * `[:admission]` -- `:admitted | :refused` (+ `:code`, `:consequence`)
     * `[:kill_switch]` -- `:clear | :tripped`
     * `[:claim]` -- `:execute | :replay | :refused` (+ `:execution_id`)
@@ -115,6 +118,7 @@ defmodule AshA2A.CommandBus do
 
     with {:ok, skill, _action, consequence} <-
            observe_target(command, inspect_target(command, resource_or_domain)),
+         {:ok, opts} <- preflight_plan_step(command, opts),
          :ok <- observe_admission(command, consequence, admit(command, consequence)),
          :ok <- observe_kill_switch(command, check_kill_switch(opts)),
          claim <- observe_claim(command, claim_receipt(store, command, store_opts)) do
@@ -662,6 +666,44 @@ defmodule AshA2A.CommandBus do
   end
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
+
+  # RFC-SA2A-002 §36 Gate 5. A command presented as a plan step (`opts[:plan]`
+  # or `opts[:preflight]`) must carry the preflight identity issued for exactly
+  # the executing `AshA2A.Planning.BoundedPlan`; a post-preflight mutation of
+  # any bound field is refused here, before admission, claim, receipt
+  # preparation or actuation. The verified plan digest is bound onto the
+  # receipt. Commands that are not plan steps are untouched (no event).
+  defp preflight_plan_step(command, opts) do
+    if Keyword.has_key?(opts, :plan) or Keyword.has_key?(opts, :preflight) do
+      plan = Keyword.get(opts, :plan)
+
+      case AshA2A.Planning.Preflight.admit_step(Keyword.get(opts, :preflight), plan, command) do
+        {:ok, preflight} ->
+          emit_boundary([:preflight], command, %{
+            outcome: :verified,
+            plan_digest: preflight.plan_digest,
+            preflight_digest: preflight.preflight_digest
+          })
+
+          {:ok, Keyword.put_new(opts, :plan_digest, preflight.plan_digest)}
+
+        {:error, %{code: code, detail: detail} = reason} ->
+          emit_boundary([:preflight], command, %{
+            outcome: :refused,
+            code: code,
+            fields: AshA2A.Planning.Preflight.detail_fields(detail),
+            preflight_digest: preflight_digest(Keyword.get(opts, :preflight))
+          })
+
+          {:error, reason}
+      end
+    else
+      {:ok, opts}
+    end
+  end
+
+  defp preflight_digest(%AshA2A.Planning.Preflight{preflight_digest: digest}), do: digest
+  defp preflight_digest(_other), do: nil
 
   # --- boundary telemetry (see moduledoc) -----------------------------------
 
