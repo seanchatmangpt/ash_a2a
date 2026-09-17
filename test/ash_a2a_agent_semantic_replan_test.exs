@@ -195,7 +195,9 @@ defmodule AshA2AAgentSemanticReplanTest do
     # `AshA2A.Authority.Broker` grant stands for that exact (principal,
     # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
     # real pairs this file's own dispatches use.
-    AshA2A.Test.AuthorityGrantCase.grant!([{"user-1", ["create_item"]}])
+    AshA2A.Test.AuthorityGrantCase.grant!([
+      {"user-1", AshA2A.Test.Fixture.SemanticReplan.Item, ["create_item"]}
+    ])
 
     {_sup, _registry_name} =
       AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [

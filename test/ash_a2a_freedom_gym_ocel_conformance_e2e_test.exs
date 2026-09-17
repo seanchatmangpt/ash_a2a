@@ -91,7 +91,9 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
     # `AshA2A.Authority.Broker` grant stands for that exact (principal,
     # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
     # real pairs this file's own dispatches use.
-    AshA2A.Test.AuthorityGrantCase.grant!([{"ocel-conformance-test-caller", ["next_phase"]}])
+    AshA2A.Test.AuthorityGrantCase.grant!([
+      {"ocel-conformance-test-caller", AshA2A.Test.Fixture.FreedomGym.Facilitator, ["next_phase"]}
+    ])
 
     {_sup, _registry_name} =
       AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [FacilitatorAgent])

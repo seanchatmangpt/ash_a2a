@@ -416,7 +416,16 @@ defmodule AshA2A.Chicago.Courts.PlanAuthority do
   # 005 (negative, ungranted) / 007 (positive, granted)
   defp task_assignment(ctx, falsifier, kind) do
     who = "chicago-plan-gates-a2a-#{kind}-#{Fx.token()}"
-    grants = if kind == :positive, do: [{who, "advance"}], else: []
+    # SA2A-AUTH-017 (RFC-SA2A-002 S66): the real dispatch path
+    # (`AshA2A.Agent.build_command/4`) now resolves the dispatched skill's
+    # canonical capability id (`AshA2A.Info.skill/2`) before calling
+    # `AshA2A.Authority.Grant.authorize/3`, so the grant `Fx.with_broker/2`
+    # issues below must be keyed on that same canonical id -- exactly what
+    # `Fx.capability_ids/0` already resolves for `Planned.advance` -- rather
+    # than the bare wire selector "advance", or CHI-PLAN-AUTH-007's granted
+    # dispatch would stop matching its own grant.
+    [advance_id, _unlock_id] = Fx.capability_ids()
+    grants = if kind == :positive, do: [{who, advance_id}], else: []
 
     {planned, reply} =
       Fx.with_broker(grants, fn ->

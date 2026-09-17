@@ -886,8 +886,15 @@ defmodule AshA2A.Chicago.Courts.Brce do
     try do
       subject = Identity.principal(agent_principal())
 
+      # SA2A-AUTH-017 (RFC-SA2A-002 S66): `AshA2A.Agent.build_command/4` now
+      # resolves the dispatched skill's canonical capability id
+      # (`AshA2A.Info.skill/2`) before calling `Grant.authorize/3`, so the
+      # standing grant issued here for the real `LedgerAgent` dispatch path
+      # must be keyed on that same canonical `Ledger` id, not the bare wire
+      # selector.
       for capability <- ["record", "transmit"] do
-        {:ok, %Authority{}} = Authority.Grant.grant(subject, capability)
+        {:ok, %{id: capability_id}} = AshA2A.Info.skill(Ledger, capability)
+        {:ok, %Authority{}} = Authority.Grant.grant(subject, capability_id)
       end
 
       fun.()

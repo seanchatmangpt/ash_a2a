@@ -28,9 +28,21 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
   alias AshA2A.Authority
   alias AshA2A.Authority.Broker.InMemory
-  alias AshA2A.Test.Fixture.{ActuationCounter, GrantProbeAgent}
+  alias AshA2A.Test.Fixture.{ActuationCounter, GrantProbe, GrantProbeAgent}
 
   @principal "user-grant-probe"
+
+  # SA2A-AUTH-017 (RFC-SA2A-002 S66, capability substitution): the real
+  # dispatch path (`AshA2A.Agent.build_command/4`) now resolves the
+  # dispatched skill's canonical capability id (`AshA2A.Info.skill/2`)
+  # before calling `AshA2A.Authority.Grant.authorize/3`, so a grant meant to
+  # authorize a real `call/3` dispatch below must be issued/checked under
+  # that same canonical `GrantProbe` id, not the bare wire selector
+  # ("touch"/"mutate") `call/3` itself still accepts unchanged.
+  defp capability_id(selector) do
+    {:ok, skill} = AshA2A.Info.skill(GrantProbe, selector)
+    skill.id
+  end
 
   setup do
     {_sup, _registry} =
@@ -95,15 +107,15 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
     test "holds no authority at all for the capability it never asked for", ctx do
       subject = AshA2A.Identity.principal(@principal)
 
-      refute InMemory.granted?(subject, "touch", ctx.broker_opts)
-      assert Authority.Grant.authorize(@principal, "touch") == nil
+      refute InMemory.granted?(subject, capability_id("touch"), ctx.broker_opts)
+      assert Authority.Grant.authorize(@principal, capability_id("touch")) == nil
     end
   end
 
   describe "(b) an authenticated principal WITH a real broker-issued grant" do
     test "can actuate the granted :external_do skill, exactly once" do
       subject = AshA2A.Identity.principal(@principal)
-      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, "touch")
+      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, capability_id("touch"))
 
       assert {:ok, task} = call("touch", %{"note" => "granted"})
       assert task.status.state == :completed
@@ -113,7 +125,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
     test "a grant for one capability does NOT confer the others (S29, per-capability)" do
       subject = AshA2A.Identity.principal(@principal)
-      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, "mutate")
+      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, capability_id("mutate"))
 
       assert {:ok, mutate_task} = call("mutate", %{"note" => "ok"})
       assert mutate_task.status.state == :completed
@@ -128,7 +140,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
     test "a revoked grant fails closed again", ctx do
       subject = AshA2A.Identity.principal(@principal)
-      assert {:ok, authority} = Authority.Grant.grant(subject, "touch")
+      assert {:ok, authority} = Authority.Grant.grant(subject, capability_id("touch"))
 
       assert {:ok, first} = call("touch", %{"note" => "before revoke"})
       assert first.status.state == :completed
@@ -145,7 +157,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
   describe "(c) :observe is unaffected by the grant decision" do
     test "an ungranted authenticated principal can still call an :observe skill", ctx do
       subject = AshA2A.Identity.principal(@principal)
-      refute InMemory.granted?(subject, "peek", ctx.broker_opts)
+      refute InMemory.granted?(subject, capability_id("peek"), ctx.broker_opts)
 
       assert {:ok, task} = call("peek")
       assert task.status.state == :completed
@@ -157,7 +169,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
   describe "(d) replay still works for an authenticated, granted caller" do
     test "the same real message sent twice replays instead of double-actuating" do
       subject = AshA2A.Identity.principal(@principal)
-      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, "touch")
+      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, capability_id("touch"))
 
       message =
         data_message(%{"note" => "retry-me"}, %{
@@ -207,14 +219,16 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
     test "the grant decision itself is idempotent: same deterministic token_id every call" do
       subject = AshA2A.Identity.principal(@principal)
-      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, "touch")
+      assert {:ok, %Authority{}} = Authority.Grant.grant(subject, capability_id("touch"))
 
-      first = Authority.Grant.authorize(@principal, "touch")
-      second = Authority.Grant.authorize(@principal, "touch")
+      first = Authority.Grant.authorize(@principal, capability_id("touch"))
+      second = Authority.Grant.authorize(@principal, capability_id("touch"))
 
       assert %Authority{} = first
       assert first.token_id == second.token_id
-      assert first.token_id == AshA2A.Identity.runtime(Authority.grant_token_id(subject, "touch"))
+
+      assert first.token_id ==
+               AshA2A.Identity.runtime(Authority.grant_token_id(subject, capability_id("touch")))
     end
   end
 
@@ -232,19 +246,19 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       assert {:ok, %Authority{}} =
                InMemory.issue(
                  subject,
-                 "touch",
+                 capability_id("touch"),
                  ctx.broker_opts ++
                    [
-                     token_id: Authority.grant_token_id(subject, "touch"),
+                     token_id: Authority.grant_token_id(subject, capability_id("touch")),
                      expires_at: DateTime.add(DateTime.utc_now(), -3600, :second)
                    ]
                )
 
       # Layer (a): the broker itself must not report an expired grant standing.
-      refute InMemory.granted?(subject, "touch", ctx.broker_opts)
+      refute InMemory.granted?(subject, capability_id("touch"), ctx.broker_opts)
 
       # Layer (b): the dispatch-path authorizer must mint no authority.
-      assert Authority.Grant.authorize(@principal, "touch") == nil
+      assert Authority.Grant.authorize(@principal, capability_id("touch")) == nil
 
       # End to end through the real supervised agent and real counter.
       assert {:ok, task} = call("touch", %{"note" => "expired"})
@@ -258,15 +272,15 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       assert {:ok, %Authority{}} =
                InMemory.issue(
                  subject,
-                 "touch",
+                 capability_id("touch"),
                  ctx.broker_opts ++
                    [
-                     token_id: Authority.grant_token_id(subject, "touch"),
+                     token_id: Authority.grant_token_id(subject, capability_id("touch")),
                      expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
                    ]
                )
 
-      assert InMemory.granted?(subject, "touch", ctx.broker_opts)
+      assert InMemory.granted?(subject, capability_id("touch"), ctx.broker_opts)
       assert {:ok, task} = call("touch", %{"note" => "not-yet-expired"})
       assert task.status.state == :completed
       assert ActuationCounter.count() == 1
@@ -280,7 +294,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       expires_at = DateTime.add(DateTime.utc_now(), 3600, :second)
 
       assert {:ok, %Authority{} = authority} =
-               Authority.Grant.grant(subject, "touch", expires_at: expires_at)
+               Authority.Grant.grant(subject, capability_id("touch"), expires_at: expires_at)
 
       assert authority.expires_at != nil
       assert DateTime.compare(authority.expires_at, expires_at) == :eq
@@ -288,7 +302,8 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       # And the grant's real bound reaches the synthesized dispatch authority,
       # so `Authority.admits?/2`'s own expiry check is reachable rather than
       # structurally dead.
-      assert %Authority{expires_at: ^expires_at} = Authority.Grant.authorize(@principal, "touch")
+      assert %Authority{expires_at: ^expires_at} =
+               Authority.Grant.authorize(@principal, capability_id("touch"))
     end
 
     test "the synthesized authority keeps the deterministic grant token id" do
@@ -298,14 +313,15 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       subject = AshA2A.Identity.principal(@principal)
 
       assert {:ok, _} =
-               Authority.Grant.grant(subject, "touch",
+               Authority.Grant.grant(subject, capability_id("touch"),
                  expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
                )
 
-      assert %Authority{} = authority = Authority.Grant.authorize(@principal, "touch")
+      assert %Authority{} =
+               authority = Authority.Grant.authorize(@principal, capability_id("touch"))
 
       assert authority.token_id ==
-               AshA2A.Identity.runtime(Authority.grant_token_id(subject, "touch"))
+               AshA2A.Identity.runtime(Authority.grant_token_id(subject, capability_id("touch")))
     end
   end
 

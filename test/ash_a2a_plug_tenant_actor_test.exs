@@ -62,9 +62,11 @@ defmodule AshA2APlugTenantActorTest do
     # multitenancy enforcement, which is what it is actually about -- not
     # from a missing capability grant masking it.
     AshA2A.Test.AuthorityGrantCase.grant!([
-      {%{id: "user-acme-1", tenant: "acme"}, ["create_note"]},
-      {%{id: "user-beta-1", tenant: "beta"}, ["create_note"]},
-      {%{id: "user-no-tenant"}, ["create_note"]}
+      {%{id: "user-acme-1", tenant: "acme"}, AshA2A.Test.Fixture.TenantActorNote,
+       ["create_note"]},
+      {%{id: "user-beta-1", tenant: "beta"}, AshA2A.Test.Fixture.TenantActorNote,
+       ["create_note"]},
+      {%{id: "user-no-tenant"}, AshA2A.Test.Fixture.TenantActorNote, ["create_note"]}
     ])
 
     :ok

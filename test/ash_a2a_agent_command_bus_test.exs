@@ -109,7 +109,8 @@ defmodule AshA2AAgentCommandBusTest do
     # reachable without a grant) and `"mystery"` (`:unknown`, must stay
     # refused for a reason that has nothing to do with authority).
     AshA2A.Test.AuthorityGrantCase.grant!([
-      {"user-1", ["create_item", "update_item", "destroy_item", "next_phase"]}
+      {"user-1", AshA2A.Test.Fixture.Item, ["create_item", "update_item", "destroy_item"]},
+      {"user-1", FreedomGym.Facilitator, ["next_phase"]}
     ])
 
     handler_id = {:command_bus_test, System.unique_integer([:positive])}
@@ -144,6 +145,15 @@ defmodule AshA2AAgentCommandBusTest do
     [metadata: %{"a2a.auth" => %{identity: identity}}]
   end
 
+  # SA2A-AUTH-017 (RFC-SA2A-002 S66): the exact canonical id
+  # `AshA2A.Agent.build_command/4` resolves for `selector` on `resource`,
+  # via the same `AshA2A.Info.skill/2` lookup, so a receipt/OCEL assertion
+  # checks the real capability identity rather than the bare wire selector.
+  defp capability_id!(resource_or_domain, selector) do
+    {:ok, skill} = AshA2A.Info.skill(resource_or_domain, selector)
+    skill.id
+  end
+
   test "a real create -> Agent -> CommandBus -> Ash.create -> Receipt" do
     message = data_message(%{"label" => "widget"}, %{metadata: %{skill: "create_item"}})
 
@@ -151,7 +161,12 @@ defmodule AshA2AAgentCommandBusTest do
     assert task.status.state == :completed
 
     assert_receive {:receipt_committed, create_receipt}, 1_000
-    assert create_receipt.capability_id == "create_item"
+    # SA2A-AUTH-017 (RFC-SA2A-002 S66): the receipt's `capability_id` is now
+    # the CANONICAL, resource-qualified id `AshA2A.Agent.build_command/4`
+    # resolves (`AshA2A.Info.skill/2`), not the bare wire selector
+    # "create_item" -- so a standing grant for one resource's skill can no
+    # longer be mistaken for a same-named skill on a different resource.
+    assert create_receipt.capability_id == capability_id!(AshA2A.Test.Fixture.Item, "create_item")
     assert create_receipt.consequence == :change
     assert create_receipt.status == :completed
     refute create_receipt.replayed?
@@ -171,7 +186,7 @@ defmodule AshA2AAgentCommandBusTest do
     assert update_task.status.state == :completed
 
     assert_receive {:receipt_committed, update_receipt}, 1_000
-    assert update_receipt.capability_id == "update_item"
+    assert update_receipt.capability_id == capability_id!(AshA2A.Test.Fixture.Item, "update_item")
     assert update_receipt.consequence == :change
     assert update_receipt.status == :completed
 
@@ -187,7 +202,10 @@ defmodule AshA2AAgentCommandBusTest do
     assert destroy_task.status.state == :completed
 
     assert_receive {:receipt_committed, destroy_receipt}, 1_000
-    assert destroy_receipt.capability_id == "destroy_item"
+
+    assert destroy_receipt.capability_id ==
+             capability_id!(AshA2A.Test.Fixture.Item, "destroy_item")
+
     assert destroy_receipt.consequence == :change
     assert destroy_receipt.status == :completed
   end
@@ -243,7 +261,10 @@ defmodule AshA2AAgentCommandBusTest do
     assert task.status.state == :completed
 
     assert_receive {:receipt_committed, receipt}, 1_000
-    assert receipt.capability_id == "next_phase"
+
+    assert receipt.capability_id ==
+             capability_id!(FreedomGym.Facilitator, "next_phase")
+
     assert receipt.consequence == :change
     assert receipt.status == :completed
   end

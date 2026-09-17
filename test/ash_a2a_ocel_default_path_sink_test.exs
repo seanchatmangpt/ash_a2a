@@ -158,8 +158,8 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
     # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
     # real pairs this file's own dispatches use.
     AshA2A.Test.AuthorityGrantCase.grant!([
-      {"user-1", ["create_item"]},
-      {"user-2", ["create_item", "update_item"]}
+      {"user-1", AshA2A.Test.Fixture.Item, ["create_item"]},
+      {"user-2", AshA2A.Test.Fixture.Item, ["create_item", "update_item"]}
     ])
 
     Application.put_env(:ash_a2a, :ocel_ingest_url, base_url)
@@ -217,7 +217,11 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
     assert event["event_type"] == "ash_a2a.receipt.completed"
     assert event["event_id"]
     assert event["event_time"]
-    assert event["attributes"]["capability_id"] == "create_item"
+    # SA2A-AUTH-017 (RFC-SA2A-002 S66): the event's `capability_id` is the
+    # canonical, resource-qualified id `AshA2A.Agent.build_command/4`
+    # resolves (`AshA2A.Info.skill/2`), not the bare wire selector.
+    {:ok, create_skill} = AshA2A.Info.skill(AshA2A.Test.Fixture.Item, "create_item")
+    assert event["attributes"]["capability_id"] == create_skill.id
     assert event["attributes"]["consequence"] == "change"
     assert event["attributes"]["status"] == "completed"
     assert event["attributes"]["replayed"] == false
@@ -276,7 +280,8 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
     assert length(events) == 1
     [event] = events
 
-    assert event["attributes"]["capability_id"] == "update_item"
+    {:ok, update_skill} = AshA2A.Info.skill(AshA2A.Test.Fixture.Item, "update_item")
+    assert event["attributes"]["capability_id"] == update_skill.id
     assert event["attributes"]["consequence"] == "change"
     assert event["attributes"]["status"] == "completed"
     assert event["attributes"]["skill_name"] == "update_item"

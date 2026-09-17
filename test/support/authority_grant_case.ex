@@ -22,21 +22,40 @@ defmodule AshA2A.Test.AuthorityGrantCase do
   capability_id)`, so two modules granting different principals cannot
   collide. A test that needs isolated revocation state should start its own
   uniquely-named broker instead and be `async: false`.
+
+  ## SA2A-AUTH-017 (RFC-SA2A-002 S66, capability substitution)
+
+  `AshA2A.Agent.build_command/4` now resolves the dispatched skill's
+  CANONICAL capability id (`AshA2A.Info.skill/2`,
+  `"\#{inspect(resource)}.\#{action}"`) before calling
+  `AshA2A.Authority.Grant.authorize/3` -- so a grant issued under a bare
+  wire selector ("create_item") no longer matches what the real dispatch
+  path looks up. `grant!/1` therefore takes the resource/domain each
+  capability id selector belongs to and resolves it the SAME way before
+  issuing, so a grant issued here is the grant the real dispatch path finds.
   """
 
   alias AshA2A.{Authority, Identity}
 
   @doc """
-  Issues one real capability grant per `{principal, capability_id}` pair in
-  `grants`, through the real `AshA2A.Authority.Grant.grant/3` seam.
+  Issues one real capability grant per `{principal, resource_or_domain,
+  capability_selectors}` triple in `grants`, through the real
+  `AshA2A.Authority.Grant.grant/3` seam.
 
-  `grants` is a list of `{principal, capability_ids}` tuples, where
   `principal` is the SAME term the test's verified `auth_identity` carries
   (any term -- `AshA2A.Identity.principal/1` normalizes it identically on
-  both sides) and `capability_ids` is a list of capability id strings.
+  both sides). `resource_or_domain` is the real Ash resource/domain module
+  each selector in `capability_selectors` is resolved against via
+  `AshA2A.Info.skill/2` into its canonical capability id -- the exact id
+  `AshA2A.Agent.build_command/4` resolves on the real dispatch path -- before
+  the grant is issued. A principal with capabilities spanning more than one
+  resource needs one triple per resource.
 
       setup do
-        AshA2A.Test.AuthorityGrantCase.grant!([{"user-1", ["create_item", "update_item"]}])
+        AshA2A.Test.AuthorityGrantCase.grant!([
+          {"user-1", AshA2A.Test.Fixture.Item, ["create_item", "update_item"]}
+        ])
+
         :ok
       end
 
@@ -48,10 +67,12 @@ defmodule AshA2A.Test.AuthorityGrantCase do
   (`AshA2A.Authority.Grant.granted?/3`), not merely that a call returned
   `:ok`.
   """
-  @spec grant!([{term(), [String.t()]}]) :: :ok
+  @spec grant!([{term(), module(), [String.t()]}]) :: :ok
   def grant!(grants) when is_list(grants) do
-    for {principal, capability_ids} <- grants, capability_id <- capability_ids do
+    for {principal, resource_or_domain, capability_selectors} <- grants,
+        selector <- capability_selectors do
       subject = Identity.principal(principal)
+      capability_id = capability_id!(resource_or_domain, selector)
 
       case Authority.Grant.grant(subject, capability_id) do
         {:ok, %Authority{}} -> :ok
@@ -62,5 +83,17 @@ defmodule AshA2A.Test.AuthorityGrantCase do
     end
 
     :ok
+  end
+
+  defp capability_id!(resource_or_domain, selector) do
+    case AshA2A.Info.skill(resource_or_domain, selector) do
+      {:ok, %{id: id}} ->
+        id
+
+      {:error, :skill_not_found} ->
+        raise ArgumentError,
+              "AshA2A.Test.AuthorityGrantCase.grant!/1: #{inspect(resource_or_domain)} has " <>
+                "no skill matching #{inspect(selector)}"
+    end
   end
 end
