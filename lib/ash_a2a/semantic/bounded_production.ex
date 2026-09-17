@@ -28,6 +28,10 @@ defmodule AshA2A.Semantic.BoundedProduction do
     * `{:error, %{code: :bound_reached, bound: :max_steps, ...}}`
     * `{:error, %{code: :bound_reached, bound: :max_wall_time_ms, ...}}`
 
+  Both `:bound_reached` refusals carry the operation `:state` reached when
+  the bound decided, so a caller that performed consequence before the
+  bound (e.g. `AshA2A.Semantic.Episode`) can account for what already ran.
+
   There is no fourth outcome and no unbounded branch, so an operation
   whose predicate never becomes true still halts -- provably, against a
   real never-satisfied predicate, in this module's own test file.
@@ -130,7 +134,8 @@ defmodule AshA2A.Semantic.BoundedProduction do
            bound: :max_steps,
            operation: contract.operation,
            limit: contract.max_steps,
-           steps: steps
+           steps: steps,
+           state: state
          }}
 
       System.monotonic_time(:millisecond) - started_at_ms > contract.max_wall_time_ms ->
@@ -141,7 +146,8 @@ defmodule AshA2A.Semantic.BoundedProduction do
            operation: contract.operation,
            limit: contract.max_wall_time_ms,
            elapsed_ms: System.monotonic_time(:millisecond) - started_at_ms,
-           steps: steps
+           steps: steps,
+           state: state
          }}
 
       true ->
