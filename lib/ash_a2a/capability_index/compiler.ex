@@ -63,7 +63,8 @@ defmodule AshA2A.CapabilityIndex.Compiler do
       expose?: true,
       consequence: override_value(override, :consequence, default_consequence(action.type)),
       arguments: derive_arguments(resource, action),
-      hddl_operators: override_value(override, :hddl_operators, [])
+      hddl_operators: override_value(override, :hddl_operators, []),
+      on_cancel: override_value(override, :on_cancel, nil)
     }
   end
 

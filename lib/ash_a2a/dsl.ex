@@ -51,6 +51,18 @@ defmodule AshA2A.Dsl do
           "Required to lift a generic :action skill off the fail-closed :unknown " <>
           "default; has no effect on :read/:create/:update/:destroy unless a " <>
           "resource author deliberately wants to override their own default."
+    ],
+    on_cancel: [
+      type: {:or, [:module, :mfa]},
+      required: false,
+      doc:
+        "Optional real Ash-side compensation hook (see AshA2A.OnCancel), run by " <>
+          "AshA2A.Agent.__cancel__/2 when a task under this skill is genuinely " <>
+          "canceled. A bare module must implement `c:AshA2A.OnCancel.on_cancel/3`; " <>
+          "an `{module, function, extra_args}` MFA is called with " <>
+          "`[exec_context, task_id, context_id | extra_args]`. Unset (the " <>
+          "default) leaves cancellation telemetry-only, unchanged from before " <>
+          "this option existed."
     ]
   ]
 

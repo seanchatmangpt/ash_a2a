@@ -783,40 +783,164 @@ defmodule AshA2A.Agent do
   # value an unauthenticated remote caller could spoof through cancel-request
   # metadata.
   #
-  # There is no ash_a2a DSL hook (no `on_cancel` skill option) for a resource
-  # author to run real Ash-side compensation here, and none is fabricated --
-  # `AshA2A.Skill`/`AshA2A.Dsl` declare no such callback today (grep over
-  # `lib/ash_a2a/{dsl,skill}.ex` confirms). What this function provides, for
-  # real, is a `:telemetry.execute/3` event (`:telemetry` is a real
-  # transitive dep already used the identical way by `A2A.Agent` itself for
-  # `[:a2a, :agent, :cancel]`, `~/xaas/deps/a2a/lib/a2a/agent.ex:290-294`)
-  # carrying the resolved `AshA2A.ExecutionContext` (actor/tenant/domain)
-  # plus `task_id`/`context_id` -- a real, attachable hook a resource author
-  # can subscribe to (`:telemetry.attach/4`) to run Ash-side cleanup on
-  # cancellation, instead of the prior silent, unobservable inherited `:ok`
-  # no-op.
+  # This function provides two real, observable things on cancel:
+  #
+  #   1. A `:telemetry.execute/3` event (`:telemetry` is a real transitive
+  #      dep already used the identical way by `A2A.Agent` itself for
+  #      `[:a2a, :agent, :cancel]`, `~/xaas/deps/a2a/lib/a2a/agent.ex:290-294`)
+  #      carrying the resolved `AshA2A.ExecutionContext` (actor/tenant/domain)
+  #      plus `task_id`/`context_id` -- a real, attachable hook a resource
+  #      author can subscribe to (`:telemetry.attach/4`) to run Ash-side
+  #      cleanup on cancellation, instead of the prior silent, unobservable
+  #      inherited `:ok` no-op.
+  #   2. Since the `on_cancel` skill option (`AshA2A.Dsl`, `AshA2A.OnCancel`)
+  #      was added, a real, first-class DSL-level compensation call: if the
+  #      real caller message's `:skill` metadata (see `run_on_cancel_hook/5`
+  #      below for exactly where that message comes from) resolves to a
+  #      compiled skill (`AshA2A.Info.skill/2`, the same lookup
+  #      `fetch_skill/2` in `AshA2A.Dispatcher` performs for the
+  #      message-dispatch path) that declares `on_cancel:`, it is invoked
+  #      with the same resolved `exec_context` plus `task_id`/`context_id`
+  #      -- real Ash-side compensation, not just an attachable
+  #      side-channel. A missing/ambiguous skill resolution, or a skill
+  #      with no `on_cancel:` declared, silently falls back to
+  #      telemetry-only, exactly the prior behavior -- this is purely
+  #      additive.
   @doc false
   @spec __cancel__(module(), A2A.Agent.context()) :: :ok
   def __cancel__(resource_or_domain, %{metadata: metadata} = context) do
+    metadata = metadata || %{}
+
     exec_context =
       AshA2A.ContextResolver.from_a2a_message(
-        %A2A.Message{role: :user, parts: [], metadata: metadata || %{}},
+        %A2A.Message{role: :user, parts: [], metadata: metadata},
         resource_or_domain,
         [],
         verified_auth_identity(context)
       )
+
+    task_id = Map.get(context, :task_id)
+    context_id = Map.get(context, :context_id)
 
     :telemetry.execute(
       [:ash_a2a, :agent, :cancel],
       %{},
       %{
         resource_or_domain: resource_or_domain,
-        task_id: Map.get(context, :task_id),
-        context_id: Map.get(context, :context_id),
+        task_id: task_id,
+        context_id: context_id,
         actor: exec_context.actor,
         tenant: exec_context.tenant,
         context: exec_context.context,
         domain: exec_context.domain
+      }
+    )
+
+    run_on_cancel_hook(resource_or_domain, context, exec_context, task_id, context_id)
+
+    :ok
+  end
+
+  # Resolves the canceled task's skill and, only if that skill declares
+  # `on_cancel:`, invokes it. Any exception/exit the hook raises, or a
+  # non-`:ok` return, is caught here and reported via
+  # `[:ash_a2a, :agent, :cancel_hook_error]` telemetry rather than
+  # propagated -- `handle_cancel/1`'s `:ok` contract with `A2A.Agent`'s own
+  # state machine must never break because a resource author's hook
+  # misbehaves (see `AshA2A.OnCancel`'s @moduledoc, "Failure handling").
+  #
+  # Skill resolution here reads `:skill` metadata from the real inbound
+  # caller message via `context.history` -- NOT `context.metadata`, unlike
+  # the `exec_context` telemetry above. `A2A.Agent.Runtime.run_task/4` sets
+  # a cancel/message context's `metadata` field to the real *task's own*
+  # runtime metadata (`task.metadata`, e.g. `%{stream: fun}` for an
+  # in-flight streaming task -- `~/xaas/deps/a2a/lib/a2a/agent/
+  # runtime.ex:63-71`), which is a distinct map from the caller-supplied
+  # `A2A.Message.metadata` that actually carries `:skill`/`"skill"`
+  # (confirmed: `process_message/5`, runtime.ex:22-26, only ever populates
+  # `task.metadata` from a separate `opts[:metadata]` GenServer-call
+  # option, which `AshA2A.Agent`'s own `handle_message/2`/`handle_cancel/1`
+  # overrides never pass -- so `task.metadata` starts, and for every
+  # real caller in this library, stays `%{}` aside from the `:stream` key).
+  # `context.history` (`task.history`, runtime.ex:23-24,40-41), by
+  # contrast, always includes the real caller-constructed `A2A.Message`
+  # (`role: :user`) that started or continued the task -- the same message
+  # a live `handle_message/2` dispatch would have resolved `:skill` from --
+  # so the *last* such message in history (a continued multi-turn task can
+  # switch skills on a later turn; the first message is not necessarily the
+  # current one) is the correct, real source for cancel-time skill
+  # resolution.
+  defp run_on_cancel_hook(resource_or_domain, context, exec_context, task_id, context_id) do
+    with {:ok, skill_name} <-
+           resolve_skill_name(resource_or_domain, last_user_message(context)),
+         {:ok, %{on_cancel: on_cancel}} when not is_nil(on_cancel) <-
+           AshA2A.Info.skill(resource_or_domain, skill_name) do
+      invoke_on_cancel_hook(on_cancel, resource_or_domain, exec_context, task_id, context_id)
+    else
+      _no_hook -> :ok
+    end
+  end
+
+  @empty_user_message %A2A.Message{role: :user, parts: [], metadata: %{}}
+
+  defp last_user_message(%{history: history}) when is_list(history) do
+    history
+    |> Enum.reverse()
+    |> Enum.find(&match?(%A2A.Message{role: :user}, &1))
+    |> case do
+      nil -> @empty_user_message
+      message -> message
+    end
+  end
+
+  defp last_user_message(_context), do: @empty_user_message
+
+  defp invoke_on_cancel_hook(on_cancel, resource_or_domain, exec_context, task_id, context_id) do
+    {module, function, extra_args} =
+      case on_cancel do
+        {module, function, extra_args} when is_atom(module) and is_atom(function) ->
+          {module, function, extra_args}
+
+        module when is_atom(module) ->
+          {module, :on_cancel, []}
+      end
+
+    apply(module, function, [exec_context, task_id, context_id | extra_args])
+  rescue
+    error ->
+      emit_cancel_hook_error(resource_or_domain, exec_context, task_id, context_id, %{
+        kind: :error,
+        reason: Exception.message(error)
+      })
+  catch
+    kind, reason ->
+      emit_cancel_hook_error(resource_or_domain, exec_context, task_id, context_id, %{
+        kind: kind,
+        reason: inspect(reason)
+      })
+  else
+    :ok ->
+      :ok
+
+    other ->
+      emit_cancel_hook_error(resource_or_domain, exec_context, task_id, context_id, %{
+        kind: :bad_return,
+        reason: inspect(other)
+      })
+  end
+
+  defp emit_cancel_hook_error(resource_or_domain, exec_context, task_id, context_id, error) do
+    :telemetry.execute(
+      [:ash_a2a, :agent, :cancel_hook_error],
+      %{},
+      %{
+        resource_or_domain: resource_or_domain,
+        task_id: task_id,
+        context_id: context_id,
+        actor: exec_context.actor,
+        tenant: exec_context.tenant,
+        domain: exec_context.domain,
+        error: error
       }
     )
 
