@@ -230,4 +230,86 @@ defmodule AshA2A.Semantic.MachineExperienceTest do
     assert {:unknown, %Unknown{reason: :no_admitted_machinery}, %{code: :no_resolver}} =
              Unknown.route("buggy", %{"x" => 1}, machinery: store)
   end
+
+  # --------------------------------------------------------------------
+  # A compiled route is not permanent: unregister/3 genuinely retracts it
+  # --------------------------------------------------------------------
+
+  test "unregister/3 forces the class back to genuinely UNKNOWN -- resolve/3 misses, Unknown.route/3 spends the resolver again" do
+    {:ok, resolution} =
+      LlmBoundary.candidate(Unknown.declare("gate-cycle", %{}), :llm, %{"answer" => 1})
+
+    {:ok, machinery} =
+      MachineExperience.compile_back(resolution, :rule, fn _ -> {:ok, :machinery_result} end)
+
+    {:ok, store, register_changelog} =
+      MachineExperience.register(MachineExperience.new_store(), machinery)
+
+    assert register_changelog.added == ["gate-cycle"]
+
+    # Real state: the class routes deterministically before retraction.
+    assert MachineExperience.resolve(store, "gate-cycle", %{}) == {:ok, :machinery_result}
+
+    assert {:ok, :machinery, :machinery_result, _budget} =
+             Unknown.route("gate-cycle", %{}, machinery: store)
+
+    assert {:ok, next_store, %Changelog{} = unregister_changelog} =
+             MachineExperience.unregister(store, "gate-cycle", reason: "court disproved it")
+
+    assert unregister_changelog.removed == ["gate-cycle"]
+    assert unregister_changelog.added == []
+    assert MachineExperience.classes(next_store) == []
+
+    # Real state: `resolve/3` genuinely misses after retraction, and a
+    # rerun through `Unknown.route/3` spends the resolver again rather
+    # than returning a stale machinery hit.
+    assert MachineExperience.resolve(next_store, "gate-cycle", %{}) == :no_machinery
+
+    assert {:ok, :resolved, %Resolution{} = re_resolution, _budget} =
+             Unknown.route("gate-cycle", %{"days" => 2},
+               machinery: next_store,
+               budget: budget(1),
+               resolver: {:llm, llm_resolver()}
+             )
+
+    assert re_resolution.class == "gate-cycle"
+  end
+
+  test "unregister/3 is a real no-op for a class nobody registered, not an error" do
+    store = MachineExperience.new_store()
+
+    assert {:ok, same_store, %Changelog{} = changelog} =
+             MachineExperience.unregister(store, "never-registered")
+
+    assert changelog.removed == []
+    assert changelog.added == []
+    assert MachineExperience.classes(same_store) == MachineExperience.classes(store)
+  end
+
+  test "unregister/3 emits a real telemetry event distinguishing an actual removal from a no-op" do
+    handler_id = make_ref()
+
+    :telemetry.attach(
+      handler_id,
+      [:ash_a2a, :semantic, :machine_experience, :unregister],
+      fn _event, _measurements, metadata, _config ->
+        send(self(), {:unregister_event, metadata})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    {:ok, resolution} = LlmBoundary.candidate(Unknown.declare("delta", %{}), :llm, %{"a" => 1})
+    {:ok, machinery} = MachineExperience.compile_back(resolution, :rule, fn _ -> {:ok, 1} end)
+    {:ok, store, _} = MachineExperience.register(MachineExperience.new_store(), machinery)
+
+    {:ok, _next_store, _} = MachineExperience.unregister(store, "delta", reason: "epoch-close")
+
+    assert_received {:unregister_event, %{class: "delta", reason: "epoch-close", removed: true}}
+
+    {:ok, _still_empty, _} = MachineExperience.unregister(store, "never-there")
+
+    assert_received {:unregister_event, %{class: "never-there", reason: nil, removed: false}}
+  end
 end

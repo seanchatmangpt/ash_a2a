@@ -21,6 +21,7 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
   | 003 | positive | repeated reruns execute a real solved candidate plan with Allocation_LLM = 0 |
   | 004 | negative | compiled machinery does not over-generalize past its class coverage |
   | 005 | negative | compile-back refuses anything that is not a boundary-issued candidate |
+  | 006 | negative | unregistering a class's machinery genuinely forces it back to UNKNOWN |
   """
 
   use AshA2A.Chicago.Court
@@ -29,6 +30,7 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
   alias AshA2A.Chicago.Courts.InferenceMappings, as: M
   alias AshA2A.Chicago.Courts.Known
   alias AshA2A.Chicago.Fixtures.UnknownLlm, as: Fx
+  alias AshA2A.Chicago.Ocel.Mapping
   alias AshA2A.Planning.{HddlSolver, RequestRouter}
   alias AshA2A.Semantic.{Allocator, ExecutionPackage, MachineExperience, Unknown}
   alias AshA2A.Semantic.Unknown.Resolution
@@ -67,8 +69,25 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
       M.compile_back(),
       M.register(),
       M.llm_invoke(),
-      M.planner_invoke()
+      M.planner_invoke(),
+      unregister_mapping()
     ]
+  end
+
+  # Not in `AshA2A.Chicago.Courts.InferenceMappings`: this court is the only
+  # one exercising `MachineExperience.unregister/3` so far, and that shared
+  # module documents itself as "every court declares the subset it relies
+  # on" -- a mapping only SA2A-MX needs belongs here, not spread into a file
+  # every other court also touches.
+  @spec unregister_mapping() :: Mapping.t()
+  defp unregister_mapping do
+    Mapping.new!(
+      event: [:ash_a2a, :semantic, :machine_experience, :unregister],
+      activity: "machine_experience.unregister",
+      source: __MODULE__,
+      objects: fn _m, meta -> [{"semantic_class", meta[:class], "class"}] end,
+      attributes: fn _m, meta -> Map.take(meta, [:reason, :removed]) end
+    )
   end
 
   @impl true
@@ -159,6 +178,23 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
         attempt_predicate: {:observed, "machine_experience.compile_back"},
         outcome_predicate:
           {:observed, "machine_experience.compile_back", %{"outcome" => "compiled"}}
+      ),
+      negative(6,
+        invariant:
+          "§65/§82: a class's compiled machinery is not permanent -- unregistering it genuinely forces the class back to UNKNOWN, never a stale machinery hit",
+        stimulus:
+          "MachineExperience.unregister/3 of the class the MX-001 store just registered, then Unknown.route/3 for the same class/subject with an LLM resolver still available",
+        boundary: "MachineExperience.unregister/3 -> Unknown.route/3 step 1 (resolve/3 misses)",
+        forbidden_outcome:
+          "semantic.allocation{resolver=machinery} for the class after it was unregistered",
+        attempt_evidence:
+          "machine_experience.unregister{removed=true}, semantic.allocation (any resolver)",
+        survival_evidence:
+          "a machinery hit (or machinery-attributed allocation) for the unregistered class",
+        guard:
+          "MachineExperience.resolve/3 Map.fetch/2 missing once unregister/3 has deleted the class",
+        attempt_predicate: {:observed, "semantic.allocation"},
+        outcome_predicate: {:observed, "semantic.allocation", %{"resolver" => "machinery"}}
       )
     ]
   end
@@ -177,7 +213,7 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
 
   @impl true
   def run(%Context{} = ctx) do
-    [f1, f2, f3, f4, f5] = falsifiers()
+    [f1, f2, f3, f4, f5, f6] = falsifiers()
     class = "chicago.mx.gate_cycle.#{Fx.unique()}"
 
     {r1, compiled} = resolve_and_compile(ctx, f1, class)
@@ -191,12 +227,13 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
           if(solver?, do: rerun(ctx, f2, class, store), else: blocked(f2)),
           if(solver?, do: reruns(ctx, f3, class, store), else: blocked(f3)),
           uncovered(ctx, f4, class, store),
-          forged(ctx, f5, resolution)
+          forged(ctx, f5, resolution),
+          unregistered(ctx, f6, class, store)
         ]
 
       other ->
         detail = "compile-back produced no machinery: #{inspect(other, limit: 6)}"
-        [r1 | Enum.map([f2, f3, f4, f5], &Result.unknown(&1, detail))]
+        [r1 | Enum.map([f2, f3, f4, f5, f6], &Result.unknown(&1, detail))]
     end
   end
 
@@ -383,6 +420,45 @@ defmodule AshA2A.Chicago.Courts.MachineExperience do
         Enum.any?(replies, &match?({:ok, _}, &1)) or
           M.seen?(ctx, f, "machine_experience.compile_back", %{"outcome" => "compiled"}),
       evidence: %{"replies" => Enum.map(replies, &Known.summarize/1)}
+    )
+  end
+
+  defp unregistered(ctx, f, class, store) do
+    reply =
+      Context.stimulus(ctx, f, fn ->
+        M.guarded(fn ->
+          {:ok, next_store, changelog} =
+            MachineExperience.unregister(store, class, reason: "SA2A-MX-006 falsifier")
+
+          route_reply =
+            Unknown.route(class, @preserved_fixture,
+              machinery: next_store,
+              budget: budget(),
+              resolver: model_resolver()
+            )
+
+          {changelog, route_reply}
+        end)
+      end)
+
+    {changelog, route_reply} =
+      case reply do
+        {%AshA2A.CapabilityIndex.Changelog{}, _} = ok -> ok
+        other -> {nil, other}
+      end
+
+    machinery_hit? = match?({:ok, :machinery, _, _}, route_reply)
+
+    Result.negative(f,
+      attempt_observed?:
+        M.seen?(ctx, f, "machine_experience.unregister", %{"removed" => "true"}) and
+          M.seen?(ctx, f, "semantic.allocation"),
+      forbidden_outcome_observed?:
+        machinery_hit? or M.seen?(ctx, f, "semantic.allocation", %{"resolver" => "machinery"}),
+      evidence: %{
+        "changelog_removed" => changelog && changelog.removed,
+        "reply" => Known.summarize(route_reply)
+      }
     )
   end
 end
