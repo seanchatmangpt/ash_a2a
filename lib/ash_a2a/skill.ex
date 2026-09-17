@@ -45,6 +45,17 @@ defmodule AshA2A.Skill do
       either safe-to-skip or safe-to-execute -- an unclassified generic
       action must never be the means by which a real consequence bypasses
       the `CommandBus` DO boundary.
+
+  ## `on_cancel`
+
+  Optional real Ash-side compensation hook run by `AshA2A.Agent.__cancel__/2`
+  when a task under this skill is genuinely canceled (see
+  `AshA2A.OnCancel`'s @moduledoc for the full contract and failure handling).
+  Like `hddl_operators` and unlike `arguments`, this field has no Ash-native
+  equivalent to derive instead, so it IS copied through into the compiled
+  capability index by `AshA2A.CapabilityIndex.Compiler.project/3`. `nil`
+  (the default) means no hook is declared -- cancellation stays telemetry-only,
+  exactly as before this field existed.
   """
 
   @type consequence :: :observe | :change | :external_do | :unknown
@@ -60,7 +71,8 @@ defmodule AshA2A.Skill do
           expose?: boolean(),
           consequence: consequence() | nil,
           arguments: [AshA2A.Argument.t()],
-          hddl_operators: [AshA2A.HddlOperator.t()]
+          hddl_operators: [AshA2A.HddlOperator.t()],
+          on_cancel: module() | mfa() | nil
         }
 
   defstruct [
@@ -73,6 +85,7 @@ defmodule AshA2A.Skill do
     :tags,
     :__identifier__,
     :consequence,
+    :on_cancel,
     expose?: true,
     arguments: [],
     hddl_operators: [],
