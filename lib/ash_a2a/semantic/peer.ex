@@ -70,7 +70,8 @@ defmodule AshA2A.Semantic.Peer do
       `:code`, `:class`, `:graph_digest`)
   """
 
-  alias AshA2A.Semantic.{Envelope, Extension, GraphLaw, Refusal, Standing}
+  alias AshA2A.Semantic.{Envelope, Extension, GraphLaw, PeerCapabilityReconciliation, Refusal}
+  alias AshA2A.Semantic.Standing
   alias AshA2A.Semantic.Standing.Ledger
 
   defstruct [
@@ -81,7 +82,8 @@ defmodule AshA2A.Semantic.Peer do
     :receipt_store,
     shapes: "",
     mode: :strict,
-    graph_law: nil
+    graph_law: nil,
+    mapping_registry: nil
   ]
 
   @type mode :: :strict | :permissive
@@ -94,7 +96,8 @@ defmodule AshA2A.Semantic.Peer do
           receipt_store: {module(), keyword()} | nil,
           shapes: String.t(),
           mode: mode(),
-          graph_law: module() | nil
+          graph_law: module() | nil,
+          mapping_registry: AshA2A.Semantic.MappingRegistry.t() | nil
         }
 
   @typedoc """
@@ -139,6 +142,14 @@ defmodule AshA2A.Semantic.Peer do
       `AshA2A.ReceiptStore`. An envelope's `receipts` references are admitted
       only when each resolves to a matching receipt there; without a store,
       any receipt reference is unverifiable and refused (RFC-SA2A-002 §54).
+    * `:mapping_registry` -- this peer's own
+      `AshA2A.Semantic.MappingRegistry`, holding whatever cross-peer semantic
+      mappings it has admitted (RFC-SA2A-001 S47). Used by
+      `AshA2A.Semantic.PeerCapabilityReconciliation` to reconcile an
+      envelope's claimed capability label against this peer's own capability
+      identity before admitting it. Without one, a fresh empty registry is
+      used -- with no admitted mappings, only identical semantic identities
+      reconcile.
   """
   @spec new(keyword()) :: t()
   def new(opts) do
@@ -150,7 +161,8 @@ defmodule AshA2A.Semantic.Peer do
       receipt_store: Keyword.get(opts, :receipt_store),
       shapes: Keyword.get(opts, :shapes, ""),
       mode: Keyword.get(opts, :mode, :strict),
-      graph_law: Keyword.get(opts, :graph_law)
+      graph_law: Keyword.get(opts, :graph_law),
+      mapping_registry: Keyword.get(opts, :mapping_registry)
     }
   end
 
@@ -371,6 +383,7 @@ defmodule AshA2A.Semantic.Peer do
     # (`%{media_type:, digest:, content:}`), so the engine gets `.content`.
     with :ok <- check_graph_present(envelope),
          :ok <- check_semantic_basis(envelope),
+         :ok <- PeerCapabilityReconciliation.reconcile(peer, envelope),
          :ok <- check_provenance(envelope),
          :ok <- check_authority_requirement(envelope),
          :ok <- check_receipt_references(peer, envelope),
