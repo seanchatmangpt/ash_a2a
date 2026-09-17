@@ -8,6 +8,30 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed -- Local dev-setup gap misread as a board-persona regression
+
+- Real defect found while independently verifying the board-persona
+  deliberation plan (`test/ash_a2a/board_persona_deliberation_test.exs`,
+  itself fully green and unrelated to this): a fresh worktree's full
+  `mix test` run reported 37 real failures and 4 new `setup_all` invalids
+  against the stated baseline. Root-caused (not asserted) by reproducing
+  the exact failure in an isolated worktree first: `native/hddl_cli`'s
+  `target/release/hddl_cli` binary was never built there, so every test
+  that dispatches through it (directly, or via the shared
+  `test/support/freedom_gym_meeting_plan.ex` fixture) hit the real,
+  correctly-raised `hddl_cli_not_built` error instead of a skip. CI
+  (`.github/workflows/ci.yml`) already builds this binary as an explicit
+  step, and the fixture's own error message already names the fix
+  (`cd native/hddl_cli && cargo build --release`) -- this was never a
+  source-code bug in `native/hddl_cli/src/main.rs` or in the fixture, and
+  no assertion was weakened or deleted to "fix" it.
+- Real fix: ran `cargo build --release --locked` for `native/hddl_cli`
+  (`Cargo.lock` unchanged) in the isolated worktree; the previously-failing
+  suite then reported 0 failures. Added a "Local Development Setup"
+  section to `README.md` documenting the two native builds a fresh clone
+  or worktree needs before `mix test` (this repo had no such documentation
+  anywhere, which is the actual reason the gap existed to begin with).
+
 ### Verified -- v26.9.17 FOND/HDDL Self-Improvement Domain
 
 - **`test/ash_a2a/chicago/sa2a_v26_9_17_fond_qualification_test.exs`**: the
