@@ -73,6 +73,30 @@ defmodule Mix.Tasks.AshA2a.VerifyArchitecture do
   this tree). See `AshA2A.ArchitectureVerifier`'s moduledoc for the full,
   verified account of that dependency and what real checks were substituted
   instead.
+
+    8. `AshA2A.Info.semantic_requests_enabled?/1` reflects a resource's real
+       `a2a do semantic_requests true end` declaration.
+    9. An unopted-in resource's dispatch really falls through past the
+       `:semantic_request` gate to ordinary skill resolution.
+
+  ## Checks 10-16: Chicago court rollup (ARD §23 single-entry-point gap)
+
+  This task is the one CI-gate entry point ARD §23 names, but until this
+  rollup existed it attested to none of the real RFC-SA2A-002 Chicago
+  falsifier-court evidence already committed under
+  `lib/ash_a2a/chicago/courts/` for envelope negotiation, BRCE/sole-DO-
+  boundary, authority non-implication, receipt identity binding, offline
+  replay, knowledge-hook meta-admission and OCEL evidence validity -- each of
+  those already has its own real, passing `test/ash_a2a/chicago/*_test.exs`,
+  but none of it rolled up into `mix ash_a2a.verify_architecture` itself.
+
+  `AshA2A.ArchitectureVerifier.ChicagoRollup.checks/0` (see that module's
+  moduledoc for the exact court list, exclusions, and why) closes that gap:
+  each of the seven named Chicago courts is run for real, alone, through the
+  same `AshA2A.Chicago.Runner` their own dedicated tests already use, and
+  reported here as one additional PASS/FAIL check per court -- a genuine
+  architecture-invariant failure in any of those seven courts now fails this
+  one CI gate, not just their own separately-run test file.
   """
 
   use Mix.Task

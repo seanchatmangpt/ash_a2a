@@ -30,6 +30,12 @@ defmodule AshA2AArchitectureVerifierTest do
   `CHI-BRCE` Chicago court (`test/ash_a2a/chicago/brce_gate7_test.exs`), a
   separate, slower verification surface. This check gives the faster
   `mix ash_a2a.verify_architecture` surface the same property directly.
+
+  `checks/0` additively appends a seven-court Chicago rollup after these
+  ten (`AshA2A.ArchitectureVerifier.ChicagoRollup.checks/0`, ARD §23's
+  single-entry-point gap); this file still exercises the original ten
+  individually below. The rollup itself is tested in isolation, in its own
+  dedicated file, `test/ash_a2a_architecture_verifier_chicago_rollup_test.exs`.
   """
 
   use ExUnit.Case, async: true
@@ -38,12 +44,25 @@ defmodule AshA2AArchitectureVerifierTest do
   alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
   alias AshA2A.{Authority, BrceAnchor, Command, CommandBus, Dispatcher, Identity, Info, Receipt}
 
-  test "checks/0 reports all ten real architecture invariants as passing" do
+  test "checks/0 reports all ten original architecture invariants as passing, plus the Chicago rollup" do
     results = ArchitectureVerifier.checks()
 
-    assert length(results) == 10
-    assert Enum.all?(results, &(&1.status == :pass)), inspect(results)
-    assert Enum.all?(results, &(&1.detail != ""))
+    # The original ten checks this file's other tests below exercise
+    # individually, by position -- untouched by the additive Chicago
+    # rollup appended after them.
+    original_ten = Enum.take(results, 10)
+    assert length(original_ten) == 10
+    assert Enum.all?(original_ten, &(&1.status == :pass)), inspect(original_ten)
+    assert Enum.all?(original_ten, &(&1.detail != ""))
+
+    # `checks/0` additively rolls up seven real Chicago court checks
+    # (`AshA2A.ArchitectureVerifier.ChicagoRollup.checks/0`, ARD §23's
+    # single-entry-point gap) after the original ten -- see that module
+    # and `test/ash_a2a_architecture_verifier_chicago_rollup_test.exs` for
+    # their own dedicated coverage; asserted here only so this file's own
+    # "how many checks does the one CI-gate entry point report" claim
+    # stays true rather than silently going stale.
+    assert length(results) == 17
   end
 
   test "check 1: AshA2A.Info.capability_index/1 returns a real, non-nil list for the fixture resource" do

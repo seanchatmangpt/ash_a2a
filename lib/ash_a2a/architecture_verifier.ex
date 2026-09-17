@@ -195,9 +195,28 @@ defmodule AshA2A.ArchitectureVerifier do
   and `check_unopted_semantic_request_falls_through/0`, closing the two
   real gaps this moduledoc explicitly named rather than leaving them
   permanently unaddressed.
+
+  ## Chicago court rollup (checks 10-16) -- ARD §23's single-entry-point gap
+
+  Checks 1-9 above are the only checks this task's own moduledoc originally
+  enumerated -- all scoped to capability-index derivability, consequence
+  classification, `CommandBus` admission and `Command.fingerprint/1`.
+  Real, separate falsifier-court coverage already existed for the other ARD
+  §23 invariants (semantic envelope negotiation, BRCE/sole-DO-boundary,
+  authority non-implication, receipt identity binding, offline replay,
+  knowledge-hook meta-admission, OCEL evidence validity) under
+  `lib/ash_a2a/chicago/courts/`, each with its own dedicated
+  `test/ash_a2a/chicago/*_test.exs` -- but `mix ash_a2a.verify_architecture`,
+  the one CI-gate entry point ARD §23 names, rolled none of it up: a CI run
+  of that single task attested to none of it. `AshA2A.ArchitectureVerifier.
+  ChicagoRollup.checks/0` (see that module) closes this by running each of
+  those seven courts for real, through the same `AshA2A.Chicago.Runner`
+  every one of their own tests already uses, and reporting one PASS/FAIL
+  entry per court in this same `result()` shape.
   """
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, Info, Receipt}
+  alias AshA2A.ArchitectureVerifier.ChicagoRollup
   alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
 
   @type result :: %{name: String.t(), status: :pass | :fail, detail: String.t()}
@@ -216,7 +235,7 @@ defmodule AshA2A.ArchitectureVerifier do
       check_sole_do_fence_refuses_unanchored_dispatch(),
       check_semantic_requests_gate_compiles(),
       check_unopted_semantic_request_falls_through()
-    ]
+    ] ++ ChicagoRollup.checks()
   end
 
   # -- Check 1: AshA2A.Info.capability_index/1 derives real capability truth --
