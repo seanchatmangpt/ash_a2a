@@ -162,6 +162,118 @@ defmodule AshA2A.Test.ChicagoSelfTest do
     end
   end
 
+  defmodule ReplayCourt do
+    @moduledoc """
+    Real, non-discoverable court alongside `AshA2A.Test.ChicagoSelfTest.Court`
+    proving `AshA2A.CommandBus`'s replay guard (`claim_receipt/3` ->
+    `AshA2A.ReceiptStore.claim/2` `{:replay, receipt}` branch) is not vacuous
+    for RFC-SA2A-002 §97's `AshA2A.Chicago.Mutation.Catalog`
+    `"replay_calls_actuator"` mutation.
+
+    `AshA2A.Test.ChicagoSelfTest.Court` (CHI-SELFTEST) deliberately never
+    drives a replay -- it exists to prove authority non-implication -- and
+    `AshA2A.Chicago.MutationHarnessTest` "a vacuous court for the guard is
+    reported as mutant_survived" documents the anti-vacuity engine correctly
+    catching exactly that gap for CHI-SELFTEST. This court closes the gap for
+    real, as its own court: it resubmits the identical, already-committed
+    `Item.create` command a second time through the real `AshA2A.CommandBus`
+    and asserts, via the independent OCEL observer, that the second
+    submission's stimulus bracket observes only a `brce.claim` decision and
+    never `brce.actuate.start` / `dispatch.start`.
+
+    Attempt evidence is outcome-neutral (`{:observed, "brce.claim"}`, not
+    filtered to `outcome=replay`), for the same reason
+    `AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt`'s moduledoc gives:
+    the `replay_calls_actuator` mutant rewrites `claim_receipt/3` so the
+    boundary itself reports `outcome=execute` on what is really a replay --
+    filtering attempt evidence on that value would make the exact mutation
+    under test look like an uncorroborated `:unknown` (evidence destroyed)
+    rather than the real, corroborated `FALSIFIER_SURVIVED` the removed guard
+    actually causes.
+    """
+    use AshA2A.Chicago.Court, discoverable: false
+
+    alias AshA2A.Test.ChicagoSelfTest, as: T
+
+    @impl true
+    def id, do: "CHI-SELFTEST-REPLAY"
+    @impl true
+    def title, do: "Chicago machinery self-test: CommandBus replay guard"
+    @impl true
+    def gate, do: nil
+    @impl true
+    def profile, do: :core
+    @impl true
+    def rfc_sections, do: ["§38", "§71", "§97"]
+
+    @impl true
+    def falsifiers do
+      [
+        Falsifier.new!(
+          id: "CHI-SELFTEST-REPLAY-001",
+          court_id: "CHI-SELFTEST-REPLAY",
+          kind: :negative,
+          invariant: "§38/§71: a replayed command never re-actuates",
+          stimulus:
+            "the identical, already-committed Item.create command (same command_id and fingerprint) resubmitted via CommandBus.run/4",
+          boundary: "AshA2A.CommandBus claim_receipt/3 (AshA2A.ReceiptStore.claim/2)",
+          forbidden_outcome: "a second actuation / a second Item row for the same label",
+          attempt_evidence: "brce.claim decided for this (second, replay) submission",
+          survival_evidence:
+            "brce.actuate.start or dispatch.start attributed to the replay submission; label count > 1 in an independent Ash.read!",
+          guard:
+            "CommandBus.claim_receipt/3 -> ReceiptStore.Memory.claim/2 {:replay, receipt} branch",
+          failure_class: :replay_failure,
+          attempt_predicate: {:observed, "brce.claim"},
+          outcome_predicate:
+            {:any, [{:observed, "brce.actuate.start"}, {:observed, "dispatch.start"}]}
+        )
+      ]
+    end
+
+    @impl true
+    def run(%Context{} = ctx) do
+      [falsifier] = falsifiers()
+
+      T.with_store(fn store_opts ->
+        label = "replay-#{System.unique_integer([:positive])}"
+        command = T.command(label, true)
+        message = T.message(label)
+
+        {:ok, first_receipt} =
+          CommandBus.run(command, message, AshA2A.Test.Fixture.Item, store_opts: store_opts)
+
+        count_before_replay = Enum.count(T.labels(), &(&1 == label))
+
+        replayed =
+          Context.stimulus(ctx, falsifier, fn ->
+            CommandBus.run(command, message, AshA2A.Test.Fixture.Item, store_opts: store_opts)
+          end)
+
+        count_after_replay = Enum.count(T.labels(), &(&1 == label))
+        second_call_records = Context.observed(ctx, falsifier)
+
+        [
+          Result.negative(falsifier,
+            attempt_observed?: Context.observed?(ctx, falsifier, "brce.claim"),
+            forbidden_outcome_observed?:
+              Context.observed?(ctx, falsifier, "brce.actuate.start") or
+                Context.observed?(ctx, falsifier, "dispatch.start") or
+                count_after_replay > count_before_replay,
+            evidence: %{
+              "first_receipt_id" => inspect(Map.get(first_receipt, :receipt_id)),
+              "count_before_replay" => count_before_replay,
+              "count_after_replay" => count_after_replay,
+              "replayed?" => match?({:ok, %{replayed?: true}}, replayed),
+              "second_call_activities" =>
+                Enum.map(second_call_records, &inspect({&1.activity, &1.attributes["outcome"]}))
+            }
+          )
+        ]
+      end)
+    end
+  end
+
   defmodule LyingCourt do
     @moduledoc "Reports a kill without ever stimulating the SUT: must not count."
     use AshA2A.Chicago.Court, discoverable: false
