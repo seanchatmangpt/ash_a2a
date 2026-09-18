@@ -83,12 +83,28 @@ returns as the identity — that whole term is what reaches the dispatch path as
 `auth_identity`, and `AshA2A.Identity.principal/1` normalizes it identically on both
 sides.
 
-To take a grant away, revoke it through the broker; the next dispatch fails closed
-with `:authority_required`:
+To take a grant away, revoke it through `Grant` — the symmetric counterpart
+of `grant/3`, keyed on the same deterministic token id `authorize/3` looks
+up — and the next dispatch fails closed with `:authority_required`:
 
 ```elixir
-:ok = AshA2A.Authority.Broker.Ekv.revoke(authority)
+:ok = AshA2A.Authority.Grant.revoke(subject, "create_note")
 ```
+
+`Grant.renew/3` extends or shortens a standing grant's `expires_at` in
+place, and `Grant.list_grants/2` enumerates what a principal currently
+holds (both degrade to a named `:error` when the configured broker doesn't
+implement the optional callbacks). Every decision and lifecycle transition
+is observable as telemetry — `[:ash_a2a, :authority, :decision]` and
+`[:ash_a2a, :authority, :grant, :issue | :revoke | :renew]` — so "did the
+revocation take effect" is answered from your telemetry backend, not by
+waiting for the next refusal (see the
+[telemetry reference](../reference/telemetry.md)).
+
+> If a command can reach your action through an **async** path (Oban
+> delivery), revocation needs one more step: your worker must re-verify
+> the grant live at execution time — see
+> [Verify authority on async paths](verify-authority-on-async-paths.md).
 
 ### What an ungranted consequential call looks like
 
@@ -204,12 +220,26 @@ by setting `metadata["skill"]` explicitly on the outbound `A2A.Message`:
 message = %{A2A.Message.new_user([A2A.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
 ```
 
-`AshA2A.Agent.resolve_skill_name/2` reads `metadata["skill"]` (via
+The agent reads `metadata["skill"]` at skill resolution (via
 `AshA2A.MetadataKey.get/2`, so either the atom or string key works) before ever
 falling back to the single-skill default, so an explicit skill name always
 disambiguates regardless of how many public actions the resource has. Note that
 `"skill"` here is a routing directive read from message metadata deliberately — it is
 not `actor`/`tenant`, and `ContextResolver` never touches it.
+
+## What the plug does NOT do for you
+
+- **mTLS is declared-but-unsupported**: declaring a
+  `%A2A.SecurityScheme.MutualTLS{}` scheme makes credential extraction
+  return `:unsupported` (→ 401). There is no client-certificate identity
+  path in the SDK today.
+- **Token validation is entirely yours**: the OAuth2/OIDC schemes extract
+  a bearer string; no JWKS fetch, introspection, audience, or signature
+  check ships with the library. Your `verify/3` callback is the whole
+  verification story.
+- **The shipped brokers are reference implementations**: neither
+  `InMemory` nor `Ekv` is Sybil-resistant or an identity system; production
+  wants a broker backed by your real one.
 
 ## See also
 
