@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
-## [Unreleased]
+## [26.9.17] - 2026-09-17
 
 ### Docs
 - Production-readiness documentation pass (v26.9.17 dry run): README
@@ -22,8 +22,6 @@ once it reaches 1.0.
   banners on the v26.9.17 reports, `SECURITY.md`, and hex-package
   shipping of the `docs/` quadrants (previously `mix hex.publish` would
   fail to build ExDoc extras the package did not contain).
-
-## [26.9.17] - 2026-09-17
 
 ### Fixed -- CommandBus production-scale story: real gap closed, Ekv wiring now genuinely config-only
 
