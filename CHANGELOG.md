@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [Unreleased]
+
+### Fixed
+
+- **`RouterCounters` telemetry cross-contamination between concurrent
+  same-node instances** (v26.9.17 stress finding, resolved):
+  `:telemetry.execute/3` broadcasts
+  `[:ash_a2a, :router, :tier_selected]` to every attached handler on the
+  node, so two overlapping instances each counted the other's dispatches --
+  the exact per-batch mismatch the stress wave reproduced and had to prune
+  around (`multinode_concurrency_test.exs`). `attach!/3` now accepts
+  `owner: pid` (default `:any`, the unchanged historical semantics), the
+  same design `AshA2A.Telemetry.AllocationCounters` shipped for the
+  identical broadcast problem; `handle_event/4` runs in the emitting
+  process, so a pid-scoped instance counts exactly its own dispatches.
+  Fail-before: two concurrent drivers x (2 facts + 1 phrase) dispatches
+  each read `%{deterministic: 4, phrase: 2}`; pass-after: each reads its
+  own exact counts (`test/ash_a2a/telemetry/router_counters_isolation_test.exs`).
+  `AshA2A.Test.MultinodeRouterCounters.drive_and_report/3` (the reference
+  consumer that hit the defect) now attaches with `owner: self()`.
+
+### Added
+
+- **Standing `CommandBus.run/4` tail-latency SLO tripwire**
+  (`AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest`, `:benchmark`
+  tag): under sustained concurrent load, late-half p99 must stay within
+  **3.0x** early-half p99 with zero errors -- 2x headroom over the worst
+  non-pathological `Memory`-store measurement (1.274x-1.515x), versus the
+  pathological 181x observed under heavy host contention. The tripwire
+  reports the store's real max mailbox length and outbox depth alongside
+  the ratio (so a trip arrives with its mechanism attached) and carries an
+  explicit forced-synthetic knob (`ASH_A2A_TAIL_TRIPWIRE_FORCE_X`) used
+  only for its own fail-before evidence (forced 10x late-half run trips:
+  measured ratio 12.158x). SLO and mechanism documented in
+  `AshA2A.CommandBus`'s moduledoc. Mechanism diagnosis behind the bound:
+  per-dispatch sampler evidence shows the store mailbox and the receipt
+  outbox do NOT accumulate through a run (both ~0 from start to finish),
+  while mean/p50 climb and throughput decays track host contention -- the
+  shared-mailbox deschedule amplification the
+  `v26.9.17-commandbus-scale.md` Memory-vs-Ekv differential already
+  measured, not unbounded in-SUT state growth; callers needing the
+  tightest tail on contended hosts configure `:receipt_store, Ekv`
+  (0.812x-1.072x on the same metric).
+
 ## [26.9.17] - 2026-09-17
 
 ### Docs
