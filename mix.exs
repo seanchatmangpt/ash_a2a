@@ -5,6 +5,8 @@ defmodule AshA2A.MixProject do
     [
       app: :ash_a2a,
       version: "26.9.17",
+      source_url: "https://github.com/seanchatmangpt/ash_a2a",
+      homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
       description: description(),
       package: package(),
@@ -18,18 +20,43 @@ defmodule AshA2A.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: [
-        "README.md",
-        "CHANGELOG.md",
-        "docs/tutorials/getting-started.md",
-        "docs/how-to/authenticate-agent-requests.md",
-        "docs/how-to/enable-semantic-requests.md",
-        "docs/how-to/observe-dispatch-with-ocel.md",
-        "docs/how-to/use-role-based-llm-resolution.md",
-        "docs/explanation/architecture.md",
-        "docs/explanation/graphlaw-wasm-integration.md",
-        "docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md",
-        "docs/reference/index.md"
+      extras:
+        Enum.map(
+          [
+            # Project
+            "README.md",
+            "CHANGELOG.md",
+            "docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md",
+            # Tutorials
+            "docs/tutorials/getting-started.md",
+            # How-to guides
+            "docs/how-to/authenticate-agent-requests.md",
+            "docs/how-to/verify-authority-on-async-paths.md",
+            "docs/how-to/enable-semantic-requests.md",
+            "docs/how-to/observe-dispatch-with-ocel.md",
+            "docs/how-to/use-role-based-llm-resolution.md",
+            "docs/how-to/test-your-ash_a2a-app.md",
+            # Reference
+            "docs/reference/index.md",
+            "docs/reference/dsl.md",
+            "docs/reference/configuration.md",
+            "docs/reference/telemetry.md",
+            "docs/reference/mix-tasks.md",
+            "docs/reference/a2a-endpoint-contract.md",
+            # Explanation
+            "docs/explanation/architecture.md",
+            "docs/explanation/message-lifecycle.md",
+            "docs/explanation/canonical-graph-identity.md",
+            "docs/explanation/graphlaw-wasm-integration.md"
+          ],
+          &{&1, []}
+        ),
+      groups_for_extras: [
+        "Project": ~r"README|CHANGELOG|PHOENIX",
+        "Tutorials": ~r"docs/tutorials",
+        "How-to guides": ~r"docs/how-to",
+        "Reference": ~r"docs/reference",
+        "Explanation": ~r"docs/explanation"
       ]
     ]
   end
@@ -44,7 +71,10 @@ defmodule AshA2A.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => "https://github.com/seanchatmangpt/ash_a2a"},
-      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE)
+      # The four Diataxis quadrants ship in the package so `mix hex.publish`
+      # can build the ExDoc extras declared in docs/0 above. Internal trees
+      # (docs/jira, docs/rfc, litho.docs, research) deliberately do NOT ship.
+      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE docs/tutorials docs/how-to docs/reference docs/explanation)
     ]
   end
 
