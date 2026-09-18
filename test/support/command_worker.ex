@@ -19,6 +19,35 @@ defmodule AshA2A.Test.Support.CommandWorker do
   (`command_id` + identical `fingerprint`) replays the already-committed
   receipt instead of re-executing the real Ash action a second time.
 
+  ## Live authority re-verification (real gap closed)
+
+  Real hardening pass finding (`test/ash_a2a/chicago/hardening/
+  adapter_crash_safety_test.exs`, "real defect ... revoked-but-unexpired
+  authority still actuates"): `ObanAuthority.reconstruct/2` restores the
+  ORIGINAL `expires_at` from enqueue-time job args, so it correctly refuses
+  an authority that has since expired -- but a REVOKED grant with no
+  expiry, or one whose expiry has not yet passed, has nothing in the
+  reconstructed struct that could ever reflect the revocation.
+  `CommandBus.admit/2`'s own `Authority.admits?/2` check only inspects the
+  struct it is handed; it never re-queries the broker. `perform/1` below
+  therefore re-verifies LIVE broker standing via
+  `ObanAuthority.verify_live!/3` before every fresh dispatch.
+
+  That gate is conditional, not unconditional, for a real, separately
+  proven reason (same hardening pass, same test file): gating every
+  `perform/1` on live standing unconditionally would spuriously refuse a
+  legitimate Oban at-least-once REDELIVERY of a command whose receipt is
+  ALREADY durable, the instant its principal's grant is revoked AFTER the
+  real consequence already happened -- even though `CommandBus.run/4`'s own
+  claim/replay logic would have replayed the stored receipt without
+  touching Ash again. Revoking authority must never invalidate evidence of
+  a consequence that already happened. So the receipt store is peeked
+  first (cheap, never itself a source of authority): an existing receipt
+  means this is redelivery-of-an-already-actuated command, and live
+  re-verification is skipped on purpose; no receipt yet means a genuinely
+  fresh (or still in-flight) attempt, which DOES need live standing
+  re-verified before `CommandBus` ever sees it.
+
   Deliberately scoped to `AshA2A.Test.Fixture.Item` (this repo's real
   `:create`/`:update`/`:destroy`-shaped Chicago-style test fixture) rather
   than accepting an arbitrary `resource_or_domain` at runtime: a real
@@ -35,12 +64,30 @@ defmodule AshA2A.Test.Support.CommandWorker do
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
-    command = reconstruct_command(args)
-    message = A2A.Message.new_user([A2A.Part.Data.new(args["input"] || %{})])
+    principal_value = raw_value(args["principal_id"])
+    reconstructed = reconstruct_command(args, principal_value)
+    store = CommandBus.default_store()
 
-    case CommandBus.run(command, message, AshA2A.Test.Fixture.Item) do
-      {:ok, _receipt} -> :ok
-      {:error, reason} -> {:error, reason}
+    # Peek before re-verifying live standing: an already-durable receipt
+    # means this is redelivery of an already-actuated command (skip live
+    # re-verification on purpose -- see moduledoc), never a fresh attempt.
+    authority_result =
+      case store.fetch(reconstructed.command_id, []) do
+        {:ok, _already_durable_receipt} ->
+          {:ok, reconstructed.authority}
+
+        :error ->
+          ObanAuthority.verify_live!(reconstructed.authority, args["capability_id"])
+      end
+
+    with {:ok, live_authority} <- authority_result do
+      command = %{reconstructed | authority: live_authority}
+      message = A2A.Message.new_user([A2A.Part.Data.new(args["input"] || %{})])
+
+      case CommandBus.run(command, message, AshA2A.Test.Fixture.Item) do
+        {:ok, _receipt} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -61,9 +108,7 @@ defmodule AshA2A.Test.Support.CommandWorker do
   # always agree on the same real fingerprint, which is exactly what lets
   # `AshA2A.CommandBus`'s claim/replay logic in `AshA2A.ReceiptStore`
   # recognize the second run as the same command rather than a new one.
-  defp reconstruct_command(args) do
-    principal_value = raw_value(args["principal_id"])
-
+  defp reconstruct_command(args, principal_value) do
     Command.new(args["capability_id"],
       command_id: raw_value(args["command_id"]),
       agent_id: raw_value(args["agent_id"]),

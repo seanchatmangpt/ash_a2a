@@ -27,29 +27,26 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   mock, no stub, no direct call to `Envelope.new/1` or `Peer.admit/2` that
   would skip the transport, the JSON codec, or the Plug pipeline.
 
-  ## A genuine gap this pass found, and why it is not fixed in this file
+  ## A real gap this pass found, and its fix (closed, not just documented)
 
-  The last `describe` block below is not a defense being confirmed -- it is
-  a real, reproduced, currently-open defect: syntactically-garbage,
-  non-Turtle `graph.content` is silently **ADMITTED** by the real wire
-  boundary, because `AshA2A.Semantic.Peer.admit_candidate/2` (`lib/ash_a2a/
-  semantic/peer.ex`) has no equivalent of `AshA2A.Semantic.AdmissionPipeline`'s
-  Parse-stage triple-existence witness (`admission_pipeline.ex`'s own
-  moduledoc documents the exact same class of vacuous-pass defect and the
-  fix it applied -- a fix that was never ported to `Peer.admit_candidate/2`,
-  the module actually reachable from the live A2A wire). Confirmed for real,
-  end to end, over the real `A2A.Plug` HTTP JSON-RPC boundary, before this
-  test was written (not asserted from reading the source alone).
+  The last `describe` block below originally documented a real, reproduced,
+  open defect: syntactically-garbage, non-Turtle `graph.content` was
+  silently **ADMITTED** by the real wire boundary, because
+  `AshA2A.Semantic.Peer.admit_candidate/2` (`lib/ash_a2a/semantic/peer.ex`)
+  had no equivalent of `AshA2A.Semantic.AdmissionPipeline`'s Parse-stage
+  triple-existence witness (`admission_pipeline.ex`'s own moduledoc
+  documents the exact same class of vacuous-pass defect and the fix it
+  applied). Confirmed for real, end to end, over the real `A2A.Plug` HTTP
+  JSON-RPC boundary, before this test was written (not asserted from
+  reading the source alone).
 
-  Fixing it means editing `lib/ash_a2a/semantic/peer.ex`, which is **not**
-  this task's assigned file (`test/ash_a2a/chicago/hardening/
-  adversarial_input_test.exs` only, per this session's parallel-agent scope
-  discipline: a shared file discovered mid-task is noted for the serial
-  MergeVerify phase, not edited here). So this test asserts the real,
-  currently-true behavior -- a regression-capturing falsifier, not a
-  disguised pass -- rather than weakening the check to claim the gap does
-  not exist. Flip the assertion to `refute` once `peer.ex` grows a parse
-  witness.
+  `peer.ex`'s `admit_candidate/2` now runs the same real engine-native
+  parse witness (`check_parse_witness/2`, calling
+  `AshA2A.Semantic.AdmissionPipeline.parse_witness/0` and reusing
+  `AshA2A.GraphLaw.Wasm.dialect/2` to read the `N3_DENIAL` verdict) before
+  `graph_hash`/shape validation ever run -- garbage now refuses with
+  `:parse_yielded_no_triples`. The last `describe` block below is a
+  regression guard for the fix, not an open-gap document.
   """
 
   use ExUnit.Case, async: false
@@ -405,25 +402,26 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   end
 
   # ---------------------------------------------------------------------------
-  # A genuine, currently-open gap: non-RDF garbage graph content is silently
-  # ADMITTED by the real wire boundary. See the moduledoc's "A genuine gap
-  # this pass found" section for the full explanation and why this is a
-  # documenting falsifier, not a fix, in this file.
+  # CLOSED (was a genuine gap when this file was first written): non-RDF
+  # garbage graph content used to be silently ADMITTED by the real wire
+  # boundary. `lib/ash_a2a/semantic/peer.ex`'s `admit_candidate/2` now runs
+  # the same real engine-native parse witness
+  # `AshA2A.Semantic.AdmissionPipeline` already used (see that module's
+  # moduledoc, "Parse is a real witness, not an assumption") before ever
+  # computing `graph_hash`/running shapes. This test now regression-guards
+  # the fix rather than documenting the open gap.
   # ---------------------------------------------------------------------------
 
-  describe "KNOWN REAL GAP -- garbage graph.content is silently admitted, no parse witness" do
-    @tag :known_gap
-    test "malformed, non-Turtle graph content, hashed by the real engine, is admitted rather than refused",
+  describe "parse witness closes the garbage-admission gap" do
+    test "malformed, non-Turtle graph content is refused with a real typed code, never admitted",
          %{endpoint_opts: eo} do
       # Not empty, not blank -- syntactically garbage. The real engine
-      # (measured directly, and documented identically in
-      # `AshA2A.Semantic.AdmissionPipeline`'s own moduledoc under "Parse is a
-      # real witness, not an assumption") parses this to zero triples and
-      # reports `graph_hash` as the empty-graph digest
+      # (measured directly) parses this to zero triples and would report
+      # `graph_hash` as the empty-graph digest
       # (`af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262`
-      # == blake3("")), and SHACL against peer B's real `ex:Order` shape
-      # reports "0 violations" because there is nothing to target -- a
-      # vacuous pass, not a real determination.
+      # == blake3("")) and "0 violations" against any real shape -- a
+      # vacuous pass, not a real determination, which is exactly why the
+      # parse witness must run BEFORE either of those, not after.
       garbage = "@@@ not turtle at all ;;; <<< binary garbage {{{{ unclosed \x01\x02"
 
       {:ok, garbage_digest} = GraphLaw.graph_hash(garbage)
@@ -433,18 +431,23 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
 
       assert {200, data} = admit(eo, payload)
 
-      # THE REAL, CURRENTLY-TRUE, ADVERSARIAL FINDING: this is an assertion
-      # of observed fact, produced by a real end-to-end HTTP round trip
-      # through the real `AshA2A.Semantic.Peer.receive_message/2` boundary --
-      # not a description, not a guess, not weakened to hide the gap. Flip
-      # this to `refute data["standing"] == "admitted"` (and assert a real
-      # typed refusal code instead) once `lib/ash_a2a/semantic/peer.ex`
-      # gains a Parse-stage witness equivalent to
-      # `AshA2A.Semantic.AdmissionPipeline`'s (see this file's moduledoc).
-      assert data["standing"] == "admitted"
+      # THE REAL, CURRENTLY-TRUE, FIXED BEHAVIOR: a real end-to-end HTTP
+      # round trip through the real `AshA2A.Semantic.Peer.receive_message/2`
+      # boundary now refuses this input, with the real typed code the parse
+      # witness produces -- not merely "not admitted" (which the earlier,
+      # weaker version of this test already could have satisfied vacuously
+      # via some unrelated refusal).
+      refute data["standing"] == "admitted"
+      assert data["standing"] == "refused"
+      assert data["code"] == "parse_yielded_no_triples"
+    end
 
-      assert data["graph_digest"] ==
-               "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+    test "a well-formed graph with real triples still admits normally (positive control)",
+         %{endpoint_opts: eo} = ctx do
+      payload = base_payload(ctx)
+
+      assert {200, data} = admit(eo, payload)
+      assert data["standing"] == "admitted"
     end
   end
 end

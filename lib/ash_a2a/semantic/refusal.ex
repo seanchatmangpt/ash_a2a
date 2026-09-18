@@ -184,6 +184,8 @@ defmodule AshA2A.Semantic.Refusal do
     semantic_item_invalid: :refused_structure,
     semantic_goal_missing: :refused_structure,
     invalid_semantic_ir: :refused_structure,
+    parse_yielded_no_triples: :refused_structure,
+    parse_witness_inconclusive: :refused_structure,
     invalid_goal_facts: :refused_structure,
     ambiguous_goal_facts_shape: :refused_structure,
     invalid_fact_entry: :refused_structure,
@@ -247,6 +249,7 @@ defmodule AshA2A.Semantic.Refusal do
     semantic_synthesis_failed: :refused_plan,
     invalid_semantic_plan_shape: :refused_plan,
     unexpected_planner_result: :refused_plan,
+    hddl_solve_error: :refused_plan,
     unsupported_planner: :refused_plan,
 
     # --- REFUSED_CAPABILITY -----------------------------------------------
@@ -330,6 +333,7 @@ defmodule AshA2A.Semantic.Refusal do
     semantic_worker_exit: :blocked_resource,
     receipt_store_unavailable: :blocked_resource,
     peer_b_unavailable: :blocked_resource,
+    parse_witness_missing: :blocked_resource,
     dispatch_crashed: :blocked_resource,
     # `AshA2A.GraphLaw.Wasm` transport: the real engine could not be reached
     # or did not run. A missing artifact, a missing host script, no `node`, a

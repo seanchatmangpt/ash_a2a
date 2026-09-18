@@ -161,25 +161,27 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
      replay-on-redelivery proof but exercised here against the hardened
      worker specifically.
 
-  ## Real gap found and left for the serial MergeVerify phase (NOT fixed here)
+  ## Real gap found, and since closed (CLOSED, not still open)
 
-  `AshA2A.Test.Support.CommandWorker` -- this repo's ALREADY-SHIPPED
-  reference `Oban.Worker` (`test/support/command_worker.ex`, added prior to
-  this hardening pass) -- calls `ObanAuthority.reconstruct/2` but never
-  `ObanAuthority.verify_live!/3`. `AshA2A.Delivery.Oban`'s own moduledoc
-  states this is a legal, documented choice ("A worker is not required to
-  call `verify_live!/3`"), but its real, concrete consequence is that the
-  SHIPPED worker fails closed on an EXPIRED authority (expiry alone survives
-  `reconstruct/2` + `CommandBus.admit/2`'s own `Authority.admits?/2` expiry
-  check) but does NOT fail closed on a REVOKED-but-unexpired authority -- a
-  revoked standing grant with no time bound at all still actuates through
-  `AshA2A.Test.Support.CommandWorker`. The last test below proves this real,
-  currently-shipped behavior directly (not a hypothetical), state-based, so
-  it will need updating (not deleting) once `test/support/command_worker.ex`
-  is hardened to call `verify_live!/3` too -- that file is outside this
-  hardening pass's assigned scope (`test/ash_a2a/chicago/hardening/
-  adapter_crash_safety_test.exs` only) and is flagged here for the serial
-  MergeVerify phase instead of being edited from this file.
+  `AshA2A.Test.Support.CommandWorker` -- this repo's shipped reference
+  `Oban.Worker` (`test/support/command_worker.ex`) -- originally called
+  `ObanAuthority.reconstruct/2` but never `ObanAuthority.verify_live!/3`.
+  `AshA2A.Delivery.Oban`'s own moduledoc states omitting `verify_live!/3` is
+  a legal, documented choice, but its real, concrete consequence was that
+  the shipped worker failed closed on an EXPIRED authority (expiry alone
+  survives `reconstruct/2` + `CommandBus.admit/2`'s own `Authority.admits?/2`
+  expiry check) but did NOT fail closed on a REVOKED-but-unexpired
+  authority. `test/support/command_worker.ex` now peeks the receipt store
+  (skip live re-verification only for redelivery of an already-durable
+  receipt -- see that file's own moduledoc for why an unconditional gate
+  would itself be a regression) then calls `ObanAuthority.verify_live!/3`
+  against the CONFIGURED (default, config-driven) broker before a fresh
+  `CommandBus.run/4` dispatch -- the same real contract
+  `CrashSafeCommandWorker` above already proved out in this same file. The
+  last test below now regression-guards the closed gap, using the real
+  default broker (the one `test/support/command_worker.ex` actually
+  consults in production, unlike this file's own `CrashSafeCommandWorker`
+  reference body, which threads a test-local broker for isolation).
   """
 
   use ExUnit.Case, async: false
@@ -453,45 +455,43 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
 
   # -- 6. Real, currently-shipped gap in AshA2A.Test.Support.CommandWorker ---
   #
-  # Documents ACTUAL current behavior (state-based, not an interaction
-  # check) of the already-shipped reference worker -- see this file's
-  # moduledoc "Real gap found" section. NOT a defect in this hardening
-  # pass's own new code; `test/support/command_worker.ex` is outside this
-  # file's assigned scope and is flagged for the serial MergeVerify phase.
-  test "the ALREADY-SHIPPED AshA2A.Test.Support.CommandWorker does NOT re-verify live broker standing, so a revoked-but-unexpired grant still actuates (real, found gap -- flagged for MergeVerify, not fixed here)",
-       %{suffix: suffix, label: label, broker: broker} do
+  # Regression guard for the closed gap (state-based, not an interaction
+  # check) -- see this file's moduledoc "Real gap found, and since closed".
+  # Uses the real DEFAULT (config-driven) broker deliberately, since that
+  # is the one `test/support/command_worker.ex` actually consults in
+  # production -- unlike `CrashSafeCommandWorker` above, which threads a
+  # test-local broker purely for test isolation.
+  test "the shipped AshA2A.Test.Support.CommandWorker now re-verifies live broker standing, so a revoked-but-unexpired grant is refused (closed gap, regression guard)",
+       %{suffix: suffix, label: label} do
     subject = Identity.principal("subject-shipped-gap-#{suffix}")
-    assert {:ok, authority} = Grant.grant(subject, @capability_id, broker: broker)
+    assert {:ok, authority} = Grant.grant(subject, @capability_id)
 
     command = build_command("crash-shipped-gap-#{suffix}", subject, authority, label)
 
-    # CommandWorker.perform/1 resolves the default AshA2A.ReceiptStore.Memory
-    # (no store_opts plumbing) and the default AshA2A.Authority.Broker
-    # (config-driven, ignoring our test-local broker entirely) -- which is
-    # exactly the point being documented: it never re-queries ANY broker at
-    # perform/1 time, live or otherwise. Enqueue via the same real Oban
-    # instance; CommandWorker's own reconstruction ignores the test broker
-    # plumbing keys this file's hardened worker reads.
+    # CommandWorker.perform/1 resolves the default AshA2A.ReceiptStore and
+    # the default (config-driven) AshA2A.Authority.Broker -- both real,
+    # both the ones production actually uses.
     assert {:ok, %Delivery{provider_ref: job_id}} =
              Delivery.Oban.enqueue(CommandWorker, command,
                name: @oban_name,
                job_opts: [queue: :commands]
              )
 
-    assert :ok = Grant.revoke(subject, @capability_id, broker: broker)
+    assert :ok = Grant.revoke(subject, @capability_id)
 
     job = AshA2A.Test.Repo.get!(Oban.Job, job_id) |> dequeue!()
 
-    # Real, currently-shipped behavior: :ok, not a refusal -- CommandWorker
-    # reconstructs expires_at (nil here, since this grant was never time
-    # bounded) and hands the authority straight to CommandBus.run/4, whose
-    # own admission checks subject/capability/expiry only. Revocation is
-    # invisible to it because it never asks the broker again.
-    assert :ok = Oban.Testing.perform_job(job, repo: AshA2A.Test.Repo)
+    # Real, current, fixed behavior: a refusal, not :ok -- CommandWorker
+    # peeks the receipt store (no receipt exists yet for this fresh
+    # command), finds none, and calls ObanAuthority.verify_live!/3 against
+    # the real default broker before ever reaching CommandBus.run/4.
+    # Revocation is now visible because it re-asks the broker for real.
+    assert {:error, %{reason: :authority_stale}} =
+             Oban.Testing.perform_job(job, repo: AshA2A.Test.Repo)
 
-    assert {:ok, _receipt} = AshA2A.ReceiptStore.Memory.fetch(command.command_id)
+    assert :error = AshA2A.ReceiptStore.Memory.fetch(command.command_id)
 
-    assert [%Item{label: ^label}] =
+    assert [] =
              Item
              |> Ash.read!(domain: ItemDomain)
              |> Enum.filter(&(&1.label == label))

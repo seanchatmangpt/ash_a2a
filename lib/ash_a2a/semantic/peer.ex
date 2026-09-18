@@ -70,9 +70,24 @@ defmodule AshA2A.Semantic.Peer do
       `:code`, `:class`, `:graph_digest`)
   """
 
-  alias AshA2A.Semantic.{Envelope, Extension, GraphLaw, PeerCapabilityReconciliation, Refusal}
+  alias AshA2A.Semantic.{
+    AdmissionPipeline,
+    Envelope,
+    Extension,
+    GraphLaw,
+    PeerCapabilityReconciliation,
+    Refusal
+  }
+
   alias AshA2A.Semantic.Standing
   alias AshA2A.Semantic.Standing.Ledger
+  # `AshA2A.GraphLaw.Wasm.dialect/2` is a pure lookup over any decoded
+  # `validate_all` report (`%{"dialects" => [...]}`) -- reused here across
+  # the AshA2A.Semantic.GraphLaw seam this module actually speaks through,
+  # not tied to that module's own wasm host instance. Aliased under a
+  # distinguishing name since `GraphLaw` above already names the sibling
+  # `AshA2A.Semantic.GraphLaw`.
+  alias AshA2A.GraphLaw.Wasm, as: RawWasmReport
 
   defstruct [
     :name,
@@ -388,6 +403,7 @@ defmodule AshA2A.Semantic.Peer do
          :ok <- check_authority_requirement(envelope),
          :ok <- check_receipt_references(peer, envelope),
          graph_ttl = envelope.graph.content,
+         :ok <- check_parse_witness(graph_ttl, opts),
          {:ok, digest} <- GraphLaw.graph_hash(graph_ttl, opts),
          :ok <- check_claimed_digest(envelope, digest),
          {:ok, report} <- GraphLaw.validate(graph_ttl, peer.shapes, opts) do
@@ -455,6 +471,53 @@ defmodule AshA2A.Semantic.Peer do
       code: :illegal_standing_transition,
       detail: "cannot admit an envelope whose standing is #{inspect(standing)}"
     }
+  end
+
+  # Real, engine-native triple-existence witness -- ported from
+  # `AshA2A.Semantic.AdmissionPipeline`'s own Parse stage (see that module's
+  # moduledoc, "Parse is a real witness, not an assumption"). Measured,
+  # real gap this closed: without this check, `graph_hash/1` happily digests
+  # non-Turtle garbage (returning the well-known empty-graph digest
+  # `af1349b9...`, i.e. `blake3("")`), and `validate/2` against this peer's
+  # own real shapes reports "0 violations" for it -- a vacuous pass, since a
+  # graph with zero triples cannot violate a shape that targets a class no
+  # triple declares membership in. A peer that only checked "engine agreed,
+  # 0 violations" could be handed arbitrary non-RDF bytes over the real wire
+  # and silently admit them. This appends the universal denial rule
+  # `{ ?s ?p ?o } => false .` and requires the engine's `N3_DENIAL` dialect
+  # to come back `REFUSED` with at least one violation -- which happens iff
+  # the graph really contains at least one triple.
+  defp check_parse_witness(graph_ttl, opts) do
+    witness_ttl = graph_ttl <> AdmissionPipeline.parse_witness()
+
+    with {:ok, witness_report} <- GraphLaw.validate(witness_ttl, "", opts),
+         {:ok, entry} <- RawWasmReport.dialect(witness_report, "N3_DENIAL") do
+      case entry do
+        %{"status" => "REFUSED", "triples_out" => count} when count >= 1 ->
+          :ok
+
+        %{"status" => "ADMITTED"} = admitted_entry ->
+          {:error,
+           %{
+             code: :parse_yielded_no_triples,
+             detail:
+               "candidate graph parsed to zero real triples (engine: #{inspect(admitted_entry)})"
+           }}
+
+        other ->
+          {:error, %{code: :parse_witness_inconclusive, detail: "engine: #{inspect(other)}"}}
+      end
+    else
+      {:error, %{code: :graphlaw_unavailable}} = error ->
+        error
+
+      {:error, refusal} when is_map(refusal) ->
+        {:error,
+         %{
+           code: :parse_witness_missing,
+           detail: "parse witness could not be evaluated: #{inspect(refusal)}"
+         }}
+    end
   end
 
   @doc """

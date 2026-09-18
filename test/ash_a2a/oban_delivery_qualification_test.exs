@@ -51,7 +51,8 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
 
   use ExUnit.Case, async: false
 
-  alias AshA2A.{Authority, Command, Delivery, Identity, SemanticSubject}
+  alias AshA2A.{Command, Delivery, Identity, SemanticSubject}
+  alias AshA2A.Authority.Grant
   alias AshA2A.Test.Fixture.{Item, ItemDomain}
   alias AshA2A.Test.Support.CommandWorker
 
@@ -230,7 +231,11 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
   # semantic/manufacture identity through delivery.
   defp build_command_with_semantic_subject(command_id, label) do
     principal = Identity.principal("subject-#{command_id}")
-    authority = Authority.new(principal, @capability_id, token_id: "auth-#{command_id}")
+    # Real grant, not a hand-built struct -- CommandWorker.perform/1 now
+    # re-verifies live broker standing (see command_worker.ex's moduledoc,
+    # "Live authority re-verification"), so the authority must really be
+    # granted through the configured broker, not merely constructed.
+    {:ok, authority} = Grant.grant(principal, @capability_id)
 
     {:ok, semantic_subject} =
       SemanticSubject.new(
@@ -286,7 +291,9 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
   # pattern -- same capability id form, same Authority/Command shape.
   defp build_command(command_id, label) do
     principal = Identity.principal("subject-#{command_id}")
-    authority = Authority.new(principal, @capability_id, token_id: "auth-#{command_id}")
+    # Real grant, not a hand-built struct -- see build_command_with_semantic_
+    # subject/2's comment above for why.
+    {:ok, authority} = Grant.grant(principal, @capability_id)
 
     Command.new(@capability_id,
       command_id: command_id,
