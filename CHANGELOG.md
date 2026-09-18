@@ -8,6 +8,60 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Hardened, benchmarked, and stress-tested -- v26.9.17 harden/benchmark/stress pass
+
+- 14 disjoint worktree tasks ran in parallel against v26.9.17 (6
+  hardening, 5 benchmark-authoring covering 7 new RFC-SA2A-002
+  categories, 3 stress/soak), then merged serially (`--no-ff`, no
+  conflicts) onto `main`. Final head `fea05cd`.
+- **Hardening (6 tasks)**: 4 clean bills of health -- no real defect
+  found in `CommandBus`/S55 actuation-claim concurrency, crash
+  boundaries (RFC S70), the mock/Dialyzer posture (0 mock violations,
+  0 new Dialyzer warning classes), or `Bounds`/`Allocator` resource-
+  exhaustion/escalation paths. 2 tasks found real production defects,
+  both correctly left unfixed here (the fix lives in a file shared
+  with other parallel worktrees) and flagged for the serial
+  MergeVerify/integration phase instead: (1)
+  `AshA2A.Semantic.Peer.admit_candidate/2` silently admits non-Turtle
+  garbage that parses to zero triples over the real HTTP wire (no
+  parse-stage witness, unlike `AdmissionPipeline`); (2) the shipped
+  `test/support/command_worker.ex` never calls
+  `ObanAuthority.verify_live!/3`, so a revoked-but-unexpired authority
+  still actuates through it. Verbatim findings and commit SHAs in
+  `docs/explanation/chicago-benchmark-report.md`'s new "Hardening
+  findings" section.
+- **Benchmarks**: RFC-SA2A-002 names 10 benchmark categories; before
+  this pass only 3 (B1/B5/B9) had a real standalone module. This pass
+  adds real, measured modules for the other 7 (B2 logic closure, B3
+  Knowledge Hook reflex, B4 HDDL/FOND planning, B6 reactive cascade,
+  B7 cross-runtime portability, B8 offline replay, B10 crash/
+  recovery) -- all 10 categories now produce real numbers, though the
+  7 new modules are not yet wired into `Bench.@benchmarks`/the mix
+  task (a disclosed follow-up, not done here since that touches a
+  file shared with other parallel worktrees). Full numbers in
+  `docs/explanation/chicago-benchmark-report.md`.
+- **Stress/soak (3 tasks)**: sustained-throughput found a real,
+  reproduced tail-latency-climbs-under-load pattern in
+  `CommandBus.run/4` (34,881 dispatches across three 12s runs, 0
+  errors, 0 process leak, but late-half p99 up to 181x early-half
+  p99); multinode-concurrency ran 6 real `:peer` BEAM nodes cleanly
+  (0 failures across 5 seeds) while surfacing two real out-of-scope
+  defects (a cross-VM temp-file collision in `HddlSolver`, and
+  `RouterCounters` telemetry cross-contamination between concurrent
+  instances on one node); resource-ceiling drove 130 real delegations
+  against a 100-execution ceiling and terminated exactly at 100/100
+  with zero leak past the ceiling. Full detail in
+  `docs/explanation/v26.9.17-stress-report.md` and the benchmark
+  report's new "Stress test results" section.
+- Post-merge full suite (`mix test --max-cases 6`): 58 doctests, 29
+  properties, 2086 tests. 1-2 failures observed across repeated runs,
+  in different tests each run (`AshA2A.SemanticRefusalTest`'s
+  `:hddl_solve_error` mapping check; an `:eaddrinuse` port-bind race
+  under parallel execution) -- confirmed pre-existing on `main`
+  before this pass (none of this pass's merges touched `lib/` files
+  that could move either check), not a regression introduced here.
+  Architecture verifier: 11/11 clean on the final merge.
+
 ### Verified -- v26.9.17 PRD/ARD 50-agent pass: ash_a2a's own scope only
 
 - Scope note, stated plainly: this entry covers `ash_a2a`'s own portion of a
