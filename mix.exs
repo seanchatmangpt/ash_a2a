@@ -52,11 +52,11 @@ defmodule AshA2A.MixProject do
           &{&1, []}
         ),
       groups_for_extras: [
-        "Project": ~r"README|CHANGELOG|PHOENIX",
-        "Tutorials": ~r"docs/tutorials",
+        Project: ~r"README|CHANGELOG|PHOENIX",
+        Tutorials: ~r"docs/tutorials",
         "How-to guides": ~r"docs/how-to",
-        "Reference": ~r"docs/reference",
-        "Explanation": ~r"docs/explanation"
+        Reference: ~r"docs/reference",
+        Explanation: ~r"docs/explanation"
       ]
     ]
   end
@@ -74,7 +74,8 @@ defmodule AshA2A.MixProject do
       # The four Diataxis quadrants ship in the package so `mix hex.publish`
       # can build the ExDoc extras declared in docs/0 above. Internal trees
       # (docs/jira, docs/rfc, litho.docs, research) deliberately do NOT ship.
-      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE docs/tutorials docs/how-to docs/reference docs/explanation)
+      files:
+        ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE docs/tutorials docs/how-to docs/reference docs/explanation)
     ]
   end
 

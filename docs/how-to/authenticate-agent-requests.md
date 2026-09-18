@@ -59,6 +59,18 @@ config :ash_a2a, :authority_policy, :broker
 config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.Ekv
 ```
 
+This is genuinely config-only (v26.9.17): `AshA2A.Application.start/2`
+auto-starts a real `EKV` instance on the broker's behalf the same way it
+already does for `config :ash_a2a, :receipt_store, AshA2A.ReceiptStore.Ekv`
+— no separate supervision-tree change is needed, and choosing both configs
+as `Ekv` at once starts two distinct instances, one per layer. Before this
+fix that was not true (`Authority.Broker.Ekv`'s own moduledoc states it does
+not start `EKV` itself); see `docs/explanation/v26.9.17-commandbus-scale.md`
+for the real numbers behind choosing `Ekv` here at all — durability across a
+restart, not scale: the same document's Authority Broker section measures
+`Ekv` as ~1.7x–2.2x higher latency than `InMemory` at this specific,
+read-heavy layer, with no throughput upside.
+
 `AshA2A.Authority.Broker` is a behaviour with three shipped-in reference points:
 `AshA2A.Authority.Broker.InMemory` (a real `GenServer`, single node, development and
 tests), `AshA2A.Authority.Broker.Ekv` (durable across process and node restarts), and

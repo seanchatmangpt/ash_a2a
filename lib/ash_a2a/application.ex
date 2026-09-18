@@ -12,6 +12,32 @@ defmodule AshA2A.Application do
   supervision lifecycle. `AshA2A.Semantic.PackageStore` is always started
   under its own default registered name -- it has no swappable-behaviour
   config today (no host has needed a second implementation yet).
+
+  The same automatic-wiring treatment now also covers `:authority_broker`
+  (v26.9.17): choosing `AshA2A.Authority.Broker.Ekv` starts a second,
+  distinctly-named-and-pathed `EKV` instance on the broker's behalf, the same
+  way choosing `AshA2A.ReceiptStore.Ekv` already does for the receipt store.
+  Before this, `docs/how-to/authenticate-agent-requests.md`'s own primary
+  example (`config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.Ekv`)
+  was not actually config-only: `AshA2A.Authority.Broker.Ekv`'s moduledoc is
+  explicit that it "does not start or supervise `EKV` itself," so a host that
+  followed the doc verbatim, with no separate supervision-tree change of
+  their own, got `:broker_unavailable`/`false` on every real `granted?/3`
+  call the moment traffic arrived -- a real gap between what the config
+  claimed to do and what the running system did, closed here.
+  `AshA2A.Authority.Broker.InMemory` keeps its existing host-started
+  convention (this project's own test suite starts it explicitly in
+  `test/test_helper.exs`, matching `AshA2A.Authority.Broker`'s own
+  moduledoc); only the durable `Ekv` broker gets automatic wiring, matching
+  the receipt-store precedent exactly (`AshA2A.ReceiptStore.Memory` also
+  keeps its non-`Ekv` clause auto-started below -- that asymmetry with the
+  broker's `InMemory` is deliberate: this application already owned starting
+  `ReceiptStore.Memory` before this change, so extending that same clause to
+  the broker's `InMemory` would double-start the one GenServer the existing
+  test suite starts itself, for a broker whose whole model is exactly this
+  "host starts it in their own supervision tree" convention -- see
+  `AshA2A.Authority.Broker`'s moduledoc, unlike the receipt store, which
+  never asked hosts to hand-start `Memory`).
   """
 
   use Application
@@ -43,6 +69,7 @@ defmodule AshA2A.Application do
 
     children =
       receipt_store_children() ++
+        authority_broker_children() ++
         [
           # A2A-2602: the OCEL forwarder's per-event supervised tasks are
           # BOUNDED. `max_children` is the hard concurrency ceiling for the
@@ -118,6 +145,45 @@ defmodule AshA2A.Application do
     :ash_a2a
     |> Application.get_env(:receipt_store_ekv_opts, [])
     |> Keyword.put_new(:name, AshA2A.ReceiptStore.Ekv)
+    |> Keyword.put_new(:data_dir, default_data_dir)
+    |> Keyword.put_new(:cluster_size, 1)
+  end
+
+  # Mirrors `receipt_store_children/0` for the authority-broker layer.
+  # `:authority_broker` may be a bare module or a `{module, broker_opts}`
+  # tuple (see `AshA2A.Authority.Grant.resolve_broker/1`); both forms are
+  # normalized here the same way `resolve_broker/1` does, so a host that
+  # names a custom `:name` in `broker_opts` gets that exact `EKV` instance
+  # started rather than this function silently falling back to the default.
+  defp authority_broker_children do
+    case Application.get_env(:ash_a2a, :authority_broker) do
+      AshA2A.Authority.Broker.Ekv ->
+        [{EKV, authority_broker_ekv_opts([])}]
+
+      {AshA2A.Authority.Broker.Ekv, broker_opts} when is_list(broker_opts) ->
+        [{EKV, authority_broker_ekv_opts(broker_opts)}]
+
+      _other ->
+        # `nil` (unconfigured), `AshA2A.Authority.Broker.InMemory` (host- or
+        # test-started, see the moduledoc above), and any custom broker all
+        # own their own supervision lifecycle -- exactly
+        # `receipt_store_children/0`'s own `_custom_store -> []` precedent.
+        []
+    end
+  end
+
+  # Deliberately a DIFFERENT default `:name` and `:data_dir` than
+  # `receipt_store_ekv_opts/0`: `AshA2A.Authority.Broker.Ekv`'s own moduledoc
+  # states distinct `EKV` instances are how more than one independently
+  # configured broker/store avoids colliding on unrelated key spaces (grant
+  # revocation state vs. receipt/claim state) -- reusing the receipt store's
+  # instance here would put authority grants and command receipts in the same
+  # on-disk keyspace for no reason other than accident.
+  defp authority_broker_ekv_opts(broker_opts) do
+    default_data_dir = Path.join(System.tmp_dir!(), "ash_a2a_authority_broker_ekv")
+
+    broker_opts
+    |> Keyword.put_new(:name, AshA2A.Authority.Broker.Ekv)
     |> Keyword.put_new(:data_dir, default_data_dir)
     |> Keyword.put_new(:cluster_size, 1)
   end
