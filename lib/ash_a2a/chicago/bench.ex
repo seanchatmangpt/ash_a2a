@@ -19,23 +19,54 @@ defmodule AshA2A.Chicago.Bench do
     * `write!/2` + `verify_file/1` -- the raw machine-readable result written
       content-addressed; editing it after generation invalidates its digest
       (§135)
-    * `run/1` -- runs B1/B5/B9 and writes raw results plus a derived summary
-      (`mix ash_a2a.chicago.bench`)
+    * `run/1` -- runs all benchmarks and writes raw results plus a derived
+      summary (`mix ash_a2a.chicago.bench`)
     * `AshA2A.Chicago.Bench.Regression` -- §122 comparison across records
 
-  Benchmarks: `AshA2A.Chicago.Bench.B1Admission` (`SA2A-B1`),
+  Benchmarks (all 10 RFC-SA2A-002 categories):
+  `AshA2A.Chicago.Bench.B1Admission` (`SA2A-B1`),
+  `AshA2A.Chicago.Bench.B2LogicClosure` (`SA2A-B2`),
+  `AshA2A.Chicago.Bench.B3HookReflex` (`SA2A-B3`),
+  `AshA2A.Chicago.Bench.B4Planning` (`SA2A-B4`),
   `AshA2A.Chicago.Bench.B5Authority` (`SA2A-B5`),
-  `AshA2A.Chicago.Bench.B9OcelOverhead` (`SA2A-B9`). The qualification court is
+  `AshA2A.Chicago.Bench.B6ReactiveCascade` (`SA2A-B6`),
+  `AshA2A.Chicago.Bench.B7CrossRuntime` (`SA2A-B7`),
+  `AshA2A.Chicago.Bench.B8Replay` (`SA2A-B8`),
+  `AshA2A.Chicago.Bench.B9OcelOverhead` (`SA2A-B9`),
+  `AshA2A.Chicago.Bench.B10Recovery` (`SA2A-B10`). The qualification court is
   `AshA2A.Chicago.Courts.Benchmarks` (`SA2A-BENCH`).
   """
 
   alias AshA2A.Chicago.{Json, Profile, Subject}
-  alias AshA2A.Chicago.Bench.{B1Admission, B5Authority, B9OcelOverhead, Environment}
+  alias AshA2A.Chicago.Bench.{
+    B1Admission,
+    B2LogicClosure,
+    B3HookReflex,
+    B4Planning,
+    B5Authority,
+    B6ReactiveCascade,
+    B7CrossRuntime,
+    B8Replay,
+    B9OcelOverhead,
+    B10Recovery,
+    Environment
+  }
 
   @schema "ash_a2a.chicago.bench_result/1"
   @specification "RFC-SA2A-002-v26.9.16"
 
-  @benchmarks [{"B1", B1Admission}, {"B5", B5Authority}, {"B9", B9OcelOverhead}]
+  @benchmarks [
+    {"B1", B1Admission},
+    {"B2", B2LogicClosure},
+    {"B3", B3HookReflex},
+    {"B4", B4Planning},
+    {"B5", B5Authority},
+    {"B6", B6ReactiveCascade},
+    {"B7", B7CrossRuntime},
+    {"B8", B8Replay},
+    {"B9", B9OcelOverhead},
+    {"B10", B10Recovery}
+  ]
 
   @default_iterations 10
   @default_warmup 2
