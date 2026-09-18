@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.AshA2a.Chicago.Bench do
-  @shortdoc "Runs the RFC-SA2A-002 benchmarks (B1 admission, B5 authority/BRCE, B9 OCEL overhead)"
+  @shortdoc "Runs the RFC-SA2A-002 benchmarks (all 10 categories, B1-B10)"
 
   @moduledoc """
   Runs the RFC-SA2A-002 benchmark harness (`AshA2A.Chicago.Bench`) against
@@ -12,7 +12,7 @@ defmodule Mix.Tasks.AshA2a.Chicago.Bench do
 
   Options:
 
-    * `--only` -- comma-separated benchmark ids (`B1`, `B5`, `B9`; default all)
+    * `--only` -- comma-separated benchmark ids (`B1`..`B10`; default all 10)
     * `--iterations` -- measured iterations per benchmark (default #{AshA2A.Chicago.Bench.default_iterations()})
     * `--warmup` -- warmup iterations, invariant-checked but excluded from
       the distribution (default #{AshA2A.Chicago.Bench.default_warmup()})

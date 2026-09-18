@@ -77,17 +77,9 @@ defmodule AshA2A.Chicago.Bench.B6ReactiveCascade do
   4 Leaf). `wide_*`: terminal `:quiescent`, `depth_reached == 1`, exactly 4
   committed routes. Every case: the independent `Signal` row delta equals
   the committed route count, and `cascade.stop` telemetry's `outcome`/`code`
-  agree with the returned struct's.
-
-  ## Not yet wired into the run-all dispatch
-
-  `AshA2A.Chicago.Bench.@benchmarks` and `Mix.Tasks.AshA2a.Chicago.Bench`'s
-  `--only` help text list B1/B5/B9 only; this module is intentionally not
-  added there in this change (both are files shared with other in-flight
-  SA2A-B* benchmark modules building concurrently) -- run it directly via
-  `AshA2A.Chicago.Bench.B6ReactiveCascade.run/1`, or wire it into the shared
-  dispatch in the serial merge/integration pass alongside its sibling
-  modules.
+  agree with the returned struct's. It is wired into the run-all dispatch
+  (`AshA2A.Chicago.Bench.@benchmarks`, selectable via `mix
+  ash_a2a.chicago.bench --only B6`).
   """
 
   alias AshA2A.Chicago.Bench

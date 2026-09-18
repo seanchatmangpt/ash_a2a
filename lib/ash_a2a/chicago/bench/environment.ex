@@ -47,7 +47,7 @@ defmodule AshA2A.Chicago.Bench.Environment do
       "model_provider" => %{
         "status" => "not_applicable",
         "reason" =>
-          "B1/B5/B9 measure deterministic admission, authority/BRCE and OCEL paths; no UNKNOWN resolution through a model is benchmarked"
+          "all 10 RFC-SA2A-002 benchmark categories (B1-B10) measure deterministic engine/broker/solver/replay paths; no UNKNOWN resolution through a model is benchmarked"
       },
       "host" => %{"hostname_sha256" => hostname_digest()}
     }
