@@ -8,6 +8,23 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Docs
+- Production-readiness documentation pass (v26.9.17 dry run): README
+  front-door rewrite (correcting the false "vendored `:a2a` SDK" claim —
+  it is the published `actioncard/a2a-elixir` Hex package — and the CI
+  native-build claim: CI builds `hddl_cli` only), a corrected Getting
+  Started (agents boot via `config :ash_a2a, :agents` because the library
+  app already runs `A2A.AgentSupervisor`; new HTTP-serving step with
+  `A2A.Plug`/`A2A.Client`), new reference pages (DSL schema,
+  configuration, telemetry events, mix tasks, A2A endpoint contract), a
+  new message-lifecycle explanation, new how-tos (testing, verifying
+  authority on async Oban paths), auth/OCEL how-to corrections, status
+  banners on the v26.9.17 reports, `SECURITY.md`, and hex-package
+  shipping of the `docs/` quadrants (previously `mix hex.publish` would
+  fail to build ExDoc extras the package did not contain).
+
+## [26.9.17] - 2026-09-17
+
 ### Hardened, benchmarked, and stress-tested -- v26.9.17 harden/benchmark/stress pass
 
 - 14 disjoint worktree tasks ran in parallel against v26.9.17 (6
@@ -29,7 +46,10 @@ once it reaches 1.0.
   `ObanAuthority.verify_live!/3`, so a revoked-but-unexpired authority
   still actuates through it. Verbatim findings and commit SHAs in
   `docs/explanation/chicago-benchmark-report.md`'s new "Hardening
-  findings" section.
+  findings" section. **Both defects were subsequently fixed on `main` in
+  `1f06cab` (2026-09-17)**: `Peer.admit_candidate/2` now requires a
+  parse-stage witness, and `test/support/command_worker.ex` now calls
+  `ObanAuthority.verify_live!/3` with receipt-peek ordering.
 - **Benchmarks**: RFC-SA2A-002 names 10 benchmark categories; before
   this pass only 3 (B1/B5/B9) had a real standalone module. This pass
   adds real, measured modules for the other 7 (B2 logic closure, B3
@@ -381,6 +401,18 @@ once it reaches 1.0.
   `ash_a2a_agent_semantic_replan_test.exs`). `:observe` and `:unknown`
   capabilities were deliberately left ungranted so the tests that assert on
   those paths still prove what they claim.
+
+## [26.9.16] - 2026-09-16
+
+No curated entry was cut for this release at the time; the milestone's
+record lives in `docs/jira/v26.9.16/` and the git history (RFC-SA2A-002
+Chicago gate work, canonical graph identity, RDF serialization gates,
+GraphLaw engine work).
+
+## [26.9.15] - 2026-09-15
+
+No curated entry was cut for this release at the time; the milestone's
+record lives in `docs/jira/v26.9.15/` and the git history.
 
 ## [26.9.14] - 2026-09-14
 
@@ -742,6 +774,18 @@ default path, and adding real ecosystem-primitive dependencies, are
 deliberately deferred to a follow-up release, not silently implied by this
 one.
 
+### Candidate architecture design record
+
+The stacked PR series #1 through #6 defined one candidate sequence:
+derive capabilities from Ash public actions, separate machine identities,
+add the receipted command path, compose lifecycle behavior with
+AshStateMachine and Reactor, separate background delivery through Oban,
+and project Group as runtime topology. The design keeps task, command,
+execution, runtime, delivery, and topology identities distinct instead of
+collapsing them into one agent identifier. (Historical design-state note
+written while that work was still CANDIDATE; the shipped behavior is
+described in the sections above.)
+
 ## [26.9.10] - 2026-09-10
 
 ### Added
@@ -756,13 +800,3 @@ one.
 - `AgentCard` `supported_interfaces` proto-drift.
 - Dispatcher `KeyError` on skill lookup.
 - `__spark_metadata__` verification issues.
-
-## [Unreleased]
-
-### v26.9.12 candidate architecture
-
-The stacked PR series #1 through #6 now defines one candidate sequence: derive capabilities from Ash public actions, separate machine identities, add the receipted command path, compose lifecycle behavior with AshStateMachine and Reactor, separate background delivery through Oban, and project Group as runtime topology.
-
-The design keeps task, command, execution, runtime, delivery, and topology identities distinct instead of collapsing them into one agent identifier.
-
-DurableServer is the next runtime-continuity layer and is tracked in issue #8. FLAME and Phoenix Presence remain later optional composition points. This section records design state only; the stacked work remains CANDIDATE until fresh execution evidence exists.

@@ -29,19 +29,15 @@ The forwarder POSTs to `"#{ocel_ingest_url}/ocel/events"` with a JSON body of
 `%{"events" => [event]}` — one event per POST, matching beam4pm's
 `BeamPM.OcelIngest.Router` wire contract.
 
-## 2. Attach the handler
+## 2. Attachment is automatic
 
-Call `AshA2A.Telemetry.OcelForwarder.attach!/0` once, typically from your
-application's `start/2`:
+Since v26.9.15, `AshA2A.Application` (the library's own OTP `mod`) calls
+`AshA2A.Telemetry.OcelForwarder.attach!/0` at boot — the call is
+idempotent and a no-op cost when no ingest URL is configured — so a host
+app gets forwarding the moment it sets `:ocel_ingest_url`. You do not
+need to call `attach!/0` yourself (doing so is still harmless).
 
-```elixir
-def start(_type, _args) do
-  :ok = AshA2A.Telemetry.OcelForwarder.attach!()
-  # ... your supervision tree
-end
-```
-
-`attach!/0` attaches two `:telemetry` handlers:
+`attach!/0` attaches three `:telemetry` handlers:
 
 - `[:ash_a2a, :dispatch, :stop]` — fired by `AshA2A.Dispatcher`'s existing
   `:telemetry.span([:ash_a2a, :dispatch], ...)` around every skill dispatch.
@@ -53,9 +49,19 @@ end
   default `AshA2A.Agent.call/2` route for any `:change`/`:external_do` skill
   (not opt-in-only anymore) — a plain agent call for a mutating skill emits
   this event.
+- `[:ash_a2a, :receipt, :outboxed]` — fired when the command's `:pending`
+  receipt is journaled to the `AshA2A.ReceiptOutbox` before dispatch
+  (crash-recovery evidence; see
+  [Architecture](../explanation/architecture.md)).
 
-Call `AshA2A.Telemetry.OcelForwarder.detach/0` to remove both handlers (e.g.
-in test `on_exit/1` callbacks).
+Per-event HTTP POSTs run under a bounded `Task.Supervisor`
+(`config :ash_a2a, :ocel_max_in_flight`, default 256). Beyond that ceiling
+the forwarder sheds deliberately, counts the shed, and reports it via the
+`[:ash_a2a, :ocel, :shed]` event — observational egress is never an
+unbounded process fan-out.
+
+Call `AshA2A.Telemetry.OcelForwarder.detach/0` to remove all three
+handlers (e.g. in test `on_exit/1` callbacks).
 
 ## 3. One event per dispatch, not two (deduplication)
 

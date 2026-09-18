@@ -1,7 +1,7 @@
 import Config
 
 # Real libcluster Kubernetes.DNS topology -- the *headless* Service
-# (spec.clusterIP: None, rendered via ash_a2a's own k8s/swarm-headless-service.yaml,
+# (spec.clusterIP: None, rendered via ash_a2a's own k8s/headless-service.yaml,
 # see k8s/README.md) resolves to one A record per real, ready pod.
 # `:application_name` must match the
 # real node basename this release is started with (RELEASE_NODE below),

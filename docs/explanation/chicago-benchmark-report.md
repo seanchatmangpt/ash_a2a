@@ -280,6 +280,12 @@ mix ash_a2a.chicago.bench --verify <output-dir>/SA2A-B9.<sha256>.json
 
 ## Hardening findings (v26.9.17 harden/benchmark/stress pass)
 
+> **Status (2026-09-17, post-merge)**: both defects below were fixed on
+> `main` in commit `1f06cab` — `Peer.admit_candidate/2` now enforces a
+> parse-stage witness, and `test/support/command_worker.ex` now calls
+> `ObanAuthority.verify_live!/3` (receipt-peek ordering). Also recorded in
+> the CHANGELOG under `[26.9.17]`.
+
 Six adversarial hardening tasks ran against already-shipped v26.9.17
 code. Four returned a clean bill of health (no real defect found);
 two found a real production defect, both correctly left unfixed in

@@ -40,8 +40,9 @@ dependency, exactly the way any other host app would.
   `A2A.AgentSupervisor`/the receipt store/OCEL forwarder.
 - **`swarm/lib/swarm_node/probe.ex`** -- the real cross-pod dispatch
   probe described above.
-- **`swarm/Dockerfile`** -- multi-stage build, `hexpm/elixir:1.19.5-erlang-27.2.4-debian-bookworm-slim`
-  (this repo's own real `.tool-versions` pin) → `debian:bookworm-slim`
+- **`swarm/Dockerfile`** -- multi-stage build, `hexpm/elixir:1.19.5-erlang-27.2.4-debian-bookworm-20260824-slim`
+  (the date-pinned tag actually used by the Dockerfile; this repo's own real
+  `.tool-versions` pins the same Elixir/OTP pair) → `debian:bookworm-slim`
   runtime, non-root UID 10001.
 - **`k8s/*.yaml`** -- Namespace (Pod Security Admission `restricted`),
   ResourceQuota, ServiceAccount, headless Service (DNS-based peer
@@ -136,6 +137,19 @@ Run it standalone against an already-deployed cluster:
     # defaults: namespace=ash-a2a-swarm, app-label=ash-a2a-swarm
 
 ## Running it
+
+Two prerequisites worth knowing before the one-liner:
+
+- **The cookie Secret is created by `deploy.sh`, not by any manifest.**
+  `k8s/deployment.yaml` references a Secret named `ash-a2a-swarm-cookie`
+  that no YAML file defines — `deploy.sh` (and `swarm-test.yml`) generate
+  it with `openssl rand -hex 32`. A plain `kubectl apply -f k8s/` without
+  it leaves pods in `CreateContainerConfigError`.
+- **There are no HTTP liveness/readiness probes, by design.** The swarm
+  nodes expose no HTTP server; the workload's health signal is the
+  `bin/swarm_node rpc` exec probe (and only the distribution ports
+  4369/9000 could be probed at the transport level). The deployment
+  carries no liveness/readiness/startup probes as deployed.
 
     bash k8s/deploy.sh                    # creates/reuses a kind cluster named ash-a2a-swarm,
                                            # deploys, probes cross-pod dispatch, verifies real
