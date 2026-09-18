@@ -45,8 +45,11 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   `AshA2A.Semantic.AdmissionPipeline.parse_witness/0` and reusing
   `AshA2A.GraphLaw.Wasm.dialect/2` to read the `N3_DENIAL` verdict) before
   `graph_hash`/shape validation ever run -- garbage now refuses with
-  `:parse_yielded_no_triples`. The last `describe` block below is a
-  regression guard for the fix, not an open-gap document.
+  `:parse_yielded_no_triples`. The last two `describe` blocks below are
+  regression guards for the fix, not open-gap documents -- the second of them
+  re-proves the same refusal over the real socket transport (a real Bandit
+  listener + a real `Req` POST), so the garbage bytes genuinely cross a TCP
+  wire rather than only an in-process `Plug.Test` dispatch.
   """
 
   use ExUnit.Case, async: false
@@ -447,6 +450,97 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
       payload = base_payload(ctx)
 
       assert {200, data} = admit(eo, payload)
+      assert data["standing"] == "admitted"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # The SAME parse-witness refusal, proven over the REAL socket transport: a
+  # real local Bandit listener + a real `Req` HTTP POST. The `Plug.Test`
+  # dispatch above exercises the full real Plug pipeline, but no TCP wire --
+  # here the garbage bytes genuinely leave the process and come back, so the
+  # closed gap is guarded at the transport the production defect lived on.
+  # ---------------------------------------------------------------------------
+
+  describe "parse witness over the real socket transport" do
+    setup %{endpoint_opts: endpoint_opts} do
+      unless Http.bandit_available?() do
+        flunk("Bandit is not available in this runtime; cannot exercise the real HTTP transport.")
+      end
+
+      {:ok, listener} = Http.start_listener(endpoint_opts)
+
+      # Same measured Bandit/ThousandIsland shutdown-exit caveat documented in
+      # the non-UTF8 describe above: caught here, shared fixture untouched.
+      on_exit(fn ->
+        try do
+          Http.stop_listener(listener)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+      %{listener: listener}
+    end
+
+    test "real garbage graph bytes POSTed over the real socket are refused with the typed parse-witness code, never admitted",
+         %{listener: %{url: url}} do
+      garbage = "@@@ not turtle at all ;;; <<< binary garbage {{{{ unclosed \x01\x02"
+      {:ok, garbage_digest} = GraphLaw.graph_hash(garbage)
+
+      payload = Envelopes.admissible(garbage, garbage_digest)
+      message = Envelopes.activated(payload)
+      {:ok, encoded_message} = A2A.JSON.encode(message)
+
+      body =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => System.unique_integer([:positive]),
+          "method" => "message/send",
+          "params" => %{"message" => encoded_message}
+        })
+
+      response =
+        Req.post!(url,
+          body: body,
+          headers: [{"content-type", "application/json"}],
+          receive_timeout: 15_000
+        )
+
+      assert response.status == 200
+
+      data = Http.reply_data(response.body)
+
+      refute data["standing"] == "admitted"
+      assert data["standing"] == "refused"
+      assert data["code"] == "parse_yielded_no_triples"
+    end
+
+    test "a well-formed graph POSTed over the same real socket still admits (positive control)",
+         %{listener: listener} = ctx do
+      payload = base_payload(ctx)
+      message = Envelopes.activated(payload)
+      {:ok, encoded_message} = A2A.JSON.encode(message)
+
+      body =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => System.unique_integer([:positive]),
+          "method" => "message/send",
+          "params" => %{"message" => encoded_message}
+        })
+
+      response =
+        Req.post!(listener.url,
+          body: body,
+          headers: [{"content-type", "application/json"}],
+          receive_timeout: 15_000
+        )
+
+      assert response.status == 200
+
+      data = Http.reply_data(response.body)
+
       assert data["standing"] == "admitted"
     end
   end
