@@ -87,7 +87,12 @@ defmodule AshA2A.Test.MultinodeRouterCounters do
     {:ok, _apps} = Application.ensure_all_started(:telemetry)
 
     ref = RouterCounters.new()
-    handler_id = RouterCounters.attach!(ref)
+    # owner: self() (b4p-f5-02 item 3) -- this MFA attaches AND routes in
+    # this one process, so a pid-scoped instance counts exactly its own
+    # dispatches even if another RouterCounters instance is attached
+    # concurrently on the same node (the same-node cross-contamination the
+    # stress wave's multinode_concurrency_test.exs documented for real).
+    handler_id = RouterCounters.attach!(ref, make_ref(), owner: self())
 
     try do
       Enum.each(1..facts_count//1, fn _ ->
