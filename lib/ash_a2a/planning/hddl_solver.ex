@@ -89,7 +89,7 @@ defmodule AshA2A.Planning.HddlSolver do
 
   defp run(path, domain_text, problem_text, opts) do
     tmp_dir = Keyword.get(opts, :tmp_dir, System.tmp_dir!())
-    unique = System.unique_integer([:positive, :monotonic])
+    unique = crossvm_unique()
     domain_path = Path.join(tmp_dir, "ash_a2a_hddl_domain_#{unique}.hddl")
     problem_path = Path.join(tmp_dir, "ash_a2a_hddl_problem_#{unique}.hddl")
 
@@ -103,6 +103,28 @@ defmodule AshA2A.Planning.HddlSolver do
       File.rm(domain_path)
       File.rm(problem_path)
     end
+  end
+
+  # `System.unique_integer/1` is unique only within one BEAM VM. The
+  # v26.9.17 multinode stress wave (real `:peer` nodes on one shared host,
+  # all resolving the same `System.tmp_dir!/0`) showed two fresh VMs'
+  # monotonic counters emit identical sequences, so same-sequence solves on
+  # different nodes derived the SAME absolute temp paths and the concurrent
+  # `File.write!/2` + `File.rm/1` pairs corrupted each other's solve (see
+  # `AshA2A.PlanningHddlSolverCrossvmTest`, which reproduces the
+  # contamination and is red on the old node-blind naming). Prefixing a
+  # sanitized `node()` tag makes the paths unique ACROSS VMs, not just
+  # within one: distinct nodes always have distinct names, so tags cannot
+  # collide by construction, and within one node `System.unique_integer/1`
+  # keeps its per-invocation uniqueness. Cleanup is unchanged -- each owner
+  # removes exactly the paths it wrote.
+  defp crossvm_unique do
+    node_tag =
+      node()
+      |> Atom.to_string()
+      |> String.replace(~r/[^A-Za-z0-9_@.-]/, "_")
+
+    "#{node_tag}-#{System.unique_integer([:positive, :monotonic])}"
   end
 
   defp decode_result(stdout, exit_code) do

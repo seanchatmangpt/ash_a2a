@@ -8,6 +8,42 @@ once it reaches 1.0.
 
 ## [26.9.17] - 2026-09-17
 
+### Fixed -- HddlSolver cross-VM temp-file collision (the stress pass's disclosed defect, now fixed at the source)
+
+- `AshA2A.Planning.HddlSolver.run/4` derived its temp paths from
+  `System.unique_integer/1`, which is unique only WITHIN one BEAM VM. On
+  the stress wave's own shape (real `:peer` nodes on one shared host, all
+  resolving the same `System.tmp_dir!/0`), two fresh VMs' monotonic
+  counters emit identical sequences, so same-sequence solves derived the
+  SAME absolute temp paths; the concurrent `File.write!/2` + `File.rm/1`
+  pairs then corrupted each other's solve (the original stress run caught
+  two peers both computing `ash_a2a_hddl_domain_11.hddl`, one peer's
+  cleanup unlinking the file under the other peer's in-flight
+  `System.cmd/3` read). The fix prefixes a sanitized `node()` tag to the
+  per-invocation unique integer, making paths unique ACROSS VMs by
+  construction (distinct nodes have distinct names); cleanup is unchanged
+  and per-owner. Reproduction:
+  `AshA2A.PlanningHddlSolverCrossvmTest` (`test/ash_a2a_planning_hddl_solver_crossvm_test.exs`)
+  drives TWO real `:peer` nodes concurrently over a shared `tmp_dir`, one
+  with the genuinely solvable `freedom_gym_meeting` pair and one with the
+  genuinely unsolvable `unsolvable_qualification` pair, and asserts every
+  outcome stayed consistent with its own node's inputs. Fail-before
+  (unfixed code; re-verified on this branch): `1 test, 1 failure` on every
+  run, with run-varying real cross-contamination through the shared paths
+  -- the solvable node returning `:hddl_solve_error` for solutions that
+  were its own bytes, and on the original stress run, node B's first
+  iteration returning `ok: true`, a solve of node A's bytes. Pass-after:
+  `1 test, 0 failures` (plus 2 stability reruns), related
+  planning/multinode/HddlSolver suites (8 files) `42 tests, 0 failures`,
+  `mix test --max-cases 6` clean except the disclosed pre-existing
+  graphlaw-family flakes (`GraphLawVendorToolVersionCwdTest` `/private/var`;
+  `GraphlawEngineTest` `on_exit` teardown races), all green in isolation.
+  The stress harness's test-side
+  `isolate_peer_unique_integer_counters/1` band mitigation
+  (`test/ash_a2a/chicago/stress/multinode_concurrency_test.exs`) remains
+  harmless but is now redundant; removing it belongs to that file's own
+  scope.
+
 ### Docs
 - Production-readiness documentation pass (v26.9.17 dry run): README
   front-door rewrite (correcting the false "vendored `:a2a` SDK" claim —
