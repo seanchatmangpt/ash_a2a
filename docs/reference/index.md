@@ -16,9 +16,27 @@ Status legend:
   `AshA2A.Agent.__dispatch__`'s default path under any condition; reached only via an
   explicit alternate caller (Reactor step, planner output, etc.).
 
-As of v26.9.14, every module previously listed `ADAPTER-SEAM (no real provider)` has a
-real, dependency-satisfied, tested integration -- see
-[Architecture](../explanation/architecture.md#the-ecosystem-adapters-are-real-integrations-not-just-seams-as-of-v2691) for the full evidence table.
+As of v26.9.14 (re-verified at v26.9.17), every module previously listed
+`ADAPTER-SEAM (no real provider)` has a real, dependency-satisfied, tested
+integration -- see
+[Architecture](../explanation/architecture.md#the-ecosystem-adapters-are-real-integrations-not-just-seams)
+for the full evidence table.
+
+Reference pages in this quadrant:
+
+- [DSL reference](dsl.md) — the `a2a` section, `skill`, `hddl_operator`,
+  `semantic_requests`, and compile-time verification.
+- [Configuration](configuration.md) — every application config key and
+  environment variable the library reads.
+- [Telemetry events](telemetry.md) — the production event catalog with
+  payloads.
+- [Mix tasks](mix-tasks.md) — the 13 shipped tasks.
+- [A2A endpoint contract](a2a-endpoint-contract.md) — the served HTTP
+  wire surface: card, JSON-RPC, errors, streaming, auth.
+
+The module rows below cover the dispatch-relevant public surface with its
+real integration status; full module API detail lives in the generated
+ExDoc module documentation (HexDocs).
 
 ## Core (dispatch path)
 
@@ -37,6 +55,7 @@ real, dependency-satisfied, tested integration -- see
 | [`AshA2A.Argument`](https://hexdocs.pm/ash_a2a/AshA2A.Argument.html) | Spark DSL entity for `a2a do skill ... do argument ... end end`; kept for source compatibility, ignored by compilation (real arguments are derived from Ash introspection, not this DSL entity). | ALIVE |
 | [`AshA2A.Dsl`](https://hexdocs.pm/ash_a2a/AshA2A.Dsl.html) | Spark DSL extension defining the optional residual `a2a do skill ... end` override block and the `semantic_requests` opt-in flag. | ALIVE |
 | [`AshA2A.Verify`](https://hexdocs.pm/ash_a2a/AshA2A.Verify.html) | Spark DSL verifier checking every override points at a real public Ash action. | ALIVE |
+| [`AshA2A.ArchitectureVerifier`](https://hexdocs.pm/ash_a2a/AshA2A.ArchitectureVerifier.html) | Executable architecture-invariant checks behind `mix ash_a2a.verify_architecture` (CI gate). | ALIVE |
 | [`AshA2A.Transformers.BuildCapabilityIndex`](https://hexdocs.pm/ash_a2a/AshA2A.Transformers.BuildCapabilityIndex.html) | Spark DSL transformer that persists residual overrides and subject kind (resource/domain) at compile time. | ALIVE |
 | [`AshA2A.MetadataKey`](https://hexdocs.pm/ash_a2a/AshA2A.MetadataKey.html) | Shared atom-or-string map lookup helper used by `ContextResolver`, `Agent`, and `Dispatcher`. | ALIVE |
 | [`AshA2A.Application`](https://hexdocs.pm/ash_a2a/AshA2A.Application.html) | OTP application starting the A2A agent supervisor and the configured receipt store (`Memory` by default, `Ekv` or a host-supplied module otherwise). | ALIVE |
@@ -64,6 +83,13 @@ See [Architecture](../explanation/architecture.md).
 | [`AshA2A.ReceiptStore`](https://hexdocs.pm/ash_a2a/AshA2A.ReceiptStore.html) | Behaviour for replay-safe command receipt storage distinguishing replay from conflict. | ALIVE (opt-in trigger) |
 | [`AshA2A.ReceiptStore.Memory`](https://hexdocs.pm/ash_a2a/AshA2A.ReceiptStore.Memory.html) | In-memory `GenServer` reference implementation of `AshA2A.ReceiptStore`; the default, started by `AshA2A.Application`. No persistence across a restart. | ALIVE (opt-in trigger) |
 | [`AshA2A.ReceiptStore.Ekv`](https://hexdocs.pm/ash_a2a/AshA2A.ReceiptStore.Ekv.html) | Real on-disk-persisted `AshA2A.ReceiptStore` backed by `:ekv`; survives a process restart. Configure via `config :ash_a2a, :receipt_store, AshA2A.ReceiptStore.Ekv`. | ALIVE (opt-in trigger) |
+| [`AshA2A.Authority.Grant`](https://hexdocs.pm/ash_a2a/AshA2A.Authority.Grant.html) | The grant decision layer: standing `grant/3`/`revoke/3`/`renew/3`/`granted?/3` over a configured broker; closes the S29 authentication-vs-authority escalation. | ALIVE (opt-in trigger) |
+| [`AshA2A.Authority.Broker`](https://hexdocs.pm/ash_a2a/AshA2A.Authority.Broker.html) | Broker behaviour for standing grants; shipped reference implementations `Broker.InMemory` (single node, dev/tests) and `Broker.Ekv` (durable). | ALIVE (opt-in trigger) |
+| [`AshA2A.BrceAnchor`](https://hexdocs.pm/ash_a2a/AshA2A.BrceAnchor.html) | Sole-DO fence: a consequence-bearing dispatch is refused unless `CommandBus` handed over a pending receipt anchor bound to that exact capability. | ALIVE |
+| [`AshA2A.ReceiptOutbox`](https://hexdocs.pm/ash_a2a/AshA2A.ReceiptOutbox.html) | Filesystem receipt journal: `:pending` receipt persisted before dispatch, finalized after — crash-recovery evidence. | ALIVE (opt-in trigger) |
+| [`AshA2A.Reconciliation`](https://hexdocs.pm/ash_a2a/AshA2A.Reconciliation.html) | Post-crash durable-evidence classifier over outbox + store (RFC-SA2A-002 §70/§71/§94). | ALIVE (opt-in trigger) |
+| [`AshA2A.KillSwitch`](https://hexdocs.pm/ash_a2a/AshA2A.KillSwitch.html) | Class-level halt primitive (`trip/3`, `tripped?/1`, authority-gated `reset/4`); application-started, consulted only by explicit host opt-in. | ALIVE |
+| [`AshA2A.OnCancel`](https://hexdocs.pm/ash_a2a/AshA2A.OnCancel.html) | Behaviour for the `skill` entity's `on_cancel` Ash-side compensation hook. | ALIVE (opt-in trigger) |
 | [`AshA2A.Reactor.ExecuteCommand`](https://hexdocs.pm/ash_a2a/AshA2A.Reactor.ExecuteCommand.html) | `Reactor.Step` adapter that calls `AshA2A.CommandBus` for one admitted command inside a Reactor. | PARTIAL (not default path) |
 | [`AshA2A.Reactor.CommandWorkflow`](https://hexdocs.pm/ash_a2a/AshA2A.Reactor.CommandWorkflow.html) | Real multi-step `Reactor.run/2` DAG composing command execution; a deliberately unauthorized command halts the real run before any receipt commits. | PARTIAL (not default path) |
 | [`AshA2A.Reactor.BuildCommand`](https://hexdocs.pm/ash_a2a/AshA2A.Reactor.BuildCommand.html) | `Reactor.Step` that constructs an `AshA2A.Command` from step inputs for `CommandWorkflow`. | PARTIAL (not default path) |
@@ -71,7 +97,7 @@ See [Architecture](../explanation/architecture.md).
 | [`AshA2A.Planning.Candidate`](https://hexdocs.pm/ash_a2a/AshA2A.Planning.Candidate.html) | Planner-output struct with candidate-only standing and no DO authority. | PARTIAL (not default path) |
 | [`AshA2A.TaskLifecycle`](https://hexdocs.pm/ash_a2a/AshA2A.TaskLifecycle.html) | Adapter over host-owned `AshStateMachine` task truth; declares A2A task vocabulary. `:ash_state_machine` is now a real dependency with a real qualification test. | REAL_INTEGRATED (provider, opt-in) |
 
-## Semantic pipeline (opt-in production surface, v26.9.14)
+## Semantic pipeline (opt-in production surface)
 
 Reached only when a resource declares `a2a do semantic_requests true end` AND the caller
 sets `:semantic_request` message metadata -- see
@@ -91,6 +117,9 @@ sets `:semantic_request` message metadata -- see
 | [`AshA2A.Semantic.ExecutionPackage`](https://hexdocs.pm/ash_a2a/AshA2A.Semantic.ExecutionPackage.html) | `standing: :candidate, authority: :none`-fenced package; `to_reply/1` converts it to a real `Dispatcher.reply()`, never a DO. | ALIVE (opt-in trigger) |
 | [`AshA2A.Semantic.Feedback`](https://hexdocs.pm/ash_a2a/AshA2A.Semantic.Feedback.html) | `from_receipt/2` projects a real committed `Receipt` into replan observation input. | ALIVE (opt-in trigger) |
 | [`AshA2A.Semantic.PackageStore`](https://hexdocs.pm/ash_a2a/AshA2A.Semantic.PackageStore.html) | Correlates a package's content-addressed fingerprint back to the full struct `replan/4` needs; started alongside the default receipt store. | ALIVE (opt-in trigger) |
+| [`AshA2A.Semantic.Refusal`](https://hexdocs.pm/ash_a2a/AshA2A.Semantic.Refusal.html) | Canonical S42 refusal taxonomy; `classify/1` maps ~60 native refusal codes into 18 classes. | ALIVE (opt-in trigger) |
+| [`AshA2A.Semantic.Standing`](https://hexdocs.pm/ash_a2a/AshA2A.Semantic.Standing.html) | HMAC-sealed standing-ledger transitions; makes semantic `standing` unforgeable. | ALIVE (opt-in trigger) |
+| [`AshA2A.Semantic.IrAdmissionSeal`](https://hexdocs.pm/ash_a2a/AshA2A.Semantic.IrAdmissionSeal.html) | Anti-forgery HMAC seal on `Semantic.IR`; hand-built IR is refused downstream. | ALIVE (opt-in trigger) |
 
 ## Ecosystem adapters (real, dependency-satisfied integrations)
 
