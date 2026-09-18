@@ -165,9 +165,17 @@ defmodule AshA2A.Chicago.Stress.MultinodeConcurrencyTest do
   (for example, filtering `handle_event/4` on a caller identity carried in
   the telemetry event metadata, or scoping the attached event name itself
   per instance) before any TWO overlapping instances can safely run
-  concurrently on one node. Until that real fix lands, this file's final,
-  committed test design deliberately keeps `@dispatches_per_node` at 1 --
-  still real, still genuinely concurrent ACROSS all `@peer_count` nodes
+  concurrently on one node. RESOLVED since b4p-f5-02 item 3:
+  `RouterCounters.attach!/3` grew an `:owner` option (the
+  `AllocationCounters` precedent -- `:any` default keeps the historical
+  broadcast semantics, a pid scopes counts to one emitting process), and
+  `AshA2A.Test.MultinodeRouterCounters.drive_and_report/3` now attaches
+  with `owner: self()`, so concurrent same-node batches ARE isolated; this
+  file still keeps `@dispatches_per_node` at 1 (its assertions and runtime
+  envelope are tuned for it), with the isolation property itself covered
+  by `test/ash_a2a/telemetry/router_counters_isolation_test.exs`. The kept
+  single-batch design is still real, still genuinely concurrent ACROSS all
+  `@peer_count` nodes
   (separate BEAM VMs, separate telemetry registries -- cross-NODE
   concurrency was never affected by this defect, only same-node concurrent
   attachment was) -- so this file ships as a real, passing, honest hardening

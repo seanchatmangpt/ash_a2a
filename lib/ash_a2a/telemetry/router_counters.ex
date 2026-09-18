@@ -21,10 +21,39 @@ defmodule AshA2A.Telemetry.RouterCounters do
 
   Each attached instance owns its own counters reference, threaded through
   as `:telemetry.attach/4`'s own documented `config` argument -- there is
-  no global/`:persistent_term` counter here, so multiple independent
-  instances (for example, one per `async: true` test process, or one owned
-  by a host application) never share state and never interfere with each
-  other's counts.
+  no global/`:persistent_term` counter here, so multiple instances never
+  share *storage*.
+
+  ## `:owner` -- which emitters this instance counts (b4p-f5-02 item 3)
+
+  Storage isolation is not *source* isolation: `:telemetry.execute/3`
+  broadcasts an event name to EVERY attached handler on the node, so two
+  overlapping instances both counting with `:any` each observe the union of
+  all router dispatches, not their own. This is a real, reproducibly
+  observed defect (the stress wave's
+  `test/ash_a2a/chicago/stress/multinode_concurrency_test.exs` caught
+  concurrent same-node batches inflating each other's counts; the
+  `RouterCountersIsolationTest` fail-before reproduces it as
+  `deterministic: 4, phrase: 2` for two drivers x 2+1 dispatches each).
+  `attach!/3`'s `:owner` option closes it, with the same semantics
+  `AshA2A.Telemetry.AllocationCounters` already shipped for the identical
+  broadcast problem:
+
+    * `:any` (default) -- count every emitter. The right behaviour for a
+      long-lived, application-wide instrument, and the exact pre-existing
+      semantics of this module (every prior caller and test keeps working
+      unchanged).
+    * a pid -- count only events emitted by that process (`handle_event/4`
+      runs in the emitting process, so the check is exact). A caller that
+      attaches and routes in the same process owns a genuinely private
+      measurement; two concurrent drivers each scoped to their own pid
+      observe genuinely disjoint telemetry.
+
+  A per-instance identity token carried in `route/3`'s event metadata was
+  considered and rejected: it would thread caller identity through
+  `RequestRouter`'s public opts and emitted metadata -- a wider API change
+  with no in-repo precedent -- while `:owner` closes the observed defect
+  with the established `AllocationCounters` pattern.
 
   ## Three slots, one genuinely new (this task)
 
@@ -49,6 +78,12 @@ defmodule AshA2A.Telemetry.RouterCounters do
       AshA2A.Telemetry.RouterCounters.counts(ref)
       #=> %{deterministic: 3, llm: 1, phrase: 2}
       AshA2A.Telemetry.RouterCounters.detach(handler_id)
+
+  A caller that needs its own private counts while other instances may be
+  attached concurrently on the same node scopes them per emitting process:
+
+      ref = AshA2A.Telemetry.RouterCounters.new()
+      handler_id = AshA2A.Telemetry.RouterCounters.attach!(ref, make_ref(), owner: self())
 
   A host application wanting one long-lived, application-wide instance
   attaches once (for example from `AshA2A.Application.start/2`, the same
@@ -86,17 +121,27 @@ defmodule AshA2A.Telemetry.RouterCounters do
   silently overwrite one another's registration -- passing an explicit,
   stable suffix is only needed when a caller wants a predictable, opaque
   handler id of its own (an idempotent boot-time `attach!/2` call, say).
+
+  ## Options
+
+    * `:owner` -- `:any` (default) counts every emitter; a pid counts only
+      events emitted by that process, giving callers that attach and route
+      in the same process genuinely private counts even while other
+      instances are attached concurrently on the same node. See the
+      moduledoc's "`:owner`" section for the observed cross-contamination
+      defect this closes.
   """
-  @spec attach!(ref(), term()) :: term()
-  def attach!(ref, handler_id_suffix \\ make_ref()) do
+  @spec attach!(ref(), term(), keyword()) :: term()
+  def attach!(ref, handler_id_suffix \\ make_ref(), opts \\ []) do
     handler_id = {__MODULE__, handler_id_suffix}
+    config = %{ref: ref, owner: Keyword.get(opts, :owner, :any)}
 
     :ok =
       case :telemetry.attach(
              handler_id,
              [:ash_a2a, :router, :tier_selected],
              &__MODULE__.handle_event/4,
-             ref
+             config
            ) do
         :ok -> :ok
         {:error, :already_exists} -> :ok
@@ -110,21 +155,37 @@ defmodule AshA2A.Telemetry.RouterCounters do
   def detach(handler_id), do: :telemetry.detach(handler_id)
 
   @doc false
-  @spec handle_event(:telemetry.event_name(), :telemetry.event_measurements(), map(), ref()) ::
+  @spec handle_event(:telemetry.event_name(), :telemetry.event_measurements(), map(), map()) ::
           :ok
-  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, %{tier: :facts}, ref) do
-    :counters.add(ref, @deterministic_index, 1)
+  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, %{tier: :facts}, %{
+        ref: ref,
+        owner: owner
+      }) do
+    if owner == :any or owner == self(), do: :counters.add(ref, @deterministic_index, 1)
+
+    :ok
   end
 
-  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, %{tier: :text}, ref) do
-    :counters.add(ref, @llm_index, 1)
+  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, %{tier: :text}, %{
+        ref: ref,
+        owner: owner
+      }) do
+    if owner == :any or owner == self(), do: :counters.add(ref, @llm_index, 1)
+
+    :ok
   end
 
-  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, %{tier: :phrase}, ref) do
-    :counters.add(ref, @phrase_index, 1)
+  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, %{tier: :phrase}, %{
+        ref: ref,
+        owner: owner
+      }) do
+    if owner == :any or owner == self(), do: :counters.add(ref, @phrase_index, 1)
+
+    :ok
   end
 
-  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, _metadata, _ref), do: :ok
+  def handle_event([:ash_a2a, :router, :tier_selected], _measurements, _metadata, _config),
+    do: :ok
 
   @doc """
   Current real atomic counts for `ref`: `%{deterministic: n, llm: n, phrase: n}`.
