@@ -8,6 +8,51 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed -- CommandBus production-scale story: real gap closed, Ekv wiring now genuinely config-only
+
+- Merged both v26.9.17 Benchmark-phase branches
+  (`feat/bench-ekv-receipt-store-scale`, `feat/bench-ekv-authority-broker-scale`)
+  that measured `AshA2A.ReceiptStore.Ekv` and `AshA2A.Authority.Broker.Ekv`
+  against their `Memory`/`InMemory` counterparts under real sustained
+  concurrent load. Real, disclosed findings (both against the hypothesized
+  "Ekv resolves scale" outcome, verified rather than assumed): the receipt
+  store's Ekv variant resolves the specific *climbing* p99-under-load
+  pattern `Memory` shows, but trades it for materially lower throughput and
+  occasional multi-second I/O-contended outliers on a shared/loaded host;
+  the authority broker's Ekv variant does not resolve anything at that
+  read-heavy layer -- it is ~1.7x-2.2x higher latency than `InMemory` at
+  every percentile, with no throughput upside. Neither is an unqualified
+  scale win; both are real durability-vs-latency trades. Full numbers in
+  `docs/explanation/v26.9.17-commandbus-scale.md`.
+- **Real gap found and fixed while investigating why a production caller
+  would choose `Ekv` at all**: `AshA2A.Application.start/2` auto-wired a
+  real `EKV` instance for `:receipt_store` when set to
+  `AshA2A.ReceiptStore.Ekv`, but had no equivalent clause for
+  `:authority_broker` -- so `docs/how-to/authenticate-agent-requests.md`'s
+  own primary example (`config :ash_a2a, :authority_broker,
+  AshA2A.Authority.Broker.Ekv`, alone) was not actually config-only: no
+  `EKV` instance existed for the broker to read/write, so every real
+  `granted?/3` call rescued/caught to `false`. Fixed with a new
+  `authority_broker_children/0` in `lib/ash_a2a/application.ex`, mirroring
+  `receipt_store_children/0` exactly (bare-module and `{module, opts}`
+  tuple config forms both handled, a distinct default `:name`/`:data_dir`
+  so the two Ekv-backed layers never share an on-disk keyspace by
+  accident). `AshA2A.Authority.Broker.InMemory` keeps its existing
+  host-started convention -- only the durable `Ekv` broker needed this.
+- Two new real (no mock/stub) tests in `test/ash_a2a/application_test.exs`
+  prove the fix: one starts the real application with only the config line
+  above set and round-trips a real grant through
+  `AshA2A.Authority.Grant.grant/3`/`granted?/3`/`revoke/3` with no manual
+  `EKV` start anywhere in the test; the other configures both
+  `:receipt_store` and `:authority_broker` as `Ekv` simultaneously and
+  asserts two distinct, real, alive `EKV` children. Both fixed two further
+  real defects these tests themselves caught while being written
+  (`EKV.child_spec/1`'s real supervision type, and directory/subject-name
+  uniqueness that a bare `System.unique_integer/1` does not guarantee
+  across separate `mix test` process invocations) -- confirmed stable
+  across 9 repeated runs (5 back-to-back plus 4 distinct `--seed` values),
+  0 failures.
+
 ### Hardened, benchmarked, and stress-tested -- v26.9.17 harden/benchmark/stress pass
 
 - 14 disjoint worktree tasks ran in parallel against v26.9.17 (6
