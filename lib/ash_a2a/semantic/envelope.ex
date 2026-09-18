@@ -112,8 +112,8 @@ defmodule AshA2A.Semantic.Envelope do
   @authority_requirements ~w(none delegated principal attested)
 
   # `Vocabulary.prefixes/0` is the existing prior-art-first namespace
-  # registry (rdf/rdfs/owl/prov/time/odrl/skos/schema/oa/sosa). `sa2a` is
-  # this RFC's own prefix and is admitted alongside them.
+  # registry (rdf/rdfs/owl/prov/time/odrl/skos/schema/oa/sosa/ssn/saref/qudt).
+  # `sa2a` is this RFC's own prefix and is admitted alongside them.
   @extra_prefixes ["sa2a"]
 
   @enforce_keys [:envelope_id, :kind]

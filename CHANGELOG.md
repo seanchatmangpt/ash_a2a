@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.18] - 2026-09-18
+
+### Added
+- Three new public-vocabulary prefixes in `AshA2A.Semantic.Vocabulary`:
+  `ssn` (http://www.w3.org/ns/ssn/), `saref`
+  (https://saref.etsi.org/core/), and `qudt`
+  (http://qudt.org/schema/qudt/), alongside the existing
+  rdf/rdfs/owl/prov/time/odrl/skos/schema/oa/sosa registry. No other
+  behavior changes -- `expand/1`, `local/1`, and every other prefix keep
+  their existing IRIs. Prompted by a planned SA2A-MFG-01 synthetic
+  manufacturing case study (in a separate repo) that needs
+  equipment/quantity semantics expressed on public ontologies rather than
+  a bespoke domain schema; landed here first since the case study depends
+  on it.
+
 ## [26.9.17] - 2026-09-17
 
 ### Docs

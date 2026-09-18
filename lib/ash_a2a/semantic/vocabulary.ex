@@ -11,7 +11,10 @@ defmodule AshA2A.Semantic.Vocabulary do
     "skos" => "http://www.w3.org/2004/02/skos/core#",
     "schema" => "https://schema.org/",
     "oa" => "http://www.w3.org/ns/oa#",
-    "sosa" => "http://www.w3.org/ns/sosa/"
+    "sosa" => "http://www.w3.org/ns/sosa/",
+    "ssn" => "http://www.w3.org/ns/ssn/",
+    "saref" => "https://saref.etsi.org/core/",
+    "qudt" => "http://qudt.org/schema/qudt/"
   }
 
   def prefixes, do: @prefixes
