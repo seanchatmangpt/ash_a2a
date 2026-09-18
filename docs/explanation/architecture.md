@@ -1,10 +1,12 @@
 # Architecture
 
 This explains how ash_a2a is actually put together today, not how it is
-eventually meant to work. There are two layers in this codebase, and they are
-at very different levels of maturity: a projection layer that is real, tested,
-and wired into every dispatch, and an admission/receipt layer that is real
-and tested but sits beside the default path rather than inside it.
+eventually meant to work. There are two layers in this codebase: a
+projection layer that is real, tested, and wired into every dispatch, and
+an admission/receipt layer that is equally real and tested — and, since
+v26.9.14, is the route the default dispatch path itself takes for every
+consequence-bearing skill (see "CommandBus on the default dispatch path"
+below).
 
 ## Layer 1: capability projection (the default path)
 
@@ -60,7 +62,7 @@ and real evidence, not a sketch, and it is now the route both
 `AshA2A.Agent.__dispatch__` path use (see below) -- not a parallel,
 opt-in route only some callers happen to take.
 
-## The ecosystem adapters are real integrations, not just seams (as of v26.9.14)
+## The ecosystem adapters are real integrations, not just seams
 
 `AshA2A.Delivery.Oban`, `AshA2A.Topology.Group`, `AshA2A.Topology.Presence`,
 `AshA2A.Durability.DurableServer`, `AshA2A.Execution.FLAME`, and
@@ -165,6 +167,41 @@ hashes the authority's `token_id`) would differ from the last and permanently
 defeat replay detection -- a real, reproduced-and-fixed regression, not a
 hypothetical. The grant decision changes whether an authority is produced,
 never which one, so replay is unaffected.
+
+## Receipt durability, crash recovery, and the kill switch (v26.9.15-v26.9.17)
+
+Three later additions close the crash-window story around the receipted
+path:
+
+- **`AshA2A.ReceiptOutbox`** — a filesystem-backed receipt journal.
+  Consequence-bearing commands persist a `:pending` receipt *before*
+  dispatch; the finalized receipt replaces that same file afterward. A
+  crash between "decided" and "done" therefore leaves admissible evidence
+  rather than silence (`config :ash_a2a, :receipt_outbox_dir`; a
+  reconciler sweeps stuck entries).
+- **`AshA2A.Reconciliation`** — the durable-evidence classifier
+  (RFC-SA2A-002 §70/§71/§94): after a crash anywhere on the BRCE path,
+  the only admissible answer to "what happened to this command?" is what
+  the outbox and the store can prove, classified into resolved outcomes
+  (replayed, compensated) rather than guessed.
+- **`AshA2A.KillSwitch`** — a class-level halt primitive started by
+  `AshA2A.Application` as a node-wide singleton (`trip/3`, `tripped?/1`,
+  authority-gated `reset/4`). Deliberately *not* consulted by
+  `CommandBus.admit/2` or any dispatch path: it is an operator tool for
+  halting a class of work, not a silent admission gate.
+
+The claim-lease side of the same story: the receipt store's actuation
+claim lease (default `config :ash_a2a, :claim_lease_ms, 300_000`) guards
+the window in which a claimed-but-unfinished command cannot be
+double-executed — a deliberate tradeoff the v26.9.17 hardening pass
+audited as sound (see the stress report for load-behavior caveats).
+
+In the semantic layer, the same anti-forgery discipline that
+`AshA2A.Semantic.Standing` applies to envelopes also covers the
+intermediate representation itself: `AshA2A.Semantic.IrAdmissionSeal`
+HMAC-seals admitted `Semantic.IR`s and downstream consumers verify the
+seal — a hand-built `%IR{standing: :admitted}` is refused rather than
+honored.
 
 ## Other real additions this release
 
@@ -309,8 +346,23 @@ tested -- corrected here rather than left stale:
   fingerprint falls through to a fresh compile rather than replanning silently against
   the wrong evidence. This closure is caller-triggered (a message must carry the
   fingerprint), not a background process that replans every receipt on its own.
-- **Architecture-verifier coverage exists**: `mix ash_a2a.verify_architecture` (9/9 real
-  checks) includes `check_semantic_requests_gate_compiles` (the DSL opt-in real-compiles
+- **Architecture-verifier coverage exists**: `mix ash_a2a.verify_architecture`
+  (a real, growing set of executable checks — run the task to count them)
+  includes `check_semantic_requests_gate_compiles` (the DSL opt-in real-compiles
   as real capability truth) and `check_unopted_semantic_request_falls_through` (an
   unopted-in resource's `:semantic_request`-flagged dispatch real-falls-through to
   ordinary skill resolution, never silently routing to `Semantic.Compiler.compile/3`).
+
+## See also
+
+- [Message lifecycle](message-lifecycle.md) — one request, wire to
+  receipt, narrated end to end.
+- [chicago-conformance-court.md](chicago-conformance-court.md) — what the
+  RFC-SA2A-002 conformance courts are; the dated v26.9.17
+  benchmark/stress/hardening reports sit alongside as point-in-time
+  evidence, not evergreen explanation.
+- [canonical-graph-identity.md](canonical-graph-identity.md) and
+  [graphlaw-wasm-integration.md](graphlaw-wasm-integration.md) — the
+  semantic identity and law-engine layers.
+- `docs/rfc/` — RFC-SA2A-001/002 (Proposed Standard), the normative
+  source most moduledocs cite.
