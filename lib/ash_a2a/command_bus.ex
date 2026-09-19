@@ -372,7 +372,8 @@ defmodule AshA2A.CommandBus do
     do: "actuation claim store is unavailable; refusing consequence before DO"
 
   defp actuation_refusal_detail(_reason),
-    do: "actuation identity is already claimed for this effect; refusing to repeat the consequence"
+    do:
+      "actuation identity is already claimed for this effect; refusing to repeat the consequence"
 
   defp receipt_opts(%Actuation{} = actuation, opts) do
     [actuation: actuation]
