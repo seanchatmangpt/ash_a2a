@@ -102,7 +102,8 @@ defmodule AshA2A.Receipt do
     :action_not_found,
     :command_conflict,
     :actuation_conflict,
-    :actuation_in_flight
+    :actuation_in_flight,
+    :actuation_store_unavailable
   ]
 
   @enforce_keys [
@@ -249,7 +250,7 @@ defmodule AshA2A.Receipt do
       terminal_status: nil,
       evidence_class: Keyword.get_lazy(opts, :evidence_class, &default_evidence_class/0),
       reconciliation: %{state: reconciliation_state(consequence), attempts: 0},
-      metadata: %{outcome: :pending}
+      metadata: prepared_metadata(command)
     }
     |> Binding.bind(predecessor: Keyword.get(opts, :chain_predecessor))
   end
@@ -417,6 +418,19 @@ defmodule AshA2A.Receipt do
       evidence_digest: Actuation.digest(authority.evidence)
     }
   end
+
+  defp prepared_metadata(%Command{metadata: metadata}) do
+    work_order_digest =
+      if is_map(metadata) do
+        Map.get(metadata, :work_order_digest) || Map.get(metadata, "work_order_digest")
+      end
+
+    %{outcome: :pending}
+    |> maybe_put_metadata(:work_order_digest, work_order_digest)
+  end
+
+  defp maybe_put_metadata(metadata, _key, nil), do: metadata
+  defp maybe_put_metadata(metadata, key, value), do: Map.put(metadata, key, value)
 
   defp intended_effect(%Command{} = command, consequence, opts) do
     base = %{
