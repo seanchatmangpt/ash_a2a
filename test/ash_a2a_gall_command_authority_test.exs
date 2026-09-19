@@ -9,7 +9,10 @@ defmodule AshA2A.Test.FailingActuationStore do
   def fetch(command_id, opts), do: Memory.fetch(command_id, opts)
 
   def claim_actuation(_actuation, _command, _opts), do: raise("actuation index unavailable")
-  def commit_actuation(actuation, receipt, opts), do: Memory.commit_actuation(actuation, receipt, opts)
+
+  def commit_actuation(actuation, receipt, opts),
+    do: Memory.commit_actuation(actuation, receipt, opts)
+
   def release_actuation(actuation, opts), do: Memory.release_actuation(actuation, opts)
 end
 
@@ -18,7 +21,18 @@ defmodule AshA2AGallCommandAuthorityTest do
 
   import AshA2A.Test.MessageHelpers
 
-  alias AshA2A.{Actuation, Authority, Command, CommandBus, Evidence, Identity, Receipt, SemanticProjection, SemanticSubject}
+  alias AshA2A.{
+    Actuation,
+    Authority,
+    Command,
+    CommandBus,
+    Evidence,
+    Identity,
+    Receipt,
+    SemanticProjection,
+    SemanticSubject
+  }
+
   alias AshA2A.Test.FailingActuationStore
   alias AshA2A.Test.Fixture.Item
 
@@ -33,7 +47,8 @@ defmodule AshA2AGallCommandAuthorityTest do
     capability = "AshA2A.Test.Fixture.Item.create"
     secret = "raw-bearer-secret-must-not-leak"
 
-    authority = Authority.new(principal, capability, token_id: "gall-grant", evidence: %{bearer: secret})
+    authority =
+      Authority.new(principal, capability, token_id: "gall-grant", evidence: %{bearer: secret})
 
     {:ok, subject} =
       SemanticSubject.new(
@@ -74,7 +89,9 @@ defmodule AshA2AGallCommandAuthorityTest do
     refute inspect(event) =~ secret
   end
 
-  test "enforced effect idempotency refuses before DO when actuation store is unavailable", %{store_opts: store_opts} do
+  test "enforced effect idempotency refuses before DO when actuation store is unavailable", %{
+    store_opts: store_opts
+  } do
     capability = "AshA2A.Test.Fixture.Item.create"
     principal = Identity.principal("gall-store-user-#{System.unique_integer([:positive])}")
     label = "must-not-exist-#{System.unique_integer([:positive])}"
