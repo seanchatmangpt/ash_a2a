@@ -55,6 +55,8 @@ defmodule AshA2A.ReceiptStore do
       the prior outcome and MUST be returned rather than re-actuating
     * `{:error, :actuation_in_flight}` -- another claimant prepared this effect
       and has not finished; refuse rather than double-actuate
+    * `{:error, :actuation_store_unavailable}` -- the effect-level claim store
+      could not be consulted; callers enforcing idempotency must refuse before DO.
     * `{:error, :actuation_conflict}` -- the same actuation id is held with a
       different idempotency key, which means two callers disagree about what
       the external token for this effect is
@@ -62,7 +64,7 @@ defmodule AshA2A.ReceiptStore do
   @type actuation_claim_result ::
           :proceed
           | {:duplicate, Receipt.t()}
-          | {:error, :actuation_in_flight | :actuation_conflict}
+          | {:error, :actuation_in_flight | :actuation_conflict | :actuation_store_unavailable}
 
   @callback claim(Command.t(), keyword()) :: claim_result()
   @callback commit(Receipt.t(), keyword()) :: :ok

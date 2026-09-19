@@ -9,7 +9,7 @@ defmodule AshA2A.SemanticProjection do
   or grants command authority.
   """
 
-  alias AshA2A.{Identity, Receipt}
+  alias AshA2A.{Evidence, Identity, Receipt, SemanticSubject}
 
   @spec receipt(Receipt.t()) :: map()
   def receipt(%Receipt{} = receipt) do
@@ -22,6 +22,15 @@ defmodule AshA2A.SemanticProjection do
       principal_id: external(receipt.principal_id),
       capability_id: receipt.capability_id,
       fingerprint: receipt.fingerprint,
+      semantic_graph_digest: semantic_field(receipt.semantic_subject, :graph_digest),
+      projection_digest: receipt.projection_digest,
+      manufacturer_digest: semantic_field(receipt.semantic_subject, :manufacturer_digest),
+      actuation_id: external(receipt.actuation_id),
+      idempotency_key: external(receipt.idempotency_key),
+      authority_grant_id: authority_field(receipt.authority_grant, :token_id),
+      authority_evidence_digest: authority_field(receipt.authority_grant, :evidence_digest),
+      evidence_class: evidence_class_label(receipt.evidence_class),
+      work_order_digest: work_order_digest(receipt.metadata),
       consequence: receipt.consequence,
       status: receipt.status,
       standing: receipt.standing,
@@ -80,6 +89,15 @@ defmodule AshA2A.SemanticProjection do
         "principal_id" => semantic.principal_id,
         "capability_id" => semantic.capability_id,
         "fingerprint" => semantic.fingerprint,
+        "semantic_graph_digest" => semantic.semantic_graph_digest,
+        "projection_digest" => semantic.projection_digest,
+        "manufacturer_digest" => semantic.manufacturer_digest,
+        "actuation_id" => semantic.actuation_id,
+        "idempotency_key" => semantic.idempotency_key,
+        "authority_grant_id" => semantic.authority_grant_id,
+        "authority_evidence_digest" => semantic.authority_evidence_digest,
+        "evidence_class" => semantic.evidence_class,
+        "work_order_digest" => semantic.work_order_digest,
         "consequence" => to_string(semantic.consequence),
         "status" => to_string(semantic.status),
         "standing" => to_string(semantic.standing),
@@ -102,6 +120,24 @@ defmodule AshA2A.SemanticProjection do
       "relationships" => []
     }
   end
+
+  defp semantic_field(%SemanticSubject{} = subject, field), do: Map.get(subject, field)
+  defp semantic_field(_subject, _field), do: nil
+
+  defp authority_field(authority, field) when is_map(authority), do: Map.get(authority, field)
+  defp authority_field(_authority, _field), do: nil
+
+  defp evidence_class_label(nil), do: nil
+
+  defp evidence_class_label(value) do
+    if Evidence.Class.value?(value), do: value |> Evidence.Class.label() |> to_string(), else: nil
+  end
+
+  defp work_order_digest(metadata) when is_map(metadata) do
+    Map.get(metadata, :work_order_digest) || Map.get(metadata, "work_order_digest")
+  end
+
+  defp work_order_digest(_metadata), do: nil
 
   defp external(nil), do: nil
   defp external(%Identity{} = identity), do: Identity.external(identity)

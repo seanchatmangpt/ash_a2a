@@ -210,7 +210,8 @@ defmodule AshA2A.CommandBus do
           prior
         )
 
-      {:error, reason} when reason in [:actuation_in_flight, :actuation_conflict] ->
+      {:error, reason}
+      when reason in [:actuation_in_flight, :actuation_conflict, :actuation_store_unavailable] ->
         refuse_actuation(
           store,
           command,
@@ -349,8 +350,7 @@ defmodule AshA2A.CommandBus do
       {:error,
        %{
          code: reason,
-         detail:
-           "actuation identity is already claimed for this effect; refusing to repeat the consequence"
+         detail: actuation_refusal_detail(reason)
        }}
 
     receipt =
@@ -365,8 +365,15 @@ defmodule AshA2A.CommandBus do
       Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
     )
 
-    {:error, %{code: reason, detail: "actuation identity already claimed", receipt: receipt}}
+    {:error, %{code: reason, detail: actuation_refusal_detail(reason), receipt: receipt}}
   end
+
+  defp actuation_refusal_detail(:actuation_store_unavailable),
+    do: "actuation claim store is unavailable; refusing consequence before DO"
+
+  defp actuation_refusal_detail(_reason),
+    do:
+      "actuation identity is already claimed for this effect; refusing to repeat the consequence"
 
   defp receipt_opts(%Actuation{} = actuation, opts) do
     [actuation: actuation]
@@ -413,9 +420,9 @@ defmodule AshA2A.CommandBus do
       :proceed
     end
   rescue
-    _error -> :proceed
+    _error -> {:error, :actuation_store_unavailable}
   catch
-    :exit, _reason -> :proceed
+    :exit, _reason -> {:error, :actuation_store_unavailable}
   end
 
   defp claim_actuation(_store, _actuation, _command, _consequence, _store_opts, _opts),
