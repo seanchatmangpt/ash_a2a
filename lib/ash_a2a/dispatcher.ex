@@ -122,21 +122,28 @@ defmodule AshA2A.Dispatcher do
   `context.metadata["a2a.auth"][:identity]` for every real dispatch (see
   `AshA2A.Agent.__dispatch__`).
   """
-  @spec dispatch(skill_name(), Message.t(), resource_or_domain(), [Message.t()], term()) ::
-          reply()
+  @spec dispatch(
+          skill_name(),
+          Message.t(),
+          resource_or_domain(),
+          [Message.t()],
+          term(),
+          keyword()
+        ) :: reply()
   def dispatch(
         skill_name,
         %Message{} = a2a_message,
         resource_or_domain,
         history \\ [],
-        auth_identity \\ nil
+        auth_identity \\ nil,
+        opts \\ []
       )
-      when is_list(history) do
+      when is_list(history) and is_list(opts) do
     start_meta = %{resource_or_domain: resource_or_domain, skill_name: skill_name}
 
     :telemetry.span([:ash_a2a, :dispatch], start_meta, fn ->
       {reply, object_id} =
-        do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity)
+        do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
 
       stop = start_meta |> Map.merge(stop_meta(reply)) |> maybe_put_object_id(object_id)
       {reply, stop}
@@ -164,10 +171,11 @@ defmodule AshA2A.Dispatcher do
   # receipt anchor is taken first (single use), and a consequence-bearing
   # skill is refused before its Ash action runs unless `AshA2A.CommandBus`
   # handed over a pending anchor bound to this exact capability.
-  defp do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity) do
+  defp do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts) do
     anchor = AshA2A.BrceAnchor.take()
 
-    with {:ok, skill} <- tag_stage(fetch_skill(resource_or_domain, skill_name), :skill_lookup),
+    with {:ok, skill} <-
+           tag_stage(resolve_skill(resource_or_domain, skill_name, opts), :skill_lookup),
          %AshA2A.ExecutionContext{} = exec_context <-
            AshA2A.ContextResolver.from_a2a_message(
              a2a_message,
@@ -255,14 +263,43 @@ defmodule AshA2A.Dispatcher do
   # canonical lookup paths, not a security issue (it only ever fails closed,
   # never admits something it shouldn't), but a real usability/consistency
   # bug this fixes.
+  # b4p-f5-10: `AshA2A.CommandBus` re-dispatches a consequence-bearing skill
+  # it has ALREADY resolved (`inspect_target/2` -> `AshA2A.Info.skill/2`).
+  # Re-matching that skill by bare display `name` here would index-first-match
+  # a different resource's namesake on a multi-resource domain (every public
+  # action is a skill, so `create` x N resources is the default surface) and
+  # `AshA2A.BrceAnchor.admit/2` would then refuse the exact-skill anchor with
+  # `:capability_mismatch`. The opt carries the exact resolved skill; the
+  # selector-based lookup below stays authoritative for every other caller.
+  defp resolve_skill(resource_or_domain, skill_name, opts) do
+    case Keyword.get(opts, :resolved_skill) do
+      %AshA2A.Skill{} = skill -> {:ok, skill}
+      _ -> fetch_skill(resource_or_domain, skill_name)
+    end
+  end
+
+  # An exact capability-id match is authoritative even when the display name
+  # is shared across resources; a selector matching more than one skill is
+  # refused typed (`{:ambiguous_skill, selector}`) instead of silently
+  # resolving to the index-first namesake.
   defp fetch_skill(resource_or_domain, skill_name) do
-    resource_or_domain
-    |> AshA2A.Info.capability_index()
-    |> List.wrap()
-    |> Enum.find(&(&1.id == skill_name or skill_name_matches?(&1.name, skill_name)))
-    |> case do
-      nil -> {:error, {:unknown_skill, skill_name}}
-      skill -> {:ok, skill}
+    skills =
+      resource_or_domain
+      |> AshA2A.Info.capability_index()
+      |> List.wrap()
+
+    case Enum.filter(skills, &(&1.id == skill_name or skill_name_matches?(&1.name, skill_name))) do
+      [] ->
+        {:error, {:unknown_skill, skill_name}}
+
+      [skill] ->
+        {:ok, skill}
+
+      matches ->
+        case Enum.filter(matches, &(&1.id == skill_name)) do
+          [skill] -> {:ok, skill}
+          _ -> {:error, {:ambiguous_skill, skill_name}}
+        end
     end
   end
 

@@ -647,6 +647,7 @@ defmodule AshA2A.CommandBus do
       {:ok, skill, action, skill.consequence}
     else
       {:error, :skill_not_found} -> {:error, refusal(:capability_not_found)}
+      {:error, {:ambiguous_skill, _selector}} -> {:error, refusal(:ambiguous_skill)}
       nil -> {:error, refusal(:action_not_found)}
     end
   end
@@ -919,7 +920,11 @@ defmodule AshA2A.CommandBus do
         message,
         resource_or_domain,
         Keyword.get(opts, :history, []),
-        Keyword.get(opts, :auth_identity)
+        Keyword.get(opts, :auth_identity),
+        # b4p-f5-10: the exact skill was resolved in `inspect_target/2`;
+        # carrying it through prevents the re-dispatch from re-matching the
+        # bare display name to an index-first namesake.
+        resolved_skill: skill
       )
     after
       Process.delete(:ash_a2a_ocel_command_bus_dispatch)

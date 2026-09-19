@@ -5,7 +5,7 @@ defmodule AshA2A.BrceAnchor do
 
       Attempted(a) ⇒ PreparedReceipt(a)
 
-  `AshA2A.Dispatcher.dispatch/5` is the one function that invokes a real Ash
+  `AshA2A.Dispatcher.dispatch/6` is the one function that invokes a real Ash
   action for a skill. Before this fence it actuated any skill it was handed,
   so every caller able to reach it -- a host, a planner adapter, a hook
   handler, a hand-rolled agent -- could produce a `:change`/`:external_do`

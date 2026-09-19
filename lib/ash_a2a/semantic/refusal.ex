@@ -256,6 +256,7 @@ defmodule AshA2A.Semantic.Refusal do
     capability_not_found: :refused_capability,
     action_not_found: :refused_capability,
     skill_not_found: :refused_capability,
+    ambiguous_skill: :refused_capability,
     noncanonical_capability: :refused_capability,
     planner_capability_projection_missing: :refused_capability,
 

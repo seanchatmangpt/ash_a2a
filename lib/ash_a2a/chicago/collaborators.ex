@@ -15,7 +15,7 @@ defmodule AshA2A.Chicago.Collaborators do
   | `:authority_broker`    | configured `:authority_broker` + `:authority_policy` | a fresh nonce principal with no grant is asked for a fresh nonce capability through the real `AshA2A.Authority.Grant.authorize/3`: a real boundary refuses |
   | `:consequence_boundary`| `AshA2A.CommandBus`                        | its import table calls the actuator and `:telemetry.execute/3` |
   | `:receipt_store`       | `AshA2A.CommandBus.default_store/0`        | implements `AshA2A.ReceiptStore`; durability PROVEN by `DurabilityProbe` (write -> real restart -> read -> replay) |
-  | `:actuator`            | `AshA2A.Dispatcher`                        | exports `dispatch/5` and is the call `CommandBus` compiles |
+  | `:actuator`            | `AshA2A.Dispatcher`                        | exports `dispatch/6` (b4p-f5-10 added the resolved-skill opt) and is the call `CommandBus` compiles |
   | `:independent_verifier`| `AshA2A.Chicago.Query`                     | the runner's import table loads and evaluates through it |
   | `:replay_engine`       | the receipt store's command replay         | re-claiming a committed command after the real restart answers `:replay` |
   | `:process_observer`    | `AshA2A.Chicago.Observer`                  | loaded; the run's observer process is live when given |
@@ -260,7 +260,7 @@ defmodule AshA2A.Chicago.Collaborators do
       actuator_calls: calls_into(module, AshA2A.Dispatcher),
       boundary_telemetry?: "execute/3" in calls_into(module, :telemetry),
       identified?:
-        exported?(module, :run, 4) and "dispatch/5" in calls_into(module, AshA2A.Dispatcher)
+        exported?(module, :run, 4) and "dispatch/6" in calls_into(module, AshA2A.Dispatcher)
     }
   end
 
@@ -284,8 +284,8 @@ defmodule AshA2A.Chicago.Collaborators do
       module: module,
       invoked_by: AshA2A.CommandBus,
       identified?:
-        exported?(module, :dispatch, 5) and
-          "dispatch/5" in calls_into(AshA2A.CommandBus, module)
+        exported?(module, :dispatch, 6) and
+          "dispatch/6" in calls_into(AshA2A.CommandBus, module)
     }
   end
 

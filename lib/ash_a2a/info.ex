@@ -62,13 +62,25 @@ defmodule AshA2A.Info do
     resource_or_domain
     |> capability_index()
     |> List.wrap()
-    |> Enum.find(fn skill ->
+    |> Enum.filter(fn skill ->
       skill.id == selector || skill.name == selector ||
         to_string(skill.name) == to_string(selector)
     end)
     |> case do
-      nil -> {:error, :skill_not_found}
-      skill -> {:ok, skill}
+      [] ->
+        {:error, :skill_not_found}
+
+      [skill] ->
+        {:ok, skill}
+
+      matches ->
+        # b4p-f5-10: an exact capability-id match wins even when the display
+        # name is shared; otherwise a multi-match selector is ambiguous and
+        # refused typed rather than resolving to the index-first namesake.
+        case Enum.filter(matches, &(&1.id == selector)) do
+          [skill] -> {:ok, skill}
+          _ -> {:error, {:ambiguous_skill, selector}}
+        end
     end
   end
 

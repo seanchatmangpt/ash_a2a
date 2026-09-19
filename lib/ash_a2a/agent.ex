@@ -3,7 +3,7 @@ defmodule AshA2A.Agent do
   Generates a real, runnable `A2A.Agent` GenServer for an `AshA2A`-extended
   resource or domain, so a compiled capability index has an actual supervised
   process a caller can send an `A2A.Message` to -- not just a synchronous
-  `AshA2A.Dispatcher.dispatch/5` function call.
+  `AshA2A.Dispatcher.dispatch/6` function call.
 
       defmodule MyApp.EchoAgent do
         use AshA2A.Agent, resource_or_domain: MyApp.Echo
@@ -25,7 +25,7 @@ defmodule AshA2A.Agent do
   convention). A resource/domain with exactly one compiled skill lets the
   caller omit `:skill` metadata entirely -- that single skill is dispatched
   by default. Either way, dispatch runs through the real
-  `AshA2A.Dispatcher.dispatch/5` path (PRD §3.2/§3.5), so an agent process
+  `AshA2A.Dispatcher.dispatch/6` path (PRD §3.2/§3.5), so an agent process
   built with this macro can never diverge from what `AshA2A.Info.agent_card/2`
   advertises.
 
@@ -34,7 +34,7 @@ defmodule AshA2A.Agent do
   -- the accumulated multi-turn transcript `A2A.Agent.Runtime` builds for a
   continued (`task_id:`) task (`~/xaas/deps/a2a/lib/a2a/agent.ex:69-90,
   130-135`) -- is threaded straight through to
-  `AshA2A.Dispatcher.dispatch/5`, which folds it into the Ash `context:` opt
+  `AshA2A.Dispatcher.dispatch/6`, which folds it into the Ash `context:` opt
   as `:a2a_history` (see `__dispatch__/3` and `task_history/1` below).
 
   ## Concurrency: one mailbox, not a worker pool
@@ -114,7 +114,7 @@ defmodule AshA2A.Agent do
   end
 
   # `AshA2A.CommandBus.run/4` is the canonical receipted route to
-  # `AshA2A.Dispatcher.dispatch/5` -- it calls `dispatch/5` internally with
+  # `AshA2A.Dispatcher.dispatch/6` -- it calls `dispatch/6` internally with
   # this exact same `skill_name`/`message`/`resource_or_domain`/`history`/
   # `auth_identity` shape (`command_bus.ex:32-38`), so routing every real
   # dispatch through it here does not change what actually executes or how
@@ -123,7 +123,7 @@ defmodule AshA2A.Agent do
   # `ReceiptStore` (real replay/conflict detection for a caller-supplied
   # stable `command_id`), and a committed `AshA2A.Receipt` for every real
   # outcome. Before this change, the default `A2A.Agent` path -- the only
-  # path any deployed agent actually uses -- called `Dispatcher.dispatch/5`
+  # path any deployed agent actually uses -- called `Dispatcher.dispatch/6`
   # directly and left `CommandBus` reachable only from the parallel,
   # opt-in `Reactor.ExecuteCommand`/`Delivery.Oban`/`Execution.FLAME` routes,
   # so no default-path invocation ever left a receipt and `CommandBus` was
@@ -149,7 +149,7 @@ defmodule AshA2A.Agent do
   # `AshA2A.Authority.Grant` for the RFC-SA2A-001 S29 escalation that
   # behavior was. This gate does not replace or tighten Ash's own
   # actor/policy authorization, which still runs exactly as before inside
-  # the wrapped `Dispatcher.dispatch/5` call; it only adds a receipted
+  # the wrapped `Dispatcher.dispatch/6` call; it only adds a receipted
   # admission gate ahead of it.
   #
   # Routing is by `skill.consequence` -- real capability truth computed once
@@ -157,7 +157,7 @@ defmodule AshA2A.Agent do
   # @moduledoc) -- never by re-deriving a binary "read or not" judgment from
   # `action.type` here. Four branches:
   #
-  #   * `:observe` -- direct `Dispatcher.dispatch/5`, no `CommandBus`. This
+  #   * `:observe` -- direct `Dispatcher.dispatch/6`, no `CommandBus`. This
   #     also covers a streaming `:read` (PRD §3.7,
   #     `Dispatcher.run_read_stream/4`) correctly: `AshA2A.Receipt.
   #     from_reply/4`'s `summarize/1` would otherwise collapse a real
@@ -174,7 +174,7 @@ defmodule AshA2A.Agent do
   #     caller reaching it directly -- this is defense in depth, not the
   #     only enforcement point.)
   #   * A skill/action lookup failure resolves to `:observe` here (falls
-  #     through to a direct `Dispatcher.dispatch/5` call) so an unknown or
+  #     through to a direct `Dispatcher.dispatch/6` call) so an unknown or
   #     misconfigured skill still surfaces through `dispatch/5`'s own
   #     existing, tagged `{:error, {:skill_lookup, _}}`/
   #     `{:error, {:action_resolution, _}}` shapes unchanged, rather than
@@ -706,7 +706,7 @@ defmodule AshA2A.Agent do
   # actually succeeds, `~/xaas/deps/a2a/lib/a2a/plug/auth.ex:175-176,226-242`)
   # -- and threads only its `:identity` field (the verified identity map a
   # resource author's own `verify` callback returned) into
-  # `AshA2A.Dispatcher.dispatch/5` as `auth_identity`. This is the ONLY path
+  # `AshA2A.Dispatcher.dispatch/6` as `auth_identity`. This is the ONLY path
   # `actor`/`tenant` ever reach `AshA2A.ContextResolver.from_a2a_message/4`
   # from -- `message.metadata` (the inbound `A2A.Message`'s own,
   # unauthenticated, remote-caller-controlled field) is never consulted for
@@ -753,7 +753,7 @@ defmodule AshA2A.Agent do
   # `_context` and never read it (ash_a2a task #8), so a resource action had
   # no way to see prior turns on a continued task -- the second dispatch of a
   # multi-turn conversation looked identical to a fresh one. Threaded here
-  # into `AshA2A.Dispatcher.dispatch/5` -> `AshA2A.ContextResolver.
+  # into `AshA2A.Dispatcher.dispatch/6` -> `AshA2A.ContextResolver.
   # from_a2a_message/4` -> `AshA2A.ExecutionContext.history` -> the Ash
   # `context:` opt (`AshA2A.Dispatcher.build_opts/2`), so a resource action
   # can read it via `context[:a2a_history]`. `context` may be a plain map
