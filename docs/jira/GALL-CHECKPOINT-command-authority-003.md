@@ -281,3 +281,61 @@ Stop and preserve typed uncertainty when:
 - replay safety depends on an external system with no idempotency/reconciliation contract.
 
 GALL-003 may still be `ALIVE` for its bounded local consequence subject while GALL-004 remains open; it MUST NOT self-issue the independent-observer claim.
+
+## 2026-09-18 exact-head code review
+
+Reviewed source subject: `501e7bab0aecaca1b815679f5e33a2998f85178b`.
+
+### Observed implementation
+
+GALL-003 is much closer to an execution seal than the original contract wording implies.
+
+`AshA2A.CommandBus` already has an explicit consequence state machine:
+
+`ADMITTED -> CLAIMED -> RECEIPT_ANCHORED -> EXECUTING -> CONSEQUENCE_OBSERVED -> RECEIPT_DURABLE | RECEIPT_OUTBOXED`.
+
+For `:change` and `:external_do`, a pending receipt anchor is mandatory before dispatch; anchor persistence failure refuses before DO. The finalized receipt preserves the anchor receipt identity.
+
+`AshA2A.Receipt` already carries S31-style fields including actuation/idempotency identity, actor, bounded authority-grant descriptor, semantic subject, intended effect, input/plan/projection digests, logical clock, evidence class, reconciliation state, and terminal status. Raw authority evidence is represented by a digest rather than copied into the durable receipt.
+
+The source tree also contains:
+
+- an exact-capability duplicate-action-name regression court;
+- a separate-OS-BEAM crash-window Chicago test that performs a real HTTP consequence, kills the producer after acknowledgement, reconciles the pending anchor, and asserts replay does not DO twice;
+- filesystem outbox reconciliation;
+- boundary telemetry around target/admission/claim/prepare/actuate/postcondition/commit.
+
+Presence of these tests is source evidence only in this review; they were not re-executed here.
+
+### Remaining semantic-observation gap
+
+The current `AshA2A.SemanticProjection.ocel_event/1` does **not** project several identities already present on the receipt and required by the downstream Weaver/GALL-004 court. Its emitted attributes currently include command/execution/task/agent/principal/capability/fingerprint/consequence/status/standing/replayed, but not the receipt's:
+
+- semantic subject / projection digest;
+- actuation id;
+- idempotency key;
+- bounded authority-grant identity/digest;
+- evidence class.
+
+GALL-003 should close that projection gap rather than inventing parallel telemetry identity.
+
+### Effect-dedup fail-open falsifier
+
+When effect-level actuation dedup enforcement is active, `claim_actuation/6` currently rescues/ catches receipt-store failures and degrades to `:proceed`; `commit_actuation/6` similarly degrades to `:ok`. The prepared receipt anchor still exists, but a fresh command id with the same declared effect can no longer rely on the effect-index court if that store is unavailable.
+
+The exact GALL-003 court MUST decide this boundary explicitly. For `:declared`/`:strict` idempotency, the required falsifier is: **actuation-claim store unavailable must not silently widen authority to repeat a declared-idempotent consequence**. If fail-open is intentionally retained, the ticket cannot claim an effect-level replay seal under that failure mode.
+
+### Revised next action
+
+The smallest implementation delta is:
+
+1. project the already-canonical receipt semantic/actuation/authority-digest identities into observational telemetry;
+2. add a no-secret-leak falsifier;
+3. add the effect-claim-store-unavailable falsifier for enforced idempotency;
+4. execute the existing exact capability + prepared-anchor + crash-window courts at the final exact head and emit one checkpoint receipt.
+
+### Review standing
+
+- core CommandBus prepared-receipt path: `PARTIAL_ALIVE` by source inspection;
+- exact-head GALL-003 crown: `UNKNOWN` until executed;
+- downstream semantic telemetry identity completeness: `PARTIAL_ALIVE`.
