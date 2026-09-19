@@ -339,3 +339,43 @@ The smallest implementation delta is:
 - core CommandBus prepared-receipt path: `PARTIAL_ALIVE` by source inspection;
 - exact-head GALL-003 crown: `UNKNOWN` until executed;
 - downstream semantic telemetry identity completeness: `PARTIAL_ALIVE`.
+
+## Four-hour conversation synthesis — coder-agent consequence law, 2026-09-18
+
+The last four hours sharpen GALL-003 from "agent command bus" into the consequence law for semantic work, including coding agents.
+
+### Work-order correlation
+
+When a consequence originates from a semantic GALL/Jira work order, the prepared/final receipt must preserve an opaque, exact correlation to that admitted work-order identity/digest in addition to semantic subject, capability, actuation, authority and receipt identity.
+
+The receipt does not need to reproduce the whole ticket graph. It must make it impossible to confuse:
+
+`which admitted work order selected this consequence?`
+
+with:
+
+`which prompt/agent happened to request it?`
+
+Prompt text is never authority.
+
+### Coder agents do not create a second DO path
+
+A zcode/XaaS/UltraCode coding worker may SELECT candidates and CONSTRUCT proposed changes, but any consequence-bearing mutation governed by this architecture must cross the admitted authority/receipt boundary. A skill invocation, model decision, planner output, GNN score or subagent delegation is not permission to DO.
+
+Required conceptual chain:
+
+`semantic work order -> candidate/planner/rule -> Admission -> exact capability -> Authority -> prepared receipt -> BRCE/CommandBus DO -> final receipt`.
+
+This is also the non-LLM-actuation boundary discussed for SA2A: once the semantic object is admitted, deterministic rules/workflows/planners can execute without an LLM remaining in the actuation loop.
+
+### Learned inference boundary
+
+GraphSAGE/ONNX/other ML outputs may rank or manufacture candidate semantic edges. They remain `CANDIDATE` and may not set authority, skip admission, mint a consequence receipt for work that did not occur, or self-promote to standing.
+
+### XaaS delegation remains separate evidence
+
+XaaS PR #51's application-level delegation court is useful downstream evidence, not a substitute for this CommandBus court. GALL-003 must preserve its own exact capability / prepared receipt / replay boundary and compose with external durable runtimes by explicit identity, never by assuming "another BEAM process already checked it."
+
+### Framework exclusion
+
+Jido/LangGraph/CrewAI-style frameworks are not dependencies for GALL-003. If observed for competitive intelligence, their messages/actions must still be reduced to the same admitted command/authority/consequence model before they can affect standing.
