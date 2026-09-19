@@ -97,3 +97,30 @@ Produces the command/receipt subject consumed by:
 At one exact PR head, an exact manufactured capability survives admission and authority, traverses the sole CommandBus DO path with a prepared receipt, performs exactly one real consequence, remains replay-safe across the crash window, and is independently identifiable by downstream observers. The historical display-name regression is a permanent mutation falsifier.
 
 Standing on completion: `ALIVE` for the exact repository-local command/authority/receipt subject only.
+
+## 2026-09-18 semantic telemetry propagation
+
+GALL-003 is the producer-side source of exact correlation identity for the downstream independent telemetry court.
+
+A consequence-bearing command MUST make the following opaque identities observable where the runtime transport supports them:
+
+- exact semantic subject;
+- objective/task/action identity where present;
+- exact capability ID;
+- prepared and durable receipt correlation identity;
+- actor / role identity;
+- opaque authority-grant ID or digest;
+- exact runtime/source subject identity required for downstream reconciliation.
+
+Forbidden:
+
+- bearer tokens, credentials, or authority secrets in telemetry;
+- display-name fallback replacing exact capability identity;
+- loss of correlation identity across process/task boundaries;
+- using an OpenTelemetry / Weaver validation result as permission to DO.
+
+Downstream evidence chain:
+
+`GALL-003 consequence -> observed OTLP/events -> Weaver semantic validation -> OCEL -> beam4pm GALL-004 independent postcondition court`.
+
+Weaver validates observation semantics only. BRCE / CommandBus remains the consequence boundary. Independent postcondition standing remains owned by beam4pm GALL-004 and its stacked Weaver contract in `seanchatmangpt/beam4pm#76`.
