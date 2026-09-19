@@ -124,3 +124,160 @@ Downstream evidence chain:
 `GALL-003 consequence -> observed OTLP/events -> Weaver semantic validation -> OCEL -> beam4pm GALL-004 independent postcondition court`.
 
 Weaver validates observation semantics only. BRCE / CommandBus remains the consequence boundary. Independent postcondition standing remains owned by beam4pm GALL-004 and its stacked Weaver contract in `seanchatmangpt/beam4pm#76`.
+
+## Implementation specifics — refined 2026-09-18
+
+Current docs-only PR head at this refinement: `8feb63eee7dc66747b04721534efd4f6b44ba602`.
+
+### Verified existing surfaces
+
+The checkpoint MUST compose, not replace, these already-established surfaces:
+
+- `lib/ash_a2a/command_bus.ex`
+  - canonical consequence-bearing boundary;
+  - target inspection, authority handling, prepared receipt/outbox interaction, dispatch, finalization.
+- `lib/ash_a2a/dispatcher.ex`
+  - real Ash action dispatch;
+  - current exact-skill redispatch support added by commit `538b0de47554520250f40aaca58a480cfc1f8c24`.
+- `lib/ash_a2a/info.ex`
+  - exact capability lookup / ambiguous-selector refusal.
+- `lib/ash_a2a/brce_anchor.ex`
+  - prepared receipt / consequence admission fence.
+- `lib/ash_a2a/receipt.ex`
+  - consequence receipt representation.
+- `lib/ash_a2a/receipt_outbox.ex`
+  - durable pending/final receipt state used by the crash-window path.
+- `lib/ash_a2a/telemetry/ocel_forwarder.ex`
+  - bounded process-evidence forwarding.
+- `test/ash_a2a_command_bus_outbox_chicago_test.exs`
+  - pre-DO durable anchor / fail-closed / replay witnesses.
+- `test/ash_a2a_command_bus_crash_window_chicago_test.exs`
+  - real external acknowledgement + BEAM death + reconciliation witness.
+- `test/support/receipt_crash_window_fixture.ex`
+  - real collaborator for the crash-window court.
+- existing duplicate-action-name regression introduced with `538b0de...`
+  - exact capability-id dispatch succeeds;
+  - ambiguous bare selector refuses typed.
+
+### Smallest coherent production diff
+
+The preferred GALL-003 implementation is **primarily a composition court**, not another CommandBus.
+
+Production changes are allowed only if the composed court finds a missing identity or refusal edge.
+
+Required consolidation:
+
+1. Define one canonical GALL subject struct/map at the court boundary containing:
+   - GALL-002 manufacturer subject digest;
+   - semantic subject;
+   - exact capability ID;
+   - selector presented by caller;
+   - authority grant ID/digest;
+   - command ID/fingerprint;
+   - idempotency key;
+   - consequence class.
+
+2. Ensure `CommandBus` receipt metadata carries the upstream manufacturer/semantic subject digest needed by beam4pm.
+   - If that field already exists, reuse it.
+   - If it does not, add only the minimal receipt metadata field; do not duplicate the whole GALL-002 receipt.
+
+3. Ensure the exact resolved skill object continues from `CommandBus.inspect_target/2` into `Dispatcher.dispatch/6` via `resolved_skill:`.
+   - No second display-name resolution is allowed after authority/preparation.
+
+4. Keep `ReceiptOutbox` as the crash-window durability mechanism.
+   - GALL-003 does not introduce a second journal.
+
+5. Keep `OcelForwarder` bounded.
+   - Process evidence failure/saturation must not create an unbounded task surface or silently change consequence authority.
+
+### New crown court
+
+Add one top-level composition test:
+
+`test/gall_checkpoint_003_command_authority_chicago_test.exs`
+
+It MUST orchestrate the existing lower courts and add the cross-invariant bindings they do not individually prove.
+
+Required witnesses:
+
+1. **duplicate capability display names**
+   - two real Ash resources;
+   - both expose `create`;
+   - dispatch exact B capability ID;
+   - prove B receives the consequence;
+   - receipt capability ID == exact B ID.
+
+2. **ambiguous selector**
+   - dispatch bare `create`;
+   - result == typed `:ambiguous_skill` / refused capability;
+   - external consequence count == 0.
+
+3. **prepared receipt ordering**
+   - observe prepared/outbox anchor before actuator invocation.
+
+4. **real consequence**
+   - use the existing real external-DO fixture, not a mock return value.
+
+5. **crash window**
+   - external acknowledgement;
+   - kill BEAM before final receipt commit;
+   - restart/reconcile;
+   - replay;
+   - external operation count remains exactly 1.
+
+6. **subject mismatch**
+   - change GALL-002/semantic subject identity with otherwise identical command;
+   - stale command/receipt identity must not retain standing.
+
+7. **architecture mutation**
+   - the existing architecture verifier must fail if a consequence-bearing path calls the actuator outside CommandBus or bypasses BRCE preparation.
+
+### Exact acceptance commands
+
+```bash
+mix format --check-formatted
+mix compile --warnings-as-errors
+mix test test/ash_a2a_command_bus_outbox_chicago_test.exs
+mix test test/ash_a2a_command_bus_crash_window_chicago_test.exs
+mix test test/gall_checkpoint_003_command_authority_chicago_test.exs
+```
+
+Then execute the repository's existing architecture-verifier command and the affected/full suite required by repository doctrine.
+
+Do not relabel the historical full-suite VendorCwd/macOS path trio as a GALL-003 failure if reproduced unchanged on the exact base; record them as inherited evidence separately.
+
+### Handoff artifact to GALL-004 / GALL-005
+
+The receipt emitted by the successful court MUST expose enough information for an observer that does not trust the actuator:
+
+```text
+ash_a2a_repo_sha
+gall_002_manufacturer_subject_digest
+semantic_subject_digest
+capability_id
+selector
+authority_grant_digest
+command_id
+command_fingerprint
+idempotency_key
+prepared_receipt_id
+final_or_pending_receipt_id
+consequence_class
+consequence_identity
+external_operation_count_witness
+runtime/source identity
+```
+
+Do not include bearer credentials or authority secrets. Only opaque authority identity/digest crosses into observation.
+
+### Stop conditions
+
+Stop and preserve typed uncertainty when:
+
+- the external side effect occurred but finalization cannot be proven;
+- independent downstream observation is missing;
+- subject identity cannot be correlated across the consequence;
+- only a display name is available for a multi-match capability;
+- replay safety depends on an external system with no idempotency/reconciliation contract.
+
+GALL-003 may still be `ALIVE` for its bounded local consequence subject while GALL-004 remains open; it MUST NOT self-issue the independent-observer claim.
