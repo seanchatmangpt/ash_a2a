@@ -19,6 +19,8 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
     end
 
     actions do
+      read :read
+
       create :create do
         accept([:label])
       end
@@ -37,6 +39,8 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
     end
 
     actions do
+      read :read
+
       create :create do
         accept([:label])
       end
@@ -94,7 +98,7 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
 
   test "exact non-first duplicate capability survives CommandBus and emits bound observer handoff",
        %{store_opts: store_opts} do
-    capability = "#{__MODULE__}.B.create"
+    capability = AshA2A.CapabilityIndex.Compiler.capability_id(B, :create)
     cmd = command(capability, "gall-003-b")
 
     assert {:ok, receipt} =
@@ -130,7 +134,7 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
   end
 
   test "tampering a bound semantic subject prevents observer handoff", %{store_opts: store_opts} do
-    capability = "#{__MODULE__}.A.create"
+    capability = AshA2A.CapabilityIndex.Compiler.capability_id(A, :create)
     cmd = command(capability, "gall-003-tamper")
 
     assert {:ok, receipt} =

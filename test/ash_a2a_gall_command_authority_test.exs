@@ -82,7 +82,7 @@ defmodule AshA2AGallCommandAuthorityTest do
     assert attrs["manufacturer_digest"] == subject.manufacturer_digest
     assert is_binary(attrs["actuation_id"])
     assert is_binary(attrs["idempotency_key"])
-    assert attrs["authority_grant_id"] == "gall-grant"
+    assert attrs["authority_grant_id"] == Identity.external(authority.token_id)
     assert is_binary(attrs["authority_evidence_digest"])
     assert attrs["evidence_class"] == "local_test"
     assert attrs["work_order_digest"] == command.metadata.work_order_digest
