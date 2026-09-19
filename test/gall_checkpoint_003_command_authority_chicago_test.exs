@@ -19,7 +19,7 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
     end
 
     actions do
-      read :read
+      read(:read)
 
       create :create do
         accept([:label])
@@ -39,7 +39,7 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
     end
 
     actions do
-      read :read
+      read(:read)
 
       create :create do
         accept([:label])
