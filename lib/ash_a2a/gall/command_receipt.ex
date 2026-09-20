@@ -16,6 +16,7 @@ defmodule AshA2A.Gall.CommandReceipt do
     :capability_id,
     :command_fingerprint,
     :semantic_subject,
+    :semantic_subject_digest,
     :manufacturer_subject_digest,
     :authority_grant_digest,
     :idempotency_key,
@@ -31,6 +32,7 @@ defmodule AshA2A.Gall.CommandReceipt do
     :capability_id,
     :command_fingerprint,
     :semantic_subject,
+    :semantic_subject_digest,
     :manufacturer_subject_digest,
     :authority_grant_digest,
     :idempotency_key,
@@ -65,6 +67,7 @@ defmodule AshA2A.Gall.CommandReceipt do
         capability_id: receipt.capability_id,
         command_fingerprint: receipt.fingerprint,
         semantic_subject: semantic_subject,
+        semantic_subject_digest: semantic_digest(semantic_subject),
         manufacturer_subject_digest: subject.manufacturer_digest,
         authority_grant_digest: digest(receipt.authority_grant),
         idempotency_key: receipt.idempotency_key,
@@ -86,11 +89,28 @@ defmodule AshA2A.Gall.CommandReceipt do
     end
   end
 
+  @spec semantic_digest(term()) :: String.t()
+  def semantic_digest(term) do
+    term
+    |> canonical()
+    |> :erlang.term_to_binary([:deterministic])
+    |> then(&("sha256:" <> (:crypto.hash(:sha256, &1) |> Base.encode16(case: :lower))))
+  end
+
   @spec digest(term()) :: String.t()
   def digest(term) do
     encoded = :erlang.term_to_binary(term, [:deterministic])
     "sha256:" <> (:crypto.hash(:sha256, encoded) |> Base.encode16(case: :lower))
   end
+
+  defp canonical(value) when is_map(value) do
+    value
+    |> Enum.map(fn {key, item} -> {to_string(key), canonical(item)} end)
+    |> Enum.sort_by(&elem(&1, 0))
+  end
+
+  defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
+  defp canonical(value), do: value
 
   defp consequence(value) when value in [:change, :external_do], do: :ok
   defp consequence(_), do: {:error, :non_consequence_receipt}
