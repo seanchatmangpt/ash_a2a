@@ -133,6 +133,7 @@ defmodule AshA2A.Gall.Receipt003Court do
     after
       Application.delete_env(:ash_a2a, :receipt_outbox_dir)
     end
+  end
 
   defp event(activity, sequence, handoff) do
     %{
