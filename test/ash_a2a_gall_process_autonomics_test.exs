@@ -146,8 +146,13 @@ defmodule AshA2A.Gall.ProcessAutonomicsTest do
 
     assert receipt.status == :completed
     assert get_in(receipt.metadata, [:postcondition, :status]) == :verified
-    assert receipt.metadata.actuation_identity
-    assert receipt.metadata.idempotency_identity
+    assert receipt.actuation_id
+    assert receipt.idempotency_key
+    assert receipt.plan_digest == candidate.finding_digest
+    assert receipt.intended_effect.gall_finding_digest == candidate.finding_digest
+    assert receipt.intended_effect.target == target
+    assert receipt.intended_effect.scope == scope
+    assert receipt.intended_effect.budget == budget
 
     assert {:ok, stored} = ReceiptStore.Memory.fetch(candidate.command.command_id, store_opts)
     assert stored.receipt_id == receipt.receipt_id
