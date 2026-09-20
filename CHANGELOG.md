@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
-## [Unreleased]
+## [26.9.18] - 2026-09-19
 
 ### Fixed
 
@@ -49,6 +49,18 @@ once it reaches 1.0.
   measured, not unbounded in-SUT state growth; callers needing the
   tightest tail on contended hosts configure `:receipt_store, Ekv`
   (0.812x-1.072x on the same metric).
+
+- Three new public-vocabulary prefixes in `AshA2A.Semantic.Vocabulary`:
+  `ssn` (http://www.w3.org/ns/ssn/), `saref`
+  (https://saref.etsi.org/core/), and `qudt`
+  (http://qudt.org/schema/qudt/), alongside the existing
+  rdf/rdfs/owl/prov/time/odrl/skos/schema/oa/sosa registry. No other
+  behavior changes -- `expand/1`, `local/1`, and every other prefix keep
+  their existing IRIs. Prompted by a planned SA2A-MFG-01 synthetic
+  manufacturing case study (in a separate repo) that needs
+  equipment/quantity semantics expressed on public ontologies rather than
+  a bespoke domain schema; landed here first since the case study depends
+  on it.
 
 ## [26.9.17] - 2026-09-17
 
@@ -213,8 +225,12 @@ once it reaches 1.0.
   re-verified, or re-scored as part of this pass.
 - Real numbers from this pass: 83 requirements already implemented, 18 real
   gaps found, 16 real gaps built and merged (see the `feat/sa2a-ard-*`
-  merge commits in `git log`), 0 gaps deferred to a follow-up (the deferred
-  list is empty for this pass).
+  merge commits in `git log`), 0 gaps deferred to a follow-up within this
+  pass's ARD scope (the deferred list is empty for this pass; one
+  regression surfaced during the pass and was deferred to the owning
+  cluster rather than this task's scope -- see the "Fixed --
+  IrAdmissionSeal regression" entry later in this same 26.9.17 section,
+  closed there).
 - CalVer bump to 26.9.17 committed (`mix.exs` version line only, single-line
   diff, confirmed via `git diff` before commit).
 - Real `mix hex.publish --dry-run` outcome: built `ash_a2a 26.9.17` correctly
