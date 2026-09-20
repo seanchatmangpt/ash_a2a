@@ -31,6 +31,11 @@ jobs:
           elixir-version: "1.19.0"
           otp-version: "28.0.2"
       - run: mix deps.get
+      - name: Parse portable receipt court
+        env:
+          MIX_ENV: test
+        run: elixir -e 'File.read!("scripts/gall_checkpoint_003_receipt.exs") |> Code.string_to_quoted!()'
+
       - name: Run narrow CommandBus courts
         env:
           MIX_ENV: test
