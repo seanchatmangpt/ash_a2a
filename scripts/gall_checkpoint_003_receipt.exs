@@ -9,7 +9,7 @@ defmodule AshA2A.Gall.Receipt003Court do
 
   defmodule Resource do
     use Ash.Resource,
-      domain: Domain,
+      domain: AshA2A.Gall.Receipt003Court.Domain,
       data_layer: Ash.DataLayer.Ets,
       extensions: [AshA2A]
 
@@ -72,7 +72,7 @@ defmodule AshA2A.Gall.Receipt003Court do
           input: %{label: "gall-003-exact-head"}
         )
   
-      pre_state = Ash.read!(Resource, domain: Domain)
+      pre_state = Ash.read!(Resource, action: :read, domain: Domain)
       pre_state_digest = CommandReceipt.digest(pre_state)
   
       {:ok, receipt} =
@@ -98,7 +98,7 @@ defmodule AshA2A.Gall.Receipt003Court do
       command_path = Path.join(out_dir, "gall-003-receipt.json")
       File.write!(command_path, Jason.encode!(handoff, pretty: true) <> "\n")
   
-      post_state = Ash.read!(Resource, domain: Domain)
+      post_state = Ash.read!(Resource, action: :read, domain: Domain)
   
       post_payload = %{
         "capability_id" => handoff["capability_id"],
