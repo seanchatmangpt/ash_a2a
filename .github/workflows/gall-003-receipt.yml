@@ -1,0 +1,38 @@
+name: GALL-003 durable receipt court
+
+on:
+  pull_request:
+    branches:
+      - gall/checkpoint-003-command-authority
+    paths:
+      - "lib/ash_a2a/gall/command_receipt.ex"
+      - "scripts/gall_checkpoint_003_receipt.exs"
+      - "test/gall_checkpoint_003_command_authority_chicago_test.exs"
+      - "test/ash_a2a_gall_command_authority_test.exs"
+      - ".github/workflows/gall-003-receipt.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receipt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.0"
+          otp-version: "28.0.2"
+      - run: mix deps.get
+      - name: Run narrow CommandBus courts
+        env:
+          MIX_ENV: test
+        run: |
+          mix test             test/gall_checkpoint_003_command_authority_chicago_test.exs             test/ash_a2a_gall_command_authority_test.exs
