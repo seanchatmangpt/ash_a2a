@@ -1,0 +1,37 @@
+name: Semantic Work Envelope Court
+
+on:
+  pull_request:
+    branches:
+      - feat/v26.9.18-semantic-work-fabric
+    paths:
+      - "lib/ash_a2a/semantic/work_envelope.ex"
+      - "test/ash_a2a_semantic_work_envelope_test.exs"
+      - ".github/workflows/semantic-work-envelope.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-subject:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: "28.0"
+          elixir-version: "1.19.0"
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get
+      - name: Format only the semantic-work subject
+        run: mix format --check-formatted lib/ash_a2a/semantic/work_envelope.ex test/ash_a2a_semantic_work_envelope_test.exs
+      - name: Execute exact semantic-work envelope court
+        run: mix test test/ash_a2a_semantic_work_envelope_test.exs
