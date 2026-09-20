@@ -257,6 +257,17 @@ defmodule AshA2A.Gall.ProcessIntervention do
       bus_opts =
         opts
         |> Keyword.put(:postcondition, postcondition)
+        |> Keyword.put(:target, candidate.target)
+        |> Keyword.put(:plan_digest, candidate.finding_digest)
+        |> Keyword.put(
+          :intended_effect,
+          %{
+            gall_finding_digest: candidate.finding_digest,
+            target: candidate.target,
+            scope: candidate.scope,
+            budget: candidate.budget
+          }
+        )
         |> Keyword.put_new(:idempotency_key, "gall:" <> candidate.finding_digest)
 
       case CommandBus.run(command, message, resource_or_domain, bus_opts) do
