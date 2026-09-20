@@ -12,8 +12,9 @@ defmodule AshA2A.Semantic.WorkEnvelopeTest do
     {:ok, digest} = CanonicalGraph.canonical_digest(@ttl)
 
     descriptor = %{
+      "work_order_iri" => "urn:gall:work-order:test:001",
       "checkpoint_iri" => "urn:gall:checkpoint:test:001",
-      "repository" => "seanchatmangpt/ash_a2a",
+      "repository_identity" => "seanchatmangpt/ash_a2a",
       "base_sha" => String.duplicate("b", 40),
       "graph_digest" => "sha256:" <> digest,
       "goal" => "transport the work subject",
@@ -30,8 +31,9 @@ defmodule AshA2A.Semantic.WorkEnvelopeTest do
 
   test "caller supplied graph identity cannot replace observed identity" do
     descriptor = %{
+      "work_order_iri" => "urn:gall:work-order:test:001",
       "checkpoint_iri" => "urn:gall:checkpoint:test:001",
-      "repository" => "seanchatmangpt/ash_a2a",
+      "repository_identity" => "seanchatmangpt/ash_a2a",
       "base_sha" => String.duplicate("b", 40),
       "graph_digest" => "sha256:" <> String.duplicate("0", 64)
     }
@@ -44,8 +46,9 @@ defmodule AshA2A.Semantic.WorkEnvelopeTest do
     {:ok, digest} = CanonicalGraph.canonical_digest(@ttl)
 
     descriptor = %{
+      "work_order_iri" => "urn:gall:work-order:test:001",
       "checkpoint_iri" => "urn:gall:checkpoint:test:001",
-      "repository" => "repo",
+      "repository_identity" => "seanchatmangpt/ash_a2a",
       "base_sha" => String.duplicate("b", 40),
       "graph_digest" => "sha256:" <> digest,
       "required_capabilities" => ["Publish"],
@@ -74,8 +77,12 @@ defmodule AshA2A.Semantic.WorkEnvelopeTest do
                "worktree" => "/tmp/worktree"
              })
 
+    assert lease["work_order_iri"] == checkpoint["work_order_iri"]
     assert lease["graph_digest"] == checkpoint["graph_digest"]
+    assert lease["repository_identity"] == checkpoint["repository_identity"]
+    assert lease["base_sha"] == checkpoint["base_sha"]
     refute Map.has_key?(lease, "standing")
+    refute Map.has_key?(lease, "authority")
 
     assert {:ok, receipt} =
              WorkEnvelope.receipt(checkpoint, %{
@@ -86,5 +93,30 @@ defmodule AshA2A.Semantic.WorkEnvelopeTest do
              })
 
     assert receipt["standing"] == "BUILD_BROKEN"
+    assert receipt["work_order_iri"] == checkpoint["work_order_iri"]
+    assert receipt["repository_identity"] == checkpoint["repository_identity"]
+    assert receipt["base_sha"] == checkpoint["base_sha"]
   end
 end
+
+
+  test "checkpoint refuses incomplete exact work subject identity" do
+    {:ok, digest} = CanonicalGraph.canonical_digest(@ttl)
+
+    base = %{
+      "work_order_iri" => "urn:gall:work-order:test:001",
+      "checkpoint_iri" => "urn:gall:checkpoint:test:001",
+      "repository_identity" => "seanchatmangpt/ash_a2a",
+      "base_sha" => String.duplicate("b", 40),
+      "graph_digest" => "sha256:" <> digest
+    }
+
+    assert {:error, %{code: :refused_missing_semantic_field, field: "work_order_iri"}} =
+             WorkEnvelope.checkpoint(@ttl, Map.delete(base, "work_order_iri"))
+
+    assert {:error, %{code: :refused_invalid_semantic_field, field: "repository_identity"}} =
+             WorkEnvelope.checkpoint(@ttl, %{base | "repository_identity" => "ash_a2a"})
+
+    assert {:error, %{code: :refused_invalid_semantic_field, field: "base_sha"}} =
+             WorkEnvelope.checkpoint(@ttl, %{base | "base_sha" => "main"})
+  end
