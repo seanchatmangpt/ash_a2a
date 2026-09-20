@@ -113,9 +113,9 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
       assert inv.roles.authority_broker.module == AshA2A.Authority.Broker.InMemory
       assert inv.roles.authority_broker.fail_closed_proven?
       # b4p-f5-10: CommandBus's re-dispatch now carries `resolved_skill:` (a 6th
-    # opt arg) so the exact resolved skill is dispatched, never a display-name
-    # rematch — the recorded actuator call is accordingly dispatch/6.
-    assert inv.roles.consequence_boundary.actuator_calls == ["dispatch/6"]
+      # opt arg) so the exact resolved skill is dispatched, never a display-name
+      # rematch — the recorded actuator call is accordingly dispatch/6.
+      assert inv.roles.consequence_boundary.actuator_calls == ["dispatch/6"]
       assert inv.roles.receipt_store.module == AshA2A.CommandBus.default_store()
       assert inv.roles.independent_verifier.module == AshA2A.Chicago.Query
       assert inv.mock_scan.outcome == :clean

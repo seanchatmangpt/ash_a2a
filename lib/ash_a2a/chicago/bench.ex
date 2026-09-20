@@ -38,6 +38,7 @@ defmodule AshA2A.Chicago.Bench do
   """
 
   alias AshA2A.Chicago.{Json, Profile, Subject}
+
   alias AshA2A.Chicago.Bench.{
     B1Admission,
     B2LogicClosure,
