@@ -13,6 +13,7 @@ defmodule AshA2A.Semantic.WorkEnvelope do
   @schema "gall.semantic-work/1"
   @sha ~r/^[0-9a-f]{40}$/
   @graph_digest ~r/^sha256:[0-9a-f]{64}$/
+  @repository_identity ~r/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 
   @doc """
   Binds an authority-free checkpoint descriptor to the canonical Turtle graph.
@@ -24,8 +25,9 @@ defmodule AshA2A.Semantic.WorkEnvelope do
   def checkpoint(turtle, descriptor) when is_binary(turtle) and is_map(descriptor) do
     with {:ok, digest} <- CanonicalGraph.canonical_digest(turtle),
          observed_digest = "sha256:" <> digest,
-         :ok <- require_string(descriptor, "checkpoint_iri"),
-         :ok <- require_string(descriptor, "repository"),
+         :ok <- require_iri(descriptor, "work_order_iri"),
+         :ok <- require_iri(descriptor, "checkpoint_iri"),
+         :ok <- require_match(descriptor, "repository_identity", @repository_identity),
          :ok <- require_match(descriptor, "base_sha", @sha),
          :ok <- require_match(descriptor, "graph_digest", @graph_digest),
          :ok <- require_equal(descriptor, "graph_digest", observed_digest),
@@ -34,8 +36,9 @@ defmodule AshA2A.Semantic.WorkEnvelope do
        %{
          "schema" => @schema,
          "type" => "gall:CheckpointDescriptor",
+         "work_order_iri" => fetch(descriptor, "work_order_iri"),
          "checkpoint_iri" => fetch(descriptor, "checkpoint_iri"),
-         "repository" => fetch(descriptor, "repository"),
+         "repository_identity" => fetch(descriptor, "repository_identity"),
          "base_sha" => fetch(descriptor, "base_sha"),
          "graph_digest" => observed_digest,
          "canonicalization" => CanonicalGraph.algorithm_id(),
@@ -67,8 +70,11 @@ defmodule AshA2A.Semantic.WorkEnvelope do
        %{
          "schema" => "gall.work-lease/1",
          "type" => "gall:WorkLease",
+         "work_order_iri" => checkpoint["work_order_iri"],
          "checkpoint_iri" => checkpoint["checkpoint_iri"],
          "graph_digest" => checkpoint["graph_digest"],
+         "repository_identity" => checkpoint["repository_identity"],
+         "base_sha" => checkpoint["base_sha"],
          "epoch_id" => fetch(lease, "epoch_id"),
          "worker_id" => fetch(lease, "worker_id"),
          "worktree" => fetch(lease, "worktree")
@@ -95,8 +101,11 @@ defmodule AshA2A.Semantic.WorkEnvelope do
        %{
          "schema" => @schema,
          "type" => "gall:Receipt",
+         "work_order_iri" => checkpoint["work_order_iri"],
          "checkpoint_iri" => checkpoint["checkpoint_iri"],
          "graph_digest" => checkpoint["graph_digest"],
+         "repository_identity" => checkpoint["repository_identity"],
+         "base_sha" => checkpoint["base_sha"],
          "receipt_iri" => fetch(receipt, "receipt_iri"),
          "candidate_sha" => fetch(receipt, "candidate_sha"),
          "standing" => fetch(receipt, "standing"),
@@ -122,6 +131,18 @@ defmodule AshA2A.Semantic.WorkEnvelope do
     case fetch(map, key) do
       list when is_list(list) -> Enum.map(list, &to_string/1)
       _ -> []
+    end
+  end
+
+  defp require_iri(map, key) do
+    case fetch(map, key) do
+      value when is_binary(value) and value != "" ->
+        if String.contains?(value, ":"),
+          do: :ok,
+          else: {:error, %{code: :refused_invalid_semantic_field, field: key}}
+
+      _ ->
+        {:error, %{code: :refused_missing_semantic_field, field: key}}
     end
   end
 
@@ -164,8 +185,10 @@ defmodule AshA2A.Semantic.WorkEnvelope do
   defp atom_key(map, key) do
     atom =
       case key do
+        "work_order_iri" -> :work_order_iri
         "checkpoint_iri" -> :checkpoint_iri
-        "repository" -> :repository
+        "repository_identity" -> :repository_identity
+        "repository" -> :repository_identity
         "base_sha" -> :base_sha
         "graph_digest" -> :graph_digest
         "goal" -> :goal
