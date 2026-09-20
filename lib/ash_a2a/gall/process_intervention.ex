@@ -21,8 +21,17 @@ defmodule AshA2A.Gall.ProcessIntervention do
     with :ok <- no_secrets(finding),
          :ok <- sha(finding[:producer_sha] || finding["producer_sha"], :producer_sha, 40),
          :ok <- digest(finding[:evidence_digest] || finding["evidence_digest"], :evidence_digest),
-         :ok <- digest(finding[:semantic_subject_digest] || finding["semantic_subject_digest"], :semantic_subject_digest),
-         :ok <- member(finding[:finding_class] || finding["finding_class"], @finding_classes, :finding_class),
+         :ok <-
+           digest(
+             finding[:semantic_subject_digest] || finding["semantic_subject_digest"],
+             :semantic_subject_digest
+           ),
+         :ok <-
+           member(
+             finding[:finding_class] || finding["finding_class"],
+             @finding_classes,
+             :finding_class
+           ),
          :ok <- member(finding[:horizon] || finding["horizon"], @horizons, :horizon),
          :ok <- producer_allowed(finding, allowed_producers),
          :ok <- vocabulary_allowed(finding, public_vocab),
@@ -44,7 +53,13 @@ defmodule AshA2A.Gall.ProcessIntervention do
 
   @spec intervene(map(), Command.t(), A2A.Message.t(), module(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def intervene(candidate, %Command{} = command, %A2A.Message{} = message, resource_or_domain, opts \\ []) do
+  def intervene(
+        candidate,
+        %Command{} = command,
+        %A2A.Message{} = message,
+        resource_or_domain,
+        opts \\ []
+      ) do
     observer = Keyword.get(opts, :independent_observer)
 
     with :ok <- admitted_candidate(candidate),
@@ -67,7 +82,9 @@ defmodule AshA2A.Gall.ProcessIntervention do
   defp admitted_candidate(_), do: {:error, :gall_029_admission_required}
 
   defp command_binding(candidate, command) do
-    bound = command.metadata[:gall_029_candidate_digest] || command.metadata["gall_029_candidate_digest"]
+    bound =
+      command.metadata[:gall_029_candidate_digest] || command.metadata["gall_029_candidate_digest"]
+
     cond do
       command.capability_id != candidate.capability_id -> {:error, :capability_mismatch}
       bound != candidate.candidate_digest -> {:error, :candidate_binding_mismatch}
@@ -80,7 +97,8 @@ defmodule AshA2A.Gall.ProcessIntervention do
     cond do
       (observer[:independent] || observer["independent"]) != true ->
         {:error, :observer_not_independent}
-      (observer[:candidate_digest] || observer["candidate_digest"]) != candidate.candidate_digest ->
+      (observer[:candidate_digest] || observer["candidate_digest"]) !=
+          candidate.candidate_digest ->
         {:error, :observer_candidate_mismatch}
       (observer[:command_id] || observer["command_id"]) != command_id ->
         {:error, :observer_command_mismatch}
@@ -99,12 +117,14 @@ defmodule AshA2A.Gall.ProcessIntervention do
   end
 
   defp producer_allowed(_finding, []), do: :ok
+
   defp producer_allowed(finding, allowed) do
     producer = finding[:producer_sha] || finding["producer_sha"]
     if producer in allowed, do: :ok, else: {:error, :stale_or_unadmitted_producer}
   end
 
   defp vocabulary_allowed(_finding, []), do: :ok
+
   defp vocabulary_allowed(finding, allowed) do
     vocab = finding[:vocabulary] || finding["vocabulary"]
     if vocab in allowed, do: :ok, else: {:error, :private_or_unknown_vocabulary}
@@ -124,6 +144,7 @@ defmodule AshA2A.Gall.ProcessIntervention do
       _ -> {:error, :secret_bearing_finding}
     end
   end
+
   defp no_secrets(value) when is_list(value) do
     Enum.reduce_while(value, :ok, fn v, :ok ->
       case no_secrets(v) do
@@ -148,8 +169,10 @@ defmodule AshA2A.Gall.ProcessIntervention do
       (:crypto.hash(:sha256, :erlang.term_to_binary(canonical(value), [:deterministic]))
        |> Base.encode16(case: :lower))
   end
+
   defp canonical(value) when is_map(value),
     do: value |> Enum.map(fn {k, v} -> {to_string(k), canonical(v)} end) |> Enum.sort()
+
   defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
   defp canonical(value), do: value
 end
