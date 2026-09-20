@@ -117,7 +117,8 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
     assert String.starts_with?(handoff.handoff_digest, "sha256:")
 
     refute Enum.any?(Ash.read!(A, action: :read, domain: Domain), &(&1.label == cmd.input.label))
-    assert Enum.count(Ash.read!(B, action: :read, domain: Domain), &(&1.label == cmd.input.label)) == 1
+    assert Enum.count(Ash.read!(B, action: :read, domain: Domain), &(&1.label == cmd.input.label)) ==
+             1
   end
 
   test "ambiguous display selector is refused before consequence", %{store_opts: store_opts} do
