@@ -37,7 +37,10 @@ defmodule AshA2A.Semantic.WorkEnvelopeTest do
   end
 
   test "caller supplied graph identity cannot replace observed identity" do
-    input = %{descriptor(String.duplicate("0", 64)) | "graph_digest" => "sha256:" <> String.duplicate("0", 64)}
+    input = %{
+      descriptor(String.duplicate("0", 64))
+      | "graph_digest" => "sha256:" <> String.duplicate("0", 64)
+    }
 
     assert {:error, %{code: :refused_graph_identity_mismatch}} =
              WorkEnvelope.checkpoint(@ttl, input)
