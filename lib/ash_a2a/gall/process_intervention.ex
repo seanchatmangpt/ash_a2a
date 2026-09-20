@@ -7,7 +7,11 @@ defmodule AshA2A.Gall.ProcessIntervention do
   module reports an intervention as verified.
   """
 
-  alias AshA2A.{Command, CommandBus, Receipt}
+  alias AshA2A.{Authority, Command, CommandBus, Receipt}
+
+  @sha ~r/\A[0-9a-f]{40}\z/
+  @digest ~r/\Asha256:[0-9a-f]{64}\z/
+  @repository ~r/\A[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\z/
 
   @finding_classes ~w(conformance prediction attribution postcondition)
   @horizons ~w(FAST MEDIUM SLOW)
@@ -15,10 +19,12 @@ defmodule AshA2A.Gall.ProcessIntervention do
 
   @spec admit(map(), keyword()) :: {:ok, map()} | {:error, term()}
   def admit(finding, opts \\ []) when is_map(finding) do
-    allowed_producers = Keyword.get(opts, :allowed_producers, [])
+    allowed_producers = Keyword.get(opts, :allowed_producers, %{})
     public_vocab = Keyword.get(opts, :public_vocabulary, [])
+    admission_rules = Keyword.get(opts, :admission_rules, %{})
 
     with :ok <- no_secrets(finding),
+         :ok <- repository(finding[:producer_repository] || finding["producer_repository"]),
          :ok <- sha(finding[:producer_sha] || finding["producer_sha"], :producer_sha, 40),
          :ok <- digest(finding[:evidence_digest] || finding["evidence_digest"], :evidence_digest),
          :ok <- digest(finding[:semantic_subject_digest] || finding["semantic_subject_digest"], :semantic_subject_digest),
@@ -26,15 +32,19 @@ defmodule AshA2A.Gall.ProcessIntervention do
          :ok <- member(finding[:horizon] || finding["horizon"], @horizons, :horizon),
          :ok <- producer_allowed(finding, allowed_producers),
          :ok <- vocabulary_allowed(finding, public_vocab),
-         {:ok, capability_id} <- capability(finding) do
+         {:ok, capability_id} <- capability(finding, admission_rules) do
       base = %{
         schema: "ash_a2a.gall.process-candidate/v26.9.18",
         finding_digest: canonical_digest(finding),
+        producer_repository: finding[:producer_repository] || finding["producer_repository"],
         producer_sha: finding[:producer_sha] || finding["producer_sha"],
         semantic_subject_digest: finding[:semantic_subject_digest] || finding["semantic_subject_digest"],
         finding_class: finding[:finding_class] || finding["finding_class"],
         horizon: finding[:horizon] || finding["horizon"],
+        finding_type: finding[:finding_type] || finding["finding_type"],
+        candidate_class: finding[:candidate_class] || finding["candidate_class"],
         capability_id: capability_id,
+        evidence_ceiling: "ADMIT_ONLY",
         authority: :none
       }
 
@@ -49,18 +59,30 @@ defmodule AshA2A.Gall.ProcessIntervention do
 
     with :ok <- admitted_candidate(candidate),
          :ok <- command_binding(candidate, command),
+         :ok <- authority_binding(command),
+         {:ok, expected_postcondition_digest} <- intervention_constraints(command, opts),
          :ok <- require_observer(observer),
-         {:ok, %Receipt{} = receipt} <- CommandBus.run(command, message, resource_or_domain, opts),
+         bus_opts <- Keyword.drop(opts, [:independent_observer, :scope, :max_consequences, :expected_postcondition]),
+         {:ok, %Receipt{} = receipt} <- CommandBus.run(command, message, resource_or_domain, bus_opts),
          {:ok, observer_receipt} <- observer.(candidate, receipt),
-         :ok <- observer_binding(candidate, receipt, observer_receipt) do
-      {:ok, %{command_receipt: receipt, observer_receipt: observer_receipt}}
+         :ok <- observer_binding(candidate, receipt, observer_receipt, expected_postcondition_digest) do
+      {:ok, %{
+        command_receipt: receipt,
+        observer_receipt: observer_receipt,
+        evidence_ceiling: "AUTHORIZED_DO",
+        postcondition_standing: "VERIFIED"
+      }}
     end
   end
 
   defp require_observer(fun) when is_function(fun, 2), do: :ok
   defp require_observer(_), do: {:error, :independent_observer_required}
 
-  defp admitted_candidate(%{schema: "ash_a2a.gall.process-candidate/v26.9.18", authority: :none} = c) do
+  defp admitted_candidate(%{
+         schema: "ash_a2a.gall.process-candidate/v26.9.18",
+         authority: :none,
+         evidence_ceiling: "ADMIT_ONLY"
+       } = c) do
     expected = c |> Map.delete(:candidate_digest) |> canonical_digest()
     if c.candidate_digest == expected, do: :ok, else: {:error, :candidate_digest_mismatch}
   end
@@ -75,7 +97,8 @@ defmodule AshA2A.Gall.ProcessIntervention do
     end
   end
 
-  defp observer_binding(candidate, receipt, observer) when is_map(observer) do
+  defp observer_binding(candidate, receipt, observer, expected_postcondition_digest)
+       when is_map(observer) do
     command_id = AshA2A.Identity.external(receipt.command_id)
     cond do
       (observer[:independent] || observer["independent"]) != true ->
@@ -86,28 +109,85 @@ defmodule AshA2A.Gall.ProcessIntervention do
         {:error, :observer_command_mismatch}
       (observer[:postcondition] || observer["postcondition"]) != "verified" ->
         {:error, :postcondition_not_verified}
+      (observer[:expected_postcondition_digest] || observer["expected_postcondition_digest"]) !=
+          expected_postcondition_digest ->
+        {:error, :observer_postcondition_subject_mismatch}
       true -> :ok
     end
   end
-  defp observer_binding(_, _, _), do: {:error, :invalid_observer_receipt}
+  defp observer_binding(_, _, _, _), do: {:error, :invalid_observer_receipt}
 
-  defp capability(finding) do
-    case finding[:requested_capability_id] || finding["requested_capability_id"] do
+  defp capability(finding, rules) when is_map(rules) do
+    key = {
+      finding[:vocabulary] || finding["vocabulary"],
+      finding[:finding_type] || finding["finding_type"],
+      finding[:candidate_class] || finding["candidate_class"]
+    }
+
+    case Map.get(rules, key) do
       value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, :requested_capability_id}
+      nil -> {:error, :unsupported_process_finding_rule}
+      _ -> {:error, :invalid_process_finding_rule}
     end
   end
 
-  defp producer_allowed(_finding, []), do: :ok
-  defp producer_allowed(finding, allowed) do
+  defp capability(_finding, _rules), do: {:error, :invalid_process_finding_rules}
+
+  defp producer_allowed(finding, allowed) when is_map(allowed) do
+    repository = finding[:producer_repository] || finding["producer_repository"]
     producer = finding[:producer_sha] || finding["producer_sha"]
-    if producer in allowed, do: :ok, else: {:error, :stale_or_unadmitted_producer}
+
+    if Map.get(allowed, repository) == producer,
+      do: :ok,
+      else: {:error, :stale_or_unadmitted_producer}
   end
+
+  defp producer_allowed(_finding, _allowed), do: {:error, :invalid_producer_allowlist}
 
   defp vocabulary_allowed(_finding, []), do: :ok
   defp vocabulary_allowed(finding, allowed) do
     vocab = finding[:vocabulary] || finding["vocabulary"]
     if vocab in allowed, do: :ok, else: {:error, :private_or_unknown_vocabulary}
+  end
+
+  defp authority_binding(%Command{authority: %Authority{} = authority} = command) do
+    if Authority.admits?(authority, %{
+         principal_id: command.principal_id,
+         capability_id: command.capability_id
+       }),
+      do: :ok,
+      else: {:error, :authority_mismatch}
+  end
+
+  defp authority_binding(%Command{authority: nil}), do: {:error, :authority_required}
+  defp authority_binding(_), do: {:error, :authority_mismatch}
+
+  defp intervention_constraints(command, opts) do
+    scope = Keyword.get(opts, :scope)
+    max_consequences = Keyword.get(opts, :max_consequences)
+    expected = Keyword.get(opts, :expected_postcondition)
+    idempotency_key =
+      command.metadata[:idempotency_key] || command.metadata["idempotency_key"]
+
+    cond do
+      not is_map(scope) or map_size(scope) == 0 ->
+        {:error, :intervention_scope_required}
+
+      max_consequences != 1 ->
+        {:error, :intervention_budget_must_be_one}
+
+      (scope[:input_digest] || scope["input_digest"]) != canonical_digest(command.input) ->
+        {:error, :intervention_scope_input_mismatch}
+
+      not is_binary(idempotency_key) or idempotency_key == "" ->
+        {:error, :intervention_idempotency_required}
+
+      not is_map(expected) or map_size(expected) == 0 ->
+        {:error, :expected_postcondition_required}
+
+      true ->
+        {:ok, canonical_digest(expected)}
+    end
   end
 
   defp no_secrets(value) when is_map(value) do
@@ -138,12 +218,24 @@ defmodule AshA2A.Gall.ProcessIntervention do
   defp secret_value?(_), do: false
 
   defp member(value, allowed, field), do: if(value in allowed, do: :ok, else: {:error, field})
-  defp digest("sha256:" <> hex, _field) when byte_size(hex) == 64, do: :ok
+
+  defp repository(value) when is_binary(value),
+    do: if(Regex.match?(@repository, value), do: :ok, else: {:error, :producer_repository})
+
+  defp repository(_), do: {:error, :producer_repository}
+
+  defp digest(value, _field) when is_binary(value),
+    do: if(Regex.match?(@digest, value), do: :ok, else: {:error, :digest})
+
   defp digest(_, field), do: {:error, field}
-  defp sha(value, _field, size) when is_binary(value) and byte_size(value) == size, do: :ok
+
+  defp sha(value, _field, _size) when is_binary(value),
+    do: if(Regex.match?(@sha, value), do: :ok, else: {:error, :producer_sha})
+
   defp sha(_, field, _size), do: {:error, field}
 
-  defp canonical_digest(value) do
+  @doc false
+  def canonical_digest(value) do
     "sha256:" <>
       (:crypto.hash(:sha256, :erlang.term_to_binary(canonical(value), [:deterministic]))
        |> Base.encode16(case: :lower))
