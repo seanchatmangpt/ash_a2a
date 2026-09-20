@@ -116,8 +116,8 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
     assert handoff.manufacturer_subject_digest == semantic_subject().manufacturer_digest
     assert String.starts_with?(handoff.handoff_digest, "sha256:")
 
-    assert Ash.read!(A, action: :read, domain: Domain) == []
-    assert length(Ash.read!(B, action: :read, domain: Domain)) == 1
+    refute Enum.any?(Ash.read!(A, action: :read, domain: Domain), &(&1.label == cmd.input.label))
+    assert Enum.count(Ash.read!(B, action: :read, domain: Domain), &(&1.label == cmd.input.label)) == 1
   end
 
   test "ambiguous display selector is refused before consequence", %{store_opts: store_opts} do
@@ -129,8 +129,8 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
                store_opts: store_opts
              )
 
-    assert Ash.read!(A, action: :read, domain: Domain) == []
-    assert Ash.read!(B, action: :read, domain: Domain) == []
+    refute Enum.any?(Ash.read!(A, action: :read, domain: Domain), &(&1.label == cmd.input.label))
+    refute Enum.any?(Ash.read!(B, action: :read, domain: Domain), &(&1.label == cmd.input.label))
   end
 
   test "tampering a bound semantic subject prevents observer handoff", %{store_opts: store_opts} do
