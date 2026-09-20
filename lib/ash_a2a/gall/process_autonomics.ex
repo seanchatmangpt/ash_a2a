@@ -127,8 +127,11 @@ defmodule AshA2A.Gall.ProcessFinding do
   defp nonempty(_field, value) when is_binary(value) and value != "", do: :ok
   defp nonempty(field, value), do: refuse(:invalid_field, %{field: field, value: value})
 
-  defp member(_field, value, allowed) when value in allowed, do: :ok
-  defp member(field, value, allowed), do: refuse(:unsupported_value, %{field: field, value: value, allowed: allowed})
+  defp member(field, value, allowed) do
+    if value in allowed,
+      do: :ok,
+      else: refuse(:unsupported_value, %{field: field, value: value, allowed: allowed})
+  end
 
   defp equal(_field, value, value), do: :ok
   defp equal(field, actual, expected), do: refuse(:identity_mismatch, %{field: field, expected: expected, actual: actual})
