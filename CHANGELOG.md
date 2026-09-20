@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.20] - 2026-09-20
+
+### Added
+
+- **`AshA2A.Reconciliation.MapeK`**: a named Monitor/Analyze/Plan/Execute
+  loop over shared Knowledge, built on the existing
+  `AshA2A.Reconciliation.classify/4` and `.reconcile/4` (purely additive,
+  no change to either) (`test/ash_a2a/reconciliation_mape_k_test.exs`).
+- **GALL structured-work-fabric (SWF) message types**: six new modules
+  under `lib/ash_a2a/gall/` -- `Capability`, `Checkpoint`,
+  `EvidenceReceipt`, `Fields`, `Message`, `WorkLease` -- typed message
+  shapes for GALL checkpoint/lease/receipt exchange with typed authority
+  refusals (`test/ash_a2a_gall_swf_message_test.exs`, 21 tests, 0
+  failures).
+- Per-method A2A JSON-RPC conformance tests over the real vendored
+  `A2A.Plug` (`test/ash_a2a_a2a_methods_test.exs`) and
+  `docs/reference/a2a-spec-version-mapping.md`. One test in this file,
+  `message/stream answers with an SSE event stream`, is `@tag :skip`'d: it
+  exposed a genuine gap -- `A2A.stream/3` returns an error (observed as a
+  real `application/json` reply, not `text/event-stream`) for an agent
+  built over a plain `:read`-skill Ash resource. Left skipped with the
+  gap documented inline rather than silently weakened or deleted; fixing
+  `AshA2A.Agent`'s streaming-skill support is real feature work out of
+  this release's scope.
+- `CITATION.cff`, `REPRODUCE.md`.
+- Two GALL process-intervention specs (from `gall/v26.9.18-final-specs`):
+  `docs/jira/v26.9.18/GALL-029-process-finding-admission-{PRD,ARD}.md`,
+  `docs/jira/v26.9.18/GALL-030-bounded-process-intervention-{PRD,ARD}.md`.
+
+### Changed
+
+- SA2A profile identifiers moved from v26.9.16 to v26.9.20
+  (`SA2A-PROFILE-v26.9.20`, `urn:sa2a:profile:v26.9.20`,
+  `SA2A-STRICT-v26.9.20`) in `AshA2A.SA2A.Conformance` and
+  `AshA2A.Semantic.Extension`, with matching test-fixture updates.
+
 ## [26.9.18] - 2026-09-19
 
 ### Fixed
