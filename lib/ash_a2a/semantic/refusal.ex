@@ -172,6 +172,12 @@ defmodule AshA2A.Semantic.Refusal do
     conflict: :refused_identity,
     in_flight: :refused_identity,
     envelope_id_missing: :refused_identity,
+    # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): a lease/receipt offered
+    # against something that is not a bound checkpoint has no subject to be
+    # about; a supplied graph digest that differs from the digest the peer
+    # observed is two identities that must agree colliding.
+    refused_unbound_checkpoint: :refused_identity,
+    refused_graph_identity_mismatch: :refused_identity,
 
     # --- REFUSED_NAMESPACE ------------------------------------------------
     undeclared_predicate: :refused_namespace,
@@ -205,6 +211,11 @@ defmodule AshA2A.Semantic.Refusal do
     envelope_json_invalid: :refused_structure,
     graph_shape_invalid: :refused_structure,
     standing_state_unknown: :refused_structure,
+    # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): a descriptor that is not a
+    # map, or a required semantic field that is absent or the wrong shape.
+    refused_semantic_work_descriptor: :refused_structure,
+    refused_missing_semantic_field: :refused_structure,
+    refused_invalid_semantic_field: :refused_structure,
     # `AshA2A.Semantic.AdmissionPipeline`'s Identity stage: the engine
     # validated twice against fresh stores and the two canonical digests
     # disagreed, or no replay block was reported at all. A judgement that
@@ -259,6 +270,9 @@ defmodule AshA2A.Semantic.Refusal do
     ambiguous_skill: :refused_capability,
     noncanonical_capability: :refused_capability,
     planner_capability_projection_missing: :refused_capability,
+    # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): the same capability named
+    # both required and forbidden by one work descriptor.
+    refused_capability_contradiction: :refused_capability,
 
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
