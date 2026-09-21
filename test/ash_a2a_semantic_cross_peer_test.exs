@@ -40,6 +40,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
   """
 
   use ExUnit.Case, async: false
+  @moduletag :graphlaw_engine
 
   alias AshA2A.Semantic.{Envelope, Extension, GraphLaw, Peer, Standing}
   alias AshA2A.Semantic.Standing.Ledger
