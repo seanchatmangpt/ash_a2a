@@ -15,7 +15,7 @@ between `8d61f46` and `2730c9b` is empty).
 | Value set | `:observe`, `:change`, `:external_do`, `:unknown` | ALIVE (schema read back) |
 | Action-level `authority:` (grant) declaration in the DSL | No such key | ALIVE (schema) |
 | Installer emits a `skill ... consequence:` entry | No | INSPECTED (source) |
-| Installer on an existing `a2a` block | Adds a second starter block | UNVERIFIED (comment) |
+| Installer on an existing `a2a` block | Adds a second, empty starter block; existing skill survives | ALIVE (executed) |
 
 ALIVE here means observed execution of the exact subject: `MIX_ENV=test mix run` printed the
 values below from real compiled fixtures and from `AshA2A.Dsl`'s own entity schema.
@@ -90,9 +90,20 @@ A generated generic action with no override is `:unknown` and fails closed at di
 - `:87-101` (no `--target`): only a notice; no module is patched.
 - The starter block is not idempotent. `test/mix/tasks/ash_a2a_install_test.exs:110-112` states
   that duplication of the starter `a2a do end` block on a second run is a known, pre-existing
-  concern. UNVERIFIED by execution in this stream: the claim rests on that test comment and on
-  the unconditional `add_code` at `:161-168`, not on a run against a module that already has an
-  `a2a` block.
+  concern, and the `add_code` at `:161-168` is unconditional. ALIVE (executed by the qualifier
+  of this stream, not by the builder): a real in-memory Igniter project
+  (`Igniter.Test.test_project/1`, `Igniter.compose_task("ash_a2a.install", ["--target",
+  "Test.Resource"])`) produced two consecutive empty `a2a do end` blocks after two runs, and,
+  against a module that already held `a2a do skill(:actuate, :actuate, consequence:
+  :external_do) end`, prepended a second, empty `a2a do end` in front of it (two `a2a do`
+  occurrences either way). The duplicate is cosmetic: a module compiled with both blocks yields
+  `Spark.Dsl.Extension.get_entities(mod, [:a2a])` equal to `[actuate: :external_do]` and the
+  persisted `:ash_a2a_skill_overrides` still carries `consequence: :external_do`, so the skill
+  and its consequence survive.
+- Classification read back for a generic action, executed: `skill(:with_override,
+  :with_override, consequence: :external_do)` gives `consequence: :external_do`, id
+  `ExtX.Resource.with_override`; the same kind of action with no `skill` entry gives
+  `consequence: :unknown`, id `ExtX.Resource.without_override`.
 
 ## Consequence for the ggen_igniter external-do stream
 
