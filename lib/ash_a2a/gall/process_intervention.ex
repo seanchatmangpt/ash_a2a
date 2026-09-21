@@ -40,7 +40,8 @@ defmodule AshA2A.Gall.ProcessIntervention do
         schema: "ash_a2a.gall.process-candidate/v26.9.18",
         finding_digest: canonical_digest(finding),
         producer_sha: finding[:producer_sha] || finding["producer_sha"],
-        semantic_subject_digest: finding[:semantic_subject_digest] || finding["semantic_subject_digest"],
+        semantic_subject_digest:
+          finding[:semantic_subject_digest] || finding["semantic_subject_digest"],
         finding_class: finding[:finding_class] || finding["finding_class"],
         horizon: finding[:horizon] || finding["horizon"],
         capability_id: capability_id,
@@ -75,7 +76,9 @@ defmodule AshA2A.Gall.ProcessIntervention do
   defp require_observer(fun) when is_function(fun, 2), do: :ok
   defp require_observer(_), do: {:error, :independent_observer_required}
 
-  defp admitted_candidate(%{schema: "ash_a2a.gall.process-candidate/v26.9.18", authority: :none} = c) do
+  defp admitted_candidate(
+         %{schema: "ash_a2a.gall.process-candidate/v26.9.18", authority: :none} = c
+       ) do
     expected = c |> Map.delete(:candidate_digest) |> canonical_digest()
     if c.candidate_digest == expected, do: :ok, else: {:error, :candidate_digest_mismatch}
   end
@@ -83,7 +86,8 @@ defmodule AshA2A.Gall.ProcessIntervention do
 
   defp command_binding(candidate, command) do
     bound =
-      command.metadata[:gall_029_candidate_digest] || command.metadata["gall_029_candidate_digest"]
+      command.metadata[:gall_029_candidate_digest] ||
+        command.metadata["gall_029_candidate_digest"]
 
     cond do
       command.capability_id != candidate.capability_id -> {:error, :capability_mismatch}
