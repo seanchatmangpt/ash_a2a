@@ -4,15 +4,18 @@ defmodule AshA2A.Gall.ProcessInterventionTest do
   alias AshA2A.Gall.ProcessIntervention
 
   defp finding(overrides \\ %{}) do
-    Map.merge(%{
-      producer_sha: String.duplicate("a", 40),
-      evidence_digest: "sha256:" <> String.duplicate("b", 64),
-      semantic_subject_digest: "sha256:" <> String.duplicate("c", 64),
-      finding_class: "conformance",
-      horizon: "FAST",
-      vocabulary: "https://w3id.org/ocel",
-      requested_capability_id: "Example.Resource.change"
-    }, overrides)
+    Map.merge(
+      %{
+        producer_sha: String.duplicate("a", 40),
+        evidence_digest: "sha256:" <> String.duplicate("b", 64),
+        semantic_subject_digest: "sha256:" <> String.duplicate("c", 64),
+        finding_class: "conformance",
+        horizon: "FAST",
+        vocabulary: "https://w3id.org/ocel",
+        requested_capability_id: "Example.Resource.change"
+      },
+      overrides
+    )
   end
 
   test "GALL-029 admits evidence as authority-free candidate" do
