@@ -168,6 +168,7 @@ defmodule AshA2A.Semantic.Refusal do
     unclaimed_command: :refused_identity,
     continuation_fingerprint_invalid: :refused_identity,
     refused_semantic_subject: :refused_identity,
+    semantic_subject_missing: :refused_identity,
     already_exists: :refused_identity,
     conflict: :refused_identity,
     in_flight: :refused_identity,
@@ -278,6 +279,8 @@ defmodule AshA2A.Semantic.Refusal do
     kill_switch_tripped: :refused_consequence,
     not_cancelable: :refused_consequence,
     consequence_class_unknown: :refused_consequence,
+    non_consequence_receipt: :refused_consequence,
+    consequence_terminal_state_unbound: :refused_consequence,
 
     # --- REFUSED_RECEIPT --------------------------------------------------
     receipt_anchor_unavailable: :refused_receipt,
@@ -285,6 +288,7 @@ defmodule AshA2A.Semantic.Refusal do
     receipt_commit_pending: :refused_receipt,
     receipt_not_completed: :refused_receipt,
     continuation_receipt_not_found: :refused_receipt,
+    invalid_gall_command_receipt: :refused_receipt,
 
     # --- REFUSED_BOUNDS ---------------------------------------------------
     max_children: :refused_bounds,
@@ -333,6 +337,7 @@ defmodule AshA2A.Semantic.Refusal do
     enoent: :blocked_resource,
     semantic_worker_exit: :blocked_resource,
     receipt_store_unavailable: :blocked_resource,
+    actuation_store_unavailable: :blocked_resource,
     peer_b_unavailable: :blocked_resource,
     parse_witness_missing: :blocked_resource,
     dispatch_crashed: :blocked_resource,

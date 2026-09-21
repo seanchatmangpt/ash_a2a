@@ -1,0 +1,45 @@
+name: GALL-003 Command Authority Court
+
+on:
+  pull_request:
+    paths:
+      - "lib/ash_a2a/command_bus.ex"
+      - "lib/ash_a2a/gall/**"
+      - "lib/ash_a2a/receipt*.ex"
+      - "lib/ash_a2a/semantic/refusal.ex"
+      - "lib/ash_a2a/semantic_projection.ex"
+      - "test/ash_a2a_gall_command_authority_test.exs"
+      - "test/gall_checkpoint_003_command_authority_chicago_test.exs"
+      - "test/ash_a2a/semantic_refusal_test.exs"
+      - ".github/workflows/gall-003-command-authority.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Admit exact subject
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.0"
+          elixir-version: "1.19.0"
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get
+      - run: mix format --check-formatted
+      - run: mix compile --warnings-as-errors
+      - name: GALL-003 focused court
+        run: |
+          mix test \
+            test/ash_a2a/semantic_refusal_test.exs \
+            test/ash_a2a_gall_command_authority_test.exs \
+            test/gall_checkpoint_003_command_authority_chicago_test.exs
