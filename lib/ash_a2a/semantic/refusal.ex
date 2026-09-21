@@ -172,6 +172,11 @@ defmodule AshA2A.Semantic.Refusal do
     conflict: :refused_identity,
     in_flight: :refused_identity,
     envelope_id_missing: :refused_identity,
+    # GALL-029/030 candidate/receipt identity-binding checks
+    # (lib/ash_a2a/gall/process_intervention.ex).
+    candidate_digest_mismatch: :refused_identity,
+    candidate_binding_mismatch: :refused_identity,
+    receipt_candidate_binding_mismatch: :refused_identity,
 
     # --- REFUSED_NAMESPACE ------------------------------------------------
     undeclared_predicate: :refused_namespace,
@@ -205,6 +210,10 @@ defmodule AshA2A.Semantic.Refusal do
     envelope_json_invalid: :refused_structure,
     graph_shape_invalid: :refused_structure,
     standing_state_unknown: :refused_structure,
+    # GALL-003 command receipt's own subject-carrying field is absent, or
+    # the receipt shape itself is not one this runtime understands
+    # (lib/ash_a2a/gall/command_receipt.ex).
+    semantic_subject_missing: :refused_structure,
     # `AshA2A.Semantic.AdmissionPipeline`'s Identity stage: the engine
     # validated twice against fresh stores and the two canonical digests
     # disagreed, or no replay block was reported at all. A judgement that
@@ -259,6 +268,12 @@ defmodule AshA2A.Semantic.Refusal do
     ambiguous_skill: :refused_capability,
     noncanonical_capability: :refused_capability,
     planner_capability_projection_missing: :refused_capability,
+    # GALL-029/030 process-intervention capability checks
+    # (lib/ash_a2a/gall/process_intervention.ex).
+    capability_mismatch: :refused_capability,
+    receipt_capability_mismatch: :refused_capability,
+    requested_capability_id: :refused_capability,
+    gall_029_admission_required: :refused_capability,
 
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
@@ -272,12 +287,20 @@ defmodule AshA2A.Semantic.Refusal do
     semantic_package_authority_ceiling_violated: :refused_authority,
     planner_authority_ceiling_violated: :refused_authority,
     authority_requirement_unknown: :refused_authority,
+    # GALL-029/030 independent-observer verification requirements
+    # (lib/ash_a2a/gall/process_intervention.ex).
+    independent_observer_required: :refused_authority,
+    independent_observer_not_verified: :refused_authority,
 
     # --- REFUSED_CONSEQUENCE ----------------------------------------------
     consequence_unclassified: :refused_consequence,
     kill_switch_tripped: :refused_consequence,
     not_cancelable: :refused_consequence,
     consequence_class_unknown: :refused_consequence,
+    # GALL-003 command-receipt consequence binding
+    # (lib/ash_a2a/gall/command_receipt.ex).
+    non_consequence_receipt: :refused_consequence,
+    consequence_terminal_state_unbound: :refused_consequence,
 
     # --- REFUSED_RECEIPT --------------------------------------------------
     receipt_anchor_unavailable: :refused_receipt,
@@ -285,6 +308,10 @@ defmodule AshA2A.Semantic.Refusal do
     receipt_commit_pending: :refused_receipt,
     receipt_not_completed: :refused_receipt,
     continuation_receipt_not_found: :refused_receipt,
+    # GALL-003/GALL-029 receipt-identity binding checks
+    # (lib/ash_a2a/gall/command_receipt.ex, process_intervention.ex).
+    invalid_gall_command_receipt: :refused_receipt,
+    receipt_command_mismatch: :refused_receipt,
 
     # --- REFUSED_BOUNDS ---------------------------------------------------
     max_children: :refused_bounds,
@@ -306,6 +333,10 @@ defmodule AshA2A.Semantic.Refusal do
     # presenting a standing its own sealed history does not evidence.
     standing_ledger_absent: :refused_meta_rigor,
     standing_ledger_malformed: :refused_meta_rigor,
+    # GALL-030 bounded process intervention: a finding whose evidence
+    # itself carries secret-bearing content must not be propagated further
+    # (lib/ash_a2a/gall/process_intervention.ex).
+    secret_bearing_finding: :refused_meta_rigor,
     standing_ledger_discontinuous: :refused_meta_rigor,
     standing_ledger_inconsistent: :refused_meta_rigor,
     standing_ledger_unsealed: :refused_meta_rigor,
@@ -333,6 +364,7 @@ defmodule AshA2A.Semantic.Refusal do
     enoent: :blocked_resource,
     semantic_worker_exit: :blocked_resource,
     receipt_store_unavailable: :blocked_resource,
+    actuation_store_unavailable: :blocked_resource,
     peer_b_unavailable: :blocked_resource,
     parse_witness_missing: :blocked_resource,
     dispatch_crashed: :blocked_resource,

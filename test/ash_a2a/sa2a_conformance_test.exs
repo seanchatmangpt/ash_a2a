@@ -623,7 +623,7 @@ defmodule AshA2A.SA2AConformanceTest do
           assert Map.has_key?(receipt, key), "receipt is missing #{key}"
         end
 
-        assert receipt["profile"] == "SA2A-STRICT-v26.9.16"
+        assert receipt["profile"] == "SA2A-STRICT-v26.9.20"
         assert receipt["graphlaw_version"] =~ "praxis-graphlaw v"
         assert String.match?(receipt["root_manifest_digest"], ~r/\A[0-9a-f]{64}\z/)
 
@@ -647,7 +647,7 @@ defmodule AshA2A.SA2AConformanceTest do
       else
         encoded = JSON.encode!(context.receipt)
         assert {:ok, decoded} = JSON.decode(encoded)
-        assert decoded["profile"] == "SA2A-STRICT-v26.9.16"
+        assert decoded["profile"] == "SA2A-STRICT-v26.9.20"
       end
     end
 

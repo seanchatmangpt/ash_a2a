@@ -36,9 +36,9 @@ defmodule AshA2A.SemanticExtensionTest do
 
   describe "profile identity" do
     test "the profile identifier is exactly the one the RFC names" do
-      assert Extension.profile_id() == "SA2A-PROFILE-v26.9.16"
-      assert Extension.profile_version() == "v26.9.16"
-      assert Extension.profile_uri() == "urn:sa2a:profile:v26.9.16"
+      assert Extension.profile_id() == "SA2A-PROFILE-v26.9.20"
+      assert Extension.profile_version() == "v26.9.20"
+      assert Extension.profile_uri() == "urn:sa2a:profile:v26.9.20"
     end
 
     test "the capability declaration is A2A-specification shaped" do
@@ -96,7 +96,7 @@ defmodule AshA2A.SemanticExtensionTest do
       opts = Extension.advertise(url: @base_url)
       encoded = A2A.JSON.encode_agent_card(card, opts)
 
-      assert %{"protocolBinding" => "SA2A-PROFILE-v26.9.16", "protocolVersion" => "v26.9.16"} =
+      assert %{"protocolBinding" => "SA2A-PROFILE-v26.9.20", "protocolVersion" => "v26.9.20"} =
                Enum.find(
                  encoded["supportedInterfaces"],
                  &(&1["protocolBinding"] == Extension.profile_id())
@@ -194,7 +194,7 @@ defmodule AshA2A.SemanticExtensionTest do
     end
 
     test "both advertising negotiates", %{advertising: card} do
-      assert {:ok, "SA2A-PROFILE-v26.9.16"} = Extension.negotiate(card, card)
+      assert {:ok, "SA2A-PROFILE-v26.9.20"} = Extension.negotiate(card, card)
     end
 
     test "remote silent refuses with :unsupported_profile", %{
@@ -245,7 +245,7 @@ defmodule AshA2A.SemanticExtensionTest do
 
       assert Extension.activated?(message)
       assert message.extensions["other"] == %{"keep" => true}
-      assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.16"}} = Extension.payload(message)
+      assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.20"}} = Extension.payload(message)
     end
 
     test "activation survives a real A2A.JSON message encode/decode round trip" do
@@ -256,7 +256,7 @@ defmodule AshA2A.SemanticExtensionTest do
       {:ok, decoded} = encoded |> Jason.encode!() |> Jason.decode!() |> A2A.JSON.decode(:message)
 
       assert Extension.activated?(decoded)
-      assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.16"}} = Extension.payload(decoded)
+      assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.20"}} = Extension.payload(decoded)
     end
   end
 end

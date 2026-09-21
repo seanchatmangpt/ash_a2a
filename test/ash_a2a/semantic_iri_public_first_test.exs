@@ -721,7 +721,7 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
       assert detail =~ "graph_hash"
     end
 
-    test "prefix backing is reported honestly: 4 real documents, 6 prefix-only" do
+    test "prefix backing is reported honestly: only locally-cached documents count as backed" do
       report = OntologyCache.prefix_backing_report()
       assert length(report) == map_size(Vocabulary.prefixes())
 
@@ -729,7 +729,18 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
       unbacked = for %{prefix: p, backing: :prefix_only} <- report, do: p
 
       assert Enum.sort(backed) == ["owl", "rdf", "rdfs", "skos"]
-      assert Enum.sort(unbacked) == ["oa", "odrl", "prov", "schema", "sosa", "time"]
+
+      assert Enum.sort(unbacked) == [
+               "oa",
+               "odrl",
+               "prov",
+               "qudt",
+               "saref",
+               "schema",
+               "sosa",
+               "ssn",
+               "time"
+             ]
     end
   end
 
@@ -832,7 +843,6 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
       assert Vocabulary.expand("skos:Concept") == @skos_concept
       assert Vocabulary.expand("rdf:type") == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
       assert Vocabulary.expand("prov:Activity") == "http://www.w3.org/ns/prov#Activity"
-      assert map_size(Vocabulary.prefixes()) == 10
     end
 
     test "Vocabulary.local/1 still mints, and Iri classifies what it mints as private" do

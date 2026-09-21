@@ -40,9 +40,9 @@ defmodule AshA2A.Semantic.Extension do
   specification's own site without this module changing.
   """
 
-  @profile_id "SA2A-PROFILE-v26.9.16"
-  @profile_uri "urn:sa2a:profile:v26.9.16"
-  @profile_version "v26.9.16"
+  @profile_id "SA2A-PROFILE-v26.9.20"
+  @profile_uri "urn:sa2a:profile:v26.9.20"
+  @profile_version "v26.9.20"
   @extension_key "sa2a"
 
   @typedoc "Typed negotiation refusal. `code` is stable; `detail` is prose."

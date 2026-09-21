@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "ash_a2a"
+version: "26.9.18"
+date-released: "2026-09-18"
+license: MIT
+type: software
+authors:
+  - family-names: Chatman
+    given-names: Sean
+repository-code: "https://github.com/seanchatmangpt/ash_a2a"
+abstract: "Ash extension exposing Ash resources as A2A agents with receipted, replayable command execution and SA2A semantic profile support."

@@ -4,11 +4,11 @@ defmodule AshA2A.Semantic.VocabularyTest do
   alias AshA2A.Semantic.Vocabulary
 
   describe "prefixes/0" do
-    test "returns exactly the ten known prefix keys" do
+    test "returns exactly the known prefix keys" do
       prefixes = Vocabulary.prefixes()
 
       assert MapSet.new(Map.keys(prefixes)) ==
-               MapSet.new(~w(rdf rdfs owl prov time odrl skos schema oa sosa))
+               MapSet.new(~w(rdf rdfs owl prov time odrl skos schema oa sosa ssn saref qudt))
     end
 
     test "known prefixes resolve to their expected URIs" do

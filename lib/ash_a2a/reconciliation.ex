@@ -465,3 +465,124 @@ defmodule AshA2A.Reconciliation do
   defp identity_value(%Identity{value: value}), do: value
   defp identity_value(value), do: value
 end
+
+defmodule AshA2A.Reconciliation.MapeK do
+  @moduledoc """
+  A named MAPE-K (Monitor, Analyze, Plan, Execute over shared Knowledge) loop
+  over `AshA2A.Reconciliation`.
+
+  One `run/4` iteration, for a set of command ids:
+
+    1. **Monitor** -- `Reconciliation.classify/4` reads the durable evidence
+       (primary store + outbox) for every command.
+    2. **Analyze** -- commands whose state is `:prepared_unknown_outcome` are
+       the symptoms; every other state is already settled.
+    3. **Plan** -- each symptom is planned as a `:reconcile` action when a
+       probe is available for it, else `:defer` (fail-closed, nothing inferred).
+    4. **Execute** -- `Reconciliation.reconcile/4` runs each `:reconcile` plan
+       with the probe. The loop never actuates; probes only read.
+    5. **Knowledge** -- a map threaded through iterations recording, per
+       command id, the last observed state, the plans made, the number of
+       iterations that touched it, and whether it reached a settled state.
+
+  `run/4` iterates until every command is settled or `:max_iterations`
+  (default 3) is reached, and returns `{:ok, knowledge}`. A receipt store
+  outage is `{:error, :receipt_store_unavailable}`.
+
+  Options: `:probe` (`fun(Receipt.t() -> probe_result)`), `:max_iterations`,
+  `:knowledge` (prior knowledge map to continue from).
+  """
+
+  alias AshA2A.Reconciliation
+
+  @settled [:not_attempted, :executed, :failed, :reconciled, :compensated]
+
+  @type knowledge :: %{optional(String.t()) => map()}
+
+  @spec run([AshA2A.Identity.t()], module(), keyword(), keyword()) ::
+          {:ok, knowledge()} | {:error, :receipt_store_unavailable}
+  def run(command_ids, store, store_opts, opts \\ []) do
+    max = Keyword.get(opts, :max_iterations, 3)
+    knowledge = Keyword.get(opts, :knowledge, %{})
+    loop(command_ids, store, store_opts, opts, knowledge, 1, max)
+  end
+
+  defp loop(ids, store, store_opts, opts, knowledge, iteration, max) do
+    with {:ok, observed} <- monitor(ids, store, store_opts) do
+      case analyze(observed) do
+        [] ->
+          {:ok, remember(knowledge, observed, [], iteration)}
+
+        symptoms when iteration > max ->
+          {:ok, remember(knowledge, observed, Enum.map(symptoms, &{&1, :defer}), iteration)}
+
+        symptoms ->
+          plans = plan(symptoms, opts)
+
+          with {:ok, _} <- execute(plans, store, store_opts, opts) do
+            knowledge = remember(knowledge, observed, plans, iteration)
+            loop(ids, store, store_opts, opts, knowledge, iteration + 1, max)
+          end
+      end
+    end
+  end
+
+  # Monitor
+  defp monitor(ids, store, store_opts) do
+    Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
+      case Reconciliation.classify(id, store, store_opts) do
+        {:ok, c} -> {:cont, {:ok, [{id, c} | acc]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, acc} -> {:ok, Enum.reverse(acc)}
+      error -> error
+    end
+  end
+
+  # Analyze
+  defp analyze(observed) do
+    for {id, %{state: state}} <- observed, state not in @settled, do: id
+  end
+
+  # Plan
+  defp plan(symptoms, opts) do
+    action = if Keyword.get(opts, :probe), do: :reconcile, else: :defer
+    Enum.map(symptoms, &{&1, action})
+  end
+
+  # Execute
+  defp execute(plans, store, store_opts, opts) do
+    Enum.reduce_while(plans, {:ok, []}, fn
+      {id, :reconcile}, {:ok, acc} ->
+        case Reconciliation.reconcile(id, store, store_opts, probe: Keyword.fetch!(opts, :probe)) do
+          {:ok, result} -> {:cont, {:ok, [result | acc]}}
+          {:error, _} = error -> {:halt, error}
+        end
+
+      {_id, :defer}, acc ->
+        {:cont, acc}
+    end)
+  end
+
+  # Knowledge
+  defp remember(knowledge, observed, plans, iteration) do
+    plan_by_id = Map.new(plans)
+
+    Enum.reduce(observed, knowledge, fn {id, c}, acc ->
+      key = id.value
+      prior = Map.get(acc, key, %{plans: [], iterations: 0})
+
+      entry = %{
+        state: c.state,
+        settled?: c.state in @settled,
+        plans: prior.plans ++ List.wrap(plan_by_id[id]),
+        iterations: max(prior.iterations, iteration),
+        last_iteration: iteration
+      }
+
+      Map.put(acc, key, entry)
+    end)
+  end
+end
