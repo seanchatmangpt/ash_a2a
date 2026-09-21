@@ -44,17 +44,21 @@ excluded_tags =
       [:graphlaw | excluded_tags]
   end
 
-# `:graphlaw_engine`: the tests below reach the real praxis-graphlaw wasm
-# through the seven independently-resolved paths this library exposes
+# `:graphlaw_engine`: the tests tagged with it reach the real praxis-graphlaw
+# wasm through the seven independently-resolved paths this library exposes
 # (`GraphLaw.WasmDriver`, `GraphLaw.Wasm`, `GraphLaw.Runtime`,
 # `Semantic.GraphLawBridge`, `Semantic.GraphLaw.Wasm`, `SA2A.Graphlaw`,
-# `Semantic.RootManifest.EngineProbe`), each defaulting to a `praxis` workspace
-# checkout that only exists on the author's machine (ash_a2a#27: 107
-# hosted-CI failures, every one `graphlaw_wasm_not_found` / `enoent` / a court
-# BLOCKED on "the real praxis-graphlaw engine is unreachable"). Same contract as
-# `:graphlaw` above: when any resolved wasm or `node` is missing the tagged
-# tests are excluded with a NAMED, PRINTED reason -- never stubbed, never
-# silently passed.
+# `Semantic.RootManifest.EngineProbe`). Each of them now defaults to the
+# vendored, git-tracked, MANIFEST-pinned `priv/graphlaw/praxis_graphlaw.wasm`
+# (`AshA2A.GraphLaw.wasm_path/0`), so on any checkout with `node` on PATH this
+# tag excludes NOTHING and all of those tests run. (ash_a2a#27's 103 hosted-CI
+# failures were the seven resolvers defaulting to a `/Users/sac/praxis/...`
+# path, not an absent engine; `AshA2A.Chicago.WasmDefaultResolutionTest` and
+# `AshA2A.Chicago.FalsifierWasmDefaultReachabilityTest` now guard that.)
+#
+# Same contract as `:graphlaw` above, kept only as a fallback for a truly
+# missing artifact or a missing `node`: the tagged tests are excluded with a
+# NAMED, PRINTED reason -- never stubbed, never silently passed.
 graphlaw_engine_missing =
   [
     {"GraphLaw.WasmDriver", AshA2A.GraphLaw.WasmDriver.wasm_path()},

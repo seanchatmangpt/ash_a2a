@@ -4,26 +4,29 @@
 
 defmodule AshA2A.Chicago.FalsifierWasmDefaultReachabilityTest do
   @moduledoc """
-  Falsifier (`errc/ash-a2a-format`, lens: falsifier) for the claim recorded in
-  `test/test_helper.exs` and `docs/streams/ash-a2a-format.md` that the
-  praxis-graphlaw engine is "unreachable on the hosted runner", which is the
-  stated reason 103 tests are excluded under `:graphlaw_engine` instead of
-  running.
+  Falsifier (`errc/ash-a2a-format`, lens: falsifier) for the claim that the
+  praxis-graphlaw engine is "unreachable on the hosted runner", which was the
+  stated reason 103 tests were excluded under `:graphlaw_engine` instead of
+  running (ash_a2a#27).
 
   Real files only: the repo's own git-tracked `priv/graphlaw/` tree and the
   `lib/` sources, read from disk. No collaborator is faked.
 
-  1. The positive control PASSES: the wasm every hosted checkout contains,
+  1. Positive control: the wasm every hosted checkout contains,
      `priv/graphlaw/praxis_graphlaw.wasm`, is byte-identical to the digest
      `priv/graphlaw/MANIFEST.json` pins (and, on a machine that has the praxis
-     checkout, to that build). The engine is therefore reachable from a bare
-     checkout; the exclusion is not forced by absence of the artifact.
-  2. The falsifier FAILS on this branch: six modules under `lib/` default
-     their wasm resolver to an absolute path under the author's home
-     (`/Users/sac/praxis/...`) instead of the vendored artifact. That default,
-     not the absence of the engine, is what made the 103 hosted-runner tests
-     fail, and hiding those tests behind `:graphlaw_engine` leaves the default
-     in place while dropping the only coverage that would catch a regression.
+     checkout, to that build). The engine is reachable from a bare checkout;
+     no exclusion is forced by absence of the artifact.
+  2. Falsifier: no module under `lib/` defaults a wasm resolver to an absolute
+     path under a developer home. At 55753a5 it FAILED: six `@default_*wasm*`
+     offenders (`graph_law/wasm.ex`, `graph_law/wasm_driver.ex`,
+     `sa2a/graphlaw.ex`, `semantic/graph_law/wasm.ex`,
+     `semantic/graph_law_bridge.ex`, `semantic/root_manifest/engine_probe.ex`)
+     plus, under the `~/praxis` pattern added afterwards, `graph_law/runtime.ex`.
+     That default, not the absence of the engine, made the 103 hosted-runner
+     tests fail. It is retained as the permanent guard against reintroducing
+     such a default. The resolved-state counterpart is
+     `AshA2A.Chicago.WasmDefaultResolutionTest`.
   """
 
   use ExUnit.Case, async: true
@@ -59,7 +62,11 @@ defmodule AshA2A.Chicago.FalsifierWasmDefaultReachabilityTest do
         |> String.split("\n")
         |> Enum.with_index(1)
         |> Enum.filter(fn {line, _n} ->
-          Regex.match?(~r/@default_\w*wasm\w*\s+"\/(Users|home)\//, line)
+          # An attribute default under a developer home, or an expanded `~/praxis`
+          # default (GraphLaw.Runtime used the latter, which the attribute form
+          # alone would not catch).
+          Regex.match?(~r/@default_\w*wasm\w*\s+"\/(Users|home)\//, line) or
+            Regex.match?(~r/Path\.expand\("~\/praxis/, line)
         end)
         |> Enum.map(fn {_line, n} -> "#{Path.relative_to(file, @root)}:#{n}" end)
       end)

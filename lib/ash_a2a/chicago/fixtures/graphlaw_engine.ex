@@ -183,8 +183,32 @@ defmodule AshA2A.Chicago.Fixtures.GraphlawEngine do
   def stop_host(name) do
     case Process.whereis(name) do
       nil -> :ok
-      pid -> GenServer.stop(pid, :normal, 10_000)
+      pid -> stop_pid(pid)
     end
+  end
+
+  @doc """
+  Stops one GenServer pid, tolerating the host having already exited.
+
+  `start_host/0` links the host to the calling test process, and an ExUnit
+  `on_exit` callback runs concurrently with the shutdown of that process. The
+  host can therefore die between `Process.whereis/1` returning its pid and
+  `GenServer.stop/3` reaching it, which surfaces as
+  `** (exit) no process` and fails an otherwise-passing test (observed in a
+  full `mix test` under load, `AshA2A.Chicago.GraphlawEngineTest`
+  "every recorded case re-runs to the recorded observation", ash_a2a#27
+  stream `ash-a2a-format`). The wanted post-condition of a stop is "the
+  process is gone"; an exit that says exactly that (`:noproc`, `:shutdown`,
+  `:normal` from the racing link signal) satisfies it. Any other exit reason
+  is a real fault and still propagates.
+  """
+  @spec stop_pid(pid()) :: :ok
+  def stop_pid(pid) when is_pid(pid) do
+    GenServer.stop(pid, :normal, 10_000)
+  catch
+    :exit, {reason, _call} when reason in [:noproc, :normal, :shutdown, :killed] -> :ok
+    :exit, {{:shutdown, _}, _call} -> :ok
+    :exit, reason when reason in [:noproc, :normal, :shutdown, :killed] -> :ok
   end
 
   @doc """

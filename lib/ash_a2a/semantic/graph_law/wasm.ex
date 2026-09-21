@@ -25,7 +25,8 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
         timeout: 30_000
 
   `wasm_path` also reads the `GRAPHLAW_WASM` environment variable, then
-  falls back to the in-tree `praxis` checkout location. Absence of the wasm
+  falls back to the vendored, git-tracked, MANIFEST-pinned artifact
+  `AshA2A.GraphLaw.wasm_path/0` (`priv/graphlaw/praxis_graphlaw.wasm`). Absence of the wasm
   or of `node` is a typed `:graphlaw_unavailable` refusal, never a silent
   pass.
 
@@ -41,7 +42,6 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
 
   @behaviour AshA2A.Semantic.GraphLaw
 
-  @default_wasm_path "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm"
   @default_timeout 30_000
 
   @impl true
@@ -81,7 +81,7 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
   @doc "Resolved absolute path of the wasm module this runtime would load."
   @spec wasm_path() :: String.t()
   def wasm_path do
-    config(:wasm_path) || System.get_env("GRAPHLAW_WASM") || @default_wasm_path
+    config(:wasm_path) || System.get_env("GRAPHLAW_WASM") || AshA2A.GraphLaw.wasm_path()
   end
 
   @doc """

@@ -8,9 +8,19 @@ Work base for this stream: `2730c9b47a26219a2111a8273ead8f0a5f69c6ec` (main at s
 
 The "formatting" failure named in the ERRC backlog was already fixed on the PR branch by
 `8d61f46`. What still fails PR #27 is the `mix test` step: 107 failures, of which 103 are one
-environmental class, 3 are a second environmental class, and 1 is a real defect in the PR's
-own code. This stream removes the environmental classes (named, printed test exclusions) and
-fixes the real defect on a branch cut from the PR head.
+class (seven wasm resolvers defaulting to a developer-home path), 3 are an environmental class
+(sibling checkouts), and 1 is a real defect in the PR's own code.
+
+Correction (repair pass, supersedes the first version of this document): the 103 were first
+classified as "engine unreachable on the hosted runner" and hidden behind `:graphlaw_engine`.
+That premise was false. The praxis-graphlaw wasm is vendored and git-tracked at
+`priv/graphlaw/praxis_graphlaw.wasm` (sha256 `187688d9...c0f28`, equal to
+`priv/graphlaw/MANIFEST.json`, to `priv/sa2a_conformance/MANIFEST.json`, and to the praxis
+build at `crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm`). The 103 failures
+were the resolver defaults, not an absent engine. They are now fixed at the root: the seven
+resolvers default to `AshA2A.GraphLaw.wasm_path/0`, the 103 tests run on hosted CI, and
+`:graphlaw_engine` remains only as a named, printed fallback for a truly missing artifact or a
+missing `node`.
 
 ## PR #27 check history (read-only `gh`)
 
@@ -29,7 +39,7 @@ Files the format fix touched (`gh pr view 27 --json files`): `lib/ash_a2a/chicag
 
 | Class | Count | Cause | Disposition |
 |---|---|---|---|
-| Engine unreachable | 103 | Seven resolvers default to `~/praxis` wasm | `:graphlaw_engine` |
+| Resolver default | 103 | Seven resolvers default to a `~/praxis` wasm path; the identical wasm is vendored | fixed: default is the vendored artifact |
 | Sibling repos absent | 3 | Topology court checks 11 repos under `/Users/sac` | `:sibling_repos` |
 | Real defect | 1 | Six `Semantic.WorkEnvelope` refusal codes have no S42 class | fixed on PR head |
 
@@ -42,12 +52,40 @@ that test passes on main and fails on the PR.
 
 ## What changed on this branch (`errc/ash-a2a-format`)
 
+Commit `8815f5b` (environment exclusions):
+
 - `test/test_helper.exs`: accumulates excluded tags. `:graphlaw` behavior is unchanged. New
   `:graphlaw_engine` is excluded when any of the seven resolved wasm paths or `node` is
   missing; new `:sibling_repos` is excluded when any of the 11 topology repos has no `.git`.
   Each exclusion prints its reason on stderr. Nothing is stubbed and nothing passes silently.
 - 22 test files: `@tag`/`@moduletag` on exactly the tests that failed on the runner
   (`AdversarialInputTest` and `SemanticCrossPeerTest` are module-wide; the rest are per test).
+
+Repair commit (root cause of the 103):
+
+- Seven resolvers now fall back to `AshA2A.GraphLaw.wasm_path/0` instead of a developer-home
+  path: `graph_law/wasm.ex`, `graph_law/wasm_driver.ex`, `graph_law/runtime.ex`,
+  `sa2a/graphlaw.ex`, `semantic/graph_law/wasm.ex`, `semantic/graph_law_bridge.ex`,
+  `semantic/root_manifest/engine_probe.ex`. Override precedence (opts, app env, env vars) is
+  unchanged. `AshA2A.GraphLaw`, `WasmtimeRuntime` and `WasmexHost` already defaulted to `priv/`.
+- With that default, `:graphlaw_engine` excludes nothing on any checkout that has `node` on
+  `PATH`; the tag and the `test_helper.exs` block remain as the fallback for a missing
+  artifact or `node` (UNVERIFIED: the hosted ubuntu runner's `node` version against the wasm
+  host; `ubuntu-latest` preinstalls Node and `ci.yml` does not pin it). `:sibling_repos`
+  stays: those 3 tests are legitimately unrunnable on a hosted runner.
+- Guards: `test/ash_a2a/chicago/wasm_default_resolution_test.exs` (each resolver, no override,
+  resolves to a real file whose sha256 equals the MANIFEST pin; 7 of 9 fail on base
+  `2730c9b`), and `test/ash_a2a/chicago/falsifier_wasm_default_reachability_test.exs`
+  (no `lib/` wasm default under a developer home; failed at `55753a5`).
+- `test/ash_a2a_sa2a_corpus_test.exs`: the pin test joined `/Users/sac/praxis` with a manifest
+  path that already starts with `praxis/`, a path that never existed, so it always took its
+  "not checkable here" branch and never compared a digest. It now compares the vendored wasm's
+  sha256 and byte size to the corpus manifest on every checkout.
+- `AshA2A.Chicago.Fixtures.GraphlawEngine.stop_host/1`: a TOCTOU race (host linked to the test
+  process dies between `Process.whereis/1` and `GenServer.stop/3`) failed
+  `GraphlawEngineTest` "every recorded case re-runs..." once in a full run under load
+  (`** (exit) no process`); it passes 3 of 3 in isolation. `stop_pid/1` now treats "already
+  gone" as success; guard: `test/ash_a2a/chicago/graphlaw_engine_stop_host_test.exs`.
 
 ## Evidence
 
