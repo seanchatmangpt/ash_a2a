@@ -19,6 +19,7 @@ defmodule AshA2A.Gall.ProcessIntervention do
   def admit(finding, opts \\ []) when is_map(finding) do
     producer_sha = finding[:producer_sha] || finding["producer_sha"]
     evidence_digest = finding[:evidence_digest] || finding["evidence_digest"]
+
     semantic_subject_digest =
       finding[:semantic_subject_digest] || finding["semantic_subject_digest"]
 
@@ -149,18 +150,16 @@ defmodule AshA2A.Gall.ProcessIntervention do
     end
   end
 
-  defp independent_confirmation(
-         %Receipt{
-           metadata: %{
-             postcondition: %{status: :verified, independent: true} = observation
-           }
+  defp independent_confirmation(%Receipt{
+         metadata: %{
+           postcondition: %{status: :verified, independent: true} = observation
          }
-       ),
+       }),
        do: {:ok, observation}
 
-  defp independent_confirmation(
-         %Receipt{metadata: %{postcondition: %{status: :unverified, reason: reason}}}
-       ),
+  defp independent_confirmation(%Receipt{
+         metadata: %{postcondition: %{status: :unverified, reason: reason}}
+       }),
        do: {:error, {:independent_observer_unverified, reason}}
 
   defp independent_confirmation(_), do: {:error, :independent_observer_not_verified}
@@ -230,7 +229,10 @@ defmodule AshA2A.Gall.ProcessIntervention do
   end
 
   defp canonical(value) when is_map(value),
-    do: value |> Enum.map(fn {key, nested} -> {to_string(key), canonical(nested)} end) |> Enum.sort()
+    do:
+      value
+      |> Enum.map(fn {key, nested} -> {to_string(key), canonical(nested)} end)
+      |> Enum.sort()
 
   defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
   defp canonical(value), do: value

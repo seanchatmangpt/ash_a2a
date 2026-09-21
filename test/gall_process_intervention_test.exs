@@ -163,12 +163,14 @@ defmodule AshA2A.Gall.ProcessInterventionTest do
     ]
 
     first_command =
-      Command.new(first.capability_id,
+      Command.new(
+        first.capability_id,
         common ++ [metadata: %{gall_029_candidate_digest: first.candidate_digest}]
       )
 
     second_command =
-      Command.new(second.capability_id,
+      Command.new(
+        second.capability_id,
         common ++ [metadata: %{gall_029_candidate_digest: second.candidate_digest}]
       )
 
