@@ -11,6 +11,8 @@ defmodule AshA2A.CommandBusCrashWindowChicagoTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{CommandBus, Receipt, ReceiptOutbox, ReceiptStore}
   alias AshA2A.Test.Fixture.ReceiptCrashWindow.{ExternalDo, Runner}
 

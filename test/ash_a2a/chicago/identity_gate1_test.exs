@@ -13,6 +13,8 @@ defmodule AshA2A.Chicago.IdentityGate1Test do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Query, Requalification, Runner, StandingReceipt, Subject}
   alias AshA2A.Chicago.Courts.ExactIdentity
   alias AshA2A.Chicago.Fixtures.Identity, as: Fx

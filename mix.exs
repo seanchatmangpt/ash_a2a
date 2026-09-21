@@ -1,6 +1,17 @@
 defmodule AshA2A.MixProject do
   use Mix.Project
 
+  def cli do
+    [
+      preferred_envs: [
+        "test.all": :test,
+        "test.serial": :test,
+        "test.serial.shard": :test,
+        "test.serial.solo": :test
+      ]
+    ]
+  end
+
   def project do
     [
       app: :ash_a2a,
@@ -13,7 +24,59 @@ defmodule AshA2A.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
-      docs: docs()
+      docs: docs(),
+      aliases: aliases()
+    ]
+  end
+
+  defp aliases do
+    [
+      # `mix test` is now the fast-iteration default: the ~96 files tagged
+      # `:serial` are `async: false` for real shared-state reasons (see
+      # `test/test_helper.exs`'s broker comment, and each file's own
+      # moduledoc -- mostly a shared global `:telemetry` observer used for
+      # stimulus attribution) and run strictly one-at-a-time regardless of
+      # `--max-cases`, dominating full-suite wall clock (measured: ~240s
+      # for the fast lane vs. ~740-1300s for everything). Full coverage
+      # (what CI runs) is `mix test.all`; `mix test.serial` runs just the
+      # excluded tail.
+      #
+      # `test.all` deliberately reads `"test --include serial"`, not
+      # `"test"`: Mix's alias self-reference loop guard only fires when an
+      # alias invokes a task of its OWN name, not when a *different*
+      # alias's step resolves to an already-aliased task name -- so a bare
+      # `"test.all": "test"` would silently re-enter the `test` alias
+      # above (still excluding `:serial`) instead of reaching the real
+      # underlying task. `--include serial` is ExUnit's own, native way to
+      # cancel the earlier `--exclude serial`: ExUnit applies include/
+      # exclude filters for a tag in the order given, so the later
+      # `--include` wins for that tag, correctly yielding the full suite
+      # with zero custom logic.
+      test: "test --exclude serial",
+      "test.all": "test --include serial",
+      "test.serial": "test --only serial",
+
+      # `:serial` (all 96) splits into two DISJOINT, independently-tagged
+      # subsets rather than "serial minus an exclude": ExUnit's `--only`
+      # is a sole selector, not intersected with a same-invocation
+      # `--exclude` for a different tag (confirmed empirically -- `--only
+      # serial --exclude serial_solo` silently ran a `serial_solo`-tagged
+      # test anyway, letting a `:benchmark` resource-ceiling test slip
+      # through onto a loaded host). So instead of trying to subtract,
+      # each file gets exactly one of two positive tags:
+      #   - `:serial_solo` (~23 files): holds a real host-level shared
+      #     resource across OS processes (a fixed port, a real
+      #     `:peer`/multinode spawn, the shared Postgres test database,
+      #     the `hddl_cli` native subprocess) -- must run together in one
+      #     `mix test.serial.solo` invocation, never sharded.
+      #   - `:serial_shard` (~73 files): serial only for real but
+      #     VM-local shared state (a shared `:telemetry` observer, the
+      #     shared `AshA2A.Authority.Broker.InMemory`) -- safe to run via
+      #     `MIX_TEST_PARTITION=<n> mix test.serial.shard --partitions <N>`
+      #     launched as N separate OS processes (each tracked by its own
+      #     PID, never stopped by name/pattern) -- see the how-to guide.
+      "test.serial.shard": "test --only serial_shard",
+      "test.serial.solo": "test --only serial_solo"
     ]
   end
 

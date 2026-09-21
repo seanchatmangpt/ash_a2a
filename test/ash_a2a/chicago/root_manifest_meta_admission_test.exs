@@ -14,6 +14,8 @@ defmodule AshA2A.Chicago.RootManifestMetaAdmissionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{CourtManifest, Result, Runner, StandingReceipt, Subject}
   alias AshA2A.Chicago.Courts.{MetaAdmission, RootManifest}

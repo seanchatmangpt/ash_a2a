@@ -14,6 +14,8 @@ defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Receipt, ReceiptOutbox}
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Query, Runner}

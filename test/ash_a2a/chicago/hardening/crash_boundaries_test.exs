@@ -36,6 +36,8 @@ defmodule AshA2A.Chicago.Hardening.CrashBoundariesTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Identity, Receipt, Reconciliation}
   alias AshA2A.Chicago.Fixtures.ChaosReconciliation.Environment, as: Env
 

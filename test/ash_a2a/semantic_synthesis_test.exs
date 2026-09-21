@@ -1,6 +1,8 @@
 defmodule AshA2A.Planning.SemanticSynthesisTest do
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Planning.SemanticSynthesis
   alias AshA2A.Test.Fixture.Echo
 

@@ -11,6 +11,8 @@ defmodule AshA2A.AuthorityBrokerEkvTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Authority, Identity}
   alias AshA2A.Authority.Broker.Ekv
 

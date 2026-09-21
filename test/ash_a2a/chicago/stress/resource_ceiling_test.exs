@@ -40,6 +40,8 @@ defmodule AshA2A.Chicago.Stress.ResourceCeilingTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.Fixtures.AutonomyBounds, as: F
   alias AshA2A.Semantic.Episode
 

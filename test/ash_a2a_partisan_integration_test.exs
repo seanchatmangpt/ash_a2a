@@ -48,6 +48,8 @@ defmodule AshA2A.PartisanIntegrationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   @moduletag :partisan_investigation
 
   @tag :skip

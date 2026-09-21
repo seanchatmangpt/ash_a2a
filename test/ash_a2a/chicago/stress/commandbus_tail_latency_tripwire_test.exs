@@ -81,6 +81,8 @@ defmodule AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Bench, Json}
   alias AshA2A.{Authority, Command, CommandBus, Identity}
   alias AshA2A.Test.Fixture.Item

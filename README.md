@@ -142,10 +142,12 @@ cd native/hddl_cli && cargo build --release --locked && cd -
 - Postgres 16 on `localhost:55432` (user/password `postgres`, db
   `ash_a2a_test`, per `config/test.exs`) is needed by the real Oban
   delivery qualification tests.
-- The canonical full-suite invocation is `mix test --max-cases 6` (the
-  suite spawns `:peer` nodes and subprocesses; higher parallelism trips
-  port-bind races). 1–2 known-flaky tests are documented in the
-  [CHANGELOG](CHANGELOG.md) under `[26.9.17]`.
+- `mix test` (no args) is the fast-iteration default — it excludes the
+  `:serial`-tagged tail (see the how-to guide below). The canonical
+  full-suite invocation, and what CI runs, is `mix test.all --max-cases 6`
+  (the suite spawns `:peer` nodes and subprocesses; higher parallelism
+  trips port-bind races). Known-flaky tests are documented in the
+  [CHANGELOG](CHANGELOG.md).
 
 Full detail: [Testing ash_a2a (your app and this
 repo)](docs/how-to/test-your-ash_a2a-app.md). Both `target/` directories are

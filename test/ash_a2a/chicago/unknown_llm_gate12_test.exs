@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.UnknownLlmGate12Test do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Context, Falsifier, Result, Runner}
   alias AshA2A.Chicago.Courts

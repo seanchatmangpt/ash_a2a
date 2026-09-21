@@ -30,6 +30,8 @@ defmodule AshA2A.ArchitectureVerifier.ChicagoRollupTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.ArchitectureVerifier
   alias AshA2A.ArchitectureVerifier.ChicagoRollup
   alias AshA2A.Chicago.{Result, Runner}

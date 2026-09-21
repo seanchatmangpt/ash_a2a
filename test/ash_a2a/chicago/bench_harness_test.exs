@@ -15,6 +15,8 @@ defmodule AshA2A.Chicago.BenchHarnessTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Authority.Broker.InMemory
   alias AshA2A.Authority.Grant
   alias AshA2A.Chicago.{Bench, Query, Runner, StandingReceipt, Subject}

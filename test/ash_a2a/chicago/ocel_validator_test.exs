@@ -14,6 +14,8 @@ defmodule AshA2A.Chicago.OcelValidatorTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Context, Observer, Result, Runner, StandingReceipt}
   alias AshA2A.Chicago.Courts.OcelValidity
   alias AshA2A.Chicago.Ocel.{Log, Mapping, Validator}

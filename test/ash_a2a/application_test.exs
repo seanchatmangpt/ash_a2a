@@ -1,6 +1,8 @@
 defmodule AshA2A.ApplicationTest do
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   @moduledoc """
   Exercises `AshA2A.Application.start/2` for real. Every other test in this
   suite that needs a running `A2A.AgentSupervisor` bypasses this module and

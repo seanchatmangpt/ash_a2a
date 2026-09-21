@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.CanonicalIdentityProjectionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Chicago.Courts.{
     CanonicalGraphIdentity,
     CanonicalMutation,

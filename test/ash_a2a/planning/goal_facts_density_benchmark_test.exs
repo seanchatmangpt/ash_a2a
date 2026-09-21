@@ -99,6 +99,8 @@ defmodule AshA2A.Planning.GoalFactsDensityBenchmarkTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Planning.GoalFacts
   alias AshA2A.Test.Fixture.HddlDeterministicFixture
 

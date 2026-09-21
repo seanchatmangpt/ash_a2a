@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.CrownTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago
 
   alias AshA2A.Chicago.Courts.{

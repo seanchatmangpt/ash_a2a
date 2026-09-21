@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.MutationHarnessTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Authority, CommandBus, Identity}
   alias AshA2A.Authority.Broker
   alias AshA2A.Chicago.{Mutation, Runner}

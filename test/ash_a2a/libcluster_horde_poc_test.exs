@@ -40,6 +40,8 @@ defmodule AshA2A.LibclusterHordePocTest do
   """
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   setup_all do
     System.cmd("epmd", ["-daemon"], stderr_to_stdout: true)
 

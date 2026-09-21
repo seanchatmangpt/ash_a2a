@@ -15,6 +15,8 @@ defmodule AshA2A.Chicago.CrossRuntimePortabilityTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Query, Runner}
   alias AshA2A.Chicago.Courts.CrossRuntimePortability, as: Court
   alias AshA2A.Chicago.Fixtures.CrossRuntime, as: Fx

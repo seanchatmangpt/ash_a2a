@@ -11,6 +11,8 @@ defmodule AshA2A.ReceiptStoreEkvTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.{Command, CommandBus, Identity, Receipt}

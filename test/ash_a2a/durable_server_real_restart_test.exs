@@ -66,6 +66,8 @@ defmodule AshA2A.DurableServerRealRestartTest do
   """
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Durability.DurableServer, as: Durability
   alias AshA2A.Identity
   alias AshA2A.Test.RestartableDurableServerFixture, as: Fixture

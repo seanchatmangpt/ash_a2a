@@ -66,6 +66,8 @@ defmodule AshA2A.MultinodeClusterTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Test.Fixture.HddlDeterministicFixture
   alias AshA2A.Test.MultinodeDispatch
 

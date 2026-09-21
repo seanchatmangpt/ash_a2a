@@ -19,6 +19,8 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Semantic.{CanonicalDigest, GraphLawBridge, IR, Ontology, Serialize}
 
   # Published BLAKE3 test vector for the input "abc".

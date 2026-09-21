@@ -13,6 +13,8 @@ defmodule AshA2A.Chicago.LogicSparqlTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.Courts.{SafeLogic, SparqlFalsifiers}
   alias AshA2A.Chicago.Fixtures.LogicSparql, as: F
   alias AshA2A.Chicago.{Result, Runner, StandingReceipt}

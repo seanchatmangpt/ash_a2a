@@ -141,6 +141,8 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Telemetry.RouterCounters

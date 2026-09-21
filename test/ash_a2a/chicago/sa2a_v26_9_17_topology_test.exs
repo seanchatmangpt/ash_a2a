@@ -10,6 +10,8 @@ defmodule AshA2A.Chicago.SA2AV269_17TopologyTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.Courts.SA2AV269_17Topology, as: Topology
   alias AshA2A.Chicago.{Query, Runner}
 

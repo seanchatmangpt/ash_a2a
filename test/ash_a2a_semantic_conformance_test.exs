@@ -24,6 +24,8 @@ defmodule AshA2ASemanticConformanceTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Semantic.{Admission, Conformance, IR, Ontology, Profile, Source, Vocabulary}
   alias AshA2A.{Receipt, SemanticSubject}
 

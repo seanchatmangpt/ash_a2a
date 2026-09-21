@@ -17,6 +17,8 @@ defmodule AshA2A.Chicago.Observer.EvidenceBoundsTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.Observer
   alias AshA2A.Chicago.Observer.EvidenceBounds
   alias AshA2A.Chicago.Ocel.Mapping

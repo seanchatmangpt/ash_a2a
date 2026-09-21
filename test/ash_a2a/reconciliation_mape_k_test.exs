@@ -6,6 +6,9 @@ defmodule AshA2A.Reconciliation.MapeKTest do
   ledger (a real collaborator, not an interaction verifier).
   """
   use ExUnit.Case, async: false
+
+  @moduletag :serial
+  @moduletag :serial_shard
   @moduletag :tmp_dir
 
   alias AshA2A.{Command, Receipt, ReceiptOutbox, Reconciliation}

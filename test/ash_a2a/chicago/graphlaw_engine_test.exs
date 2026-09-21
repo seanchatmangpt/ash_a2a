@@ -14,6 +14,8 @@ defmodule AshA2A.Chicago.GraphlawEngineTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Result, Runner, StandingReceipt}
   alias AshA2A.Chicago.Courts.GraphlawEngine

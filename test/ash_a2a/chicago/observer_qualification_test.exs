@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.ObserverQualificationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Observer, Query, Result, Runner, StandingReceipt, Subject}
   alias AshA2A.Chicago.Courts.ObserverQualification
   alias AshA2A.Chicago.Fixtures.ObserverQualification, as: Fx

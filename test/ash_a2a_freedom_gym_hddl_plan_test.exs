@@ -31,6 +31,8 @@ defmodule AshA2AFreedomGymHddlPlanTest do
   # `A2A.Agent` process itself is registered under its own module name).
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Test.Fixture.FreedomGym.{FacilitatorAgent, MeetingPlan}

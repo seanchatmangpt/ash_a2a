@@ -15,6 +15,8 @@ defmodule AshA2A.SA2AConformanceTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.GraphLaw.{Runtime, RuntimeB, WasmexSession}
   alias AshA2A.SA2A.{Conformance, ResultProjection, StateMachine, Vector}
 

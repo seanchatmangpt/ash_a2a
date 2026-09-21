@@ -24,6 +24,8 @@ defmodule AshA2A.SemanticConformanceDynamicCallSitesTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Semantic.Conformance
   alias AshA2A.Test.{DynamicCallSiteFixture, StaticCallSiteFixture}
 

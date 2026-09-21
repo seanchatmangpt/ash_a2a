@@ -48,6 +48,9 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
   it depends on a real out-of-process server.
   """
   use ExUnit.Case, async: false
+
+  @moduletag :serial
+  @moduletag :serial_solo
   @moduletag :external_api
 
   import AshA2A.Test.MessageHelpers

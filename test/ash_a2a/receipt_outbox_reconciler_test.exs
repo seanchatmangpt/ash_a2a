@@ -16,6 +16,8 @@ defmodule AshA2A.ReceiptOutboxReconcilerTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Command, Identity, Receipt, ReceiptOutbox}
   alias AshA2A.ReceiptOutbox.Reconciler
 

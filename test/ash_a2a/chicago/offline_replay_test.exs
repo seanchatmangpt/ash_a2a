@@ -15,6 +15,8 @@ defmodule AshA2A.Chicago.OfflineReplayTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   import ExUnit.CaptureIO
 
   alias AshA2A.Chicago.{Result, Runner}

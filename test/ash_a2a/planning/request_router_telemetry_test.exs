@@ -47,6 +47,8 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Planning.RequestRouter
   alias AshA2A.Semantic.IR
   alias AshA2A.Telemetry.RouterCounters

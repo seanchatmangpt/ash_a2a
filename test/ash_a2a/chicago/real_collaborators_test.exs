@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Collaborators, Query, Runner}
   alias AshA2A.Chicago.Collaborators.{DurabilityProbe, MockScan}
   alias AshA2A.Chicago.Courts.RealCollaborators

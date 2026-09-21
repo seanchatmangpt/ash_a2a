@@ -18,6 +18,8 @@ defmodule AshA2A.Chicago.BrceGate7Test do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Authority, BrceAnchor, Command, CommandBus, Dispatcher, Identity, Receipt}
   alias AshA2A.{ReceiptOutbox, ReceiptStore}
   alias AshA2A.Chicago

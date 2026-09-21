@@ -13,6 +13,8 @@ defmodule AshA2A.RuntimeProvidersIntegrationTest do
   """
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Durability.DurableServer, as: Durability
   alias AshA2A.Execution.FLAME, as: Placement
   alias AshA2A.Identity
