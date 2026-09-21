@@ -34,6 +34,37 @@ once it reaches 1.0.
 - Two GALL process-intervention specs (from `gall/v26.9.18-final-specs`):
   `docs/jira/v26.9.18/GALL-029-process-finding-admission-{PRD,ARD}.md`,
   `docs/jira/v26.9.18/GALL-030-bounded-process-intervention-{PRD,ARD}.md`.
+- **GALL-003 command-receipt court** (from PR #25): `lib/ash_a2a/gall/
+  command_receipt.ex`, a `mix run` script
+  (`scripts/gall_checkpoint_003_receipt.exs`) and CI workflow producing a
+  durable, portable command-receipt seal binding a receipt to its exact
+  command/capability/consequence-terminal-state identity
+  (`test/ash_a2a_gall_command_authority_test.exs`,
+  `test/gall_checkpoint_003_command_authority_chicago_test.exs`).
+- **GALL-029/030 process intervention** (from PR #26):
+  `lib/ash_a2a/gall/process_intervention.ex` -- admits a process finding,
+  binds it to an independently-observed, digest-matched candidate and its
+  receipt, and routes a bounded `CommandBus` intervention only once every
+  identity/authority/consequence check passes
+  (`test/gall_process_intervention_test.exs`). `Command.fingerprint/1`
+  (`lib/ash_a2a/command.ex`) now additionally folds in a
+  `:gall_029_candidate_digest` metadata field when present -- a deliberate
+  identity-widening fix closing a replay hole where two different admitted
+  findings could otherwise share one command fingerprint; ordinary
+  transport-only metadata remains excluded.
+- 16 new S42 refusal codes introduced by the above two additions --
+  `semantic_subject_missing`, `invalid_gall_command_receipt`,
+  `non_consequence_receipt`, `consequence_terminal_state_unbound`,
+  `capability_mismatch`, `receipt_capability_mismatch`,
+  `requested_capability_id`, `gall_029_admission_required`,
+  `candidate_digest_mismatch`, `candidate_binding_mismatch`,
+  `receipt_candidate_binding_mismatch`, `receipt_command_mismatch`,
+  `independent_observer_required`, `independent_observer_not_verified`,
+  `secret_bearing_finding`, `actuation_store_unavailable` -- registered in
+  `AshA2A.Semantic.Refusal`'s S42 taxonomy so `classify/1` stays total
+  (caught by the existing refusal-drift test,
+  `test/ash_a2a/semantic_refusal_test.exs`, before this fix and passing
+  after it).
 
 ### Changed
 
