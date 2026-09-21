@@ -16,7 +16,7 @@ Status legend:
   `AshA2A.Agent.__dispatch__`'s default path under any condition; reached only via an
   explicit alternate caller (Reactor step, planner output, etc.).
 
-As of v26.9.14 (re-verified at v26.9.17), every module previously listed
+As of v26.9.14 (re-verified at v26.9.21), every module previously listed
 `ADAPTER-SEAM (no real provider)` has a real, dependency-satisfied, tested
 integration -- see
 [Architecture](../explanation/architecture.md#the-ecosystem-adapters-are-real-integrations-not-just-seams)
@@ -145,3 +145,23 @@ dependency of this project with a real qualification test exercising it -- see
 | [`AshA2A.Telemetry.OcelForwarder`](https://hexdocs.pm/ash_a2a/AshA2A.Telemetry.OcelForwarder.html) | Best-effort OCEL v2 telemetry egress. Exactly one event per CommandBus-routed dispatch (dispatch-span and receipt-committed fields merged, deduplicated); a direct `Dispatcher.dispatch/5` caller still gets its own dispatch event. Observational only. | ALIVE |
 | [`AshA2A.SemanticProjection`](https://hexdocs.pm/ash_a2a/AshA2A.SemanticProjection.html) | Read-only projection of committed receipts and capabilities into machine-readable evidence; joins `ash_r2rml` mapping results when available (real, asserted mapping as of v26.9.14, not just the refusal path). | PARTIAL (not default path) |
 | [`AshA2A.Research.ERC`](https://hexdocs.pm/ash_a2a/AshA2A.Research.ERC.html) | Executable Research Claim receipt emitter; writes a machine-readable JSON receipt from this project's own test-run evidence. | PARTIAL (not default path) |
+
+## GALL structured-work-fabric & receipt courts (v26.9.20)
+
+Real code with real, passing Chicago-style tests, but none of these are called
+by `AshA2A.Agent.__dispatch__`'s default path, `CommandBus`, or `Dispatcher` --
+they are typed message/receipt shapes and a standalone reconciliation loop,
+reached only via their own scripts/tests or explicit host wiring (same
+"PARTIAL (not default path)" convention as the `Reactor.*` rows above).
+
+| Module | Description | Status |
+| --- | --- | --- |
+| [`AshA2A.Gall.Capability`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.Capability.html) | The closed GALL capability vocabulary (PRD §43.5): `Read/Write/Edit/Commit/Push/Publish/Deploy/Merge`, no extension point. | PARTIAL (not default path) |
+| [`AshA2A.Gall.Checkpoint`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.Checkpoint.html) | Typed GALL checkpoint message shape. | PARTIAL (not default path) |
+| [`AshA2A.Gall.CommandReceipt`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.CommandReceipt.html) | GALL-003 durable portable command receipt court: seals a command receipt independent of the issuing `ReceiptStore`. | PARTIAL (not default path) |
+| [`AshA2A.Gall.EvidenceReceipt`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.EvidenceReceipt.html) | Typed GALL evidence-receipt message shape. | PARTIAL (not default path) |
+| [`AshA2A.Gall.Fields`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.Fields.html) | Shared field-shape helpers for GALL message types. | PARTIAL (not default path) |
+| [`AshA2A.Gall.Message`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.Message.html) | GALL structured-work-fabric message envelope; `validate/2` enforces the capability child-subset rule (PRD §30). | PARTIAL (not default path) |
+| [`AshA2A.Gall.ProcessIntervention`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.ProcessIntervention.html) | GALL-029 finding admission and GALL-030 bounded intervention over `CommandBus`; findings remain evidence, never authority. | PARTIAL (not default path) |
+| [`AshA2A.Gall.WorkLease`](https://hexdocs.pm/ash_a2a/AshA2A.Gall.WorkLease.html) | Typed GALL work-lease message shape. | PARTIAL (not default path) |
+| [`AshA2A.Reconciliation.MapeK`](https://hexdocs.pm/ash_a2a/AshA2A.Reconciliation.MapeK.html) | Named Monitor/Analyze/Plan/Execute-over-shared-Knowledge loop built on `AshA2A.Reconciliation.classify/4`/`.reconcile/4`; purely additive, no default-path wiring. | PARTIAL (not default path) |

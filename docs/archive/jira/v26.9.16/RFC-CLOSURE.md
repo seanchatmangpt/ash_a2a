@@ -9,7 +9,7 @@ Status: DRAFT IMPLEMENTATION PR. No merge, publication, runtime ALIVE, or produc
 - A2A-2611 — SHLLM bounded local UNKNOWN tier
 - A2A-2612 — machine-experience compile-back
 
-Canonical ticket text lives on `main` under `docs/jira/v26.9.16/`.
+Canonical ticket text lives on `main` under `docs/archive/jira/v26.9.16/`.
 
 ## RFC ownership
 

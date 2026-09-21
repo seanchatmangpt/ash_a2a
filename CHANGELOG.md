@@ -10,7 +10,8 @@ once it reaches 1.0.
 
 ### Changed
 
-- No source changes. This version records merging the local
+- No functional source changes (see "Documentation" below for prose-only
+  moduledoc/comment path updates). This version records merging the local
   `release/v26.9.20` branch (commits `8eb4335`, `bb47a99`) into `main` as
   `2730c9b` -- the round-2 GALL-003/GALL-029/030 work landed on `main`
   after the `[26.9.20]` entry below was written, so this entry closes that
@@ -32,6 +33,46 @@ once it reaches 1.0.
   identity conservation) still has real WASM/SAT-solver environment
   failures, not a mechanical fix -- deferred, unchanged from the prior
   two rounds' reasoning.
+
+### Documentation
+
+Full documentation audit and archive pass ahead of external review:
+
+- Created `docs/archive/` and moved 47 point-in-time engineering records
+  out of the active docs tree: the entire `docs/jira/` RFC-ticket/ARD-PRD
+  scratch area (34 files, `v26.9.11`-`v26.9.18` plus the cross-cutting
+  GALL-CHECKPOINT-003 set) to `docs/archive/jira/`; the v26.9.17
+  benchmark/stress/hardening/coverage reports, the partisan-integration
+  spike note, and the AIRGAP/ENTERPRISE/SSP security-posture reports (10
+  files) to `docs/archive/reports/`; and `MANUFACTURING_RECEIPT.md` plus
+  `litho.docs/` (14 files) to `docs/archive/session-history/`. All moves
+  via `git mv` (history preserved). Left in place as durable, non-
+  point-in-time docs: `docs/explanation/chicago-conformance-court.md`,
+  `docs/rfc/` (versioned specs), `docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md`.
+- Updated every real citation of a moved file's path in `lib/ash_a2a/
+  {command_bus,agent}.ex` moduledocs, `docs/how-to/{authenticate-agent-
+  requests,verify-authority-on-async-paths}.md`, three test files'
+  moduledoc/error-message strings, `k8s/README.md`, and `SECURITY.md` --
+  prose/comment-only edits, no logic changes; confirmed via a repo-wide
+  grep for the old paths (zero dangling references outside historical
+  CHANGELOG entries) and a full green test run.
+- `docs/reference/index.md` (the module-status source of truth) was 4
+  versions stale ("re-verified at v26.9.17"). A `defmodule` grep over
+  `lib/` found 9 real modules missing from its tables -- the 8 GALL
+  structured-work-fabric/receipt modules and `AshA2A.Reconciliation.MapeK`
+  -- now added as a new "GALL structured-work-fabric & receipt courts"
+  section, classified `PARTIAL (not default path)` (real, tested, not
+  reached by `Agent.__dispatch__`'s default path). Re-verified at v26.9.21.
+- `docs/reference/a2a-spec-version-mapping.md` existed on disk and shipped
+  in the Hex package tarball but wasn't wired into ExDoc's `docs()` extras
+  or linked from README -- added to both.
+- `docs/how-to/test-your-ash_a2a-app.md`'s "Known flakiness" section named
+  a stale flake set (`:hddl_solve_error` mapping, `:eaddrinuse`) from
+  v26.9.17; replaced with the current, actually-observed flakes
+  (`BoundsExhaustionTest`'s "no self-grant" property,
+  `AshA2A.CancelInflightTest`) per this session's own full-suite evidence.
+- Full accounting of every file touched (kept/updated/archived, with
+  reasons) recorded in `DOCS_AUDIT_v26.9.21.md` at the repo root.
 
 ## [26.9.20] - 2026-09-20
 

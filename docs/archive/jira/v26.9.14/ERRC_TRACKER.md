@@ -3,7 +3,7 @@
 Started 2026-09-15, scope: real gaps and tooling friction surfaced across this
 session's work on `epoch/v26.9.15-semantic-subject` → `main` → v26.9.14 (published,
 then republished with doc corrections). Source material: this session's own
-`docs/jira/v26.9.14/RELEASE_RECEIPT.md` §8 disclosures, the earlier remote-eval
+`docs/archive/jira/v26.9.14/RELEASE_RECEIPT.md` §8 disclosures, the earlier remote-eval
 deferred list, and the live friction hit running `act` locally.
 
 ## Cycle 5 (2026-09-15) — loop wrap-up: dead-argument-DSL warning executed
@@ -150,7 +150,7 @@ answered with real evidence, not assumption:
 - **Emitted OCEL event shape uses ad hoc flat keys, not real OCEL 2.0's
   `ocel:`-prefixed wire vocabulary** — confirmed this is an intentional,
   disclosed design choice targeting beam4pm's specific ingest contract
-  (`docs/jira/v26.9.11/ocel-v2-telemetry-forwarder.md`), not a bug, but the
+  (`docs/archive/jira/v26.9.11/ocel-v2-telemetry-forwarder.md`), not a bug, but the
   divergence from the actual OCEL 2.0 standard is real. `bounded_and_safe:
   false` — cross-repo (ash_a2a ↔ beam4pm) wire-contract decision. Options:
   dual emission (standard + beam4pm-specific) or getting beam4pm's router

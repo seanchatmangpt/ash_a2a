@@ -94,9 +94,9 @@ defmodule AshA2A.CommandBus do
 
   The bound is 2x headroom over the worst non-pathological ratio measured
   for the default `AshA2A.ReceiptStore.Memory` backend (1.274x-1.515x,
-  `docs/explanation/v26.9.17-commandbus-scale.md`), versus the pathological
+  `docs/archive/reports/v26.9.17-commandbus-scale.md`), versus the pathological
   181x observed under heavy external host contention
-  (`docs/explanation/v26.9.17-stress-report.md`). Mechanism: `Memory` is a
+  (`docs/archive/reports/v26.9.17-stress-report.md`). Mechanism: `Memory` is a
   single `GenServer` -- every claim/actuation-claim/commit funnels through
   one mailbox, so when the store process is descheduled under contention,
   queued calls pile up and the *tail* (p99) climbs; the tripwire samples the

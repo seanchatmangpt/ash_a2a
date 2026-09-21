@@ -17,10 +17,10 @@ defmodule AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest do
   The bound is 2x headroom over the worst non-pathological ratio ever
   measured for the default `AshA2A.ReceiptStore.Memory` backend
   (1.274x / 1.515x / 1.391x across the three real runs reported in
-  `docs/explanation/v26.9.17-commandbus-scale.md`), and far below the
+  `docs/archive/reports/v26.9.17-commandbus-scale.md`), and far below the
   pathological 181x observed when the host itself was under heavy external
   contention (load average 12-18 on a 16-scheduler host; see
-  `docs/explanation/v26.9.17-stress-report.md`). The tripwire is therefore
+  `docs/archive/reports/v26.9.17-stress-report.md`). The tripwire is therefore
   meaningful on a nominally unloaded host; on a heavily contended host the
   run reports its ratio and may trip -- that is the honest reading, not a
   false positive (an operator signing a Fortune-5 SLO needs to know their
@@ -236,7 +236,7 @@ defmodule AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest do
              "max_store_mailbox_len=#{max_store_mql}, forced=#{force_x}) -- " <>
              "CommandBus.run/4's tail is climbing under sustained load; see the " <>
              "moduledoc mechanism notes and " <>
-             "docs/explanation/v26.9.17-commandbus-scale.md"
+             "docs/archive/reports/v26.9.17-commandbus-scale.md"
   end
 
   defp drive_worker(worker_idx, run_id, label_prefix, deadline_ms, run_started_ms, ctx) do

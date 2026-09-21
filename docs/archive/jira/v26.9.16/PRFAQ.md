@@ -179,7 +179,7 @@ used by `request_router_llm_never_called_test.exs`), and
   drawn from (this session's own multi-lens workflow output — not yet
   committed as a standing repo document; ask to have it written to
   `docs/` if it should become one).
-- `docs/jira/v26.9.15/README.md` — the release-charter format this
+- `docs/archive/jira/v26.9.15/README.md` — the release-charter format this
   document follows.
 - `lib/ash_a2a/planning/request_router.ex` — the already-real,
   already-tested router this charter wires in.

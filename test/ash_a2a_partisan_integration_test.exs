@@ -32,7 +32,7 @@ defmodule AshA2A.PartisanIntegrationTest do
   ~> 1.27` requirement) was also confirmed real via a diagnostic-only
   `telemetry` override attempt. Full evidence, both verbatim resolver
   failures, and the real Hex API requirement dumps live in
-  `docs/explanation/partisan-integration-investigation.md`.
+  `docs/archive/reports/partisan-integration-investigation.md`.
 
   Because dependency resolution never completes, Partisan was never added
   to this repo's real `mix.exs`/`mix.lock` (leaving both would permanently
@@ -52,7 +52,7 @@ defmodule AshA2A.PartisanIntegrationTest do
 
   @tag :skip
   @tag skip:
-         "BLOCKED at mix deps.get -- see docs/explanation/partisan-integration-investigation.md " <>
+         "BLOCKED at mix deps.get -- see docs/archive/reports/partisan-integration-investigation.md " <>
            "(Partisan 6.2.0's non-optional `telemetry ~> 1.1.0` pin conflicts with this repo's " <>
            "already-required `oban ~> 2.24` -> `telemetry ~> 1.3`; a second conflict layer via " <>
            "Partisan's exact `opentelemetry_api 1.2.1` pin was also confirmed real)"

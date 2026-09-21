@@ -94,11 +94,15 @@ are also exercisable directly — see the
 
 ### Known flakiness (honest inventory)
 
-As of v26.9.17, repeated full runs show 1–2 failures in *different* tests
-each run: `AshA2A.SemanticRefusalTest`'s `:hddl_solve_error` mapping check,
-and an `:eaddrinuse` port-bind race under parallel execution. Both are
-documented pre-existing in the CHANGELOG. Triage rule: re-run the single
-file; if it passes in isolation, it's one of these, not your change.
+As of v26.9.21 (~2122 tests), repeated full runs show 0–2 failures in
+*different* tests each run: `AshA2A.Chicago.Hardening.BoundsExhaustionTest`'s
+"no self-grant" property, and occasionally
+`AshA2A.CancelInflightTest` -- both `--max-cases 6` concurrency-timing
+flakes, confirmed pre-existing by diffing the failing file against
+`origin/main` (empty diff) and passing 3/3 in isolated single-file reruns.
+Documented in the CHANGELOG's `[26.9.20]`/`[26.9.21]` entries. Triage rule:
+re-run the single file; if it passes in isolation, it's one of these, not
+your change.
 
 ### Mirroring CI
 

@@ -43,6 +43,7 @@ defmodule AshA2A.MixProject do
             "docs/reference/telemetry.md",
             "docs/reference/mix-tasks.md",
             "docs/reference/a2a-endpoint-contract.md",
+            "docs/reference/a2a-spec-version-mapping.md",
             # Explanation
             "docs/explanation/architecture.md",
             "docs/explanation/message-lifecycle.md",
@@ -73,7 +74,7 @@ defmodule AshA2A.MixProject do
       links: %{"GitHub" => "https://github.com/seanchatmangpt/ash_a2a"},
       # The four Diataxis quadrants ship in the package so `mix hex.publish`
       # can build the ExDoc extras declared in docs/0 above. Internal trees
-      # (docs/jira, docs/rfc, litho.docs, research) deliberately do NOT ship.
+      # (docs/archive, docs/rfc, research) deliberately do NOT ship.
       files:
         ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE docs/tutorials docs/how-to docs/reference docs/explanation)
     ]

@@ -82,7 +82,7 @@ end
 
 defmodule AshA2AAgentSemanticRouterWiringTest do
   @moduledoc """
-  v26.9.16 (`docs/jira/v26.9.16/PRFAQ.md` item 1) real, Chicago-style
+  v26.9.16 (`docs/archive/jira/v26.9.16/PRFAQ.md` item 1) real, Chicago-style
   end-to-end coverage for the new production call site: a real dispatch
   through the real, supervised `A2A.Agent` process
   (`AshA2AAgentSemanticRouterWiringTest`'s own `SemanticRouterWiredAgent`)
