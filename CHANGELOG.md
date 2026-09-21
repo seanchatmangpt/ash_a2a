@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.21] - 2026-09-21
+
+### Changed
+
+- No source changes. This version records merging the local
+  `release/v26.9.20` branch (commits `8eb4335`, `bb47a99`) into `main` as
+  `2730c9b` -- the round-2 GALL-003/GALL-029/030 work landed on `main`
+  after the `[26.9.20]` entry below was written, so this entry closes that
+  gap. Full suite re-verified on `main` post-merge: 58 doctests, 29
+  properties, 2122 tests, 0 failures, 2 skipped.
+- Repository cleanup: removed worktrees and local branches fully subsumed
+  by that merge (`chore/f5-01-bench-wiring`, `chore/f5-01-defect1-verify`,
+  `chore/f5-01-defect2-verify`, `fix/hddlsolver-crossvm-tempdir`,
+  `fix/router-counters-isolation`, `fix/commandbus-skill-name-resolution`,
+  `feat/sa2a-002-chicago-foundation-v26.9.16`, `feat/gall-swf-v26.9.18`,
+  `w9-sweep/format-main`, `release/v26.9.18`, `release/v26.9.20`) --
+  each was either 0 commits ahead of `main` already or byte-identical
+  content already folded in.
+- No new upstream PR content included this round. Of the 9 open PRs on
+  `ash_a2a` at merge time: #22-#26/#29/#30 are already-included duplicates
+  (confirmed via diff, e.g. PR #30's formatting fix is identical to what
+  shipped in `[26.9.20]`); #28 is a narrowing stacked on #26's branch and
+  needs #26 pushed + rebased before it can land; #27 (Semantic Work
+  identity conservation) still has real WASM/SAT-solver environment
+  failures, not a mechanical fix -- deferred, unchanged from the prior
+  two rounds' reasoning.
+
 ## [26.9.20] - 2026-09-20
 
 ### Added
