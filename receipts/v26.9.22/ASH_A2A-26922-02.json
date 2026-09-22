@@ -1,0 +1,31 @@
+{
+  "wo": "ASH_A2A-26922-02",
+  "base_sha": "19cd30ee01d38e8df940a800ae081e85b370afc0",
+  "head_sha": "f85abfd4b60e30dd5e51ba4c44957ba2a68d0f24",
+  "commands": [
+    {
+      "cmd": "env -u ZAI_API_KEY mix test.all test/ash_a2a_zai_concurrency_ocel_test.exs (BEFORE fix, at 19cd30e)",
+      "exit": 0,
+      "output_excerpt": "50 real concurrent dispatches fired: 4/50 completed, 46x HTTP 429 rate-limit, '1 test, 0 failures'",
+      "note": "REGRESSION REPRODUCED: the test RAN because (a) @describetag skip: sat on a module with no describe block so the skip never attached, and (b) @moduletag :serial rescues the test from the :external_api exclusion under --include serial. Fired real Z.AI calls and wrote research/erc/ERC-003/004 receipts as side effects."
+    },
+    {
+      "cmd": "env -u ZAI_API_KEY mix test.all test/ash_a2a_zai_concurrency_ocel_test.exs (AFTER fix, at f85abfd)",
+      "exit": 0,
+      "output_excerpt": "1 test, 0 failures, 1 skipped",
+      "note": "skipped by tag as the WO acceptance requires"
+    },
+    {
+      "cmd": "mix test.all test/ash_a2a/chicago/stress/sustained_throughput_test.exs (AFTER fix)",
+      "exit": 0,
+      "output_excerpt": "All tests have been excluded. 0 tests, 0 failures (1 excluded)",
+      "note": ":benchmark exclusion now un-overridable by --include serial (serial tags removed from the 5 whole-module benchmark files)"
+    },
+    {
+      "cmd": "mix format --check-formatted",
+      "exit": 0
+    }
+  ],
+  "standing": "ALIVE",
+  "notes": "Fix covers the same class in all 10 affected files: zai (moduletag skip), 5 whole-module :benchmark files (serial tags removed), 3 mixed files with per-test EnvKeyFixture skips (5 external_api tests). freedom_gym already carried a module-level skip. CI-sim of the full suite deferred to the pre-push gate of ASH_A2A-26922-04."
+}
