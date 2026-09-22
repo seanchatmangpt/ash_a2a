@@ -92,12 +92,27 @@ Repair commit (root cause of the 103):
 - Base `2730c9b`, this tree, real environment, before the change: `mix compile
   --warnings-as-errors` exit 0, `mix format --check-formatted` exit 0, full `mix test`: 58
   doctests, 29 properties, 2122 tests, 0 failures, 2 skipped (18 excluded).
-- Hosted-CI simulation (wasm paths pointed at a missing file through the app config and all
-  five env vars, run over the 23 failing files):
+- Hosted-CI simulation of the original `8815f5b` state (wasm paths pointed at a missing file
+  through the app config and all five env vars, run over the 23 failing files). SUPERSEDED by
+  the repair below: it measured the exclusion, and the exclusion was the wrong fix.
   - forced-include (`--include graphlaw_engine --include sibling_repos`): 316 tests,
     103 failures; the failing set equals the CI set minus the 4 not reproducible locally
     (3 sibling-repo tests and the real defect), with 0 failures CI did not have.
   - as committed: 4 doctests, 213 tests, 0 failures, 3 skipped (122 excluded).
+- Repair, hosted-runner simulation (`f31df40`): a clean `git clone` (tracked files only) with
+  `deps`/`_build` cloned, run under macOS `sandbox-exec` with
+  `(deny file-read* (subpath "/Users/sac/praxis"))` so `File.exists?` on the praxis wasm is
+  `false` while the vendored wasm is `true` (verified from Elixir in the sandbox):
+  - Same three files at base `2730c9b` (`graph_law_wasm_test`, `semantic_admission_pipeline_test`,
+    `graphlaw_engine_test`): 20 tests, 1 failure, 10 skipped, 27 excluded, with
+    `[sa2a] EXCLUDING :graphlaw live-engine tests -- wasm_not_built (wasm: /Users/sac/praxis/...)`.
+    At `f31df40`: 47 tests, 0 failures, no `EXCLUDING` line.
+  - All 24 tagged files plus the new guards, no sandbox: 4 doctests, 368 tests, 0 failures, no
+    `EXCLUDING` line. With the sandbox: 329 of those pass and 6 fail plus 33 invalid (all
+    in the executable-identity probe, `emulator_sha256 => nil`, which needs process
+    introspection); the identical 6 failures and 33 invalid reproduce under
+    `sandbox-exec -p '(version 1)(allow default)'` with no deny rule, so they are a sandbox
+    artifact and not a reachability finding.
 - Sibling-repo simulation (`:chicago_topology_root` pointed at a missing directory): forced
   include gives 19 tests, 3 failures; as committed gives 16 tests, 0 failures (3 excluded).
 - The temporary simulation config was reverted before commit; `git diff -- config/test.exs`
@@ -116,14 +131,20 @@ Repair commit (root cause of the 103):
 1. The test-exclusion commit `8815f5b` applies to the PR head (`git apply --check` of its
    `test/` diff onto `488ae22` succeeded): only two of the tagged files differ between the PR
    head and this base (`envelope_negotiation_transport_test.exs`, `sa2a_conformance_test.exs`),
-   in unrelated version-string hunks.
+   in unrelated version-string hunks. The repair commit `f31df40` supersedes its premise:
+   the `lib/` + `test/` diff `2730c9b..f31df40` also `git apply --check`s cleanly onto
+   `488ae22` (worktree `/Users/sac/ash_a2a-wt2/pr27`, no change made). `f31df40` edits
+   `test/test_helper.exs` and the tagged files that `8815f5b` introduced, so take them in
+   order and together; `8815f5b` alone would hide 103 real-engine tests behind a false
+   premise, and the falsifier `5ece126` fails until `f31df40` lands.
 2. The refusal-class commit is `488ae22` on `errc/ash-a2a-pr27-refusal-classes` (cut from
    `8d61f46e`); it is only meaningful on the PR branch. With it,
    `test/ash_a2a/semantic_refusal_test.exs` (21 tests, including "every refusal code found on
    disk is explicitly mapped") and `test/ash_a2a_semantic_work_envelope_test.exs` pass, and
    `mix compile --warnings-as-errors` and `mix format --check-formatted` exit 0.
-3. Both are candidates; neither was pushed. Merge order on the PR branch: `488ae22` first
-   (real defect), then `8815f5b` (environment).
+3. All are candidates; none was pushed. Merge order on the PR branch: `488ae22` first
+   (real defect), then `8815f5b` (environment), `5ece126` (falsifier), `f31df40` (root-cause
+   repair).
 
 ## Not configured
 
