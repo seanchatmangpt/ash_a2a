@@ -1,0 +1,14 @@
+@prefix es: <https://w3id.org/chatman/engineering-standards#> .
+@prefix prof: <http://www.w3.org/ns/dx/prof/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix project: <https://w3id.org/chatman/project/seanchatmangpt-ash_a2a#> .
+
+project:Profile a prof:Profile ;
+  dcterms:title "seanchatmangpt/ash_a2a engineering-standards adoption" ;
+  dcterms:description "SA2A transport and runtime profile" ;
+  prof:isProfileOf <https://w3id.org/chatman/engineering-standards> ;
+  dcterms:source <https://github.com/seanchatmangpt/engineering-standards/commit/5a3bb6446aeaee2255a7523d4d8cebf6042960c3> .
+
+project:Repository a es:RepositorySubject ;
+  es:repository "seanchatmangpt/ash_a2a" ;
+  es:baseSha "596960660fb4c54777c0b8a24d9d284318898071" .
