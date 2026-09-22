@@ -273,6 +273,7 @@ defmodule AshA2A.Chicago.RootManifestMetaAdmissionTest do
       assert Refusal.classify(:court_manifest_not_an_object) == :refused_structure
     end
 
+    @tag :graphlaw_engine
     test "the committed Root Manifest is reproduced from the corpus and verifies at use" do
       {:ok, rebuilt} = ConformanceCorpus.build()
       assert rebuilt.digest == committed_root_digest()

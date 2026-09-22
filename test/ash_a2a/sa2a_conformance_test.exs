@@ -318,6 +318,7 @@ defmodule AshA2A.SA2AConformanceTest do
       assert reason.message =~ "same {host_id, engine_id}"
     end
 
+    @tag :graphlaw_engine
     test "refuses an empty corpus rather than passing vacuously" do
       dir = Path.join(System.tmp_dir!(), "sa2a_empty_#{System.unique_integer([:positive])}")
       File.mkdir_p!(dir)
@@ -331,6 +332,7 @@ defmodule AshA2A.SA2AConformanceTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "refuses a corpus directory that does not exist" do
       assert {:error, reason} = Conformance.run(corpus_dir: "/nonexistent/sa2a/corpus")
       assert reason.code == :sa2a_corpus_not_found

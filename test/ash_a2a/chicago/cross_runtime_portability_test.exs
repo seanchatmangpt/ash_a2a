@@ -146,6 +146,7 @@ defmodule AshA2A.Chicago.CrossRuntimePortabilityTest do
     end
 
     @tag timeout: 300_000
+    @tag :graphlaw_engine
     test "an unavailable host makes its falsifiers BLOCKED, never killed", %{tmp_dir: dir} do
       previous = Application.fetch_env(:ash_a2a, :graphlaw_runtime_b_executable)
 

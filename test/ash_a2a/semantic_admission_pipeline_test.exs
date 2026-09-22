@@ -484,6 +484,7 @@ defmodule AshA2A.SemanticAdmissionPipelineTest do
   end
 
   describe "engine unavailability is a refusal, never a pass" do
+    @tag :graphlaw_engine
     test "a wrong wasm path refuses at :parse as undetermined" do
       assert {:error, %Refusal{} = refusal} =
                AdmissionPipeline.admit(

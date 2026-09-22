@@ -172,6 +172,7 @@ defmodule AshA2A.Chicago.CrownTest do
   end
 
   describe "§98/§146 a mandatory-corpus gap blocks a Strict crown claim, never silently upgraded" do
+    @tag :graphlaw_engine
     test "a real SA2A-CORE CONFORMANT run is reported PARTIAL_ALIVE, never CONFORMANT, when claimed Strict",
          %{tmp_dir: dir} do
       courts = [ExactIdentity, ExecutableWorld, RealCollaborators]

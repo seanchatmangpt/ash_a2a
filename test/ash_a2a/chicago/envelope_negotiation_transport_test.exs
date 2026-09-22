@@ -63,6 +63,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
   }
 
   describe "a real run of the three courts" do
+    @tag :graphlaw_engine
     test "every falsifier reaches its final verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do

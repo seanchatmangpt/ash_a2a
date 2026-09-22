@@ -501,6 +501,7 @@ defmodule AshA2A.Chicago.MutationHarnessTest do
     # Every resolved killer court (SA2A-AUTH, SA2A-ENV, SA2A-SHACL, CHI-ID, ...)
     # runs once as a baseline and once per mutant under the real Runner.
     @tag timeout: 1_800_000
+    @tag :graphlaw_engine
     test "every falsifier's verdict, corroborated by the independent OCEL consumer", %{
       tmp_dir: dir
     } do

@@ -53,6 +53,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
   end
 
   describe "content addressing" do
+    @tag :graphlaw_engine
     test "the committed manifest's recorded digest is reproduced by rebuilding from the real corpus" do
       {:ok, rebuilt} = ConformanceCorpus.build()
 
@@ -67,6 +68,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert byte_size(rebuilt.digest) == 7 + 64
     end
 
+    @tag :graphlaw_engine
     test "the content address is INDEPENDENT of where the corpus lives on disk" do
       {:ok, at_priv} = ConformanceCorpus.build()
       staged = stage()
@@ -96,6 +98,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert RootManifest.content_digest(a) == RootManifest.content_digest(b)
     end
 
+    @tag :graphlaw_engine
     test "changing any addressed field moves the content address" do
       {:ok, manifest} = ConformanceCorpus.build()
       moved = %{manifest | version_policy: Map.put(manifest.version_policy, "extra", "x")}
@@ -103,6 +106,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       refute RootManifest.content_digest(moved) == manifest.digest
     end
 
+    @tag :graphlaw_engine
     test "changing an UNADDRESSED field does not move the content address" do
       {:ok, manifest} = ConformanceCorpus.build()
       relocated = %{manifest | root: "/somewhere/else", verified_at: DateTime.utc_now()}
@@ -117,6 +121,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                RootManifest.load("/nonexistent/sa2a/root_manifest.json", require_engine: false)
     end
 
+    @tag :graphlaw_engine
     test "refuses a manifest whose recorded digest does not match its contents" do
       staged = stage()
 
@@ -135,6 +140,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert detail.recorded != detail.recomputed
     end
 
+    @tag :graphlaw_engine
     test "refuses when a pinned artifact's real bytes drifted" do
       staged = stage()
       shapes = Path.join(staged.root, "conformance/shapes/command_envelope.shacl.ttl")
@@ -148,6 +154,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       refute detail.pinned == detail.actual
     end
 
+    @tag :graphlaw_engine
     test "refuses when a pinned artifact is gone" do
       staged = stage()
       File.rm!(Path.join(staged.root, "conformance/rules/derivation.n3"))
@@ -156,6 +163,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                RootManifest.load(staged.path, require_engine: false)
     end
 
+    @tag :graphlaw_engine
     test "refuses a malformed (non-JSON-object) manifest" do
       staged = stage()
       File.write!(staged.path, "not json at all")
@@ -164,6 +172,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                RootManifest.load(staged.path, require_engine: false)
     end
 
+    @tag :graphlaw_engine
     test "refuses a manifest missing a required field" do
       staged = stage()
 
@@ -175,6 +184,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                RootManifest.load(staged.path, require_engine: false)
     end
 
+    @tag :graphlaw_engine
     test "require_engine: false yields a manifest explicitly marked unverified" do
       staged = stage()
       assert {:ok, manifest} = RootManifest.load(staged.path, require_engine: false)
@@ -250,6 +260,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       %{manifest: manifest}
     end
 
+    @tag :graphlaw_engine
     test "an ordinary transport-verified agent is refused even with the right capability and subject",
          %{manifest: manifest} do
       # This is the exact authority an ordinary authenticated A2A caller gets.
@@ -276,6 +287,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert detail.required_source == RootManifest.custody_source()
     end
 
+    @tag :graphlaw_engine
     test "an authority whose subject does not match the independently supplied principal is refused",
          %{manifest: manifest} do
       {_alice, authority} = custodian("alice")
@@ -289,6 +301,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                )
     end
 
+    @tag :graphlaw_engine
     test "an expired custodian authority is refused", %{manifest: manifest} do
       principal = Identity.principal("root-custodian-expired")
 
@@ -304,6 +317,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                )
     end
 
+    @tag :graphlaw_engine
     test "a custodian authority for the wrong capability is refused", %{manifest: manifest} do
       principal = Identity.principal("root-custodian-1")
       wrong = Authority.new(principal, "some:other:capability", source: :root_custodian)
@@ -314,6 +328,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                )
     end
 
+    @tag :graphlaw_engine
     test "a nil authority is refused", %{manifest: manifest} do
       assert {:error, %{code: :authority_mismatch}} =
                RootManifest.mutate(
@@ -325,6 +340,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                )
     end
 
+    @tag :graphlaw_engine
     test "a non-principal identity is refused", %{manifest: manifest} do
       {_p, authority} = custodian()
 
@@ -338,6 +354,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
                )
     end
 
+    @tag :graphlaw_engine
     test "an unknown field is refused and no new atom is created", %{manifest: manifest} do
       {principal, authority} = custodian()
       before = :erlang.system_info(:atom_count)
@@ -355,6 +372,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert :erlang.system_info(:atom_count) == before
     end
 
+    @tag :graphlaw_engine
     test "a real custodian mutation succeeds and MOVES the content address", %{manifest: manifest} do
       {principal, authority} = custodian()
       original_digest = manifest.digest
@@ -376,6 +394,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert manifest.digest == original_digest
     end
 
+    @tag :graphlaw_engine
     test "mutation re-verifies pins against disk and refuses if the corpus drifted" do
       staged = stage()
       {:ok, manifest} = RootManifest.load(staged.path, require_engine: false)
@@ -392,6 +411,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
   end
 
   describe "pin metadata" do
+    @tag :graphlaw_engine
     test "the corpus pins exactly the machinery, and deliberately not the data or the falsifiers" do
       {:ok, manifest} = ConformanceCorpus.build()
       paths = manifest |> RootManifest.all_pins() |> Enum.map(&Map.fetch!(&1, "path"))
@@ -412,6 +432,7 @@ defmodule AshA2A.Semantic.RootManifestTest do
       assert File.exists?(Path.join(ConformanceCorpus.root(), falsifiers.n3_rules))
     end
 
+    @tag :graphlaw_engine
     test "every pin carries a real sha256 of the real file" do
       {:ok, manifest} = ConformanceCorpus.build()
 

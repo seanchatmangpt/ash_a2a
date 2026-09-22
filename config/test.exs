@@ -56,3 +56,9 @@ config :ash_a2a, AshA2A.Test.Repo,
 # `AshA2A.Test.AuthorityGrantCase.grant!/1`.
 config :ash_a2a, :authority_policy, :broker
 config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.InMemory
+
+# QUALIFIER SCRATCH ONLY: hosted-CI simulation with the VENDORED wasm (never committed).
+config :ash_a2a, :graphlaw_wasm_path, Path.expand("../priv/graphlaw/praxis_graphlaw.wasm", __DIR__)
+config :ash_a2a, :sa2a_graphlaw_wasm, Path.expand("../priv/graphlaw/praxis_graphlaw.wasm", __DIR__)
+config :ash_a2a, AshA2A.Semantic.GraphLaw.Wasm, wasm_path: Path.expand("../priv/graphlaw/praxis_graphlaw.wasm", __DIR__)
+config :ash_a2a, :chicago_topology_root, "/nonexistent-qual-root"
