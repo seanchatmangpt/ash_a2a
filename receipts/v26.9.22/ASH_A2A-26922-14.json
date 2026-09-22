@@ -1,0 +1,133 @@
+{
+  "identity": {
+    "subject": "ASH_A2A-26922-14",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+    "subject_sha": "2dd08851fbaabe14c407481875476010e3fa7262",
+    "base_sha": "f068adb4869e0adf78ecf689af44c67f670544f3"
+  },
+  "authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "orders.json ASH_A2A-26922-14, Claude-session law lane per /Users/sac/wt/v26922/COORDINATION.md; branch-local commits only, no push/merge/tag/publish",
+    "actor": "claude-opus-5-5 workflow subagent, worktree law-ASH_A2A-26922-14"
+  },
+  "consequence": {
+    "commits": [
+      "a09f535a98864d181677cfdc55f42f478f200509",
+      "501a4fdbc427dc6ae50c64368126f2156d3b99c9",
+      "31d0c4177a66fa4cf351744e15828c25d3c5d413",
+      "2dd08851fbaabe14c407481875476010e3fa7262"
+    ],
+    "files_changed": [
+      "lib/ash_a2a/standing_ref.ex",
+      "lib/mix/tasks/ash_a2a.standing_ref.ex",
+      "test/mix/tasks/ash_a2a_standing_ref_test.exs",
+      "priv/sa2a/chicago_court_manifest.json",
+      "receipts/courts/sa2a/a09f535a98864d181677cfdc55f42f478f200509/chicago/standing_receipt.json",
+      "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/standing_receipt.json",
+      "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/results.json",
+      "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/ocel.json",
+      "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/ocel_validation.json",
+      "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/subject.json",
+      "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/sa2a-conformance.json",
+      "receipts/v26.9.22/ASH_A2A-26922-14.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "mix test test/mix/tasks/ash_a2a_standing_ref_test.exs",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "9 tests, 0 failures (real tmp git repos; receipts from StandingReceipt.build/1 over Subject.capture/1 and one from the real Chicago Runner)",
+        "output_sha256": "2c75ac0d185bd37d174c12ef5450d9d417eee4d5c33a996c907312d9580a1b84"
+      },
+      {
+        "cmd": "test \"$(mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT 2>/dev/null)\" = 501a4fdbc427dc6ae50c64368126f2156d3b99c9",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "task printed exactly 501a4fdbc427dc6ae50c64368126f2156d3b99c9",
+        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+      },
+      {
+        "cmd": "git show HEAD:receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/standing_receipt.json | jq -e '.standing==\"CONFORMANT\" and .subject.source_revision==\"501a4fdbc427dc6ae50c64368126f2156d3b99c9\" and .subject.dirty==false and .court.manifest.verification==\"admitted\"'",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "committed standing receipt at HEAD: standing CONFORMANT, subject.source_revision == 501a4fd, dirty false, court manifest admitted",
+        "output_sha256": "754f1ba026d76ada4f689f3a41d31f1806f41693a4b2edb4fd742bf1cf05f56e"
+      },
+      {
+        "cmd": "rm -rf /private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg && mkdir -p /private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg && git archive HEAD receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago | tar -x -C /private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg && PKG=/private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg/receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago MIX_ENV=test mix run --no-start -e '{:ok, v} = AshA2A.Chicago.FreshConsumer.verify(System.fetch_env!(\"PKG\")); IO.puts(\"outcome=\" <> v[\"outcome\"] <> \" reconstructed=\" <> v[\"standing\"][\"reconstructed\"]); if v[\"outcome\"] != \"reproduced\" or v[\"standing\"][\"reconstructed\"] != \"CONFORMANT\", do: System.halt(1)'",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "FreshConsumer.verify/2 in a fresh OS process over the git-archived package: outcome=reproduced reconstructed=CONFORMANT",
+        "output_sha256": "5646336a33aa3ed1b04ad814d067533a2899babeb8ac27e8df4c503662c91a0a"
+      },
+      {
+        "cmd": "test \"$(mix ash_a2a.standing_ref --court sa2a --standing PARTIAL_ALIVE 2>/dev/null)\" = a09f535a98864d181677cfdc55f42f478f200509",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "--standing PARTIAL_ALIVE skips newer 501a4fd (standing_mismatch CONFORMANT) and prints a09f535",
+        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+      },
+      {
+        "cmd": "! mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT --require-conformance",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "--require-conformance refuses 501a4fd ({:conformance_result, \"FAIL\"}) and a09f535 (PARTIAL_ALIVE); task exits non-zero (negated to 0)",
+        "output_sha256": "5a01fcbe3d623bfdc6f151d45976d58fe76b002eda092e196f5c48362bf2e504"
+      },
+      {
+        "cmd": "sed -i '' 's/check(receipt\\[\"standing\"\\] == wanted, {:standing_mismatch, receipt\\[\"standing\"\\]})/:ok/' lib/ash_a2a/standing_ref.ex && ! git diff --quiet -- lib/ash_a2a/standing_ref.ex && ! mix test test/mix/tasks/ash_a2a_standing_ref_test.exs; rc=$?; git checkout -- lib/ash_a2a/standing_ref.ex; git diff --quiet && exit $rc",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "revert-mutation: standing admission check replaced by :ok -> 9 tests, 3 failures; file restored, tree clean",
+        "output_sha256": "9353c1e43470e18e1ed62cda414f8eeab93b10df98f215f3f212c9f50e532e7f"
+      },
+      {
+        "cmd": "MIX_ENV=test mix ash_a2a.chicago.pin_court_manifest --check",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "court manifest current: 31687d49... (44 courts)",
+        "output_sha256": "094a8b249ac787de8742e7de9cbe922562e7385edc3fd80a090fa5197432be97"
+      },
+      {
+        "cmd": "mix format --check-formatted lib/ash_a2a/standing_ref.ex lib/mix/tasks/ash_a2a.standing_ref.ex test/mix/tasks/ash_a2a_standing_ref_test.exs",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "mix format --check-formatted on the three touched source files: clean",
+        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+      },
+      {
+        "cmd": "mix compile --warnings-as-errors",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "mix compile --warnings-as-errors (dev) exit 0",
+        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+      }
+    ],
+    "durable_location": "git-tracked on branch law/ASH_A2A-26922-14: receipts/v26.9.22/ASH_A2A-26922-14.json and receipts/courts/sa2a/<sha>/"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "acceptance-1 (mix test test/mix/tasks/ash_a2a_standing_ref_test.exs: 9 tests, 0 failures) and acceptance-2 (mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT printed 501a4fd) plus artifact-standing and artifact-fresh-consumer (reproduced CONFORMANT, 20/20 checks) -- all exit 0 at subject_sha 2dd0885 in the order's worktree"
+  },
+  "composition": "C03 standing-addressed dependencies (A+B+I)",
+  "contingencies": [
+    "The only CONFORMANT SA2A receipt exists because commit 501a4fd re-pins priv/sa2a/chicago_court_manifest.json (MIX_ENV=test mix ash_a2a.chicago.pin_court_manifest; 13 -> 44 courts, b19cae23 -> 31687d49). The committed manifest had been stale since 0bf012a (2026-09-16; 42 later commits touched lib/ash_a2a/chicago/courts/), so a09f535 ran 187/187 corroborated yet was issued PARTIAL_ALIVE for court-manifest drift. The re-pin is a CANDIDATE court meta-admission for the v26.9.22 qualification court; if refused, revert 501a4fd and standing_ref correctly resolves nothing.",
+    "Default resolver semantics (31d0c41) admit on the Chicago standing receipt and report the co-located portable conformance receipt (identity-checked, forged PASS refused). The full-corpus `mix ash_a2a.sa2a_conformance` at 501a4fd reports result FAIL (same_input_identity: v006_blank_nodes graph_hash unstable across repetition in both runtimes, praxis-graphlaw v26.7.5), which the Chicago SA2A-XRUNTIME court adjudicates. Strict reading (--require-conformance, the ASH_A2A-26922-10 CI-artifact acceptance) resolves no SHA today."
+  ],
+  "observations": [
+    "`mix ash_a2a.chicago` in MIX_ENV=test does not start AshA2A.Authority.Broker.InMemory (config/test.exs names it, test_helper.exs starts it): SA2A-TRANSPORT-004/005 were BLOCKED (noproc) until the court ran under `mix run -e` with the broker started.",
+    "SA2A-XRUNTIME-002 is BLOCKED unless native/graphlaw_host is built (cargo build --release --locked, 5m27s here).",
+    "ASH_A2A-26922-10's acceptance `jq -e '.result==\"PASS\"' sa2a-conformance.json` cannot pass with praxis-graphlaw v26.7.5 vendored (v006_blank_nodes)."
+  ],
+  "pre_existing_failures": [
+    "mix test.all test/ash_a2a/chicago/root_manifest_meta_admission_test.exs: 1 failure (SA2A-META-007, SA2A-META-017 :blocked) at 2dd0885 AND identically with the base f068adb manifest restored in the working tree -- not introduced by the re-pin; cause UNVERIFIED (native/hddl_cli/target absent in this worktree is a candidate). crown_test.exs in the same run: 0 failures."
+  ],
+  "generated_vs_handwritten": "handwritten: lib/ash_a2a/standing_ref.ex, lib/mix/tasks/ash_a2a.standing_ref.ex, test/mix/tasks/ash_a2a_standing_ref_test.exs -- UNSUPPORTED(generator-capability): no ggen-marketplace pack generates a git-history receipt resolver or Elixir mix task (checked evidence-standing-pack, receipt-provenance-unification-pack, standing-ladder-pack, elixir-mcp-a2a-pack). generated-by-tool: priv/sa2a/chicago_court_manifest.json (mix ash_a2a.chicago.pin_court_manifest); receipts/courts/sa2a/** (mix ash_a2a.chicago / mix ash_a2a.sa2a_conformance outputs, copied verbatim).",
+  "falsifiers": [
+    "C03: resolver returns a SHA without a durable CONFORMANT receipt -- exercised: relabelled, resealed, wrong-SHA, dirty-subject, wrong-wasm, forged-PASS and uncommitted receipts all refused/unread in the test; revert-mutation of the standing check fails 3 tests.",
+    "C03 consumer half (consumers still pin divergent versions): NOT executed here -- xaas/beam4pm/ggen_igniter/ash_surface mix.exs unchanged; `mix ash_a2a.standing_ref --format dep` prints the pin tuple."
+  ]
+}
