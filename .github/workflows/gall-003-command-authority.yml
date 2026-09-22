@@ -1,6 +1,9 @@
 name: GALL-003 Command Authority Court
 
 on:
+  push:
+    branches:
+      - gall/checkpoint-003-command-authority
   pull_request:
     paths:
       - "lib/ash_a2a/command_bus.ex"
