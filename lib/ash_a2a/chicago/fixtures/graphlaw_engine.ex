@@ -182,8 +182,20 @@ defmodule AshA2A.Chicago.Fixtures.GraphlawEngine do
   @doc "Stops a host started by `start_host/0`."
   def stop_host(name) do
     case Process.whereis(name) do
-      nil -> :ok
-      pid -> GenServer.stop(pid, :normal, 10_000)
+      nil ->
+        :ok
+
+      pid ->
+        try do
+          GenServer.stop(pid, :normal, 10_000)
+        catch
+          # `start_host/0` `start_link`s the host to the calling (test) process,
+          # so the host can exit with its owner between `whereis/1` and `stop/3`
+          # (check-then-act). A host already gone is the state this function
+          # exists to reach.
+          :exit, {reason, _} when reason in [:noproc, :normal, :shutdown] -> :ok
+          :exit, reason when reason in [:noproc, :normal, :shutdown] -> :ok
+        end
     end
   end
 
