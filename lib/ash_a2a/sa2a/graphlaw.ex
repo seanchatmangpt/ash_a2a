@@ -32,23 +32,24 @@ defmodule AshA2A.SA2A.Graphlaw do
   """
 
   @wasm_env_var "SA2A_GRAPHLAW_WASM"
-  @default_wasm "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm"
 
   @doc """
   Resolves the pinned wasm path: `opts[:wasm_path]`, else the
   `SA2A_GRAPHLAW_WASM` environment variable, else
-  `Application.get_env(:ash_a2a, :sa2a_graphlaw_wasm)`, else a default pointing
-  at the praxis checkout.
+  `Application.get_env(:ash_a2a, :sa2a_graphlaw_wasm)`, else the vendored,
+  git-tracked, MANIFEST-pinned artifact `AshA2A.GraphLaw.wasm_path/0`
+  (`priv/graphlaw/praxis_graphlaw.wasm`).
 
-  Configurable rather than hardcoded because the wasm is a workspace artifact
-  built from a sibling Rust crate -- it is not vendored into this repo, and the
-  computed default only resolves on a machine that has that checkout.
+  The default is the vendored copy, not a path under a developer home: that
+  artifact is present in every checkout and in the published package, so the
+  engine is reachable without a sibling `praxis` workspace.
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
     Keyword.get(opts, :wasm_path) ||
       System.get_env(@wasm_env_var) ||
-      Application.get_env(:ash_a2a, :sa2a_graphlaw_wasm, @default_wasm)
+      Application.get_env(:ash_a2a, :sa2a_graphlaw_wasm) ||
+      AshA2A.GraphLaw.wasm_path()
   end
 
   @doc "Path to the committed Node driver that implements the wasm-bindgen ABI."

@@ -354,18 +354,26 @@ defmodule AshA2ASA2ACorpusTest do
                "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
     end
 
-    test "if the pinned wasm is on this machine its real sha256 matches the manifest", %{
+    test "the vendored wasm every checkout contains has the real sha256 the manifest pins", %{
       corpus: corpus
     } do
-      path = Path.join("/Users/sac/praxis", Corpus.engine(corpus)["wasm_path"])
+      # The corpus pins the engine it was measured against by sha256. That
+      # engine is vendored at `priv/graphlaw/praxis_graphlaw.wasm`, so the pin
+      # is checkable on EVERY checkout -- not only where a sibling praxis
+      # workspace happens to exist. (This test previously joined
+      # "/Users/sac/praxis" with a manifest path that already starts with
+      # "praxis/", a path that never existed, so it always took its "not
+      # checkable here" branch and never compared a digest.)
+      actual =
+        AshA2A.GraphLaw.wasm_path()
+        |> File.read!()
+        |> then(&:crypto.hash(:sha256, &1))
+        |> Base.encode16(case: :lower)
 
-      if File.exists?(path) do
-        actual = Base.encode16(:crypto.hash(:sha256, File.read!(path)), case: :lower)
-        assert actual == Corpus.engine(corpus)["wasm_sha256"]
-      else
-        # Not a silent pass: the pinning claim is simply not checkable here.
-        assert Corpus.engine(corpus)["wasm_sha256"] =~ ~r/\A[0-9a-f]{64}\z/
-      end
+      assert actual == Corpus.engine(corpus)["wasm_sha256"]
+
+      assert byte_size(File.read!(AshA2A.GraphLaw.wasm_path())) ==
+               Corpus.engine(corpus)["wasm_bytes"]
     end
 
     test "every measured divergence from the RFC is recorded, not hidden", %{corpus: corpus} do

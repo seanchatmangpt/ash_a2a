@@ -76,6 +76,7 @@ defmodule AshA2A.Chicago.Release.ExactSubjectTest do
       assert Regex.match?(~r/\A[0-9a-f]{64}\z/, s.falsifier_corpus_sha256)
     end
 
+    @tag :sibling_repos
     test "repositories/0 reports the real 11-repo topology, reusing Topology.check_repo/1", %{
       subject: s
     } do

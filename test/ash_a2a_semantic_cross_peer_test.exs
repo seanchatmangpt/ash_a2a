@@ -40,6 +40,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
   """
 
   use ExUnit.Case, async: false
+  @moduletag :graphlaw_engine
 
   @moduletag :serial
   @moduletag :serial_shard

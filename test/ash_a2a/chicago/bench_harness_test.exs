@@ -351,6 +351,7 @@ defmodule AshA2A.Chicago.BenchHarnessTest do
   end
 
   describe "SA2A-BENCH court end-to-end" do
+    @tag :graphlaw_engine
     test "Runner.run: every benchmark falsifier measured over the real SUT and OCEL-corroborated",
          %{tmp_dir: dir} do
       assert {:ok, run} =

@@ -85,6 +85,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
   end
 
   describe "the real engine is reachable and is the engine we think it is" do
+    @tag :graphlaw_engine
     test "graphlaw_version/0 returns a real version string from the wasm module" do
       if live?() do
         assert {:ok, version} = GraphLawBridge.version()
@@ -92,12 +93,14 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "blake3_hex/1 reproduces the published BLAKE3 test vector for \"abc\"" do
       if live?() do
         assert {:ok, @blake3_abc} = GraphLawBridge.blake3_hex("abc")
       end
     end
 
+    @tag :graphlaw_engine
     test "run_hooks/2 returns the real admission vocabulary, JSON-decoded" do
       if live?() do
         base = "<http://e/a> <http://e/p> <http://e/b> .\n"
@@ -110,6 +113,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "validate_all/6 returns the real dialect report, JSON-decoded" do
       if live?() do
         {:ok, nt} = Serialize.to_ntriples(ontology!())
@@ -125,6 +129,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
   end
 
   describe "the RFC S12 path: Ontology -> serialize -> verify -> native canonical digest" do
+    @tag :graphlaw_engine
     test "a real Ontology produces a real, verified 64-hex canonical digest" do
       if live?() do
         ontology = ontology!()
@@ -141,6 +146,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "the digest is syntax-independent: N-Triples and Turtle of the same graph agree" do
       # This is the property RFC S12 is actually asking for -- identity of the
       # *graph*, not of a chosen serialization.
@@ -155,6 +161,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "the digest is stable across repeated real engine invocations" do
       if live?() do
         ontology = ontology!()
@@ -164,6 +171,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "the digest ignores IR item order (the graph is the same graph)" do
       if live?() do
         assert {:ok, forward} = CanonicalDigest.digest(ontology!(order: :forward))
@@ -172,6 +180,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "the digest changes when the graph actually changes" do
       if live?() do
         assert {:ok, alice} = CanonicalDigest.digest(ontology!(label_a: "Alice"))
@@ -180,6 +189,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "document/2 returns the exact bytes the digest was taken over" do
       if live?() do
         ontology = ontology!()
@@ -208,6 +218,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       |> Base.encode16(case: :lower)
     end
 
+    @tag :graphlaw_engine
     test "two Elixir representations of the SAME RDF graph disagree under term_to_binary but agree under the engine" do
       if live?() do
         # Identical RDF graph. The only difference is how the object term is
@@ -239,6 +250,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "a plain literal and an explicit xsd:string literal are one RDF term to the engine" do
       if live?() do
         plain = [%{subject: "http://e/a", predicate: "http://e/p", object: {:literal, "hi"}}]
@@ -260,6 +272,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
   end
 
   describe "measured limits of graph_hash/1 -- asserted so the docs cannot drift" do
+    @tag :graphlaw_engine
     test "it is NOT duplicate-insensitive: it is a multiset digest, not an RDF-set digest" do
       if live?() do
         t = %{subject: "http://e/a", predicate: "http://e/p", object: {:iri, "http://e/b"}}
@@ -277,6 +290,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "it is NOT blank-node canonical: relabelling a blank node changes the digest" do
       if live?() do
         a = [%{subject: {:bnode, "b0"}, predicate: "http://e/p", object: {:iri, "http://e/b"}}]
@@ -288,6 +302,7 @@ defmodule AshA2A.Semantic.CanonicalDigestTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "it has no parse-error channel -- which is exactly why the gate exists" do
       if live?() do
         good = "<http://e/a> <http://e/p> <http://e/b> .\n"
