@@ -62,11 +62,18 @@ defmodule AshA2AZaiConcurrencyOcelTest do
                      )
 
   @moduletag :external_api
-  @describetag skip:
-                 (is_nil(@zai_key) && "ZAI_API_KEY not found in ~/.env") ||
-                   (not @ingest_reachable? &&
-                      "beam4pm's real OCEL ingest server is not reachable at #{@ingest_url} -- " <>
-                        "start it standalone first: cd ~/beam4pm && MIX_ENV=dev mix run --no-halt")
+  # `@moduletag skip:` (not `@describetag`): this module has no `describe`
+  # block, so a `@describetag` here would attach to nothing and the skip
+  # would silently never fire -- the real defect behind 5969606's
+  # `--include serial` re-admission (the module's `@moduletag :serial`
+  # rescues it from the `:external_api` exclusion under `mix test.all`,
+  # firing 50 real dispatches). Module-level skip = named, printed, and
+  # effective in every lane.
+  @moduletag skip:
+               (is_nil(@zai_key) && "ZAI_API_KEY not found in ~/.env") ||
+                 (not @ingest_reachable? &&
+                    "beam4pm's real OCEL ingest server is not reachable at #{@ingest_url} -- " <>
+                      "start it standalone first: cd ~/beam4pm && MIX_ENV=dev mix run --no-halt")
 
   setup_all do
     if @zai_key do
