@@ -9,7 +9,7 @@ defmodule AshA2A.Gall.ProcessIntervention do
   the actuator or a self-asserted callback.
   """
 
-  alias AshA2A.{Command, CommandBus, Identity, Postcondition, Receipt}
+  alias AshA2A.{Command, CommandBus, Postcondition, Receipt}
 
   @finding_classes ~w(conformance prediction attribution postcondition)
   @horizons ~w(FAST MEDIUM SLOW)
