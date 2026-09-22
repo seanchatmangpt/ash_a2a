@@ -20,6 +20,10 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
       `main` checkout that is the newest main SHA)
     * `--repo` -- repository path (default: current directory)
     * `--profile` -- require this claimed profile, e.g. `SA2A-STRICT`
+    * `--require-conformance` -- also refuse a SHA whose co-located
+      portable-conformance receipt is absent or not `PASS` (by default it is
+      identity-checked and reported, since the Chicago standing already
+      adjudicates it; see `AshA2A.StandingRef`)
     * `--artifacts` -- directory of downloaded `sa2a-conformance-<sha>/` CI
       artifacts, read in addition to the git-tracked receipts
     * `--max-commits` -- bound on the history walk (default 1000)
@@ -46,6 +50,7 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
     ref: :string,
     repo: :string,
     profile: :string,
+    require_conformance: :boolean,
     artifacts: :string,
     max_commits: :integer,
     format: :string,
@@ -73,6 +78,7 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
         standing: opts[:standing],
         ref: opts[:ref],
         profile: opts[:profile],
+        require_conformance: opts[:require_conformance],
         artifacts_dir: opts[:artifacts],
         max_commits: opts[:max_commits]
       ]

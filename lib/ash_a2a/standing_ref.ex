@@ -45,9 +45,25 @@ defmodule AshA2A.StandingRef do
     * a `CONFORMANT` claim is consistent with the receipt's own tallies,
       gate rows, OCEL evidence and claim text -- flipping the standing string
       and re-sealing the digest does not produce an admitted CONFORMANT
-    * a co-located `sa2a-conformance.json`, when present, reports `PASS`
-      with every assertion computed and true, over the exact graphlaw wasm
-      the subject bound (`validator_digests["graphlaw_wasm"]`)
+    * a co-located `sa2a-conformance.json`, when present, was run over the
+      exact graphlaw wasm the subject bound (`validator_digests
+      ["graphlaw_wasm"]`), and a `PASS` label is backed by every assertion
+      computed and true (a forged `PASS` is refused)
+
+  ## Standing is the court's, not a re-judgement of raw runner output
+
+  The standing that addresses the dependency is the Chicago court's standing
+  receipt. The co-located portable-conformance receipt is raw runner output
+  that the Chicago `SA2A-XRUNTIME` court already adjudicates: against
+  praxis-graphlaw v26.7.5 the full-corpus runner reports `FAIL` because
+  `graph_hash/1` of `v006_blank_nodes` is not stable across repetition (a
+  deterministic engine property, `AshA2A.SA2A.Conformance` moduledoc), and
+  `SA2A-XRUNTIME-008` passes precisely when that unstable identity is refused
+  agreement. So by default a present conformance receipt is identity-checked
+  and reported (`conformance: "PASS" | "FAIL" | "ABSENT"`), not re-judged;
+  `require_conformance: true` (`--require-conformance`) additionally refuses
+  any SHA whose conformance receipt is absent or not `PASS` -- the stricter
+  ASH_A2A-26922-10 CI-artifact reading.
 
   Commits are walked newest first along `--first-parent` of `:ref` (the
   states `:ref` itself held); `:max_commits` bounds the walk.
@@ -111,7 +127,8 @@ defmodule AshA2A.StandingRef do
   `:standing` (default `"CONFORMANT"`), `:ref` (default `"HEAD"`; on a
   `main` checkout that is the newest main SHA, elsewhere pass
   `"origin/main"`), `:profile` (e.g. `"SA2A-STRICT"`; default any),
-  `:artifacts_dir`, `:max_commits` (default #{@default_max_commits}).
+  `:require_conformance` (default `false`), `:artifacts_dir`,
+  `:max_commits` (default #{@default_max_commits}).
 
   Returns `{:ok, resolution}` or `{:error, reason}`; the not-found reason
   `{:no_admitted_receipt, refused}` lists every receipt that was refused and
@@ -135,7 +152,10 @@ defmodule AshA2A.StandingRef do
         spec: spec,
         court: court,
         wanted: wanted,
-        profile: Keyword.get(opts, :profile),
+        admit_opts: [
+          profile: Keyword.get(opts, :profile),
+          require_conformance: Keyword.get(opts, :require_conformance, false)
+        ],
         ref: ref,
         head: head,
         git_index: git_index,
@@ -149,11 +169,11 @@ defmodule AshA2A.StandingRef do
   @doc """
   Admits or refuses one receipt for `sha`: `standing_bytes` is the standing
   receipt JSON, `conformance_bytes` the co-located conformance receipt JSON or
-  `nil` when absent. Pure.
+  `nil` when absent. Options: `:profile`, `:require_conformance`. Pure.
   """
-  @spec admit(String.t(), binary(), binary() | nil, String.t(), String.t() | nil) ::
+  @spec admit(String.t(), binary(), binary() | nil, String.t(), keyword()) ::
           {:ok, %{receipt: map(), conformance: String.t()}} | {:error, term()}
-  def admit(sha, standing_bytes, conformance_bytes, wanted, profile \\ nil) do
+  def admit(sha, standing_bytes, conformance_bytes, wanted, opts \\ []) do
     with {:ok, receipt} <- decode(standing_bytes, :standing_receipt_undecodable),
          :ok <-
            check(
@@ -165,9 +185,10 @@ defmodule AshA2A.StandingRef do
          :ok <- check(subject.source_revision == sha, :subject_revision_mismatch),
          :ok <- check(subject.dirty? == false, :subject_dirty),
          :ok <- check(receipt["standing"] == wanted, {:standing_mismatch, receipt["standing"]}),
-         :ok <- profile_ok(receipt, profile),
+         :ok <- profile_ok(receipt, Keyword.get(opts, :profile)),
          :ok <- consistent(receipt, sha),
-         {:ok, conformance} <- conformance(conformance_bytes, subject) do
+         {:ok, conformance} <-
+           conformance(conformance_bytes, subject, Keyword.get(opts, :require_conformance, false)) do
       {:ok, %{receipt: receipt, conformance: conformance}}
     end
   rescue
@@ -206,7 +227,7 @@ defmodule AshA2A.StandingRef do
     result =
       with {:ok, standing_bytes} <- read(source, ctx.spec.standing_file, ctx.repo),
            {:ok, conformance_bytes} <- read_optional(source, ctx.spec.conformance_file, ctx) do
-        admit(sha, standing_bytes, conformance_bytes, ctx.wanted, ctx.profile)
+        admit(sha, standing_bytes, conformance_bytes, ctx.wanted, ctx.admit_opts)
       end
 
     case result do
@@ -370,19 +391,27 @@ defmodule AshA2A.StandingRef do
 
   defp consistent(_receipt, _sha), do: :ok
 
-  defp conformance(nil, _subject), do: {:ok, "ABSENT"}
+  defp conformance(nil, _subject, true), do: {:error, :conformance_absent}
+  defp conformance(nil, _subject, false), do: {:ok, "ABSENT"}
 
-  defp conformance(bytes, subject) do
+  defp conformance(bytes, subject, require?) do
     with {:ok, doc} <- decode(bytes, :conformance_undecodable),
-         :ok <- check(is_map(doc) and doc["result"] == "PASS", {:conformance_result, result(doc)}),
-         :ok <- check(assertions_passed?(doc["assertions"]), :conformance_assertion_not_passed),
+         :ok <- check(is_map(doc), :conformance_undecodable),
          :ok <-
            check(
              doc["wasm_digest_algorithm"] == "sha256" and
                doc["wasm_digest"] == subject.validator_digests["graphlaw_wasm"],
              :conformance_wasm_not_subject_wasm
-           ) do
-      {:ok, "PASS"}
+           ),
+         :ok <- check(doc["result"] in ["PASS", "FAIL"], {:conformance_result, result(doc)}),
+         :ok <-
+           check(
+             doc["result"] != "PASS" or assertions_passed?(doc["assertions"]),
+             :conformance_assertion_not_passed
+           ),
+         :ok <-
+           check(not require? or doc["result"] == "PASS", {:conformance_result, doc["result"]}) do
+      {:ok, doc["result"]}
     end
   end
 

@@ -184,7 +184,7 @@ defmodule Mix.Tasks.AshA2a.StandingRefTest do
                StandingRef.resolve(repo: repo)
     end
 
-    test "a co-located conformance receipt must PASS over the subject's own wasm",
+    test "a co-located conformance receipt is bound to the subject's wasm; PASS is required only on request",
          %{tmp_dir: dir} do
       repo = init_repo!(dir)
       a = commit!(repo, "app.txt", "v1")
@@ -193,27 +193,52 @@ defmodule Mix.Tasks.AshA2a.StandingRefTest do
       receipt_b = build_receipt!(repo, :conformant)
       c = commit!(repo, "app.txt", "v3")
       receipt_c = build_receipt!(repo, :conformant)
+      d = commit!(repo, "app.txt", "v4")
+      receipt_d = build_receipt!(repo, :conformant)
 
       wasm = receipt_a["subject"]["validator_digests"]["graphlaw_wasm"]
       assert is_binary(wasm)
 
-      pass = conformance(wasm, true)
-      file_receipt!(repo, a, receipt_a, %{"sa2a-conformance.json" => pass})
+      # A PASS label its own assertions contradict is forged.
+      forged =
+        put_in(conformance(wasm, true), ["assertions", "same_input_identity", "value"], false)
+
+      file_receipt!(repo, a, receipt_a, %{"sa2a-conformance.json" => conformance(wasm, true)})
       file_receipt!(repo, b, receipt_b, %{"sa2a-conformance.json" => conformance(wasm, false)})
 
       file_receipt!(repo, c, receipt_c, %{
         "sa2a-conformance.json" => conformance(String.duplicate("0", 64), true)
       })
 
+      file_receipt!(repo, d, receipt_d, %{"sa2a-conformance.json" => forged})
       commit_receipts!(repo)
 
-      assert {:ok, %{sha: ^a, conformance: "PASS", refused: refused}} =
+      # Default: the Chicago standing addresses the SHA; a FAIL over the
+      # subject's own wasm is reported, not re-judged.
+      assert {:ok, %{sha: ^b, conformance: "FAIL", refused: refused}} =
                StandingRef.resolve(repo: repo)
 
       assert Enum.map(refused, &{&1.sha, &1.reason}) == [
+               {d, :conformance_assertion_not_passed},
+               {c, :conformance_wasm_not_subject_wasm}
+             ]
+
+      # Strict: the conformance receipt must be present and PASS.
+      assert {:ok, %{sha: ^a, conformance: "PASS", refused: strict_refused}} =
+               StandingRef.resolve(repo: repo, require_conformance: true)
+
+      assert Enum.map(strict_refused, &{&1.sha, &1.reason}) == [
+               {d, :conformance_assertion_not_passed},
                {c, :conformance_wasm_not_subject_wasm},
                {b, {:conformance_result, "FAIL"}}
              ]
+
+      printed =
+        capture_io(fn ->
+          Mix.Tasks.AshA2a.StandingRef.run(["--repo", repo, "--require-conformance"])
+        end)
+
+      assert String.trim(printed) == a
     end
 
     test "no admitted receipt: the task prints no SHA and exits non-zero with the refusals",
