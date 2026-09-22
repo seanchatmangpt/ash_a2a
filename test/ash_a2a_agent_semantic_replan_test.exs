@@ -197,8 +197,15 @@ defmodule AshA2AAgentSemanticReplanTest do
     # `AshA2A.Authority.Broker` grant stands for that exact (principal,
     # capability) pair -- see `AshA2A.Authority.Grant`. Issued here for the
     # real pairs this file's own dispatches use.
+    # The FAILURE scenario's closing dispatch targets the always-forbid
+    # `SemanticReplan.Forbidden` resource's `create_forbidden` skill: it must
+    # be GRANTED so `CommandBus.admit/2` passes and the Ash action genuinely
+    # runs and is genuinely denied by policy (a real `:failed` receipt).
+    # Without the grant the dispatch is refused `:authority_required` before
+    # any action runs, and no receipt is ever committed.
     AshA2A.Test.AuthorityGrantCase.grant!([
-      {"user-1", AshA2A.Test.Fixture.SemanticReplan.Item, ["create_item"]}
+      {"user-1", AshA2A.Test.Fixture.SemanticReplan.Item, ["create_item"]},
+      {"user-1", AshA2A.Test.Fixture.SemanticReplan.Forbidden, ["create_forbidden"]}
     ])
 
     {_sup, _registry_name} =

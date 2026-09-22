@@ -72,7 +72,16 @@ defmodule AshA2A.SparqlOracle do
   def ask_many([]), do: {:ok, []}
 
   def ask_many(pairs) when is_list(pairs) do
-    dir = Path.join(System.tmp_dir!(), "sa2a-oracle-#{System.unique_integer([:positive])}")
+    # `System.unique_integer/1` is unique only within ONE VM; the OS pid makes
+    # the directory unique across concurrent BEAMs sharing the same tmp dir
+    # (a second `mix test` would otherwise collide on `sa2a-oracle-<n>` and
+    # `rm_rf!` this run's files mid-flight: "missing query file for 00014.nt").
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "sa2a-oracle-#{System.pid()}-#{System.unique_integer([:positive])}"
+      )
+
     File.mkdir_p!(dir)
 
     try do
