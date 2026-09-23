@@ -1,6 +1,6 @@
 {
   "wo": "ASH_A2A-26922-10",
-  "base_sha": "64cb56e",
+  "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
   "commands": [
     {
       "cmd": "grep -n 'schedule:' .github/workflows/sa2a-conformance.yml",
@@ -8,11 +8,23 @@
       "output_excerpt": "24:  schedule:"
     },
     {
-      "cmd": "yaml parse of .github/workflows/sa2a-conformance.yml",
+      "cmd": "gh run download 35807754326 -n sa2a-conformance-43ac10928ab0fc8820c2db8a790c015b207605c6",
       "exit": 0,
-      "note": "YAML-VALID"
+      "output_excerpt": "sa2a-conformance.json + chicago/standing_receipt.json downloaded by exact SHA",
+      "note": "the durable exact-SHA delivery mechanism is ALIVE: every main push and a daily schedule produce a named, downloadable receipt pair"
+    },
+    {
+      "cmd": "jq -e '.result==\"PASS\"' sa2a-conformance.json && [ \"$(jq -r .standing chicago/standing_receipt.json)\" = CONFORMANT ]",
+      "exit": 1,
+      "output_excerpt": "strict result: FAIL (v006_blank_nodes: graph_hash/1 not stable across repetition, deterministic on both runtimes); CI standing: NONCONFORMANT (SA2A-TOPO-002 survived)",
+      "note": "BLOCKED clauses, with root causes: (1) the strict corpus's blank-node vector cannot pass anywhere until praxis-graphlaw's graph_hash is made repetition-stable for blank nodes - no strict-profile CONFORMANT receipt has ever existed (survey); (2) SA2A-TOPO-002 is a gate-3 positive control over the 11 author-workstation sibling checkouts, so a hosted CONFORMANT is impossible without weakening the court - no cumulative profile excludes it. CONFORMANT is a workstation claim: proven locally at 70d2666 (standing CONFORMANT, 3/3 gates PASSED, 134 killed, 0 survived, 0 blocked) after the court-manifest re-pin, with the InMemory broker running and native/graphlaw_host built."
+    },
+    {
+      "cmd": "MIX_ENV=test mix ash_a2a.chicago.pin_court_manifest --check (in CI)",
+      "exit": 0,
+      "note": "tripwire added: a drifted court manifest fails the job before any receipt is produced"
     }
   ],
   "standing": "PARTIAL_ALIVE",
-  "notes": "Workflow authored and committed; the acceptance's observed-run clause (gh run download of a sa2a-conformance-<sha> artifact with PASS/CONFORMANT) is verified after the push in ASH_A2A-26922-04's cycle. Standing moves to ALIVE on the first observed artifact. Durable in-repo receipts for the v26.9.22 work live at receipts/v26.9.22/ (this directory)."
+  "notes": "Delivered: the scheduled, exact-SHA-named, durable receipt pipeline with the admission tripwire. Blocked on the acceptance's PASS/CONFORMANT clauses by two pre-existing court-level facts recorded above; fixing either is a praxis-graphlaw or court-design change outside this lane's warrant. The receipts are honest by construction: they record NONCONFORMANT/FAIL where that is the truth."
 }

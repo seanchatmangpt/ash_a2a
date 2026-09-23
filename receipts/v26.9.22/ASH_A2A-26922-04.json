@@ -1,0 +1,24 @@
+{
+  "wo": "ASH_A2A-26922-04",
+  "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
+  "commands": [
+    {
+      "cmd": "git push origin release/v26.9.22:main (9f22374..43ac109, fast-forward)",
+      "exit": 0
+    },
+    {
+      "cmd": "gh run list -R seanchatmangpt/ash_a2a --branch main --workflow CI --limit 1 --json conclusion,headSha",
+      "exit": 0,
+      "output_excerpt": "success 43ac10928ab0fc8820c2db8a790c015b207605c6 (run 35807754337)",
+      "note": "headSha equals git rev-parse origin/main as the acceptance requires"
+    },
+    {
+      "cmd": "gh run view 35807754337 --log | grep -c 'EXCLUDING :graphlaw'",
+      "exit": 0,
+      "output_excerpt": "0",
+      "note": "the wasm-path cause of the old exclusion is gone (WO1); the graphlaw live-engine tests really run on CI now, which exposed two follow-on defects fixed in this line (composition-lock hard-coded rev, :sibling_repos re-admission)"
+    }
+  ],
+  "standing": "ALIVE",
+  "notes": "Local pre-push gate at the same tree: mix format --check-formatted, mix compile --force --warnings-as-errors, mix test.all -> 58 doctests, 29 properties, 2170 tests, 0 failures, 4 skipped (11 excluded), exit 0"
+}
