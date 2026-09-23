@@ -182,8 +182,17 @@ defmodule AshA2A.Chicago.Hardening.BoundsExhaustionTest do
         assert {:error, %{code: :invalid_allocation_amount, dimension: ^dimension}} =
                  Allocator.allocate(budget, dimension, negative)
 
-        # No headroom was manufactured by the attempt.
-        assert Allocator.remaining(budget)[dimension] == 100
+        # No headroom was manufactured by the attempt. `:wall_time_ms` is a
+        # MEASURED dimension (`limit - elapsed`, see `Allocator.remaining/1`),
+        # so real elapsed time may legitimately shrink it below the limit
+        # between `new!` and here; the refund attempt must only never GROW it.
+        remaining = Allocator.remaining(budget)[dimension]
+
+        if dimension == :wall_time_ms do
+          assert remaining <= 100
+        else
+          assert remaining == 100
+        end
       end
     end
 

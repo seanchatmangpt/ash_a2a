@@ -65,7 +65,7 @@ already does for `config :ash_a2a, :receipt_store, AshA2A.ReceiptStore.Ekv`
 — no separate supervision-tree change is needed, and choosing both configs
 as `Ekv` at once starts two distinct instances, one per layer. Before this
 fix that was not true (`Authority.Broker.Ekv`'s own moduledoc states it does
-not start `EKV` itself); see `docs/explanation/v26.9.17-commandbus-scale.md`
+not start `EKV` itself); see `docs/archive/reports/v26.9.17-commandbus-scale.md`
 for the real numbers behind choosing `Ekv` here at all — durability across a
 restart, not scale: the same document's Authority Broker section measures
 `Ekv` as ~1.7x–2.2x higher latency than `InMemory` at this specific,

@@ -51,6 +51,8 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.{Command, Delivery, Identity, SemanticSubject}
   alias AshA2A.Authority.Grant
   alias AshA2A.Test.Fixture.{Item, ItemDomain}

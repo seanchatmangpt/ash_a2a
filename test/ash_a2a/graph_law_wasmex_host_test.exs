@@ -31,6 +31,8 @@ defmodule AshA2A.GraphLawWasmexHostTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.GraphLaw.WasmexHost
 
   # --- Measured constants (see moduledoc) ------------------------------

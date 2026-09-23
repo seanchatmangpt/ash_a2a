@@ -45,6 +45,8 @@ defmodule AshA2A.Telemetry.RouterCountersIsolationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Planning.RequestRouter
   alias AshA2A.Telemetry.RouterCounters
   alias AshA2A.Test.Fixture.HddlDeterministicFixture

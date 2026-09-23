@@ -49,6 +49,8 @@ defmodule AshA2A.ScheduledSweepQualificationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Test.Fixture.ScheduledSweep
 
   setup_all do

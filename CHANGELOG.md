@@ -6,7 +6,142 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
-## [Unreleased]
+## [26.9.21] - 2026-09-21
+
+### Changed
+
+- No functional source changes (see "Documentation" below for prose-only
+  moduledoc/comment path updates). This version records merging the local
+  `release/v26.9.20` branch (commits `8eb4335`, `bb47a99`) into `main` as
+  `2730c9b` -- the round-2 GALL-003/GALL-029/030 work landed on `main`
+  after the `[26.9.20]` entry below was written, so this entry closes that
+  gap. Full suite re-verified on `main` post-merge: 58 doctests, 29
+  properties, 2122 tests, 0 failures, 2 skipped.
+- Repository cleanup: removed worktrees and local branches fully subsumed
+  by that merge (`chore/f5-01-bench-wiring`, `chore/f5-01-defect1-verify`,
+  `chore/f5-01-defect2-verify`, `fix/hddlsolver-crossvm-tempdir`,
+  `fix/router-counters-isolation`, `fix/commandbus-skill-name-resolution`,
+  `feat/sa2a-002-chicago-foundation-v26.9.16`, `feat/gall-swf-v26.9.18`,
+  `w9-sweep/format-main`, `release/v26.9.18`, `release/v26.9.20`) --
+  each was either 0 commits ahead of `main` already or byte-identical
+  content already folded in.
+- No new upstream PR content included this round. Of the 9 open PRs on
+  `ash_a2a` at merge time: #22-#26/#29/#30 are already-included duplicates
+  (confirmed via diff, e.g. PR #30's formatting fix is identical to what
+  shipped in `[26.9.20]`); #28 is a narrowing stacked on #26's branch and
+  needs #26 pushed + rebased before it can land; #27 (Semantic Work
+  identity conservation) still has real WASM/SAT-solver environment
+  failures, not a mechanical fix -- deferred, unchanged from the prior
+  two rounds' reasoning.
+
+### Documentation
+
+Full documentation audit and archive pass ahead of external review:
+
+- Created `docs/archive/` and moved 47 point-in-time engineering records
+  out of the active docs tree: the entire `docs/jira/` RFC-ticket/ARD-PRD
+  scratch area (34 files, `v26.9.11`-`v26.9.18` plus the cross-cutting
+  GALL-CHECKPOINT-003 set) to `docs/archive/jira/`; the v26.9.17
+  benchmark/stress/hardening/coverage reports, the partisan-integration
+  spike note, and the AIRGAP/ENTERPRISE/SSP security-posture reports (10
+  files) to `docs/archive/reports/`; and `MANUFACTURING_RECEIPT.md` plus
+  `litho.docs/` (14 files) to `docs/archive/session-history/`. All moves
+  via `git mv` (history preserved). Left in place as durable, non-
+  point-in-time docs: `docs/explanation/chicago-conformance-court.md`,
+  `docs/rfc/` (versioned specs), `docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md`.
+- Updated every real citation of a moved file's path in `lib/ash_a2a/
+  {command_bus,agent}.ex` moduledocs, `docs/how-to/{authenticate-agent-
+  requests,verify-authority-on-async-paths}.md`, three test files'
+  moduledoc/error-message strings, `k8s/README.md`, and `SECURITY.md` --
+  prose/comment-only edits, no logic changes; confirmed via a repo-wide
+  grep for the old paths (zero dangling references outside historical
+  CHANGELOG entries) and a full green test run.
+- `docs/reference/index.md` (the module-status source of truth) was 4
+  versions stale ("re-verified at v26.9.17"). A `defmodule` grep over
+  `lib/` found 9 real modules missing from its tables -- the 8 GALL
+  structured-work-fabric/receipt modules and `AshA2A.Reconciliation.MapeK`
+  -- now added as a new "GALL structured-work-fabric & receipt courts"
+  section, classified `PARTIAL (not default path)` (real, tested, not
+  reached by `Agent.__dispatch__`'s default path). Re-verified at v26.9.21.
+- `docs/reference/a2a-spec-version-mapping.md` existed on disk and shipped
+  in the Hex package tarball but wasn't wired into ExDoc's `docs()` extras
+  or linked from README -- added to both.
+- `docs/how-to/test-your-ash_a2a-app.md`'s "Known flakiness" section named
+  a stale flake set (`:hddl_solve_error` mapping, `:eaddrinuse`) from
+  v26.9.17; replaced with the current, actually-observed flakes
+  (`BoundsExhaustionTest`'s "no self-grant" property,
+  `AshA2A.CancelInflightTest`) per this session's own full-suite evidence.
+- Full accounting of every file touched (kept/updated/archived, with
+  reasons) recorded in `DOCS_AUDIT_v26.9.21.md` at the repo root.
+
+## [26.9.20] - 2026-09-20
+
+### Added
+
+- **`AshA2A.Reconciliation.MapeK`**: a named Monitor/Analyze/Plan/Execute
+  loop over shared Knowledge, built on the existing
+  `AshA2A.Reconciliation.classify/4` and `.reconcile/4` (purely additive,
+  no change to either) (`test/ash_a2a/reconciliation_mape_k_test.exs`).
+- **GALL structured-work-fabric (SWF) message types**: six new modules
+  under `lib/ash_a2a/gall/` -- `Capability`, `Checkpoint`,
+  `EvidenceReceipt`, `Fields`, `Message`, `WorkLease` -- typed message
+  shapes for GALL checkpoint/lease/receipt exchange with typed authority
+  refusals (`test/ash_a2a_gall_swf_message_test.exs`, 21 tests, 0
+  failures).
+- Per-method A2A JSON-RPC conformance tests over the real vendored
+  `A2A.Plug` (`test/ash_a2a_a2a_methods_test.exs`) and
+  `docs/reference/a2a-spec-version-mapping.md`. One test in this file,
+  `message/stream answers with an SSE event stream`, is `@tag :skip`'d: it
+  exposed a genuine gap -- `A2A.stream/3` returns an error (observed as a
+  real `application/json` reply, not `text/event-stream`) for an agent
+  built over a plain `:read`-skill Ash resource. Left skipped with the
+  gap documented inline rather than silently weakened or deleted; fixing
+  `AshA2A.Agent`'s streaming-skill support is real feature work out of
+  this release's scope.
+- `CITATION.cff`, `REPRODUCE.md`.
+- Two GALL process-intervention specs (from `gall/v26.9.18-final-specs`):
+  `docs/jira/v26.9.18/GALL-029-process-finding-admission-{PRD,ARD}.md`,
+  `docs/jira/v26.9.18/GALL-030-bounded-process-intervention-{PRD,ARD}.md`.
+- **GALL-003 command-receipt court** (from PR #25): `lib/ash_a2a/gall/
+  command_receipt.ex`, a `mix run` script
+  (`scripts/gall_checkpoint_003_receipt.exs`) and CI workflow producing a
+  durable, portable command-receipt seal binding a receipt to its exact
+  command/capability/consequence-terminal-state identity
+  (`test/ash_a2a_gall_command_authority_test.exs`,
+  `test/gall_checkpoint_003_command_authority_chicago_test.exs`).
+- **GALL-029/030 process intervention** (from PR #26):
+  `lib/ash_a2a/gall/process_intervention.ex` -- admits a process finding,
+  binds it to an independently-observed, digest-matched candidate and its
+  receipt, and routes a bounded `CommandBus` intervention only once every
+  identity/authority/consequence check passes
+  (`test/gall_process_intervention_test.exs`). `Command.fingerprint/1`
+  (`lib/ash_a2a/command.ex`) now additionally folds in a
+  `:gall_029_candidate_digest` metadata field when present -- a deliberate
+  identity-widening fix closing a replay hole where two different admitted
+  findings could otherwise share one command fingerprint; ordinary
+  transport-only metadata remains excluded.
+- 16 new S42 refusal codes introduced by the above two additions --
+  `semantic_subject_missing`, `invalid_gall_command_receipt`,
+  `non_consequence_receipt`, `consequence_terminal_state_unbound`,
+  `capability_mismatch`, `receipt_capability_mismatch`,
+  `requested_capability_id`, `gall_029_admission_required`,
+  `candidate_digest_mismatch`, `candidate_binding_mismatch`,
+  `receipt_candidate_binding_mismatch`, `receipt_command_mismatch`,
+  `independent_observer_required`, `independent_observer_not_verified`,
+  `secret_bearing_finding`, `actuation_store_unavailable` -- registered in
+  `AshA2A.Semantic.Refusal`'s S42 taxonomy so `classify/1` stays total
+  (caught by the existing refusal-drift test,
+  `test/ash_a2a/semantic_refusal_test.exs`, before this fix and passing
+  after it).
+
+### Changed
+
+- SA2A profile identifiers moved from v26.9.16 to v26.9.20
+  (`SA2A-PROFILE-v26.9.20`, `urn:sa2a:profile:v26.9.20`,
+  `SA2A-STRICT-v26.9.20`) in `AshA2A.SA2A.Conformance` and
+  `AshA2A.Semantic.Extension`, with matching test-fixture updates.
+
+## [26.9.18] - 2026-09-19
 
 ### Fixed
 
@@ -49,6 +184,18 @@ once it reaches 1.0.
   measured, not unbounded in-SUT state growth; callers needing the
   tightest tail on contended hosts configure `:receipt_store, Ekv`
   (0.812x-1.072x on the same metric).
+
+- Three new public-vocabulary prefixes in `AshA2A.Semantic.Vocabulary`:
+  `ssn` (http://www.w3.org/ns/ssn/), `saref`
+  (https://saref.etsi.org/core/), and `qudt`
+  (http://qudt.org/schema/qudt/), alongside the existing
+  rdf/rdfs/owl/prov/time/odrl/skos/schema/oa/sosa registry. No other
+  behavior changes -- `expand/1`, `local/1`, and every other prefix keep
+  their existing IRIs. Prompted by a planned SA2A-MFG-01 synthetic
+  manufacturing case study (in a separate repo) that needs
+  equipment/quantity semantics expressed on public ontologies rather than
+  a bespoke domain schema; landed here first since the case study depends
+  on it.
 
 ## [26.9.17] - 2026-09-17
 
@@ -213,8 +360,12 @@ once it reaches 1.0.
   re-verified, or re-scored as part of this pass.
 - Real numbers from this pass: 83 requirements already implemented, 18 real
   gaps found, 16 real gaps built and merged (see the `feat/sa2a-ard-*`
-  merge commits in `git log`), 0 gaps deferred to a follow-up (the deferred
-  list is empty for this pass).
+  merge commits in `git log`), 0 gaps deferred to a follow-up within this
+  pass's ARD scope (the deferred list is empty for this pass; one
+  regression surfaced during the pass and was deferred to the owning
+  cluster rather than this task's scope -- see the "Fixed --
+  IrAdmissionSeal regression" entry later in this same 26.9.17 section,
+  closed there).
 - CalVer bump to 26.9.17 committed (`mix.exs` version line only, single-line
   diff, confirmed via `git diff` before commit).
 - Real `mix hex.publish --dry-run` outcome: built `ash_a2a 26.9.17` correctly

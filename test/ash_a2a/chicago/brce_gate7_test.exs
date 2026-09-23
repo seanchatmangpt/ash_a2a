@@ -18,6 +18,8 @@ defmodule AshA2A.Chicago.BrceGate7Test do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Authority, BrceAnchor, Command, CommandBus, Dispatcher, Identity, Receipt}
   alias AshA2A.{ReceiptOutbox, ReceiptStore}
   alias AshA2A.Chicago
@@ -49,6 +51,7 @@ defmodule AshA2A.Chicago.BrceGate7Test do
 
   describe "CHI-BRCE end to end over the real SUT" do
     @tag timeout: 300_000
+    @tag :graphlaw_engine
     test "every falsifier reaches its verdict and every pass is corroborated by the independent OCEL consumer",
          %{tmp_dir: dir} do
       assert {:ok, run} = Runner.run(courts: [Brce], profile: :do, evidence_dir: dir)

@@ -33,6 +33,8 @@ defmodule AshA2AJsonRoundtripTest do
   # reaching for a duplicate fixture just to keep `async: true`.
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Test.Fixture.EchoAgent

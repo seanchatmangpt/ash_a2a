@@ -24,6 +24,8 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
   """
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias A2A.Message
   alias A2A.Part
   alias AshA2A.{Command, Identity, Receipt}

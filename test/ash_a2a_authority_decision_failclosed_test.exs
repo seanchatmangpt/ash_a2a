@@ -51,6 +51,8 @@ defmodule AshA2A.AuthorityDecisionFailClosedTest do
   """
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.{Authority, Command, Identity}
   alias AshA2A.Authority.Decision
   alias AshA2A.Test.Fixture.AuthorityProbe

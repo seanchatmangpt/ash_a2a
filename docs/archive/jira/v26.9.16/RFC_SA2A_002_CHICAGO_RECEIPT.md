@@ -6,7 +6,7 @@ This receipt covers the local session that built `AshA2A.Chicago`, the
 falsification-based conformance court for RFC-SA2A-002 v26.9.16
 (`docs/rfc/RFC-SA2A-002-v26.9.16.md`), from its foundation commit through the
 final closure and documentation commits on `main`. It follows the shape of
-`docs/jira/v26.9.14/RELEASE_RECEIPT.md`. Nothing here was pushed — see §7.
+`docs/archive/jira/v26.9.14/RELEASE_RECEIPT.md`. Nothing here was pushed — see §7.
 
 ## 1. Identity
 
@@ -457,6 +457,6 @@ at `:strict` (§6), not because this receipt is withholding a passing claim.
 - `priv/sa2a/chicago_mandatory_corpus.json` — the S98 mandatory corpus
 - `CHANGELOG.md` — the `[Unreleased]` Chicago court entry
 - `docs/explanation/chicago-benchmark-report.md` — the B1/B5/B9 benchmark report (commit `c553124`)
-- `docs/jira/v26.9.14/RELEASE_RECEIPT.md` — the prior release receipt this document's shape follows
+- `docs/archive/jira/v26.9.14/RELEASE_RECEIPT.md` — the prior release receipt this document's shape follows
 
 Claude-Session: https://claude.ai/code/session_017Dd9AnjCaRgumnhptViGXM

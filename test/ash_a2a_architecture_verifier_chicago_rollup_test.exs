@@ -30,6 +30,8 @@ defmodule AshA2A.ArchitectureVerifier.ChicagoRollupTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.ArchitectureVerifier
   alias AshA2A.ArchitectureVerifier.ChicagoRollup
   alias AshA2A.Chicago.{Result, Runner}
@@ -112,6 +114,7 @@ defmodule AshA2A.ArchitectureVerifier.ChicagoRollupTest do
   # convention for its heavier Chicago tests (e.g.
   # `brce_gate7_test.exs`'s `@tag timeout: 300_000`).
   @tag timeout: 600_000
+  @tag :graphlaw_engine
   test "ArchitectureVerifier.checks/0 rolls up all seven real Chicago courts alongside the original ten" do
     results = ArchitectureVerifier.checks()
 

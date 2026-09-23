@@ -227,7 +227,7 @@ defmodule AshA2A.Agent do
   # correlated to it (`build_command/4` below records exactly how a Command
   # continues a package) -- see `dispatch_semantic_replan/2`. A missing
   # `:continuation_fingerprint` no longer jumps straight to a fresh compile
-  # -- as of v26.9.16 (`docs/jira/v26.9.16/PRFAQ.md` item 1) it falls
+  # -- as of v26.9.16 (`docs/archive/jira/v26.9.16/PRFAQ.md` item 1) it falls
   # through to `dispatch_semantic_route/2` below, which decides for real,
   # per-message, whether a fresh compile is even the right tier. Every
   # existing caller's *behavior* is still unchanged: a message with no
@@ -247,7 +247,7 @@ defmodule AshA2A.Agent do
     end
   end
 
-  # NEW in v26.9.16 (`docs/jira/v26.9.16/PRFAQ.md` item 1): the real,
+  # NEW in v26.9.16 (`docs/archive/jira/v26.9.16/PRFAQ.md` item 1): the real,
   # production call site for `AshA2A.Planning.RequestRouter` -- previously
   # a fully built, 39-test-covered, adversarially-verified module with zero
   # callers anywhere in this library's own real dispatch surface

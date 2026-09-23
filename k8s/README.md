@@ -111,8 +111,8 @@ bare `cd <dir> && ggen sync run` invocation this pack's own
 ## Network isolation verification is now automated, not a manual one-off
 
 Earlier evidence-gathering for this workload (see
-`docs/AIRGAP_READINESS_REPORT.md`'s "1. Egress falsifier" and
-`docs/ENTERPRISE_READINESS_REPORT.md`'s "Correction (re-derived from a
+`docs/archive/reports/AIRGAP_READINESS_REPORT.md`'s "1. Egress falsifier" and
+`docs/archive/reports/ENTERPRISE_READINESS_REPORT.md`'s "Correction (re-derived from a
 real falsifier, not assumed)") confirmed egress isolation by hand:
 delete `k8s/network-policy.yaml`, confirm a real
 `:gen_tcp.connect/4` to a public IP succeeds (positive control),
@@ -170,8 +170,8 @@ this class of host -- see the real, disclosed `act` findings below;
 without it, or with the macOS-side forwarding socket path, the runner
 container fails to start at all.)
 
-See `docs/ENTERPRISE_READINESS_REPORT.md` (security posture + resilience
-evidence) and `docs/AIRGAP_READINESS_REPORT.md` (zero-outbound-
+See `docs/archive/reports/ENTERPRISE_READINESS_REPORT.md` (security posture + resilience
+evidence) and `docs/archive/reports/AIRGAP_READINESS_REPORT.md` (zero-outbound-
 connectivity evidence, with an honest correction of this file's own
 earlier NetworkPolicy-enforcement claim -- see that report's "Correction"
 section) for real, reproducible evidence gathered against this exact
@@ -227,7 +227,7 @@ exact same real commands by hand:
 
 ## Digest-pinning readiness (prep only -- not yet executed)
 
-Real gap disclosed in `docs/ENTERPRISE_READINESS_REPORT.md`'s caveat
+Real gap disclosed in `docs/archive/reports/ENTERPRISE_READINESS_REPORT.md`'s caveat
 (SEC-IMG-001) and `~/ggen-marketplace/packs/kubernetes-workload-pack`'s
 `control-map.md` SEC-COSIGN-001 row: this workload's image has never
 been pushed to a real registry, so there is no real digest to pin
@@ -349,7 +349,7 @@ execution pending.
    `"swarm_dispatch_verified":true` probe result against the now
    digest-pinned + cosign-verified image, then re-run `kyverno apply`
    (the one prior failing control in
-   `docs/ENTERPRISE_READINESS_REPORT.md`'s scanner table) to confirm the
+   `docs/archive/reports/ENTERPRISE_READINESS_REPORT.md`'s scanner table) to confirm the
    digest-pinning control now passes for real.
 
 ### Why this is prep, not execution
@@ -369,7 +369,7 @@ was never really pushed.
 ## Explicitly out of scope this pass (disclosed, matching this pack's own backlog discipline)
 
 - RBAC Role/RoleBinding beyond the ServiceAccount itself (none needed --
-  see `docs/ENTERPRISE_READINESS_REPORT.md`), HorizontalPodAutoscaler,
+  see `docs/archive/reports/ENTERPRISE_READINESS_REPORT.md`), HorizontalPodAutoscaler,
   PodDisruptionBudget -- same NAMESPACE_CONTROL/CLUSTER_CONTROL boundary
   `kubernetes-workload-pack`'s own control-map.md documents; not this
   ephemeral test workload's concern. (NetworkPolicy itself, `k8s/

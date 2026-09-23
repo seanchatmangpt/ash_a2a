@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.{Collaborators, Query, Runner}
   alias AshA2A.Chicago.Collaborators.{DurabilityProbe, MockScan}
   alias AshA2A.Chicago.Courts.RealCollaborators
@@ -23,6 +25,7 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
   @moduletag timeout: 600_000
 
   describe "CHI-REAL court end to end through the runner" do
+    @tag :graphlaw_engine
     test "every falsifier reaches its verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do
@@ -92,6 +95,7 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
   end
 
   describe "inventory of the real running configuration" do
+    @tag :graphlaw_engine
     test "identifies all nine roles with the real components and admits them", %{tmp_dir: dir} do
       inv = Collaborators.inventory(claim: :core, probe_dir: dir)
 

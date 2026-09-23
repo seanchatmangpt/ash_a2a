@@ -10,6 +10,8 @@ defmodule AshA2A.Chicago.SA2AV269_17TopologyTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago.Courts.SA2AV269_17Topology, as: Topology
   alias AshA2A.Chicago.{Query, Runner}
 
@@ -25,6 +27,7 @@ defmodule AshA2A.Chicago.SA2AV269_17TopologyTest do
   end
 
   describe "the 11 real local repos this domain's :init declares as HDDL objects" do
+    @tag :sibling_repos
     test "every one resolves to a real git HEAD via check_repo/1, on this machine" do
       results =
         for {obj, dir, _cap, _critical?} <- Topology.repos() do
@@ -83,6 +86,7 @@ defmodule AshA2A.Chicago.SA2AV269_17TopologyTest do
   end
 
   describe "SA2A-TOPO court end to end through the runner" do
+    @tag :sibling_repos
     test "every falsifier reaches its verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do

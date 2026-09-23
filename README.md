@@ -142,10 +142,12 @@ cd native/hddl_cli && cargo build --release --locked && cd -
 - Postgres 16 on `localhost:55432` (user/password `postgres`, db
   `ash_a2a_test`, per `config/test.exs`) is needed by the real Oban
   delivery qualification tests.
-- The canonical full-suite invocation is `mix test --max-cases 6` (the
-  suite spawns `:peer` nodes and subprocesses; higher parallelism trips
-  port-bind races). 1–2 known-flaky tests are documented in the
-  [CHANGELOG](CHANGELOG.md) under `[26.9.17]`.
+- `mix test` (no args) is the fast-iteration default — it excludes the
+  `:serial`-tagged tail (see the how-to guide below). The canonical
+  full-suite invocation, and what CI runs, is `mix test.all --max-cases 6`
+  (the suite spawns `:peer` nodes and subprocesses; higher parallelism
+  trips port-bind races). Known-flaky tests are documented in the
+  [CHANGELOG](CHANGELOG.md).
 
 Full detail: [Testing ash_a2a (your app and this
 repo)](docs/how-to/test-your-ash_a2a-app.md). Both `target/` directories are
@@ -193,6 +195,9 @@ reference for lookup, and explanation for understanding. It is published on
   - [A2A endpoint contract](docs/reference/a2a-endpoint-contract.md) —
     served HTTP surface: agent card, JSON-RPC methods, error codes,
     streaming, auth.
+  - [A2A spec version mapping](docs/reference/a2a-spec-version-mapping.md)
+    — which A2A protocol spec version this library targets and how its
+    JSON-RPC methods map onto it.
 - **Explanation**:
   - [Architecture](docs/explanation/architecture.md) — the capability
     projection, admission/receipt layers, adapters, and consequence
@@ -205,23 +210,29 @@ reference for lookup, and explanation for understanding. It is published on
 ### Internal evidence and reports (not user documentation)
 
 These artifacts are deliberately published with the repository but are
-point-in-time engineering records, not guides:
+point-in-time engineering records, not guides. As of v26.9.21 they live
+under `docs/archive/`, grouped by kind:
 
-- `docs/explanation/chicago-benchmark-report.md`,
-  `v26.9.17-stress-report.md`, `v26.9.17-hardening-audit.md`,
-  `sa2a-v26-9-17-capability-coverage-sweep.md`,
-  `sa2a-v26-9-17-hddl-reachability-analysis.md` — measured evidence from
-  the v26.9.17 hardening/benchmark/stress pass (referenced from the
-  CHANGELOG).
+- `docs/archive/reports/` — measured evidence: the v26.9.17 hardening/
+  benchmark/stress pass (`chicago-benchmark-report.md`,
+  `v26.9.17-{stress-report,hardening-audit,commandbus-scale}.md`,
+  `sa2a-v26-9-17-{capability-coverage-sweep,hddl-reachability-analysis}.md`,
+  referenced from the CHANGELOG), the `partisan-integration-investigation.md`
+  spike note, and the security-posture reports gathered against the `k8s/`
+  swarm manifests (`AIRGAP_READINESS_REPORT.md`, `ENTERPRISE_READINESS_REPORT.md`,
+  `SSP_CONTROL_APPENDIX.md`; kind-cluster scope, 2026-09-15; explicitly not
+  an ATO).
+- `docs/archive/jira/` — RFC-style tickets, checkpoints, and ARD/PRD pairs
+  from v26.9.11 through v26.9.18's development.
+- `docs/archive/session-history/` — `MANUFACTURING_RECEIPT.md` and
+  `litho.docs/`, internal session history and manufacturing records.
+- `DOCS_AUDIT_v26.9.21.md` (repo root) — the accounting of this
+  documentation audit itself: every file kept/updated/archived, and why.
 - `docs/explanation/chicago-conformance-court.md` — what the RFC-SA2A-002
-  conformance court is.
-- `docs/AIRGAP_READINESS_REPORT.md`, `docs/ENTERPRISE_READINESS_REPORT.md`,
-  `docs/SSP_CONTROL_APPENDIX.md` — security-posture evidence gathered
-  against the `k8s/` swarm manifests (kind-cluster scope, 2026-09-15);
-  explicitly not an ATO.
-- `docs/rfc/` — RFC-SA2A-001/002 (Proposed Standard status).
-- `MANUFACTURING_RECEIPT.md`, `docs/jira/`, `litho.docs/`, `research/` —
-  internal session history and manufacturing records.
+  conformance court is (kept in place: a durable explanation, not a
+  point-in-time record).
+- `docs/rfc/` — RFC-SA2A-001/002 (Proposed Standard status; kept in place).
+- `research/` — kept in place, outside `docs/archive/`.
 
 ## Security
 

@@ -140,6 +140,8 @@ end
 defmodule AshA2A.DurableServerContinuityTest do
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Durability.DurableServer
   alias AshA2A.Identity
   alias AshA2A.Test.FakeDurableServerSupervisor, as: FakeProvider

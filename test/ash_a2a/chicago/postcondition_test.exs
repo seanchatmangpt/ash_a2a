@@ -13,6 +13,8 @@ defmodule AshA2A.Chicago.PostconditionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Authority, Command, CommandBus, Identity, Postcondition, Receipt}
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Query, Runner}

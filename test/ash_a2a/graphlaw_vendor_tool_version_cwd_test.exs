@@ -21,6 +21,8 @@ defmodule AshA2A.GraphLawVendorToolVersionCwdTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.GraphLaw.Vendor
 
   @wasm_crate "crates/praxis-graphlaw-wasm"

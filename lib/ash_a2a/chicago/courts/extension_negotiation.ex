@@ -93,7 +93,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
       negative("002",
         invariant: "A remote card advertising an incompatible profile version does not negotiate",
         stimulus:
-          "negotiate/2 against the card A2A.Plug serves for a remote advertising SA2A-PROFILE-v26.9.16 at protocolVersion v25.1.0",
+          "negotiate/2 against the card A2A.Plug serves for a remote advertising SA2A-PROFILE-v26.9.20 at protocolVersion v25.1.0",
         boundary: "AshA2A.Semantic.Extension.negotiate/2",
         forbidden_outcome: "negotiation outcome :ok",
         attempt: {:observed, @negotiate},

@@ -15,6 +15,8 @@ defmodule AshA2A.Chicago.BenchHarnessTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Authority.Broker.InMemory
   alias AshA2A.Authority.Grant
   alias AshA2A.Chicago.{Bench, Query, Runner, StandingReceipt, Subject}
@@ -349,6 +351,7 @@ defmodule AshA2A.Chicago.BenchHarnessTest do
   end
 
   describe "SA2A-BENCH court end-to-end" do
+    @tag :graphlaw_engine
     test "Runner.run: every benchmark falsifier measured over the real SUT and OCEL-corroborated",
          %{tmp_dir: dir} do
       assert {:ok, run} =

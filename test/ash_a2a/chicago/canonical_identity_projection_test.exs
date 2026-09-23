@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.CanonicalIdentityProjectionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Chicago.Courts.{
     CanonicalGraphIdentity,
     CanonicalMutation,
@@ -47,6 +49,7 @@ defmodule AshA2A.Chicago.CanonicalIdentityProjectionTest do
 
   describe "the courts over the real SUT" do
     @tag timeout: 600_000
+    @tag :graphlaw_engine
     test "every falsifier reaches its final verdict and every pass is OCEL-corroborated",
          %{tmp_dir: dir} do
       assert {:ok, run} = Runner.run(courts: @courts, profile: :strict, evidence_dir: dir)
@@ -145,6 +148,7 @@ defmodule AshA2A.Chicago.CanonicalIdentityProjectionTest do
                CanonicalGraph.verify_pin(:not_a_pin)
     end
 
+    @tag :graphlaw_engine
     test "the committed manifest is still reproduced by its lawful manufacturer" do
       {:ok, rebuilt} = ConformanceCorpus.build()
       committed = ConformanceCorpus.manifest_path() |> File.read!() |> JSON.decode!()

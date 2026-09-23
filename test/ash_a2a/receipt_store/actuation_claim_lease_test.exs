@@ -16,6 +16,8 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   @moduletag :tmp_dir
 
   alias AshA2A.{Actuation, Command, Identity, Receipt, ReceiptOutbox}

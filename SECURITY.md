@@ -48,6 +48,6 @@ mTLS is declared-but-unsupported at the plug layer. Details:
   [the async authority how-to](docs/how-to/verify-authority-on-async-paths.md).
 - The Kubernetes security posture of the swarm test harness (NetworkPolicy
   egress isolation, restricted Pod Security, non-root execution) and its
-  measured evidence are documented in `docs/ENTERPRISE_READINESS_REPORT.md`
-  and `docs/AIRGAP_READINESS_REPORT.md` (kind-cluster scope, 2026-09-15;
+  measured evidence are documented in `docs/archive/reports/ENTERPRISE_READINESS_REPORT.md`
+  and `docs/archive/reports/AIRGAP_READINESS_REPORT.md` (kind-cluster scope, 2026-09-15;
   image digest pinning remains a disclosed open item).

@@ -132,7 +132,7 @@ actively, rapidly committing to this exact working tree.
 1. **Merged `origin/main` into local `main`** — commit
    `2f8ca172926f742742ca71d942fbb4539512753c`. Before merging, confirmed via
    `git diff --name-only main...origin/main` that all 10 commits unique to `origin/main`
-   (all `docs(v26.9.16): ticket ...` files under `docs/jira/v26.9.16/`) touched paths that
+   (all `docs(v26.9.16): ticket ...` files under `docs/archive/jira/v26.9.16/`) touched paths that
    did not exist in local `main` — zero path overlap, so the merge was content-safe
    regardless of the concurrent automation loop. `git merge origin/main --no-edit -F <msg>`
    completed clean ("Merge made by the 'ort' strategy", no conflicts), confirmed by

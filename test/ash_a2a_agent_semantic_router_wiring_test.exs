@@ -82,7 +82,7 @@ end
 
 defmodule AshA2AAgentSemanticRouterWiringTest do
   @moduledoc """
-  v26.9.16 (`docs/jira/v26.9.16/PRFAQ.md` item 1) real, Chicago-style
+  v26.9.16 (`docs/archive/jira/v26.9.16/PRFAQ.md` item 1) real, Chicago-style
   end-to-end coverage for the new production call site: a real dispatch
   through the real, supervised `A2A.Agent` process
   (`AshA2AAgentSemanticRouterWiringTest`'s own `SemanticRouterWiredAgent`)
@@ -141,6 +141,8 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Telemetry.RouterCounters
@@ -232,6 +234,16 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
   # `mix test` run (`test/test_helper.exs`), consistent with this repo's
   # own established convention for this exact scenario.
   @tag :external_api
+  # ASH_A2A-26922-02: `mix test.all` = `test --include serial`, and ExUnit's
+  # include filter rescues any matching test from ALL exclusions -- this
+  # module's `@moduletag :serial` re-admitted this `@tag :external_api`
+  # test into the CI lane. There is no filter expression for "serial but
+  # not external_api", so this file keeps the repo's own named-skip
+  # convention (see test/ash_a2a_zai_concurrency_ocel_test.exs): a real,
+  # compile-time precondition check with a named, printed reason.
+  @tag skip:
+         (is_nil(AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")) &&
+            "ZAI_API_KEY not found in ~/.env -- real, unseamed LLM round-trip") || nil
   @tag timeout: 180_000
   test "3b: real text with no goal_facts key still falls through to dispatch_semantic_compile/2 (real, unseamed LLM path)" do
     message =

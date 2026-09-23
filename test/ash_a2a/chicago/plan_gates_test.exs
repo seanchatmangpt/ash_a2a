@@ -21,6 +21,8 @@ defmodule AshA2A.Chicago.PlanGatesTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Query, Runner}
   alias AshA2A.Chicago.Courts.{PlanAuthority, PlanPackage, WholePlanPreflight}

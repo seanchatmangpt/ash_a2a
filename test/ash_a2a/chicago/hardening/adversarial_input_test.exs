@@ -53,7 +53,10 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   """
 
   use ExUnit.Case, async: false
+  @moduletag :graphlaw_engine
 
+  @moduletag :serial
+  @moduletag :serial_shard
   @moduletag timeout: 120_000
 
   alias AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport.{

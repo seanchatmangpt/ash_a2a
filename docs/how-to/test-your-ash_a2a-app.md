@@ -66,39 +66,86 @@ Without it those tests fail in `setup_all` — 8 tests on a clean run.
 ### Commands
 
 ```sh
-mix test                      # everyday work
-mix test --max-cases 6       # canonical full-suite invocation
+mix test                      # fast-iteration default (~1400 tests, ~4 min)
+mix test.all --max-cases 6    # full suite, what CI runs (~2122 tests, ~12-20 min)
+mix test.serial               # just the excluded serial tail (96 files)
 ```
 
-`--max-cases 6` is the number the suite is actually run with: it spawns
-real `:peer` BEAM nodes and OS subprocesses, and higher parallelism trips
-`:eaddrinuse` port-bind races. Tags: `:benchmark` and `:external_api` are
-excluded by default (`test/test_helper.exs`); `:graphlaw` tests
-self-exclude with a printed reason when the node/wasm prerequisites are
-missing. Opt in explicitly:
+`mix test` excludes the `:serial` tag by default (96 files, `async: false`
+for real shared-state reasons -- mostly a shared global `:telemetry`
+observer used for stimulus attribution in the Chicago courts; see each
+tagged file's own moduledoc, and `test/test_helper.exs`'s broker comment).
+These files run strictly one-at-a-time regardless of `--max-cases` and
+dominate full-suite wall clock (measured: ~240s for the fast lane vs.
+~740-1300s for everything). `mix test.all` runs the complete suite exactly
+as before this alias existed, and is what CI invokes.
+`--max-cases 6` (only meaningful for `test.all`/`test.serial`, since the
+fast lane doesn't include the files that need it) is the number the full
+suite is actually run with: it spawns real `:peer` BEAM nodes and OS
+subprocesses, and higher parallelism trips `:eaddrinuse` port-bind races.
+Tags: `:benchmark` and `:external_api` are excluded from every command
+above by default (`test/test_helper.exs`); `:graphlaw` tests self-exclude
+with a printed reason when the node/wasm prerequisites are missing. Opt
+into a benchmark explicitly:
 
 ```sh
-mix test test/ash_a2a/chicago/stress/sustained_throughput_test.exs --include benchmark
+mix test.all test/ash_a2a/chicago/stress/sustained_throughput_test.exs --include benchmark
+```
+
+#### Running the serial tail with more concurrency
+
+The 96 `:serial` files split into two disjoint, independently-tagged
+groups (never combine `--only`/`--exclude` for two different tags in one
+invocation to approximate this split -- confirmed the hard way: ExUnit's
+`--only` is a sole selector and silently ignores an `--exclude` for a
+*different* tag in the same command, and `--include` for a broader tag
+re-admits everything under it via OR-logic, not AND):
+
+- `:serial_solo` (23 files) hold a real host-level shared resource across
+  OS processes -- a fixed port, a real `:peer`/multinode spawn, the
+  shared Postgres test database, the `hddl_cli` native subprocess. Run
+  together, never sharded: `mix test.serial.solo`.
+- `:serial_shard` (73 files) are serial only for real but VM-local shared
+  state (the telemetry observer, the shared in-memory authority broker)
+  -- eliminated entirely by running each shard as its own OS process.
+  Native `mix test --partitions` support makes this safe: each partition
+  is its own BEAM VM, so there is nothing left to race between shards.
+
+```sh
+# 4-way example; tune N to your machine, and always capture each
+# shard's own PID -- never stop test runs by name/pattern, since other
+# processes on a shared machine can share the "mix test" substring.
+for i in 1 2 3 4; do
+  MIX_TEST_PARTITION=$i mix test.serial.shard --partitions 4 &
+done
+wait
+mix test.serial.solo
 ```
 
 ### What's in the suite
 
-~2086 tests plus 58 doctests and 29 properties: unit/DSL tests, real-Plug
-HTTP tests, property/fuzz (StreamData), Oban-on-real-Postgres integration,
-multinode `:peer` tests, the SA2A conformance court (dual real WASM/JS
-runtimes over `priv/sa2a_conformance/`), and ~45 Chicago conformance
-courts under `test/ash_a2a/chicago/`. The three CI-gate mix tasks
+~2122 tests plus 58 doctests and 29 properties (`mix test.all`): unit/DSL
+tests, real-Plug HTTP tests, property/fuzz (StreamData),
+Oban-on-real-Postgres integration, multinode `:peer` tests, the SA2A
+conformance court (dual real WASM/JS runtimes over
+`priv/sa2a_conformance/`), and ~45 Chicago conformance courts under
+`test/ash_a2a/chicago/`. `mix test` (the default) covers ~1400 of these,
+excluding the 96-file `:serial` tail. The three CI-gate mix tasks
 (`ash_a2a.verify_architecture`, `verify_adapters`, `verify_conformance`)
 are also exercisable directly — see the
 [mix tasks reference](../reference/mix-tasks.md).
 
 ### Known flakiness (honest inventory)
 
-As of v26.9.17, repeated full runs show 1–2 failures in *different* tests
-each run: `AshA2A.SemanticRefusalTest`'s `:hddl_solve_error` mapping check,
-and an `:eaddrinuse` port-bind race under parallel execution. Both are
-documented pre-existing in the CHANGELOG. Triage rule: re-run the single
-file; if it passes in isolation, it's one of these, not your change.
+As of v26.9.21 (~2122 tests), repeated full runs show 0–2 failures in
+*different* tests each run: `AshA2A.Chicago.Hardening.BoundsExhaustionTest`'s
+"no self-grant" property, and occasionally
+`AshA2A.CancelInflightTest` -- both `--max-cases 6` concurrency-timing
+flakes, confirmed pre-existing by diffing the failing file against
+`origin/main` (empty diff) and passing 3/3 in isolated single-file reruns.
+Documented in the CHANGELOG's `[26.9.20]`/`[26.9.21]` entries. Triage rule:
+re-run the single file; if it passes in isolation, it's one of these, not
+your change.
 
 ### Mirroring CI
 

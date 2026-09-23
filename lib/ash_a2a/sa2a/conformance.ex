@@ -203,7 +203,7 @@ defmodule AshA2A.SA2A.Conformance do
   alias AshA2A.SA2A.{ResultProjection, StateMachine, Vector}
   alias AshA2A.Semantic.CanonicalGraph
 
-  @profile "SA2A-STRICT-v26.9.16"
+  @profile "SA2A-STRICT-v26.9.20"
   @assertions [
     :same_wasm,
     :same_input_identity,

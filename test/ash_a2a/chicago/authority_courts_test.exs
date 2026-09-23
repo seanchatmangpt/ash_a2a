@@ -12,6 +12,8 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.{Authority, Identity}
   alias AshA2A.Authority.Broker.{Ekv, InMemory}
   alias AshA2A.Authority.Grant

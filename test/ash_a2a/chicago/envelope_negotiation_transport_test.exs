@@ -13,6 +13,8 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Court, Falsifier, Query, Runner}
 
@@ -63,6 +65,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
   }
 
   describe "a real run of the three courts" do
+    @tag :graphlaw_engine
     test "every falsifier reaches its final verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do
@@ -217,7 +220,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
       binding = Extension.profile_id()
 
       assert Extension.advertisement(
-               card([%{protocol_binding: binding, protocol_version: "v26.9.16"}])
+               card([%{protocol_binding: binding, protocol_version: "v26.9.20"}])
              ) == :compatible
 
       assert Extension.advertisement(
@@ -230,7 +233,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
       assert Extension.advertisement(nil) == :absent
       refute Extension.advertised?(nil)
 
-      compatible = card([%{protocol_binding: binding, protocol_version: "v26.9.16"}])
+      compatible = card([%{protocol_binding: binding, protocol_version: "v26.9.20"}])
       old = card([%{protocol_binding: binding, protocol_version: "v25.1.0"}])
 
       assert {:error, %{code: :profile_version_incompatible}} =

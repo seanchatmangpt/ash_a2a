@@ -95,6 +95,8 @@ defmodule AshA2A.ReceiptStoreEkvCrossnodeTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.{Command, Identity, Receipt}
   alias AshA2A.ReceiptStore.Ekv
   alias AshA2A.Test.MultinodeEkvOwner

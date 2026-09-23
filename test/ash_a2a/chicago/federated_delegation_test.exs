@@ -17,6 +17,8 @@ defmodule AshA2A.Chicago.FederatedDelegationTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{Query, Runner}
   alias AshA2A.Chicago.Courts.FederatedDelegation

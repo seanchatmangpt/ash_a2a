@@ -60,7 +60,6 @@ defmodule AshA2A.Semantic.RootManifest.EngineProbe do
   `{:error, %{code: ...}}`. There is no "assume valid" branch.
   """
 
-  @default_wasm_path "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm"
   @host_relative "graphlaw/graphlaw_host_probe.mjs"
 
   @type failure :: %{required(:code) => atom(), optional(:detail) => term()}
@@ -69,15 +68,16 @@ defmodule AshA2A.Semantic.RootManifest.EngineProbe do
   Resolves the real `praxis-graphlaw` wasm artifact path.
 
   Order: `opts[:wasm_path]`, `Application.get_env(:ash_a2a,
-  :graphlaw_wasm_path)`, `System.get_env("GRAPHLAW_WASM")`, then the
-  documented default sibling-workspace path.
+  :graphlaw_wasm_path)`, `System.get_env("GRAPHLAW_WASM")`, then the vendored,
+  git-tracked, MANIFEST-pinned artifact `AshA2A.GraphLaw.wasm_path/0`
+  (`priv/graphlaw/praxis_graphlaw.wasm`).
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
     Keyword.get(opts, :wasm_path) ||
       Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
       System.get_env("GRAPHLAW_WASM") ||
-      @default_wasm_path
+      AshA2A.GraphLaw.wasm_path()
   end
 
   @doc """

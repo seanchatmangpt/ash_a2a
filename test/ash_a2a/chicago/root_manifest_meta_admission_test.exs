@@ -14,6 +14,8 @@ defmodule AshA2A.Chicago.RootManifestMetaAdmissionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Chicago
   alias AshA2A.Chicago.{CourtManifest, Result, Runner, StandingReceipt, Subject}
   alias AshA2A.Chicago.Courts.{MetaAdmission, RootManifest}
@@ -273,6 +275,7 @@ defmodule AshA2A.Chicago.RootManifestMetaAdmissionTest do
       assert Refusal.classify(:court_manifest_not_an_object) == :refused_structure
     end
 
+    @tag :graphlaw_engine
     test "the committed Root Manifest is reproduced from the corpus and verifies at use" do
       {:ok, rebuilt} = ConformanceCorpus.build()
       assert rebuilt.digest == committed_root_digest()

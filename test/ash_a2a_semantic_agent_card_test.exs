@@ -187,6 +187,7 @@ defmodule AshA2A.SemanticAgentCardTest do
   end
 
   describe "RDF projection" do
+    @tag :graphlaw_engine
     test "the Turtle projection is accepted and hashed by the REAL GraphLaw engine", %{
       declarations: declarations
     } do

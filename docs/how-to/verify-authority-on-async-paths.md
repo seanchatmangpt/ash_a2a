@@ -14,7 +14,7 @@ it: this repo's own shipped reference worker
 a revoked-but-unexpired authority could still actuate through it. The fix
 (receipt-peek + live re-verification) landed the same day in `1f06cab`
 and is the pattern below. See the CHANGELOG under `[26.9.17]` and
-`docs/explanation/chicago-benchmark-report.md`'s "Hardening findings"
+`docs/archive/reports/chicago-benchmark-report.md`'s "Hardening findings"
 section for the original finding.
 
 ## 1. Enqueue with an authority snapshot

@@ -44,6 +44,8 @@ defmodule AshA2A.DistributedNodeLossTest do
   """
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   # Deliberately NOT aliasing `AshA2A.Topology.Group` to `Group` here: this
   # file mostly drives the REAL `group` hex package (`Group.start_link`,
   # `Group.monitor`, `Group.lookup`, the real `%Group.Event{}` struct)

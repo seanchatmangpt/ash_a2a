@@ -22,6 +22,8 @@ defmodule AshA2AFreedomGymPhaseAdmissionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Test.Fixture.FreedomGym.{FacilitatorAgent, MeetingPlan, PhaseAdmission}

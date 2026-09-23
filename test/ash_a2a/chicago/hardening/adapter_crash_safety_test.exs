@@ -186,6 +186,8 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.{Command, Delivery, Identity}
   alias AshA2A.Authority.{Broker.InMemory, Grant}
   alias AshA2A.Test.Fixture.{Item, ItemDomain}

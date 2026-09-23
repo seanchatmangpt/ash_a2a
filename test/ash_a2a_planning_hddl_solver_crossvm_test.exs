@@ -39,6 +39,8 @@ defmodule AshA2A.PlanningHddlSolverCrossvmTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.Test.HddlSolverCrossvmDispatch
 
   @cli_path Path.expand("../native/hddl_cli/target/release/hddl_cli", __DIR__)

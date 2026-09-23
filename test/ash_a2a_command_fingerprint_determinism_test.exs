@@ -100,7 +100,9 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
         command.capability_id,
         command.input,
         nil,
-        AshA2A.SemanticSubject.fingerprint_token(command.semantic_subject)
+        AshA2A.SemanticSubject.fingerprint_token(command.semantic_subject),
+        Map.get(command.metadata, :gall_029_candidate_digest) ||
+          Map.get(command.metadata, "gall_029_candidate_digest")
       }
       |> :erlang.term_to_binary([:deterministic])
       |> then(&:crypto.hash(:sha256, &1))

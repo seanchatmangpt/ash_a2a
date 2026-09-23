@@ -4,9 +4,10 @@ defmodule AshA2A.Command do
 
   A command binds distinct machine identities, a canonical capability id, the
   admitted input, optional exact semantic/manufacture subject, and optional
-  verified authority. `fingerprint` is derived only from semantic command
-  content, so retries may carry a fresh transport timestamp while still proving
-  they are the same command intent against the same manufactured subject.
+  verified authority. `fingerprint` is derived from semantic command content
+  plus reserved identity-bearing metadata admitted at a consequence boundary.
+  Transport-only metadata remains excluded, so ordinary retries may carry fresh
+  transport context while preserving command identity.
   """
 
   alias AshA2A.{Authority, Identity, SemanticSubject}
@@ -105,12 +106,23 @@ defmodule AshA2A.Command do
       command.capability_id,
       command.input,
       authority_token,
-      SemanticSubject.fingerprint_token(command.semantic_subject)
+      SemanticSubject.fingerprint_token(command.semantic_subject),
+      gall_029_candidate_digest(command.metadata)
     }
     |> :erlang.term_to_binary([:deterministic])
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end
+
+  # GALL-030: this one metadata field is semantic identity, not transport
+  # decoration. Including it closes the replay hole where two different
+  # admitted findings could otherwise share one command fingerprint.
+  defp gall_029_candidate_digest(metadata) when is_map(metadata) do
+    Map.get(metadata, :gall_029_candidate_digest) ||
+      Map.get(metadata, "gall_029_candidate_digest")
+  end
+
+  defp gall_029_candidate_digest(_), do: nil
 
   defp ensure_identity(kind, %Identity{kind: kind} = identity), do: identity
 

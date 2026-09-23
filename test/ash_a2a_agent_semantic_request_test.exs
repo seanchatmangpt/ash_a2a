@@ -58,6 +58,8 @@ defmodule AshA2AAgentSemanticRequestTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Test.Fixture.{Echo, EchoAgent, SemanticEnabledAgent}
@@ -110,6 +112,16 @@ defmodule AshA2AAgentSemanticRequestTest do
   # one test alone cost ~93s of a ~315s total run). Adding the tag now
   # makes the comment's own claim real.
   @tag :external_api
+  # ASH_A2A-26922-02: `mix test.all` = `test --include serial`, and ExUnit's
+  # include filter rescues any matching test from ALL exclusions -- this
+  # module's `@moduletag :serial` re-admitted this `@tag :external_api`
+  # test into the CI lane. There is no filter expression for "serial but
+  # not external_api", so this file keeps the repo's own named-skip
+  # convention (see test/ash_a2a_zai_concurrency_ocel_test.exs): a real,
+  # compile-time precondition check with a named, printed reason.
+  @tag skip:
+         (is_nil(AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")) &&
+            "ZAI_API_KEY not found in ~/.env -- real, unseamed LLM round-trip") || nil
   @tag timeout: 180_000
   test "both gates true: a real dispatch reaches the real semantic compiler and fails closed (not a crash) with no injected generate_object seam" do
     message =

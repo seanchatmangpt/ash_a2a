@@ -123,6 +123,13 @@ defmodule AshA2A.Chicago.Stress.AgentDispatchBrokerScaleTest do
   alias AshA2A.Test.Fixture.{BrokerScaleItemAgent, Item, ItemDomain}
 
   @moduletag :benchmark
+  # No `:serial`/`:serial_shard`/`:serial_solo` tag here (removed, ASH_A2A-26922-02):
+  # `mix test.all` = `test --include serial`, and ExUnit's include filter
+  # rescues ANY test matching the include from ALL exclusions -- a serial
+  # tag on this whole-module `:benchmark` file re-admitted the benchmark
+  # into the CI lane. With no serial tag, the `:benchmark` exclusion in
+  # test_helper.exs is un-overridable by `--include serial`; run this file
+  # explicitly (`mix test <path>` or `--only benchmark`).
   @moduletag timeout: :infinity
 
   @capability_selector "create_item"

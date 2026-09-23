@@ -25,6 +25,8 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_shard
   alias AshA2A.GraphLaw.ConformanceVectors
   alias AshA2A.GraphLaw.{Runtime, RuntimeB, WasmexSession, WasmtimeRuntime}
 

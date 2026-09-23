@@ -15,6 +15,8 @@ defmodule AshA2A.SA2AConformanceTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :serial
+  @moduletag :serial_solo
   alias AshA2A.GraphLaw.{Runtime, RuntimeB, WasmexSession}
   alias AshA2A.SA2A.{Conformance, ResultProjection, StateMachine, Vector}
 
@@ -318,6 +320,7 @@ defmodule AshA2A.SA2AConformanceTest do
       assert reason.message =~ "same {host_id, engine_id}"
     end
 
+    @tag :graphlaw_engine
     test "refuses an empty corpus rather than passing vacuously" do
       dir = Path.join(System.tmp_dir!(), "sa2a_empty_#{System.unique_integer([:positive])}")
       File.mkdir_p!(dir)
@@ -331,6 +334,7 @@ defmodule AshA2A.SA2AConformanceTest do
       end
     end
 
+    @tag :graphlaw_engine
     test "refuses a corpus directory that does not exist" do
       assert {:error, reason} = Conformance.run(corpus_dir: "/nonexistent/sa2a/corpus")
       assert reason.code == :sa2a_corpus_not_found
@@ -623,7 +627,7 @@ defmodule AshA2A.SA2AConformanceTest do
           assert Map.has_key?(receipt, key), "receipt is missing #{key}"
         end
 
-        assert receipt["profile"] == "SA2A-STRICT-v26.9.16"
+        assert receipt["profile"] == "SA2A-STRICT-v26.9.20"
         assert receipt["graphlaw_version"] =~ "praxis-graphlaw v"
         assert String.match?(receipt["root_manifest_digest"], ~r/\A[0-9a-f]{64}\z/)
 
@@ -647,7 +651,7 @@ defmodule AshA2A.SA2AConformanceTest do
       else
         encoded = JSON.encode!(context.receipt)
         assert {:ok, decoded} = JSON.decode(encoded)
-        assert decoded["profile"] == "SA2A-STRICT-v26.9.16"
+        assert decoded["profile"] == "SA2A-STRICT-v26.9.20"
       end
     end
 
