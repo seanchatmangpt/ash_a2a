@@ -44,13 +44,14 @@ defmodule AshA2A.GraphLaw.WasmDriver do
     1. `opts[:wasm_path]`
     2. `Application.get_env(:ash_a2a, :graphlaw_wasm_path)`
     3. the `GRAPHLAW_WASM_PATH` environment variable
-    4. `@default_wasm_path` -- the in-tree `praxis` checkout location
+    4. `AshA2A.GraphLaw.wasm_path/0` -- the vendored, git-tracked,
+       MANIFEST-pinned copy at `priv/graphlaw/praxis_graphlaw.wasm`
 
-  The wasm module is a 3.2MB build artifact of a *separate* repository and is
-  deliberately not vendored into this one, so the default only resolves on a
-  machine that also has `praxis` checked out. Every function here returns a
-  typed `{:error, %{code: :graphlaw_wasm_not_found, ...}}` rather than
-  raising when it does not resolve.
+  The default is the vendored artifact, which every checkout and the published
+  package contain, so it resolves without a sibling `praxis` workspace. Every
+  function here still returns a typed
+  `{:error, %{code: :graphlaw_wasm_not_found, ...}}` rather than raising when
+  an explicitly configured path does not resolve.
 
   ## Error discipline
 
@@ -60,8 +61,6 @@ defmodule AshA2A.GraphLaw.WasmDriver do
   returned payload and maps an engine-reported error to a typed
   `{:error, map}` with a `:code` key.
   """
-
-  @default_wasm_path "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm"
 
   @driver_relative "graphlaw/graphlaw_driver.mjs"
 
@@ -79,7 +78,7 @@ defmodule AshA2A.GraphLaw.WasmDriver do
     Keyword.get(opts, :wasm_path) ||
       Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
       System.get_env("GRAPHLAW_WASM_PATH") ||
-      @default_wasm_path
+      AshA2A.GraphLaw.wasm_path()
   end
 
   @doc """

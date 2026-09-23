@@ -32,6 +32,7 @@ defmodule AshA2A.Chicago.IdentityGate1Test do
 
   describe "the CHI-ID court end to end" do
     @tag timeout: 300_000
+    @tag :graphlaw_engine
     test "every falsifier reaches its verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do

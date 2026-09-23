@@ -51,6 +51,7 @@ defmodule AshA2A.Chicago.BrceGate7Test do
 
   describe "CHI-BRCE end to end over the real SUT" do
     @tag timeout: 300_000
+    @tag :graphlaw_engine
     test "every falsifier reaches its verdict and every pass is corroborated by the independent OCEL consumer",
          %{tmp_dir: dir} do
       assert {:ok, run} = Runner.run(courts: [Brce], profile: :do, evidence_dir: dir)

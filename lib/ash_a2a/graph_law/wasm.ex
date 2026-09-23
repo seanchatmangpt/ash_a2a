@@ -49,8 +49,6 @@ defmodule AshA2A.GraphLaw.Wasm do
   bad input, so `decode_json/1` surfaces that as `{:error, ...}` for callers.
   """
 
-  @default_wasm_path "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm"
-
   @host_script Path.expand("../../../priv/graphlaw/graphlaw_host.mjs", __DIR__)
 
   @typedoc "One real call into the wasm: an exported function name and its string arguments."
@@ -60,14 +58,15 @@ defmodule AshA2A.GraphLaw.Wasm do
   Resolves the real path of the GraphLaw wasm artifact.
 
   Order: `opts[:wasm_path]`, then `Application.get_env(:ash_a2a, :graphlaw_wasm_path)`,
-  then a build-machine default. Configurable rather than hardcoded for the same
-  reason `AshA2A.Planning.HddlSolver.cli_path/1` is: the artifact lives outside
-  this repo and outside the published hex package.
+  then the vendored, git-tracked, MANIFEST-pinned artifact
+  `AshA2A.GraphLaw.wasm_path/0` (`priv/graphlaw/praxis_graphlaw.wasm`), which
+  is present in every checkout and in the published hex package.
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
     Keyword.get(opts, :wasm_path) ||
-      Application.get_env(:ash_a2a, :graphlaw_wasm_path, @default_wasm_path)
+      Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
+      AshA2A.GraphLaw.wasm_path()
   end
 
   @doc """

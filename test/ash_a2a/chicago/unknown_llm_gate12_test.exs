@@ -71,6 +71,7 @@ defmodule AshA2A.Chicago.UnknownLlmGate12Test do
   }
 
   describe "end-to-end qualification run" do
+    @tag :graphlaw_engine
     test "every falsifier reaches its final verdict and every pass is OCEL-corroborated",
          %{tmp_dir: dir} do
       assert {:ok, run} = Runner.run(courts: @courts, profile: :strict, evidence_dir: dir)

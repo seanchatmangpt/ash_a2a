@@ -1,0 +1,24 @@
+{
+  "wo": "ASH_A2A-26922-08",
+  "base_sha": "831fb99e8d1a68a5e9f0587771c3ff88e2e8ba30",
+  "head_sha": "64cb56e",
+  "commands": [
+    {
+      "cmd": "mix test.all test/mix/tasks/ash_a2a_install_test.exs",
+      "exit": 0,
+      "output_excerpt": "7 tests, 0 failures",
+      "note": "includes the WO-required new case: two runs yield exactly one a2a do block and exactly one consequence: :external_do; plus consequence emission, append-into-existing-block, and refusal of an unparseable --skill spec"
+    },
+    {
+      "cmd": "mix format --check-formatted && mix compile --warnings-as-errors",
+      "exit": 0
+    },
+    {
+      "cmd": "grep for mock patterns in changed files",
+      "exit": 1,
+      "note": "no matches: real Igniter.Test in-memory project + real compose_task, no interaction mocks"
+    }
+  ],
+  "standing": "ALIVE",
+  "notes": "Closes the ggen_igniter UNSUPPORTED row 'ash_a2a.install cannot emit an explicit a2a skill consequence :external_do override' (ontology.ttl:1932,1961). Implementation note recorded: Sourceror wraps literal atoms in {:__block__,_,[atom]}, so identifier comparison unwraps before equality; first detection attempt without unwrapping duplicated the declaration on run 2 and was caught by the new two-run test before commit."
+}

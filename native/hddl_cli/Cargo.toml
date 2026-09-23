@@ -27,7 +27,7 @@ name = "hddl_analyze"
 path = "src/bin/hddl_analyze.rs"
 
 [dependencies]
-ferroplan = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "29134d7bc2c578aa39e05bceeee43a6893f2026b" }
-ferroplan-hddl = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "29134d7bc2c578aa39e05bceeee43a6893f2026b" }
+ferroplan = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "e90928d7b0687a959831553c4eacca3d75ca6c88" }
+ferroplan-hddl = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "e90928d7b0687a959831553c4eacca3d75ca6c88" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

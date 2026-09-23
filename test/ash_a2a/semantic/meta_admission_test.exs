@@ -76,6 +76,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
       %{staged: staged, manifest: manifest}
     end
 
+    @tag :graphlaw_engine
     test "a pinned artifact whose bytes match has standing", %{manifest: manifest} do
       assert {:ok, pin} =
                MetaAdmission.standing(
@@ -88,6 +89,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
       assert String.starts_with?(Map.fetch!(pin, "digest"), "sha256:")
     end
 
+    @tag :graphlaw_engine
     test "a real, well-formed, UNPINNED artifact has no standing", %{manifest: manifest} do
       rogue = ConformanceCorpus.unpinned_falsifiers().shacl_shapes
 
@@ -103,6 +105,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
       assert detail.invariant == "NOT Standing(v) => NOT Validates(v, x)"
     end
 
+    @tag :graphlaw_engine
     test "a pinned artifact under the WRONG kind has no standing", %{manifest: manifest} do
       assert {:error, %{code: :REFUSED_META_RIGOR, detail: %{reason: :not_pinned}}} =
                MetaAdmission.standing(
@@ -112,6 +115,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
                )
     end
 
+    @tag :graphlaw_engine
     test "standing is re-checked at USE time, catching a post-load swap", %{
       staged: staged,
       manifest: manifest
@@ -133,6 +137,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
       refute detail.pinned == detail.actual
     end
 
+    @tag :graphlaw_engine
     test "a pinned artifact that vanished has no standing", %{
       staged: staged,
       manifest: manifest
@@ -143,6 +148,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
                MetaAdmission.standing(manifest, "conformance/rules/derivation.n3", "n3_rules")
     end
 
+    @tag :graphlaw_engine
     test "every RFC S20 artifact kind is enumerated" do
       kinds = MetaAdmission.artifact_kinds()
 
@@ -155,6 +161,7 @@ defmodule AshA2A.Semantic.MetaAdmissionTest do
   end
 
   describe "the engine is machinery too" do
+    @tag :graphlaw_engine
     test "an unverified engine refuses every engine-backed operation" do
       staged = stage()
       {:ok, manifest} = RootManifest.load(staged.path, require_engine: false)

@@ -1,0 +1,25 @@
+{
+  "wo": "ASH_A2A-26922-05",
+  "base_sha": "70d2666 (pre-bump line head; bumps landed after the CI-exposure fixes)",
+  "commands": [
+    {
+      "cmd": "mix deps.update ash mint",
+      "exit": 0,
+      "output_excerpt": "ash 3.33.1 -> 3.33.9 (EEF-CVE-2026-86338 fixed in 3.33.9), mint 1.10.0 -> 1.10.1 (EEF-CVE-2026-82672 fixed in 1.10.1); mix.lock +7/-7 including tightened transitives"
+    },
+    {
+      "cmd": "mix deps.get && mix hex.audit",
+      "exit": 0,
+      "output_excerpt": "No retired or security advisory packages found",
+      "note": "baseline audit before the bump listed exactly the two WO-named advisories"
+    },
+    {
+      "cmd": "mix format --check-formatted && mix compile --force --warnings-as-errors && mix test.all",
+      "exit": 0,
+      "output_excerpt": "58 doctests, 29 properties, 2170 tests, 0 failures, 4 skipped (11 excluded)",
+      "note": "full local gate at the final tree; gate exited 0 only after three CI-exposure fixes landed in the same line: the darwin-only CwdTest symlink comparisons (byte-identical test back to 5969606, 3 deterministic darwin failures), the composition-lock hard-coded rev (broke by the e90928d repin), and the two :sibling_repos tests re-admitted on hosted CI once --include serial rescued them from the named exclusion (same ExUnit precedence class as WO2)"
+    }
+  ],
+  "standing": "ALIVE",
+  "notes": "Hosted-CI deps audit confirmation follows the push (run at the pushed head)"
+}
