@@ -1,0 +1,18 @@
+{
+  "wo": "ASH_A2A-26922-10",
+  "base_sha": "64cb56e",
+  "commands": [
+    {
+      "cmd": "grep -n 'schedule:' .github/workflows/sa2a-conformance.yml",
+      "exit": 0,
+      "output_excerpt": "24:  schedule:"
+    },
+    {
+      "cmd": "yaml parse of .github/workflows/sa2a-conformance.yml",
+      "exit": 0,
+      "note": "YAML-VALID"
+    }
+  ],
+  "standing": "PARTIAL_ALIVE",
+  "notes": "Workflow authored and committed; the acceptance's observed-run clause (gh run download of a sa2a-conformance-<sha> artifact with PASS/CONFORMANT) is verified after the push in ASH_A2A-26922-04's cycle. Standing moves to ALIVE on the first observed artifact. Durable in-repo receipts for the v26.9.22 work live at receipts/v26.9.22/ (this directory)."
+}
