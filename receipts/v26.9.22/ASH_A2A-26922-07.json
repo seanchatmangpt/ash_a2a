@@ -1,0 +1,35 @@
+{
+  "wo": "ASH_A2A-26922-07",
+  "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
+  "commands": [
+    {
+      "cmd": "gh api pulls/28 -X PATCH base=main",
+      "exit": 0,
+      "note": "retargeted BEFORE closing #26 (whose head was #28's base) so closing #26 could not auto-close #28"
+    },
+    {
+      "cmd": "git merge --no-ff origin/main into gall/dfcm-029-030-policy-budget-court",
+      "exit": 1,
+      "output_excerpt": "CONFLICT (add/add): lib/ash_a2a/gall/process_intervention.ex + test -- main's bb47a99 admission shape (field allowlists + AshA2A.Postcondition independent confirmation) vs #28's narrowing (allowed_producers/admission_rules + observer-callback verification) are two competing implementations of the same module",
+      "note": "merge ABORTED, no winner picked by hand; #28 stays open on main with the reconciliation requirement documented in a PR comment (issuecomment-5787029021). This sub-step is BLOCKED on a design decision outside this lane's warrant; dependents branch around it (#28 simply remains unmerged, as the acceptance's open-PR list anticipates)"
+    },
+    {
+      "cmd": "gh pr close 22/23/24/25/26/29/30 with citations",
+      "exit": 0,
+      "note": "22: code shipped via bb47a99, docs archived by 185da12, unique yml NOT ported (main carries gall-003-receipt.yml from the shipped lineage); 23: specs archived by 185da12; 24: superseded by #27 (closed after #27's retarget); 25: shipped via bb47a99/8eb4335; 26: shipped via bb47a99; 29: competing implementation; 30: format clean on main, verified by the v26.9.22 gate"
+    },
+    {
+      "cmd": "mix test.all test/gall_process_intervention_test.exs",
+      "exit": 0,
+      "output_excerpt": "9 tests, 0 failures"
+    },
+    {
+      "cmd": "gh pr list --state open",
+      "exit": 0,
+      "output_excerpt": "open: #28 only",
+      "note": "none of 22, 23, 25, 26, 29, 30 remain open, as the acceptance requires (24 also closed)"
+    }
+  ],
+  "standing": "PARTIAL_ALIVE",
+  "notes": "Closures + retarget + test acceptance: ALIVE. #28's main-merge: BLOCKED on the process_intervention.ex design reconciliation; the narrowing lands only via a deliberate re-port onto the shipped shape or an explicit operator decision between the two admission designs."
+}
