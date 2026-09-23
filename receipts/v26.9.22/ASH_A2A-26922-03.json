@@ -1,4 +1,63 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-03",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "831fb998a1e18ce810697f2a4b070c78126638b4",
+    "base_sha": "0834a797e7602a5231674cb101ce1c2fefb00494"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "831fb998a1e18ce810697f2a4b070c78126638b4"
+    ],
+    "files_changed": [],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "git merge --no-ff fix/test-determinism-v26.9.21",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "stop_host/1 conflict resolved onto stop_pid/1 delegation (superset of tolerance clauses)"
+      },
+      {
+        "cmd": "mix format --check-formatted && mix compile --warnings-as-errors",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "for i in 1 2 3; do mix test.all test/ash_a2a_agent_semantic_replan_test.exs test/ash_a2a/chicago/hardening/bounds_exhaustion_test.exs test/ash_a2a/chicago/graphlaw_engine_test.exs || exit 1; done",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "three consecutive deterministic runs at 831fb99 | RUN 1/2/3: 10 properties, 29 tests, 0 failures; ALL-RUNS-EXIT-0"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-03.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "3x mix test.all determinism loop at 831fb99 exit 0; format + compile --warnings-as-errors clean"
+  },
+  "repairs": [
+    {
+      "field": "base_sha",
+      "was": "f85abfd4b60e30dd5e51ba4c44957ba2a68d0f24",
+      "now": "0834a797e7602a5231674cb101ce1c2fefb00494",
+      "reason": "recorded 40-hex does not resolve to a commit; corrected to the true parent of merge 831fb99 (the ASH_A2A-26922-02 receipt commit)"
+    },
+    {
+      "field": "head_sha",
+      "was": "831fb99e8d1a68a5e9f0587771c3ff88e2e8ba30",
+      "now": "831fb998a1e18ce810697f2a4b070c78126638b4",
+      "reason": "recorded 40-hex does not resolve to a commit; corrected to the actual merge commit (abbrev 831fb99)"
+    }
+  ],
   "wo": "ASH_A2A-26922-03",
   "base_sha": "f85abfd4b60e30dd5e51ba4c44957ba2a68d0f24",
   "head_sha": "831fb99e8d1a68a5e9f0587771c3ff88e2e8ba30",
@@ -19,6 +78,6 @@
       "note": "three consecutive deterministic runs at 831fb99 in ~/wt/v26922/ash_a2a/int"
     }
   ],
-  "standing": "ALIVE",
+  "standing_lane": "ALIVE",
   "notes": "fix/test-determinism-v26.9.21 is now an ancestor of release/v26.9.22; wall_time_ms property and the two shutdown/tmp-dir races are on the integration line"
 }

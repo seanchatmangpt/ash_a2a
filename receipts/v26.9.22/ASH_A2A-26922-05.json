@@ -1,4 +1,54 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-05",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
+    "base_sha": "70d266695c4a4a79e663d55f47e93cb819f47eec"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "43ac10928ab0fc8820c2db8a790c015b207605c6"
+    ],
+    "files_changed": [
+      "mix.lock",
+      "receipts/v26.9.22/ASH_A2A-26922-05.json"
+    ],
+    "remote_effects": [
+      "hosted CI deps audit clean at the pushed head (43ac109 line)"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "mix deps.update ash mint",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "ash 3.33.1 -> 3.33.9 (EEF-CVE-2026-86338), mint 1.10.0 -> 1.10.1 (EEF-CVE-2026-82672)"
+      },
+      {
+        "cmd": "mix deps.get && mix hex.audit",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "No retired or security advisory packages found"
+      },
+      {
+        "cmd": "mix format --check-formatted && mix compile --force --warnings-as-errors && mix test.all",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "58 doctests, 29 properties, 2170 tests, 0 failures, 4 skipped (11 excluded)"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-05.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "mix hex.audit clean and full local gate exit 0 at 43ac109 (the commit carrying the mix.lock bump)"
+  },
   "wo": "ASH_A2A-26922-05",
   "base_sha": "70d2666 (pre-bump line head; bumps landed after the CI-exposure fixes)",
   "commands": [
@@ -20,6 +70,6 @@
       "note": "full local gate at the final tree; gate exited 0 only after three CI-exposure fixes landed in the same line: the darwin-only CwdTest symlink comparisons (byte-identical test back to 5969606, 3 deterministic darwin failures), the composition-lock hard-coded rev (broke by the e90928d repin), and the two :sibling_repos tests re-admitted on hosted CI once --include serial rescued them from the named exclusion (same ExUnit precedence class as WO2)"
     }
   ],
-  "standing": "ALIVE",
+  "standing_lane": "ALIVE",
   "notes": "Hosted-CI deps audit confirmation follows the push (run at the pushed head)"
 }

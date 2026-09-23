@@ -1,4 +1,93 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-06",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "c74c2e95dd37a9cf17fe01fcb360bd02a0c9d0be",
+    "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "488ae22abe527f3f5763fe51851d4f83e1abe5db",
+      "9d8374983964be1a0cdc435563c9c7edadf8e396",
+      "c74c2e95dd37a9cf17fe01fcb360bd02a0c9d0be"
+    ],
+    "files_changed": [],
+    "remote_effects": [
+      "gh api pulls/27 base=main retarget",
+      "gh pr merge 27 --merge -> MERGED c74c2e9",
+      "remote branch feat/v26.9.19-work-envelope-v2 deleted",
+      "Semantic Work Envelope Court dispatched: run 35810740402 on main",
+      "PR #24 closed earlier as superseded by #27"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "gh api pulls/27 -X PATCH base=main (retarget before touching #24, as ordered)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "git merge --no-ff origin/main into fabric/dfcm-semantic-work-identity-conservation; merge --no-ff errc/ash-a2a-pr27-refusal-classes (488ae22)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "refusal.ex add/add resolved keeping BOTH sides; pushed as 9d83749"
+      },
+      {
+        "cmd": "gh run view 35807779516 --json headSha,conclusion",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "9d8374983964be1a0cdc435563c9c7edadf8e396 success"
+      },
+      {
+        "cmd": "gh pr merge 27 --merge",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "MERGED c74c2e9"
+      },
+      {
+        "cmd": "gh api git/refs/heads/feat/v26.9.19-work-envelope-v2 -X DELETE",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "gh workflow run 'Semantic Work Envelope Court' --ref main",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "run 35810740402 queued on main"
+      },
+      {
+        "cmd": "git cat-file -e origin/main:lib/ash_a2a/semantic/work_envelope.ex",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "mix test.all test/ash_a2a_semantic_work_envelope_test.exs test/ash_a2a/semantic_refusal_test.exs (at 6e16553)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "26 tests, 0 failures"
+      },
+      {
+        "cmd": "gh pr view 27 --json state,baseRefName",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "MERGED main"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-06.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "work_envelope.ex cat-file -e on origin/main; 26 envelope/refusal tests 0 failures; gh pr view 27 = MERGED main"
+  },
   "wo": "ASH_A2A-26922-06",
   "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
   "commands": [
@@ -48,6 +137,6 @@
       "output_excerpt": "MERGED main"
     }
   ],
-  "standing": "ALIVE",
+  "standing_lane": "ALIVE",
   "notes": "The worker-lease hop's blocker (work-envelope-not-on-main) is cleared: work_order_iri/checkpoint_iri/graph_digest/repository_identity/base_sha conservation now rides SA2A transport on main. #24 was closed first as superseded (after the retarget made that safe)."
 }

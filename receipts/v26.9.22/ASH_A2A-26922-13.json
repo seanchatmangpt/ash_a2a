@@ -1,4 +1,85 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-13",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "2c080b9a0d1ccb545541bbc584ed4f27ed7b0af1",
+    "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "bdacf7a148d7a41f21fbf630b0713e413c8da0a1",
+      "ffff182",
+      "f3f8f3d",
+      "6ccb43a",
+      "2c080b9a0d1ccb545541bbc584ed4f27ed7b0af1"
+    ],
+    "files_changed": [
+      "research/erc/ERC-003-1790023779192.json",
+      "research/erc/ERC-003-1790034439868.json",
+      "research/erc/ERC-003-1790035824244.json",
+      "research/erc/ERC-003-1790037397192.json",
+      "research/erc/ERC-003-1790038365021.json",
+      "research/erc/ERC-004-1790023779362.json",
+      "research/erc/ERC-004-1790034439890.json",
+      "research/erc/ERC-004-1790035824266.json",
+      "research/erc/ERC-004-1790037397214.json",
+      "research/erc/ERC-004-1790038365043.json"
+    ],
+    "remote_effects": [
+      "worktrees removed: qual-sim, basecheck, w6-a2a-gates (duplicate 8d61f46), ash-a2a-wt2/pr27, wt/ash-a2a-27, wt/v26922/ash_a2a/pr31, ash-a2a-wt2/format",
+      "branches retired after merge/port verification: errc/ash-a2a-pr27-refusal-classes, fabric/dfcm-semantic-work-identity-conservation, adopt/engineering-standards-v26.9.21, errc/ash-a2a-format, w6-a2a-gates, feat/sa2a-*-v26.9.16 x3"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "git -C /Users/sac/ash_a2a add research/erc && git commit (ERC-003/ERC-004, 10 files)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "ffff182 on fix/test-determinism-v26.9.21, merged as f3f8f3d; integration-tree ERC receipts committed as 6ccb43a"
+      },
+      {
+        "cmd": "git stash drop x5, each recorded first",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "all five stashes preserved byte-identically at preserve/v26.9.22/stash-{0..4} by W0 before dropping"
+      },
+      {
+        "cmd": "git worktree remove: qual-sim, basecheck, w6-a2a-gates, ash-a2a-wt2/pr27, wt/ash-a2a-27, wt/v26922/ash_a2a/pr31, ash-a2a-wt2/format",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "git branch -D: 5 merged branches + 3 ported feat/sa2a-*-v26.9.16",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "each sa2a branch port-verified: signature files cat-file -e on main"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_a2a status --porcelain | wc -l",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "0"
+      },
+      {
+        "cmd": "git stash list | wc -l",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "0"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-13.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "git -C /Users/sac/ash_a2a status --porcelain | wc -l = 0 and git stash list | wc -l = 0 (re-verified 2026-09-22 by the resuming agent); every stash/worktree/branch disposal preserved via preserve/v26.9.22/* refs first"
+  },
   "wo": "ASH_A2A-26922-13",
   "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
   "commands": [
@@ -33,5 +114,6 @@
       "output_excerpt": "0"
     }
   ],
-  "standing": "ALIVE"
+  "standing_lane": "ALIVE",
+  "notes": ""
 }

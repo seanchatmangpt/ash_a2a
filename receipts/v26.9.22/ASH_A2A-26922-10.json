@@ -1,4 +1,61 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-10",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "e656040385292b8dd38de4dc33b882ff993261a1",
+    "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "e656040385292b8dd38de4dc33b882ff993261a1",
+      "7252e86"
+    ],
+    "files_changed": [
+      ".github/workflows/sa2a-conformance.yml"
+    ],
+    "remote_effects": [
+      "sa2a-conformance.yml runs on every main push + daily schedule",
+      "receipt artifacts published by exact SHA: run 35807754326 at 43ac109; later runs 35812565087 success at 9bb0252"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "grep -n 'schedule:' .github/workflows/sa2a-conformance.yml",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "24:  schedule:"
+      },
+      {
+        "cmd": "gh run download 35807754326 -n sa2a-conformance-43ac10928ab0fc8820c2db8a790c015b207605c6",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "durable exact-SHA delivery mechanism ALIVE"
+      },
+      {
+        "cmd": "jq -e '.result==\"PASS\"' sa2a-conformance.json && [ \"$(jq -r .standing chicago/standing_receipt.json)\" = CONFORMANT ]",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 1,
+        "summary": "BLOCKED clauses with root causes: blank-node graph_hash not repetition-stable (praxis-graphlaw); SA2A-TOPO-002 positive control cannot pass hosted"
+      },
+      {
+        "cmd": "MIX_ENV=test mix ash_a2a.chicago.pin_court_manifest --check (in CI)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "tripwire: drifted court manifest fails the job before receipts"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-10.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "PARTIAL_ALIVE",
+    "derived_from": "pipeline ALIVE: schedule present, exact-SHA artifacts downloadable, manifest tripwire in CI; PASS/CONFORMANT clauses BLOCKED (replay command 3 exit 1) by pre-existing court-level facts outside this lane's warrant; receipts honest by construction (NONCONFORMANT/FAIL recorded as truth)"
+  },
   "wo": "ASH_A2A-26922-10",
   "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
   "commands": [
@@ -25,6 +82,6 @@
       "note": "tripwire added: a drifted court manifest fails the job before any receipt is produced"
     }
   ],
-  "standing": "PARTIAL_ALIVE",
+  "standing_lane": "PARTIAL_ALIVE",
   "notes": "Delivered: the scheduled, exact-SHA-named, durable receipt pipeline with the admission tripwire. Blocked on the acceptance's PASS/CONFORMANT clauses by two pre-existing court-level facts recorded above; fixing either is a praxis-graphlaw or court-design change outside this lane's warrant. The receipts are honest by construction: they record NONCONFORMANT/FAIL where that is the truth."
 }

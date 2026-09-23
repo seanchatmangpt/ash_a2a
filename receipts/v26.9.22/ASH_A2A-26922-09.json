@@ -1,4 +1,52 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-09",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "df903df5f388738828c2ac040a4f779e2393567f",
+    "base_sha": "64cb56ec93c5a38ac071242a49c4624d4f518005"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "df903df5f388738828c2ac040a4f779e2393567f"
+    ],
+    "files_changed": [
+      "native/hddl_cli/Cargo.lock",
+      "native/hddl_cli/Cargo.toml"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "grep -c 'rev = \"e90928d' native/hddl_cli/Cargo.toml",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "2"
+      },
+      {
+        "cmd": "cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "locked build re-proven after rev bump regenerated Cargo.lock"
+      },
+      {
+        "cmd": "mix test.all test/ash_a2a/chicago/sa2a_v26_9_17_fond_qualification_test.exs test/ash_a2a/chicago/sa2a_v26_9_17_reachability_analysis_test.exs",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "4 tests, 0 failures"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-09.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "grep count = 2 (ferroplan + ferroplan-hddl at e90928d7b0687a959831553c4eacca3d75ca6c88); locked cargo build exit 0; 4 SA2A v26.9.17 tests 0 failures at df903df"
+  },
   "wo": "ASH_A2A-26922-09",
   "base_sha": "64cb56e",
   "commands": [
@@ -19,5 +67,6 @@
       "output_excerpt": "4 tests, 0 failures"
     }
   ],
-  "standing": "ALIVE"
+  "standing_lane": "ALIVE",
+  "notes": ""
 }

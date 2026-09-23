@@ -1,4 +1,67 @@
 {
+  "identity": {
+    "subject": "ASH_A2A-26922-01",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "19cd30ee01d38e8df940a800ae081e85b370afc0",
+    "base_sha": "596960660fb4c54777c0b8a24d9d284318898071"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "13652e2637769914c0265e498d351b68b416aede",
+      "f31df402369a92f4b38e1fe2dddaeb30f30f67b7",
+      "19cd30ee01d38e8df940a800ae081e85b370afc0"
+    ],
+    "files_changed": [],
+    "remote_effects": [
+      "release/v26.9.22 advanced by merge 19cd30e (pushed to main with the WO-04 gate push)"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "git -C /Users/sac/ash_a2a-wt2/format add docs/streams/ash-a2a-format.md && git commit -F format-commit-1-msg.txt",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "stream doc committed as 13652e2 on errc/ash-a2a-format"
+      },
+      {
+        "cmd": "git merge --no-ff errc/ash-a2a-format",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "17 dual-changed test files carry both tag sets"
+      },
+      {
+        "cmd": "git merge-base --is-ancestor f31df40 HEAD",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "mix test.all test/ash_a2a/chicago/wasm_default_resolution_test.exs test/ash_a2a/chicago/falsifier_wasm_default_reachability_test.exs test/ash_a2a/chicago/graphlaw_engine_stop_host_test.exs",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "14 tests, 0 failures | 14 tests, 0 failures"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-01.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "mix test.all (3 chicago wasm tests) at 19cd30e: 14 tests, 0 failures; merge-base --is-ancestor f31df40 HEAD exit 0; negative check: git grep 'praxis/crates' HEAD -- lib -> no matches (grep exit 1 = clean)"
+  },
+  "negative_checks": [
+    {
+      "cmd": "git grep -n 'praxis/crates' HEAD -- lib",
+      "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+      "exit": 1,
+      "summary": "no matches (grep exit 1 = clean), as the acceptance requires"
+    }
+  ],
   "wo": "ASH_A2A-26922-01",
   "base_sha": "596960660fb4c54777c0b8a24d9d284318898071",
   "head_sha": "19cd30ee01d38e8df940a800ae081e85b370afc0",
@@ -29,6 +92,6 @@
       "note": "first run exit 0; second run exit 1 was a rebar3 yamerl dag-restore crash (infra, not tests) - repaired with mix deps.compile yamerl --force, then clean re-run exit 0"
     }
   ],
-  "standing": "ALIVE",
+  "standing_lane": "ALIVE",
   "notes": "merge commit 19cd30e on release/v26.9.22; vendored priv/graphlaw/praxis_graphlaw.wasm is now the default for all seven wasm resolvers"
 }
