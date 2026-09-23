@@ -1,0 +1,23 @@
+{
+  "wo": "ASH_A2A-26922-09",
+  "base_sha": "64cb56e",
+  "commands": [
+    {
+      "cmd": "grep -c 'rev = \"e90928d' native/hddl_cli/Cargo.toml",
+      "exit": 0,
+      "output_excerpt": "2",
+      "note": "both ferroplan and ferroplan-hddl repinned to e90928d7b0687a959831553c4eacca3d75ca6c88 (v0.28.0), the commit beam4pm's native/ferroplan submodule carries"
+    },
+    {
+      "cmd": "cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked",
+      "exit": 0,
+      "note": "after the rev bump regenerated the tracked Cargo.lock (6 entries), the locked build was re-proven"
+    },
+    {
+      "cmd": "mix test.all test/ash_a2a/chicago/sa2a_v26_9_17_fond_qualification_test.exs test/ash_a2a/chicago/sa2a_v26_9_17_reachability_analysis_test.exs",
+      "exit": 0,
+      "output_excerpt": "4 tests, 0 failures"
+    }
+  ],
+  "standing": "ALIVE"
+}
