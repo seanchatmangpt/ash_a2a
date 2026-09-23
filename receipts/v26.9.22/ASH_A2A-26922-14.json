@@ -2,7 +2,7 @@
   "identity": {
     "subject": "ASH_A2A-26922-14",
     "repo": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
-    "subject_sha": "2dd08851fbaabe14c407481875476010e3fa7262",
+    "subject_sha": "780df64f4f83abb0d9bf132b4b166bd88be2d4ea",
     "base_sha": "f068adb4869e0adf78ecf689af44c67f670544f3"
   },
   "authority": {
@@ -15,12 +15,14 @@
       "a09f535a98864d181677cfdc55f42f478f200509",
       "501a4fdbc427dc6ae50c64368126f2156d3b99c9",
       "31d0c4177a66fa4cf351744e15828c25d3c5d413",
-      "2dd08851fbaabe14c407481875476010e3fa7262"
+      "2dd08851fbaabe14c407481875476010e3fa7262",
+      "780df64f4f83abb0d9bf132b4b166bd88be2d4ea"
     ],
     "files_changed": [
       "lib/ash_a2a/standing_ref.ex",
       "lib/mix/tasks/ash_a2a.standing_ref.ex",
       "test/mix/tasks/ash_a2a_standing_ref_test.exs",
+      "mix.exs",
       "priv/sa2a/chicago_court_manifest.json",
       "receipts/courts/sa2a/a09f535a98864d181677cfdc55f42f478f200509/chicago/standing_receipt.json",
       "receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/standing_receipt.json",
@@ -39,78 +41,106 @@
         "cmd": "mix test test/mix/tasks/ash_a2a_standing_ref_test.exs",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
-        "summary": "9 tests, 0 failures (real tmp git repos; receipts from StandingReceipt.build/1 over Subject.capture/1 and one from the real Chicago Runner)",
-        "output_sha256": "2c75ac0d185bd37d174c12ef5450d9d417eee4d5c33a996c907312d9580a1b84"
+        "summary": "11 tests, 0 failures (real tmp git repos; receipts from StandingReceipt.build/1 over Subject.capture/1 and one from the real Chicago Runner; real `mix` child processes over a copied, stale build)",
+        "output_sha256": "89682e75e0a7a81a48a139344d3ab67b55859f212fdde80b0078cf6aca97df11"
       },
       {
-        "cmd": "test \"$(mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT 2>/dev/null)\" = 501a4fdbc427dc6ae50c64368126f2156d3b99c9",
+        "cmd": "test \"$(mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT)\" = 501a4fdbc427dc6ae50c64368126f2156d3b99c9",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
-        "summary": "task printed exactly 501a4fdbc427dc6ae50c64368126f2156d3b99c9",
-        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+        "summary": "stdout exactly 501a4fdbc427dc6ae50c64368126f2156d3b99c9 (no 2>/dev/null needed)",
+        "output_sha256": "457800e6a96b9c54671b1512978f52094dd04b54031e79d113f27caa4207f3c2"
+      },
+      {
+        "cmd": "S=/private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/cold && rm -rf $S && git clone -q . $S && git -C $S checkout -q 780df64f4f83abb0d9bf132b4b166bd88be2d4ea && cp -cR deps $S/deps && mkdir -p $S/_build/dev/lib && for d in _build/dev/lib/*; do [ \"$(basename $d)\" = ash_a2a ] || cp -cR $d $S/_build/dev/lib/; done && cd $S && test \"$(mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT 2>stderr.txt)\" = 501a4fdbc427dc6ae50c64368126f2156d3b99c9 && grep -E 'Compiling [0-9]+ files \\(\\.ex\\)|Generated ash_a2a app' stderr.txt",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "court finding closed: fresh clone at 780df64, project never compiled (deps prebuilt, dev env): stdout exactly 501a4fd; 'Compiling 319 files (.ex)' and 'Generated ash_a2a app' on stderr",
+        "output_sha256": "6ad20363e7ee24785f92a2af7f6502b35bbffd95981e4ade2980b4babdf22689"
       },
       {
         "cmd": "git show HEAD:receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago/standing_receipt.json | jq -e '.standing==\"CONFORMANT\" and .subject.source_revision==\"501a4fdbc427dc6ae50c64368126f2156d3b99c9\" and .subject.dirty==false and .court.manifest.verification==\"admitted\"'",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
-        "summary": "committed standing receipt at HEAD: standing CONFORMANT, subject.source_revision == 501a4fd, dirty false, court manifest admitted",
-        "output_sha256": "754f1ba026d76ada4f689f3a41d31f1806f41693a4b2edb4fd742bf1cf05f56e"
+        "summary": "committed standing receipt: standing CONFORMANT, subject.source_revision == 501a4fd, dirty false, court manifest admitted",
+        "output_sha256": "a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74"
       },
       {
         "cmd": "rm -rf /private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg && mkdir -p /private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg && git archive HEAD receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago | tar -x -C /private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg && PKG=/private/tmp/claude-501/-Users-sac/1fecd79a-9323-4b57-a949-d7892a3ea283/scratchpad/replay/pkg/receipts/courts/sa2a/501a4fdbc427dc6ae50c64368126f2156d3b99c9/chicago MIX_ENV=test mix run --no-start -e '{:ok, v} = AshA2A.Chicago.FreshConsumer.verify(System.fetch_env!(\"PKG\")); IO.puts(\"outcome=\" <> v[\"outcome\"] <> \" reconstructed=\" <> v[\"standing\"][\"reconstructed\"]); if v[\"outcome\"] != \"reproduced\" or v[\"standing\"][\"reconstructed\"] != \"CONFORMANT\", do: System.halt(1)'",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
         "summary": "FreshConsumer.verify/2 in a fresh OS process over the git-archived package: outcome=reproduced reconstructed=CONFORMANT",
-        "output_sha256": "5646336a33aa3ed1b04ad814d067533a2899babeb8ac27e8df4c503662c91a0a"
+        "output_sha256": "0d40b75a4efd5ae6d9a82784c98b18b3c821d5d89ed642b1297324c772cfd724"
       },
       {
-        "cmd": "test \"$(mix ash_a2a.standing_ref --court sa2a --standing PARTIAL_ALIVE 2>/dev/null)\" = a09f535a98864d181677cfdc55f42f478f200509",
+        "cmd": "test \"$(mix ash_a2a.standing_ref --court sa2a --standing PARTIAL_ALIVE)\" = a09f535a98864d181677cfdc55f42f478f200509",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
         "summary": "--standing PARTIAL_ALIVE skips newer 501a4fd (standing_mismatch CONFORMANT) and prints a09f535",
-        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       {
         "cmd": "! mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT --require-conformance",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
         "summary": "--require-conformance refuses 501a4fd ({:conformance_result, \"FAIL\"}) and a09f535 (PARTIAL_ALIVE); task exits non-zero (negated to 0)",
-        "output_sha256": "5a01fcbe3d623bfdc6f151d45976d58fe76b002eda092e196f5c48362bf2e504"
+        "output_sha256": "e6d09f413891b62c57a838604343809b22a8d9ac91ca5489b8a9c16c1c9c13c2"
       },
       {
         "cmd": "sed -i '' 's/check(receipt\\[\"standing\"\\] == wanted, {:standing_mismatch, receipt\\[\"standing\"\\]})/:ok/' lib/ash_a2a/standing_ref.ex && ! git diff --quiet -- lib/ash_a2a/standing_ref.ex && ! mix test test/mix/tasks/ash_a2a_standing_ref_test.exs; rc=$?; git checkout -- lib/ash_a2a/standing_ref.ex; git diff --quiet && exit $rc",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
-        "summary": "revert-mutation: standing admission check replaced by :ok -> 9 tests, 3 failures; file restored, tree clean",
-        "output_sha256": "9353c1e43470e18e1ed62cda414f8eeab93b10df98f215f3f212c9f50e532e7f"
+        "summary": "revert-mutation: standing admission check replaced by :ok -> 11 tests, 3 failures; file restored, tree clean",
+        "output_sha256": "c4590a304432df2735712dd6d23d956da8c9be5d54fe0f37d3a4c1152bfee061"
+      },
+      {
+        "cmd": "perl -0pi -e 's/Process\\.group_leader\\(self\\(\\), Process\\.whereis\\(:standard_error\\)\\)\\n/:ok\\n/' lib/mix/tasks/ash_a2a.standing_ref.ex && ! git diff --quiet -- lib/mix/tasks/ash_a2a.standing_ref.ex && ! mix test test/mix/tasks/ash_a2a_standing_ref_test.exs --only describe:'stdout carries only the resolution'; rc=$?; git checkout -- lib/mix/tasks/ash_a2a.standing_ref.ex; git diff --quiet && exit $rc",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "revert-mutation: on_stderr/1 redirect removed -> 2 tests, 2 failures (direct-task child run: 'Generated ash_a2a app' on stdout; on_stderr/1 mechanism test); file restored",
+        "output_sha256": "39c33058b33daae8b388868ed24b3875ff7c7366115efdc3e5f6b544d7fc9ddc"
+      },
+      {
+        "cmd": "perl -0pi -e 's/Process\\.group_leader\\(self\\(\\), Process\\.whereis\\(:standard_error\\)\\)\\n/:ok\\n/' mix.exs && ! git diff --quiet -- mix.exs && ! mix test test/mix/tasks/ash_a2a_standing_ref_test.exs --only describe:'stdout carries only the resolution'; rc=$?; git checkout -- mix.exs; git diff --quiet && exit $rc",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "revert-mutation: mix.exs alias redirect removed -> 2 tests, 1 failure (alias child run, env []); file restored",
+        "output_sha256": "e7ee1a2a42217d7398af63fdcf977ffd9d3bbba797bcfa0089d617a1e2142969"
+      },
+      {
+        "cmd": "perl -pi -e 's/defp emit\\(\"sha\", resolution, _opts\\), do: IO\\.puts\\(resolution\\.sha\\)/defp emit(\"sha\", resolution, _opts), do: Mix.shell().info(resolution.sha)/' lib/mix/tasks/ash_a2a.standing_ref.ex && ! git diff --quiet -- lib/mix/tasks/ash_a2a.standing_ref.ex && ! mix test test/mix/tasks/ash_a2a_standing_ref_test.exs --only describe:'stdout carries only the resolution'; rc=$?; git checkout -- lib/mix/tasks/ash_a2a.standing_ref.ex; git diff --quiet && exit $rc",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
+        "exit": 0,
+        "summary": "revert-mutation: SHA emitted via Mix.shell().info -> 2 tests, 1 failure (MIX_QUIET=1 child run prints no SHA); file restored",
+        "output_sha256": "9bddf85b0082f1fe72f94acc2e510d4faaf71794a990e79a1e7bfd484a629d54"
       },
       {
         "cmd": "MIX_ENV=test mix ash_a2a.chicago.pin_court_manifest --check",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
         "summary": "court manifest current: 31687d49... (44 courts)",
-        "output_sha256": "094a8b249ac787de8742e7de9cbe922562e7385edc3fd80a090fa5197432be97"
+        "output_sha256": "2ffe3b0b8fba25ee966d157c08d4d137efbe6d30e44a7b027e33e1a5b7698421"
       },
       {
-        "cmd": "mix format --check-formatted lib/ash_a2a/standing_ref.ex lib/mix/tasks/ash_a2a.standing_ref.ex test/mix/tasks/ash_a2a_standing_ref_test.exs",
+        "cmd": "mix format --check-formatted mix.exs lib/ash_a2a/standing_ref.ex lib/mix/tasks/ash_a2a.standing_ref.ex test/mix/tasks/ash_a2a_standing_ref_test.exs",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
-        "summary": "mix format --check-formatted on the three touched source files: clean",
-        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+        "summary": "mix format --check-formatted on mix.exs and the three touched source files: clean",
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       {
         "cmd": "mix compile --warnings-as-errors",
         "cwd": "/Users/sac/wt/v26922/ash_a2a/law-ASH_A2A-26922-14",
         "exit": 0,
         "summary": "mix compile --warnings-as-errors (dev) exit 0",
-        "output_sha256": "20e93068f7614527ce01f714318f4e1e5ac4f8609ab1da4abb81523a42ce3df8"
+        "output_sha256": "457800e6a96b9c54671b1512978f52094dd04b54031e79d113f27caa4207f3c2"
       }
     ],
     "durable_location": "git-tracked on branch law/ASH_A2A-26922-14: receipts/v26.9.22/ASH_A2A-26922-14.json and receipts/courts/sa2a/<sha>/"
   },
   "standing": {
     "value": "ALIVE",
-    "derived_from": "acceptance-1 (mix test test/mix/tasks/ash_a2a_standing_ref_test.exs: 9 tests, 0 failures) and acceptance-2 (mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT printed 501a4fd) plus artifact-standing and artifact-fresh-consumer (reproduced CONFORMANT, 20/20 checks) -- all exit 0 at subject_sha 2dd0885 in the order's worktree"
+    "derived_from": "acceptance-1 (mix test test/mix/tasks/ash_a2a_standing_ref_test.exs: 11 tests, 0 failures) and acceptance-2 (mix ash_a2a.standing_ref --court sa2a --standing CONFORMANT stdout exactly 501a4fd), cold-build-stdout (court repair finding: stdout exactly the SHA on a never-compiled project), artifact-standing and artifact-fresh-consumer (reproduced CONFORMANT), four revert-mutations each failing acceptance -- all 14 replay commands exit 0 at subject_sha 780df64 in the order's worktree"
   },
   "composition": "C03 standing-addressed dependencies (A+B+I)",
   "contingencies": [
@@ -125,9 +155,21 @@
   "pre_existing_failures": [
     "mix test.all test/ash_a2a/chicago/root_manifest_meta_admission_test.exs: 1 failure (SA2A-META-007, SA2A-META-017 :blocked) at 2dd0885 AND identically with the base f068adb manifest restored in the working tree -- not introduced by the re-pin; cause UNVERIFIED (native/hddl_cli/target absent in this worktree is a candidate). crown_test.exs in the same run: 0 failures."
   ],
-  "generated_vs_handwritten": "handwritten: lib/ash_a2a/standing_ref.ex, lib/mix/tasks/ash_a2a.standing_ref.ex, test/mix/tasks/ash_a2a_standing_ref_test.exs -- UNSUPPORTED(generator-capability): no ggen-marketplace pack generates a git-history receipt resolver or Elixir mix task (checked evidence-standing-pack, receipt-provenance-unification-pack, standing-ladder-pack, elixir-mcp-a2a-pack). generated-by-tool: priv/sa2a/chicago_court_manifest.json (mix ash_a2a.chicago.pin_court_manifest); receipts/courts/sa2a/** (mix ash_a2a.chicago / mix ash_a2a.sa2a_conformance outputs, copied verbatim).",
+  "generated_vs_handwritten": "handwritten: lib/ash_a2a/standing_ref.ex, lib/mix/tasks/ash_a2a.standing_ref.ex, test/mix/tasks/ash_a2a_standing_ref_test.exs, mix.exs alias ash_a2a.standing_ref + compile_on_stderr/1 -- UNSUPPORTED(generator-capability): no ggen-marketplace pack generates a git-history receipt resolver or Elixir mix task (checked evidence-standing-pack, receipt-provenance-unification-pack, standing-ladder-pack, elixir-mcp-a2a-pack). generated-by-tool: priv/sa2a/chicago_court_manifest.json (mix ash_a2a.chicago.pin_court_manifest); receipts/courts/sa2a/** (mix ash_a2a.chicago / mix ash_a2a.sa2a_conformance outputs, copied verbatim).",
   "falsifiers": [
     "C03: resolver returns a SHA without a durable CONFORMANT receipt -- exercised: relabelled, resealed, wrong-SHA, dirty-subject, wrong-wasm, forged-PASS and uncommitted receipts all refused/unread in the test; revert-mutation of the standing check fails 3 tests.",
-    "C03 consumer half (consumers still pin divergent versions): NOT executed here -- xaas/beam4pm/ggen_igniter/ash_surface mix.exs unchanged; `mix ash_a2a.standing_ref --format dep` prints the pin tuple."
-  ]
+    "C03 consumer half (consumers still pin divergent versions): NOT executed here -- xaas/beam4pm/ggen_igniter/ash_surface mix.exs unchanged; `mix ash_a2a.standing_ref --format dep` prints the pin tuple.",
+    "Stdout contract: `ref=$(mix ash_a2a.standing_ref ...)` captures anything but the resolution -- exercised: stale-build child runs via the alias, via the task directly (mix run --no-compile) and with MIX_QUIET=1, plus a cold 319-file compile in a fresh clone; each of the three fix parts reverted fails acceptance."
+  ],
+  "repair_round": {
+    "court_finding": "cold _build: `mix ash_a2a.standing_ref` wrote 'Compiling 319 files (.ex)' / 'Generated ash_a2a app' to stdout before the SHA, so `test \"$(mix ash_a2a.standing_ref ...)\" = <sha>` held only on a warm build",
+    "reproduced": "scratch clone at ab1d9f4, project cold, deps prebuilt: stdout = 'Compiling 319 files (.ex)', 'Compiling lib/ash_a2a/chicago/fixtures/authority.ex (it's taking more than 10s)', 'Generated ash_a2a app', then the SHA; stderr empty. New child-process test failed on unfixed code: left 'Generated ash_a2a app\\n<sha>\\n'",
+    "fix_commit": "780df64f4f83abb0d9bf132b4b166bd88be2d4ea",
+    "fix": [
+      "Mix.Tasks.AshA2a.StandingRef.on_stderr/1: the task's own compile runs with the group leader (inherited by the parallel compiler) on stderr",
+      "mix.exs alias ash_a2a.standing_ref = [&compile_on_stderr/1, \"ash_a2a.standing_ref\"]: compiles under the same redirect before Mix dispatches the task (a cold _build compiles before dispatch, outside the task)",
+      "resolution (sha/dep/json) written with IO.puts, not Mix.shell().info, so MIX_QUIET=1 keeps it"
+    ],
+    "residual": "Where ash_a2a is a dependency of a consumer project, Mix compiles that project's dependencies before dispatching any task (outside ash_a2a's alias); the documented knob there is MIX_QUIET=1, exercised in-repo by the MIX_QUIET=1 child run, NOT executed from a consumer project."
+  }
 }
