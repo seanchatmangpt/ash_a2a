@@ -177,6 +177,12 @@ defmodule AshA2A.Semantic.Refusal do
     candidate_digest_mismatch: :refused_identity,
     candidate_binding_mismatch: :refused_identity,
     receipt_candidate_binding_mismatch: :refused_identity,
+    # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): a lease/receipt offered
+    # against something that is not a bound checkpoint has no subject to be
+    # about; a supplied graph digest that differs from the digest the peer
+    # observed is two identities that must agree colliding.
+    refused_unbound_checkpoint: :refused_identity,
+    refused_graph_identity_mismatch: :refused_identity,
 
     # --- REFUSED_NAMESPACE ------------------------------------------------
     undeclared_predicate: :refused_namespace,
@@ -214,6 +220,11 @@ defmodule AshA2A.Semantic.Refusal do
     # the receipt shape itself is not one this runtime understands
     # (lib/ash_a2a/gall/command_receipt.ex).
     semantic_subject_missing: :refused_structure,
+    # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): a descriptor that is not a
+    # map, or a required semantic field that is absent or the wrong shape.
+    refused_semantic_work_descriptor: :refused_structure,
+    refused_missing_semantic_field: :refused_structure,
+    refused_invalid_semantic_field: :refused_structure,
     # `AshA2A.Semantic.AdmissionPipeline`'s Identity stage: the engine
     # validated twice against fresh stores and the two canonical digests
     # disagreed, or no replay block was reported at all. A judgement that
@@ -274,6 +285,9 @@ defmodule AshA2A.Semantic.Refusal do
     receipt_capability_mismatch: :refused_capability,
     requested_capability_id: :refused_capability,
     gall_029_admission_required: :refused_capability,
+    # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): the same capability named
+    # both required and forbidden by one work descriptor.
+    refused_capability_contradiction: :refused_capability,
 
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
