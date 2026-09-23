@@ -1,0 +1,28 @@
+{
+  "wo": "ASH_A2A-26922-11",
+  "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
+  "commands": [
+    {
+      "cmd": "merge origin/main into adopt/engineering-standards-v26.9.21 + re-render the three adoption files' subject/baseSha 5969606 -> 43ac109",
+      "exit": 0,
+      "note": "pushed as 5765598; the ALIVE claim is now pinned to the CI-green v26.9.22 line head (hosted run 35807754337 at 43ac109 is the observed execution), not to red 5969606"
+    },
+    {
+      "cmd": "gh run view 35807837412 --json headSha,conclusion",
+      "exit": 0,
+      "output_excerpt": "5765598a7217c72ca912751d2c6f1d3e438e2c7d success",
+      "note": "exact-head CI green (draft marked ready first)"
+    },
+    {
+      "cmd": "gh pr merge 31 --merge",
+      "exit": 0,
+      "output_excerpt": "MERGED 6e16553"
+    },
+    {
+      "cmd": "git cat-file -e origin/main:engineering-standards.json && git cat-file -e origin/main:semantic/engineering-standards-profile.ttl && git cat-file -e origin/main:AGENTS.md",
+      "exit": 0,
+      "note": "all three exist on merged main; base_sha is 43ac109..., not 5969606"
+    }
+  ],
+  "standing": "ALIVE"
+}
