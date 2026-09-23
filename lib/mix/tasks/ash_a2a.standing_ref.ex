@@ -33,6 +33,20 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
     * `--git-url` -- repository URL for `--format dep` (default: the
       `origin` remote)
 
+  ## Output
+
+  stdout carries the resolution and nothing else, so
+  `ref=$(mix ash_a2a.standing_ref ...)` captures exactly the SHA (or the
+  `dep`/`json` rendering). The compile this task runs first -- which on a cold
+  or stale `_build` prints `Compiling N files (.ex)` / `Generated ash_a2a app`
+  -- is redirected to stderr, as are the refusals. In this repository the
+  `ash_a2a.standing_ref` alias in `mix.exs` compiles the same way before Mix
+  dispatches the task, which covers a `_build` so cold that the task module
+  itself is not compiled yet. Where `ash_a2a` is a dependency, Mix compiles
+  dependencies before any task runs: `MIX_QUIET=1` silences that, and the
+  resolution is still printed (it is written to stdout directly, not through
+  `Mix.shell().info/1`).
+
   ## Exit status
 
   `0` with the SHA printed when a receipt is admitted; non-zero, with the
@@ -69,7 +83,7 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
     unless format in @formats,
       do: Mix.raise("--format must be one of #{Enum.join(@formats, ", ")}")
 
-    Mix.Task.run("compile", [])
+    on_stderr(fn -> Mix.Task.run("compile", []) end)
 
     resolve_opts =
       [
@@ -104,11 +118,28 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
     end
   end
 
-  defp emit("sha", resolution, _opts), do: Mix.shell().info(resolution.sha)
+  @doc false
+  # Runs `fun` with this process's group leader -- inherited by every process
+  # it spawns, e.g. the parallel compiler -- set to stderr, so `:stdio` output
+  # such as `Mix.Shell.IO.info/1`'s compile progress never reaches stdout.
+  def on_stderr(fun) do
+    stdout = Process.group_leader()
+    Process.group_leader(self(), Process.whereis(:standard_error))
+
+    try do
+      fun.()
+    after
+      Process.group_leader(self(), stdout)
+    end
+  end
+
+  # The resolution is the task's product, not an informational message: it is
+  # written to stdout directly so `MIX_QUIET=1` (`Mix.Shell.Quiet`) keeps it.
+  defp emit("sha", resolution, _opts), do: IO.puts(resolution.sha)
 
   defp emit("dep", resolution, opts) do
     url = opts[:git_url] || origin_url(Keyword.get(opts, :repo, File.cwd!()))
-    Mix.shell().info(~s({:ash_a2a, git: "#{url}", ref: "#{resolution.sha}"}))
+    IO.puts(~s({:ash_a2a, git: "#{url}", ref: "#{resolution.sha}"}))
   end
 
   defp emit("json", resolution, _opts) do
@@ -117,7 +148,7 @@ defmodule Mix.Tasks.AshA2a.StandingRef do
       Enum.map(refused, &%{&1 | reason: inspect(&1.reason)})
     end)
     |> JSON.encode!()
-    |> Mix.shell().info()
+    |> IO.puts()
   end
 
   defp origin_url(repo) do

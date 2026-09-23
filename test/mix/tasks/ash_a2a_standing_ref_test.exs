@@ -271,6 +271,79 @@ defmodule Mix.Tasks.AshA2a.StandingRefTest do
     end
   end
 
+  describe "stdout carries only the resolution" do
+    # Real `mix` OS processes over a copy of this project's real build, made
+    # stale by removing the compiled `.app` so the compile that precedes the
+    # task really prints "Generated ash_a2a app" -- the chatter that, on a
+    # cold or stale `_build`, used to precede the SHA on stdout and pollute
+    # `ref=$(mix ash_a2a.standing_ref ...)`. stdout and stderr are captured
+    # separately; the children get their own MIX_BUILD_PATH, so this
+    # project's `_build` is only read, never written.
+    @tag timeout: 900_000
+    test "a stale build's compile chatter goes to stderr; MIX_QUIET=1 still prints the SHA",
+         %{tmp_dir: dir} do
+      repo = init_repo!(dir)
+      a = commit!(repo, "app.txt", "v1")
+      file_receipt!(repo, a, build_receipt!(repo, :conformant))
+      commit_receipts!(repo)
+
+      build = Path.join(dir, "build")
+      File.cp_r!(Mix.Project.build_path(), build)
+      app = Path.join([build, "lib", "ash_a2a", "ebin", "ash_a2a.app"])
+
+      args = ["--repo", repo, "--court", "sa2a", "--standing", "CONFORMANT"]
+
+      # The task run directly, bypassing the `mix.exs` alias: the compile the
+      # task itself runs is what regenerates the `.app`.
+      direct = [
+        "run",
+        "--no-compile",
+        "--no-start",
+        "-e",
+        ~s|Mix.Tasks.AshA2a.StandingRef.run(JSON.decode!(System.fetch_env!("STANDING_REF_ARGS")))|
+      ]
+
+      try do
+        for {argv, env, generated_on_stderr?} <- [
+              {["ash_a2a.standing_ref" | args], [], true},
+              {direct, [{"STANDING_REF_ARGS", JSON.encode!(args)}], true},
+              {["ash_a2a.standing_ref" | args], [{"MIX_QUIET", "1"}], false}
+            ] do
+          File.rm!(app)
+          assert {stdout, stderr, 0} = mix!(dir, build, argv, env)
+          assert stdout == a <> "\n", "#{inspect(argv)} #{inspect(env)} stderr: #{stderr}"
+          assert String.contains?(stderr, "Generated ash_a2a app") == generated_on_stderr?
+          assert File.exists?(app)
+        end
+      after
+        File.rm_rf!(build)
+      end
+    end
+
+    test "on_stderr/1 moves the caller's and its spawned processes' stdio to stderr" do
+      stderr =
+        capture_io(:stderr, fn ->
+          stdout =
+            capture_io(fn ->
+              assert :done =
+                       Mix.Tasks.AshA2a.StandingRef.on_stderr(fn ->
+                         Mix.Shell.IO.info("Generated ash_a2a app")
+
+                         task = Task.async(fn -> IO.puts("Compiling 1 file (.ex)") end)
+                         Task.await(task)
+                         :done
+                       end)
+
+              IO.write("after")
+            end)
+
+          assert stdout == "after"
+        end)
+
+      assert stderr == "Generated ash_a2a app\nCompiling 1 file (.ex)\n"
+    end
+  end
+
   describe "a receipt issued by the real Chicago runner" do
     test "resolves at its real standing and is refused as CONFORMANT", %{tmp_dir: dir} do
       repo = init_repo!(dir)
@@ -333,6 +406,30 @@ defmodule Mix.Tasks.AshA2a.StandingRefTest do
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, JSON.encode!(receipt))
     Enum.each(extra, fn {name, doc} -> File.write!(Path.join(dir, name), JSON.encode!(doc)) end)
+  end
+
+  # `mix <argv>` as a real OS process in this project over the build at
+  # `build`; returns stdout and stderr separately and the exit status.
+  defp mix!(dir, build, argv, env) do
+    err = Path.join(dir, "mix.stderr")
+
+    {stdout, status} =
+      System.cmd(
+        "sh",
+        ["-c", ~s(exec "$@" 2>"$MIX_CHILD_STDERR"), "sh", System.find_executable("mix") | argv],
+        cd: Path.dirname(Mix.Project.project_file()),
+        env:
+          %{
+            "MIX_ENV" => "test",
+            "MIX_BUILD_PATH" => build,
+            "MIX_QUIET" => nil,
+            "MIX_CHILD_STDERR" => err
+          }
+          |> Map.merge(Map.new(env))
+          |> Enum.to_list()
+      )
+
+    {stdout, File.read!(err), status}
   end
 
   defp git!(repo, args) do
