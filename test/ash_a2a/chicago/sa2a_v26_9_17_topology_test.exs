@@ -28,6 +28,20 @@ defmodule AshA2A.Chicago.SA2AV269_17TopologyTest do
 
   describe "the 11 real local repos this domain's :init declares as HDDL objects" do
     @tag :sibling_repos
+    # ASH_A2A-26922-04: `mix test.all` = `test --include serial`, and this
+    # module's `@moduletag :serial` rescues these `:sibling_repos` tests from
+    # test_helper.exs's named `:sibling_repos` exclusion (ExUnit include
+    # overrides ALL exclusions for a matching test) -- so on a hosted runner
+    # they ran, found no /Users/sac sibling checkouts, and failed. Same class
+    # as ASH_A2A-26922-02: a compile-time precondition check with a named,
+    # printed reason, matching the repo's real skip convention.
+    @tag skip:
+           (Enum.any?(
+              Enum.map(Topology.repos(), &Topology.repo_path(elem(&1, 1))),
+              &(!File.exists?(Path.join(&1, ".git")))
+            ) &&
+              "sibling repo topology absent on this machine -- the 11 real checkouts are author-workstation-local") ||
+             nil
     test "every one resolves to a real git HEAD via check_repo/1, on this machine" do
       results =
         for {obj, dir, _cap, _critical?} <- Topology.repos() do
@@ -87,6 +101,20 @@ defmodule AshA2A.Chicago.SA2AV269_17TopologyTest do
 
   describe "SA2A-TOPO court end to end through the runner" do
     @tag :sibling_repos
+    # ASH_A2A-26922-04: `mix test.all` = `test --include serial`, and this
+    # module's `@moduletag :serial` rescues these `:sibling_repos` tests from
+    # test_helper.exs's named `:sibling_repos` exclusion (ExUnit include
+    # overrides ALL exclusions for a matching test) -- so on a hosted runner
+    # they ran, found no /Users/sac sibling checkouts, and failed. Same class
+    # as ASH_A2A-26922-02: a compile-time precondition check with a named,
+    # printed reason, matching the repo's real skip convention.
+    @tag skip:
+           (Enum.any?(
+              Enum.map(Topology.repos(), &Topology.repo_path(elem(&1, 1))),
+              &(!File.exists?(Path.join(&1, ".git")))
+            ) &&
+              "sibling repo topology absent on this machine -- the 11 real checkouts are author-workstation-local") ||
+             nil
     test "every falsifier reaches its verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do
