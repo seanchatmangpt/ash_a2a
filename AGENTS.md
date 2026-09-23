@@ -2,7 +2,7 @@
 
 > Generated adoption header. Shared engineering semantics are rooted at `seanchatmangpt/engineering-standards@5a3bb6446aeaee2255a7523d4d8cebf6042960c3`.
 
-- Repository subject: `seanchatmangpt/ash_a2a@596960660fb4c54777c0b8a24d9d284318898071`
+- Repository subject: `seanchatmangpt/ash_a2a@43ac10928ab0fc8820c2db8a790c015b207605c6`
 - Ecosystem role: SA2A transport and runtime profile
 - Adoption manifest: `engineering-standards.json`
 - Project profile: `semantic/engineering-standards-profile.ttl`

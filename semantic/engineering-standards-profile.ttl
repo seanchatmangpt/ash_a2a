@@ -11,4 +11,4 @@ project:Profile a prof:Profile ;
 
 project:Repository a es:RepositorySubject ;
   es:repository "seanchatmangpt/ash_a2a" ;
-  es:baseSha "596960660fb4c54777c0b8a24d9d284318898071" .
+  es:baseSha "43ac10928ab0fc8820c2db8a790c015b207605c6" .

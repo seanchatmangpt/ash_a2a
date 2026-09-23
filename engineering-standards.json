@@ -1,7 +1,7 @@
 {
   "schema": "engineering-standards.repository-adoption.v26.9.21",
   "repository": "seanchatmangpt/ash_a2a",
-  "base_sha": "596960660fb4c54777c0b8a24d9d284318898071",
+  "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
   "mode": "SEMANTIC_WORK",
   "role": "SA2A transport and runtime profile",
   "root": {
