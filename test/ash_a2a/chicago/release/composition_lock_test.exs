@@ -63,8 +63,19 @@ defmodule AshA2A.Chicago.Release.CompositionLockTest do
     end
 
     test "native_pins reports this real repo's real ferroplan git-rev pin", %{lock: lock} do
-      assert lock.native_pins["ferroplan"] == "29134d7bc2c578aa39e05bceeee43a6893f2026b"
-      assert lock.native_pins["ferroplan-hddl"] == "29134d7bc2c578aa39e05bceeee43a6893f2026b"
+      # Expected values are read from the real Cargo.toml, not hard-coded:
+      # the pin changes with every reviewed repin (e.g. 29134d7 -> e90928d,
+      # ASH_A2A-26922-09), and the invariant under test is that the
+      # composition lock's parsed pins MATCH the real manifest bytes.
+      expected =
+        "native/hddl_cli/Cargo.toml"
+        |> File.read!()
+        |> then(&Regex.scan(~r/(ferroplan(?:-hddl)?)\s*=\s*\{[^}]*rev\s*=\s*"([0-9a-f]{40})"/, &1))
+        |> Map.new(fn [_full, name, rev] -> {name, rev} end)
+
+      assert expected["ferroplan"] =~ ~r/\A[0-9a-f]{40}\z/
+      assert lock.native_pins["ferroplan"] == expected["ferroplan"]
+      assert lock.native_pins["ferroplan-hddl"] == expected["ferroplan-hddl"]
     end
 
     test "mix_lock_sha256 is a real sha256 over the real mix.lock file, verified independently",
