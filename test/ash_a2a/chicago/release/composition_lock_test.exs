@@ -70,7 +70,9 @@ defmodule AshA2A.Chicago.Release.CompositionLockTest do
       expected =
         "native/hddl_cli/Cargo.toml"
         |> File.read!()
-        |> then(&Regex.scan(~r/(ferroplan(?:-hddl)?)\s*=\s*\{[^}]*rev\s*=\s*"([0-9a-f]{40})"/, &1))
+        |> then(
+          &Regex.scan(~r/(ferroplan(?:-hddl)?)\s*=\s*\{[^}]*rev\s*=\s*"([0-9a-f]{40})"/, &1)
+        )
         |> Map.new(fn [_full, name, rev] -> {name, rev} end)
 
       assert expected["ferroplan"] =~ ~r/\A[0-9a-f]{40}\z/
