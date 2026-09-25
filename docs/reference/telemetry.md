@@ -89,3 +89,17 @@ events are shed, counted, and reported via `[:ash_a2a, :ocel, :shed]`.
 Forwarding is best-effort: non-2xx responses and network failures are
 logged and swallowed, never raised into dispatch. See
 [Observe dispatch with OCEL](../how-to/observe-dispatch-with-ocel.md).
+
+## Router tier counters
+
+`AshA2A.Telemetry.RouterCounters` is the reference consumer of
+`[:ash_a2a, :router, :tier_selected]` — an opt-in, in-process `:counters`
+instrument (never auto-attached) counting the deterministic/phrase/llm tier
+split of `AshA2A.Planning.RequestRouter.route/3`. `new/0` makes a zeroed
+reference, `attach!/2`/`attach!/3` attach it (each instance owns its own
+counters storage), `counts/1` reads `%{deterministic: n, llm: n, phrase: n}`,
+and `detach/1` removes the handler. `attach!/3`'s `:owner` option isolates
+sources per emitter: `:any` (default) counts every emitter on the node,
+while a pid counts only events emitted by that process — so overlapping
+instances (concurrent test drivers, per-request measurement) never inflate
+each other's counts.

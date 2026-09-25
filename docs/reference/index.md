@@ -151,6 +151,7 @@ dependency of this project with a real qualification test exercising it -- see
 | Module | Description | Status |
 | --- | --- | --- |
 | [`AshA2A.Telemetry.OcelForwarder`](https://hexdocs.pm/ash_a2a/AshA2A.Telemetry.OcelForwarder.html) | Best-effort OCEL v2 telemetry egress. Exactly one event per CommandBus-routed dispatch (dispatch-span and receipt-committed fields merged, deduplicated); a direct `Dispatcher.dispatch/6` caller still gets its own dispatch event. Observational only. | ALIVE |
+| [`AshA2A.Telemetry.RouterCounters`](https://hexdocs.pm/ash_a2a/AshA2A.Telemetry.RouterCounters.html) | In-process `:counters`-backed RequestRouter tier-split instrument: `new/0`, `attach!/2` and `attach!/3`, `counts/1`, `detach/1`. `attach!/3`'s `:owner` option isolates sources per emitter: `:any` (default) counts every emitter -- the exact pre-existing union behavior -- while a pid counts only events emitted by that process. | PARTIAL (not default path) |
 | [`AshA2A.SemanticProjection`](https://hexdocs.pm/ash_a2a/AshA2A.SemanticProjection.html) | Read-only projection of committed receipts and capabilities into machine-readable evidence; joins `ash_r2rml` mapping results when available (real, asserted mapping as of v26.9.14, not just the refusal path). | PARTIAL (not default path) |
 | [`AshA2A.Research.ERC`](https://hexdocs.pm/ash_a2a/AshA2A.Research.ERC.html) | Executable Research Claim receipt emitter; writes a machine-readable JSON receipt from this project's own test-run evidence. | PARTIAL (not default path) |
 
