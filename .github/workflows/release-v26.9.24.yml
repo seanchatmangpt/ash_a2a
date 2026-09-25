@@ -32,7 +32,7 @@ jobs:
       - name: Set up Erlang/OTP and Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18.4"
+          elixir-version: "1.19.5"
           otp-version: "27.3.4"
       - name: Prepare Hex
         run: |
@@ -84,16 +84,12 @@ jobs:
         run: |
           set -euo pipefail
           subject="$(git rev-parse HEAD)"
-          if git ls-remote --exit-code --tags origin refs/tags/v26.9.24 >/dev/null 2>&1; then
-            observed="$(git ls-remote --tags origin refs/tags/v26.9.24 | cut -f1)"
-            test "$observed" = "$subject"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.24" >/dev/null 2>&1; then
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.24" --jq .object.sha)" = "$subject"
           else
-            git config user.name github-actions
-            git config user.email github-actions@users.noreply.github.com
-            git tag -a v26.9.24 "$subject" -m "v26.9.24"
-            git push origin refs/tags/v26.9.24
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v26.9.24" -f sha="$subject" >/dev/null
           fi
           if ! gh release view v26.9.24 >/dev/null 2>&1; then
             gh release create v26.9.24 --target "$subject" --title "v26.9.24" --generate-notes
           fi
-          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v26.9.24" --jq .sha)" = "$subject"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.24" --jq .object.sha)" = "$subject"
