@@ -66,7 +66,7 @@ defmodule AshA2A.Receipt do
   it is the statement that no terminal status has been observed yet.
   """
 
-  alias AshA2A.{Actuation, Authority, Command, Evidence, Identity, SemanticSubject}
+  alias AshA2A.{Actuation, Authority, Command, Evidence, Identity, SemanticSubject, SpgIdentity}
   alias AshA2A.Receipt.Binding
 
   @typedoc """
@@ -419,7 +419,7 @@ defmodule AshA2A.Receipt do
     }
   end
 
-  defp prepared_metadata(%Command{metadata: metadata}) do
+  defp prepared_metadata(%Command{metadata: metadata, spg_identity: spg_identity}) do
     work_order_digest =
       if is_map(metadata) do
         Map.get(metadata, :work_order_digest) || Map.get(metadata, "work_order_digest")
@@ -427,6 +427,7 @@ defmodule AshA2A.Receipt do
 
     %{outcome: :pending}
     |> maybe_put_metadata(:work_order_digest, work_order_digest)
+    |> Map.merge(SpgIdentity.attributes(spg_identity))
   end
 
   defp maybe_put_metadata(metadata, _key, nil), do: metadata

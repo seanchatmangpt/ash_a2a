@@ -10,7 +10,7 @@ defmodule AshA2A.Command do
   transport context while preserving command identity.
   """
 
-  alias AshA2A.{Authority, Identity, SemanticSubject}
+  alias AshA2A.{Authority, Identity, SemanticSubject, SpgIdentity}
 
   @enforce_keys [
     :command_id,
@@ -30,6 +30,7 @@ defmodule AshA2A.Command do
     :input,
     :authority,
     :semantic_subject,
+    :spg_identity,
     :submitted_at,
     :fingerprint,
     metadata: %{}
@@ -44,6 +45,7 @@ defmodule AshA2A.Command do
           input: term(),
           authority: Authority.t() | nil,
           semantic_subject: SemanticSubject.t() | nil,
+          spg_identity: SpgIdentity.t() | nil,
           submitted_at: DateTime.t(),
           fingerprint: String.t(),
           metadata: map()
@@ -58,6 +60,7 @@ defmodule AshA2A.Command do
     input = Keyword.get(opts, :input, %{})
     authority = Keyword.get(opts, :authority)
     semantic_subject = Keyword.get(opts, :semantic_subject)
+    spg_identity = Keyword.get(opts, :spg_identity)
     submitted_at = Keyword.get(opts, :submitted_at, DateTime.utc_now())
     metadata = Map.new(Keyword.get(opts, :metadata, %{}))
 
@@ -70,6 +73,7 @@ defmodule AshA2A.Command do
       input: input,
       authority: authority,
       semantic_subject: semantic_subject,
+      spg_identity: spg_identity,
       submitted_at: submitted_at,
       fingerprint: "",
       metadata: metadata
@@ -107,6 +111,7 @@ defmodule AshA2A.Command do
       command.input,
       authority_token,
       SemanticSubject.fingerprint_token(command.semantic_subject),
+      SpgIdentity.fingerprint_token(command.spg_identity),
       gall_029_candidate_digest(command.metadata)
     }
     |> :erlang.term_to_binary([:deterministic])
