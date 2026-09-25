@@ -66,7 +66,7 @@ handlers (e.g. in test `on_exit/1` callbacks).
 ## 3. One event per dispatch, not two (deduplication)
 
 A `CommandBus`-routed dispatch internally still calls
-`AshA2A.Dispatcher.dispatch/5` (the same function a direct, non-CommandBus
+`AshA2A.Dispatcher.dispatch/6` (the same function a direct, non-CommandBus
 caller uses), which still carries the `[:ash_a2a, :dispatch, :stop]` span.
 Rather than posting that span as a second, separate OCEL event, `CommandBus`
 marks the calling process for the duration of that internal call, and
@@ -77,7 +77,7 @@ exactly one real HTTP-posted event per logical CommandBus-routed dispatch,
 carrying both receipt-derived fields (`capability_id`, `consequence`,
 `status`, `command_id`, `execution_id`, `fingerprint`, `principal_id`,
 `replayed`) and the dispatch-derived ones. A direct, non-CommandBus
-`AshA2A.Dispatcher.dispatch/5` call (e.g. a `:observe`/`:read` skill, or a
+`AshA2A.Dispatcher.dispatch/6` call (e.g. a `:observe`/`:read` skill, or a
 caller that bypasses the default agent path entirely) is unaffected and
 still posts its own single dispatch event exactly as before.
 
@@ -124,7 +124,7 @@ Two real integration tests, no mocks:
 
 - `test/ash_a2a_telemetry_ocel_forwarder_test.exs` — a real local Bandit HTTP
   listener mirroring the ingest contract, a direct
-  `AshA2A.Dispatcher.dispatch/5` call against the `FreedomGym.Facilitator`
+  `AshA2A.Dispatcher.dispatch/6` call against the `FreedomGym.Facilitator`
   fixture, asserting on the actual captured HTTP body for the single
   dispatch-only event.
 - `test/ash_a2a_telemetry_ocel_forwarder_command_bus_test.exs` and

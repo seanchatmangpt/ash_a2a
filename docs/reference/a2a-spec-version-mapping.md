@@ -2,18 +2,18 @@
 
 Maps A2A JSON-RPC methods to the vendored `:a2a` 0.2.0 Plug behavior as
 observed by `test/ash_a2a_a2a_methods_test.exs`, and to the SA2A profile
-id in force for release v26.9.18.
+id in force for release v26.9.20.
 
-Version: v26.9.18
+Version: v26.9.20
 
 ## Profile identifiers
 
 | Constant | Value |
 |----------|-------|
-| `AshA2A.Semantic.Extension.profile_id/0` | `SA2A-PROFILE-v26.9.18` |
-| `AshA2A.Semantic.Extension.profile_uri/0` | `urn:sa2a:profile:v26.9.18` |
-| `AshA2A.Semantic.Extension.profile_version/0` | `v26.9.18` |
-| `AshA2A.SA2A.Conformance` receipt profile | `SA2A-STRICT-v26.9.18` |
+| `AshA2A.Semantic.Extension.profile_id/0` | `SA2A-PROFILE-v26.9.20` |
+| `AshA2A.Semantic.Extension.profile_uri/0` | `urn:sa2a:profile:v26.9.20` |
+| `AshA2A.Semantic.Extension.profile_version/0` | `v26.9.20` |
+| `AshA2A.SA2A.Conformance` receipt profile | `SA2A-STRICT-v26.9.20` |
 
 ## Method mapping
 

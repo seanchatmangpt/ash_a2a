@@ -25,7 +25,7 @@ fail-closed defaults are deliberate.
 | Key | Default | Consumed by / meaning |
 | --- | --- | --- |
 | `:authority_policy` | `:broker` | `AshA2A.Authority.Grant`. `:broker` is the fail-closed default (grants required). `:transport_verified_grants_capability` is the legacy escalation mode — **violates RFC-SA2A-001 S29**; migration window only. |
-| `:authority_broker` | — (none) | Broker module implementing `AshA2A.Authority.Broker`. Shipped: `Broker.InMemory` (GenServer, single node, dev/tests) and `Broker.Ekv` (durable). Unset + `:broker` policy = every consequential dispatch refused `:authority_required` with a warning naming the missing config. |
+| `:authority_broker` | — (none) | Broker module implementing `AshA2A.Authority.Broker`. Shipped: `Broker.InMemory` (GenServer, single node, dev/tests) and `Broker.Ekv` (durable — gets automatic EKV child wiring from `AshA2A.Application`, with its own distinct `:name`/`:data_dir`, separate from the receipt store's EKV; config-only, no hand-started child needed since 2026-09-17). Unset + `:broker` policy = every consequential dispatch refused `:authority_required` with a warning naming the missing config. |
 
 ## Application config — LLM roles, telemetry, planning
 
