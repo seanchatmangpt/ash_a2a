@@ -1,0 +1,14 @@
+docs(streams): ash_a2a#27 CI classification and the external_do consequence override
+
+docs/streams/ash-a2a-format.md: PR #27 check history (format failed on three
+earlier heads, fixed by 8d61f46; residual failure is mix test), the 107-failure
+classification (103 engine unreachable, 3 sibling repos absent, 1 real defect),
+the hosted-CI simulation results, and merge guidance for the two candidate
+commits (8815f5b here, 488ae22 on errc/ash-a2a-pr27-refusal-classes).
+
+docs/streams/ash-a2a-external-do.md: answer to whether the DSL or installer
+allows an action-level consequence or authority declaration for an
+:external_do capability, with file:line evidence. consequence: is a skill
+entity option (lib/ash_a2a/dsl.ex:46-56); there is no authority key; authority
+is a runtime broker grant keyed by capability id; the installer only adds the
+extension and an empty a2a block and never emits a skill entry.
