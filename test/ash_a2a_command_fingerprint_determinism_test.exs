@@ -101,6 +101,7 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
         command.input,
         nil,
         AshA2A.SemanticSubject.fingerprint_token(command.semantic_subject),
+        AshA2A.SpgIdentity.fingerprint_token(command.spg_identity),
         Map.get(command.metadata, :gall_029_candidate_digest) ||
           Map.get(command.metadata, "gall_029_candidate_digest")
       }

@@ -1,0 +1,98 @@
+{
+  "identity": {
+    "subject": "ASH_A2A-26922-07",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "893ec0b1f04651c7873467a24fbf4a9dd0600780",
+    "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "893ec0b1f04651c7873467a24fbf4a9dd0600780"
+    ],
+    "files_changed": [
+      "receipts/v26.9.22/ASH_A2A-26922-07.json"
+    ],
+    "remote_effects": [
+      "gh api pulls/28 -X PATCH base=main (retargeted before closing #26)",
+      "gh pr close 22/23/24/25/26/29/30 with citations (8eb4335/bb47a99/185da12/5969606)",
+      "PR comment issuecomment-5787029021 documents the #28 reconciliation requirement"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "gh api pulls/28 -X PATCH base=main",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "retargeted BEFORE closing #26"
+      },
+      {
+        "cmd": "git merge --no-ff origin/main into gall/dfcm-029-030-policy-budget-court",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 1,
+        "summary": "CONFLICT (add/add) process_intervention.ex: two competing admission designs; merge ABORTED, no winner picked by hand - BLOCKED on a design decision outside this lane's warrant"
+      },
+      {
+        "cmd": "gh pr close 22/23/24/25/26/29/30 with citations",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "mix test.all test/gall_process_intervention_test.exs",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "9 tests, 0 failures"
+      },
+      {
+        "cmd": "gh pr list --state open",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "open: #28 only"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-07.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "PARTIAL_ALIVE",
+    "derived_from": "closures/retarget/test acceptance ALIVE (9 tests 0 failures; none of 22/23/25/26/29/30 open); the #28 main-merge clause BLOCKED: merge exit 1 on the process_intervention.ex design conflict (replay command 2), reconciliation documented in issuecomment-5787029021"
+  },
+  "wo": "ASH_A2A-26922-07",
+  "base_sha": "43ac10928ab0fc8820c2db8a790c015b207605c6",
+  "commands": [
+    {
+      "cmd": "gh api pulls/28 -X PATCH base=main",
+      "exit": 0,
+      "note": "retargeted BEFORE closing #26 (whose head was #28's base) so closing #26 could not auto-close #28"
+    },
+    {
+      "cmd": "git merge --no-ff origin/main into gall/dfcm-029-030-policy-budget-court",
+      "exit": 1,
+      "output_excerpt": "CONFLICT (add/add): lib/ash_a2a/gall/process_intervention.ex + test -- main's bb47a99 admission shape (field allowlists + AshA2A.Postcondition independent confirmation) vs #28's narrowing (allowed_producers/admission_rules + observer-callback verification) are two competing implementations of the same module",
+      "note": "merge ABORTED, no winner picked by hand; #28 stays open on main with the reconciliation requirement documented in a PR comment (issuecomment-5787029021). This sub-step is BLOCKED on a design decision outside this lane's warrant; dependents branch around it (#28 simply remains unmerged, as the acceptance's open-PR list anticipates)"
+    },
+    {
+      "cmd": "gh pr close 22/23/24/25/26/29/30 with citations",
+      "exit": 0,
+      "note": "22: code shipped via bb47a99, docs archived by 185da12, unique yml NOT ported (main carries gall-003-receipt.yml from the shipped lineage); 23: specs archived by 185da12; 24: superseded by #27 (closed after #27's retarget); 25: shipped via bb47a99/8eb4335; 26: shipped via bb47a99; 29: competing implementation; 30: format clean on main, verified by the v26.9.22 gate"
+    },
+    {
+      "cmd": "mix test.all test/gall_process_intervention_test.exs",
+      "exit": 0,
+      "output_excerpt": "9 tests, 0 failures"
+    },
+    {
+      "cmd": "gh pr list --state open",
+      "exit": 0,
+      "output_excerpt": "open: #28 only",
+      "note": "none of 22, 23, 25, 26, 29, 30 remain open, as the acceptance requires (24 also closed)"
+    }
+  ],
+  "standing_lane": "PARTIAL_ALIVE",
+  "notes": "Closures + retarget + test acceptance: ALIVE. #28's main-merge: BLOCKED on the process_intervention.ex design reconciliation; the narrowing lands only via a deliberate re-port onto the shipped shape or an explicit operator decision between the two admission designs."
+}

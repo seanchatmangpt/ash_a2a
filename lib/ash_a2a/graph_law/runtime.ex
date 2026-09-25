@@ -116,17 +116,20 @@ defmodule AshA2A.GraphLaw.Runtime do
 
   Resolution order: `opts[:wasm_path]`, then
   `Application.get_env(:ash_a2a, :graphlaw_wasm_path)`, then the
-  `PRAXIS_GRAPHLAW_WASM` environment variable, then the in-tree
-  `praxis-graphlaw-wasm` build output. There is no vendored copy: the court
-  is explicitly a statement about *the* module `praxis` builds, so pointing
-  at a checkout is the honest default rather than a stale copy.
+  `PRAXIS_GRAPHLAW_WASM` environment variable, then the vendored,
+  git-tracked artifact `AshA2A.GraphLaw.wasm_path/0`
+  (`priv/graphlaw/praxis_graphlaw.wasm`). That copy is byte-identical to the
+  module `praxis` builds -- `priv/graphlaw/MANIFEST.json` pins its sha256 and
+  `mix ash_a2a.verify_graphlaw` checks it -- so the default is the module the
+  court is a statement about, present in every checkout, not a stale copy.
+  Point `PRAXIS_GRAPHLAW_WASM` at a fresh `praxis` build to test that instead.
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
     Keyword.get(opts, :wasm_path) ||
       Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
       System.get_env("PRAXIS_GRAPHLAW_WASM") ||
-      Path.expand("~/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm")
+      AshA2A.GraphLaw.wasm_path()
   end
 
   @doc """

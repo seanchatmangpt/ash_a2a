@@ -116,6 +116,157 @@ defmodule Mix.Tasks.AshA2a.InstallTest do
     end
   end
 
+  # ASH_A2A-26922-08: explicit skill consequences and the idempotent
+  # `a2a do` block. ggen_igniter's semantic-jira-pack records, as an
+  # UNSUPPORTED(generator-capability) ontology row, that `ash_a2a.install`
+  # could not emit an explicit `a2a` skill `consequence: :external_do`
+  # override; `--skill name:action:consequence` closes that row.
+  describe "mix ash_a2a.install --skill" do
+    test "emits the declared skill with an explicit consequence: :external_do inside the a2a do block" do
+      igniter =
+        test_project(
+          files: %{
+            @path => """
+            defmodule Test.Resource do
+              use Ash.Resource,
+                domain: Test.Domain,
+                data_layer: Ash.DataLayer.Ets
+
+              attributes do
+                uuid_primary_key(:id)
+              end
+            end
+            """
+          }
+        )
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource",
+          "--skill",
+          "advance_item:advance:external_do"
+        ])
+
+      content = source_content(igniter, @path)
+
+      assert count_occurrences(content, "a2a do") == 1
+      # Igniter formats composed content, so the emitted declaration is in
+      # parens form (same for every assertion below).
+      assert content =~ "skill(:advance_item, :advance, consequence: :external_do)"
+    end
+
+    test "two runs yield exactly one a2a do block and exactly one consequence: :external_do" do
+      igniter =
+        test_project(
+          files: %{
+            @path => """
+            defmodule Test.Resource do
+              use Ash.Resource,
+                domain: Test.Domain,
+                data_layer: Ash.DataLayer.Ets
+
+              attributes do
+                uuid_primary_key(:id)
+              end
+            end
+            """
+          }
+        )
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource",
+          "--skill",
+          "advance_item:advance:external_do"
+        ])
+        |> apply_igniter!()
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource",
+          "--skill",
+          "advance_item:advance:external_do"
+        ])
+
+      content = source_content(igniter, @path)
+
+      # The block is written idempotently: never a second `a2a do` block,
+      # never a duplicated declaration, never a duplicated extension entry.
+      assert count_occurrences(content, "a2a do") == 1
+      assert count_occurrences(content, "consequence: :external_do") == 1
+      assert count_occurrences(content, "skill(:advance_item") == 1
+      assert count_occurrences(content, "AshA2A") == 1
+    end
+
+    test "appends a new --skill into an existing a2a do block without duplicating the block" do
+      igniter =
+        test_project(
+          files: %{
+            @path => """
+            defmodule Test.Resource do
+              use Ash.Resource,
+                domain: Test.Domain,
+                data_layer: Ash.DataLayer.Ets
+
+              attributes do
+                uuid_primary_key(:id)
+              end
+            end
+            """
+          }
+        )
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource",
+          "--skill",
+          "advance_item:advance:external_do"
+        ])
+        |> apply_igniter!()
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource",
+          "--skill",
+          "log_item:log"
+        ])
+
+      content = source_content(igniter, @path)
+
+      assert count_occurrences(content, "a2a do") == 1
+      # the previously-written declaration is preserved exactly once, the new
+      # one appended without any consequence
+      assert count_occurrences(
+               content,
+               "skill(:advance_item, :advance, consequence: :external_do)"
+             ) == 1
+
+      assert content =~ ~r/skill\(:log_item, :log\)\n/m
+      refute content =~ "skill(:log_item, :log, consequence:"
+    end
+
+    test "an unparseable --skill spec is refused, not silently dropped" do
+      assert_raise Mix.Error, ~r/Invalid --skill consequence/i, fn ->
+        test_project(
+          files: %{
+            @path => """
+            defmodule Test.Resource do
+              use Ash.Resource,
+                domain: Test.Domain,
+                data_layer: Ash.DataLayer.Ets
+
+              attributes do
+                uuid_primary_key(:id)
+              end
+            end
+            """
+          }
+        )
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource",
+          "--skill",
+          "advance_item:advance:not_a_consequence"
+        ])
+      end
+    end
+  end
+
   defp source_content(igniter, path) do
     igniter.rewrite
     |> Rewrite.source!(path)

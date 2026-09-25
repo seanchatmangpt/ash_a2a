@@ -6,6 +6,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.22] - 2026-09-23
+
+### Fixed
+
+- **GraphLaw wasm resolvers now default to the vendored artifact.** Seven
+  resolvers defaulted to a developer-home path (`/Users/sac/praxis`), which
+  made every hosted CI run exclude the live-engine tests by a named-printed
+  exclusion and fail 110 tests (run 35662751905 at 5969606). The vendored
+  `priv/graphlaw/praxis_graphlaw.wasm` is now the default everywhere
+  (merge 19cd30e from `errc/ash-a2a-format`, with the falsifier tests that
+  prove it: `wasm_default_resolution_test`,
+  `falsifier_wasm_default_reachability_test`,
+  `graphlaw_engine_stop_host_test`). Hosted CI at 43ac109 runs the
+  live-engine tests with zero `EXCLUDING :graphlaw` lines (run
+  35807754337).
+- **`mix test.all` can no longer re-admit `:external_api`/`:benchmark`
+  tests** (regression from 5969606): ExUnit's include filter rescues any
+  matching test from ALL exclusions, so `--include serial` fired real
+  live-API tests in the CI lane -- observed locally as 50 real concurrent
+  Z.AI dispatches with 46 HTTP 429s. The Zai probe's skip is now
+  `@moduletag`-level (it previously sat on a `@describetag` in a module
+  with no `describe` block, so it never attached); the five whole-module
+  benchmark files dropped their serial tags; the three mixed
+  semantic-agent test files carry the repo's compile-time named-skip
+  convention (f85abfd).
+- **Test determinism** (merge 831fb99 from `fix/test-determinism-v26.9.21`):
+  the wall_time_ms property no longer asserts equality on a measured
+  dimension; the stale forbidden-grant test and two shutdown/tmp-dir races
+  are fixed; `GraphlawEngine.stop_host/1` is deduplicated onto
+  `stop_pid/1` (three consecutive identical suite runs verified).
+- **CI-exposed test repairs** (f822d85): the composition-lock test reads
+  the real `native/hddl_cli/Cargo.toml` rev instead of a hard-coded pin,
+  and the two `:sibling_repos` topology tests carry the named skip (the
+  serial include had been rescuing them from the test_helper exclusion on
+  hosted runners). The darwin-only `/var` symlink comparison failures in
+  the vendor-tool cwd test are fixed by OS-level canonicalization.
+
+### Changed
+
+- **Dependency security**: `ash` 3.33.1 → 3.33.9 (EEF-CVE-2026-86338) and
+  `mint` 1.10.0 → 1.10.1 (EEF-CVE-2026-82672); `mix hex.audit` is clean.
+- **`native/hddl_cli` repinned** to ferroplan `e90928d` (v0.28.0), the
+  commit beam4pm's submodule carries (df903df); cargo `--locked` build and
+  the SA2A v26.9.17 FOND/reachability qualification tests verified.
+- **PR #27 landed (c74c2e9)**: the Semantic Work Envelope conserves the
+  work-order subject (`work_order_iri`, `checkpoint_iri`, RDFC-1.0
+  `graph_digest`, `repository_identity`, `base_sha`) through SA2A
+  transport, with 488ae22's S42 refusal-class mapping; the competing
+  `feat/v26.9.19-work-envelope-v2` lineage is retired and the Semantic
+  Work Envelope Court runs on main via workflow dispatch.
+- **PR #31 landed (6e16553)**: engineering-standards adoption re-rendered
+  against the v26.9.22 line head (ALIVE claim pinned to a CI-green
+  subject, not the red 5969606 baseline).
+- **Court manifest re-pinned** (70d2666) after the lawful court-machinery
+  changes above, unblocking `mix ash_a2a.chicago --profile core
+  --require-conformant` on the workstation (standing CONFORMANT, 3/3
+  gates, 134 falsifiers killed, 0 survived).
+
+### Added
+
+- **Durable exact-SHA SA2A court receipts on a schedule**
+  (`.github/workflows/sa2a-conformance.yml`): every push to main and a
+  daily cron run both courts and upload `sa2a-conformance-<sha>` with
+  `sa2a-conformance.json` + `chicago/standing_receipt.json`, behind a
+  court-manifest drift tripwire. The receipts record the hosted truth
+  (NONCONFORMANT: SA2A-TOPO-002's collaborators are the 11
+  author-workstation checkouts; strict FAIL: blank-node `graph_hash/1` is
+  not repetition-stable) -- CONFORMANT remains a workstation claim.
+- **`mix ash_a2a.install --skill name:action[:consequence]`** (64cb56e):
+  emits explicit `skill` declarations with `consequence: :external_do`
+  inside the `a2a do` block, closing ggen_igniter's
+  UNSUPPORTED(generator-capability) row; the `a2a do` block is now
+  written idempotently (two runs yield exactly one block and one
+  declaration per skill).
+- **`receipts/v26.9.22/`**: one JSON receipt per v26.9.22 work order
+  (commands, exits, standing), committed in-repo instead of gitignored
+  `tmp/` output.
+
+### Removed
+
+- Superseded PRs closed with citations (#22-#26, #29, #30; #28 retargeted
+  to main and documented as needing a design reconciliation on
+  `process_intervention.ex`); stashes disposed into
+  `preserve/v26.9.22/*` branches; merged worktrees and the ported
+  `feat/sa2a-*-v26.9.16` branches retired.
+
 ## [26.9.21] - 2026-09-21
 
 ### Changed

@@ -1,0 +1,100 @@
+{
+  "identity": {
+    "subject": "ASH_A2A-26922-12",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "d1147187da32728bb1a9068be7c7f24d33cb95c8",
+    "base_sha": "d1147187da32728bb1a9068be7c7f24d33cb95c8"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "d1147187da32728bb1a9068be7c7f24d33cb95c8",
+      "9bb0252ad426ef5a2d023bcfea9a09975524e3df"
+    ],
+    "files_changed": [
+      "CHANGELOG.md",
+      "mix.exs"
+    ],
+    "remote_effects": [
+      "git push origin main (6e16553..d114718 line, then receipt commit 9bb0252)",
+      "annotated tag v26.9.22 pushed: 8642376d1584f5c70aa36b0ee7915a9b80e0e809 -> d114718",
+      "hex publish: https://hex.pm/packages/ash_a2a/26.9.22 (sha256 4bd3955d89794aafe9889e37534948a6812f072a45bfc5bc9a7fe046fa3646fb)",
+      "hosted CI success at d114718 (run 35811231943) and at 9bb0252 (runs 35812565058 CI, 35812565087 SA2A receipts)"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "mix.exs version 26.9.21 -> 26.9.22 + CHANGELOG [26.9.22]; commit and push (d114718)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      },
+      {
+        "cmd": "gh run list --branch main --workflow CI --limit 1 (at d114718)",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "tag placed only on the CI-green exact subject | completed success d114718 (run 35811231943)"
+      },
+      {
+        "cmd": "git tag -a v26.9.22 && git push origin v26.9.22",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "8642376d1584f5c70aa36b0ee7915a9b80e0e809 refs/tags/v26.9.22"
+      },
+      {
+        "cmd": "HEX_API_KEY (from ~/.env) mix hex.publish --yes",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "Package published to https://hex.pm/packages/ash_a2a/26.9.22"
+      },
+      {
+        "cmd": "grep -q 'version: \"26.9.22\"' mix.exs && git ls-remote --tags origin v26.9.22 && mix hex.info ash_a2a | grep -q 26.9.22",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "all three acceptance checks pass"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-12.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "acceptance triple verified: mix.exs version 26.9.22; tag v26.9.22 on origin (annotated, -> d114718); mix hex.info shows 26.9.22 published; CI green at the tagged subject before tagging"
+  },
+  "wo": "ASH_A2A-26922-12",
+  "base_sha": "d114718 (the tagged release commit)",
+  "commands": [
+    {
+      "cmd": "mix.exs version 26.9.21 -> 26.9.22 + CHANGELOG [26.9.22] section; commit and push (6e16553..d114718)",
+      "exit": 0
+    },
+    {
+      "cmd": "gh run list --branch main --workflow CI --limit 1 (at d114718)",
+      "exit": 0,
+      "output_excerpt": "completed success d114718 (run 35811231943)",
+      "note": "tag placed only on the CI-green exact subject, per the binding rule"
+    },
+    {
+      "cmd": "git tag -a v26.9.22 (annotated) && git push origin v26.9.22",
+      "exit": 0,
+      "output_excerpt": "8642376d1584f5c70aa36b0ee7915a9b80e0e809 refs/tags/v26.9.22"
+    },
+    {
+      "cmd": "HEX_API_KEY (from ~/.env) mix hex.publish --yes",
+      "exit": 0,
+      "output_excerpt": "Package published to https://hex.pm/packages/ash_a2a/26.9.22 (4bd3955d89794aafe9889e37534948a6812f072a45bfc5bc9a7fe046fa3646fb); docs at https://ash-a2a.hexdocs.pm/26.9.22",
+      "note": "the operator-approved final release action; the local cached hex key was invalid, publish succeeded with the HEX_API_KEY from ~/.env"
+    },
+    {
+      "cmd": "grep -q 'version: \"26.9.22\"' mix.exs && git ls-remote --tags origin v26.9.22 && mix hex.info ash_a2a | grep -q 26.9.22",
+      "exit": 0,
+      "output_excerpt": "all three acceptance checks pass"
+    }
+  ],
+  "standing_lane": "ALIVE",
+  "notes": "Consumers can now lock hex 26.9.22: xaas (locked 26.9.12), beam4pm (26.9.21), ggen_igniter (26.9.17), ash_surface (git e25ed6e). The v26.9.18/v26.9.20 tag gap noted in the survey is not retroactively filled; v26.9.22 is tagged on the green subject."
+}

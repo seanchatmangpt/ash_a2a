@@ -31,6 +31,11 @@ defmodule AshA2A.SemanticProjection do
       authority_evidence_digest: authority_field(receipt.authority_grant, :evidence_digest),
       evidence_class: evidence_class_label(receipt.evidence_class),
       work_order_digest: work_order_digest(receipt.metadata),
+      spg_graph_id: metadata_field(receipt.metadata, :spg_graph_id),
+      spg_graph_version: metadata_field(receipt.metadata, :spg_graph_version),
+      spg_node_id: metadata_field(receipt.metadata, :spg_node_id),
+      spg_edge_id: metadata_field(receipt.metadata, :spg_edge_id),
+      spg_projection_family: metadata_field(receipt.metadata, :spg_projection_family),
       consequence: receipt.consequence,
       status: receipt.status,
       standing: receipt.standing,
@@ -98,6 +103,11 @@ defmodule AshA2A.SemanticProjection do
         "authority_evidence_digest" => semantic.authority_evidence_digest,
         "evidence_class" => semantic.evidence_class,
         "work_order_digest" => semantic.work_order_digest,
+        "spg_graph_id" => semantic.spg_graph_id,
+        "spg_graph_version" => semantic.spg_graph_version,
+        "spg_node_id" => semantic.spg_node_id,
+        "spg_edge_id" => semantic.spg_edge_id,
+        "spg_projection_family" => semantic.spg_projection_family,
         "consequence" => to_string(semantic.consequence),
         "status" => to_string(semantic.status),
         "standing" => to_string(semantic.standing),
@@ -138,6 +148,12 @@ defmodule AshA2A.SemanticProjection do
   end
 
   defp work_order_digest(_metadata), do: nil
+
+  defp metadata_field(metadata, field) when is_map(metadata) do
+    Map.get(metadata, field) || Map.get(metadata, Atom.to_string(field))
+  end
+
+  defp metadata_field(_metadata, _field), do: nil
 
   defp external(nil), do: nil
   defp external(%Identity{} = identity), do: Identity.external(identity)

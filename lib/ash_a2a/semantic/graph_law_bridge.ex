@@ -29,15 +29,13 @@ defmodule AshA2A.Semantic.GraphLawBridge do
         graphlaw_node_path: "node"
 
   `graphlaw_wasm_path` also honours the `ASH_A2A_GRAPHLAW_WASM` environment
-  variable, falling back to the checkout-relative praxis path. Like
-  `AshA2A.Planning.HddlSolver`'s `cli_path/1`, the default only resolves on a
-  machine that has the praxis workspace -- `available?/0` reports that
-  honestly instead of raising.
+  variable, falling back to the vendored, git-tracked, MANIFEST-pinned artifact
+  `AshA2A.GraphLaw.wasm_path/0` (`priv/graphlaw/praxis_graphlaw.wasm`), which is
+  present in every checkout -- `available?/0` still reports an unresolvable
+  explicit path honestly instead of raising.
   """
 
   alias AshA2A.Semantic.Serialize
-
-  @default_wasm_path "/Users/sac/praxis/crates/praxis-graphlaw-wasm/pkg/praxis_graphlaw_wasm_bg.wasm"
 
   @doc "Absolute path of the real praxis-graphlaw wasm module."
   @spec wasm_path(keyword()) :: String.t()
@@ -45,7 +43,7 @@ defmodule AshA2A.Semantic.GraphLawBridge do
     Keyword.get(opts, :wasm_path) ||
       Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
       System.get_env("ASH_A2A_GRAPHLAW_WASM") ||
-      @default_wasm_path
+      AshA2A.GraphLaw.wasm_path()
   end
 
   @doc "Absolute path of the real Node host shim shipped in `priv/`."

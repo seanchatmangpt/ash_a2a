@@ -1,0 +1,82 @@
+{
+  "identity": {
+    "subject": "ASH_A2A-26922-08",
+    "repo": "/Users/sac/wt/v26922/ash_a2a/int",
+    "subject_sha": "64cb56ec93c5a38ac071242a49c4624d4f518005",
+    "base_sha": "6ae085afd5e3925751d62cca42c464996fefa192"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "v26.9.22 wave dispatch: lane L2 work orders /tmp/v26922-wos/L2-ash_a2a--ash_a2a.txt (operator-issued); release/tag/hex-publish actions operator-approved per WO-12",
+    "actor": "zcode-lane-L2 (v26.9.22 wave)"
+  },
+  "consequence": {
+    "commits": [
+      "64cb56ec93c5a38ac071242a49c4624d4f518005"
+    ],
+    "files_changed": [
+      "lib/mix/tasks/ash_a2a.install.ex",
+      "test/mix/tasks/ash_a2a_install_test.exs"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "mix test.all test/mix/tasks/ash_a2a_install_test.exs",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": "includes the two-runs-yield-one-block consequence: :external_do case | 7 tests, 0 failures"
+      },
+      {
+        "cmd": "mix format --check-formatted && mix compile --warnings-as-errors",
+        "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+        "exit": 0,
+        "summary": ""
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/ASH_A2A-26922-08.json (git-tracked on seanchatmangpt/ash_a2a main)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "mix test.all test/mix/tasks/ash_a2a_install_test.exs at 64cb56e: 7 tests, 0 failures (incl. idempotent two-run external_do case); format + compile clean"
+  },
+  "negative_checks": [
+    {
+      "cmd": "grep for mock patterns in changed files",
+      "cwd": "/Users/sac/wt/v26922/ash_a2a/int",
+      "exit": 1,
+      "summary": "no matches: real Igniter.Test project + real compose_task, no interaction mocks (Chicago-clean)"
+    }
+  ],
+  "repairs": [
+    {
+      "field": "base_sha",
+      "was": "831fb99e8d1a68a5e9f0587771c3ff88e2e8ba30",
+      "now": "6ae085afd5e3925751d62cca42c464996fefa192",
+      "reason": "recorded 40-hex does not resolve to a commit; corrected to the true parent of 64cb56e (the ASH_A2A-26922-03 receipt commit)"
+    }
+  ],
+  "wo": "ASH_A2A-26922-08",
+  "base_sha": "831fb99e8d1a68a5e9f0587771c3ff88e2e8ba30",
+  "head_sha": "64cb56e",
+  "commands": [
+    {
+      "cmd": "mix test.all test/mix/tasks/ash_a2a_install_test.exs",
+      "exit": 0,
+      "output_excerpt": "7 tests, 0 failures",
+      "note": "includes the WO-required new case: two runs yield exactly one a2a do block and exactly one consequence: :external_do; plus consequence emission, append-into-existing-block, and refusal of an unparseable --skill spec"
+    },
+    {
+      "cmd": "mix format --check-formatted && mix compile --warnings-as-errors",
+      "exit": 0
+    },
+    {
+      "cmd": "grep for mock patterns in changed files",
+      "exit": 1,
+      "note": "no matches: real Igniter.Test in-memory project + real compose_task, no interaction mocks"
+    }
+  ],
+  "standing_lane": "ALIVE",
+  "notes": "Closes the ggen_igniter UNSUPPORTED row 'ash_a2a.install cannot emit an explicit a2a skill consequence :external_do override' (ontology.ttl:1932,1961). Implementation note recorded: Sourceror wraps literal atoms in {:__block__,_,[atom]}, so identifier comparison unwraps before equality; first detection attempt without unwrapping duplicated the declaration on run 2 and was caught by the new two-run test before commit."
+}

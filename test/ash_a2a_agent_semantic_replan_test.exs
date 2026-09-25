@@ -320,6 +320,16 @@ defmodule AshA2AAgentSemanticReplanTest do
   # no @tag :external_api because they are real but fast/structural --
   # no live LLM call -- and correctly keep running by default.
   @tag :external_api
+  # ASH_A2A-26922-02: `mix test.all` = `test --include serial`, and ExUnit's
+  # include filter rescues any matching test from ALL exclusions -- this
+  # module's `@moduletag :serial` re-admitted this `@tag :external_api`
+  # test into the CI lane. There is no filter expression for "serial but
+  # not external_api", so this file keeps the repo's own named-skip
+  # convention (see test/ash_a2a_zai_concurrency_ocel_test.exs): a real,
+  # compile-time precondition check with a named, printed reason.
+  @tag skip:
+         (is_nil(AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")) &&
+            "ZAI_API_KEY not found in ~/.env -- real, unseamed LLM round-trip") || nil
   @tag timeout: 180_000
   test "SUCCESS: a real completed closing dispatch's receipt drives a real replan, candidate never escapes :candidate/:none" do
     package = real_compile_execution_package!("create a labeled item")
@@ -380,6 +390,9 @@ defmodule AshA2AAgentSemanticReplanTest do
   # rate-limit-contention interaction with the concurrency-probe test.
   # Same real missing-tag bug fixed here too -- see that test's own note.
   @tag :external_api
+  @tag skip:
+         (is_nil(AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")) &&
+            "ZAI_API_KEY not found in ~/.env -- real, unseamed LLM round-trip") || nil
   @tag timeout: 180_000
   test "FAILURE: a real class:forbidden closing dispatch still commits a real receipt that a follow-up replan can observe" do
     package = real_compile_execution_package!("create a labeled item, forbidden variant")
@@ -427,6 +440,9 @@ defmodule AshA2AAgentSemanticReplanTest do
   # rate-limit-contention interaction with the concurrency-probe test.
   # Same real missing-tag bug fixed here too -- see that test's own note.
   @tag :external_api
+  @tag skip:
+         (is_nil(AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")) &&
+            "ZAI_API_KEY not found in ~/.env -- real, unseamed LLM round-trip") || nil
   @tag timeout: 180_000
   test "BLOCKED: a real {:input_required, _} closing dispatch still commits a real receipt that a follow-up replan can observe" do
     package = real_compile_execution_package!("create a labeled item, blocked variant")

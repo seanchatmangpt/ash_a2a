@@ -27,6 +27,21 @@ defmodule AshA2A.GraphLawVendorToolVersionCwdTest do
 
   @wasm_crate "crates/praxis-graphlaw-wasm"
 
+  # The probe prints its own `getcwd/0`, and the OS resolves symlinks in it
+  # (macOS reports /private/var/... where System.tmp_dir!/2 hands out
+  # /var/...). The invariant under test -- "the subprocess really ran in that
+  # directory" -- is preserved under symlink resolution, so every comparison
+  # canonicalises BOTH sides through File.realpath!/1 instead of comparing a
+  # resolved path against an unresolved one.
+  defp canonical(path) do
+    expand = Path.expand(path)
+    prev = File.cwd!()
+    File.cd!(expand)
+    resolved = File.cwd!()
+    File.cd!(prev)
+    resolved
+  end
+
   setup do
     root = Path.join(System.tmp_dir!(), "sa2a-vendor-cwd-#{System.unique_integer([:positive])}")
     crate_dir = Path.join(root, @wasm_crate)
@@ -92,11 +107,11 @@ defmodule AshA2A.GraphLawVendorToolVersionCwdTest do
 
       # The probe prints its own cwd, so this IS the directory the subprocess
       # ran in -- not a claim about it.
-      assert Path.expand(provenance["rustc_version"]) == Path.expand(crate_dir)
-      assert Path.expand(provenance["wasm_pack_version"]) == Path.expand(crate_dir)
+      assert canonical(provenance["rustc_version"]) == canonical(crate_dir)
+      assert canonical(provenance["wasm_pack_version"]) == canonical(crate_dir)
 
       # The defect: before the fix both of these ran here instead.
-      refute Path.expand(provenance["rustc_version"]) == Path.expand(File.cwd!())
+      refute canonical(provenance["rustc_version"]) == canonical(File.cwd!())
     end
 
     test "the directory used is recorded in the manifest so a reader can check it", %{
@@ -107,15 +122,15 @@ defmodule AshA2A.GraphLawVendorToolVersionCwdTest do
 
       assert provenance["tool_version_cwd"] == crate_dir
 
-      assert Path.expand(provenance["rustc_version"]) ==
-               Path.expand(provenance["tool_version_cwd"])
+      assert canonical(provenance["rustc_version"]) ==
+               canonical(provenance["tool_version_cwd"])
     end
 
     test "an explicit :cd moves the probe with it", %{root: root, elsewhere: elsewhere} do
       provenance =
         Vendor.provenance(root, rustc: "sa2a-cwd-probe", cd: elsewhere)
 
-      assert Path.expand(provenance["rustc_version"]) == Path.expand(elsewhere)
+      assert canonical(provenance["rustc_version"]) == canonical(elsewhere)
       assert provenance["tool_version_cwd"] == elsewhere
     end
 

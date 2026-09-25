@@ -25,6 +25,7 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
   @moduletag timeout: 600_000
 
   describe "CHI-REAL court end to end through the runner" do
+    @tag :graphlaw_engine
     test "every falsifier reaches its verdict and every pass is OCEL-corroborated", %{
       tmp_dir: dir
     } do
@@ -94,6 +95,7 @@ defmodule AshA2A.Chicago.RealCollaboratorsTest do
   end
 
   describe "inventory of the real running configuration" do
+    @tag :graphlaw_engine
     test "identifies all nine roles with the real components and admits them", %{tmp_dir: dir} do
       inv = Collaborators.inventory(claim: :core, probe_dir: dir)
 

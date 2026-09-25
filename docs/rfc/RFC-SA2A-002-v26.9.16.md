@@ -2,7 +2,8 @@
 
 ## Chicago Conformance, Falsification, Benchmark, and OCEL v2 Qualification Standard for Semantic A2A Systems
 
-**Status:** Proposed Standard  
+**Status:** FINAL_SPEC — closed for v26.9.24  
+**Implementation standing:** NOT_CLAIMED  
 **Version:** v26.9.16  
 **Category:** Protocol Conformance / Falsification / Process Evidence / Benchmarking  
 **Companion specification:** RFC-SA2A-001 v26.9.16 — *Semantic A2A: Admitted Semantic Interoperation for Machine-to-Machine Systems*  
@@ -2843,3 +2844,14 @@ Thus the conformance court itself obeys the Semantic A2A machine-experience prin
 ---
 
 # End of RFC-SA2A-002 v26.9.16
+
+
+# Appendix — v26.9.24 Closure
+
+This specification is terminal for the v26.9.24 semantic release boundary. Later implementation evidence may strengthen standing, but it must not silently change this protocol contract.
+
+At closure, candidate/finding admission remains non-authoritative; consequential execution is confined to the CommandBus/BRCE DO boundary; exact producer/evidence/semantic-subject bindings and independent postcondition evidence remain required where the implementation profile declares them.
+
+$$
+FinalSpec \not\Rightarrow Authority \qquad FinalSpec \not\Rightarrow ProductionStanding
+$$
