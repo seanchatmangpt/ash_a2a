@@ -22,7 +22,7 @@ When a message arrives, `AshA2A.Agent.__dispatch__` resolves the skill name,
 pulls `history` off the `A2A.Agent.context()` and `auth_identity` out of
 `context.metadata["a2a.auth"]` (populated only by `A2A.Plug.Auth` after real
 credential verification -- never from caller-controlled `A2A.Message.metadata`),
-and calls `AshA2A.Dispatcher.dispatch/5` directly. `Dispatcher` resolves
+and calls `AshA2A.Dispatcher.dispatch/6` directly. `Dispatcher` resolves
 actor/tenant through `AshA2A.ContextResolver.from_a2a_message/4` and invokes
 the real Ash action with the non-bang `Ash.Changeset.for_create/3` /
 `Ash.Query.for_read/3` / `Ash.ActionInput.for_action/3` APIs. This chain --
@@ -125,7 +125,7 @@ exercises a real `AshR2RML.Resource`-extended fixture through
 inbound message and routes any skill whose real, compiled
 `AshA2A.Skill.consequence` is `:change`/`:external_do` through
 `AshA2A.CommandBus.run/4` (which itself calls the same
-`AshA2A.Dispatcher.dispatch/5` unchanged) instead of calling `dispatch/5`
+`AshA2A.Dispatcher.dispatch/6` unchanged) instead of calling `dispatch/6`
 directly. Routing is by consequence classification, never by re-deriving a
 binary judgment from `action.type` at dispatch time -- `action.type` alone
 cannot tell a pure generic `:action` (a calculation, a read-shaped custom
@@ -156,7 +156,7 @@ skill on the agent card. That was a real, reproduced privilege escalation;
 `Grant` is the decision that closes it. `:observe` skills are unaffected
 (`admit/2` admits them unconditionally). This gate does not replace or
 tighten Ash's own actor/policy authorization, which still runs exactly as
-before inside the wrapped `dispatch/5` call.
+before inside the wrapped `dispatch/6` call.
 
 When a grant does stand, the authority is still built through
 `from_verified_identity/2`, so its `token_id` remains deterministic (a stable
@@ -223,9 +223,9 @@ honored.
   used to fire both `[:ash_a2a, :dispatch, :stop]` and
   `[:ash_a2a, :receipt, :committed]` as two separate HTTP-posted events for
   one logical action. `CommandBus.run/4` now correlates its internal
-  `Dispatcher.dispatch/5` call so `AshA2A.Telemetry.OcelForwarder` merges the
+  `Dispatcher.dispatch/6` call so `AshA2A.Telemetry.OcelForwarder` merges the
   dispatch span's fields into the single receipt-derived event instead of
-  posting both -- a direct (non-CommandBus) `Dispatcher.dispatch/5` caller is
+  posting both -- a direct (non-CommandBus) `Dispatcher.dispatch/6` caller is
   unaffected.
 - **`mix ash_a2a.install` merges into an existing `extensions:` list** (via
   `Spark.Igniter.add_extension/5`, matching `ash_r2rml.install.ex`'s own

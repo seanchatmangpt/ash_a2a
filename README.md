@@ -26,7 +26,8 @@ compiled index:
   nonexistent action (`:REFUSED_ACTION_NOT_FOUND`) or duplicates a skill
   name (`:REFUSED_DUPLICATE_SKILL_NAME`),
 - and dispatches an inbound `A2A.Message` to the right Ash action
-  (`AshA2A.Dispatcher.dispatch/5`), either as a bare function call or
+  (`AshA2A.Dispatcher.dispatch/6`; arities `/3`–`/5` remain valid via
+  defaults), either as a bare function call or
   through a real supervised `A2A.Agent` process (`AshA2A.Agent`) — routing
   consequence-bearing skills (`:change`/`:external_do`) through the
   receipted `AshA2A.CommandBus` with authority admission and replay-safe
@@ -104,8 +105,11 @@ message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
   AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
 ```
 
-`dispatch/5` takes further `history` and `auth_identity` arguments
-(both default to `nil`). `auth_identity` is the trust boundary: with the
+`dispatch/6` takes further `history`, `auth_identity`, and `opts` arguments
+(`history`/`auth_identity` default to `nil`-able values, `opts` to `[]` —
+e.g. `:resolved_skill` carries the exact resolved skill through a
+`CommandBus` re-dispatch, fixing multi-resource namesake
+`:capability_mismatch` refusals). `auth_identity` is the trust boundary: with the
 default `nil`, `context.actor`/`context.tenant` resolve to `nil` and
 dispatch fails closed for anything your Ash policies gate on identity —
 identity only ever arrives from transport-verified auth

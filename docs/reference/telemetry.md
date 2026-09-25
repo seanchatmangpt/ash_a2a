@@ -18,7 +18,7 @@ end, nil)
 
 | Event | Measurements | Metadata | Emitted by |
 | --- | --- | --- | --- |
-| `[:ash_a2a, :dispatch, :start]` / `[:ash_a2a, :dispatch, :stop]` (a `:telemetry.span`) | `duration` (native) on stop | `resource_or_domain`, `skill_name`; stop adds reply outcome, stage-tagged error `{:error, {stage, reason}}` on failure, and `object_id` (real identity of the acted-on record/instance, when one exists — never fabricated) | `AshA2A.Dispatcher.dispatch/5` |
+| `[:ash_a2a, :dispatch, :start]` / `[:ash_a2a, :dispatch, :stop]` (a `:telemetry.span`) | `duration` (native) on stop | `resource_or_domain`, `skill_name`; stop adds reply outcome, stage-tagged error `{:error, {stage, reason}}` on failure, and `object_id` (real identity of the acted-on record/instance, when one exists — never fabricated) | `AshA2A.Dispatcher.dispatch/6` (arities `/3`–`/5` remain valid via defaults) |
 | `[:ash_a2a, :dispatch, :brce_gate]` | `system_time` | skill metadata + outcome/reason (sole-DO fence verdict) | `AshA2A.BrceAnchor` |
 | `[:ash_a2a, :dispatch, :actuate]` | `system_time` | skill metadata + `anchored: boolean` | `AshA2A.BrceAnchor` |
 
@@ -38,6 +38,8 @@ end, nil)
 | `[:ash_a2a, :command_bus, :postcondition]` | — | outcome, reason, `postcondition_id`, verifier, `independent` | `AshA2A.Postcondition` |
 | `[:ash_a2a, :receipt, :outboxed]` | — | receipt (journaled `:pending` pre-dispatch) | `AshA2A.CommandBus` |
 | `[:ash_a2a, :receipt, :committed]` | — | receipt (final, post-dispatch) | `AshA2A.CommandBus` |
+| `[:ash_a2a, :receipt_outbox, :reconciler, :tick]` | `committed`, `remaining` | — (drain summary; opt-in reconciler) | `AshA2A.ReceiptOutbox.Reconciler` |
+| `[:ash_a2a, :receipt_outbox, :reconciler, :stuck]` | `attempts` | `command_id`, `receipt_id`, `threshold` — one event per stuck journal entry past the threshold (opt-in reconciler) | `AshA2A.ReceiptOutbox.Reconciler` |
 | `[:ash_a2a, :reconciliation, :classified / :reconciled / :compensated]` | `system_time` | `command_id`, `receipt_id`, receipt status, `resolved_as`, label | `AshA2A.Reconciliation` |
 
 ### Authority
@@ -60,6 +62,10 @@ end, nil)
 | `[:ash_a2a, :evidence, <decision>]` | `system_time` | outcome/code, chain digest | `AshA2A.Evidence.Class` |
 | `[:ash_a2a, :sa2a, :conformance, :runtime_identity / :judged / :vector_judged / :replayed]` | — | conformance decision fields | `AshA2A.SA2A.Conformance` |
 | `[:ash_a2a, :ocel, :shed]` | — | `url`, `reason` | `AshA2A.Telemetry.OcelForwarder` (bounded-fanout shed counter) |
+| `[:ash_a2a, :semantic, :machine_experience, :register / :compile_back / :unregister]` | `classes` (register/unregister), `count: 1` (compile_back) | `class`, `kind`, `fingerprint` (register/compile_back); `class`, `reason`, `removed` (unregister — fires even when the class is absent, reporting `removed: false`) | `AshA2A.Semantic.MachineExperience` |
+| `[:ash_a2a, :hook_reactor, :hook, :admission / :evaluate]` | `duration_us` | hook metadata + `:outcome` | `AshA2A.Semantic.HookReactor` |
+| `[:ash_a2a, :hook_reactor, :intent, :constructed / :idempotency]` | `duration_us` | intent construction / idempotency-check metadata + `:outcome` | `AshA2A.Semantic.HookReactor` |
+| `[:ash_a2a, :hook_reactor, :cascade, :bound]` | `requested`, `ceiling` | cascade-bound metadata | `AshA2A.Semantic.HookReactor` |
 
 ### Chicago / QA harness events (internal)
 

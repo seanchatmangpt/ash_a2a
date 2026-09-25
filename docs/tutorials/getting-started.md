@@ -104,7 +104,7 @@ message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
   AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
 ```
 
-`AshA2A.Dispatcher.dispatch/5` takes the skill name, the `A2A.Message`, and
+`AshA2A.Dispatcher.dispatch/6` takes the skill name, the `A2A.Message`, and
 the resource (or domain), plus optional `history` and `auth_identity`
 arguments (both default to `nil`). It runs the underlying `:read` action
 for real through Ash and wraps the result back into an `A2A.Part.Data`
@@ -116,7 +116,7 @@ transport-verified auth, never from message metadata (see
 
 ## 3. Run it as a supervised A2A agent
 
-A bare `dispatch/5` call is synchronous and process-free. To run the same
+A bare `dispatch/6` call is synchronous and process-free. To run the same
 resource as a long-lived, addressable agent, define a module with
 `use AshA2A.Agent`:
 
@@ -159,7 +159,7 @@ Because `MyApp.Echo` exposes exactly one public action, the inbound
 message's `metadata[:skill]` may be omitted; a resource or domain with more
 than one skill requires the caller to set it, to say which skill to
 dispatch. Routing is by compiled consequence classification: `:observe`
-skills (like this `:read`) go straight to `Dispatcher.dispatch/5`, while
+skills (like this `:read`) go straight to `Dispatcher.dispatch/6`, while
 `:change`/`:external_do` skills route through the receipted
 `AshA2A.CommandBus` (authority admission, replay-safe receipts) — see
 [Architecture](../explanation/architecture.md).
