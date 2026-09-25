@@ -64,7 +64,7 @@ defmodule AshA2A.SpgIdentity do
     }
   end
 
-  defp non_empty(field, value) when is_binary(value) and byte_size(value) > 0, do: :ok
+  defp non_empty(_field, value) when is_binary(value) and byte_size(value) > 0, do: :ok
   defp non_empty(field, _value), do: {:error, {:refused_spg_identity, field}}
 
   defp optional_non_empty(_field, nil), do: :ok
