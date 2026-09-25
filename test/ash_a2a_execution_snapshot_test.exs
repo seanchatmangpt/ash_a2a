@@ -48,6 +48,7 @@ defmodule AshA2A.ExecutionSnapshotTest do
     {:ok, completed} = ExecutionSnapshot.complete(running, "receipt-1")
 
     assert {:ok, ^completed} = ExecutionSnapshot.complete(completed, "receipt-1")
+
     assert {:error, :duplicate_consequence} =
              ExecutionSnapshot.complete(completed, "receipt-2")
   end

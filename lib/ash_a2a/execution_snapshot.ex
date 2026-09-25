@@ -80,7 +80,11 @@ defmodule AshA2A.ExecutionSnapshot do
   def start(%__MODULE__{}), do: {:error, :start_not_allowed}
 
   @spec checkpoint(t(), non_neg_integer(), String.t()) :: {:ok, t()} | {:error, atom()}
-  def checkpoint(%__MODULE__{state: state, sequence: current} = snapshot, sequence, history_digest)
+  def checkpoint(
+        %__MODULE__{state: state, sequence: current} = snapshot,
+        sequence,
+        history_digest
+      )
       when state in [:running, :checkpointed] and is_integer(sequence) and sequence > current and
              is_binary(history_digest) and history_digest != "" do
     checkpoint = %{
@@ -112,8 +116,11 @@ defmodule AshA2A.ExecutionSnapshot do
   def worker_lost(%__MODULE__{}), do: {:error, :worker_loss_not_applicable}
 
   @spec complete(t(), String.t()) :: {:ok, t()} | {:error, atom()}
-  def complete(%__MODULE__{state: :completed, consequence_receipt_id: receipt} = snapshot, receipt),
-    do: {:ok, snapshot}
+  def complete(
+        %__MODULE__{state: :completed, consequence_receipt_id: receipt} = snapshot,
+        receipt
+      ),
+      do: {:ok, snapshot}
 
   def complete(%__MODULE__{state: :completed}, _receipt),
     do: {:error, :duplicate_consequence}
