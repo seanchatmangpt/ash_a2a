@@ -3,6 +3,7 @@
 ## Semantic A2A: Admitted Semantic Interoperation for Machine-to-Machine Systems
 
 **Status:** FINAL_SPEC — closed for v26.9.24
+**Implementation standing:** NOT_CLAIMED
 **Version:** v26.9.16
 **Category:** Protocol Architecture / Semantic Systems
 **Intended audience:** Implementers of autonomous systems, enterprise agent infrastructure, semantic systems, planners, generators, authority brokers, workflow engines, and machine-to-machine protocols.
@@ -2855,8 +2856,6 @@ This specification is terminal for the v26.9.24 semantic release boundary. Later
 
 At closure, candidate/finding admission remains non-authoritative; consequential execution is confined to the CommandBus/BRCE DO boundary; exact producer/evidence/semantic-subject bindings and independent postcondition evidence remain required where the implementation profile declares them.
 
-[
-FinalSpec 
-otRightarrow Authority qquad FinalSpec 
-otRightarrow ProductionStanding
-]
+$$
+FinalSpec \not\Rightarrow Authority \qquad FinalSpec \not\Rightarrow ProductionStanding
+$$
