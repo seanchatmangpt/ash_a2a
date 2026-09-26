@@ -5,35 +5,38 @@
     "refuse": 100.0
   },
   "elixir": "1.19.5",
+  "measured_on_parent": "b94a1d46854d8436abcd0504bde93dcd6a4f0a6a",
   "method": "timer.tc, nearest-rank percentiles, per-call = batch time / batch",
   "otp_release": "28",
   "results": {
     "condition": {
       "batch": 50,
-      "max_us": 165.8,
-      "p50_us": 32.38,
-      "p95_us": 81.68,
-      "p99_us": 139.38,
+      "max_us": 1052.46,
+      "p50_us": 22.82,
+      "p95_us": 40.86,
+      "p99_us": 421.3,
       "samples": 400
     },
     "new": {
       "batch": 50,
-      "max_us": 297.96,
-      "p50_us": 49.76,
-      "p95_us": 109.2,
-      "p99_us": 194.14,
+      "max_us": 60.2,
+      "p50_us": 41.66,
+      "p95_us": 46.96,
+      "p99_us": 52.44,
       "samples": 400
     },
     "refuse": {
       "batch": 50,
-      "max_us": 585.46,
-      "p50_us": 24.4,
-      "p95_us": 81.22,
-      "p99_us": 154.76,
+      "max_us": 259.34,
+      "p50_us": 25.42,
+      "p95_us": 38.28,
+      "p99_us": 76.1,
       "samples": 400
     }
   },
   "subject": "ash_a2a AshA2A.Semantic.PolicyPhenotype",
+  "subject_blob_sha1": "44dbcff7094f6bd0bd4f0af45c084c16eab19155",
+  "subject_path": "lib/ash_a2a/semantic/policy_phenotype.ex",
   "system_architecture": "aarch64-apple-darwin25.2.0",
   "warmup": 200
 }

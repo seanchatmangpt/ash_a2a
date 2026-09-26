@@ -14,7 +14,9 @@ defmodule AshA2A.Semantic.PolicyPhenotypeBenchmarkTest do
   Each sample is a batch of `@batch` calls so per-call cost is above timer
   resolution. The numbers are printed and written to
   `receipts/v26.9.26/policy_phenotype_bench.json` when
-  `POLICY_PHENOTYPE_BENCH_RECEIPT=1`.
+  `POLICY_PHENOTYPE_BENCH_RECEIPT=1` (with `POLICY_PHENOTYPE_BENCH_PARENT` set to
+  the commit the measured tree is committed on). The receipt carries the git
+  blob id of the measured module; a non-benchmark test refuses a stale receipt.
 
   Regression bound: the median (p50) per-call cost must stay under
   `@p50_bound_us`. p50 is used, not p99, because this host is shared with
@@ -104,8 +106,21 @@ defmodule AshA2A.Semantic.PolicyPhenotypeBenchmarkTest do
     IO.puts("\n[policy_phenotype_bench] " <> inspect(results))
 
     if System.get_env("POLICY_PHENOTYPE_BENCH_RECEIPT") == "1" do
+      subject_path = "lib/ash_a2a/semantic/policy_phenotype.ex"
+      content = File.read!(subject_path)
+
+      # git blob id of the measured module, so the receipt names its exact
+      # subject; a commit cannot contain its own SHA, so the commit identity is
+      # the parent the measured tree is committed on (POLICY_PHENOTYPE_BENCH_PARENT).
+      blob_sha1 =
+        :crypto.hash(:sha, ["blob ", Integer.to_string(byte_size(content)), 0, content])
+        |> Base.encode16(case: :lower)
+
       receipt = %{
         subject: "ash_a2a AshA2A.Semantic.PolicyPhenotype",
+        subject_path: subject_path,
+        subject_blob_sha1: blob_sha1,
+        measured_on_parent: System.fetch_env!("POLICY_PHENOTYPE_BENCH_PARENT"),
         otp_release: to_string(:erlang.system_info(:otp_release)),
         elixir: System.version(),
         system_architecture: to_string(:erlang.system_info(:system_architecture)),

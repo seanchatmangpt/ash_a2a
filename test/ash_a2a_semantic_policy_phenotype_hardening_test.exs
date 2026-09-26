@@ -43,7 +43,40 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
       "credential",
       "  --DO--  ",
       :authority,
-      :execution_grant
+      :execution_grant,
+      # camelCase / PascalCase / acronym boundaries (ash_a2a#41 court probe)
+      "ExecutionGrant",
+      "executionAuthority",
+      "grantLevel",
+      "AuthorityLevel",
+      "doAction",
+      "HTTPGrant",
+      :executionGrant,
+      # concatenations with no boundary at all
+      "executiongrant",
+      "executionauthority",
+      "grantlevel",
+      "preauthorized",
+      "unpermitted",
+      # plurals, participles, synonyms
+      "leases",
+      "tokens",
+      "authorizations",
+      "authorized",
+      "authorized_level",
+      "permitted",
+      "privilege",
+      "credentials_scope",
+      "entitlement",
+      # Cyrillic/Greek homoglyphs NFKC does not fold
+      "\u0430uthority",
+      "gr\u0430nt_level",
+      "\u0440ermission",
+      "p\u03B5rmit_scope",
+      # not valid UTF-8: cannot be normalized, so the fence fails closed
+      <<"authority", 0xFF>>,
+      <<"execution_grant", 0x80>>,
+      <<"exploration", 0xFF>>
     ]
 
     for axis <- @disguised do
@@ -84,13 +117,35 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
     end
 
     test "ordinary words containing 'do' as a substring are not refused" do
-      for axis <- ["domain_focus", "dormancy", "undo_tolerance"] do
+      for axis <- ["domain_focus", "dormancy", "undo_tolerance", "domainFocus"] do
         assert {:ok, _} =
                  PolicyPhenotype.new(
                    capability_iri: @cap,
                    policy_family: "planner:Astar",
                    conditionable_axes: %{axis => %{min: 0.0, max: 1.0}}
                  )
+      end
+    end
+  end
+
+  describe "fence stays precise on ordinary behavioral names" do
+    test "camelCase behavioral names and look-alike English words are admitted" do
+      for axis <- [
+            "selfModelPlasticity",
+            "riskTolerance",
+            "releaseCadence",
+            "fragrant_novelty",
+            "please_seeking",
+            "Exploration_Level"
+          ] do
+        result =
+          PolicyPhenotype.new(
+            capability_iri: @cap,
+            policy_family: "planner:Astar",
+            conditionable_axes: %{axis => %{min: 0.0, max: 1.0}}
+          )
+
+        assert {:ok, _} = result, "false positive on #{inspect(axis)}"
       end
     end
   end
@@ -103,6 +158,7 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
       axis
       |> :unicode.characters_to_nfkc_binary()
       |> String.replace(~r/[\p{Cf}]/u, "")
+      |> String.replace(~r/(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=\p{Lu})(?=\p{Lu}\p{Ll})/u, "_")
       |> String.downcase()
       |> String.replace(~r/[^\p{L}\p{N}]+/u, "_")
       |> String.trim("_")
@@ -111,6 +167,7 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
     test "exhaustive single/double-byte ASCII and a seeded random corpus agree" do
       singles = for c <- 0..127, do: <<c>>
       doubles = for a <- 0..127, b <- [?a, ?Z, ?_, ?-, ?\s, ?0], do: <<a, b>>
+      triples = for a <- [?a, ?A, ?0, ?_], b <- [?A, ?b], c <- [?a, ?B, ?1, ?-], do: <<a, b, c>>
 
       :rand.seed(:exsss, {26, 9, 26})
 
@@ -120,7 +177,7 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
           for _ <- 1..len, into: <<>>, do: <<:rand.uniform(128) - 1>>
         end
 
-      for axis <- singles ++ doubles ++ randoms ++ PolicyPhenotype.default_axes() do
+      for axis <- singles ++ doubles ++ triples ++ randoms ++ PolicyPhenotype.default_axes() do
         assert PolicyPhenotype.normalize_axis_name(axis) == reference(axis),
                "fast path diverged on #{inspect(axis)}"
       end
@@ -136,6 +193,32 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
       assert PolicyPhenotype.normalize_axis_name(<<0xFF, 0xFE>>) == <<0xFF, 0xFE>>
       assert PolicyPhenotype.normalize_axis_name(42) == 42
       assert PolicyPhenotype.normalize_axis_name(:Execution_Grant) == "execution_grant"
+    end
+
+    test "camelCase and acronym boundaries split into tokens" do
+      assert PolicyPhenotype.normalize_axis_name("ExecutionGrant") == "execution_grant"
+      assert PolicyPhenotype.normalize_axis_name("executionAuthority") == "execution_authority"
+      assert PolicyPhenotype.normalize_axis_name("HTTPGrant") == "http_grant"
+      assert PolicyPhenotype.normalize_axis_name("v2Grant") == "v2_grant"
+      assert PolicyPhenotype.normalize_axis_name("AUTHORITY") == "authority"
+      assert PolicyPhenotype.normalize_axis_name("selfModelPlasticity") == "self_model_plasticity"
+      assert PolicyPhenotype.normalize_axis_name("ÉxplorationLevel") == "éxploration_level"
+    end
+
+    test "a camelCase spelling collides with its snake_case twin" do
+      assert {:error,
+              %{
+                code: :invalid_policy_phenotype,
+                detail: {:duplicate_axis, :conditionable_axes, "self_model_plasticity"}
+              }} =
+               PolicyPhenotype.new(
+                 capability_iri: @cap,
+                 policy_family: "planner:Astar",
+                 conditionable_axes: %{
+                   "self_model_plasticity" => %{min: 0.0, max: 1.0},
+                   "selfModelPlasticity" => %{min: 0.0, max: 1.0}
+                 }
+               )
     end
   end
 
@@ -235,6 +318,30 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
       assert {:ok, %{evidence_refs: []}} = PolicyPhenotype.new(base(evidence_refs: nil))
     end
 
+    test "reaction arithmetic that overflows is refused, not raised" do
+      for {norm, cue} <- [
+            {%{slope: 1.0e308}, 1.0e10},
+            {%{slope: -1.0e308}, 1.0e10},
+            {%{slope: 1.0, reference_cue: -1.0e308}, 1.0e308},
+            {%{slope: 10 ** 400}, 1.0}
+          ] do
+        {:ok, p} = PolicyPhenotype.new(base(reaction_norms: %{"exploration" => norm}))
+        result = PolicyPhenotype.condition(p, cue)
+
+        assert {:error, %{code: :invalid_reaction_norm, detail: {:overflow, "exploration", ^cue}}} =
+                 result
+
+        assert Refusal.classify(code(result)) == :refused_structure
+      end
+    end
+
+    test "large but representable reaction arithmetic still clamps" do
+      {:ok, p} = PolicyPhenotype.new(base(reaction_norms: %{"exploration" => %{slope: 1.0e300}}))
+      assert {:ok, %{condition: %{"exploration" => 1.0}}} = PolicyPhenotype.condition(p, 1.0)
+      assert {:ok, %{condition: %{"exploration" => low}}} = PolicyPhenotype.condition(p, -1.0)
+      assert low == 0.0
+    end
+
     test "non-numeric cue" do
       {:ok, p} = PolicyPhenotype.new(base())
 
@@ -325,6 +432,25 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
                p
                | conditionable_axes: %{"authority" => %{min: 0, max: 1}}
              })
+    end
+  end
+
+  describe "committed benchmark receipt is bound to its subject" do
+    test "receipt names the exact blob of the module it measured" do
+      subject_path = "lib/ash_a2a/semantic/policy_phenotype.ex"
+      receipt = "receipts/v26.9.26/policy_phenotype_bench.json" |> File.read!() |> :json.decode()
+      content = File.read!(subject_path)
+
+      blob_sha1 =
+        :crypto.hash(:sha, ["blob ", Integer.to_string(byte_size(content)), 0, content])
+        |> Base.encode16(case: :lower)
+
+      assert receipt["subject_path"] == subject_path
+
+      assert receipt["subject_blob_sha1"] == blob_sha1,
+             "benchmark receipt is stale: re-run with POLICY_PHENOTYPE_BENCH_RECEIPT=1"
+
+      assert receipt["measured_on_parent"] =~ ~r/\A[0-9a-f]{40}\z/
     end
   end
 
