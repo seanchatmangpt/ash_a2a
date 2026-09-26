@@ -1,0 +1,23 @@
+@prefix sa2a: <https://seanchatman.github.io/sa2a/runtime-substitution#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+sa2a:RuntimePart a rdfs:Class .
+sa2a:PartRequirement a rdfs:Class .
+sa2a:PartPassport a rdfs:Class .
+sa2a:SubstitutionClaim a rdfs:Class .
+sa2a:QualificationReceipt a rdfs:Class .
+sa2a:ConsequenceWitness a rdfs:Class .
+sa2a:exactSubject a rdf:Property ; rdfs:range xsd:string .
+sa2a:capabilityDigest a rdf:Property ; rdfs:range xsd:string .
+sa2a:workloadDigest a rdf:Property ; rdfs:range xsd:string .
+sa2a:consequenceDigest a rdf:Property ; rdfs:range xsd:string .
+sa2a:authorityDigest a rdf:Property ; rdfs:range xsd:string .
+sa2a:receiptDigest a rdf:Property ; rdfs:range xsd:string .
+sa2a:qualifiedBy a rdf:Property ; rdfs:range sa2a:QualificationReceipt .
+sa2a:authorityCeiling a rdf:Property ; rdfs:range xsd:string .
+sa2a:RuntimeSubstitutionCourt a prov:SoftwareAgent ;
+  sa2a:authorityCeiling "NONE" ;
+  rdfs:comment "SELECT-only exact runtime replacement requires capability, workload, consequence, authority and receipt conservation." .
