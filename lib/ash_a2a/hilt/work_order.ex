@@ -18,6 +18,18 @@ defmodule AshA2A.Hilt.WorkOrder do
   @authority_levels [:observe, :select, :construct, :do]
   @consequence_classes [:observe, :change, :external_do, :unknown]
 
+  @refusal_codes %{
+    stale_task_identity: :refused_identity,
+    stale_candidate_identity: :refused_identity,
+    stale_subject_identity: :refused_identity,
+    stale_work_order_identity: :refused_identity,
+    stale_capability_identity: :refused_capability,
+    authority_ceiling_exceeded: :refused_authority
+  }
+
+  @doc false
+  def __sa2a_refusal_codes__, do: @refusal_codes
+
   @enforce_keys [
     :work_order_id,
     :task_id,
@@ -219,7 +231,11 @@ defmodule AshA2A.Hilt.WorkOrder do
   end
 
   defp same(_kind, expected, expected), do: :ok
-  defp same(kind, _expected, _actual), do: {:error, String.to_atom("stale_#{kind}_identity")}
+  defp same(:task, _expected, _actual), do: {:error, :stale_task_identity}
+  defp same(:candidate, _expected, _actual), do: {:error, :stale_candidate_identity}
+  defp same(:subject, _expected, _actual), do: {:error, :stale_subject_identity}
+  defp same(:work_order, _expected, _actual), do: {:error, :stale_work_order_identity}
+  defp same(:capability, _expected, _actual), do: {:error, :stale_capability_identity}
 
   defp external_task(%Identity{kind: :task} = identity), do: Identity.external(identity)
   defp external_task(_), do: nil
