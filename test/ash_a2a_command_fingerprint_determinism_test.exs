@@ -102,14 +102,74 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
         nil,
         AshA2A.SemanticSubject.fingerprint_token(command.semantic_subject),
         AshA2A.SpgIdentity.fingerprint_token(command.spg_identity),
-        Map.get(command.metadata, :gall_029_candidate_digest) ||
-          Map.get(command.metadata, "gall_029_candidate_digest")
+        nil
       }
       |> :erlang.term_to_binary([:deterministic])
       |> then(&:crypto.hash(:sha256, &1))
       |> Base.encode16(case: :lower)
 
     assert Command.fingerprint(command) == expected
+  end
+
+  test "canonical candidate_digest aliases the legacy GALL-029 spelling without replay drift" do
+    opts = base_opts(%{effect_key: "e-candidate"})
+
+    canonical =
+      Command.new(
+        @capability,
+        Keyword.put(opts, :metadata, %{candidate_digest: "sha256:candidate"})
+      )
+
+    legacy =
+      Command.new(
+        @capability,
+        Keyword.put(opts, :metadata, %{gall_029_candidate_digest: "sha256:candidate"})
+      )
+
+    assert Command.candidate_digest(canonical) == "sha256:candidate"
+    assert Command.candidate_digest(legacy) == "sha256:candidate"
+    assert Command.fingerprint(canonical) == Command.fingerprint(legacy)
+  end
+
+  test "work-order binding is semantic identity and provider metadata is not" do
+    opts = base_opts(%{effect_key: "e-work-order"})
+
+    left =
+      Command.new(
+        @capability,
+        Keyword.put(opts, :metadata, %{
+          candidate_digest: "sha256:candidate",
+          work_order_digest: "sha256:work-a",
+          provider: "provider-a",
+          transport: "wss"
+        })
+      )
+
+    provider_changed =
+      Command.new(
+        @capability,
+        Keyword.put(opts, :metadata, %{
+          candidate_digest: "sha256:candidate",
+          work_order_digest: "sha256:work-a",
+          provider: "provider-b",
+          transport: "http"
+        })
+      )
+
+    work_changed =
+      Command.new(
+        @capability,
+        Keyword.put(opts, :metadata, %{
+          candidate_digest: "sha256:candidate",
+          work_order_digest: "sha256:work-b",
+          provider: "provider-a",
+          transport: "wss"
+        })
+      )
+
+    assert Command.work_order_digest(left) == "sha256:work-a"
+    assert Command.fingerprint(left) == Command.fingerprint(provider_changed)
+    refute Command.fingerprint(left) == Command.fingerprint(work_changed)
   end
 
   test "a different effect (different capability_id) is NOT deduplicated by the fingerprint" do
