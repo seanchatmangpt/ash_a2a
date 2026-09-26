@@ -137,18 +137,56 @@ defmodule AshA2A.ExecutionSnapshot do
     {:ok, %{snapshot | state: :refused, provider_projection: %{refusal: reason}}}
   end
 
+  @semantic_identity_fields [
+    :task_id,
+    :exact_subject,
+    :capability_digest,
+    :semantic_request_digest,
+    :tool_surface_digest,
+    :ontology_digest,
+    :policy_digest,
+    :effect_digest,
+    :authority_requirement,
+    :planner_snapshot,
+    :execution_manifest_digest,
+    :root_task_id,
+    :parent_task_id,
+    :delegation_policy,
+    :depth
+  ]
+
   @doc """
   Stable local identity for cache/topology use only.
 
-  This digest is not admission, authority, execution proof, or standing.
+  This digest intentionally includes provider/worker/lifecycle state. It is not
+  admission, authority, execution proof, semantic work identity, or standing.
   """
   @spec digest(t()) :: String.t()
   def digest(%__MODULE__{} = snapshot) do
     snapshot
     |> Map.from_struct()
+    |> canonical_digest()
+  end
+
+  @doc """
+  Provider- and transport-independent semantic identity of the admitted work.
+
+  Provider, worker, checkpoint, lifecycle state, timestamps, and consequence
+  receipt identity are excluded so reclaim/provider-extinction can change
+  topology without silently changing the work being performed.
+  """
+  @spec semantic_identity_digest(t()) :: String.t()
+  def semantic_identity_digest(%__MODULE__{} = snapshot) do
+    snapshot
+    |> Map.take(@semantic_identity_fields)
+    |> canonical_digest()
+  end
+
+  defp canonical_digest(value) do
+    value
     |> Enum.sort()
     |> :erlang.term_to_binary()
-    |> :crypto.hash(:sha256)
+    |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end
 end
