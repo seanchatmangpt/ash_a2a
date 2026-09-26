@@ -5,7 +5,7 @@ defmodule AshA2A.CapabilityReleaseTest do
 
   defp digest(char), do: "sha256:" <> String.duplicate(char, 64)
 
-  defp released(id \ "MyApp.Resource.create", version \ "26.9.26") do
+  defp released(id \\ "MyApp.Resource.create", version \\ "26.9.26") do
     candidate = CapabilityRelease.candidate(id, version, digest("a"))
     {:ok, admitted} = CapabilityRelease.admit(candidate, digest("b"))
     {:ok, released} = CapabilityRelease.release(admitted, digest("c"))
