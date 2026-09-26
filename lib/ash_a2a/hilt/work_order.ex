@@ -146,8 +146,11 @@ defmodule AshA2A.Hilt.WorkOrder do
 
     exact_subject_digest =
       case command.semantic_subject do
-        %SemanticSubject{} = subject -> Actuation.digest(SemanticSubject.fingerprint_token(subject))
-        _ -> raise ArgumentError, "HILT work order requires an exact semantic subject"
+        %SemanticSubject{} = subject ->
+          Actuation.digest(SemanticSubject.fingerprint_token(subject))
+
+        _ ->
+          raise ArgumentError, "HILT work order requires an exact semantic subject"
       end
 
     new!(

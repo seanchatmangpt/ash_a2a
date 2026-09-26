@@ -146,7 +146,10 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     ]
   end
 
-  defp validate_identity(%__MODULE__{capability_iri: capability_iri, policy_family: policy_family})
+  defp validate_identity(%__MODULE__{
+         capability_iri: capability_iri,
+         policy_family: policy_family
+       })
        when is_binary(capability_iri) and byte_size(capability_iri) > 0 and
               is_binary(policy_family) and byte_size(policy_family) > 0,
        do: :ok

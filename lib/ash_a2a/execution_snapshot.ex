@@ -310,7 +310,7 @@ defmodule AshA2A.ExecutionSnapshot do
         raise ArgumentError, "invalid execution snapshot envelope"
     end
   rescue
-    ArgumentError = error -> reraise(error, __STACKTRACE__)
+    error in ArgumentError -> reraise(error, __STACKTRACE__)
     _error -> raise ArgumentError, "invalid execution snapshot envelope"
   end
 
