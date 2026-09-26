@@ -58,7 +58,7 @@ defmodule AshA2A.Semantic.PolicyPhenotypeTest do
   end
 
   test "authority-like axes are refused before they can become phenotype state" do
-    for axis <- ~w(authority permission execution_grant execution_authority do) do
+    for axis <- ["authority", "permission", "execution_grant", "execution_authority", "do", " Authority ", "EXECUTION_GRANT"] do
       assert {:error,
               %{code: :temperament_cannot_encode_authority, detail: ^axis}} =
                PolicyPhenotype.new(
@@ -97,6 +97,7 @@ defmodule AshA2A.Semantic.PolicyPhenotypeTest do
   test "default vocabulary is behavioral and contains no authority axis" do
     axes = PolicyPhenotype.default_axes()
 
+    assert PolicyPhenotype.vocabulary_provenance() == "https://arxiv.org/abs/2609.29423"
     assert "initiative" in axes
     assert "expressiveness" in axes
     refute "authority" in axes
