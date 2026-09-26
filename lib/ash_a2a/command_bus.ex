@@ -140,7 +140,8 @@ defmodule AshA2A.CommandBus do
 
     maybe_reconcile_outbox(store, store_opts)
 
-    with {:ok, skill, _action, consequence} <-
+    with {:ok, opts} <- hilt_work_order(command, opts),
+         {:ok, skill, _action, consequence} <-
            observe_target(command, inspect_target(command, resource_or_domain)),
          {:ok, opts} <- preflight_plan_step(command, opts),
          :ok <- observe_admission(command, consequence, admit(command, consequence)),
@@ -702,6 +703,37 @@ defmodule AshA2A.CommandBus do
   end
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
+
+  # v26.9.25 HILT admission. A work order is an optional executable contract,
+  # not a new actuation path: once supplied it must already be bound into the
+  # command fingerprint via AshA2A.Hilt.WorkOrder.bind_command/2. Verification
+  # happens before capability resolution, command claim, receipt preparation or
+  # DO. Provider/transport selection is absent from the contract.
+  defp hilt_work_order(command, opts) do
+    case Keyword.get(opts, :work_order) do
+      nil ->
+        {:ok, opts}
+
+      %AshA2A.Hilt.WorkOrder{} = work_order ->
+        case AshA2A.Hilt.WorkOrder.admit_command(work_order, command) do
+          :ok ->
+            emit_boundary([:work_order], command, %{
+              outcome: :verified,
+              work_order_digest: AshA2A.Hilt.WorkOrder.identity_digest(work_order)
+            })
+
+            {:ok, opts}
+
+          {:error, code} ->
+            emit_boundary([:work_order], command, %{outcome: :refused, code: code})
+            {:error, refusal(code)}
+        end
+
+      _other ->
+        emit_boundary([:work_order], command, %{outcome: :refused, code: :invalid_command_input})
+        {:error, refusal(:invalid_command_input)}
+    end
+  end
 
   # RFC-SA2A-002 §36 Gate 5. A command presented as a plan step (`opts[:plan]`
   # or `opts[:preflight]`) must carry the preflight identity issued for exactly
