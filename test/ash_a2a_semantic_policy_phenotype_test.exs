@@ -58,9 +58,16 @@ defmodule AshA2A.Semantic.PolicyPhenotypeTest do
   end
 
   test "authority-like axes are refused before they can become phenotype state" do
-    for axis <- ["authority", "permission", "execution_grant", "execution_authority", "do", " Authority ", "EXECUTION_GRANT"] do
-      assert {:error,
-              %{code: :temperament_cannot_encode_authority, detail: ^axis}} =
+    for axis <- [
+          "authority",
+          "permission",
+          "execution_grant",
+          "execution_authority",
+          "do",
+          " Authority ",
+          "EXECUTION_GRANT"
+        ] do
+      assert {:error, %{code: :temperament_cannot_encode_authority, detail: ^axis}} =
                PolicyPhenotype.new(
                  capability_iri: "urn:sa2a:capability:Example.Search.read",
                  policy_family: "planner:Astar",

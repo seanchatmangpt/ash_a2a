@@ -1,0 +1,39 @@
+{
+  "bound_p50_us": {
+    "condition": 120.0,
+    "new": 200.0,
+    "refuse": 100.0
+  },
+  "elixir": "1.19.5",
+  "method": "timer.tc, nearest-rank percentiles, per-call = batch time / batch",
+  "otp_release": "28",
+  "results": {
+    "condition": {
+      "batch": 50,
+      "max_us": 165.8,
+      "p50_us": 32.38,
+      "p95_us": 81.68,
+      "p99_us": 139.38,
+      "samples": 400
+    },
+    "new": {
+      "batch": 50,
+      "max_us": 297.96,
+      "p50_us": 49.76,
+      "p95_us": 109.2,
+      "p99_us": 194.14,
+      "samples": 400
+    },
+    "refuse": {
+      "batch": 50,
+      "max_us": 585.46,
+      "p50_us": 24.4,
+      "p95_us": 81.22,
+      "p99_us": 154.76,
+      "samples": 400
+    }
+  },
+  "subject": "ash_a2a AshA2A.Semantic.PolicyPhenotype",
+  "system_architecture": "aarch64-apple-darwin25.2.0",
+  "warmup": 200
+}
