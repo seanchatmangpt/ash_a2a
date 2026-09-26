@@ -140,7 +140,7 @@ defmodule AshA2A.CapabilityRelease do
   explicitly supplied.
   """
   @spec guard(String.t(), keyword()) :: :ok | {:error, term()}
-  def guard(capability_id, opts \ []) when is_binary(capability_id) and is_list(opts) do
+  def guard(capability_id, opts \\ []) when is_binary(capability_id) and is_list(opts) do
     closure =
       Keyword.get(opts, :capability_release_closure) ||
         Application.get_env(:ash_a2a, :capability_release_closure)
