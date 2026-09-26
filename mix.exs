@@ -15,7 +15,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.9.24",
+      version: "26.9.25",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -306,6 +306,10 @@ defmodule AshA2A.MixProject do
       # `lib/ash_a2a/semantic/canonical_graph.ex` call it outside the test
       # env, the same real constraint documented for `:plug`/`:ekv`.
       {:rdf, "~> 3.0"},
+      # RFC 8785 JSON Canonicalization Scheme. Already locked transitively
+      # through :rdf; promoted to a direct dependency because release-closure
+      # portable identity calls Jcs.encode/1 at runtime.
+      {:jcs, "~> 0.2"},
       # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
       # runtime. ONE declaration shared by two independent hosts of the same
       # vendored `priv/graphlaw/praxis_graphlaw.wasm` law package:

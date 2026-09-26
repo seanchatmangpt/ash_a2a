@@ -141,9 +141,10 @@ defmodule AshA2A.CommandBus do
 
     maybe_reconcile_outbox(store, store_opts)
 
-    with {:ok, skill, _action, consequence} <-
+    with {:ok, opts} <- hilt_work_order(command, opts),
+         {:ok, skill, _action, consequence} <-
            observe_target(command, inspect_target(command, resource_or_domain)),
-         :ok <- enforce_release_closure(skill, opts),
+         {:ok, opts} <- bind_release_closure(skill, opts),
          {:ok, opts} <- preflight_plan_step(command, opts),
          :ok <- observe_admission(command, consequence, admit(command, consequence)),
          :ok <- observe_kill_switch(command, check_kill_switch(opts)),
@@ -177,10 +178,13 @@ defmodule AshA2A.CommandBus do
   # powerless even if they are otherwise present in the compiled capability
   # index. The closure is evidence identity, not authority; normal BRCE
   # admission still follows this gate.
-  defp enforce_release_closure(skill, opts) do
-    case CapabilityRelease.guard(skill.id, opts) do
-      :ok ->
-        :ok
+  defp bind_release_closure(skill, opts) do
+    case CapabilityRelease.binding(skill.id, opts) do
+      {:ok, nil} ->
+        {:ok, opts}
+
+      {:ok, binding} ->
+        {:ok, Keyword.put(opts, :capability_release_binding, binding)}
 
       {:error, reason} ->
         {:error,
@@ -399,11 +403,25 @@ defmodule AshA2A.CommandBus do
       "actuation identity is already claimed for this effect; refusing to repeat the consequence"
 
   defp receipt_opts(%Actuation{} = actuation, opts) do
+    release_attributes =
+      opts
+      |> Keyword.get(:capability_release_binding)
+      |> CapabilityRelease.attributes()
+
+    intended_effect =
+      opts
+      |> Keyword.get(:intended_effect, %{})
+      |> Map.new()
+      |> Map.merge(release_attributes)
+
     [actuation: actuation]
     |> maybe_put(:plan_digest, Keyword.get(opts, :plan_digest))
     |> maybe_put(:evidence_class, Keyword.get(opts, :evidence_class))
-    |> maybe_put(:intended_effect, Keyword.get(opts, :intended_effect))
+    |> maybe_put(:intended_effect, nonempty_map(intended_effect))
   end
+
+  defp nonempty_map(map) when map_size(map) == 0, do: nil
+  defp nonempty_map(map), do: map
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
@@ -725,6 +743,37 @@ defmodule AshA2A.CommandBus do
   end
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
+
+  # v26.9.25 HILT admission. A work order is an optional executable contract,
+  # not a new actuation path. It must already be bound into Command.fingerprint/1
+  # via AshA2A.Hilt.WorkOrder.bind_command/2. Verification happens before
+  # capability resolution, release-closure gating, claim, receipt preparation,
+  # or DO. Provider and transport selection are absent from the contract.
+  defp hilt_work_order(command, opts) do
+    case Keyword.get(opts, :work_order) do
+      nil ->
+        {:ok, opts}
+
+      %AshA2A.Hilt.WorkOrder{} = work_order ->
+        case AshA2A.Hilt.WorkOrder.admit_command(work_order, command) do
+          :ok ->
+            emit_boundary([:work_order], command, %{
+              outcome: :verified,
+              work_order_digest: AshA2A.Hilt.WorkOrder.identity_digest(work_order)
+            })
+
+            {:ok, opts}
+
+          {:error, code} ->
+            emit_boundary([:work_order], command, %{outcome: :refused, code: code})
+            {:error, refusal(code)}
+        end
+
+      _other ->
+        emit_boundary([:work_order], command, %{outcome: :refused, code: :invalid_command_input})
+        {:error, refusal(:invalid_command_input)}
+    end
+  end
 
   # RFC-SA2A-002 §36 Gate 5. A command presented as a plan step (`opts[:plan]`
   # or `opts[:preflight]`) must carry the preflight identity issued for exactly
