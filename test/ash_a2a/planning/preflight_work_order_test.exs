@@ -73,9 +73,12 @@ defmodule AshA2A.Planning.PreflightWorkOrderTest do
       assert {:error,
               %{
                 code: :preflight_work_order_mismatch,
-                detail: %{plan_digest: plan_digest, work_order_digest: ^@replanned}
+                detail: %{plan_digest: plan_digest, work_order_digest: claimed}
               }} = Preflight.admit_step(preflight, plan, command)
 
+      # `^` pins only bind variables, not module attributes, so the claimed
+      # digest is compared at runtime instead of pinned in the pattern.
+      assert claimed == @replanned
       assert plan_digest == preflight.plan_digest
       assert plan_digest == planned.package.plan_digest
     end
