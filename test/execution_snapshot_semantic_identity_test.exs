@@ -64,9 +64,7 @@ defmodule AshA2A.ExecutionSnapshotSemanticIdentityTest do
              )
 
     refute ExecutionSnapshot.semantic_identity_digest(original) ==
-             ExecutionSnapshot.semantic_identity_digest(
-               snapshot(authority_requirement: "DO")
-             )
+             ExecutionSnapshot.semantic_identity_digest(snapshot(authority_requirement: "DO"))
   end
 
   test "digests are lowercase sha256 hex" do
