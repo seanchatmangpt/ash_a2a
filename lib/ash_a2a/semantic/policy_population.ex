@@ -307,7 +307,7 @@ defmodule AshA2A.Semantic.PolicyPopulation do
         |> Map.delete(:authority_semantics)
 
       case payload
-           |> transport_keys()
+           |> population_transport_keys()
            |> Enum.find(fn key -> String.downcase(String.trim(key)) in forbidden end) do
         nil -> :ok
         found -> refuse(:population_authority_smuggling, found)
@@ -349,12 +349,22 @@ defmodule AshA2A.Semantic.PolicyPopulation do
     ArgumentError -> Map.get(map, key, default)
   end
 
-  defp transport_keys(value) when is_map(value) do
-    Enum.flat_map(value, fn {key, nested} -> [to_string(key) | transport_keys(nested)] end)
+  defp population_transport_keys(value) when is_map(value) do
+    Enum.flat_map(value, fn {key, nested} ->
+      string_key = to_string(key)
+
+      cond do
+        string_key == "authority_semantics" -> []
+        string_key == "phenotype" -> [string_key]
+        true -> [string_key | population_transport_keys(nested)]
+      end
+    end)
   end
 
-  defp transport_keys(value) when is_list(value), do: Enum.flat_map(value, &transport_keys/1)
-  defp transport_keys(_value), do: []
+  defp population_transport_keys(value) when is_list(value),
+    do: Enum.flat_map(value, &population_transport_keys/1)
+
+  defp population_transport_keys(_value), do: []
 
   defp refuse(code, detail), do: {:error, %{code: code, detail: detail}}
 end
