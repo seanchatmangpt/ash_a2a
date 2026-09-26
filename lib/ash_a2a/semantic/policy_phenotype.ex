@@ -244,16 +244,34 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   defp decode_reaction_norms(other), do: other
 
   defp reject_authority_smuggling(map) do
-    forbidden = ~w(authority permission execution_grant execution_authority grant token credential)
+    expected_semantics = %{
+      "candidate_only" => true,
+      "phenotype_has_authority" => false,
+      "execution_authority" => "external_command_bus_brce"
+    }
 
-    found =
-      map
-      |> transport_keys()
-      |> Enum.find(fn key -> String.downcase(String.trim(key)) in forbidden end)
+    semantics = value(map, "authority_semantics", expected_semantics)
 
-    if found == nil,
-      do: :ok,
-      else: refuse(:phenotype_authority_smuggling, found)
+    if semantics != expected_semantics do
+      refuse(:phenotype_authority_smuggling, {:authority_semantics, semantics})
+    else
+      forbidden =
+        ~w(authority permission execution_grant execution_authority grant token credential)
+
+      payload =
+        map
+        |> Map.delete("authority_semantics")
+        |> Map.delete(:authority_semantics)
+
+      found =
+        payload
+        |> transport_keys()
+        |> Enum.find(fn key -> String.downcase(String.trim(key)) in forbidden end)
+
+      if found == nil,
+        do: :ok,
+        else: refuse(:phenotype_authority_smuggling, found)
+    end
   end
 
   defp transport_keys(value) when is_map(value) do
