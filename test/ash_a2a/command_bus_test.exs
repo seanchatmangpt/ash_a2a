@@ -3,7 +3,8 @@ defmodule AshA2A.CommandBusTest do
 
   import AshA2A.Test.MessageHelpers
 
-  alias AshA2A.{Authority, Command, CommandBus, Identity, ReceiptStore}
+  alias AshA2A.{Authority, Command, CommandBus, Identity, ReceiptStore, SemanticSubject}
+  alias AshA2A.Hilt.WorkOrder
   alias AshA2A.Test.Fixture.{Crashy, Echo, Item}
 
   setup do
@@ -248,4 +249,134 @@ defmodule AshA2A.CommandBusTest do
     assert replay.replayed?
     assert replay.receipt_id == receipt.receipt_id
   end
+
+  test "HILT work order is verified before claim and survives provider substitution", %{
+    store_opts: store_opts
+  } do
+    {:ok, subject} =
+      SemanticSubject.new(
+        graph_digest: "sha256:" <> String.duplicate("a", 64),
+        projection_digest: "sha256:" <> String.duplicate("b", 64),
+        manufacturer_digest: "sha256:" <> String.duplicate("c", 64),
+        ephemeral?: false
+      )
+
+    candidate =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "hilt-read-1",
+        agent_id: "agent-1",
+        principal_id: "anonymous",
+        task_id: "hilt-task-1",
+        semantic_subject: subject,
+        input: %{},
+        metadata: %{
+          candidate_digest: "sha256:hilt-candidate",
+          provider: "provider-a",
+          transport: "wss"
+        }
+      )
+
+    work_order =
+      WorkOrder.for_command!(candidate, :observe,
+        work_order_id: "hilt-wo-1",
+        observation_bounds: %{resources: ["echo"], max_items: 1},
+        action_bounds: %{actions: [candidate.capability_id], max_external_requests: 0},
+        authority_ceiling: :observe,
+        process_evidence: %{ocel_required: true},
+        falsifier: %{refuse_on: [:stale_subject, :candidate_substitution]}
+      )
+
+    bound = WorkOrder.bind_command(work_order, candidate)
+
+    assert {:ok, first} =
+             CommandBus.run(bound, data_message(%{}), Echo,
+               store_opts: store_opts,
+               work_order: work_order
+             )
+
+    assert first.status == :completed
+    assert first.metadata.work_order_digest == WorkOrder.identity_digest(work_order)
+    assert first.metadata.candidate_digest == "sha256:hilt-candidate"
+
+    provider_changed_candidate =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "hilt-read-1",
+        agent_id: "agent-1",
+        principal_id: "anonymous",
+        task_id: "hilt-task-1",
+        semantic_subject: subject,
+        input: %{},
+        metadata: %{
+          candidate_digest: "sha256:hilt-candidate",
+          provider: "provider-b",
+          transport: "http"
+        }
+      )
+
+    provider_changed = WorkOrder.bind_command(work_order, provider_changed_candidate)
+
+    assert provider_changed.fingerprint == bound.fingerprint
+
+    assert {:ok, replay} =
+             CommandBus.run(provider_changed, data_message(%{}), Echo,
+               store_opts: store_opts,
+               work_order: work_order
+             )
+
+    assert replay.replayed?
+    assert replay.receipt_id == first.receipt_id
+  end
+
+  test "HILT stale candidate is refused before receipt-store claim", %{store_opts: store_opts} do
+    {:ok, subject} =
+      SemanticSubject.new(
+        graph_digest: "sha256:" <> String.duplicate("d", 64),
+        projection_digest: "sha256:" <> String.duplicate("e", 64),
+        manufacturer_digest: "sha256:" <> String.duplicate("f", 64)
+      )
+
+    candidate =
+      Command.new("AshA2A.Test.Fixture.Echo.read",
+        command_id: "hilt-stale-1",
+        agent_id: "agent-1",
+        principal_id: "anonymous",
+        task_id: "hilt-task-stale",
+        semantic_subject: subject,
+        input: %{},
+        metadata: %{candidate_digest: "sha256:admitted-candidate"}
+      )
+
+    work_order =
+      WorkOrder.for_command!(candidate, :observe,
+        work_order_id: "hilt-wo-stale",
+        observation_bounds: %{resources: ["echo"]},
+        action_bounds: %{actions: [candidate.capability_id]},
+        authority_ceiling: :observe,
+        process_evidence: %{ocel_required: true},
+        falsifier: %{candidate_substitution: :refuse}
+      )
+
+    bound = WorkOrder.bind_command(work_order, candidate)
+
+    forged =
+      Command.new(bound.capability_id,
+        command_id: bound.command_id,
+        agent_id: bound.agent_id,
+        principal_id: bound.principal_id,
+        task_id: bound.task_id,
+        semantic_subject: bound.semantic_subject,
+        input: bound.input,
+        submitted_at: bound.submitted_at,
+        metadata: Map.put(bound.metadata, :candidate_digest, "sha256:forged-candidate")
+      )
+
+    assert {:error, %{code: :stale_candidate_identity}} =
+             CommandBus.run(forged, data_message(%{}), Echo,
+               store_opts: store_opts,
+               work_order: work_order
+             )
+
+    assert :error = ReceiptStore.Memory.fetch(forged.command_id, store_opts)
+  end
+
 end
