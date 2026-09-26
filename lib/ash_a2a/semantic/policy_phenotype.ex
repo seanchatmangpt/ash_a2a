@@ -21,6 +21,8 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   cannot be used as a disguised execution permission.
   """
 
+  @vocabulary_provenance "https://arxiv.org/abs/2609.29423"
+
   @forbidden_axes MapSet.new([
                     "authority",
                     "permission",
@@ -124,6 +126,10 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   @spec actuation_boundary() :: :external_command_bus_brce
   def actuation_boundary, do: :external_command_bus_brce
 
+  @doc "Provenance for the temperament vocabulary, not evidence for a specific phenotype value."
+  @spec vocabulary_provenance() :: String.t()
+  def vocabulary_provenance, do: @vocabulary_provenance
+
   @doc "The supported temperament vocabulary from arXiv:2609.29423."
   @spec default_axes() :: [String.t()]
   def default_axes do
@@ -153,7 +159,7 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
       Map.keys(phenotype.conditionable_axes) ++
         Map.keys(phenotype.condition) ++ Map.keys(phenotype.reaction_norms)
 
-    case Enum.find(axes, &MapSet.member?(@forbidden_axes, &1)) do
+    case Enum.find(axes, &forbidden_axis?/1) do
       nil -> :ok
       axis -> refuse(:temperament_cannot_encode_authority, axis)
     end
@@ -207,6 +213,15 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
         {:halt, refuse(:invalid_reaction_norm, entry)}
     end)
   end
+
+  defp forbidden_axis?(axis) when is_binary(axis) do
+    axis
+    |> String.trim()
+    |> String.downcase()
+    |> then(&MapSet.member?(@forbidden_axes, &1))
+  end
+
+  defp forbidden_axis?(_axis), do: false
 
   defp clamp(value, min, _max) when value < min, do: min
   defp clamp(value, _min, max) when value > max, do: max
