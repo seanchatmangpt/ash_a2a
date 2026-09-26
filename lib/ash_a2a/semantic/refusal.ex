@@ -185,6 +185,7 @@ defmodule AshA2A.Semantic.Refusal do
     refused_graph_identity_mismatch: :refused_identity,
 
     # --- REFUSED_NAMESPACE ------------------------------------------------
+    unknown_condition_axis: :refused_namespace,
     undeclared_predicate: :refused_namespace,
     undeclared_object: :refused_namespace,
     foreign_format: :refused_namespace,
@@ -192,6 +193,8 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- REFUSED_STRUCTURE ------------------------------------------------
     semantic_fields_missing: :refused_structure,
+    invalid_policy_phenotype: :refused_structure,
+    invalid_reaction_norm: :refused_structure,
     semantic_item_invalid: :refused_structure,
     semantic_goal_missing: :refused_structure,
     invalid_semantic_ir: :refused_structure,
@@ -291,6 +294,7 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
+    temperament_cannot_encode_authority: :refused_authority,
     authority_mismatch: :refused_authority,
     # `AshA2A.Authority.Decision.verdict/1`: a declared consequence that
     # contradicts (or lacks) the DSL attestation stays in the authority branch
@@ -329,6 +333,8 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- REFUSED_BOUNDS ---------------------------------------------------
     max_children: :refused_bounds,
+    invalid_condition_axis_range: :refused_bounds,
+    condition_out_of_range: :refused_bounds,
     standing_bounds_exceeded: :refused_bounds,
 
     # --- REFUSED_META_RIGOR -----------------------------------------------
