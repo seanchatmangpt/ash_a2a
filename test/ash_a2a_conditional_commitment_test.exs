@@ -82,4 +82,34 @@ defmodule AshA2AConditionalCommitmentTest do
     assert decision.refusal_code == :command_id_mismatch
     refute decision.ready_for_do?
   end
+
+  test "commitment digest is deterministic and changes at preparation" do
+    command = command(authorized: true)
+    receipt = pending_receipt(command)
+
+    authorized_digest = ConditionalCommitment.digest(command)
+    prepared_digest = ConditionalCommitment.digest(command, receipt)
+
+    assert authorized_digest == ConditionalCommitment.digest(command)
+    assert prepared_digest == ConditionalCommitment.digest(command, receipt)
+    refute authorized_digest == prepared_digest
+    assert String.length(authorized_digest) == 64
+    assert String.length(prepared_digest) == 64
+  end
+
+  test "metadata is bounded and exposes no raw command input or authority evidence" do
+    command = command(authorized: true)
+    receipt = pending_receipt(command)
+
+    metadata = ConditionalCommitment.metadata(command, receipt)
+
+    assert metadata.commitment_standing == :prepared
+    assert metadata.commitment_authorized
+    assert metadata.commitment_prepared
+    assert metadata.commitment_ready_for_do
+    assert is_binary(metadata.commitment_digest)
+    assert is_binary(metadata.prepared_receipt_id)
+    refute Map.has_key?(metadata, :input)
+    refute Map.has_key?(metadata, :authority)
+  end
 end
