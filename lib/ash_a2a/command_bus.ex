@@ -111,6 +111,7 @@ defmodule AshA2A.CommandBus do
   alias AshA2A.{
     Actuation,
     Authority,
+    CapabilityRelease,
     Command,
     Identity,
     KillSwitch,
@@ -142,6 +143,7 @@ defmodule AshA2A.CommandBus do
 
     with {:ok, skill, _action, consequence} <-
            observe_target(command, inspect_target(command, resource_or_domain)),
+         :ok <- enforce_release_closure(skill, opts),
          {:ok, opts} <- preflight_plan_step(command, opts),
          :ok <- observe_admission(command, consequence, admit(command, consequence)),
          :ok <- observe_kill_switch(command, check_kill_switch(opts)),
@@ -166,6 +168,27 @@ defmodule AshA2A.CommandBus do
         {:error, reason} ->
           {:error, refusal(reason)}
       end
+    end
+  end
+
+  # v26.9.26 RACaP boundary: when strict release mode is enabled, a
+  # capability is executable only if its exact A2A skill id is present in the
+  # frozen released closure. Candidate/admitted/retired artifacts remain
+  # powerless even if they are otherwise present in the compiled capability
+  # index. The closure is evidence identity, not authority; normal BRCE
+  # admission still follows this gate.
+  defp enforce_release_closure(skill, opts) do
+    case CapabilityRelease.guard(skill.id, opts) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        {:error,
+         %{
+           code: :capability_release_refused,
+           detail: "capability is outside the frozen released execution closure",
+           reason: reason
+         }}
     end
   end
 
