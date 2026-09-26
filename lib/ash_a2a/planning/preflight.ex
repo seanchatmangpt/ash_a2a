@@ -19,6 +19,10 @@ defmodule AshA2A.Planning.BoundedPlan do
       (`[%{capability_id: ...}]`); never a grant
     * `:semantic_subject` -- the exact `AshA2A.SemanticSubject` the plan was
       constructed for
+    * `:work_order_digest` -- the admitted work-order identity this plan was
+      manufactured under (`"sha256:<hex>"` or `nil` when the planner ran
+      outside an admitted work order). Evidence bound by the preflight
+      identity, never authority: it names the order, it does not grant it.
 
   Standing `:candidate`, authority `:none`. A bounded plan is not authority:
   every step still needs its own `AshA2A.Authority` at `AshA2A.CommandBus`.
@@ -37,7 +41,7 @@ defmodule AshA2A.Planning.BoundedPlan do
     :authority_requirement,
     :semantic_subject
   ]
-  defstruct @enforce_keys ++ [standing: :candidate, authority: :none]
+  defstruct @enforce_keys ++ [work_order_digest: nil, standing: :candidate, authority: :none]
 
   @type step :: %{capability_id: String.t(), input: map()}
 
@@ -53,6 +57,7 @@ defmodule AshA2A.Planning.BoundedPlan do
           financial_envelope: map(),
           authority_requirement: [map()],
           semantic_subject: AshA2A.SemanticSubject.t(),
+          work_order_digest: String.t() | nil,
           standing: :candidate,
           authority: :none
         }
@@ -77,6 +82,21 @@ defmodule AshA2A.Planning.Preflight do
   preparation or actuation. The executing plan is then re-validated, so a
   hand-built preflight identity over an out-of-bounds plan is refused too.
 
+  The planner-selected action is additionally bound to the admitted work-order
+  identity: the plan's `:work_order_digest` is bound into the preflight
+  identity like every other consequence-changing field, and a step that CLAIMS
+  a work-order identity different from the one admitted at preflight
+  construction is refused `:preflight_work_order_mismatch` (naming the
+  preflighted `:plan_digest` and the claimed `:work_order_digest`), so a
+  replanned action cannot execute under a different work order than admitted.
+  Missing-digest semantics follow the existing bound-field rules: a step that
+  claims no `:work_order_digest` (nothing in `command.metadata`) is admitted on
+  the step identity it always carried (`capability_id` + `input`); only a
+  claim that disagrees with the preflighted digest -- including a claim made to
+  a plan preflighted without one -- is refused. The binding is evidence: a
+  verified step still requires a real `AshA2A.Authority` at
+  `CommandBus.admit/2`.
+
   A preflight is evidence, never authority (`authority: :none`): a verified
   step still requires a real `AshA2A.Authority` at `CommandBus.admit/2`.
 
@@ -91,6 +111,8 @@ defmodule AshA2A.Planning.Preflight do
        `:preflight_authority_requirement_missing`)
     6. the semantic subject is bound to this package
        (`:preflight_semantic_subject_mismatch`)
+    7. a plan step's claimed work-order identity equals the one admitted at
+       preflight construction (`:preflight_work_order_mismatch`)
   """
 
   alias AshA2A.Planning.BoundedPlan
@@ -109,6 +131,7 @@ defmodule AshA2A.Planning.Preflight do
     :financial_envelope,
     :authority_requirement,
     :semantic_subject,
+    :work_order_digest,
     :standing,
     :authority
   ]
@@ -120,6 +143,7 @@ defmodule AshA2A.Planning.Preflight do
     :preflight_digest,
     :plan_digest,
     :field_digests,
+    :work_order_digest,
     bound_fields: @bound_fields,
     standing: :preflighted,
     authority: :none
@@ -129,6 +153,7 @@ defmodule AshA2A.Planning.Preflight do
           preflight_digest: String.t(),
           plan_digest: String.t(),
           field_digests: %{atom() => String.t()},
+          work_order_digest: String.t() | nil,
           bound_fields: [atom()],
           standing: :preflighted,
           authority: :none
@@ -153,7 +178,8 @@ defmodule AshA2A.Planning.Preflight do
       preflight_bound_exceeded: :refused_bounds,
       preflight_step_not_in_plan: :refused_plan,
       preflight_authority_requirement_missing: :refused_authority,
-      preflight_semantic_subject_mismatch: :refused_identity
+      preflight_semantic_subject_mismatch: :refused_identity,
+      preflight_work_order_mismatch: :refused_identity
     }
   end
 
@@ -170,6 +196,7 @@ defmodule AshA2A.Planning.Preflight do
        %__MODULE__{
          preflight_digest: identity_digest(field_digests),
          plan_digest: plan.plan_package.plan_digest,
+         work_order_digest: plan.work_order_digest,
          field_digests: field_digests
        }}
     end
@@ -181,7 +208,9 @@ defmodule AshA2A.Planning.Preflight do
 
   `preflight` must be the identity issued for exactly `plan`: every bound
   field is re-digested and compared; the plan is re-validated; the command
-  must be one of the plan's steps.
+  must be one of the plan's steps; and a work-order identity the step claims
+  (`command.metadata["work_order_digest"]`) must equal the one admitted at
+  preflight construction.
   """
   @spec admit_step(t() | nil, BoundedPlan.t() | nil, map()) :: {:ok, t()} | refusal()
   def admit_step(nil, _plan, _command),
@@ -193,6 +222,7 @@ defmodule AshA2A.Planning.Preflight do
   def admit_step(%__MODULE__{} = preflight, %BoundedPlan{} = plan, command) do
     with :ok <- same_identity(preflight, plan),
          :ok <- validate(plan),
+         :ok <- work_order_bound(preflight, command),
          :ok <- step_in_plan(plan, command) do
       {:ok, preflight}
     end
@@ -234,6 +264,40 @@ defmodule AshA2A.Planning.Preflight do
       })
     end
   end
+
+  # --- work-order binding ------------------------------------------------------
+
+  # The replan guard: a plan step that claims a work-order identity must claim
+  # the one the preflighted plan was admitted under, so a replanned action
+  # cannot execute under a different work order than admitted. A step that
+  # claims no identity keeps the existing step semantics (capability + input);
+  # only a disagreeing claim -- including a claim against a plan preflighted
+  # without one -- is refused, fail closed. Evidence, never authority: this
+  # names the order, it never grants it. Pinned cross-lane refusal shape
+  # (v26.9.25 _LANES-strategic-loop RESOLUTIONS 5): the refusal names both the
+  # admitted plan and the claimed order.
+  defp work_order_bound(%__MODULE__{} = preflight, command) do
+    admitted = preflight.work_order_digest
+
+    case work_order_claim(command) do
+      nil -> :ok
+      ^admitted -> :ok
+
+      claimed ->
+        error(:preflight_work_order_mismatch, %{
+          plan_digest: preflight.plan_digest,
+          work_order_digest: claimed
+        })
+    end
+  end
+
+  # The claim rides in the command's metadata under the string or atom key;
+  # `%AshA2A.Command{}` carries it there and plain maps are accepted too.
+  defp work_order_claim(%{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, "work_order_digest") || Map.get(metadata, :work_order_digest)
+  end
+
+  defp work_order_claim(_command), do: nil
 
   # --- validation -------------------------------------------------------------
 

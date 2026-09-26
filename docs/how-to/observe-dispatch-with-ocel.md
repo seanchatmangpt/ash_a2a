@@ -76,7 +76,9 @@ marks the calling process for the duration of that internal call, and
 exactly one real HTTP-posted event per logical CommandBus-routed dispatch,
 carrying both receipt-derived fields (`capability_id`, `consequence`,
 `status`, `command_id`, `execution_id`, `fingerprint`, `principal_id`,
-`replayed`) and the dispatch-derived ones. A direct, non-CommandBus
+`replayed`, and — when SPG identity is provided — `spg_graph_id`,
+`spg_graph_version`, `spg_node_id`, `spg_edge_id`,
+`spg_projection_family`) and the dispatch-derived ones. A direct, non-CommandBus
 `AshA2A.Dispatcher.dispatch/6` call (e.g. a `:observe`/`:read` skill, or a
 caller that bypasses the default agent path entirely) is unaffected and
 still posts its own single dispatch event exactly as before.

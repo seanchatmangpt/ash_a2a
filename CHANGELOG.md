@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [Unreleased] - 2026-09-25
+
+### Added
+
+- `AshA2A.SpgIdentity` module (d660a9e) — SPG evidence identity for commands:
+  `graph_id`/`graph_version`/`node_id` required, `edge_id`/`projection_family`
+  optional; evidence only, grants neither capability nor authority;
+  `new/1` refuses with `{:error, {:refused_spg_identity, field}}`.
+
+### Changed
+
+- `AshA2A.Command` carries an optional `:spg_identity` (`AshA2A.SpgIdentity`);
+  its token joins the deterministic fingerprint digest, and receipts,
+  `SemanticProjection` output, and OCEL events forward the five `spg_*`
+  attributes (`spg_graph_id`, `spg_graph_version`, `spg_node_id`,
+  `spg_edge_id`, `spg_projection_family`) when SPG identity is present.
+
 ## [26.9.22] - 2026-09-23
 
 ### Fixed
