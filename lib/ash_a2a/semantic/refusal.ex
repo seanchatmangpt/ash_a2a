@@ -160,6 +160,7 @@ defmodule AshA2A.Semantic.Refusal do
   @mapping %{
     # --- REFUSED_IDENTITY -------------------------------------------------
     semantic_identity_invalid: :refused_identity,
+    policy_phenotype_digest_mismatch: :refused_identity,
     semantic_ir_unsealed: :refused_identity,
     semantic_ir_seal_invalid: :refused_identity,
     semantic_source_mismatch: :refused_identity,
@@ -194,6 +195,7 @@ defmodule AshA2A.Semantic.Refusal do
     # --- REFUSED_STRUCTURE ------------------------------------------------
     semantic_fields_missing: :refused_structure,
     invalid_policy_phenotype: :refused_structure,
+    invalid_policy_phenotype_transport: :refused_structure,
     invalid_reaction_norm: :refused_structure,
     semantic_item_invalid: :refused_structure,
     semantic_goal_missing: :refused_structure,
@@ -295,6 +297,7 @@ defmodule AshA2A.Semantic.Refusal do
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
     temperament_cannot_encode_authority: :refused_authority,
+    phenotype_authority_smuggling: :refused_authority,
     authority_mismatch: :refused_authority,
     # `AshA2A.Authority.Decision.verdict/1`: a declared consequence that
     # contradicts (or lacks) the DSL attestation stays in the authority branch
