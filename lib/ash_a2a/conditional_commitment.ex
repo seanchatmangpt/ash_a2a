@@ -9,15 +9,12 @@ defmodule AshA2A.ConditionalCommitment do
       proposal != authority != prepared consequence
 
   AshA2A.BrceAnchor remains the sole-DO fence. This module is an upstream
-  classifier that lets planners, agents, and governance surfaces ask whether a
-  command is merely proposed, currently authorized, or actually backed by the
-  exact pending receipt that BRCE requires before DO.
-
-  A request for approval is therefore never represented as approval, and an
-  authority grant alone is never represented as permission to cross BRCE.
+  classifier and observation surface. A request for approval is never
+  represented as approval, and an authority grant alone is never represented
+  as permission to cross BRCE.
   """
 
-  alias AshA2A.{Authority, Command, Receipt}
+  alias AshA2A.{Authority, Command, Identity, Receipt}
 
   @type standing :: :proposed | :authorized | :prepared | :refused
 
@@ -32,17 +29,6 @@ defmodule AshA2A.ConditionalCommitment do
           ready_for_do?: boolean()
         }
 
-  @doc """
-  Classify an existing command and optional prepared receipt.
-
-  The classifier is deliberately strict:
-  * a command with no matching live authority is only a proposal;
-  * a matching authority without a pending receipt is authorized but not ready;
-  * a pending receipt must bind the exact command id, capability, and fingerprint;
-  * a mismatched receipt is a typed refusal, never evidence of preparation.
-
-  ready_for_do? can only be true for :prepared.
-  """
   @spec classify(Command.t(), Receipt.t() | nil) :: t()
   def classify(%Command{} = command, receipt \\ nil) do
     authorized? = Authority.admits?(command.authority, command)
@@ -68,6 +54,52 @@ defmodule AshA2A.ConditionalCommitment do
     classify(command, receipt).ready_for_do?
   end
 
+  @doc """
+  Deterministic digest of the exact command/receipt commitment projection.
+
+  The digest is observation identity only. It confers no authority and is not
+  an idempotency token for actuation.
+  """
+  @spec digest(Command.t(), Receipt.t() | nil) :: String.t()
+  def digest(%Command{} = command, receipt \\ nil) do
+    decision = classify(command, receipt)
+
+    {
+      Identity.external(command.command_id),
+      command.capability_id,
+      command.fingerprint,
+      receipt_identity(receipt),
+      decision.standing,
+      decision.authorized?,
+      decision.prepared?,
+      decision.ready_for_do?,
+      decision.refusal_code
+    }
+    |> :erlang.term_to_binary([:deterministic])
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
+  end
+
+  @doc """
+  Bounded telemetry/OCEL-safe projection of commitment standing.
+
+  No raw authority evidence or command input is included.
+  """
+  @spec metadata(Command.t(), Receipt.t() | nil) :: map()
+  def metadata(%Command{} = command, receipt \\ nil) do
+    decision = classify(command, receipt)
+
+    %{
+      commitment_standing: decision.standing,
+      commitment_authorized: decision.authorized?,
+      commitment_prepared: decision.prepared?,
+      commitment_ready_for_do: decision.ready_for_do?,
+      commitment_refusal_code: decision.refusal_code,
+      commitment_digest: digest(command, receipt),
+      prepared_receipt_id: receipt_identity(receipt)
+    }
+  end
+
   defp receipt_binding(_command, nil), do: :absent
 
   defp receipt_binding(%Command{} = command, %Receipt{status: :pending} = receipt) do
@@ -80,6 +112,11 @@ defmodule AshA2A.ConditionalCommitment do
   end
 
   defp receipt_binding(_command, %Receipt{}), do: {:mismatch, :receipt_not_pending}
+
+  defp receipt_identity(%Receipt{receipt_id: %Identity{} = receipt_id}),
+    do: Identity.external(receipt_id)
+
+  defp receipt_identity(_), do: nil
 
   defp decision(standing, authorized?, prepared?, refusal_code) do
     %__MODULE__{
