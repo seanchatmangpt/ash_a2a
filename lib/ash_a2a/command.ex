@@ -127,11 +127,11 @@ defmodule AshA2A.Command do
   same fingerprint.
   """
   @spec candidate_digest(t()) :: String.t() | nil
-  def candidate_digest(%__MODULE__{metadata: metadata}), do: candidate_digest(metadata)
+  def candidate_digest(%__MODULE__{metadata: metadata}), do: metadata_candidate_digest(metadata)
 
   @doc "Work-order digest when this command is bound to an executable HILT work order."
   @spec work_order_digest(t()) :: String.t() | nil
-  def work_order_digest(%__MODULE__{metadata: metadata}), do: work_order_digest(metadata)
+  def work_order_digest(%__MODULE__{metadata: metadata}), do: metadata_work_order_digest(metadata)
 
   # Backwards-compatible semantic metadata token. When no work-order binding
   # exists this returns exactly the historical GALL candidate token, preserving
@@ -139,27 +139,31 @@ defmodule AshA2A.Command do
   # existed. Once a work-order digest is present, the product becomes identity-
   # bearing and a stale command cannot be replayed under a different work order.
   defp semantic_metadata_identity(metadata) do
-    candidate = candidate_digest(metadata)
-    work_order = work_order_digest(metadata)
+    candidate = metadata_candidate_digest(metadata)
+    work_order = metadata_work_order_digest(metadata)
 
     if is_nil(work_order), do: candidate, else: {candidate, work_order}
   end
 
-  defp candidate_digest(metadata) when is_map(metadata) do
+  # Metadata-level lookups behind the public `candidate_digest/1` and
+  # `work_order_digest/1` accessors. Distinct names because Elixir refuses a
+  # def/defp pair sharing name and arity, and because the public and private
+  # clauses operate on different subjects (command struct vs metadata map).
+  defp metadata_candidate_digest(metadata) when is_map(metadata) do
     Map.get(metadata, :candidate_digest) ||
       Map.get(metadata, "candidate_digest") ||
       Map.get(metadata, :gall_029_candidate_digest) ||
       Map.get(metadata, "gall_029_candidate_digest")
   end
 
-  defp candidate_digest(_), do: nil
+  defp metadata_candidate_digest(_), do: nil
 
-  defp work_order_digest(metadata) when is_map(metadata) do
+  defp metadata_work_order_digest(metadata) when is_map(metadata) do
     Map.get(metadata, :work_order_digest) ||
       Map.get(metadata, "work_order_digest")
   end
 
-  defp work_order_digest(_), do: nil
+  defp metadata_work_order_digest(_), do: nil
 
   defp ensure_identity(kind, %Identity{kind: kind} = identity), do: identity
 

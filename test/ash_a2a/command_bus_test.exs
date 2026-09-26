@@ -378,5 +378,4 @@ defmodule AshA2A.CommandBusTest do
 
     assert :error = ReceiptStore.Memory.fetch(forged.command_id, store_opts)
   end
-
 end

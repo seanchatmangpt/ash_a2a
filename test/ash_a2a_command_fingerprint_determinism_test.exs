@@ -115,12 +115,14 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
     opts = base_opts(%{effect_key: "e-candidate"})
 
     canonical =
-      Command.new(@capability,
+      Command.new(
+        @capability,
         Keyword.put(opts, :metadata, %{candidate_digest: "sha256:candidate"})
       )
 
     legacy =
-      Command.new(@capability,
+      Command.new(
+        @capability,
         Keyword.put(opts, :metadata, %{gall_029_candidate_digest: "sha256:candidate"})
       )
 
@@ -133,7 +135,8 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
     opts = base_opts(%{effect_key: "e-work-order"})
 
     left =
-      Command.new(@capability,
+      Command.new(
+        @capability,
         Keyword.put(opts, :metadata, %{
           candidate_digest: "sha256:candidate",
           work_order_digest: "sha256:work-a",
@@ -143,7 +146,8 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
       )
 
     provider_changed =
-      Command.new(@capability,
+      Command.new(
+        @capability,
         Keyword.put(opts, :metadata, %{
           candidate_digest: "sha256:candidate",
           work_order_digest: "sha256:work-a",
@@ -153,7 +157,8 @@ defmodule AshA2A.CommandFingerprintDeterminismTest do
       )
 
     work_changed =
-      Command.new(@capability,
+      Command.new(
+        @capability,
         Keyword.put(opts, :metadata, %{
           candidate_digest: "sha256:candidate",
           work_order_digest: "sha256:work-b",

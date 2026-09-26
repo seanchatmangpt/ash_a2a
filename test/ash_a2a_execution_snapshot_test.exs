@@ -131,6 +131,7 @@ defmodule AshA2A.ExecutionSnapshotTest do
     assert refused.state == :refused
     assert refused.refusal == %{reason: :authority_mismatch}
     assert refused.provider_projection == snapshot.provider_projection
+
     assert ExecutionSnapshot.semantic_identity_digest(refused) ==
              ExecutionSnapshot.semantic_identity_digest(snapshot)
   end

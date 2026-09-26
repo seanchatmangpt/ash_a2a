@@ -1,7 +1,15 @@
 defmodule AshA2A.Hilt.WorkOrderExecutionIdentityTest do
   use ExUnit.Case, async: true
 
-  alias AshA2A.{Authority, Command, ExecutionIdentity, ExecutionSnapshot, Identity, SemanticSubject}
+  alias AshA2A.{
+    Authority,
+    Command,
+    ExecutionIdentity,
+    ExecutionSnapshot,
+    Identity,
+    SemanticSubject
+  }
+
   alias AshA2A.Hilt.WorkOrder
 
   @digest "sha256:" <> String.duplicate("a", 64)
@@ -156,9 +164,14 @@ defmodule AshA2A.Hilt.WorkOrderExecutionIdentityTest do
     assert :ok = ExecutionIdentity.verify_snapshot(identity, snapshot)
 
     provider_changed =
-      %{snapshot | provider_projection: %{provider: "provider-b", transport: "http"}, worker_id: "worker-b"}
+      %{
+        snapshot
+        | provider_projection: %{provider: "provider-b", transport: "http"},
+          worker_id: "worker-b"
+      }
 
     assert :ok = ExecutionIdentity.verify_snapshot(identity, provider_changed)
+
     assert ExecutionSnapshot.semantic_identity_digest(snapshot) ==
              ExecutionSnapshot.semantic_identity_digest(provider_changed)
 
