@@ -42,11 +42,12 @@ defmodule AshA2A.CapabilityRelease do
 
   defmodule Closure do
     @moduledoc false
-    @enforce_keys [:digest, :capabilities]
-    defstruct [:digest, :capabilities]
+    @enforce_keys [:digest, :portable_digest, :capabilities]
+    defstruct [:digest, :portable_digest, :capabilities]
 
     @type t :: %__MODULE__{
             digest: String.t(),
+            portable_digest: String.t(),
             capabilities: %{required(String.t()) => Capability.t()}
           }
   end
@@ -55,6 +56,7 @@ defmodule AshA2A.CapabilityRelease do
     @moduledoc false
     @enforce_keys [
       :closure_digest,
+      :portable_closure_digest,
       :capability_id,
       :capability_version,
       :capability_digest,
@@ -64,6 +66,7 @@ defmodule AshA2A.CapabilityRelease do
     ]
     defstruct [
       :closure_digest,
+      :portable_closure_digest,
       :capability_id,
       :capability_version,
       :capability_digest,
@@ -74,6 +77,7 @@ defmodule AshA2A.CapabilityRelease do
 
     @type t :: %__MODULE__{
             closure_digest: String.t(),
+            portable_closure_digest: String.t(),
             capability_id: String.t(),
             capability_version: String.t(),
             capability_digest: String.t(),
@@ -148,8 +152,9 @@ defmodule AshA2A.CapabilityRelease do
          :ok <- require_unique_ids(capabilities) do
       ordered = Enum.sort_by(capabilities, &{&1.id, &1.version, &1.digest})
       digest = digest_term(Enum.map(ordered, &closure_projection/1))
+      portable_digest = portable_digest(ordered)
       by_id = Map.new(ordered, &{&1.id, &1})
-      {:ok, %Closure{digest: digest, capabilities: by_id}}
+      {:ok, %Closure{digest: digest, portable_digest: portable_digest, capabilities: by_id}}
     end
   end
 
@@ -243,6 +248,7 @@ defmodule AshA2A.CapabilityRelease do
   def attributes(%Binding{} = binding) do
     %{
       release_closure_digest: binding.closure_digest,
+      release_portable_closure_digest: binding.portable_closure_digest,
       release_capability_id: binding.capability_id,
       release_capability_version: binding.capability_version,
       release_capability_digest: binding.capability_digest,
@@ -255,6 +261,7 @@ defmodule AshA2A.CapabilityRelease do
   defp build_binding(%Closure{} = closure, %Capability{state: :released} = capability) do
     projection = {
       closure.digest,
+      closure.portable_digest,
       capability.id,
       capability.version,
       capability.digest,
@@ -264,6 +271,7 @@ defmodule AshA2A.CapabilityRelease do
 
     %Binding{
       closure_digest: closure.digest,
+      portable_closure_digest: closure.portable_digest,
       capability_id: capability.id,
       capability_version: capability.version,
       capability_digest: capability.digest,
@@ -314,6 +322,39 @@ defmodule AshA2A.CapabilityRelease do
       capability.admission_digest,
       capability.release_digest
     }
+  end
+
+  @doc """
+  Cross-runtime closure identity using RFC 8785 JCS.
+
+  The existing `Closure.digest` remains the compatibility identity based on
+  deterministic Erlang-term encoding. This portable digest is an additional
+  identity over JSON-native data so Python/RDF/tooling can independently
+  recompute the same closure without understanding BEAM term encoding.
+  """
+  @spec portable_digest([Capability.t()]) :: String.t()
+  def portable_digest(capabilities) when is_list(capabilities) do
+    members =
+      capabilities
+      |> Enum.sort_by(&{&1.id, &1.version, &1.digest})
+      |> Enum.map(fn capability ->
+        %{
+          "capability_id" => capability.id,
+          "version" => capability.version,
+          "capability_digest" => capability.digest,
+          "admission_digest" => capability.admission_digest,
+          "release_digest" => capability.release_digest
+        }
+      end)
+
+    payload = %{
+      "schema" => "chatman.release-closure/v1",
+      "members" => members
+    }
+
+    "sha256:" <>
+      (:crypto.hash(:sha256, Jcs.encode(payload))
+       |> Base.encode16(case: :lower))
   end
 
   defp digest_term(term) do
