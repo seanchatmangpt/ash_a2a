@@ -9,7 +9,11 @@ defmodule AshA2A.Semantic.PolicyPhenotypeBenchmarkTest do
     * `new/1` on the full nine-axis default vocabulary with reaction norms
       (the admission fence: option/duplicate/normalized-authority checks);
     * `condition/2` on the same phenotype (re-validation + reaction step);
-    * `new/1` refusing a disguised authority axis (the refusal path).
+    * `new/1` refusing a disguised authority axis (the refusal path);
+    * `new/1` refusing a root split across interior token boundaries
+      (`boldness_gr_ant_level`, the ash_a2a#45 second-court window check);
+    * `new/1` admitting a 64-token benign axis name (worst realistic cost of
+      the bounded adjacent-token window scan, which must stay linear).
 
   Each sample is a batch of `@batch` calls so per-call cost is above timer
   resolution. The numbers are printed and written to
@@ -27,7 +31,12 @@ defmodule AshA2A.Semantic.PolicyPhenotypeBenchmarkTest do
   on every call measured p50 new/1 = 261-286us, condition/2 = 136-147us,
   refusal = 139-149us; the ASCII fast path measured p50 new/1 = 45-93us,
   condition/2 = 29-42us, refusal = 20-22us on the same loaded host. The
-  committed receipt records the admitted run.
+  `long_name` bound (2500us) catches the second regression observed while
+  hardening ash_a2a#45: re-checking every run of up to 15 adjacent tokens
+  measured 5198us per `new/1` on the 64-token name; the bounded left/right
+  run scan measured 485-650us at load average ~140 (the 67f48618 fence
+  without the window/digit checks: 145-180us). The committed receipt records
+  the admitted run.
 
   Tagged `:benchmark` (excluded by default in `test/test_helper.exs`):
 
@@ -42,7 +51,13 @@ defmodule AshA2A.Semantic.PolicyPhenotypeBenchmarkTest do
   @warmup 200
   @samples 400
   @batch 50
-  @p50_bound_us %{new: 200.0, condition: 120.0, refuse: 100.0}
+  @p50_bound_us %{
+    new: 200.0,
+    condition: 120.0,
+    refuse: 100.0,
+    split_refuse: 100.0,
+    long_name: 2500.0
+  }
 
   defp full_opts do
     axes = PolicyPhenotype.default_axes()
@@ -97,10 +112,32 @@ defmodule AshA2A.Semantic.PolicyPhenotypeBenchmarkTest do
     assert {:error, %{code: :temperament_cannot_encode_authority}} =
              PolicyPhenotype.new(refuse_opts)
 
+    split_opts =
+      Keyword.update!(
+        opts,
+        :conditionable_axes,
+        &Map.put(&1, "boldness_gr_ant_level", %{min: 0.0, max: 1.0})
+      )
+
+    assert {:error, %{code: :temperament_cannot_encode_authority}} =
+             PolicyPhenotype.new(split_opts)
+
+    long_axis = Enum.map_join(1..64, "_", &"trait#{&1}x")
+
+    long_opts = [
+      capability_iri: "urn:sa2a:capability:Example.Search.read",
+      policy_family: "planner:MCTS",
+      conditionable_axes: %{long_axis => %{min: 0.0, max: 1.0}}
+    ]
+
+    assert {:ok, _} = PolicyPhenotype.new(long_opts)
+
     results = %{
       new: measure(fn -> {:ok, _} = PolicyPhenotype.new(opts) end),
       condition: measure(fn -> {:ok, _} = PolicyPhenotype.condition(phenotype, 0.8) end),
-      refuse: measure(fn -> {:error, _} = PolicyPhenotype.new(refuse_opts) end)
+      refuse: measure(fn -> {:error, _} = PolicyPhenotype.new(refuse_opts) end),
+      split_refuse: measure(fn -> {:error, _} = PolicyPhenotype.new(split_opts) end),
+      long_name: measure(fn -> {:ok, _} = PolicyPhenotype.new(long_opts) end)
     }
 
     IO.puts("\n[policy_phenotype_bench] " <> inspect(results))

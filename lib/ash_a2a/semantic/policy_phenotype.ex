@@ -26,8 +26,16 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   invisible marks and splits camelCase boundaries), a Cyrillic/Greek homoglyph
   skeleton of it, inflected authority tokens, authority roots hidden by
   separator splits (`gr_ant`, `d_o`) through the separator-free skeleton, and
-  authority stems inside concatenated words. An axis name that is not valid
-  UTF-8 cannot be normalized and is refused (the fence fails closed).
+  authority stems inside concatenated words, token roots split across
+  interior boundaries (every run of up to 15 adjacent tokens is re-joined:
+  `boldness_gr_ant_level`, `d_o_action`), and digit-for-letter spellings
+  (`auth0rity`, `gr4nt`, `l3ase`). An axis name that is not valid UTF-8
+  cannot be normalized and is refused (the fence fails closed).
+
+  Malformed containers are refused, never raised on: improper lists as
+  options, pair lists or evidence refs, a non-map axis field or non-list
+  evidence field on a struct handed to `condition/2`, and a non-phenotype
+  first argument to `condition/2`.
 
   The declaration shapes are closed: a range is exactly `%{min, max}`, a
   reaction norm exactly `%{slope}` or `%{slope, reference_cue}` — any other
@@ -81,8 +89,26 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
                       "privileges",
                       "privileged",
                       "sudo",
-                      "superuser"
+                      "superuser",
+                      "admin",
+                      "admins",
+                      "administrator",
+                      "administrators"
                     ])
+
+  # A forbidden token/affix root split across token boundaries anywhere in the
+  # name (`boldness_gr_ant_level`, `d_o_action`, `x_to_ken_budget`) is found by
+  # re-checking runs of adjacent tokens joined without separators. Only the
+  # runs that can change the verdict are built (see `forbidden_window?/1`), so
+  # the check stays linear in the name length instead of quadratic.
+  @max_token_bytes 14
+  @max_root_bytes 6
+
+  # Digits written for the letters they resemble (`auth0rity`, `gr4nt`,
+  # `permi55ion`, `l3ase`). Applied only to names that contain one of these
+  # digits; `1` is tried as both `i` and `l` (`pr1vilege`, `privi1ege`).
+  @leet_i %{?0 => ?o, ?1 => ?i, ?3 => ?e, ?4 => ?a, ?5 => ?s, ?7 => ?t, ?8 => ?b}
+  @leet_l Map.put(@leet_i, ?1, ?l)
 
   # Stems refused anywhere inside the separator-free name, so concatenations
   # (`executionauthority`, `preauthorized`, `unpermitted`) cannot hide them.
@@ -138,6 +164,9 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     "\u04BB" => "h",
     "\u04CF" => "l",
     "\u0261" => "g",
+    "\u0131" => "i",
+    "\u0251" => "a",
+    "\u0237" => "j",
     "\u03B1" => "a",
     "\u03B5" => "e",
     "\u03B9" => "i",
@@ -207,7 +236,8 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
   @spec new(keyword()) :: {:ok, t()} | {:error, %{code: refusal_code(), detail: term()}}
   def new(opts) when is_list(opts) do
-    with :ok <- validate_options(opts),
+    with :ok <- proper_list(opts, :expected_keyword_list),
+         :ok <- validate_options(opts),
          {:ok, conditionable_axes} <- to_axis_map(opts, :conditionable_axes),
          {:ok, condition} <- to_axis_map(opts, :condition),
          {:ok, reaction_norms} <- to_axis_map(opts, :reaction_norms),
@@ -229,6 +259,7 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
   defp validate(%__MODULE__{} = phenotype) do
     with :ok <- validate_shape(phenotype),
+         :ok <- validate_field_types(phenotype),
          :ok <- validate_identity(phenotype),
          :ok <- validate_axis_names(phenotype),
          :ok <- validate_ranges(phenotype.conditionable_axes),
@@ -249,6 +280,41 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     end
   end
 
+  # A struct handed to `condition/2` may carry any term in any field
+  # (`%{phenotype | condition: nil}`); every later step assumes the declared
+  # container types, so a wrong container is refused here instead of raising
+  # BadMapError/FunctionClauseError downstream.
+  defp validate_field_types(%__MODULE__{} = phenotype) do
+    cond do
+      not plain_map?(phenotype.conditionable_axes) ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, :conditionable_axes})
+
+      not plain_map?(phenotype.condition) ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, :condition})
+
+      not plain_map?(phenotype.reaction_norms) ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, :reaction_norms})
+
+      not proper_list?(phenotype.evidence_refs) ->
+        refuse(:invalid_policy_phenotype, {:invalid_evidence_ref, phenotype.evidence_refs})
+
+      true ->
+        :ok
+    end
+  end
+
+  defp plain_map?(term), do: is_map(term) and not is_struct(term)
+
+  # `is_list/1` is true for improper lists (`[a | :b]`), which make every
+  # Enum function raise; they are refused as malformed input instead.
+  defp proper_list?([]), do: true
+  defp proper_list?([_ | tail]), do: proper_list?(tail)
+  defp proper_list?(_), do: false
+
+  defp proper_list(list, detail) do
+    if proper_list?(list), do: :ok, else: refuse(:invalid_policy_phenotype, detail)
+  end
+
   @doc """
   Apply the declared reaction norms for `cue`.
 
@@ -267,6 +333,9 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
   def condition(%__MODULE__{}, _cue),
     do: refuse(:invalid_policy_phenotype, :cue_must_be_numeric)
+
+  def condition(_not_a_phenotype, _cue),
+    do: refuse(:invalid_policy_phenotype, :expected_policy_phenotype)
 
   @doc "A phenotype is a declaration/candidate, never a grant."
   @spec grant?(t()) :: false
@@ -439,14 +508,7 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   defp authority_named_key?(key) when is_atom(key), do: authority_named_key?(Atom.to_string(key))
 
   defp authority_named_key?(key) when is_binary(key) do
-    normalized = normalize_axis(key)
-
-    if String.valid?(normalized) do
-      forbidden_name?(normalized) or
-        (not ascii?(normalized) and forbidden_name?(skeleton(normalized)))
-    else
-      true
-    end
+    fenced?(normalize_axis(key))
   end
 
   defp authority_named_key?(_key), do: true
@@ -473,7 +535,7 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
         refuse_axis_collision(key, Map.keys(map), map)
 
       list when is_list(list) ->
-        if Enum.all?(list, &match?({_, _}, &1)) do
+        if proper_list?(list) and Enum.all?(list, &match?({_, _}, &1)) do
           refuse_axis_collision(key, Enum.map(list, &elem(&1, 0)), list)
         else
           refuse(:invalid_policy_phenotype, {:expected_axis_map, key})
@@ -491,7 +553,12 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     end
   end
 
-  defp to_evidence_refs(refs) when is_list(refs), do: {:ok, refs}
+  defp to_evidence_refs(refs) when is_list(refs) do
+    if proper_list?(refs),
+      do: {:ok, refs},
+      else: refuse(:invalid_policy_phenotype, {:invalid_evidence_ref, refs})
+  end
+
   defp to_evidence_refs(nil), do: {:ok, []}
   defp to_evidence_refs(ref), do: {:ok, [ref]}
 
@@ -517,19 +584,36 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     end
   end
 
-  defp forbidden_axis?(axis) when is_binary(axis) or is_atom(axis) do
-    normalized = normalize_axis(axis)
+  defp forbidden_axis?(axis) when is_binary(axis) or is_atom(axis),
+    do: fenced?(normalize_axis(axis))
 
+  defp forbidden_axis?(_axis), do: false
+
+  # The one fence both axis names and nested keys go through: the normalized
+  # name, its Cyrillic/Greek homoglyph skeleton (non-ASCII names), and its
+  # digit-for-letter spellings (names containing a look-alike digit).
+  defp fenced?(normalized) do
     if String.valid?(normalized) do
-      forbidden_name?(normalized) or
-        (not ascii?(normalized) and forbidden_name?(skeleton(normalized)))
+      spellings =
+        if ascii?(normalized), do: [normalized], else: [normalized, skeleton(normalized)]
+
+      Enum.any?(spellings, &(forbidden_name?(&1) or forbidden_leet?(&1)))
     else
       # Not valid UTF-8, so not normalizable and not checkable: fail closed.
       true
     end
   end
 
-  defp forbidden_axis?(_axis), do: false
+  defp forbidden_leet?(name) do
+    if :binary.match(name, ["0", "1", "3", "4", "5", "7", "8"]) == :nomatch do
+      false
+    else
+      forbidden_name?(unleet(name, @leet_i)) or
+        (:binary.match(name, "1") != :nomatch and forbidden_name?(unleet(name, @leet_l)))
+    end
+  end
+
+  defp unleet(name, map), do: for(<<c <- name>>, into: <<>>, do: <<Map.get(map, c, c)>>)
 
   defp forbidden_name?(normalized) do
     tokens = String.split(normalized, "_", trim: true)
@@ -541,7 +625,57 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     MapSet.member?(@forbidden_axes, normalized) or
       Enum.any?(tokens, &forbidden_token?/1) or
       forbidden_token?(joined) or
-      :binary.match(joined, stem_pattern()) != :nomatch
+      :binary.match(joined, stem_pattern()) != :nomatch or
+      forbidden_window?(tokens)
+  end
+
+  # Re-checks every run of >= 2 adjacent tokens whose verdict can differ from
+  # a shorter run's, which is the same verdict as checking every run:
+  #
+  #   * left-anchored runs are grown while the part before the newest token is
+  #     shorter than the longest forbidden token (@max_token_bytes). Past that,
+  #     a run can no longer equal a forbidden token, and its first
+  #     @max_root_bytes bytes (the prefix-root check) are already fixed by a
+  #     shorter run that was checked;
+  #   * right-anchored runs are grown leftwards while the part after the
+  #     oldest token is shorter than @max_root_bytes, or the run is a benign
+  #     look-alike word (`vagrant` must not shield `xyzvagrant`). Past that,
+  #     the last @max_root_bytes bytes (the suffix-root check) are fixed.
+  defp forbidden_window?([_single]), do: false
+  defp forbidden_window?([]), do: false
+
+  defp forbidden_window?(tokens) do
+    forbidden_left_runs?(tokens) or forbidden_right_runs?(Enum.reverse(tokens))
+  end
+
+  defp forbidden_left_runs?([head | tail]),
+    do: grow_left?(head, tail) or forbidden_left_runs?(tail)
+
+  defp forbidden_left_runs?([]), do: false
+
+  defp grow_left?(_acc, []), do: false
+  defp grow_left?(acc, _tokens) when byte_size(acc) >= @max_token_bytes, do: false
+
+  defp grow_left?(acc, [next | tail]) do
+    run = acc <> next
+    forbidden_token?(run) or grow_left?(run, tail)
+  end
+
+  # `reversed` lists tokens last-first; each run ends at its first element.
+  defp forbidden_right_runs?([last | earlier]),
+    do: grow_right?(last, earlier) or forbidden_right_runs?(earlier)
+
+  defp forbidden_right_runs?([]), do: false
+
+  defp grow_right?(_run, []), do: false
+
+  defp grow_right?(run, [prev | earlier]) do
+    if byte_size(run) >= @max_root_bytes and not MapSet.member?(@benign_affix_words, run) do
+      false
+    else
+      next = prev <> run
+      forbidden_token?(next) or grow_right?(next, earlier)
+    end
   end
 
   defp forbidden_token?(token) do
