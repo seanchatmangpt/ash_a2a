@@ -1,1 +1,261 @@
-defmodule AshA2A.Hilt.WorkOrder do\n  @moduledoc """\n  Executable HILT work-order contract for the SA2A boundary.\n\n  A work order is not authority and never performs DO. It freezes the semantic\n  scope that a later AshA2A.Command must preserve: exact task/subject,\n  candidate, capability, bounded observation/action surfaces, authority\n  ceiling, consequence class, process evidence and falsifier identity.\n\n  bind_command/2 places the content-addressed work-order identity into command\n  metadata. AshA2A.Command.fingerprint/1 treats that field as semantic\n  identity, so provider substitution and transport retries preserve the same\n  command while stale/reused work orders do not.\n  """\n\n  alias AshA2A.{Actuation, Authority, Command, Identity, SemanticSubject}\n\n  @authority_levels [:observe, :select, :construct, :do]\n  @consequence_classes [:observe, :change, :external_do, :unknown]\n\n  @enforce_keys [\n    :work_order_id,\n    :task_id,\n    :exact_subject_digest,\n    :candidate_digest,\n    :capability_id,\n    :observation_bounds_digest,\n    :action_bounds_digest,\n    :authority_ceiling,\n    :consequence_class,\n    :process_evidence_digest,\n    :falsifier_digest\n  ]\n\n  defstruct [\n    :work_order_id,\n    :task_id,\n    :exact_subject_digest,\n    :candidate_digest,\n    :capability_id,\n    :observation_bounds_digest,\n    :action_bounds_digest,\n    :authority_ceiling,\n    :consequence_class,\n    :process_evidence_digest,\n    :falsifier_digest,\n    metadata: %{}\n  ]\n\n  @type authority_level :: :observe | :select | :construct | :do\n  @type consequence_class :: :observe | :change | :external_do | :unknown\n  @type t :: %__MODULE__{\n          work_order_id: String.t(),\n          task_id: String.t(),\n          exact_subject_digest: String.t(),\n          candidate_digest: String.t(),\n          capability_id: String.t(),\n          observation_bounds_digest: String.t(),\n          action_bounds_digest: String.t(),\n          authority_ceiling: authority_level(),\n          consequence_class: consequence_class(),\n          process_evidence_digest: String.t(),\n          falsifier_digest: String.t(),\n          metadata: map()\n        }\n\n  @identity_fields [\n    :work_order_id,\n    :task_id,\n    :exact_subject_digest,\n    :candidate_digest,\n    :capability_id,\n    :observation_bounds_digest,\n    :action_bounds_digest,\n    :authority_ceiling,\n    :consequence_class,\n    :process_evidence_digest,\n    :falsifier_digest\n  ]\n\n  @doc "Builds a fail-closed work order from explicit, already-bounded identities."\n  @spec new!(keyword()) :: t()\n  def new!(attrs) when is_list(attrs) do\n    work_order = struct!(__MODULE__, attrs)\n\n    Enum.each(\n      [\n        :work_order_id,\n        :task_id,\n        :exact_subject_digest,\n        :candidate_digest,\n        :capability_id,\n        :observation_bounds_digest,\n        :action_bounds_digest,\n        :process_evidence_digest,\n        :falsifier_digest\n      ],\n      fn field ->\n        case Map.fetch!(work_order, field) do\n          value when is_binary(value) and byte_size(value) > 0 -> :ok\n          _ -> raise ArgumentError, "#{field} must be a non-empty string"\n        end\n      end\n    )\n\n    if work_order.authority_ceiling not in @authority_levels do\n      raise ArgumentError, "authority_ceiling must be one of #{inspect(@authority_levels)}"\n    end\n\n    if work_order.consequence_class not in @consequence_classes do\n      raise ArgumentError, "consequence_class must be one of #{inspect(@consequence_classes)}"\n    end\n\n    %{work_order | metadata: Map.new(work_order.metadata || %{})}\n  end\n\n  @doc """\n  Manufactures a work order from an existing candidate command plus bounded\n  observation/action/process/falsifier descriptors.\n\n  This does not bind the command yet; call bind_command/2 after construction.\n  """\n  @spec for_command!(Command.t(), consequence_class(), keyword()) :: t()\n  def for_command!(%Command{} = command, consequence_class, opts) when is_list(opts) do\n    task_id =\n      case command.task_id do\n        %Identity{kind: :task} = identity -> Identity.external(identity)\n        _ -> raise ArgumentError, "HILT work order requires command.task_id"\n      end\n\n    candidate_digest =\n      Command.candidate_digest(command) ||\n        raise ArgumentError, "HILT work order requires candidate_digest"\n\n    exact_subject_digest =\n      case command.semantic_subject do\n        %SemanticSubject{} = subject -> Actuation.digest(SemanticSubject.fingerprint_token(subject))\n        _ -> raise ArgumentError, "HILT work order requires an exact semantic subject"\n      end\n\n    new!(\n      work_order_id: Keyword.fetch!(opts, :work_order_id),\n      task_id: task_id,\n      exact_subject_digest: exact_subject_digest,\n      candidate_digest: candidate_digest,\n      capability_id: command.capability_id,\n      observation_bounds_digest: digest_bound(Keyword.fetch!(opts, :observation_bounds)),\n      action_bounds_digest: digest_bound(Keyword.fetch!(opts, :action_bounds)),\n      authority_ceiling: Keyword.fetch!(opts, :authority_ceiling),\n      consequence_class: consequence_class,\n      process_evidence_digest: digest_bound(Keyword.fetch!(opts, :process_evidence)),\n      falsifier_digest: digest_bound(Keyword.fetch!(opts, :falsifier)),\n      metadata: Keyword.get(opts, :metadata, %{})\n    )\n  end\n\n  @doc "Content-addressed semantic identity of the work order."\n  @spec identity_digest(t()) :: String.t()\n  def identity_digest(%__MODULE__{} = work_order) do\n    work_order\n    |> Map.from_struct()\n    |> Map.take(@identity_fields)\n    |> Actuation.digest()\n  end\n\n  @doc """\n  Reissues command with this work order bound into identity-bearing metadata.\n\n  Transport/provider metadata remains untouched but is not fingerprint-bearing.\n  """\n  @spec bind_command(t(), Command.t()) :: Command.t()\n  def bind_command(%__MODULE__{} = work_order, %Command{} = command) do\n    metadata =\n      command.metadata\n      |> Map.new()\n      |> Map.put(:candidate_digest, work_order.candidate_digest)\n      |> Map.put(:work_order_digest, identity_digest(work_order))\n\n    Command.new(command.capability_id,\n      command_id: command.command_id,\n      agent_id: command.agent_id,\n      principal_id: command.principal_id,\n      task_id: command.task_id,\n      input: command.input,\n      authority: command.authority,\n      semantic_subject: command.semantic_subject,\n      spg_identity: command.spg_identity,\n      submitted_at: command.submitted_at,\n      metadata: metadata\n    )\n  end\n\n  @doc """\n  Verifies that a bound command is still the command this work order admits.\n\n  This is admission only. It does not replace the authority broker or\n  AshA2A.CommandBus consequence boundary.\n  """\n  @spec admit_command(t(), Command.t()) :: :ok | {:error, atom()}\n  def admit_command(%__MODULE__{} = work_order, %Command{} = command) do\n    with :ok <- same(:task, work_order.task_id, external_task(command.task_id)),\n         :ok <- same(:capability, work_order.capability_id, command.capability_id),\n         :ok <- same(:candidate, work_order.candidate_digest, Command.candidate_digest(command)),\n         :ok <-\n           same(\n             :subject,\n             work_order.exact_subject_digest,\n             subject_digest(command.semantic_subject)\n           ),\n         :ok <-\n           same(\n             :work_order,\n             identity_digest(work_order),\n             Command.work_order_digest(command)\n           ),\n         :ok <- consequence_within_ceiling(work_order, command) do\n      :ok\n    end\n  end\n\n  defp same(_kind, expected, expected), do: :ok\n  defp same(kind, _expected, _actual), do: {:error, String.to_atom("stale_#{kind}_identity")}\n\n  defp external_task(%Identity{kind: :task} = identity), do: Identity.external(identity)\n  defp external_task(_), do: nil\n\n  defp subject_digest(%SemanticSubject{} = subject),\n    do: Actuation.digest(SemanticSubject.fingerprint_token(subject))\n\n  defp subject_digest(_), do: nil\n\n  defp consequence_within_ceiling(%__MODULE__{consequence_class: :unknown}, _command),\n    do: {:error, :consequence_unclassified}\n\n  defp consequence_within_ceiling(%__MODULE__{} = work_order, command) do\n    required = consequence_authority(work_order.consequence_class)\n\n    cond do\n      level(work_order.authority_ceiling) < level(required) ->\n        {:error, :authority_ceiling_exceeded}\n\n      required == :do and not match?(%Authority{}, command.authority) ->\n        {:error, :authority_required}\n\n      required == :do and not Authority.admits?(command.authority, command) ->\n        {:error, :authority_mismatch}\n\n      true ->\n        :ok\n    end\n  end\n\n  defp consequence_authority(:observe), do: :observe\n  defp consequence_authority(:change), do: :do\n  defp consequence_authority(:external_do), do: :do\n  defp consequence_authority(:unknown), do: :do\n\n  defp level(level), do: Enum.find_index(@authority_levels, &(&1 == level))\n\n  defp digest_bound(value), do: Actuation.digest(value)\nend\n
+defmodule AshA2A.Hilt.WorkOrder do
+  @moduledoc """
+  Executable HILT work-order contract for the SA2A boundary.
+
+  A work order is not authority and never performs DO. It freezes the semantic
+  scope that a later AshA2A.Command must preserve: exact task/subject,
+  candidate, capability, bounded observation/action surfaces, authority
+  ceiling, consequence class, process evidence and falsifier identity.
+
+  bind_command/2 places the content-addressed work-order identity into command
+  metadata. AshA2A.Command.fingerprint/1 treats that field as semantic
+  identity, so provider substitution and transport retries preserve the same
+  command while stale/reused work orders do not.
+  """
+
+  alias AshA2A.{Actuation, Authority, Command, Identity, SemanticSubject}
+
+  @authority_levels [:observe, :select, :construct, :do]
+  @consequence_classes [:observe, :change, :external_do, :unknown]
+
+  @enforce_keys [
+    :work_order_id,
+    :task_id,
+    :exact_subject_digest,
+    :candidate_digest,
+    :capability_id,
+    :observation_bounds_digest,
+    :action_bounds_digest,
+    :authority_ceiling,
+    :consequence_class,
+    :process_evidence_digest,
+    :falsifier_digest
+  ]
+
+  defstruct [
+    :work_order_id,
+    :task_id,
+    :exact_subject_digest,
+    :candidate_digest,
+    :capability_id,
+    :observation_bounds_digest,
+    :action_bounds_digest,
+    :authority_ceiling,
+    :consequence_class,
+    :process_evidence_digest,
+    :falsifier_digest,
+    metadata: %{}
+  ]
+
+  @type authority_level :: :observe | :select | :construct | :do
+  @type consequence_class :: :observe | :change | :external_do | :unknown
+  @type t :: %__MODULE__{
+          work_order_id: String.t(),
+          task_id: String.t(),
+          exact_subject_digest: String.t(),
+          candidate_digest: String.t(),
+          capability_id: String.t(),
+          observation_bounds_digest: String.t(),
+          action_bounds_digest: String.t(),
+          authority_ceiling: authority_level(),
+          consequence_class: consequence_class(),
+          process_evidence_digest: String.t(),
+          falsifier_digest: String.t(),
+          metadata: map()
+        }
+
+  @identity_fields [
+    :work_order_id,
+    :task_id,
+    :exact_subject_digest,
+    :candidate_digest,
+    :capability_id,
+    :observation_bounds_digest,
+    :action_bounds_digest,
+    :authority_ceiling,
+    :consequence_class,
+    :process_evidence_digest,
+    :falsifier_digest
+  ]
+
+  @doc "Builds a fail-closed work order from explicit, already-bounded identities."
+  @spec new!(keyword()) :: t()
+  def new!(attrs) when is_list(attrs) do
+    work_order = struct!(__MODULE__, attrs)
+
+    Enum.each(
+      [
+        :work_order_id,
+        :task_id,
+        :exact_subject_digest,
+        :candidate_digest,
+        :capability_id,
+        :observation_bounds_digest,
+        :action_bounds_digest,
+        :process_evidence_digest,
+        :falsifier_digest
+      ],
+      fn field ->
+        case Map.fetch!(work_order, field) do
+          value when is_binary(value) and byte_size(value) > 0 -> :ok
+          _ -> raise ArgumentError, "#{field} must be a non-empty string"
+        end
+      end
+    )
+
+    if work_order.authority_ceiling not in @authority_levels do
+      raise ArgumentError, "authority_ceiling must be one of #{inspect(@authority_levels)}"
+    end
+
+    if work_order.consequence_class not in @consequence_classes do
+      raise ArgumentError, "consequence_class must be one of #{inspect(@consequence_classes)}"
+    end
+
+    %{work_order | metadata: Map.new(work_order.metadata || %{})}
+  end
+
+  @doc """
+  Manufactures a work order from an existing candidate command plus bounded
+  observation/action/process/falsifier descriptors.
+
+  This does not bind the command yet; call bind_command/2 after construction.
+  """
+  @spec for_command!(Command.t(), consequence_class(), keyword()) :: t()
+  def for_command!(%Command{} = command, consequence_class, opts) when is_list(opts) do
+    task_id =
+      case command.task_id do
+        %Identity{kind: :task} = identity -> Identity.external(identity)
+        _ -> raise ArgumentError, "HILT work order requires command.task_id"
+      end
+
+    candidate_digest =
+      Command.candidate_digest(command) ||
+        raise ArgumentError, "HILT work order requires candidate_digest"
+
+    exact_subject_digest =
+      case command.semantic_subject do
+        %SemanticSubject{} = subject -> Actuation.digest(SemanticSubject.fingerprint_token(subject))
+        _ -> raise ArgumentError, "HILT work order requires an exact semantic subject"
+      end
+
+    new!(
+      work_order_id: Keyword.fetch!(opts, :work_order_id),
+      task_id: task_id,
+      exact_subject_digest: exact_subject_digest,
+      candidate_digest: candidate_digest,
+      capability_id: command.capability_id,
+      observation_bounds_digest: digest_bound(Keyword.fetch!(opts, :observation_bounds)),
+      action_bounds_digest: digest_bound(Keyword.fetch!(opts, :action_bounds)),
+      authority_ceiling: Keyword.fetch!(opts, :authority_ceiling),
+      consequence_class: consequence_class,
+      process_evidence_digest: digest_bound(Keyword.fetch!(opts, :process_evidence)),
+      falsifier_digest: digest_bound(Keyword.fetch!(opts, :falsifier)),
+      metadata: Keyword.get(opts, :metadata, %{})
+    )
+  end
+
+  @doc "Content-addressed semantic identity of the work order."
+  @spec identity_digest(t()) :: String.t()
+  def identity_digest(%__MODULE__{} = work_order) do
+    work_order
+    |> Map.from_struct()
+    |> Map.take(@identity_fields)
+    |> Actuation.digest()
+  end
+
+  @doc """
+  Reissues command with this work order bound into identity-bearing metadata.
+
+  Transport/provider metadata remains untouched but is not fingerprint-bearing.
+  """
+  @spec bind_command(t(), Command.t()) :: Command.t()
+  def bind_command(%__MODULE__{} = work_order, %Command{} = command) do
+    metadata =
+      command.metadata
+      |> Map.new()
+      |> Map.put(:candidate_digest, work_order.candidate_digest)
+      |> Map.put(:work_order_digest, identity_digest(work_order))
+
+    Command.new(command.capability_id,
+      command_id: command.command_id,
+      agent_id: command.agent_id,
+      principal_id: command.principal_id,
+      task_id: command.task_id,
+      input: command.input,
+      authority: command.authority,
+      semantic_subject: command.semantic_subject,
+      spg_identity: command.spg_identity,
+      submitted_at: command.submitted_at,
+      metadata: metadata
+    )
+  end
+
+  @doc """
+  Verifies that a bound command is still the command this work order admits.
+
+  This is admission only. It does not replace the authority broker or
+  AshA2A.CommandBus consequence boundary.
+  """
+  @spec admit_command(t(), Command.t()) :: :ok | {:error, atom()}
+  def admit_command(%__MODULE__{} = work_order, %Command{} = command) do
+    with :ok <- same(:task, work_order.task_id, external_task(command.task_id)),
+         :ok <- same(:capability, work_order.capability_id, command.capability_id),
+         :ok <- same(:candidate, work_order.candidate_digest, Command.candidate_digest(command)),
+         :ok <-
+           same(
+             :subject,
+             work_order.exact_subject_digest,
+             subject_digest(command.semantic_subject)
+           ),
+         :ok <-
+           same(
+             :work_order,
+             identity_digest(work_order),
+             Command.work_order_digest(command)
+           ),
+         :ok <- consequence_within_ceiling(work_order, command) do
+      :ok
+    end
+  end
+
+  defp same(_kind, expected, expected), do: :ok
+  defp same(kind, _expected, _actual), do: {:error, String.to_atom("stale_#{kind}_identity")}
+
+  defp external_task(%Identity{kind: :task} = identity), do: Identity.external(identity)
+  defp external_task(_), do: nil
+
+  defp subject_digest(%SemanticSubject{} = subject),
+    do: Actuation.digest(SemanticSubject.fingerprint_token(subject))
+
+  defp subject_digest(_), do: nil
+
+  defp consequence_within_ceiling(%__MODULE__{consequence_class: :unknown}, _command),
+    do: {:error, :consequence_unclassified}
+
+  defp consequence_within_ceiling(%__MODULE__{} = work_order, command) do
+    required = consequence_authority(work_order.consequence_class)
+
+    cond do
+      level(work_order.authority_ceiling) < level(required) ->
+        {:error, :authority_ceiling_exceeded}
+
+      required == :do and not match?(%Authority{}, command.authority) ->
+        {:error, :authority_required}
+
+      required == :do and not Authority.admits?(command.authority, command) ->
+        {:error, :authority_mismatch}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp consequence_authority(:observe), do: :observe
+  defp consequence_authority(:change), do: :do
+  defp consequence_authority(:external_do), do: :do
+  defp consequence_authority(:unknown), do: :do
+
+  defp level(level), do: Enum.find_index(@authority_levels, &(&1 == level))
+
+  defp digest_bound(value), do: Actuation.digest(value)
+end
