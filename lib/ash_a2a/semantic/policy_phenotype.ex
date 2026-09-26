@@ -22,11 +22,20 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
   Axis names associated with authority are refused so an "initiative" or other
   behavioral dimension cannot be used as a disguised execution permission. The
-  fence checks the normalized name (see `normalize_axis_name/1`, which splits
-  camelCase boundaries), a Cyrillic/Greek homoglyph skeleton of it, inflected
-  authority tokens, and authority stems inside concatenated words. An axis
-  name that is not valid UTF-8 cannot be normalized and is refused (the fence
-  fails closed).
+  fence checks the normalized name (see `normalize_axis_name/1`, which strips
+  invisible marks and splits camelCase boundaries), a Cyrillic/Greek homoglyph
+  skeleton of it, inflected authority tokens, authority roots hidden by
+  separator splits (`gr_ant`, `d_o`) through the separator-free skeleton, and
+  authority stems inside concatenated words. An axis name that is not valid
+  UTF-8 cannot be normalized and is refused (the fence fails closed).
+
+  The declaration shapes are closed: a range is exactly `%{min, max}`, a
+  reaction norm exactly `%{slope}` or `%{slope, reference_cue}` — any other
+  key at any depth (in particular an authority-named one such as `grant`,
+  `token`, `lease`, `authority`, `execution_grant`) is refused as an unknown
+  option and never preserved. `condition/2` re-validates the struct it is
+  handed, so a field forged onto the struct after construction
+  (`Map.put(phenotype, :execution_grant, ...)`) is refused, not honored.
   """
 
   @vocabulary_provenance "https://arxiv.org/abs/2609.29423"
@@ -160,6 +169,18 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     evidence_refs: []
   ]
 
+  # `Map.keys/1` of a struct includes `:__struct__`; anything else is a forged
+  # field refused by `validate_shape/1`.
+  @schema_fields MapSet.new([
+                   :__struct__,
+                   :capability_iri,
+                   :policy_family,
+                   :conditionable_axes,
+                   :condition,
+                   :reaction_norms,
+                   :evidence_refs
+                 ])
+
   @type axis_range :: %{required(:min) => number(), required(:max) => number()}
 
   @type reaction_norm :: %{
@@ -207,13 +228,24 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   def new(_opts), do: refuse(:invalid_policy_phenotype, :expected_keyword_list)
 
   defp validate(%__MODULE__{} = phenotype) do
-    with :ok <- validate_identity(phenotype),
+    with :ok <- validate_shape(phenotype),
+         :ok <- validate_identity(phenotype),
          :ok <- validate_axis_names(phenotype),
          :ok <- validate_ranges(phenotype.conditionable_axes),
          :ok <- validate_condition(phenotype),
          :ok <- validate_reaction_norms(phenotype),
          :ok <- validate_evidence_refs(phenotype.evidence_refs) do
       {:ok, phenotype}
+    end
+  end
+
+  # The `%__MODULE__{}` pattern admits maps with forged extra fields
+  # (`Map.put(phenotype, :execution_grant, ...)` still matches), so the exact
+  # field set is checked before any value in the struct is used.
+  defp validate_shape(%__MODULE__{} = phenotype) do
+    case Enum.find(Map.keys(phenotype), &(not MapSet.member?(@schema_fields, &1))) do
+      nil -> :ok
+      key -> refuse(:invalid_policy_phenotype, {:unknown_option, key})
     end
   end
 
@@ -251,13 +283,13 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   @doc """
   The normalized form the authority fence and the duplicate-axis check compare.
 
-  NFKC-folded, format characters (Cf) removed, a `_` inserted at every
-  camelCase boundary (lower/digit then upper: `executionGrant`; and the end of
-  an acronym: `HTTPGrant` -> `http_grant`), lowercased, every run of
-  non-letter/non-digit characters collapsed to one `_`, and leading/trailing
-  `_` trimmed. Atoms are normalized by name; other terms (including binaries
-  that are not valid UTF-8) are returned as-is, and such an axis is refused by
-  the authority fence.
+  NFKC-folded, format characters (Cf) and combining marks (Mn, incl. U+034F)
+  removed, a `_` inserted at every camelCase boundary (lower/digit then upper:
+  `executionGrant`; and the end of an acronym: `HTTPGrant` -> `http_grant`),
+  lowercased, every run of non-letter/non-digit characters collapsed to one
+  `_`, and leading/trailing `_` trimmed. Atoms are normalized by name; other
+  terms (including binaries that are not valid UTF-8) are returned as-is, and
+  such an axis is refused by the authority fence.
   """
   @spec normalize_axis_name(term()) :: term()
   def normalize_axis_name(axis), do: normalize_axis(axis)
@@ -304,16 +336,34 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     end
   end
 
+  # Closed shapes: a range is exactly %{min, max} and a reaction norm exactly
+  # %{slope} | %{slope, reference_cue}. Open map matches would let extra keys
+  # (in particular authority-named ones) ride into the struct at any depth, so
+  # anything else is refused — an authority-named key with
+  # `{:unknown_option, key}`, never preserved.
   defp validate_ranges(ranges) do
-    Enum.reduce_while(ranges, :ok, fn
-      {axis, %{min: min, max: max}}, :ok
-      when is_binary(axis) and is_number(min) and is_number(max) and min < max ->
-        {:cont, :ok}
+    Enum.reduce_while(ranges, :ok, fn {axis, range}, :ok ->
+      cond do
+        authority_named_key?(axis) ->
+          {:halt, refuse(:invalid_policy_phenotype, {:unknown_option, axis})}
 
-      {axis, range}, :ok ->
-        {:halt, refuse(:invalid_condition_axis_range, {axis, range})}
+        not is_binary(axis) ->
+          {:halt, refuse(:invalid_condition_axis_range, {axis, range})}
+
+        closed_range?(range) ->
+          {:cont, :ok}
+
+        true ->
+          {:halt, authority_or(range, refuse(:invalid_condition_axis_range, {axis, range}))}
+      end
     end)
   end
+
+  defp closed_range?(range) when is_map(range) and map_size(range) == 2 do
+    match?(%{min: min, max: max} when is_number(min) and is_number(max) and min < max, range)
+  end
+
+  defp closed_range?(_range), do: false
 
   defp validate_condition(%__MODULE__{} = phenotype) do
     Enum.reduce_while(phenotype.condition, :ok, fn
@@ -335,23 +385,71 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   end
 
   defp validate_reaction_norms(%__MODULE__{} = phenotype) do
-    Enum.reduce_while(phenotype.reaction_norms, :ok, fn
-      {axis, %{slope: slope} = norm}, :ok when is_binary(axis) and is_number(slope) ->
-        cond do
-          not Map.has_key?(phenotype.conditionable_axes, axis) ->
-            {:halt, refuse(:unknown_condition_axis, axis)}
+    Enum.reduce_while(phenotype.reaction_norms, :ok, fn {axis, norm}, :ok ->
+      cond do
+        authority_named_key?(axis) ->
+          {:halt, refuse(:invalid_policy_phenotype, {:unknown_option, axis})}
 
-          Map.has_key?(norm, :reference_cue) and not is_number(norm.reference_cue) ->
-            {:halt, refuse(:invalid_reaction_norm, {axis, norm})}
+        not closed_norm?(norm) ->
+          {:halt, authority_or(norm, refuse(:invalid_reaction_norm, {axis, norm}))}
 
-          true ->
-            {:cont, :ok}
-        end
+        not Map.has_key?(phenotype.conditionable_axes, axis) ->
+          {:halt, refuse(:unknown_condition_axis, axis)}
 
-      entry, :ok ->
-        {:halt, refuse(:invalid_reaction_norm, entry)}
+        true ->
+          {:cont, :ok}
+      end
     end)
   end
+
+  defp closed_norm?(norm) when is_map(norm) and map_size(norm) == 1 do
+    match?(%{slope: slope} when is_number(slope), norm)
+  end
+
+  defp closed_norm?(norm) when is_map(norm) and map_size(norm) == 2 do
+    match?(%{slope: slope, reference_cue: cue} when is_number(slope) and is_number(cue), norm)
+  end
+
+  defp closed_norm?(_norm), do: false
+
+  # An authority-named key anywhere inside the value (any map depth, any list
+  # member) upgrades the refusal to `{:unknown_option, key}`; `fallback` keeps
+  # the pre-existing typed refusal for a shape violation with none.
+  defp authority_or(term, fallback) do
+    case authority_offender(term) do
+      nil -> fallback
+      key -> refuse(:invalid_policy_phenotype, {:unknown_option, key})
+    end
+  end
+
+  defp authority_offender(%{} = map) when not is_struct(map) do
+    Enum.find_value(map, fn {key, value} ->
+      if authority_named_key?(key), do: key, else: authority_offender(value)
+    end)
+  end
+
+  defp authority_offender(values) when is_list(values),
+    do: Enum.find_value(values, &authority_offender/1)
+
+  defp authority_offender(_term), do: nil
+
+  # A key is authority-named when its normalized form (or its homoglyph
+  # skeleton) hits the fence. Keys that cannot be normalized (non-atom/binary,
+  # invalid UTF-8) fail closed.
+  defp authority_named_key?(key) when is_atom(key), do: authority_named_key?(Atom.to_string(key))
+
+  defp authority_named_key?(key) when is_binary(key) do
+    normalized = normalize_axis(key)
+
+    if String.valid?(normalized) do
+      forbidden_name?(normalized) or
+        (not ascii?(normalized) and forbidden_name?(skeleton(normalized)))
+    else
+      true
+    end
+  end
+
+  defp authority_named_key?(_key), do: true
 
   defp validate_options(opts) do
     with true <- Enum.all?(opts, &match?({key, _} when is_atom(key), &1)),
@@ -437,8 +535,12 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     tokens = String.split(normalized, "_", trim: true)
     joined = Enum.join(tokens)
 
+    # The separator-free skeleton re-runs the FULL token root set, so a root
+    # hidden by separator/camel/invisible-mark splits (`gr_ant`, `d_o`,
+    # `gra\u034Fnt`) is refused exactly as its joined spelling would be.
     MapSet.member?(@forbidden_axes, normalized) or
       Enum.any?(tokens, &forbidden_token?/1) or
+      forbidden_token?(joined) or
       :binary.match(joined, stem_pattern()) != :nomatch
   end
 
@@ -484,11 +586,13 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     end
   end
 
-  # NFKC-folds compatibility forms (fullwidth letters), drops invisible
-  # format characters (zero-width space/joiner, BOM, soft hyphen), and maps
-  # every run of non-alphanumeric separators to one `_`, so `Execution-Grant`,
-  # `execution grant`, `auth\u200Bority` and `ＡＵＴＨＯＲＩＴＹ` normalize to the
-  # same name the fence checks.
+  # NFKC-folds compatibility forms (fullwidth letters), drops invisible format
+  # characters (zero-width space/joiner, BOM, soft hyphen) AND combining marks
+  # (Mn, incl. U+034F COMBINING GRAPHEME JOINER, which would otherwise become a
+  # separator and split `grant` into `gr_ant`), and maps every run of
+  # non-alphanumeric separators to one `_`, so `Execution-Grant`,
+  # `execution grant`, `auth\u200Bority`, `gra\u034Fnt` and `ＡＵＴＨＯＲＩＴＹ`
+  # normalize to the same name the fence checks.
   defp normalize_axis(axis) when is_atom(axis), do: axis |> Atom.to_string() |> normalize_axis()
 
   defp normalize_axis(axis) when is_binary(axis) do
@@ -539,7 +643,7 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   defp normalize_unicode(axis) do
     axis
     |> :unicode.characters_to_nfkc_binary()
-    |> String.replace(~r/[\p{Cf}]/u, "")
+    |> String.replace(~r/[\p{Cf}\p{Mn}]/u, "")
     |> String.replace(~r/(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=\p{Lu})(?=\p{Lu}\p{Ll})/u, "_")
     |> String.downcase()
     |> String.replace(~r/[^\p{L}\p{N}]+/u, "_")

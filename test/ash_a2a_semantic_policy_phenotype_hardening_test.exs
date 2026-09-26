@@ -152,12 +152,14 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
 
   describe "normalization fast path is equivalent to the Unicode reference" do
     # Reference implementation written independently in the test: the exact
-    # regex pipeline the module uses for non-ASCII names. The ASCII fast path
-    # must agree with it byte-for-byte on every ASCII input.
+    # regex pipeline the module uses for non-ASCII names (format characters Cf
+    # AND combining marks Mn are dropped, so a combining grapheme joiner cannot
+    # split a root into fake separators). The ASCII fast path must agree with
+    # it byte-for-byte on every ASCII input.
     defp reference(axis) do
       axis
       |> :unicode.characters_to_nfkc_binary()
-      |> String.replace(~r/[\p{Cf}]/u, "")
+      |> String.replace(~r/[\p{Cf}\p{Mn}]/u, "")
       |> String.replace(~r/(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=\p{Lu})(?=\p{Lu}\p{Ll})/u, "_")
       |> String.downcase()
       |> String.replace(~r/[^\p{L}\p{N}]+/u, "_")
@@ -184,9 +186,20 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
     end
 
     test "non-ASCII names take the reference path" do
-      for axis <- ["auth\u200Bority", "ＡＵＴＨＯＲＩＴＹ", "Éxploration", "perm\u00ADission"] do
+      for axis <- [
+            "auth\u200Bority",
+            "ＡＵＴＨＯＲＩＴＹ",
+            "Éxploration",
+            "perm\u00ADission",
+            # U+034F COMBINING GRAPHEME JOINER (Mn): stripped, not turned into
+            # a separator, so `gra\u034Fnt` normalizes to `grant`.
+            "gra\u034Fnt",
+            "execution\u034Fgrant"
+          ] do
         assert PolicyPhenotype.normalize_axis_name(axis) == reference(axis)
       end
+
+      assert PolicyPhenotype.normalize_axis_name("gra\u034Fnt") == "grant"
     end
 
     test "invalid UTF-8 and non-string terms pass through unchanged" do
@@ -432,6 +445,128 @@ defmodule AshA2A.Semantic.PolicyPhenotypeHardeningTest do
                p
                | conditionable_axes: %{"authority" => %{min: 0, max: 1}}
              })
+    end
+  end
+
+  # ash_a2a#45 court verdict REFUSED d35394a with 3 MAJOR admission_vacuous
+  # defects; each test here kills exactly one of them on the repaired module.
+  describe "v26.9.26 court repair: the three refused defects are killed" do
+    test "D1 invisible-mark split (U+034F) cannot admit a forbidden root", %{} do
+      # Mn mark stripped by normalization, so the joined skeleton is `grant`.
+      for axis <- ["gra\u034Fnt", "execution\u034Fgrant\u034F", "le\u034Fase"] do
+        assert {:error, %{code: :temperament_cannot_encode_authority, detail: ^axis}} =
+                 PolicyPhenotype.new(
+                   capability_iri: @cap,
+                   policy_family: "planner:Astar",
+                   conditionable_axes: %{axis => %{min: 0.0, max: 1.0}}
+                 ),
+               "admitted despite Mn marks: #{inspect(axis)}"
+      end
+    end
+
+    test "D1 separator splits rejoin to a forbidden root in the skeleton" do
+      for axis <- ["gr_ant", "d_o", "tok_en", "le_ase", "execution_gr_ant", "GRant"] do
+        assert {:error, %{code: :temperament_cannot_encode_authority}} =
+                 PolicyPhenotype.new(
+                   capability_iri: @cap,
+                   policy_family: "planner:Astar",
+                   conditionable_axes: %{axis => %{min: 0.0, max: 1.0}}
+                 ),
+               "admitted despite joined forbidden root: #{inspect(axis)}"
+      end
+    end
+
+    test "D1 benign words with the same letters stay admitted (no joined-check false positive)" do
+      for axis <- ["fragrant_novelty", "releaseCadence", "undo_tolerance", "domain_focus"] do
+        assert {:ok, _} =
+                 PolicyPhenotype.new(
+                   capability_iri: @cap,
+                   policy_family: "planner:Astar",
+                   conditionable_axes: %{axis => %{min: 0.0, max: 1.0}}
+                 ),
+               "false positive on #{inspect(axis)}"
+      end
+    end
+
+    test "D2 authority-named key inside a range map is refused at any depth" do
+      for range <- [
+            %{min: 0.0, max: 1.0, execution_grant: "token"},
+            %{min: 0.0, max: 1.0, meta: %{"token" => "secret"}},
+            %{min: 0.0, max: 1.0, nested: [%{lease: true}]}
+          ] do
+        assert {:error, %{code: :invalid_policy_phenotype, detail: {:unknown_option, key}}} =
+                 PolicyPhenotype.new(
+                   capability_iri: @cap,
+                   policy_family: "planner:Astar",
+                   conditionable_axes: %{"exploration" => range}
+                 ),
+               "admitted range #{inspect(range)}"
+
+        assert key in [:execution_grant, "token", :lease]
+      end
+    end
+
+    test "D2 authority-named key inside a reaction norm is refused" do
+      assert {:error, %{code: :invalid_policy_phenotype, detail: {:unknown_option, :authority}}} =
+               PolicyPhenotype.new(
+                 capability_iri: @cap,
+                 policy_family: "planner:Astar",
+                 conditionable_axes: %{"exploration" => %{min: 0.0, max: 1.0}},
+                 reaction_norms: %{"exploration" => %{slope: 0.1, authority: :execute}}
+               )
+    end
+
+    test "D2 unknown non-authority keys are also refused, never preserved" do
+      assert {:error, %{code: :invalid_condition_axis_range}} =
+               PolicyPhenotype.new(
+                 capability_iri: @cap,
+                 policy_family: "planner:Astar",
+                 conditionable_axes: %{"exploration" => %{min: 0.0, max: 1.0, color: "red"}}
+               )
+
+      assert {:error, %{code: :invalid_reaction_norm}} =
+               PolicyPhenotype.new(
+                 capability_iri: @cap,
+                 policy_family: "planner:Astar",
+                 conditionable_axes: %{"exploration" => %{min: 0.0, max: 1.0}},
+                 reaction_norms: %{"exploration" => %{slope: 0.1, color: "red"}}
+               )
+    end
+
+    test "D3 a field forged onto the struct after construction is refused by condition/2" do
+      {:ok, p} =
+        PolicyPhenotype.new(
+          capability_iri: @cap,
+          policy_family: "planner:Astar",
+          conditionable_axes: %{"exploration" => %{min: 0.0, max: 1.0}},
+          condition: %{"exploration" => 0.5},
+          reaction_norms: %{"exploration" => %{slope: 0.5}}
+        )
+
+      forged = Map.put(p, :execution_grant, "token-abc")
+
+      assert {:error,
+              %{code: :invalid_policy_phenotype, detail: {:unknown_option, :execution_grant}}} =
+               PolicyPhenotype.condition(forged, 1.0),
+             "forged :execution_grant was honored"
+    end
+
+    test "D3 every non-schema forged field is refused, and a legit phenotype still conditions" do
+      {:ok, p} =
+        PolicyPhenotype.new(
+          capability_iri: @cap,
+          policy_family: "planner:Astar",
+          conditionable_axes: %{"exploration" => %{min: 0.0, max: 1.0}},
+          condition: %{"exploration" => 0.5},
+          reaction_norms: %{"exploration" => %{slope: 0.5}}
+        )
+
+      for field <- [:command_handle, :authority_lease, :do_token] do
+        assert {:error, %{code: :invalid_policy_phenotype, detail: {:unknown_option, ^field}}} =
+                 PolicyPhenotype.condition(Map.put(p, field, :forged), 0.5)
+      end
+
+      assert {:ok, %{condition: %{"exploration" => 0.9}}} = PolicyPhenotype.condition(p, 0.8)
     end
   end
 
