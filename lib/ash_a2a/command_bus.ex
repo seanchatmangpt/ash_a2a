@@ -144,7 +144,7 @@ defmodule AshA2A.CommandBus do
     with {:ok, opts} <- hilt_work_order(command, opts),
          {:ok, skill, _action, consequence} <-
            observe_target(command, inspect_target(command, resource_or_domain)),
-         :ok <- enforce_release_closure(skill, opts),
+         {:ok, opts} <- bind_release_closure(skill, opts),
          {:ok, opts} <- preflight_plan_step(command, opts),
          :ok <- observe_admission(command, consequence, admit(command, consequence)),
          :ok <- observe_kill_switch(command, check_kill_switch(opts)),
@@ -178,10 +178,13 @@ defmodule AshA2A.CommandBus do
   # powerless even if they are otherwise present in the compiled capability
   # index. The closure is evidence identity, not authority; normal BRCE
   # admission still follows this gate.
-  defp enforce_release_closure(skill, opts) do
-    case CapabilityRelease.guard(skill.id, opts) do
-      :ok ->
-        :ok
+  defp bind_release_closure(skill, opts) do
+    case CapabilityRelease.binding(skill.id, opts) do
+      {:ok, nil} ->
+        {:ok, opts}
+
+      {:ok, binding} ->
+        {:ok, Keyword.put(opts, :capability_release_binding, binding)}
 
       {:error, reason} ->
         {:error,
@@ -400,11 +403,25 @@ defmodule AshA2A.CommandBus do
       "actuation identity is already claimed for this effect; refusing to repeat the consequence"
 
   defp receipt_opts(%Actuation{} = actuation, opts) do
+    release_attributes =
+      opts
+      |> Keyword.get(:capability_release_binding)
+      |> CapabilityRelease.attributes()
+
+    intended_effect =
+      opts
+      |> Keyword.get(:intended_effect, %{})
+      |> Map.new()
+      |> Map.merge(release_attributes)
+
     [actuation: actuation]
     |> maybe_put(:plan_digest, Keyword.get(opts, :plan_digest))
     |> maybe_put(:evidence_class, Keyword.get(opts, :evidence_class))
-    |> maybe_put(:intended_effect, Keyword.get(opts, :intended_effect))
+    |> maybe_put(:intended_effect, nonempty_map(intended_effect))
   end
+
+  defp nonempty_map(map) when map_size(map) == 0, do: nil
+  defp nonempty_map(map), do: map
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
