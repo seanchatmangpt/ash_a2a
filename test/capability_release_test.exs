@@ -34,6 +34,9 @@ defmodule AshA2A.CapabilityReleaseTest do
     assert {:ok, first} = CapabilityRelease.freeze([a, b])
     assert {:ok, second} = CapabilityRelease.freeze([b, a])
     assert first.digest == second.digest
+    assert first.portable_digest == second.portable_digest
+    assert String.starts_with?(first.portable_digest, "sha256:")
+    assert first.portable_digest == CapabilityRelease.portable_digest([b, a])
   end
 
   test "strict guard refuses anything outside frozen release closure" do
@@ -76,6 +79,7 @@ defmodule AshA2A.CapabilityReleaseTest do
              CapabilityRelease.binding("cap", capability_release_closure: closure)
 
     assert binding.closure_digest == closure.digest
+    assert binding.portable_closure_digest == closure.portable_digest
     assert binding.capability_id == "cap"
     assert binding.capability_version == "26.9.26"
     assert binding.capability_digest == capability.digest
@@ -99,6 +103,7 @@ defmodule AshA2A.CapabilityReleaseTest do
     attrs = CapabilityRelease.attributes(binding)
 
     assert attrs.release_closure_digest == closure.digest
+    assert attrs.release_portable_closure_digest == closure.portable_digest
     assert attrs.release_capability_id == "cap"
     assert attrs.release_capability_version == capability.version
     assert attrs.release_capability_digest == capability.digest
