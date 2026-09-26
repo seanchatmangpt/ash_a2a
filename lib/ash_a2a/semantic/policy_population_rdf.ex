@@ -217,8 +217,8 @@ defmodule AshA2A.Semantic.PolicyPopulationRDF do
 
   defp axis_iri(axis) do
     digest =
-      axis
-      |> :crypto.hash(:sha256)
+      :sha256
+      |> :crypto.hash(axis)
       |> Base.encode16(case: :lower)
 
     "urn:sa2a:temperament-axis:" <> digest
