@@ -80,6 +80,20 @@ defmodule AshA2A.Semantic.PolicyPhenotypeTest do
              )
   end
 
+  test "phenotype refusal codes enter the existing S42 taxonomy" do
+    alias AshA2A.Semantic.Refusal
+
+    assert Refusal.classify(:invalid_policy_phenotype) == :refused_structure
+    assert Refusal.classify(:invalid_reaction_norm) == :refused_structure
+    assert Refusal.classify(:unknown_condition_axis) == :refused_namespace
+
+    assert Refusal.classify(:temperament_cannot_encode_authority) ==
+             :refused_authority
+
+    assert Refusal.classify(:invalid_condition_axis_range) == :refused_bounds
+    assert Refusal.classify(:condition_out_of_range) == :refused_bounds
+  end
+
   test "default vocabulary is behavioral and contains no authority axis" do
     axes = PolicyPhenotype.default_axes()
 
