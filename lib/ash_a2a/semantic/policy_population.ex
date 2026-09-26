@@ -46,7 +46,7 @@ defmodule AshA2A.Semantic.PolicyPopulation do
 
   @spec new(kind(), [member() | {PolicyPhenotype.t(), number()}], keyword()) ::
           {:ok, t()} | {:error, %{code: refusal_code(), detail: term()}}
-  def new(kind, members, opts \ [])
+  def new(kind, members, opts \\ [])
 
   def new(kind, members, opts) when is_list(members) and is_list(opts) do
     with {:ok, kind} <- normalize_kind(kind),
@@ -183,7 +183,7 @@ defmodule AshA2A.Semantic.PolicyPopulation do
   @doc "Decode the canonical map and optionally verify the expected population digest."
   @spec from_map(map(), String.t() | nil) ::
           {:ok, t()} | {:error, %{code: atom(), detail: term()}}
-  def from_map(map, expected_digest \ nil)
+  def from_map(map, expected_digest \\ nil)
 
   def from_map(map, expected_digest) when is_map(map) do
     with :ok <- reject_authority_smuggling(map),
@@ -343,7 +343,7 @@ defmodule AshA2A.Semantic.PolicyPopulation do
     |> :math.sqrt()
   end
 
-  defp value(map, key, default \ nil) do
+  defp value(map, key, default \\ nil) do
     Map.get(map, key, Map.get(map, String.to_existing_atom(key), default))
   rescue
     ArgumentError -> Map.get(map, key, default)
