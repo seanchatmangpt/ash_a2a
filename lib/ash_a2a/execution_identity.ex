@@ -49,11 +49,17 @@ defmodule AshA2A.ExecutionIdentity do
   @spec snapshot!(t(), String.t(), keyword()) :: ExecutionSnapshot.t()
   def snapshot!(%__MODULE__{} = identity, execution_manifest_digest, opts \\ [])
       when is_binary(execution_manifest_digest) and execution_manifest_digest != "" do
-    identity
-    |> Map.from_struct()
-    |> Map.to_list()
+    reserved = Map.keys(Map.from_struct(identity)) ++ [:execution_manifest_digest]
+    attempted = Enum.filter(Keyword.keys(opts), &(&1 in reserved))
+
+    if attempted != [] do
+      raise ArgumentError,
+            "snapshot identity fields are derived, not caller-set: #{inspect(attempted)}"
+    end
+
+    opts
+    |> Keyword.merge(Map.to_list(Map.from_struct(identity)))
     |> Keyword.put(:execution_manifest_digest, execution_manifest_digest)
-    |> Keyword.merge(opts)
     |> ExecutionSnapshot.new!()
   end
 
