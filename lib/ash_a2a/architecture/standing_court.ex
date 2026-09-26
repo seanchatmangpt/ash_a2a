@@ -114,7 +114,7 @@ defmodule AshA2A.Architecture.StandingCourt do
   defp digest(term) do
     term
     |> canonical()
-    |> :crypto.hash(:sha256)
+    |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end
 
