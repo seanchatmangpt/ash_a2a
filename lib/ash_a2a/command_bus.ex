@@ -66,6 +66,7 @@ defmodule AshA2A.CommandBus do
       `:verified | :refused` (+ `:code`, `:fields`, `:plan_digest`,
       `:preflight_digest`), see `AshA2A.Planning.Preflight.admit_step/3`
     * `[:admission]` -- `:admitted | :refused` (+ `:code`, `:consequence`)
+    * `[:commitment]` -- deterministic `:authorized | :prepared | :refused` standing projection; observation only, never authority
     * `[:kill_switch]` -- `:clear | :tripped`
     * `[:claim]` -- `:execute | :replay | :refused` (+ `:execution_id`)
     * `[:prepare]` -- `:prepared | :not_required | :failed` (+ `:receipt_id`)
@@ -113,6 +114,7 @@ defmodule AshA2A.CommandBus do
     Authority,
     CapabilityRelease,
     Command,
+    ConditionalCommitment,
     Identity,
     KillSwitch,
     Postcondition,
@@ -263,6 +265,7 @@ defmodule AshA2A.CommandBus do
     case observe_prepare(
            command,
            execution_id,
+           consequence,
            prepare_receipt_anchor(command, execution_id, consequence, receipt_opts)
          ) do
       {:ok, anchor} ->
@@ -778,6 +781,7 @@ defmodule AshA2A.CommandBus do
 
   defp observe_admission(command, consequence, :ok) do
     emit_boundary([:admission], command, %{outcome: :admitted, consequence: consequence})
+    emit_commitment(command, nil, :admission, consequence)
     :ok
   end
 
@@ -826,7 +830,7 @@ defmodule AshA2A.CommandBus do
 
   defp observe_claim(_command, other), do: other
 
-  defp observe_prepare(command, execution_id, {:ok, anchor} = ok) do
+  defp observe_prepare(command, execution_id, consequence, {:ok, anchor} = ok) do
     {outcome, receipt_id} =
       case anchor do
         %Receipt{receipt_id: id} -> {:prepared, identity_value(id)}
@@ -839,10 +843,11 @@ defmodule AshA2A.CommandBus do
       execution_id: identity_value(execution_id)
     })
 
+    emit_commitment(command, anchor, :prepare, consequence)
     ok
   end
 
-  defp observe_prepare(command, execution_id, {:error, reason} = error) do
+  defp observe_prepare(command, execution_id, consequence, {:error, reason} = error) do
     emit_boundary([:prepare], command, %{
       outcome: :failed,
       code: :receipt_anchor_unavailable,
@@ -850,6 +855,7 @@ defmodule AshA2A.CommandBus do
       execution_id: identity_value(execution_id)
     })
 
+    emit_commitment(command, nil, :prepare_failed, consequence)
     error
   end
 
@@ -907,6 +913,19 @@ defmodule AshA2A.CommandBus do
         observation
     end
   end
+
+  defp emit_commitment(command, receipt, transition, consequence)
+       when consequence in [:change, :external_do] do
+    metadata =
+      command
+      |> ConditionalCommitment.metadata(receipt)
+      |> Map.put(:transition, transition)
+      |> Map.put(:consequence, consequence)
+
+    emit_boundary([:commitment], command, metadata)
+  end
+
+  defp emit_commitment(_command, _receipt, _transition, _consequence), do: :ok
 
   defp emit_boundary(suffix, %{command_id: command_id} = subject, extra) do
     :telemetry.execute(
