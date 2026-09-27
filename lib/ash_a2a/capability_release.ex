@@ -42,16 +42,52 @@ defmodule AshA2A.CapabilityRelease do
 
   defmodule Closure do
     @moduledoc false
-    @enforce_keys [:digest, :capabilities]
-    defstruct [:digest, :capabilities]
+    @enforce_keys [:digest, :portable_digest, :capabilities]
+    defstruct [:digest, :portable_digest, :capabilities]
 
     @type t :: %__MODULE__{
             digest: String.t(),
+            portable_digest: String.t(),
             capabilities: %{required(String.t()) => Capability.t()}
           }
   end
 
-  alias __MODULE__.{Capability, Closure}
+  defmodule Binding do
+    @moduledoc false
+    @enforce_keys [
+      :closure_digest,
+      :portable_closure_digest,
+      :capability_id,
+      :capability_version,
+      :capability_digest,
+      :admission_digest,
+      :release_digest,
+      :binding_digest
+    ]
+    defstruct [
+      :closure_digest,
+      :portable_closure_digest,
+      :capability_id,
+      :capability_version,
+      :capability_digest,
+      :admission_digest,
+      :release_digest,
+      :binding_digest
+    ]
+
+    @type t :: %__MODULE__{
+            closure_digest: String.t(),
+            portable_closure_digest: String.t(),
+            capability_id: String.t(),
+            capability_version: String.t(),
+            capability_digest: String.t(),
+            admission_digest: String.t(),
+            release_digest: String.t(),
+            binding_digest: String.t()
+          }
+  end
+
+  alias __MODULE__.{Binding, Capability, Closure}
 
   @spec candidate(String.t(), String.t(), String.t()) :: Capability.t()
   def candidate(id, version, digest) do
@@ -116,8 +152,9 @@ defmodule AshA2A.CapabilityRelease do
          :ok <- require_unique_ids(capabilities) do
       ordered = Enum.sort_by(capabilities, &{&1.id, &1.version, &1.digest})
       digest = digest_term(Enum.map(ordered, &closure_projection/1))
+      portable_digest = portable_digest(ordered)
       by_id = Map.new(ordered, &{&1.id, &1})
-      {:ok, %Closure{digest: digest, capabilities: by_id}}
+      {:ok, %Closure{digest: digest, portable_digest: portable_digest, capabilities: by_id}}
     end
   end
 
@@ -130,7 +167,7 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   @doc """
-  Runtime release gate used by CommandBus.
+  Runtime release gate used by CommandBus and Dispatcher.
 
   Modes:
     * legacy - preserve pre-v26.9.26 behavior.
@@ -141,6 +178,110 @@ defmodule AshA2A.CapabilityRelease do
   """
   @spec guard(String.t(), keyword()) :: :ok | {:error, term()}
   def guard(capability_id, opts \\ []) when is_binary(capability_id) and is_list(opts) do
+    case binding(capability_id, opts) do
+      {:ok, _binding_or_nil} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Resolve the exact released version selected by the current closure.
+
+  Legacy mode returns {:ok, nil}; strict mode returns an immutable Binding.
+  The binding is evidence identity and may be recorded on a receipt, but it is
+  never an authority token.
+  """
+  @spec binding(String.t(), keyword()) :: {:ok, Binding.t() | nil} | {:error, term()}
+  def binding(capability_id, opts \\ []) when is_binary(capability_id) and is_list(opts) do
+    case release_config(opts) do
+      {:legacy, _closure} ->
+        {:ok, nil}
+
+      {:strict, %Closure{} = closure} ->
+        with {:ok, capability} <- select(closure, capability_id) do
+          {:ok, build_binding(closure, capability)}
+        end
+
+      {:strict, nil} ->
+        {:error, :capability_release_closure_missing}
+
+      {other, _closure} ->
+        {:error, {:invalid_capability_release_mode, other}}
+    end
+  end
+
+  @doc "Return released capability ids in stable lexical order."
+  @spec released_ids(Closure.t()) :: [String.t()]
+  def released_ids(%Closure{} = closure) do
+    closure.capabilities
+    |> Map.keys()
+    |> Enum.sort()
+  end
+
+  @doc """
+  Filter an advertised/dispatchable skill index through the current release
+  mode. Strict mode never advertises a skill that the same closure would refuse
+  at runtime.
+  """
+  @spec filter_skills([map()], keyword()) :: {:ok, [map()]} | {:error, term()}
+  def filter_skills(skills, opts \\ []) when is_list(skills) and is_list(opts) do
+    case release_config(opts) do
+      {:legacy, _closure} ->
+        {:ok, skills}
+
+      {:strict, %Closure{} = closure} ->
+        released = MapSet.new(released_ids(closure))
+        {:ok, Enum.filter(skills, &MapSet.member?(released, &1.id))}
+
+      {:strict, nil} ->
+        {:error, :capability_release_closure_missing}
+
+      {other, _closure} ->
+        {:error, {:invalid_capability_release_mode, other}}
+    end
+  end
+
+  @doc "Stable receipt/intended-effect projection of one strict release binding."
+  @spec attributes(Binding.t() | nil) :: map()
+  def attributes(nil), do: %{}
+
+  def attributes(%Binding{} = binding) do
+    %{
+      release_closure_digest: binding.closure_digest,
+      release_portable_closure_digest: binding.portable_closure_digest,
+      release_capability_id: binding.capability_id,
+      release_capability_version: binding.capability_version,
+      release_capability_digest: binding.capability_digest,
+      release_admission_digest: binding.admission_digest,
+      release_evidence_digest: binding.release_digest,
+      release_binding_digest: binding.binding_digest
+    }
+  end
+
+  defp build_binding(%Closure{} = closure, %Capability{state: :released} = capability) do
+    projection = {
+      closure.digest,
+      closure.portable_digest,
+      capability.id,
+      capability.version,
+      capability.digest,
+      capability.admission_digest,
+      capability.release_digest
+    }
+
+    %Binding{
+      closure_digest: closure.digest,
+      portable_closure_digest: closure.portable_digest,
+      capability_id: capability.id,
+      capability_version: capability.version,
+      capability_digest: capability.digest,
+      admission_digest: capability.admission_digest,
+      release_digest: capability.release_digest,
+      binding_digest: digest_term(projection)
+    }
+  end
+
+  defp release_config(opts) do
     closure =
       Keyword.get(opts, :capability_release_closure) ||
         Application.get_env(:ash_a2a, :capability_release_closure)
@@ -154,22 +295,7 @@ defmodule AshA2A.CapabilityRelease do
         end
       end)
 
-    case {mode, closure} do
-      {:legacy, _} ->
-        :ok
-
-      {:strict, %Closure{} = frozen} ->
-        case select(frozen, capability_id) do
-          {:ok, _capability} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
-
-      {:strict, nil} ->
-        {:error, :capability_release_closure_missing}
-
-      {other, _} ->
-        {:error, {:invalid_capability_release_mode, other}}
-    end
+    {mode, closure}
   end
 
   defp require_released(capabilities) do
@@ -196,6 +322,39 @@ defmodule AshA2A.CapabilityRelease do
       capability.admission_digest,
       capability.release_digest
     }
+  end
+
+  @doc """
+  Cross-runtime closure identity using RFC 8785 JCS.
+
+  The existing `Closure.digest` remains the compatibility identity based on
+  deterministic Erlang-term encoding. This portable digest is an additional
+  identity over JSON-native data so Python/RDF/tooling can independently
+  recompute the same closure without understanding BEAM term encoding.
+  """
+  @spec portable_digest([Capability.t()]) :: String.t()
+  def portable_digest(capabilities) when is_list(capabilities) do
+    members =
+      capabilities
+      |> Enum.sort_by(&{&1.id, &1.version, &1.digest})
+      |> Enum.map(fn capability ->
+        %{
+          "capability_id" => capability.id,
+          "version" => capability.version,
+          "capability_digest" => capability.digest,
+          "admission_digest" => capability.admission_digest,
+          "release_digest" => capability.release_digest
+        }
+      end)
+
+    payload = %{
+      "schema" => "chatman.release-closure/v1",
+      "members" => members
+    }
+
+    "sha256:" <>
+      (:crypto.hash(:sha256, Jcs.encode(payload))
+       |> Base.encode16(case: :lower))
   end
 
   defp digest_term(term) do

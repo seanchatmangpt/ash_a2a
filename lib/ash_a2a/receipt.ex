@@ -98,6 +98,7 @@ defmodule AshA2A.Receipt do
     :authority_required,
     :authority_mismatch,
     :consequence_unclassified,
+    :capability_release_refused,
     :capability_not_found,
     :action_not_found,
     :command_conflict,

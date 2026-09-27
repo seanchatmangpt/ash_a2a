@@ -10,6 +10,7 @@ defmodule AshA2A.Info do
   """
 
   alias AshA2A.CapabilityIndex.Compiler
+  alias AshA2A.CapabilityRelease
   alias Spark.Dsl.Extension
 
   @type not_compiled :: :not_compiled
@@ -84,12 +85,44 @@ defmodule AshA2A.Info do
     end
   end
 
+  @doc """
+  Build an AgentCard from the same release closure used by runtime dispatch.
+
+  Legacy mode advertises the full derived capability index. Strict mode
+  advertises only exact skill ids present in the frozen released closure.
+  """
   @spec agent_card(module(), keyword()) :: A2A.AgentCard.t()
   def agent_card(resource_or_domain, opts \\ []) do
-    resource_or_domain
-    |> capability_index()
-    |> List.wrap()
-    |> AshA2A.CapabilityIndex.build_agent_card(opts)
+    case released_capability_index_result(resource_or_domain, opts) do
+      {:ok, index} ->
+        card_opts =
+          Keyword.drop(opts, [:capability_release_closure, :capability_release_mode])
+
+        AshA2A.CapabilityIndex.build_agent_card(index, card_opts)
+
+      {:error, reason} ->
+        raise ArgumentError, "cannot build released AgentCard: #{inspect(reason)}"
+    end
+  end
+
+  @doc "Derived capability index filtered through the active release closure."
+  @spec released_capability_index(module(), keyword()) ::
+          [AshA2A.CapabilityIndex.skill()] | nil
+  def released_capability_index(resource_or_domain, opts \\ []) do
+    case released_capability_index_result(resource_or_domain, opts) do
+      {:ok, index} -> index
+      {:error, :not_compiled} -> nil
+      {:error, reason} -> raise ArgumentError, "capability release refused: #{inspect(reason)}"
+    end
+  end
+
+  @spec released_capability_index_result(module(), keyword()) ::
+          {:ok, [AshA2A.CapabilityIndex.skill()]} | {:error, term()}
+  def released_capability_index_result(resource_or_domain, opts \\ []) do
+    with {:ok, index} <- capability_index_result(resource_or_domain),
+         {:ok, released} <- CapabilityRelease.filter_skills(index, opts) do
+      {:ok, released}
+    end
   end
 
   @doc """

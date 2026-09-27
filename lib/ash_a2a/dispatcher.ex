@@ -176,6 +176,8 @@ defmodule AshA2A.Dispatcher do
 
     with {:ok, skill} <-
            tag_stage(resolve_skill(resource_or_domain, skill_name, opts), :skill_lookup),
+         :ok <-
+           tag_stage(AshA2A.CapabilityRelease.guard(skill.id, opts), :release_gate),
          %AshA2A.ExecutionContext{} = exec_context <-
            AshA2A.ContextResolver.from_a2a_message(
              a2a_message,
@@ -216,7 +218,7 @@ defmodule AshA2A.Dispatcher do
   defp stop_meta({:stream, _}), do: %{reply_type: :stream}
 
   defp stop_meta({:error, {stage, reason}})
-       when stage in [:skill_lookup, :action_resolution, :brce_gate, :execution] do
+       when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :execution] do
     %{stage: stage, error: reason}
   end
 

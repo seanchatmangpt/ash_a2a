@@ -16,9 +16,34 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
       value(cue) = baseline + slope * (cue - reference_cue)
 
-  Every result is clamped to the declared axis range. Axis names associated
-  with authority are refused so an "initiative" or other behavioral dimension
-  cannot be used as a disguised execution permission.
+  Every result is clamped to the declared axis range. If the arithmetic
+  itself cannot be represented (float overflow), `condition/2` refuses with
+  `:invalid_reaction_norm` instead of raising.
+
+  Axis names associated with authority are refused so an "initiative" or other
+  behavioral dimension cannot be used as a disguised execution permission. The
+  fence checks the normalized name (see `normalize_axis_name/1`, which strips
+  invisible marks and splits camelCase boundaries), a Cyrillic/Greek homoglyph
+  skeleton of it, inflected authority tokens, authority roots hidden by
+  separator splits (`gr_ant`, `d_o`) through the separator-free skeleton, and
+  authority stems inside concatenated words, token roots split across
+  interior boundaries (every run of up to 15 adjacent tokens is re-joined:
+  `boldness_gr_ant_level`, `d_o_action`), and digit-for-letter spellings
+  (`auth0rity`, `gr4nt`, `l3ase`). An axis name that is not valid UTF-8
+  cannot be normalized and is refused (the fence fails closed).
+
+  Malformed containers are refused, never raised on: improper lists as
+  options, pair lists or evidence refs, a non-map axis field or non-list
+  evidence field on a struct handed to `condition/2`, and a non-phenotype
+  first argument to `condition/2`.
+
+  The declaration shapes are closed: a range is exactly `%{min, max}`, a
+  reaction norm exactly `%{slope}` or `%{slope, reference_cue}` — any other
+  key at any depth (in particular an authority-named one such as `grant`,
+  `token`, `lease`, `authority`, `execution_grant`) is refused as an unknown
+  option and never preserved. `condition/2` re-validates the struct it is
+  handed, so a field forged onto the struct after construction
+  (`Map.put(phenotype, :execution_grant, ...)`) is refused, not honored.
   """
 
   @vocabulary_provenance "https://arxiv.org/abs/2609.29423"
@@ -31,6 +56,138 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
                     "do"
                   ])
 
+  # Tokens that make an axis authority-bearing wherever they appear as a whole
+  # token of a normalized name (`execution-grant`, `grant_level`, `doAction`).
+  # `do` is refused only as a whole token so `undo`, `domain` are unaffected.
+  @forbidden_tokens MapSet.new([
+                      "do",
+                      "does",
+                      "authority",
+                      "authorities",
+                      "authorization",
+                      "authorizations",
+                      "authorize",
+                      "authorized",
+                      "permission",
+                      "permissions",
+                      "permitted",
+                      "grant",
+                      "grants",
+                      "granted",
+                      "granting",
+                      "grantee",
+                      "grantor",
+                      "lease",
+                      "leases",
+                      "leased",
+                      "leasing",
+                      "credential",
+                      "credentials",
+                      "token",
+                      "tokens",
+                      "privilege",
+                      "privileges",
+                      "privileged",
+                      "sudo",
+                      "superuser",
+                      "admin",
+                      "admins",
+                      "administrator",
+                      "administrators"
+                    ])
+
+  # A forbidden token/affix root split across token boundaries anywhere in the
+  # name (`boldness_gr_ant_level`, `d_o_action`, `x_to_ken_budget`) is found by
+  # re-checking runs of adjacent tokens joined without separators. Only the
+  # runs that can change the verdict are built (see `forbidden_window?/1`), so
+  # the check stays linear in the name length instead of quadratic.
+  @max_token_bytes 14
+  @max_root_bytes 6
+
+  # Digits written for the letters they resemble (`auth0rity`, `gr4nt`,
+  # `permi55ion`, `l3ase`). Applied only to names that contain one of these
+  # digits; `1` is tried as both `i` and `l` (`pr1vilege`, `privi1ege`).
+  @leet_i %{?0 => ?o, ?1 => ?i, ?3 => ?e, ?4 => ?a, ?5 => ?s, ?7 => ?t, ?8 => ?b}
+  @leet_l Map.put(@leet_i, ?1, ?l)
+
+  # Stems refused anywhere inside the separator-free name, so concatenations
+  # (`executionauthority`, `preauthorized`, `unpermitted`) cannot hide them.
+  @forbidden_stems [
+    "authori",
+    "authoris",
+    "permission",
+    "permit",
+    "privileg",
+    "credential",
+    "entitle"
+  ]
+
+  # Roots refused as the prefix or suffix of any token (`grantlevel`,
+  # `executiongrant`, `leaseholder`, `tokenbudget`), except the listed
+  # ordinary English words that merely end in the same letters.
+  @forbidden_affixes ["grant", "lease", "token"]
+  @forbidden_suffixes Enum.flat_map(@forbidden_affixes, &[&1, &1 <> "s"])
+  @benign_affix_words MapSet.new([
+                        "fragrant",
+                        "flagrant",
+                        "vagrant",
+                        "migrant",
+                        "emigrant",
+                        "immigrant",
+                        "release",
+                        "please"
+                      ])
+
+  # Lowercase Cyrillic/Greek letters that render like Latin ones. NFKC does
+  # not fold these, so `\u0430uthority` would otherwise pass the fence.
+  @homoglyphs %{
+    "\u0430" => "a",
+    "\u0431" => "b",
+    "\u0432" => "b",
+    "\u0435" => "e",
+    "\u0451" => "e",
+    "\u0433" => "r",
+    "\u0456" => "i",
+    "\u0457" => "i",
+    "\u0458" => "j",
+    "\u043A" => "k",
+    "\u043C" => "m",
+    "\u043D" => "h",
+    "\u043E" => "o",
+    "\u0440" => "p",
+    "\u0441" => "c",
+    "\u0442" => "t",
+    "\u0443" => "y",
+    "\u0445" => "x",
+    "\u0455" => "s",
+    "\u0501" => "d",
+    "\u04BB" => "h",
+    "\u04CF" => "l",
+    "\u0261" => "g",
+    "\u0131" => "i",
+    "\u0251" => "a",
+    "\u0237" => "j",
+    "\u03B1" => "a",
+    "\u03B5" => "e",
+    "\u03B9" => "i",
+    "\u03BA" => "k",
+    "\u03BD" => "v",
+    "\u03BF" => "o",
+    "\u03C1" => "p",
+    "\u03C4" => "t",
+    "\u03C5" => "u",
+    "\u03C7" => "x"
+  }
+
+  @allowed_options [
+    :capability_iri,
+    :policy_family,
+    :conditionable_axes,
+    :condition,
+    :reaction_norms,
+    :evidence_refs
+  ]
+
   @enforce_keys [:capability_iri, :policy_family]
   defstruct [
     :capability_iri,
@@ -40,6 +197,18 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     reaction_norms: %{},
     evidence_refs: []
   ]
+
+  # `Map.keys/1` of a struct includes `:__struct__`; anything else is a forged
+  # field refused by `validate_shape/1`.
+  @schema_fields MapSet.new([
+                   :__struct__,
+                   :capability_iri,
+                   :policy_family,
+                   :conditionable_axes,
+                   :condition,
+                   :reaction_norms,
+                   :evidence_refs
+                 ])
 
   @type axis_range :: %{required(:min) => number(), required(:max) => number()}
 
@@ -67,25 +236,84 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
   @spec new(keyword()) :: {:ok, t()} | {:error, %{code: refusal_code(), detail: term()}}
   def new(opts) when is_list(opts) do
-    phenotype = %__MODULE__{
-      capability_iri: Keyword.get(opts, :capability_iri),
-      policy_family: Keyword.get(opts, :policy_family),
-      conditionable_axes: Map.new(Keyword.get(opts, :conditionable_axes, %{})),
-      condition: Map.new(Keyword.get(opts, :condition, %{})),
-      reaction_norms: Map.new(Keyword.get(opts, :reaction_norms, %{})),
-      evidence_refs: List.wrap(Keyword.get(opts, :evidence_refs, []))
-    }
+    with :ok <- proper_list(opts, :expected_keyword_list),
+         :ok <- validate_options(opts),
+         {:ok, conditionable_axes} <- to_axis_map(opts, :conditionable_axes),
+         {:ok, condition} <- to_axis_map(opts, :condition),
+         {:ok, reaction_norms} <- to_axis_map(opts, :reaction_norms),
+         {:ok, evidence_refs} <- to_evidence_refs(Keyword.get(opts, :evidence_refs, [])) do
+      phenotype = %__MODULE__{
+        capability_iri: Keyword.get(opts, :capability_iri),
+        policy_family: Keyword.get(opts, :policy_family),
+        conditionable_axes: conditionable_axes,
+        condition: condition,
+        reaction_norms: reaction_norms,
+        evidence_refs: evidence_refs
+      }
 
-    with :ok <- validate_identity(phenotype),
-         :ok <- validate_axis_names(phenotype),
-         :ok <- validate_ranges(phenotype.conditionable_axes),
-         :ok <- validate_condition(phenotype),
-         :ok <- validate_reaction_norms(phenotype) do
-      {:ok, phenotype}
+      validate(phenotype)
     end
   end
 
   def new(_opts), do: refuse(:invalid_policy_phenotype, :expected_keyword_list)
+
+  defp validate(%__MODULE__{} = phenotype) do
+    with :ok <- validate_shape(phenotype),
+         :ok <- validate_field_types(phenotype),
+         :ok <- validate_identity(phenotype),
+         :ok <- validate_axis_names(phenotype),
+         :ok <- validate_ranges(phenotype.conditionable_axes),
+         :ok <- validate_condition(phenotype),
+         :ok <- validate_reaction_norms(phenotype),
+         :ok <- validate_evidence_refs(phenotype.evidence_refs) do
+      {:ok, phenotype}
+    end
+  end
+
+  # The `%__MODULE__{}` pattern admits maps with forged extra fields
+  # (`Map.put(phenotype, :execution_grant, ...)` still matches), so the exact
+  # field set is checked before any value in the struct is used.
+  defp validate_shape(%__MODULE__{} = phenotype) do
+    case Enum.find(Map.keys(phenotype), &(not MapSet.member?(@schema_fields, &1))) do
+      nil -> :ok
+      key -> refuse(:invalid_policy_phenotype, {:unknown_option, key})
+    end
+  end
+
+  # A struct handed to `condition/2` may carry any term in any field
+  # (`%{phenotype | condition: nil}`); every later step assumes the declared
+  # container types, so a wrong container is refused here instead of raising
+  # BadMapError/FunctionClauseError downstream.
+  defp validate_field_types(%__MODULE__{} = phenotype) do
+    cond do
+      not plain_map?(phenotype.conditionable_axes) ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, :conditionable_axes})
+
+      not plain_map?(phenotype.condition) ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, :condition})
+
+      not plain_map?(phenotype.reaction_norms) ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, :reaction_norms})
+
+      not proper_list?(phenotype.evidence_refs) ->
+        refuse(:invalid_policy_phenotype, {:invalid_evidence_ref, phenotype.evidence_refs})
+
+      true ->
+        :ok
+    end
+  end
+
+  defp plain_map?(term), do: is_map(term) and not is_struct(term)
+
+  # `is_list/1` is true for improper lists (`[a | :b]`), which make every
+  # Enum function raise; they are refused as malformed input instead.
+  defp proper_list?([]), do: true
+  defp proper_list?([_ | tail]), do: proper_list?(tail)
+  defp proper_list?(_), do: false
+
+  defp proper_list(list, detail) do
+    if proper_list?(list), do: :ok, else: refuse(:invalid_policy_phenotype, detail)
+  end
 
   @doc """
   Apply the declared reaction norms for `cue`.
@@ -97,26 +325,17 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   @spec condition(t(), number()) ::
           {:ok, t()} | {:error, %{code: refusal_code(), detail: term()}}
   def condition(%__MODULE__{} = phenotype, cue) when is_number(cue) do
-    with :ok <- validate_axis_names(phenotype),
-         :ok <- validate_ranges(phenotype.conditionable_axes),
-         :ok <- validate_condition(phenotype),
-         :ok <- validate_reaction_norms(phenotype) do
-      next_condition =
-        Enum.reduce(phenotype.reaction_norms, phenotype.condition, fn
-          {axis, %{slope: slope} = norm}, acc ->
-            %{min: min, max: max} = Map.fetch!(phenotype.conditionable_axes, axis)
-            baseline = Map.get(acc, axis, min)
-            reference_cue = Map.get(norm, :reference_cue, 0.0)
-            value = baseline + slope * (cue - reference_cue)
-            Map.put(acc, axis, clamp(value, min, max))
-        end)
-
+    with {:ok, phenotype} <- validate(phenotype),
+         {:ok, next_condition} <- react_all(phenotype, cue) do
       {:ok, %{phenotype | condition: next_condition}}
     end
   end
 
   def condition(%__MODULE__{}, _cue),
     do: refuse(:invalid_policy_phenotype, :cue_must_be_numeric)
+
+  def condition(_not_a_phenotype, _cue),
+    do: refuse(:invalid_policy_phenotype, :expected_policy_phenotype)
 
   @doc "A phenotype is a declaration/candidate, never a grant."
   @spec grant?(t()) :: false
@@ -129,6 +348,20 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   @doc "Provenance for the temperament vocabulary, not evidence for a specific phenotype value."
   @spec vocabulary_provenance() :: String.t()
   def vocabulary_provenance, do: @vocabulary_provenance
+
+  @doc """
+  The normalized form the authority fence and the duplicate-axis check compare.
+
+  NFKC-folded, format characters (Cf) and combining marks (Mn, incl. U+034F)
+  removed, a `_` inserted at every camelCase boundary (lower/digit then upper:
+  `executionGrant`; and the end of an acronym: `HTTPGrant` -> `http_grant`),
+  lowercased, every run of non-letter/non-digit characters collapsed to one
+  `_`, and leading/trailing `_` trimmed. Atoms are normalized by name; other
+  terms (including binaries that are not valid UTF-8) are returned as-is, and
+  such an axis is refused by the authority fence.
+  """
+  @spec normalize_axis_name(term()) :: term()
+  def normalize_axis_name(axis), do: normalize_axis(axis)
 
   @doc "The supported temperament vocabulary from arXiv:2609.29423."
   @spec default_axes() :: [String.t()]
@@ -158,9 +391,13 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     do: refuse(:invalid_policy_phenotype, :capability_and_policy_family_required)
 
   defp validate_axis_names(%__MODULE__{} = phenotype) do
+    # Each distinct name is fenced once (condition/reaction-norm keys normally
+    # repeat the conditionable axes); first-offender order is preserved.
     axes =
-      Map.keys(phenotype.conditionable_axes) ++
-        Map.keys(phenotype.condition) ++ Map.keys(phenotype.reaction_norms)
+      Enum.uniq(
+        Map.keys(phenotype.conditionable_axes) ++
+          Map.keys(phenotype.condition) ++ Map.keys(phenotype.reaction_norms)
+      )
 
     case Enum.find(axes, &forbidden_axis?/1) do
       nil -> :ok
@@ -168,16 +405,34 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     end
   end
 
+  # Closed shapes: a range is exactly %{min, max} and a reaction norm exactly
+  # %{slope} | %{slope, reference_cue}. Open map matches would let extra keys
+  # (in particular authority-named ones) ride into the struct at any depth, so
+  # anything else is refused — an authority-named key with
+  # `{:unknown_option, key}`, never preserved.
   defp validate_ranges(ranges) do
-    Enum.reduce_while(ranges, :ok, fn
-      {axis, %{min: min, max: max}}, :ok
-      when is_binary(axis) and is_number(min) and is_number(max) and min < max ->
-        {:cont, :ok}
+    Enum.reduce_while(ranges, :ok, fn {axis, range}, :ok ->
+      cond do
+        authority_named_key?(axis) ->
+          {:halt, refuse(:invalid_policy_phenotype, {:unknown_option, axis})}
 
-      {axis, range}, :ok ->
-        {:halt, refuse(:invalid_condition_axis_range, {axis, range})}
+        not is_binary(axis) ->
+          {:halt, refuse(:invalid_condition_axis_range, {axis, range})}
+
+        closed_range?(range) ->
+          {:cont, :ok}
+
+        true ->
+          {:halt, authority_or(range, refuse(:invalid_condition_axis_range, {axis, range}))}
+      end
     end)
   end
+
+  defp closed_range?(range) when is_map(range) and map_size(range) == 2 do
+    match?(%{min: min, max: max} when is_number(min) and is_number(max) and min < max, range)
+  end
+
+  defp closed_range?(_range), do: false
 
   defp validate_condition(%__MODULE__{} = phenotype) do
     Enum.reduce_while(phenotype.condition, :ok, fn
@@ -199,32 +454,357 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   end
 
   defp validate_reaction_norms(%__MODULE__{} = phenotype) do
-    Enum.reduce_while(phenotype.reaction_norms, :ok, fn
-      {axis, %{slope: slope} = norm}, :ok when is_binary(axis) and is_number(slope) ->
-        cond do
-          not Map.has_key?(phenotype.conditionable_axes, axis) ->
-            {:halt, refuse(:unknown_condition_axis, axis)}
+    Enum.reduce_while(phenotype.reaction_norms, :ok, fn {axis, norm}, :ok ->
+      cond do
+        authority_named_key?(axis) ->
+          {:halt, refuse(:invalid_policy_phenotype, {:unknown_option, axis})}
 
-          Map.has_key?(norm, :reference_cue) and not is_number(norm.reference_cue) ->
-            {:halt, refuse(:invalid_reaction_norm, {axis, norm})}
+        not closed_norm?(norm) ->
+          {:halt, authority_or(norm, refuse(:invalid_reaction_norm, {axis, norm}))}
 
-          true ->
-            {:cont, :ok}
-        end
+        not Map.has_key?(phenotype.conditionable_axes, axis) ->
+          {:halt, refuse(:unknown_condition_axis, axis)}
 
-      entry, :ok ->
-        {:halt, refuse(:invalid_reaction_norm, entry)}
+        true ->
+          {:cont, :ok}
+      end
     end)
   end
 
-  defp forbidden_axis?(axis) when is_binary(axis) do
-    axis
-    |> String.trim()
-    |> String.downcase()
-    |> then(&MapSet.member?(@forbidden_axes, &1))
+  defp closed_norm?(norm) when is_map(norm) and map_size(norm) == 1 do
+    match?(%{slope: slope} when is_number(slope), norm)
   end
 
+  defp closed_norm?(norm) when is_map(norm) and map_size(norm) == 2 do
+    match?(%{slope: slope, reference_cue: cue} when is_number(slope) and is_number(cue), norm)
+  end
+
+  defp closed_norm?(_norm), do: false
+
+  # An authority-named key anywhere inside the value (any map depth, any list
+  # member) upgrades the refusal to `{:unknown_option, key}`; `fallback` keeps
+  # the pre-existing typed refusal for a shape violation with none.
+  defp authority_or(term, fallback) do
+    case authority_offender(term) do
+      nil -> fallback
+      key -> refuse(:invalid_policy_phenotype, {:unknown_option, key})
+    end
+  end
+
+  defp authority_offender(%{} = map) when not is_struct(map) do
+    Enum.find_value(map, fn {key, value} ->
+      if authority_named_key?(key), do: key, else: authority_offender(value)
+    end)
+  end
+
+  defp authority_offender(values) when is_list(values),
+    do: Enum.find_value(values, &authority_offender/1)
+
+  defp authority_offender(_term), do: nil
+
+  # A key is authority-named when its normalized form (or its homoglyph
+  # skeleton) hits the fence. Keys that cannot be normalized (non-atom/binary,
+  # invalid UTF-8) fail closed.
+  defp authority_named_key?(key) when is_atom(key), do: authority_named_key?(Atom.to_string(key))
+
+  defp authority_named_key?(key) when is_binary(key) do
+    fenced?(normalize_axis(key))
+  end
+
+  defp authority_named_key?(_key), do: true
+
+  defp validate_options(opts) do
+    with true <- Enum.all?(opts, &match?({key, _} when is_atom(key), &1)),
+         keys = Keyword.keys(opts),
+         [] <- Enum.reject(keys, &(&1 in @allowed_options)),
+         nil <- first_duplicate(keys) do
+      :ok
+    else
+      false -> refuse(:invalid_policy_phenotype, :expected_keyword_list)
+      [unknown | _] -> refuse(:invalid_policy_phenotype, {:unknown_option, unknown})
+      duplicate -> refuse(:invalid_policy_phenotype, {:duplicate_option, duplicate})
+    end
+  end
+
+  # Accepts a map or a list of `{axis, value}` pairs. A list naming one axis
+  # twice (after normalization) is refused instead of letting `Map.new/1`
+  # silently keep the last delivery.
+  defp to_axis_map(opts, key) do
+    case Keyword.get(opts, key, %{}) do
+      %{} = map when not is_struct(map) ->
+        refuse_axis_collision(key, Map.keys(map), map)
+
+      list when is_list(list) ->
+        if proper_list?(list) and Enum.all?(list, &match?({_, _}, &1)) do
+          refuse_axis_collision(key, Enum.map(list, &elem(&1, 0)), list)
+        else
+          refuse(:invalid_policy_phenotype, {:expected_axis_map, key})
+        end
+
+      _other ->
+        refuse(:invalid_policy_phenotype, {:expected_axis_map, key})
+    end
+  end
+
+  defp refuse_axis_collision(key, axes, entries) do
+    case first_duplicate(Enum.map(axes, &normalize_axis/1)) do
+      nil -> {:ok, Map.new(entries)}
+      axis -> refuse(:invalid_policy_phenotype, {:duplicate_axis, key, axis})
+    end
+  end
+
+  defp to_evidence_refs(refs) when is_list(refs) do
+    if proper_list?(refs),
+      do: {:ok, refs},
+      else: refuse(:invalid_policy_phenotype, {:invalid_evidence_ref, refs})
+  end
+
+  defp to_evidence_refs(nil), do: {:ok, []}
+  defp to_evidence_refs(ref), do: {:ok, [ref]}
+
+  defp validate_evidence_refs(refs) when is_list(refs) do
+    case Enum.find(refs, &(not (is_binary(&1) and byte_size(&1) > 0))) do
+      nil -> :ok
+      ref -> refuse(:invalid_policy_phenotype, {:invalid_evidence_ref, ref})
+    end
+  end
+
+  defp validate_evidence_refs(refs),
+    do: refuse(:invalid_policy_phenotype, {:invalid_evidence_ref, refs})
+
+  defp first_duplicate(items) do
+    Enum.reduce_while(items, MapSet.new(), fn item, seen ->
+      if MapSet.member?(seen, item),
+        do: {:halt, {:dup, item}},
+        else: {:cont, MapSet.put(seen, item)}
+    end)
+    |> case do
+      {:dup, item} -> item
+      _seen -> nil
+    end
+  end
+
+  defp forbidden_axis?(axis) when is_binary(axis) or is_atom(axis),
+    do: fenced?(normalize_axis(axis))
+
   defp forbidden_axis?(_axis), do: false
+
+  # The one fence both axis names and nested keys go through: the normalized
+  # name, its Cyrillic/Greek homoglyph skeleton (non-ASCII names), and its
+  # digit-for-letter spellings (names containing a look-alike digit).
+  defp fenced?(normalized) do
+    if String.valid?(normalized) do
+      spellings =
+        if ascii?(normalized), do: [normalized], else: [normalized, skeleton(normalized)]
+
+      Enum.any?(spellings, &(forbidden_name?(&1) or forbidden_leet?(&1)))
+    else
+      # Not valid UTF-8, so not normalizable and not checkable: fail closed.
+      true
+    end
+  end
+
+  defp forbidden_leet?(name) do
+    if :binary.match(name, ["0", "1", "3", "4", "5", "7", "8"]) == :nomatch do
+      false
+    else
+      forbidden_name?(unleet(name, @leet_i)) or
+        (:binary.match(name, "1") != :nomatch and forbidden_name?(unleet(name, @leet_l)))
+    end
+  end
+
+  defp unleet(name, map), do: for(<<c <- name>>, into: <<>>, do: <<Map.get(map, c, c)>>)
+
+  defp forbidden_name?(normalized) do
+    tokens = String.split(normalized, "_", trim: true)
+    joined = Enum.join(tokens)
+
+    # The separator-free skeleton re-runs the FULL token root set, so a root
+    # hidden by separator/camel/invisible-mark splits (`gr_ant`, `d_o`,
+    # `gra\u034Fnt`) is refused exactly as its joined spelling would be.
+    MapSet.member?(@forbidden_axes, normalized) or
+      Enum.any?(tokens, &forbidden_token?/1) or
+      forbidden_token?(joined) or
+      :binary.match(joined, stem_pattern()) != :nomatch or
+      forbidden_window?(tokens)
+  end
+
+  # Re-checks every run of >= 2 adjacent tokens whose verdict can differ from
+  # a shorter run's, which is the same verdict as checking every run:
+  #
+  #   * left-anchored runs are grown while the part before the newest token is
+  #     shorter than the longest forbidden token (@max_token_bytes). Past that,
+  #     a run can no longer equal a forbidden token, and its first
+  #     @max_root_bytes bytes (the prefix-root check) are already fixed by a
+  #     shorter run that was checked;
+  #   * right-anchored runs are grown leftwards while the part after the
+  #     oldest token is shorter than @max_root_bytes, or the run is a benign
+  #     look-alike word (`vagrant` must not shield `xyzvagrant`). Past that,
+  #     the last @max_root_bytes bytes (the suffix-root check) are fixed.
+  defp forbidden_window?([_single]), do: false
+  defp forbidden_window?([]), do: false
+
+  defp forbidden_window?(tokens) do
+    forbidden_left_runs?(tokens) or forbidden_right_runs?(Enum.reverse(tokens))
+  end
+
+  defp forbidden_left_runs?([head | tail]),
+    do: grow_left?(head, tail) or forbidden_left_runs?(tail)
+
+  defp forbidden_left_runs?([]), do: false
+
+  defp grow_left?(_acc, []), do: false
+  defp grow_left?(acc, _tokens) when byte_size(acc) >= @max_token_bytes, do: false
+
+  defp grow_left?(acc, [next | tail]) do
+    run = acc <> next
+    forbidden_token?(run) or grow_left?(run, tail)
+  end
+
+  # `reversed` lists tokens last-first; each run ends at its first element.
+  defp forbidden_right_runs?([last | earlier]),
+    do: grow_right?(last, earlier) or forbidden_right_runs?(earlier)
+
+  defp forbidden_right_runs?([]), do: false
+
+  defp grow_right?(_run, []), do: false
+
+  defp grow_right?(run, [prev | earlier]) do
+    if byte_size(run) >= @max_root_bytes and not MapSet.member?(@benign_affix_words, run) do
+      false
+    else
+      next = prev <> run
+      forbidden_token?(next) or grow_right?(next, earlier)
+    end
+  end
+
+  defp forbidden_token?(token) do
+    MapSet.member?(@forbidden_tokens, token) or
+      ((affix_prefix?(token) or affix_suffix?(token)) and
+         not MapSet.member?(@benign_affix_words, token))
+  end
+
+  for root <- @forbidden_affixes do
+    defp affix_prefix?(unquote(root) <> _), do: true
+  end
+
+  defp affix_prefix?(_token), do: false
+
+  defp affix_suffix?(token) do
+    size = byte_size(token)
+
+    Enum.any?(@forbidden_suffixes, fn suffix ->
+      n = byte_size(suffix)
+      size >= n and binary_part(token, size - n, n) == suffix
+    end)
+  end
+
+  # `:binary.match/2` with a plain list rebuilds its automaton on every call;
+  # the compiled pattern is built once per VM and kept in :persistent_term.
+  defp stem_pattern do
+    case :persistent_term.get({__MODULE__, :stem_pattern}, nil) do
+      nil ->
+        pattern = :binary.compile_pattern(@forbidden_stems)
+        :persistent_term.put({__MODULE__, :stem_pattern}, pattern)
+        pattern
+
+      pattern ->
+        pattern
+    end
+  end
+
+  defp skeleton(name) do
+    for <<grapheme::utf8 <- name>>, into: <<>> do
+      char = <<grapheme::utf8>>
+      Map.get(@homoglyphs, char, char)
+    end
+  end
+
+  # NFKC-folds compatibility forms (fullwidth letters), drops invisible format
+  # characters (zero-width space/joiner, BOM, soft hyphen) AND combining marks
+  # (Mn, incl. U+034F COMBINING GRAPHEME JOINER, which would otherwise become a
+  # separator and split `grant` into `gr_ant`), and maps every run of
+  # non-alphanumeric separators to one `_`, so `Execution-Grant`,
+  # `execution grant`, `auth\u200Bority`, `gra\u034Fnt` and `ＡＵＴＨＯＲＩＴＹ`
+  # normalize to the same name the fence checks.
+  defp normalize_axis(axis) when is_atom(axis), do: axis |> Atom.to_string() |> normalize_axis()
+
+  defp normalize_axis(axis) when is_binary(axis) do
+    cond do
+      ascii?(axis) -> fold_ascii(axis, nil, <<>>)
+      String.valid?(axis) -> normalize_unicode(axis)
+      true -> axis
+    end
+  end
+
+  defp normalize_axis(axis), do: axis
+
+  # Fast path (every default axis and almost every real one): one pass over
+  # the bytes, no regex, no Unicode tables. Splits camelCase boundaries,
+  # lowercases A-Z, keeps a-z/0-9, collapses any other run of bytes to a
+  # single `_`, trims `_` at both ends. `prev` is the previous raw byte.
+  defp ascii?(<<c, rest::binary>>) when c < 128, do: ascii?(rest)
+  defp ascii?(<<>>), do: true
+  defp ascii?(_), do: false
+
+  defp fold_ascii(<<c, rest::binary>>, _prev, acc) when c in ?a..?z or c in ?0..?9,
+    do: fold_ascii(rest, c, <<acc::binary, c>>)
+
+  defp fold_ascii(<<c, rest::binary>>, prev, acc) when c in ?A..?Z do
+    acc = if camel_boundary?(prev, rest), do: <<acc::binary, ?_>>, else: acc
+    fold_ascii(rest, c, <<acc::binary, c + 32>>)
+  end
+
+  defp fold_ascii(<<c, rest::binary>>, _prev, <<>>), do: fold_ascii(rest, c, <<>>)
+
+  defp fold_ascii(<<c, rest::binary>>, _prev, acc) do
+    if :binary.last(acc) == ?_,
+      do: fold_ascii(rest, c, acc),
+      else: fold_ascii(rest, c, <<acc::binary, ?_>>)
+  end
+
+  defp fold_ascii(<<>>, _prev, acc), do: String.trim_trailing(acc, "_")
+
+  # An upper-case letter starts a new word after a lower-case letter or digit,
+  # or after an upper-case letter when a lower-case letter follows (acronym end).
+  defp camel_boundary?(prev, _rest) when prev in ?a..?z or prev in ?0..?9, do: true
+  defp camel_boundary?(prev, <<next, _::binary>>) when prev in ?A..?Z and next in ?a..?z, do: true
+  defp camel_boundary?(_prev, _rest), do: false
+
+  # Slow path for non-ASCII names only: NFKC folds compatibility forms,
+  # format characters (Cf) are dropped, then the ASCII fold applies to the
+  # letters/digits that remain; other letters are kept as-is (lowercased).
+  defp normalize_unicode(axis) do
+    axis
+    |> :unicode.characters_to_nfkc_binary()
+    |> String.replace(~r/[\p{Cf}\p{Mn}]/u, "")
+    |> String.replace(~r/(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=\p{Lu})(?=\p{Lu}\p{Ll})/u, "_")
+    |> String.downcase()
+    |> String.replace(~r/[^\p{L}\p{N}]+/u, "_")
+    |> String.trim("_")
+  end
+
+  defp react_all(%__MODULE__{} = phenotype, cue) do
+    Enum.reduce_while(phenotype.reaction_norms, {:ok, phenotype.condition}, fn
+      {axis, %{slope: slope} = norm}, {:ok, acc} ->
+        %{min: min, max: max} = Map.fetch!(phenotype.conditionable_axes, axis)
+        baseline = Map.get(acc, axis, min)
+        reference_cue = Map.get(norm, :reference_cue, 0.0)
+
+        case react(baseline, slope, cue, reference_cue) do
+          {:ok, value} -> {:cont, {:ok, Map.put(acc, axis, clamp(value, min, max))}}
+          :overflow -> {:halt, refuse(:invalid_reaction_norm, {:overflow, axis, cue})}
+        end
+    end)
+  end
+
+  # BEAM floats have no infinity: an unrepresentable product raises
+  # ArithmeticError, which is turned into a refusal here.
+  defp react(baseline, slope, cue, reference_cue) do
+    {:ok, baseline + slope * (cue - reference_cue)}
+  rescue
+    ArithmeticError -> :overflow
+  end
 
   defp clamp(value, min, _max) when value < min, do: min
   defp clamp(value, _min, max) when value > max, do: max
