@@ -22,8 +22,8 @@ Assertions that pay for themselves:
   replayed `command_id` with different content refuses
   `:command_conflict`. Assert the typed codes, not string output.
 - **Trust boundary**: a message with `metadata["actor"]` set must not
-  change `context.actor` — only `auth_identity` (the 4th/5th `dispatch/5`
-  argument) does.
+  change `context.actor` — only `auth_identity` (an argument of
+  `dispatch/6`) does.
 - **Compile-time**: declaring `skill(:x, :nonexistent_action)` fails
   compilation with `:REFUSED_ACTION_NOT_FOUND` — a compile-test (or just
   compiling your fixtures in `test/support`) is the guard.

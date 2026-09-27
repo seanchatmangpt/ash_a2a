@@ -177,6 +177,16 @@ defmodule AshA2A.Semantic.Refusal do
     candidate_digest_mismatch: :refused_identity,
     candidate_binding_mismatch: :refused_identity,
     receipt_candidate_binding_mismatch: :refused_identity,
+    # v26.9.25/26 durable execution snapshots
+    # (lib/ash_a2a/execution_snapshot.ex): the claim/start/checkpoint/lose
+    # lifecycle refuses a transition whose execution-identity precondition is
+    # absent -- same shape as `unclaimed_command` / `in_flight` above. The
+    # worker binding, the claimed state, or the monotonic history digest that
+    # names this exact execution is missing or conflicting.
+    claim_not_allowed: :refused_identity,
+    start_not_allowed: :refused_identity,
+    checkpoint_not_monotonic: :refused_identity,
+    worker_loss_not_applicable: :refused_identity,
     # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): a lease/receipt offered
     # against something that is not a bound checkpoint has no subject to be
     # about; a supplied graph digest that differs from the digest the peer
@@ -185,6 +195,7 @@ defmodule AshA2A.Semantic.Refusal do
     refused_graph_identity_mismatch: :refused_identity,
 
     # --- REFUSED_NAMESPACE ------------------------------------------------
+    unknown_condition_axis: :refused_namespace,
     undeclared_predicate: :refused_namespace,
     undeclared_object: :refused_namespace,
     foreign_format: :refused_namespace,
@@ -192,6 +203,8 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- REFUSED_STRUCTURE ------------------------------------------------
     semantic_fields_missing: :refused_structure,
+    invalid_policy_phenotype: :refused_structure,
+    invalid_reaction_norm: :refused_structure,
     semantic_item_invalid: :refused_structure,
     semantic_goal_missing: :refused_structure,
     invalid_semantic_ir: :refused_structure,
@@ -257,6 +270,12 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- REFUSED_PROVENANCE -----------------------------------------------
     ungrounded_assertion: :refused_provenance,
+    # v26.9.25/26 frozen released capability closure
+    # (lib/ash_a2a/capability_release.ex): strict release mode gates execution
+    # on the frozen closure as required grounding evidence; when the closure
+    # itself is absent, the execution cannot be grounded -- provenance is
+    # absent where it is required, not a judgement about the capability.
+    capability_release_closure_missing: :refused_provenance,
 
     # --- REFUSED_PROFILE --------------------------------------------------
     profile_invalid: :refused_profile,
@@ -288,9 +307,15 @@ defmodule AshA2A.Semantic.Refusal do
     # `AshA2A.Semantic.WorkEnvelope` (ash_a2a#27): the same capability named
     # both required and forbidden by one work descriptor.
     refused_capability_contradiction: :refused_capability,
+    # v26.9.25/26 frozen released capability closure
+    # (lib/ash_a2a/command_bus.ex `enforce_release_closure/2`): in strict
+    # release mode a capability outside the frozen released closure stays
+    # powerless -- same class as `gall_029_admission_required` above.
+    capability_release_refused: :refused_capability,
 
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
+    temperament_cannot_encode_authority: :refused_authority,
     authority_mismatch: :refused_authority,
     # `AshA2A.Authority.Decision.verdict/1`: a declared consequence that
     # contradicts (or lacks) the DSL attestation stays in the authority branch
@@ -315,6 +340,13 @@ defmodule AshA2A.Semantic.Refusal do
     # (lib/ash_a2a/gall/command_receipt.ex).
     non_consequence_receipt: :refused_consequence,
     consequence_terminal_state_unbound: :refused_consequence,
+    # v26.9.25/26 durable execution snapshots
+    # (lib/ash_a2a/execution_snapshot.ex): completion is the consequence-
+    # bearing transition of the snapshot lifecycle; barring it from a
+    # non-running state, or repeating it for an execution that already
+    # carries a terminal consequence, is the same class as `kill_switch_tripped`.
+    completion_not_allowed: :refused_consequence,
+    duplicate_consequence: :refused_consequence,
 
     # --- REFUSED_RECEIPT --------------------------------------------------
     receipt_anchor_unavailable: :refused_receipt,
@@ -326,9 +358,16 @@ defmodule AshA2A.Semantic.Refusal do
     # (lib/ash_a2a/gall/command_receipt.ex, process_intervention.ex).
     invalid_gall_command_receipt: :refused_receipt,
     receipt_command_mismatch: :refused_receipt,
+    # v26.9.25/26 durable execution snapshots
+    # (lib/ash_a2a/execution_snapshot.ex): a supplied consequence-receipt
+    # digest that does not match the receipt bound to the execution is a
+    # receipt-identity mismatch, like `receipt_command_mismatch`.
+    receipt_binding_mismatch: :refused_receipt,
 
     # --- REFUSED_BOUNDS ---------------------------------------------------
     max_children: :refused_bounds,
+    invalid_condition_axis_range: :refused_bounds,
+    condition_out_of_range: :refused_bounds,
     standing_bounds_exceeded: :refused_bounds,
 
     # --- REFUSED_META_RIGOR -----------------------------------------------

@@ -6,6 +6,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [Unreleased] - 2026-09-25
+
+### Added
+
+- `AshA2A.SpgIdentity` module (d660a9e) — SPG evidence identity for commands:
+  `graph_id`/`graph_version`/`node_id` required, `edge_id`/`projection_family`
+  optional; evidence only, grants neither capability nor authority;
+  `new/1` refuses with `{:error, {:refused_spg_identity, field}}`.
+- `AshA2A.ExecutionSnapshot` (1af4d78) — durable task state independent of any
+  one worker process; descriptive and authority-free so a different worker can
+  reconstruct admitted work after a crash. Provider/runtime topology is
+  deliberately excluded from the semantic work identity.
+- `AshA2A.CapabilityRelease` (77e3265) — frozen capability lifecycle and
+  deployment closure (candidate/admitted/released/retired); `guard/2` is wired
+  into `AshA2A.CommandBus` and reads the new application-env keys
+  `:capability_release_closure` (frozen released-closure digest set, default
+  `nil`) and `:capability_release_mode` (default `:legacy`; passing a closure
+  in opts implies `:strict` for that call).
+- `AshA2A.ConditionalCommitment` (a9979ed) — deterministic pre-DO classifier
+  of a command's standing (`proposal != authority != prepared consequence`);
+  `AshA2A.BrceAnchor` remains the sole-DO fence.
+- `AshA2A.Semantic.PolicyPhenotype` (bf438c7) — candidate-only SA2A
+  declaration of one behavioral realization of a policy; transport-neutral and
+  authority-free, never a capability grant.
+- `AshA2A.Hilt.WorkOrder` and `AshA2A.ExecutionIdentity` (5109c5a) —
+  executable HILT work-order contract plus the canonical bridge to a durable
+  `AshA2A.ExecutionSnapshot` identity: the ExecutionSnapshot replay boundary.
+  Work-order identity is folded into the command fingerprint via
+  `bind_command/2` and verified in `CommandBus`, so provider substitution and
+  transport retries preserve the same command while stale/reused work orders
+  do not. Version bumped to 26.9.25.
+- Total refusal classification (13054ac) — the nine unmapped v26.9.25/26
+  refusal codes now carry explicit S42 classes: `claim_not_allowed`,
+  `start_not_allowed`, `checkpoint_not_monotonic`, `worker_loss_not_applicable`
+  → `:refused_identity`; `completion_not_allowed`, `duplicate_consequence` →
+  `:refused_consequence`; `receipt_binding_mismatch` → `:refused_receipt`;
+  `capability_release_refused` → `:refused_capability`;
+  `capability_release_closure_missing` → `:refused_provenance`.
+
+### Changed
+
+- `AshA2A.Command` carries an optional `:spg_identity` (`AshA2A.SpgIdentity`);
+  its token joins the deterministic fingerprint digest, and receipts,
+  `SemanticProjection` output, and OCEL events forward the five `spg_*`
+  attributes (`spg_graph_id`, `spg_graph_version`, `spg_node_id`,
+  `spg_edge_id`, `spg_projection_family`) when SPG identity is present.
+
 ## [26.9.22] - 2026-09-23
 
 ### Fixed

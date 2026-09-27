@@ -49,7 +49,7 @@ metadata → `:ambiguous_skill`).
 The resolved skill carries a compile-time `consequence` classification.
 `:unknown` is refused outright (`:consequence_unclassified`) — a generic
 `:action` does not run until its author classifies it. `:observe` (the
-`:read` default) calls `AshA2A.Dispatcher.dispatch/5` directly. A
+`:read` default) calls `AshA2A.Dispatcher.dispatch/6` directly. A
 `:change`/`:external_do` skill instead builds an `AshA2A.Command` and
 enters `AshA2A.CommandBus.run/4` — the receipted path.
 
@@ -81,7 +81,7 @@ instead of re-executing; a different fingerprint under the same id is a
 filesystem `AshA2A.ReceiptOutbox` **before** dispatch, so a crash between
 "decided" and "done" leaves admissible evidence rather than silence.
 
-Then the bus calls the very same `Dispatcher.dispatch/5` an `:observe`
+Then the bus calls the very same `Dispatcher.dispatch/6` an `:observe`
 skill used. The dispatcher resolves actor/tenant through
 `AshA2A.ContextResolver` — from `auth_identity` only, never from message
 metadata — and runs the real Ash action (`for_read`/`for_create`/…).

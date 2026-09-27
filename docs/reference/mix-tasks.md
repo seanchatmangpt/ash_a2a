@@ -26,7 +26,7 @@ These are the repo's own regression gates (run by or alongside
 | --- | --- |
 | `mix ash_a2a.sa2a_conformance` | Runs the SA2A portable semantic execution conformance court (dual real runtimes over `priv/sa2a_conformance/`). |
 | `mix ash_a2a.chicago` | Runs the RFC-SA2A-002 Chicago conformance court. |
-| `mix ash_a2a.chicago.bench` | Runs the RFC-SA2A-002 benchmarks (`--only B1,B9`-style selection, iterations/warmup/out flags; results are content-addressed). Note: B1/B5/B9 are wired into the runner; the seven newer benchmark modules (B2, B3, B4, B6, B7, B8, B10) currently run standalone — a disclosed follow-up. |
+| `mix ash_a2a.chicago.bench` | Runs the RFC-SA2A-002 benchmarks — all 10 categories B1–B10 in one invocation (`--only B1,B9`-style selection, iterations/warmup/out flags; results are content-addressed). Since 2026-09-18 the seven newer benchmark modules (B2, B3, B4, B6, B7, B8, B10) are wired into the run-all dispatch, no longer standalone. |
 | `mix ash_a2a.chicago.mutate` | Runs the RFC-SA2A-002 §22/§97 anti-vacuity mutation catalog. |
 | `mix ash_a2a.chicago.pin_court_manifest` | Rebuilds `priv/sa2a/chicago_court_manifest.json` from the compiled courts. |
 | `mix ash_a2a.sa2a.pin_root_manifest` | Rebuilds `priv/sa2a/root_manifest.json` from the real conformance corpus. |

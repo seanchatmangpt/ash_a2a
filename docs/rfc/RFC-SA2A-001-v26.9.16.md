@@ -2,7 +2,8 @@
 
 ## Semantic A2A: Admitted Semantic Interoperation for Machine-to-Machine Systems
 
-**Status:** Proposed Standard
+**Status:** FINAL_SPEC — closed for v26.9.24
+**Implementation standing:** NOT_CLAIMED
 **Version:** v26.9.16
 **Category:** Protocol Architecture / Semantic Systems
 **Intended audience:** Implementers of autonomous systems, enterprise agent infrastructure, semantic systems, planners, generators, authority brokers, workflow engines, and machine-to-machine protocols.
@@ -2847,3 +2848,14 @@ The most important addition relative to our earlier `ash_a2a` work is **meta-adm
 [6]: https://www.w3.org/TR/sparql12-query/ "SPARQL 1.2 Query Language"
 [7]: https://www.w3.org/TR/odrl-model/ "ODRL Information Model 2.2"
 [8]: https://www.w3.org/TR/rdf12-concepts/ "RDF 1.2 Concepts and Abstract Data Model"
+
+
+# Appendix — v26.9.24 Closure
+
+This specification is terminal for the v26.9.24 semantic release boundary. Later implementation evidence may strengthen standing, but it must not silently change this protocol contract.
+
+At closure, candidate/finding admission remains non-authoritative; consequential execution is confined to the CommandBus/BRCE DO boundary; exact producer/evidence/semantic-subject bindings and independent postcondition evidence remain required where the implementation profile declares them.
+
+$$
+FinalSpec \not\Rightarrow Authority \qquad FinalSpec \not\Rightarrow ProductionStanding
+$$

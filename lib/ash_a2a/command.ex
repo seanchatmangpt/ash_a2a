@@ -10,7 +10,7 @@ defmodule AshA2A.Command do
   transport context while preserving command identity.
   """
 
-  alias AshA2A.{Authority, Identity, SemanticSubject}
+  alias AshA2A.{Authority, Identity, SemanticSubject, SpgIdentity}
 
   @enforce_keys [
     :command_id,
@@ -30,6 +30,7 @@ defmodule AshA2A.Command do
     :input,
     :authority,
     :semantic_subject,
+    :spg_identity,
     :submitted_at,
     :fingerprint,
     metadata: %{}
@@ -44,6 +45,7 @@ defmodule AshA2A.Command do
           input: term(),
           authority: Authority.t() | nil,
           semantic_subject: SemanticSubject.t() | nil,
+          spg_identity: SpgIdentity.t() | nil,
           submitted_at: DateTime.t(),
           fingerprint: String.t(),
           metadata: map()
@@ -58,6 +60,7 @@ defmodule AshA2A.Command do
     input = Keyword.get(opts, :input, %{})
     authority = Keyword.get(opts, :authority)
     semantic_subject = Keyword.get(opts, :semantic_subject)
+    spg_identity = Keyword.get(opts, :spg_identity)
     submitted_at = Keyword.get(opts, :submitted_at, DateTime.utc_now())
     metadata = Map.new(Keyword.get(opts, :metadata, %{}))
 
@@ -70,6 +73,7 @@ defmodule AshA2A.Command do
       input: input,
       authority: authority,
       semantic_subject: semantic_subject,
+      spg_identity: spg_identity,
       submitted_at: submitted_at,
       fingerprint: "",
       metadata: metadata
@@ -107,22 +111,59 @@ defmodule AshA2A.Command do
       command.input,
       authority_token,
       SemanticSubject.fingerprint_token(command.semantic_subject),
-      gall_029_candidate_digest(command.metadata)
+      SpgIdentity.fingerprint_token(command.spg_identity),
+      semantic_metadata_identity(command.metadata)
     }
     |> :erlang.term_to_binary([:deterministic])
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end
 
-  # GALL-030: this one metadata field is semantic identity, not transport
-  # decoration. Including it closes the replay hole where two different
-  # admitted findings could otherwise share one command fingerprint.
-  defp gall_029_candidate_digest(metadata) when is_map(metadata) do
-    Map.get(metadata, :gall_029_candidate_digest) ||
+  @doc """
+  Candidate digest carried by the command's semantic metadata.
+
+  `:candidate_digest` is canonical. The GALL-029 spelling remains a read
+  alias so persisted commands from the pre-v26.9.25 boundary retain the exact
+  same fingerprint.
+  """
+  @spec candidate_digest(t()) :: String.t() | nil
+  def candidate_digest(%__MODULE__{metadata: metadata}), do: metadata_candidate_digest(metadata)
+
+  @doc "Work-order digest when this command is bound to an executable HILT work order."
+  @spec work_order_digest(t()) :: String.t() | nil
+  def work_order_digest(%__MODULE__{metadata: metadata}), do: metadata_work_order_digest(metadata)
+
+  # Backwards-compatible semantic metadata token. When no work-order binding
+  # exists this returns exactly the historical GALL candidate token, preserving
+  # fingerprints for durable receipts created before the HILT work-order field
+  # existed. Once a work-order digest is present, the product becomes identity-
+  # bearing and a stale command cannot be replayed under a different work order.
+  defp semantic_metadata_identity(metadata) do
+    candidate = metadata_candidate_digest(metadata)
+    work_order = metadata_work_order_digest(metadata)
+
+    if is_nil(work_order), do: candidate, else: {candidate, work_order}
+  end
+
+  # Metadata-level lookups behind the public `candidate_digest/1` and
+  # `work_order_digest/1` accessors. Distinct names because Elixir refuses a
+  # def/defp pair sharing name and arity, and because the public and private
+  # clauses operate on different subjects (command struct vs metadata map).
+  defp metadata_candidate_digest(metadata) when is_map(metadata) do
+    Map.get(metadata, :candidate_digest) ||
+      Map.get(metadata, "candidate_digest") ||
+      Map.get(metadata, :gall_029_candidate_digest) ||
       Map.get(metadata, "gall_029_candidate_digest")
   end
 
-  defp gall_029_candidate_digest(_), do: nil
+  defp metadata_candidate_digest(_), do: nil
+
+  defp metadata_work_order_digest(metadata) when is_map(metadata) do
+    Map.get(metadata, :work_order_digest) ||
+      Map.get(metadata, "work_order_digest")
+  end
+
+  defp metadata_work_order_digest(_), do: nil
 
   defp ensure_identity(kind, %Identity{kind: kind} = identity), do: identity
 

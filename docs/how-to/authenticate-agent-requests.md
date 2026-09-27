@@ -17,7 +17,7 @@ The only path an actor/tenant can take into your action is:
    `conn.private[:a2a][:auth]`.
 2. `A2A.Plug` merges that into the call's `metadata["a2a.auth"]`.
 3. `AshA2A.Agent.__dispatch__` reads `metadata["a2a.auth"][:identity]` and passes it
-   to `AshA2A.Dispatcher.dispatch/5` as `auth_identity`.
+   to `AshA2A.Dispatcher.dispatch/6` as `auth_identity`.
 4. `AshA2A.ContextResolver.from_a2a_message/4` sets `context.actor` to that
    `auth_identity` verbatim, and `context.tenant` to `auth_identity[:tenant]` (or the
    string-keyed `"tenant"`), or `nil` if the caller never wired auth at all.
