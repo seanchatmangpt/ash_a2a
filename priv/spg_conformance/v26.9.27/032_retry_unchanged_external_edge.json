@@ -1,0 +1,37 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-032",
+  "family": "recovery",
+  "name": "retry_unchanged_external_edge",
+  "expect": "refuse",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:recovery:retry_unchanged_external_edge"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "recovery.retry_unchanged_external_edge",
+        "value": false,
+        "refusal_code": "SPG_RECOVERY_RETRY_UNCHANGED_EXTERNAL_EDGE"
+      }
+    ]
+  },
+  "assertion": {
+    "must_refuse": true,
+    "refusal_code": "SPG_RECOVERY_RETRY_UNCHANGED_EXTERNAL_EDGE"
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 32
+  }
+}

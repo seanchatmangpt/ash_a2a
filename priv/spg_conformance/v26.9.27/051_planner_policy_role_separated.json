@@ -1,0 +1,41 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-051",
+  "family": "planner",
+  "name": "planner_policy_role_separated",
+  "expect": "admit",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:planner:planner_policy_role_separated"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "planner.planner_policy_role_separated",
+        "value": true
+      }
+    ]
+  },
+  "assertion": {
+    "must_admit": true,
+    "must_preserve": [
+      "subject",
+      "procedure",
+      "authority",
+      "receipt"
+    ]
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 51
+  }
+}

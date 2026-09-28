@@ -1,0 +1,37 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-048",
+  "family": "falsifier",
+  "name": "counterexample_invalidates_candidate",
+  "expect": "refuse",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:falsifier:counterexample_invalidates_candidate"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "falsifier.counterexample_invalidates_candidate",
+        "value": false,
+        "refusal_code": "SPG_FALSIFIER_COUNTEREXAMPLE_INVALIDATES_CANDIDATE"
+      }
+    ]
+  },
+  "assertion": {
+    "must_refuse": true,
+    "refusal_code": "SPG_FALSIFIER_COUNTEREXAMPLE_INVALIDATES_CANDIDATE"
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 48
+  }
+}

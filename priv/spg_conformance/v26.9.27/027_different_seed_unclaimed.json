@@ -1,0 +1,41 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-027",
+  "family": "replay",
+  "name": "different_seed_unclaimed",
+  "expect": "admit",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:replay:different_seed_unclaimed"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "replay.different_seed_unclaimed",
+        "value": true
+      }
+    ]
+  },
+  "assertion": {
+    "must_admit": true,
+    "must_preserve": [
+      "subject",
+      "procedure",
+      "authority",
+      "receipt"
+    ]
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 27
+  }
+}

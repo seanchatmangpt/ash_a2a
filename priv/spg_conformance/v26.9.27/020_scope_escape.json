@@ -1,0 +1,37 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-020",
+  "family": "intervention",
+  "name": "scope_escape",
+  "expect": "refuse",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:intervention:scope_escape"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "intervention.scope_escape",
+        "value": false,
+        "refusal_code": "SPG_INTERVENTION_SCOPE_ESCAPE"
+      }
+    ]
+  },
+  "assertion": {
+    "must_refuse": true,
+    "refusal_code": "SPG_INTERVENTION_SCOPE_ESCAPE"
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 20
+  }
+}
