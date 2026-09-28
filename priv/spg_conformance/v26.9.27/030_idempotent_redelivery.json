@@ -1,0 +1,33 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-030",
+  "family": "replay",
+  "name": "idempotent_redelivery",
+  "expect": "admit",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:replay:idempotent_redelivery"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "assertion": {
+    "must_admit": true,
+    "must_preserve": [
+      "subject",
+      "procedure",
+      "authority",
+      "receipt"
+    ]
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 30
+  }
+}
