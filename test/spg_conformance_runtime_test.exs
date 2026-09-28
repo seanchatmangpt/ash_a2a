@@ -12,7 +12,9 @@ defmodule AshA2A.SpgConformanceRuntimeTest do
     assert length(cases) == 56
     assert Enum.count(cases, &(&1["expect"] == "admit")) == 28
     assert Enum.count(cases, &(&1["expect"] == "refuse")) == 28
-    assert Enum.map(cases, & &1["case_id"]) == Enum.map(1..56, &"SPG-#{String.pad_leading(Integer.to_string(&1), 3, "0")}")
+    assert Enum.map(cases, & &1["case_id"]) ==
+             Enum.map(1..56, &"SPG-#{String.pad_leading(Integer.to_string(&1), 3, "0")}")
+
     assert Enum.map(cases, &get_in(&1, ["replay", "seed"])) == Enum.to_list(1..56)
     assert Enum.all?(cases, fn case -> match?({:ok, _}, SpgConformance.validate_case(case)) end)
   end
@@ -87,7 +89,9 @@ defmodule AshA2A.SpgConformanceRuntimeTest do
     assert {:error, :subject_identity_drift} = SpgConformance.evaluate(admitted, evaluator)
   end
 
-  test "admitted consumer must preserve procedure authority and receipt projections", %{cases: cases} do
+  test "admitted consumer must preserve procedure authority and receipt projections", %{
+    cases: cases
+  } do
     admitted = Enum.find(cases, &(&1["case_id"] == "SPG-044"))
 
     missing_authority = fn case ->

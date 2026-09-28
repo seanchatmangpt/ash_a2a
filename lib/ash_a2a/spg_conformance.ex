@@ -236,10 +236,12 @@ defmodule AshA2A.SpgConformance do
     if failing_check(case) == nil, do: :ok, else: {:error, :admit_has_failing_check}
   end
 
-  defp stimulus_oracle_coherence(%{
-         "expect" => "refuse",
-         "assertion" => %{"refusal_code" => expected}
-       } = case) do
+  defp stimulus_oracle_coherence(
+         %{
+           "expect" => "refuse",
+           "assertion" => %{"refusal_code" => expected}
+         } = case
+       ) do
     case failing_check(case) do
       %{"refusal_code" => ^expected} -> :ok
       nil -> {:error, :refusal_has_no_failing_check}
@@ -272,8 +274,10 @@ defmodule AshA2A.SpgConformance do
 
   defp matches_oracle(%{"expect" => "admit"}, {:admit, _}), do: :ok
 
-  defp matches_oracle(%{"expect" => "refuse", "assertion" => %{"refusal_code" => expected}},
-         {:refuse, expected}),
+  defp matches_oracle(
+         %{"expect" => "refuse", "assertion" => %{"refusal_code" => expected}},
+         {:refuse, expected}
+       ),
        do: :ok
 
   defp matches_oracle(%{"expect" => "admit"}, {:refuse, code}),
@@ -282,8 +286,10 @@ defmodule AshA2A.SpgConformance do
   defp matches_oracle(%{"expect" => "refuse"}, {:admit, _}),
     do: {:error, :false_admission}
 
-  defp matches_oracle(%{"expect" => "refuse", "assertion" => %{"refusal_code" => expected}},
-         {:refuse, actual}),
+  defp matches_oracle(
+         %{"expect" => "refuse", "assertion" => %{"refusal_code" => expected}},
+         {:refuse, actual}
+       ),
        do: {:error, {:refusal_code_drift, expected, actual}}
 
   defp preserves_required(_case, {:refuse, _}), do: :ok
