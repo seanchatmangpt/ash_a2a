@@ -45,7 +45,9 @@ jobs:
           grep -Eq 'version:[[:space:]]*"26\.9\.28"' mix.exs
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
+          mix deps.update ggen_igniter ash_r2rml
+          grep -F '"ggen_igniter": {:hex, :ggen_igniter, "26.9.28"' mix.lock
+          grep -F '"ash_r2rml": {:hex, :ash_r2rml, "26.9.28"' mix.lock
           mix format --check-formatted
           mix compile --warnings-as-errors
           mix test.all
