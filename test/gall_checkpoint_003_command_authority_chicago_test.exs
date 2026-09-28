@@ -111,7 +111,7 @@ defmodule AshA2A.Gall.CommandAuthorityChicagoTest do
 
     assert receipt.capability_id == capability
     assert receipt.consequence == :change
-    assert receipt.terminal_status == :executed
+    assert receipt.terminal_status == :executed, "failed dispatch receipt: #{inspect(receipt)}"
 
     assert {:ok, handoff} = CommandReceipt.from_receipt(receipt)
     assert handoff.capability_id == capability

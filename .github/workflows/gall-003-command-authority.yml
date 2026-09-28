@@ -1,0 +1,71 @@
+name: GALL-003 Command Authority Court
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "lib/ash_a2a/command_bus.ex"
+      - "lib/ash_a2a/gall/**"
+      - "lib/ash_a2a/receipt*.ex"
+      - "lib/ash_a2a/semantic/refusal.ex"
+      - "lib/ash_a2a/semantic_projection.ex"
+      - "test/ash_a2a_gall_command_authority_test.exs"
+      - "test/ash_a2a_gall_process_autonomics_test.exs"
+      - "test/gall_checkpoint_003_command_authority_chicago_test.exs"
+      - "test/ash_a2a/semantic_refusal_test.exs"
+      - ".github/workflows/gall-003-command-authority.yml"
+  pull_request:
+    paths:
+      - "lib/ash_a2a/command_bus.ex"
+      - "lib/ash_a2a/gall/**"
+      - "lib/ash_a2a/receipt*.ex"
+      - "lib/ash_a2a/semantic/refusal.ex"
+      - "lib/ash_a2a/semantic_projection.ex"
+      - "test/ash_a2a_gall_command_authority_test.exs"
+      - "test/ash_a2a_gall_process_autonomics_test.exs"
+      - "test/gall_checkpoint_003_command_authority_chicago_test.exs"
+      - "test/ash_a2a/semantic_refusal_test.exs"
+      - ".github/workflows/gall-003-command-authority.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Admit exact subject
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: "28.0.2"
+          elixir-version: "1.19.0"
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get
+      - run: mix format --check-formatted
+        env:
+          MIX_ENV: test
+      - run: mix compile --warnings-as-errors
+        env:
+          MIX_ENV: test
+      - name: GALL-003 focused court
+        env:
+          MIX_ENV: test
+        # `mix test` is aliased to `test --exclude serial`; the GALL court files are
+        # @moduletag :serial, so plain `mix test` runs 0 tests. `test.all` includes them.
+        run: |
+          mix test.all \
+            test/ash_a2a/semantic_refusal_test.exs \
+            test/ash_a2a_gall_command_authority_test.exs \
+            test/ash_a2a_gall_process_autonomics_test.exs \
+            test/gall_checkpoint_003_command_authority_chicago_test.exs
