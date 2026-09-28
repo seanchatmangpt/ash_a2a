@@ -3,7 +3,7 @@ defmodule AshA2A.Gall.Closure.Provenance do
 
   alias AshA2A.Gall.Closure.Determinism
 
-  def build(candidate, task \ nil) when is_map(candidate) do
+  def build(candidate, task \\ nil) when is_map(candidate) do
     envelope = %{
       producer_repository: field(candidate, :producer_repository),
       producer_sha: field(candidate, :producer_sha),

@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "lib/ash_a2a/spg_conformance.ex"
+      - "lib/ash_a2a/gall/closure/**"
       - "priv/spg_conformance/**"
       - "test/spg_conformance_runtime_test.exs"
       - ".github/workflows/spg-conformance-runtime.yml"
