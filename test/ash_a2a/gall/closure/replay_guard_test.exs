@@ -7,6 +7,7 @@ defmodule AshA2A.Gall.Closure.ReplayGuardTest do
     assert {:ok, :exact_replay} = ReplayGuard.classify(previous, previous)
 
     rebound = %{command_id: "c1", actuation_id: "a2", idempotency_key: "k2"}
+
     assert {:error, {:refused_gall, :replay_guard, :command_rebound_to_new_effect}} =
              ReplayGuard.classify(previous, rebound)
   end

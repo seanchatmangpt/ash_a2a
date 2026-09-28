@@ -10,11 +10,17 @@ defmodule AshA2A.Gall.Closure.ScopePolicy do
     actual_target = field(scope, :target)
 
     cond do
-      map_size(scope) == 0 -> {:error, {:refused_gall, :scope_policy, :empty_scope}}
-      actual_input != expected_input -> {:error, {:refused_gall, :scope_policy, :input_digest_mismatch}}
+      map_size(scope) == 0 ->
+        {:error, {:refused_gall, :scope_policy, :empty_scope}}
+
+      actual_input != expected_input ->
+        {:error, {:refused_gall, :scope_policy, :input_digest_mismatch}}
+
       not is_nil(expected_target) and actual_target != expected_target ->
         {:error, {:refused_gall, :scope_policy, :target_mismatch}}
-      true -> {:ok, scope}
+
+      true ->
+        {:ok, scope}
     end
   end
 

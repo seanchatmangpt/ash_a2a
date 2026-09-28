@@ -6,7 +6,10 @@ defmodule AshA2A.Gall.Closure.Falsifier do
       expected
       |> Enum.reduce([], fn {key, value}, acc ->
         actual = Map.get(observed, key, Map.get(observed, to_string(key)))
-        if actual == value, do: acc, else: [%{field: key, expected: value, observed: actual} | acc]
+
+        if actual == value,
+          do: acc,
+          else: [%{field: key, expected: value, observed: actual} | acc]
       end)
       |> Enum.reverse()
 
@@ -16,5 +19,6 @@ defmodule AshA2A.Gall.Closure.Falsifier do
     end
   end
 
-  def evaluate(_, _), do: {:error, {:falsified, [%{field: :envelope, expected: :map, observed: :invalid}]}}
+  def evaluate(_, _),
+    do: {:error, {:falsified, [%{field: :envelope, expected: :map, observed: :invalid}]}}
 end

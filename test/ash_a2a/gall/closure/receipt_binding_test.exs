@@ -6,7 +6,13 @@ defmodule AshA2A.Gall.Closure.ReceiptBindingTest do
     digest = "sha256:" <> String.duplicate("a", 64)
     candidate = %{candidate_digest: digest}
     command = %{command_id: "c1", capability_id: "Item.create", fingerprint: "fp"}
-    receipt = %{command_id: "c1", capability_id: "Item.create", fingerprint: "fp", metadata: %{candidate_digest: digest}}
+
+    receipt = %{
+      command_id: "c1",
+      capability_id: "Item.create",
+      fingerprint: "fp",
+      metadata: %{candidate_digest: digest}
+    }
 
     assert {:ok, ^receipt} = ReceiptBinding.admit(receipt, command, candidate)
 

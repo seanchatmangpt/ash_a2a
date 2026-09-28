@@ -5,7 +5,8 @@ defmodule AshA2A.Gall.Receipt do
 
   @schema "ash_a2a.gall.receipt/v1"
 
-  def prepare(subject, finding, authority, scope) when is_map(subject) and is_map(finding) and is_map(scope) do
+  def prepare(subject, finding, authority, scope)
+      when is_map(subject) and is_map(finding) and is_map(scope) do
     body = %{
       schema: @schema,
       subject: subject,
@@ -42,7 +43,8 @@ defmodule AshA2A.Gall.Receipt do
 
   def valid?(_), do: false
 
-  defp reseal(receipt), do: Map.put(receipt, :digest, receipt |> Map.delete(:digest) |> Determinism.digest())
+  defp reseal(receipt),
+    do: Map.put(receipt, :digest, receipt |> Map.delete(:digest) |> Determinism.digest())
 
   defp authority_token(%{token_id: token}), do: token
   defp authority_token(%{"token_id" => token}), do: token
