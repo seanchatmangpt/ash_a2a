@@ -188,6 +188,11 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
     :evidence_refs
   ]
 
+  # Top-level keys of the canonical transport map (`to_map/1`); `from_map/2`
+  # refuses any other key instead of ignoring it.
+  @transport_keys ~w(capability_iri policy_family conditionable_axes condition
+                     reaction_norms evidence_refs authority_semantics)
+
   @enforce_keys [:capability_iri, :policy_family]
   defstruct [
     :capability_iri,
@@ -228,6 +233,9 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
 
   @type refusal_code ::
           :invalid_policy_phenotype
+          | :invalid_policy_phenotype_transport
+          | :policy_phenotype_digest_mismatch
+          | :phenotype_authority_smuggling
           | :temperament_cannot_encode_authority
           | :invalid_condition_axis_range
           | :unknown_condition_axis
@@ -337,6 +345,67 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
   def condition(_not_a_phenotype, _cue),
     do: refuse(:invalid_policy_phenotype, :expected_policy_phenotype)
 
+  @doc "Canonical transport map. It describes behavior and explicitly grants nothing."
+  @spec to_map(t()) :: map()
+  def to_map(%__MODULE__{} = phenotype) do
+    %{
+      "capability_iri" => phenotype.capability_iri,
+      "policy_family" => phenotype.policy_family,
+      "conditionable_axes" =>
+        Map.new(phenotype.conditionable_axes, fn {axis, %{min: min, max: max}} ->
+          {axis, %{"min" => min, "max" => max}}
+        end),
+      "condition" => phenotype.condition,
+      "reaction_norms" =>
+        Map.new(phenotype.reaction_norms, fn {axis, norm} ->
+          value =
+            %{"slope" => norm.slope}
+            |> maybe_put("reference_cue", Map.get(norm, :reference_cue))
+
+          {axis, value}
+        end),
+      "evidence_refs" => phenotype.evidence_refs,
+      "authority_semantics" => %{
+        "candidate_only" => true,
+        "phenotype_has_authority" => false,
+        "execution_authority" => "external_command_bus_brce"
+      }
+    }
+  end
+
+  @doc "Canonical term digest of to_map/1."
+  @spec digest(t()) :: String.t()
+  def digest(%__MODULE__{} = phenotype) do
+    AshA2A.Semantic.CanonicalTermDigest.digest(to_map(phenotype))
+  end
+
+  @doc "Parse the canonical transport map and optionally verify its expected digest."
+  @spec from_map(map(), String.t() | nil) ::
+          {:ok, t()} | {:error, %{code: refusal_code(), detail: term()}}
+  def from_map(map, expected_digest \\ nil)
+
+  def from_map(map, expected_digest) when is_map(map) do
+    with :ok <- reject_authority_smuggling(map),
+         :ok <- reject_unknown_transport_keys(map),
+         {:ok, phenotype} <-
+           new(
+             capability_iri: value(map, "capability_iri"),
+             policy_family: value(map, "policy_family"),
+             conditionable_axes: decode_axes(value(map, "conditionable_axes", %{})),
+             condition: Map.new(value(map, "condition", %{})),
+             reaction_norms: decode_reaction_norms(value(map, "reaction_norms", %{})),
+             evidence_refs: List.wrap(value(map, "evidence_refs", []))
+           ),
+         :ok <- verify_expected_digest(phenotype, expected_digest) do
+      {:ok, phenotype}
+    end
+  rescue
+    _error -> refuse(:invalid_policy_phenotype_transport, map)
+  end
+
+  def from_map(other, _expected_digest),
+    do: refuse(:invalid_policy_phenotype_transport, other)
+
   @doc "A phenotype is a declaration/candidate, never a grant."
   @spec grant?(t()) :: false
   def grant?(%__MODULE__{}), do: false
@@ -378,6 +447,133 @@ defmodule AshA2A.Semantic.PolicyPhenotype do
       "expressiveness"
     ]
   end
+
+  defp value(map, key, default \\ nil) do
+    Map.get(map, key, Map.get(map, String.to_existing_atom(key), default))
+  rescue
+    ArgumentError -> Map.get(map, key, default)
+  end
+
+  # Closed-shape preserving decode: known string keys become the struct's atom
+  # keys, every other key is carried through unchanged, so main's
+  # `closed_range?/1` / `closed_norm?/1` (and the authority upgrade in
+  # `authority_or/2`) refuse it instead of the transport silently dropping it.
+  defp decode_axes(axes) when is_map(axes) and not is_struct(axes) do
+    Map.new(axes, fn {axis, range} ->
+      {to_string(axis), decode_closed(range, %{"min" => :min, "max" => :max})}
+    end)
+  end
+
+  defp decode_axes(other), do: other
+
+  defp decode_reaction_norms(norms) when is_map(norms) and not is_struct(norms) do
+    Map.new(norms, fn {axis, norm} ->
+      {to_string(axis),
+       decode_closed(norm, %{"slope" => :slope, "reference_cue" => :reference_cue})}
+    end)
+  end
+
+  defp decode_reaction_norms(other), do: other
+
+  # A key given twice (`"min"` and `:min`) would collapse under `Map.new/1`;
+  # the collision is kept visible as an extra key so the closed shape refuses.
+  defp decode_closed(value, known) when is_map(value) and not is_struct(value) do
+    decoded = Map.new(value, fn {key, v} -> {Map.get(known, key, key), v} end)
+
+    if map_size(decoded) == map_size(value),
+      do: decoded,
+      else: Map.put(decoded, {:duplicate_transport_key, Map.keys(value)}, true)
+  end
+
+  defp decode_closed(other, _known), do: other
+
+  defp reject_unknown_transport_keys(map) do
+    keys = Map.keys(map)
+    names = Enum.map(keys, &to_string/1)
+    duplicates = names -- Enum.uniq(names)
+
+    case Enum.find(keys, &(to_string(&1) not in @transport_keys)) do
+      nil when duplicates == [] ->
+        :ok
+
+      nil ->
+        # `"capability_iri"` and `:capability_iri` together: `value/3` would read
+        # one and silently shadow the other, so the ambiguity is refused.
+        refuse(:invalid_policy_phenotype_transport, {:duplicate_key, duplicates})
+
+      key ->
+        refuse(:invalid_policy_phenotype_transport, {:unknown_key, key})
+    end
+  end
+
+  defp reject_authority_smuggling(map) do
+    expected_semantics = %{
+      "candidate_only" => true,
+      "phenotype_has_authority" => false,
+      "execution_authority" => "external_command_bus_brce"
+    }
+
+    # Every present form is checked: a forged `:authority_semantics` next to a
+    # canonical `"authority_semantics"` must not hide behind `value/3`'s preference.
+    forged =
+      ["authority_semantics", :authority_semantics]
+      |> Enum.filter(&Map.has_key?(map, &1))
+      |> Enum.map(&Map.fetch!(map, &1))
+      |> Enum.find(&(&1 != expected_semantics))
+
+    if forged != nil do
+      refuse(:phenotype_authority_smuggling, {:authority_semantics, forged})
+    else
+      forbidden =
+        ~w(authority permission execution_grant execution_authority grant token credential)
+
+      payload =
+        map
+        |> Map.delete("authority_semantics")
+        |> Map.delete(:authority_semantics)
+
+      # main's authority fence (normalization, homoglyph skeleton, leetspeak,
+      # split tokens; non-normalizable keys fail closed) plus the original
+      # exact-match transport words, so every previously refused key stays refused.
+      found =
+        payload
+        |> transport_keys()
+        |> Enum.find(fn key ->
+          authority_named_key?(key) or String.downcase(String.trim(key)) in forbidden
+        end)
+
+      if found == nil,
+        do: :ok,
+        else: refuse(:phenotype_authority_smuggling, found)
+    end
+  end
+
+  defp transport_keys(value) when is_map(value) do
+    Enum.flat_map(value, fn {key, nested} -> [to_string(key) | transport_keys(nested)] end)
+  end
+
+  defp transport_keys(value) when is_list(value), do: Enum.flat_map(value, &transport_keys/1)
+  defp transport_keys(_value), do: []
+
+  defp verify_expected_digest(_phenotype, nil), do: :ok
+
+  defp verify_expected_digest(phenotype, expected_digest) when is_binary(expected_digest) do
+    actual = digest(phenotype)
+
+    if actual == expected_digest,
+      do: :ok,
+      else:
+        refuse(:policy_phenotype_digest_mismatch, %{
+          expected: expected_digest,
+          actual: actual
+        })
+  end
+
+  defp verify_expected_digest(_phenotype, other),
+    do: refuse(:invalid_policy_phenotype_transport, {:expected_digest, other})
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp validate_identity(%__MODULE__{
          capability_iri: capability_iri,

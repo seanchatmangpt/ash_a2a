@@ -160,6 +160,9 @@ defmodule AshA2A.Semantic.Refusal do
   @mapping %{
     # --- REFUSED_IDENTITY -------------------------------------------------
     semantic_identity_invalid: :refused_identity,
+    policy_phenotype_digest_mismatch: :refused_identity,
+    policy_population_digest_mismatch: :refused_identity,
+    policy_population_rdf_identity_mismatch: :refused_identity,
     semantic_ir_unsealed: :refused_identity,
     semantic_ir_seal_invalid: :refused_identity,
     semantic_source_mismatch: :refused_identity,
@@ -197,6 +200,8 @@ defmodule AshA2A.Semantic.Refusal do
     # --- REFUSED_NAMESPACE ------------------------------------------------
     unknown_condition_axis: :refused_namespace,
     undeclared_predicate: :refused_namespace,
+    policy_population_custom_rdf_predicate: :refused_namespace,
+    policy_population_custom_rdf_class: :refused_namespace,
     undeclared_object: :refused_namespace,
     foreign_format: :refused_namespace,
     kind_namespace_unregistered: :refused_namespace,
@@ -204,6 +209,14 @@ defmodule AshA2A.Semantic.Refusal do
     # --- REFUSED_STRUCTURE ------------------------------------------------
     semantic_fields_missing: :refused_structure,
     invalid_policy_phenotype: :refused_structure,
+    invalid_policy_phenotype_transport: :refused_structure,
+    invalid_policy_population: :refused_structure,
+    invalid_policy_population_rdf: :refused_structure,
+    invalid_population_kind: :refused_structure,
+    population_requires_member: :refused_structure,
+    homogeneous_population_requires_one_phenotype: :refused_structure,
+    adaptive_population_requires_reaction_norm: :refused_structure,
+    invalid_population_weight: :refused_structure,
     invalid_reaction_norm: :refused_structure,
     semantic_item_invalid: :refused_structure,
     semantic_goal_missing: :refused_structure,
@@ -316,6 +329,8 @@ defmodule AshA2A.Semantic.Refusal do
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
     temperament_cannot_encode_authority: :refused_authority,
+    phenotype_authority_smuggling: :refused_authority,
+    population_authority_smuggling: :refused_authority,
     authority_mismatch: :refused_authority,
     # `AshA2A.Authority.Decision.verdict/1`: a declared consequence that
     # contradicts (or lacks) the DSL attestation stays in the authority branch
