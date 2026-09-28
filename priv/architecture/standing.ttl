@@ -1,0 +1,35 @@
+@prefix arch: <https://seanchatmangpt.github.io/ontology/architecture-standing#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+
+arch:ArchitectureStandingCourt a arch:Court ;
+  arch:permitsStanding arch:UNKNOWN ;
+  arch:permitsStanding arch:REFUSED ;
+  arch:permitsStanding arch:ADMITTED ;
+  arch:authorityCeiling "NONE" ;
+  arch:requiresEvidence arch:ExactRepository, arch:ExactCommit, arch:ArchitectureContractDigest,
+    arch:CandidateSBBDigest, arch:QualificationDigest, arch:IndependentObserverDigest ;
+  arch:requiresFalsifier arch:StaleSubject, arch:CrossSubjectReuse, arch:ForgedQualification,
+    arch:AuthorityLaundering, arch:ReplayDivergence, arch:MalformedDigest, arch:NonIndependentObserver .
+
+arch:UNKNOWN a arch:StandingState .
+arch:REFUSED a arch:StandingState .
+arch:ADMITTED a arch:StandingState .
+arch:ExactRepository a arch:EvidenceClass .
+arch:ExactCommit a arch:EvidenceClass .
+arch:ArchitectureContractDigest a arch:EvidenceClass .
+arch:CandidateSBBDigest a arch:EvidenceClass .
+arch:QualificationDigest a arch:EvidenceClass .
+arch:IndependentObserverDigest a arch:EvidenceClass, prov:Entity .
+arch:StaleSubject a arch:Falsifier .
+arch:CrossSubjectReuse a arch:Falsifier .
+arch:ForgedQualification a arch:Falsifier .
+arch:AuthorityLaundering a arch:Falsifier .
+arch:ReplayDivergence a arch:Falsifier .
+arch:MalformedDigest a arch:Falsifier .
+arch:NonIndependentObserver a arch:Falsifier .
+arch:Qualification a arch:CandidateEvidence ;
+  arch:cannotGrant arch:DO, arch:Authority ;
+  arch:standingScope "repository-local architecture selection" .
+arch:DeterministicReplay a arch:QualificationRequirement ;
+  arch:requiresBinding arch:ExactRepository, arch:ExactCommit, arch:ArchitectureContractDigest,
+    arch:CandidateSBBDigest, arch:QualificationDigest, arch:IndependentObserverDigest .
