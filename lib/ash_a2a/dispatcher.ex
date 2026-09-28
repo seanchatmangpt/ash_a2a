@@ -701,11 +701,35 @@ defmodule AshA2A.Dispatcher do
   # so create/update/destroy's missing-tenant errors get the same
   # `{:invalid_config, _}` treatment as read's instead of falling through to
   # the generic `:input_required` clause below.
+  #
+  # `Ash.Error.Query.NotFound` (`deps/ash/lib/ash/error/query/not_found.ex`)
+  # also declares `class: :invalid`, but it signals a genuinely missing (or
+  # concurrently destroyed) record for an otherwise valid-shaped primary key
+  # -- not a defect in the caller's *input*. `fetch_record_for_update/3`
+  # (shared by `run_update/4` and `run_destroy/4`) calls `Ash.get/3`, whose
+  # not-found path goes through `Ash.Error.to_error_class/2`; Splode wraps the
+  # single `NotFound` in an `Ash.Error.Invalid{errors: [...]}` container, so
+  # `find_not_found/1` walks the wrapper's `errors:` list (and matches a
+  # bare `NotFound` too, handled by the clause above). Signaling
+  # `{:input_required, _}` here would tell a well-behaved A2A client to
+  # resubmit identical input forever against a record that will never exist,
+  # so it maps to the non-retryable `"not_found: ..."` class instead
+  # (carried forward from preserve/v26.9.22/stash-4, reshaped onto
+  # `class_message/2`).
+  defp to_reply({:error, %Ash.Error.Query.NotFound{} = error}) do
+    {:error, class_message(:not_found, Exception.message(error))}
+  end
+
   defp to_reply({:error, %{class: :invalid} = error}) do
-    if tenant_required_error?(error) do
-      {:error, class_message(:invalid_config, Exception.message(error))}
-    else
-      {:input_required, [Part.Text.new(Exception.message(error))]}
+    cond do
+      not_found = find_not_found(error) ->
+        {:error, class_message(:not_found, Exception.message(not_found))}
+
+      tenant_required_error?(error) ->
+        {:error, class_message(:invalid_config, Exception.message(error))}
+
+      true ->
+        {:input_required, [Part.Text.new(Exception.message(error))]}
     end
   end
 
@@ -766,6 +790,19 @@ defmodule AshA2A.Dispatcher do
     |> Exception.message()
     |> String.contains?(@tenant_required_text)
   end
+
+  # The record-missing error, bare or nested in a `class: :invalid` wrapper's
+  # `errors:` list, or `nil`. Returning the inner `NotFound` (not the wrapper)
+  # keeps the reply's message to the one "record with ... not found" line
+  # rather than the wrapper's aggregated, breadcrumb-bearing text. See the
+  # comment above the `to_reply/1` clauses that call this.
+  defp find_not_found(%Ash.Error.Query.NotFound{} = error), do: error
+
+  defp find_not_found(%{errors: errors}) when is_list(errors) do
+    Enum.find_value(errors, &find_not_found/1)
+  end
+
+  defp find_not_found(_error), do: nil
 
   defp missing_argument_message({:missing_argument, names}) when is_list(names) do
     "missing required argument(s): #{Enum.map_join(names, ", ", &to_string/1)}"
