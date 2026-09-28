@@ -13,7 +13,8 @@ defmodule AshA2A.Gall.Closure.ExactSubject do
          true <- Regex.match?(@digest, subject),
          identity when is_binary(identity) <- field(candidate, :candidate_digest),
          true <- Regex.match?(@digest, identity) do
-      {:ok, %{repository: repo, sha: sha, semantic_subject_digest: subject, candidate_digest: identity}}
+      {:ok,
+       %{repository: repo, sha: sha, semantic_subject_digest: subject, candidate_digest: identity}}
     else
       _ -> {:error, {:refused_gall, :exact_subject, :invalid_or_inexact_subject}}
     end

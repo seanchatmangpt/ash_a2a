@@ -19,11 +19,19 @@ defmodule AshA2A.Gall.Closure.Pipeline do
   def admit(candidate, policy) when is_map(candidate) and is_map(policy) do
     with {:ok, exact} <- ExactSubject.admit(candidate),
          {:ok, candidate} <- ProducerPolicy.admit(candidate, policy[:allowed_producers] || %{}),
-         {:ok, candidate} <- EvidencePolicy.admit(candidate, policy[:allowed_evidence_digests] || []),
-         {:ok, candidate} <- SemanticSubjectPolicy.admit(candidate, policy[:allowed_semantic_subjects] || []),
+         {:ok, candidate} <-
+           EvidencePolicy.admit(candidate, policy[:allowed_evidence_digests] || []),
+         {:ok, candidate} <-
+           SemanticSubjectPolicy.admit(candidate, policy[:allowed_semantic_subjects] || []),
          {:ok, candidate} <- VocabularyPolicy.admit(candidate, policy[:public_vocabularies] || []),
-         {:ok, candidate} <- CapabilityPolicy.admit(candidate, policy[:allowed_capabilities] || []) do
-      {:ok, %{candidate: candidate, exact_subject: exact, provenance: Provenance.build(candidate, policy[:task_id])}}
+         {:ok, candidate} <-
+           CapabilityPolicy.admit(candidate, policy[:allowed_capabilities] || []) do
+      {:ok,
+       %{
+         candidate: candidate,
+         exact_subject: exact,
+         provenance: Provenance.build(candidate, policy[:task_id])
+       }}
     end
   end
 

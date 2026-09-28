@@ -1,7 +1,8 @@
 defmodule AshA2A.Gall.Closure.ReceiptBinding do
   @moduledoc "Verifies that a canonical AshA2A receipt remains bound to the exact command and GALL candidate."
 
-  def admit(receipt, command, candidate) when is_map(receipt) and is_map(command) and is_map(candidate) do
+  def admit(receipt, command, candidate)
+      when is_map(receipt) and is_map(command) and is_map(candidate) do
     command_id = field(command, :command_id)
     capability = field(command, :capability_id)
     fingerprint = field(command, :fingerprint)
@@ -19,7 +20,8 @@ defmodule AshA2A.Gall.Closure.ReceiptBinding do
       not is_nil(fingerprint) and field(receipt, :fingerprint) != fingerprint ->
         {:error, {:refused_gall, :receipt_binding, :fingerprint_mismatch}}
 
-      (field(metadata, :candidate_digest) || field(effect, :gall_029_candidate_digest)) != candidate_digest ->
+      (field(metadata, :candidate_digest) || field(effect, :gall_029_candidate_digest)) !=
+          candidate_digest ->
         {:error, {:refused_gall, :receipt_binding, :candidate_mismatch}}
 
       true ->

@@ -6,9 +6,14 @@ defmodule AshA2A.Gall.Closure.ProducerPolicy do
     sha = field(candidate, :producer_sha)
 
     case Map.fetch(allowed, repo) do
-      {:ok, ^sha} -> {:ok, candidate}
-      {:ok, expected} -> {:error, {:refused_gall, :producer_policy, {:sha_mismatch, expected, sha}}}
-      :error -> {:error, {:refused_gall, :producer_policy, {:repository_not_admitted, repo}}}
+      {:ok, ^sha} ->
+        {:ok, candidate}
+
+      {:ok, expected} ->
+        {:error, {:refused_gall, :producer_policy, {:sha_mismatch, expected, sha}}}
+
+      :error ->
+        {:error, {:refused_gall, :producer_policy, {:repository_not_admitted, repo}}}
     end
   end
 

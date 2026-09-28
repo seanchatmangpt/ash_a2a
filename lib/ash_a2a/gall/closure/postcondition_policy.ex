@@ -7,7 +7,8 @@ defmodule AshA2A.Gall.Closure.PostconditionPolicy do
     {:ok, %{expected: expected, digest: Determinism.digest(expected)}}
   end
 
-  def bind(_), do: {:error, {:refused_gall, :postcondition_policy, :expected_postcondition_required}}
+  def bind(_),
+    do: {:error, {:refused_gall, :postcondition_policy, :expected_postcondition_required}}
 
   def verify(%{digest: digest}, observation) when is_map(observation) do
     independent = field(observation, :independent)
@@ -15,10 +16,17 @@ defmodule AshA2A.Gall.Closure.PostconditionPolicy do
     observed = field(observation, :expected_postcondition_digest)
 
     cond do
-      independent != true -> {:error, {:refused_gall, :postcondition_policy, :observer_not_independent}}
-      status not in [:verified, "verified"] -> {:error, {:refused_gall, :postcondition_policy, :not_verified}}
-      observed != digest -> {:error, {:refused_gall, :postcondition_policy, :subject_mismatch}}
-      true -> {:ok, observation}
+      independent != true ->
+        {:error, {:refused_gall, :postcondition_policy, :observer_not_independent}}
+
+      status not in [:verified, "verified"] ->
+        {:error, {:refused_gall, :postcondition_policy, :not_verified}}
+
+      observed != digest ->
+        {:error, {:refused_gall, :postcondition_policy, :subject_mismatch}}
+
+      true ->
+        {:ok, observation}
     end
   end
 

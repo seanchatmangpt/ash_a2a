@@ -1,7 +1,8 @@
 defmodule AshA2A.Gall.Closure.CapabilityPolicy do
   @moduledoc "Requires the capability to come from an admitted semantic rule and never from finding self-assertion."
 
-  def admit(candidate, allowed_capabilities) when is_map(candidate) and is_list(allowed_capabilities) do
+  def admit(candidate, allowed_capabilities)
+      when is_map(candidate) and is_list(allowed_capabilities) do
     capability = field(candidate, :capability_id)
     requested = field(candidate, :requested_capability_id)
 

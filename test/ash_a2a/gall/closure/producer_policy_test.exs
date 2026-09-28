@@ -8,6 +8,8 @@ defmodule AshA2A.Gall.Closure.ProducerPolicyTest do
     assert {:ok, ^candidate} = ProducerPolicy.admit(candidate, %{"seanchatmangpt/beam4pm" => sha})
 
     assert {:error, {:refused_gall, :producer_policy, {:sha_mismatch, _, _}}} =
-             ProducerPolicy.admit(candidate, %{"seanchatmangpt/beam4pm" => String.duplicate("b", 40)})
+             ProducerPolicy.admit(candidate, %{
+               "seanchatmangpt/beam4pm" => String.duplicate("b", 40)
+             })
   end
 end

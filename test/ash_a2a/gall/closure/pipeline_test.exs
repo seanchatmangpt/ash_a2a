@@ -25,6 +25,7 @@ defmodule AshA2A.Gall.Closure.PipelineTest do
 
     assert {:ok, admitted} = Pipeline.admit(candidate, policy)
     input = %{label: "x"}
+
     command = %{
       capability_id: "Item.create",
       input: input,

@@ -1,7 +1,8 @@
 defmodule AshA2A.Gall.Closure.VocabularyPolicy do
   @moduledoc "Admits only explicit public semantic vocabularies; private/secret vocabularies fail closed."
 
-  def admit(candidate, public_vocabularies) when is_map(candidate) and is_list(public_vocabularies) do
+  def admit(candidate, public_vocabularies)
+      when is_map(candidate) and is_list(public_vocabularies) do
     vocabulary = field(candidate, :vocabulary)
 
     cond do
