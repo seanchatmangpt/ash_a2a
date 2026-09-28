@@ -105,7 +105,10 @@ defmodule AshA2A.OnCancelHookTest do
     # Pinned on task_id: async modules cancel concurrently and fire the same
     # global telemetry event, so the first message may belong to another test.
     task_id = task.id
-    assert_receive {:ash_a2a_cancel_hook_error_telemetry, %{task_id: ^task_id} = error_meta}, 1_000
+
+    assert_receive {:ash_a2a_cancel_hook_error_telemetry, %{task_id: ^task_id} = error_meta},
+                   1_000
+
     assert error_meta.task_id == task.id
     assert error_meta.resource_or_domain == OnCancelErrorStreamItem
     assert error_meta.error.kind == :error
