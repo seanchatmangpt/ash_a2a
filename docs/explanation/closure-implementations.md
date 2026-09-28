@@ -2,7 +2,7 @@
 
 Three overlapping implementations of the GALL closure laws exist under `lib/ash_a2a/`.
 This page records which module owns which law, based on what the code does today.
-Nothing is deleted or moved by this document.
+The redundant modules have since been removed (see "Deduplication" below); this page now describes what remains.
 
 ## Standing and authority
 
@@ -13,16 +13,24 @@ A guard passing, an envelope binding, or a receipt projection is never a DO gran
 `authority: "NONE"` and `standing: "CANDIDATE"` values these modules emit are markers,
 not permissions.
 
-## The three trees
+## Deduplication (done)
 
-| Tree | Files | Shape | State |
-|---|---|---|---|
-| `AshA2A.Gall.Closure.*` (`lib/ash_a2a/gall/closure/`) | 27 | Policy modules with typed `{:refused_gall, module, reason}` refusals, composed by `Pipeline` (`admit/2`, `preflight/3`, ...) | Formatted, main line. The only tree consumed by other code: `AshA2A.Gall.Receipt` aliases `Gall.Closure.Determinism` for receipt digests. |
-| `AshA2A.GallClosure.*` (`lib/ash_a2a/gall_closure/`) | 30 | Tiny `admit/1` guards on one key each | Being hardened (work in progress). At the last committed state, `AuthorityCeiling`, `OneDoGate`, `InterventionBudget`, `LeaseGuard`, `MigrationGuard` and `ScopeGuard` still only test that the key is not `nil`, `false` or `""`. |
-| `AshA2A.SemanticWork.*` (`lib/ash_a2a/semantic_work/`) | 30 | `bind/1` identity envelopes, each with its own copy-pasted `req!/2` helper | Being refactored onto a shared `AshA2A.SemanticWork.Envelope` (work in progress; the committed modules still carry their own `req!/2`). |
+`AshA2A.Gall.Closure.*` (27 modules, `lib/ash_a2a/gall/closure/`) is the canonical
+implementation and the only tree consumed by other code (`AshA2A.Gall.Receipt` aliases
+`Gall.Closure.Determinism`). Every `GallClosure.*` and `SemanticWork.*` module that had a
+canonical equivalent there was removed together with its tests: 26 of 30 `GallClosure`
+modules and 21 of 30 `SemanticWork` modules. Nothing outside those trees referenced them.
+Removed modules remain in git history.
 
-Only `Gall.Receipt` references these trees from outside them. `gall_closure/` and `semantic_work/`
-have no non-test consumers today, so nothing depends on them being kept as they are.
+Kept because no canonical owner exists yet:
+
+| Module | Why kept |
+|---|---|
+| `GallClosure.LeaseGuard` | `Gall.Closure` has no lease law. Value-checking (non-negative integer epoch). |
+| `GallClosure.CheckpointBinding`, `FindingBinding`, `InterventionClosure` | No `Gall.Closure` counterpart. |
+| `SemanticWork.Lease` | Lease identity envelope (`expires_at` validated). |
+| `SemanticWork.Admission`, `Candidate`, `Checkpoint`, `GraphIdentity`, `Projection`, `Provider`, `WorkOrder` | No `Gall.Closure` counterpart. |
+| `SemanticWork.Envelope` | Shared `fetch/2` used by the kept envelopes; replaces the per-module `req!/2` copies. |
 
 ## ERRC
 
@@ -35,46 +43,32 @@ have no non-test consumers today, so nothing depends on them being kept as they 
 
 ## Ownership by law
 
-"Canonical" is the module that today carries the real check or the most complete behaviour.
-Where no tree has a value-checking implementation, that is stated instead of guessed.
+Each law below is owned by the listed `Gall.Closure` module. The former `GallClosure.*` /
+`SemanticWork.*` equivalents were removed (except where noted in the kept table above).
 
-| Law | Canonical owner | Redundant equivalents |
-|---|---|---|
-| Authority ceiling | `Gall.Closure.AuthorityBinding` (subject, capability, scope and budget compared to the command); the `"NONE"` marker is set by `Gall.Closure.Migration` | `GallClosure.AuthorityCeiling` (presence only), `SemanticWork.AuthorityCeiling` (envelope with fixed `authority: "NONE"`) |
-| One DO / one consequence | `Gall.Closure.BudgetPolicy` (must equal 1) | `GallClosure.OneDoGate` (presence only), `GallClosure.CommandBusBoundary`, `SemanticWork.CommandBoundary` |
-| Intervention budget | `Gall.Closure.BudgetPolicy` | `GallClosure.InterventionBudget` (presence only), `SemanticWork.Budget` |
-| Lease | No value-checking owner. Neither `Gall.Closure` nor `Gall.Receipt` handles leases. | `GallClosure.LeaseGuard` (presence only, so it becomes the owner once hardened), `SemanticWork.Lease` (identity envelope) |
-| Scope | `Gall.Closure.ScopePolicy` (input digest and target compared to the command) | `GallClosure.ScopeGuard` (presence only), `SemanticWork.Scope` |
-| Migration / version | `Gall.Closure.Migration` (`to_v1`) with `Gall.Closure.Compatibility` (fail-closed gate) | `GallClosure.MigrationGuard`, `GallClosure.CompatibilityGuard`, `SemanticWork.Migration`, `SemanticWork.Compatibility` |
-| Exact subject | `Gall.Closure.ExactSubject`, plus `SemanticSubjectPolicy` for semantic subjects | `GallClosure.ExactSubject`, `SemanticWork.ExactSubject`, `SemanticWork.SourceIdentity` |
-| Receipt binding | `Gall.Closure.ReceiptBinding` (receipt bound to the exact command and candidate), with `AshA2A.Gall.Receipt` for the receipt projection | `GallClosure.ReceiptBinding`, `SemanticWork.Receipt` |
-| Replay | `Gall.Closure.ReplayGuard` (classifies exact replay, no second consequence) | `GallClosure.ReplayBinding`, `SemanticWork.Replay` (`consequence_budget: 0`) |
-| OCEL | `Gall.Closure.OcelProjection` | `GallClosure.OcelIdentity`, `SemanticWork.OcelBinding` |
-| Provenance | `Gall.Closure.Provenance` | `GallClosure.ProvenanceBinding`, `SemanticWork.Provenance` |
-| Falsifier | `Gall.Closure.Falsifier` (bounded negative controls) | `GallClosure.Falsifier`, `SemanticWork.Falsifier` |
-| Idempotency | `Gall.Closure.IdempotencyPolicy` | `GallClosure.Idempotency`, `SemanticWork.Idempotency` |
-| Postcondition | `Gall.Closure.PostconditionPolicy` | `GallClosure.Postcondition`, `SemanticWork.Postcondition` |
-| Capability / command binding | `Gall.Closure.CapabilityPolicy`, `CommandBinding` | `GallClosure.CommandIdentity`, `SemanticWork.Capability` |
-| Determinism (digest) | `Gall.Closure.Determinism` (used by `Gall.Receipt`) | `GallClosure.Determinism`, `SemanticWork.Determinism` |
-| Refusal / recovery | `Gall.Closure.Refusal`, `Recovery` | `GallClosure.TypedRefusal`, `RecoveryRoute`, `SemanticWork.Refusal`, `Recovery` |
-| Audit, planning, simulation consumers | `Gall.Closure.AuditConsumer`, `PlanningConsumer`, `SimulationConsumer` | `GallClosure.AuditConsumer`, `PrimaryConsumer`, `SimulationConsumer`, `SemanticWork.Consumer` |
-| Evidence / vocabulary / producer policy | `Gall.Closure.EvidencePolicy`, `VocabularyPolicy`, `ProducerPolicy` | `GallClosure.EvidenceBinding`, `PolicyGuard`, `StandingGuard`, `SemanticWork.Policy`, `Standing` |
-| Telemetry | `Gall.Closure.TelemetryEnvelope` | `GallClosure.ObservationGuard` |
-| Composition | `Gall.Closure.Pipeline` (`admit/2`, `preflight/3`) | none |
+| Law | Owner |
+|---|---|
+| Authority ceiling | `Gall.Closure.AuthorityBinding` (the `"NONE"` marker is set by `Gall.Closure.Migration`) |
+| One DO / intervention budget | `Gall.Closure.BudgetPolicy` (must equal 1) |
+| Lease | `GallClosure.LeaseGuard` (no `Gall.Closure` owner) |
+| Scope | `Gall.Closure.ScopePolicy` |
+| Migration / version | `Gall.Closure.Migration` with `Compatibility` |
+| Exact subject | `Gall.Closure.ExactSubject`, `SemanticSubjectPolicy` |
+| Receipt binding | `Gall.Closure.ReceiptBinding`, `AshA2A.Gall.Receipt` |
+| Replay | `Gall.Closure.ReplayGuard` |
+| OCEL | `Gall.Closure.OcelProjection` |
+| Provenance | `Gall.Closure.Provenance` |
+| Falsifier | `Gall.Closure.Falsifier` |
+| Idempotency | `Gall.Closure.IdempotencyPolicy` |
+| Postcondition | `Gall.Closure.PostconditionPolicy` |
+| Capability / command binding | `Gall.Closure.CapabilityPolicy`, `CommandBinding` |
+| Determinism (digest) | `Gall.Closure.Determinism` |
+| Refusal / recovery | `Gall.Closure.Refusal`, `Recovery` |
+| Audit / planning / simulation consumers | `Gall.Closure.AuditConsumer`, `PlanningConsumer`, `SimulationConsumer` |
+| Evidence / vocabulary / producer policy | `Gall.Closure.EvidencePolicy`, `VocabularyPolicy`, `ProducerPolicy` |
+| Telemetry | `Gall.Closure.TelemetryEnvelope` |
+| Composition | `Gall.Closure.Pipeline` (`admit/2`, `preflight/3`) |
 
-`SemanticWork.*` modules with no closure counterpart (`Admission`, `Candidate`, `Checkpoint`,
-`GraphIdentity`, `Projection`, `Provider`, `WorkOrder`) and `GallClosure.*` modules likewise
-(`CheckpointBinding`, `FindingBinding`, `InterventionClosure`) are not covered by this map.
-Decide their owner when each is reached.
+## Follow-up
 
-## Follow-up plan
-
-1. Finish the in-progress `SemanticWork.Envelope` extraction so the `req!/2` copies go away. Keep the
-   `{:refused_missing_identity, key}` and `:refused_invalid_envelope` refusals unchanged.
-2. Finish value-checking hardening of the six `GallClosure` guards listed above, with
-   negative tests per guard. `LeaseGuard` needs an expected-value source, since `Gall.Closure`
-   has no lease law to defer to.
-3. Have `GallClosure` and `SemanticWork` modules delegate to the canonical owner where one is
-   named above, or document them as thin envelopes over it.
-4. Only after that, and after confirming no callers remain, propose removal or merge. Removal is
-   a separate change and is not part of this one.
+Decide canonical owners for the kept modules, or move them under `Gall.Closure`, as they are reached.

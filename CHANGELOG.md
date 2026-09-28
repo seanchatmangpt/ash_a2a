@@ -52,10 +52,13 @@ once it reaches 1.0.
   `SemanticProjection` output, and OCEL events forward the five `spg_*`
   attributes (`spg_graph_id`, `spg_graph_version`, `spg_node_id`,
   `spg_edge_id`, `spg_projection_family`) when SPG identity is present.
-- Closure layer: added `docs/explanation/closure-implementations.md`, which maps each
-  closure law to one canonical owner among `Gall.Closure.*`, `GallClosure.*` and
-  `SemanticWork.*`. Documentation only; no module is removed and nothing here grants
-  authority (only `CommandBus` and `BrceAnchor` DO).
+- Closure layer deduplicated: `Gall.Closure.*` is the canonical implementation.
+  26 redundant `GallClosure.*` and 21 redundant `SemanticWork.*` modules (and their
+  tests) were removed; the remaining `GallClosure.LeaseGuard` and `SemanticWork.*`
+  envelopes have no canonical counterpart and now share `SemanticWork.Envelope`.
+  49 closure/SPG refusal codes are classified in `Semantic.Refusal`. See
+  `docs/explanation/closure-implementations.md`. Nothing here grants authority
+  (only `CommandBus` and `BrceAnchor` DO).
 - `AshA2A.Planning.BoundedPlan` gains `:work_order_digest` (39752e9) —
   `AshA2A.Planning.Preflight` folds the admitted work-order digest into the
   preflight identity, so a step claiming a different work-order identity is
