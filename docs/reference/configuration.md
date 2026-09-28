@@ -31,7 +31,7 @@ fail-closed defaults are deliberate.
 
 | Key | Default | Consumed by / meaning |
 | --- | --- | --- |
-| `:capability_release_closure` | `nil` | `AshA2A.CapabilityRelease` / `AshA2A.CommandBus` — the frozen released closure (`freeze/1` builds a `%Closure{digest, capabilities}` from released capabilities only). In strict mode, execution requires exact skill-id membership in this closure; passing a closure in `CommandBus` opts implies `:strict` for that call unless a mode is explicitly supplied. |
+| `:capability_release_closure` | `nil` | `AshA2A.CapabilityRelease` / `AshA2A.CommandBus` / `AshA2A.Dispatcher` — the frozen released closure (`freeze/1` builds a `%Closure{digest, capabilities}` from released capabilities only). In strict mode, execution requires exact skill-id membership in this closure; passing a closure in `CommandBus` opts implies `:strict` for that call unless a mode is explicitly supplied. |
 | `:capability_release_mode` | `:legacy` | `AshA2A.CapabilityRelease.guard/2` release-gate mode. `:legacy` preserves pre-v26.9.26 behavior (gate inert). `:strict` requires a frozen closure and exact skill-id membership: strict + absent closure refuses `:capability_release_closure_missing` (S42 `:refused_provenance`); a capability outside the closure refuses `:capability_release_refused` (S42 `:refused_capability`). Any other value refuses `{:invalid_capability_release_mode, mode}`. |
 
 ## Application config — LLM roles, telemetry, planning

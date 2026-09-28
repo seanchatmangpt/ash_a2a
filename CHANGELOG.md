@@ -52,6 +52,32 @@ once it reaches 1.0.
   `SemanticProjection` output, and OCEL events forward the five `spg_*`
   attributes (`spg_graph_id`, `spg_graph_version`, `spg_node_id`,
   `spg_edge_id`, `spg_projection_family`) when SPG identity is present.
+- `AshA2A.Planning.BoundedPlan` gains `:work_order_digest` (39752e9) —
+  `AshA2A.Planning.Preflight` folds the admitted work-order digest into the
+  preflight identity, so a step claiming a different work-order identity is
+  refused `:preflight_work_order_mismatch` (reporting the planned
+  `:plan_digest` vs the claimed `:work_order_digest`), classified S42
+  `:refused_identity`.
+- Closure identity gains `portable_digest` (015e126) — SHA-256 over RFC 8785
+  canonical JSON of a `chatman.release-closure/v1` payload (lexically
+  sorted), recomputable cross-runtime without BEAM term encoding; the
+  existing digest remains the compatibility identity.
+- Strict-mode receipts merge `AshA2A.CapabilityRelease.attributes/1` into
+  `intended_effect` before commit; `intended_effect` is omitted entirely
+  when the merged map is empty (658c959).
+- Release-closure gating reaches the card and the direct dispatch path
+  (6fcc5b7, c846fac): `AshA2A.Info.agent_card/2` builds from the capability
+  index filtered through the active release closure — legacy mode (default)
+  advertises the full index with wire behavior unchanged, strict mode
+  advertises only exact released skill ids, and a closure refusal raises
+  `ArgumentError` at card-build time — with new public companions
+  `AshA2A.Info.released_capability_index/2` (returns `nil` when not
+  compiled) and the non-raising `AshA2A.Info.released_capability_index_result/2`;
+  `AshA2A.Dispatcher.dispatch/6` now guards every skill through
+  `AshA2A.CapabilityRelease.guard/2` before context resolution, so in strict
+  mode a non-member skill (even `:read`) fails with
+  `{:error, {:release_gate, {:capability_release_refused, ...}}}` (task
+  `:failed`; `:release_gate` is a new stage in stage-tagged error tuples).
 
 ## [26.9.22] - 2026-09-23
 

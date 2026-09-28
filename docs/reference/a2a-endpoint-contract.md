@@ -29,9 +29,17 @@ production deployment must always set it.
 
 ## Agent card
 
-`AshA2A.Info.agent_card/2` projects the compiled capability index
-(`AshA2A.CapabilityIndex.AgentCardBuilder.build_agent_card/2`) into an
-`A2A.AgentCard`:
+`AshA2A.Info.agent_card/2` builds the card from the compiled capability
+index (`AshA2A.CapabilityIndex.AgentCardBuilder.build_agent_card/2`)
+filtered through the active release closure (6fcc5b7, PR #43). In legacy
+mode (the `:capability_release_mode` default) the full index is
+advertised and wire behavior is unchanged; in `:strict` mode only exact
+skill ids present in the frozen released closure are advertised, and a
+closure refusal raises `ArgumentError` at card-build time. The public
+companions are `AshA2A.Info.released_capability_index/2` (returns `nil`
+when the resource is not compiled; raises on a closure refusal) and the
+non-raising `AshA2A.Info.released_capability_index_result/2`. The
+projected card is an `A2A.AgentCard`:
 
 - `name` (default `"ash_a2a_agent"`), `description`, `version` (default
   `"0.1.0"`), `provider` — overridable via card opts.
@@ -93,6 +101,14 @@ supported · `-32004` unsupported operation (also
 Resource/action wiring problems (`TenantRequired`, `NoPrimaryAction`)
 surface as `{:error, {:invalid_config, _}}` task failures, not
 `input_required`.
+
+Direct dispatch (`AshA2A.Dispatcher.dispatch/6`) additionally guards
+every skill through `AshA2A.CapabilityRelease.guard/2` before context
+resolution (c846fac). In `:strict` mode a skill outside the frozen
+released closure — including `:read` skills — fails with
+`{:error, {:release_gate, {:capability_release_refused, ...}}}` (task
+`:failed`); `:release_gate` is a stage in the dispatcher's stage-tagged
+error tuples, between `:skill_lookup` and `:action_resolution`.
 
 ## Metadata merge order
 
