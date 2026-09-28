@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Deliberate ekv source build (SC-03): ekv 0.4.3 ships no 0.4.3 checksums.
+  EKV_BUILD: "1"
+
 jobs:
   receipt:
     runs-on: ubuntu-latest
@@ -28,9 +32,9 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19.0"
-          otp-version: "28.0.2"
-      - run: mix deps.get
+          version-file: .tool-versions
+          version-type: strict
+      - run: mix deps.get --check-locked
       - name: Parse portable receipt court
         env:
           MIX_ENV: test

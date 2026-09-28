@@ -1,6 +1,12 @@
 defmodule AshA2A.MixProject do
   use Mix.Project
 
+  # Whole-suite line-coverage floor (see test_coverage/0). Measured 78.78%
+  # total on 2026-09-27 (`mix test.all --cover` at 8a69838 plus in-flight
+  # lane edits); the floor sits a few points under the measurement so
+  # scheduling noise does not flap CI, and is meant to ratchet upward.
+  @coverage_threshold 75
+
   def cli do
     [
       preferred_envs: [
@@ -26,7 +32,8 @@ defmodule AshA2A.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       docs: docs(),
-      aliases: aliases()
+      aliases: aliases(),
+      test_coverage: test_coverage()
     ]
   end
 
@@ -162,8 +169,40 @@ defmodule AshA2A.MixProject do
       # The four Diataxis quadrants ship in the package so `mix hex.publish`
       # can build the ExDoc extras declared in docs/0 above. Internal trees
       # (docs/archive, docs/rfc, research) deliberately do NOT ship.
-      files:
-        ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE docs/tutorials docs/how-to docs/reference docs/explanation)
+      #
+      # The two native helper crates ship as SOURCE ONLY (manifest, lock,
+      # toolchain pin, src -- never `target/`): lib/ code reads
+      # `native/hddl_cli/Cargo.toml` (AshA2A.Chicago.Release.CompositionLock)
+      # and resolves `native/*/target/release/*` binaries, so a Hex consumer
+      # must be able to rebuild the exact locked closure from the tarball
+      # (`cargo +1.97.1 build --release --locked --manifest-path ...`).
+      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
+           docs/tutorials docs/how-to docs/reference docs/explanation) ++ native_package_files()
+    ]
+  end
+
+  @native_crates ~w(hddl_cli graphlaw_host)
+
+  @doc false
+  def native_package_files do
+    for crate <- @native_crates,
+        file <- ~w(Cargo.toml Cargo.lock rust-toolchain.toml src),
+        do: "native/#{crate}/#{file}"
+  end
+
+  # Coverage gate (TQ-09). The floor is the measured whole-suite total at the
+  # time the gate was introduced, so it ratchets rather than silently
+  # regressing; CI runs `mix test.all --cover`, which exits 3 below the
+  # threshold (`--export-coverage` would skip the threshold entirely).
+  # Chicago bench/fixture code and test support are excluded: they are court
+  # material, not library surface.
+  defp test_coverage do
+    [
+      summary: [threshold: @coverage_threshold],
+      ignore_modules: [
+        ~r/^AshA2A\.Chicago\.(Bench|Fixtures)\./,
+        ~r/^AshA2A\.Test\./
+      ]
     ]
   end
 

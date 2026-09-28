@@ -15,14 +15,21 @@ name: Swarm test (kind)
 on:
   workflow_dispatch: {}
 
+# Least privilege: the job only reads the repo and uses the Actions cache
+# runtime token (not a repository permission).
+permissions:
+  contents: read
+
 jobs:
   swarm-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       # Real, disclosed requirement (confirmed against docs.docker.com/build/cache/backends/gha/):
       # a bare `docker buildx build` shell step does NOT automatically see
@@ -31,7 +38,7 @@ jobs:
       # `--cache-from/--cache-to type=gha` below would silently fail to
       # authenticate (no cache hit, no error) on github.com-hosted runners.
       - name: Expose GitHub Runtime for buildx gha cache
-        uses: crazy-max/ghaction-github-runtime@v4
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4
 
       # The Dockerfile layer reorder (deps.get before COPY lib/) only lets a single
       # build reuse its own layers; this GHA cache additionally lets that cache
@@ -48,7 +55,7 @@ jobs:
             .
 
       - name: Create kind cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
           cluster_name: ash-a2a-swarm
           wait: 90s
@@ -100,7 +107,7 @@ jobs:
 
       - name: Real resilience/chaos test (kill one pod, verify self-heal + swarm reformation)
         run: |
-          PODS=($(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[*].metadata.name}'))
+          read -r -a PODS <<< "$(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[*].metadata.name}')"
           kubectl -n ash-a2a-swarm delete pod "${PODS[${#PODS[@]}-1]}" --wait=false
           kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=90s
           sleep 8

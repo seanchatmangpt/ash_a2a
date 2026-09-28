@@ -1,0 +1,168 @@
+# Hex release, triggered by a version tag (SC-06). Replaces the per-version
+# release-v26.9.25.yml: a pushed `v<version>` tag is the release subject, and
+# the job refuses unless the tag equals mix.exs `version`.
+#
+# Authority: the publishing job runs in the `hex-release` environment, which
+# must be configured in repository settings with required reviewers and the
+# HEX_API_KEY secret scoped to that environment
+# (`gh secret set HEX_API_KEY --env hex-release`). Without that secret the job
+# stops at "Admit publish authority" with BLOCKED(authority:HEX_API_KEY) and
+# exit 2 -- nothing is published.
+#
+# Supply chain (SC-02/SC-07/SC-12): lock drift and advisories refuse before
+# build; the consumer prod closure must compile; CycloneDX SBOMs (Hex closure +
+# both native crates) and build-provenance/SBOM attestations are produced for
+# the exact tarball and attached to the GitHub release.
+name: Hex release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hex-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EKV_BUILD: "1"
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: hex-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout exact release subject
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Admit exact version (tag == mix.exs version)
+        id: subject
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -nE 's/^[[:space:]]*version:[[:space:]]*"([^"]+)".*/\1/p' mix.exs | head -1)"
+          test -n "$version" || { echo "REFUSED(release:no mix.exs version)" >&2; exit 2; }
+          test "$tag" = "$version" || { echo "REFUSED(release:tag $tag != mix.exs $version)" >&2; exit 2; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "subject=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Set up Erlang/OTP and Elixir (.tool-versions)
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - name: Prepare Hex
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+      - name: Refuse lock drift and advisories
+        run: |
+          mix deps.get --check-locked
+          mix hex.audit
+      # SC-12: prove the closure a Hex consumer actually compiles (no dev-only
+      # ggen_igniter; rustler is present only transitively via wasmex's
+      # rustler_precompiled, which downloads a prebuilt NIF) before anything is
+      # published.
+      - name: Verify consumer prod closure compiles
+        env:
+          MIX_ENV: prod
+        run: |
+          mix deps.get --only prod --check-locked
+          mix compile --warnings-as-errors
+      - name: Build exact package subject
+        run: |
+          set -euo pipefail
+          mix hex.build -o "ash_a2a-${{ steps.subject.outputs.version }}.tar"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: CycloneDX SBOMs (Hex prod closure + native crates)
+        run: |
+          set -euo pipefail
+          v="${{ steps.subject.outputs.version }}"
+          mix escript.install hex sbom 0.11.0 --force
+          "$HOME/.mix/escripts/mix_sbom" cyclonedx --only prod --format json \
+            --output "ash_a2a-$v.cdx.json" --force .
+          cargo +1.97.1 install cargo-cyclonedx --locked --version 0.5.9
+          for crate in hddl_cli graphlaw_host; do
+            cargo +1.97.1 cyclonedx --manifest-path "native/$crate/Cargo.toml" \
+              --format json --override-filename "$crate-$v.cdx"
+            mv "native/$crate/$crate-$v.cdx.json" .
+          done
+          ls -l ./*.cdx.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: ash_a2a-${{ steps.subject.outputs.version }}.tar
+      - name: Attest SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
+        with:
+          subject-path: ash_a2a-${{ steps.subject.outputs.version }}.tar
+          sbom-path: ash_a2a-${{ steps.subject.outputs.version }}.cdx.json
+      - name: Observe registry
+        id: registry
+        env:
+          PACKAGE: ash_a2a
+          VERSION: ${{ steps.subject.outputs.version }}
+        run: |
+          set -euo pipefail
+          if curl -fsS "https://hex.pm/api/packages/$PACKAGE" | jq -e --arg v "$VERSION" '.releases[]? | select(.version == $v)' >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Admit publish authority
+        if: steps.registry.outputs.exists != 'true'
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          test -n "$HEX_API_KEY" || { echo "BLOCKED(authority:HEX_API_KEY)" >&2; exit 2; }
+      - name: Publish to Hex
+        if: steps.registry.outputs.exists != 'true'
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: mix hex.publish --yes
+      - name: Verify Hex consequence
+        env:
+          PACKAGE: ash_a2a
+          VERSION: ${{ steps.subject.outputs.version }}
+        run: |
+          set -euo pipefail
+          # `mix hex.publish` rebuilds the package, so the registry copy is
+          # only the attested subject if its outer checksum equals the sha256
+          # of the tarball the provenance/SBOM attestations name.
+          local_sum="$(sha256sum "ash_a2a-$VERSION.tar" | cut -d' ' -f1)"
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if remote_sum="$(curl -fsS "https://hex.pm/api/packages/$PACKAGE/releases/$VERSION" | jq -er '.checksum')"; then
+              if [ "$remote_sum" = "$local_sum" ]; then
+                exit 0
+              fi
+              echo "REFUSED(release:hex checksum $remote_sum != attested $local_sum)" >&2
+              exit 2
+            fi
+            sleep 3
+          done
+          echo "BLOCKED(evidence:hex-registry)" >&2
+          exit 3
+      - name: GitHub release with tarball, SBOMs and provenance subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SUBJECT: ${{ steps.subject.outputs.subject }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)" = "$SUBJECT" \
+            || test "$(git rev-parse "$TAG^{commit}")" = "$SUBJECT"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" ash_a2a-*.tar ./*.cdx.json --clobber

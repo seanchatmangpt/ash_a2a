@@ -1,6 +1,10 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
 
+# Per-lane / per-merge build roots (MIX_BUILD_ROOT=_build-<lane>) used by
+# same-checkout agent fan-out: build output, never source.
+/_build-*/
+
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 

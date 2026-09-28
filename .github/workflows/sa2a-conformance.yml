@@ -30,6 +30,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Deliberate ekv source build (SC-03): ekv 0.4.3 ships no 0.4.3 checksums.
+  EKV_BUILD: "1"
+
 jobs:
   receipts:
     runs-on: ubuntu-latest
@@ -49,24 +53,26 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Admit exact subject
         env:
           EXPECTED_SHA: ${{ github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-      - uses: erlef/setup-beam@v1
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          otp-version: "28.0"
-          elixir-version: "1.19.0"
-      - uses: actions/cache@v4
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             deps
             _build
             native/hddl_cli/target
-          key: ash-a2a-sa2a-${{ runner.os }}-${{ hashFiles('mix.lock', 'native/hddl_cli/Cargo.lock') }}
+            native/graphlaw_host/target
+          key: ash-a2a-sa2a-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal
       - name: Build exact ferroplan-backed HDDL CLI
@@ -75,16 +81,18 @@ jobs:
       # runtime B through this native host; without it the court degrades to
       # PARTIAL_ALIVE (cross-runtime control blocked), never CONFORMANT.
       - name: Build graphlaw_host (wasmtime runtime B)
-        run: cargo build --release --manifest-path native/graphlaw_host/Cargo.toml
+        run: cargo +1.97.1 build --release --locked --manifest-path native/graphlaw_host/Cargo.toml
       - run: mix local.hex --force
       - run: mix local.rebar --force
-      - run: mix deps.get
+      - run: mix deps.get --check-locked
       - run: mix compile --warnings-as-errors
       # Tripwire: court machinery must be admitted. A lib change that moves a
       # court digest without a reviewed re-pin is drift, and this fails the
       # job before a drifted receipt can even be produced.
       - name: Court manifest admission check
-        run: MIX_ENV=test mix ash_a2a.chicago.pin_court_manifest --check
+        env:
+          MIX_ENV: test
+        run: mix ash_a2a.chicago.pin_court_manifest --check
       # The strict conformance corpus is RECORDED, not gating: its
       # v006_blank_nodes vector fails deterministically on every host ("input
       # identity is not a function of the input graph" -- graph_hash/1 is not
@@ -97,7 +105,9 @@ jobs:
       - name: SA2A strict conformance corpus court (recorded)
         id: strict
         continue-on-error: true
-        run: MIX_ENV=test mix ash_a2a.sa2a_conformance --out sa2a-conformance.json
+        env:
+          MIX_ENV: test
+        run: mix ash_a2a.sa2a_conformance --out sa2a-conformance.json
       # The court needs the same runtime collaborators ExUnit's test_helper
       # provides: a live InMemory authority broker (without it
       # SA2A-TRANSPORT-004/005 block on {:noproc, ...}) and test-env config.
@@ -116,14 +126,16 @@ jobs:
       # manifest) is where that standing is earned.
       - name: Chicago core standing court (recorded)
         if: always()
+        env:
+          MIX_ENV: test
         run: >-
-          MIX_ENV=test mix run --eval
+          mix run --eval
           '{:ok, _} = AshA2A.Authority.Broker.InMemory.start_link([]);
           Mix.Task.run("ash_a2a.chicago",
           ["--profile", "core", "--evidence-dir", "chicago"])'
       - name: Publish exact-SHA receipts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sa2a-conformance-${{ github.sha }}
           path: |

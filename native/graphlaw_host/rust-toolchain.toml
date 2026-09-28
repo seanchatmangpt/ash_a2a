@@ -1,0 +1,4 @@
+# One Rust toolchain identity for local and CI builds (CI passes +1.97.1).
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"

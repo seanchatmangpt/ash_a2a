@@ -32,6 +32,8 @@ host imports nor marshal Rust `String` returns, so a real host program is
 required.
 """
 license = "MIT"
+# Build-only helper binary; never published to crates.io.
+publish = false
 
 [[bin]]
 name = "graphlaw_host"
@@ -39,5 +41,7 @@ path = "src/main.rs"
 
 [dependencies]
 wasmtime = "=48.0.1"
-serde_json = "1"
-sha2 = "0.10"
+# Exact pins matching Cargo.lock: Runtime B conformance receipts must come
+# from one dependency identity (SC-08), not whatever `1`/`0.10` resolves to.
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"

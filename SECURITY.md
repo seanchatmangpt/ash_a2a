@@ -2,18 +2,46 @@
 
 ## Supported versions
 
-`ash_a2a` uses calendar versioning (`YY.M.N`). Only the latest `26.9.x`
-line on `main` receives security fixes; published Hex releases lag `main`
-in this era, so check the [CHANGELOG](CHANGELOG.md) for which fixes a given
-Hex version actually contains.
+`ash_a2a` uses calendar versioning (`YY.M.N`). Security fixes land on `main`
+and ship in the next Hex release; only the newest published Hex version is
+supported.
+
+| Version | Supported | Notes |
+|---|---|---|
+| latest `26.9.x` on Hex | yes | fixes are backported only to the newest release |
+| older `26.9.x` | no | upgrade to the newest release |
+| `main` (unreleased) | best effort | may be ahead of Hex; see [CHANGELOG](CHANGELOG.md) |
+
+The [CHANGELOG](CHANGELOG.md) names the first Hex version that carries each
+security fix (and its GHSA/CVE id once one is assigned).
 
 ## Reporting a vulnerability
 
-Open a GitHub issue at
-<https://github.com/seanchatmangpt/ash_a2a/issues> describing the impact
-and, if possible, a reproduction. This is a solo-maintained research-era
-project; there is no private channel yet — do not include live credentials
-in a report.
+**Do not open a public issue for a vulnerability.** Report it privately
+through GitHub Private Vulnerability Reporting:
+<https://github.com/seanchatmangpt/ash_a2a/security/advisories/new>.
+Include the impact, affected version or commit SHA, and a reproduction if
+possible. Never include live credentials.
+
+If that form is unavailable (Private Vulnerability Reporting disabled or the
+link returns an error), open a public issue titled `Security contact request`
+that contains **no** vulnerability details; the maintainer will open a
+private advisory and invite you to it.
+
+Response targets (solo maintainer, best effort, business days):
+
+| Step | Target |
+|---|---|
+| Acknowledge the report | 3 business days |
+| Triage and severity (CVSS v4) | 7 business days |
+| Fix released: critical / high | 14 / 30 days |
+| Fix released: medium / low | 90 days / next release |
+
+Disclosure process: the fix is developed in a private GitHub security
+advisory, a GHSA (and a CVE through GitHub's CNA when warranted) is
+requested, the fixed Hex version is published, and the advisory is then made
+public with credit to the reporter unless they ask otherwise. The default
+coordinated-disclosure window is 90 days from the report.
 
 Include the module and refusal code if you hit one: the library fails
 closed with typed `:REFUSED_*` / `:refused_*` vocabulary (see
@@ -37,6 +65,21 @@ mTLS is declared-but-unsupported at the plug layer. Details:
 [verifying authority on async paths](docs/how-to/verify-authority-on-async-paths.md).
 
 ## Operational security notes
+
+Production hardening checklist (see
+[the configuration reference](docs/reference/configuration.md) for each key):
+
+- `config :ash_a2a, :strict_security, true` -- boot-time
+  `AshA2A.Authority.SecurityPreflight.check!/0` refuses insecure settings
+  (legacy authority policy, missing/in-memory broker, in-memory receipt store,
+  EKV data dir under the OS temp dir) instead of warning.
+- Leave `config :ash_a2a, :require_authenticated_caller` at its default
+  `true`; opt individual skills out with `public_skills:` only when they are
+  meant to be anonymous.
+- Keep `config :ash_a2a, :semantic_max_text_bytes` bounded (default 16_384)
+  if the semantic surface is enabled.
+- Never set `:allow_legacy_authority_policy` in production.
+- Bound request bodies at the endpoint (`Plug.Parsers`, `length:`).
 
 - The default receipt store is in-memory; production durability wants
   `config :ash_a2a, :receipt_store, AshA2A.ReceiptStore.Ekv` with a real

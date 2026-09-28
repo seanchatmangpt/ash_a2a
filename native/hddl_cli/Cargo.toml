@@ -17,6 +17,8 @@ Elixir surface. The Rust dependency is therefore the canonical ferroplan source
 itself, not an ambient sibling checkout and not a reimplementation or mock.
 """
 license = "MIT"
+# Build-only helper binary; never published to crates.io.
+publish = false
 
 [[bin]]
 name = "hddl_cli"
@@ -27,7 +29,7 @@ name = "hddl_analyze"
 path = "src/bin/hddl_analyze.rs"
 
 [dependencies]
-ferroplan = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "e90928d7b0687a959831553c4eacca3d75ca6c88" }
-ferroplan-hddl = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "e90928d7b0687a959831553c4eacca3d75ca6c88" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+ferroplan = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "e90928d7b0687a959831553c4eacca3d75ca6c88", version = "=0.28.0" }
+ferroplan-hddl = { git = "https://github.com/seanchatmangpt/ferroplan.git", rev = "e90928d7b0687a959831553c4eacca3d75ca6c88", version = "=0.28.0" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
