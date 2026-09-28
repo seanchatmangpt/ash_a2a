@@ -13,12 +13,15 @@ defmodule AshA2AAgentModuledocTest do
 
   use ExUnit.Case
 
-  test "AshA2A.Agent's real compiled moduledoc documents single-mailbox serialization" do
+  test "AshA2A.Agent's real compiled moduledoc documents off-mailbox async execution and the inline escape hatch" do
     assert {:docs_v1, _anno, :elixir, _format, %{"en" => moduledoc}, _meta, _docs} =
              Code.fetch_docs(AshA2A.Agent)
 
-    assert moduledoc =~ "one mailbox"
-    assert moduledoc =~ "serialized"
-    assert moduledoc =~ "multiple named agent instances"
+    # Superseded the single-mailbox caveat: handlers now run in monitored
+    # workers (AshA2A.Transport.Runtime); `mode: :inline` restores serialization.
+    assert moduledoc =~ "no longer runs handlers inside its own mailbox"
+    assert moduledoc =~ "mode: :async"
+    assert moduledoc =~ "mode: :inline"
+    assert moduledoc =~ "max_in_flight"
   end
 end

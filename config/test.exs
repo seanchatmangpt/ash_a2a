@@ -61,3 +61,9 @@ config :ash_a2a, AshA2A.Test.Repo,
 # `AshA2A.Test.AuthorityGrantCase.grant!/1`.
 config :ash_a2a, :authority_policy, :broker
 config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.InMemory
+
+# SEC-05 makes authenticated callers the production default. The pre-SEC-05
+# agent/dispatch tests exercise skills with no verified identity; the
+# transport court passes `require_authenticated_caller: true` explicitly per
+# case, so fail-closed behavior stays witnessed there.
+config :ash_a2a, :require_authenticated_caller, false
