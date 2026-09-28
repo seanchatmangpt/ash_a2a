@@ -203,9 +203,47 @@ defmodule AshA2A.Agent do
       emit_route(resource_or_domain, %{route: :semantic})
       dispatch_semantic(resource_or_domain, message)
     else
+      message = merge_turn_history(message, history)
       dispatch_skill(resource_or_domain, message, history, auth_identity)
     end
   end
+
+  # A2A's `:input_required` continuation calls `handle_message/2` with only the
+  # follow-up message; the first turn's `A2A.Part.Data` arguments live solely in
+  # `context.history`. Fold every prior `:user` turn's Data, oldest to newest,
+  # under the current message's Data (current turn wins on key collision), so a
+  # follow-up that supplies only the missing field completes the action.
+  # Only argument *data* is folded -- metadata is never merged across turns, so
+  # skill/actor/context metadata stays exactly what the current caller sent.
+  # (Carried from preserve/v26.9.22/stash-4 `merge_turn_history/2`, minus its
+  # cross-turn metadata merge.)
+  defp merge_turn_history(%A2A.Message{} = message, [_ | _] = history) do
+    prior =
+      history
+      |> Enum.filter(&match?(%A2A.Message{role: :user}, &1))
+      |> Enum.reject(&(&1.message_id == message.message_id))
+      |> Enum.reduce(%{}, fn %A2A.Message{parts: parts}, acc ->
+        Enum.reduce(parts, acc, fn
+          %A2A.Part.Data{data: data}, acc when is_map(data) -> Map.merge(acc, data)
+          _other, acc -> acc
+        end)
+      end)
+
+    if prior == %{} do
+      message
+    else
+      {data_parts, other_parts} = Enum.split_with(message.parts, &match?(%A2A.Part.Data{}, &1))
+
+      current =
+        Enum.reduce(data_parts, %{}, fn %A2A.Part.Data{data: data}, acc ->
+          Map.merge(acc, data)
+        end)
+
+      %{message | parts: [A2A.Part.Data.new(Map.merge(prior, current)) | other_parts]}
+    end
+  end
+
+  defp merge_turn_history(message, _history), do: message
 
   defp semantic_request?(resource_or_domain, %A2A.Message{metadata: metadata}) do
     AshA2A.Info.semantic_requests_enabled?(resource_or_domain) and

@@ -79,3 +79,48 @@ defmodule AshA2A.Test.Fixture.MultiTurnConversationAgent do
     resource_or_domain: AshA2A.Test.Fixture.MultiTurnConversation,
     name: "multi_turn_conversation_agent"
 end
+
+defmodule AshA2A.Test.Fixture.MultiTurnPair do
+  @moduledoc """
+  Real fixture for multi-turn argument carry-over: `:pair` requires both
+  `:left` and `:right`. Turn 1 supplies only `:left` (paused
+  `:input_required`); turn 2 supplies only `:right`. The action can only
+  complete if the dispatcher folds turn 1's `A2A.Part.Data` forward.
+  """
+
+  use Ash.Resource,
+    domain: AshA2A.Test.Fixture.MultiTurnPairDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  actions do
+    action :pair, :map do
+      argument(:left, :string, allow_nil?: false)
+      argument(:right, :string, allow_nil?: false)
+
+      run(fn input, _context ->
+        {:ok, %{left: input.arguments.left, right: input.arguments.right}}
+      end)
+    end
+  end
+
+  a2a do
+    skill(:pair, :pair, consequence: :observe)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.MultiTurnPairDomain do
+  @moduledoc false
+  use Ash.Domain, extensions: [AshA2A], validate_config_inclusion?: false
+
+  resources do
+    resource(AshA2A.Test.Fixture.MultiTurnPair)
+  end
+end
+
+defmodule AshA2A.Test.Fixture.MultiTurnPairAgent do
+  @moduledoc false
+  use AshA2A.Agent,
+    resource_or_domain: AshA2A.Test.Fixture.MultiTurnPair,
+    name: "multi_turn_pair_agent"
+end
