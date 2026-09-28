@@ -74,15 +74,14 @@ defmodule AshA2A.Telemetry.OcelForwarderCommandBusTest do
 
   defp start_micro_beam_ocel_ingest! do
     {:ok, _} = Agent.start_link(fn -> [] end, name: MicroBeamOcelIngest.Store)
-    port = Enum.random(23_000..23_999)
-    {:ok, pid} = Bandit.start_link(plug: MicroBeamOcelIngest, port: port, ip: {127, 0, 0, 1})
+    %{pid: pid, base_url: base_url} = AshA2A.Test.EphemeralHttp.start!(MicroBeamOcelIngest)
 
     on_exit(fn ->
       Process.exit(pid, :normal)
       if Process.whereis(MicroBeamOcelIngest.Store), do: Agent.stop(MicroBeamOcelIngest.Store)
     end)
 
-    "http://127.0.0.1:#{port}"
+    base_url
   end
 
   setup do

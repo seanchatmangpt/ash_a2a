@@ -133,15 +133,20 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
 
   defp start_micro_beam_ocel_ingest! do
     {:ok, _} = Agent.start_link(fn -> [] end, name: OcelDefaultPathSinkStore)
-    port = Enum.random(23_000..23_999)
-    {:ok, pid} = Bandit.start_link(plug: MicroBeamOcelIngest, port: port, ip: {127, 0, 0, 1})
+    %{pid: pid, base_url: base_url} = AshA2A.Test.EphemeralHttp.start!(MicroBeamOcelIngest)
 
     on_exit(fn ->
       Process.exit(pid, :normal)
-      if Process.whereis(OcelDefaultPathSinkStore), do: Agent.stop(OcelDefaultPathSinkStore)
+      # The Agent is linked to the (already exiting) test process, so it can
+      # die between a `whereis` check and `stop/1`; tolerate that race.
+      try do
+        Agent.stop(OcelDefaultPathSinkStore)
+      catch
+        :exit, _ -> :ok
+      end
     end)
 
-    "http://127.0.0.1:#{port}"
+    base_url
   end
 
   # `A2A.Plug` only populates `context.metadata["a2a.auth"]` after real

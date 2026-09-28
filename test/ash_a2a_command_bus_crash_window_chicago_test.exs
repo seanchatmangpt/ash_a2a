@@ -41,8 +41,7 @@ defmodule AshA2A.CommandBusCrashWindowChicagoTest do
   setup do
     {:ok, _agent} = Agent.start_link(fn -> [] end, name: Receiver.Store)
 
-    port = Enum.random(25_000..25_999)
-    {:ok, _bandit} = Bandit.start_link(plug: Receiver, port: port, ip: {127, 0, 0, 1})
+    %{port: port} = AshA2A.Test.EphemeralHttp.start!(Receiver)
 
     outbox_dir =
       Path.join(

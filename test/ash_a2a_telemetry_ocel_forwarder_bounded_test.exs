@@ -54,8 +54,7 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     {:ok, _} =
       Agent.start_link(fn -> %{active: 0, max: 0, served: 0} end, name: SlowOcelIngest.Store)
 
-    port = Enum.random(24_000..24_999)
-    {:ok, _} = Bandit.start_link(plug: SlowOcelIngest, port: port, ip: {127, 0, 0, 1})
+    %{port: port} = AshA2A.Test.EphemeralHttp.start!(SlowOcelIngest)
 
     supervisor_name =
       Module.concat(__MODULE__, "BoundedTaskSupervisor#{System.unique_integer([:positive])}")

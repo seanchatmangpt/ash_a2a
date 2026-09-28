@@ -132,8 +132,15 @@ defmodule AshA2A.Planning.RequestRouterPhraseTierTest do
       :telemetry.attach(
         handler_id,
         [:ash_a2a, :router, :tier_selected],
+        # TQ-02: this module is `async: true` and `:tier_selected` is a
+        # global event every concurrent routing call fires. Pin on this
+        # test's own routing call via the router's `caller:` metadata, so a
+        # concurrent test's event (any tier) is never mistaken for ours --
+        # while a wrong tier from OUR call still surfaces as a mismatch.
         fn _event, measurements, metadata, _config ->
-          send(test_pid, {:ash_a2a_router_telemetry, measurements, metadata})
+          if metadata[:caller] == test_pid do
+            send(test_pid, {:ash_a2a_router_telemetry, measurements, metadata})
+          end
         end,
         nil
       )
@@ -143,8 +150,53 @@ defmodule AshA2A.Planning.RequestRouterPhraseTierTest do
       assert {:ok, _package} = route_with_phrase_templates_and_llm_guard("create a labeled item")
 
       assert_receive {:ash_a2a_router_telemetry, %{}, metadata}
+      assert metadata.caller == test_pid
       assert metadata.tier == :phrase
       assert metadata.resource_or_domain == HddlDeterministicFixture
+    end
+
+    test "the caller pin rejects a concurrent process's :tier_selected event (TQ-02 isolation)" do
+      handler_id = {__MODULE__, make_ref()}
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:ash_a2a, :router, :tier_selected],
+        fn _event, _measurements, metadata, _config ->
+          if metadata[:caller] == test_pid do
+            send(test_pid, {:own_router_telemetry, metadata})
+          end
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      # A real concurrent routing call in another process: it fires the
+      # same global event (tier :text, since the free-text string falls
+      # through to the LLM tier and the guard raises there).
+      # spawn_monitor, not Task.start + Process.alive?: the process may still
+      # be exiting when :other_routed lands, so an alive? check would race.
+      # The :DOWN is ordered after every message `other` sent to us (same
+      # sender), so refute_received below is sound once :DOWN is received.
+      {other, other_ref} =
+        spawn_monitor(fn ->
+          try do
+            route_with_phrase_templates_and_llm_guard("advance the admitted workflow")
+          rescue
+            RuntimeError -> :ok
+          end
+
+          send(test_pid, :other_routed)
+        end)
+
+      assert_receive :other_routed, 5_000
+      assert_receive {:DOWN, ^other_ref, :process, ^other, :normal}, 5_000
+      refute_received {:own_router_telemetry, _}
+
+      assert {:ok, _package} = route_with_phrase_templates_and_llm_guard("create a labeled item")
+      assert_receive {:own_router_telemetry, %{tier: :phrase, caller: ^test_pid}}
+      refute_received {:own_router_telemetry, _}
     end
   end
 

@@ -51,8 +51,12 @@ defmodule AshA2A.Planning.RequestRouter do
   At each of the three real branch points, `route/3` emits a real
   `[:ash_a2a, :router, :tier_selected]` event (`:telemetry.execute/3`,
   unchanged mechanism since task 4) with metadata
-  `%{resource_or_domain:, tier: :facts | :phrase | :text}`, emitted right
-  before delegating to the real downstream function. A phrase-tier match
+  `%{resource_or_domain:, tier: :facts | :phrase | :text, caller: pid()}`,
+  emitted right before delegating to the real downstream function.
+  `caller` is the pid of the process that invoked `route/3` (the telemetry
+  handler runs synchronously in that process), so a handler attached by one
+  of many concurrent callers can pin on its own routing decision instead of
+  observing whichever caller's event arrives first. A phrase-tier match
   whose `to_envelope.(captures)` produced an invalid result (a raise, or a
   non-map) is a caller template bug, not a routing decision -- `route/3`
   returns that typed `{:error, %{code: :invalid_phrase_template}}`
@@ -347,7 +351,7 @@ defmodule AshA2A.Planning.RequestRouter do
     :telemetry.execute(
       [:ash_a2a, :router, :tier_selected],
       %{},
-      %{resource_or_domain: resource_or_domain, tier: tier}
+      %{resource_or_domain: resource_or_domain, tier: tier, caller: self()}
     )
   end
 end

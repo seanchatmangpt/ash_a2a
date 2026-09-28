@@ -76,15 +76,14 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
 
   defp start_micro_beam_ocel_ingest! do
     {:ok, _} = Agent.start_link(fn -> [] end, name: MicroBeamOcelIngest.Store)
-    port = Enum.random(22_000..22_999)
-    {:ok, pid} = Bandit.start_link(plug: MicroBeamOcelIngest, port: port, ip: {127, 0, 0, 1})
+    %{pid: pid, base_url: base_url} = AshA2A.Test.EphemeralHttp.start!(MicroBeamOcelIngest)
 
     on_exit(fn ->
       Process.exit(pid, :normal)
       stop_named_agent(MicroBeamOcelIngest.Store)
     end)
 
-    "http://127.0.0.1:#{port}"
+    base_url
   end
 
   # The Agents above are `start_link`ed to the test process, so they begin
@@ -121,10 +120,12 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
   defmodule SlowMicroBeamOcelIngest do
     @moduledoc """
     Real Plug.Router mirroring `MicroBeamOcelIngest` above, but the
-    `POST /ocel/events` handler sleeps a real, configurable number of
-    milliseconds (read from a real Agent, not hardcoded) before responding --
-    a real slow ingest endpoint, not a simulated one, to prove the calling
-    process is never held open for that long any more.
+    `POST /ocel/events` handler is GATED: it notifies the owning test
+    process (pid read from a real Agent) that it is holding the request,
+    then blocks until that test sends `:release` -- a real slow ingest
+    endpoint whose slowness is controlled by the test, not by a wall-clock
+    sleep (TQ-12: no race between a fixed server delay and the dispatch
+    duration).
     """
     use Plug.Router
 
@@ -133,8 +134,14 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     plug(:dispatch)
 
     post "/ocel/events" do
-      delay_ms = Agent.get(SlowMicroBeamOcelIngest.Delay, & &1)
-      Process.sleep(delay_ms)
+      owner = Agent.get(SlowMicroBeamOcelIngest.Owner, & &1)
+      send(owner, {:slow_ingest_request_held, self()})
+
+      receive do
+        :release -> :ok
+      after
+        60_000 -> :ok
+      end
 
       case conn.body_params do
         %{"events" => events} when is_list(events) ->
@@ -155,20 +162,19 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     end
   end
 
-  defp start_slow_ocel_ingest!(delay_ms) do
+  defp start_slow_ocel_ingest!(owner) do
     {:ok, _} = Agent.start_link(fn -> [] end, name: SlowMicroBeamOcelIngest.Store)
-    {:ok, _} = Agent.start_link(fn -> delay_ms end, name: SlowMicroBeamOcelIngest.Delay)
-    port = Enum.random(23_000..23_999)
-    {:ok, pid} = Bandit.start_link(plug: SlowMicroBeamOcelIngest, port: port, ip: {127, 0, 0, 1})
+    {:ok, _} = Agent.start_link(fn -> owner end, name: SlowMicroBeamOcelIngest.Owner)
+    %{pid: pid, base_url: base_url} = AshA2A.Test.EphemeralHttp.start!(SlowMicroBeamOcelIngest)
 
     on_exit(fn ->
       Process.exit(pid, :normal)
 
       stop_named_agent(SlowMicroBeamOcelIngest.Store)
-      stop_named_agent(SlowMicroBeamOcelIngest.Delay)
+      stop_named_agent(SlowMicroBeamOcelIngest.Owner)
     end)
 
-    "http://127.0.0.1:#{port}"
+    base_url
   end
 
   defp wait_for_slow_events(min_count, timeout_ms) do
@@ -324,21 +330,31 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     assert event["attributes"]["error"] =~ "unknown_skill"
   end
 
-  test "a real dispatch against a slow OCEL ingest endpoint returns well before the slow response, proving the POST is truly offloaded" do
-    # Real slow HTTP server: the /ocel/events handler really sleeps this long
-    # before responding. Before the async offload, `post_event/2`'s
+  test "a real dispatch against a slow OCEL ingest endpoint returns while the endpoint is still holding the POST, proving the POST is truly offloaded" do
+    # Real gated HTTP server: the /ocel/events handler holds the request
+    # until this test releases it. Before the async offload, `post_event/2`'s
     # `Req.post/2` executed synchronously inside `handle_event/4`, which
     # `:telemetry.span/3` (`dispatcher.ex:137`) runs synchronously in the
     # calling process -- so `AshA2A.Dispatcher.dispatch/5` itself would have
-    # blocked for this entire delay. In the real single-mailbox `A2A.Agent`
+    # blocked until the response. In the real single-mailbox `A2A.Agent`
     # GenServer (`agent.ex`), that means every other caller queued behind it
     # would have blocked too.
-    # Chosen below `post_event/2`'s default 2_000ms `receive_timeout_ms` so
-    # the deferred POST still completes successfully (a real 201, not a
-    # client-side transport timeout) -- isolating exactly the claim under
-    # test: the calling process no longer waits for it.
-    delay_ms = 800
-    slow_url = start_slow_ocel_ingest!(delay_ms)
+    #
+    # TQ-12: no wall-clock margin decides this test. The client
+    # `receive_timeout` is raised to 60s, so a synchronous (regressed) POST
+    # could not return the dispatch call before the 60s timeout; the dispatch
+    # is given 10s to return while the server is provably still holding the
+    # request (Store empty, response not sent). A 50x gap, not a 100ms one.
+    previous_timeout = Application.get_env(:ash_a2a, :ocel_ingest_timeout_ms)
+    Application.put_env(:ash_a2a, :ocel_ingest_timeout_ms, 60_000)
+
+    on_exit(fn ->
+      if previous_timeout,
+        do: Application.put_env(:ash_a2a, :ocel_ingest_timeout_ms, previous_timeout),
+        else: Application.delete_env(:ash_a2a, :ocel_ingest_timeout_ms)
+    end)
+
+    slow_url = start_slow_ocel_ingest!(self())
     Application.put_env(:ash_a2a, :ocel_ingest_url, slow_url)
 
     message =
@@ -349,19 +365,22 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
         })
       ])
 
-    {elapsed_us, {:reply, _parts}} =
-      :timer.tc(fn -> AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator) end)
+    dispatch = Task.async(fn -> AshA2A.Dispatcher.dispatch(:run_phase, message, Facilitator) end)
 
-    elapsed_ms = System.convert_time_unit(elapsed_us, :microsecond, :millisecond)
+    assert {:ok, {:reply, _parts}} = Task.yield(dispatch, 10_000),
+           "the dispatch call did not return while the OCEL endpoint was still holding " <>
+             "the POST -- the POST is not actually offloaded"
 
-    assert elapsed_ms < delay_ms,
-           "expected the dispatch call to return well before the OCEL endpoint's " <>
-             "#{delay_ms}ms response (and far before the old ~30s+ worst case), " <>
-             "got #{elapsed_ms}ms -- the POST is not actually offloaded"
+    # The POST really reached the endpoint and is still being held: the
+    # dispatch returned before any response existed.
+    assert_receive {:slow_ingest_request_held, handler}, 10_000
+    assert Agent.get(SlowMicroBeamOcelIngest.Store, & &1) == []
+
+    send(handler, :release)
 
     # The event still eventually arrives -- offloading to a Task never drops
     # it, only defers the network call off the calling process.
-    events = wait_for_slow_events(1, delay_ms + 1_500)
+    events = wait_for_slow_events(1, 10_000)
 
     assert [event] = events
     assert event["event_type"] == "ash_a2a.dispatch.facilitator.run_phase"

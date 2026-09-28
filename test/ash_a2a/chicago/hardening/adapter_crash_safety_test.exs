@@ -290,8 +290,11 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
     assert {:ok, %Delivery{provider_ref: job_id}} =
              enqueue(CrashSafeCommandWorker, command, broker_name, store_name)
 
-    # Really wait past the real expiry -- not a mocked clock.
-    Process.sleep(1_100)
+    # Really wait past the real expiry -- not a mocked clock. TQ-12: poll the
+    # real wall clock (and the same `Authority.expired?/1` predicate the
+    # worker consults) instead of a fixed 1_100ms sleep, so scheduler jitter
+    # between grant and sleep can never leave the grant still standing.
+    await_real_expiry!(authority, expires_at)
 
     job = AshA2A.Test.Repo.get!(Oban.Job, job_id) |> dequeue!()
 
@@ -604,6 +607,30 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
 
         then: mix test test/ash_a2a/chicago/hardening/adapter_crash_safety_test.exs
         """
+    end
+  end
+
+  # Bounded poll on the real clock: returns once `utc_now` is strictly past
+  # `expires_at` AND the real `AshA2A.Authority.expired?/1` agrees. Any
+  # serialization of `expires_at` into Oban args can only truncate it
+  # (never push it later), so being past the real value is sufficient.
+  defp await_real_expiry!(authority, expires_at, deadline_ms \\ 10_000) do
+    deadline = System.monotonic_time(:millisecond) + deadline_ms
+    do_await_real_expiry!(authority, expires_at, deadline)
+  end
+
+  defp do_await_real_expiry!(authority, expires_at, deadline) do
+    cond do
+      DateTime.compare(DateTime.utc_now(), expires_at) == :gt and
+          AshA2A.Authority.expired?(authority) ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk("grant with expires_at #{inspect(expires_at)} never expired on the real clock")
+
+      true ->
+        Process.sleep(25)
+        do_await_real_expiry!(authority, expires_at, deadline)
     end
   end
 end
