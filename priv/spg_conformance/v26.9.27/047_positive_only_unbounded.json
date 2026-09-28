@@ -1,0 +1,28 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-047",
+  "family": "falsifier",
+  "name": "positive_only_unbounded",
+  "expect": "refuse",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:falsifier:positive_only_unbounded"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "assertion": {
+    "must_refuse": true,
+    "refusal_code": "SPG_FALSIFIER_POSITIVE_ONLY_UNBOUNDED"
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 47
+  }
+}

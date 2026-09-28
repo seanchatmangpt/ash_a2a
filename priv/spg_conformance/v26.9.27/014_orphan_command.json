@@ -1,0 +1,28 @@
+{
+  "schema": "ash-a2a/spg-conformance/1",
+  "case_id": "SPG-014",
+  "family": "spg",
+  "name": "orphan_command",
+  "expect": "refuse",
+  "subject": {
+    "repo": "seanchatmangpt/ash_a2a",
+    "base_sha": "8a698385507b66635f7190cc8250846c425fb657"
+  },
+  "procedure": {
+    "vocabulary": "SPG",
+    "identity": "urn:ash-a2a:spg:spg:orphan_command"
+  },
+  "boundary": {
+    "candidate_truth_separated": true,
+    "authority_explicit": true,
+    "exact_subject": true
+  },
+  "assertion": {
+    "must_refuse": true,
+    "refusal_code": "SPG_SPG_ORPHAN_COMMAND"
+  },
+  "replay": {
+    "deterministic": true,
+    "seed": 14
+  }
+}
