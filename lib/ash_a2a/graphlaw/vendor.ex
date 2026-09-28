@@ -45,14 +45,19 @@ defmodule AshA2A.GraphLaw.Vendor do
   @doc """
   Resolves the praxis checkout directory.
 
-  Order: `opts[:praxis]`, then `$PRAXIS_ROOT`, then `~/praxis`. The result is
+  Order: `opts[:praxis]`, then `PRAXIS_ROOT`, then `~/praxis`. The result is
   accepted only if it actually contains `crates/praxis-graphlaw-wasm/Cargo.toml`,
   so a stale env var fails loudly instead of producing a confusing cargo error.
+
+  `PRAXIS_ROOT` is read from `opts[:env]` (a `%{"PRAXIS_ROOT" => dir}` map)
+  when given, else from the process environment. Passing `:env` lets a caller
+  (a concurrent test in particular) exercise the env-var hop without mutating
+  the OS-process-wide environment every other process reads.
   """
   @spec locate_praxis(keyword()) :: {:ok, String.t()} | {:error, map()}
   def locate_praxis(opts \\ []) do
     candidate =
-      opts[:praxis] || System.get_env("PRAXIS_ROOT") || @default_praxis
+      opts[:praxis] || env_var(opts, "PRAXIS_ROOT") || @default_praxis
 
     root = Path.expand(candidate)
     marker = Path.join([root, @wasm_crate, "Cargo.toml"])
@@ -69,6 +74,13 @@ defmodule AshA2A.GraphLaw.Vendor do
              "consumers: the committed priv/graphlaw artifact and manifest " <>
              "remain usable without a praxis checkout."
        }}
+    end
+  end
+
+  defp env_var(opts, name) do
+    case Keyword.fetch(opts, :env) do
+      {:ok, env} when is_map(env) -> Map.get(env, name)
+      _ -> System.get_env(name)
     end
   end
 

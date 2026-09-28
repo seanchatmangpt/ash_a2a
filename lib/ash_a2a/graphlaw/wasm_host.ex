@@ -87,8 +87,12 @@ defmodule AshA2A.GraphLaw.WasmHost do
       File.write!(request_path, request)
 
       try do
-        {stdout, _exit} = System.cmd(node, [host, request_path], stderr_to_stdout: false)
-        decode(stdout)
+        # Bounded (PERF-03): a hung node is killed after the deadline and a
+        # spawn over the node-wide cap is shed, both as typed errors.
+        case AshA2A.GraphLaw.Subprocess.run(node, [host, request_path], opts) do
+          {:ok, {stdout, _exit}} -> decode(stdout)
+          {:error, _} = error -> error
+        end
       after
         File.rm(request_path)
       end

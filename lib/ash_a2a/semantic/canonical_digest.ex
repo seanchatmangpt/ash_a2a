@@ -88,8 +88,8 @@ defmodule AshA2A.Semantic.CanonicalDigest do
     verify? = Keyword.get(opts, :verify, true)
 
     with {:ok, document} <- serialize(triples, format, opts),
-         {:ok, distinct} <- gate(verify?, triples, document, format, opts),
-         {:ok, digest} <- GraphLawBridge.graph_hash(document, opts),
+         {:ok, distinct, gated_digest} <- gate_digest(verify?, triples, document, format, opts),
+         {:ok, digest} <- digest_of(gated_digest, document, opts),
          :ok <- reject_error_payload(digest),
          {:ok, version} <- GraphLawBridge.version(opts) do
       {:ok,
@@ -109,6 +109,20 @@ defmodule AshA2A.Semantic.CanonicalDigest do
 
   def canonical_digest(other, _opts),
     do: {:error, %{code: :canonical_digest_expected_triples, detail: other}}
+
+  # PERF-08: the verified Turtle gate already hashed the Turtle document in
+  # the same engine batch; that value IS the digest, so it is not hashed a
+  # second time. `:ntriples` (and an unverified Turtle digest) take one call.
+  defp gate_digest(true, triples, document, :turtle, opts),
+    do: turtle_gate(triples, document, opts)
+
+  defp gate_digest(verify?, triples, document, format, opts) do
+    with {:ok, distinct} <- gate(verify?, triples, document, format, opts),
+         do: {:ok, distinct, nil}
+  end
+
+  defp digest_of(nil, document, opts), do: GraphLawBridge.graph_hash(document, opts)
+  defp digest_of(digest, _document, _opts), do: {:ok, digest}
 
   @doc """
   Just the digest hex string, for call sites that only need the identity.
@@ -167,6 +181,11 @@ defmodule AshA2A.Semantic.CanonicalDigest do
   end
 
   defp gate(true, triples, turtle_document, :turtle, opts) do
+    with {:ok, distinct, _turtle_hash} <- turtle_gate(triples, turtle_document, opts),
+         do: {:ok, distinct}
+  end
+
+  defp turtle_gate(triples, turtle_document, opts) do
     with {:ok, nt} <- Serialize.to_ntriples(triples),
          {:ok, distinct} <- Serialize.verify(triples, nt, format: :ntriples),
          {:ok, [turtle_hash, ntriples_hash]} <-
@@ -175,7 +194,7 @@ defmodule AshA2A.Semantic.CanonicalDigest do
              opts
            ) do
       if turtle_hash == ntriples_hash do
-        {:ok, distinct}
+        {:ok, distinct, turtle_hash}
       else
         {:error,
          %{

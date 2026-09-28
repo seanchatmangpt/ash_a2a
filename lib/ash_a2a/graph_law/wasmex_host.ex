@@ -129,6 +129,39 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   Every transaction restores the stack pointer and frees the returned
   string in an `after` block, so a raise or a wasm trap cannot leak either.
 
+  ## Bounds, recycling and pooling (PERF-02/04/05/06, SC-04)
+
+    * **Digest pin.** `init/1` loads through `AshA2A.GraphLaw.EngineLoad.load/3`
+      with the MANIFEST pin (`EngineLoad.pinned_sha256/0`, or
+      `opts[:expected_sha256]`, or `config :ash_a2a, :graphlaw_wasm_sha256`).
+      Swapped or corrupted bytes leave the host `{:unavailable,
+      %{code: :graphlaw_wasm_digest_mismatch}}`. `expected_sha256: :unpinned`
+      is the explicit opt-out.
+    * **Shared compile.** The compiled module comes from EngineLoad's
+      per-node cache, so a restart or an in-process recycle costs one
+      instantiation, not a Cranelift compile.
+    * **Fuel + memory limit.** The store is built on a fuel-metering engine
+      with `%Wasmex.StoreLimits{memory_size: ...}`
+      (`:graphlaw_memory_limit_bytes`, default 256 MiB) and every transaction
+      starts with a fresh fuel budget (`:graphlaw_fuel_per_call`, default
+      10,000,000,000 instructions). The default wall-clock bound is 5 s.
+    * **Exits never kill the host.** Each raw wasm call is a direct
+      `GenServer.call` to the Wasmex instance with a caller deadline 1 s
+      beyond the native interrupt deadline, and any exit is caught and typed
+      (`:graphlaw_call_exited`). The host traps exits of its instance.
+    * **Recycling.** After a failed transaction (trap, exit, ABI failure) or
+      when linear memory exceeds the high-water mark
+      (`:graphlaw_memory_recycle_bytes`, default 128 MiB -- linear memory never
+      shrinks), the instance is replaced in-process from the cached module;
+      the queued mailbox survives. Telemetry:
+      `[:ash_a2a, :graphlaw, :host, :recycle]`.
+    * **Load shedding.** A call whose target mailbox already holds
+      `:graphlaw_max_queue` (default 64) messages is refused
+      `{:error, %{code: :graphlaw_saturated}}` instead of queueing unbounded.
+    * **Pool.** `AshA2A.GraphLaw.WasmexPool` runs N of these hosts; calls to
+      the default server name are routed to the least-loaded pool member when
+      a pool is running.
+
   ## Missing artifact
 
   Following `AshA2A.Planning.HddlSolver`'s convention for an absent native
@@ -158,10 +191,34 @@ defmodule AshA2A.GraphLaw.WasmexHost do
 
   use GenServer
 
+  alias AshA2A.GraphLaw.EngineLoad
+
   require Logger
 
   @import_namespace "./praxis_graphlaw_wasm_bg.js"
-  @default_timeout 30_000
+  @default_timeout 5_000
+  # Per-step bound for the wasm-bindgen ABI helper calls (stack pointer,
+  # malloc, free): each is a handful of instructions.
+  @abi_timeout 1_000
+  @default_fuel 10_000_000_000
+  @instantiate_fuel 1_000_000_000
+  @default_memory_limit 256 * 1024 * 1024
+  @default_recycle_bytes 128 * 1024 * 1024
+  @default_max_queue 64
+
+  @doc false
+  # RFC-SA2A-001 S42 classes for the typed transport codes this host returns.
+  def __sa2a_refusal_codes__,
+    do: %{
+      graphlaw_call_exited: :blocked_resource,
+      graphlaw_saturated: :blocked_resource,
+      graphlaw_timeout: :blocked_resource,
+      graphlaw_not_started: :blocked_resource,
+      graphlaw_instantiation_failed: :blocked_resource,
+      graphlaw_wasm_unreadable: :blocked_resource,
+      graphlaw_wasm_not_vendored: :blocked_resource,
+      graphlaw_unknown_function: :blocked_resource
+    }
 
   # wasm-bindgen's shadow-stack return slot is 16 bytes; a String return is
   # the first two little-endian i32 in it: (ptr, len).
@@ -460,25 +517,44 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   @doc """
   Starts the supervised engine instance.
 
-  Options: `:name` (default `#{inspect(__MODULE__)}`), `:wasm_path`.
+  Options: `:name` (default `#{inspect(__MODULE__)}`; `nil` for an unnamed
+  pool member), `:wasm_path`, `:expected_sha256` (`:unpinned` opts out of the
+  MANIFEST pin), `:fuel`, `:memory_limit_bytes`, `:recycle_bytes`,
+  `:registry` (a duplicate-key `Registry` the host joins under `:members`).
   Never fails to start because of a missing or unloadable artifact — that
   becomes a typed error on every call instead (see the module doc).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
+    case Keyword.pop(opts, :name, __MODULE__) do
+      {nil, opts} ->
+        GenServer.start_link(__MODULE__, opts)
+
+      {name, opts} ->
+        GenServer.start_link(__MODULE__, [{:registered_as, name} | opts], name: name)
+    end
   end
 
   @impl true
   def init(opts) do
+    Process.flag(:trap_exit, true)
     path = wasm_path(opts)
 
-    case load(path) do
+    case Keyword.get(opts, :registry) do
+      nil -> :ok
+      registry -> {:ok, _} = Registry.register(registry, :members, nil)
+    end
+
+    case load(path, opts) do
       {:ok, state} ->
+        state = Map.put(state, :default?, Keyword.get(opts, :registered_as) == __MODULE__)
+        publish(state)
         {:ok, state}
 
       {:error, reason} ->
+        if Keyword.get(opts, :registered_as) == __MODULE__,
+          do: :persistent_term.erase({__MODULE__, :loaded})
+
         Logger.warning(
           "AshA2A.GraphLaw.WasmexHost: engine unavailable (#{inspect(reason)}). " <>
             "GraphLaw-backed calls will return typed errors; nothing else is affected."
@@ -488,26 +564,84 @@ defmodule AshA2A.GraphLaw.WasmexHost do
     end
   end
 
-  defp load(path) do
+  defp load(path, opts) do
+    load_opts = [fuel?: true, expected_sha256: EngineLoad.expected_sha256(opts)]
+
     with true <- File.exists?(path) or {:error, %{code: :graphlaw_wasm_not_vendored, path: path}},
          {:ok, bytes} <- read_wasm(path),
-         {:ok, store} <- Wasmex.Store.new(),
-         {:ok, module} <- AshA2A.GraphLaw.EngineLoad.admit("BEAM/WasmexHost", bytes, store),
-         {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}),
-         {:ok, store} <- Wasmex.store(pid),
-         {:ok, memory} <- Wasmex.memory(pid) do
-      {:ok,
-       %{
-         status: :loaded,
-         pid: pid,
-         store: store,
-         memory: memory,
-         path: path,
-         wasm_sha256: AshA2A.GraphLaw.Runtime.bytes_digest(bytes)
-       }}
+         {:ok, entry} <- EngineLoad.load("BEAM/WasmexHost", bytes, load_opts),
+         base = %{
+           status: :loaded,
+           path: path,
+           entry: entry,
+           wasm_sha256: entry.wasm_sha256,
+           fuel: config(opts, :fuel, :graphlaw_fuel_per_call, @default_fuel),
+           memory_limit:
+             config(
+               opts,
+               :memory_limit_bytes,
+               :graphlaw_memory_limit_bytes,
+               @default_memory_limit
+             ),
+           recycle_bytes:
+             config(opts, :recycle_bytes, :graphlaw_memory_recycle_bytes, @default_recycle_bytes),
+           recycles: 0
+         },
+         {:ok, state} <- instantiate(base) do
+      {:ok, state}
     else
       {:error, _} = err -> err
       other -> {:error, %{code: :graphlaw_instantiation_failed, detail: other, path: path}}
+    end
+  end
+
+  defp config(opts, key, env_key, default),
+    do: Keyword.get(opts, key) || Application.get_env(:ash_a2a, env_key, default)
+
+  # One fresh store + instance over the cached compiled module.
+  defp instantiate(%{entry: entry} = state) do
+    limits = %Wasmex.StoreLimits{memory_size: state.memory_limit}
+
+    # Instantiation runs the module's start function (`__wbindgen_start`),
+    # which is metered too; it gets the instantiation budget, and every
+    # transaction then resets the store to the per-call budget.
+    with {:ok, store} <- Wasmex.Store.new(limits, entry.engine),
+         :ok <- Wasmex.StoreOrCaller.set_fuel(store, max(state.fuel, @instantiate_fuel)),
+         {:ok, pid} <-
+           Wasmex.start_link(%{store: store, module: entry.module, imports: imports()}),
+         {:ok, store} <- Wasmex.store(pid),
+         {:ok, memory} <- Wasmex.memory(pid) do
+      {:ok, Map.merge(state, %{pid: pid, store: store, memory: memory})}
+    else
+      {:error, _} = err -> err
+      other -> {:error, %{code: :graphlaw_instantiation_failed, detail: other}}
+    end
+  end
+
+  # Replaces the instance in-process (the mailbox survives). The old instance
+  # is unlinked and killed first so its exit cannot race the new one.
+  defp recycle(%{pid: old} = state, reason) do
+    Process.unlink(old)
+    Process.exit(old, :kill)
+
+    :telemetry.execute(
+      [:ash_a2a, :graphlaw, :host, :recycle],
+      %{system_time: System.system_time()},
+      %{wasm_sha256: state.wasm_sha256, reason: reason}
+    )
+
+    case instantiate(state) do
+      {:ok, fresh} ->
+        %{fresh | recycles: state.recycles + 1}
+
+      {:error, error} ->
+        unavailable = %{
+          status: {:unavailable, %{code: :graphlaw_instantiation_failed, detail: error}},
+          default?: state.default?
+        }
+
+        publish(unavailable)
+        unavailable
     end
   end
 
@@ -547,7 +681,9 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   end
 
   defp transact(server, fun, args, timeout) do
-    GenServer.call(server, {:transact, fun, args, timeout}, call_timeout(timeout))
+    with {:ok, target} <- route(server) do
+      GenServer.call(target, {:transact, fun, args, timeout}, call_timeout(timeout, 1, args))
+    end
   catch
     :exit, {:noproc, _} ->
       {:error, %{code: :graphlaw_not_started, server: server}}
@@ -556,11 +692,96 @@ defmodule AshA2A.GraphLaw.WasmexHost do
       {:error, %{code: :graphlaw_timeout, function: fun, timeout: timeout}}
   end
 
-  # The GenServer must outlive the inner wasm call it is waiting on,
-  # otherwise a slow engine call surfaces as a caller timeout while the
-  # instance is still mid-transaction.
-  defp call_timeout(:infinity), do: :infinity
-  defp call_timeout(timeout) when is_integer(timeout), do: timeout + 5_000
+  @doc """
+  Runs several raw engine calls in ONE host transaction sequence (one
+  `handle_call/3`, no interleaving), returning the raw result strings in
+  order: `[{"graph_hash", [ttl]}, {"graphlaw_version", []}]` ->
+  `{:ok, [hash, version]}`. The first failure stops the batch.
+
+  Raw means undecoded: an engine error comes back as its `{"error": ...}`
+  JSON string, exactly as the node shims return it, so callers keep one
+  decoding path across hosts.
+  """
+  @spec raw_many([{String.t(), [String.t()]}], GenServer.server(), timeout()) ::
+          {:ok, [String.t()]} | {:error, error()} | {:error, encoding_error()}
+  def raw_many(calls, server \\ __MODULE__, timeout \\ @default_timeout) when is_list(calls) do
+    args = Enum.flat_map(calls, fn {_fun, call_args} -> call_args end)
+
+    with :ok <- Enum.reduce_while(args, :ok, &utf8_step/2),
+         {:ok, target} <- route(server) do
+      GenServer.call(
+        target,
+        {:transact_many, calls, timeout},
+        call_timeout(timeout, length(calls), args)
+      )
+    end
+  catch
+    :exit, {:noproc, _} ->
+      {:error, %{code: :graphlaw_not_started, server: server}}
+
+    :exit, {:timeout, _} ->
+      {:error, %{code: :graphlaw_timeout, function: :raw_many, timeout: timeout}}
+  end
+
+  defp utf8_step(arg, :ok) do
+    case ensure_utf8(arg) do
+      :ok -> {:cont, :ok}
+      error -> {:halt, error}
+    end
+  end
+
+  @doc """
+  `%{wasm_sha256: digest, path: path, recycles: n}` for a loaded host, or the
+  typed unavailability reason.
+  """
+  @spec info(GenServer.server(), timeout()) :: {:ok, map()} | {:error, error()}
+  def info(server \\ __MODULE__, timeout \\ @default_timeout) do
+    GenServer.call(server, :info, timeout)
+  catch
+    :exit, {:noproc, _} -> {:error, %{code: :graphlaw_not_started, server: server}}
+    :exit, {:timeout, _} -> {:error, %{code: :graphlaw_timeout, function: :info}}
+  end
+
+  # The default name routes to the least-loaded member of a running
+  # `AshA2A.GraphLaw.WasmexPool`; any explicit server is used as given. Either
+  # way a target whose mailbox is already at the shedding bound is refused.
+  defp route(__MODULE__ = server) do
+    target = AshA2A.GraphLaw.WasmexPool.pick() || server
+    shed(target)
+  end
+
+  defp route(server), do: shed(server)
+
+  defp shed(target) do
+    max = Application.get_env(:ash_a2a, :graphlaw_max_queue, @default_max_queue)
+
+    case GenServer.whereis(target) do
+      pid when is_pid(pid) ->
+        case Process.info(pid, :message_queue_len) do
+          {:message_queue_len, len} when len >= max ->
+            {:error, %{code: :graphlaw_saturated, queue: len, max_queue: max}}
+
+          _ ->
+            {:ok, pid}
+        end
+
+      _ ->
+        {:ok, target}
+    end
+  end
+
+  # The caller must outlive every inner step it is waiting on: the real call
+  # (`timeout` + 1 s reply margin) plus, per engine call, the ABI helper steps
+  # (claim, one malloc per argument, free, release), each bounded by
+  # `@abi_timeout` + 1 s. Strictly greater than their sum, so a slow engine
+  # call surfaces as the host's typed error, never as a caller timeout while
+  # the instance is still mid-transaction.
+  defp call_timeout(:infinity, _calls, _args), do: :infinity
+
+  defp call_timeout(timeout, calls, args) when is_integer(timeout) do
+    steps = calls * 3 + length(args)
+    calls * (timeout + 1_000) + steps * (@abi_timeout + 1_000) + 1_000
+  end
 
   @impl true
   def handle_call(:status, _from, %{status: :loaded} = state) do
@@ -571,18 +792,44 @@ defmodule AshA2A.GraphLaw.WasmexHost do
     {:reply, {:error, reason}, state}
   end
 
-  def handle_call(
-        {:transact, _fun, _args, _timeout},
-        _from,
-        %{status: {:unavailable, reason}} = state
-      ) do
+  def handle_call(:info, _from, %{status: :loaded} = state) do
+    {:reply, {:ok, Map.take(state, [:wasm_sha256, :path, :recycles])}, state}
+  end
+
+  def handle_call(:info, _from, %{status: {:unavailable, reason}} = state) do
+    {:reply, {:error, reason}, state}
+  end
+
+  def handle_call({:transact, _, _, _}, _from, %{status: {:unavailable, reason}} = state) do
+    {:reply, {:error, reason}, state}
+  end
+
+  def handle_call({:transact_many, _, _}, _from, %{status: {:unavailable, reason}} = state) do
     {:reply, {:error, reason}, state}
   end
 
   def handle_call({:transact, fun, args, timeout}, _from, %{status: :loaded} = state) do
-    result = do_transact(state, fun, args, timeout)
-    AshA2A.GraphLaw.EngineTelemetry.emit("BEAM/WasmexHost", state.wasm_sha256, fun, result)
+    {result, state} = run_transaction(state, fun, args, timeout)
     {:reply, result, state}
+  end
+
+  def handle_call({:transact_many, calls, timeout}, _from, %{status: :loaded} = state) do
+    {results, state} =
+      Enum.reduce_while(calls, {[], state}, fn {fun, args}, {acc, st} ->
+        case run_transaction(st, fun, args, timeout) do
+          {{:ok, raw}, st} when st.status == :loaded -> {:cont, {[raw | acc], st}}
+          {{:ok, _raw}, st} -> {:halt, {{:error, st.status}, st}}
+          {{:error, _} = err, st} -> {:halt, {err, st}}
+        end
+      end)
+
+    reply =
+      case results do
+        list when is_list(list) -> {:ok, Enum.reverse(list)}
+        {:error, _} = err -> err
+      end
+
+    {:reply, reply, state}
   end
 
   def handle_call(
@@ -595,6 +842,86 @@ defmodule AshA2A.GraphLaw.WasmexHost do
 
   def handle_call(:memory_size, _from, %{status: {:unavailable, reason}} = state) do
     {:reply, {:error, reason}, state}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    if Map.get(state, :default?), do: :persistent_term.erase({__MODULE__, :loaded})
+    :ok
+  end
+
+  # The default-named host publishes its loaded digest so routing
+  # (`loaded_sha256/0`) never has to queue a `:status` call behind a running
+  # transaction. Only written on a load/unload edge, never per call.
+  defp publish(%{default?: true, status: :loaded, wasm_sha256: sha, path: path}),
+    do: :persistent_term.put({__MODULE__, :loaded}, {sha, Path.expand(path)})
+
+  defp publish(%{default?: true}), do: :persistent_term.erase({__MODULE__, :loaded})
+  defp publish(_state), do: :ok
+
+  @doc """
+  The pinned SHA-256 the default-named host has loaded, or `nil` when it is
+  not running or not loaded. Lock-free: no call to the host.
+  """
+  @spec loaded_sha256() :: String.t() | nil
+  def loaded_sha256 do
+    case loaded() do
+      {sha, _path} -> sha
+      nil -> nil
+    end
+  end
+
+  @doc """
+  `{sha256, expanded_wasm_path}` of the default-named host's loaded engine,
+  or `nil`. Transports use the path to decide whether the warm host is a
+  truthful answer: only when THEIR resolved wasm path is the one it loaded.
+  """
+  @spec loaded() :: {String.t(), String.t()} | nil
+  def loaded do
+    with {sha, path} <- :persistent_term.get({__MODULE__, :loaded}, nil),
+         pid when is_pid(pid) <- Process.whereis(__MODULE__) do
+      {sha, path}
+    else
+      _ -> nil
+    end
+  end
+
+  @doc "Whether the default host has loaded exactly the wasm at `path`."
+  @spec serves?(String.t()) :: boolean()
+  def serves?(path) when is_binary(path) do
+    case loaded() do
+      {_sha, loaded_path} -> loaded_path == Path.expand(path)
+      nil -> false
+    end
+  end
+
+  # The instance died outside a call (it is linked and this host traps exits):
+  # replace it rather than dying with it.
+  @impl true
+  def handle_info({:EXIT, pid, reason}, %{status: :loaded, pid: pid} = state) do
+    {:noreply, recycle(state, {:instance_exit, inspect(reason, limit: 5)})}
+  end
+
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  @recycle_codes [:graphlaw_call_failed, :graphlaw_call_exited, :graphlaw_abi_failure]
+
+  defp run_transaction(state, fun, args, timeout) do
+    :ok = Wasmex.StoreOrCaller.set_fuel(state.store, state.fuel)
+    result = do_transact(state, fun, args, timeout)
+    AshA2A.GraphLaw.EngineTelemetry.emit("BEAM/WasmexHost", state.wasm_sha256, fun, result)
+    {result, maybe_recycle(state, result)}
+  end
+
+  defp maybe_recycle(state, {:error, %{code: code}}) when code in @recycle_codes,
+    do: recycle(state, code)
+
+  defp maybe_recycle(%{store: store, memory: memory} = state, _result) do
+    if Wasmex.Memory.size(store, memory) > state.recycle_bytes,
+      do: recycle(state, :memory_high_water),
+      else: state
   end
 
   # ---------------------------------------------------------------------
@@ -619,14 +946,14 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   end
 
   defp claim_return_slot(state) do
-    case call_raw(state, "__wbindgen_add_to_stack_pointer", [-@ret_slot], @default_timeout) do
+    case call_raw(state, "__wbindgen_add_to_stack_pointer", [-@ret_slot], @abi_timeout) do
       {:ok, [retptr]} -> {:ok, retptr}
       other -> {:error, %{code: :graphlaw_abi_failure, step: :claim_return_slot, detail: other}}
     end
   end
 
   defp release_return_slot(state) do
-    _ = call_raw(state, "__wbindgen_add_to_stack_pointer", [@ret_slot], @default_timeout)
+    _ = call_raw(state, "__wbindgen_add_to_stack_pointer", [@ret_slot], @abi_timeout)
     :ok
   end
 
@@ -643,7 +970,7 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   defp write_string(%{store: store, memory: memory} = state, binary) do
     size = byte_size(binary)
 
-    case call_raw(state, "__wbindgen_export2", [size, 1], @default_timeout) do
+    case call_raw(state, "__wbindgen_export2", [size, 1], @abi_timeout) do
       {:ok, [ptr]} ->
         case Wasmex.Memory.write_binary(store, memory, ptr, binary) do
           :ok -> {:ok, ptr}
@@ -660,6 +987,9 @@ defmodule AshA2A.GraphLaw.WasmexHost do
       {:ok, _} ->
         header = Wasmex.Memory.read_binary(store, memory, retptr, @ret_header)
         read_result(state, header)
+
+      {:error, %{code: :graphlaw_call_exited}} = exited ->
+        exited
 
       {:error, reason} ->
         {:error, %{code: :graphlaw_call_failed, function: fun, reason: reason}}
@@ -678,7 +1008,7 @@ defmodule AshA2A.GraphLaw.WasmexHost do
     after
       # Free the engine-allocated result string. Guaranteed to run even if
       # reading it raises, so a failed read cannot leak linear memory.
-      _ = call_raw(state, "__wbindgen_export4", [ptr, len, 1], @default_timeout)
+      _ = call_raw(state, "__wbindgen_export4", [ptr, len, 1], @abi_timeout)
     end
   end
 
@@ -686,7 +1016,21 @@ defmodule AshA2A.GraphLaw.WasmexHost do
     {:error, %{code: :graphlaw_abi_failure, step: :read_result, header: header}}
   end
 
+  # A direct call into the Wasmex GenServer so the native interrupt deadline
+  # and the caller deadline differ: the native epoch interrupt fires first and
+  # comes back as `{:error, _}`, and the caller waits 1 s longer. Any exit
+  # (the instance crashed, or the reply still lost the race) is caught and
+  # typed here -- it must never propagate into this host's `handle_call/3`.
   defp call_raw(%{pid: pid}, fun, params, timeout) do
-    Wasmex.call_function(pid, fun, params, timeout)
+    {native, caller} =
+      case timeout do
+        :infinity -> {nil, :infinity}
+        ms when is_integer(ms) -> {ms, ms + 1_000}
+      end
+
+    GenServer.call(pid, {:call_function, fun, params, native}, caller)
+  catch
+    :exit, reason ->
+      {:error, %{code: :graphlaw_call_exited, function: fun, reason: inspect(reason, limit: 5)}}
   end
 end

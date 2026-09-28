@@ -4,7 +4,14 @@
 #
 # Run with:
 #
-#     mix run bench/ash_a2a_bench.exs
+#     mix run bench/ash_a2a_bench.exs [--concurrency N]
+#
+# `--concurrency N` (default 1) issues each operation's timed calls from N
+# concurrent callers (`Task.async_stream/3`, `max_concurrency: N`) and also
+# reports wall-clock throughput (ops/s), so serialization in a shared process
+# shows up as tail latency and flat throughput instead of staying invisible.
+# The GraphLaw engine path (warm host, session open, admission, canonical
+# digest) has its own concurrency sweep: `mix run bench/graphlaw_throughput.exs`.
 #
 # Timing uses only `:timer.tc/1` from the stdlib -- no Benchee, no new
 # mix.exs dependency. Percentiles (p50/p95/p99) are computed by hand from a
@@ -372,14 +379,32 @@ defmodule AshA2A.Bench do
     # are not counted in the timed sample.
     for _ <- 1..@warmup, do: fun.()
 
+    concurrency = concurrency()
+    started = System.monotonic_time(:microsecond)
+
     samples =
-      for _ <- 1..@iterations do
-        {micros, _result} = :timer.tc(fun)
-        micros
-      end
+      1..@iterations
+      |> Task.async_stream(
+        fn _ ->
+          {micros, _result} = :timer.tc(fun)
+          micros
+        end,
+        max_concurrency: concurrency,
+        timeout: :infinity
+      )
+      |> Enum.map(fn {:ok, micros} -> micros end)
       |> Enum.sort()
 
+    wall = max(System.monotonic_time(:microsecond) - started, 1)
     report(label, samples)
+    IO.puts("  conc = #{concurrency}")
+    IO.puts("  ops  = #{Float.round(@iterations * 1_000_000 / wall, 1)} ops/s")
+  end
+
+  defp concurrency do
+    case OptionParser.parse(System.argv(), strict: [concurrency: :integer]) do
+      {opts, _, _} -> max(Keyword.get(opts, :concurrency, 1), 1)
+    end
   end
 
   defp report(label, samples) do

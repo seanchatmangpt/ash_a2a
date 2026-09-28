@@ -14,10 +14,12 @@ defmodule AshA2A.Semantic.GraphLaw do
   not RDFC-1.0.
 
   The engine is reached as a real WebAssembly module
-  (`praxis_graphlaw_wasm_bg.wasm`, wasm-bindgen bundler target) instantiated
-  by a small real host shim, `priv/graphlaw/graphlaw_host_peer.mjs`. See
-  `AshA2A.Semantic.GraphLaw.Wasm` for the transport and the exact
-  wasm-bindgen ABI it speaks.
+  (`praxis_graphlaw.wasm`, wasm-bindgen bundler target). The default
+  implementation is `AshA2A.Semantic.GraphLaw.WasmexHost`, the warm in-BEAM
+  Wasmtime host (PERF-01: ~0.5 ms a call instead of ~100 ms for a `node`
+  spawn). `AshA2A.Semantic.GraphLaw.Wasm` -- a real `node` subprocess over
+  `priv/graphlaw/graphlaw_host_peer.mjs` -- remains available as the second,
+  independent runtime for cross-runtime courts.
 
   ## Why this is a behaviour
 
@@ -49,16 +51,33 @@ defmodule AshA2A.Semantic.GraphLaw do
   @callback version() :: {:ok, String.t()} | {:error, refusal()}
   @callback graph_hash(String.t()) :: {:ok, String.t()} | {:error, refusal()}
   @callback validate(String.t(), String.t()) :: {:ok, report()} | {:error, refusal()}
+  @callback validate_many([{String.t(), String.t()}]) :: {:ok, [report()]} | {:error, refusal()}
+  @optional_callbacks validate_many: 1
 
   @doc """
   Returns the configured engine implementation.
 
-  Defaults to `AshA2A.Semantic.GraphLaw.Wasm`, the real wasm runner.
+  Defaults to `AshA2A.Semantic.GraphLaw.WasmexHost`, the warm in-BEAM host,
+  whenever it has loaded the same wasm the peer transport resolves.
+  Behaviour change (PERF-01): the default was the per-call `node` runner
+  `AshA2A.Semantic.GraphLaw.Wasm`; select it explicitly with
+  `config :ash_a2a, :graph_law, AshA2A.Semantic.GraphLaw.Wasm`.
   """
   @spec impl(keyword()) :: module()
   def impl(opts \\ []) do
-    Keyword.get(opts, :graph_law) ||
-      Application.get_env(:ash_a2a, :graph_law, AshA2A.Semantic.GraphLaw.Wasm)
+    Keyword.get(opts, :graph_law) || Application.get_env(:ash_a2a, :graph_law) || default_impl()
+  end
+
+  # The warm host is the default only while it truthfully serves the bytes
+  # the peer transport is configured for: a configured
+  # `AshA2A.Semantic.GraphLaw.Wasm` `:wasm_path` (or `GRAPHLAW_WASM`) naming
+  # other bytes, or a host that is not loaded, selects the node runner, which
+  # then answers for exactly those bytes (including its fail-closed
+  # `:graphlaw_unavailable`).
+  defp default_impl do
+    if AshA2A.GraphLaw.WasmexHost.serves?(AshA2A.Semantic.GraphLaw.Wasm.wasm_path()),
+      do: AshA2A.Semantic.GraphLaw.WasmexHost,
+      else: AshA2A.Semantic.GraphLaw.Wasm
   end
 
   @spec version(keyword()) :: {:ok, String.t()} | {:error, refusal()}
@@ -70,6 +89,34 @@ defmodule AshA2A.Semantic.GraphLaw do
   @spec validate(String.t(), String.t(), keyword()) :: {:ok, report()} | {:error, refusal()}
   def validate(ttl, shapes, opts \\ []) when is_binary(ttl) and is_binary(shapes),
     do: impl(opts).validate(ttl, shapes)
+
+  @doc """
+  Validates several `{ttl, shapes}` pairs, in order (PERF-07). Uses the
+  implementation's own batch (one engine round trip for the in-BEAM host)
+  when it has one; otherwise calls `validate/2` per pair and stops at the
+  first failure. The reports are the same as `validate/3`'s, pair by pair.
+  """
+  @spec validate_many([{String.t(), String.t()}], keyword()) ::
+          {:ok, [report()]} | {:error, refusal()}
+  def validate_many(pairs, opts \\ []) when is_list(pairs) do
+    module = impl(opts)
+
+    if Code.ensure_loaded?(module) and function_exported?(module, :validate_many, 1) do
+      module.validate_many(pairs)
+    else
+      pairs
+      |> Enum.reduce_while({:ok, []}, fn {ttl, shapes}, {:ok, acc} ->
+        case module.validate(ttl, shapes) do
+          {:ok, report} -> {:cont, {:ok, [report | acc]}}
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
+      |> case do
+        {:ok, reports} -> {:ok, Enum.reverse(reports)}
+        error -> error
+      end
+    end
+  end
 
   @doc """
   Reduces a real engine report to a single admission verdict.

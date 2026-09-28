@@ -94,10 +94,9 @@ defmodule AshA2A.GraphLaw.WasmexSession do
     with :ok <- available?(opts) do
       path = Runtime.wasm_path(opts)
       bytes = File.read!(path)
-      digest = Runtime.bytes_digest(bytes)
 
-      case start_instance(bytes, opts) do
-        {:ok, pid, import_names} ->
+      case start_instance(bytes, path, opts) do
+        {:ok, pid, digest, import_names} ->
           {:ok, store} = Wasmex.store(pid)
           {:ok, memory} = Wasmex.memory(pid)
 
@@ -117,7 +116,11 @@ defmodule AshA2A.GraphLaw.WasmexSession do
            }}
 
         {:error, %{code: code} = refused}
-        when code in [:graphlaw_import_surface_mismatch, :graphlaw_wasm_invalid] ->
+        when code in [
+               :graphlaw_import_surface_mismatch,
+               :graphlaw_wasm_invalid,
+               :graphlaw_wasm_digest_mismatch
+             ] ->
           {:error, Map.put(refused, :path, path)}
 
         {:error, reason} ->
@@ -134,25 +137,57 @@ defmodule AshA2A.GraphLaw.WasmexSession do
   defp bounded?(opts),
     do: Enum.any?([:fuel, :memory_limit_bytes], &Keyword.has_key?(opts, &1))
 
-  defp start_instance(bytes, opts) do
-    if bounded?(opts) do
-      config = Wasmex.EngineConfig.consume_fuel(%Wasmex.EngineConfig{}, true)
-      limits = %Wasmex.StoreLimits{memory_size: Keyword.get(opts, :memory_limit_bytes)}
+  # The compiled module comes from `EngineLoad.load/3`'s per-node cache
+  # (PERF-02): the Cranelift compile (~1 s for this 3.2 MB module) happens once
+  # per `{sha256, fuel?}`; each session still gets its own `Wasmex.Store` --
+  # own fuel budget, own memory limit, own interrupt flag -- and its own
+  # instance. The surface is admitted before `Wasmex.start_link/1`: a foreign
+  # import surface otherwise crashes the linked caller from Wasmex's `init/1`.
+  defp start_instance(bytes, path, opts) do
+    fuel? = bounded?(opts)
+    load_opts = [fuel?: fuel?, expected_sha256: expected_sha256(path, opts)]
 
-      with {:ok, engine} <- Wasmex.Engine.new(config),
-           {:ok, store} <- Wasmex.Store.new(limits, engine),
-           :ok <- Wasmex.StoreOrCaller.set_fuel(store, Keyword.get(opts, :fuel, 0)),
-           {:ok, module} <- EngineLoad.admit(host_id(), bytes, store),
-           {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}) do
-        {:ok, pid, module |> Wasmex.Module.imports() |> EngineLoad.import_names()}
-      end
-    else
-      # The surface is admitted before `Wasmex.start_link/1`: a foreign import
-      # surface otherwise crashes the linked caller from Wasmex's `init/1`.
-      with {:ok, store} <- Wasmex.Store.new(),
-           {:ok, module} <- EngineLoad.admit(host_id(), bytes, store),
-           {:ok, pid} <- Wasmex.start_link(%{store: store, module: module, imports: imports()}),
-           do: {:ok, pid, nil}
+    with {:ok, entry} <- EngineLoad.load(host_id(), bytes, load_opts),
+         {:ok, store} <- new_store(entry.engine, fuel?, opts),
+         {:ok, pid} <-
+           Wasmex.start_link(%{store: store, module: entry.module, imports: imports()}) do
+      names = if fuel?, do: entry.import_names, else: nil
+      {:ok, pid, entry.wasm_sha256, names}
+    end
+  end
+
+  defp new_store(engine, false, _opts), do: Wasmex.Store.new(nil, engine)
+
+  defp new_store(engine, true, opts) do
+    limits = %Wasmex.StoreLimits{memory_size: Keyword.get(opts, :memory_limit_bytes)}
+
+    with {:ok, store} <- Wasmex.Store.new(limits, engine),
+         :ok <- Wasmex.StoreOrCaller.set_fuel(store, Keyword.get(opts, :fuel, 0)),
+         do: {:ok, store}
+  end
+
+  # SC-04: every path is held to the pin (`opts[:expected_sha256]`, else
+  # `config :ash_a2a, :graphlaw_wasm_sha256`, else the MANIFEST pin) except
+  # one the caller named itself: an explicit `opts[:wasm_path]` other than the
+  # vendored artifact (a court's substituted engine, a local rebuild) is the
+  # caller's choice of bytes and is not pinned unless it also passes
+  # `:expected_sha256`. A path that only arrived through ambient configuration
+  # (`config :ash_a2a, :graphlaw_wasm_path` or `PRAXIS_GRAPHLAW_WASM`) is NOT a
+  # caller's choice: it is pinned like the vendored artifact, so redirecting
+  # the environment cannot swap the admission engine silently. Set
+  # `config :ash_a2a, :graphlaw_wasm_sha256` (a digest, or `:unpinned`) to run
+  # a configured rebuild.
+  defp expected_sha256(path, opts) do
+    cond do
+      Keyword.has_key?(opts, :expected_sha256) ->
+        Keyword.fetch!(opts, :expected_sha256)
+
+      Keyword.has_key?(opts, :wasm_path) and
+          Path.expand(path) != Path.expand(AshA2A.GraphLaw.wasm_path()) ->
+        :unpinned
+
+      true ->
+        EngineLoad.expected_sha256(opts)
     end
   end
 

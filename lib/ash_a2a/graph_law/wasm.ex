@@ -32,7 +32,11 @@ defmodule AshA2A.GraphLaw.Wasm do
   ## Batching
 
   Instantiating a 3.2 MB wasm module costs real time, so `batch/2` runs a whole
-  list of calls inside one process and one instantiation. `AshA2A.Semantic.AdmissionPipeline`
+  list of calls inside one process and one instantiation -- or, when the
+  application's warm in-BEAM `AshA2A.GraphLaw.WasmexHost` has loaded the
+  pinned engine and no transport override is given, inside one host
+  transaction sequence with no spawn at all (PERF-01; `transport: :node`
+  forces the subprocess). `AshA2A.Semantic.AdmissionPipeline`
   issues exactly one `batch/2` per admission attempt.
 
   ## Measured engine behaviour this module does not paper over
@@ -114,14 +118,20 @@ defmodule AshA2A.GraphLaw.Wasm do
   Returns `{:ok, [String.t()]}` with one raw result string per call, in order,
   or `{:error, map()}` carrying a `:code` key. Never raises for an engine-level
   problem: a missing artifact, a non-zero host exit, non-JSON host output, and a
-  host-reported failure are all typed errors.
+  host-reported failure are all typed errors. The subprocess is bounded by
+  `AshA2A.GraphLaw.Subprocess` (`:timeout_ms`, `:max_concurrency`):
+  `:graphlaw_host_timeout` / `:graphlaw_host_saturated`.
   """
   @spec batch([call()], keyword()) :: {:ok, [String.t()]} | {:error, map()}
   def batch(calls, opts \\ []) when is_list(calls) do
     result =
-      with :ok <- availability(opts),
-           {:ok, request} <- encode_request(calls, opts) do
-        run_host(request, opts)
+      if in_beam?(opts) do
+        in_beam_batch(calls)
+      else
+        with :ok <- availability(opts),
+             {:ok, request} <- encode_request(calls, opts) do
+          run_host(request, opts)
+        end
       end
 
     # Boundary telemetry (RFC-SA2A-002 §12/§18): which wasm path the real host
@@ -133,6 +143,32 @@ defmodule AshA2A.GraphLaw.Wasm do
     )
 
     result
+  end
+
+  # PERF-01: with no transport override (`:wasm_path`, `:host_script`,
+  # `:node`, `transport: :node`) and the application's warm in-BEAM
+  # `AshA2A.GraphLaw.WasmexHost` loaded on the pinned engine, the batch runs
+  # there -- one host transaction sequence over the same bytes, ~0.5 ms a call
+  # instead of ~100 ms per `node` spawn. Raw result strings, same as the shim.
+  defp in_beam?(opts) do
+    Keyword.get(opts, :transport) != :node and
+      not Enum.any?([:wasm_path, :host_script, :node], &Keyword.has_key?(opts, &1)) and
+      AshA2A.GraphLaw.WasmexHost.serves?(wasm_path(opts))
+  end
+
+  defp in_beam_batch(calls) do
+    calls = Enum.map(calls, fn {fun, args} -> {to_string(fun), args} end)
+
+    case AshA2A.GraphLaw.WasmexHost.raw_many(calls) do
+      {:ok, raws} ->
+        {:ok, raws}
+
+      {:error, {:invalid_encoding, offset}} ->
+        {:error, %{code: :invalid_encoding, byte_offset: offset}}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   defp error_code({:error, %{code: code}}), do: code
@@ -281,9 +317,15 @@ defmodule AshA2A.GraphLaw.Wasm do
     File.write!(request_path, request)
 
     try do
-      case System.cmd(node, [script, request_path], stderr_to_stdout: false) do
-        {stdout, 0} -> decode_host_output(stdout)
-        {stdout, code} -> {:error, %{code: :graphlaw_host_exit, exit: code, stdout: stdout}}
+      case AshA2A.GraphLaw.Subprocess.run(node, [script, request_path], opts) do
+        {:ok, {stdout, 0}} ->
+          decode_host_output(stdout)
+
+        {:ok, {stdout, code}} ->
+          {:error, %{code: :graphlaw_host_exit, exit: code, stdout: stdout}}
+
+        {:error, _} = error ->
+          error
       end
     after
       File.rm(request_path)

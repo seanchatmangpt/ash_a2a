@@ -42,6 +42,18 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
 
   @behaviour AshA2A.Semantic.GraphLaw
 
+  alias AshA2A.GraphLaw.Runtime
+
+  @doc false
+  def __sa2a_refusal_codes__,
+    do: %{
+      graphlaw_unavailable: :blocked_resource,
+      graphlaw_host_failed: :blocked_resource,
+      graphlaw_host_timeout: :blocked_resource,
+      graphlaw_host_saturated: :blocked_resource,
+      graphlaw_wasm_digest_mismatch: :refused_identity
+    }
+
   @default_timeout 30_000
 
   @impl true
@@ -71,12 +83,35 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
   @doc """
   Reports whether the real engine is reachable from this runtime right now.
 
-  Runs a real `graphlaw_version` call. Used by tests to decide between
-  exercising the engine and asserting the fail-closed path -- never to skip
-  silently.
+  Cheap (PERF-12): `node`, the wasm and the host shim must exist, and one real
+  `graphlaw_version` probe must have succeeded for this wasm file identity
+  (`{path, size, mtime}`). The successful probe is memoized in
+  `:persistent_term`, so only the first call per artifact spawns `node`; a
+  failed probe is not memoized. Used by tests to decide between exercising the
+  engine and asserting the fail-closed path -- never to skip silently.
   """
   @spec available?() :: boolean()
-  def available?, do: match?({:ok, _}, version())
+  def available? do
+    wasm = wasm_path()
+
+    with {:ok, %{size: size, mtime: mtime}} <- File.stat(wasm, time: :posix),
+         true <- File.exists?(host_script()) do
+      key = {__MODULE__, :probed, Path.expand(wasm), size, mtime}
+
+      case :persistent_term.get(key, nil) do
+        node when is_binary(node) ->
+          File.exists?(node)
+
+        nil ->
+          node = config(:node) || System.find_executable("node")
+
+          is_binary(node) and match?({:ok, _}, version()) and
+            :persistent_term.put(key, node) == :ok
+      end
+    else
+      _ -> false
+    end
+  end
 
   @doc "Resolved absolute path of the wasm module this runtime would load."
   @spec wasm_path() :: String.t()
@@ -118,7 +153,45 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
         {:error, refusal(:graphlaw_unavailable, "host shim not found at #{script}")}
 
       true ->
-        run(node, script, wasm, fn_name, args)
+        with :ok <- check_pin(wasm), do: run(node, script, wasm, fn_name, args)
+    end
+  end
+
+  @doc """
+  SC-04 for the peer transport: `:ok` when the bytes this runtime would hand
+  `node` equal the pin, or when the operator named the path itself.
+
+  Pinned: the vendored artifact and any path that arrived only through the
+  ambient `GRAPHLAW_WASM` environment variable, against
+  `AshA2A.GraphLaw.EngineLoad.expected_sha256/1` (`config :ash_a2a,
+  :graphlaw_wasm_sha256`, else the MANIFEST pin). Unpinned: an explicit
+  `config :ash_a2a, #{inspect(__MODULE__)}, wasm_path: ...` naming other
+  bytes (a court's substituted engine, a local rebuild). Without this, the
+  in-BEAM host refusing a swapped `priv` artifact would make
+  `AshA2A.Semantic.GraphLaw.impl/1` fall back to this runner, which would
+  then execute the same swapped bytes. The file is hashed on every call (a
+  few ms against a ~100 ms `node` spawn), so no memo can go stale.
+  """
+  @spec check_pin(String.t()) :: :ok | {:error, map()}
+  def check_pin(wasm) do
+    configured = config(:wasm_path)
+
+    expected =
+      if is_binary(configured) and Path.expand(configured) == Path.expand(wasm) and
+           Path.expand(wasm) != Path.expand(AshA2A.GraphLaw.wasm_path()),
+         do: :unpinned,
+         else: AshA2A.GraphLaw.EngineLoad.expected_sha256([])
+
+    with {:ok, bytes} <- File.read(wasm),
+         :ok <- AshA2A.GraphLaw.EngineLoad.check_digest(Runtime.bytes_digest(bytes), expected) do
+      :ok
+    else
+      {:error, %{code: code} = error} ->
+        {:error, refusal(code, inspect(Map.delete(error, :code)))}
+
+      {:error, reason} ->
+        {:error,
+         refusal(:graphlaw_unavailable, "wasm module unreadable at #{wasm}: #{inspect(reason)}")}
     end
   end
 
@@ -132,12 +205,20 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
       # Request goes via a real temp file rather than stdin: `System.cmd/3`
       # has no stdin plumbing, and graphs are routinely larger than an argv
       # slot can hold.
-      case System.cmd(node, [script, "--request-file", request_path],
+      # stderr is NOT merged into stdout (PERF-12): a node warning on stderr
+      # must not turn a successful envelope into a JSON decode failure.
+      case AshA2A.GraphLaw.Subprocess.run(node, [script, "--request-file", request_path],
              env: [{"GRAPHLAW_WASM", wasm}],
-             stderr_to_stdout: true
+             timeout_ms: timeout()
            ) do
-        {stdout, 0} -> decode_envelope(stdout)
-        {stdout, status} -> {:error, refusal(:graphlaw_host_failed, "exit #{status}: #{stdout}")}
+        {:ok, {stdout, 0}} ->
+          decode_envelope(stdout)
+
+        {:ok, {stdout, status}} ->
+          {:error, refusal(:graphlaw_host_failed, "exit #{status}: #{stdout}")}
+
+        {:error, %{code: code} = error} ->
+          {:error, refusal(code, inspect(Map.delete(error, :code)))}
       end
     rescue
       error -> {:error, refusal(:graphlaw_host_failed, Exception.message(error))}
@@ -189,9 +270,8 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
 
   defp refusal(code, detail), do: %{code: code, detail: to_string(detail)}
 
-  # `timeout/0` is resolved but not yet threaded into `System.cmd/3`, which
-  # has no timeout option. Documented rather than dropped: a caller wanting a
-  # hard bound must wrap the call in a `Task` with `Task.yield/2`.
+  # `timeout/0` bounds every subprocess through `AshA2A.GraphLaw.Subprocess`
+  # (a timed-out node is killed: `:graphlaw_host_timeout`).
   @doc false
   def configured_timeout, do: timeout()
 end

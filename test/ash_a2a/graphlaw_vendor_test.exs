@@ -167,10 +167,24 @@ defmodule AshA2A.GraphLawVendorTest do
       File.mkdir_p!(Path.join(root, "crates/praxis-graphlaw-wasm"))
       File.write!(Path.join(root, "crates/praxis-graphlaw-wasm/Cargo.toml"), "[package]\n")
 
-      System.put_env("PRAXIS_ROOT", "/nonexistent/env/praxis")
-      on_exit(fn -> System.delete_env("PRAXIS_ROOT") end)
+      env = %{"PRAXIS_ROOT" => "/nonexistent/env/praxis"}
 
-      assert {:ok, ^root} = Vendor.locate_praxis(praxis: root)
+      assert {:ok, ^root} = Vendor.locate_praxis(praxis: root, env: env)
+    end
+
+    test "PRAXIS_ROOT is read from an injected env map, never the process env" do
+      before = System.get_env("PRAXIS_ROOT")
+      root = tmp_dir("praxis_env")
+      File.mkdir_p!(Path.join(root, "crates/praxis-graphlaw-wasm"))
+      File.write!(Path.join(root, "crates/praxis-graphlaw-wasm/Cargo.toml"), "[package]\n")
+
+      assert {:ok, ^root} = Vendor.locate_praxis(env: %{"PRAXIS_ROOT" => root})
+
+      assert {:error, %{code: :praxis_not_found, message: message}} =
+               Vendor.locate_praxis(env: %{"PRAXIS_ROOT" => "/nonexistent/env/praxis"})
+
+      assert message =~ "/nonexistent/env/praxis"
+      assert System.get_env("PRAXIS_ROOT") == before
     end
   end
 

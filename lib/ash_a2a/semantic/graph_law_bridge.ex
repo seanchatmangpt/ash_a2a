@@ -11,13 +11,22 @@ defmodule AshA2A.Semantic.GraphLawBridge do
 
   ## Host resolution order
 
-    1. `AshA2A.GraphLaw.Wasm` -- if that module is loaded (an in-BEAM wasm host,
-       e.g. via `wasmex`), its `graph_hash/1` is used directly. This bridge
-       defers to it rather than competing with it.
+    1. `AshA2A.GraphLaw.WasmexHost` -- the application-supervised, warm,
+       in-BEAM Wasmtime instance (or the least-loaded member of an
+       `AshA2A.GraphLaw.WasmexPool`), used whenever it has loaded the pinned
+       engine and the caller did not name an explicit `:wasm_path`. A call
+       costs ~0.5 ms instead of the ~100 ms of a `node` spawn plus a fresh
+       3.2 MB instantiation (PERF-01, measured), and `call_many/2` runs a whole
+       batch inside one host transaction sequence (PERF-08).
     2. A real `node` subprocess over `priv/graphlaw/graphlaw_invoke.mjs`,
-       following exactly the real-subprocess pattern this repo already uses for
-       the native solver in `AshA2A.Planning.HddlSolver` -- write a real request
-       file, run a real OS process, decode its real stdout JSON.
+       following the real-subprocess pattern of `AshA2A.Planning.HddlSolver`,
+       bounded by `AshA2A.GraphLaw.Subprocess` (deadline + concurrency cap).
+       This stays the second runtime of the cross-runtime court and the only
+       host that honours a per-call `:wasm_path`.
+
+  The engine version is memoized per wasm identity (the in-BEAM host's pinned
+  SHA-256, or the node shim's `{path, size, mtime}`), since it cannot change
+  for a fixed artifact.
 
   Nothing here simulates a result. Every `{:ok, _}` this module returns came
   out of the real wasm module's linear memory.
@@ -69,7 +78,7 @@ defmodule AshA2A.Semantic.GraphLawBridge do
   @spec available?(keyword()) :: boolean()
   def available?(opts \\ []) do
     in_beam_host?(opts) or
-      (System.find_executable(node_path(opts)) != nil and File.exists?(wasm_path(opts)) and
+      (find_node(opts) != nil and File.exists?(wasm_path(opts)) and
          File.exists?(shim_path()))
   end
 
@@ -84,7 +93,7 @@ defmodule AshA2A.Semantic.GraphLawBridge do
       in_beam_host?(opts) ->
         :in_beam
 
-      System.find_executable(node_path(opts)) == nil ->
+      find_node(opts) == nil ->
         {:unavailable, %{code: :graphlaw_node_not_found, node_path: node_path(opts)}}
 
       not File.exists?(wasm_path(opts)) ->
@@ -100,7 +109,37 @@ defmodule AshA2A.Semantic.GraphLawBridge do
 
   @doc "Real `graphlaw_version()` string from the engine."
   @spec version(keyword()) :: {:ok, String.t()} | {:error, map()}
-  def version(opts \\ []), do: call_one("graphlaw_version", [], opts)
+  def version(opts \\ []) do
+    key = {__MODULE__, :version, version_identity(opts)}
+
+    case :persistent_term.get(key, nil) do
+      nil ->
+        with {:ok, version} <- call_one("graphlaw_version", [], opts) do
+          :persistent_term.put(key, version)
+          {:ok, version}
+        end
+
+      version ->
+        {:ok, version}
+    end
+  end
+
+  # What pins the version: the in-BEAM host's loaded SHA-256, or the node
+  # shim's artifact file identity (a re-vendored file changes size or mtime).
+  defp version_identity(opts) do
+    case in_beam_sha256(opts) do
+      nil ->
+        path = wasm_path(opts)
+
+        case File.stat(path, time: :posix) do
+          {:ok, %{size: size, mtime: mtime}} -> {:file, Path.expand(path), size, mtime}
+          {:error, _} -> {:file, Path.expand(path), nil, System.unique_integer()}
+        end
+
+      sha ->
+        {:in_beam, sha}
+    end
+  end
 
   @doc """
   Real canonical graph hash of an RDF document (Turtle or N-Triples).
@@ -112,14 +151,8 @@ defmodule AshA2A.Semantic.GraphLawBridge do
   a digest of a silently truncated one.
   """
   @spec graph_hash(binary(), keyword()) :: {:ok, String.t()} | {:error, map()}
-  def graph_hash(document, opts \\ []) when is_binary(document) do
-    if in_beam_host?(opts) do
-      apply(AshA2A.GraphLaw.Wasm, :graph_hash, [document])
-      |> normalize_in_beam()
-    else
-      call_one("graph_hash", [document], opts)
-    end
-  end
+  def graph_hash(document, opts \\ []) when is_binary(document),
+    do: call_one("graph_hash", [document], opts)
 
   @doc "Real `blake3_hex/1` of an arbitrary string, straight from the engine."
   @spec blake3_hex(binary(), keyword()) :: {:ok, String.t()} | {:error, map()}
@@ -177,82 +210,39 @@ defmodule AshA2A.Semantic.GraphLawBridge do
 
   @doc """
   Batched call: `[{"graph_hash", [doc]}, {"blake3_hex", ["abc"]}]`. Returns
-  `{:ok, [String.t()]}` in the same order.
+  `{:ok, [String.t()]}` (raw engine strings) in the same order.
 
   On the `:node_shim` host this is one real wasm instantiation. On the
-  `:in_beam` host there is no atomic multi-call primitive, so each call is
-  dispatched in order to the same real, already-loaded engine instance and
-  the results collected -- N real, independent calls (every `graphlaw_*`
-  export is pure and stateless), not one request faked as several.
+  `:in_beam` host it is one `AshA2A.GraphLaw.WasmexHost.raw_many/3`: every
+  call runs inside one host `handle_call/3`, in order, with no interleaving.
   """
   @spec call_many([{String.t(), [binary()]}], keyword()) :: {:ok, [String.t()]} | {:error, map()}
   def call_many(calls, opts \\ []) when is_list(calls) do
     case host(opts) do
-      {:unavailable, reason} ->
-        {:error, reason}
-
-      # `AshA2A.GraphLaw.Wasm` (admission-standing-fixes' subprocess host) has
-      # no genuine ATOMIC multi-call primitive -- there is no single request
-      # that runs several engine functions in one round trip the way the
-      # node-shim's `run_shim/2` does. What every real caller of `call_many/2`
-      # in this codebase actually needs, though, is N independent, pure
-      # results (each real `graphlaw_*` export is stateless -- no call
-      # observes another's effect), not atomicity: `CanonicalDigest`'s
-      # turtle/n-triples double `graph_hash` comparison, for one. So each
-      # call is dispatched in order through the same real in-BEAM host
-      # `call_one/3`'s length-1 case already used, and the results collected
-      # in the caller's order -- N real engine calls, honestly, not one
-      # request faked as several.
-      :in_beam ->
-        in_beam_call_many(calls)
-
-      :node_shim ->
-        run_shim(calls, opts)
+      {:unavailable, reason} -> {:error, reason}
+      :in_beam -> in_beam_call_many(calls)
+      :node_shim -> run_shim(calls, opts)
     end
   end
+
+  @known ~w(graphlaw_version graph_hash blake3_hex run_hooks validate_all)
 
   defp in_beam_call_many(calls) do
-    Enum.reduce_while(calls, {:ok, []}, fn call, {:ok, acc} ->
-      case in_beam_call(call) do
-        {:ok, result} -> {:cont, {:ok, [result | acc]}}
-        {:error, _} = error -> {:halt, error}
-      end
-    end)
-    |> case do
-      {:ok, results} -> {:ok, Enum.reverse(results)}
-      error -> error
+    case Enum.find(calls, fn {fun, _args} -> fun not in @known end) do
+      {fun, args} ->
+        {:error, %{code: :graphlaw_unknown_function, fn: fun, arity: length(args)}}
+
+      nil ->
+        case AshA2A.GraphLaw.WasmexHost.raw_many(calls) do
+          {:ok, results} -> {:ok, results}
+          {:error, {:invalid_encoding, offset}} -> {:error, invalid_encoding(offset)}
+          {:error, _} = error -> error
+        end
     end
   end
 
-  # Routes one call to the exact matching real `AshA2A.GraphLaw.Wasm`
-  # function. `run_hooks`/`validate_all` there already return a DECODED map
-  # (this module's own `run_hooks/3`/`validate_all/6` re-decode via
-  # `Serialize.from_json/1` downstream of `call_one/3`), so their result is
-  # re-encoded back to the same raw JSON string shape the node-shim path
-  # returns -- the one real, minimal seam that lets every caller of
-  # `call_one/3` stay host-agnostic.
-  defp in_beam_call({"graphlaw_version", []}),
-    do: AshA2A.GraphLaw.Wasm.version() |> normalize_in_beam()
-
-  defp in_beam_call({"graph_hash", [ttl]}),
-    do: AshA2A.GraphLaw.Wasm.graph_hash(ttl) |> normalize_in_beam()
-
-  defp in_beam_call({"blake3_hex", [value]}),
-    do: AshA2A.GraphLaw.Wasm.blake3_hex(value) |> normalize_in_beam()
-
-  defp in_beam_call({"run_hooks", [base, event]}) do
-    with {:ok, decoded} <- AshA2A.GraphLaw.Wasm.run_hooks(base, event),
-         do: {:ok, JSON.encode!(decoded)}
-  end
-
-  defp in_beam_call({"validate_all", [ttl, profile, shacl, shex, shape_map]}) do
-    with {:ok, decoded} <-
-           AshA2A.GraphLaw.Wasm.validate_all(ttl, profile, shacl, shex, shape_map),
-         do: {:ok, JSON.encode!(decoded)}
-  end
-
-  defp in_beam_call({fun, args}),
-    do: {:error, %{code: :graphlaw_unknown_function, fn: fun, arity: length(args)}}
+  defp invalid_encoding(offset),
+    do: %{code: :invalid_encoding, byte_offset: offset, detail: "input is not valid UTF-8"}
 
   defp call_one(fun, args, opts) do
     case call_many([{fun, args}], opts) do
@@ -274,12 +264,14 @@ defmodule AshA2A.Semantic.GraphLawBridge do
     File.write!(request_path, payload)
 
     try do
-      {stdout, exit_code} =
-        System.cmd(node_path(opts), [shim_path(), wasm_path(opts), request_path],
-          stderr_to_stdout: false
-        )
-
-      decode_shim(stdout, exit_code)
+      case AshA2A.GraphLaw.Subprocess.run(
+             node_path(opts),
+             [shim_path(), wasm_path(opts), request_path],
+             opts
+           ) do
+        {:ok, {stdout, exit_code}} -> decode_shim(stdout, exit_code)
+        {:error, _} = error -> error
+      end
     after
       File.rm(request_path)
     end
@@ -303,22 +295,53 @@ defmodule AshA2A.Semantic.GraphLawBridge do
   end
 
   # An explicit `:wasm_path` opt means the caller cares WHICH wasm bytes
-  # execute -- `AshA2A.GraphLaw.Wasm`'s in-BEAM host resolves its own
-  # application-configured path independently and has no way to honour a
-  # per-call override, so it is not a truthful answer to that request. Found
-  # by a real test asserting a deliberately-wrong `wasm_path:` produces a
-  # typed refusal rather than being silently ignored in favour of whatever
-  # wasm the in-BEAM host happens to have loaded.
-  defp in_beam_host?(opts) do
-    not Keyword.has_key?(opts, :wasm_path) and
-      Code.ensure_loaded?(AshA2A.GraphLaw.Wasm) and
-      function_exported?(AshA2A.GraphLaw.Wasm, :graph_hash, 1)
+  # execute -- the in-BEAM host runs the one pinned artifact it loaded at
+  # start and cannot honour a per-call override, so it is not a truthful
+  # answer to that request. Found by a real test asserting a
+  # deliberately-wrong `wasm_path:` produces a typed refusal rather than
+  # being silently ignored.
+  defp in_beam_host?(opts), do: in_beam_sha256(opts) != nil
+
+  defp in_beam_sha256(opts) do
+    cond do
+      Keyword.has_key?(opts, :wasm_path) ->
+        nil
+
+      AshA2A.GraphLaw.WasmexHost.serves?(wasm_path(opts)) ->
+        AshA2A.GraphLaw.WasmexHost.loaded_sha256()
+
+      true ->
+        nil
+    end
   end
 
-  defp normalize_in_beam({:ok, _} = ok), do: ok
-  defp normalize_in_beam({:error, _} = error), do: error
-  defp normalize_in_beam(hex) when is_binary(hex), do: {:ok, hex}
+  # `System.find_executable/1` walks PATH on every call; a found executable
+  # is memoized per requested name (a miss is not, so installing node later
+  # is still seen).
+  defp find_node(opts) do
+    name = node_path(opts)
+    key = {__MODULE__, :node, name}
 
-  defp normalize_in_beam(other),
-    do: {:error, %{code: :graphlaw_unexpected_in_beam_result, detail: other}}
+    case :persistent_term.get(key, nil) do
+      nil ->
+        case System.find_executable(name) do
+          nil ->
+            nil
+
+          path ->
+            :persistent_term.put(key, path)
+            path
+        end
+
+      path ->
+        if File.exists?(path), do: path, else: System.find_executable(name)
+    end
+  end
+
+  @doc false
+  def __sa2a_refusal_codes__,
+    do: %{
+      invalid_encoding: :refused_structure,
+      graphlaw_unknown_function: :blocked_resource
+    }
 end

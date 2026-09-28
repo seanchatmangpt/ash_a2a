@@ -27,9 +27,11 @@ defmodule AshA2A.GraphLaw.WasmDriver do
   cannot be imported under plain Node ESM, so this module does not use it.
   It instead drives `priv/graphlaw/graphlaw_driver.mjs`, which instantiates
   the raw `praxis_graphlaw_wasm_bg.wasm` directly and reimplements only the
-  wasm-bindgen string ABI. Invocation is a real `System.cmd/3` subprocess --
-  exactly the pattern `AshA2A.Planning.HddlSolver` already establishes for
-  the native HDDL solver. No result this module returns was constructed in
+  wasm-bindgen string ABI. Invocation is a real subprocess bounded by
+  `AshA2A.GraphLaw.Subprocess` (deadline + node-wide concurrency cap). When
+  the application's warm in-BEAM `AshA2A.GraphLaw.WasmexHost` has loaded the
+  pinned engine and no explicit wasm override is in play, `call_many/2` runs
+  there instead (PERF-01); `transport: :node` forces the subprocess. No result this module returns was constructed in
   Elixir; every one came out of the real engine.
 
   Because instantiating a ~3.2MB module dominates per-call cost, the
@@ -119,6 +121,49 @@ defmodule AshA2A.GraphLaw.WasmDriver do
   @spec call_many([call_spec()], keyword()) ::
           {:ok, [{:ok, String.t()} | {:error, error()}]} | {:error, error()}
   def call_many(calls, opts \\ []) when is_list(calls) do
+    if in_beam?(opts), do: in_beam_call_many(calls), else: node_call_many(calls, opts)
+  end
+
+  # PERF-01: when the application's warm `AshA2A.GraphLaw.WasmexHost` has
+  # loaded the pinned engine and the caller did not ask for specific bytes
+  # (`:wasm_path`, `GRAPHLAW_WASM_PATH`) or for the node runtime
+  # (`transport: :node`), the batch runs in-BEAM in one host transaction
+  # sequence -- same engine bytes, same per-call result shape, no spawn.
+  defp in_beam?(opts) do
+    Keyword.get(opts, :transport) != :node and not Keyword.has_key?(opts, :wasm_path) and
+      AshA2A.GraphLaw.WasmexHost.serves?(wasm_path(opts))
+  end
+
+  @exports ~w(graphlaw_version graph_hash blake3_hex run_hooks validate_all)
+
+  # An unknown export is a per-call error (the node driver's shape), not a
+  # failure of the whole batch; only the known calls run on the host.
+  defp in_beam_call_many(calls) do
+    known = Enum.filter(calls, fn {fun, _} -> fun in @exports end)
+
+    case AshA2A.GraphLaw.WasmexHost.raw_many(known) do
+      {:ok, raws} ->
+        {results, []} =
+          Enum.map_reduce(calls, raws, fn
+            {fun, _args}, rest when fun in @exports ->
+              [raw | tail] = rest
+              {decode_result(%{"ok" => raw}), tail}
+
+            {fun, _args}, rest ->
+              {decode_result(%{"error" => "unknown export #{fun}"}), rest}
+          end)
+
+        {:ok, results}
+
+      {:error, {:invalid_encoding, offset}} ->
+        {:error, %{code: :invalid_encoding, byte_offset: offset}}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp node_call_many(calls, opts) do
     wasm = wasm_path(opts)
     driver = driver_path()
 
@@ -164,12 +209,14 @@ defmodule AshA2A.GraphLaw.WasmDriver do
     try do
       # stdin is fed from a real file rather than an argv string: turtle
       # documents routinely exceed argv limits and contain shell metachars.
-      {stdout, exit_code} =
-        System.cmd("sh", ["-c", "exec node #{esc(driver)} < #{esc(request_path)}"],
-          stderr_to_stdout: false
-        )
-
-      decode(stdout, exit_code, length(calls))
+      case AshA2A.GraphLaw.Subprocess.run(
+             "sh",
+             ["-c", "exec node #{esc(driver)} < #{esc(request_path)}"],
+             opts
+           ) do
+        {:ok, {stdout, exit_code}} -> decode(stdout, exit_code, length(calls))
+        {:error, _} = error -> error
+      end
     after
       File.rm(request_path)
     end
