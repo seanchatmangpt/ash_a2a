@@ -1,0 +1,13 @@
+# Base (kind/CI shape). `kubectl apply -k k8s` applies everything below;
+# production uses `kubectl apply -k k8s/overlays/prod`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - resource-quota.yaml
+  - service-account.yaml
+  - headless-service.yaml
+  - http-service.yaml
+  - network-policy.yaml
+  - pdb.yaml
+  - deployment.yaml

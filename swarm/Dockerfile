@@ -13,7 +13,12 @@
 # (elixir 1.19.5-otp-27, erlang 27.2.4) -- the exact same toolchain every
 # other real verification step in this repo already runs against, not a
 # separately-chosen version.
-FROM hexpm/elixir:1.19.5-erlang-27.2.4-debian-bookworm-20260824-slim AS builder
+#
+# Both FROM lines are pinned by content digest (DEP-08), not by mutable tag:
+# a tag can be re-pointed upstream, a digest cannot. Digests resolved with
+# `docker buildx imagetools inspect <tag>` on 2026-09-27 (OCI image index, so
+# multi-arch). Bump by re-resolving the tag and replacing the digest.
+FROM hexpm/elixir:1.19.5-erlang-27.2.4-debian-bookworm-20260824-slim@sha256:bf90f2ae006d21c89d74ccfec1db58739b13d4b0bf6c6f984abbfa260bf89669 AS builder
 
 # build-essential + git: ash_a2a's own real dependency tree includes a
 # NIF (ekv, a transitive dependency of durable_server) whose
@@ -73,19 +78,29 @@ RUN mix deps.get --only prod
 WORKDIR /build
 
 COPY lib ./lib
+# priv/ carries the GraphLaw WASM (priv/graphlaw/praxis_graphlaw.wasm), the
+# SA2A corpus, conformance vectors and the court manifest -- everything
+# ash_a2a resolves through :code.priv_dir(:ash_a2a). Without it the release
+# boots with every semantic/SA2A admission surface degraded to typed errors
+# (DEP-01); the RUN test below and SwarmNode.Health.boot_gate/1 make that a
+# build failure and a boot failure respectively, never a silent degradation.
+COPY priv ./priv
 COPY swarm ./swarm
 
 WORKDIR /build/swarm
 
 RUN mix deps.compile
 RUN mix compile
-RUN mix release swarm_node
+RUN mix release swarm_node \
+    && test -s "$(ls -d /build/swarm/_build/prod/rel/swarm_node/lib/ash_a2a-*)/priv/graphlaw/praxis_graphlaw.wasm" \
+    && test -s /build/swarm/_build/prod/rel/swarm_node/ssl_dist.conf \
+    && test -s /build/swarm/_build/prod/rel/swarm_node/capability_release.json
 
 # --- Runtime stage: minimal, non-root, matches the k8s podSecurityContext
 # this image is deployed under (runAsUser/runAsGroup 10001, per
 # ash_a2a's own k8s/README.md and the kubernetes-workload-pack
 # high-assurance-workload example this manifest is modeled on).
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
 
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends libncurses6 libstdc++6 openssl locales ca-certificates \
@@ -95,6 +110,11 @@ RUN apt-get update -y \
 
 WORKDIR /app
 COPY --from=builder --chown=10001:10001 /build/swarm/_build/prod/rel/swarm_node ./
+
+# Persistent state root (receipts, broker, outbox): a PVC is mounted here by
+# the StatefulSet (k8s/deployment.yaml); created here so ownership is right
+# even when run without a volume.
+RUN mkdir -p /var/lib/ash_a2a && chown 10001:10001 /var/lib/ash_a2a
 
 USER 10001:10001
 

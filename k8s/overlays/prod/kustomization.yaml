@@ -1,0 +1,49 @@
+# Production overlay (DEP-06, DEP-07, DEP-08, DEP-09).
+#
+#   * Image pinned by content digest from the release registry. The CI release
+#     job (docker buildx build --push -> cosign sign -> cosign verify) writes
+#     the pushed digest here with
+#       kustomize edit set image \
+#         ash-a2a-swarm-node:local=<registry>/ash-a2a-swarm-node@sha256:<digest>
+#     The all-zero digest below is deliberately unpullable: an unedited
+#     overlay fails at pull time instead of running an unverified image.
+#     Enforce signature verification at admission with a Sigstore
+#     policy-controller ClusterImagePolicy or Kyverno verifyImages rule
+#     scoped to this namespace.
+#   * imagePullPolicy IfNotPresent (a digest reference is immutable).
+#   * Replicas MUST land on distinct nodes (hostname DoNotSchedule).
+#   * cert-manager issues the distribution TLS Secret.
+#   * External egress granted per destination (egress-external.yaml).
+#
+# Render/apply (the base manifests live in k8s/ itself, above this overlay, so
+# the file-level load restrictor must be relaxed):
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/overlays/prod \
+#     | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../namespace.yaml
+  - ../../resource-quota.yaml
+  - ../../service-account.yaml
+  - ../../headless-service.yaml
+  - ../../http-service.yaml
+  - ../../network-policy.yaml
+  - ../../pdb.yaml
+  - ../../deployment.yaml
+  - ../../dist-tls-certificate.yaml
+  - egress-external.yaml
+images:
+  - name: ash-a2a-swarm-node
+    newName: registry.example.invalid/ash-a2a-swarm-node
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+patches:
+  - target:
+      kind: StatefulSet
+      name: ash-a2a-swarm
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/topologySpreadConstraints/0/whenUnsatisfiable
+        value: DoNotSchedule

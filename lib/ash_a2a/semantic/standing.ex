@@ -153,8 +153,18 @@ defmodule AshA2A.Semantic.Standing do
   state -- it is the genesis standing and confers nothing. Every state above it
   requires a verifying seal.
 
+  **Where the key comes from.** When `config :ash_a2a, :standing_ledger_key`
+  holds a binary, that exact 32-byte key seals and verifies every chain, so a
+  chain sealed on one node verifies on every other node of the cluster and
+  after a restart or rolling update. Any other configured value (wrong size,
+  not a binary) raises `ArgumentError` at boot (`ensure_ledger_key/0`) and on
+  every transition -- a misconfigured key fails closed, never silently falls
+  back. When the key is unset, 32 random bytes are generated once per runtime
+  and held in `:persistent_term`: chains are then **node-local and do not
+  survive a restart** -- fine for a single node or tests, not for a cluster.
+
   **What this does and does not defend against, precisely.** The key is 32
-  random bytes generated once per runtime and held in `:persistent_term`; the
+  bytes (configured, or random per runtime and held in `:persistent_term`); the
   seal is never serialized (`Envelope.to_map/1` omits it). That closes
   struct-literal forgery, forgery by hand-built history, forgery across the
   wire, and forgery by replaying a serialized envelope. It does **not** defend
@@ -669,6 +679,23 @@ defmodule AshA2A.Semantic.Standing do
   end
 
   defp ledger_key do
+    case Application.get_env(:ash_a2a, :standing_ledger_key) do
+      nil -> runtime_ledger_key()
+      key -> validate_configured_key!(key)
+    end
+  end
+
+  defp validate_configured_key!(key) when is_binary(key) and byte_size(key) == 32, do: key
+
+  defp validate_configured_key!(key) do
+    size = if is_binary(key), do: "#{byte_size(key)} bytes", else: "not a binary"
+
+    raise ArgumentError,
+          "config :ash_a2a, :standing_ledger_key must be exactly 32 raw bytes " <>
+            "(got #{size}); refusing to seal standing under a malformed key"
+  end
+
+  defp runtime_ledger_key do
     case :persistent_term.get(@ledger_key_term, nil) do
       nil -> seed_ledger_key()
       key -> key

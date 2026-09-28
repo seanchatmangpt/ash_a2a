@@ -61,25 +61,49 @@ fi
 echo "== Load real image into kind (no registry push needed) ==" >&2
 kind load docker-image "$IMAGE" --name "$CLUSTER"
 
-echo "== Apply namespace + quota + ServiceAccount + headless Service + NetworkPolicy ==" >&2
+echo "== Apply namespace (Secrets below need it) ==" >&2
 kubectl apply -f "$REPO_ROOT/k8s/namespace.yaml"
-kubectl apply -f "$REPO_ROOT/k8s/resource-quota.yaml"
-kubectl apply -f "$REPO_ROOT/k8s/service-account.yaml"
-kubectl apply -f "$REPO_ROOT/k8s/headless-service.yaml"
-kubectl apply -f "$REPO_ROOT/k8s/network-policy.yaml"
 
-echo "== Ensure real distribution cookie Secret exists (random, never committed) ==" >&2
+# All Secrets are generated here, random, never committed, and only created
+# when absent (re-runs keep the existing cluster identity and keys). In
+# production they come from an external secret manager / cert-manager
+# (k8s/overlays/prod), not from this script.
+echo "== Ensure distribution cookie Secret exists ==" >&2
 if ! kubectl -n ash-a2a-swarm get secret ash-a2a-swarm-cookie >/dev/null 2>&1; then
   COOKIE="$(openssl rand -hex 32)"
   kubectl -n ash-a2a-swarm create secret generic ash-a2a-swarm-cookie \
     --from-literal=cookie="$COOKIE"
 fi
 
-echo "== Apply Deployment ==" >&2
-kubectl apply -f "$REPO_ROOT/k8s/deployment.yaml"
+echo "== Ensure receipt-binding / standing-ledger key Secret exists (DEP-02/DEP-04) ==" >&2
+if ! kubectl -n ash-a2a-swarm get secret ash-a2a-swarm-keys >/dev/null 2>&1; then
+  kubectl -n ash-a2a-swarm create secret generic ash-a2a-swarm-keys \
+    --from-literal=receipt-binding-key="$(openssl rand -base64 32)" \
+    --from-literal=standing-ledger-key="$(openssl rand -base64 32)"
+fi
 
-echo "== Wait for real rollout ==" >&2
-kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=180s
+echo "== Ensure distribution TLS Secret exists (DEP-07/SEC-10: private CA + leaf) ==" >&2
+if ! kubectl -n ash-a2a-swarm get secret ash-a2a-swarm-dist-tls >/dev/null 2>&1; then
+  TLS_DIR="$(mktemp -d)"
+  trap 'rm -rf "$TLS_DIR"' EXIT
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 365 \
+    -subj "/CN=ash-a2a-swarm-dist-ca" -keyout "$TLS_DIR/ca.key" -out "$TLS_DIR/ca.crt" 2>/dev/null
+  openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+    -subj "/CN=swarm_node" -keyout "$TLS_DIR/tls.key" -out "$TLS_DIR/tls.csr" 2>/dev/null
+  openssl x509 -req -in "$TLS_DIR/tls.csr" -CA "$TLS_DIR/ca.crt" -CAkey "$TLS_DIR/ca.key" \
+    -CAcreateserial -days 90 -out "$TLS_DIR/tls.crt" 2>/dev/null
+  kubectl -n ash-a2a-swarm create secret generic ash-a2a-swarm-dist-tls \
+    --from-file=tls.crt="$TLS_DIR/tls.crt" \
+    --from-file=tls.key="$TLS_DIR/tls.key" \
+    --from-file=ca.crt="$TLS_DIR/ca.crt"
+fi
+
+echo "== Apply base manifests (kustomize: quota, SA, Services, NetworkPolicy, PDB, StatefulSet) ==" >&2
+kubectl apply -k "$REPO_ROOT/k8s"
+
+echo "== Wait for rollout: every replica Ready (readiness = /readyz, SwarmNode.Health) ==" >&2
+kubectl -n ash-a2a-swarm rollout status statefulset/ash-a2a-swarm --timeout=300s
+kubectl -n ash-a2a-swarm wait --for=condition=Ready pod -l app=ash-a2a-swarm --timeout=180s
 
 # Real egress falsifier (NIST SP 800-53 SC-7(5), deny-by-default egress):
 # a positive control (policy removed, real raw TCP connect to a public IP
@@ -118,9 +142,8 @@ echo "== Real swarm-dispatch probe (from pod 0, against real peer pods) ==" >&2
 PODS=($(kubectl -n ash-a2a-swarm get pods -l app=ash-a2a-swarm -o jsonpath='{.items[*].metadata.name}'))
 echo "Real pods: ${PODS[*]}" >&2
 
-# Give libcluster's 5s polling interval a moment to have actually
-# connected the real peers before probing.
-sleep 8
+# No sleep: readiness (SWARM_MIN_PEERS=1) already means each pod has
+# connected peers.
 
 # `rpc` evaluates the expression in the ALREADY-RUNNING remote node and
 # returns/prints its result -- it does not affect that node's lifecycle,
@@ -145,10 +168,11 @@ bash "$REPO_ROOT/k8s/verify_network_isolation.sh"
 echo "== Real resilience/chaos test: kill one pod, verify self-heal + swarm reformation ==" >&2
 VICTIM="${PODS[${#PODS[@]}-1]}"
 echo "Killing pod: $VICTIM" >&2
-kubectl -n ash-a2a-swarm delete pod "$VICTIM" --wait=false
-kubectl -n ash-a2a-swarm rollout status deployment/ash-a2a-swarm --timeout=90s
-
-sleep 8
+kubectl -n ash-a2a-swarm delete pod "$VICTIM" --wait=true
+# The StatefulSet recreates the pod under the same name and PVC; wait until
+# it is Ready again (i.e. /readyz passes: rejoined peers, GraphLaw loaded).
+kubectl -n ash-a2a-swarm rollout status statefulset/ash-a2a-swarm --timeout=180s
+kubectl -n ash-a2a-swarm wait --for=condition=Ready pod "$VICTIM" --timeout=180s
 
 SURVIVOR="${PODS[0]}"
 POST_CHAOS_OUTPUT="$(kubectl -n ash-a2a-swarm exec "$SURVIVOR" -- \

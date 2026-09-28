@@ -1,18 +1,18 @@
 # SEC-NET-001 (kubernetes-workload-pack's control-map.md): default-deny
-# NetworkPolicy + explicit allowed flows. This was this session's one
-# disclosed NAMESPACE_CONTROL gap (kubescape's NSA scan of
-# k8s/deployment.yaml alone failed exactly one control here:
-# "Ingress and Egress blocked" -- 19/20 controls passed otherwise).
-# Closed here since a real enterprise/regulated-buyer security review is
-# exactly what would gate on this control's presence, not just document
-# its absence.
+# NetworkPolicy + explicit allowed flows.
 #
-# Egress: DNS (kube-dns, needed for libcluster's own Kubernetes.DNS
-# strategy to resolve the headless Service) + pod-to-pod on the real
-# distribution ports this swarm needs (epmd 4369, the fixed inet_dist
-# port 9000 from swarm/rel/vm.args.eex). Ingress: the same two ports,
-# from other pods carrying this workload's own label only -- no ingress
-# from any other namespace/workload.
+# Ingress:
+#   * 4369 (epmd) and 9000 (TLS distribution) ONLY from pods of this workload
+#     (podSelector app=ash-a2a-swarm) -- no other pod or namespace can reach
+#     the distribution ports (SEC-10).
+#   * 4000 (opt-in A2A HTTP) ONLY from the ingress controller's namespace
+#     (namespaceSelector kubernetes.io/metadata.name=ingress-nginx; change
+#     the value in an overlay for another controller).
+#   * 4001 (admin: /healthz /readyz /drain) from nothing: kubelet probes and
+#     the preStop hook come from the node, not from a pod.
+# Egress: DNS (kube-dns) + pod-to-pod on 4369/9000. External egress (OCEL
+# ingest, LLM providers) is denied here and must be granted explicitly per
+# destination -- see k8s/overlays/prod/egress-external.yaml (DEP-09).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -45,6 +45,13 @@ spec:
         - port: 4369
           protocol: TCP
         - port: 9000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 4000
           protocol: TCP
   egress:
     - to:

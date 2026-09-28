@@ -1,0 +1,18 @@
+# ClusterIP Service for the opt-in A2A JSON-RPC surface (DEP-09;
+# SwarmNode.A2ARouter, enabled with SWARM_A2A_HTTP=true). Lists only Ready
+# pods. Expose it through the cluster's ingress controller with TLS
+# terminated there (HTTPS-only, HSTS) -- the pod speaks plain HTTP on 4000
+# and the NetworkPolicy admits that port only from the ingress namespace.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ash-a2a-swarm-http
+  namespace: ash-a2a-swarm
+spec:
+  type: ClusterIP
+  selector:
+    app: ash-a2a-swarm
+  ports:
+    - name: a2a-http
+      port: 4000
+      targetPort: a2a-http

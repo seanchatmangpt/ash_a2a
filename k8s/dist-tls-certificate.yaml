@@ -1,0 +1,63 @@
+# Production issuance of the Erlang-distribution TLS material (DEP-07 /
+# SEC-10) with cert-manager: a namespace-local CA dedicated to this cluster's
+# distribution (never shared -- it is the ONLY peer-authentication root, see
+# swarm/rel/overlays/ssl_dist.conf) and one leaf certificate every replica
+# mounts from the Secret ash-a2a-swarm-dist-tls (tls.crt, tls.key, ca.crt).
+# Included by k8s/overlays/prod; k8s/deploy.sh generates the same Secret shape
+# with openssl for kind, where cert-manager is not installed.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ash-a2a-swarm-selfsigned
+  namespace: ash-a2a-swarm
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ash-a2a-swarm-dist-ca
+  namespace: ash-a2a-swarm
+spec:
+  isCA: true
+  commonName: ash-a2a-swarm-dist-ca
+  secretName: ash-a2a-swarm-dist-ca
+  duration: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: ash-a2a-swarm-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ash-a2a-swarm-dist-ca
+  namespace: ash-a2a-swarm
+spec:
+  ca:
+    secretName: ash-a2a-swarm-dist-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ash-a2a-swarm-dist-tls
+  namespace: ash-a2a-swarm
+spec:
+  secretName: ash-a2a-swarm-dist-tls
+  duration: 2160h
+  renewBefore: 360h
+  commonName: swarm_node
+  dnsNames:
+    - "*.ash-a2a-swarm-headless.ash-a2a-swarm.svc.cluster.local"
+  usages:
+    - server auth
+    - client auth
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: ash-a2a-swarm-dist-ca
+    kind: Issuer

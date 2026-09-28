@@ -30,7 +30,10 @@ defmodule SwarmNode.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :runtime_tools],
+      # `:ssl` is required in the release: the node's distribution runs over
+      # `-proto_dist inet_tls` (rel/vm.args.eex, DEP-07/SEC-10), which needs
+      # the ssl application's code in the release boot path.
+      extra_applications: [:logger, :runtime_tools, :ssl, :public_key, :crypto],
       mod: {SwarmNode.Application, []}
     ]
   end
@@ -42,7 +45,12 @@ defmodule SwarmNode.MixProject do
       # CommandBus / A2A.Agent machinery this whole repo's test suite
       # already covers, never a reimplementation or a mock host.
       {:ash_a2a, path: ".."},
-      {:libcluster, "~> 3.5"}
+      {:libcluster, "~> 3.5"},
+      # HTTP surface for kubelet probes (/healthz, /readyz, /drain) and the
+      # opt-in A2A JSON-RPC mount (SwarmNode.A2ARouter). Same versions the
+      # root ash_a2a lock already pins.
+      {:bandit, "~> 1.5"},
+      {:plug, "~> 1.16"}
     ]
   end
 
@@ -50,6 +58,9 @@ defmodule SwarmNode.MixProject do
     [
       swarm_node: [
         include_executables_for: [:unix],
+        # rel/overlays/ssl_dist.conf lands at the release root (/app in the
+        # image) and is what rel/vm.args.eex's -ssl_dist_optfile points at.
+        overlays: ["rel/overlays"],
         applications: [swarm_node: :permanent]
       ]
     ]

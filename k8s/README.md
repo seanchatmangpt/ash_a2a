@@ -1,5 +1,39 @@
 # ash_a2a real distributed-agent swarm test (kind + act)
 
+## Production shape (2026-09-27, lane deploy: DEP-01..DEP-12, SEC-10)
+
+Supersedes any statement further down that contradicts it.
+
+- **Workload**: `deployment.yaml` is a **StatefulSet** (file name kept for
+  tooling): stable node names `swarm_node@<pod>.ash-a2a-swarm-headless...`,
+  libcluster `Kubernetes.DNSSRV`, one PVC `data` per replica at
+  `/var/lib/ash_a2a` holding the EKV receipt store, EKV authority broker and
+  receipt outbox. `/tmp` is an emptyDir for `RELEASE_TMP` only.
+- **Fail-closed prod config** (`swarm/config/runtime.exs`): Ekv receipt store,
+  Ekv broker, strict capability-release gate with a frozen closure pinned by
+  portable digest, receipt binding key, 32-byte standing-ledger key -- a
+  missing or malformed env var refuses boot.
+- **Boot gate + probes**: the release ships `priv/` (GraphLaw WASM); boot fails
+  if GraphLaw is not loaded. `startupProbe`/`readinessProbe`/`livenessProbe`
+  hit `/healthz` and `/readyz` on the kubelet-only admin port 4001;
+  `preStop` calls `/drain`; `terminationGracePeriodSeconds: 60`;
+  `minReadySeconds: 10`; PodDisruptionBudget `minAvailable: 2`;
+  topology spread across hosts and zones (enforced in the prod overlay).
+- **Distribution TLS**: `-proto_dist inet_tls` with a dedicated CA
+  (`swarm/rel/overlays/ssl_dist.conf`, `verify_peer` both ways,
+  `fail_if_no_peer_cert`). Secret `ash-a2a-swarm-dist-tls` from
+  cert-manager (`dist-tls-certificate.yaml`, prod) or `deploy.sh` (kind).
+- **Supply chain**: both Dockerfile `FROM`s pinned by `@sha256`; the prod
+  overlay (`overlays/prod`) pins the app image by digest (unpullable all-zero
+  placeholder until the release job writes the real one) with
+  `imagePullPolicy: IfNotPresent`.
+- **Network**: dist ports only from peer pods; A2A HTTP (opt-in,
+  `SWARM_A2A_HTTP=true`, `AshA2A.Transport.Plug` at `/a2a`) only from the
+  ingress namespace via `http-service.yaml`; external egress only via
+  explicit rules (`overlays/prod/egress-external.yaml`).
+- **Apply**: kind/CI `bash k8s/deploy.sh` (`kubectl apply -k k8s`); prod
+  `kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/overlays/prod | kubectl apply -f -`.
+
 ## What this proves
 
 A real, falsifiable claim: `AshA2A.Agent` GenServers running on genuinely

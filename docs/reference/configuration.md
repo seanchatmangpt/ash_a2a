@@ -15,8 +15,10 @@ fail-closed defaults are deliberate.
 | `:receipt_commit_retry_delays_ms` | `[50, 150]` | `CommandBus` receipt-commit retry backoff. |
 | `:actuation_dedup` | `:declared` | `CommandBus` actuation de-duplication mode. |
 | `:claim_lease_ms` | `300_000` | Receipt-store claim lease TTL (the crash-recovery window a claimed-but-unfinished command is guarded by). |
-| `:receipt_binding_key` | — | Key binding a receipt to its evidence (`AshA2A.Receipt.Binding`). |
-| `:receipt_outbox_dir` | — | `AshA2A.ReceiptOutbox` filesystem journal directory (pending receipts written before dispatch). |
+| `:receipt_binding_key` | — (unset: keyed binding refuses `:receipt_binding_key_unavailable`) | Key binding a receipt to its evidence (`AshA2A.Receipt.Binding`). Production: a secret of at least 32 random bytes, identical on every node. |
+| `:receipt_outbox_dir` | `System.tmp_dir!()/ash_a2a_receipt_outbox` | `AshA2A.ReceiptOutbox` filesystem journal directory (pending receipts written before dispatch). **The tmp-dir default does not survive a pod reschedule or host reboot** — the crash-recovery guarantee the outbox exists for is lost with it. Set a persistent directory in production. |
+| `:standing_ledger_key` | — (unset: 32 random bytes per runtime) | `AshA2A.Semantic.Standing` seal key. Must be exactly 32 raw bytes; any other configured value raises `ArgumentError` at boot and on every transition. **Unset, the key is generated per node at boot and held in `:persistent_term`: a standing chain sealed on one node is refused (`:standing_ledger_unsealed`) on every other node and after any restart or rolling update.** Set the same key on every node of a cluster. |
+| `:env` | `:prod` | `AshA2A.Application` boot-time durability warning: when `:prod` and receipts are non-durable (memory store, tmp data dirs), a warning is logged. Hosts set it to their Mix env. |
 | `:outbox_reconciler_interval_ms`, `:outbox_stuck_attempts_threshold` | — | Outbox reconciler polling and stuck-detection thresholds. |
 | `:durable_server_provider` | — | `AshA2A.Durability.DurableServer` provider seam. |
 
@@ -25,7 +27,7 @@ fail-closed defaults are deliberate.
 | Key | Default | Consumed by / meaning |
 | --- | --- | --- |
 | `:authority_policy` | `:broker` | `AshA2A.Authority.Grant`. `:broker` is the fail-closed default (grants required). `:transport_verified_grants_capability` is the legacy escalation mode — **violates RFC-SA2A-001 S29**; migration window only. |
-| `:authority_broker` | — (none) | Broker module implementing `AshA2A.Authority.Broker`. Shipped: `Broker.InMemory` (GenServer, single node, dev/tests) and `Broker.Ekv` (durable — gets automatic EKV child wiring from `AshA2A.Application`, with its own distinct `:name`/`:data_dir`, separate from the receipt store's EKV; config-only, no hand-started child needed since 2026-09-17). Unset + `:broker` policy = every consequential dispatch refused `:authority_required` with a warning naming the missing config. |
+| `:authority_broker` | — (none) | Broker module implementing `AshA2A.Authority.Broker`. Shipped: `Broker.InMemory` (GenServer, single node, dev/tests) and `Broker.Ekv` (durable — gets automatic EKV child wiring from `AshA2A.Application`, with its own distinct `:name`/`:data_dir`, separate from the receipt store's EKV; config-only, no hand-started child needed since 2026-09-17). Unset + `:broker` policy = every consequential dispatch refused `:authority_required` with a warning naming the missing config. **`Broker.Ekv`'s `:data_dir` defaults to `System.tmp_dir!()/ash_a2a_authority_broker_ekv`, which does not survive a pod reschedule or reboot** — grants and revocations would be lost; pass `{AshA2A.Authority.Broker.Ekv, data_dir: "/persistent/path", cluster_size: n}`. |
 
 ## Application config — capability release
 
@@ -72,16 +74,58 @@ Per-module form is also supported where noted, e.g.
 | `ASH_A2A_NODE` | `GraphLaw.WasmHost` | Node binary for the JS WASM host. |
 | `ASH_A2A_B3SUM` | `GraphLaw.Manifest` | `b3sum` binary for BLAKE3 digests. |
 | `PRAXIS_ROOT`, `WASM_PACK` | `GraphLaw.Vendor` | Vendoring toolchain only (`mix ash_a2a.vendor_graphlaw`). |
-| `SWARM_K8S_SERVICE` | `swarm/config/runtime.exs` | Gates libcluster DNS topology in the swarm test app. |
+| `SWARM_K8S_SERVICE` | `swarm/config/runtime.exs` | Gates the libcluster topology in the swarm host app. **Unset, the node runs unclustered** (no libcluster topology is configured, `Node.list/0` stays empty). |
+| `SWARM_K8S_NAMESPACE` | `swarm/config/runtime.exs` | With `SWARM_K8S_SERVICE`, selects `Cluster.Strategy.Kubernetes.DNSSRV` (stable StatefulSet pod hostnames); without it, `Kubernetes.DNS` (pod IPs). |
 
 > **Precedence warning**: there are *five* different WASM-path env vars
 > above, each read by a different runtime. In production pick the app-env
 > key `:graphlaw_wasm_path` (or the per-module form) over env vars, and set
 > exactly one source — the fallback chains are per-module, not global.
 
-## Swarm release variables (test harness, not the library)
+## Swarm release variables (the `swarm/` host app, not the library)
 
-`RELEASE_DISTRIBUTION`, `RELEASE_NODE`, `RELEASE_COOKIE`, `RELEASE_TMP`,
-and `POD_IP` are consumed by the `swarm/` release image's boot scripts and
-`k8s/deployment.yaml` — they configure BEAM distribution for the Kubernetes
-swarm test, not `ash_a2a` itself.
+Consumed by the `swarm/` release (`swarm/config/runtime.exs`,
+`swarm/rel/env.sh.eex`) and set by `k8s/deployment.yaml`. In the `:prod`
+release every `ASH_A2A_*` variable below is **required**: a missing or
+malformed value raises while `config/runtime.exs` is evaluated, so the node
+refuses to boot instead of falling back to the library's dev defaults.
+
+| Variable | Purpose |
+| --- | --- |
+| `RELEASE_DISTRIBUTION`, `RELEASE_NODE`, `RELEASE_COOKIE`, `RELEASE_TMP`, `POD_NAME`, `POD_NAMESPACE` | BEAM distribution identity (`swarm_node@<pod>.ash-a2a-swarm-headless.<ns>.svc.cluster.local`). |
+| `ASH_A2A_EKV_CLUSTER_SIZE` | EKV `cluster_size` for both the receipt store and the broker (= replica count). |
+| `ASH_A2A_RECEIPT_DATA_DIR`, `ASH_A2A_BROKER_DATA_DIR`, `ASH_A2A_OUTBOX_DIR` | Absolute persistent directories (the StatefulSet PVC at `/var/lib/ash_a2a`). |
+| `ASH_A2A_CAPABILITY_RELEASE_MANIFEST`, `ASH_A2A_CAPABILITY_RELEASE_DIGEST` | Frozen release closure (JSON manifest, `SwarmNode.ReleaseClosure`) and its pinned digest; mismatch refuses boot. |
+| `ASH_A2A_RECEIPT_BINDING_KEY` | Base64, 32..1024 bytes -> `:receipt_binding_key`. |
+| `ASH_A2A_STANDING_LEDGER_KEY` | Base64, exactly 32 bytes -> `:standing_ledger_key`. |
+| `SWARM_DIST_TLS` | `true` (default): distribution over `-proto_dist inet_tls` with `ssl_dist.conf` (certs at `/etc/ash_a2a/dist`). `false` is cleartext, local development only. |
+| `SWARM_DIST_TLS_OPTFILE` | Override the ssl_dist optfile path. |
+| `SWARM_SCHEDULERS` | `+S N:N`, match the pod CPU limit. |
+| `SWARM_REQUIRE_GRAPHLAW` | `true` (prod default): boot fails if the GraphLaw WASM is not loaded; readiness also requires it. |
+| `SWARM_MIN_PEERS`, `SWARM_DRAIN_MS`, `SWARM_ADMIN_PORT` | Readiness peer floor (default and minimum `div(ASH_A2A_EKV_CLUSTER_SIZE, 2)`, the EKV write-quorum peers; a lower value refuses boot), preStop drain window (a fixed time window, not an in-flight tracker), admin HTTP port (4001: `/healthz`, `/readyz`, `/drain`). |
+| `SWARM_A2A_HTTP`, `SWARM_A2A_PORT`, `SWARM_A2A_BASE_URL` | Opt-in A2A JSON-RPC surface (`AshA2A.Transport.Plug` at `/a2a`, port 4000). Off by default. |
+| `SWARM_LOG_LEVEL` | Logger level; prod logs are JSON lines (`SwarmNode.JsonLogFormatter`). |
+
+## Production checklist
+
+Every item below has an unsafe dev default in the library; a production host
+must set all of them (the `swarm/` prod release enforces this at boot):
+
+1. `:receipt_store` = `AshA2A.ReceiptStore.Ekv` with a persistent
+   `:receipt_store_ekv_opts[:data_dir]` and `:cluster_size` = replica count.
+2. `:authority_broker` = `{AshA2A.Authority.Broker.Ekv, data_dir: <persistent>,
+   cluster_size: n}` (unset refuses every consequential dispatch).
+3. `:receipt_outbox_dir` on persistent storage.
+4. `:receipt_binding_key` (secret, same on every node).
+5. `:standing_ledger_key` (exactly 32 bytes, same on every node).
+6. `:capability_release_mode` = `:strict` plus a frozen
+   `:capability_release_closure`.
+7. The GraphLaw WASM shipped in the release (`priv/graphlaw/`) and verified
+   loaded at boot (`AshA2A.GraphLaw.WasmexHost.available?/0`).
+8. `AshA2A.ReceiptOutbox.Reconciler` running (started by default by
+   `AshA2A.Application`; do not set `config :ash_a2a, :outbox_reconciler,
+   false` unless the host supervises its own instance).
+9. Erlang distribution over TLS with a dedicated CA; distribution ports
+   reachable only from peer pods.
+10. A2A HTTP (if exposed) behind an HTTPS-only ingress (HSTS); TLS terminates
+    at the ingress.

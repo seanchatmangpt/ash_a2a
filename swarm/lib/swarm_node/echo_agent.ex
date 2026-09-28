@@ -7,9 +7,16 @@ defmodule SwarmNode.EchoAgent do
   pod/node it runs on; a peer node reaches it with real distributed Erlang
   addressing: `GenServer.call({SwarmNode.EchoAgent, target_node}, ...)`
   (equivalently `SwarmNode.EchoAgent.call({SwarmNode.EchoAgent,
-  target_node}, message)`), never through any HTTP surface -- this repo's
-  `A2A.Agent`/`AshA2A.Dispatcher` path is pure BEAM message passing.
+  target_node}, message)`); the opt-in HTTP surface is `SwarmNode.A2ARouter`.
+
+  Authentication: `ash_a2a` refuses unauthenticated callers by default
+  (`:require_authenticated_caller`). The BEAM-dispatch probe carries no A2A
+  auth identity; its caller is authenticated at the transport instead
+  (distribution over mutually-authenticated TLS, rel/ssl_dist.conf). So only
+  the `:observe`-only, side-effect-free `ping` skill is declared public; any
+  future `:change`/`:external_do` skill stays behind authentication and the
+  authority broker.
   """
 
-  use AshA2A.Agent, resource_or_domain: SwarmNode.Echo
+  use AshA2A.Agent, resource_or_domain: SwarmNode.Echo, public_skills: [:ping]
 end

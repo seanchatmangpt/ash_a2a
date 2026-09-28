@@ -1,0 +1,4 @@
+## vm.args for the hidden node `bin/swarm_node rpc|remote` starts. The TLS
+## distribution flags come from rel/env.sh.eex (ELIXIR_ERL_OPTIONS), which the
+## release script sources for every command, so rpc/remote speak the same
+## inet_tls distribution as the running node.

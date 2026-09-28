@@ -1,0 +1,32 @@
+# Explicit external egress (DEP-09). The base NetworkPolicy denies all
+# external egress, so configuring :ocel_ingest_url or an LLM provider without
+# a rule here makes those calls time out (OCEL events are shed and counted;
+# LLM roles fail). Replace the documentation-range CIDR (TEST-NET-1,
+# 192.0.2.0/24 -- routes nowhere) with the real destination ranges, one rule
+# per destination, HTTPS only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ash-a2a-swarm-allow-external-egress
+  namespace: ash-a2a-swarm
+spec:
+  podSelector:
+    matchLabels:
+      app: ash-a2a-swarm
+  policyTypes:
+    - Egress
+  egress:
+    # OCEL ingest endpoint (config :ash_a2a, :ocel_ingest_url).
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.10/32
+      ports:
+        - port: 443
+          protocol: TCP
+    # LLM provider endpoint(s) (config :ash_a2a, :llm_profiles).
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.20/32
+      ports:
+        - port: 443
+          protocol: TCP

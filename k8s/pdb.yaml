@@ -1,0 +1,13 @@
+# DEP-06: voluntary disruptions (node drain, cluster autoscaler, upgrades)
+# may never take more than one replica at a time. minAvailable 2 of 3 is also
+# the EKV write quorum (cluster_size 3), so a drain can never cost quorum.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ash-a2a-swarm
+  namespace: ash-a2a-swarm
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ash-a2a-swarm
