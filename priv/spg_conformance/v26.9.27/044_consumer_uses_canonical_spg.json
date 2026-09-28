@@ -17,6 +17,14 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "consumer.consumer_uses_canonical_spg",
+        "value": true
+      }
+    ]
+  },
   "assertion": {
     "must_admit": true,
     "must_preserve": [

@@ -1,0 +1,53 @@
+name: SPG runtime conformance court
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "lib/ash_a2a/spg_conformance.ex"
+      - "priv/spg_conformance/**"
+      - "test/spg_conformance_runtime_test.exs"
+      - ".github/workflows/spg-conformance-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spg-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Assert exact head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.0"
+          otp-version: "28.0.2"
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build
+          key: ash-a2a-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get
+
+      - name: Format SPG court
+        run: |
+          mix format --check-formatted             lib/ash_a2a/spg_conformance.ex             test/spg_conformance_runtime_test.exs
+
+      - name: Run SPG runtime conformance
+        env:
+          MIX_ENV: test
+        run: mix test test/spg_conformance_runtime_test.exs --trace

@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "intervention.scope_escape",
+        "value": false,
+        "refusal_code": "SPG_INTERVENTION_SCOPE_ESCAPE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_INTERVENTION_SCOPE_ESCAPE"

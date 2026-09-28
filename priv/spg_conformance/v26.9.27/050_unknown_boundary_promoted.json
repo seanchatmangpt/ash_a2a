@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "falsifier.unknown_boundary_promoted",
+        "value": false,
+        "refusal_code": "SPG_FALSIFIER_UNKNOWN_BOUNDARY_PROMOTED"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_FALSIFIER_UNKNOWN_BOUNDARY_PROMOTED"

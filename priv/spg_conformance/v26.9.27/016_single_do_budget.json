@@ -17,6 +17,14 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "intervention.single_do_budget",
+        "value": true
+      }
+    ]
+  },
   "assertion": {
     "must_admit": true,
     "must_preserve": [

@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "authority.disclose_without_authority",
+        "value": false,
+        "refusal_code": "SPG_AUTHORITY_DISCLOSE_WITHOUT_AUTHORITY"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_AUTHORITY_DISCLOSE_WITHOUT_AUTHORITY"

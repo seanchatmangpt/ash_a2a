@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "planner.global_stop_on_local_failure",
+        "value": false,
+        "refusal_code": "SPG_PLANNER_GLOBAL_STOP_ON_LOCAL_FAILURE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_PLANNER_GLOBAL_STOP_ON_LOCAL_FAILURE"

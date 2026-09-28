@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "semantic_jira.superseded_work_order",
+        "value": false,
+        "refusal_code": "SPG_SEMANTIC_JIRA_SUPERSEDED_WORK_ORDER"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_SEMANTIC_JIRA_SUPERSEDED_WORK_ORDER"

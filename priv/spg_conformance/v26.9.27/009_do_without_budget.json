@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "authority.do_without_budget",
+        "value": false,
+        "refusal_code": "SPG_AUTHORITY_DO_WITHOUT_BUDGET"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_AUTHORITY_DO_WITHOUT_BUDGET"

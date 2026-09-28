@@ -17,6 +17,14 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "falsifier.boundary_condition_explicit",
+        "value": true
+      }
+    ]
+  },
   "assertion": {
     "must_admit": true,
     "must_preserve": [

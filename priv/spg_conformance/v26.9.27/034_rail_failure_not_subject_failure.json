@@ -17,6 +17,14 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "recovery.rail_failure_not_subject_failure",
+        "value": true
+      }
+    ]
+  },
   "assertion": {
     "must_admit": true,
     "must_preserve": [
