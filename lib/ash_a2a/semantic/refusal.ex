@@ -158,6 +158,11 @@ defmodule AshA2A.Semantic.Refusal do
   # a time. Codes here are NEVER renamed -- this is a projection of the
   # existing vocabulary, not a replacement for it.
   @mapping %{
+    # --- transport / receipt-store codes (merge reconciliation) ------------
+    bad_signature: :refused_authority,
+    stale_timestamp: :refused_bounds,
+    unconfirmed: :refused_receipt,
+    receipt_store_not_configured: :blocked_resource,
     # --- REFUSED_IDENTITY -------------------------------------------------
     semantic_identity_invalid: :refused_identity,
     policy_phenotype_digest_mismatch: :refused_identity,
@@ -781,7 +786,8 @@ defmodule AshA2A.Semantic.Refusal do
   # refusal (e.g. `AshA2A.Authority.Decision`'s `{:admitted, %{code:
   # :authority_admitted}}`). Giving them a refusal class would be false; they
   # are listed so the drift test can tell them apart from unclassified codes.
-  @non_refusal_codes [:authority_admitted]
+  # `:x` is the SafeError.redact/1 doctest's placeholder code, not a refusal.
+  @non_refusal_codes [:authority_admitted, :x]
 
   @doc "Outcome codes that are not refusals and therefore carry no S42 class."
   @spec non_refusal_codes() :: [atom()]
