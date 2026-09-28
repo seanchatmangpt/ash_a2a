@@ -29,6 +29,17 @@ defmodule AshA2A.ConditionalCommitment do
           ready_for_do?: boolean()
         }
 
+  @doc """
+  Classify an existing command and optional prepared receipt.
+
+  The classifier is deliberately strict:
+  * a command with no matching live authority is only a proposal;
+  * a matching authority without a pending receipt is authorized but not ready;
+  * a pending receipt must bind the exact command id, capability, and fingerprint;
+  * a mismatched receipt is a typed refusal, never evidence of preparation.
+
+  ready_for_do? can only be true for :prepared.
+  """
   @spec classify(Command.t(), Receipt.t() | nil) :: t()
   def classify(%Command{} = command, receipt \\ nil) do
     authorized? = Authority.admits?(command.authority, command)

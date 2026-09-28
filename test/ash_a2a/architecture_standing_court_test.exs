@@ -10,16 +10,21 @@ defmodule AshA2A.Architecture.StandingCourtTest do
 
   defp claim do
     %{
-      repository: "seanchatmangpt/ash_a2a", commit: @sha,
-      contract_digest: @contract, candidate_digest: @candidate
+      repository: "seanchatmangpt/ash_a2a",
+      commit: @sha,
+      contract_digest: @contract,
+      candidate_digest: @candidate
     }
   end
 
   defp evidence do
     %{
-      repository: "seanchatmangpt/ash_a2a", commit: @sha,
-      contract_digest: @contract, candidate_digest: @candidate,
-      qualification_digest: @qualification, observer_digest: @observer
+      repository: "seanchatmangpt/ash_a2a",
+      commit: @sha,
+      contract_digest: @contract,
+      candidate_digest: @candidate,
+      qualification_digest: @qualification,
+      observer_digest: @observer
     }
   end
 

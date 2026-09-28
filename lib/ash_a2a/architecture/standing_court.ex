@@ -1,12 +1,17 @@
 defmodule AshA2A.Architecture.StandingCourt do
   @moduledoc "Exact-subject, authority-free court for ABB/SBB selection evidence."
 
+  # Embedded at compile time so the court does not depend on the source tree
+  # layout at runtime (a release build has no ../../../priv relative to lib/).
   @policy_path Path.expand("../../../priv/architecture/standing.ttl", __DIR__)
+  @external_resource @policy_path
+  @policy_ttl File.read!(@policy_path)
   @required ~w(repository commit contract_digest candidate_digest qualification_digest observer_digest)
   @digest_fields ~w(contract_digest candidate_digest qualification_digest observer_digest)
 
   def policy do
-    ttl = File.read!(@policy_path)
+    ttl = @policy_ttl
+
     states =
       Regex.scan(~r/arch:(UNKNOWN|REFUSED|ADMITTED)/, ttl, capture: :all_but_first)
       |> List.flatten()
@@ -60,39 +65,45 @@ defmodule AshA2A.Architecture.StandingCourt do
       |> Enum.flat_map(fn field ->
         c = get(claim, field)
         e = get(evidence, field)
+
         if present_value?(c) and present_value?(e) and c != e,
-          do: [{:exact_subject_mismatch, field}], else: []
+          do: [{:exact_subject_mismatch, field}],
+          else: []
       end)
 
     malformed =
       @digest_fields
       |> Enum.flat_map(fn field ->
         vals = [get(claim, field), get(evidence, field)] |> Enum.reject(&is_nil/1)
-        if Enum.any?(vals, &(not digest64?(&1))),
-          do: [{:malformed_digest, field}], else: []
+        if Enum.any?(vals, &(not digest64?(&1))), do: [{:malformed_digest, field}], else: []
       end)
 
     forged =
       if get(evidence, "self_attested_qualification") in [true, "true", 1] or
            get(evidence, "authority_granted_by_qualification") in [true, "true", 1],
-        do: [{:forbidden_evidence, "authority_laundering"}], else: []
+         do: [{:forbidden_evidence, "authority_laundering"}],
+         else: []
 
     observer =
       if present?(evidence, "observer_digest") and
            get(evidence, "observer_digest") == get(evidence, "qualification_digest"),
-        do: [{:forbidden_evidence, "non_independent_observer"}], else: []
+         do: [{:forbidden_evidence, "non_independent_observer"}],
+         else: []
 
     Enum.uniq(missing ++ mismatch ++ malformed ++ forged ++ observer)
   end
 
   defp contradiction?({kind, _})
        when kind in [:exact_subject_mismatch, :malformed_digest, :forbidden_evidence], do: true
+
   defp contradiction?(_), do: false
 
   defp ensure_policy!(policy, standing) do
     token = standing |> Atom.to_string() |> String.upcase()
     unless MapSet.member?(policy.states, token), do: raise("standing not permitted by TTL policy")
-    unless policy.authority == "NONE", do: raise("architecture qualification attempted authority escalation")
+
+    unless policy.authority == "NONE",
+      do: raise("architecture qualification attempted authority escalation")
   end
 
   defp present?(map, key), do: present_value?(get(map, key))
@@ -119,9 +130,12 @@ defmodule AshA2A.Architecture.StandingCourt do
   end
 
   defp canonical(map) when is_map(map) do
-    map |> Enum.map(fn {k, v} -> {to_string(k), canonical(v)} end)
-        |> Enum.sort() |> :erlang.term_to_binary([:deterministic])
+    map
+    |> Enum.map(fn {k, v} -> {to_string(k), canonical(v)} end)
+    |> Enum.sort()
+    |> :erlang.term_to_binary([:deterministic])
   end
+
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(v), do: v
 end

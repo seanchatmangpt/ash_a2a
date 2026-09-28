@@ -3,10 +3,61 @@ defmodule AshA2A.Equilibrium.SwitchboardTest do
   alias AshA2A.Equilibrium.Switchboard, as: S
   alias S.{WorkOrder, Planner, Provider, Queue}
 
-  defp w(extra \\ %{}), do: struct!(WorkOrder, Map.merge(%{id: "w", subject: "s", capability: :plan, role: :planner, policy: :bounded, authority: 0, epoch: 7, max_steps: 8}, extra))
-  defp p(extra \\ %{}), do: struct!(Planner, Map.merge(%{id: :hddl, kind: :hddl, capabilities: [:plan], roles: [:planner], policies: [:bounded], authority_ceiling: 0, max_steps: 16, provider_ids: [:p1], priority: 1}, extra))
-  defp v(extra \\ %{}), do: struct!(Provider, Map.merge(%{id: :p1, epoch: 7, capabilities: [:plan], alive: true}, extra))
-  defp ctx, do: %{subject: "s", epoch: 7, capabilities: [:plan], roles: [:planner], policies: [:bounded], authority_ceiling: 0}
+  defp w(extra \\ %{}),
+    do:
+      struct!(
+        WorkOrder,
+        Map.merge(
+          %{
+            id: "w",
+            subject: "s",
+            capability: :plan,
+            role: :planner,
+            policy: :bounded,
+            authority: 0,
+            epoch: 7,
+            max_steps: 8
+          },
+          extra
+        )
+      )
+
+  defp p(extra \\ %{}),
+    do:
+      struct!(
+        Planner,
+        Map.merge(
+          %{
+            id: :hddl,
+            kind: :hddl,
+            capabilities: [:plan],
+            roles: [:planner],
+            policies: [:bounded],
+            authority_ceiling: 0,
+            max_steps: 16,
+            provider_ids: [:p1],
+            priority: 1
+          },
+          extra
+        )
+      )
+
+  defp v(extra \\ %{}),
+    do:
+      struct!(
+        Provider,
+        Map.merge(%{id: :p1, epoch: 7, capabilities: [:plan], alive: true}, extra)
+      )
+
+  defp ctx,
+    do: %{
+      subject: "s",
+      epoch: 7,
+      capabilities: [:plan],
+      roles: [:planner],
+      policies: [:bounded],
+      authority_ceiling: 0
+    }
 
   test "admission refuses identity, epoch and authority drift" do
     assert :ok = S.admit(w(), ctx())

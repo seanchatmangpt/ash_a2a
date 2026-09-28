@@ -8,10 +8,19 @@ defmodule AshA2A.Equilibrium.Switchboard do
   """
 
   @type refusal ::
-          :subject_mismatch | :capability_missing | :role_mismatch |
-          :policy_mismatch | :authority_increase | :stale_epoch |
-          :no_planner | :no_provider | :unbounded_plan | :duplicate |
-          :backpressure | :stale_lease | :ontology_contract_missing
+          :subject_mismatch
+          | :capability_missing
+          | :role_mismatch
+          | :policy_mismatch
+          | :authority_increase
+          | :stale_epoch
+          | :no_planner
+          | :no_provider
+          | :unbounded_plan
+          | :duplicate
+          | :backpressure
+          | :stale_lease
+          | :ontology_contract_missing
 
   defmodule WorkOrder do
     @enforce_keys [:id, :subject, :capability, :role, :policy, :authority, :epoch, :max_steps]
@@ -19,7 +28,16 @@ defmodule AshA2A.Equilibrium.Switchboard do
   end
 
   defmodule Planner do
-    @enforce_keys [:id, :kind, :capabilities, :roles, :policies, :authority_ceiling, :max_steps, :provider_ids]
+    @enforce_keys [
+      :id,
+      :kind,
+      :capabilities,
+      :roles,
+      :policies,
+      :authority_ceiling,
+      :max_steps,
+      :provider_ids
+    ]
     defstruct @enforce_keys ++ [priority: 0]
   end
 
@@ -29,12 +47,26 @@ defmodule AshA2A.Equilibrium.Switchboard do
   end
 
   defmodule Receipt do
-    @enforce_keys [:id, :kind, :subject, :work_order_id, :planner_id, :provider_id, :authority, :epoch, :digest]
+    @enforce_keys [
+      :id,
+      :kind,
+      :subject,
+      :work_order_id,
+      :planner_id,
+      :provider_id,
+      :authority,
+      :epoch,
+      :digest
+    ]
     defstruct @enforce_keys ++ [standing: :candidate, consequence: :none]
   end
 
   defmodule Queue do
-    defstruct pending: :queue.new(), known: MapSet.new(), leases: %{}, completed: MapSet.new(), limit: 128
+    defstruct pending: :queue.new(),
+              known: MapSet.new(),
+              leases: %{},
+              completed: MapSet.new(),
+              limit: 128
   end
 
   @required_ttl ~w(Planner Policy Role Agent Authority DO Standing WorkOrder Selection Construct BRCEReceipt)a
@@ -68,7 +100,9 @@ defmodule AshA2A.Equilibrium.Switchboard do
       |> Enum.sort_by(fn p -> {-p.priority, to_string(p.id)} end)
 
     case eligible do
-      [] -> {:error, :no_planner}
+      [] ->
+        {:error, :no_planner}
+
       [planner | _] ->
         case provider_for(planner, w, providers) do
           nil -> {:error, :no_provider}
@@ -85,7 +119,8 @@ defmodule AshA2A.Equilibrium.Switchboard do
   defp provider_for(planner, w, providers) do
     providers
     |> Enum.filter(fn p ->
-      p.alive and p.epoch == w.epoch and p.id in planner.provider_ids and w.capability in p.capabilities
+      p.alive and p.epoch == w.epoch and p.id in planner.provider_ids and
+        w.capability in p.capabilities
     end)
     |> Enum.sort_by(&to_string(&1.id))
     |> List.first()
@@ -93,9 +128,14 @@ defmodule AshA2A.Equilibrium.Switchboard do
 
   defp receipt(w, planner, provider) do
     payload = %{
-      authority: w.authority, capability: w.capability, epoch: w.epoch,
-      planner: planner.id, provider: provider.id, subject: w.subject,
-      work_order: w.id, max_steps: w.max_steps
+      authority: w.authority,
+      capability: w.capability,
+      epoch: w.epoch,
+      planner: planner.id,
+      provider: provider.id,
+      subject: w.subject,
+      work_order: w.id,
+      max_steps: w.max_steps
     }
 
     digest = canonical_digest(payload)
@@ -126,10 +166,20 @@ defmodule AshA2A.Equilibrium.Switchboard do
           {:ok, WorkOrder.t(), map(), Queue.t()} | {:empty, Queue.t()}
   def lease(%Queue{} = q, owner, epoch, ttl) when ttl > 0 do
     case :queue.out(q.pending) do
-      {:empty, _} -> {:empty, q}
+      {:empty, _} ->
+        {:empty, q}
+
       {{:value, w}, rest} ->
         token = canonical_digest(%{id: w.id, owner: owner, epoch: epoch})
-        lease = %{owner: owner, epoch: epoch, token: token, expires_at: epoch + ttl, work_order: w}
+
+        lease = %{
+          owner: owner,
+          epoch: epoch,
+          token: token,
+          expires_at: epoch + ttl,
+          work_order: w
+        }
+
         {:ok, w, lease, %{q | pending: rest, leases: Map.put(q.leases, w.id, lease)}}
     end
   end
@@ -137,7 +187,10 @@ defmodule AshA2A.Equilibrium.Switchboard do
   @spec reclaim(Queue.t(), non_neg_integer()) :: Queue.t()
   def reclaim(%Queue{} = q, now_epoch) do
     {expired, live} = Enum.split_with(q.leases, fn {_id, l} -> l.expires_at <= now_epoch end)
-    pending = Enum.reduce(expired, q.pending, fn {_id, l}, acc -> :queue.in(l.work_order, acc) end)
+
+    pending =
+      Enum.reduce(expired, q.pending, fn {_id, l}, acc -> :queue.in(l.work_order, acc) end)
+
     %{q | pending: pending, leases: Map.new(live)}
   end
 
@@ -147,14 +200,19 @@ defmodule AshA2A.Equilibrium.Switchboard do
     case Map.get(q.leases, id) do
       %{token: ^token, epoch: ^epoch} ->
         {:ok, %{q | leases: Map.delete(q.leases, id), completed: MapSet.put(q.completed, id)}}
-      _ -> {:error, :stale_lease}
+
+      _ ->
+        {:error, :stale_lease}
     end
   end
 
   @spec replay([Receipt.t()]) :: {:ok, [String.t()]} | {:error, :non_deterministic_receipt}
   def replay(receipts) do
     ids = Enum.map(receipts, & &1.id)
-    if ids == Enum.uniq(ids), do: {:ok, Enum.sort(ids)}, else: {:error, :non_deterministic_receipt}
+
+    if ids == Enum.uniq(ids),
+      do: {:ok, Enum.sort(ids)},
+      else: {:error, :non_deterministic_receipt}
   end
 
   @spec canonical_digest(map()) :: String.t()
@@ -168,5 +226,6 @@ defmodule AshA2A.Equilibrium.Switchboard do
 
   defp authority_leq?(requested, ceiling) when is_integer(requested) and is_integer(ceiling),
     do: requested <= ceiling
+
   defp authority_leq?(requested, ceiling), do: requested == ceiling
 end

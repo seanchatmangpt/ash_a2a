@@ -1,0 +1,23 @@
+@prefix ce:   <https://chatman.dev/ns/ce#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Ontology contract for AshA2A.SagaControl (v26.9.27 cancel saga).
+# SagaControl is powerless: it CONSTRUCTs recovery intent; DO flows only
+# through the CommandBus under a separately admitted command.
+
+ce:Planner      a owl:Class ; rdfs:label "Planner" .
+ce:Policy       a owl:Class ; rdfs:label "Policy" .
+ce:Role         a owl:Class ; rdfs:label "Role" .
+ce:Agent        a owl:Class ; rdfs:label "Agent" .
+ce:Authority    a owl:Class ; rdfs:label "Authority" .
+ce:Standing     a owl:Class ; rdfs:label "Standing" .
+ce:CommandBus   a owl:Class ; rdfs:label "CommandBus" ;
+  rdfs:comment "The only DO path; compensation intents must be admitted here." .
+
+ce:Construct    a ce:Authority ; rdfs:label "CONSTRUCT ceiling" .
+ce:DO           a ce:Authority ; rdfs:label "DO (actuation)" .
+
+ce:staleEpochRefusal a owl:NamedIndividual ;
+  rdfs:label "stale_epoch" ;
+  rdfs:comment "A cancel/tick/compensation/settle carrying a non-current epoch is refused." .
