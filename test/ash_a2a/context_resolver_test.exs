@@ -62,8 +62,28 @@ defmodule AshA2A.ContextResolverTest do
       # (Map.get(metadata, Atom.to_string(:context))) actually ran and
       # returned the real, non-default value (an empty map would also satisfy
       # a weaker assertion, so assert the exact raw_context contents).
-      assert ctx.context == raw_context
-      assert ctx.context == %{foo: 1}
+      #
+      # SEC-11: the caller-supplied map is namespaced under
+      # `:a2a_client_context`, never merged at the top level.
+      assert ctx.context == %{a2a_client_context: raw_context}
+      assert ctx.context == %{a2a_client_context: %{foo: 1}}
+      refute Map.has_key?(ctx.context, :foo)
+    end
+
+    test "a caller cannot place a top-level key into the Ash context (SEC-11)" do
+      message = %{A2A.Message.new_user("hi") | metadata: %{"context" => %{"authorize?" => false}}}
+      ctx = ContextResolver.from_a2a_message(message, AshA2A.Test.Fixture.Domain)
+
+      assert Map.keys(ctx.context) == [:a2a_client_context]
+      assert ctx.context.a2a_client_context == %{"authorize?" => false}
+    end
+
+    test "non-map context or non-map metadata resolves to an empty context, never raises" do
+      bad_ctx = %{A2A.Message.new_user("hi") | metadata: %{"context" => "x"}}
+      assert ContextResolver.from_a2a_message(bad_ctx, AshA2A.Test.Fixture.Domain).context == %{}
+
+      bad_md = %{A2A.Message.new_user("hi") | metadata: [1]}
+      assert ContextResolver.from_a2a_message(bad_md, AshA2A.Test.Fixture.Domain).context == %{}
     end
   end
 end

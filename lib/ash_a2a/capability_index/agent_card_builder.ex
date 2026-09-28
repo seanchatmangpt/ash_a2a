@@ -27,10 +27,25 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
       version: Keyword.get(opts, :version, "0.1.0"),
       skills: Enum.map(ordered_skills, &build_agent_card_skill/1),
       provider: Keyword.get(opts, :provider),
+      capabilities: Keyword.get(opts, :capabilities, default_capabilities()),
       security_schemes: Keyword.get(opts, :security_schemes, %{}),
       security: Keyword.get(opts, :security, []),
       supported_interfaces:
         Keyword.get(opts, :supported_interfaces, [default_supported_interface(url)])
+    }
+  end
+
+  # CONF-06: the struct advertises what the runtime really serves --
+  # `message/stream` works for every skill through `AshA2A.Transport.Plug`,
+  # while push notifications, state-transition history and the extended card
+  # are not served, so they are advertised `false` rather than omitted.
+  @spec default_capabilities() :: map()
+  defp default_capabilities do
+    %{
+      streaming: true,
+      push_notifications: false,
+      state_transition_history: false,
+      extended_agent_card: false
     }
   end
 

@@ -64,13 +64,16 @@ defmodule AshA2A.ContextResolver do
       `auth_identity[:tenant]` (or `auth_identity["tenant"]`) when
       `auth_identity` is a map; `nil` when `auth_identity` is `nil` or has no
       tenant claim. Never falls back to caller-supplied `metadata[:tenant]`.
-    * `:context` — read from `message.metadata[:context]` (or `"context"`); defaults
-      to `%{}` when absent, mirroring `AshAi.Tool.Execution.build_opts/2`'s
-      `context[:context] || %{}` (`~/xaas/deps/ash_ai/lib/ash_ai/tool/execution.ex:100-107`).
-      `:context` is not a privilege-bearing field (it never determines
-      authorization or row visibility on its own) and is passed straight
-      through to actions the way `AshAi.Tool.Execution` already does, so it is
-      intentionally still sourced from raw metadata.
+    * `:context` — the caller-supplied `message.metadata[:context]` (or
+      `"context"`) map is **untrusted** and is never merged into the Ash
+      context at the top level (SEC-11): it is namespaced as
+      `%{a2a_client_context: client_map}`, so a resource change or
+      preparation reading `context[:some_key]` can never be fed a
+      caller-chosen value that looks server-set. Actions that want the
+      client's hints read `context[:a2a_client_context]` and must treat it as
+      untrusted input. A non-map value is dropped (the agent refuses it
+      earlier with `:invalid_context`); absent metadata context resolves to
+      `%{}`.
     * `:domain`  — never read from message metadata (a caller-supplied domain module
       is not something an inbound A2A message may set); it is always the second
       argument passed by the dispatcher that already knows which Ash domain owns
@@ -137,16 +140,26 @@ defmodule AshA2A.ContextResolver do
         auth_identity \\ nil
       )
       when is_atom(domain) and is_list(history) do
-    metadata = metadata || %{}
+    metadata = if is_map(metadata), do: metadata, else: %{}
 
     %ExecutionContext{
       actor: auth_identity,
       tenant: tenant_claim(auth_identity),
-      context: fetch(metadata, :context) || %{},
+      context: client_context(fetch(metadata, :context)),
       domain: domain,
       history: history
     }
   end
+
+  @doc """
+  Key under which the untrusted, caller-supplied context map is namespaced
+  inside `AshA2A.ExecutionContext.context`.
+  """
+  @spec client_context_key() :: :a2a_client_context
+  def client_context_key, do: :a2a_client_context
+
+  defp client_context(%{} = client) when map_size(client) > 0, do: %{a2a_client_context: client}
+  defp client_context(_absent_or_invalid), do: %{}
 
   defp tenant_claim(auth_identity) when is_map(auth_identity), do: fetch(auth_identity, :tenant)
   defp tenant_claim(_auth_identity), do: nil
@@ -154,4 +167,6 @@ defmodule AshA2A.ContextResolver do
   defp fetch(metadata, key) when is_map(metadata) do
     AshA2A.MetadataKey.get(metadata, key)
   end
+
+  defp fetch(_metadata, _key), do: nil
 end

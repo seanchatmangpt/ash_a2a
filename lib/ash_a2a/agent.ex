@@ -37,18 +37,42 @@ defmodule AshA2A.Agent do
   `AshA2A.Dispatcher.dispatch/6`, which folds it into the Ash `context:` opt
   as `:a2a_history` (see `__dispatch__/3` and `task_history/1` below).
 
-  ## Concurrency: one mailbox, not a worker pool
+  ## Concurrency, ownership and admission
 
-  A generated agent is a single `A2A.Agent` GenServer process, so every
-  `:message`/`:cancel`/`:get_task`/`:list_tasks` call to one agent instance
-  is serialized through that one mailbox -- a slow in-flight dispatch
-  (a long-running Ash action) blocks every other in-flight call to the
-  *same* agent instance until it completes. This is inherent to `A2A.Agent`'s
-  design, not a bug introduced by `AshA2A.Agent`. If concurrent throughput
-  across skills/resources matters, run multiple named agent instances (one
-  per resource/domain, or sharded per tenant) behind `A2A.AgentSupervisor`
-  rather than relying on one process to serve unrelated concurrent work.
+  The generated GenServer no longer runs handlers inside its own mailbox.
+  `AshA2A.Transport.Runtime` replaces `A2A.Agent`'s `{:message, ...}` clause:
+  by default (`execution: [mode: :async]`) each message runs in a monitored
+  worker, so a slow Ash action or LLM compile does not block `tasks/get`,
+  `tasks/list`, `tasks/cancel` or other callers, and a crashing handler
+  fails only its own task. A global `max_in_flight` cap (default 256) and an
+  optional per-principal `rate_limit: {count, per_ms}` refuse excess load
+  with typed `:server_busy`/`:rate_limited` errors. `mode: :inline` restores
+  the old serialized behavior.
+
+  Tasks are owned by the verified principal that created them: a different
+  principal continuing a task gets `{:error, :not_found}`, and a continuation
+  always runs under the *current* call's verified auth. Serve agents over
+  HTTP with `AshA2A.Transport.Plug` (owner-scoped `tasks/*`, no credential
+  echo, truthful AgentCard capabilities), not the raw `A2A.Plug`.
+
+  ## Authentication (fail closed)
+
+  `config :ash_a2a, :require_authenticated_caller` defaults to `true`: an
+  unauthenticated caller cannot run `:observe` skills or semantic
+  compilation. Per agent: `use AshA2A.Agent, resource_or_domain: R,
+  require_authenticated_caller: false` or `public_skills: [:greet]`.
   """
+
+  # Per-agent dispatch options (never forwarded to the AgentCard builder):
+  #   * `:require_authenticated_caller` -- overrides
+  #     `config :ash_a2a, :require_authenticated_caller` (default `true`).
+  #   * `:public_skills` -- skill names/ids an unauthenticated caller may
+  #     still invoke when authentication is required.
+  @dispatch_opt_keys [:require_authenticated_caller, :public_skills]
+
+  # Bound on the caller-supplied `metadata["context"]` map (SEC-11), measured
+  # as its external term size.
+  @max_client_context_bytes 8192
 
   @doc false
   defmacro __using__(opts) do
@@ -65,6 +89,8 @@ defmodule AshA2A.Agent do
     # via `bind_quoted`, exactly what `A2A.Agent.__using__/1` requires.
     resource_or_domain = Macro.expand(resource_or_domain_ast, __CALLER__)
     {agent_opts, _bindings} = Code.eval_quoted(agent_opts_ast, [], __CALLER__)
+    {execution_opts, agent_opts} = Keyword.pop(agent_opts, :execution, [])
+    {dispatch_opts, agent_opts} = Keyword.split(agent_opts, @dispatch_opt_keys)
     card_opts = __card_opts__(resource_or_domain, agent_opts)
 
     # `unquote(Macro.escape(card_opts))` (not `bind_quoted`) splices the
@@ -77,10 +103,65 @@ defmodule AshA2A.Agent do
       use A2A.Agent, unquote(Macro.escape(card_opts))
 
       @ash_a2a_resource_or_domain unquote(resource_or_domain)
+      @ash_a2a_execution unquote(Macro.escape(execution_opts))
+      @ash_a2a_dispatch_opts unquote(Macro.escape(dispatch_opts))
+
+      # SEC-01/SEC-03: `A2A.Agent`'s own `{:message, ...}` clause runs the
+      # handler inside this GenServer and continues a task under its STORED
+      # auth. `AshA2A.Transport.Runtime` replaces that clause (owner check,
+      # auth rebinding, CSPRNG task ids, admission limits, off-mailbox
+      # execution) and adds the owner-scoped reads `AshA2A.Transport.Plug`
+      # uses. Every other call falls through to `A2A.Agent` unchanged.
+      defoverridable handle_call: 3
+
+      @impl GenServer
+      def handle_call({:message, message, opts}, from, state) do
+        AshA2A.Transport.Runtime.handle_message_call(
+          __MODULE__,
+          @ash_a2a_execution,
+          message,
+          opts,
+          from,
+          state
+        )
+      end
+
+      def handle_call({:ash_a2a_get_task, principal, task_id}, _from, state) do
+        {:reply, AshA2A.Transport.Runtime.get_task_for(state, principal, task_id), state}
+      end
+
+      def handle_call({:ash_a2a_list_tasks, principal, params}, _from, state) do
+        {:reply, AshA2A.Transport.Runtime.list_tasks_for(state, principal, params), state}
+      end
+
+      # A cancel racing a running handler is refused, never reported as
+      # `:canceled` while the handler's effect may still commit.
+      def handle_call({:cancel, task_id} = request, from, state) do
+        if AshA2A.Transport.Runtime.in_flight?(task_id),
+          do: {:reply, {:error, :not_cancelable}, state},
+          else: super(request, from, state)
+      end
+
+      def handle_call(request, from, state), do: super(request, from, state)
+
+      @impl GenServer
+      def handle_info(msg, state) do
+        case AshA2A.Transport.Runtime.handle_info(msg, state) do
+          :unhandled -> AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
+          reply -> reply
+        end
+      end
+
+      defoverridable handle_call: 3, handle_info: 2
 
       @impl A2A.Agent
       def handle_message(message, context) do
-        AshA2A.Agent.__dispatch__(@ash_a2a_resource_or_domain, message, context)
+        AshA2A.Agent.__dispatch__(
+          @ash_a2a_resource_or_domain,
+          message,
+          context,
+          @ash_a2a_dispatch_opts
+        )
       end
 
       defoverridable handle_message: 2
@@ -192,20 +273,127 @@ defmodule AshA2A.Agent do
   # gate falls straight through to the ordinary skill-resolution path below
   # exactly as before this feature existed -- this branch adds a new,
   # explicit route, it does not change the meaning of any existing message.
+  #
+  # SEC-02: the whole dispatch is shape-checked first and wrapped in
+  # rescue/catch, so one malformed request or handler bug fails only its own
+  # task with a typed error (`AshA2A.Transport.SafeError`, opaque `ref`, full
+  # detail logged server-side) -- it never crashes the shared agent process.
+  #
+  # SEC-05: when authentication is required (the default, see
+  # `authentication_required?/1`), an unauthenticated caller is refused with
+  # `%{code: :unauthenticated}` before any `:observe` skill or semantic
+  # compilation runs, unless the skill is listed in `:public_skills`.
   @doc false
-  @spec __dispatch__(module(), A2A.Message.t(), A2A.Agent.context() | map()) ::
+  @spec __dispatch__(module(), A2A.Message.t(), A2A.Agent.context() | map(), keyword()) ::
           AshA2A.Dispatcher.reply()
-  def __dispatch__(resource_or_domain, %A2A.Message{} = message, context) do
-    history = task_history(context)
-    auth_identity = verified_auth_identity(context)
+  def __dispatch__(resource_or_domain, message, context, opts \\ [])
 
-    if semantic_request?(resource_or_domain, message) do
-      emit_route(resource_or_domain, %{route: :semantic})
-      dispatch_semantic(resource_or_domain, message)
-    else
-      message = merge_turn_history(message, history)
-      dispatch_skill(resource_or_domain, message, history, auth_identity)
+  def __dispatch__(resource_or_domain, %A2A.Message{} = message, context, opts) do
+    with :ok <- validate_message(message) do
+      history = task_history(context)
+      auth_identity = verified_auth_identity(context)
+
+      if semantic_request?(resource_or_domain, message) do
+        emit_route(resource_or_domain, %{route: :semantic})
+
+        with :ok <- authenticated(auth_identity, nil, opts) do
+          dispatch_semantic(resource_or_domain, message)
+        end
+      else
+        message = merge_turn_history(message, history)
+        dispatch_skill(resource_or_domain, message, history, auth_identity, opts)
+      end
     end
+  rescue
+    error -> {:error, AshA2A.Transport.SafeError.internal(:internal_error, error, __STACKTRACE__)}
+  catch
+    kind, reason ->
+      {:error,
+       AshA2A.Transport.SafeError.internal(:internal_error, {kind, reason}, __STACKTRACE__)}
+  end
+
+  def __dispatch__(_resource_or_domain, _message, _context, _opts) do
+    {:error, %{code: :invalid_message}}
+  end
+
+  @doc """
+  Typed refusal codes this module (and the dispatch surface it guards)
+  returns, classified for S42 totality.
+  """
+  @spec __sa2a_refusal_codes__() :: %{atom() => atom()}
+  def __sa2a_refusal_codes__ do
+    %{
+      invalid_message: :refused_structure,
+      invalid_metadata: :refused_structure,
+      invalid_context: :refused_structure,
+      invalid_input: :refused_structure,
+      context_too_large: :refused_bounds,
+      unauthenticated: :refused_identity,
+      internal_error: :blocked_unknown
+    }
+  end
+
+  # Shape checks on the untrusted wire message: `metadata` must be a map,
+  # `metadata["context"]` absent or a bounded map, and every Data part's
+  # `data` a map. Each failure is a typed refusal, never an exception.
+  defp validate_message(%A2A.Message{metadata: metadata, parts: parts}) do
+    cond do
+      not (is_nil(metadata) or is_map(metadata)) ->
+        {:error, %{code: :invalid_metadata}}
+
+      not valid_context?(metadata || %{}) ->
+        {:error, %{code: :invalid_context}}
+
+      context_too_large?(metadata || %{}) ->
+        {:error, %{code: :context_too_large, max_bytes: @max_client_context_bytes}}
+
+      not (is_list(parts) and Enum.all?(parts, &valid_part?/1)) ->
+        {:error, %{code: :invalid_input}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp valid_context?(metadata) do
+    case AshA2A.MetadataKey.fetch(metadata, :context) do
+      {:ok, context} -> is_nil(context) or is_map(context)
+      :error -> true
+    end
+  end
+
+  defp context_too_large?(metadata) do
+    case AshA2A.MetadataKey.get(metadata, :context) do
+      %{} = context -> :erlang.external_size(context) > @max_client_context_bytes
+      _ -> false
+    end
+  end
+
+  defp valid_part?(%A2A.Part.Data{data: data}), do: is_map(data)
+  defp valid_part?(_part), do: true
+
+  defp authenticated(auth_identity, skill_name, opts) do
+    cond do
+      not is_nil(auth_identity) -> :ok
+      not authentication_required?(opts) -> :ok
+      public_skill?(skill_name, opts) -> :ok
+      true -> {:error, %{code: :unauthenticated}}
+    end
+  end
+
+  defp authentication_required?(opts) do
+    case Keyword.fetch(opts, :require_authenticated_caller) do
+      {:ok, value} -> value != false
+      :error -> Application.get_env(:ash_a2a, :require_authenticated_caller, true) != false
+    end
+  end
+
+  defp public_skill?(nil, _opts), do: false
+
+  defp public_skill?(skill_name, opts) do
+    opts
+    |> Keyword.get(:public_skills, [])
+    |> Enum.any?(&(to_string(&1) == to_string(skill_name)))
   end
 
   # A2A's `:input_required` continuation calls `handle_message/2` with only the
@@ -419,7 +607,12 @@ defmodule AshA2A.Agent do
           end
         rescue
           error ->
-            {:error, %{code: :semantic_compilation_failed, detail: Exception.message(error)}}
+            {:error,
+             AshA2A.Transport.SafeError.internal(
+               :semantic_compilation_failed,
+               error,
+               __STACKTRACE__
+             )}
         end
     end
   end
@@ -502,11 +695,12 @@ defmodule AshA2A.Agent do
       end
     rescue
       error ->
-        {:error, %{code: :semantic_replan_failed, detail: Exception.message(error)}}
+        {:error,
+         AshA2A.Transport.SafeError.internal(:semantic_replan_failed, error, __STACKTRACE__)}
     end
   end
 
-  defp dispatch_skill(resource_or_domain, message, history, auth_identity) do
+  defp dispatch_skill(resource_or_domain, message, history, auth_identity, opts) do
     case resolve_skill_name(resource_or_domain, message) do
       {:ok, skill_name} ->
         consequence = consequence(resource_or_domain, skill_name)
@@ -519,13 +713,15 @@ defmodule AshA2A.Agent do
 
         case consequence do
           :observe ->
-            AshA2A.Dispatcher.dispatch(
-              skill_name,
-              message,
-              resource_or_domain,
-              history,
-              auth_identity
-            )
+            with :ok <- authenticated(auth_identity, skill_name, opts) do
+              AshA2A.Dispatcher.dispatch(
+                skill_name,
+                message,
+                resource_or_domain,
+                history,
+                auth_identity
+              )
+            end
 
           consequence when consequence in [:change, :external_do] ->
             command = build_command(resource_or_domain, skill_name, message, auth_identity)
@@ -566,6 +762,11 @@ defmodule AshA2A.Agent do
   defp consequence(resource_or_domain, skill_name) do
     case AshA2A.Info.skill(resource_or_domain, skill_name) do
       {:ok, %AshA2A.Skill{consequence: consequence}} when not is_nil(consequence) -> consequence
+      # SEC-05: a resolved skill with no consequence is unclassified and
+      # refused closed, never treated as a read.
+      {:ok, %AshA2A.Skill{}} -> :unknown
+      # Lookup failure: routed to the dispatcher, whose typed
+      # `{:skill_lookup, _}` refusal is the canonical error for it.
       _ -> :observe
     end
   end
@@ -986,7 +1187,7 @@ defmodule AshA2A.Agent do
   end
 
   defp resolve_skill_name(resource_or_domain, %A2A.Message{metadata: metadata}) do
-    metadata = metadata || %{}
+    metadata = if is_map(metadata), do: metadata, else: %{}
 
     case AshA2A.MetadataKey.get(metadata, :skill) do
       nil -> default_skill_name(resource_or_domain)
