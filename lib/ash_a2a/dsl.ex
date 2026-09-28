@@ -49,8 +49,10 @@ defmodule AshA2A.Dsl do
       doc:
         "Explicit consequence classification (see AshA2A.Skill's @moduledoc). " <>
           "Required to lift a generic :action skill off the fail-closed :unknown " <>
-          "default; has no effect on :read/:create/:update/:destroy unless a " <>
-          "resource author deliberately wants to override their own default."
+          "default. On :create/:update/:destroy it may only RAISE the :change " <>
+          "default (to :external_do or :unknown); `consequence: :observe` on a " <>
+          "mutating action is a compile-time DslError (observe_on_mutating_action, " <>
+          "SEC-04), because :observe skips authority, admission and receipts."
     ],
     on_cancel: [
       type: {:or, [:module, :mfa]},

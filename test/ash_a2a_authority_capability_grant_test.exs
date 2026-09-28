@@ -370,4 +370,36 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       assert ActuationCounter.count() == 1
     end
   end
+
+  describe "SEC-07: legacy policy under strict security" do
+    setup do
+      keys = [:authority_policy, :strict_security, :allow_legacy_authority_policy]
+      prior = Map.new(keys, &{&1, Application.get_env(:ash_a2a, &1)})
+      Application.put_env(:ash_a2a, :authority_policy, :transport_verified_grants_capability)
+      Application.put_env(:ash_a2a, :strict_security, true)
+      Application.delete_env(:ash_a2a, :allow_legacy_authority_policy)
+      on_exit(fn -> Enum.each(prior, fn {k, v} -> restore(k, v) end) end)
+      :ok
+    end
+
+    test "is REFUSED at request time without the explicit acknowledgement -- zero actuations" do
+      assert {:ok, task} = call("touch", %{"note" => "strict"})
+      assert task.status.state == :failed
+      assert ActuationCounter.count() == 0
+
+      assert Authority.Grant.authorize(@principal, capability_id(:touch)) == nil
+    end
+
+    test "is honored again only with the explicit acknowledgement" do
+      Application.put_env(
+        :ash_a2a,
+        :allow_legacy_authority_policy,
+        :i_accept_privilege_escalation
+      )
+
+      assert {:ok, task} = call("touch", %{"note" => "acknowledged"})
+      assert task.status.state == :completed
+      assert ActuationCounter.count() == 1
+    end
+  end
 end

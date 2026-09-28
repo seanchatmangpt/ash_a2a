@@ -31,18 +31,58 @@ defmodule AshA2A.Semantic.PackageStore do
   authority: :none` value that was never receipted evidence and never granted
   any authority -- unlike a committed `AshA2A.Receipt`, nothing of consequence
   was ever true because a package merely existed here.
+
+  ## Bounds (SEC-09)
+
+  The store is bounded so an opted-in semantic surface cannot grow memory
+  without limit: at most `:max_entries` packages (option, else
+  `config :ash_a2a, :semantic_package_store_max_entries`, default 10_000),
+  evicted oldest-first (FIFO by insertion), and each entry expires
+  `:ttl_ms` after insertion (option, else
+  `config :ash_a2a, :semantic_package_store_ttl_ms`, default 1 hour). An
+  expired or evicted fingerprint fetches as `:error`, exactly like an
+  unknown one -- a continuation naming it is refused by the caller, never
+  resolved to a stale package. Re-putting an existing fingerprint refreshes
+  its TTL and FIFO position.
   """
   use GenServer
 
   alias AshA2A.Semantic.ExecutionPackage
 
+  @default_max_entries 10_000
+  @default_ttl_ms :timer.hours(1)
+
   @doc false
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, %{}, name: Keyword.get(opts, :name, __MODULE__))
+    GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
   @impl true
-  def init(state), do: {:ok, state}
+  def init(opts) do
+    {:ok,
+     %{
+       entries: %{},
+       order: :queue.new(),
+       max_entries:
+         opts
+         |> Keyword.get_lazy(:max_entries, fn ->
+           Application.get_env(:ash_a2a, :semantic_package_store_max_entries)
+         end)
+         |> bound_or_default(@default_max_entries),
+       ttl_ms:
+         opts
+         |> Keyword.get_lazy(:ttl_ms, fn ->
+           Application.get_env(:ash_a2a, :semantic_package_store_ttl_ms)
+         end)
+         |> bound_or_default(@default_ttl_ms)
+     }}
+  end
+
+  # Fail closed on a malformed bound: a non-integer max_entries (e.g. an
+  # unparsed env string) compares larger than every integer and would disable
+  # eviction; a non-integer ttl_ms would crash every put.
+  defp bound_or_default(value, _default) when is_integer(value) and value > 0, do: value
+  defp bound_or_default(_value, default), do: default
 
   @doc "Stores `package`, keyed by its own real `fingerprint`."
   @spec put(ExecutionPackage.t(), keyword()) :: :ok
@@ -56,17 +96,60 @@ defmodule AshA2A.Semantic.PackageStore do
     GenServer.call(server(opts), {:fetch, fingerprint})
   end
 
+  @doc """
+  Number of stored entries. Bounded by `:max_entries`; an expired entry is
+  removed lazily (on its next fetch, or by FIFO eviction), so it may still be
+  counted here until then.
+  """
+  @spec size(keyword()) :: non_neg_integer()
+  def size(opts \\ []), do: GenServer.call(server(opts), :size)
+
   @impl true
-  def handle_call({:put, %ExecutionPackage{} = package}, _from, state) do
-    {:reply, :ok, Map.put(state, package.fingerprint, package)}
+  def handle_call({:put, %ExecutionPackage{fingerprint: fp} = package}, _from, state) do
+    now = now_ms()
+    # Drop any older position for this key so FIFO order stays exact.
+    order = :queue.filter(&(&1 != fp), state.order)
+    entries = Map.put(state.entries, fp, {package, now + state.ttl_ms})
+
+    state =
+      %{state | entries: entries, order: :queue.in(fp, order)}
+      |> evict_over_capacity()
+
+    {:reply, :ok, state}
   end
 
   def handle_call({:fetch, fingerprint}, _from, state) do
-    case Map.get(state, fingerprint) do
-      %ExecutionPackage{} = package -> {:reply, {:ok, package}, state}
-      _ -> {:reply, :error, state}
+    now = now_ms()
+
+    case Map.get(state.entries, fingerprint) do
+      {%ExecutionPackage{} = package, expires_at} when expires_at > now ->
+        {:reply, {:ok, package}, state}
+
+      {_package, _expired} ->
+        {:reply, :error,
+         %{
+           state
+           | entries: Map.delete(state.entries, fingerprint),
+             order: :queue.filter(&(&1 != fingerprint), state.order)
+         }}
+
+      nil ->
+        {:reply, :error, state}
     end
   end
+
+  def handle_call(:size, _from, state), do: {:reply, map_size(state.entries), state}
+
+  defp evict_over_capacity(state) do
+    if map_size(state.entries) > state.max_entries do
+      {{:value, oldest}, order} = :queue.out(state.order)
+      evict_over_capacity(%{state | entries: Map.delete(state.entries, oldest), order: order})
+    else
+      state
+    end
+  end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp server(opts), do: Keyword.get(opts, :name, __MODULE__)
 end

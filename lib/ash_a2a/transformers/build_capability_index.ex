@@ -6,6 +6,19 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
   persists a second capability model here. The real capability index is
   derived later from `Ash.Resource.Info.public_actions/1` by
   `AshA2A.CapabilityIndex.Compiler`.
+
+  ## Consequence floor (SEC-04)
+
+  An override may RAISE a mutating action's consequence (`:change` ->
+  `:external_do`, or to the fail-closed `:unknown`) but may never LOWER a
+  `:create`/`:update`/`:destroy` action to `consequence: :observe`. `:observe`
+  skips `AshA2A.Authority.Grant`, `AshA2A.CommandBus` admission, receipts and
+  the BRCE anchor, so lowering a mutating action to it would let a
+  transport-authenticated caller mutate data with no authority and no
+  receipt. Such a declaration is a compile-time `Spark.Error.DslError`
+  (`:observe_on_mutating_action`, class `:refused_consequence`). `:read` and generic `:action`
+  may be declared `:observe` (a generic action must opt in explicitly; its
+  default stays `:unknown`).
   """
   use Spark.Dsl.Transformer
 
@@ -24,7 +37,7 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
     dsl_state
     |> Transformer.get_entities([:a2a])
     |> Enum.reduce_while({:ok, dsl_state, []}, fn override, {:ok, dsl, overrides} ->
-      case resolve_resource(override, module, resource_dsl?, own_domain) do
+      case resolve_and_check(override, dsl_state, module, resource_dsl?, own_domain) do
         {:ok, resolved} ->
           new_dsl =
             Transformer.replace_entity(dsl, [:a2a], resolved, &(&1.name == override.name))
@@ -36,8 +49,8 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
            {:error,
             Spark.Error.DslError.exception(
               module: module,
-              path: [:a2a, override.name, :resource],
-              message: message,
+              path: error_path(override, message),
+              message: error_message(message),
               location: Spark.Dsl.Entity.anno(override)
             )}}
       end
@@ -58,6 +71,72 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
         {:error, error}
     end
   end
+
+  @mutating_types [:create, :update, :destroy]
+
+  @doc false
+  def __sa2a_refusal_codes__, do: %{observe_on_mutating_action: :refused_consequence}
+
+  defp resolve_and_check(override, dsl_state, module, resource_dsl?, own_domain) do
+    with {:ok, resolved} <- resolve_resource(override, module, resource_dsl?, own_domain),
+         :ok <- check_consequence_floor(resolved, dsl_state, resource_dsl?) do
+      {:ok, resolved}
+    end
+  end
+
+  defp error_path(override, {:consequence, _}), do: [:a2a, override.name, :consequence]
+  defp error_path(override, _message), do: [:a2a, override.name, :resource]
+
+  defp error_message({:consequence, message}), do: message
+  defp error_message(message), do: message
+
+  defp check_consequence_floor(%{consequence: :observe} = override, dsl_state, resource_dsl?) do
+    case action_type(override, dsl_state, resource_dsl?) do
+      type when type in @mutating_types ->
+        {:error,
+         {:consequence,
+          "observe_on_mutating_action: skill `#{override.name}` declares " <>
+            "`consequence: :observe` on #{inspect(type)} action `#{override.action}`. " <>
+            "A mutating action may be raised to :external_do or :unknown but never " <>
+            "lowered to :observe, which would skip authority, CommandBus admission, " <>
+            "receipts and the BRCE anchor."}}
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp check_consequence_floor(_override, _dsl_state, _resource_dsl?), do: :ok
+
+  # Resource-level: the resource is still compiling, so read its own
+  # `actions` entities from `dsl_state`. `defaults [...]` actions may not be
+  # materialized yet (Ash's SetPrimaryActions may run after this
+  # transformer); a default action's name IS its type, so fall back to the
+  # `defaults` option. Domain-level: the resource is already compiled.
+  defp action_type(%{action: action}, dsl_state, true) do
+    case Enum.find(Transformer.get_entities(dsl_state, [:actions]), &(&1.name == action)) do
+      %{type: type} ->
+        type
+
+      nil ->
+        defaults = Transformer.get_option(dsl_state, [:actions], :defaults, []) || []
+
+        if Enum.any?(defaults, &default_named?(&1, action)), do: action, else: nil
+    end
+  end
+
+  defp action_type(%{resource: resource, action: action}, _dsl_state, false) do
+    case Ash.Resource.Info.action(resource, action) do
+      %{type: type} -> type
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp default_named?(name, action) when is_atom(name), do: name == action
+  defp default_named?({name, _accept}, action), do: name == action
+  defp default_named?(_other, _action), do: false
 
   defp resolve_resource(%{resource: nil} = override, module, true, own_domain) do
     {:ok, %{override | resource: module, domain: own_domain}}

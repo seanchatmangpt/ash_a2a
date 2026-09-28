@@ -165,22 +165,46 @@ defmodule AshA2A.Authority.Grant do
   defp decide(policy, auth_identity, capability_id, opts) do
     case policy do
       :transport_verified_grants_capability ->
-        warn_once(
-          :legacy_policy,
-          "ash_a2a: :authority_policy is set to :transport_verified_grants_capability. " <>
-            "Every transport-authenticated caller therefore holds authority for EVERY " <>
-            "capability on the agent card, including :change and :external_do skills. " <>
-            "This violates RFC-SA2A-001 S29 (Authentication does NOT imply Authority) and " <>
-            "is a privilege escalation, preserved only for compatibility during migration. " <>
-            "Configure `config :ash_a2a, authority_policy: :broker` and an " <>
-            ":authority_broker with real grants (see AshA2A.Authority.Grant)."
-        )
-
-        {Authority.from_verified_identity(auth_identity, capability_id), :legacy_transport_policy}
+        legacy_decide(auth_identity, capability_id)
 
       :broker ->
         broker_authorize(auth_identity, capability_id, opts)
     end
+  end
+
+  # SEC-07: in strict security mode (`AshA2A.Authority.SecurityPreflight
+  # .strict?/0`, on by default in a :prod build) the legacy escalation policy
+  # is REFUSED at request time unless explicitly acknowledged, even if the
+  # host never called `SecurityPreflight.check!/0` at boot.
+  defp legacy_decide(auth_identity, capability_id) do
+    if AshA2A.Authority.SecurityPreflight.legacy_policy_allowed?() do
+      legacy_grant(auth_identity, capability_id)
+    else
+      warn_once(
+        :legacy_policy_refused,
+        "ash_a2a: :authority_policy :transport_verified_grants_capability is REFUSED in " <>
+          "strict security mode; every consequential dispatch fails closed. Configure " <>
+          ":broker, or acknowledge with `config :ash_a2a, :allow_legacy_authority_policy, " <>
+          ":i_accept_privilege_escalation`."
+      )
+
+      {nil, :legacy_authority_policy_refused}
+    end
+  end
+
+  defp legacy_grant(auth_identity, capability_id) do
+    warn_once(
+      :legacy_policy,
+      "ash_a2a: :authority_policy is set to :transport_verified_grants_capability. " <>
+        "Every transport-authenticated caller therefore holds authority for EVERY " <>
+        "capability on the agent card, including :change and :external_do skills. " <>
+        "This violates RFC-SA2A-001 S29 (Authentication does NOT imply Authority) and " <>
+        "is a privilege escalation, preserved only for compatibility during migration. " <>
+        "Configure `config :ash_a2a, authority_policy: :broker` and an " <>
+        ":authority_broker with real grants (see AshA2A.Authority.Grant)."
+    )
+
+    {Authority.from_verified_identity(auth_identity, capability_id), :legacy_transport_policy}
   end
 
   @doc """

@@ -10,6 +10,16 @@ defmodule AshA2A.Semantic.Compiler do
   step downstream of that seam (IR construction, Admission fencing, Ontology
   projection, PlanningIR projection, ExecutionPackage fencing/fingerprinting)
   executes for real, with no further test doubles.
+
+  ## Input bound (SEC-09)
+
+  Every compile is a paid LLM call, so the source text is bounded BEFORE any
+  hashing, telemetry or model invocation: text larger than
+  `max_text_bytes/1` (`opts[:max_text_bytes]`, else
+  `config :ash_a2a, :semantic_max_text_bytes`, default 16_384 bytes) is
+  refused with `{:error, %{code: :semantic_text_too_large, ...}}` and the
+  model is never called. `compile_many/3` bounds its batch size the same way
+  (`:semantic_max_batch`, default 100 -> `:semantic_batch_too_large`).
   """
 
   alias AshA2A.{LLMProfiles, Planning.SemanticSynthesis}
@@ -28,12 +38,59 @@ defmodule AshA2A.Semantic.Compiler do
 
   @default_role :semantic_reasoner
 
+  @default_max_text_bytes 16_384
+  @default_max_batch 100
+
+  @doc false
+  # S42 refusal totality.
+  def __sa2a_refusal_codes__ do
+    %{semantic_text_too_large: :refused_bounds, semantic_batch_too_large: :refused_bounds}
+  end
+
+  @doc "The effective per-compile source-text byte ceiling."
+  @spec max_text_bytes(keyword()) :: pos_integer()
+  def max_text_bytes(opts \\ []) do
+    (Keyword.get(opts, :max_text_bytes) ||
+       Application.get_env(:ash_a2a, :semantic_max_text_bytes))
+    |> bound_or_default(@default_max_text_bytes)
+  end
+
+  # Fail closed on a malformed bound: a non-integer (e.g. an unparsed
+  # `System.get_env/1` string) would otherwise compare as larger than every
+  # integer under Erlang term order and silently disable the cap.
+  defp bound_or_default(value, _default) when is_integer(value) and value > 0, do: value
+  defp bound_or_default(_value, default), do: default
+
   def compile(resource_or_domain, text, opts \\ []) when is_binary(text) do
-    source = Source.new(text, Keyword.get(opts, :source_opts, []))
-    compile_source(resource_or_domain, source, opts)
+    with :ok <- check_text_size(text, opts) do
+      source = Source.new(text, Keyword.get(opts, :source_opts, []))
+      compile_source(resource_or_domain, source, opts)
+    end
   end
 
   def compile_source(resource_or_domain, %Source{} = source, opts \\ []) do
+    case check_text_size(source.text || "", opts) do
+      :ok -> do_compile_source(resource_or_domain, source, opts)
+      refusal -> refusal
+    end
+  end
+
+  defp check_text_size(text, opts) do
+    limit = max_text_bytes(opts)
+    size = byte_size(text)
+
+    if size > limit do
+      {:error,
+       %{
+         code: :semantic_text_too_large,
+         detail: %{bytes: size, max_text_bytes: limit}
+       }}
+    else
+      :ok
+    end
+  end
+
+  defp do_compile_source(resource_or_domain, %Source{} = source, opts) do
     role = Keyword.get(opts, :role, @default_role)
     generate = Keyword.get(opts, :generate_object, &ReqLLM.generate_object/4)
 
@@ -69,6 +126,19 @@ defmodule AshA2A.Semantic.Compiler do
   end
 
   def compile_many(resource_or_domain, texts, opts \\ []) when is_list(texts) do
+    max_batch =
+      (Keyword.get(opts, :max_batch) || Application.get_env(:ash_a2a, :semantic_max_batch))
+      |> bound_or_default(@default_max_batch)
+
+    if length(texts) > max_batch do
+      {:error,
+       %{code: :semantic_batch_too_large, detail: %{count: length(texts), max_batch: max_batch}}}
+    else
+      do_compile_many(resource_or_domain, texts, opts)
+    end
+  end
+
+  defp do_compile_many(resource_or_domain, texts, opts) do
     concurrency = Keyword.get(opts, :max_concurrency, 50)
 
     texts
