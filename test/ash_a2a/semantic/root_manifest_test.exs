@@ -357,19 +357,22 @@ defmodule AshA2A.Semantic.RootManifestTest do
     @tag :graphlaw_engine
     test "an unknown field is refused and no new atom is created", %{manifest: manifest} do
       {principal, authority} = custodian()
-      before = :erlang.system_info(:atom_count)
+      # A global atom_count comparison races with every other async test that
+      # interns atoms; assert on the exact key instead.
+      unknown =
+        "totally_made_up_field_qwerty_" <> Integer.to_string(System.unique_integer([:positive]))
 
       assert {:error, %{code: :REFUSED_MANIFEST_MALFORMED, detail: detail}} =
                RootManifest.mutate(
                  manifest,
-                 %{"totally_made_up_field_qwerty" => 1},
+                 %{unknown => 1},
                  authority,
                  principal,
                  require_engine: false
                )
 
       assert :"$unknown" in detail.unmutable_or_unknown_fields
-      assert :erlang.system_info(:atom_count) == before
+      assert_raise ArgumentError, fn -> String.to_existing_atom(unknown) end
     end
 
     @tag :graphlaw_engine

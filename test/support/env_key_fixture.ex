@@ -37,4 +37,25 @@ defmodule AshA2A.Test.EnvKeyFixture do
         nil
     end
   end
+
+  @doc """
+  Named skip reason for a live-LLM round-trip test, or `nil` to run it.
+
+  Live calls require an explicit opt-in (`ASH_A2A_LIVE_LLM=1`, e.g. via
+  `mix test.live`), not merely a key in `~/.env`: `mix test.all` includes
+  `:serial` modules, which would otherwise pull paid, slow, nondeterministic
+  network calls into the default suite whenever a developer has a key.
+  """
+  def live_llm_skip_reason(env_var_name \\ "ZAI_API_KEY") do
+    cond do
+      System.get_env("ASH_A2A_LIVE_LLM") != "1" ->
+        "live LLM round-trip: set ASH_A2A_LIVE_LLM=1 (mix test.live) to run"
+
+      is_nil(read_key(env_var_name)) ->
+        "#{env_var_name} not found in ~/.env"
+
+      true ->
+        nil
+    end
+  end
 end

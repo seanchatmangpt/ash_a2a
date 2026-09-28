@@ -70,7 +70,7 @@ defmodule AshA2AZaiConcurrencyOcelTest do
   # firing 50 real dispatches). Module-level skip = named, printed, and
   # effective in every lane.
   @moduletag skip:
-               (is_nil(@zai_key) && "ZAI_API_KEY not found in ~/.env") ||
+               AshA2A.Test.EnvKeyFixture.live_llm_skip_reason() ||
                  (not @ingest_reachable? &&
                     "beam4pm's real OCEL ingest server is not reachable at #{@ingest_url} -- " <>
                       "start it standalone first: cd ~/beam4pm && MIX_ENV=dev mix run --no-halt")

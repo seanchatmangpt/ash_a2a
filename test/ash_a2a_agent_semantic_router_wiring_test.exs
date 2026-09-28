@@ -241,9 +241,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
   # not external_api", so this file keeps the repo's own named-skip
   # convention (see test/ash_a2a_zai_concurrency_ocel_test.exs): a real,
   # compile-time precondition check with a named, printed reason.
-  @tag skip:
-         (is_nil(AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")) &&
-            "ZAI_API_KEY not found in ~/.env -- real, unseamed LLM round-trip") || nil
+  @tag skip: AshA2A.Test.EnvKeyFixture.live_llm_skip_reason()
   @tag timeout: 180_000
   test "3b: real text with no goal_facts key still falls through to dispatch_semantic_compile/2 (real, unseamed LLM path)" do
     message =

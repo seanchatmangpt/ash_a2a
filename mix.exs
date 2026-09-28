@@ -6,6 +6,7 @@ defmodule AshA2A.MixProject do
       preferred_envs: [
         "test.all": :test,
         "test.serial": :test,
+        "test.live": :test,
         "test.serial.shard": :test,
         "test.serial.solo": :test
       ]
@@ -55,6 +56,8 @@ defmodule AshA2A.MixProject do
       test: "test --exclude serial",
       "test.all": "test --include serial",
       "test.serial": "test --only serial",
+      # Live, paid, networked LLM round-trips: explicit opt-in only.
+      "test.live": "cmd ASH_A2A_LIVE_LLM=1 mix test --include serial --only external_api",
 
       # `:serial` (all 96) splits into two DISJOINT, independently-tagged
       # subsets rather than "serial minus an exclude": ExUnit's `--only`
@@ -178,7 +181,8 @@ defmodule AshA2A.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ash, "~> 3.0"},
+      # >= 3.33.11: EEF-CVE-2026-93477 (private action args settable via bulk update/destroy)
+      {:ash, "~> 3.33 and >= 3.33.11"},
       {:igniter, "~> 0.6"},
       # `only: :dev`: real, disclosed finding (swarm-test Docker build,
       # this session) -- zero references to `GgenIgniter`/`ggen_igniter`

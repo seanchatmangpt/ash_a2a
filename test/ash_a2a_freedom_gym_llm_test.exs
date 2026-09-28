@@ -36,7 +36,7 @@ defmodule AshA2AFreedomGymLlmTest do
   @zai_key AshA2A.Test.EnvKeyFixture.read_key("ZAI_API_KEY")
 
   @moduletag :external_api
-  @describetag skip: is_nil(@zai_key) && "ZAI_API_KEY not found in ~/.env"
+  @describetag skip: AshA2A.Test.EnvKeyFixture.live_llm_skip_reason()
 
   setup_all do
     if @zai_key do
