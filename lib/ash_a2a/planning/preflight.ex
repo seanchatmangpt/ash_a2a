@@ -280,8 +280,11 @@ defmodule AshA2A.Planning.Preflight do
     admitted = preflight.work_order_digest
 
     case work_order_claim(command) do
-      nil -> :ok
-      ^admitted -> :ok
+      nil ->
+        :ok
+
+      ^admitted ->
+        :ok
 
       claimed ->
         error(:preflight_work_order_mismatch, %{
