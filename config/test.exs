@@ -2,6 +2,11 @@ import Config
 
 config :ash_a2a, ash_domains: [AshA2A.Test.Fixture.Domain]
 
+# test/support/fixture.ex defines many single-purpose fixture domains; they are
+# not registered app domains, so inclusion validation is noise under
+# --warnings-as-errors in MIX_ENV=test.
+config :ash, :validate_domain_config_inclusion?, false
+
 # Real Phoenix.Presence host config for
 # AshA2A.RuntimeProvidersIntegrationTest -- exercises
 # AshA2A.Topology.Presence against a real Presence module backed by a real
