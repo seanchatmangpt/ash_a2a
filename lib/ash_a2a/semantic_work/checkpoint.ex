@@ -1,18 +1,13 @@
 defmodule AshA2A.SemanticWork.Checkpoint do
   @moduledoc "Exact semantic-work Checkpoint boundary."
+
+  alias AshA2A.SemanticWork.Envelope
+
   def bind(m) when is_map(m) do
-    try do
-      {:ok,
-       %{
-         checkpoint: req!(m, :checkpoint),
-         epoch: req!(m, :epoch),
-         graph_digest: req!(m, :graph_digest)
-       }}
-    catch
-      {:missing, k} -> {:error, {:refused_missing_identity, k}}
+    with {:ok, r} <- Envelope.fetch(m, [:checkpoint, :epoch, :graph_digest]) do
+      {:ok, %{checkpoint: r.checkpoint, epoch: r.epoch, graph_digest: r.graph_digest}}
     end
   end
 
   def bind(_), do: {:error, :refused_invalid_envelope}
-  defp req!(m, k), do: Map.get(m, k) || Map.get(m, to_string(k)) || throw({:missing, k})
 end

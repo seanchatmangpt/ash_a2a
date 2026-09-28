@@ -1,13 +1,13 @@
 defmodule AshA2A.SemanticWork.Compatibility do
   @moduledoc "Semantic-work Compatibility guard."
+
+  alias AshA2A.SemanticWork.Envelope
+
   def bind(m) when is_map(m) do
-    try do
-      {:ok, %{version: req!(m, :version), accepts: req!(m, :accepts), subject: req!(m, :subject)}}
-    catch
-      {:missing, k} -> {:error, {:refused_missing_identity, k}}
+    with {:ok, r} <- Envelope.fetch(m, [:version, :accepts, :subject]) do
+      {:ok, %{version: r.version, accepts: r.accepts, subject: r.subject}}
     end
   end
 
   def bind(_), do: {:error, :refused_invalid_envelope}
-  defp req!(m, k), do: Map.get(m, k) || Map.get(m, to_string(k)) || throw({:missing, k})
 end

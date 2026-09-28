@@ -1,18 +1,18 @@
 defmodule AshA2A.SemanticWork.Receipt do
   @moduledoc "Exact semantic-work Receipt boundary."
+
+  alias AshA2A.SemanticWork.Envelope
+
   def bind(m) when is_map(m) do
-    try do
+    with {:ok, r} <- Envelope.fetch(m, [:receipt_id, :subject]) do
       {:ok,
        %{
-         receipt_id: req!(m, :receipt_id),
-         subject: req!(m, :subject),
+         receipt_id: r.receipt_id,
+         subject: r.subject,
          standing: Map.get(m, :standing, "CANDIDATE")
        }}
-    catch
-      {:missing, k} -> {:error, {:refused_missing_identity, k}}
     end
   end
 
   def bind(_), do: {:error, :refused_invalid_envelope}
-  defp req!(m, k), do: Map.get(m, k) || Map.get(m, to_string(k)) || throw({:missing, k})
 end

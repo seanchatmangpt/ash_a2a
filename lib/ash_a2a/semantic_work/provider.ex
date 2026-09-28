@@ -1,14 +1,13 @@
 defmodule AshA2A.SemanticWork.Provider do
   @moduledoc "Semantic-work Provider guard."
+
+  alias AshA2A.SemanticWork.Envelope
+
   def bind(m) when is_map(m) do
-    try do
-      {:ok,
-       %{provider: req!(m, :provider), subject: req!(m, :subject), contract: req!(m, :contract)}}
-    catch
-      {:missing, k} -> {:error, {:refused_missing_identity, k}}
+    with {:ok, r} <- Envelope.fetch(m, [:provider, :subject, :contract]) do
+      {:ok, %{provider: r.provider, subject: r.subject, contract: r.contract}}
     end
   end
 
   def bind(_), do: {:error, :refused_invalid_envelope}
-  defp req!(m, k), do: Map.get(m, k) || Map.get(m, to_string(k)) || throw({:missing, k})
 end
