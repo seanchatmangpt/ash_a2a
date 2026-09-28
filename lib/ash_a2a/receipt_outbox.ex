@@ -47,6 +47,73 @@ defmodule AshA2A.ReceiptOutbox do
 
   @format_version 1
   @suffix ".receipt"
+  @keyed_magic "SA2AJ1K"
+  @marker_magic "SA2AJ1U"
+  @mac_size 32
+  @warn_key {__MODULE__, :unkeyed_warned}
+
+  @doc """
+  The configured journal integrity key (RFC-SA2A-004 section 12): the
+  `:receipt_outbox_key`, else `:receipt_binding_key`, when a non-empty
+  binary; otherwise `nil`.
+  """
+  @spec integrity_key() :: binary() | nil
+  def integrity_key do
+    Enum.find_value([:receipt_outbox_key, :receipt_binding_key], fn name ->
+      case Application.get_env(:ash_a2a, name) do
+        key when is_binary(key) and byte_size(key) > 0 -> key
+        _ -> nil
+      end
+    end)
+  end
+
+  # Keyed: magic <> HMAC-SHA256(key, term bytes) <> term bytes. Unkeyed:
+  # marker magic <> term bytes, so a later keyed runtime can tell the entry
+  # was never tagged and refuse it (a planted forgery is indistinguishable
+  # from it, by design).
+  defp seal(term_bytes) do
+    case integrity_key() do
+      nil ->
+        warn_unkeyed_once()
+        @marker_magic <> term_bytes
+
+      key ->
+        @keyed_magic <> :crypto.mac(:hmac, :sha256, key, term_bytes) <> term_bytes
+    end
+  end
+
+  defp warn_unkeyed_once do
+    if :persistent_term.get(@warn_key, false) == false do
+      :persistent_term.put(@warn_key, true)
+
+      Logger.warning(
+        "AshA2A.ReceiptOutbox: no :receipt_outbox_key/:receipt_binding_key configured; " <>
+          "journal entries are written UNTAGGED and a keyed runtime will refuse them"
+      )
+    end
+
+    :ok
+  end
+
+  defp unseal(binary) do
+    key = integrity_key()
+
+    case binary do
+      <<@keyed_magic, mac::binary-size(@mac_size), rest::binary>> ->
+        cond do
+          key == nil -> {:error, :outbox_key_unavailable}
+          :crypto.hash_equals(mac, :crypto.mac(:hmac, :sha256, key, rest)) -> {:ok, rest}
+          true -> {:error, :outbox_bad_tag}
+        end
+
+      <<@marker_magic, rest::binary>> ->
+        if key == nil, do: {:ok, rest}, else: {:error, :outbox_untagged_entry}
+
+      other ->
+        # Legacy / foreign bytes carry no tag.
+        if key == nil, do: {:ok, other}, else: {:error, :outbox_untagged_entry}
+    end
+  end
 
   @doc "The journal directory."
   @spec dir() :: String.t()
@@ -60,7 +127,7 @@ defmodule AshA2A.ReceiptOutbox do
   def append(%Receipt{} = receipt) do
     entry_path = entry_path(receipt)
     tmp_path = entry_path <> ".tmp.#{System.unique_integer([:positive])}"
-    payload = :erlang.term_to_binary({@format_version, receipt})
+    payload = seal(:erlang.term_to_binary({@format_version, receipt}))
 
     with :ok <- File.mkdir_p(dir()),
          :ok <- File.write(tmp_path, payload, [:binary, :sync]),
@@ -419,7 +486,8 @@ defmodule AshA2A.ReceiptOutbox do
   defp decode_entry(filename) do
     path = Path.join(dir(), filename)
 
-    with {:ok, binary} <- File.read(path),
+    with {:ok, raw} <- File.read(path),
+         {:ok, binary} <- unseal(raw),
          {:ok, %Receipt{} = receipt} <- safe_binary_to_term(binary) do
       {:ok, receipt}
     else
@@ -434,7 +502,25 @@ defmodule AshA2A.ReceiptOutbox do
     end
   end
 
+  # `:safe` refuses atoms not already in the atom table. A journal written by
+  # another VM names struct modules (`AshA2A.Evidence.*`, `AshA2A.Identity`,
+  # ...) that a freshly restarted VM has not lazily loaded yet, so without
+  # this a legitimate crash-window anchor decodes as `:bad_term`. Loading the
+  # application's own compiled modules registers exactly those atoms and no
+  # attacker-controlled ones.
+  @modules_loaded_key {__MODULE__, :modules_loaded}
+  defp ensure_app_modules_loaded do
+    if :persistent_term.get(@modules_loaded_key, false) == false do
+      (Application.spec(:ash_a2a, :modules) || []) |> Enum.each(&Code.ensure_loaded/1)
+      :persistent_term.put(@modules_loaded_key, true)
+    end
+
+    :ok
+  end
+
   defp safe_binary_to_term(binary) do
+    ensure_app_modules_loaded()
+
     case :erlang.binary_to_term(binary, [:safe]) do
       {@format_version, %Receipt{} = receipt} -> {:ok, receipt}
       {@format_version, _other} -> :foreign_format

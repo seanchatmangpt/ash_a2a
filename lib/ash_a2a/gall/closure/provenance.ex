@@ -5,11 +5,11 @@ defmodule AshA2A.Gall.Closure.Provenance do
 
   def build(candidate, task \\ nil) when is_map(candidate) do
     envelope = %{
-      producer_repository: field(candidate, :producer_repository),
-      producer_sha: field(candidate, :producer_sha),
-      evidence_digest: field(candidate, :evidence_digest),
-      semantic_subject_digest: field(candidate, :semantic_subject_digest),
-      candidate_digest: field(candidate, :candidate_digest),
+      producer_repository: AshA2A.Gall.Fields.get(candidate, :producer_repository),
+      producer_sha: AshA2A.Gall.Fields.get(candidate, :producer_sha),
+      evidence_digest: AshA2A.Gall.Fields.get(candidate, :evidence_digest),
+      semantic_subject_digest: AshA2A.Gall.Fields.get(candidate, :semantic_subject_digest),
+      candidate_digest: AshA2A.Gall.Fields.get(candidate, :candidate_digest),
       task_id: task,
       authority: :none,
       standing: :candidate
@@ -23,6 +23,4 @@ defmodule AshA2A.Gall.Closure.Provenance do
   end
 
   def valid?(_), do: false
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

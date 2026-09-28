@@ -5,13 +5,14 @@ defmodule AshA2A.Gall.Closure.ExactSubject do
   @digest ~r/\Asha256:[0-9a-f]{64}\z/
 
   def admit(candidate) when is_map(candidate) do
-    with repo when is_binary(repo) <- field(candidate, :producer_repository),
+    with repo when is_binary(repo) <- AshA2A.Gall.Fields.get(candidate, :producer_repository),
          true <- valid_repo?(repo),
-         sha when is_binary(sha) <- field(candidate, :producer_sha),
+         sha when is_binary(sha) <- AshA2A.Gall.Fields.get(candidate, :producer_sha),
          true <- Regex.match?(@sha, sha),
-         subject when is_binary(subject) <- field(candidate, :semantic_subject_digest),
+         subject when is_binary(subject) <-
+           AshA2A.Gall.Fields.get(candidate, :semantic_subject_digest),
          true <- Regex.match?(@digest, subject),
-         identity when is_binary(identity) <- field(candidate, :candidate_digest),
+         identity when is_binary(identity) <- AshA2A.Gall.Fields.get(candidate, :candidate_digest),
          true <- Regex.match?(@digest, identity) do
       {:ok,
        %{repository: repo, sha: sha, semantic_subject_digest: subject, candidate_digest: identity}}
@@ -28,6 +29,4 @@ defmodule AshA2A.Gall.Closure.ExactSubject do
       _ -> false
     end
   end
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

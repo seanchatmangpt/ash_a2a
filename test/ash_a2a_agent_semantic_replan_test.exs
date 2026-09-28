@@ -253,6 +253,10 @@ defmodule AshA2AAgentSemanticReplanTest do
                plan_generate_object: plan
              )
 
+    # RFC-SA2A-004 S21: a stored package belongs to the principal that wrote
+    # it (bound exactly as a real agent dispatch binds it); this file's
+    # continuations are all made by "user-1".
+    package = AshA2A.Agent.__bind_package__(package, "user-1")
     :ok = PackageStore.put(package)
     package
   end

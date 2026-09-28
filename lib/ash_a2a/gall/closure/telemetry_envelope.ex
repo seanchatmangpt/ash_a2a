@@ -10,15 +10,13 @@ defmodule AshA2A.Gall.Closure.TelemetryEnvelope do
         Map.merge(
           %{
             outcome: outcome,
-            candidate_digest: field(subject, :candidate_digest),
-            command_id: field(subject, :command_id),
-            receipt_id: field(subject, :receipt_id),
+            candidate_digest: AshA2A.Gall.Fields.get(subject, :candidate_digest),
+            command_id: AshA2A.Gall.Fields.get(subject, :command_id),
+            receipt_id: AshA2A.Gall.Fields.get(subject, :receipt_id),
             authority: :none
           },
           attrs
         )
     }
   end
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

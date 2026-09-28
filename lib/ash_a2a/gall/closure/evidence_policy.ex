@@ -5,8 +5,8 @@ defmodule AshA2A.Gall.Closure.EvidencePolicy do
   @classes ~w(conformance prediction attribution postcondition)
 
   def admit(candidate, allowed_digests) when is_map(candidate) and is_list(allowed_digests) do
-    digest = field(candidate, :evidence_digest)
-    class = field(candidate, :finding_class)
+    digest = AshA2A.Gall.Fields.get(candidate, :evidence_digest)
+    class = AshA2A.Gall.Fields.get(candidate, :finding_class)
 
     cond do
       not is_binary(digest) or not Regex.match?(@digest, digest) ->
@@ -24,6 +24,4 @@ defmodule AshA2A.Gall.Closure.EvidencePolicy do
   end
 
   def admit(_, _), do: {:error, {:refused_gall, :evidence_policy, :invalid_policy}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

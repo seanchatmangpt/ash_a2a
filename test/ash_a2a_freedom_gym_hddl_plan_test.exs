@@ -68,12 +68,15 @@ defmodule AshA2AFreedomGymHddlPlanTest do
   test "facilitator's :next_phase skill derives the real phase sequence from the real HDDL plan, over real A2A dispatch" do
     plan_name = :"hddl_plan_test_#{System.unique_integer([:positive])}"
 
-    fetch_next = fn ->
+    # RFC-SA2A-004 S11: strict actuation dedup refuses a second fresh request
+    # naming the identical effect, so each real step is a distinct request
+    # (distinct input), as a real facilitator's successive turns are.
+    fetch_next = fn turn ->
       assert {:ok, task} =
                FacilitatorAgent.call(
                  FacilitatorAgent,
                  data_message(
-                   %{plan_name: plan_name, prompt_text: "next real phase, please"},
+                   %{plan_name: plan_name, prompt_text: "next real phase, please (turn #{turn})"},
                    %{metadata: %{skill: "next_phase"}}
                  ),
                  metadata: %{"a2a.auth" => %{identity: "hddl-plan-test-caller"}}
@@ -84,7 +87,7 @@ defmodule AshA2AFreedomGymHddlPlanTest do
       result
     end
 
-    observed_phases = Enum.map(1..6, fn _ -> fetch_next.().phase end)
+    observed_phases = Enum.map(1..6, fn turn -> fetch_next.(turn).phase end)
 
     assert observed_phases == [
              :open,
@@ -124,6 +127,6 @@ defmodule AshA2AFreedomGymHddlPlanTest do
              )
 
     assert reset_task.status.state == :completed
-    assert fetch_next.().phase == :open
+    assert fetch_next.(7).phase == :open
   end
 end

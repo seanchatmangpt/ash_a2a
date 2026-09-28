@@ -1285,7 +1285,12 @@ defmodule AshA2A.Semantic.Episode do
         CommandBus.run(command, message, cfg.resource_or_domain,
           store: cfg.store,
           store_opts: cfg.store_opts,
-          plan_digest: s.package.plan_digest
+          plan_digest: s.package.plan_digest,
+          # RFC-SA2A-004 S11: actuation dedup is strict by default. A stage
+          # retry (`:a<n>`) is a genuinely new attempt after a failed one, so
+          # each attempt declares its own idempotency identity (the attempt-
+          # scoped command id); a replay of the SAME attempt still dedups.
+          idempotency_key: command_id
         )
       end)
 

@@ -3,8 +3,8 @@ defmodule AshA2A.Gall.Closure.CapabilityPolicy do
 
   def admit(candidate, allowed_capabilities)
       when is_map(candidate) and is_list(allowed_capabilities) do
-    capability = field(candidate, :capability_id)
-    requested = field(candidate, :requested_capability_id)
+    capability = AshA2A.Gall.Fields.get(candidate, :capability_id)
+    requested = AshA2A.Gall.Fields.get(candidate, :requested_capability_id)
 
     cond do
       not is_binary(capability) or capability == "" ->
@@ -22,6 +22,4 @@ defmodule AshA2A.Gall.Closure.CapabilityPolicy do
   end
 
   def admit(_, _), do: {:error, {:refused_gall, :capability_policy, :invalid_policy}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

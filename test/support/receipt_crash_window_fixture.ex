@@ -95,6 +95,12 @@ defmodule AshA2A.Test.Fixture.ReceiptCrashWindow.Runner do
     Application.put_env(:ash_a2a, :receipt_outbox_dir, outbox_dir)
     {:ok, _pid} = GenServer.start(AshA2A.ReceiptStore.Memory, %{}, name: @store)
 
+    # RFC-SA2A-004 S10: the pre-DO gate revalidates authority against the
+    # configured broker. This child VM does not run test_helper.exs, so it
+    # starts the same real in-memory broker the parent test VM has; the
+    # authority is legitimate (never revoked), so DO must proceed.
+    {:ok, _broker} = AshA2A.Authority.Broker.InMemory.start_link([])
+
     CommandBus.run(
       command(url, command_id),
       message(url, command_id),

@@ -27,11 +27,9 @@ defmodule AshA2A.BrceAnchor do
        refused with `:brce_prepared_receipt_required` before any Ash action
        runs.
 
-  Durability is established where it is decided: `CommandBus` only hands over
-  an anchor after `ReceiptOutbox.append/1` returned `:ok`. The dispatcher does
-  not re-stat the journal file, because `ReceiptOutbox.reconcile/2` run by a
-  concurrent `CommandBus.run/4` may legitimately commit and remove an
-  in-flight anchor between preparation and dispatch.
+  Durability is verified at the fence (RFC-SA2A-004 §21): `admit/2` requires
+  `ReceiptOutbox.anchored?/1` for the pending anchor, so a hand-built
+  in-process anchor with no outbox entry is refused with `:anchor_not_durable`.
 
   Scope, stated exactly: the anchor lives in the dispatching process's
   dictionary, so it fences *paths* (callers that reach the dispatcher without
@@ -134,6 +132,7 @@ defmodule AshA2A.BrceAnchor do
     cond do
       not capability_bound?(skill, anchor.capability_id) -> {:refused, :capability_mismatch}
       anchor.consequence != consequence -> {:refused, :consequence_mismatch}
+      not AshA2A.ReceiptOutbox.anchored?(anchor) -> {:refused, :anchor_not_durable}
       true -> :anchored
     end
   end

@@ -351,9 +351,35 @@ defmodule AshA2A.Dispatcher do
   # selector-based lookup below stays authoritative for every other caller.
   defp resolve_skill(resource_or_domain, skill_name, opts) do
     case Keyword.get(opts, :resolved_skill) do
-      %AshA2A.Skill{} = skill -> {:ok, skill}
-      _ -> fetch_skill(resource_or_domain, skill_name)
+      %AshA2A.Skill{} = skill -> verify_resolved_skill(resource_or_domain, skill)
+      nil -> fetch_skill(resource_or_domain, skill_name)
+      _other -> {:error, resolved_skill_refusal(nil)}
     end
+  end
+
+  # RFC-SA2A-004 §11.4/§21: a caller-supplied `:resolved_skill` is untrusted
+  # input. It is admitted only when it is structurally identical to the
+  # compiled capability-index skill with the same id; otherwise fail closed
+  # (`:capability_mismatch`, classified `:refused_capability`).
+  defp verify_resolved_skill(resource_or_domain, %AshA2A.Skill{id: id} = skill) do
+    indexed =
+      resource_or_domain
+      |> AshA2A.Info.capability_index()
+      |> List.wrap()
+      |> Enum.find(&(&1.id == id))
+
+    if indexed == skill, do: {:ok, skill}, else: {:error, resolved_skill_refusal(id)}
+  end
+
+  defp resolved_skill_refusal(id) do
+    %{
+      code: :capability_mismatch,
+      reason: :resolved_skill_not_in_index,
+      capability_id: id,
+      detail:
+        "caller-supplied resolved_skill is not structurally identical to the compiled " <>
+          "capability-index skill"
+    }
   end
 
   # An exact capability-id match is authoritative even when the display name

@@ -3,7 +3,7 @@ defmodule AshA2A.Gall.Closure.VocabularyPolicy do
 
   def admit(candidate, public_vocabularies)
       when is_map(candidate) and is_list(public_vocabularies) do
-    vocabulary = field(candidate, :vocabulary)
+    vocabulary = AshA2A.Gall.Fields.get(candidate, :vocabulary)
 
     cond do
       not is_binary(vocabulary) or vocabulary == "" ->
@@ -21,6 +21,4 @@ defmodule AshA2A.Gall.Closure.VocabularyPolicy do
   end
 
   def admit(_, _), do: {:error, {:refused_gall, :vocabulary_policy, :invalid_policy}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

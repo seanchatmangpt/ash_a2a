@@ -23,7 +23,153 @@ defmodule AshA2A.SpgConformance do
   @case_id ~r/\ASPG-[0-9]{3}\z/
   @refusal ~r/\ASPG_[A-Z0-9_]+\z/
 
+  @pin_file "CORPUS_DIGEST.sha256"
+
+  # RFC-SA2A-004 section 19: which families are evaluated independently of
+  # `stimulus.checks` (recomputed from the case's concrete fields through real
+  # modules) versus self-checked (reference evaluator, reads the checks).
+  # The concrete fields (subject, procedure, boundary, replay) are identical
+  # across all cases except identity strings and seeds, so refuse cases carry
+  # no concrete witness of their failing condition: the independent evaluator
+  # admits them, and that disagreement is reported, not hidden.
+  @independent_families ~w(identity spg authority replay)
+  @self_checked_families ~w(intervention ocel recovery semantic_jira consumer falsifier planner)
+
   @type decision :: {:admit, map()} | {:refuse, String.t()}
+
+  @spec independent_families() :: [String.t()]
+  def independent_families, do: @independent_families
+
+  @spec self_checked_families() :: [String.t()]
+  def self_checked_families, do: @self_checked_families
+
+  @doc "Path of the committed corpus digest pin."
+  @spec pin_path() :: String.t()
+  def pin_path, do: Path.join(corpus_dir(), @pin_file)
+
+  @doc """
+  Recomputes the corpus digest over `dir` and compares it to the committed pin.
+  Returns `{:error, {:corpus_digest_mismatch, expected, actual}}` on drift.
+  """
+  @spec verify_pinned(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def verify_pinned(dir \\ corpus_dir(), pin \\ pin_path()) do
+    with {:ok, raw} <- read_pin(pin) do
+      expected = String.trim(raw)
+      actual = dir |> load_all() |> corpus_digest()
+
+      if actual == expected,
+        do: {:ok, actual},
+        else: {:error, {:corpus_digest_mismatch, expected, actual}}
+    end
+  end
+
+  defp read_pin(pin) do
+    case File.read(pin) do
+      {:ok, raw} -> {:ok, raw}
+      {:error, reason} -> {:error, {:corpus_pin_unreadable, reason}}
+    end
+  end
+
+  @doc """
+  Evaluator that ignores `stimulus.checks` and recomputes the decision from the
+  case's concrete fields using `AshA2A.SpgIdentity`, `Gall.Closure.ReplayGuard`
+  and `Gall.Closure.AuthorityBinding`.
+  """
+  @spec independent_evaluator(map()) :: decision()
+  def independent_evaluator(case) do
+    with :ok <- independent_identity(case),
+         :ok <- independent_authority(case),
+         :ok <- independent_replay(case) do
+      {:admit,
+       %{
+         "subject" => case["subject"],
+         "procedure" => case["procedure"],
+         "authority" => %{"explicit" => get_in(case, ["boundary", "authority_explicit"])},
+         "receipt" => %{"case_id" => case_id(case), "seed" => get_in(case, ["replay", "seed"])}
+       }}
+    else
+      {:error, code} -> {:refuse, code}
+    end
+  end
+
+  @doc """
+  Runs only the independently evaluable families with `independent_evaluator/1`
+  and reports per-case agreement with the fixture oracle (no fixture is altered).
+  """
+  @spec independent_report([map()]) :: map()
+  def independent_report(cases) do
+    rows =
+      cases
+      |> Enum.filter(&(&1["family"] in @independent_families))
+      |> Enum.map(fn c ->
+        {case_id(c), c["family"], c["expect"], verdict(independent_evaluator(c))}
+      end)
+
+    {agree, disagree} = Enum.split_with(rows, fn {_, _, expect, got} -> expect == got end)
+    %{evaluated: length(rows), agree: agree, disagree: disagree}
+  end
+
+  defp independent_identity(case) do
+    procedure_id = get_in(case, ["procedure", "identity"])
+
+    with "urn:ash-a2a:spg:" <> rest <- procedure_id,
+         [family, node] <- String.split(rest, ":", parts: 2),
+         {:ok, _identity} <-
+           AshA2A.SpgIdentity.new(
+             graph_id: "urn:ash-a2a:spg",
+             graph_version: case["schema"],
+             node_id: node,
+             projection_family: family
+           ),
+         true <- family == case["family"] and node == case["name"],
+         :ok <- regex(get_in(case, ["subject", "repo"]), @repo, :repo),
+         :ok <- regex(get_in(case, ["subject", "base_sha"]), @sha, :sha) do
+      :ok
+    else
+      _ -> {:error, "SPG_INDEPENDENT_IDENTITY_MISMATCH"}
+    end
+  end
+
+  defp independent_authority(case) do
+    if get_in(case, ["boundary", "authority_explicit"]) == true do
+      scope = %{
+        "repo" => get_in(case, ["subject", "repo"]),
+        "sha" => get_in(case, ["subject", "base_sha"])
+      }
+
+      principal = "spg:" <> to_string(case["family"])
+
+      authority = %{
+        subject: principal,
+        capability_id: case["name"],
+        constraints: %{scope: scope, max_consequences: 1}
+      }
+
+      command = %{principal_id: principal, capability_id: case["name"]}
+
+      case AshA2A.Gall.Closure.AuthorityBinding.admit(authority, command, scope, 1) do
+        {:ok, _} -> :ok
+        {:error, _} -> {:error, "SPG_INDEPENDENT_AUTHORITY_UNBOUND"}
+      end
+    else
+      {:error, "SPG_INDEPENDENT_AUTHORITY_UNBOUND"}
+    end
+  end
+
+  defp independent_replay(case) do
+    seed = get_in(case, ["replay", "seed"])
+
+    delivery = %{
+      command_id: case_id(case),
+      actuation_id: "act-#{seed}",
+      idempotency_key: "k-#{seed}"
+    }
+
+    case AshA2A.Gall.Closure.ReplayGuard.classify(delivery, delivery) do
+      {:ok, :exact_replay} -> :ok
+      _ -> {:error, "SPG_INDEPENDENT_REPLAY_UNSTABLE"}
+    end
+  end
 
   @spec corpus_dir() :: String.t()
   def corpus_dir, do: Application.app_dir(:ash_a2a, @relative_dir)

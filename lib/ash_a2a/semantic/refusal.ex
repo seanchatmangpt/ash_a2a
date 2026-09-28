@@ -163,6 +163,10 @@ defmodule AshA2A.Semantic.Refusal do
     stale_timestamp: :refused_bounds,
     unconfirmed: :refused_receipt,
     receipt_store_not_configured: :blocked_resource,
+    # RFC-SA2A-004 receipt outbox integrity (lib/ash_a2a/receipt_outbox.ex).
+    outbox_bad_tag: :refused_receipt,
+    outbox_untagged_entry: :refused_receipt,
+    outbox_key_unavailable: :blocked_resource,
     # --- REFUSED_IDENTITY -------------------------------------------------
     semantic_identity_invalid: :refused_identity,
     policy_phenotype_digest_mismatch: :refused_identity,

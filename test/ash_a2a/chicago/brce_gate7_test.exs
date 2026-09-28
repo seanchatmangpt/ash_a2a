@@ -167,6 +167,14 @@ defmodule AshA2A.Chicago.BrceGate7Test do
     } do
       by_id = pending_anchor(record.id, :change)
       by_name = pending_anchor("record", :change)
+      # RFC-SA2A-004 §21: admission requires a durable outbox entry.
+      :ok = ReceiptOutbox.append(by_id)
+      :ok = ReceiptOutbox.append(by_name)
+
+      on_exit(fn ->
+        ReceiptOutbox.remove(by_id)
+        ReceiptOutbox.remove(by_name)
+      end)
 
       assert {:ok, ^by_id} = BrceAnchor.admit(record, by_id)
       assert {:ok, ^by_name} = BrceAnchor.admit(record, by_name)

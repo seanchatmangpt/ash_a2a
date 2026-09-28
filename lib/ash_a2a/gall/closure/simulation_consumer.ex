@@ -5,8 +5,8 @@ defmodule AshA2A.Gall.Closure.SimulationConsumer do
       when is_map(candidate) and is_map(scope) and is_map(expected_postcondition) do
     %{
       kind: :gall_simulation_case,
-      candidate_digest: field(candidate, :candidate_digest),
-      capability_id: field(candidate, :capability_id),
+      candidate_digest: AshA2A.Gall.Fields.get(candidate, :candidate_digest),
+      capability_id: AshA2A.Gall.Fields.get(candidate, :capability_id),
       scope: scope,
       expected_postcondition: expected_postcondition,
       evidence_ceiling: :construct,
@@ -15,6 +15,4 @@ defmodule AshA2A.Gall.Closure.SimulationConsumer do
   end
 
   def project(_, _, _), do: {:error, {:refused_gall, :simulation_consumer, :invalid_input}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

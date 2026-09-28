@@ -6,7 +6,12 @@ defmodule AshA2A.Test.Fixture.ItemAgent do
   since no shared fixture wraps `Item` in a real agent process yet.
   """
 
-  use AshA2A.Agent, resource_or_domain: AshA2A.Test.Fixture.Item, name: "item_command_bus_agent"
+  use AshA2A.Agent,
+    resource_or_domain: AshA2A.Test.Fixture.Item,
+    name: "item_command_bus_agent",
+    # RFC-SA2A-004 S21: `:ping` is a generic :action declared :observe; the
+    # agent must opt in explicitly for it to dispatch unreceipted.
+    observe_generic_actions: [:ping]
 end
 
 defmodule AshA2A.Test.Fixture.UnclassifiedAction.Resource do
@@ -157,7 +162,10 @@ defmodule AshA2AAgentCommandBusTest do
   end
 
   test "a real create -> Agent -> CommandBus -> Ash.create -> Receipt" do
-    message = data_message(%{"label" => "widget"}, %{metadata: %{skill: "create_item"}})
+    message =
+      data_message(%{"label" => "widget-#{System.unique_integer([:positive])}"}, %{
+        metadata: %{skill: "create_item"}
+      })
 
     assert {:ok, task} = ItemAgent.call(ItemAgent, message, authenticated_call_opts("user-1"))
     assert task.status.state == :completed
@@ -213,7 +221,10 @@ defmodule AshA2AAgentCommandBusTest do
   end
 
   test "an unauthenticated create through the default agent path is refused before dispatch, no receipt committed" do
-    message = data_message(%{"label" => "widget"}, %{metadata: %{skill: "create_item"}})
+    message =
+      data_message(%{"label" => "widget-#{System.unique_integer([:positive])}"}, %{
+        metadata: %{skill: "create_item"}
+      })
 
     # A `handle_message/2` `{:error, _}` reply surfaces through
     # `A2A.Agent.call/3` as a real `{:ok, task}` with the task's own status
@@ -273,7 +284,7 @@ defmodule AshA2AAgentCommandBusTest do
 
   test "a real client retry (same protocol-native message_id) through the default agent path replays instead of double-executing" do
     message =
-      data_message(%{"label" => "widget"}, %{
+      data_message(%{"label" => "widget-#{System.unique_integer([:positive])}"}, %{
         metadata: %{skill: "create_item"},
         message_id: "stable-retry-id-1"
       })

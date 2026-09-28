@@ -34,6 +34,12 @@ defmodule AshA2A.Authority do
     :source,
     :issued_at,
     :expires_at,
+    # RFC-SA2A-004 S10: the `{module, broker_opts}` whose `granted?/3` admitted
+    # this standing authority (set only by `AshA2A.Authority.Grant`). Kept out
+    # of `evidence` so `Receipt.authority_grant/1`'s evidence digest stays a
+    # function of transport evidence alone; `AshA2A.CommandBus` revalidates
+    # against this same broker immediately before DO.
+    admitted_by: nil,
     evidence: %{},
     constraints: %{}
   ]
@@ -45,6 +51,7 @@ defmodule AshA2A.Authority do
           source: atom(),
           issued_at: DateTime.t(),
           expires_at: DateTime.t() | nil,
+          admitted_by: {module(), keyword()} | nil,
           evidence: term(),
           constraints: map()
         }
@@ -126,13 +133,100 @@ defmodule AshA2A.Authority do
   end
 
   @spec admits?(t() | nil, map()) :: boolean()
-  def admits?(%__MODULE__{} = authority, %{principal_id: principal, capability_id: capability}) do
+  def admits?(
+        %__MODULE__{} = authority,
+        %{principal_id: principal, capability_id: capability} = command
+      ) do
     authority.subject == principal and
       authority.capability_id == capability and
-      not expired?(authority)
+      not expired?(authority) and
+      constraints_satisfied?(authority, command)
   end
 
   def admits?(_authority, _command), do: false
+
+  @doc """
+  RFC-SA2A-004 S10: declared constraints bind the decision, not only
+  principal/capability/expiry. Recognized constraint keys (atom or string):
+
+    * `:input` -- a map; every entry must equal the command input's entry.
+    * `:subject` -- must equal the command's semantic subject or its
+      `AshA2A.SemanticSubject.fingerprint_token/1`.
+    * `:effect_digest` -- must equal `AshA2A.Actuation.identity/1`'s
+      `effect_digest` for the command.
+
+  An absent constraint is unconstrained; a declared constraint the command
+  does not satisfy (including a command lacking the constrained field) refuses.
+  """
+  @spec constraints_satisfied?(t(), map()) :: boolean()
+  def constraints_satisfied?(%__MODULE__{constraints: constraints}, command)
+      when is_map(constraints) do
+    Enum.all?(constraints, fn {key, expected} ->
+      constraint_ok?(normalize_key(key), expected, command)
+    end)
+  end
+
+  def constraints_satisfied?(_authority, _command), do: true
+
+  defp normalize_key(key) when is_binary(key) do
+    case key do
+      "input" -> :input
+      "subject" -> :subject
+      "effect_digest" -> :effect_digest
+      other -> other
+    end
+  end
+
+  defp normalize_key(key), do: key
+
+  defp constraint_ok?(:input, expected, command) when is_map(expected) do
+    input = Map.get(command, :input)
+
+    is_map(input) and
+      Enum.all?(expected, fn {k, v} -> input_value(input, k) == {:ok, v} end)
+  end
+
+  defp constraint_ok?(:input, _expected, _command), do: false
+
+  defp constraint_ok?(:subject, expected, command) do
+    subject = Map.get(command, :semantic_subject)
+
+    not is_nil(subject) and
+      (expected == subject or expected == AshA2A.SemanticSubject.fingerprint_token(subject))
+  end
+
+  defp constraint_ok?(:effect_digest, expected, %AshA2A.Command{} = command) do
+    AshA2A.Actuation.identity(command).effect_digest == expected
+  end
+
+  defp constraint_ok?(:effect_digest, _expected, _command), do: false
+
+  # Other keys (e.g. :external_idempotency_token) are carried evidence, not
+  # command-matching constraints.
+  defp constraint_ok?(_other, _expected, _command), do: true
+
+  defp input_value(input, key) do
+    cond do
+      Map.has_key?(input, key) ->
+        {:ok, Map.fetch!(input, key)}
+
+      is_atom(key) and Map.has_key?(input, Atom.to_string(key)) ->
+        {:ok, Map.fetch!(input, Atom.to_string(key))}
+
+      is_binary(key) ->
+        string_key_lookup(input, key)
+
+      true ->
+        :error
+    end
+  end
+
+  defp string_key_lookup(input, key) do
+    Enum.find_value(input, :error, fn
+      {k, v} when is_atom(k) -> if Atom.to_string(k) == key, do: {:ok, v}
+      _ -> nil
+    end)
+  end
 
   @spec expired?(t()) :: boolean()
   def expired?(%__MODULE__{expires_at: nil}), do: false

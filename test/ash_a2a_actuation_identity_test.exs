@@ -160,35 +160,45 @@ defmodule AshA2A.ActuationIdentityTest do
     assert KeyedActuationCounter.count(key) == 1
   end
 
-  test "the DEFAULT :declared mode does not collapse an undeclared repeat -- and says so", %{
-    store_opts: store_opts
-  } do
+  test "the DEFAULT mode is :strict (RFC-SA2A-004 S11): a fresh-id repeat of the same effect is refused a second crossing",
+       %{store_opts: store_opts} do
+    key = "default-strict-#{System.unique_integer([:positive])}"
+
+    assert CommandBus.actuation_dedup_mode() == :strict
+
+    assert {:ok, first} = run(command("strict-1", key), key, store_opts)
+    assert {:ok, second} = run(command("strict-2", key), key, store_opts)
+
+    assert KeyedActuationCounter.count(key) == 1
+    assert first.actuation_id == second.actuation_id
+    assert second.metadata.outcome == :deduplicated
+    refute Map.has_key?(first.intended_effect, :actuation_dedup_compat)
+  end
+
+  test "explicit :declared is a LEGACY opt-in: undeclared repeat executes and receipts stamp compat",
+       %{store_opts: store_opts} do
     key = "declared-#{System.unique_integer([:positive])}"
+    legacy = [actuation_dedup: :declared]
 
-    assert CommandBus.actuation_dedup_mode() == :declared
+    assert {:ok, first} = run(command("declared-1", key), key, store_opts, legacy)
+    assert {:ok, second} = run(command("declared-2", key), key, store_opts, legacy)
 
-    assert {:ok, first} = run(command("declared-1", key), key, store_opts)
-    assert {:ok, second} = run(command("declared-2", key), key, store_opts)
-
-    # Both really executed. With no client-declared idempotency key, "same
-    # capability, same principal, same input, again" is genuinely ambiguous
-    # between a dropped-response retry and a second intentional request, and
-    # refusing real work on a guess is the worse failure. The identities are
-    # still derived and recorded on both receipts -- only enforcement is
-    # withheld.
+    # Both really executed: legacy semantics withhold enforcement without a
+    # client-declared key. The identities are still derived and recorded, and
+    # the receipts say the legacy compatibility mode was in force.
     assert KeyedActuationCounter.count(key) == 2
     assert first.actuation_id == second.actuation_id
     assert first.idempotency_key == second.idempotency_key
     refute second.metadata[:outcome] == :deduplicated
+    assert first.intended_effect.actuation_dedup_compat == :declared_legacy
+    assert second.intended_effect.actuation_dedup_compat == :declared_legacy
 
-    # Declaring a key on the third call makes the effect enforceable, and a
-    # fourth call under that same declared key is refused a second crossing.
     declared = command("declared-3", key, metadata: %{idempotency_key: "declared_token"})
-    assert {:ok, _} = run(declared, key, store_opts)
+    assert {:ok, _} = run(declared, key, store_opts, legacy)
     assert KeyedActuationCounter.count(key) == 3
 
     declared_retry = command("declared-4", key, metadata: %{idempotency_key: "declared_token"})
-    assert {:ok, dedup} = run(declared_retry, key, store_opts)
+    assert {:ok, dedup} = run(declared_retry, key, store_opts, legacy)
     assert KeyedActuationCounter.count(key) == 3
     assert dedup.metadata.outcome == :deduplicated
   end

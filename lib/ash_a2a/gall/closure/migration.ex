@@ -4,9 +4,9 @@ defmodule AshA2A.Gall.Closure.Migration do
   @schema "ash_a2a.gall.closure/v1"
 
   def to_v1(candidate) when is_map(candidate) do
-    with digest when is_binary(digest) <- field(candidate, :candidate_digest),
-         repo when is_binary(repo) <- field(candidate, :producer_repository),
-         sha when is_binary(sha) <- field(candidate, :producer_sha) do
+    with digest when is_binary(digest) <- AshA2A.Gall.Fields.get(candidate, :candidate_digest),
+         repo when is_binary(repo) <- AshA2A.Gall.Fields.get(candidate, :producer_repository),
+         sha when is_binary(sha) <- AshA2A.Gall.Fields.get(candidate, :producer_sha) do
       {:ok,
        candidate
        |> stringify_keys()
@@ -26,6 +26,4 @@ defmodule AshA2A.Gall.Closure.Migration do
   defp stringify_keys(map) do
     Map.new(map, fn {key, value} -> {to_string(key), value} end)
   end
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

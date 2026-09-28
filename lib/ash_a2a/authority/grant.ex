@@ -462,11 +462,14 @@ defmodule AshA2A.Authority.Grant do
           # dispatch path -- a time bound that could never fail. Expiry is
           # ENFORCED by `granted?/3` above; carrying it here is defence in
           # depth, and it keeps the token id untouched so replay is unaffected.
-          {Authority.from_verified_identity(
-             auth_identity,
-             capability_id,
-             grant_expires_at(module, subject, capability_id, broker_opts)
-           ), :grant_standing}
+          authority =
+            Authority.from_verified_identity(
+              auth_identity,
+              capability_id,
+              grant_expires_at(module, subject, capability_id, broker_opts)
+            )
+
+          {%{authority | admitted_by: {module, broker_opts}}, :grant_standing}
         else
           {nil, :no_standing_grant}
         end

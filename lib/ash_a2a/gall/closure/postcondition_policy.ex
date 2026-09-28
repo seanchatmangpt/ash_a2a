@@ -11,9 +11,9 @@ defmodule AshA2A.Gall.Closure.PostconditionPolicy do
     do: {:error, {:refused_gall, :postcondition_policy, :expected_postcondition_required}}
 
   def verify(%{digest: digest}, observation) when is_map(observation) do
-    independent = field(observation, :independent)
-    status = field(observation, :status)
-    observed = field(observation, :expected_postcondition_digest)
+    independent = AshA2A.Gall.Fields.get(observation, :independent)
+    status = AshA2A.Gall.Fields.get(observation, :status)
+    observed = AshA2A.Gall.Fields.get(observation, :expected_postcondition_digest)
 
     cond do
       independent != true ->
@@ -31,6 +31,4 @@ defmodule AshA2A.Gall.Closure.PostconditionPolicy do
   end
 
   def verify(_, _), do: {:error, {:refused_gall, :postcondition_policy, :invalid_observation}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

@@ -4,10 +4,10 @@ defmodule AshA2A.Gall.Closure.ScopePolicy do
   alias AshA2A.Gall.Closure.Determinism
 
   def admit(scope, command) when is_map(scope) and is_map(command) do
-    expected_input = Determinism.digest(field(command, :input) || %{})
-    expected_target = field(command, :target)
-    actual_input = field(scope, :input_digest)
-    actual_target = field(scope, :target)
+    expected_input = Determinism.digest(AshA2A.Gall.Fields.get(command, :input) || %{})
+    expected_target = AshA2A.Gall.Fields.get(command, :target)
+    actual_input = AshA2A.Gall.Fields.get(scope, :input_digest)
+    actual_target = AshA2A.Gall.Fields.get(scope, :target)
 
     cond do
       map_size(scope) == 0 ->
@@ -25,6 +25,4 @@ defmodule AshA2A.Gall.Closure.ScopePolicy do
   end
 
   def admit(_, _), do: {:error, {:refused_gall, :scope_policy, :invalid_scope}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

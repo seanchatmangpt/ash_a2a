@@ -4,9 +4,9 @@ defmodule AshA2A.Gall.Closure.IdempotencyPolicy do
   alias AshA2A.Gall.Closure.Determinism
 
   def admit(command, candidate) when is_map(command) and is_map(candidate) do
-    metadata = field(command, :metadata) || %{}
-    key = field(metadata, :idempotency_key)
-    candidate_digest = field(candidate, :candidate_digest)
+    metadata = AshA2A.Gall.Fields.get(command, :metadata) || %{}
+    key = AshA2A.Gall.Fields.get(metadata, :idempotency_key)
+    candidate_digest = AshA2A.Gall.Fields.get(candidate, :candidate_digest)
     expected = key_for(candidate_digest)
 
     cond do
@@ -28,6 +28,4 @@ defmodule AshA2A.Gall.Closure.IdempotencyPolicy do
 
   def key_for(candidate_digest) when is_binary(candidate_digest),
     do: "gall:" <> Determinism.digest(candidate_digest)
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

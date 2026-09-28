@@ -2,8 +2,8 @@ defmodule AshA2A.Gall.Closure.ProducerPolicy do
   @moduledoc "Pins each admitted producer repository to one exact source SHA."
 
   def admit(candidate, allowed) when is_map(candidate) and is_map(allowed) do
-    repo = field(candidate, :producer_repository)
-    sha = field(candidate, :producer_sha)
+    repo = AshA2A.Gall.Fields.get(candidate, :producer_repository)
+    sha = AshA2A.Gall.Fields.get(candidate, :producer_sha)
 
     case Map.fetch(allowed, repo) do
       {:ok, ^sha} ->
@@ -18,6 +18,4 @@ defmodule AshA2A.Gall.Closure.ProducerPolicy do
   end
 
   def admit(_, _), do: {:error, {:refused_gall, :producer_policy, :invalid_policy}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

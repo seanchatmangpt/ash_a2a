@@ -221,15 +221,22 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
 
     if is_binary(command_id) and String.starts_with?(command_id, config.prefix) and
          is_binary(meta[:receipt_id]) do
-      path =
-        Path.join(
-          ReceiptOutbox.dir(),
-          Identity.external(Identity.runtime(meta[:receipt_id])) <> ".receipt"
-        )
+      # Read the anchor through the journal's own decoder (it verifies the
+      # RFC-SA2A-004 integrity tag and finds the command-keyed file), then
+      # re-encode it in the journal term format the evidence chain consumes.
+      case Enum.find(ReceiptOutbox.entries(), fn receipt ->
+             receipt.command_id.value == command_id and
+               Identity.external(receipt.receipt_id) ==
+                 Identity.external(Identity.runtime(meta[:receipt_id]))
+           end) do
+        %AshA2A.Receipt{} = receipt ->
+          send(
+            config.collector,
+            {:replay_prepared, command_id, EvidenceChain.encode_receipt(receipt)}
+          )
 
-      case File.read(path) do
-        {:ok, bytes} -> send(config.collector, {:replay_prepared, command_id, bytes})
-        _ -> :ok
+        nil ->
+          :ok
       end
     end
 

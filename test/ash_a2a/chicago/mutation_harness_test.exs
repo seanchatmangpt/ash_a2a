@@ -517,9 +517,14 @@ defmodule AshA2A.Chicago.MutationHarnessTest do
       resolution = Map.new(Catalog.resolution(), &{&1.id, &1})
 
       expected_kills = %{
+        # RFC-SA2A-004 S10: the pre-DO gate now independently re-checks
+        # expiry, so an expired authority (MUTGUARD-003) is refused at the
+        # gate even when `admit/2` / `admits?/2` is mutated to accept it. That
+        # is defense in depth, not a lost guard: 003 stays a killer of
+        # `ignore_expiry`, which mutates the expiry check both layers share.
         "authority_check_true" =>
-          ~w(CHI-MUTGUARD-001 CHI-MUTGUARD-002 CHI-MUTGUARD-003 CHI-MUTGUARD-004 CHI-MUTGUARD-006),
-        "authority_admits_true" => ~w(CHI-MUTGUARD-002 CHI-MUTGUARD-003),
+          ~w(CHI-MUTGUARD-001 CHI-MUTGUARD-002 CHI-MUTGUARD-004 CHI-MUTGUARD-006),
+        "authority_admits_true" => ~w(CHI-MUTGUARD-002),
         "ignore_expiry" => ~w(CHI-MUTGUARD-003),
         "ignore_revocation" => ~w(CHI-MUTGUARD-004),
         # Without a prepared anchor the sole-DO dispatcher (CHI-BRCE Gate 7)

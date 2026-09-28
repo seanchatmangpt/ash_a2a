@@ -38,6 +38,30 @@ defmodule AshA2A.Gall.Fields do
     end
   end
 
+  @doc """
+  Key-presence lookup of `key` (atom) then `to_string(key)` in a map. A key that
+  is present with a `nil`/`false` value is returned as `{:ok, value}`; it is never
+  skipped in favour of the other key style (unlike `Map.get(m, k) || Map.get(m, s)`).
+  """
+  @spec fetch(term(), atom() | String.t()) :: {:ok, term()} | :error
+  def fetch(map, key) when is_map(map) do
+    case Map.fetch(map, key) do
+      {:ok, _} = ok -> ok
+      :error -> Map.fetch(map, to_string(key))
+    end
+  end
+
+  def fetch(_other, _key), do: :error
+
+  @doc "Like `fetch/2` but returns the value, or `nil` when neither key is present."
+  @spec get(term(), atom() | String.t()) :: term()
+  def get(map, key) do
+    case fetch(map, key) do
+      {:ok, value} -> value
+      :error -> nil
+    end
+  end
+
   @doc "True when the value is a binary with an IRI-style scheme prefix."
   @spec iri?(term()) :: boolean()
   def iri?(value) when is_binary(value) do

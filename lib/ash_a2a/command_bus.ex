@@ -164,6 +164,10 @@ defmodule AshA2A.CommandBus do
   def __sa2a_refusal_codes__ do
     %{
       kill_switch_unavailable: :blocked_resource,
+      authority_revoked: :refused_authority,
+      authority_expired: :refused_authority,
+      authority_constraint_mismatch: :refused_authority,
+      authority_revalidation_unavailable: :blocked_resource,
       stale_execution: :refused_identity,
       dispatch_timeout: :blocked_resource,
       dispatch_lost: :blocked_resource
@@ -319,30 +323,44 @@ defmodule AshA2A.CommandBus do
            prepare_receipt_anchor(command, execution_id, consequence, receipt_opts)
          ) do
       {:ok, anchor} ->
-        case confirm_execution(store, command, execution_id, anchor, store_opts) do
-          :ok ->
-            # OBS-04: the OCEL forwarder stashes dispatch correlation in this
-            # process; it is consumed only when a receipt event is emitted.
-            # Clear it on every exit from the consequence path (outbox,
-            # error, timeout), never only on the happy path.
-            try do
-              execute_anchored(
-                command,
-                execution_id,
-                consequence,
-                skill,
-                message,
-                resource_or_domain,
-                store,
-                store_opts,
-                opts,
-                actuation,
-                receipt_opts,
-                anchor
-              )
-            after
-              Process.delete(@ocel_pending_key)
-            end
+        with :ok <- confirm_execution(store, command, execution_id, anchor, store_opts),
+             :ok <- pre_do_gate(command, consequence, opts) do
+          # OBS-04: the OCEL forwarder stashes dispatch correlation in this
+          # process; it is consumed only when a receipt event is emitted.
+          # Clear it on every exit from the consequence path (outbox,
+          # error, timeout), never only on the happy path.
+          try do
+            execute_anchored(
+              command,
+              execution_id,
+              consequence,
+              skill,
+              message,
+              resource_or_domain,
+              store,
+              store_opts,
+              opts,
+              actuation,
+              receipt_opts,
+              anchor
+            )
+          after
+            Process.delete(@ocel_pending_key)
+          end
+        else
+          {:gate_refused, error} ->
+            refuse_before_do(
+              store,
+              command,
+              execution_id,
+              consequence,
+              store_opts,
+              receipt_opts,
+              actuation,
+              anchor,
+              opts,
+              error
+            )
 
           {:error, reason} ->
             # Superseded (or unverifiable) before DO: nothing crossed the
@@ -585,11 +603,28 @@ defmodule AshA2A.CommandBus do
       |> Keyword.get(:intended_effect, %{})
       |> Map.new()
       |> Map.merge(release_attributes)
+      |> Map.merge(dedup_compat(opts))
 
     [actuation: actuation]
     |> maybe_put(:plan_digest, Keyword.get(opts, :plan_digest))
     |> maybe_put(:evidence_class, Keyword.get(opts, :evidence_class))
     |> maybe_put(:intended_effect, nonempty_map(intended_effect))
+  end
+
+  defp dedup_mode_normalized(opts) do
+    case actuation_dedup_mode(opts) do
+      :declared -> :declared
+      :off -> :off
+      _strict -> :strict
+    end
+  end
+
+  defp dedup_compat(opts) do
+    case dedup_mode_normalized(opts) do
+      :declared -> %{actuation_dedup_compat: :declared_legacy}
+      :off -> %{actuation_dedup_compat: :off_legacy}
+      :strict -> %{}
+    end
   end
 
   defp nonempty_map(map) when map_size(map) == 0, do: nil
@@ -599,30 +634,22 @@ defmodule AshA2A.CommandBus do
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   @doc """
-  The RFC-SA2A-001 S55 actuation dedup mode currently in force.
+  The RFC-SA2A-001 S55 / RFC-SA2A-004 S11 actuation dedup mode currently in force.
 
-    * `:declared` (default) -- enforce only for a command that carries an
-      explicit idempotency token (`metadata[:idempotency_key]`, the authority's
-      `:external_idempotency_token` constraint, or `opts[:idempotency_key]`).
-    * `:strict` -- enforce on the derived effect digest alone, so two distinct
-      command ids naming the same effect deduplicate even with no declared
-      token.
-    * `:off` -- never actuation-claim; command-id claiming only.
-
-  `:declared` is the default deliberately. With no client-declared key, "same
-  capability, same principal, same input, again" is genuinely ambiguous between
-  a dropped-response retry and a second intentional request -- creating two
-  identically-labelled records is a real, legitimate operation. Silently
-  collapsing those would refuse real work on the strength of a guess. S55's
-  requirement is met the way S55 words it: the identities are always derived
-  and always recorded on the receipt, and BRCE detects and refuses a repeat
-  whenever the caller has actually declared the effect idempotent. `:strict` is
-  available for a deployment whose capabilities are all genuinely idempotent.
+    * `:strict` (default) -- the effect claim is mandatory for `:change` and
+      `:external_do`: it is enforced on the derived effect digest, so two
+      distinct command ids (fresh requests) naming the same effect cannot cross
+      DO twice, with or without a declared idempotency token.
+    * `:declared` -- LEGACY opt-in. Enforce only for a command that carries an
+      explicit idempotency token. Receipts record
+      `intended_effect.actuation_dedup_compat == :declared_legacy`.
+    * `:off` -- LEGACY opt-in. Never actuation-claim; command-id claiming only.
+      Receipts record `intended_effect.actuation_dedup_compat == :off_legacy`.
   """
-  @spec actuation_dedup_mode(keyword()) :: :declared | :strict | :off
+  @spec actuation_dedup_mode(keyword()) :: :strict | :declared | :off
   def actuation_dedup_mode(opts \\ []) do
     Keyword.get(opts, :actuation_dedup) ||
-      Application.get_env(:ash_a2a, :actuation_dedup, :declared)
+      Application.get_env(:ash_a2a, :actuation_dedup, :strict)
   end
 
   defp claim_actuation(store, actuation, command, consequence, store_opts, opts)
@@ -644,9 +671,9 @@ defmodule AshA2A.CommandBus do
   defp enforce_actuation?(store, %Actuation{} = actuation, opts) do
     actuation_aware?(store) and
       case actuation_dedup_mode(opts) do
-        :strict -> true
         :declared -> actuation.external_token?
-        _ -> false
+        :off -> false
+        _strict -> true
       end
   end
 
@@ -951,7 +978,7 @@ defmodule AshA2A.CommandBus do
   # publishing its state) refuses -- fail closed -- instead of letting the
   # exit propagate into, and kill, the calling agent process.
   defp check_kill_switch(opts) do
-    case Keyword.get(opts, :kill_switch_class) do
+    case kill_switch_class(opts) do
       nil ->
         :ok
 
@@ -965,6 +992,166 @@ defmodule AshA2A.CommandBus do
     _error -> kill_switch_unavailable()
   catch
     :exit, _reason -> kill_switch_unavailable()
+  end
+
+  # RFC-SA2A-004 S11: the class may be named per call or host-wide
+  # (`config :ash_a2a, :kill_switch_class`); the per-call opt wins.
+  defp kill_switch_class(opts) do
+    Keyword.get(opts, :kill_switch_class) || Application.get_env(:ash_a2a, :kill_switch_class)
+  end
+
+  # RFC-SA2A-004 S10/S11: AUTHORITY_REVALIDATED. Immediately before DO --
+  # after the anchor is persisted and the claim confirmed -- authority is
+  # re-checked against the authoritative broker (when one is configured) and
+  # the kill switch is consulted again. Either failing means no DO.
+  defp pre_do_gate(command, consequence, opts) do
+    with :ok <- revalidate_authority(command, consequence, opts),
+         :ok <- gate_result(check_kill_switch(opts)) do
+      :ok
+    end
+  end
+
+  defp gate_result(:ok), do: :ok
+  defp gate_result({:error, error}), do: {:gate_refused, error}
+
+  defp revalidate_authority(_command, :observe, _opts), do: :ok
+
+  defp revalidate_authority(%Command{authority: %Authority{} = authority} = command, _c, opts) do
+    with :ok <- constraints_gate(authority, command) do
+      case resolve_authority_broker(authority, opts) do
+        :none ->
+          if Authority.expired?(authority),
+            do: {:gate_refused, refusal(:authority_expired)},
+            else: :ok
+
+        {module, broker_opts} ->
+          if standing_grant?(authority) do
+            standing_with_broker(module, broker_opts, authority)
+          else
+            verify_with_broker(module, broker_opts, authority)
+          end
+      end
+    end
+  end
+
+  # No authority struct means `admit/2` already had to refuse (authority is
+  # required for every consequential capability). There is nothing to
+  # revalidate here, and this gate deliberately does not become a second,
+  # masking copy of `admit/2`'s presence check: a mutant of that single guard
+  # must stay observable to the mutation courts (CHI-SELFTEST / CHI-MUTGUARD).
+  defp revalidate_authority(_command, _consequence, _opts), do: :ok
+
+  # An authority synthesized on the dispatch path (`from_verified_identity/3`)
+  # is a STANDING claim keyed by `Authority.grant_token_id/2`, admitted under
+  # policy `:broker` by `Broker.granted?/3`; the broker never issued it as an
+  # individual token, so revalidation asks the same question admission asked.
+  defp standing_grant?(%Authority{admitted_by: {_module, _opts}}), do: true
+
+  defp standing_grant?(%Authority{source: :transport_verified} = authority) do
+    Application.get_env(:ash_a2a, :authority_policy, :broker) == :broker and
+      authority.token_id.value ==
+        Authority.grant_token_id(authority.subject, authority.capability_id)
+  end
+
+  defp standing_grant?(_authority), do: false
+
+  defp standing_with_broker(module, broker_opts, authority) do
+    cond do
+      Authority.expired?(authority) ->
+        {:gate_refused, refusal(:authority_expired)}
+
+      Code.ensure_loaded?(module) and function_exported?(module, :granted?, 3) ->
+        if module.granted?(authority.subject, authority.capability_id, broker_opts),
+          do: :ok,
+          else: {:gate_refused, refusal(:authority_revoked)}
+
+      true ->
+        {:gate_refused, revalidation_unavailable()}
+    end
+  rescue
+    _error -> {:gate_refused, revalidation_unavailable()}
+  catch
+    :exit, _reason -> {:gate_refused, revalidation_unavailable()}
+  end
+
+  defp constraints_gate(authority, command) do
+    if Authority.constraints_satisfied?(authority, command),
+      do: :ok,
+      else: {:gate_refused, refusal(:authority_constraint_mismatch)}
+  end
+
+  # The per-call opt wins; otherwise the broker that ADMITTED this standing
+  # authority (`Authority.admitted_by`, set by `Grant.authorize/3`), so the
+  # revalidation asks the same broker admission asked; otherwise the host-wide
+  # configured broker.
+  defp resolve_authority_broker(%Authority{admitted_by: admitted_by}, opts) do
+    case Keyword.get(opts, :authority_broker) || admitted_by ||
+           Application.get_env(:ash_a2a, :authority_broker) do
+      {module, broker_opts} when is_atom(module) and is_list(broker_opts) -> {module, broker_opts}
+      module when is_atom(module) and not is_nil(module) -> {module, []}
+      _none -> :none
+    end
+  end
+
+  defp verify_with_broker(module, broker_opts, authority) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :verify, 2) do
+      case module.verify(authority, broker_opts) do
+        {:ok, _authority} ->
+          :ok
+
+        {:error, %{reason: :expired}} ->
+          {:gate_refused, refusal(:authority_expired)}
+
+        {:error, _revoked_or_mismatch} ->
+          {:gate_refused, refusal(:authority_revoked)}
+
+        _other ->
+          {:gate_refused, revalidation_unavailable()}
+      end
+    else
+      {:gate_refused, revalidation_unavailable()}
+    end
+  rescue
+    _error -> {:gate_refused, revalidation_unavailable()}
+  catch
+    :exit, _reason -> {:gate_refused, revalidation_unavailable()}
+  end
+
+  defp revalidation_unavailable do
+    %{
+      code: :authority_revalidation_unavailable,
+      detail: "authoritative broker could not be consulted immediately before DO (fail closed)"
+    }
+  end
+
+  # Pre-DO refusal after the anchor was persisted: nothing crossed the
+  # consequence boundary, so the anchor and the actuation claim are released
+  # and the still-open command claim is closed with a real refusal receipt.
+  defp refuse_before_do(
+         store,
+         command,
+         execution_id,
+         consequence,
+         store_opts,
+         receipt_opts,
+         actuation,
+         anchor,
+         opts,
+         %{code: code} = error
+       ) do
+    if anchor, do: ReceiptOutbox.remove(anchor)
+    release_actuation(store, actuation, consequence, store_opts, opts)
+
+    receipt =
+      command
+      |> Receipt.from_reply(execution_id, consequence, {:error, error}, receipt_opts)
+      |> mark_standing(store)
+
+    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    _ = commit_with_retries(store, receipt, store_opts, delays)
+    emit_boundary([:pre_do_gate], command, %{outcome: :refused, code: code})
+
+    {:error, Map.put(error, :receipt, receipt)}
   end
 
   defp kill_switch_unavailable do

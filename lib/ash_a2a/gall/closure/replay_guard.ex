@@ -2,12 +2,12 @@ defmodule AshA2A.Gall.Closure.ReplayGuard do
   @moduledoc "Classifies exact replay without permitting a second consequence."
 
   def classify(previous, current) when is_map(previous) and is_map(current) do
-    prev_command = field(previous, :command_id)
-    curr_command = field(current, :command_id)
-    prev_actuation = field(previous, :actuation_id)
-    curr_actuation = field(current, :actuation_id)
-    prev_key = field(previous, :idempotency_key)
-    curr_key = field(current, :idempotency_key)
+    prev_command = AshA2A.Gall.Fields.get(previous, :command_id)
+    curr_command = AshA2A.Gall.Fields.get(current, :command_id)
+    prev_actuation = AshA2A.Gall.Fields.get(previous, :actuation_id)
+    curr_actuation = AshA2A.Gall.Fields.get(current, :actuation_id)
+    prev_key = AshA2A.Gall.Fields.get(previous, :idempotency_key)
+    curr_key = AshA2A.Gall.Fields.get(current, :idempotency_key)
 
     cond do
       prev_key == curr_key and not is_nil(prev_key) and prev_actuation == curr_actuation ->
@@ -25,6 +25,4 @@ defmodule AshA2A.Gall.Closure.ReplayGuard do
   end
 
   def classify(_, _), do: {:error, {:refused_gall, :replay_guard, :invalid_receipt}}
-
-  defp field(map, key), do: Map.get(map, key) || Map.get(map, to_string(key))
 end

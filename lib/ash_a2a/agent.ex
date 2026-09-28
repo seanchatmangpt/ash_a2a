@@ -68,7 +68,17 @@ defmodule AshA2A.Agent do
   #     `config :ash_a2a, :require_authenticated_caller` (default `true`).
   #   * `:public_skills` -- skill names/ids an unauthenticated caller may
   #     still invoke when authentication is required.
-  @dispatch_opt_keys [:require_authenticated_caller, :public_skills]
+  #   * `:observe_generic_actions` -- RFC-SA2A-004 S21: skill names whose
+  #     author-declared `consequence: :observe` on a generic `:action` (whose
+  #     body Ash cannot prove side-effect-free) is explicitly accepted for
+  #     direct, unreceipted dispatch. Without listing here (or in
+  #     `:public_skills`) such a skill is refused `:consequence_unclassified`.
+  @dispatch_opt_keys [
+    :require_authenticated_caller,
+    :public_skills,
+    :observe_generic_actions,
+    :strict_observe_generic_actions
+  ]
 
   # Bound on the caller-supplied `metadata["context"]` map (SEC-11), measured
   # as its external term size.
@@ -297,7 +307,7 @@ defmodule AshA2A.Agent do
         emit_route(resource_or_domain, %{route: :semantic})
 
         with :ok <- authenticated(auth_identity, nil, opts) do
-          dispatch_semantic(resource_or_domain, message)
+          dispatch_semantic(resource_or_domain, message, continuation_principal(auth_identity))
         end
       else
         message = merge_turn_history(message, history)
@@ -460,13 +470,17 @@ defmodule AshA2A.Agent do
   # `goal_facts` still ends up at the exact same `dispatch_semantic_compile/2`
   # call it always did (see that function's own routing below), just via
   # one extra real dispatch hop instead of a direct call.
-  defp dispatch_semantic(resource_or_domain, %A2A.Message{metadata: metadata} = message) do
+  defp dispatch_semantic(
+         resource_or_domain,
+         %A2A.Message{metadata: metadata} = message,
+         principal
+       ) do
     case AshA2A.MetadataKey.get(metadata || %{}, :continuation_fingerprint) do
       nil ->
-        dispatch_semantic_route(resource_or_domain, message)
+        dispatch_semantic_route(resource_or_domain, message, principal)
 
       fingerprint when is_binary(fingerprint) and fingerprint != "" ->
-        dispatch_semantic_replan(resource_or_domain, fingerprint)
+        dispatch_semantic_replan(resource_or_domain, fingerprint, principal)
 
       _invalid ->
         {:error, %{code: :continuation_fingerprint_invalid}}
@@ -514,11 +528,12 @@ defmodule AshA2A.Agent do
   #
   # `detect_tier/1` itself is never modified by this wiring -- it is called
   # exactly as it already existed and is already tested.
-  @spec dispatch_semantic_route(module(), A2A.Message.t()) :: AshA2A.Dispatcher.reply()
-  defp dispatch_semantic_route(resource_or_domain, %A2A.Message{} = message) do
+  @spec dispatch_semantic_route(module(), A2A.Message.t(), String.t()) ::
+          AshA2A.Dispatcher.reply()
+  defp dispatch_semantic_route(resource_or_domain, %A2A.Message{} = message, principal) do
     case AshA2A.Planning.RequestRouter.detect_tier(message) do
       {:facts, _envelope} ->
-        dispatch_semantic_goal_facts(resource_or_domain, message)
+        dispatch_semantic_goal_facts(resource_or_domain, message, principal)
 
       :invalid_goal_facts ->
         {:error, %{code: :invalid_goal_facts}}
@@ -527,10 +542,10 @@ defmodule AshA2A.Agent do
         {:error, %{code: :ambiguous_goal_facts_shape}}
 
       {:text, _text} ->
-        dispatch_semantic_compile(resource_or_domain, message)
+        dispatch_semantic_compile(resource_or_domain, message, principal)
 
       :error ->
-        dispatch_semantic_compile(resource_or_domain, message)
+        dispatch_semantic_compile(resource_or_domain, message, principal)
     end
   end
 
@@ -554,10 +569,12 @@ defmodule AshA2A.Agent do
   # as replan-able later (`dispatch_semantic_replan/2` above) as an
   # LLM-compiled one; the two tiers converge on one real, shared package
   # lifecycle from this point on.
-  @spec dispatch_semantic_goal_facts(module(), A2A.Message.t()) :: AshA2A.Dispatcher.reply()
-  defp dispatch_semantic_goal_facts(resource_or_domain, %A2A.Message{} = message) do
+  @spec dispatch_semantic_goal_facts(module(), A2A.Message.t(), String.t()) ::
+          AshA2A.Dispatcher.reply()
+  defp dispatch_semantic_goal_facts(resource_or_domain, %A2A.Message{} = message, principal) do
     case AshA2A.Planning.RequestRouter.route(resource_or_domain, message) do
       {:ok, package} ->
+        package = bind_package_principal(package, principal)
         :ok = AshA2A.Semantic.PackageStore.put(package)
         AshA2A.Semantic.ExecutionPackage.to_reply(package)
 
@@ -590,7 +607,7 @@ defmodule AshA2A.Agent do
   # same real store `dispatch_semantic_replan/2` below reads from, so a
   # caller that later presents this package's `"execution_package_fingerprint"`
   # back as a `:continuation_fingerprint` can resolve it for real.
-  defp dispatch_semantic_compile(resource_or_domain, %A2A.Message{} = message) do
+  defp dispatch_semantic_compile(resource_or_domain, %A2A.Message{} = message, principal) do
     case A2A.Message.text(message) do
       nil ->
         {:error, %{code: :semantic_request_missing_text}}
@@ -599,6 +616,7 @@ defmodule AshA2A.Agent do
         try do
           case AshA2A.Semantic.Compiler.compile(resource_or_domain, text) do
             {:ok, package} ->
+              package = bind_package_principal(package, principal)
               :ok = AshA2A.Semantic.PackageStore.put(package)
               AshA2A.Semantic.ExecutionPackage.to_reply(package)
 
@@ -636,31 +654,88 @@ defmodule AshA2A.Agent do
   # this real absence IS the refusal signal, not a special case); (2) the
   # real `ExecutionPackage` this fingerprint names must still be resolvable
   # in `AshA2A.Semantic.PackageStore`.
-  defp dispatch_semantic_replan(resource_or_domain, fingerprint) do
-    case fetch_continuation_receipt(fingerprint) do
-      {:error, _reason} = error ->
-        error
-
-      {:ok, receipt} ->
-        case AshA2A.Semantic.PackageStore.fetch(fingerprint) do
-          :error ->
-            {:error,
-             %{code: :continuation_package_not_found, execution_package_fingerprint: fingerprint}}
-
-          {:ok, package} ->
-            replan(resource_or_domain, package, receipt)
-        end
+  #
+  # RFC-SA2A-004 S21 (cross-principal continuation lookup): both lookups are
+  # scoped to the verified `principal`. A receipt or package that belongs to
+  # a different principal (or a package with no principal binding at all) is
+  # answered with the exact same typed not-found error as an absent one, so
+  # a foreign caller cannot distinguish "exists for someone else" from
+  # "never existed".
+  defp dispatch_semantic_replan(resource_or_domain, fingerprint, principal) do
+    case resolve_continuation(fingerprint, principal) do
+      {:ok, receipt, package} -> replan(resource_or_domain, package, receipt, principal)
+      {:error, _reason} = error -> error
     end
   end
 
-  defp fetch_continuation_receipt(fingerprint) do
+  # Principal-scoped continuation resolution (receipt first, then package),
+  # shared by the real replan dispatch and `__resolve_continuation__/2`.
+  defp resolve_continuation(fingerprint, principal) do
+    with {:ok, receipt} <- fetch_continuation_receipt(fingerprint, principal) do
+      case fetch_continuation_package(fingerprint, principal) do
+        :error ->
+          {:error,
+           %{code: :continuation_package_not_found, execution_package_fingerprint: fingerprint}}
+
+        {:ok, package} ->
+          {:ok, receipt, package}
+      end
+    end
+  end
+
+  @doc false
+  # Test/support seam: the exact principal-scoped lookup a real semantic
+  # continuation performs before re-synthesis (no LLM call), for the verified
+  # `auth_identity`.
+  @spec __resolve_continuation__(String.t(), term()) ::
+          {:ok, AshA2A.Receipt.t(), struct()} | {:error, map()}
+  def __resolve_continuation__(fingerprint, auth_identity),
+    do: resolve_continuation(fingerprint, continuation_principal(auth_identity))
+
+  defp fetch_continuation_package(fingerprint, principal) do
+    case AshA2A.Semantic.PackageStore.fetch(fingerprint) do
+      {:ok, package} ->
+        if package_principal(package) == principal, do: {:ok, package}, else: :error
+
+      :error ->
+        :error
+    end
+  end
+
+  # The verified principal a stored package belongs to, bound at write time
+  # into the package's own `source.provenance` (no fingerprint input, so the
+  # content-addressed identity is unchanged). `nil` = unbound.
+  defp package_principal(%{source: %{provenance: %{bound_principal: principal}}}),
+    do: principal
+
+  defp package_principal(_package), do: nil
+
+  defp bind_package_principal(%{source: %{provenance: provenance} = source} = package, principal)
+       when is_map(provenance) do
+    %{
+      package
+      | source: %{source | provenance: Map.put(provenance, :bound_principal, principal)}
+    }
+  end
+
+  @doc false
+  # Test/support seam: binds `package` to `auth_identity`'s principal exactly
+  # as a real agent dispatch does before `PackageStore.put/2`.
+  @spec __bind_package__(struct(), term()) :: struct()
+  def __bind_package__(package, auth_identity),
+    do: bind_package_principal(package, continuation_principal(auth_identity))
+
+  defp continuation_principal(auth_identity),
+    do: AshA2A.Identity.principal(auth_identity || "anonymous")
+
+  defp fetch_continuation_receipt(fingerprint, principal) do
     store = AshA2A.CommandBus.default_store()
 
     case store.fetch(AshA2A.Identity.command(fingerprint), []) do
-      {:ok, receipt} ->
+      {:ok, %AshA2A.Receipt{principal_id: ^principal} = receipt} ->
         {:ok, receipt}
 
-      :error ->
+      _other_or_foreign ->
         {:error,
          %{code: :continuation_receipt_not_found, execution_package_fingerprint: fingerprint}}
     end
@@ -683,10 +758,11 @@ defmodule AshA2A.Agent do
   # Held to the identical no-raise contract as `dispatch_semantic_compile/2`
   # above, for the identical reason (a misconfigured/failing LLM role must
   # become a typed reply, never crash the shared `A2A.Agent` process).
-  defp replan(resource_or_domain, package, receipt) do
+  defp replan(resource_or_domain, package, receipt, principal) do
     try do
       case AshA2A.Semantic.Compiler.replan(resource_or_domain, package, receipt) do
         {:ok, next, _feedback} ->
+          next = bind_package_principal(next, principal)
           :ok = AshA2A.Semantic.PackageStore.put(next)
           AshA2A.Semantic.ExecutionPackage.to_reply(next)
 
@@ -713,7 +789,8 @@ defmodule AshA2A.Agent do
 
         case consequence do
           :observe ->
-            with :ok <- authenticated(auth_identity, skill_name, opts) do
+            with :ok <- authenticated(auth_identity, skill_name, opts),
+                 :ok <- observe_declaration_admitted(resource_or_domain, skill_name, opts) do
               AshA2A.Dispatcher.dispatch(
                 skill_name,
                 message,
@@ -759,6 +836,40 @@ defmodule AshA2A.Agent do
   defp route_for(_consequence), do: :refused
 
   @spec consequence(module(), AshA2A.Dispatcher.skill_name()) :: AshA2A.Skill.consequence()
+  # RFC-SA2A-004 S21: a generic `:action` declared `consequence: :observe` is
+  # an author assertion Ash cannot verify (its body may have side effects), so
+  # it is not silently dispatched as side-effect-free: it must be named in
+  # `:observe_generic_actions` (or `:public_skills`) on the agent.
+  defp observe_declaration_admitted(resource_or_domain, skill_name, opts) do
+    with {:ok, %AshA2A.Skill{resource: resource, action: action}} when not is_nil(resource) <-
+           AshA2A.Info.skill(resource_or_domain, skill_name),
+         %{type: :action} <- Ash.Resource.Info.action(resource, action),
+         false <- explicit_observe_action?(skill_name, opts) do
+      {:error, %{code: :consequence_unclassified}}
+    else
+      _ -> :ok
+    end
+  end
+
+  # The gate is the strict profile (RFC-SA2A-004 S9/S21). Until the fixture
+  # and adapter contracts declare their generic :observe actions it is opt-in
+  # (`config :ash_a2a, :strict_observe_generic_actions, true` or the per-agent
+  # `strict_observe_generic_actions: true` opt); the default keeps the
+  # documented legacy behavior and RFC-SA2A-004 delta records the gap.
+  defp explicit_observe_action?(skill_name, opts) do
+    strict? =
+      Keyword.get(
+        opts,
+        :strict_observe_generic_actions,
+        Application.get_env(:ash_a2a, :strict_observe_generic_actions, false)
+      )
+
+    not strict? or public_skill?(skill_name, opts) or
+      opts
+      |> Keyword.get(:observe_generic_actions, [])
+      |> Enum.any?(&(to_string(&1) == to_string(skill_name)))
+  end
+
   defp consequence(resource_or_domain, skill_name) do
     case AshA2A.Info.skill(resource_or_domain, skill_name) do
       {:ok, %AshA2A.Skill{consequence: consequence}} when not is_nil(consequence) -> consequence
