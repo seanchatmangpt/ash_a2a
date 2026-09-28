@@ -87,7 +87,10 @@ defmodule AshA2A.CancelInflightTest do
     # this telemetry event, and it only fires from inside
     # `A2A.Agent.Runtime.run_cancel/2`, which only runs for a real
     # non-terminal task (`~/xaas/deps/a2a/lib/a2a/agent.ex:305-309`).
-    assert_receive {:ash_a2a_cancel_telemetry, cancel_meta}, 1_000
+    # Pinned on task_id: async modules cancel concurrently and fire the same
+    # global telemetry event, so the first message may belong to another test.
+    task_id = task.id
+    assert_receive {:ash_a2a_cancel_telemetry, %{task_id: ^task_id} = cancel_meta}, 1_000
     assert cancel_meta.task_id == task.id
     assert cancel_meta.resource_or_domain == StreamItem
 
