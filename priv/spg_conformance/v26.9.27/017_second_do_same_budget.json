@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "intervention.second_do_same_budget",
+        "value": false,
+        "refusal_code": "SPG_INTERVENTION_SECOND_DO_SAME_BUDGET"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_INTERVENTION_SECOND_DO_SAME_BUDGET"

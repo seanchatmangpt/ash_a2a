@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "spg.duplicate_procedural_vocab",
+        "value": false,
+        "refusal_code": "SPG_SPG_DUPLICATE_PROCEDURAL_VOCAB"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_SPG_DUPLICATE_PROCEDURAL_VOCAB"

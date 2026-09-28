@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "spg.orphan_command",
+        "value": false,
+        "refusal_code": "SPG_SPG_ORPHAN_COMMAND"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_SPG_ORPHAN_COMMAND"

@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "falsifier.counterexample_invalidates_candidate",
+        "value": false,
+        "refusal_code": "SPG_FALSIFIER_COUNTEREXAMPLE_INVALIDATES_CANDIDATE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_FALSIFIER_COUNTEREXAMPLE_INVALIDATES_CANDIDATE"

@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "replay.receipt_missing_source",
+        "value": false,
+        "refusal_code": "SPG_REPLAY_RECEIPT_MISSING_SOURCE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_REPLAY_RECEIPT_MISSING_SOURCE"

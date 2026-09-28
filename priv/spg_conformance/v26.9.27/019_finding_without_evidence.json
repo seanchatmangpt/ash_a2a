@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "intervention.finding_without_evidence",
+        "value": false,
+        "refusal_code": "SPG_INTERVENTION_FINDING_WITHOUT_EVIDENCE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_INTERVENTION_FINDING_WITHOUT_EVIDENCE"

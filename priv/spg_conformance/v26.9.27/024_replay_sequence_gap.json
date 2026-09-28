@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "ocel.replay_sequence_gap",
+        "value": false,
+        "refusal_code": "SPG_OCEL_REPLAY_SEQUENCE_GAP"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_OCEL_REPLAY_SEQUENCE_GAP"

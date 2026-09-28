@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "identity.source_repo_mismatch",
+        "value": false,
+        "refusal_code": "SPG_IDENTITY_SOURCE_REPO_MISMATCH"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_IDENTITY_SOURCE_REPO_MISMATCH"

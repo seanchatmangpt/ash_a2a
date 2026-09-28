@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "recovery.no_lawful_edge",
+        "value": false,
+        "refusal_code": "SPG_RECOVERY_NO_LAWFUL_EDGE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_RECOVERY_NO_LAWFUL_EDGE"

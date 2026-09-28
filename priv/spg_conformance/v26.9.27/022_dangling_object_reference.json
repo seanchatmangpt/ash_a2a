@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "ocel.dangling_object_reference",
+        "value": false,
+        "refusal_code": "SPG_OCEL_DANGLING_OBJECT_REFERENCE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_OCEL_DANGLING_OBJECT_REFERENCE"
