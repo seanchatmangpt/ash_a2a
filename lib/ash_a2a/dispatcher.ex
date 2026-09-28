@@ -80,6 +80,8 @@ defmodule AshA2A.Dispatcher do
   either.
   """
 
+  require Logger
+
   alias A2A.Message
   alias A2A.Part
 
@@ -139,15 +141,81 @@ defmodule AshA2A.Dispatcher do
         opts \\ []
       )
       when is_list(history) and is_list(opts) do
-    start_meta = %{resource_or_domain: resource_or_domain, skill_name: skill_name}
+    start_meta =
+      %{resource_or_domain: resource_or_domain, skill_name: skill_name}
+      |> Map.merge(correlation_meta(a2a_message, opts))
 
-    :telemetry.span([:ash_a2a, :dispatch], start_meta, fn ->
-      {reply, object_id} =
-        do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
+    with_logger_correlation(start_meta, fn ->
+      :telemetry.span([:ash_a2a, :dispatch], start_meta, fn ->
+        {reply, object_id} =
+          do_dispatch(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
 
-      stop = start_meta |> Map.merge(stop_meta(reply)) |> maybe_put_object_id(object_id)
-      {reply, stop}
+        stop = start_meta |> Map.merge(stop_meta(reply)) |> maybe_put_object_id(object_id)
+        {reply, stop}
+      end)
     end)
+  end
+
+  # OBS-12: request/trace correlation. `:command_id` / `:task_id` come from the
+  # trusted caller (`AshA2A.CommandBus`, `AshA2A.Agent`) via `opts`; a W3C
+  # `traceparent` is accepted from `a2a_message.metadata` ONLY when it is
+  # syntactically a traceparent (it is unauthenticated wire input, used purely
+  # as a correlation key, never for any decision). Absent values are omitted,
+  # so existing start metadata is unchanged for callers that pass none.
+  @traceparent ~r/\A[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}\z/
+
+  @doc false
+  @spec correlation_meta(Message.t(), keyword()) :: map()
+  def correlation_meta(%Message{} = a2a_message, opts) do
+    %{}
+    |> put_correlation(:command_id, correlation_value(Keyword.get(opts, :command_id)))
+    |> put_correlation(:task_id, correlation_value(Keyword.get(opts, :task_id)))
+    |> put_correlation(:traceparent, traceparent(a2a_message))
+  end
+
+  defp put_correlation(meta, _key, nil), do: meta
+  defp put_correlation(meta, key, value), do: Map.put(meta, key, value)
+
+  defp correlation_value(%{value: value}) when is_binary(value) and byte_size(value) <= 256,
+    do: value
+
+  defp correlation_value(value) when is_binary(value) and byte_size(value) <= 256, do: value
+  defp correlation_value(_other), do: nil
+
+  defp traceparent(%Message{metadata: %{"traceparent" => value}})
+       when is_binary(value) and byte_size(value) == 55 do
+    if Regex.match?(@traceparent, value), do: value
+  end
+
+  defp traceparent(_message), do: nil
+
+  # Sets Logger metadata for the duration of one dispatch and restores the
+  # caller's previous values afterwards, so log lines emitted inside the Ash
+  # action can be joined with the dispatch telemetry events without leaking
+  # correlation keys into the caller process's later, unrelated log lines.
+  @logger_keys [:ash_a2a_command_id, :ash_a2a_task_id, :ash_a2a_traceparent, :ash_a2a_skill]
+
+  # `skill_name` is caller input of any shape (dispatch/6 must fail closed,
+  # not raise, on a tuple or map); only a name-shaped value becomes metadata.
+  defp logger_skill(name) when is_binary(name), do: name
+  defp logger_skill(name) when is_atom(name) and not is_nil(name), do: Atom.to_string(name)
+  defp logger_skill(_other), do: nil
+
+  defp with_logger_correlation(meta, fun) do
+    previous = Logger.metadata() |> Keyword.take(@logger_keys)
+
+    Logger.metadata(
+      ash_a2a_command_id: Map.get(meta, :command_id),
+      ash_a2a_task_id: Map.get(meta, :task_id),
+      ash_a2a_traceparent: Map.get(meta, :traceparent),
+      ash_a2a_skill: logger_skill(Map.get(meta, :skill_name))
+    )
+
+    try do
+      fun.()
+    after
+      Logger.metadata(Enum.map(@logger_keys, &{&1, Keyword.get(previous, &1)}))
+    end
   end
 
   # `object_id`, when non-nil, is the real identity of the specific resource
@@ -217,12 +285,20 @@ defmodule AshA2A.Dispatcher do
   defp stop_meta({:input_required, _}), do: %{reply_type: :input_required}
   defp stop_meta({:stream, _}), do: %{reply_type: :stream}
 
+  # OBS-01: the `:error` metadata is a data-free summary
+  # (`AshA2A.Telemetry.Redact.error_summary/1`), never the raw reason term --
+  # raw Ash errors carry input values and crash banners carry arbitrary state,
+  # and this metadata is forwarded to external OCEL ingest and to any generic
+  # logging handler. The dispatch REPLY is unchanged; only telemetry is
+  # redacted. `config :ash_a2a, :telemetry_raw_errors, true` restores raw
+  # terms for in-VM handlers.
   defp stop_meta({:error, {stage, reason}})
        when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :execution] do
-    %{stage: stage, error: reason}
+    %{stage: stage, error: AshA2A.Telemetry.Redact.telemetry_error(reason)}
   end
 
-  defp stop_meta({:error, reason}), do: %{stage: :execution, error: reason}
+  defp stop_meta({:error, reason}),
+    do: %{stage: :execution, error: AshA2A.Telemetry.Redact.telemetry_error(reason)}
 
   # -- Skill lookup -----------------------------------------------------
 

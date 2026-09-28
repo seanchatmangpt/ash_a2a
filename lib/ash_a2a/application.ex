@@ -38,9 +38,32 @@ defmodule AshA2A.Application do
   "host starts it in their own supervision tree" convention -- see
   `AshA2A.Authority.Broker`'s moduledoc, unlike the receipt store, which
   never asked hosts to hand-start `Memory`).
+
+  ## Outbox reconciler (OBS-08 / R7 / DEP-10)
+
+  `AshA2A.ReceiptOutbox.Reconciler` is started by default, after the receipt
+  store and authority broker, so receipts journaled before a crash are
+  drained and its `[:ash_a2a, :receipt_outbox, :reconciler, :tick | :stuck]`
+  backlog signals exist without host wiring. Opt out with
+  `config :ash_a2a, :outbox_reconciler, false` (for example when a host
+  supervises its own instance with custom options). Behaviour change: before
+  this, the reconciler was opt-in and never started here.
+
+  ## Runtime configuration facts (OBS-07)
+
+  At boot this application emits `[:ash_a2a, :runtime, :configured]` with
+  `%{system_time: _}` and the facts from `AshA2A.Health.runtime_facts/0`
+  (receipt store module, whether it is durable, whether its data dir or the
+  receipt outbox dir is under the OS tmp directory, the authority broker).
+  When `config :ash_a2a, :env` is `:prod` (the default) and receipts are not
+  durable, it logs ONE warning. With `config :ash_a2a,
+  :require_durable_receipts, true` it refuses to start instead
+  (`{:error, {:non_durable_receipt_store, facts}}`).
   """
 
   use Application
+
+  require Logger
 
   @impl true
   def start(_type, _args) do
@@ -67,9 +90,19 @@ defmodule AshA2A.Application do
     # standing. See that module's "Standing cannot be forged" section.
     :ok = AshA2A.Semantic.Standing.ensure_ledger_key()
 
+    facts = AshA2A.Health.runtime_facts()
+    :ok = report_runtime(facts)
+
+    with :ok <- enforce_durability(facts) do
+      start_supervisor(agents)
+    end
+  end
+
+  defp start_supervisor(agents) do
     children =
       receipt_store_children() ++
         authority_broker_children() ++
+        outbox_reconciler_children() ++
         [
           # A2A-2602: the OCEL forwarder's per-event supervised tasks are
           # BOUNDED. `max_children` is the hard concurrency ceiling for the
@@ -110,6 +143,51 @@ defmodule AshA2A.Application do
 
     Supervisor.start_link(children, strategy: :one_for_one, name: AshA2A.Supervisor)
   end
+
+  @doc false
+  # Public (undocumented) so the default and the opt-out can be exercised
+  # against the real config without restarting the application.
+  @spec outbox_reconciler_children() :: [Supervisor.child_spec() | {module(), keyword()}]
+  def outbox_reconciler_children do
+    if Application.get_env(:ash_a2a, :outbox_reconciler, true) == false,
+      do: [],
+      else: [{AshA2A.ReceiptOutbox.Reconciler, []}]
+  end
+
+  @doc false
+  @spec report_runtime(map()) :: :ok
+  def report_runtime(facts) do
+    :telemetry.execute(
+      [:ash_a2a, :runtime, :configured],
+      %{system_time: System.system_time()},
+      facts
+    )
+
+    if Application.get_env(:ash_a2a, :env, :prod) == :prod and non_durable?(facts) do
+      Logger.warning(
+        "AshA2A: receipts are not durable in this runtime " <>
+          "(receipt_store=#{inspect(facts.receipt_store)}, durable=#{facts.durable}, " <>
+          "data_dir_tmp=#{facts.data_dir_tmp}, " <>
+          "receipt_outbox_dir_tmp=#{facts.receipt_outbox_dir_tmp}). " <>
+          "Configure AshA2A.ReceiptStore.Ekv with a persistent :data_dir and a " <>
+          "persistent :receipt_outbox_dir, or set config :ash_a2a, :env to a " <>
+          "non-:prod value for development."
+      )
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec enforce_durability(map()) :: :ok | {:error, {:non_durable_receipt_store, map()}}
+  def enforce_durability(facts) do
+    if Application.get_env(:ash_a2a, :require_durable_receipts, false) == true and
+         non_durable?(facts),
+       do: {:error, {:non_durable_receipt_store, facts}},
+       else: :ok
+  end
+
+  defp non_durable?(facts), do: not facts.durable or facts.receipt_outbox_dir_tmp
 
   defp receipt_store_children do
     case Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory) do
