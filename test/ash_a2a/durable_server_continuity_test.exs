@@ -1,4 +1,6 @@
 defmodule AshA2A.Test.FakeDurableServerSupervisor do
+  # ensure_started_child/rehome_child return `{:ok, {pid, meta}}` -- the real
+  # DurableServer.Supervisor success shape the adapter requires (R10).
   def start_link do
     Agent.start_link(fn -> %{active: %{}, persisted: %{}} end)
   end
@@ -11,7 +13,7 @@ defmodule AshA2A.Test.FakeDurableServerSupervisor do
     Agent.get_and_update(supervisor, fn state ->
       case Map.fetch(state.persisted, key) do
         {:ok, runtime} ->
-          {{:ok, runtime}, put_in(state.active[key], runtime)}
+          {{:ok, {self(), runtime}}, put_in(state.active[key], runtime)}
 
         :error ->
           runtime = %{
@@ -27,7 +29,7 @@ defmodule AshA2A.Test.FakeDurableServerSupervisor do
             |> put_in([:active, key], runtime)
             |> put_in([:persisted, key], runtime)
 
-          {{:ok, runtime}, next}
+          {{:ok, {self(), runtime}}, next}
       end
     end)
   end
@@ -57,7 +59,7 @@ defmodule AshA2A.Test.FakeDurableServerSupervisor do
         |> put_in([:active, key], runtime)
         |> put_in([:persisted, key], runtime)
 
-      {{:ok, runtime}, next}
+      {{:ok, {self(), runtime}}, next}
     end)
   end
 

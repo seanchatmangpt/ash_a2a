@@ -77,7 +77,14 @@ defmodule AshA2A.ObanDeliveryQualificationTest do
   end
 
   setup do
-    suffix = System.unique_integer([:positive, :monotonic]) |> Integer.to_string()
+    # Run-unique, not just VM-unique: `oban_jobs` persists across runs and
+    # `AshA2A.Delivery.Oban.enqueue/3` deduplicates on command_id +
+    # fingerprint by default (R11), so a VM-monotonic suffix could collide
+    # with a prior run's still-live row and return that job instead.
+    suffix =
+      Base.encode16(:crypto.strong_rand_bytes(6), case: :lower) <>
+        "-" <> Integer.to_string(System.unique_integer([:positive, :monotonic]))
+
     %{suffix: suffix, label: "oban-qual-item-#{suffix}"}
   end
 

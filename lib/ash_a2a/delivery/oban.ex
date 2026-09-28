@@ -46,9 +46,18 @@ defmodule AshA2A.Delivery.Oban do
   this repo's own reference implementation and restores `expires_at` via
   `reconstruct/2`; see `test/ash_a2a/oban_authority_staleness_test.exs` for a
   real, broker-backed regression proof of both halves of this gap.
+
+  ## Enqueue deduplication and in-flight retries
+
+  `enqueue/3` applies `unique_opts/0` by default, so the same command
+  (`command_id` + `fingerprint`) is held by at most one live job. Host
+  workers should map the `AshA2A.CommandBus` result with `perform_result/2`
+  so a claim still held elsewhere snoozes instead of burning attempts.
   """
 
   alias AshA2A.{Authority, Command, Delivery, Identity, SemanticSubject}
+
+  @in_flight_codes [:in_flight, :actuation_in_flight]
 
   @spec available?() :: boolean()
   def available?, do: Code.ensure_loaded?(Oban) and Code.ensure_loaded?(Oban.Job)
@@ -73,7 +82,12 @@ defmodule AshA2A.Delivery.Oban do
   @spec enqueue(module(), Command.t(), keyword()) :: {:ok, Delivery.t()} | {:error, term()}
   def enqueue(worker, %Command{} = command, opts \\ []) when is_atom(worker) do
     if available?() do
-      job_opts = Keyword.put(Keyword.get(opts, :job_opts, []), :worker, worker)
+      job_opts =
+        opts
+        |> Keyword.get(:job_opts, [])
+        |> Keyword.put(:worker, worker)
+        |> Keyword.put_new(:unique, unique_opts())
+
       changeset = apply(Oban.Job, :new, [payload(command), job_opts])
 
       result =
@@ -88,7 +102,7 @@ defmodule AshA2A.Delivery.Oban do
            Delivery.new(:oban, command,
              provider_ref: Map.get(job, :id),
              status: :scheduled,
-             metadata: %{worker: worker}
+             metadata: %{worker: worker, deduplicated?: Map.get(job, :conflict?, false) == true}
            )}
 
         {:error, reason} ->
@@ -96,6 +110,58 @@ defmodule AshA2A.Delivery.Oban do
       end
     else
       {:error, {:unsupported, :oban}}
+    end
+  end
+
+  @doc """
+  Default Oban `:unique` options applied by `enqueue/3`.
+
+  One live job per `(worker, command_id, fingerprint)`: a second enqueue of
+  the same admitted command (client retry, or a web node and a reactor both
+  delivering it) returns the existing job (`Delivery.metadata.deduplicated?`
+  is `true`) instead of inserting a duplicate that would only collide with
+  the first on the `AshA2A.CommandBus` claim. `:completed` is included so a
+  re-enqueue after success is also collapsed (CommandBus would only replay
+  the receipt); `:cancelled` and `:discarded` are excluded so a dead job can
+  be legitimately re-enqueued. The fingerprint is part of the key so a
+  same-id/different-content command is NOT silently absorbed -- it is
+  inserted and then refused by CommandBus as `:command_conflict`.
+
+  A caller may override via `job_opts: [unique: ...]` (including
+  `unique: false` to opt out).
+  """
+  @spec unique_opts() :: keyword()
+  def unique_opts do
+    [
+      fields: [:args, :worker],
+      keys: [:command_id, :fingerprint],
+      period: :infinity,
+      states: [:available, :scheduled, :executing, :retryable, :completed, :suspended]
+    ]
+  end
+
+  @doc """
+  Maps an `AshA2A.CommandBus.run/4` result to an `Oban.Worker.perform/1`
+  return value. Host workers should return `perform_result(CommandBus.run(...))`.
+
+    * `{:ok, _}` / `:ok` -> `:ok`
+    * a claim still held by another executor (`:in_flight`,
+      `:actuation_in_flight`, bare or as `%{code: ...}`) -> `{:snooze, seconds}`
+      (default 30). Snoozing does not consume an attempt, so a concurrent
+      duplicate delivery cannot exhaust `max_attempts` and discard a
+      legitimate job while the first attempt is still running.
+    * any other `{:error, reason}` passes through unchanged.
+  """
+  @spec perform_result(term(), pos_integer()) :: :ok | {:snooze, pos_integer()} | {:error, term()}
+  def perform_result(result, snooze_seconds \\ 30)
+      when is_integer(snooze_seconds) and snooze_seconds > 0 do
+    case result do
+      :ok -> :ok
+      {:ok, _} -> :ok
+      {:error, %{code: code}} when code in @in_flight_codes -> {:snooze, snooze_seconds}
+      {:error, code} when code in @in_flight_codes -> {:snooze, snooze_seconds}
+      {:error, _} = error -> error
+      other -> {:error, {:unexpected_command_bus_result, other}}
     end
   end
 
