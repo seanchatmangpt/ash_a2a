@@ -14,21 +14,27 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  EKV_BUILD: "1"
 
 jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           submodules: recursive
-      - uses: erlef/setup-beam@v1
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19.0"
-          otp-version: "28.0.2"
+          version-file: .tool-versions
+          version-type: strict
       - name: Require upstream v26.9.28 registry subjects
         run: |
           set -euo pipefail
