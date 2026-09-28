@@ -1,7 +1,8 @@
 defmodule AshA2A.SemanticWork.BudgetTest do
- use ExUnit.Case, async: true
- alias AshA2A.SemanticWork.Budget
- test "refusal is typed" do
-  assert {:error,{:refused_missing_identity,_}}=Budget.bind(%{})
- end
+  use ExUnit.Case, async: true
+  alias AshA2A.SemanticWork.Budget
+
+  test "refusal is typed" do
+    assert {:error, {:refused_missing_identity, _}} = Budget.bind(%{})
+  end
 end
