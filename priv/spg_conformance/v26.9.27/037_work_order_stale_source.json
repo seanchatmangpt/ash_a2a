@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "semantic_jira.work_order_stale_source",
+        "value": false,
+        "refusal_code": "SPG_SEMANTIC_JIRA_WORK_ORDER_STALE_SOURCE"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_SEMANTIC_JIRA_WORK_ORDER_STALE_SOURCE"

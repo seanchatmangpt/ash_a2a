@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "consumer.consumer_drops_authority",
+        "value": false,
+        "refusal_code": "SPG_CONSUMER_CONSUMER_DROPS_AUTHORITY"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_CONSUMER_CONSUMER_DROPS_AUTHORITY"

@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "planner.planner_claims_authority",
+        "value": false,
+        "refusal_code": "SPG_PLANNER_PLANNER_CLAIMS_AUTHORITY"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_PLANNER_PLANNER_CLAIMS_AUTHORITY"

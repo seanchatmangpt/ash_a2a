@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "identity.subject_sha_mismatch",
+        "value": false,
+        "refusal_code": "SPG_IDENTITY_SUBJECT_SHA_MISMATCH"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_IDENTITY_SUBJECT_SHA_MISMATCH"

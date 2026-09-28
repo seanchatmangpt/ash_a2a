@@ -17,6 +17,15 @@
     "authority_explicit": true,
     "exact_subject": true
   },
+  "stimulus": {
+    "checks": [
+      {
+        "predicate": "identity.task_identity_missing",
+        "value": false,
+        "refusal_code": "SPG_IDENTITY_TASK_IDENTITY_MISSING"
+      }
+    ]
+  },
   "assertion": {
     "must_refuse": true,
     "refusal_code": "SPG_IDENTITY_TASK_IDENTITY_MISSING"
