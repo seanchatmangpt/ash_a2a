@@ -209,4 +209,20 @@ defmodule AshA2A.SagaControl do
     do:
       :crypto.hash(:sha256, :erlang.term_to_binary(term, [:deterministic]))
       |> Base.encode16(case: :lower)
+
+  @doc false
+  # S42 refusal totality: every typed refusal this module returns is classified
+  # (merged into AshA2A.Semantic.Refusal.mapping/0 via AshA2A.Chicago.refusal_codes/0).
+  def __sa2a_refusal_codes__ do
+    %{
+      already_terminal_or_recovering: :refused_plan,
+      compensation_not_admitted: :refused_consequence,
+      compensation_not_required: :refused_plan,
+      invalid_replay: :refused_receipt,
+      invalid_state: :refused_plan,
+      receipt_closure_incomplete: :refused_receipt,
+      settlement_not_admitted: :refused_consequence,
+      stale_epoch: :refused_identity
+    }
+  end
 end

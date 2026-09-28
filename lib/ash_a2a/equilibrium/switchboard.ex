@@ -228,4 +228,25 @@ defmodule AshA2A.Equilibrium.Switchboard do
     do: requested <= ceiling
 
   defp authority_leq?(requested, ceiling), do: requested == ceiling
+
+  @doc false
+  # S42 refusal totality: every typed refusal this module returns is classified
+  # (merged into AshA2A.Semantic.Refusal.mapping/0 via AshA2A.Chicago.refusal_codes/0).
+  def __sa2a_refusal_codes__ do
+    %{
+      authority_increase: :refused_authority,
+      backpressure: :blocked_resource,
+      capability_missing: :refused_capability,
+      duplicate: :refused_receipt,
+      no_planner: :blocked_resource,
+      no_provider: :blocked_resource,
+      non_deterministic_receipt: :refused_receipt,
+      policy_mismatch: :refused_identity,
+      role_mismatch: :refused_authority,
+      stale_epoch: :refused_identity,
+      stale_lease: :refused_authority,
+      subject_mismatch: :refused_identity,
+      unbounded_plan: :refused_bounds
+    }
+  end
 end

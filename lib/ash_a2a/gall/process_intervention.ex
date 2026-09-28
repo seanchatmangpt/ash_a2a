@@ -384,4 +384,24 @@ defmodule AshA2A.Gall.ProcessIntervention do
 
   defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
   defp canonical(value), do: value
+
+  @doc false
+  # S42 refusal totality: every typed refusal this module returns is classified
+  # (merged into AshA2A.Semantic.Refusal.mapping/0 via AshA2A.Chicago.refusal_codes/0).
+  def __sa2a_refusal_codes__ do
+    %{
+      expected_postcondition_required: :refused_meta_rigor,
+      intervention_budget_must_be_one: :refused_bounds,
+      intervention_idempotency_required: :refused_structure,
+      intervention_scope_input_mismatch: :refused_identity,
+      intervention_scope_required: :refused_bounds,
+      invalid_process_finding_rule: :refused_rule,
+      invalid_process_finding_rules: :refused_rule,
+      observer_postcondition_subject_mismatch: :refused_meta_rigor,
+      producer_allowlist_required: :refused_provenance,
+      producer_repository: :refused_provenance,
+      stale_or_unadmitted_producer: :refused_provenance,
+      unsupported_process_finding_rule: :refused_rule
+    }
+  end
 end

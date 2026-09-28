@@ -138,4 +138,13 @@ defmodule AshA2A.Architecture.StandingCourt do
 
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(v), do: v
+
+  @doc false
+  # S42 refusal totality: every typed refusal this module returns is classified
+  # (merged into AshA2A.Semantic.Refusal.mapping/0 via AshA2A.Chicago.refusal_codes/0).
+  def __sa2a_refusal_codes__ do
+    %{
+      replay_divergence: :refused_receipt
+    }
+  end
 end

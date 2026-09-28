@@ -472,4 +472,14 @@ defmodule AshA2A.StandingRef do
   rescue
     e in ErlangError -> {:error, {:git_unavailable, Exception.message(e)}}
   end
+
+  @doc false
+  # S42 refusal totality: every typed refusal this module returns is classified
+  # (merged into AshA2A.Semantic.Refusal.mapping/0 via AshA2A.Chicago.refusal_codes/0).
+  def __sa2a_refusal_codes__ do
+    %{
+      conformance_absent: :refused_receipt,
+      subject_identity_mismatch: :refused_identity
+    }
+  end
 end
