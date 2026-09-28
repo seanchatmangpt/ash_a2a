@@ -76,8 +76,29 @@ defmodule AshA2A.MixProject do
       #     launched as N separate OS processes (each tracked by its own
       #     PID, never stopped by name/pattern) -- see the how-to guide.
       "test.serial.shard": "test --only serial_shard",
-      "test.serial.solo": "test --only serial_solo"
+      "test.serial.solo": "test --only serial_solo",
+
+      # `mix ash_a2a.standing_ref` prints a SHA for `ref=$(...)` capture. On a
+      # `_build` so cold that the task module is not compiled yet, Mix compiles
+      # the project before it can dispatch the task, printing "Compiling N
+      # files (.ex)" / "Generated ash_a2a app" to stdout ahead of the SHA.
+      # Compile first with stdout on stderr, then run the real task (the
+      # alias's own-name step reaches the task, not the alias).
+      "ash_a2a.standing_ref": [&compile_on_stderr/1, "ash_a2a.standing_ref"]
     ]
+  end
+
+  # Same redirect as `Mix.Tasks.AshA2a.StandingRef.on_stderr/1`, which cannot
+  # be called here: on a cold `_build` that module does not exist yet.
+  defp compile_on_stderr(_args) do
+    stdout = Process.group_leader()
+    Process.group_leader(self(), Process.whereis(:standard_error))
+
+    try do
+      Mix.Task.run("compile", [])
+    after
+      Process.group_leader(self(), stdout)
+    end
   end
 
   defp docs do
