@@ -279,6 +279,15 @@ defmodule AshA2A.Postcondition do
       timeout ->
         Process.exit(pid, :kill)
         Process.demonitor(monitor, [:flush])
+        # The verifier may have sent its verdict between the timeout firing
+        # and the kill landing; drop it so it never leaks into the caller's
+        # mailbox (a long-lived agent process would accumulate them).
+        receive do
+          {^ref, _late_verdict} -> :ok
+        after
+          0 -> :ok
+        end
+
         {:unverified, :verifier_timeout}
     end
   end

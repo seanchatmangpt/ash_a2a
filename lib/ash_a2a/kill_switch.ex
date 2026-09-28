@@ -52,21 +52,30 @@ defmodule AshA2A.KillSwitch do
   independent-source discipline `Command.principal_id` already gives
   `admit/2`.
 
-  ## Scope: a real, isolated primitive -- not wired into dispatch
+  ## Wiring into dispatch
 
-  This module is deliberately NOT wired into `AshA2A.CommandBus.admit/2`,
-  `AshA2A.Dispatcher`, or any other existing admission/dispatch path --
-  `tripped?/1` is not consulted anywhere on the real command-execution path
-  today, and `mix ash_a2a.verify_architecture`'s gates are unchanged by this
-  module's existence. Wiring a class kill switch into live command
-  admission is a larger, separate, and riskier change (which commands
-  belong to which class? does a trip mid-flight cancel in-progress work or
-  only refuse new admission? what's the blast radius of one bad `trip/3`
-  call reaching production dispatch?) intentionally left out of scope here.
-  This branch proves the mechanism works in isolation, against its own real
-  demo workers (`AshA2A.Test.Support.KillSwitchDemo.Worker`, real
-  `GenServer` processes -- see `test/ash_a2a/kill_switch_test.exs`), not
-  that it is safe to flip on for real traffic.
+  `AshA2A.CommandBus.run/4` consults `tripped?/1` when the caller names a
+  class (`opts[:kill_switch_class]`), before claim and DO. If the switch
+  cannot be consulted (never started), the bus refuses with
+  `:kill_switch_unavailable` -- fail closed, never a crash of the caller.
+
+  ## Trips survive restarts (finding R6)
+
+  Trip state is never held only in this process's heap:
+
+    * Every trip/reset is mirrored into `:persistent_term`, which outlives
+      this `GenServer`. A supervisor restart re-reads it in `init/1`, so a
+      crash can no longer silently clear every trip, and `tripped?/1` reads
+      it directly -- no `GenServer.call`, so a busy or restarting switch
+      never blocks or crashes a dispatching caller.
+    * With `config :ash_a2a, :kill_switch_path, "/durable/dir/ks.dets"` (or
+      `opts[:path]`), trips are also written synchronously to a DETS file
+      before `trip/3` returns and rehydrated on node boot, so a trip also
+      survives a node restart. `AshA2A.ReceiptStore.boot_check/1` requires
+      this path outside the tmp dir in production.
+
+  Trip writes are rare by design (incidents), which is the access pattern
+  `:persistent_term` is built for.
 
   ## One global switchboard by default
 
@@ -103,11 +112,32 @@ defmodule AshA2A.KillSwitch do
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, %{}, name: Keyword.get(opts, :name, __MODULE__))
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, Keyword.put(opts, :name, name), name: name)
   end
 
   @impl true
-  def init(state), do: {:ok, state}
+  def init(opts) when is_list(opts) do
+    name = Keyword.fetch!(opts, :name)
+
+    path =
+      Keyword.get_lazy(opts, :path, fn ->
+        if name == __MODULE__, do: Application.get_env(:ash_a2a, :kill_switch_path)
+      end)
+
+    dets = open_dets(name, path)
+    disk = read_dets(dets)
+
+    # A prior incarnation in this VM (supervisor restart) left the freshest
+    # state in `:persistent_term`; a node boot finds none and falls back to
+    # the durable DETS copy.
+    trips = :persistent_term.get(term_key(name), disk)
+    state = %{name: name, dets: dets, trips: trips}
+    publish(state)
+    persist_all(state)
+
+    {:ok, state}
+  end
 
   @doc """
   Trips (halts) `class`. Real, low-barrier, no authority required -- see
@@ -131,8 +161,26 @@ defmodule AshA2A.KillSwitch do
   `trip/3` recorded), `false` otherwise.
   """
   @spec tripped?(class()) :: {true, reason()} | false
-  def tripped?(class) do
-    GenServer.call(__MODULE__, {:tripped?, normalize(class)})
+  def tripped?(class), do: tripped?(class, __MODULE__)
+
+  @doc """
+  `tripped?/1` against the instance registered as `name`. Reads the
+  published trip state directly (no `GenServer.call`). Exits
+  `{:noproc, _}` when no instance named `name` has ever published state --
+  callers on a dispatch path treat that as "cannot consult", i.e. refuse.
+  """
+  @spec tripped?(class(), GenServer.name()) :: {true, reason()} | false
+  def tripped?(class, name) do
+    case :persistent_term.get(term_key(name), :unavailable) do
+      :unavailable ->
+        exit({:noproc, {__MODULE__, :tripped?, [class, name]}})
+
+      trips ->
+        case Map.get(trips, normalize(class)) do
+          %{reason: reason} -> {true, reason}
+          nil -> false
+        end
+    end
   end
 
   @doc """
@@ -174,12 +222,18 @@ defmodule AshA2A.KillSwitch do
 
   @impl true
   def handle_call({:trip, class, reason, tripped_at}, _from, state) do
-    {:reply, :ok, Map.put(state, class, %{reason: reason, tripped_at: tripped_at})}
+    info = %{reason: reason, tripped_at: tripped_at}
+    # Durable first, then visible: a crash between the two leaves the trip
+    # on disk, which rehydrates as tripped (the safe direction).
+    persist(state, {:put, class, info})
+    state = %{state | trips: Map.put(state.trips, class, info)}
+    publish(state)
+    {:reply, :ok, state}
   end
 
   @impl true
   def handle_call({:tripped?, class}, _from, state) do
-    case Map.get(state, class) do
+    case Map.get(state.trips, class) do
       %{reason: reason} -> {:reply, {true, reason}, state}
       nil -> {:reply, false, state}
     end
@@ -187,7 +241,61 @@ defmodule AshA2A.KillSwitch do
 
   @impl true
   def handle_call({:reset, class}, _from, state) do
-    {:reply, :ok, Map.delete(state, class)}
+    # Visible first, then durable: a crash between the two leaves the trip
+    # on disk (rehydrates tripped), never a cleared trip that resurrects.
+    state = %{state | trips: Map.delete(state.trips, class)}
+    publish(state)
+    persist(state, {:delete, class})
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def terminate(_reason, %{dets: dets}) when not is_nil(dets) do
+    _ = :dets.close(dets)
+    :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
+  defp term_key(name), do: {__MODULE__, :trips, name}
+
+  defp publish(%{name: name, trips: trips}), do: :persistent_term.put(term_key(name), trips)
+
+  defp open_dets(_name, nil), do: nil
+
+  defp open_dets(name, path) when is_binary(path) do
+    :ok = File.mkdir_p(Path.dirname(path))
+
+    case :dets.open_file({__MODULE__, name}, file: String.to_charlist(path), type: :set) do
+      {:ok, table} -> table
+      {:error, reason} -> raise ArgumentError, "kill switch store #{path}: #{inspect(reason)}"
+    end
+  end
+
+  defp read_dets(nil), do: %{}
+
+  defp read_dets(table) do
+    :dets.foldl(fn {class, info}, acc -> Map.put(acc, class, info) end, %{}, table)
+  end
+
+  defp persist(%{dets: nil}, _op), do: :ok
+
+  defp persist(%{dets: table}, {:put, class, info}) do
+    :ok = :dets.insert(table, {class, info})
+    :dets.sync(table)
+  end
+
+  defp persist(%{dets: table}, {:delete, class}) do
+    :ok = :dets.delete(table, class)
+    :dets.sync(table)
+  end
+
+  defp persist_all(%{dets: nil}), do: :ok
+
+  defp persist_all(%{dets: table, trips: trips}) do
+    :ok = :dets.delete_all_objects(table)
+    :ok = :dets.insert(table, Map.to_list(trips))
+    :dets.sync(table)
   end
 
   defp server(opts), do: Keyword.get(opts, :name, __MODULE__)

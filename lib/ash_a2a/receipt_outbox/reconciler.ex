@@ -40,22 +40,29 @@ defmodule AshA2A.ReceiptOutbox.Reconciler do
   Both drain and read reuse `AshA2A.ReceiptOutbox`'s own real functions;
   this module owns no receipt-journal I/O itself.
 
-  ## Deliberately not started by default
+  ## Started by default
 
-  Following `AshA2A.KillSwitch`'s own precedent (see its moduledoc's "Scope"
-  section): `AshA2A.Application` does not start this GenServer. A host opts
-  in by adding `{AshA2A.ReceiptOutbox.Reconciler, []}` (or with `:interval_ms`
-  / `:stuck_attempts_threshold` / `:store` / `:store_opts` overrides) to its
-  own supervision tree, or by configuring
-  `config :ash_a2a, :outbox_reconciler_interval_ms, n` and letting a host
-  supervisor start it under that config. This is purely additive: it does
-  not touch `command_bus.ex`, `receipt_outbox.ex`, or `reconciliation.ex`.
+  `AshA2A.Application.outbox_reconciler_children/0` starts this GenServer
+  unless `config :ash_a2a, :outbox_reconciler, false`. Hosts may also start
+  their own instance with `:interval_ms` / `:stuck_attempts_threshold` /
+  `:store` / `:store_opts` overrides.
+
+  ## Legacy migration
+
+  `init/1` runs `AshA2A.ReceiptOutbox.migrate_legacy/0` once, rewriting
+  decodable pre-R5 entries into the command-keyed file format so a torn
+  legacy entry cannot keep blocking every claim reclaim.
 
   ## Telemetry
 
     * `[:ash_a2a, :receipt_outbox, :reconciler, :tick]` -- measurements
-      `%{committed: non_neg_integer(), remaining: non_neg_integer()}`,
-      metadata `%{}`.
+      `%{committed: non_neg_integer(), remaining: non_neg_integer(),
+      corrupt: non_neg_integer()}`, metadata `%{}`.
+    * `[:ash_a2a, :receipt_outbox, :reconciler, :corrupt]` -- emitted once
+      per tick when undecodable journal files exist (finding OBS-09: they
+      count in `:remaining` forever but can never raise `:stuck`, since
+      their attempts are unreadable). Measurements `%{count: n}`, metadata
+      `%{filenames: [String.t()], reasons: [term()]}`.
     * `[:ash_a2a, :receipt_outbox, :reconciler, :stuck]` -- measurements
       `%{attempts: non_neg_integer()}`, metadata `%{command_id: String.t(),
       receipt_id: String.t() | nil, threshold: non_neg_integer()}`, one event
@@ -142,6 +149,8 @@ defmodule AshA2A.ReceiptOutbox.Reconciler do
     store = Keyword.get(opts, :store, CommandBus.default_store())
     store_opts = Keyword.get(opts, :store_opts, [])
 
+    _migrated = safe_migrate()
+
     state = %{
       interval_ms: interval_ms,
       stuck_attempts_threshold: stuck_attempts_threshold,
@@ -169,11 +178,21 @@ defmodule AshA2A.ReceiptOutbox.Reconciler do
     {:ok, %{committed: committed, remaining: remaining} = result} =
       ReceiptOutbox.reconcile(store, store_opts)
 
+    corrupt = ReceiptOutbox.corrupt_entries()
+
     :telemetry.execute(
       [:ash_a2a, :receipt_outbox, :reconciler, :tick],
-      %{committed: committed, remaining: remaining},
+      %{committed: committed, remaining: remaining, corrupt: length(corrupt)},
       %{}
     )
+
+    if corrupt != [] do
+      :telemetry.execute(
+        [:ash_a2a, :receipt_outbox, :reconciler, :corrupt],
+        %{count: length(corrupt)},
+        %{filenames: Enum.map(corrupt, &elem(&1, 0)), reasons: Enum.map(corrupt, &elem(&1, 1))}
+      )
+    end
 
     emit_stuck_entries(state)
 
@@ -197,6 +216,12 @@ defmodule AshA2A.ReceiptOutbox.Reconciler do
         )
       end
     end)
+  end
+
+  defp safe_migrate do
+    ReceiptOutbox.migrate_legacy()
+  rescue
+    _error -> 0
   end
 
   defp identity_value(%{value: value}), do: value

@@ -42,6 +42,17 @@ defmodule AshA2A.ReceiptStore.Ekv do
   why deferring to the claimant's own primary command claim's
   `ClaimLease.abandoned?/2` verdict is a sound liveness guarantee one layer
   down from the primary claim.
+
+  ## Fencing and error totality (findings R4, R8)
+
+  `commit/2` requires the stored claim's `execution_id` to equal the
+  receipt's (`{:error, :stale_execution}` otherwise), and `confirm_claim/3`
+  lets `AshA2A.CommandBus` re-check ownership before DO. An `:unconfirmed`
+  EKV write is settled by a consistent read: `:ok` only when the stored value
+  is exactly what this call wrote, `{:error, :receipt_store_unconfirmed}`
+  otherwise -- never reported as `:unclaimed_command`. Any other EKV error
+  maps to the typed `:receipt_store_unavailable` /
+  `:actuation_store_unavailable` instead of raising `CaseClauseError`.
   """
 
   @behaviour AshA2A.ReceiptStore
@@ -62,14 +73,24 @@ defmodule AshA2A.ReceiptStore.Ekv do
   @spec durable?() :: boolean()
   def durable?, do: true
 
+  @doc false
+  # S42 totality for the typed codes this store returns.
+  def __sa2a_refusal_codes__ do
+    %{
+      stale_execution: :refused_identity,
+      receipt_store_unconfirmed: :blocked_resource
+    }
+  end
+
   @impl true
   def claim(%Command{} = command, opts \\ []) do
     name = ekv_name(opts)
     key = Identity.external(command.command_id)
+    lease = Keyword.take(opts, [:claim_lease_ms, :execution_id])
 
     case EKV.get(name, key) do
-      nil -> attempt_fresh_claim(name, key, command)
-      entry -> decide_claim(name, key, entry, command)
+      nil -> attempt_fresh_claim(name, key, command, lease)
+      entry -> decide_claim(name, key, entry, command, lease)
     end
   end
 
@@ -80,8 +101,8 @@ defmodule AshA2A.ReceiptStore.Ekv do
   # re-dispatches through the exact same fingerprint-match logic
   # (`decide_claim/4`) a first-time reader would have used, instead of
   # trusting the not-found branch it already took.
-  defp attempt_fresh_claim(name, key, command) do
-    entry = fresh_claim_entry(command)
+  defp attempt_fresh_claim(name, key, command, lease) do
+    entry = fresh_claim_entry(command, lease)
 
     case EKV.put(name, key, entry, if_vsn: nil) do
       {:ok, _vsn} ->
@@ -103,8 +124,11 @@ defmodule AshA2A.ReceiptStore.Ekv do
             {:execute, entry.execution_id}
 
           winner ->
-            decide_claim(name, key, winner, command)
+            decide_claim(name, key, winner, command, lease)
         end
+
+      {:error, _other} ->
+        {:error, :receipt_store_unavailable}
     end
   end
 
@@ -117,7 +141,8 @@ defmodule AshA2A.ReceiptStore.Ekv do
          _name,
          _key,
          %{fingerprint: fingerprint, receipt: %Receipt{} = receipt},
-         %Command{} = command
+         %Command{} = command,
+         _lease
        )
        when fingerprint == command.fingerprint do
     {:replay, Receipt.replay(receipt)}
@@ -134,28 +159,28 @@ defmodule AshA2A.ReceiptStore.Ekv do
   # `commit/2` already uses -- so a claimant that resumed and committed
   # between this decision and the write below loses the CAS and is replayed,
   # never double-executed.
-  defp decide_claim(name, key, %{fingerprint: fingerprint} = entry, %Command{} = command)
+  defp decide_claim(name, key, %{fingerprint: fingerprint} = entry, %Command{} = command, lease)
        when fingerprint == command.fingerprint do
-    if ClaimLease.abandoned?(Map.get(entry, :claimed_at), command.command_id) do
-      reclaim(name, key, command)
+    if ClaimLease.abandoned?(Map.get(entry, :claimed_at), command.command_id, lease) do
+      reclaim(name, key, command, lease)
     else
       {:error, :in_flight}
     end
   end
 
-  defp decide_claim(_name, _key, _entry, _command) do
+  defp decide_claim(_name, _key, _entry, _command, _lease) do
     {:error, :command_conflict}
   end
 
-  defp reclaim(name, key, %Command{} = command) do
+  defp reclaim(name, key, %Command{} = command, lease) do
     case EKV.lookup(name, key) do
       {%{fingerprint: fingerprint, receipt: %Receipt{} = receipt}, _vsn}
       when fingerprint == command.fingerprint ->
         {:replay, Receipt.replay(receipt)}
 
       {%{fingerprint: fingerprint} = current, vsn} when fingerprint == command.fingerprint ->
-        if ClaimLease.abandoned?(Map.get(current, :claimed_at), command.command_id) do
-          entry = fresh_claim_entry(command)
+        if ClaimLease.abandoned?(Map.get(current, :claimed_at), command.command_id, lease) do
+          entry = fresh_claim_entry(command, lease)
 
           case EKV.put(name, key, entry, if_vsn: vsn) do
             {:ok, _new_vsn} ->
@@ -170,8 +195,11 @@ defmodule AshA2A.ReceiptStore.Ekv do
                   {:execute, entry.execution_id}
 
                 winner ->
-                  decide_claim(name, key, winner, command)
+                  decide_claim(name, key, winner, command, lease)
               end
+
+            {:error, _other} ->
+              {:error, :receipt_store_unavailable}
           end
         else
           {:error, :in_flight}
@@ -181,14 +209,21 @@ defmodule AshA2A.ReceiptStore.Ekv do
         {:error, :command_conflict}
 
       nil ->
-        attempt_fresh_claim(name, key, command)
+        attempt_fresh_claim(name, key, command, lease)
     end
   end
 
-  defp fresh_claim_entry(%Command{} = command) do
+  # `opts[:execution_id]`: see `AshA2A.ReceiptStore.Memory`'s identical
+  # option -- reconciliation re-creates a lost claim under the outboxed
+  # receipt's own execution id.
+  defp fresh_claim_entry(%Command{} = command, opts) do
     %{
       fingerprint: command.fingerprint,
-      execution_id: Identity.execution(Ash.UUIDv7.generate()),
+      execution_id:
+        case Keyword.get(opts, :execution_id) do
+          %Identity{kind: :execution} = given -> given
+          _ -> Identity.execution(Ash.UUIDv7.generate())
+        end,
       receipt: nil,
       claimed_at: ClaimLease.now()
     }
@@ -196,26 +231,79 @@ defmodule AshA2A.ReceiptStore.Ekv do
 
   @impl true
   def commit(%Receipt{} = receipt, opts \\ []) do
-    name = ekv_name(opts)
-    key = Identity.external(receipt.command_id)
+    commit_attempt(ekv_name(opts), Identity.external(receipt.command_id), receipt, 3)
+  end
 
-    # `EKV.lookup/2` (not `EKV.get/2`) so the version read immediately before
-    # this write is the exact version fed to `if_vsn:` below -- a fresh CAS
-    # read-then-write pair, not the vsn from some earlier read (there is none
-    # to thread through: `commit/2`'s signature is the `AshA2A.ReceiptStore`
-    # behaviour contract, unchanged by this fix).
+  # `EKV.lookup/2` (not `EKV.get/2`) so the version read immediately before
+  # each write is the exact version fed to `if_vsn:` -- a fresh CAS
+  # read-then-write pair. A lost CAS re-reads and re-decides (bounded), so a
+  # concurrent writer of an unrelated field never turns a legitimate commit
+  # into a false `:unclaimed_command`.
+  defp commit_attempt(_name, _key, _receipt, 0), do: {:error, :receipt_store_unavailable}
+
+  defp commit_attempt(name, key, %Receipt{} = receipt, attempts) do
     case EKV.lookup(name, key) do
       {%{fingerprint: fingerprint} = entry, vsn} when fingerprint == receipt.fingerprint ->
-        case EKV.put(name, key, %{entry | receipt: receipt}, if_vsn: vsn) do
-          {:ok, _new_vsn} ->
-            :ok
+        # Execution-id fencing (finding R4).
+        if Map.get(entry, :execution_id) == receipt.execution_id do
+          next = %{entry | receipt: receipt}
 
-          {:error, reason} when reason in [:conflict, :unconfirmed] ->
-            {:error, :unclaimed_command}
+          case EKV.put(name, key, next, if_vsn: vsn) do
+            {:ok, _new_vsn} -> :ok
+            {:error, :conflict} -> commit_attempt(name, key, receipt, attempts - 1)
+            {:error, :unconfirmed} -> settle(name, key, next)
+            {:error, _other} -> {:error, :receipt_store_unavailable}
+          end
+        else
+          {:error, :stale_execution}
         end
 
       _ ->
         {:error, :unclaimed_command}
+    end
+  end
+
+  @doc """
+  Confirms `execution_id` still owns the claim for `command_id` (finding R4),
+  via a consistent (quorum) read. `{:error, :stale_execution}` when another
+  execution holds it.
+  """
+  @impl true
+  @spec confirm_claim(Identity.t(), Identity.t(), keyword()) ::
+          :ok | {:error, :stale_execution | :receipt_store_unavailable}
+  def confirm_claim(
+        %Identity{kind: :command} = command_id,
+        %Identity{} = execution_id,
+        opts \\ []
+      ) do
+    case consistent_get(ekv_name(opts), Identity.external(command_id)) do
+      {:ok, %{execution_id: ^execution_id}} -> :ok
+      {:ok, %{}} -> {:error, :stale_execution}
+      {:ok, nil} -> {:error, :stale_execution}
+      {:error, _reason} -> {:error, :receipt_store_unavailable}
+    end
+  end
+
+  # `EKV.get(name, key, consistent: true)` RAISES when the consensus read
+  # fails (no quorum, no CAS config) -- it never returns `{:error, _}`. This
+  # wrapper makes the fencing and settle paths total: a failed consistent
+  # read is a typed unavailability, never an exception escaping the store.
+  defp consistent_get(name, key) do
+    {:ok, EKV.get(name, key, consistent: true)}
+  rescue
+    error -> {:error, {:consistent_read_failed, Exception.message(error)}}
+  catch
+    :exit, reason -> {:error, {:consistent_read_failed, reason}}
+  end
+
+  # EKV's documented resolution for an `:unconfirmed` write is a consistent
+  # read: the write landed iff the committed value is exactly what we wrote
+  # (finding R8 -- previously misreported as `:unclaimed_command`, which sent
+  # `AshA2A.ReceiptOutbox` into a spurious re-claim).
+  defp settle(name, key, expected) do
+    case consistent_get(name, key) do
+      {:ok, ^expected} -> :ok
+      _other -> {:error, :receipt_store_unconfirmed}
     end
   end
 
@@ -244,14 +332,15 @@ defmodule AshA2A.ReceiptStore.Ekv do
   def claim_actuation(%Actuation{} = actuation, %Command{} = command, opts \\ []) do
     name = ekv_name(opts)
     key = actuation_key(actuation)
+    lease = lease_opts(opts)
 
     case EKV.get(name, key) do
-      nil -> attempt_fresh_actuation_claim(name, key, actuation, command)
-      entry -> decide_actuation(name, entry, actuation, command)
+      nil -> attempt_fresh_actuation_claim(name, key, actuation, command, lease)
+      entry -> decide_actuation(name, entry, actuation, command, lease)
     end
   end
 
-  defp attempt_fresh_actuation_claim(name, key, actuation, command) do
+  defp attempt_fresh_actuation_claim(name, key, actuation, command, lease) do
     entry = %{
       idempotency_key: Identity.external(actuation.idempotency_key),
       command_id: command.command_id,
@@ -262,11 +351,21 @@ defmodule AshA2A.ReceiptStore.Ekv do
       {:ok, _vsn} ->
         :proceed
 
-      {:error, reason} when reason in [:conflict, :unconfirmed] ->
+      {:error, :unconfirmed} ->
+        case EKV.get(name, key, consistent: true) do
+          ^entry -> :proceed
+          nil -> {:error, :actuation_in_flight}
+          winner -> decide_actuation(name, winner, actuation, command, lease)
+        end
+
+      {:error, :conflict} ->
         case EKV.get(name, key) do
           nil -> {:error, :actuation_in_flight}
-          winner -> decide_actuation(name, winner, actuation, command)
+          winner -> decide_actuation(name, winner, actuation, command, lease)
         end
+
+      {:error, _other} ->
+        {:error, :actuation_store_unavailable}
     end
   end
 
@@ -274,7 +373,8 @@ defmodule AshA2A.ReceiptStore.Ekv do
          name,
          %{idempotency_key: idempotency} = entry,
          %Actuation{} = actuation,
-         %Command{} = command
+         %Command{} = command,
+         lease
        ) do
     cond do
       idempotency != Identity.external(actuation.idempotency_key) ->
@@ -284,11 +384,12 @@ defmodule AshA2A.ReceiptStore.Ekv do
         {:duplicate, Receipt.replay(entry.receipt)}
 
       true ->
-        reclaim_or_refuse_actuation(name, entry, actuation, command)
+        reclaim_or_refuse_actuation(name, entry, actuation, command, lease)
     end
   end
 
-  defp decide_actuation(_name, _entry, _actuation, _command), do: {:error, :actuation_conflict}
+  defp decide_actuation(_name, _entry, _actuation, _command, _lease),
+    do: {:error, :actuation_conflict}
 
   # Bounded actuation-claim lease + reconciliation (RFC-SA2A-001 S55, ARD S40's
   # idempotency-store liveness requirement, one index below the primary
@@ -297,14 +398,49 @@ defmodule AshA2A.ReceiptStore.Ekv do
   # `ClaimLease.abandoned?/2`, DO never started for this effect either -- see
   # `AshA2A.ReceiptStore.ActuationClaimLease` for the full argument and why a
   # claim that DID reach the outbox is still never reclaimed.
-  defp reclaim_or_refuse_actuation(name, %{command_id: claimant_command_id}, actuation, command) do
+  #
+  # A claimant whose primary claim already carries a finalized receipt is a
+  # completed effect whose actuation-index commit was lost (finding R1): the
+  # primary receipt is returned as the duplicate and written back into the
+  # actuation entry, never re-run.
+  defp reclaim_or_refuse_actuation(
+         name,
+         %{command_id: claimant_command_id},
+         actuation,
+         command,
+         lease
+       ) do
     primary_claim = EKV.get(name, Identity.external(claimant_command_id))
 
-    if ActuationClaimLease.abandoned?(primary_claim, claimant_command_id) do
-      reclaim_actuation(name, actuation, command)
-    else
-      {:error, :actuation_in_flight}
+    case ActuationClaimLease.decide(primary_claim, claimant_command_id, lease) do
+      :reclaim ->
+        reclaim_actuation(name, actuation, command, lease)
+
+      {:duplicate, %Receipt{} = receipt} ->
+        heal_actuation(name, actuation, receipt)
+        {:duplicate, Receipt.replay(receipt)}
+
+      :in_flight ->
+        {:error, :actuation_in_flight}
     end
+  end
+
+  # Best-effort: the duplicate answer is already correct without it; the heal
+  # only saves the next claimant the primary-claim read.
+  defp heal_actuation(name, actuation, receipt) do
+    key = actuation_key(actuation)
+
+    case EKV.lookup(name, key) do
+      {%{receipt: nil} = entry, vsn} ->
+        EKV.put(name, key, %{entry | receipt: receipt}, if_vsn: vsn)
+
+      _ ->
+        :ok
+    end
+
+    :ok
+  rescue
+    _error -> :ok
   end
 
   # Fresh CAS read-then-write immediately before the reclaiming write, the
@@ -312,7 +448,7 @@ defmodule AshA2A.ReceiptStore.Ekv do
   # claimant that committed between the abandonment decision and this write
   # loses the CAS and is re-dispatched through `decide_actuation/4` against
   # the real winning entry, never silently overwritten.
-  defp reclaim_actuation(name, %Actuation{} = actuation, %Command{} = command) do
+  defp reclaim_actuation(name, %Actuation{} = actuation, %Command{} = command, lease) do
     key = actuation_key(actuation)
 
     case EKV.lookup(name, key) do
@@ -326,15 +462,25 @@ defmodule AshA2A.ReceiptStore.Ekv do
           {:ok, _new_vsn} ->
             :proceed
 
-          {:error, reason} when reason in [:conflict, :unconfirmed] ->
+          {:error, :unconfirmed} ->
+            case EKV.get(name, key, consistent: true) do
+              ^fresh -> :proceed
+              nil -> {:error, :actuation_in_flight}
+              winner -> decide_actuation(name, winner, actuation, command, lease)
+            end
+
+          {:error, :conflict} ->
             case EKV.get(name, key) do
               nil -> {:error, :actuation_in_flight}
-              winner -> decide_actuation(name, winner, actuation, command)
+              winner -> decide_actuation(name, winner, actuation, command, lease)
             end
+
+          {:error, _other} ->
+            {:error, :actuation_store_unavailable}
         end
 
       nil ->
-        attempt_fresh_actuation_claim(name, key, actuation, command)
+        attempt_fresh_actuation_claim(name, key, actuation, command, lease)
     end
   end
 
@@ -345,12 +491,13 @@ defmodule AshA2A.ReceiptStore.Ekv do
 
     case EKV.lookup(name, key) do
       {entry, vsn} when is_map(entry) ->
-        case EKV.put(name, key, %{entry | receipt: receipt}, if_vsn: vsn) do
-          {:ok, _new_vsn} ->
-            :ok
+        next = %{entry | receipt: receipt}
 
-          {:error, reason} when reason in [:conflict, :unconfirmed] ->
-            {:error, :actuation_conflict}
+        case EKV.put(name, key, next, if_vsn: vsn) do
+          {:ok, _new_vsn} -> :ok
+          {:error, :conflict} -> {:error, :actuation_conflict}
+          {:error, :unconfirmed} -> settle(name, key, next)
+          {:error, _other} -> {:error, :actuation_store_unavailable}
         end
 
       _ ->
@@ -387,4 +534,6 @@ defmodule AshA2A.ReceiptStore.Ekv do
     do: "actuation:" <> Identity.external(actuation_id)
 
   defp ekv_name(opts), do: Keyword.get(opts, :name, __MODULE__)
+
+  defp lease_opts(opts), do: Keyword.take(opts, [:claim_lease_ms])
 end

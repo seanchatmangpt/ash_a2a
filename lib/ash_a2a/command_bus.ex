@@ -107,6 +107,38 @@ defmodule AshA2A.CommandBus do
   0.812x-1.072x on the same metric, same scale document; a durability
   trade, not a free win -- read that document's absolute numbers first).
 
+  ## Production hardening (v26.9.27)
+
+    * **Dispatch deadline (R9).** DO runs in a monitored child process that
+      inherits the caller's process dictionary (Ash/Logger/OTel context and
+      the `$callers` chain) and is killed after `opts[:dispatch_timeout_ms]`
+      / `config :ash_a2a, :dispatch_timeout_ms` (default 30_000;
+      `:infinity` runs DO in the caller, the pre-R9 behavior). A timed-out
+      consequence-bearing command is refused `:dispatch_timeout`: its receipt
+      is marked `terminal_status: :unknown_outcome`, the pending anchor is
+      KEPT (DO may have partially run), and the actuation claim is neither
+      committed nor released -- a retry replays the unknown outcome; it never
+      re-executes. The child is linked, so a caller death still takes DO
+      down with it and a signal death of DO still takes the caller down (the
+      pre-R9 crash semantics); a caller that traps exits instead gets
+      `:dispatch_lost`, closed the same way as a timeout.
+    * **Execution fencing (R4).** After the anchor is prepared and before DO,
+      a store exporting `confirm_claim/3` must confirm this execution still
+      owns the claim; otherwise the anchor is removed, the actuation claim
+      released, and the command refused (`:stale_execution` /
+      `:receipt_store_unavailable`) without DO.
+    * **Actuation commit (R1).** `commit_actuation/3` is retried with the
+      receipt-commit delays and its failure is observable
+      (`[:ash_a2a, :command_bus, :actuation_commit]`, `outcome: :failed`);
+      the stores answer a later claim of that effect from the claimant's
+      committed primary receipt, so a lost actuation commit can no longer
+      re-open the effect.
+    * **Kill switch fails closed (R6).** A kill switch that cannot be
+      consulted refuses with `:kill_switch_unavailable` instead of crashing
+      the calling agent process.
+    * **OCEL correlation hygiene (OBS-04).** The pending-dispatch stash is
+      deleted after every consequence path, including outbox and error
+      paths, so it can never merge into a later command's receipt event.
   """
 
   alias AshA2A.{
@@ -123,6 +155,20 @@ defmodule AshA2A.CommandBus do
   }
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
+
+  @ocel_pending_key :ash_a2a_ocel_pending_dispatch
+  @default_dispatch_timeout_ms 30_000
+
+  @doc false
+  # S42 totality for the typed codes this module introduces.
+  def __sa2a_refusal_codes__ do
+    %{
+      kill_switch_unavailable: :blocked_resource,
+      stale_execution: :refused_identity,
+      dispatch_timeout: :blocked_resource,
+      dispatch_lost: :blocked_resource
+    }
+  end
 
   @spec default_store() :: module()
   def default_store do
@@ -273,30 +319,39 @@ defmodule AshA2A.CommandBus do
            prepare_receipt_anchor(command, execution_id, consequence, receipt_opts)
          ) do
       {:ok, anchor} ->
-        reply =
-          actuate(command, execution_id, anchor, consequence, fn ->
-            safe_dispatch(skill, message, resource_or_domain, opts, anchor)
-          end)
+        case confirm_execution(store, command, execution_id, anchor, store_opts) do
+          :ok ->
+            # OBS-04: the OCEL forwarder stashes dispatch correlation in this
+            # process; it is consumed only when a receipt event is emitted.
+            # Clear it on every exit from the consequence path (outbox,
+            # error, timeout), never only on the happy path.
+            try do
+              execute_anchored(
+                command,
+                execution_id,
+                consequence,
+                skill,
+                message,
+                resource_or_domain,
+                store,
+                store_opts,
+                opts,
+                actuation,
+                receipt_opts,
+                anchor
+              )
+            after
+              Process.delete(@ocel_pending_key)
+            end
 
-        postcondition =
-          observe_postcondition(command, execution_id, anchor, consequence, reply, opts)
-
-        receipt =
-          case anchor do
-            %Receipt{} ->
-              Receipt.finalize(anchor, reply)
-
-            nil ->
-              Receipt.from_reply(command, execution_id, consequence, reply, receipt_opts)
-          end
-          |> Postcondition.apply_to_receipt(postcondition)
-          |> mark_standing(store)
-
-        commit_actuation(store, actuation, receipt, consequence, store_opts, opts)
-
-        store
-        |> commit_receipt(receipt, store_opts)
-        |> Postcondition.consequence_result(postcondition)
+          {:error, reason} ->
+            # Superseded (or unverifiable) before DO: nothing crossed the
+            # consequence boundary, so the anchor and the actuation claim
+            # are released and the command is refused.
+            ReceiptOutbox.remove(anchor)
+            release_actuation(store, actuation, consequence, store_opts, opts)
+            refuse_unconfirmed_execution(command, execution_id, anchor, reason)
+        end
 
       {:error, reason} ->
         release_actuation(store, actuation, consequence, store_opts, opts)
@@ -311,6 +366,120 @@ defmodule AshA2A.CommandBus do
           reason
         )
     end
+  end
+
+  defp execute_anchored(
+         command,
+         execution_id,
+         consequence,
+         skill,
+         message,
+         resource_or_domain,
+         store,
+         store_opts,
+         opts,
+         actuation,
+         receipt_opts,
+         anchor
+       ) do
+    reply =
+      actuate(command, execution_id, anchor, consequence, fn ->
+        safe_dispatch(skill, message, resource_or_domain, opts, anchor)
+      end)
+
+    case {reply, anchor} do
+      {{:error, %{code: code}}, %Receipt{}} when code in [:dispatch_timeout, :dispatch_lost] ->
+        close_timed_out(store, command, anchor, reply, store_opts)
+
+      _completed ->
+        postcondition =
+          observe_postcondition(command, execution_id, anchor, consequence, reply, opts)
+
+        receipt =
+          case anchor do
+            %Receipt{} ->
+              Receipt.finalize(anchor, reply)
+
+            nil ->
+              Receipt.from_reply(command, execution_id, consequence, reply, receipt_opts)
+          end
+          |> Postcondition.apply_to_receipt(postcondition)
+          |> mark_standing(store)
+
+        _ = commit_actuation(store, actuation, receipt, consequence, store_opts, opts)
+
+        store
+        |> commit_receipt(receipt, store_opts)
+        |> Postcondition.consequence_result(postcondition)
+    end
+  end
+
+  # R9: DO exceeded its deadline and was killed, or its process died without
+  # replying (`:dispatch_lost`). Whether it crossed the
+  # consequence boundary is genuinely unknown, so the receipt says exactly
+  # that (S31 UNKNOWN_OUTCOME), the pending anchor is kept as replay-blocking
+  # evidence, and the actuation claim is left in flight (never committed as
+  # an outcome, never released for re-actuation).
+  defp close_timed_out(store, command, %Receipt{} = anchor, reply, store_opts) do
+    {:error, %{code: code}} = reply
+
+    receipt =
+      anchor
+      |> Receipt.mark_unknown_outcome(code)
+      |> mark_standing(store)
+
+    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    commit_result = commit_with_retries(store, receipt, store_opts, delays)
+
+    emit_boundary([:commit], command, %{
+      outcome: :unknown_outcome,
+      receipt_id: identity_value(receipt.receipt_id),
+      primary_receipt_commit: commit_result
+    })
+
+    {:error, detail} = reply
+
+    {:error,
+     Map.merge(detail, %{
+       receipt: receipt,
+       outcome_known?: false,
+       primary_receipt_commit: commit_result
+     })}
+  end
+
+  defp confirm_execution(_store, _command, _execution_id, nil, _store_opts), do: :ok
+
+  defp confirm_execution(store, command, execution_id, %Receipt{}, store_opts) do
+    if Code.ensure_loaded?(store) and function_exported?(store, :confirm_claim, 3) do
+      case store.confirm_claim(command.command_id, execution_id, store_opts) do
+        :ok -> :ok
+        {:error, :stale_execution} -> {:error, :stale_execution}
+        {:error, _other} -> {:error, :receipt_store_unavailable}
+      end
+    else
+      :ok
+    end
+  rescue
+    _error -> {:error, :receipt_store_unavailable}
+  catch
+    :exit, _reason -> {:error, :receipt_store_unavailable}
+  end
+
+  defp refuse_unconfirmed_execution(command, execution_id, anchor, reason) do
+    emit_boundary([:claim], command, %{
+      outcome: :refused,
+      code: reason,
+      execution_id: identity_value(execution_id),
+      receipt_id: identity_value(anchor.receipt_id)
+    })
+
+    {:error,
+     %{
+       code: reason,
+       detail:
+         "this execution no longer holds (or could not confirm) the command claim; " <>
+           "refused before DO"
+     }}
   end
 
   # The command-id claim is already open (`receipt: nil`) by the time an
@@ -481,18 +650,61 @@ defmodule AshA2A.CommandBus do
       end
   end
 
+  # R1: the actuation commit is no longer silently discarded. It is retried
+  # with the receipt-commit delays and a final failure is observable; the
+  # stores independently answer later claims of this effect from the
+  # claimant's committed primary receipt (ActuationClaimLease.decide/3), so a
+  # lost actuation commit cannot re-open a completed effect.
   defp commit_actuation(store, actuation, receipt, consequence, store_opts, opts)
        when consequence in [:change, :external_do] do
-    if enforce_actuation?(store, actuation, opts),
-      do: store.commit_actuation(actuation, receipt, store_opts),
-      else: :ok
-  rescue
-    _error -> :ok
-  catch
-    :exit, _reason -> :ok
+    if enforce_actuation?(store, actuation, opts) do
+      delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+      result = commit_actuation_with_retries(store, actuation, receipt, store_opts, delays)
+
+      if result != :ok do
+        emit_boundary([:actuation_commit], receipt, %{
+          outcome: :failed,
+          reason: inspect(result),
+          receipt_id: identity_value(receipt.receipt_id)
+        })
+      end
+
+      result
+    else
+      :ok
+    end
   end
 
   defp commit_actuation(_store, _actuation, _receipt, _consequence, _store_opts, _opts), do: :ok
+
+  defp commit_actuation_with_retries(store, actuation, receipt, store_opts, delays) do
+    case commit_actuation_once(store, actuation, receipt, store_opts) do
+      :ok ->
+        :ok
+
+      error ->
+        case delays do
+          [] ->
+            error
+
+          [delay | rest] ->
+            Process.sleep(delay)
+            commit_actuation_with_retries(store, actuation, receipt, store_opts, rest)
+        end
+    end
+  end
+
+  defp commit_actuation_once(store, actuation, receipt, store_opts) do
+    case store.commit_actuation(actuation, receipt, store_opts) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:unexpected, other}}
+    end
+  rescue
+    _error -> {:error, :actuation_store_unavailable}
+  catch
+    :exit, _reason -> {:error, :actuation_store_unavailable}
+  end
 
   defp release_actuation(store, actuation, consequence, store_opts, opts)
        when consequence in [:change, :external_do] do
@@ -609,6 +821,8 @@ defmodule AshA2A.CommandBus do
   defp commit_with_retries(store, receipt, store_opts, delays) do
     case commit_once(store, receipt, store_opts) do
       :ok -> :ok
+      # Fenced out by a newer execution (R4): retrying cannot succeed.
+      {:error, :stale_execution} -> {:error, :stale_execution}
       {:error, reason} -> retry_commit(store, receipt, store_opts, delays, reason)
     end
   end
@@ -732,17 +946,33 @@ defmodule AshA2A.CommandBus do
   # class is checked against the real `AshA2A.KillSwitch.tripped?/1` state
   # for that class, refusing before `claim_receipt/3` (and therefore before
   # any receipt is claimed or DO ever runs) when it is tripped.
+  #
+  # R6: a kill switch that cannot be consulted (not started, crashed before
+  # publishing its state) refuses -- fail closed -- instead of letting the
+  # exit propagate into, and kill, the calling agent process.
   defp check_kill_switch(opts) do
     case Keyword.get(opts, :kill_switch_class) do
       nil ->
         :ok
 
       class ->
-        case KillSwitch.tripped?(class) do
+        case KillSwitch.tripped?(class, Keyword.get(opts, :kill_switch, KillSwitch)) do
           {true, reason} -> {:error, %{code: :kill_switch_tripped, detail: reason}}
           false -> :ok
         end
     end
+  rescue
+    _error -> kill_switch_unavailable()
+  catch
+    :exit, _reason -> kill_switch_unavailable()
+  end
+
+  defp kill_switch_unavailable do
+    {:error,
+     %{
+       code: :kill_switch_unavailable,
+       detail: "kill switch could not be consulted; refusing before claim (fail closed)"
+     }}
   end
 
   defp refusal(reason), do: %{code: reason, detail: Atom.to_string(reason)}
@@ -1030,12 +1260,119 @@ defmodule AshA2A.CommandBus do
     end
   end
 
+  @doc """
+  The dispatch deadline in force: `opts[:dispatch_timeout_ms]`, else
+  `config :ash_a2a, :dispatch_timeout_ms`, else #{@default_dispatch_timeout_ms}.
+  `:infinity` runs DO in the calling process with no deadline.
+  """
+  @spec dispatch_timeout_ms(keyword()) :: pos_integer() | :infinity
+  def dispatch_timeout_ms(opts \\ []) do
+    Keyword.get(opts, :dispatch_timeout_ms) ||
+      Application.get_env(:ash_a2a, :dispatch_timeout_ms, @default_dispatch_timeout_ms)
+  end
+
   defp safe_dispatch(skill, message, resource_or_domain, opts, anchor) do
+    case dispatch_timeout_ms(opts) do
+      :infinity ->
+        guarded_dispatch(skill, message, resource_or_domain, opts, anchor)
+
+      timeout when is_integer(timeout) and timeout > 0 ->
+        bounded_dispatch(skill, message, resource_or_domain, opts, anchor, timeout)
+    end
+  end
+
+  defp guarded_dispatch(skill, message, resource_or_domain, opts, anchor) do
     dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts, anchor)
   rescue
     exception -> {:error, dispatch_crash_reason(:error, exception, __STACKTRACE__)}
   catch
     kind, reason -> {:error, dispatch_crash_reason(kind, reason, __STACKTRACE__)}
+  end
+
+  # R9: DO runs in a LINKED, monitored child that inherits this process's
+  # dictionary -- Ash actor/tenant context, Logger metadata, OTel context --
+  # and a `$callers` chain (so Ecto sandbox allowances resolve exactly as
+  # they do for `Task`). The link keeps the pre-R9 crash semantics: if the
+  # caller dies, DO dies with it (no orphaned consequence), and if DO is
+  # killed by a signal, the caller dies too, exactly as when DO ran
+  # in-process. The OCEL pending-dispatch stash the child's dispatch
+  # telemetry produces is carried back so receipt correlation is unchanged.
+  # On deadline the child is unlinked, killed, and the reply is
+  # `:dispatch_timeout`; a reply racing the kill is flushed. A caller that
+  # traps exits sees a signal death as `:dispatch_lost` instead of dying.
+  defp bounded_dispatch(skill, message, resource_or_domain, opts, anchor, timeout) do
+    parent = self()
+    ref = make_ref()
+    inherited = inheritable_dictionary()
+    callers = [parent | List.wrap(Process.get(:"$callers"))]
+
+    pid =
+      spawn_link(fn ->
+        Enum.each(inherited, fn {key, value} -> Process.put(key, value) end)
+        Process.put(:"$callers", callers)
+        reply = guarded_dispatch(skill, message, resource_or_domain, opts, anchor)
+        send(parent, {ref, reply, Process.get(@ocel_pending_key)})
+      end)
+
+    monitor = Process.monitor(pid)
+
+    receive do
+      {^ref, reply, pending} ->
+        release_child(pid, monitor)
+        if pending != nil, do: Process.put(@ocel_pending_key, pending)
+        reply
+
+      # Reached only when this process traps exits (otherwise the link has
+      # already taken it down): DO died without replying, so whether it
+      # crossed the consequence boundary is unknown, exactly like a timeout.
+      {:DOWN, ^monitor, :process, ^pid, reason} ->
+        release_child(pid, nil)
+
+        {:error,
+         %{
+           code: :dispatch_lost,
+           detail: "dispatch process died without replying; outcome unknown",
+           reason: inspect(reason, limit: 5)
+         }}
+    after
+      timeout ->
+        Process.unlink(pid)
+        Process.exit(pid, :kill)
+        release_child(pid, monitor)
+
+        receive do
+          {^ref, _late_reply, _pending} -> :ok
+        after
+          0 -> :ok
+        end
+
+        {:error,
+         %{
+           code: :dispatch_timeout,
+           detail: "dispatch exceeded #{timeout}ms and was killed; outcome unknown",
+           timeout_ms: timeout
+         }}
+    end
+  end
+
+  # Drops the link and monitor and flushes any `{:EXIT, pid, _}` a
+  # trapping caller already received, so the child leaves no stray message
+  # in a long-lived agent's mailbox.
+  defp release_child(pid, monitor) do
+    Process.unlink(pid)
+    if monitor, do: Process.demonitor(monitor, [:flush])
+
+    receive do
+      {:EXIT, ^pid, _reason} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  @uninherited [:"$ancestors", :"$initial_call", :"$callers"]
+
+  defp inheritable_dictionary do
+    Enum.reject(Process.get(), fn {key, _value} -> key in @uninherited end)
   end
 
   defp dispatch_crash_reason(kind, reason, stacktrace) do

@@ -12,6 +12,12 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
   filesystem `AshA2A.ReceiptOutbox`. No Mock/mox/patch/monkeypatch anywhere
   in this file: "abandoned" and "reclaimed" are asserted on the real claim
   results the stores return, not on interaction expectations.
+
+  TQ-06: the lease is injected per call (`claim_lease_ms:` in the store opts)
+  at 500ms -- long enough that the "still held" assertion cannot race a GC
+  pause or a loaded scheduler -- and expiry is observed with a deadline poll
+  instead of a fixed sleep. Nothing here mutates the global
+  `:claim_lease_ms`.
   """
 
   use ExUnit.Case, async: false
@@ -23,18 +29,15 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
   alias AshA2A.{Actuation, Command, Identity, Receipt, ReceiptOutbox}
   alias AshA2A.ReceiptStore.{Ekv, Memory}
 
+  @lease_ms 500
+  @expiry_deadline_ms 2_000
+
   setup %{tmp_dir: tmp_dir} do
-    previous_lease = Application.get_env(:ash_a2a, :claim_lease_ms)
     previous_outbox = Application.get_env(:ash_a2a, :receipt_outbox_dir)
 
     Application.put_env(:ash_a2a, :receipt_outbox_dir, Path.join(tmp_dir, "outbox"))
 
     on_exit(fn ->
-      case previous_lease do
-        nil -> Application.delete_env(:ash_a2a, :claim_lease_ms)
-        value -> Application.put_env(:ash_a2a, :claim_lease_ms, value)
-      end
-
       case previous_outbox do
         nil -> Application.delete_env(:ash_a2a, :receipt_outbox_dir)
         value -> Application.put_env(:ash_a2a, :receipt_outbox_dir, value)
@@ -42,6 +45,28 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
     end)
 
     :ok
+  end
+
+  # Polls `fun` until it returns `expected` or the deadline passes; returns the
+  # last observed value so a failing assertion shows the real result.
+  defp eventually(expected, fun, deadline_ms \\ @expiry_deadline_ms) do
+    stop = System.monotonic_time(:millisecond) + deadline_ms
+    poll(expected, fun, stop)
+  end
+
+  defp poll(expected, fun, stop) do
+    case fun.() do
+      ^expected ->
+        expected
+
+      other ->
+        if System.monotonic_time(:millisecond) >= stop do
+          other
+        else
+          Process.sleep(25)
+          poll(expected, fun, stop)
+        end
+    end
   end
 
   defp effect_command(command_id, effect_key) do
@@ -55,11 +80,9 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
 
   describe "Memory backend" do
     test "an in-flight actuation is reclaimed once its claimant's primary claim is abandoned (lease elapsed, no outbox anchor)" do
-      Application.put_env(:ash_a2a, :claim_lease_ms, 20)
-
       name = :"actuation_lease_memory_#{System.unique_integer([:positive])}"
       start_supervised!({Memory, name: name})
-      opts = [name: name]
+      opts = [name: name, claim_lease_ms: @lease_ms]
 
       key = "actuation-lease-#{System.unique_integer([:positive])}"
       crashed = effect_command("crashed-claimant", key)
@@ -76,12 +99,11 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
       # Before the lease elapses, a second claimant is refused.
       assert {:error, :actuation_in_flight} = Memory.claim_actuation(actuation, fresh, opts)
 
-      Process.sleep(60)
-
       # Past the lease, with no outbox anchor for the crashed claimant's
       # command id -- DO could not have started -- a fresh claimant reclaims
       # the effect instead of being refused forever.
-      assert :proceed = Memory.claim_actuation(actuation, fresh, opts)
+      assert :proceed =
+               eventually(:proceed, fn -> Memory.claim_actuation(actuation, fresh, opts) end)
 
       receipt =
         Receipt.from_reply(
@@ -100,11 +122,9 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
     end
 
     test "an in-flight actuation is never reclaimed once its claimant's primary claim reached the outbox anchor, no matter how long the lease has passed" do
-      Application.put_env(:ash_a2a, :claim_lease_ms, 20)
-
       name = :"actuation_lease_anchored_memory_#{System.unique_integer([:positive])}"
       start_supervised!({Memory, name: name})
-      opts = [name: name]
+      opts = [name: name, claim_lease_ms: 20]
 
       key = "actuation-anchored-#{System.unique_integer([:positive])}"
       claimant = effect_command("anchored-claimant", key)
@@ -145,14 +165,12 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
       # pattern test/ash_a2a/receipt_store_ekv_test.exs already uses.
       start_supervised!({EKV, name: ekv_name, data_dir: data_dir, cluster_size: 1})
 
-      %{store_opts: [name: ekv_name]}
+      %{store_opts: [name: ekv_name, claim_lease_ms: @lease_ms]}
     end
 
     test "an in-flight actuation is reclaimed once its claimant's primary claim is abandoned", %{
       store_opts: store_opts
     } do
-      Application.put_env(:ash_a2a, :claim_lease_ms, 20)
-
       key = "actuation-lease-ekv-#{System.unique_integer([:positive])}"
       crashed = effect_command("crashed-claimant-ekv", key)
       actuation = Actuation.identity(crashed)
@@ -163,9 +181,8 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
       fresh = effect_command("fresh-claimant-ekv", key)
       assert {:error, :actuation_in_flight} = Ekv.claim_actuation(actuation, fresh, store_opts)
 
-      Process.sleep(60)
-
-      assert :proceed = Ekv.claim_actuation(actuation, fresh, store_opts)
+      assert :proceed =
+               eventually(:proceed, fn -> Ekv.claim_actuation(actuation, fresh, store_opts) end)
 
       receipt =
         Receipt.from_reply(
@@ -185,8 +202,7 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
 
     test "an in-flight actuation is never reclaimed once its claimant's primary claim reached the outbox anchor",
          %{store_opts: store_opts} do
-      Application.put_env(:ash_a2a, :claim_lease_ms, 20)
-
+      store_opts = Keyword.put(store_opts, :claim_lease_ms, 20)
       key = "actuation-anchored-ekv-#{System.unique_integer([:positive])}"
       claimant = effect_command("anchored-claimant-ekv", key)
       actuation = Actuation.identity(claimant)

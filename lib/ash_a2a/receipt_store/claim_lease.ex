@@ -26,21 +26,34 @@ defmodule AshA2A.ReceiptStore.ClaimLease do
   no matter how old it is -- it may already have actuated, and reclaiming it
   would violate BRCE's at-most-once guarantee. Its only recovery path remains
   `AshA2A.ReceiptOutbox.reconcile/2` / `AshA2A.Reconciliation.reconcile/4`,
-  unchanged by this module. A present-but-unreadable (torn) outbox entry
-  counts as an anchor too: `ReceiptOutbox.entries/0` only returns decodable
-  entries, so this module counts raw journal files
-  (`AshA2A.ReceiptOutbox.count/0` vs. `entries/0`) rather than trusting
-  decodability, the same fail-closed instinct `AshA2A.Reconciliation` already
-  applies to unreadable entries.
+  unchanged by this module.
+
+  The anchor test is `AshA2A.ReceiptOutbox.anchored_command?/1`: journal
+  files are keyed by a digest of the command id, so the check is one
+  directory listing plus a prefix match -- no decoding -- and a torn
+  (unreadable) journal file blocks reclaim only for its OWN command id. A
+  legacy-named (pre-command-keyed) entry is decoded; an unreadable legacy
+  entry still blocks every reclaim (fail closed), which is why
+  `AshA2A.ReceiptOutbox.Reconciler` migrates legacy entries on start.
+
+  The lease is injectable per call (`opts[:claim_lease_ms]`, falling back to
+  `config :ash_a2a, :claim_lease_ms`), so a caller or test never needs to
+  mutate global application env to pin it.
   """
 
   alias AshA2A.{Identity, ReceiptOutbox}
 
   @default_lease_ms 300_000
 
-  @doc "The configured claim lease duration in milliseconds."
-  @spec duration_ms() :: non_neg_integer()
-  def duration_ms, do: Application.get_env(:ash_a2a, :claim_lease_ms, @default_lease_ms)
+  @doc """
+  The claim lease duration in milliseconds: `opts[:claim_lease_ms]` when
+  given, else `config :ash_a2a, :claim_lease_ms`, else #{300_000}.
+  """
+  @spec duration_ms(keyword()) :: non_neg_integer()
+  def duration_ms(opts \\ []) do
+    Keyword.get(opts, :claim_lease_ms) ||
+      Application.get_env(:ash_a2a, :claim_lease_ms, @default_lease_ms)
+  end
 
   @doc "Wall-clock reading to stamp a fresh (or reclaimed) claim's `claimed_at` with."
   @spec now() :: DateTime.t()
@@ -54,25 +67,14 @@ defmodule AshA2A.ReceiptStore.ClaimLease do
   lease-expired -- it predates lease tracking and so cannot itself be
   evidence of a live executor; the anchor check still applies.
   """
-  @spec abandoned?(DateTime.t() | nil, Identity.t()) :: boolean()
-  def abandoned?(claimed_at, %Identity{kind: :command} = command_id) do
-    lease_elapsed?(claimed_at) and not anchored?(command_id)
+  @spec abandoned?(DateTime.t() | nil, Identity.t(), keyword()) :: boolean()
+  def abandoned?(claimed_at, %Identity{kind: :command} = command_id, opts \\ []) do
+    lease_elapsed?(claimed_at, opts) and not ReceiptOutbox.anchored_command?(command_id)
   end
 
-  defp lease_elapsed?(nil), do: true
+  defp lease_elapsed?(nil, _opts), do: true
 
-  defp lease_elapsed?(%DateTime{} = claimed_at) do
-    DateTime.diff(now(), claimed_at, :millisecond) >= duration_ms()
-  end
-
-  # Raw entry count vs. readable entries: an unreadable (torn) journal file
-  # for this command id must still block reclaim, the same fail-closed
-  # instinct `AshA2A.Reconciliation.classify/4` already applies -- a torn
-  # file could be the very anchor that proves DO started.
-  defp anchored?(%Identity{} = command_id) do
-    readable = ReceiptOutbox.entries()
-    unreadable = max(ReceiptOutbox.count() - length(readable), 0)
-
-    unreadable > 0 or Enum.any?(readable, &(&1.command_id == command_id))
+  defp lease_elapsed?(%DateTime{} = claimed_at, opts) do
+    DateTime.diff(now(), claimed_at, :millisecond) >= duration_ms(opts)
   end
 end

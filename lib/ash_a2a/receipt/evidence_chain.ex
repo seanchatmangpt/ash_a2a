@@ -122,10 +122,14 @@ defmodule AshA2A.Receipt.EvidenceChain do
   def encode_receipt(%Receipt{} = receipt),
     do: :erlang.term_to_binary({@journal_version, receipt})
 
-  @doc "Decodes journal-format bytes into a receipt. Never raises."
+  @doc """
+  Decodes journal-format bytes into a receipt. Never raises. Uses
+  `:erlang.binary_to_term/2` with `[:safe]`: bytes that would mint a new
+  atom or an external fun decode to `{:error, :bad_term}` (finding TQ-04).
+  """
   @spec decode_receipt(binary()) :: {:ok, Receipt.t()} | {:error, term()}
   def decode_receipt(bytes) when is_binary(bytes) do
-    case :erlang.binary_to_term(bytes) do
+    case :erlang.binary_to_term(bytes, [:safe]) do
       {@journal_version, %Receipt{} = receipt} -> {:ok, receipt}
       _ -> {:error, :foreign_format}
     end

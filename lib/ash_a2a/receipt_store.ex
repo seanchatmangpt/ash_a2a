@@ -74,5 +74,133 @@ defmodule AshA2A.ReceiptStore do
   @callback commit_actuation(Actuation.t(), Receipt.t(), keyword()) :: :ok | {:error, term()}
   @callback release_actuation(Actuation.t(), keyword()) :: :ok
 
-  @optional_callbacks claim_actuation: 3, commit_actuation: 3, release_actuation: 2
+  @doc """
+  Fencing check (finding R4): `:ok` when `execution_id` still holds the claim
+  for `command_id`, `{:error, :stale_execution}` when the claim was reclaimed
+  by another execution. `AshA2A.CommandBus` calls it after preparing the
+  receipt anchor and before DO, when the store exports it.
+  """
+  @callback confirm_claim(AshA2A.Identity.t(), AshA2A.Identity.t(), keyword()) ::
+              :ok | {:error, term()}
+
+  @optional_callbacks claim_actuation: 3,
+                      commit_actuation: 3,
+                      release_actuation: 2,
+                      confirm_claim: 3
+
+  @doc """
+  True when `store` declares itself durable by exporting `durable?/0`
+  returning `true` (a convention, not a callback, so existing stores that
+  already export it need no `@impl`).
+  """
+  @spec durable?(module()) :: boolean()
+  def durable?(store) when is_atom(store) do
+    Code.ensure_loaded?(store) and function_exported?(store, :durable?, 0) and store.durable?()
+  end
+
+  @doc """
+  Boot-time durability check for the at-most-once machinery (findings R2,
+  R12, PERF-09). Intended to be called from `AshA2A.Application.start/2`
+  before the supervision tree starts; returns `:ok` or the first violation.
+
+  Inputs are read from `opts`, falling back to application env:
+
+    * `:production` (`config :ash_a2a, :production`, default `false`)
+    * `:receipt_store` (`config :ash_a2a, :receipt_store`, default
+      `AshA2A.ReceiptStore.Memory`) and whether it was set explicitly
+    * `:receipt_outbox_dir`, `:receipt_store_ekv_opts[:data_dir]`,
+      `:receipt_store_ekv_opts[:cluster_size]`, `:kill_switch_path`
+    * `:allow_memory_receipt_store` (escape hatch, default `false`)
+
+  Rules (all fail closed):
+
+    1. A durable store with the outbox journal unset or under
+       `System.tmp_dir!/0` -> `{:error, {:non_durable_outbox_dir, dir}}`: the
+       outbox anchor is the at-most-once proof and must live as long as the
+       claim store.
+    2. `Ekv` with its `:data_dir` unset or under the tmp dir ->
+       `{:error, {:non_durable_receipt_store_data_dir, dir}}`.
+    3. In production: the receipt store must be set explicitly
+       (`{:error, :receipt_store_not_configured}`), must not be `Memory`
+       unless allowed (`{:error, {:non_durable_receipt_store, Memory}}`),
+       EKV `cluster_size` must be >= 3
+       (`{:error, {:insufficient_cluster_size, n}}`), and `:kill_switch_path`
+       must be set outside the tmp dir
+       (`{:error, {:non_durable_kill_switch_path, path}}`).
+  """
+  @spec boot_check(keyword()) :: :ok | {:error, term()}
+  def boot_check(opts \\ []) do
+    env = fn key, default ->
+      Keyword.get(opts, key, Application.get_env(:ash_a2a, key, default))
+    end
+
+    production? = env.(:production, false) == true
+
+    explicit_store =
+      Keyword.get(opts, :receipt_store, Application.get_env(:ash_a2a, :receipt_store))
+
+    store = explicit_store || AshA2A.ReceiptStore.Memory
+    outbox_dir = env.(:receipt_outbox_dir, nil)
+    ekv_opts = env.(:receipt_store_ekv_opts, [])
+    kill_switch_path = env.(:kill_switch_path, nil)
+    allow_memory? = env.(:allow_memory_receipt_store, false) == true
+
+    cond do
+      production? and is_nil(explicit_store) ->
+        {:error, :receipt_store_not_configured}
+
+      production? and store == AshA2A.ReceiptStore.Memory and not allow_memory? ->
+        {:error, {:non_durable_receipt_store, store}}
+
+      durable?(store) and not durable_path?(outbox_dir) ->
+        {:error, {:non_durable_outbox_dir, outbox_dir}}
+
+      store == AshA2A.ReceiptStore.Ekv and not durable_path?(Keyword.get(ekv_opts, :data_dir)) ->
+        {:error, {:non_durable_receipt_store_data_dir, Keyword.get(ekv_opts, :data_dir)}}
+
+      production? and store == AshA2A.ReceiptStore.Ekv and
+          Keyword.get(ekv_opts, :cluster_size, 1) < 3 ->
+        {:error, {:insufficient_cluster_size, Keyword.get(ekv_opts, :cluster_size, 1)}}
+
+      production? and not durable_path?(kill_switch_path) ->
+        {:error, {:non_durable_kill_switch_path, kill_switch_path}}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc "True when `path` is set and does not live under `System.tmp_dir!/0`."
+  @spec durable_path?(term()) :: boolean()
+  def durable_path?(path) when is_binary(path) and path != "" do
+    expanded = Path.expand(path)
+    tmp = System.tmp_dir!() |> Path.expand()
+    tmp_real = resolve(tmp)
+
+    not Enum.any?([tmp, tmp_real, "/tmp", "/private/tmp", "/var/tmp"], fn root ->
+      expanded == root or String.starts_with?(expanded, root <> "/") or
+        resolve(expanded) == root or String.starts_with?(resolve(expanded), root <> "/")
+    end)
+  end
+
+  def durable_path?(_path), do: false
+
+  # Resolves a leading symlinked prefix (macOS `/var` -> `/private/var`) so a
+  # tmp dir cannot be laundered through a symlink spelling.
+  defp resolve(path) do
+    case :file.read_link_all(String.to_charlist(path)) do
+      {:ok, target} -> Path.expand(List.to_string(target), Path.dirname(path))
+      _ -> resolve_parent(path)
+    end
+  end
+
+  defp resolve_parent("/"), do: "/"
+
+  defp resolve_parent(path) do
+    parent = Path.dirname(path)
+
+    if parent == path,
+      do: path,
+      else: Path.join(resolve(parent), Path.basename(path))
+  end
 end
