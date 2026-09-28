@@ -12,6 +12,7 @@ defmodule AshA2A.SpgConformanceRuntimeTest do
     assert length(cases) == 56
     assert Enum.count(cases, &(&1["expect"] == "admit")) == 28
     assert Enum.count(cases, &(&1["expect"] == "refuse")) == 28
+
     assert Enum.map(cases, & &1["case_id"]) ==
              Enum.map(1..56, &"SPG-#{String.pad_leading(Integer.to_string(&1), 3, "0")}")
 
