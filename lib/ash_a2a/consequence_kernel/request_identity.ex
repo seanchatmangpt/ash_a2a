@@ -1,3 +1,4 @@
 defmodule AshA2A.ConsequenceKernel.RequestIdentity do
-  def derive(x), do: AshA2A.Identity.Canonical.digest(%{"kind" => "request", "request" => x})
+  @moduledoc false
+  def derive(request), do: AshA2A.Identity.Canonical.Migration.tagged_digest("sa2a.request.v1",request)
 end

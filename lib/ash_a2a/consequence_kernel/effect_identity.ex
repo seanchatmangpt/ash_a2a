@@ -1,4 +1,4 @@
 defmodule AshA2A.ConsequenceKernel.EffectIdentity do
-  def derive(r, e),
-    do: AshA2A.Identity.Canonical.digest(%{"kind" => "effect", "request_id" => r, "effect" => e})
+  @moduledoc false
+  def derive(request_id,effect), do: AshA2A.Identity.Canonical.Migration.tagged_digest("sa2a.effect.v1",%{"request_id"=>request_id,"effect"=>effect})
 end
