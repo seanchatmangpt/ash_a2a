@@ -25,7 +25,9 @@ defmodule AshA2A.Replan.Port.Beam4pm do
     do: {:ok, Map.put_new(candidate, :subject, Map.get(request, :subject))}
 
   defp normalize({:recompile_required, evidence}, request),
-    do: {:ok, %{subject: Map.get(request, :subject), outcome: :recompile_required, evidence: evidence}}
+    do:
+      {:ok,
+       %{subject: Map.get(request, :subject), outcome: :recompile_required, evidence: evidence}}
 
   defp normalize({:error, _} = error, _request), do: error
   defp normalize(other, _request), do: {:error, {:invalid_beam4pm_result, other}}

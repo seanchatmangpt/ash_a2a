@@ -44,6 +44,9 @@ defmodule AshA2AArchitectureVerifierTest do
   alias AshA2A.ArchitectureVerifier.Fixture.{Resource, SemanticResource}
   alias AshA2A.{Authority, BrceAnchor, Command, CommandBus, Dispatcher, Identity, Info, Receipt}
 
+  # Runs the seven real Chicago courts (~35s alone, >60s under full-suite
+  # load): the ExUnit default 60s timeout is a load artifact, not a verdict.
+  @tag timeout: 300_000
   test "checks/0 reports all ten original architecture invariants as passing, plus the Chicago rollup" do
     results = ArchitectureVerifier.checks()
 

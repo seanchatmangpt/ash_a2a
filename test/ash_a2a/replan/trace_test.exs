@@ -1,1 +1,8 @@
-defmodule AshA2A.Replan.TraceTest do use ExUnit.Case, async: true; test "replay preserves order" do t=%AshA2A.Replan.Trace{} |> AshA2A.Replan.Trace.append(:a) |> AshA2A.Replan.Trace.append(:b); assert [:a,:b]=AshA2A.Replan.Trace.replay(t) end end
+defmodule AshA2A.Replan.TraceTest do
+  use ExUnit.Case, async: true
+
+  test "replay preserves order" do
+    t = %AshA2A.Replan.Trace{} |> AshA2A.Replan.Trace.append(:a) |> AshA2A.Replan.Trace.append(:b)
+    assert [:a, :b] = AshA2A.Replan.Trace.replay(t)
+  end
+end

@@ -14,7 +14,12 @@ defmodule AshA2A.Replan.PortContractTest do
   test "Beam4PM strategic recompile remains a candidate rather than provider failure" do
     assert {:ok, %{subject: "s", outcome: :recompile_required}} =
              AshA2A.Replan.Port.Beam4pm.propose(
-               %{subject: "s", decision: :strategic_recompile, formalism: :hddl, evidence: %{x: 1}},
+               %{
+                 subject: "s",
+                 decision: :strategic_recompile,
+                 formalism: :hddl,
+                 evidence: %{x: 1}
+               },
                beam4pm_module: FakeBeam4pm
              )
   end

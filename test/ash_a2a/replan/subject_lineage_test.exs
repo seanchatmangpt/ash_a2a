@@ -1,1 +1,7 @@
-defmodule AshA2A.Replan.SubjectLineageTest do use ExUnit.Case, async: true; test "refuses subject drift" do assert {:error,%{code: :replan_subject_drift}}=AshA2A.Replan.SubjectLineage.guard("a","b") end end
+defmodule AshA2A.Replan.SubjectLineageTest do
+  use ExUnit.Case, async: true
+
+  test "refuses subject drift" do
+    assert {:error, %{code: :replan_subject_drift}} = AshA2A.Replan.SubjectLineage.guard("a", "b")
+  end
+end

@@ -158,6 +158,37 @@ defmodule AshA2A.Semantic.Refusal do
   # a time. Codes here are NEVER renamed -- this is a projection of the
   # existing vocabulary, not a replacement for it.
   @mapping %{
+    # --- merged C1/C2 consequence-kernel + replan-port codes (v26.9.28) ----
+    already_claimed: :refused_consequence,
+    effect_claim_missing: :refused_consequence,
+    effect_in_flight: :refused_consequence,
+    effector_contract_violation: :refused_consequence,
+    authority_unknown_decision: :blocked_unknown,
+    kernel_bypass: :refused_consequence,
+    prepared_effect_digest_mismatch: :refused_consequence,
+    prepared_record_identity_mismatch: :refused_consequence,
+    certificate_refused: :refused_authority,
+    refused: :refused_authority,
+    budget_exceeded: :refused_bounds,
+    canonical_unencodable: :refused_structure,
+    effect_instance_missing_field: :refused_structure,
+    invalid_enum: :refused_structure,
+    invalid_portable_replan_envelope: :refused_structure,
+    missing_domain: :refused_plan,
+    missing_initial: :refused_plan,
+    plan_not_found: :refused_plan,
+    replan_subject_drift: :refused_plan,
+    replay_effect_divergence: :refused_receipt,
+    ash_pplan_unavailable: :blocked_resource,
+    beam4pm_unavailable: :blocked_resource,
+    ferroplan_unavailable: :blocked_resource,
+    replan_provider_unavailable: :blocked_resource,
+    provider_required: :blocked_resource,
+    reconcile_required: :blocked_unknown,
+    standing_unknown_outcome: :blocked_unknown,
+    unsupported_algorithm: :unsupported_profile,
+    unsupported_formalism: :unsupported_profile,
+
     # --- transport / receipt-store codes (merge reconciliation) ------------
     bad_signature: :refused_authority,
     stale_timestamp: :refused_bounds,

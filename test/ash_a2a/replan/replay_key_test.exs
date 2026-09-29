@@ -1,1 +1,7 @@
-defmodule AshA2A.Replan.ReplayKeyTest do use ExUnit.Case, async: true; test "deterministic" do assert AshA2A.Replan.ReplayKey.build("s",:p,1)==AshA2A.Replan.ReplayKey.build("s",:p,1) end end
+defmodule AshA2A.Replan.ReplayKeyTest do
+  use ExUnit.Case, async: true
+
+  test "deterministic" do
+    assert AshA2A.Replan.ReplayKey.build("s", :p, 1) == AshA2A.Replan.ReplayKey.build("s", :p, 1)
+  end
+end

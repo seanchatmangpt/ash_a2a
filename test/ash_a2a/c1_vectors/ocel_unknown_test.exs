@@ -1,4 +1,8 @@
 defmodule AshA2A.C1OcelUnknownTest do
- use ExUnit.Case, async: true
- test "unknown remains explicit evidence" do p=%{instance:%{effect_id:"e",subject_digest:"s"},prepared_digest:"p"}; assert AshA2A.ConsequenceKernel.Ocel.project(p,:unknown)["outcome"]=="unknown" end
+  use ExUnit.Case, async: true
+
+  test "unknown remains explicit evidence" do
+    p = %{instance: %{effect_id: "e", subject_digest: "s"}, prepared_digest: "p"}
+    assert AshA2A.ConsequenceKernel.Ocel.project(p, :unknown)["outcome"] == "unknown"
+  end
 end

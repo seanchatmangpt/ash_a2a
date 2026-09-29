@@ -16,7 +16,14 @@ defmodule AshA2A.Replan.LoopFailoverTest do
   test "failure excludes only the failed provider and consumes the attempt budget" do
     providers = [failed: FailedProvider, working: WorkingProvider]
 
-    assert {:ok, %{provider: :working, attempt: 1, excluded: [:failed], replay_key: replay_key, candidate: %{subject: "s"}}} =
+    assert {:ok,
+            %{
+              provider: :working,
+              attempt: 1,
+              excluded: [:failed],
+              replay_key: replay_key,
+              candidate: %{subject: "s"}
+            }} =
              AshA2A.Replan.Loop.run("s", %{formalism: :hddl}, providers, max_attempts: 2)
 
     assert is_binary(replay_key)

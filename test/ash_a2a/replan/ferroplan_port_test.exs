@@ -1,1 +1,7 @@
-defmodule AshA2A.Replan.FerroplanPortTest do use ExUnit.Case, async: true; test "declares FOND" do assert AshA2A.Replan.Port.Ferroplan.supports?(:fond) end end
+defmodule AshA2A.Replan.FerroplanPortTest do
+  use ExUnit.Case, async: true
+
+  test "declares FOND" do
+    assert AshA2A.Replan.Port.Ferroplan.supports?(:fond)
+  end
+end
