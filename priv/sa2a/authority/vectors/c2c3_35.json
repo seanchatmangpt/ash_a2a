@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "case": "35",
+  "family": "epoch",
+  "expected": "refuse_on_mismatch",
+  "invariants": [
+    "policy_epoch",
+    "revocation_epoch",
+    "generation_fence"
+  ]
+}

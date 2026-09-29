@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "case": "26",
+  "family": "resource",
+  "expected": "refuse_on_mismatch",
+  "invariants": [
+    "recursive_conservation",
+    "effect_binding",
+    "no_amplification"
+  ]
+}

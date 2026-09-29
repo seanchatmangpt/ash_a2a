@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "case": "42",
+  "family": "claim",
+  "expected": "refuse_on_mismatch",
+  "invariants": [
+    "claim_once",
+    "completion_once",
+    "unknown_outcome_reconcile"
+  ]
+}

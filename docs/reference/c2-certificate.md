@@ -12,6 +12,7 @@ loss to the actuator's certificate JSON and to the authority service's reply. La
 - Time representation decision
 - Conversions
 - Verification identity in the actuator profile
+- Complete mediation
 - See also
 
 ## Struct
@@ -72,6 +73,17 @@ Certificates for actuator-profile effects bind the actuator digest (SHA-256 over
 canonical effect bytes), not `PreparedEffect.digest`. `CertificateVerifier` therefore takes the
 identity `%{digest: actuator_digest, principal: principal}` (`ActuatorProfile.effect/2` computes
 it). See `c2-wire-interop.md`.
+
+## Complete mediation
+
+`AshA2A.C2.CompleteMediation.admit/3` runs before any signature is checked. Beyond the
+digest/principal binding and the policy epoch, revocation epoch and generation checks it refuses
+(`{:error, :refused}`) a certificate whose `audience` differs from `ctx.audience`, whose
+`[not_before_ms, expires_at_ms)` window does not contain the current time, or whose `nonce` is
+shorter than 16 bytes. The clock is `ctx.now_ms` (milliseconds) when present, else `ctx.now`
+(unix seconds, the value passed to Sa2aCrypto), else the system clock. Signature verification
+itself stays in `CertificateVerifier` through `AshA2A.CryptoStanding`; the c2c3 branch's
+algorithm-atom `CryptoVerifier` provider hook was not adopted because it would bypass that path.
 
 ## See also
 
