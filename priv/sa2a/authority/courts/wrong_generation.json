@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-wrong_generation",
+  "family": "authority-actuator-resource",
+  "invariant": "wrong_generation",
+  "expected": "explicit-decision"
+}

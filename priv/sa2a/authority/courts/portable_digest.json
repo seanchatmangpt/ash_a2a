@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-portable_digest",
+  "family": "authority-actuator-resource",
+  "invariant": "portable_digest",
+  "expected": "explicit-decision"
+}

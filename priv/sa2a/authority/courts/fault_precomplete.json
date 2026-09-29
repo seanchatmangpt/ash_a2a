@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-fault_precomplete",
+  "family": "authority-actuator-resource",
+  "invariant": "fault_precomplete",
+  "expected": "explicit-decision"
+}

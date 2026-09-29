@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-allocation_boundary",
+  "family": "authority-actuator-resource",
+  "invariant": "allocation_boundary",
+  "expected": "explicit-decision"
+}

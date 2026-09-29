@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-replay",
+  "family": "authority-actuator-resource",
+  "invariant": "replay",
+  "expected": "explicit-decision"
+}

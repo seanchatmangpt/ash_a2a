@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-recursive_budget",
+  "family": "authority-actuator-resource",
+  "invariant": "recursive_budget",
+  "expected": "explicit-decision"
+}
