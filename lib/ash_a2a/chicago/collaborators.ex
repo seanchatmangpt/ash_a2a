@@ -261,7 +261,7 @@ defmodule AshA2A.Chicago.Collaborators do
 
     %{
       module: module,
-      actuator_calls: calls_into(module, inversion),
+      actuator_calls: actuator_calls(module, inversion),
       boundary_telemetry?: "execute/3" in calls_into(module, :telemetry),
       identified?:
         exported?(module, :run, 4) and "execute/2" in calls_into(module, inversion) and
@@ -672,6 +672,14 @@ defmodule AshA2A.Chicago.Collaborators do
   # Remote calls `module`'s compiled BEAM makes into `target`, as "fun/arity".
   # Read from the import table of the loaded object code: evidence of real
   # wiring, independent of any module name a config or doc asserts.
+  # The consequence-bearing actuator entry the boundary reaches: `Dispatcher.dispatch/6`, via the
+  # kernel inversion the CommandBus calls (`dispatch_observe/6` is the observation-only entry).
+  defp actuator_calls(boundary, inversion) do
+    if "execute/2" in calls_into(boundary, inversion),
+      do: Enum.filter(calls_into(inversion, AshA2A.Dispatcher), &(&1 == "dispatch/6")),
+      else: []
+  end
+
   defp calls_into(module, target) do
     with true <- Code.ensure_loaded?(module),
          {:ok, path} <- AshA2A.BeamFile.path(module),
