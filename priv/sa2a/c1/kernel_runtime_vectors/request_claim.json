@@ -1,0 +1,13 @@
+{
+  "schema": "sa2a.c1.kernel-runtime.v1",
+  "case": "request_claim",
+  "from": "prepared",
+  "to": "claimed",
+  "decision": "admit",
+  "requires": [
+    "prepared_digest",
+    "request_id",
+    "effect_id",
+    "owner"
+  ]
+}
