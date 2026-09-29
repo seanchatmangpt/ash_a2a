@@ -245,6 +245,8 @@ defmodule AshA2A.Semantic.Refusal do
     reconciliation_required: :refused_consequence,
     refused_semantic_evidence: :refused_provenance,
     already_completed: :refused_consequence,
+    # CASTLE edge-capability intake (lib/ash_a2a/castle_capability_intake.ex, PR #64).
+    unknown_castle_edge_donor: :refused_identity,
     retry_forbidden: :refused_consequence,
     # --- merged W5 authenticated effect claims and recovery (origin/main) ---
     effect_already_claimed: :refused_identity,
