@@ -1,5 +1,6 @@
 defmodule AshA2A.ConsequenceKernel.W4C.RawEffectEdges do
   alias AshA2A.ConsequenceKernel.W4C.{GraphEdge, GraphReport}
+
   def from_report(edges) do
     edges
     |> GraphReport.normalize()

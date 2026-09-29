@@ -50,5 +50,7 @@ defmodule AshA2A.PreparedEffect do
   end
 
   defp maybe_put_semantic_evidence(body, nil), do: body
-  defp maybe_put_semantic_evidence(body, evidence), do: Map.put(body, "semantic_evidence", evidence)
+
+  defp maybe_put_semantic_evidence(body, evidence),
+    do: Map.put(body, "semantic_evidence", evidence)
 end

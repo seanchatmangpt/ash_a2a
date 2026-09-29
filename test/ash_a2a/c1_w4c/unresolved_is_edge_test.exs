@@ -1,7 +1,17 @@
 defmodule AshA2A.C1W4C.UnresolvedIsEdgeTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4C.{AdmittedTopology,ChicagoAdapter,ClosurePredicate,ClosureReceipt,GraphEdge,GraphReport,UnresolvedApply}
+
+  alias AshA2A.ConsequenceKernel.W4C.{
+    AdmittedTopology,
+    ChicagoAdapter,
+    ClosurePredicate,
+    ClosureReceipt,
+    GraphEdge,
+    GraphReport,
+    UnresolvedApply
+  }
+
   test "unresolved_is_edge" do
-    assert %GraphEdge{kind: :dynamic_effect}=UnresolvedApply.edge("A","a.ex:1")
+    assert %GraphEdge{kind: :dynamic_effect} = UnresolvedApply.edge("A", "a.ex:1")
   end
 end
