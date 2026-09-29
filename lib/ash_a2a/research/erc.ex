@@ -61,17 +61,23 @@ defmodule AshA2A.Research.ERC do
   emitting an unrecognized state silently would be the same collapse the
   charter's evidence-state model forbids.
   """
-  @spec emit!(map()) :: {:ok, String.t()}
+  @spec emit!(map(), keyword()) :: {:ok, String.t()}
+  def emit!(attrs, opts \\ [])
+
   def emit!(
-        %{id: id, claim: claim, falsifier: falsifier, state: state, evidence: evidence} = attrs
+        %{id: id, claim: claim, falsifier: falsifier, state: state, evidence: evidence} = attrs,
+        opts
       )
       when is_binary(id) and is_binary(claim) and is_binary(falsifier) and is_atom(state) do
+    validate_id!(id)
+    dir = Keyword.get(opts, :dir, @erc_dir)
+
     unless state in @valid_states do
       raise ArgumentError,
             "invalid ERC evidence state #{inspect(state)} -- must be one of #{inspect(@valid_states)}"
     end
 
-    File.mkdir_p!(@erc_dir)
+    File.mkdir_p!(dir)
 
     receipt = %{
       "id" => id,
@@ -97,9 +103,21 @@ defmodule AshA2A.Research.ERC do
     }
 
     ts = System.system_time(:millisecond)
-    path = Path.join(@erc_dir, "#{id}-#{ts}.json")
+    path = Path.join(dir, "#{id}-#{ts}.json")
     File.write!(path, Jason.encode!(receipt, pretty: true))
     {:ok, path}
+  end
+
+  # CWE-22: the id becomes a file name; only a single safe path segment is
+  # admitted (no separators, no "..", no NUL, bounded length).
+  @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/
+  defp validate_id!(id) do
+    if Regex.match?(@id_pattern, id) and not String.contains?(id, "..") do
+      :ok
+    else
+      raise ArgumentError,
+            "refused_erc_id: ERC id #{inspect(id)} is not a safe file-name segment"
+    end
   end
 
   @doc """

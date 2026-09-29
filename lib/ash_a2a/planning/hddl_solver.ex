@@ -97,11 +97,94 @@ defmodule AshA2A.Planning.HddlSolver do
     File.write!(problem_path, problem_text)
 
     try do
-      {stdout, exit_code} = System.cmd(path, [domain_path, problem_path])
-      decode_result(stdout, exit_code)
+      case run_bounded(path, [domain_path, problem_path], opts) do
+        {:ok, stdout, exit_code} -> decode_result(stdout, exit_code)
+        {:error, _} = refusal -> refusal
+      end
     after
       File.rm(domain_path)
       File.rm(problem_path)
+    end
+  end
+
+  @default_timeout_ms 30_000
+  @default_max_output_bytes 8_000_000
+
+  # CWE-770: wall-clock timeout + stdout size cap. On breach the OS process is
+  # killed and a typed refusal (`:hddl_timeout` / `:hddl_output_too_large`)
+  # is returned.
+  defp run_bounded(path, args, opts) do
+    timeout =
+      Keyword.get(
+        opts,
+        :timeout_ms,
+        Application.get_env(:ash_a2a, :hddl_timeout_ms, @default_timeout_ms)
+      )
+
+    cap =
+      Keyword.get(
+        opts,
+        :max_output_bytes,
+        Application.get_env(:ash_a2a, :hddl_max_output_bytes, @default_max_output_bytes)
+      )
+
+    port =
+      Port.open({:spawn_executable, path}, [:binary, :exit_status, :use_stdio, args: args])
+
+    os_pid = Port.info(port, :os_pid)
+    deadline = System.monotonic_time(:millisecond) + timeout
+    collect(port, os_pid, deadline, timeout, cap, [], 0)
+  end
+
+  defp collect(port, os_pid, deadline, timeout, cap, acc, size) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {^port, {:data, data}} ->
+        size = size + byte_size(data)
+
+        if size > cap do
+          kill(port, os_pid)
+
+          {:error,
+           %{
+             code: :hddl_output_too_large,
+             message: "hddl_cli stdout exceeded #{cap} bytes; process killed"
+           }}
+        else
+          collect(port, os_pid, deadline, timeout, cap, [acc, data], size)
+        end
+
+      {^port, {:exit_status, status}} ->
+        {:ok, IO.iodata_to_binary(acc), status}
+    after
+      remaining ->
+        kill(port, os_pid)
+
+        {:error,
+         %{
+           code: :hddl_timeout,
+           message: "hddl_cli exceeded #{timeout}ms wall-clock; process killed"
+         }}
+    end
+  end
+
+  defp kill(port, os_pid) do
+    case os_pid do
+      {:os_pid, pid} -> System.cmd("kill", ["-9", Integer.to_string(pid)], stderr_to_stdout: true)
+      _ -> :ok
+    end
+
+    try do
+      Port.close(port)
+    catch
+      _, _ -> :ok
+    end
+
+    receive do
+      {^port, _} -> :ok
+    after
+      0 -> :ok
     end
   end
 

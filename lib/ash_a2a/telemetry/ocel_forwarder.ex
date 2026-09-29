@@ -236,10 +236,15 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
     outcome =
       try do
-        Req.post(url <> "/ocel/events",
-          json: %{"events" => [event]},
-          receive_timeout: receive_timeout_ms()
-        )
+        case AshA2A.Egress.EndpointPolicy.admit(url, [allow_userinfo: true] ++ egress_policy()) do
+          {:ok, admitted} ->
+            AshA2A.Egress.EndpointPolicy.request_options(admitted, "/ocel/events")
+            |> Keyword.merge(json: %{"events" => [event]}, receive_timeout: receive_timeout_ms())
+            |> Req.post()
+
+          {:error, code, _detail} ->
+            {:refused, code}
+        end
       rescue
         error -> {:raised, error}
       catch
@@ -248,6 +253,12 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
     duration = System.monotonic_time() - started
     account(outcome, endpoint, duration)
+  end
+
+  defp account({:refused, code}, endpoint, duration) do
+    failed(endpoint, duration, nil, code, fn ->
+      "OCEL egress to #{endpoint} refused by endpoint policy: #{code}"
+    end)
   end
 
   defp account({:ok, %Req.Response{status: status}}, endpoint, duration)
@@ -422,6 +433,22 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
   defp to_string_or_nil(nil), do: nil
   defp to_string_or_nil(value), do: to_string(value)
+
+  # SSRF policy for the ingest URL (CWE-918). Strict by default (https, public
+  # addresses only). Override with `config :ash_a2a, :ocel_egress_policy,
+  # allow_http: true, allow_cidrs: [...]` for a trusted internal collector.
+  # Under Mix env :test the default admits loopback http so the suite's local
+  # ingest listeners work; the egress court sets the policy explicitly.
+  @default_egress_policy if Mix.env() == :test,
+                           do: [allow_http: true, allow_cidrs: ["127.0.0.0/8", "::1/128"]],
+                           else: []
+
+  defp egress_policy do
+    case Application.fetch_env(:ash_a2a, :ocel_egress_policy) do
+      {:ok, policy} when is_list(policy) -> policy
+      _ -> @default_egress_policy
+    end
+  end
 
   defp receive_timeout_ms, do: Application.get_env(:ash_a2a, :ocel_ingest_timeout_ms, 2_000)
 end
