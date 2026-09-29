@@ -1,8 +1,10 @@
 defmodule AshA2A.ConsequenceKernel.PreparedEffectStore do
   @moduledoc false
-  @callback put(binary(), map()) :: :ok | {:error, term()}
-  @callback fetch(binary()) :: {:ok, map()} | :not_found | {:error, term()}
-  @callback transition(binary(), atom(), atom()) :: :ok | {:error, term()}
-  @callback claim_request(binary(), term()) :: :ok | {:error, term()}
-  @callback claim_effect(binary(), term()) :: :ok | {:error, term()}
+  @type server :: GenServer.server()
+
+  @callback put(server(), map()) :: :ok | {:error, term()}
+  @callback fetch(server(), binary()) :: {:ok, map()} | :not_found | {:error, term()}
+  @callback transition(server(), binary(), atom(), atom()) :: :ok | {:error, term()}
+  @callback claim_request(server(), binary(), term()) :: :ok | {:error, term()}
+  @callback claim_effect(server(), binary(), term()) :: :ok | {:error, term()}
 end

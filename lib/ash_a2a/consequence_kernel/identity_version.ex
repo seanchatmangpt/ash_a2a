@@ -3,5 +3,5 @@ defmodule AshA2A.ConsequenceKernel.IdentityVersion do
   @version "sa2a.c1.identity.v1"
   def current, do: @version
   def admit(@version), do: :ok
-  def admit(_), do: {:error,:canonical_schema_tag_required}
+  def admit(_), do: {:error, :canonical_schema_tag_required}
 end

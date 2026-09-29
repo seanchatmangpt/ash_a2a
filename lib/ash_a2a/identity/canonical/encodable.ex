@@ -8,21 +8,40 @@ defmodule AshA2A.Identity.Canonical.Encodable do
   defp validate(v, d) when is_list(v), do: reduce(v, d + 1)
   defp validate(v, d) when is_map(v), do: with(:ok <- keys(v), do: reduce(Map.values(v), d + 1))
   defp validate(_, _), do: {:error, :canonical_type_forbidden}
+
   defp finite_float(v) do
     case :erlang.float_to_binary(v, [:compact]) do
-      "nan" -> {:error,:canonical_non_finite_number}
-      "inf" -> {:error,:canonical_non_finite_number}
-      "-inf" -> {:error,:canonical_non_finite_number}
+      "nan" -> {:error, :canonical_non_finite_number}
+      "inf" -> {:error, :canonical_non_finite_number}
+      "-inf" -> {:error, :canonical_non_finite_number}
       _ -> :ok
     end
-  rescue _ -> {:error,:canonical_non_finite_number} end
-  defp reduce(xs,d), do: Enum.reduce_while(xs,:ok,fn x,:ok -> case validate(x,d) do :ok -> {:cont,:ok}; e -> {:halt,e} end end)
+  rescue
+    _ -> {:error, :canonical_non_finite_number}
+  end
+
+  defp reduce(xs, d),
+    do:
+      Enum.reduce_while(xs, :ok, fn x, :ok ->
+        case validate(x, d) do
+          :ok -> {:cont, :ok}
+          e -> {:halt, e}
+        end
+      end)
+
   defp keys(m) do
-    ks=Map.keys(m); names=Enum.map(ks,&to_string/1)
+    ks = Map.keys(m)
+    names = Enum.map(ks, &to_string/1)
+
     cond do
-      Enum.any?(ks,&(not (is_binary(&1) or is_atom(&1)))) -> {:error,:canonical_key_type_forbidden}
-      length(names) != length(Enum.uniq(names)) -> {:error,:canonical_key_collision}
-      true -> :ok
+      Enum.any?(ks, &(not (is_binary(&1) or is_atom(&1)))) ->
+        {:error, :canonical_key_type_forbidden}
+
+      length(names) != length(Enum.uniq(names)) ->
+        {:error, :canonical_key_collision}
+
+      true ->
+        :ok
     end
   end
 end
