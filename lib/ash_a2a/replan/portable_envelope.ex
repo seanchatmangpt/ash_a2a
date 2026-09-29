@@ -10,7 +10,7 @@ defmodule AshA2A.Replan.PortableEnvelope do
 
   alias AshA2A.Replan.{Outcome, PortableSchema, ReceiptFeedback}
 
-  @consequences [:executed, :failed, :refused, :unknown_outcome]
+  @consequences [:executed, :failed, :refused, :reconciled, :compensated, :unknown_outcome]
   @decisions [:stop, :replan]
 
   def from_receipt(receipt, provider \\ nil) when is_map(receipt) do
