@@ -1,0 +1,1 @@
+ASK { ?e <urn:sa2a:sourceDigest> ?d . FILTER(!STRSTARTS(STR(?d), "sha256:")) }
