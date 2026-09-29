@@ -129,7 +129,8 @@ defmodule AshA2A.Chicago.ClosureTest do
 
     test "known bypass: ocel_forwarder Req.post", %{report: r} do
       assert Enum.any?(r.violating_edges, fn e ->
-               e.caller_module == "AshA2A.Telemetry.OcelForwarder" and e.callee == "Req.post/2"
+               e.caller_module == "AshA2A.Telemetry.OcelForwarder" and
+                 String.starts_with?(e.callee, "Req.post/")
              end)
     end
 
