@@ -167,6 +167,4 @@ defmodule AshA2A.ContextResolver do
   defp fetch(metadata, key) when is_map(metadata) do
     AshA2A.MetadataKey.get(metadata, key)
   end
-
-  defp fetch(_metadata, _key), do: nil
 end

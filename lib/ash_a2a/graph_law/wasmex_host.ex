@@ -591,7 +591,6 @@ defmodule AshA2A.GraphLaw.WasmexHost do
       {:ok, state}
     else
       {:error, _} = err -> err
-      other -> {:error, %{code: :graphlaw_instantiation_failed, detail: other, path: path}}
     end
   end
 

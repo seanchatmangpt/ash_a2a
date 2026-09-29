@@ -304,7 +304,7 @@ defmodule AshA2A.Chicago.Fixtures.ObserverQualification.CorruptingValidator do
   def validate_file(path) do
     bytes = File.read!(path)
     offset = div(byte_size(bytes), 2)
-    <<pre::binary-size(offset), byte, post::binary>> = bytes
+    <<pre::binary-size(^offset), byte, post::binary>> = bytes
     File.write!(path, <<pre::binary, Bitwise.bxor(byte, 0x01), post::binary>>)
     {:error, %{"fault_injection" => "flipped one bit of byte #{offset} after flush"}}
   end

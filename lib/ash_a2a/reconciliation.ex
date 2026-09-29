@@ -211,10 +211,6 @@ defmodule AshA2A.Reconciliation do
       {:error, %{code: code}} = error ->
         refuse_compensation(command_id, code, label)
         error
-
-      other ->
-        refuse_compensation(command_id, :compensation_unconfirmed, label)
-        {:error, %{code: :compensation_unconfirmed, detail: inspect(other, limit: 10)}}
     end
   end
 

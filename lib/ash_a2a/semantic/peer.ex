@@ -571,7 +571,6 @@ defmodule AshA2A.Semantic.Peer do
   # RFC S11's real wire shape already carries the sender-claimed digest at
   # `graph.digest`, so there was never a need for a second field).
   defp check_claimed_digest(%Envelope{graph: %{digest: nil}}, _digest), do: :ok
-  defp check_claimed_digest(%Envelope{graph: nil}, _digest), do: :ok
 
   defp check_claimed_digest(%Envelope{graph: %{digest: claimed}}, digest) do
     if claimed == digest do

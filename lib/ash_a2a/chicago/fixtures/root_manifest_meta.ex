@@ -480,7 +480,7 @@ defmodule AshA2A.Chicago.Fixtures.RootManifestMeta do
   def flipped_copy!(source, dest) do
     bytes = File.read!(source)
     size = byte_size(bytes) - 1
-    <<head::binary-size(size), last>> = bytes
+    <<head::binary-size(^size), last>> = bytes
     File.mkdir_p!(Path.dirname(dest))
     File.write!(dest, <<head::binary, Bitwise.bxor(last, 0xFF)>>)
     dest

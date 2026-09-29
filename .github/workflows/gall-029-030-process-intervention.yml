@@ -41,7 +41,7 @@ jobs:
           path: |
             deps
             _build
-          key: ash-a2a-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          key: ash-a2a-v2-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
 
       - run: mix local.hex --force
       - run: mix local.rebar --force

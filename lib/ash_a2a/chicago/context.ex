@@ -59,7 +59,7 @@ defmodule AshA2A.Chicago.Context do
   end
 
   @doc "Observer records attributed to `falsifier` (or its id) so far in this run."
-  @spec observed(t(), Falsifier.t() | String.t()) :: [Observer.record()]
+  @spec observed(t(), Falsifier.t() | String.t()) :: [Observer.observed_record()]
   def observed(%__MODULE__{observer: nil}, _falsifier), do: []
   def observed(%__MODULE__{} = ctx, %Falsifier{id: id}), do: observed(ctx, id)
 

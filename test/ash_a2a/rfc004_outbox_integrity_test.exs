@@ -101,8 +101,8 @@ defmodule AshA2A.RFC004OutboxIntegrityTest do
     :ok = ReceiptOutbox.append(r)
     path = ReceiptOutbox.entry_path_for(r.command_id, r.receipt_id)
     bytes = File.read!(path)
-    size = byte_size(bytes)
-    <<head::binary-size(size - 1), last>> = bytes
+    keep = byte_size(bytes) - 1
+    <<head::binary-size(^keep), last>> = bytes
     File.write!(path, <<head::binary, Bitwise.bxor(last, 1)>>)
 
     assert [{_file, reason}] = ReceiptOutbox.corrupt_entries()

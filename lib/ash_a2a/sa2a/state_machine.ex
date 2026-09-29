@@ -148,7 +148,6 @@ defmodule AshA2A.SA2A.StateMachine do
           {:ok, _graph} -> {:ok, "hex64;s12_turtle"}
           {:error, {:parse_error, _}} -> {:refused, "NOT_RDF11_TURTLE"}
           {:error, {:invalid_encoding, offset}} -> {:refused, "INVALID_ENCODING:#{offset}"}
-          {:error, other} -> {:refused, "UNPARSEABLE:#{truncate(inspect(other))}"}
         end
     end
   end

@@ -80,8 +80,6 @@ defmodule AshA2A.Dispatcher do
   either.
   """
 
-  require Logger
-
   alias A2A.Message
   alias A2A.Part
 

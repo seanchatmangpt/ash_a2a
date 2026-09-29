@@ -10,15 +10,15 @@
 #   docker build -f swarm/Dockerfile -t ash-a2a-swarm-node:local .
 #
 # Elixir/OTP versions pinned to this repo's own real `.tool-versions`
-# (elixir 1.19.5-otp-27, erlang 27.2.4) -- the exact same toolchain every
+# (elixir 1.20.4-otp-29, erlang 29.1.1) -- the exact same toolchain every
 # other real verification step in this repo already runs against, not a
 # separately-chosen version.
 #
 # Both FROM lines are pinned by content digest (DEP-08), not by mutable tag:
 # a tag can be re-pointed upstream, a digest cannot. Digests resolved with
-# `docker buildx imagetools inspect <tag>` on 2026-09-27 (OCI image index, so
+# `docker buildx imagetools inspect <tag>` on 2026-09-27 (builder digest re-resolved 2026-09-28 via the Docker Hub registry API for the OTP 29 bump) (OCI image index, so
 # multi-arch). Bump by re-resolving the tag and replacing the digest.
-FROM hexpm/elixir:1.19.5-erlang-27.2.4-debian-bookworm-20260824-slim@sha256:bf90f2ae006d21c89d74ccfec1db58739b13d4b0bf6c6f984abbfa260bf89669 AS builder
+FROM hexpm/elixir:1.20.4-erlang-29.1.1-debian-bookworm-20260918-slim@sha256:037687742ae12c329b59a681a230d62ef3ddd555c0275e577ce41c61539e5248 AS builder
 
 # build-essential + git: ash_a2a's own real dependency tree includes a
 # NIF (ekv, a transitive dependency of durable_server) whose

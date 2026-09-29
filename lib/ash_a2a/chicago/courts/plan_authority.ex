@@ -241,12 +241,12 @@ defmodule AshA2A.Chicago.Courts.PlanAuthority do
       Fx.with_store(fn store_opts ->
         Context.stimulus(ctx, falsifier, fn ->
           planned = Fx.planned()
-          {authority, metadata, extra} = authority_material(authority_for.(planned), planned)
+          {metadata, extra} = authority_material(authority_for.(planned))
 
           replies =
             for step <- steps(planned, which) do
               CommandBus.run(
-                Fx.step_command(step, authority: authority || :none, metadata: metadata),
+                Fx.step_command(step, authority: :none, metadata: metadata),
                 Fx.step_message(step),
                 Planned,
                 store_opts ++ [plan: planned.plan, preflight: planned.preflight]
@@ -280,8 +280,8 @@ defmodule AshA2A.Chicago.Courts.PlanAuthority do
     )
   end
 
-  defp authority_material(nil, _planned), do: {nil, %{}, %{}}
-  defp authority_material({:metadata, metadata, extra}, _planned), do: {nil, metadata, extra}
+  defp authority_material(nil), do: {%{}, %{}}
+  defp authority_material({:metadata, metadata, extra}), do: {metadata, extra}
 
   defp steps(planned, :all_steps), do: planned.plan.steps
   defp steps(planned, :first_step), do: Enum.take(planned.plan.steps, 1)

@@ -266,7 +266,6 @@ defmodule AshA2A.Semantic.CanonicalGraph do
 
   defp error_code({:ok, _}), do: nil
   defp error_code({:error, {code, _}}) when is_atom(code), do: code
-  defp error_code({:error, _}), do: :unclassified
 
   @doc """
   Bang variant of `canonical_digest/1`.

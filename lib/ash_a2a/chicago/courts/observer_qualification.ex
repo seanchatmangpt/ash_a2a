@@ -888,7 +888,8 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
           case record_idx do
             {line, idx} ->
               {pos, _} = :binary.match(line, "pre-crash")
-              <<pre::binary-size(pos + 4), byte, post::binary>> = line
+              prefix_size = pos + 4
+              <<pre::binary-size(^prefix_size), byte, post::binary>> = line
               List.replace_at(lines, idx, <<pre::binary, Bitwise.bxor(byte, 0x01), post::binary>>)
 
             nil ->
@@ -1529,7 +1530,7 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
   defp flip_middle_byte!(path) do
     bytes = File.read!(path)
     offset = div(byte_size(bytes), 2)
-    <<pre::binary-size(offset), byte, post::binary>> = bytes
+    <<pre::binary-size(^offset), byte, post::binary>> = bytes
     File.write!(path, <<pre::binary, Bitwise.bxor(byte, 0x01), post::binary>>)
   end
 

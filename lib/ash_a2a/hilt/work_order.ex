@@ -272,7 +272,6 @@ defmodule AshA2A.Hilt.WorkOrder do
   defp consequence_authority(:observe), do: :observe
   defp consequence_authority(:change), do: :do
   defp consequence_authority(:external_do), do: :do
-  defp consequence_authority(:unknown), do: :do
 
   defp level(level), do: Enum.find_index(@authority_levels, &(&1 == level))
 

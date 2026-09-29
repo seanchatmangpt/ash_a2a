@@ -104,8 +104,25 @@ defmodule AshA2A.GraphLaw.Subprocess do
         fun.()
       after
         Process.delete({__MODULE__, :watcher})
-        send(watcher, :release)
+        release_and_wait(watcher)
       end
+    end
+  end
+
+  # Release synchronously on normal completion: `run/3` must not return while
+  # `in_flight/0` still counts its slot, or an immediate re-run at the cap is
+  # spuriously shed. The wait is bounded; if the watcher is already gone (it
+  # only exits after releasing) the monitor fires and we proceed.
+  defp release_and_wait(watcher) do
+    tag = make_ref()
+    mon = Process.monitor(watcher)
+    send(watcher, {:release, self(), tag})
+
+    receive do
+      {:released, ^tag} -> Process.demonitor(mon, [:flush])
+      {:DOWN, ^mon, :process, ^watcher, _} -> :ok
+    after
+      5_000 -> Process.demonitor(mon, [:flush])
     end
   end
 
@@ -119,9 +136,10 @@ defmodule AshA2A.GraphLaw.Subprocess do
       {:os_pid, pid} ->
         watch_loop(caller, ref, monitor, pid)
 
-      :release ->
+      {:release, from, tag} ->
         Process.demonitor(monitor, [:flush])
         :atomics.sub(ref, 1, 1)
+        send(from, {:released, tag})
 
       {:DOWN, ^monitor, :process, ^caller, _reason} ->
         if is_integer(os_pid), do: System.cmd("kill", ["-9", Integer.to_string(os_pid)])

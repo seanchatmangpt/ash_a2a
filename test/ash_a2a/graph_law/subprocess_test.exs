@@ -52,6 +52,24 @@ defmodule AshA2A.GraphLaw.SubprocessTest do
     assert {:ok, {"x\n", 0}} = Subprocess.run("sh", ["-c", "echo x"], max_concurrency: 1)
   end
 
+  test "run/3 returns only after its slot is released: back-to-back runs at cap 1 are never shed" do
+    # The slot used to be released by a watcher process asynchronously, so `run/3`
+    # could return while `in_flight/0` was still 1 and an immediate re-run at the
+    # cap was spuriously shed (`:graphlaw_host_saturated`).
+    results =
+      for _ <- 1..300 do
+        {Subprocess.run("true", [], max_concurrency: 1), Subprocess.in_flight()}
+      end
+
+    assert Enum.all?(results, fn {run, in_flight} ->
+             match?({:ok, {"", 0}}, run) and in_flight == 0
+           end),
+           "a run was shed or returned before releasing its slot: " <>
+             inspect(
+               Enum.find(results, fn {run, n} -> not match?({:ok, {"", 0}}, run) or n != 0 end)
+             )
+  end
+
   test "a caller killed mid-run releases its slot and its OS process" do
     marker = "31.#{System.unique_integer([:positive])}"
     task = Task.async(fn -> Subprocess.run("sleep", [marker], timeout_ms: 60_000) end)

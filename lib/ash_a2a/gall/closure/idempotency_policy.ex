@@ -7,7 +7,6 @@ defmodule AshA2A.Gall.Closure.IdempotencyPolicy do
     metadata = AshA2A.Gall.Fields.get(command, :metadata) || %{}
     key = AshA2A.Gall.Fields.get(metadata, :idempotency_key)
     candidate_digest = AshA2A.Gall.Fields.get(candidate, :candidate_digest)
-    expected = key_for(candidate_digest)
 
     cond do
       not is_binary(candidate_digest) ->
@@ -16,8 +15,9 @@ defmodule AshA2A.Gall.Closure.IdempotencyPolicy do
       not is_binary(key) or key == "" ->
         {:error, {:refused_gall, :idempotency_policy, :idempotency_key_required}}
 
-      key != expected ->
-        {:error, {:refused_gall, :idempotency_policy, {:key_mismatch, expected, key}}}
+      key != key_for(candidate_digest) ->
+        {:error,
+         {:refused_gall, :idempotency_policy, {:key_mismatch, key_for(candidate_digest), key}}}
 
       true ->
         {:ok, command}

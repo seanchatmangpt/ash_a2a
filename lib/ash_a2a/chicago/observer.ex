@@ -64,7 +64,7 @@ defmodule AshA2A.Chicago.Observer do
   alias AshA2A.Chicago.Observer.{EvidenceBounds, Journal}
   alias AshA2A.Chicago.Ocel.{Log, Mapping}
 
-  @type record :: %{
+  @type observed_record :: %{
           seq: pos_integer(),
           event: [atom() | String.t()],
           activity: String.t(),
@@ -141,10 +141,10 @@ defmodule AshA2A.Chicago.Observer do
   end
 
   @doc "Records so far, attributed and ordered by `chicago_seq`."
-  @spec records(GenServer.server()) :: [record()]
+  @spec records(GenServer.server()) :: [observed_record()]
   def records(observer), do: GenServer.call(observer, :records)
 
-  @spec records_for(GenServer.server(), String.t()) :: [record()]
+  @spec records_for(GenServer.server(), String.t()) :: [observed_record()]
   def records_for(observer, falsifier_id),
     do: GenServer.call(observer, {:records_for, falsifier_id})
 
@@ -905,7 +905,7 @@ defmodule AshA2A.Chicago.Observer do
   precedes it and whose stop does not. A gap closes any open interval, since
   the stop may have been lost.
   """
-  @spec attribute([record()]) :: [record()]
+  @spec attribute([observed_record()]) :: [observed_record()]
   def attribute(sorted_records) do
     {records, _active} =
       Enum.map_reduce(sorted_records, nil, fn

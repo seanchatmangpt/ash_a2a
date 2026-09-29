@@ -149,11 +149,13 @@ your change.
 
 ### Mirroring CI
 
-`.github/workflows/ci.yml` = ubuntu, OTP 28.0 / Elixir 1.19.0, Postgres 16
+`.github/workflows/ci.yml` = ubuntu, OTP 29.1.1 / Elixir 1.20.4 (from `.tool-versions`), Postgres 16
 service on 55432, Rust 1.97.1 building `hddl_cli`, then
 `mix format --check-formatted` → `mix compile --warnings-as-errors` →
-`mix test`. Note CI's OTP 28 vs local `.tool-versions`/Docker OTP 27.2.4
-split. `bin/ci-local.sh` runs ci.yml via `act`; on Apple Silicon it is a
-disclosed-broken convenience (OTP 28 arm64 needs `libcrypto.so.1.1`) —
+`mix test`. CI, `.tool-versions` and the swarm Docker image all pin the
+same OTP 29.1.1 / Elixir 1.20.4 pair; run local mix via
+`source scripts/toolchain.sh` so it resolves that pair instead of a Homebrew
+Elixir. `bin/ci-local.sh` runs ci.yml via `act`; on Apple Silicon it is a
+disclosed-broken convenience (the OTP arm64 setup-beam build needs `libcrypto.so.1.1`) —
 hosted Actions is the authoritative signal. The swarm/k8s workflow
 (`swarm-test.yml`, manual dispatch) has its own README section in `k8s/`.

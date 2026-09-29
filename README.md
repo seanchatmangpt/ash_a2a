@@ -35,8 +35,9 @@ compiled index:
 
 ## Requirements
 
-- Elixir `~> 1.19` with OTP 27+ (CI runs OTP 28.0 / Elixir 1.19.0;
-  `.tool-versions` and the swarm Docker image pin OTP 27.2.4).
+- Elixir `~> 1.19` (developed and tested on Elixir 1.20.4 / OTP 29.1.1; CI
+  installs exactly `.tool-versions` via `erlef/setup-beam` with
+  `version-type: strict`, and the swarm Docker image pins the same pair).
 - Ash `~> 3.0`.
 - No Rust toolchain is needed to **use** the published package. Rust is only
   needed to build the native HDDL/FOND planner when developing this repo or
