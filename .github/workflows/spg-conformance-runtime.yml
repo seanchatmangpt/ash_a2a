@@ -12,6 +12,12 @@ on:
       - ".github/workflows/spg-conformance-runtime.yml"
   workflow_dispatch:
 
+# A cancelled superseded PR head yields no receipt by design: only the latest
+# head of a PR is admitted; main/dispatch runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -36,16 +42,24 @@ jobs:
           version-file: .tool-versions
           version-type: strict
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             deps
             _build
-          key: ash-a2a-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          key: ash-a2a-v2-mix-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: |
+            ash-a2a-v2-mix-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock') }}-
+            ash-a2a-v2-mix-${{ runner.os }}-test-
 
       - run: mix local.hex --force
       - run: mix local.rebar --force
       - run: mix deps.get --check-locked
+      - name: Compile (test env) for cache admission
+        id: compile
+        env:
+          MIX_ENV: test
+        run: mix compile
 
       - name: Format SPG court
         run: |
@@ -55,3 +69,14 @@ jobs:
         env:
           MIX_ENV: test
         run: mix test test/spg_conformance_runtime_test.exs --trace
+
+      # Immutable-key discipline: save only a COMPLETE build (compile step succeeded),
+      # even if a later step fails, under a per-run unique key so a later good run
+      # can save again; never after cancel or a failed compile (no partial cache).
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        with:
+          path: |
+            deps
+            _build
+          key: ash-a2a-v2-mix-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock') }}-${{ github.run_id }}
