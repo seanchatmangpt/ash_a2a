@@ -17,7 +17,33 @@ defmodule Mix.Tasks.AshA2a.VerifyConformance do
       mix ash_a2a.verify_conformance --claim sa2a-core
       mix ash_a2a.verify_conformance --claim SA2A-DO --verbose
 
-  ## What it prints
+  ## Computed profile claim (`--profile c0|c1|c2|c3`)
+
+      mix ash_a2a.verify_conformance --profile c1
+      mix ash_a2a.verify_conformance --profile c2 --json receipts/conf-c2.json --github
+      mix ash_a2a.verify_conformance --profile c3 --tier I2 --scope physical-host --report
+
+  Evaluates the requirement-check table of `AshA2A.SA2A.Conformance.Profiles`
+  (cumulative C0..Cn) and prints one `PASS` / `FAIL` / `UNVERIFIED` line per
+  check, then the RFC-SA2A-007 claim line -- `SA2A v26.9.28 conforms to profile
+  Cn at independence tier Ti, hosting scope S, on subject SHA H` ONLY when every
+  check passed, else `NOT CONFORMANT to Cn: ...` listing the failing and
+  unverified checks. `:dev_bypass` / `:legacy_compat` always yield NOT
+  CONFORMANT. A `PASS` requires an executed probe. The task raises (non-zero
+  exit) on NOT CONFORMANT unless `--report` is given.
+
+    * `--json PATH` -- also write the machine report (claim, subject, checks).
+    * `--github` -- also read gh/git supply-chain facts (protected main, signed
+      tag, single release workflow); without it those checks are UNVERIFIED.
+    * `--tier I1..I4`, `--scope same-host-os-user|namespace-or-cluster|physical-host`
+      -- the claim's declared tier and scope (defaults I1 / same-host-os-user);
+      anything stronger is UNVERIFIED without operator deployment evidence.
+    * `--report` -- never fail the exit status.
+
+  See `docs/reference/conformance-claim.md`. Without `--profile` the legacy
+  RFC-SA2A-001 report below runs unchanged.
+
+  ## What it prints (legacy report, no `--profile`)
 
     1. One `MET` / `UNMET` / `UNVERIFIABLE` line per RFC S59 profile
        requirement, grouped by the profile level that introduces it.
@@ -58,13 +84,86 @@ defmodule Mix.Tasks.AshA2a.VerifyConformance do
 
   alias AshA2A.Semantic.{Conformance, Profile}
 
-  @switches [claim: :string, verbose: :boolean, explain: :boolean]
+  @switches [
+    claim: :string,
+    verbose: :boolean,
+    explain: :boolean,
+    profile: :string,
+    json: :string,
+    github: :boolean,
+    tier: :string,
+    scope: :string,
+    report: :boolean
+  ]
 
   @impl Mix.Task
   def run(argv) do
-    Mix.Task.run("app.start")
-
     {opts, _rest, _invalid} = OptionParser.parse(argv, switches: @switches)
+
+    if Keyword.has_key?(opts, :profile) do
+      run_profile(opts)
+    else
+      run_legacy(opts)
+    end
+  end
+
+  defp run_profile(opts) do
+    alias AshA2A.SA2A.Conformance.Profiles
+
+    profile =
+      case Profiles.parse(Keyword.fetch!(opts, :profile)) do
+        {:ok, p} ->
+          p
+
+        :error ->
+          Mix.raise(
+            "ash_a2a.verify_conformance: unknown --profile #{inspect(opts[:profile])}; expected c0, c1, c2 or c3"
+          )
+      end
+
+    # Load config and compile; deliberately NOT app.start: the gate must be able
+    # to report on a tree whose boot preflight refuses to start.
+    # (Skipped when the app is already loaded, e.g. when invoked from a running
+    # test suite: recompiling mid-run would purge modules under probe.)
+    if Application.spec(:ash_a2a, :vsn) == nil, do: Mix.Task.run("app.config")
+
+    ctx =
+      opts
+      |> Keyword.take([:tier, :scope, :github])
+      |> Map.new()
+
+    report = Profiles.evaluate(profile, ctx)
+
+    Enum.each(report.checks, fn check ->
+      label =
+        case check.status do
+          :pass -> "PASS        "
+          :fail -> "FAIL        "
+          :unverified -> "UNVERIFIED  "
+        end
+
+      line = "  #{label}#{check.id}"
+      if check.status == :fail, do: Mix.shell().error(line), else: Mix.shell().info(line)
+      Mix.shell().info(indent(check.evidence))
+    end)
+
+    Mix.shell().info("\n" <> report.claim)
+
+    with path when is_binary(path) <- opts[:json] do
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, Jason.encode_to_iodata!(Profiles.to_json_map(report), pretty: true))
+      Mix.shell().info("machine report written to #{path}")
+    end
+
+    if report.conformant? or Keyword.get(opts, :report, false) do
+      :ok
+    else
+      Mix.raise("ash_a2a.verify_conformance: " <> report.claim)
+    end
+  end
+
+  defp run_legacy(opts) do
+    Mix.Task.run("app.start")
 
     claim = parse_claim(Keyword.get(opts, :claim))
     verbose? = Keyword.get(opts, :verbose, false)
