@@ -1,0 +1,9 @@
+{
+  "schema": "sa2a.c1.static-call-graph.v1",
+  "case": 23,
+  "caller": "Elixir.SA2A.C1.Vector23",
+  "source": "AshA2A.Effector.perform(effect_23)",
+  "expected": "error",
+  "authority": "none",
+  "consequence": "projection_only"
+}

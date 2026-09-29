@@ -1,0 +1,9 @@
+{
+  "schema": "sa2a.c1.static-call-graph.v1",
+  "case": 10,
+  "caller": "Elixir.SA2A.C1.Vector10",
+  "source": "AshA2A.ConsequenceKernel.execute(effect_10)",
+  "expected": "ok",
+  "authority": "none",
+  "consequence": "projection_only"
+}

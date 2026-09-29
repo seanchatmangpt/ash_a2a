@@ -1,0 +1,9 @@
+{
+  "schema": "sa2a.c1.static-call-graph.v1",
+  "case": 40,
+  "caller": "Elixir.SA2A.C1.Vector40",
+  "source": "apply(Target40, :run, [effect_40])",
+  "expected": "error",
+  "authority": "none",
+  "consequence": "projection_only"
+}

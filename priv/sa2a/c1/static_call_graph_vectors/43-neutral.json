@@ -1,0 +1,9 @@
+{
+  "schema": "sa2a.c1.static-call-graph.v1",
+  "case": 43,
+  "caller": "Elixir.SA2A.C1.Vector43",
+  "source": "AshA2A.Replay.record(effect_43)",
+  "expected": "ok",
+  "authority": "none",
+  "consequence": "projection_only"
+}
