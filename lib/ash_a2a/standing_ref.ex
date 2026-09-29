@@ -253,7 +253,7 @@ defmodule AshA2A.StandingRef do
   # --- indexes -----------------------------------------------------------------
 
   defp git_index(repo, head, spec) do
-    case git(repo, ["ls-tree", "-r", "--name-only", head, "--", spec.root]) do
+    case git(repo, ["ls-tree", "-r", "--name-only", {:ref, head}, "--", {:path, spec.root}]) do
       {:ok, out} ->
         suffix = "/" <> spec.standing_file
         prefix = spec.root <> "/"
@@ -309,7 +309,7 @@ defmodule AshA2A.StandingRef do
   # --- reading -------------------------------------------------------------------
 
   defp read({:git, head, dir}, file, repo) do
-    case git(repo, ["cat-file", "blob", "#{head}:#{dir}/#{file}"]) do
+    case git(repo, ["cat-file", "blob", {:object, head, "#{dir}/#{file}"}]) do
       {:ok, bytes} -> {:ok, bytes}
       {:error, reason} -> {:error, {:receipt_unreadable, reason}}
     end
@@ -323,7 +323,7 @@ defmodule AshA2A.StandingRef do
   end
 
   defp read_optional({:git, head, dir} = source, file, ctx) do
-    case git(ctx.repo, ["cat-file", "-e", "#{head}:#{dir}/#{file}"]) do
+    case git(ctx.repo, ["cat-file", "-e", {:object, head, "#{dir}/#{file}"}]) do
       {:ok, _} -> read(source, file, ctx.repo)
       {:error, _} -> {:ok, nil}
     end
@@ -437,7 +437,7 @@ defmodule AshA2A.StandingRef do
   end
 
   defp rev_parse(repo, ref) do
-    case git(repo, ["rev-parse", "--verify", "--quiet", ref <> "^{commit}"]) do
+    case git(repo, ["rev-parse", "--verify", "--quiet", {:commit_ref, ref}]) do
       {:ok, out} ->
         sha = String.trim(out)
         if Regex.match?(@sha, sha), do: {:ok, sha}, else: {:error, {:ref_unresolvable, ref}}
@@ -448,7 +448,7 @@ defmodule AshA2A.StandingRef do
   end
 
   defp first_parent(repo, head, max) do
-    case git(repo, ["rev-list", "--first-parent", "--max-count=#{max}", head]) do
+    case git(repo, ["rev-list", "--first-parent", "--max-count=#{max}", {:ref, head}]) do
       {:ok, out} -> {:ok, String.split(out, "\n", trim: true)}
       {:error, reason} -> {:error, {:history_unreadable, reason}}
     end
@@ -465,12 +465,12 @@ defmodule AshA2A.StandingRef do
   defp check(_, reason), do: {:error, reason}
 
   defp git(repo, args) do
-    case System.cmd("git", args, cd: repo, stderr_to_stdout: true) do
-      {out, 0} -> {:ok, out}
-      {out, code} -> {:error, {:git_exit, code, String.trim(out)}}
+    case AshA2A.SafeExec.run(:git, args, cd: repo, stderr_to_stdout: true) do
+      {:ok, %{output: out, exit: 0}} -> {:ok, out}
+      {:ok, %{output: out, exit: code}} -> {:error, {:git_exit, code, String.trim(out)}}
+      {:error, %{code: :safe_exec_unavailable} = e} -> {:error, {:git_unavailable, inspect(e)}}
+      {:error, refusal} -> {:error, {:git_refused, refusal}}
     end
-  rescue
-    e in ErlangError -> {:error, {:git_unavailable, Exception.message(e)}}
   end
 
   @doc false

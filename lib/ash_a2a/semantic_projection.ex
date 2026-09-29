@@ -67,7 +67,7 @@ defmodule AshA2A.SemanticProjection do
   def r2rml_mapping_result(resource) when is_atom(resource) do
     if Code.ensure_loaded?(AshR2RML) and function_exported?(AshR2RML, :mapping_result, 1) do
       try do
-        apply(AshR2RML, :mapping_result, [resource])
+        AshA2A.CallbackRegistry.invoke(AshR2RML, :mapping_result, [resource])
       rescue
         error -> {:error, {:ash_r2rml_mapping_error, error.__struct__, Exception.message(error)}}
       catch

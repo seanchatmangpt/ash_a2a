@@ -4,7 +4,7 @@ defmodule AshA2A.SA2A.Graphlaw do
   conformance corpus.
 
   Mirrors `AshA2A.Planning.HddlSolver`'s established pattern exactly: shell out
-  to a real OS subprocess via `System.cmd/3`, decode its real stdout JSON with
+  to a real OS subprocess via `AshA2A.SafeExec` (closed allowlist, argv only), decode its real stdout JSON with
   the built-in `JSON` module (this repo's convention, never `Jason` at a native
   boundary), and return `{:error, %{code: ...}}` for every real failure mode
   rather than raising. Nothing here simulates, stubs, or hand-constructs an
@@ -99,9 +99,19 @@ defmodule AshA2A.SA2A.Graphlaw do
   end
 
   defp run(corpus_dir, opts) do
-    {stdout, exit_code} =
-      System.cmd("node", [driver_path(), corpus_dir, wasm_path(opts)], stderr_to_stdout: false)
+    case AshA2A.SafeExec.run(
+           :node,
+           [{:path, driver_path()}, {:path, corpus_dir}, {:path, wasm_path(opts)}]
+         ) do
+      {:ok, %{output: stdout, exit: exit_code}} ->
+        decode(stdout, exit_code)
 
+      {:error, %{code: code} = detail} ->
+        {:error, %{code: :sa2a_graphlaw_unavailable, detail: code, safe_exec: detail}}
+    end
+  end
+
+  defp decode(stdout, exit_code) do
     # Decode BEFORE consulting the exit code: the driver reports every fault it
     # can name as a JSON `{"error": ...}` on stdout AND a non-zero exit, and the
     # named message is strictly more useful than the number.

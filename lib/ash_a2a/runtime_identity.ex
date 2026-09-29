@@ -112,8 +112,10 @@ defmodule AshA2A.RuntimeIdentity do
           to_string(target)
 
         _ ->
-          case System.cmd("ps", ["-o", "comm=", "-p", pid], stderr_to_stdout: true) do
-            {out, 0} -> String.trim(out)
+          case AshA2A.SafeExec.run(:ps, ["-o", "comm=", "-p", {:pid, pid}],
+                 stderr_to_stdout: true
+               ) do
+            {:ok, %{output: out, exit: 0}} -> String.trim(out)
             _ -> ""
           end
       end

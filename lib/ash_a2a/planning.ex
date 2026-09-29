@@ -118,7 +118,12 @@ defmodule AshA2A.Planning do
       extra = Keyword.get(opts, :extra, %{})
       planner_opts = Keyword.get(opts, :planner_opts, [])
 
-      case apply(planner, :plan_production, [domain, problem, extra, planner_opts]) do
+      case AshA2A.CallbackRegistry.invoke(planner, :plan_production, [
+             domain,
+             problem,
+             extra,
+             planner_opts
+           ]) do
         {:ok, envelope} when is_map(envelope) ->
           from_envelope(resource_or_domain, envelope,
             planner: :ferroplan,

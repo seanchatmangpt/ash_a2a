@@ -17,7 +17,9 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
 
   A provider is `(identity :: map(), public_card :: map()) -> {:ok, map()} |
   {:error, term()}` or `{module, function, extra_args}` called as
-  `apply(module, function, [identity, public_card | extra_args])`. It receives
+  `module.function(identity, public_card, ...extra_args)` via
+  `AshA2A.CallbackRegistry` (the `{module, function, arity}` must be a registry
+  member, otherwise the provider yields `{:error, %{code: :callback_not_permitted}}`). It receives
   the encoded public card (the same map served on the well-known path) so it
   can add skills or fields for the identity rather than rebuilding the card.
   """
@@ -87,7 +89,7 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
   defp invoke(fun, identity, public) when is_function(fun, 2), do: fun.(identity, public)
 
   defp invoke({m, f, a}, identity, public) when is_atom(m) and is_atom(f) and is_list(a),
-    do: apply(m, f, [identity, public | a])
+    do: AshA2A.CallbackRegistry.invoke(m, f, [identity, public | a])
 
   defp send_json(conn, status, body) do
     conn
