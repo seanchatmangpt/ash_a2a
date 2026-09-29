@@ -1,0 +1,20 @@
+{
+  "schema": "sa2a.semantic-evidence-ref/v1",
+  "sourceSchema": "sa2a.semantic-evidence-envelope.v1",
+  "contractVersion": "v26.9.29",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY",
+  "required": [
+    "schema",
+    "contractVersion",
+    "subject",
+    "sourceDigest",
+    "graphDigest",
+    "replayIdentity",
+    "envelopeDigest",
+    "authority",
+    "consequence"
+  ],
+  "identity": "RFC8785/JCS + SHA-256 via AshA2A.Identity.Canonical",
+  "grantsDoAuthority": false
+}
