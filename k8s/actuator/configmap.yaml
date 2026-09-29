@@ -1,0 +1,31 @@
+# Operator-pinned actuator configuration (Actuator.Config). `registry` MUST be replaced by
+# the pinned public-key registry (public keys only; each kid is recomputed and must match)
+# in an overlay: an empty registry is a boot refusal, so this base fails closed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actuator-config
+  namespace: actuator-system
+data:
+  actuator.json: |
+    {
+      "state_dir": "/var/lib/actuator",
+      "audience": "actuator:actuator-system",
+      "policy_epoch": 1,
+      "allowed_subjects": [],
+      "quorum_default": 1,
+      "generation_default": 1,
+      "skew": 30,
+      "max_ttl": 900,
+      "max_revocation_staleness": 300,
+      "required_profile": "classical",
+      "registry": [],
+      "wire": {
+        "tls": {
+          "port": 8443,
+          "certfile": "/etc/actuator/tls/tls.crt",
+          "keyfile": "/etc/actuator/tls/tls.key",
+          "cacertfile": "/etc/actuator/tls/ca.crt"
+        }
+      }
+    }

@@ -1,0 +1,107 @@
+# One replica, one durable state volume (journal + effect ledger). A StatefulSet keeps the
+# claim store on a single PVC: two actuators on one state directory would defeat the
+# write-ahead claim, so replicas MUST stay 1.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: actuator
+  namespace: actuator-system
+  labels:
+    app.kubernetes.io/name: actuator
+spec:
+  replicas: 1
+  serviceName: actuator
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actuator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: actuator
+    spec:
+      serviceAccountName: actuator
+      automountServiceAccountToken: false
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: actuator
+          # Pin by digest in an overlay; the tag is a placeholder for the release build.
+          image: registry.invalid/sa2a/actuator:26.9.28
+          imagePullPolicy: IfNotPresent
+          command: ["/app/bin/actuator"]
+          args: ["start"]
+          env:
+            - name: RELEASE_DISTRIBUTION
+              value: "none"
+            - name: RELEASE_TMP
+              value: /tmp/actuator
+            - name: ACTUATOR_CONFIG
+              value: /etc/actuator/actuator.json
+          ports:
+            - name: mtls
+              containerPort: 8443
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: mtls
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: mtls
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/actuator
+            - name: config
+              mountPath: /etc/actuator/actuator.json
+              subPath: actuator.json
+              readOnly: true
+            - name: tls
+              mountPath: /etc/actuator/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp/actuator
+      volumes:
+        - name: config
+          configMap:
+            name: actuator-config
+        - name: tls
+          secret:
+            secretName: actuator-tls
+            defaultMode: 0440
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes: ["ReadWriteOncePod"]
+        resources:
+          requests:
+            storage: 1Gi
