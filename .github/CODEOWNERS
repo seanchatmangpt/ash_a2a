@@ -1,0 +1,6 @@
+# Release and supply-chain surfaces need an owner review.
+/.github/                @seanchatmangpt
+/mix.exs                 @seanchatmangpt
+/mix.lock                @seanchatmangpt
+/native/                 @seanchatmangpt
+/docs/how-to/release.md  @seanchatmangpt

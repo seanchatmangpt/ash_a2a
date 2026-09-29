@@ -2,12 +2,18 @@
 # release-v26.9.25.yml: a pushed `v<version>` tag is the release subject, and
 # the job refuses unless the tag equals mix.exs `version`.
 #
-# Authority: the publishing job runs in the `hex-release` environment, which
-# must be configured in repository settings with required reviewers and the
+# This is the ONLY workflow that publishes to Hex (docs/how-to/release.md).
+#
+# Authority: the job runs in the `hex-release` environment, which must be
+# configured in repository settings with required reviewers and the
 # HEX_API_KEY secret scoped to that environment
-# (`gh secret set HEX_API_KEY --env hex-release`). Without that secret the job
-# stops at "Admit publish authority" with BLOCKED(authority:HEX_API_KEY) and
-# exit 2 -- nothing is published.
+# (`gh secret set HEX_API_KEY --env hex-release`). The FIRST step admits that
+# secret: without it a tag push stops in seconds with
+# BLOCKED(authority:HEX_API_KEY) and exit 2 -- nothing is built or published.
+#
+# Modes: a pushed `v*` tag publishes; workflow_dispatch is a DRY RUN that
+# builds the tarball, SBOMs and attestations and verifies them with
+# `gh attestation verify`, but never publishes or creates a release.
 #
 # Supply chain (SC-02/SC-07/SC-12): lock drift and advisories refuse before
 # build; the consumer prod closure must compile; CycloneDX SBOMs (Hex closure +
@@ -32,7 +38,6 @@ env:
 
 jobs:
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: hex-release
@@ -41,6 +46,19 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Admit publish authority (HEX_API_KEY present)
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+          MODE: ${{ github.event_name == 'push' && 'publish' || 'dry-run' }}
+        run: |
+          if [ -n "$HEX_API_KEY" ]; then
+            echo "authority: HEX_API_KEY present (mode=$MODE)"
+          elif [ "$MODE" = "publish" ]; then
+            echo "BLOCKED(authority:HEX_API_KEY)" >&2
+            exit 2
+          else
+            echo "dry-run: HEX_API_KEY absent; a tag push would be BLOCKED(authority:HEX_API_KEY)"
+          fi
       - name: Checkout exact release subject
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -50,10 +68,12 @@ jobs:
         id: subject
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
           version="$(sed -nE 's/^[[:space:]]*version:[[:space:]]*"([^"]+)".*/\1/p' mix.exs | head -1)"
           test -n "$version" || { echo "REFUSED(release:no mix.exs version)" >&2; exit 2; }
-          test "$tag" = "$version" || { echo "REFUSED(release:tag $tag != mix.exs $version)" >&2; exit 2; }
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            test "$tag" = "$version" || { echo "REFUSED(release:tag $tag != mix.exs $version)" >&2; exit 2; }
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "subject=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Set up Erlang/OTP and Elixir (.tool-versions)
@@ -108,7 +128,36 @@ jobs:
         with:
           subject-path: ash_a2a-${{ steps.subject.outputs.version }}.tar
           sbom-path: ash_a2a-${{ steps.subject.outputs.version }}.cdx.json
+      - name: Attest hddl_cli SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
+        with:
+          subject-path: ash_a2a-${{ steps.subject.outputs.version }}.tar
+          sbom-path: hddl_cli-${{ steps.subject.outputs.version }}.cdx.json
+      - name: Attest graphlaw_host SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
+        with:
+          subject-path: ash_a2a-${{ steps.subject.outputs.version }}.tar
+          sbom-path: graphlaw_host-${{ steps.subject.outputs.version }}.cdx.json
+      - name: Verify attestations against the exact tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.subject.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "ash_a2a-$VERSION.tar" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "ash_a2a-$VERSION.tar" --repo "$GITHUB_REPOSITORY" \
+            --predicate-type https://cyclonedx.org/bom
+      - name: Dry-run evidence (tarball and SBOMs, not published)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-dry-run-${{ steps.subject.outputs.version }}
+          path: |
+            ash_a2a-*.tar
+            *.cdx.json
+          if-no-files-found: error
       - name: Observe registry
+        if: github.event_name == 'push'
         id: registry
         env:
           PACKAGE: ash_a2a
@@ -120,18 +169,13 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Admit publish authority
-        if: steps.registry.outputs.exists != 'true'
-        env:
-          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
-        run: |
-          test -n "$HEX_API_KEY" || { echo "BLOCKED(authority:HEX_API_KEY)" >&2; exit 2; }
       - name: Publish to Hex
-        if: steps.registry.outputs.exists != 'true'
+        if: github.event_name == 'push' && steps.registry.outputs.exists != 'true'
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         run: mix hex.publish --yes
       - name: Verify Hex consequence
+        if: github.event_name == 'push'
         env:
           PACKAGE: ash_a2a
           VERSION: ${{ steps.subject.outputs.version }}
@@ -154,6 +198,7 @@ jobs:
           echo "BLOCKED(evidence:hex-registry)" >&2
           exit 3
       - name: GitHub release with tarball, SBOMs and provenance subject
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
