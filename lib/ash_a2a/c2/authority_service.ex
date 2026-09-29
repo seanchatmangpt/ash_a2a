@@ -1,4 +1,10 @@
 defmodule AshA2A.C2.AuthorityService do
+  @moduledoc """
+  Policy/issuance logic for an authority release.
+
+  This module is not invoked by the protected control-plane pipeline. Deploy it
+  only in the independent authority trust domain with its key provider.
+  """
   alias AshA2A.C2.{AuthorityRequest, AuthorityResponse}
 
   def authorize(policy, %AuthorityRequest{} = r, ctx) do
