@@ -139,6 +139,22 @@ defmodule AshA2A.Dispatcher do
         opts \\ []
       )
       when is_list(history) and is_list(opts) do
+    if AshA2A.ConsequenceKernel.W4.DispatcherFence.admitted?() do
+      dispatch_admitted(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
+    else
+      {:error, :consequence_kernel_required}
+    end
+  end
+
+  @doc false
+  def dispatch_observe(skill_name, %Message{} = message, resource_or_domain, history \\ [], auth_identity \\ nil, opts \\ [])
+      when is_list(history) and is_list(opts) do
+    AshA2A.ConsequenceKernel.W4.DispatcherFence.enter(fn ->
+      dispatch(skill_name, message, resource_or_domain, history, auth_identity, Keyword.put(opts, :observation_only, true))
+    end)
+  end
+
+  defp dispatch_admitted(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts) do
     start_meta =
       %{resource_or_domain: resource_or_domain, skill_name: skill_name}
       |> Map.merge(correlation_meta(a2a_message, opts))
