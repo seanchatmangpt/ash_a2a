@@ -1,0 +1,7 @@
+{
+  "version": "sa2a.c1.w4.v1",
+  "case": "failed_known",
+  "input": "change",
+  "route": "consequence",
+  "expected": "failed"
+}

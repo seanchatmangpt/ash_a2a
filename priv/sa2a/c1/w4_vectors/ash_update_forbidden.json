@@ -1,0 +1,7 @@
+{
+  "version": "sa2a.c1.w4.v1",
+  "case": "ash_update_forbidden",
+  "input": "change",
+  "route": "consequence",
+  "expected": "forbidden"
+}

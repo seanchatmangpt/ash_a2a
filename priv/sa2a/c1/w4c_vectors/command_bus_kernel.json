@@ -1,0 +1,10 @@
+{
+  "version": "sa2a-c1-w4c-1",
+  "case": "command_bus_kernel",
+  "edge": {
+    "caller": "Elixir.AshA2A.ConsequenceKernel.CommandPort",
+    "callee": "Elixir.AshA2A.Dispatcher",
+    "kind": "dispatcher"
+  },
+  "expect": "allow"
+}

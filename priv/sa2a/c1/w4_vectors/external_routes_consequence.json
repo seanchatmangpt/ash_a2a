@@ -1,0 +1,7 @@
+{
+  "version": "sa2a.c1.w4.v1",
+  "case": "external_routes_consequence",
+  "input": "external_do",
+  "route": "consequence",
+  "expected": "ok"
+}

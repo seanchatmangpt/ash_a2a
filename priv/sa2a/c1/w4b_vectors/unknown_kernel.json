@@ -1,0 +1,7 @@
+{
+  "version": "sa2a.c1.w4b.v1",
+  "case": "unknown_kernel",
+  "consequence": "unknown",
+  "route": "kernel",
+  "expected": "consequence_unclassified"
+}

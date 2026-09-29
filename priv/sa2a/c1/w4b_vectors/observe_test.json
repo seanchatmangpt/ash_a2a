@@ -1,0 +1,7 @@
+{
+  "version": "sa2a.c1.w4b.v1",
+  "case": "observe_test",
+  "consequence": "observe",
+  "route": "test",
+  "expected": "invalid_consequence"
+}

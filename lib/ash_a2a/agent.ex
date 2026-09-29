@@ -791,7 +791,7 @@ defmodule AshA2A.Agent do
           :observe ->
             with :ok <- authenticated(auth_identity, skill_name, opts),
                  :ok <- observe_declaration_admitted(resource_or_domain, skill_name, opts) do
-              AshA2A.Dispatcher.dispatch(
+              AshA2A.Dispatcher.dispatch_observe(
                 skill_name,
                 message,
                 resource_or_domain,

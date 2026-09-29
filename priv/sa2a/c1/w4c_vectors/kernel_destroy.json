@@ -1,0 +1,10 @@
+{
+  "version": "sa2a-c1-w4c-1",
+  "case": "kernel_destroy",
+  "edge": {
+    "caller": "Elixir.AshA2A.ConsequenceKernel.Effector",
+    "callee": "Elixir.Ash",
+    "kind": "effect"
+  },
+  "expect": "allow"
+}
