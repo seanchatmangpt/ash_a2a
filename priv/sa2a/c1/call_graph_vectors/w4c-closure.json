@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "w4c-closure",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.W4C.Closure",
+    "operation": "closed?"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}

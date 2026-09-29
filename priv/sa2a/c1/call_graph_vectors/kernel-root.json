@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "kernel-root",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.AshA2A.ConsequenceKernel",
+    "operation": "execute"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}

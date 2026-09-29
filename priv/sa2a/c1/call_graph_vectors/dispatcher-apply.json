@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "dispatcher-apply",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.AshA2A.Dispatcher",
+    "operation": "apply"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "legacy_bypass"
+  }
+}
