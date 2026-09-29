@@ -44,4 +44,4 @@ wasmtime = "=48.0.1"
 # Exact pins matching Cargo.lock: Runtime B conformance receipts must come
 # from one dependency identity (SC-08), not whatever `1`/`0.10` resolves to.
 serde_json = "=1.0.151"
-sha2 = "=0.10.9"
+sha2 = "=0.11.0"
