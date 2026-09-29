@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-resource_amplification",
+  "family": "authority-actuator-resource",
+  "invariant": "resource_amplification",
+  "expected": "explicit-decision"
+}

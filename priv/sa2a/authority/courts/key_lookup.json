@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-key_lookup",
+  "family": "authority-actuator-resource",
+  "invariant": "key_lookup",
+  "expected": "explicit-decision"
+}

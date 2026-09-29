@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-key_lifecycle",
+  "family": "authority-actuator-resource",
+  "invariant": "key_lifecycle",
+  "expected": "explicit-decision"
+}

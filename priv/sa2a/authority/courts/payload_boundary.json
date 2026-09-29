@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-payload_boundary",
+  "family": "authority-actuator-resource",
+  "invariant": "payload_boundary",
+  "expected": "explicit-decision"
+}

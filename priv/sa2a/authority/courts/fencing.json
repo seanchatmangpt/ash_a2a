@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-fencing",
+  "family": "authority-actuator-resource",
+  "invariant": "fencing",
+  "expected": "explicit-decision"
+}

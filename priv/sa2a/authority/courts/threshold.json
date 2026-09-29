@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-threshold",
+  "family": "authority-actuator-resource",
+  "invariant": "threshold",
+  "expected": "explicit-decision"
+}

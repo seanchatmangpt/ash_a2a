@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-narrow_effector",
+  "family": "authority-actuator-resource",
+  "invariant": "narrow_effector",
+  "expected": "explicit-decision"
+}

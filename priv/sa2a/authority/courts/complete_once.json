@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-complete_once",
+  "family": "authority-actuator-resource",
+  "invariant": "complete_once",
+  "expected": "explicit-decision"
+}

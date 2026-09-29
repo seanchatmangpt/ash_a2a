@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-fault_preclaim",
+  "family": "authority-actuator-resource",
+  "invariant": "fault_preclaim",
+  "expected": "explicit-decision"
+}

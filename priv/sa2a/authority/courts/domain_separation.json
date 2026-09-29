@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-domain_separation",
+  "family": "authority-actuator-resource",
+  "invariant": "domain_separation",
+  "expected": "explicit-decision"
+}

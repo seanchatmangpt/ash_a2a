@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-wrong_epoch",
+  "family": "authority-actuator-resource",
+  "invariant": "wrong_epoch",
+  "expected": "explicit-decision"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-service_boundary",
+  "family": "authority-actuator-resource",
+  "invariant": "service_boundary",
+  "expected": "explicit-decision"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-delegation",
+  "family": "authority-actuator-resource",
+  "invariant": "delegation",
+  "expected": "explicit-decision"
+}

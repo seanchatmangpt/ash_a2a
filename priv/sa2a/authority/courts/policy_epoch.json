@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-policy_epoch",
+  "family": "authority-actuator-resource",
+  "invariant": "policy_epoch",
+  "expected": "explicit-decision"
+}

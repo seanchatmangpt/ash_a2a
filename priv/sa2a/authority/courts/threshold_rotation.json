@@ -1,0 +1,6 @@
+{
+  "id": "C2C3-threshold_rotation",
+  "family": "authority-actuator-resource",
+  "invariant": "threshold_rotation",
+  "expected": "explicit-decision"
+}
