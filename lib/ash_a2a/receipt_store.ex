@@ -105,7 +105,8 @@ defmodule AshA2A.ReceiptStore do
 
   Inputs are read from `opts`, falling back to application env:
 
-    * `:production` (`config :ash_a2a, :production`, default `false`)
+    * `:production` (`config :ash_a2a, :production`, default `false`; forced
+      on under the `:strict` `AshA2A.SecurityProfile`)
     * `:receipt_store` (`config :ash_a2a, :receipt_store`, default
       `AshA2A.ReceiptStore.Memory`) and whether it was set explicitly
     * `:receipt_outbox_dir`, `:receipt_store_ekv_opts[:data_dir]`,
@@ -134,7 +135,8 @@ defmodule AshA2A.ReceiptStore do
       Keyword.get(opts, key, Application.get_env(:ash_a2a, key, default))
     end
 
-    production? = env.(:production, false) == true
+    # RFC-SA2A-007: the :strict profile implies the production rule set.
+    production? = env.(:production, false) == true or AshA2A.SecurityProfile.strict?()
 
     explicit_store =
       Keyword.get(opts, :receipt_store, Application.get_env(:ash_a2a, :receipt_store))

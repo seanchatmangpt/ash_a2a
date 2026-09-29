@@ -59,6 +59,25 @@ defmodule AshA2A.Application do
   durable, it logs ONE warning. With `config :ash_a2a,
   :require_durable_receipts, true` it refuses to start instead
   (`{:error, {:non_durable_receipt_store, facts}}`).
+
+  ## Boot enforcement (RFC-SA2A-007)
+
+  Before anything else in `start/2`, `AshA2A.SecurityProfile.Boot.run!/0`
+  enforces the build's `AshA2A.SecurityProfile`:
+
+    * `:strict` (default) raises `AshA2A.Authority.SecurityPreflight.Error`
+      unless the outbox is keyed and durable, the receipt store is not
+      in-memory, `:capability_release_mode` is `:strict`, an authority broker
+      and a `:kill_switch_class` are configured and the
+      `:transport_verified_grants_capability` policy is absent; it also runs
+      `SecurityPreflight.check!/1` (forced) and `ReceiptStore.boot_check/0`.
+    * `:legacy_compat` logs the same findings as warnings.
+    * `:dev_bypass` (compiled out of prod) prints a boot banner and emits
+      `[:ash_a2a, :security_profile, :dev_bypass]`.
+
+  `ReceiptStore.boot_check/0` failures raise under `:strict` or
+  `config :ash_a2a, :production, true`, and are logged otherwise. Nothing in
+  this module enforces anything beyond that list.
   """
 
   use Application
@@ -67,6 +86,9 @@ defmodule AshA2A.Application do
 
   @impl true
   def start(_type, _args) do
+    # RFC-SA2A-007: profile enforcement runs before any child (or hook) starts.
+    :ok = AshA2A.SecurityProfile.Boot.run!()
+
     agents = Application.get_env(:ash_a2a, :agents, [])
 
     # `AshA2A.Telemetry.OcelForwarder.attach!/0` is real and correct

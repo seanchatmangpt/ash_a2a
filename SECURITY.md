@@ -69,10 +69,28 @@ mTLS is declared-but-unsupported at the plug layer. Details:
 Production hardening checklist (see
 [the configuration reference](docs/reference/configuration.md) for each key):
 
-- `config :ash_a2a, :strict_security, true` -- boot-time
-  `AshA2A.Authority.SecurityPreflight.check!/0` refuses insecure settings
-  (legacy authority policy, missing/in-memory broker, in-memory receipt store,
-  EKV data dir under the OS temp dir) instead of warning.
+- **Security profile (RFC-SA2A-007).** `config :ash_a2a, :security_profile,
+  :strict | :legacy_compat | :dev_bypass`, set in build config and read with
+  `Application.compile_env/3`; the default is `:strict`. It is never taken
+  from call options, request data or runtime env. `:dev_bypass` is opt-in,
+  compiled out of `:prod` builds (requesting it there is a `CompileError`),
+  prints a boot banner, emits `[:ash_a2a, :security_profile, :dev_bypass]`
+  and is stamped on receipts via `AshA2A.SecurityProfile.stamp/1`.
+  `config/runtime.exs` is a prod-like template for `:strict`.
+- **What boot enforces.** `AshA2A.Application.start/2` calls
+  `AshA2A.SecurityProfile.Boot.run!/0` before any child starts. Under
+  `:strict` it raises unless: the outbox is keyed (`:receipt_outbox_key` or
+  `:receipt_binding_key`) and its dir is not under a tmp path; the receipt
+  store is not in-memory; `:capability_release_mode` is `:strict`; an
+  `:authority_broker` and a `:kill_switch_class` are configured; and the
+  `:transport_verified_grants_capability` policy is absent. It also runs
+  `AshA2A.Authority.SecurityPreflight.check!/1` (legacy authority policy,
+  missing/in-memory broker, in-memory receipt store, EKV data dir under the
+  OS temp dir) and `AshA2A.ReceiptStore.boot_check/0`. `:legacy_compat` logs
+  the same findings as warnings. Boot does not verify credentials, broker
+  contents or key strength; it checks configuration only.
+- `config :ash_a2a, :strict_security, bool` still overrides
+  `SecurityPreflight.strict?/0` (otherwise it follows the profile).
 - Leave `config :ash_a2a, :require_authenticated_caller` at its default
   `true`; opt individual skills out with `public_skills:` only when they are
   meant to be anonymous.

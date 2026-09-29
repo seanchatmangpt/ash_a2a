@@ -19,8 +19,8 @@ defmodule AshA2A.Authority.SecurityPreflight do
   ## Strict mode
 
   `strict?/0` is `config :ash_a2a, :strict_security, bool` when set, and
-  otherwise `true` exactly when this library was compiled with
-  `Mix.env() == :prod` (a host's release build compiles its deps in `:prod`).
+  otherwise `AshA2A.SecurityProfile.strict?/0` (RFC-SA2A-007: the build's
+  profile, `:strict` by default, so a `:prod` build is strict).
   In strict mode `check!/0` raises `AshA2A.Authority.SecurityPreflight.Error`
   listing every violation, and `AshA2A.Authority.Grant` refuses the legacy
   policy at request time with `:legacy_authority_policy_refused` even if
@@ -40,12 +40,6 @@ defmodule AshA2A.Authority.SecurityPreflight do
   # /var/folders/.../T), so it alone misses the system-wide volatile roots:
   # a `:data_dir` of "/tmp/ekv" must be refused too.
   @volatile_roots ["/tmp", "/private/tmp", "/dev/shm"]
-
-  @compiled_prod? (if Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) do
-                     Mix.env() == :prod
-                   else
-                     false
-                   end)
 
   defmodule Error do
     @moduledoc "Raised by `AshA2A.Authority.SecurityPreflight.check!/0` in strict mode."
@@ -69,7 +63,7 @@ defmodule AshA2A.Authority.SecurityPreflight do
   def strict? do
     case Application.get_env(:ash_a2a, :strict_security) do
       value when is_boolean(value) -> value
-      _ -> @compiled_prod?
+      _ -> AshA2A.SecurityProfile.strict?()
     end
   end
 
