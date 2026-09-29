@@ -1,0 +1,18 @@
+PREFIX sa2a: <https://seanchatmangpt.github.io/sa2a/diataxis#>
+SELECT ?capability ?missing WHERE {
+  <urn:sa2a:repo:ash_a2a> sa2a:exports ?capability .
+  {
+    FILTER NOT EXISTS { ?capability sa2a:specifiedBy ?x }
+    BIND("reference" AS ?missing)
+  } UNION {
+    FILTER NOT EXISTS { ?capability sa2a:executedBy ?x }
+    BIND("how-to" AS ?missing)
+  } UNION {
+    FILTER NOT EXISTS { ?capability sa2a:verifiedBy ?x }
+    BIND("verification" AS ?missing)
+  } UNION {
+    FILTER NOT EXISTS { ?capability sa2a:repairedBy ?x }
+    BIND("repair" AS ?missing)
+  }
+}
+ORDER BY ?capability ?missing
