@@ -1435,14 +1435,14 @@ defmodule AshA2A.CommandBus do
         skill: skill,
         message: message,
         resource_or_domain: resource_or_domain,
-        consequence: if(anchor, do: :change, else: :observe),
+        consequence: if(anchor, do: anchor.consequence, else: :observe),
         history: Keyword.get(opts, :history, []),
         auth_identity: Keyword.get(opts, :auth_identity)
       }
 
       case AshA2A.ConsequenceKernel.W4.DispatchInversion.execute(request, opts) do
-        {_outcome, reply} -> reply
         {:error, _reason} = error -> error
+        {outcome, reply} when outcome in [:completed, :failed, :unknown_outcome] -> reply
       end
     after
       Process.delete(:ash_a2a_ocel_command_bus_dispatch)
