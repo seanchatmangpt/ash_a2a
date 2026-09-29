@@ -30,7 +30,7 @@ defmodule AshA2A.Semantic.SelectTest do
   # disk. Returns the list of `{module, function, arity}` this module's
   # compiled code can call externally.
   defp imports(module) do
-    path = :code.which(module)
+    {:ok, path} = AshA2A.BeamFile.path(module)
     {:ok, {^module, [imports: imports]}} = :beam_lib.chunks(path, [:imports])
     imports
   end

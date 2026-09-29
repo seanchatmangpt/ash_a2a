@@ -46,7 +46,7 @@ config :ash_a2a, AshA2A.Test.Repo,
   port: 55432,
   username: "postgres",
   password: "postgres",
-  database: "ash_a2a_test",
+  database: "ash_a2a_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool_size: 4
 
 # RFC-SA2A-001 S29 capability grants. `AshA2A.Authority.Grant`'s default

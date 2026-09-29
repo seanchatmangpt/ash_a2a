@@ -226,10 +226,15 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
           {:replace_body,
            """
            case ChicagoArg1:claim(ChicagoArg2, ChicagoArg3) of
-             {replay, _} -> {execute, 'Elixir.AshA2A.Identity':execution('Elixir.Ash.UUIDv7':generate())};
+             {replay, ChicagoReceipt} -> {execute, maps:get(execution_id, ChicagoReceipt)};
              ChicagoOther -> ChicagoOther
            end.
            """},
+        # The mutant re-issues the committed receipt's OWN execution id, so it
+        # also satisfies the RFC-SA2A-004 execution fence (`confirm_claim/3`
+        # compares the stored claim's execution id); a freshly minted id would
+        # be stopped by that fence and the mutation would prove the fence, not
+        # the replay branch.
         guard: "CommandBus replay branch: a committed receipt is returned, never re-actuated",
         killers: ["CHI-REPLAY", "CHI-BRCE", @guard_court]
       }

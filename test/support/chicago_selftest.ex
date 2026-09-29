@@ -240,14 +240,20 @@ defmodule AshA2A.Test.ChicagoSelfTest do
         command = T.command(label, true)
         message = T.message(label)
 
+        # RFC-SA2A-004's default `:strict` actuation dedup is a second,
+        # independent layer that also refuses re-actuation of a committed
+        # effect. This falsifier isolates the replay branch of
+        # `claim_receipt/3` itself, so that layer is off for this court only.
+        opts = [store_opts: store_opts, actuation_dedup: :off]
+
         {:ok, first_receipt} =
-          CommandBus.run(command, message, AshA2A.Test.Fixture.Item, store_opts: store_opts)
+          CommandBus.run(command, message, AshA2A.Test.Fixture.Item, opts)
 
         count_before_replay = Enum.count(T.labels(), &(&1 == label))
 
         replayed =
           Context.stimulus(ctx, falsifier, fn ->
-            CommandBus.run(command, message, AshA2A.Test.Fixture.Item, store_opts: store_opts)
+            CommandBus.run(command, message, AshA2A.Test.Fixture.Item, opts)
           end)
 
         count_after_replay = Enum.count(T.labels(), &(&1 == label))

@@ -1233,7 +1233,7 @@ defmodule AshA2A.Receipt.OfflineReplay do
         {:ok, paths}
 
       :error ->
-        with path when is_list(path) <- :code.which(__MODULE__),
+        with {:ok, path} <- AshA2A.BeamFile.path(__MODULE__),
              lib = path |> List.to_string() |> Path.dirname() |> Path.dirname() |> Path.dirname(),
              [_ | _] = paths <- Path.wildcard(Path.join(lib, "*/ebin")) do
           {:ok, Enum.sort(paths)}

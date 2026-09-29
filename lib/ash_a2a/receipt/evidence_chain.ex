@@ -129,12 +129,43 @@ defmodule AshA2A.Receipt.EvidenceChain do
   """
   @spec decode_receipt(binary()) :: {:ok, Receipt.t()} | {:error, term()}
   def decode_receipt(bytes) when is_binary(bytes) do
+    ensure_receipt_atoms_loaded()
+
     case :erlang.binary_to_term(bytes, [:safe]) do
       {@journal_version, %Receipt{} = receipt} -> {:ok, receipt}
       _ -> {:error, :foreign_format}
     end
   rescue
     _ -> {:error, :bad_term}
+  end
+
+  # `:safe` refuses atoms absent from the atom table, and a fresh OS process
+  # (offline replay, fresh consumer) has lazily loaded none of the struct and
+  # enum modules a journal receipt names. Loading the application's own compiled
+  # modules registers exactly the atoms they contain, none attacker-controlled.
+  # The consequence boundary is deliberately NOT loaded: a DO-free replay process
+  # must be able to prove `do_boundary_loaded == false`. Receipt metadata keys
+  # that only a boundary module names (e.g. `:deduplicated_from_command_id`) are
+  # registered by reading that module's compiled atom and literal tables from disk, which
+  # interns its atoms without loading or running the module.
+  @do_boundary [AshA2A.CommandBus, AshA2A.Dispatcher, AshA2A.BrceAnchor]
+  @atoms_loaded_key {__MODULE__, :receipt_atoms_loaded}
+  defp ensure_receipt_atoms_loaded do
+    if :persistent_term.get(@atoms_loaded_key, false) == false do
+      _ = Application.load(:ash_a2a)
+
+      (Application.spec(:ash_a2a, :modules) || [])
+      |> Enum.reject(&(&1 in @do_boundary))
+      |> Enum.each(&Code.ensure_loaded/1)
+
+      Enum.each(@do_boundary, fn module ->
+        _ = AshA2A.BeamFile.intern_atoms(module)
+      end)
+
+      :persistent_term.put(@atoms_loaded_key, true)
+    end
+
+    :ok
   end
 
   @doc """

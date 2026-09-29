@@ -118,7 +118,7 @@ defmodule AshA2A.Chicago.Ocel.Validator do
       "name" => @name,
       "version" => @version,
       "specification" => @specification,
-      "beam_md5" => Base.encode16(__MODULE__.module_info(:md5), case: :lower)
+      "beam_md5" => Base.encode16(AshA2A.BeamFile.md5(__MODULE__), case: :lower)
     }
   end
 

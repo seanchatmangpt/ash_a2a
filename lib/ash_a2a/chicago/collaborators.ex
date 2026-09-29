@@ -667,7 +667,7 @@ defmodule AshA2A.Chicago.Collaborators do
   # wiring, independent of any module name a config or doc asserts.
   defp calls_into(module, target) do
     with true <- Code.ensure_loaded?(module),
-         path when is_list(path) <- :code.which(module),
+         {:ok, path} <- AshA2A.BeamFile.path(module),
          {:ok, {_, [imports: imports]}} <- :beam_lib.chunks(path, [:imports]) do
       imports
       |> Enum.filter(fn {mod, _fun, _arity} -> mod == target end)

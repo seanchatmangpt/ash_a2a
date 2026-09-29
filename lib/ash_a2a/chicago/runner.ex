@@ -578,7 +578,7 @@ defmodule AshA2A.Chicago.Runner do
   defp validator_identity(validator) do
     validator
     |> CourtManifest.validator_identity()
-    |> Map.put("beam_md5", Base.encode16(validator.module_info(:md5), case: :lower))
+    |> Map.put("beam_md5", Base.encode16(AshA2A.BeamFile.md5(validator), case: :lower))
   end
 
   # --- package ---------------------------------------------------------------

@@ -98,6 +98,9 @@ defmodule AshA2A.PlanningHddlSolverCrossvmTest do
     start_opts = %{
       name: peer_name,
       host: host,
+      # A loaded full-suite run (cover-instrumented, async modules) can exceed
+      # :peer's 15s default boot wait; a slow boot is not a failure.
+      wait_boot: 60_000,
       args: [~c"-setcookie", Atom.to_charlist(cookie)]
     }
 

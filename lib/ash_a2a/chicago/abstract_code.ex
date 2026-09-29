@@ -206,9 +206,6 @@ defmodule AshA2A.Chicago.AbstractCode do
   # `:code.which/1` finds the object file on the code path without loading
   # the module, so reading abstract code never runs a module's `on_load`.
   defp beam_path(module) do
-    case :code.which(module) do
-      path when is_list(path) and path != [] -> {:ok, path}
-      other -> {:error, {:no_beam_file, other}}
-    end
+    AshA2A.BeamFile.path(module)
   end
 end

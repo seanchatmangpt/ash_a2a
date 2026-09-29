@@ -65,6 +65,33 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
 
   @vendored_wasm_sha256 "187688d9e7e33a575713d6911d75687adb38713ed37412e211af263dfcbe0c28"
 
+  @junk_inputs ["this is not turtle <<<", "@@@ bad", "<http://a> <http://b"]
+
+  # The pure digest/parse tests below all read from ONE real native-host batch
+  # (one subprocess, one wasm compile) instead of one spawn (~1.4s) per call.
+  # Every job is a real wasm call in the real host; only the spawn is shared.
+  # Tests that assert process isolation, timeout, artifact identity or error
+  # paths keep their own fresh spawns.
+  setup_all do
+    if WasmtimeRuntime.available?() == :ok do
+      keyed_jobs =
+        [
+          {:base, {"graph_hash", [@base]}},
+          {:reordered, {"graph_hash", [@reordered]}},
+          {:different, {"graph_hash", [@different]}},
+          {:blake3_abc, {"blake3_hex", ["abc"]}},
+          {:empty_graph, {"graph_hash", [""]}},
+          {:blake3_empty, {"blake3_hex", [""]}}
+        ] ++
+          Enum.map(@junk_inputs, &{{:junk, &1}, {"graph_hash", [&1]}})
+
+      {:ok, %{results: results}} = WasmtimeRuntime.batch(Enum.map(keyed_jobs, &elem(&1, 1)))
+      %{pure: keyed_jobs |> Enum.map(&elem(&1, 0)) |> Enum.zip(results) |> Map.new()}
+    else
+      %{pure: %{}}
+    end
+  end
+
   describe "path resolution and availability (no subprocess)" do
     test "wasm_digest/1 hashes the real vendored artifact on disk" do
       assert {:ok, @vendored_wasm_sha256} = WasmtimeRuntime.wasm_digest()
@@ -298,28 +325,33 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
         assert result.host =~ "graphlaw_host/"
       end
 
-      test "graph_hash/2 reproduces the S12 canonical identity vector" do
-        assert {:ok, %{value: @base_hash}} = WasmtimeRuntime.graph_hash(@base)
+      test "host graph_hash job (one shared batch) reproduces the S12 canonical identity vector",
+           %{pure: pure} do
+        assert {:ok, %{value: @base_hash}} = pure[:base]
       end
 
-      test "graph_hash/2 is invariant to prefix label and triple order" do
-        assert {:ok, %{value: base}} = WasmtimeRuntime.graph_hash(@base)
-        assert {:ok, %{value: reordered}} = WasmtimeRuntime.graph_hash(@reordered)
+      test "host graph_hash job (one shared batch) is invariant to prefix label and triple order",
+           %{pure: pure} do
+        assert {:ok, %{value: base}} = pure[:base]
+        assert {:ok, %{value: reordered}} = pure[:reordered]
 
         assert base == reordered
         assert base == @base_hash
       end
 
-      test "graph_hash/2 separates a graph that differs by one term" do
-        assert {:ok, %{value: base}} = WasmtimeRuntime.graph_hash(@base)
-        assert {:ok, %{value: different}} = WasmtimeRuntime.graph_hash(@different)
+      test "host graph_hash job (one shared batch) separates a graph that differs by one term", %{
+        pure: pure
+      } do
+        assert {:ok, %{value: base}} = pure[:base]
+        assert {:ok, %{value: different}} = pure[:different]
 
         refute base == different
         assert different == @different_hash
       end
 
-      test "blake3_hex/2 reproduces the published BLAKE3 vector for \"abc\"" do
-        assert {:ok, %{value: @blake3_abc}} = WasmtimeRuntime.blake3_hex("abc")
+      test "host blake3_hex job (one shared batch) reproduces the published BLAKE3 vector for \"abc\"",
+           %{pure: pure} do
+        assert {:ok, %{value: @blake3_abc}} = pure[:blake3_abc]
       end
 
       test "run_hooks/3 returns the real admission JSON from the engine" do
@@ -423,17 +455,19 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
       # which for wholly unparseable input is the empty graph. A caller cannot
       # use "did graph_hash error" as a syntax check; a conformance suite must
       # therefore pin this behaviour rather than assume strictness.
-      test "malformed Turtle still hashes: `graph_hash` never reports a syntax error" do
-        for junk <- ["this is not turtle <<<", "@@@ bad", "<http://a> <http://b"] do
-          assert {:ok, %{value: value}} = WasmtimeRuntime.graph_hash(junk)
+      test "malformed Turtle still hashes: `graph_hash` never reports a syntax error",
+           %{pure: pure} do
+        for junk <- @junk_inputs do
+          assert {:ok, %{value: value}} = pure[{:junk, junk}]
           # A 64-char lowercase hex digest, not an `{"error": ...}` object.
           assert value =~ ~r/\A[0-9a-f]{64}\z/, "unexpected result for #{inspect(junk)}"
         end
       end
 
-      test "input the parser recovers nothing from yields the empty-graph digest" do
+      test "input the parser recovers nothing from yields the empty-graph digest",
+           %{pure: pure} do
         for empty_equivalent <- ["@@@ bad", "<http://a> <http://b"] do
-          assert {:ok, %{value: @empty_graph_hash}} = WasmtimeRuntime.graph_hash(empty_equivalent)
+          assert {:ok, %{value: @empty_graph_hash}} = pure[{:junk, empty_equivalent}]
         end
       end
 
@@ -447,9 +481,10 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntimeTest do
         refute first == @empty_graph_hash
       end
 
-      test "the empty-graph digest is BLAKE3 of the empty canonical N-Quads form" do
-        assert {:ok, %{value: @empty_graph_hash}} = WasmtimeRuntime.graph_hash("")
-        assert {:ok, %{value: @empty_graph_hash}} = WasmtimeRuntime.blake3_hex("")
+      test "the empty-graph digest is BLAKE3 of the empty canonical N-Quads form",
+           %{pure: pure} do
+        assert {:ok, %{value: @empty_graph_hash}} = pure[:empty_graph]
+        assert {:ok, %{value: @empty_graph_hash}} = pure[:blake3_empty]
       end
 
       test "a non-wasm file is refused at compile time with artifact identity intact" do

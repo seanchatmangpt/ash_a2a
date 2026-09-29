@@ -289,7 +289,7 @@ defmodule AshA2A.Chicago.StandingReceipt do
 
     (foundation ++ courts)
     |> Enum.uniq()
-    |> Enum.map(fn m -> [inspect(m), Base.encode16(m.module_info(:md5), case: :lower)] end)
+    |> Enum.map(fn m -> [inspect(m), Base.encode16(AshA2A.BeamFile.md5(m), case: :lower)] end)
     |> Enum.sort()
     |> then(&[@specification | &1])
     |> JSON.encode!()

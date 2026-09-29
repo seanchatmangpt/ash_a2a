@@ -219,7 +219,7 @@ defmodule AshA2A.Semantic.ConstructTest do
     end
 
     test "the compiled module's real import table reaches no consequence boundary" do
-      path = :code.which(Construct)
+      {:ok, path} = AshA2A.BeamFile.path(Construct)
       {:ok, {Construct, [imports: imports]}} = :beam_lib.chunks(path, [:imports])
       modules = imports |> Enum.map(fn {mod, _f, _a} -> mod end) |> Enum.uniq()
 

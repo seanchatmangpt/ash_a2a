@@ -183,7 +183,7 @@ defmodule AshA2A.Chicago.Ocel.Mapping do
     |> Enum.map(fn m ->
       md5 =
         if Code.ensure_loaded?(m.source),
-          do: Base.encode16(m.source.module_info(:md5), case: :lower),
+          do: Base.encode16(AshA2A.BeamFile.md5(m.source), case: :lower),
           else: "unloaded"
 
       [inspect(m.source), md5, Enum.map_join(m.event, ".", &Atom.to_string/1), m.activity]

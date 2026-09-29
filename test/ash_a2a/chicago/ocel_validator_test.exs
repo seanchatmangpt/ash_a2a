@@ -293,7 +293,9 @@ defmodule AshA2A.Chicago.OcelValidatorTest do
     end
 
     test "the validator references no producer or consumer module (§15-§16)" do
-      {:ok, {_, [atoms: atoms]}} = :beam_lib.chunks(:code.which(Validator), [:atoms])
+      {:ok, {_, [atoms: atoms]}} =
+        :beam_lib.chunks(elem(AshA2A.BeamFile.path(Validator), 1), [:atoms])
+
       referenced = MapSet.new(atoms, fn {_, atom} -> atom end)
 
       for forbidden <- [Log, Observer, Mapping, AshA2A.Chicago.Query, AshA2A.Chicago.Json] do

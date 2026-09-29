@@ -297,36 +297,36 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
       ),
       negative(9,
         invariant:
-          "Primary receipt storage lost mid-run fails closed: no success, no committed receipt, no re-actuation while down, outcome recoverable after restart",
+          "Primary receipt storage lost mid-run fails closed before the consequence: the execution fence cannot be confirmed, so no DO, no success, no committed receipt, no actuation while down, and no actuation after restart",
         stimulus:
-          "EKV killed from inside the bus at brce.prepare(prepared); run continues; retry while down; restart; reconcile; resubmit",
+          "EKV killed from inside the bus at brce.prepare(prepared); bus refuses at the execution fence; retry while down; restart; reconcile; resubmit",
         boundary:
-          "CommandBus.commit_receipt/3 retries + outbox_after_consequence/2 + claim_receipt/3 rescue",
+          "CommandBus.confirm_execution/5 fence + commit_receipt/3 retries + claim_receipt/3 rescue",
         forbidden_outcome:
-          "{:ok, _} or brce.commit(committed) while storage is down, a second actuation, or final state other than executed",
+          "{:ok, _} or brce.commit(committed) while storage is down, any actuation, an external effect, or final state other than not_attempted",
         attempt_evidence:
-          "brce.prepare(prepared), brce.actuate.stop, brce.commit, reconciliation.reconciled(recovery)",
+          "brce.prepare(prepared), brce.claim(refused receipt_store_unavailable), reconciliation.reconciled(recovery)",
         survival_evidence:
-          "brce.commit(committed) observed; bus returned ok; brce.actuate.start count >= 2; classified(final) != executed",
+          "brce.commit(committed) observed; bus returned ok; brce.actuate.start observed; ledger rows > 0; classified(final) != not_attempted",
         guard:
-          "CommandBus.commit_receipt/3 {:error, _} branch; claim_receipt/3 store-unavailable refusal",
+          "CommandBus.confirm_execution/5 (RFC-SA2A-004 execution fence, fail closed before DO); claim_receipt/3 store-unavailable refusal",
         failure_class: :receipt_failure,
         attempt_predicate:
           {:all,
            [
              {:observed, "brce.prepare", %{"outcome" => "prepared"}},
-             {:observed, "brce.actuate.stop"},
-             {:observed, "brce.commit"},
+             {:observed, "brce.claim",
+              %{"outcome" => "refused", "code" => "receipt_store_unavailable"}},
              {:observed, "reconciliation.reconciled", %{"label" => "recovery"}}
            ]},
         outcome_predicate:
           {:any,
            [
              {:observed, "brce.commit", %{"outcome" => "committed"}},
-             {:count, "brce.actuate.start", :gte, 2},
+             {:observed, "brce.actuate.start"},
              {:not,
               {:observed, "reconciliation.classified",
-               %{"label" => "final", "state" => "executed"}}}
+               %{"label" => "final", "state" => "not_attempted"}}}
            ]}
       ),
       negative(10,
@@ -400,14 +400,14 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
         invariant:
           "Reconciliation never discards an observed (finalized, outboxed) outcome because the primary store already holds the pending anchor",
         stimulus:
-          "executor held at brce.actuate.start; outbox drained (pending anchor -> primary); EKV killed; executor resumes (commit fails, finalized receipt outboxed); restart; reconcile (no probe)",
+          "executor held at brce.actuate.start; outbox drained (pending anchor -> primary); EKV killed; executor resumes (the RFC-SA2A-004 durability fence finds its anchor no longer outboxed and refuses before DO, so a finalized failed receipt is outboxed); restart; reconcile (no probe)",
         boundary: "ReceiptOutbox.reconcile_entry/3",
         forbidden_outcome:
-          "the reconciled state is not executed (the observed outcome was erased) or a second actuation",
+          "the reconciled state is not the finalized outcome the outbox holds (failed: the fence refused DO, no consequence) -- the observed outcome was erased by the pending anchor -- or any consequence or second actuation",
         attempt_evidence:
           "receipt.outboxed, reconciliation.classified(pre_drain), reconciliation.reconciled(recovery)",
         survival_evidence:
-          "reconciliation.reconciled(recovery).state != executed; classified(final) != executed",
+          "reconciliation.reconciled(recovery).state != failed; classified(final) != failed; brce.actuate.start count >= 2",
         guard: "ReceiptOutbox.reconcile_entry/3 finalized-supersedes-pending clause",
         failure_class: :receipt_failure,
         attempt_predicate:
@@ -422,10 +422,9 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
            [
              {:not,
               {:observed, "reconciliation.reconciled",
-               %{"label" => "recovery", "state" => "executed"}}},
+               %{"label" => "recovery", "state" => "failed"}}},
              {:not,
-              {:observed, "reconciliation.classified",
-               %{"label" => "final", "state" => "executed"}}},
+              {:observed, "reconciliation.classified", %{"label" => "final", "state" => "failed"}}},
              {:count, "brce.actuate.start", :gte, 2}
            ]}
       ),
@@ -894,12 +893,14 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
       Result.negative(f,
         attempt_observed?:
           ev.store_down? and seen(ctx, f, "brce.prepare", %{"outcome" => "prepared"}) and
-            seen(ctx, f, "brce.actuate.stop") and seen(ctx, f, "brce.commit") and
-            match?({:ok, _}, ev.recovery),
+            seen(ctx, f, "brce.claim", %{
+              "outcome" => "refused",
+              "code" => "receipt_store_unavailable"
+            }) and match?({:ok, _}, ev.recovery),
         forbidden_outcome_observed?:
           match?({:ok, _}, ev.returned) or match?({:ok, _}, ev.retry_while_down) or
-            seen(ctx, f, "brce.commit", %{"outcome" => "committed"}) or actuations >= 2 or
-            rows > 1 or state(ev.final) != :executed,
+            seen(ctx, f, "brce.commit", %{"outcome" => "committed"}) or actuations >= 1 or
+            rows > 0 or state(ev.final) != :not_attempted,
         evidence: %{
           "command_id" => cid,
           "returned_while_store_down" => reply(ev.returned),
@@ -1067,9 +1068,9 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
           ev.paused.paused? and match?({:ok, %{committed: n}} when n >= 1, drained) and
             match?(%{primary: %{status: :pending}}, raw_while_paused) and
             seen(ctx, f, "receipt.outboxed") and classified?(ev.pre) and
-            match?({:ok, _}, ev.recovery),
+            state(ev.pre) == :failed and match?({:ok, _}, ev.recovery),
         forbidden_outcome_observed?:
-          recovered_state != :executed or state(ev.final) != :executed or rows > 1 or
+          recovered_state != :failed or state(ev.final) != :failed or rows > 0 or
             count(ctx, f, "brce.actuate.start") >= 2,
         evidence: %{
           "command_id" => cid,

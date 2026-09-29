@@ -1457,8 +1457,8 @@ defmodule AshA2A.Semantic.Conformance do
   end
 
   defp running_code_digest do
-    case :code.which(__MODULE__) do
-      path when is_list(path) ->
+    case AshA2A.BeamFile.path(__MODULE__) do
+      {:ok, path} ->
         case File.read(to_string(path)) do
           {:ok, binary} ->
             {:ok, :sha256 |> :crypto.hash(binary) |> Base.encode16(case: :lower)}
@@ -1467,7 +1467,7 @@ defmodule AshA2A.Semantic.Conformance do
             {:error, {:beam_unreadable, reason}}
         end
 
-      other ->
+      {:error, other} ->
         {:error, {:beam_unavailable, other}}
     end
   end
@@ -1891,7 +1891,7 @@ defmodule AshA2A.Semantic.Conformance do
   end
 
   defp abstract_code(module) do
-    with path when is_list(path) <- :code.which(module),
+    with {:ok, path} <- AshA2A.BeamFile.path(module),
          {:ok, {^module, [abstract_code: {:raw_abstract_v1, forms}]}} <-
            :beam_lib.chunks(path, [:abstract_code]) do
       {:ok, forms}

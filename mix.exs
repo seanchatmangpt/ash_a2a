@@ -63,6 +63,11 @@ defmodule AshA2A.MixProject do
       test: "test --exclude serial",
       "test.all": "test --include serial",
       "test.serial": "test --only serial",
+      # Local sharded tail (LOCAL ONLY; CI does not shard, it runs one
+      # `mix test.all --cover`): first run `mix compile` once and create the
+      # partition databases (`ash_a2a_test1..4`, see config/test.exs), then launch 4 OS
+      # processes, each `MIX_TEST_PARTITION=<n> mix test.serial.shard --partitions 4`
+      # for n in 1..4, plus one `mix test.serial.solo`.
       # Live, paid, networked LLM round-trips: explicit opt-in only.
       "test.live": "cmd ASH_A2A_LIVE_LLM=1 mix test --include serial --only external_api",
 
@@ -252,6 +257,11 @@ defmodule AshA2A.MixProject do
       # in for BeamPM.OcelIngest.Router (same MicroBeam4pm-style pattern
       # already used in ex4pm/ash_ex4pm/xaas this session).
       {:bandit, "~> 1.5", only: :test},
+      # Ash policy verification (test fixtures with policies) needs a SAT
+      # solver; without one every such fixture emits a compile warning and
+      # `MIX_ENV=test mix compile --warnings-as-errors` fails. Pure Elixir,
+      # test-only (Ash declares it optional).
+      {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
       {:req_llm, "~> 1.18"},
       {:ash_r2rml, "~> 26.8"},
       # `:plug` is an optional dep of `:a2a` (A2A.Plug/A2A.Plug.Auth). Also

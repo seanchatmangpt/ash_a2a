@@ -324,7 +324,15 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Environment do
     %{outbox_files: length(files), outbox_statuses: statuses, primary: primary}
   end
 
-  defp decode(bin) do
+  # Independent of `AshA2A.ReceiptOutbox`: the journal frames every entry as
+  # `"SA2AJ1K" <> 32-byte HMAC <> term` (keyed), `"SA2AJ1U" <> term` (untagged)
+  # or bare term bytes (legacy). This reader only strips that framing to reach
+  # the stored term; it does not verify the tag (the SUT does).
+  defp decode(<<"SA2AJ1K", _mac::binary-size(32), term::binary>>), do: decode_term(term)
+  defp decode(<<"SA2AJ1U", term::binary>>), do: decode_term(term)
+  defp decode(bin), do: decode_term(bin)
+
+  defp decode_term(bin) do
     {:ok, :erlang.binary_to_term(bin)}
   rescue
     _ -> :error

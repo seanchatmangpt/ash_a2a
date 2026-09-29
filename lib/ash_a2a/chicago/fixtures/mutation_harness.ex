@@ -60,9 +60,9 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness do
   end
 
   @doc "Runs `command` through the real CommandBus against the Ledger resource."
-  @spec run(Command.t(), String.t(), keyword()) :: CommandBus.result()
-  def run(%Command{} = command, label, store_opts),
-    do: CommandBus.run(command, message(label), Ledger, store_opts: store_opts)
+  @spec run(Command.t(), String.t(), keyword(), keyword()) :: CommandBus.result()
+  def run(%Command{} = command, label, store_opts, bus_opts \\ []),
+    do: CommandBus.run(command, message(label), Ledger, [store_opts: store_opts] ++ bus_opts)
 
   @doc "Runs `fun.(store_opts)` against a fresh, real receipt store."
   @spec with_store((keyword() -> result)) :: result when result: var
@@ -419,14 +419,21 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt do
     )
   end
 
+  # The RFC-SA2A-004 default `:strict` actuation dedup is a second, independent
+  # layer that also refuses a re-actuation of a committed effect (defense in
+  # depth). This falsifier isolates the replay branch of `claim_receipt/3`
+  # itself, so the actuation layer is disabled for this stimulus only
+  # (`actuation_dedup: :off`); the strict layer has its own falsifiers in
+  # `test/ash_a2a_actuation_identity_test.exs`.
   defp replay_reactuation(ctx, f, store) do
     label = H.unique("mutguard-replay")
     p = H.principal()
     command = H.command(label, principal: p, authority: H.authority(p))
+    isolate = [actuation_dedup: :off]
 
     replies =
       Context.stimulus(ctx, f, fn ->
-        [H.run(command, label, store), H.run(command, label, store)]
+        [H.run(command, label, store, isolate), H.run(command, label, store, isolate)]
       end)
 
     records = Context.observed(ctx, f)

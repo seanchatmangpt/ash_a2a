@@ -72,7 +72,11 @@ defmodule AshA2A.GraphLaw.WasmexPool do
       end
 
     children = [{Registry, keys: :duplicate, name: registry} | members]
-    Supervisor.init(children, strategy: :one_for_one)
+    # `:rest_for_one`: the registry is the first child and every member joins it
+    # from `init/1`. A registry crash drops all registrations, so the members
+    # started after it must restart and re-register; `:one_for_one` would leave
+    # live but unroutable members behind (a restarted registry with 0 members).
+    Supervisor.init(children, strategy: :rest_for_one)
   end
 
   @doc """
@@ -81,14 +85,12 @@ defmodule AshA2A.GraphLaw.WasmexPool do
   """
   @spec pick(atom()) :: pid() | nil
   def pick(registry \\ @registry) do
-    if Process.whereis(registry) do
-      registry
-      |> Registry.lookup(:members)
-      |> Enum.map(fn {pid, _} -> {queue_len(pid), pid} end)
-      |> Enum.reject(fn {len, _} -> is_nil(len) end)
-      |> Enum.min_by(&elem(&1, 0), fn -> {nil, nil} end)
-      |> elem(1)
-    end
+    registry
+    |> members()
+    |> Enum.map(fn pid -> {queue_len(pid), pid} end)
+    |> Enum.reject(fn {len, _} -> is_nil(len) end)
+    |> Enum.min_by(&elem(&1, 0), fn -> {nil, nil} end)
+    |> elem(1)
   end
 
   @doc "Every live member pid."
@@ -97,6 +99,11 @@ defmodule AshA2A.GraphLaw.WasmexPool do
     if Process.whereis(registry),
       do: registry |> Registry.lookup(:members) |> Enum.map(&elem(&1, 0)),
       else: []
+  rescue
+    # A registry mid-restart has its name registered before its key table
+    # exists: `Registry.lookup/2` raises "unknown registry". No member is
+    # routable in that window.
+    ArgumentError -> []
   end
 
   defp queue_len(pid) do

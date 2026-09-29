@@ -276,7 +276,7 @@ defmodule AshA2A.Chicago.Mutation do
 
   defp check_pristine(module, binary) do
     cond do
-      loaded_md5(module) != binary_md5(binary) ->
+      not loaded_matches_disk?(module, binary) ->
         refuse(
           :mutation_target_not_pristine,
           "loaded #{inspect(module)} differs from its on-disk BEAM (already mutated or stale)"
@@ -702,7 +702,7 @@ defmodule AshA2A.Chicago.Mutation do
     Code.ensure_loaded?(module) and
       case :code.get_object_code(module) do
         {^module, binary, _} ->
-          binary_md5(binary) == loaded_md5(module) and not :erlang.check_old_code(module)
+          loaded_matches_disk?(module, binary) and not :erlang.check_old_code(module)
 
         :error ->
           false
@@ -1109,6 +1109,20 @@ defmodule AshA2A.Chicago.Mutation do
 
   defp operator_name(:identity), do: "identity"
   defp operator_name({name, _}), do: Atom.to_string(name)
+
+  # Under `mix test --cover` the loaded module is `:cover`'s instrumented
+  # re-compilation of the very same abstract code as the on-disk BEAM, so its
+  # md5 differs by construction. That instrumentation is coverage-only, not a
+  # mutation: a cover-instrumented module counts as its on-disk BEAM. Any
+  # mutant this engine loads is NOT cover-compiled (`:code.which/1` then names its file), so a mutated module can
+  # never pass as pristine through this clause.
+  defp loaded_matches_disk?(module, binary),
+    do: binary_md5(binary) == loaded_md5(module) or cover_instrumented?(module)
+
+  # `:code.which/1` answers `:cover_compiled` only while the cover
+  # instrumentation is what is loaded; loading a mutant or the original binary
+  # replaces it with a file path.
+  defp cover_instrumented?(module), do: :code.which(module) == :cover_compiled
 
   defp loaded_md5(module), do: module.module_info(:md5) |> Base.encode16(case: :lower)
 
