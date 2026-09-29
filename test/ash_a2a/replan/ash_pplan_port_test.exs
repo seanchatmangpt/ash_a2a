@@ -1,0 +1,1 @@
+defmodule AshA2A.Replan.AshPPlanPortTest do use ExUnit.Case, async: true; test "does not claim pddl" do refute AshA2A.Replan.Port.AshPPlan.supports?(:pddl) end end
