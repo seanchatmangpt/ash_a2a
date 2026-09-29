@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chatmangpt.com/sa2a/replan-envelope/v1",
+  "title": "SA2A Replan Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_digest",
+    "exact_subject",
+    "receipt_id",
+    "consequence",
+    "decision"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sa2a/replan-envelope/v1"
+    },
+    "contract_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "exact_subject": {},
+    "receipt_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "consequence": {
+      "enum": ["executed", "failed", "refused", "unknown_outcome"]
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason", "authority"],
+      "properties": {
+        "kind": {
+          "enum": ["stop", "replan"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authority": {
+          "const": "none"
+        }
+      }
+    },
+    "provider": {
+      "type": ["string", "null"]
+    },
+    "projection_digest": {
+      "type": ["string", "null"]
+    },
+    "source_replay_key": {
+      "type": ["string", "null"]
+    }
+  }
+}
