@@ -41,6 +41,23 @@ defmodule AshA2A.Replan.PortableEnvelopeTest do
              })
   end
 
+  test "reconciled and compensated receipts stop instead of replan" do
+    for status <- [:reconciled, :compensated] do
+      assert {:ok,
+              %{
+                "consequence" => consequence,
+                "decision" => %{"kind" => "stop", "authority" => "none"}
+              }} =
+               PortableEnvelope.from_receipt(%{
+                 semantic_subject: "sha256:subject",
+                 receipt_id: "r-terminal-" <> Atom.to_string(status),
+                 terminal_status: status
+               })
+
+      assert consequence == Atom.to_string(status)
+    end
+  end
+
   test "refused receipt carries stop and remains powerless" do
     assert {:ok,
             %{
