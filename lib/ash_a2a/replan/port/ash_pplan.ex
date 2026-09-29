@@ -1,4 +1,7 @@
 defmodule AshA2A.Replan.Port.AshPPlan do
+  # MERGE NOTE: main's owner-adapter-first port kept (candidates only: authority :none, standing
+  # :candidate). r2's legacy direct-AshPPlan behaviour is preserved in legacy_propose/2, including
+  # r2's `{:ok, plan}` unwrapping for :powl plans.
   @behaviour AshA2A.Replan.Provider
 
   @owner_provider AshPPlan.SA2A.Provider
@@ -57,6 +60,16 @@ defmodule AshA2A.Replan.Port.AshPPlan do
       case apply(mod, :plan, [Map.fetch!(request, :plan_iri)]) do
         nil ->
           {:error, :plan_not_found}
+
+        {:ok, plan} ->
+          {:ok,
+           %{
+             subject: Map.get(request, :subject),
+             plan: plan,
+             formalism: :powl,
+             authority: :none,
+             standing: :candidate
+           }}
 
         plan ->
           {:ok,

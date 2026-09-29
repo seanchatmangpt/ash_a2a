@@ -10,6 +10,8 @@ defmodule AshA2A.Replan.PortableEnvelope do
 
   alias AshA2A.Replan.{Outcome, PortableSchema, ReceiptFeedback}
 
+  @schema_id PortableSchema.id()
+  @schema_digest PortableSchema.digest()
   @consequences [:executed, :failed, :refused, :reconciled, :compensated, :unknown_outcome]
   @decisions [:stop, :replan]
 
@@ -39,20 +41,22 @@ defmodule AshA2A.Replan.PortableEnvelope do
     end
   end
 
-  def validate(%{
-        "schema" => schema,
-        "contract_digest" => digest,
-        "exact_subject" => subject,
-        "receipt_id" => receipt_id,
-        "consequence" => consequence,
-        "decision" => %{
-          "kind" => kind,
-          "reason" => reason,
-          "authority" => "none"
-        }
-      } = envelope)
-      when schema == PortableSchema.id() and
-             digest == PortableSchema.digest() and
+  def validate(
+        %{
+          "schema" => schema,
+          "contract_digest" => digest,
+          "exact_subject" => subject,
+          "receipt_id" => receipt_id,
+          "consequence" => consequence,
+          "decision" => %{
+            "kind" => kind,
+            "reason" => reason,
+            "authority" => "none"
+          }
+        } = envelope
+      )
+      when schema == @schema_id and
+             digest == @schema_digest and
              not is_nil(subject) and
              is_binary(receipt_id) and byte_size(receipt_id) > 0 and
              is_binary(reason) and byte_size(reason) > 0 do
@@ -78,7 +82,9 @@ defmodule AshA2A.Replan.PortableEnvelope do
   end
 
   defp member(value, allowed) do
-    if value in Enum.map(allowed, &Atom.to_string/1), do: {:ok, value}, else: {:error, :invalid_enum}
+    if value in Enum.map(allowed, &Atom.to_string/1),
+      do: {:ok, value},
+      else: {:error, :invalid_enum}
   end
 
   defp nullable_string(nil), do: nil

@@ -1,4 +1,9 @@
 defmodule AshA2A.Replan.Loop do
+  # MERGE NOTE: main's implementation kept (superset of r2's): adds :excluded and :replay_key to the
+  # result and sorts exclusions deterministically. r2's step semantics (budget consumed per attempt,
+  # provider failure -> exclusion -> continuation, :replan_exhausted after budget, subject guard)
+  # are identical to main's. r2's unsorted `excluded` list in :replan_provider_unavailable is dropped
+  # in favour of the sorted (deterministic) list.
   alias AshA2A.Replan.{AttemptBudget, ProviderResult, ProviderSet, ReplayKey, SubjectLineage}
 
   def run(subject, request, providers, opts \\ []) do
@@ -21,7 +26,8 @@ defmodule AshA2A.Replan.Loop do
 
             case ProviderResult.normalize(mod.propose(request, opts), id) do
               {:ok, result} ->
-                with :ok <- SubjectLineage.guard(subject, Map.get(result.candidate, :subject, subject)) do
+                with :ok <-
+                       SubjectLineage.guard(subject, Map.get(result.candidate, :subject, subject)) do
                   {:ok,
                    result
                    |> Map.put(:attempt, attempt)
