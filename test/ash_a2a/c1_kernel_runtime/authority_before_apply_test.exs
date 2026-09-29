@@ -33,16 +33,16 @@ defmodule AshA2A.C1KernelRuntime.AuthorityBeforeApplyTest do
 
     {:ok, store} = Memory.start_link()
     handle = StoreHandle.new(Memory, store)
-    p = %{digest: "sha256:auth", instance: %{request_id: "r", effect_id: "e"}}
+    p = %{prepared_digest: "sha256:auth", instance: %{request_id: "r", effect_id: "e"}}
     :ok = PrepareStage.run(handle, p)
     :ok = ClaimStage.run(handle, p, self())
 
-    assert {:ok, %{state: state}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: state}} = Memory.fetch(store, p.prepared_digest)
     assert Atom.to_string(state) == v["from"]
     assert :ok = AuthorityStage.run(Auth, "p", p)
-    assert {:ok, %{state: ^state}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: ^state}} = Memory.fetch(store, p.prepared_digest)
     assert {:error, :authority_revoked} = AuthorityStage.run(Auth, "q", p)
-    assert {:ok, %{state: ^state}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: ^state}} = Memory.fetch(store, p.prepared_digest)
     assert :ok = ApplyingStage.run(handle, p)
   end
 end

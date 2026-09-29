@@ -27,7 +27,7 @@ defmodule AshA2A.ConsequenceKernelTest do
 
     Map.merge(
       %{
-        digest: "sha256:" <> id,
+        prepared_digest: "sha256:" <> id,
         instance: %{request_id: "r-" <> id, effect_id: "e-" <> id},
         consequence_class: :change
       },
@@ -57,7 +57,7 @@ defmodule AshA2A.ConsequenceKernelTest do
   test "mediates claims authority class and effect, ending :completed", %{store: store} do
     p = prepared()
     assert {:ok, :done} = ConsequenceKernel.execute(p, opts(store))
-    assert {:ok, %{state: :completed}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: :completed}} = Memory.fetch(store, p.prepared_digest)
   end
 
   test "an authority refusal stops before the effector; the record stays :claimed", %{
@@ -68,13 +68,13 @@ defmodule AshA2A.ConsequenceKernelTest do
     assert {:error, :authority_revoked} =
              ConsequenceKernel.execute(p, opts(store, principal: "q"))
 
-    assert {:ok, %{state: :claimed}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: :claimed}} = Memory.fetch(store, p.prepared_digest)
   end
 
   test "an unclassified consequence is refused before the apply boundary", %{store: store} do
     p = prepared(%{consequence_class: :not_a_class})
     assert {:error, :consequence_unclassified} = ConsequenceKernel.execute(p, opts(store))
-    assert {:ok, %{state: :claimed}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: :claimed}} = Memory.fetch(store, p.prepared_digest)
   end
 
   test "an effector error after the apply boundary is unknown_outcome, not failure", %{
@@ -85,7 +85,7 @@ defmodule AshA2A.ConsequenceKernelTest do
     assert {:unknown, {:effector_error_after_apply_boundary, :network}} =
              ConsequenceKernel.execute(p, opts(store, effector: Boom))
 
-    assert {:ok, %{state: :unknown_outcome}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: :unknown_outcome}} = Memory.fetch(store, p.prepared_digest)
   end
 
   test "the same request claimed by another owner is refused; the same prepared digest cannot be prepared twice",

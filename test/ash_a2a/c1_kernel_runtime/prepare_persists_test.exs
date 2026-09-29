@@ -20,10 +20,10 @@ defmodule AshA2A.C1KernelRuntime.PreparePersistsTest do
 
     {:ok, store} = Memory.start_link()
     handle = StoreHandle.new(Memory, store)
-    p = %{digest: "sha256:prep", instance: %{request_id: "r", effect_id: "e"}}
+    p = %{prepared_digest: "sha256:prep", instance: %{request_id: "r", effect_id: "e"}}
 
     assert :ok = PrepareStage.run(handle, p)
-    assert {:ok, %{state: state, prepared: ^p}} = Memory.fetch(store, p.digest)
+    assert {:ok, %{state: state, prepared: ^p}} = Memory.fetch(store, p.prepared_digest)
     assert Atom.to_string(state) == v["from"]
     assert {:error, :prepared_duplicate} = PrepareStage.run(handle, p)
   end

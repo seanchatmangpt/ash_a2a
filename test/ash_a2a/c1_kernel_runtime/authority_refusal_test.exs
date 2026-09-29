@@ -2,6 +2,12 @@ defmodule AshA2A.C1KernelRuntime.AuthorityRefusalTest do
   use ExUnit.Case, async: true
   alias AshA2A.ConsequenceKernel.PreparedEffectStore.Transition
 
+  setup_all do
+    # Transition owns the state atoms the vectors name; load it before String.to_existing_atom.
+    Code.ensure_loaded!(Transition)
+    :ok
+  end
+
   @vector Path.expand(
             "../../../priv/sa2a/c1/kernel_runtime_vectors/authority_refusal.json",
             __DIR__
