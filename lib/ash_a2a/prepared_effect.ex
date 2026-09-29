@@ -6,7 +6,8 @@ defmodule AshA2A.PreparedEffect do
     :consequence_class,
     :prepared_digest,
     :authority_epoch,
-    :prepared_at
+    :prepared_at,
+    :semantic_evidence
   ]
 
   @type t :: %__MODULE__{
@@ -15,29 +16,39 @@ defmodule AshA2A.PreparedEffect do
           consequence_class: atom(),
           prepared_digest: binary(),
           authority_epoch: non_neg_integer(),
-          prepared_at: term()
+          prepared_at: term(),
+          semantic_evidence: map() | nil
         }
   def new(instance, effect, class, opts \\ []) do
-    body = %{
-      "schema" => "sa2a.prepared-effect.v1",
-      "effect_id" => instance.effect_id,
-      "request_id" => instance.request_id,
-      "subject_digest" => instance.subject_digest,
-      "effect" => effect,
-      "consequence_class" => to_string(class),
-      "authority_epoch" => Keyword.get(opts, :authority_epoch, 0)
-    }
+    with {:ok, semantic_evidence} <-
+           AshA2A.Semantic.EvidenceRef.admit_optional(Keyword.get(opts, :semantic_evidence)) do
+      body =
+        %{
+          "schema" => "sa2a.prepared-effect.v1",
+          "effect_id" => instance.effect_id,
+          "request_id" => instance.request_id,
+          "subject_digest" => instance.subject_digest,
+          "effect" => effect,
+          "consequence_class" => to_string(class),
+          "authority_epoch" => Keyword.get(opts, :authority_epoch, 0)
+        }
+        |> maybe_put_semantic_evidence(semantic_evidence)
 
-    with {:ok, digest} <- AshA2A.Identity.Canonical.digest(body) do
-      {:ok,
-       struct!(__MODULE__,
-         instance: instance,
-         effect: effect,
-         consequence_class: class,
-         prepared_digest: digest,
-         authority_epoch: Keyword.get(opts, :authority_epoch, 0),
-         prepared_at: Keyword.get(opts, :prepared_at)
-       )}
+      with {:ok, digest} <- AshA2A.Identity.Canonical.digest(body) do
+        {:ok,
+         struct!(__MODULE__,
+           instance: instance,
+           effect: effect,
+           consequence_class: class,
+           prepared_digest: digest,
+           authority_epoch: Keyword.get(opts, :authority_epoch, 0),
+           prepared_at: Keyword.get(opts, :prepared_at),
+           semantic_evidence: semantic_evidence
+         )}
+      end
     end
   end
+
+  defp maybe_put_semantic_evidence(body, nil), do: body
+  defp maybe_put_semantic_evidence(body, evidence), do: Map.put(body, "semantic_evidence", evidence)
 end
