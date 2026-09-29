@@ -1,0 +1,7 @@
+{
+  "version": "sa2a.c1.w4b.v1",
+  "case": "external_dispatcher",
+  "consequence": "external_do",
+  "route": "dispatcher",
+  "expected": "consequence_kernel_required"
+}
