@@ -26,7 +26,7 @@
       "minLength": 1
     },
     "consequence": {
-      "enum": ["executed", "failed", "refused", "unknown_outcome"]
+      "enum": ["executed", "failed", "refused", "reconciled", "compensated", "unknown_outcome"]
     },
     "decision": {
       "type": "object",
