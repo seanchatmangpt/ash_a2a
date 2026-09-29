@@ -93,9 +93,11 @@ defmodule AshA2A.CryptoStanding.CertificateVerifierTest do
           revocation_epoch: 2,
           generation: 9,
           signatures: sigs,
-          v: 1,
-          not_before: @now - 10,
-          expires: @now + 100,
+          version: 1,
+          nonce: "cert-level-nonce",
+          threshold: 1,
+          not_before_ms: (@now - 10) * 1000,
+          expires_at_ms: (@now + 100) * 1000,
           audience: @audience
         },
         over
@@ -219,9 +221,9 @@ defmodule AshA2A.CryptoStanding.CertificateVerifierTest do
         {%{revocation_epoch: 3}, %{revocation_epoch: 3}},
         {%{generation: 10}, %{generation: 10}},
         {%{audience: "actuator:other"}, %{}},
-        {%{not_before: @now - 11}, %{}},
-        {%{expires: @now + 101}, %{}},
-        {%{v: 2}, %{}}
+        {%{not_before_ms: (@now - 11) * 1000}, %{}},
+        {%{expires_at_ms: (@now + 101) * 1000}, %{}},
+        {%{version: 2}, %{}}
       ]
 
       for {cert_over, ctx_over} <- mutations do
@@ -294,6 +296,33 @@ defmodule AshA2A.CryptoStanding.CertificateVerifierTest do
       k = key()
       c = cert(e, [sign(e, k)], %{principal: "someone-else"})
       assert {:error, :refused} = CertificateVerifier.standings(c, e, ctx([k]))
+    end
+  end
+
+  describe "canonical certificate time model (milliseconds struct, seconds signed message)" do
+    test "to_seconds/from_seconds round-trip whole seconds and refuse sub-second values" do
+      assert {:ok, 1_800_000_000} = Certificate.to_seconds(1_800_000_000_000)
+      assert Certificate.from_seconds(1_800_000_000) == 1_800_000_000_000
+      assert {:error, :sub_second_time} = Certificate.to_seconds(1_800_000_000_001)
+      assert {:error, :bad_time} = Certificate.to_seconds(-1)
+      assert {:error, :bad_time} = Certificate.to_seconds("1")
+    end
+
+    test "a sub-second validity bound is refused rather than truncated (would change the signed bytes)" do
+      e = effect()
+      k = key()
+      c = cert(e, [sign(e, k)], %{expires_at_ms: (@now + 100) * 1000 + 1})
+
+      assert {:error, {:certificate_refused, [{:invalid, :malformed_certificate}]}} =
+               CertificateVerifier.standings(c, e, ctx([k]))
+    end
+
+    test "the message a signer signs over the seconds form verifies over the ms struct" do
+      e = effect()
+      k = key()
+      {:ok, {nb, ex}} = Certificate.window_seconds(cert(e, []))
+      assert {nb, ex} == {@now - 10, @now + 100}
+      assert :ok = CertificateVerifier.verify(cert(e, [sign(e, k)]), e, ctx([k]))
     end
   end
 

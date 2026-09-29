@@ -1,0 +1,13 @@
+{
+  "schema": "sa2a.c1.kernel-runtime.v1",
+  "case": "release_applying",
+  "from": "applying",
+  "to": "released",
+  "decision": "refuse",
+  "requires": [
+    "prepared_digest",
+    "request_id",
+    "effect_id",
+    "owner"
+  ]
+}

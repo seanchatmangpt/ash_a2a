@@ -115,8 +115,7 @@ defmodule AuthorityService.Issuer do
     with {:ok, term} <- Jason.decode(bytes) |> tag(:malformed_effect),
          {:ok, map} <- SignedMessage.normalize(term) |> tag(:malformed_effect),
          true <- Jcs.encode(map) == bytes or {:error, :non_canonical_effect},
-         true <- is_binary(map["effect_class"]) or {:error, :malformed_effect},
-         true <- (is_integer(map["amount"]) and map["amount"] >= 0) or {:error, :malformed_effect},
+         {:ok, _class, _amount} <- class_and_amount(map),
          true <-
            (is_binary(map["principal"]) and map["principal"] != "") or {:error, :malformed_effect} do
       {:ok, map}
@@ -127,9 +126,31 @@ defmodule AuthorityService.Issuer do
     _ -> {:error, :malformed_effect}
   end
 
-  defp required(policy, %{"effect_class" => cls, "amount" => amt}) do
-    Policy.required(policy, cls, amt)
+  defp required(policy, effect) do
+    with {:ok, cls, amt} <- class_and_amount(effect) do
+      Policy.required(policy, cls, amt)
+    else
+      {:error, code} -> {:error, code}
+    end
   end
+
+  # Two effect shapes carry their policy class in the signed bytes themselves:
+  #   * authority shape: top-level `effect_class` + integer `amount` (tiered by amount);
+  #   * actuator shape (`Actuator.Effect`: `effect_type`, `consequence_class`, `params`, no
+  #     amount): the class is the effect's `consequence_class` and the tier is the class's
+  #     lowest-amount tier (amount 0), because an actuator effect declares no monetary amount.
+  #     An unknown class still refuses (`:unknown_effect_class`), so nothing is issued for a
+  #     class the operator's policy does not name. This is what lets ONE canonical byte string
+  #     be both what the authority certifies and what the actuator executes.
+  defp class_and_amount(%{"effect_class" => cls, "amount" => amt})
+       when is_binary(cls) and is_integer(amt) and amt >= 0,
+       do: {:ok, cls, amt}
+
+  defp class_and_amount(%{"effect_type" => t, "consequence_class" => cls, "params" => p})
+       when is_binary(t) and is_binary(cls) and is_map(p),
+       do: {:ok, cls, 0}
+
+  defp class_and_amount(_), do: {:error, :malformed_effect}
 
   defp not_issued(j, %{digest: d, generation: g}) do
     if Journal.issued?(j, d, g), do: {:error, :already_issued}, else: :ok

@@ -11,7 +11,7 @@ defmodule AshA2A.C2.CertificateVerifier do
   Replay protection (`{kid, nonce}`) is enforced by the durable claim store from the
   `:replay_key` returned by `standings/3`.
   """
-  alias AshA2A.C2.CompleteMediation
+  alias AshA2A.C2.{Certificate, CompleteMediation}
   alias AshA2A.CryptoStanding
   alias Sa2aCrypto.{Envelope, Suite}
 
@@ -48,9 +48,16 @@ defmodule AshA2A.C2.CertificateVerifier do
     nonce = field(sig, :nonce) || c.nonce
     raw = field(sig, :signature)
     audience = c.audience
+    window = Certificate.window_seconds(c)
+
+    {nb, ex} =
+      case window do
+        {:ok, {a, b}} -> {a, b}
+        {:error, _} -> {nil, nil}
+      end
 
     fields = %{
-      "v" => c.v,
+      "v" => c.version,
       "alg" => alg,
       "kid" => kid,
       "effect_digest" => e.digest,
@@ -59,13 +66,14 @@ defmodule AshA2A.C2.CertificateVerifier do
       "revocation_epoch" => c.revocation_epoch,
       "generation" => c.generation,
       "nonce" => nonce,
-      "not_before" => c.not_before,
-      "expires" => c.expires,
+      "not_before" => nb,
+      "expires" => ex,
       "audience" => audience
     }
 
     standing =
       with true <- is_binary(raw) or {:invalid, :bad_signature},
+           {:ok, _} <- window |> tag_window(),
            registry when not is_nil(registry) <- Map.get(ctx, :registry),
            {:ok, bytes} <- signed_message(fields),
            {:ok, env} <- envelope(fields, bytes, raw) do
@@ -95,6 +103,10 @@ defmodule AshA2A.C2.CertificateVerifier do
       alg: c.alg,
       nonce: nil
     }
+
+  # a whole-second window is a precondition of the signed message (see Certificate moduledoc)
+  defp tag_window({:ok, _} = ok), do: ok
+  defp tag_window({:error, _}), do: {:invalid, :malformed_certificate}
 
   defp signed_message(fields) do
     case CryptoStanding.signed_message(fields) do

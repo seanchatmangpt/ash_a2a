@@ -163,6 +163,67 @@ defmodule AuthorityServiceTest do
     assert {:refused, :malformed_effect, _} = issue(ctx, req)
   end
 
+  describe "actuator-shaped effects (one byte string for authority and actuator)" do
+    defp actuator_effect(over \\ %{}) do
+      Map.merge(
+        %{
+          "v" => 1,
+          "principal" => "agent:alice",
+          "subject" => "subject:orders/42",
+          "capability" => "actuator.ledger.append",
+          "consequence_class" => "internal_append",
+          "effect_type" => "ledger_append",
+          "effect_instance_id" => "ei:0001-abcdef",
+          "resource_bounds" => %{"max_bytes" => 256},
+          "policy_epoch" => 3,
+          "params" => %{"entry" => "hello"}
+        },
+        over
+      )
+    end
+
+    defp internal_append_policy(k) do
+      policy(classes: %{"internal_append" => [%{max_amount: :infinity, k: k}]})
+    end
+
+    test "class comes from consequence_class; an automated-tier class certifies the exact bytes" do
+      ctx = start_issuer(%{policy: internal_append_policy(0)})
+      e = actuator_effect()
+      bytes = effect_bytes(e)
+
+      req =
+        request(e, [], %{
+          "effect_digest" => digest(bytes),
+          "effect" => Base.url_encode64(bytes, padding: false)
+        })
+
+      assert {:ok, cert} = Issuer.issue(ctx.issuer, req, now: now())
+      {:ok, msg_bytes} = Base.url_decode64(cert["message"], padding: false)
+      {:ok, msg} = Sa2aCrypto.SignedMessage.parse(msg_bytes)
+      assert msg["effect_digest"] == digest(bytes)
+      assert msg["principal"] == "agent:alice"
+    end
+
+    test "a class the policy does not name is refused (fail closed), and k>0 still needs approvals" do
+      ctx = start_issuer(%{policy: internal_append_policy(0)})
+      e = actuator_effect(%{"consequence_class" => "external_payment"})
+
+      assert {:refused, :unknown_effect_class, _} =
+               Issuer.issue(ctx.issuer, request(e), now: now())
+
+      ctx = start_issuer(%{policy: internal_append_policy(2)})
+
+      assert {:refused, :insufficient_approvals, _} =
+               Issuer.issue(ctx.issuer, request(actuator_effect()), now: now())
+    end
+
+    test "a partial actuator-shaped effect is malformed, never defaulted" do
+      ctx = start_issuer(%{policy: internal_append_policy(0)})
+      e = actuator_effect() |> Map.delete("params")
+      assert {:refused, :malformed_effect, _} = Issuer.issue(ctx.issuer, request(e), now: now())
+    end
+  end
+
   test "the same (effect, generation) is issued once; an approval is consumed once", ctx do
     e = effect(%{"amount" => 500_000})
     d = digest(effect_bytes(e))

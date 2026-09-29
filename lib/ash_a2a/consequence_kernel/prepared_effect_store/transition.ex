@@ -1,6 +1,6 @@
 defmodule AshA2A.ConsequenceKernel.PreparedEffectStore.Transition do
   @allowed %{
-    prepared: [:claimed, :refused],
+    prepared: [:claimed, :refused, :released],
     claimed: [:applying, :released],
     applying: [:completed, :unknown_outcome],
     unknown_outcome: [:reconciled, :compensated]

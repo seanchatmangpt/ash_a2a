@@ -1,0 +1,13 @@
+{
+  "schema": "sa2a.c1.kernel-runtime.v1",
+  "case": "unknown_persisted",
+  "from": "applying",
+  "to": "unknown_outcome",
+  "decision": "admit",
+  "requires": [
+    "prepared_digest",
+    "request_id",
+    "effect_id",
+    "owner"
+  ]
+}

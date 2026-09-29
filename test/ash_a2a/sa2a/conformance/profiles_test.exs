@@ -223,9 +223,10 @@ defmodule AshA2A.SA2A.Conformance.ProfilesTest do
       assert ev =~ "Canonical"
     end
 
-    test "the real C2.PreparedEffect uses term_to_binary today (known FAIL)" do
-      assert {:fail, ev} = C1.canonical_at_boundaries(%{})
-      assert ev =~ "PreparedEffect"
+    test "the real C2.PreparedEffect no longer uses term_to_binary (portable RFC 8785 identity, PR #62)" do
+      assert {:pass, ev} = C1.canonical_at_boundaries(%{})
+      assert ev =~ "no term_to_binary"
+      assert ev =~ "Identity.Canonical"
     end
   end
 

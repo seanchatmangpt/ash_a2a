@@ -98,9 +98,11 @@ defmodule AshA2A.SA2A.Conformance.Checks.ProbeFixtures do
       revocation_epoch: 2,
       generation: 9,
       signatures: sigs,
-      v: 1,
-      not_before: @now - 10,
-      expires: @now + 100,
+      version: 1,
+      nonce: "probe-cert-nonce",
+      threshold: 1,
+      not_before_ms: (@now - 10) * 1000,
+      expires_at_ms: (@now + 100) * 1000,
       audience: @audience
     })
   end
