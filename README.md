@@ -188,6 +188,10 @@ reference for lookup, and explanation for understanding. It is published on
     (`AshA2A.Semantic.Compiler`).
   - [Test your ash_a2a app](docs/how-to/test-your-ash_a2a-app.md) — run
     commands, native prerequisites, test taxonomy, known flakiness.
+  - [Test governed actions](docs/how-to/test-governed-actions.md) — dispatch
+    through the real CommandBus with an in-process broker and store, no mocks.
+  - [Migrate legacy to strict](docs/how-to/migrate-legacy-to-strict.md) — the
+    seven behavior changes, what breaks, and the fix for each.
 - **Reference**:
   - [Module index](docs/reference/index.md)
   - [DSL reference](docs/reference/dsl.md) — the `a2a` section, `skill`

@@ -1,11 +1,11 @@
 # HANDOFF
 
 Remote-agent handoff for the v26.9.28 consequence-kernel milestone in `ash_a2a`. Subject:
-`ash_a2a` main at `9cda21c9b8728ec240ef499dfc186be2ee5e923b` (== origin/main, OBSERVED).
+`ash_a2a` main at `e2e02ebd9d674a70f1d1cdc0e08fc22a07e4b108` (section 1.1 truth table pinned to it; sections 1.2 onward were observed at `9cda21c9` and are not re-verified).
 This document integrates 8 composition-adapter designs (A1-A8), 4 court designs (C2,
 CHI-CLOSURE, CHI-CONSERVE, CHI-FAULT) and fleet-repo verification. Labels: OBSERVED = read
 or run; DERIVED = design inference; UNVERIFIED = not run or not read. Version: v26.9.28.
-Last Updated: 2026-09-28.
+Last Updated: 2026-09-28 (section 1.1 refreshed at e2e02eb).
 
 ## Contents
 
@@ -20,31 +20,45 @@ Last Updated: 2026-09-28.
 
 ## 1. Current-state truth table
 
-### 1.1 ash_a2a at 9cda21c versus what the RFCs assume
+### 1.1 ash_a2a at e2e02ebd9d674a70f1d1cdc0e08fc22a07e4b108 versus what the RFCs assume
 
-| Assumed by RFC-004/005/006 | State at 9cda21c | Status |
+Pinned subject: `main` at `e2e02ebd9d674a70f1d1cdc0e08fc22a07e4b108` (OBSERVED via
+`git rev-parse HEAD`, 2026-09-28). Module presence was read from `lib/` at that tree; wiring
+was read by grepping `lib/` for references outside each module's own directory. Uncommitted
+changes from concurrent lanes are not part of this pin.
+
+| Assumed by RFC-004/005/006 | State at e2e02eb | Status |
 |---|---|---|
-| ConsequenceKernel | no defmodule in lib/ | ABSENT |
-| PreparedEffect, PreparedEffectStore | no defmodule in lib/ | ABSENT |
-| EffectInstance, EffectClaim | no defmodule in lib/ | ABSENT |
+| ConsequenceKernel | `lib/ash_a2a/consequence_kernel.ex` plus 22 modules under `consequence_kernel/` (claim, exact_subject, effect_identity, request_identity, authority_revalidation, unknown_outcome, receipt, receipt_chain, wire, standing, refusal registry); no caller outside `effect_instance.ex` | PRESENT, UNWIRED |
+| PreparedEffect | `lib/ash_a2a/prepared_effect.ex` and `c2/prepared_effect.ex` (two modules) | PRESENT, UNWIRED |
+| PreparedEffectStore | `consequence_kernel/prepared_effect_store.ex` + memory, authenticated_record, recovery, transition, refusal; HMAC key custody `key_custody/hmac_sha256.ex`; no caller from CommandBus | PRESENT, UNWIRED |
+| EffectInstance, EffectClaim | `effect_instance.ex`; `consequence_kernel/claim.ex` | PRESENT, UNWIRED |
+| Identity.Canonical (JCS + sha256) | `identity/canonical.ex` + encodable, normalizer, migration; used only by the kernel island and `prepared_effect.ex` | PRESENT, UNWIRED |
+| Legacy digests | `command.ex` and `actuation.ex` still use `:erlang.term_to_binary([:deterministic])` | PRESENT (legacy) |
+| c2/ authority pipeline | 25 modules: authority_request, authority_client, authority_service, authority_response, actuation_pipeline, actuator, certificate, certificate_verifier, crypto_verifier, signer_set, claim_store(_ets), effector(_registry), fencing_token, budget_ledger, resource_envelope, policy_epoch, revocation_epoch; no reference from outside `c2/` | PRESENT, UNWIRED |
+| Certificate signature verification | `CertificateVerifier.verify/3` checks `CryptoVerifier.supported?/1` on each signature algorithm, not `CryptoVerifier.verify/4`; `crypto_verifier.ex` lists `:eddsa, :ml_dsa, :slh_dsa` and implements EdDSA only | PARTIAL |
 | SecurityProfile | no defmodule in lib/ | ABSENT |
-| BudgetLedger, ResourceEnvelope | only named in `_LANES.md`, `RESOLUTIONS.md` | ABSENT |
-| Identity.Canonical | only identity.ex, execution_identity.ex, spg_identity.ex | ABSENT |
-| ActuationCertificate, AuthorityService, Actuator (X1-X4) | not in lane map | ABSENT |
+| ActuationCertificate as separate module, separate authority OS process/release | not present (X1-X4 in-repo islands only) | ABSENT |
+| CallbackRegistry, Egress.EndpointPolicy | `callback_registry.ex`, `egress/endpoint_policy.ex` exist in the working tree (uncommitted at time of writing) | UNVERIFIED at pin |
+| Production dispatch path | `Agent -> CommandBus.run -> BrceAnchor.put -> Dispatcher.dispatch` (command_bus.ex:1430-1446); kernel not on the path | ALIVE (legacy path) |
+| Strict actuation dedup default | `CommandBus.actuation_dedup_mode/1` defaults `:strict`; court `test/ash_a2a/docs_truth_test.exs` | ALIVE |
+| Pre-DO authority revalidation and kill-switch recheck | `CommandBus.pre_do_gate/3` | ALIVE |
+| Receipt outbox seal (HMAC-SHA256), fsync, anchor | `receipt_outbox.ex` | ALIVE |
 | Semantic.Allocator.Budget, Semantic.Bounds.delegate/2 | exist, in-VM Elixir | PRESENT |
 | Semantic.Refusal, 18 classes, provider hook | exists (refusal.ex) | PRESENT |
-| Planning.Candidate, Planning.admit/2, Reconciliation | exist | PRESENT |
 | Chicago courts, AbstractCode, Conformance, Mutation | exist | PRESENT |
-| GraphLaw in-VM host (wasmex NIF) | mix.exs:400, application.ex:140 | PRESENT |
-| Receipt HMAC outbox | receipt_outbox.ex (HMAC-SHA256) | PRESENT |
-| Any :crypto sign/verify | none, only hash/mac | ABSENT |
+| GraphLaw in-VM host (wasmex NIF) | mix.exs, application.ex | PRESENT |
+| Toolchain | `.tool-versions`: elixir 1.20.4-otp-29, erlang 29.1.1; `scripts/toolchain.sh` | ALIVE |
+| Pinned OTP can do ML-DSA | pinned OTP is now 29.1.1; `:crypto.supports(:public_keys)` not run for this document | UNVERIFIED |
 
-Working tree is dirty: 15 modified files under `lib/ash_a2a/chicago/*`,
-`receipt/{evidence_chain,offline_replay}.ex`, `semantic/conformance.ex`, 4 tests, plus
-untracked `lib/ash_a2a/beam_file.ex`. No lane may own those files until they are committed
-or abandoned (Wave 0 precondition).
+Still unwired (the C1/C2 gap): no production caller of `ConsequenceKernel.execute/2`, of any
+`C2.*` module, of the prepared store, or of `Identity.Canonical` on the live path; identity on
+the live path is BEAM term serialization; certificate signatures are not cryptographically
+verified in `CertificateVerifier`; no separate authority or actuator process exists.
+Lane-level status: `docs/jira/v26.9.28-kernel/_LANES_V3.md`, which predates commits
+`5c60fb3`, `0704588`, `cfad84d`, `a9a4264` and should be re-tallied by the coordinator.
 
-### 1.2 Operator and premise claims checked
+### 1.2 Operator and premise claims checked (observed at 9cda21c, not re-verified)
 
 | Claim | Verdict | Evidence |
 |---|---|---|

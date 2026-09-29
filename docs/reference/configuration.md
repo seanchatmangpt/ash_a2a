@@ -13,7 +13,7 @@ fail-closed defaults are deliberate.
 | `:receipt_store` | `AshA2A.ReceiptStore.Memory` | `AshA2A.Application` / `AshA2A.CommandBus` — replay-safe receipt storage. `Ekv` gets automatic EKV child wiring. A custom module must be supervised by the host (the app starts no children for it). |
 | `:receipt_store_ekv_opts` | `[]` | EKV options for `AshA2A.ReceiptStore.Ekv`. Defaults inject `name: AshA2A.ReceiptStore.Ekv`, `cluster_size: 1`, and `data_dir: System.tmp_dir!()/ash_a2a_receipt_store_ekv`. **The tmp-dir default is not guaranteed to survive a host reboot** — set a real persistent `:data_dir` for production. |
 | `:receipt_commit_retry_delays_ms` | `[50, 150]` | `CommandBus` receipt-commit retry backoff. |
-| `:actuation_dedup` | `:declared` | `CommandBus` actuation de-duplication mode. |
+| `:actuation_dedup` | `:strict` | `CommandBus.actuation_dedup_mode/1` (per-call opt `:actuation_dedup` wins). `:strict` (default) enforces the effect claim on the derived effect digest for every `:change`/`:external_do` command, with or without an idempotency token. `:declared` (legacy opt-in) enforces only for commands carrying an explicit token; receipts record `intended_effect.actuation_dedup_compat == :declared_legacy`. `:off` (legacy opt-in) never claims an actuation (`:off_legacy`). See [migrate-legacy-to-strict](../how-to/migrate-legacy-to-strict.md). |
 | `:claim_lease_ms` | `300_000` | Receipt-store claim lease TTL (the crash-recovery window a claimed-but-unfinished command is guarded by). |
 | `:receipt_binding_key` | — (unset: keyed binding refuses `:receipt_binding_key_unavailable`) | Key binding a receipt to its evidence (`AshA2A.Receipt.Binding`). Production: a secret of at least 32 random bytes, identical on every node. |
 | `:receipt_outbox_dir` | `System.tmp_dir!()/ash_a2a_receipt_outbox` | `AshA2A.ReceiptOutbox` filesystem journal directory (pending receipts written before dispatch). **The tmp-dir default does not survive a pod reschedule or host reboot** — the crash-recovery guarantee the outbox exists for is lost with it. Set a persistent directory in production. |
@@ -35,6 +35,15 @@ fail-closed defaults are deliberate.
 | --- | --- | --- |
 | `:capability_release_closure` | `nil` | `AshA2A.CapabilityRelease` / `AshA2A.CommandBus` / `AshA2A.Dispatcher` — the frozen released closure (`freeze/1` builds a `%Closure{digest, capabilities}` from released capabilities only). In strict mode, execution requires exact skill-id membership in this closure; passing a closure in `CommandBus` opts implies `:strict` for that call unless a mode is explicitly supplied. |
 | `:capability_release_mode` | `:legacy` | `AshA2A.CapabilityRelease.guard/2` release-gate mode. `:legacy` preserves pre-v26.9.26 behavior (gate inert). `:strict` requires a frozen closure and exact skill-id membership: strict + absent closure refuses `:capability_release_closure_missing` (S42 `:refused_provenance`); a capability outside the closure refuses `:capability_release_refused` (S42 `:refused_capability`). Any other value refuses `{:invalid_capability_release_mode, mode}`. |
+
+## Application config — other security-relevant defaults
+
+| Key | Default | Consumed by / meaning |
+| --- | --- | --- |
+| `:strict_observe_generic_actions` | `false` | `AshA2A.Agent`. When `true` (or per-agent opt `strict_observe_generic_actions: true`), a generic `:action` skill with no explicit `consequence:` is refused `:consequence_unclassified` unless listed in `observe_generic_actions`. Default `false` keeps the legacy behavior. Opt-in until fixtures declare their generic actions. |
+| `:require_authenticated_caller` | `true` | `AshA2A.Agent` / `AshA2A.Transport.Plug`. Fail closed: unauthenticated callers are refused. |
+| `:kill_switch_class` | `nil` | `CommandBus` kill-switch class consulted at admission and again immediately before DO. Unset = no kill-switch gate. |
+| `:dispatch_timeout_ms` | `30_000` | `CommandBus` dispatch timeout. |
 
 ## Application config — LLM roles, telemetry, planning
 
