@@ -23,7 +23,7 @@ defmodule AshA2A.Replan.LoopFailoverTest do
   test "budget exhaustion stops before an unbounded provider loop" do
     providers = [failed: FailedProvider]
 
-    assert {:error, %{code: :replan_provider_unavailable}} =
+    assert {:error, %{code: :replan_exhausted}} =
              AshA2A.Replan.Loop.run("s", %{formalism: :hddl}, providers, max_attempts: 1)
   end
 end
