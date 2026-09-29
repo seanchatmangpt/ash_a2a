@@ -1423,24 +1423,27 @@ defmodule AshA2A.CommandBus do
     :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})
   end
 
-  # `anchor` is the durably prepared `:pending` receipt (nil for `:observe`);
-  # `AshA2A.BrceAnchor` hands it to exactly this one dispatch.
+  # W4: consequence-bearing dispatch crosses the portable kernel boundary.
+  # The legacy BRCE anchor remains correlation evidence during migration; it is
+  # not authority and cannot independently admit Dispatcher DO.
   defp dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts, anchor) do
     Process.put(:ash_a2a_ocel_command_bus_dispatch, true)
     :ok = AshA2A.BrceAnchor.put(anchor)
 
     try do
-      AshA2A.Dispatcher.dispatch(
-        skill.name,
-        message,
-        resource_or_domain,
-        Keyword.get(opts, :history, []),
-        Keyword.get(opts, :auth_identity),
-        # b4p-f5-10: the exact skill was resolved in `inspect_target/2`;
-        # carrying it through prevents the re-dispatch from re-matching the
-        # bare display name to an index-first namesake.
-        resolved_skill: skill
-      )
+      request = %AshA2A.ConsequenceKernel.W4.EffectRequest{
+        skill: skill,
+        message: message,
+        resource_or_domain: resource_or_domain,
+        consequence: if(anchor, do: :change, else: :observe),
+        history: Keyword.get(opts, :history, []),
+        auth_identity: Keyword.get(opts, :auth_identity)
+      }
+
+      case AshA2A.ConsequenceKernel.W4.DispatchInversion.execute(request, opts) do
+        {_outcome, reply} -> reply
+        {:error, _reason} = error -> error
+      end
     after
       Process.delete(:ash_a2a_ocel_command_bus_dispatch)
       AshA2A.BrceAnchor.clear()
