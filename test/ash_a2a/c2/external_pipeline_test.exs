@@ -39,6 +39,7 @@ defmodule AshA2A.C2.ExternalPipelineTest do
     assert {:ok, %{"state" => "executed"}} =
              ActuationPipeline.execute(effect, ctx, Authority, Actuator)
 
-    assert_received {:actuator_called, digest, ^digest}
+    assert_received {:actuator_called, effect_digest, certificate_digest}
+    assert effect_digest == certificate_digest
   end
 end
