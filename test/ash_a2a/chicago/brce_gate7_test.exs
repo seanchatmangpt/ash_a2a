@@ -214,7 +214,12 @@ defmodule AshA2A.Chicago.BrceGate7Test do
       assert ReceiptOutbox.anchored?(anchor)
 
       :ok = BrceAnchor.put(anchor)
-      assert {:reply, _} = Dispatcher.dispatch(:record, message(label), Ledger)
+      # consequence-bearing dispatch is admitted only inside the kernel's dispatcher fence
+      assert {:reply, _} =
+               AshA2A.ConsequenceKernel.W4.DispatcherFence.enter(fn ->
+                 Dispatcher.dispatch(:record, message(label), Ledger)
+               end)
+
       assert Enum.count(Fx.ledger_labels(), &(&1 == label)) == 1
 
       assert {:error, {:brce_gate, %{reason: :no_prepared_receipt}}} =

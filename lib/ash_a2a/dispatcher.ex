@@ -139,11 +139,11 @@ defmodule AshA2A.Dispatcher do
         opts \\ []
       )
       when is_list(history) and is_list(opts) do
-    if AshA2A.ConsequenceKernel.W4.DispatcherFence.admitted?() do
-      dispatch_admitted(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
-    else
-      {:error, :consequence_kernel_required}
-    end
+    # The W4 kernel fence is enforced per skill in `do_dispatch/6`, after the sole-DO anchor gate:
+    # a consequence-bearing skill is refused unless the call entered through
+    # `ConsequenceKernel.W4.DispatcherFence` (the kernel's `DispatchInversion`); an observation
+    # skill needs no fence (W4B `EntryPolicy.admit(:observe, :observation)`).
+    dispatch_admitted(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
   end
 
   @doc false
@@ -291,13 +291,24 @@ defmodule AshA2A.Dispatcher do
          {:ok, input} <- fetch_input(a2a_message),
          {:ok, action} <- tag_stage(fetch_action(skill), :action_resolution),
          {:ok, admitted_anchor} <-
-           tag_stage(AshA2A.BrceAnchor.admit(skill, anchor), :brce_gate) do
+           tag_stage(AshA2A.BrceAnchor.admit(skill, anchor), :brce_gate),
+         :ok <- tag_stage(kernel_fence(admitted_anchor), :kernel_fence) do
       :ok = AshA2A.BrceAnchor.actuating(skill, admitted_anchor)
       {reply, object_id} = run_skill(skill, action, input, exec_context)
       {tag_stage(reply, :execution), object_id}
     else
       {:error, _reason} = error -> {error, nil}
     end
+  end
+
+  # An anchored (consequence-bearing) dispatch must run inside the kernel's dispatcher fence;
+  # a `nil` anchor means the BRCE gate found the skill `:observe` (no anchor required).
+  defp kernel_fence(nil), do: :ok
+
+  defp kernel_fence(_anchor) do
+    if AshA2A.ConsequenceKernel.W4.DispatcherFence.admitted?(),
+      do: :ok,
+      else: {:error, :consequence_kernel_required}
   end
 
   # `fetch_skill/2` and `fetch_action/1` already return `{:ok, _} | {:error, reason}`;

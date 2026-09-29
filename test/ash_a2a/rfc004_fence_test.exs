@@ -46,10 +46,30 @@ defmodule AshA2A.RFC004FenceTest do
     on_exit(fn -> ReceiptOutbox.remove(anchor) end)
     :ok = BrceAnchor.put(anchor)
 
+    # A consequence-bearing dispatch is admitted only inside the kernel's dispatcher fence
+    # (the W4 DispatchInversion entry), and only with the durable anchor.
     assert {:reply, _} =
-             Dispatcher.dispatch(:record, message(label), Ledger, [], nil, resolved_skill: record)
+             AshA2A.ConsequenceKernel.W4.DispatcherFence.enter(fn ->
+               Dispatcher.dispatch(:record, message(label), Ledger, [], nil,
+                 resolved_skill: record
+               )
+             end)
 
     assert Enum.count(Fx.ledger_labels(), &(&1 == label)) == 1
+  end
+
+  test "a durably anchored dispatch outside the kernel fence is refused before the action runs",
+       %{record: record} do
+    label = "rfc004-nofence-#{System.unique_integer([:positive])}"
+    anchor = anchor(record.id)
+    :ok = ReceiptOutbox.append(anchor)
+    on_exit(fn -> ReceiptOutbox.remove(anchor) end)
+    :ok = BrceAnchor.put(anchor)
+
+    assert {:error, {:kernel_fence, :consequence_kernel_required}} =
+             Dispatcher.dispatch(:record, message(label), Ledger, [], nil, resolved_skill: record)
+
+    refute label in Fx.ledger_labels()
   end
 
   defp anchor(capability_id) do

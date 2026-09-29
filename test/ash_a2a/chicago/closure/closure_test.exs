@@ -104,14 +104,15 @@ defmodule AshA2A.Chicago.ClosureTest do
       assert AshA2A.Agent in modules
     end
 
-    test "known bypass: agent observe path reaches Dispatcher.dispatch", %{report: r} do
-      assert Enum.any?(r.violating_edges, fn e ->
-               e.caller_module == "AshA2A.Agent" and e.callee == "AshA2A.Dispatcher.dispatch/5"
-             end) or
-               Enum.any?(r.violating_edges, fn e ->
-                 e.caller_module == "AshA2A.Agent" and
-                   String.starts_with?(e.callee, "AshA2A.Dispatcher.dispatch/")
-               end)
+    test "migrated: agent observe path uses dispatch_observe, no raw Dispatcher.dispatch edge", %{
+      report: r
+    } do
+      # W4B moved AshA2A.Agent's :observe path from Dispatcher.dispatch to the explicit
+      # observation-only entry Dispatcher.dispatch_observe; the raw edge must not come back.
+      refute Enum.any?(r.violating_edges, fn e ->
+               e.caller_module == "AshA2A.Agent" and
+                 String.starts_with?(e.callee, "AshA2A.Dispatcher.dispatch/")
+             end)
     end
 
     test "known bypass: on_cancel apply is an UNRESOLVED dynamic_apply in Agent", %{report: r} do

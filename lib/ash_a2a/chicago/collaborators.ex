@@ -13,9 +13,9 @@ defmodule AshA2A.Chicago.Collaborators do
   | `:semantic_engine`     | `AshA2A.GraphLaw.Wasm` over `wasm_path`    | sha256 of the configured wasm equals the vendored manifest's; the real host executes it; its `graphlaw_version` equals the manifest's; its `graph_hash` of a fresh nonce graph equals the manifest-bound vendored artifact's, executed by an independent host (`AshA2A.GraphLaw.WasmHost`). The `AshA2A.Semantic.GraphLaw` port impl must agree on the same nonce. |
   | `:admission_pipeline`  | `AshA2A.Semantic.AdmissionPipeline`        | its compiled import table calls `AshA2A.GraphLaw.Wasm.batch/2` |
   | `:authority_broker`    | configured `:authority_broker` + `:authority_policy` | a fresh nonce principal with no grant is asked for a fresh nonce capability through the real `AshA2A.Authority.Grant.authorize/3`: a real boundary refuses |
-  | `:consequence_boundary`| `AshA2A.CommandBus`                        | its import table calls the actuator and `:telemetry.execute/3` |
+  | `:consequence_boundary`| `AshA2A.CommandBus`                        | its import table calls the kernel dispatch inversion (which calls the actuator) and `:telemetry.execute/3` |
   | `:receipt_store`       | `AshA2A.CommandBus.default_store/0`        | implements `AshA2A.ReceiptStore`; durability PROVEN by `DurabilityProbe` (write -> real restart -> read -> replay) |
-  | `:actuator`            | `AshA2A.Dispatcher`                        | exports `dispatch/6` (b4p-f5-10 added the resolved-skill opt) and is the call `CommandBus` compiles |
+  | `:actuator`            | `AshA2A.Dispatcher`                        | exports `dispatch/6` (b4p-f5-10 added the resolved-skill opt) and is the call the kernel dispatch inversion compiles (`CommandBus` -> `DispatchInversion` -> `Dispatcher`) |
   | `:independent_verifier`| `AshA2A.Chicago.Query`                     | the runner's import table loads and evaluates through it |
   | `:replay_engine`       | the receipt store's command replay         | re-claiming a committed command after the real restart answers `:replay` |
   | `:process_observer`    | `AshA2A.Chicago.Observer`                  | loaded; the run's observer process is live when given |
@@ -252,15 +252,20 @@ defmodule AshA2A.Chicago.Collaborators do
     }
   end
 
+  # The CommandBus reaches the actuator only through the kernel's dispatch inversion
+  # (`ConsequenceKernel.W4.DispatchInversion`), which is the one module that calls
+  # `Dispatcher.dispatch/6`; both hops are read from compiled import tables.
   defp role(:consequence_boundary, _env) do
     module = AshA2A.CommandBus
+    inversion = AshA2A.ConsequenceKernel.W4.DispatchInversion
 
     %{
       module: module,
-      actuator_calls: calls_into(module, AshA2A.Dispatcher),
+      actuator_calls: calls_into(module, inversion),
       boundary_telemetry?: "execute/3" in calls_into(module, :telemetry),
       identified?:
-        exported?(module, :run, 4) and "dispatch/6" in calls_into(module, AshA2A.Dispatcher)
+        exported?(module, :run, 4) and "execute/2" in calls_into(module, inversion) and
+          "dispatch/6" in calls_into(inversion, AshA2A.Dispatcher)
     }
   end
 
@@ -279,13 +284,15 @@ defmodule AshA2A.Chicago.Collaborators do
 
   defp role(:actuator, _env) do
     module = AshA2A.Dispatcher
+    inversion = AshA2A.ConsequenceKernel.W4.DispatchInversion
 
     %{
       module: module,
-      invoked_by: AshA2A.CommandBus,
+      invoked_by: inversion,
       identified?:
         exported?(module, :dispatch, 6) and
-          "dispatch/6" in calls_into(AshA2A.CommandBus, module)
+          "execute/2" in calls_into(AshA2A.CommandBus, inversion) and
+          "dispatch/6" in calls_into(inversion, module)
     }
   end
 

@@ -179,8 +179,10 @@ defmodule AshA2A.SA2A.Conformance.ProfilesTest do
                })
     end
 
-    test "the real CommandBus in this tree currently calls the dispatcher (known FAIL)" do
-      assert {:fail, _} = C1.command_bus_no_direct_dispatch(%{})
+    test "the real CommandBus in this tree routes every dispatch through the kernel (PASS)" do
+      # W4 moved the CommandBus's dispatcher call behind ConsequenceKernel.W4.DispatchInversion;
+      # the compiled CommandBus no longer imports AshA2A.Dispatcher (this was a known FAIL).
+      assert {:pass, _} = C1.command_bus_no_direct_dispatch(%{})
     end
   end
 
