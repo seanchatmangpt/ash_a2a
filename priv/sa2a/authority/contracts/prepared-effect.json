@@ -1,8 +1,13 @@
 {
   "schema": "sa2a/prepared-effect/v1",
+  "canonicalization": "RFC8785/JCS",
+  "digest": "SHA-256",
   "required": [
+    "version",
+    "principal",
+    "capability",
     "subject",
-    "version"
+    "payload"
   ],
   "additionalProperties": false
 }
