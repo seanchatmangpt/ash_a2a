@@ -1,0 +1,15 @@
+APPROVE EFFECT
+principal: human:alice
+audience: actuator:prod-1
+valid: 1800000000 .. 1800000300 (unix s)
+policy_epoch: 7  revocation_epoch: 3  generation: 2
+nonce: fixture-nonce-2
+effect_digest: sha256:f7f5850769b77cf69152a5a16a06c6c6fbc0ffeda2784316d47357b599079d2e
+effect:
+  capability: secret.rotate
+  inputs:
+    keys:
+      - a
+      - b
+    reason: quarterly
+  target: vault/prod

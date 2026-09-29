@@ -1,0 +1,13 @@
+APPROVE EFFECT
+principal: human:alice
+audience: actuator:prod-1
+valid: 1800000000 .. 1800000300 (unix s)
+policy_epoch: 7  revocation_epoch: 3  generation: 3
+nonce: fixture-nonce-3
+effect_digest: sha256:7a449245a6d2ac7f8aea5886f1e236f86b347e7ecdf0fe105263f8183c3dd666
+effect:
+  capability: repo.merge
+  inputs:
+    pr: 1234
+    squash: true
+  target: org/repo

@@ -1,0 +1,1 @@
+{"capability":"repo.merge","inputs":{"pr":1234,"squash":true},"target":"org/repo"}

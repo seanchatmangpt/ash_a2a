@@ -384,6 +384,8 @@ defmodule AshA2A.MixProject do
       # through :rdf; promoted to a direct dependency because release-closure
       # portable identity calls Jcs.encode/1 at runtime.
       {:jcs, "~> 0.2"},
+      # Affidavit-shaped cryptographic standing substrate (standalone project; no Ash deps).
+      {:sa2a_crypto, path: "sa2a_crypto"},
       # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
       # runtime. ONE declaration shared by two independent hosts of the same
       # vendored `priv/graphlaw/praxis_graphlaw.wasm` law package:

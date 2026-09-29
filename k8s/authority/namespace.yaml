@@ -1,0 +1,12 @@
+# AuthorityService namespace. Pod Security Admission `restricted` (enforced), same posture as
+# k8s/namespace.yaml. The namespace label below is what NetworkPolicies of other namespaces
+# select on (kubernetes.io/metadata.name is set automatically by Kubernetes).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: authority-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

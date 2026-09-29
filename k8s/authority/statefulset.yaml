@@ -1,0 +1,162 @@
+# Single replica by design: the issuance journal is a single-writer, hash-chained file, and a
+# second writer would fork the nonce history. StatefulSet gives a stable PVC and never runs two
+# pods against the same volume at once.
+#
+# Required objects that are NEVER committed (see README.md):
+#   Secret authority-policy-key   key `policy.key`  (base64url of the 32-byte P-256 scalar)
+#   Secret authority-tls          keys `tls.crt`, `tls.key`, `ca.crt` (ca.crt = CA that issues
+#                                 actuator / control-plane client certificates)
+#   ConfigMap authority-policy    keys `policy.json`, `approvers.json` (public data only)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: authority-service
+  namespace: authority-system
+  labels:
+    app: authority-service
+spec:
+  serviceName: authority-service
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: authority-service
+  template:
+    metadata:
+      labels:
+        app: authority-service
+    spec:
+      serviceAccountName: authority-service
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # fsGroup makes the Secret mount readable by uid 10001 for the init container ONLY;
+        # the service itself reads the key from a private 0600 copy (see initContainers).
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # KeyFile.load/1 refuses any key file with group/world bits. Kubernetes adds group
+        # read to Secret volumes when fsGroup is set, so install a 0600 copy into an
+        # in-memory emptyDir; the main container mounts only that copy, never the Secret.
+        - name: install-key
+          image: authority-service
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - umask 077 && install -m 0600 /secrets/key/policy.key /run/authority/key/policy.key
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+          volumeMounts:
+            - name: policy-key-secret
+              mountPath: /secrets/key
+              readOnly: true
+            - name: key
+              mountPath: /run/authority/key
+      containers:
+        - name: authority-service
+          # Digest-pinned placeholder. The all-zero digest below is deliberately unresolvable;
+          # k8s/authority/kustomization.yaml `images:` (or the release pipeline) replaces it with
+          # the real `@sha256:` digest of the built release image. Never deploy a tag.
+          image: authority-service
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: issue
+              containerPort: 8443
+          env:
+            # Paths only. Key material is never placed in the environment.
+            - name: AUTHORITY_KEY_FILE
+              value: /run/authority/key/policy.key
+            - name: AUTHORITY_CONFIG_DIR
+              value: /etc/authority
+            - name: AUTHORITY_PORT
+              value: "8443"
+            - name: AUTHORITY_AUDIENCE
+              value: authority:prod
+            - name: AUTHORITY_JOURNAL
+              value: /var/lib/authority/journal.log
+            # No Erlang distribution, no epmd (also fixed in the release's env.sh / vm.args).
+            - name: RELEASE_DISTRIBUTION
+              value: none
+            - name: RELEASE_TMP
+              value: /tmp
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          startupProbe:
+            tcpSocket:
+              port: issue
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: issue
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: issue
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: key
+              mountPath: /run/authority/key
+              readOnly: true
+            - name: tls
+              mountPath: /etc/authority/tls
+              readOnly: true
+            - name: policy
+              mountPath: /etc/authority/policy
+              readOnly: true
+            - name: journal
+              mountPath: /var/lib/authority
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: policy-key-secret
+          secret:
+            secretName: authority-policy-key
+            defaultMode: 0440
+        - name: key
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: tls
+          secret:
+            secretName: authority-tls
+            defaultMode: 0440
+        - name: policy
+          configMap:
+            name: authority-policy
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: journal
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
