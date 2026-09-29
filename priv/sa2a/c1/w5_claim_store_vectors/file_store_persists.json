@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "file_store_persists",
+  "invariant": "file claim store survives process restart",
+  "expected": "persisted",
+  "authority": "none",
+  "do_authority": false
+}

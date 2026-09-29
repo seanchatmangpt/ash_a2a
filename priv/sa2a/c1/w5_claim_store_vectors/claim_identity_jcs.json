@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "claim_identity_jcs",
+  "invariant": "claim identity is RFC8785/JCS derived",
+  "expected": "sha256",
+  "authority": "none",
+  "do_authority": false
+}

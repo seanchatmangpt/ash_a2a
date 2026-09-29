@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "transition_completed",
+  "invariant": "doing transitions to completed",
+  "expected": "ok",
+  "authority": "none",
+  "do_authority": false
+}
