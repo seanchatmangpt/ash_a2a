@@ -1,0 +1,7 @@
+{
+  "version": "sa2a-c1-w4c-1",
+  "case": "raw_then_observe",
+  "closure": "open",
+  "raw_effect_edge_count": 1,
+  "law": "zero consequential raw-effect edges outside ConsequenceKernel"
+}
