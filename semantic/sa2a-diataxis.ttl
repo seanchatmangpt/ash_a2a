@@ -1,0 +1,30 @@
+@prefix sa2a: <https://seanchatmangpt.github.io/sa2a/diataxis#> .
+@prefix a2a: <https://seanchatmangpt.github.io/ash-a2a#> .
+
+<urn:sa2a:repo:ash_a2a> a sa2a:RepositoryProfile ;
+  sa2a:sourceRepo "seanchatmangpt/ash_a2a" ;
+  sa2a:role "runtime" ;
+  sa2a:authority <https://github.com/seanchatmangpt/engineering-standards/tree/main/semantic/sa2a-diataxis> ;
+  sa2a:generator <https://github.com/seanchatmangpt/ggen-marketplace/tree/main/packs/sa2a-diataxis-pack> ;
+  sa2a:exports
+    <urn:sa2a:capability:discover>,
+    <urn:sa2a:capability:select>,
+    <urn:sa2a:capability:construct>,
+    <urn:sa2a:capability:do>,
+    <urn:sa2a:capability:receipt>,
+    <urn:sa2a:capability:replay> .
+
+<urn:sa2a:law:select-not-construct> a sa2a:ExplanationLaw .
+<urn:sa2a:law:construct-not-do> a sa2a:ExplanationLaw .
+<urn:sa2a:law:intent-not-authority> a sa2a:ExplanationLaw .
+<urn:sa2a:law:receipt-not-success> a sa2a:ExplanationLaw .
+
+<urn:sa2a:capability:construct>
+  sa2a:constrainedBy <urn:sa2a:law:select-not-construct>, <urn:sa2a:law:construct-not-do> .
+
+<urn:sa2a:capability:do>
+  sa2a:constrainedBy <urn:sa2a:law:construct-not-do>, <urn:sa2a:law:intent-not-authority> ;
+  sa2a:evidencedBy <urn:sa2a:receipt:actuation> .
+
+<urn:sa2a:capability:receipt>
+  sa2a:constrainedBy <urn:sa2a:law:receipt-not-success> .
