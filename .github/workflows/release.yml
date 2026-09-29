@@ -60,7 +60,7 @@ jobs:
             echo "dry-run: HEX_API_KEY absent; a tag push would be BLOCKED(authority:HEX_API_KEY)"
           fi
       - name: Checkout exact release subject
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
