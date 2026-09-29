@@ -103,7 +103,13 @@ defmodule Km.Server do
 
     {:reply, Jason.encode!(reply), st}
   rescue
-    e -> {:reply, Jason.encode!(%{"ok" => false, "refusal" => "keymaster_error", "detail" => Exception.message(e)}), st}
+    e ->
+      {:reply,
+       Jason.encode!(%{
+         "ok" => false,
+         "refusal" => "keymaster_error",
+         "detail" => Exception.message(e)
+       }), st}
   end
 
   defp handle("hello", _req, st) do
@@ -121,9 +127,22 @@ defmodule Km.Server do
 
   defp handle("compromise", %{"name" => name}, st) do
     cond do
-      name in ["A", "A2"] -> {%{"ok" => true, "private_key" => Km.b64(st.signers[name].priv), "kid" => st.signers[name].kid}, st}
-      name == "alice" -> {%{"ok" => true, "private_key" => Km.b64(st.approvers[name].priv), "kid" => st.approvers[name].kid}, st}
-      true -> {%{"ok" => false, "refusal" => "not_compromisable"}, st}
+      name in ["A", "A2"] ->
+        {%{
+           "ok" => true,
+           "private_key" => Km.b64(st.signers[name].priv),
+           "kid" => st.signers[name].kid
+         }, st}
+
+      name == "alice" ->
+        {%{
+           "ok" => true,
+           "private_key" => Km.b64(st.approvers[name].priv),
+           "kid" => st.approvers[name].kid
+         }, st}
+
+      true ->
+        {%{"ok" => false, "refusal" => "not_compromisable"}, st}
     end
   end
 
@@ -131,14 +150,27 @@ defmodule Km.Server do
     granted = ["A", "A2", "alice"]
 
     keys =
-      Enum.reject(Map.to_list(st.signers) ++ Map.to_list(st.approvers) ++ [{"svc", st.svc}], fn {n, _} -> n in granted end)
+      Enum.reject(
+        Map.to_list(st.signers) ++ Map.to_list(st.approvers) ++ [{"svc", st.svc}],
+        fn {n, _} -> n in granted end
+      )
 
-    forms = fn bin -> [bin, Km.b64(bin), Base.encode64(bin), Base.encode16(bin, case: :lower), Base.encode16(bin, case: :upper)] end
+    forms = fn bin ->
+      [
+        bin,
+        Km.b64(bin),
+        Base.encode64(bin),
+        Base.encode16(bin, case: :lower),
+        Base.encode16(bin, case: :upper)
+      ]
+    end
 
     needles =
       Enum.flat_map(keys, fn {n, k} -> Enum.map(forms.(k.priv), &{"key:" <> n, &1}) end) ++
         Enum.map(st.paths, fn {n, p} -> {"path:" <> n, p} end) ++
-        Enum.flat_map(st.secret_files, fn {n, path} -> [{"file:" <> n, path}, {"file_content:" <> n, File.read!(path)}] end)
+        Enum.flat_map(st.secret_files, fn {n, path} ->
+          [{"file:" <> n, path}, {"file_content:" <> n, File.read!(path)}]
+        end)
 
     hay =
       if req["selftest"] do
@@ -148,8 +180,18 @@ defmodule Km.Server do
         Base.decode64!(req["haystack"])
       end
 
-    leaks = for {name, needle} <- needles, needle != "", String.contains?(hay, needle), do: name |> String.split(":") |> Enum.take(2) |> Enum.join(":")
-    {%{"ok" => true, "leaks" => Enum.uniq(leaks), "needles" => length(needles), "needle_names" => needles |> Enum.map(&elem(&1, 0)) |> Enum.uniq()}, st}
+    leaks =
+      for {name, needle} <- needles,
+          needle != "",
+          String.contains?(hay, needle),
+          do: name |> String.split(":") |> Enum.take(2) |> Enum.join(":")
+
+    {%{
+       "ok" => true,
+       "leaks" => Enum.uniq(leaks),
+       "needles" => length(needles),
+       "needle_names" => needles |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+     }, st}
   end
 
   defp handle("approve", req, st) do
@@ -188,7 +230,10 @@ defmodule Km.Server do
 
       {:ok, json} = Envelope.encode(env)
 
-      {%{"ok" => true, "approval" => %{"envelope" => Jason.decode!(json), "message" => Km.b64(bytes)}}, st}
+      {%{
+         "ok" => true,
+         "approval" => %{"envelope" => Jason.decode!(json), "message" => Km.b64(bytes)}
+       }, st}
     else
       _ -> {%{"ok" => false, "refusal" => "unknown_approver"}, st}
     end
@@ -252,16 +297,37 @@ defmodule Km.Server do
                 |> Enum.zip(nonces)
                 |> Enum.map(fn {n, nonce} ->
                   k = st.signers[n]
-                  {:ok, msg} = SignedMessage.build(Map.merge(fields, %{"alg" => "ES256", "kid" => k.kid, "nonce" => nonce}))
-                  %{"kid" => k.kid, "alg" => "ES256", "nonce" => nonce, "signature" => Km.b64(Km.sign(k, msg))}
+
+                  {:ok, msg} =
+                    SignedMessage.build(
+                      Map.merge(fields, %{"alg" => "ES256", "kid" => k.kid, "nonce" => nonce})
+                    )
+
+                  %{
+                    "kid" => k.kid,
+                    "alg" => "ES256",
+                    "nonce" => nonce,
+                    "signature" => Km.b64(Km.sign(k, msg))
+                  }
                 end)
 
               cert = Jcs.encode(Map.put(fields, "signatures", sigs))
 
               unless journal?,
-                do: File.write!(st.misissue_log, Jason.encode!(%{"digest" => digest, "generation" => gen, "at" => now}) <> "\n", [:append])
+                do:
+                  File.write!(
+                    st.misissue_log,
+                    Jason.encode!(%{"digest" => digest, "generation" => gen, "at" => now}) <> "\n",
+                    [:append]
+                  )
 
-              {%{"ok" => true, "certificate" => Km.b64(cert), "digest" => digest, "nonces" => nonces, "journaled" => journal?}, %{st | journal: j2}}
+              {%{
+                 "ok" => true,
+                 "certificate" => Km.b64(cert),
+                 "digest" => digest,
+                 "nonces" => nonces,
+                 "journaled" => journal?
+               }, %{st | journal: j2}}
 
             {:error, reason} ->
               {%{"ok" => false, "refusal" => "journal_failed", "detail" => inspect(reason)}, st}
@@ -345,7 +411,12 @@ write_pair = fn dir, base, conf ->
   cert = conf[:cert]
   {ktype, kder} = conf[:key]
   Km.write!(Path.join(dir, base <> ".crt"), Km.pem_cert(cert), 0o644)
-  Km.write!(Path.join(dir, base <> ".key"), :public_key.pem_encode([{ktype, kder, :not_encrypted}]), 0o600)
+
+  Km.write!(
+    Path.join(dir, base <> ".key"),
+    :public_key.pem_encode([{ktype, kder, :not_encrypted}]),
+    0o600
+  )
 end
 
 write_ca = fn path, ders -> Km.write!(path, Enum.map_join(ders, "", &Km.pem_cert/1), 0o644) end
@@ -390,7 +461,13 @@ spawn_link(fn ->
   accept = fn accept ->
     case :gen_tcp.accept(lsock) do
       {:ok, s} ->
-        pid = spawn(fn -> receive do :go -> Km.frame_loop(s, srv) end end)
+        pid =
+          spawn(fn ->
+            receive do
+              :go -> Km.frame_loop(s, srv)
+            end
+          end)
+
         :ok = :gen_tcp.controlling_process(s, pid)
         send(pid, :go)
         accept.(accept)
@@ -403,5 +480,9 @@ spawn_link(fn ->
   accept.(accept)
 end)
 
-IO.puts("C2_READY " <> Jason.encode!(%{role: "keymaster", os_pid: System.pid(), node_alive: Node.alive?()}))
+IO.puts(
+  "C2_READY " <>
+    Jason.encode!(%{role: "keymaster", os_pid: System.pid(), node_alive: Node.alive?()})
+)
+
 Process.sleep(:infinity)
