@@ -1,0 +1,1 @@
+defmodule AshA2A.Replan.Beam4pmPortTest do use ExUnit.Case, async: true; test "declares POWL" do assert AshA2A.Replan.Port.Beam4pm.supports?(:powl) end end
