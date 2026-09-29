@@ -11,6 +11,7 @@ defmodule AshA2A.ConsequenceKernel.AuthenticatedJournalTest do
   alias AshA2A.ConsequenceKernel.KeyCustody.HmacSha256
   alias AshA2A.ConsequenceKernel.PreparedEffectStore.Memory
   alias AshA2A.ConsequenceKernel.UnknownOutcome
+  alias AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory, as: ClaimMemory
 
   defmodule Auth do
     def revalidate("p", _), do: :ok
@@ -37,7 +38,7 @@ defmodule AshA2A.ConsequenceKernel.AuthenticatedJournalTest do
     p
   end
 
-  defp opts(store, effector) do
+  defp opts({store, claims}, effector) do
     [
       store: Memory,
       store_handle: store,
@@ -45,6 +46,9 @@ defmodule AshA2A.ConsequenceKernel.AuthenticatedJournalTest do
       authority: Auth,
       principal: "p",
       effector: effector,
+      claim_store: ClaimMemory,
+      claim_store_handle: claims,
+      claim_key: String.duplicate("k", 32),
       key_provider: HmacSha256,
       key_opts: [key: :crypto.strong_rand_bytes(32)]
     ]
@@ -52,29 +56,36 @@ defmodule AshA2A.ConsequenceKernel.AuthenticatedJournalTest do
 
   setup do
     {:ok, store} = Memory.start_link()
-    {:ok, store: store}
+    {:ok, claims} = ClaimMemory.start_link()
+    {:ok, store: store, claims: claims}
   end
 
-  test "sealed record is journaled and the completed outcome is recorded", %{store: store} do
+  test "sealed record is journaled and the completed outcome is recorded", %{
+    store: store,
+    claims: claims
+  } do
     p = prepared()
-    assert {:ok, :done} = ConsequenceKernel.execute(p, opts(store, Eff))
+    assert {:ok, :done} = ConsequenceKernel.execute(p, opts({store, claims}, Eff))
 
     assert {:ok, %{state: :completed, outcome: :done, tag: "hmac-sha256:" <> _}} =
              Memory.fetch(store, p.prepared_digest)
   end
 
-  test "an effector exception is an unknown outcome, journaled as such", %{store: store} do
+  test "an effector exception is an unknown outcome, journaled as such", %{
+    store: store,
+    claims: claims
+  } do
     p = prepared()
 
     assert {:unknown, %UnknownOutcome{reason: {:effector_exception, %RuntimeError{}}}} =
-             ConsequenceKernel.execute(p, opts(store, Raises))
+             ConsequenceKernel.execute(p, opts({store, claims}, Raises))
 
     assert {:ok, %{state: :unknown_outcome}} = Memory.fetch(store, p.prepared_digest)
   end
 
-  test "a missing key is refused before any claim or effect", %{store: store} do
+  test "a missing key is refused before any claim or effect", %{store: store, claims: claims} do
     p = prepared()
-    bad = Keyword.put(opts(store, Eff), :key_opts, [])
+    bad = Keyword.put(opts({store, claims}, Eff), :key_opts, [])
     assert {:error, :prepared_key_unavailable} = ConsequenceKernel.execute(p, bad)
     assert :not_found = Memory.fetch(store, p.prepared_digest)
   end

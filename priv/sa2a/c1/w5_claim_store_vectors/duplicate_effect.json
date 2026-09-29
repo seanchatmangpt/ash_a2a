@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "duplicate_effect",
+  "invariant": "second claim for same effect is refused",
+  "expected": "refused",
+  "authority": "none",
+  "do_authority": false
+}

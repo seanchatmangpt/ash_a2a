@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "unknown_retry_refused",
+  "invariant": "unknown outcome cannot retry",
+  "expected": "refused",
+  "authority": "none",
+  "do_authority": false
+}

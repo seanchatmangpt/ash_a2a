@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "claim_tamper",
+  "invariant": "tampered claim fails authentication",
+  "expected": "refused",
+  "authority": "none",
+  "do_authority": false
+}

@@ -1,7 +1,12 @@
 defmodule AshA2A.ConsequenceKernel.Runtime.Pipeline do
   @moduledoc """
-  Runtime stages of the C1 consequence boundary: prepare, claim, authority revalidation,
-  applying, DO, outcome.
+  Runtime stages of the C1 consequence boundary, the single DO path: prepare, claim, authority
+  revalidation, class admission, W5 independent effect claim, applying, DO, outcome.
+
+  The W5 `ClaimProtocol` is mandatory (fail closed): `opts` must carry `:claim_store`,
+  `:claim_store_handle` and `:claim_key`, else the run is refused with
+  `:independent_effect_claim_store_required` before the apply boundary. The claim moves
+  claimed -> doing before DO and to completed / unknown_outcome after it.
 
   When `opts` carries `:key_provider`, the prepared record is sealed with
   `PreparedEffectStore.AuthenticatedRecord` (MAC under the provider's key) before anything else
@@ -23,6 +28,8 @@ defmodule AshA2A.ConsequenceKernel.Runtime.Pipeline do
     EffectorToken
   }
 
+  alias AshA2A.ConsequenceKernel.W5.ClaimProtocol
+
   def execute(p, opts) do
     store = Keyword.fetch!(opts, :store)
     handle = Keyword.fetch!(opts, :store_handle)
@@ -35,13 +42,19 @@ defmodule AshA2A.ConsequenceKernel.Runtime.Pipeline do
          :ok <- ClaimStage.run(s, p, owner),
          :ok <- AuthorityStage.run(a, Keyword.fetch!(opts, :principal), p),
          true <- AshA2A.ConsequenceClass.admitted?(p.consequence_class),
+         {:ok, ctx} <- ClaimProtocol.claim(p, owner, opts),
+         :ok <- ClaimProtocol.begin_do(ctx),
          :ok <- ApplyingStage.run(s, p) do
       token = EffectorToken.issue(p, owner)
 
-      p
-      |> apply_effect(e, token)
-      |> then(&OutcomeStage.persist(s, p, &1))
-      |> record_completion(s, p, opts)
+      outcome =
+        p
+        |> apply_effect(e, token)
+        |> then(&OutcomeStage.persist(s, p, &1))
+        |> record_completion(s, p, opts)
+
+      _ = ClaimProtocol.record_outcome(ctx, outcome)
+      outcome
     else
       false -> {:error, :consequence_unclassified}
       {:error, _} = x -> x

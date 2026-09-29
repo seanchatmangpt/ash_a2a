@@ -737,6 +737,34 @@ Each: decision, reason.
     corpora.
 15. Ownership of `chicago_mandatory_corpus.json` and `refusal.ex` after RFC-004 lands.
 
+## Merge resolution: origin/main W5 (claims/recovery) into local W5
+
+Two W5 lineages met: local `factory/v26.9.29-c1-w5-claims-recovery-r17` (vector-only tests,
+digest/`term_to_binary` identity helpers) and origin `Merge C1 W4/W5 protocol closure`
+(authenticated claims, `ClaimProtocol`, claim stores, executable tests). Decisions:
+
+- `W5.ClaimIdentity`, `W5.ReceiptChain`, `W5.ReplayEvidence`: origin side. Canonical JCS digests
+  replace `term_to_binary`; `ReplayEvidence.verify/2` is required by `replay_match/mismatch`.
+  Local tests for these are file-presence vectors and pass with either.
+- `Runtime.{Prepare,Claim,Applying,Outcome}Stage`: local `PreparedDigest.fetch/1` accessors
+  (fail closed with `:prepared_digest_missing`) kept; origin's `ClaimStage.claim_request/3` and
+  `finalize/2` split kept, `run/3` composes them.
+- `Runtime.Pipeline` stays the single DO path: prepare (`:key_provider` seals first) -> request
+  and effect claim (`:claimed`) -> authority -> class admission -> `ClaimProtocol.claim` ->
+  `begin_do` -> applying -> DO (exception/throw -> `UnknownOutcome`) -> outcome ->
+  `PreparedEffectStore.complete` -> `ClaimProtocol.record_outcome`. Local kept the journal
+  `:claimed` before authority (existing tests assert it); origin's later claim is added after
+  class admission. The W5 claim is fail-closed: missing `:claim_store`, `:claim_store_handle`
+  or `:claim_key` -> `:independent_effect_claim_store_required`. `consequence_kernel_test` and
+  `authenticated_journal_test` were adapted to supply a real `EffectClaimStore.Memory`
+  (fixtures gain `subject_digest`); assertions added on claim end state and receipt chain.
+- Defects found by running the union, fixed at root: origin `claim_protocol.ex` did not parse
+  (`with ... do:` followed by `else` block); `ClaimAuthenticator` crashed on non-binary owners
+  (pids) via `to_string/1`; the claim MAC covered `state`, so `record_outcome` failed
+  authentication after `begin_do` (state removed from the MAC body; transitions are
+  `ClaimTransition`-admitted and receipt-chained).
+- New refusal codes mapped in `lib/ash_a2a/semantic/refusal.ex` (W5 claim/recovery group).
+
 ## See Also
 
 - `docs/rfc/RFC-SA2A-004-v26.9.28.md` - normative order and identity rules.

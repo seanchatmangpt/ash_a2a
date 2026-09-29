@@ -1,0 +1,8 @@
+{
+  "schema": "sa2a.c1.w5.claim-store.v1",
+  "case": "protocol_claim",
+  "invariant": "claim protocol stores independent effect claim",
+  "expected": "ok",
+  "authority": "none",
+  "do_authority": false
+}
