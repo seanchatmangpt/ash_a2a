@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "case": "03",
+  "expected": "refuse_unless_all_bindings_match",
+  "bindings": [
+    "effect_digest",
+    "principal",
+    "policy_epoch",
+    "revocation_epoch",
+    "generation",
+    "audience"
+  ]
+}
