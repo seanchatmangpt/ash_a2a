@@ -101,7 +101,13 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
       }
     }
 
-    {:ok, envelope_digest} = Canonical.digest(body)
+    {:ok, canonical} = Canonical.encode(body)
+
+    envelope_digest =
+      "sha256:" <>
+        (:crypto.hash(:sha256, ["ashr2rml.vkg.canonical.v1\n", canonical])
+         |> Base.encode16(case: :lower))
+
     Map.put(body, "envelopeDigest", envelope_digest)
   end
 
