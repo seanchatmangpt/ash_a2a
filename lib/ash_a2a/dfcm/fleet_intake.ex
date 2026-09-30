@@ -95,7 +95,7 @@ defmodule AshA2A.DfCM.FleetIntake do
          :ok <- require_projection(projection["capability"] == donor["capability"], :capability),
          :ok <- require_projection(projection["owner"] == donor["owner"], :owner),
          :ok <- require_projection(projection["donorDigest"] == donor_digest, :donor_digest),
-         :ok <- require(digest?(projection["payloadDigest"]), :payload_digest),
+         :ok <- require_projection(digest?(projection["payloadDigest"]), :payload_digest),
          :ok <- require_projection(projection["authority"] == "NONE", :authority),
          :ok <- require_projection(projection["consequence"] == "EVIDENCE_ONLY", :consequence),
          :ok <- require_projection(projection["standing"] == "CANDIDATE", :standing) do
