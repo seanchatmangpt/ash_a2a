@@ -32,16 +32,25 @@ runs:
         path: |
           deps
           _build
+          actuator/deps
+          authority_service/deps
           native/hddl_cli/target
           native/graphlaw_host/target
-        key: ash-a2a-v3-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}
+        key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}
         restore-keys: |
-          ash-a2a-v3-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-
-          ash-a2a-v3-${{ runner.os }}-test-
+          ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-
+          ash-a2a-v2-${{ runner.os }}-test-
     - shell: bash
       run: mix local.hex --force && mix local.rebar --force
     - shell: bash
       run: mix deps.get --check-locked
+    # The C2 court harness compiles these child Mix projects from inside the
+    # tests (test/support/c2_harness/fleet.ex) without fetching their deps; on
+    # a fresh runner that left ~15 tests invalid in setup_all.
+    - name: Fetch deps for the child projects the court harness builds
+      shell: bash
+      run: |
+        for p in actuator authority_service; do (cd "$p" && mix deps.get); done
     # test-env deps.get skips dev-only deps: fail if it had to rewrite the lock.
     - name: Verify mix.lock unchanged
       shell: bash
@@ -73,6 +82,8 @@ runs:
         path: |
           deps
           _build
+          actuator/deps
+          authority_service/deps
           native/hddl_cli/target
           native/graphlaw_host/target
-        key: ash-a2a-v3-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-${{ github.run_id }}
+        key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-${{ github.run_id }}
