@@ -40,7 +40,7 @@ name = "graphlaw_host"
 path = "src/main.rs"
 
 [dependencies]
-wasmtime = "=48.0.3"
+wasmtime = "=49.0.1"
 # Exact pins matching Cargo.lock: Runtime B conformance receipts must come
 # from one dependency identity (SC-08), not whatever `1`/`0.10` resolves to.
 serde_json = "=1.0.151"
