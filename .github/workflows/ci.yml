@@ -29,8 +29,10 @@ env:
   EKV_BUILD: "1"
 
 jobs:
-  # Fast supply-chain gate (SC-02): lock drift and retired / advisory Hex
-  # packages. Rust checks: see supply-chain-deep.yml.
+  # Supply-chain gate (SC-02): lock drift, Hex advisories and Rust
+  # advisories/bans/licenses/sources for both crates. Fails closed on every PR;
+  # cheap because cargo-deny is a release binary (seconds), not a source build.
+  # The heavier package-closure check lives in supply-chain-deep.yml.
   supply-chain:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -49,6 +51,33 @@ jobs:
         run: mix deps.get --check-locked
       - name: Refuse retired / security-advisory Hex packages
         run: mix hex.audit
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      # Official maintainer release binary (was: `cargo install`, compiled from
+      # source every run). Version + SHA-256 pinned; the digest was taken from
+      # the downloaded 0.20.2 musl release asset (trust-on-first-use).
+      - name: Install cargo-deny (release binary)
+        env:
+          DENY_VERSION: 0.20.2
+          DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          set -euo pipefail
+          asset="cargo-deny-${DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/deny.tgz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${DENY_VERSION}/${asset}.tar.gz"
+          echo "${DENY_SHA256}  $RUNNER_TEMP/deny.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/deny.tgz" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/${asset}/cargo-deny" /usr/local/bin/cargo-deny
+      - name: cargo-deny (hddl_cli)
+        run: >-
+          cargo deny --manifest-path native/hddl_cli/Cargo.toml
+          --config .github/cargo-deny.toml --locked
+          check advisories bans licenses sources
+      - name: cargo-deny (graphlaw_host)
+        run: >-
+          cargo deny --manifest-path native/graphlaw_host/Cargo.toml
+          --config .github/cargo-deny.toml --locked
+          check advisories bans licenses sources
 
   # The suite, split along the seams mix.exs already documents: the async fast
   # lane, the `:serial_solo` files (host-level shared resources: fixed ports,
@@ -63,11 +92,13 @@ jobs:
     strategy:
       fail-fast: false # one push should reveal every red lane, not the first
       matrix:
+        # Balanced from measured test times (4a647a9): fast 2.1 min, solo
+        # 5.0 min, shard-1 1.5 min, shard-2 4.3 min, shard-3 4.4 min.
         include:
-          - { name: fast, cmd: "mix test", format: "true", save: "true" }
-          - { name: shard-1, cmd: "mix test.serial.shard --partitions 3", partition: "1" }
-          - { name: shard-2, cmd: "mix test.serial.shard --partitions 3", partition: "2" }
-          - { name: shard-3, cmd: "mix test.serial.shard --partitions 3", partition: "3" }
+          - { name: quick, dbs: "1", format: "true", save: "true" } # fast + shard-1
+          - { name: solo }
+          - { name: shard-2, dbs: "2" }
+          - { name: shard-3, dbs: "3" }
     env:
       MIX_ENV: test
     # Real PostgreSQL for AshA2A.Test.Repo (config/test.exs); credentials and
@@ -97,24 +128,31 @@ jobs:
           format: ${{ matrix.format || 'false' }}
           save-cache: ${{ matrix.save || 'false' }}
       - name: Create partition database
-        if: ${{ matrix.partition }}
+        if: ${{ matrix.dbs }}
         env:
-          MIX_TEST_PARTITION: ${{ matrix.partition }}
+          MIX_TEST_PARTITION: ${{ matrix.dbs }}
         run: mix ecto.create
       # TQ-09: each lane exports coverage; the threshold is evaluated once, on
-      # the merged data, by the `coverage` job (`--export-coverage` alone never
+      # the merged data, by the `test` job (`--export-coverage` alone never
       # evaluates it).
-      - name: Run lane
+      - name: Fast async lane
+        if: ${{ matrix.name == 'quick' }}
+        run: mix test --cover --export-coverage fast
+      - name: Serial shard 1 of 3
+        if: ${{ !cancelled() && matrix.name == 'quick' }}
         env:
-          MIX_TEST_PARTITION: ${{ matrix.partition }}
-        run: ${{ matrix.cmd }} --cover --export-coverage ${{ matrix.name }}
-      # `:serial_solo` (~23 files, ~40s of tests measured) holds host-level
-      # shared resources, so it runs alone -- sequentially after the fast lane
-      # in the same job: its own runner would cost more in queue/startup than
-      # it saves.
-      - name: Run serial-solo tail
-        if: ${{ !cancelled() && matrix.name == 'fast' }}
+          MIX_TEST_PARTITION: "1"
+        run: mix test.serial.shard --partitions 3 --cover --export-coverage shard-1
+      # `:serial_solo` (~23 files) holds host-level shared resources (fixed
+      # ports, :peer, shared Postgres, native subprocess): it runs alone.
+      - name: Serial solo lane
+        if: ${{ matrix.name == 'solo' }}
         run: mix test.serial.solo --cover --export-coverage solo
+      - name: Serial shard ${{ matrix.dbs }} of 3
+        if: ${{ startsWith(matrix.name, 'shard-') }}
+        env:
+          MIX_TEST_PARTITION: ${{ matrix.dbs }}
+        run: mix test.serial.shard --partitions 3 --cover --export-coverage ${{ matrix.name }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverdata-${{ matrix.name }}

@@ -1,9 +1,9 @@
 name: Supply chain (deep)
 
-# Rust advisories/bans/licenses/sources and the Hex package-closure check.
-# Split out of ci.yml (80/20): these fail on *new advisories*, not on code, so
-# they run when a PR touches locks or native sources, on main, and weekly --
-# not on every unrelated PR.
+# The Hex package-closure check (SC-10): the tarball must carry the exact native
+# sources lib/ reads. Split out of ci.yml because it needs `mix hex.build`, not
+# because it is optional: it runs when a PR touches the package inputs, on main,
+# and weekly. (Rust advisories stay in ci.yml's fast `supply-chain` job.)
 on:
   push:
     branches: [main]
@@ -44,33 +44,6 @@ jobs:
       - run: mix local.hex --force
       - run: mix local.rebar --force
       - run: mix deps.get --check-locked
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.1 --profile minimal
-      # Official maintainer release binary (was: compiled from source every
-      # run). Version + SHA-256 pinned; the digest was taken from the
-      # downloaded 0.20.2 musl release asset (trust-on-first-use).
-      - name: Install cargo-deny (release binary)
-        env:
-          DENY_VERSION: 0.20.2
-          DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
-        run: |
-          set -euo pipefail
-          asset="cargo-deny-${DENY_VERSION}-x86_64-unknown-linux-musl"
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/deny.tgz" \
-            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${DENY_VERSION}/${asset}.tar.gz"
-          echo "${DENY_SHA256}  $RUNNER_TEMP/deny.tgz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/deny.tgz" -C "$RUNNER_TEMP"
-          install -m 0755 "$RUNNER_TEMP/${asset}/cargo-deny" /usr/local/bin/cargo-deny
-      - name: cargo-deny (hddl_cli)
-        run: >-
-          cargo deny --manifest-path native/hddl_cli/Cargo.toml
-          --config .github/cargo-deny.toml --locked
-          check advisories bans licenses sources
-      - name: cargo-deny (graphlaw_host)
-        run: >-
-          cargo deny --manifest-path native/graphlaw_host/Cargo.toml
-          --config .github/cargo-deny.toml --locked
-          check advisories bans licenses sources
       # SC-10: lib/ reads native/*/Cargo.toml; the Hex tarball must carry the
       # exact native sources the composition lock pins, or consumers resolve
       # to missing files.

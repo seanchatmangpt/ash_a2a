@@ -27,7 +27,8 @@ runs:
         version-file: .tool-versions
         version-type: strict
     # Key = the real invalidators: toolchain pins, Hex lock, both Cargo locks.
-    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+    - id: cache
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: |
           deps
@@ -74,10 +75,12 @@ runs:
     - id: compile
       shell: bash
       run: mix compile --warnings-as-errors
-    # Immutable-key discipline: save only a COMPLETE build, under a per-run
-    # unique key; never after cancel or a failed compile.
+    # Save once per exact key, and only on an exact miss: one entry per lock
+    # hash per ref instead of a multi-GB entry per run (which churns the 10 GB
+    # repository cap and evicts the useful entries). Only a COMPLETE build is
+    # saved; never after cancel or a failed compile.
     - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      if: ${{ inputs.save-cache == 'true' && !cancelled() && steps.compile.outcome == 'success' }}
+      if: ${{ inputs.save-cache == 'true' && steps.cache.outputs.cache-hit != 'true' && !cancelled() && steps.compile.outcome == 'success' }}
       with:
         path: |
           deps
@@ -86,4 +89,4 @@ runs:
           authority_service/deps
           native/hddl_cli/target
           native/graphlaw_host/target
-        key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-${{ github.run_id }}
+        key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}
