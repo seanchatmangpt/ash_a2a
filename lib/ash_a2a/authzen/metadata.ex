@@ -24,18 +24,24 @@ defmodule AshA2A.AuthZEN.Metadata do
       }}
     end
   end
+
   def decode(_), do: {:error, :invalid_metadata}
 
   def bind_expected(%__MODULE__{policy_decision_point: pdp}, pdp), do: :ok
   def bind_expected(%__MODULE__{}, _), do: {:error, :pdp_mixup}
 
-  defp default_endpoint(pdp) when is_binary(pdp), do: String.trim_trailing(pdp, "/") <> "/access/v1/evaluation"
+  defp default_endpoint(pdp) when is_binary(pdp),
+    do: String.trim_trailing(pdp, "/") <> "/access/v1/evaluation"
+
   defp default_endpoint(_), do: nil
 
   defp validate_pdp(url) do
     with :ok <- validate_https(url),
-         %URI{query: nil, fragment: nil} <- URI.parse(url), do: :ok,
-         else: (_ -> {:error, :invalid_policy_decision_point})
+         %URI{query: nil, fragment: nil} <- URI.parse(url) do
+      :ok
+    else
+      _ -> {:error, :invalid_policy_decision_point}
+    end
   end
 
   defp validate_optional(map) do
@@ -43,6 +49,7 @@ defmodule AshA2A.AuthZEN.Metadata do
     |> Enum.reduce_while(:ok, fn key, :ok ->
       case map[key] do
         nil -> {:cont, :ok}
+
         url ->
           case validate_https(url) do
             :ok -> {:cont, :ok}
@@ -58,5 +65,6 @@ defmodule AshA2A.AuthZEN.Metadata do
       _ -> {:error, :https_required}
     end
   end
+
   defp validate_https(_), do: {:error, :https_required}
 end
