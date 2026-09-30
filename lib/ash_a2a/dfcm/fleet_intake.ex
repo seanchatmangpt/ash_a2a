@@ -79,7 +79,8 @@ defmodule AshA2A.DfCM.FleetIntake do
          "payloadDigest" => payload_digest,
          "authority" => "NONE",
          "consequence" => "EVIDENCE_ONLY",
-         "standing" => "CANDIDATE"
+         "standing" => "CANDIDATE",
+         "standingBinding" => standing_binding(donor)
        }}
     end
   end
@@ -98,7 +99,8 @@ defmodule AshA2A.DfCM.FleetIntake do
          :ok <- require(digest?(projection["payloadDigest"]), :payload_digest),
          :ok <- require(projection["authority"] == "NONE", :authority),
          :ok <- require(projection["consequence"] == "EVIDENCE_ONLY", :consequence),
-         :ok <- require(projection["standing"] == "CANDIDATE", :standing) do
+         :ok <- require(projection["standing"] == "CANDIDATE", :standing),
+         :ok <- require(projection["standingBinding"] == standing_binding(donor), :standing_binding) do
       {:ok, projection}
     end
   end
@@ -119,14 +121,16 @@ defmodule AshA2A.DfCM.FleetIntake do
           "dfcm" => true,
           "repository" => donor["repository"],
           "sha" => donor["sha"],
-          "owner" => donor["owner"]
+          "owner" => donor["owner"],
+          "standing_binding" => standing_binding(donor)
         },
         consequence_class: "none",
         authority_requirement: "none",
         bounds: %{
           "authority" => "NONE",
           "consequence" => "EVIDENCE_ONLY",
-          "falsifier" => donor["falsifier"]
+          "falsifier" => donor["falsifier"],
+          "standing_binding" => standing_binding(donor)
         }
       })
     end
@@ -147,6 +151,23 @@ defmodule AshA2A.DfCM.FleetIntake do
       donor["subject"] != donor["repository"] <> "@" <> donor["sha"] ->
         refusal(:subject, donor["subject"])
 
+      standing_closed?(donor) and donor["technical_standing"] != "QUALIFIED" ->
+        refusal(:technical_standing, donor["technical_standing"])
+
+      standing_closed?(donor) and donor["external_standing"] != "UNSPECIFIED" ->
+        refusal(:external_standing, donor["external_standing"])
+
+      standing_closed?(donor) and donor["runtime_authority"] != "NONE" ->
+        refusal(:runtime_authority, donor["runtime_authority"])
+
+      standing_closed?(donor) and
+          Enum.any?(
+            ["requires_exact_subject", "requires_release_binding", "requires_frozen_closure",
+             "requires_receipt_replay_binding"],
+            &(donor[&1] != true)
+          ) ->
+        refusal(:standing_requirements, standing_binding(donor))
+
       donor["authority"] != "NONE" ->
         refusal(:authority, donor["authority"])
 
@@ -165,6 +186,21 @@ defmodule AshA2A.DfCM.FleetIntake do
       true ->
         :ok
     end
+  end
+
+  defp standing_closed?(donor), do: is_binary(donor["standing_source"])
+
+  defp standing_binding(donor) do
+    %{
+      "source" => donor["standing_source"],
+      "technicalStanding" => donor["technical_standing"],
+      "externalStanding" => donor["external_standing"],
+      "runtimeAuthority" => donor["runtime_authority"],
+      "requiresExactSubject" => donor["requires_exact_subject"],
+      "requiresReleaseBinding" => donor["requires_release_binding"],
+      "requiresFrozenClosure" => donor["requires_frozen_closure"],
+      "requiresReceiptReplayBinding" => donor["requires_receipt_replay_binding"]
+    }
   end
 
   defp digest?(value),
