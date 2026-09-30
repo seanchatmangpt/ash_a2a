@@ -181,8 +181,10 @@ defmodule AshA2A.MixProject do
       # and resolves `native/*/target/release/*` binaries, so a Hex consumer
       # must be able to rebuild the exact locked closure from the tarball
       # (`cargo +1.97.1 build --release --locked --manifest-path ...`).
-      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
-           docs/tutorials docs/how-to docs/reference docs/explanation) ++ native_package_files()
+      files:
+        ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
+           docs/tutorials docs/how-to docs/reference docs/explanation sa2a_crypto/lib) ++
+          native_package_files()
     ]
   end
 
@@ -211,13 +213,17 @@ defmodule AshA2A.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
+  # sa2a_crypto remains independently testable as a nested Mix project, but
+  # its runtime modules are vendored into the ash_a2a package. Hex packages
+  # cannot depend on a local path project, so the root compiler/package owns
+  # the source projection while the nested project retains its own court.
+  defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib", "sa2a_crypto/lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :crypto],
       mod: {AshA2A.Application, []}
     ]
   end
@@ -384,8 +390,10 @@ defmodule AshA2A.MixProject do
       # through :rdf; promoted to a direct dependency because release-closure
       # portable identity calls Jcs.encode/1 at runtime.
       {:jcs, "~> 0.2"},
-      # Affidavit-shaped cryptographic standing substrate (standalone project; no Ash deps).
-      {:sa2a_crypto, path: "sa2a_crypto"},
+      # Affidavit-shaped cryptographic standing substrate. Its source is
+      # vendored from sa2a_crypto/lib via elixirc_paths/package files above;
+      # keeping it out of deps is required for a valid Hex package closure
+      # because Hex refuses local path dependencies.
       # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
       # runtime. ONE declaration shared by two independent hosts of the same
       # vendored `priv/graphlaw/praxis_graphlaw.wasm` law package:
