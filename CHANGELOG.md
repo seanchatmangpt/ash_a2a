@@ -54,6 +54,10 @@ once it reaches 1.0.
 
 ### Changed
 
+- Hex package closure now vendors the already-repository-local `sa2a_crypto/lib`
+  source through the root compiler/package instead of declaring an invalid
+  local path dependency. The nested `sa2a_crypto` Mix project remains
+  independently testable; the root package declares OTP `:crypto` directly.
 - `AshA2A.Semantic.EvidenceRef` now directly admits the v26.9.29 AshR2RML
   exact-source evidence envelope (nested source identity, RDFC-1.0,
   provenance, replay identity and recomputed producer-domain envelope digest) while
