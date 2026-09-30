@@ -7,7 +7,7 @@ defmodule AshA2A.AuthZEN.ProjectionTest do
     effect = PreparedEffect.new("principal:alice", :payments, %{"id" => 42}, %{"amount" => 100})
     assert {:ok, request} = Projection.from_effect(effect, %{"ip" => "127.0.0.1"})
     assert request.subject.id == "principal:alice"
-    assert request.action.id == "payments"
+    assert request.action.name == "payments"
     assert request.resource.id == effect.digest
     assert request.context["sa2a"]["effect_digest"] == effect.digest
     assert request.context["sa2a"]["principal"] == "principal:alice"
