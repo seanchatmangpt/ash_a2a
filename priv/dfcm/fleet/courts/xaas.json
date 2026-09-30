@@ -1,0 +1,10 @@
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "xaas",
+  "subject": "seanchatmangpt/xaas@9ff91c6fd3e205398d082a6be366f21e9ec7777c",
+  "capability": "runtime_composition_qme_projection",
+  "falsifier": "runtime projection cannot become canonical law or DO authority",
+  "expected": "REFUSED",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}

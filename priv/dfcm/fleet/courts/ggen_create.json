@@ -1,0 +1,10 @@
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "ggen_create",
+  "subject": "seanchatmangpt/ggen-create@eaa463af138d7aff88db813f0f65307bf5c9b5ba",
+  "capability": "connection_v1_generalization",
+  "falsifier": "generalized connection cannot self-promote to authority",
+  "expected": "REFUSED",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}

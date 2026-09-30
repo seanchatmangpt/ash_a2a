@@ -1,0 +1,10 @@
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "graphlaw",
+  "subject": "seanchatmangpt/graphlaw@79275191a0feb19e6de701dabb95402a9b2b28e7",
+  "capability": "qualification_algebra",
+  "falsifier": "missing observed attack cannot qualify",
+  "expected": "UNKNOWN",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}
