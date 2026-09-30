@@ -90,7 +90,8 @@ defmodule AshA2A.DfCM.FleetIntake do
     with {:ok, donor} <- fetch(id),
          :ok <- validate_donor(donor),
          {:ok, donor_digest} <- Canonical.digest(donor),
-         :ok <-\n           require_projection(projection["schema"] == "ash-a2a.dfcm-fleet-projection.v1", :schema),
+         :ok <-
+           require_projection(projection["schema"] == "ash-a2a.dfcm-fleet-projection.v1", :schema),
          :ok <- require_projection(projection["donor"] == id, :donor),
          :ok <- require_projection(projection["subject"] == donor["subject"], :subject),
          :ok <- require_projection(projection["capability"] == donor["capability"], :capability),
@@ -211,7 +212,8 @@ defmodule AshA2A.DfCM.FleetIntake do
     do: is_binary(value) and Regex.match?(~r/\Asha256:[0-9a-f]{64}\z/, value)
 
   defp require_projection(true, _field), do: :ok
-  defp require_projection(false, field),\n    do: {:error, %{code: :refused_dfcm_projection, field: field}}
+  defp require_projection(false, field),
+    do: {:error, %{code: :refused_dfcm_projection, field: field}}
 
   defp refusal(field, observed),
     do: {:error, %{code: :invalid_dfcm_donor, field: field, observed: observed}}
