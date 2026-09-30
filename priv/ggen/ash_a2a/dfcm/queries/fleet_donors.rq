@@ -1,0 +1,21 @@
+PREFIX dfcm: <https://seanchatmangpt.github.io/ash-a2a/dfcm#>
+SELECT ?id ?module_name ?repository ?sha ?subject ?capability ?owner ?authority ?consequence ?falsifier
+       (GROUP_CONCAT(DISTINCT ?reuse; separator="||") AS ?reuse_items)
+       (GROUP_CONCAT(DISTINCT ?negative; separator="||") AS ?negative_items)
+WHERE {
+  ?donor a dfcm:FleetDonor ;
+         dfcm:id ?id ;
+         dfcm:moduleName ?module_name ;
+         dfcm:repository ?repository ;
+         dfcm:sha ?sha ;
+         dfcm:subject ?subject ;
+         dfcm:capability ?capability ;
+         dfcm:owner ?owner ;
+         dfcm:authority ?authority ;
+         dfcm:consequence ?consequence ;
+         dfcm:falsifier ?falsifier .
+  OPTIONAL { ?donor dfcm:reuse ?reuse . }
+  OPTIONAL { ?donor dfcm:negativeKnowledge ?negative . }
+}
+GROUP BY ?id ?module_name ?repository ?sha ?subject ?capability ?owner ?authority ?consequence ?falsifier
+ORDER BY ?id

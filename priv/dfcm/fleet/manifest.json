@@ -1,0 +1,326 @@
+{
+  "schema": "ash-a2a.dfcm-fleet-absorption.v1",
+  "version": "26.9.30",
+  "generated_from": "priv/ggen/ash_a2a/dfcm/ontology.ttl",
+  "source_rule": "Find→Fence→Reuse/Compose→Falsify→Verify→Formalize→Automate→Receipt→Replay→Retire",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY",
+  "donors": [
+    {
+      "id": "graphlaw",
+      "module": "GraphLaw",
+      "repository": "seanchatmangpt/graphlaw",
+      "sha": "79275191a0feb19e6de701dabb95402a9b2b28e7",
+      "capability": "qualification_algebra",
+      "owner": "GraphLaw",
+      "reuse": [
+        "qualification laws",
+        "anti-vacuity",
+        "independent observer",
+        "crash reconciliation"
+      ],
+      "negative_knowledge": [
+        "unobserved attack is UNKNOWN",
+        "coupled observer is UNKNOWN",
+        "qualification grants no authority"
+      ],
+      "falsifier": "missing observed attack cannot qualify",
+      "subject": "seanchatmangpt/graphlaw@79275191a0feb19e6de701dabb95402a9b2b28e7",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "affidavit",
+      "module": "Affidavit",
+      "repository": "seanchatmangpt/affidavit",
+      "sha": "9888b4084d8d7f4cf9337f572c6bbfb592f94e09",
+      "capability": "cryptographic_trust_plane",
+      "owner": "Affidavit",
+      "reuse": [
+        "RFC8785 canonicalization",
+        "ES256",
+        "ML-DSA-65",
+        "SLH-DSA",
+        "revocation/replay"
+      ],
+      "negative_knowledge": [
+        "cryptographic standing is not DO authority",
+        "private key custody stays provider-owned",
+        "replay and revocation are load-bearing"
+      ],
+      "falsifier": "valid signature alone cannot authorize consequential DO",
+      "subject": "seanchatmangpt/affidavit@9888b4084d8d7f4cf9337f572c6bbfb592f94e09",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "ash_r2rml",
+      "module": "AshR2RML",
+      "repository": "seanchatmangpt/ash_r2rml",
+      "sha": "36f25a30f2f60acde7da1a965626451dbc40b6f8",
+      "capability": "exact_source_semantic_evidence",
+      "owner": "AshR2RML",
+      "reuse": [
+        "RDFC-1.0",
+        "source digest",
+        "graph digest",
+        "replay identity"
+      ],
+      "negative_knowledge": [
+        "authority smuggling must refuse",
+        "source identity drift must refuse",
+        "evidence remains consequence-free"
+      ],
+      "falsifier": "authority other than NONE in semantic evidence is refused",
+      "subject": "seanchatmangpt/ash_r2rml@36f25a30f2f60acde7da1a965626451dbc40b6f8",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "ggen_create",
+      "module": "GgenCreate",
+      "repository": "seanchatmangpt/ggen-create",
+      "sha": "eaa463af138d7aff88db813f0f65307bf5c9b5ba",
+      "capability": "connection_v1_generalization",
+      "owner": "ggen-create",
+      "reuse": [
+        "RECONSTITUTE envelope",
+        "package integrity",
+        "canonical JSON",
+        "collision law"
+      ],
+      "negative_knowledge": [
+        "GENERALIZE is not marketplace admission",
+        "GENERALIZE is not DO authority",
+        "noncanonical parent refuses"
+      ],
+      "falsifier": "generalized connection cannot self-promote to authority",
+      "subject": "seanchatmangpt/ggen-create@eaa463af138d7aff88db813f0f65307bf5c9b5ba",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "ferroplan",
+      "module": "Ferroplan",
+      "repository": "seanchatmangpt/ferroplan",
+      "sha": "2954d5a1045160b31510257d39386d5c36af73c3",
+      "capability": "dfcm_session_repair_probe",
+      "owner": "Ferroplan",
+      "reuse": [
+        "suffix reuse",
+        "follow-biased replan",
+        "bounded probe",
+        "FOND validation"
+      ],
+      "negative_knowledge": [
+        "repair/probe are construct-only",
+        "parent session remains untouched",
+        "invalid FOND returns typed refusal"
+      ],
+      "falsifier": "probe or repair advancing cursor or actuating is refused",
+      "subject": "seanchatmangpt/ferroplan@2954d5a1045160b31510257d39386d5c36af73c3",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "gymact",
+      "module": "GymAct",
+      "repository": "seanchatmangpt/gymact",
+      "sha": "d3eb5e848cb86952921d1b0083e0b7e7e1f53609",
+      "capability": "exact_subject_replanning",
+      "owner": "GymAct",
+      "reuse": [
+        "RFC8785 exact-subject domain",
+        "portable replanning envelope",
+        "OCEL observation"
+      ],
+      "negative_knowledge": [
+        "noncanonical subject cannot be equivalent",
+        "producer JSON subject domain must be preserved",
+        "observation is not actuation"
+      ],
+      "falsifier": "subject mutation across replanning boundary is refused",
+      "subject": "seanchatmangpt/gymact@d3eb5e848cb86952921d1b0083e0b7e7e1f53609",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "ggen_igniter",
+      "module": "GgenIgniter",
+      "repository": "seanchatmangpt/ggen_igniter",
+      "sha": "ae205c3b85c85b5d43738b2f0e3b6833863adbb0",
+      "capability": "semantic_evidence_manufacture",
+      "owner": "ggen_igniter",
+      "reuse": [
+        "ontology-driven generation",
+        "semantic evidence consumer",
+        "capability intake pack"
+      ],
+      "negative_knowledge": [
+        "generated evidence remains authority-free",
+        "generator drift must be court-visible",
+        "hand emission is residue"
+      ],
+      "falsifier": "generated semantic evidence cannot acquire consequential authority",
+      "subject": "seanchatmangpt/ggen_igniter@ae205c3b85c85b5d43738b2f0e3b6833863adbb0",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "ggen_ecosystem",
+      "module": "GgenEcosystem",
+      "repository": "seanchatmangpt/ggen-ecosystem",
+      "sha": "93d51a9dd9b083acc821376c8462d3c861adde87",
+      "capability": "qme_cross_ecosystem_crown",
+      "owner": "ggen-ecosystem",
+      "reuse": [
+        "exact-subject crown",
+        "cross-repo qualification",
+        "claim standing separation"
+      ],
+      "negative_knowledge": [
+        "green crown does not promote unsupported numeric claim",
+        "projection is nonnormative",
+        "qualification authority remains NONE"
+      ],
+      "falsifier": "composition cannot raise the 500M claim above independently evidenced standing",
+      "subject": "seanchatmangpt/ggen-ecosystem@93d51a9dd9b083acc821376c8462d3c861adde87",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "wasm4pm",
+      "module": "Wasm4pm",
+      "repository": "seanchatmangpt/wasm4pm",
+      "sha": "09c171b4447257f018e30d721af6701258ebfeff",
+      "capability": "independent_actuator_resource_claim",
+      "owner": "WASM4PM",
+      "reuse": [
+        "independent actuator",
+        "trust-domain quorum",
+        "resource admission",
+        "durable effect claim"
+      ],
+      "negative_knowledge": [
+        "resource admission precedes durable claim",
+        "same trust domain cannot manufacture quorum",
+        "unknown outcome stays unknown"
+      ],
+      "falsifier": "protected effect without verified independent quorum and durable claim is refused",
+      "subject": "seanchatmangpt/wasm4pm@09c171b4447257f018e30d721af6701258ebfeff",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "bcinr",
+      "module": "Bcinr",
+      "repository": "seanchatmangpt/bcinr",
+      "sha": "6e2c1069fbaab83ed9700aefd353071ef93073c1",
+      "capability": "cmca_resource_envelope",
+      "owner": "BCINR",
+      "reuse": [
+        "CMCA allocation mathematics",
+        "resource envelope",
+        "recursive conservation"
+      ],
+      "negative_knowledge": [
+        "allocation receipt is not authority",
+        "child cannot amplify parent budget",
+        "resource arithmetic is consequence-free"
+      ],
+      "falsifier": "allocation evidence cannot substitute for ActuationCertificate",
+      "subject": "seanchatmangpt/bcinr@6e2c1069fbaab83ed9700aefd353071ef93073c1",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "castle",
+      "module": "Castle",
+      "repository": "seanchatmangpt/castle",
+      "sha": "5c03ca0f32d9c2cc02d504004b7902b2a8256db5",
+      "capability": "fibo_consequence_reference",
+      "owner": "CASTLE",
+      "reuse": [
+        "FIBO high-value finance",
+        "exact upstream bindings",
+        "existing consequence stack"
+      ],
+      "negative_knowledge": [
+        "reference semantics do not bypass consequence gate",
+        "upstream identity must be exact",
+        "finance semantics remain evidence until admitted"
+      ],
+      "falsifier": "external finance reference cannot directly reach DO",
+      "subject": "seanchatmangpt/castle@5c03ca0f32d9c2cc02d504004b7902b2a8256db5",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "xaas",
+      "module": "Xaas",
+      "repository": "seanchatmangpt/xaas",
+      "sha": "9ff91c6fd3e205398d082a6be366f21e9ec7777c",
+      "capability": "runtime_composition_qme_projection",
+      "owner": "XaaS",
+      "reuse": [
+        "runtime composition",
+        "SemanticJira bridge",
+        "QME projection"
+      ],
+      "negative_knowledge": [
+        "projection is nonnormative",
+        "runtime composition does not mint authority",
+        "missing optional producer capability stays typed"
+      ],
+      "falsifier": "runtime projection cannot become canonical law or DO authority",
+      "subject": "seanchatmangpt/xaas@9ff91c6fd3e205398d082a6be366f21e9ec7777c",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "ggen_marketplace",
+      "module": "GgenMarketplace",
+      "repository": "seanchatmangpt/ggen-marketplace",
+      "sha": "cb82395df9d726237f5480bc41fb18e875ce91b9",
+      "capability": "work_equivalent_chicago_court",
+      "owner": "ggen-marketplace",
+      "reuse": [
+        "semantic manufacture",
+        "negative evidence",
+        "work-equivalent court"
+      ],
+      "negative_knowledge": [
+        "unsupported quantitative claim remains unsupported",
+        "independent human baseline is required",
+        "marketplace output is candidate evidence"
+      ],
+      "falsifier": "500M person-year claim cannot become standing without independent baseline evidence",
+      "subject": "seanchatmangpt/ggen-marketplace@cb82395df9d726237f5480bc41fb18e875ce91b9",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    },
+    {
+      "id": "chatman_ecosystem",
+      "module": "ChatmanEcosystem",
+      "repository": "seanchatmangpt/chatman-ecosystem",
+      "sha": "869babb1d0c852e0ceda581a3edfea6d32189d95",
+      "capability": "universal_laws_formal_core",
+      "owner": "chatman-ecosystem",
+      "reuse": [
+        "Universal Laws L1-L12",
+        "NULL",
+        "portable conformance vectors",
+        "SHACL"
+      ],
+      "negative_knowledge": [
+        "qualification has authority NONE",
+        "derived projections cannot become canonical",
+        "mature constraints require falsifier before replacement"
+      ],
+      "falsifier": "passing conformance cannot issue DO authority",
+      "subject": "seanchatmangpt/chatman-ecosystem@869babb1d0c852e0ceda581a3edfea6d32189d95",
+      "authority": "NONE",
+      "consequence": "EVIDENCE_ONLY"
+    }
+  ]
+}
