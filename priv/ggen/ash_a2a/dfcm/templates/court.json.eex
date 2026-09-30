@@ -1,0 +1,13 @@
+---
+to: "priv/dfcm/fleet/courts/<%= @id %>.json"
+---
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "<%= @id %>",
+  "subject": "<%= @subject %>",
+  "capability": "<%= @capability %>",
+  "falsifier": "<%= @falsifier %>",
+  "expected": "REFUSED",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}
