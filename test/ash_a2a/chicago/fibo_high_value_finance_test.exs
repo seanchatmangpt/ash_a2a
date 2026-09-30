@@ -19,6 +19,7 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
   use ExUnit.Case, async: true
 
   alias AshA2A.{EffectInstance, PreparedEffect}
+  alias AshA2A.Chicago
   alias AshA2A.Semantic.Allocator
 
   @fibo_market_transaction "https://spec.edmcouncil.org/fibo/ontology/FND/TransactionsExt/MarketTransactions/MarketTransaction"
@@ -217,6 +218,71 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
     refute a.prepared_digest == b.prepared_digest
     assert a.semantic_evidence["authority"] == "NONE"
     assert b.semantic_evidence["authority"] == "NONE"
+  end
+
+
+  test "v26.9.29 FIBO profile is backed by the canonical Chicago agent courts" do
+    profile =
+      "priv/sa2a/fibo_v26_9_29_chicago_profile.json"
+      |> File.read!()
+      |> JSON.decode!()
+
+    discovered = Map.new(Chicago.courts(), &{&1.id(), &1})
+
+    assert profile["schema"] == "sa2a.fibo-chicago-profile.v1"
+    assert profile["version"] == "v26.9.29"
+    assert profile["policyBoundary"]["currency"] == "USD"
+    assert profile["policyBoundary"]["amountMicros"] == @usd_10m_micros
+
+    for id <- profile["requiredCourtIds"] do
+      assert Map.has_key?(discovered, id), "required Chicago court #{id} is not discoverable"
+      court = Map.fetch!(discovered, id)
+      assert court.falsifiers() != [], "required Chicago court #{id} has no falsifiers"
+    end
+
+    for mapping <- profile["researchMappings"] do
+      assert mapping["precedent"] not in [nil, ""]
+      assert mapping["courtIds"] != []
+
+      for id <- mapping["courtIds"] do
+        assert id in profile["requiredCourtIds"],
+               "#{mapping["precedent"]} names court #{id} outside the FIBO profile"
+      end
+    end
+  end
+
+  test "the finance profile requires the full semantic-to-consequence chain, not money checks alone" do
+    profile =
+      "priv/sa2a/fibo_v26_9_29_chicago_profile.json"
+      |> File.read!()
+      |> JSON.decode!()
+
+    required = MapSet.new(profile["requiredCourtIds"])
+
+    for id <- [
+          "SA2A-ENGINE",
+          "SA2A-LOGIC",
+          "SA2A-HOOK",
+          "SA2A-CASCADE",
+          "CHI-PLAN-AUTH",
+          "CHI-PREFLIGHT",
+          "SA2A-PLAN",
+          "CHI-AUTO",
+          "SA2A-BOUNDS",
+          "SA2A-AUTH",
+          "SA2A-AUTH-GRANT",
+          "SA2A-FED",
+          "CHI-BRCE",
+          "CHI-POST",
+          "CHI-RECEIPT",
+          "CHI-REPLAY",
+          "SA2A-CHAOS",
+          "SA2A-ATTEST",
+          "SA2A-OCEL",
+          "CHI-FRESH"
+        ] do
+      assert MapSet.member?(required, id), "missing finance-chain court #{id}"
+    end
   end
 
   test "high-value semantic evidence cannot smuggle DO authority into PreparedEffect" do
