@@ -14,13 +14,18 @@ defmodule AshA2A.DfCM.FleetIntake do
   alias AshA2A.Semantic.Envelope
 
   @manifest_path Path.expand("../../../priv/dfcm/fleet/manifest.json", __DIR__)
+  @standing_manifest_path Path.expand("../../../priv/dfcm/fleet/standing-release.json", __DIR__)
   @external_resource @manifest_path
+  @external_resource @standing_manifest_path
   @manifest @manifest_path |> File.read!() |> Jason.decode!()
-  @donors Map.new(@manifest["donors"], fn donor -> {donor["id"], donor} end)
+  @standing_donor @standing_manifest_path |> File.read!() |> Jason.decode!()
+  @all_donors @manifest["donors"] ++ [@standing_donor]
+  @composed_manifest Map.put(@manifest, "donors", @all_donors)
+  @donors Map.new(@all_donors, fn donor -> {donor["id"], donor} end)
   @sha40 ~r/\A[0-9a-f]{40}\z/
 
   @spec manifest() :: map()
-  def manifest, do: @manifest
+  def manifest, do: @composed_manifest
 
   @spec ids() :: [String.t()]
   def ids, do: @donors |> Map.keys() |> Enum.sort()
