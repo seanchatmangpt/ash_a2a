@@ -355,13 +355,21 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   defp require_standing_bound(capabilities) do
-    case Enum.find(capabilities, fn
-           %Capability{standing_binding: %StandingBinding{}} -> false
-           _ -> true
-         end) do
-      nil -> :ok
-      %Capability{id: id} -> {:error, {:standing_binding_missing, id}}
-    end
+    Enum.reduce_while(capabilities, :ok, fn
+      %Capability{id: id, digest: digest, subject_revision: subject,
+                  standing_binding: %StandingBinding{} = binding}, :ok ->
+        with true <- binding.capability_id == id || {:error, {:standing_capability_id_mismatch, id}},
+             true <- binding.capability_digest == digest || {:error, {:standing_capability_digest_mismatch, id}},
+             true <- binding.subject_revision == subject || {:error, {:standing_subject_revision_mismatch, id}},
+             :ok <- StandingBinding.verify(binding) do
+          {:cont, :ok}
+        else
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+
+      %Capability{id: id}, :ok ->
+        {:halt, {:error, {:standing_binding_missing, id}}}
+    end)
   end
 
   defp require_unique_ids(capabilities) do
