@@ -6,7 +6,7 @@
   "wasm_bytes": 3249361,
   "produced_by": {
     "runtime": "wasmtime",
-    "runtime_version": "48.0.1",
+    "runtime_version": "48.0.3",
     "host": "graphlaw_host/0.1.0"
   },
   "vectors": [

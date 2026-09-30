@@ -1,0 +1,92 @@
+name: build
+description: >-
+  Toolchain + deps + native builds + compile for the test env. One definition
+  shared by every CI lane so the same source is built the same way everywhere.
+  The caller must have checked out the exact subject first. The cache is an
+  optimization only: every step is correct on a full miss.
+
+inputs:
+  format:
+    description: Run `mix format --check-formatted` (cheapest check, first).
+    default: "false"
+  save-cache:
+    description: Save the build cache after a successful compile (one lane only).
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Admit exact subject
+      shell: bash
+      env:
+        EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+    # One toolchain identity everywhere (SC-09): .tool-versions is the pin.
+    - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+      with:
+        version-file: .tool-versions
+        version-type: strict
+    # Key = the real invalidators: toolchain pins, Hex lock, both Cargo locks.
+    - id: cache
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: |
+          deps
+          _build
+          actuator/deps
+          authority_service/deps
+          native/hddl_cli/target
+          native/graphlaw_host/target
+        key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}
+        restore-keys: |
+          ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-
+          ash-a2a-v2-${{ runner.os }}-test-
+    - shell: bash
+      run: mix local.hex --force && mix local.rebar --force
+    - shell: bash
+      run: mix deps.get --check-locked
+    # The C2 court harness compiles these child Mix projects from inside the
+    # tests (test/support/c2_harness/fleet.ex) without fetching their deps; on
+    # a fresh runner that left ~15 tests invalid in setup_all.
+    - name: Fetch deps for the child projects the court harness builds
+      shell: bash
+      run: |
+        for p in actuator authority_service; do (cd "$p" && mix deps.get); done
+    # test-env deps.get skips dev-only deps: fail if it had to rewrite the lock.
+    - name: Verify mix.lock unchanged
+      shell: bash
+      run: git diff --exit-code -- mix.lock
+    - if: ${{ inputs.format == 'true' }}
+      shell: bash
+      run: mix format --check-formatted
+    - name: Install pinned Rust toolchain
+      shell: bash
+      run: rustup toolchain install 1.97.1 --profile minimal
+    - name: Build hddl_cli and graphlaw_host (both crates, locked)
+      shell: bash
+      run: |
+        cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked
+        cargo +1.97.1 build --manifest-path native/graphlaw_host/Cargo.toml --release --locked
+    - name: Verify Cargo locks are tracked and current
+      shell: bash
+      run: |
+        git ls-files --error-unmatch native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
+        git diff --exit-code -- native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
+    - id: compile
+      shell: bash
+      run: mix compile --warnings-as-errors
+    # Save once per exact key, and only on an exact miss: one entry per lock
+    # hash per ref instead of a multi-GB entry per run (which churns the 10 GB
+    # repository cap and evicts the useful entries). Only a COMPLETE build is
+    # saved; never after cancel or a failed compile.
+    - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: ${{ inputs.save-cache == 'true' && steps.cache.outputs.cache-hit != 'true' && !cancelled() && steps.compile.outcome == 'success' }}
+      with:
+        path: |
+          deps
+          _build
+          actuator/deps
+          authority_service/deps
+          native/hddl_cli/target
+          native/graphlaw_host/target
+        key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'actuator/mix.lock', 'authority_service/mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}

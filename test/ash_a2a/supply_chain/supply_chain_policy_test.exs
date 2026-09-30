@@ -19,10 +19,16 @@ defmodule AshA2A.SupplyChain.SupplyChainPolicyTest do
 
   @root File.cwd!()
   @workflows Path.wildcard(Path.join(@root, ".github/workflows/*.yml"))
+  # Local composite actions hold CI steps too; the guards that scan steps must
+  # not go blind when a step moves into one.
+  @composites Path.wildcard(Path.join(@root, ".github/actions/*/action.yml"))
+  @ci_files @workflows ++ @composites
   @sha_pin ~r/^[^@\s]+@[0-9a-f]{40}$/
 
   defp read!(rel), do: File.read!(Path.join(@root, rel))
   defp yaml!(path), do: YamlElixir.read_from_file!(path)
+
+  defp steps(%{"runs" => %{"steps" => steps}}) when is_list(steps), do: steps
 
   defp steps(workflow) do
     for {_job, job} <- workflow["jobs"] || %{}, step <- job["steps"] || [], do: step
@@ -37,7 +43,7 @@ defmodule AshA2A.SupplyChain.SupplyChainPolicyTest do
   describe "SC-06 action pinning and release authority" do
     test "every third-party action is pinned to a full 40-hex commit SHA" do
       unpinned =
-        for path <- @workflows,
+        for path <- @ci_files,
             step <- steps(yaml!(path)),
             uses = step["uses"],
             is_binary(uses),
@@ -154,7 +160,7 @@ defmodule AshA2A.SupplyChain.SupplyChainPolicyTest do
   describe "SC-08 native crate identity" do
     test "every cargo build in every workflow uses the pinned toolchain and --locked" do
       offenders =
-        for path <- @workflows,
+        for path <- @ci_files,
             line <- String.split(run_text(yaml!(path)), "\n"),
             line =~ ~r/\bcargo\b.*\bbuild\b/,
             not (line =~ "cargo +1.97.1" and line =~ "--locked"),
@@ -183,7 +189,7 @@ defmodule AshA2A.SupplyChain.SupplyChainPolicyTest do
   describe "SC-09 one BEAM toolchain identity" do
     test "every setup-beam step reads .tool-versions strictly (no inline versions)" do
       beam_steps =
-        for path <- @workflows,
+        for path <- @ci_files,
             step <- steps(yaml!(path)),
             String.starts_with?(step["uses"] || "", "erlef/setup-beam@"),
             do: {Path.basename(path), step["with"]}
@@ -277,7 +283,9 @@ defmodule AshA2A.SupplyChain.SupplyChainPolicyTest do
         |> run_text()
         |> String.split("\n")
 
-      cover_runs = Enum.filter(lines, &(&1 =~ ~r/mix test\.all\b.*--cover\b/))
+      # Any `mix test[.alias]` run under --cover counts: the suite is split into
+      # lanes (fast / serial_solo / serial_shard) that together are `test.all`.
+      cover_runs = Enum.filter(lines, &(&1 =~ ~r/mix test(\.\w+)*\b.*--cover\b/))
       assert cover_runs != [], "CI does not run the suite under --cover"
 
       # `--export-coverage` makes Mix write .coverdata and skip the threshold

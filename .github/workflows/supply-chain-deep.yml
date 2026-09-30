@@ -1,0 +1,68 @@
+name: Supply chain (deep)
+
+# The Hex package-closure check (SC-10): the tarball must carry the exact native
+# sources lib/ reads. Split out of ci.yml because it needs `mix hex.build`, not
+# because it is optional: it runs when a PR touches the package inputs, on main,
+# and weekly. (Rust advisories stay in ci.yml's fast `supply-chain` job.)
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - mix.exs
+      - mix.lock
+      - native/**
+      - .github/cargo-deny.toml
+      - .github/workflows/supply-chain-deep.yml
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  EKV_BUILD: "1"
+
+jobs:
+  supply-chain-deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      # SC-10: lib/ reads native/*/Cargo.toml; the Hex tarball must carry the
+      # exact native sources the composition lock pins, or consumers resolve
+      # to missing files.
+      - name: Package closure carries the native sources lib/ references
+        run: |
+          set -euo pipefail
+          pkg="$RUNNER_TEMP/pkg"
+          mix hex.build --unpack -o "$pkg"
+          for crate in hddl_cli graphlaw_host; do
+            for f in Cargo.toml Cargo.lock rust-toolchain.toml src/main.rs; do
+              test -f "$pkg/native/$crate/$f" || { echo "REFUSED(package:missing native/$crate/$f)" >&2; exit 2; }
+            done
+            test ! -e "$pkg/native/$crate/target" || { echo "REFUSED(package:ships native/$crate/target)" >&2; exit 2; }
+          done
+          mix run --no-start -e '
+            lock = AshA2A.Chicago.Release.CompositionLock.build!(repo: System.fetch_env!("PKG"))
+            if Enum.any?(Map.values(lock.native_pins), &is_nil/1), do: System.halt(2)
+            IO.inspect(lock.native_pins, label: "unpacked native_pins")'
+        env:
+          PKG: ${{ runner.temp }}/pkg
+          # test env: avoids compiling the dev-only ggen_igniter Rustler tree.
+          MIX_ENV: test
