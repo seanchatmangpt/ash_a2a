@@ -13,6 +13,7 @@ defmodule AshA2A.CapabilityRelease do
   """
 
   @digest ~r/^(?:sha256|blake3):[0-9a-f]{64}$/
+  @sha40 ~r/\A[0-9a-f]{40}\z/
 
   defmodule Capability do
     @moduledoc false
@@ -181,6 +182,7 @@ defmodule AshA2A.CapabilityRelease do
   def release_from_standing(%Capability{state: :admitted} = capability, opts \\ [])
       when is_list(opts) do
     with {:ok, resolution} <- AshA2A.StandingRef.resolve(opts),
+         :ok <- ensure_releasable_standing(resolution.standing),
          {:ok, receipt_digest} <- normalize_receipt_digest(resolution.receipt_digest) do
       standing_binding = build_standing_binding(resolution, receipt_digest)
 
@@ -234,8 +236,9 @@ defmodule AshA2A.CapabilityRelease do
   """
   @spec freeze_standing([Capability.t()]) :: {:ok, Closure.t()} | {:error, term()}
   def freeze_standing(capabilities) when is_list(capabilities) do
-    with :ok <- require_standing(capabilities) do
-      freeze(capabilities)
+    with {:ok, closure} <- freeze(capabilities),
+         :ok <- require_standing(capabilities) do
+      {:ok, closure}
     end
   end
 
@@ -455,11 +458,66 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   defp require_standing(capabilities) do
-    case Enum.find(capabilities, &is_nil(&1.standing_binding)) do
-      nil -> :ok
-      %Capability{} = capability -> {:error, {:technical_standing_required, capability.id}}
+    Enum.reduce_while(capabilities, :ok, fn
+      %Capability{} = capability, :ok ->
+        case validate_standing_binding(capability) do
+          :ok -> {:cont, :ok}
+          {:error, _} = error -> {:halt, error}
+        end
+    end)
+  end
+
+  defp validate_standing_binding(%Capability{standing_binding: nil} = capability),
+    do: {:error, {:technical_standing_required, capability.id}}
+
+  defp validate_standing_binding(
+         %Capability{
+           release_digest: release_digest,
+           standing_binding: %StandingBinding{} = standing
+         } = capability
+       ) do
+    projection = {
+      standing.court,
+      standing.standing,
+      standing.subject_sha,
+      standing.profile,
+      standing.conformance,
+      standing.receipt_digest
+    }
+
+    expected_binding_digest = digest_term(projection)
+
+    cond do
+      standing.standing != "CONFORMANT" ->
+        {:error, {:technical_standing_not_releasable, capability.id, standing.standing}}
+
+      not is_binary(standing.court) or String.trim(standing.court) == "" ->
+        {:error, {:technical_standing_invalid, capability.id, :court}}
+
+      not is_binary(standing.subject_sha) or not Regex.match?(@sha40, standing.subject_sha) ->
+        {:error, {:technical_standing_invalid, capability.id, :subject_sha}}
+
+      validate_digest(:receipt_digest, standing.receipt_digest) != :ok ->
+        {:error, {:technical_standing_invalid, capability.id, :receipt_digest}}
+
+      release_digest != standing.receipt_digest ->
+        {:error, {:technical_standing_invalid, capability.id, :release_digest_mismatch}}
+
+      not is_binary(standing.receipt_source) or String.trim(standing.receipt_source) == "" ->
+        {:error, {:technical_standing_invalid, capability.id, :receipt_source}}
+
+      standing.binding_digest != expected_binding_digest ->
+        {:error, {:technical_standing_invalid, capability.id, :binding_digest}}
+
+      true ->
+        :ok
     end
   end
+
+  defp ensure_releasable_standing("CONFORMANT"), do: :ok
+
+  defp ensure_releasable_standing(other),
+    do: {:error, {:technical_standing_not_releasable, other}}
 
   defp require_unique_ids(capabilities) do
     ids = Enum.map(capabilities, & &1.id)
