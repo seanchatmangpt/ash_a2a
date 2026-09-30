@@ -437,13 +437,13 @@ defmodule AshA2A.CapabilityRelease do
 
     mode =
       Keyword.get_lazy(opts, :capability_release_mode, fn ->
-        cond do
-          Keyword.has_key?(opts, :capability_release_closure) -> :strict
-          Application.get_env(:ash_a2a, :capability_release_mode) in [:strict, :standing_strict] ->
-            Application.get_env(:ash_a2a, :capability_release_mode)
+        configured = Application.get_env(:ash_a2a, :capability_release_mode)
 
-          true ->
-            :legacy
+        cond do
+          configured == :standing_strict -> :standing_strict
+          Keyword.has_key?(opts, :capability_release_closure) -> :strict
+          configured == :strict -> :strict
+          true -> :legacy
         end
       end)
 
