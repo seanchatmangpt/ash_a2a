@@ -1,0 +1,10 @@
+{
+  "version": "sa2a.c1.call-edge.v1",
+  "vector_id": "run5-010",
+  "subject": "urn:sa2a:c1:run5:010",
+  "caller": "Example.Consumer",
+  "callee": "Example.Observer",
+  "kind": "neutral",
+  "dynamic": false,
+  "expected": "admit"
+}

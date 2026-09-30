@@ -1,0 +1,10 @@
+{
+  "version": "sa2a.c1.call-edge.v1",
+  "vector_id": "run5-003",
+  "subject": "urn:sa2a:c1:run5:003",
+  "caller": "Example.Consumer",
+  "callee": "Ash",
+  "kind": "ash_effect",
+  "dynamic": false,
+  "expected": "direct_effect_bypass"
+}

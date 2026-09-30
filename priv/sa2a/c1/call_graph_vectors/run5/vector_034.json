@@ -1,0 +1,10 @@
+{
+  "version": "sa2a.c1.call-edge.v1",
+  "vector_id": "run5-034",
+  "subject": "urn:sa2a:c1:run5:034",
+  "caller": "Example.Consumer",
+  "callee": "dynamic",
+  "kind": "dynamic",
+  "dynamic": true,
+  "expected": "unresolved_dynamic_consequence"
+}

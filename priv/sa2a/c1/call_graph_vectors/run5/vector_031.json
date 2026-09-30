@@ -1,0 +1,10 @@
+{
+  "version": "sa2a.c1.call-edge.v1",
+  "vector_id": "run5-031",
+  "subject": "urn:sa2a:c1:run5:031",
+  "caller": "Example.Consumer",
+  "callee": "AshA2A.ConsequenceKernel",
+  "kind": "kernel",
+  "dynamic": false,
+  "expected": "admit"
+}

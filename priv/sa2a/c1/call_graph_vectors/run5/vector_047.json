@@ -1,0 +1,10 @@
+{
+  "version": "sa2a.c1.call-edge.v1",
+  "vector_id": "run5-047",
+  "subject": "urn:sa2a:c1:run5:047",
+  "caller": "Example.Consumer",
+  "callee": "AshA2A.Dispatcher",
+  "kind": "dispatcher",
+  "dynamic": false,
+  "expected": "kernel_bypass"
+}
