@@ -1,0 +1,10 @@
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "ggen_ecosystem",
+  "subject": "seanchatmangpt/ggen-ecosystem@93d51a9dd9b083acc821376c8462d3c861adde87",
+  "capability": "qme_cross_ecosystem_crown",
+  "falsifier": "composition cannot raise the 500M claim above independently evidenced standing",
+  "expected": "UNSUPPORTED",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}

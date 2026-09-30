@@ -181,8 +181,10 @@ defmodule AshA2A.MixProject do
       # and resolves `native/*/target/release/*` binaries, so a Hex consumer
       # must be able to rebuild the exact locked closure from the tarball
       # (`cargo +1.97.1 build --release --locked --manifest-path ...`).
-      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
-           docs/tutorials docs/how-to docs/reference docs/explanation) ++ native_package_files()
+      files:
+        ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
+           docs/tutorials docs/how-to docs/reference docs/explanation sa2a_crypto/lib) ++
+          native_package_files()
     ]
   end
 
@@ -211,13 +213,16 @@ defmodule AshA2A.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
+  # sa2a_crypto remains independently testable as a nested Mix project, while
+  # its runtime modules are vendored into the root Hex package. Hex packages
+  # cannot depend on local path projects.
+  defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib", "sa2a_crypto/lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :crypto],
       mod: {AshA2A.Application, []}
     ]
   end
@@ -384,8 +389,9 @@ defmodule AshA2A.MixProject do
       # through :rdf; promoted to a direct dependency because release-closure
       # portable identity calls Jcs.encode/1 at runtime.
       {:jcs, "~> 0.2"},
-      # Affidavit-shaped cryptographic standing substrate (standalone project; no Ash deps).
-      {:sa2a_crypto, path: "sa2a_crypto"},
+      # Affidavit-shaped cryptographic standing substrate. Source is vendored
+      # through elixirc_paths/package files above; local path deps are invalid
+      # in a Hex package closure.
       # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
       # runtime. ONE declaration shared by two independent hosts of the same
       # vendored `priv/graphlaw/praxis_graphlaw.wasm` law package:

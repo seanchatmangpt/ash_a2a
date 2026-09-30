@@ -1,0 +1,131 @@
+{
+  "schema": "sa2a.fibo-chicago-profile.v1",
+  "version": "v26.9.29",
+  "subject": "synthetic FIBO high-value financial transaction qualification",
+  "standingCeiling": "PARTIAL_ALIVE until live GraphLaw/FIBO transaction execution and rail-specific courts exist",
+  "policyBoundary": {
+    "currency": "USD",
+    "amountMicros": 10000000000000,
+    "relation": "high-value profile threshold; not a FIBO-defined regulatory threshold"
+  },
+  "requiredCourtIds": [
+    "CHI-ID",
+    "CHI-ADM",
+    "CHI-REAL",
+    "SA2A-CANON",
+    "SA2A-ENV",
+    "SA2A-SHACL",
+    "SA2A-SHEX",
+    "SA2A-SPARQL",
+    "SA2A-ENGINE",
+    "SA2A-LOGIC",
+    "SA2A-HOOK",
+    "SA2A-CASCADE",
+    "CHI-PLAN-AUTH",
+    "CHI-PREFLIGHT",
+    "SA2A-PLAN",
+    "CHI-AUTO",
+    "SA2A-BOUNDS",
+    "SA2A-AUTH",
+    "SA2A-AUTH-GRANT",
+    "SA2A-FED",
+    "CHI-BRCE",
+    "CHI-POST",
+    "CHI-RECEIPT",
+    "CHI-REPLAY",
+    "SA2A-CHAOS",
+    "SA2A-ATTEST",
+    "SA2A-OCEL",
+    "CHI-FRESH"
+  ],
+  "researchMappings": [
+    {
+      "precedent": "W3C N3 + RESTdesc proof-based API composition",
+      "capability": "semantic implication -> candidate capability -> bounded plan",
+      "courtIds": [
+        "SA2A-ENGINE",
+        "SA2A-LOGIC",
+        "SA2A-HOOK",
+        "CHI-PLAN-AUTH",
+        "CHI-PREFLIGHT",
+        "SA2A-PLAN"
+      ]
+    },
+    {
+      "precedent": "SecPAL decentralized authorization and recursive delegation",
+      "capability": "principal/capability/delegation remains separate from semantic truth",
+      "courtIds": [
+        "SA2A-AUTH",
+        "SA2A-AUTH-GRANT",
+        "SA2A-FED",
+        "CHI-BRCE"
+      ]
+    },
+    {
+      "precedent": "Differential Datalog / incremental relational maintenance",
+      "capability": "state deltas trigger bounded reactive recomputation without replayed consequence",
+      "courtIds": [
+        "SA2A-CASCADE",
+        "CHI-REPLAY",
+        "SA2A-BOUNDS"
+      ]
+    },
+    {
+      "precedent": "NoD declarative dynamic-network invariant checking",
+      "capability": "changing operational state is checked against declarative invariants before consequence",
+      "courtIds": [
+        "SA2A-LOGIC",
+        "CHI-AUTO",
+        "SA2A-BOUNDS",
+        "CHI-BRCE"
+      ]
+    },
+    {
+      "precedent": "CALM / Dedalus distributed declarative computation",
+      "capability": "bounded distributed/delegated work does not manufacture coordination or authority",
+      "courtIds": [
+        "SA2A-CASCADE",
+        "SA2A-FED",
+        "SA2A-BOUNDS",
+        "CHI-AUTO"
+      ]
+    },
+    {
+      "precedent": "Datalog why-provenance and proof/explanation research",
+      "capability": "consequence standing is reconstructible from exact evidence and independent observation",
+      "courtIds": [
+        "CHI-RECEIPT",
+        "SA2A-ATTEST",
+        "SA2A-OCEL",
+        "CHI-FRESH"
+      ]
+    },
+    {
+      "precedent": "fault-tolerant agent/workflow execution",
+      "capability": "crash, replay and postcondition ambiguity do not duplicate or falsely complete consequence",
+      "courtIds": [
+        "SA2A-CHAOS",
+        "CHI-REPLAY",
+        "CHI-POST",
+        "CHI-RECEIPT"
+      ]
+    },
+    {
+      "precedent": "FIBO financial semantics",
+      "capability": "transaction identity includes party, monetary amount, currency, agreement and settlement semantics",
+      "courtIds": [
+        "SA2A-CANON",
+        "SA2A-ENV",
+        "SA2A-SHACL",
+        "SA2A-SHEX",
+        "SA2A-SPARQL",
+        "SA2A-ENGINE"
+      ]
+    }
+  ],
+  "inherits": [
+    "chicago.universal.v1"
+  ],
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}
