@@ -196,6 +196,46 @@ defmodule AshA2A.StandingRef do
     e -> {:error, {:receipt_malformed, Exception.message(e)}}
   end
 
+
+  @doc "Re-admit one exact durable receipt source previously returned by resolve/1."
+  def replay(sha, court, wanted, receipt_source, opts \\ []) do
+    repo = opts |> Keyword.get(:repo, File.cwd!()) |> Path.expand()
+    with {:ok, spec} <- court_spec(court),
+         {:ok, source} <- source_from_label(receipt_source, spec),
+         {:ok, standing_bytes} <- read(source, spec.standing_file, repo),
+         {:ok, conformance_bytes} <- replay_optional(source, spec.conformance_file, repo) do
+      admit(sha, standing_bytes, conformance_bytes, wanted,
+        profile: Keyword.get(opts, :profile),
+        require_conformance: Keyword.get(opts, :require_conformance, false))
+    end
+  end
+  defp source_from_label("git:" <> rest, spec) do
+    case String.split(rest, ":", parts: 2) do
+      [head, path] ->
+        suffix = "/" <> spec.standing_file
+        if String.ends_with?(path, suffix),
+          do: {:ok, {:git, head, String.replace_suffix(path, suffix, "")}},
+          else: {:error, :standing_receipt_source_invalid}
+      _ -> {:error, :standing_receipt_source_invalid}
+    end
+  end
+  defp source_from_label("artifact:" <> path, spec) do
+    suffix = "/" <> spec.standing_file
+    if String.ends_with?(path, suffix),
+      do: {:ok, {:artifact, String.replace_suffix(path, suffix, "")}},
+      else: {:error, :standing_receipt_source_invalid}
+  end
+  defp source_from_label(_, _), do: {:error, :standing_receipt_source_invalid}
+  defp replay_optional({:git, head, dir} = source, file, repo) do
+    case git(repo, ["cat-file", "-e", {:object, head, "#{dir}/#{file}"}]) do
+      {:ok, _} -> read(source, file, repo)
+      {:error, _} -> {:ok, nil}
+    end
+  end
+  defp replay_optional({:artifact, dir} = source, file, repo) do
+    if File.exists?(Path.join(dir, file)), do: read(source, file, repo), else: {:ok, nil}
+  end
+
   # --- walk ------------------------------------------------------------------
 
   defp walk([], _ctx, refused, walked),
