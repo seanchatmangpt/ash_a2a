@@ -19,6 +19,14 @@ dfcm:consequence a rdf:Property .
 dfcm:falsifier a rdf:Property .
 dfcm:negativeKnowledge a rdf:Property .
 dfcm:reuse a rdf:Property .
+dfcm:standingSource a rdf:Property .
+dfcm:technicalStanding a rdf:Property .
+dfcm:externalStanding a rdf:Property .
+dfcm:runtimeAuthority a rdf:Property .
+dfcm:requiresExactSubject a rdf:Property .
+dfcm:requiresReleaseBinding a rdf:Property .
+dfcm:requiresFrozenClosure a rdf:Property .
+dfcm:requiresReceiptReplayBinding a rdf:Property .
 
 dfcm:graphlaw a dfcm:FleetDonor ;
   dfcm:id "graphlaw" ;
@@ -280,3 +288,29 @@ dfcm:chatman-ecosystem a dfcm:FleetDonor ;
   dfcm:negativeKnowledge "derived projections cannot become canonical" ;
   dfcm:negativeKnowledge "mature constraints require falsifier before replacement" .
 
+
+dfcm:graphlaw-standing-release a dfcm:FleetDonor ;
+  dfcm:id "graphlaw_standing_release" ;
+  dfcm:moduleName "GraphLawStandingRelease" ;
+  dfcm:repository "seanchatmangpt/graphlaw" ;
+  dfcm:sha "55164d4fe1cdb2e073a98fddd287cc07216663fa" ;
+  dfcm:subject "seanchatmangpt/graphlaw@55164d4fe1cdb2e073a98fddd287cc07216663fa" ;
+  dfcm:capability "standing_closed_release" ;
+  dfcm:owner "GraphLaw" ;
+  dfcm:authority "NONE" ;
+  dfcm:consequence "EVIDENCE_ONLY" ;
+  dfcm:standingSource "contracts/fleet/standing-release.ttl@1c78ee0a6c0ce9612933f92ea4eebe22e08dafd9" ;
+  dfcm:technicalStanding "QUALIFIED" ;
+  dfcm:externalStanding "UNSPECIFIED" ;
+  dfcm:runtimeAuthority "NONE" ;
+  dfcm:requiresExactSubject true ;
+  dfcm:requiresReleaseBinding true ;
+  dfcm:requiresFrozenClosure true ;
+  dfcm:requiresReceiptReplayBinding true ;
+  dfcm:reuse "canonical standing/release primitive" ;
+  dfcm:reuse "exact-subject admission" ;
+  dfcm:reuse "frozen dependency-standing closure" ;
+  dfcm:negativeKnowledge "technical standing is not external standing" ;
+  dfcm:negativeKnowledge "technical standing is not runtime authority" ;
+  dfcm:negativeKnowledge "stale or forged standing refuses" ;
+  dfcm:falsifier "execution against a subject lacking exact admitted standing must refuse" .
