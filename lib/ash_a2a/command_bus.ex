@@ -1005,9 +1005,46 @@ defmodule AshA2A.CommandBus do
   # re-checked against the authoritative broker (when one is configured) and
   # the kill switch is consulted again. Either failing means no DO.
   defp pre_do_gate(command, consequence, opts) do
-    with :ok <- revalidate_authority(command, consequence, opts),
+    with :ok <- revalidate_release_standing(opts),
+         :ok <- revalidate_authority(command, consequence, opts),
          :ok <- gate_result(check_kill_switch(opts)) do
       :ok
+    end
+  end
+
+  # Standing is evidence, never runtime authority, but strict execution must
+  # still possess that evidence at the last reversible boundary before DO.
+  # Re-resolve the exact frozen member so mutable/deleted durable evidence
+  # cannot pass on an admission observed earlier in CommandBus.run/4.
+  defp revalidate_release_standing(opts) do
+    case Keyword.get(opts, :capability_release_binding) do
+      nil ->
+        :ok
+
+      prior ->
+        case CapabilityRelease.binding(prior.capability_id, opts) do
+          {:ok, current}
+          when current.binding_digest == prior.binding_digest and
+                 current.standing_binding_identity == prior.standing_binding_identity and
+                 current.standing_receipt_digest == prior.standing_receipt_digest ->
+            :ok
+
+          {:ok, _changed} ->
+            {:gate_refused,
+             %{
+               code: :capability_release_refused,
+               detail: "standing evidence changed after release binding; refusing before DO",
+               reason: :standing_replay_changed
+             }}
+
+          {:error, reason} ->
+            {:gate_refused,
+             %{
+               code: :capability_release_refused,
+               detail: "standing evidence could not be re-admitted immediately before DO",
+               reason: reason
+             }}
+        end
     end
   end
 
