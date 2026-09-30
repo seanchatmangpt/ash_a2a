@@ -24,7 +24,9 @@ defmodule AshA2A.CapabilityRelease do
       :state,
       :admission_digest,
       :release_digest,
-      :retirement_digest
+      :retirement_digest,
+      :subject_revision,
+      :standing_binding
     ]
 
     @type state :: :candidate | :admitted | :released | :retired
@@ -36,7 +38,9 @@ defmodule AshA2A.CapabilityRelease do
             state: state(),
             admission_digest: String.t() | nil,
             release_digest: String.t() | nil,
-            retirement_digest: String.t() | nil
+            retirement_digest: String.t() | nil,
+            subject_revision: String.t() | nil,
+            standing_binding: AshA2A.StandingBinding.t() | nil
           }
   end
 
@@ -72,6 +76,7 @@ defmodule AshA2A.CapabilityRelease do
       :capability_digest,
       :admission_digest,
       :release_digest,
+      :standing_binding,
       :binding_digest
     ]
 
@@ -83,18 +88,30 @@ defmodule AshA2A.CapabilityRelease do
             capability_digest: String.t(),
             admission_digest: String.t(),
             release_digest: String.t(),
+            standing_binding: AshA2A.StandingBinding.t() | nil,
             binding_digest: String.t()
           }
   end
 
   alias __MODULE__.{Binding, Capability, Closure}
+  alias AshA2A.StandingBinding
 
   @spec candidate(String.t(), String.t(), String.t()) :: Capability.t()
-  def candidate(id, version, digest) do
+  def candidate(id, version, digest), do: candidate(id, version, digest, [])
+
+  @spec candidate(String.t(), String.t(), String.t(), keyword()) :: Capability.t()
+  def candidate(id, version, digest, opts) when is_list(opts) do
     validate_text!(:id, id)
     validate_text!(:version, version)
     validate_digest!(:digest, digest)
-    %Capability{id: id, version: version, digest: digest, state: :candidate}
+
+    %Capability{
+      id: id,
+      version: version,
+      digest: digest,
+      state: :candidate,
+      subject_revision: Keyword.get(opts, :subject_revision)
+    }
   end
 
   @spec admit(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
@@ -125,6 +142,28 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   def release(%Capability{state: state}, _digest),
+    do: {:error, {:invalid_release_transition, state, :released}}
+
+  @doc """
+  Release an admitted capability only after resolving durable technical standing
+  for its exact subject. The standing binding is evidence, not runtime authority.
+  """
+  @spec release_from_standing(Capability.t(), keyword()) ::
+          {:ok, Capability.t()} | {:error, term()}
+  def release_from_standing(%Capability{state: :admitted} = capability, opts \\ [])
+      when is_list(opts) do
+    with {:ok, standing_binding} <- StandingBinding.resolve(capability, opts) do
+      {:ok,
+       %{
+         capability
+         | state: :released,
+           release_digest: standing_binding.portable_identity,
+           standing_binding: standing_binding
+       }}
+    end
+  end
+
+  def release_from_standing(%Capability{state: state}, _opts),
     do: {:error, {:invalid_release_transition, state, :released}}
 
   @spec retire(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
@@ -158,6 +197,18 @@ defmodule AshA2A.CapabilityRelease do
     end
   end
 
+  @doc """
+  Freezes a closure only when every released capability carries durable
+  technical-standing evidence resolved by release_from_standing/2.
+  """
+  @spec freeze_standing([Capability.t()]) :: {:ok, Closure.t()} | {:error, term()}
+  def freeze_standing(capabilities) when is_list(capabilities) do
+    with {:ok, closure} <- freeze(capabilities),
+         :ok <- require_standing(capabilities) do
+      {:ok, closure}
+    end
+  end
+
   @spec select(Closure.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
   def select(%Closure{} = closure, capability_id) when is_binary(capability_id) do
     case Map.fetch(closure.capabilities, capability_id) do
@@ -172,6 +223,8 @@ defmodule AshA2A.CapabilityRelease do
   Modes:
     * legacy - preserve pre-v26.9.26 behavior.
     * strict - require a frozen closure and exact skill id membership.
+    * standing_strict - additionally require every closure member to carry
+      durable exact-subject technical standing.
 
   Passing a closure in opts implies strict for that call unless a mode is
   explicitly supplied.
@@ -202,7 +255,17 @@ defmodule AshA2A.CapabilityRelease do
           {:ok, build_binding(closure, capability)}
         end
 
+      {:standing_strict, %Closure{} = closure} ->
+        with :ok <- require_standing(Map.values(closure.capabilities)),
+             {:ok, capability} <- select(closure, capability_id),
+             :ok <- StandingBinding.verify_durable(capability.standing_binding, opts) do
+          {:ok, build_binding(closure, capability)}
+        end
+
       {:strict, nil} ->
+        {:error, :capability_release_closure_missing}
+
+      {:standing_strict, nil} ->
         {:error, :capability_release_closure_missing}
 
       {other, _closure} ->
@@ -233,7 +296,26 @@ defmodule AshA2A.CapabilityRelease do
         released = MapSet.new(released_ids(closure))
         {:ok, Enum.filter(skills, &MapSet.member?(released, &1.id))}
 
+      {:standing_strict, %Closure{} = closure} ->
+        Enum.reduce_while(skills, {:ok, []}, fn skill, {:ok, acc} ->
+          if Map.has_key?(closure.capabilities, skill.id) do
+            case binding(skill.id, opts) do
+              {:ok, %Binding{}} -> {:cont, {:ok, [skill | acc]}}
+              {:error, reason} -> {:halt, {:error, reason}}
+            end
+          else
+            {:cont, {:ok, acc}}
+          end
+        end)
+        |> case do
+          {:ok, admitted} -> {:ok, Enum.reverse(admitted)}
+          error -> error
+        end
+
       {:strict, nil} ->
+        {:error, :capability_release_closure_missing}
+
+      {:standing_strict, nil} ->
         {:error, :capability_release_closure_missing}
 
       {other, _closure} ->
@@ -246,7 +328,7 @@ defmodule AshA2A.CapabilityRelease do
   def attributes(nil), do: %{}
 
   def attributes(%Binding{} = binding) do
-    %{
+    base = %{
       release_closure_digest: binding.closure_digest,
       release_portable_closure_digest: binding.portable_closure_digest,
       release_capability_id: binding.capability_id,
@@ -256,10 +338,18 @@ defmodule AshA2A.CapabilityRelease do
       release_evidence_digest: binding.release_digest,
       release_binding_digest: binding.binding_digest
     }
+
+    case binding.standing_binding do
+      nil ->
+        base
+
+      %StandingBinding{} = standing ->
+        Map.merge(base, StandingBinding.attributes(standing))
+    end
   end
 
   defp build_binding(%Closure{} = closure, %Capability{state: :released} = capability) do
-    projection = {
+    legacy_projection = {
       closure.digest,
       closure.portable_digest,
       capability.id,
@@ -269,6 +359,12 @@ defmodule AshA2A.CapabilityRelease do
       capability.release_digest
     }
 
+    projection =
+      case capability.standing_binding do
+        nil -> legacy_projection
+        %StandingBinding{} = standing -> {legacy_projection, standing.portable_identity}
+      end
+
     %Binding{
       closure_digest: closure.digest,
       portable_closure_digest: closure.portable_digest,
@@ -277,6 +373,7 @@ defmodule AshA2A.CapabilityRelease do
       capability_digest: capability.digest,
       admission_digest: capability.admission_digest,
       release_digest: capability.release_digest,
+      standing_binding: capability.standing_binding,
       binding_digest: digest_term(projection)
     }
   end
@@ -288,9 +385,12 @@ defmodule AshA2A.CapabilityRelease do
 
     mode =
       Keyword.get_lazy(opts, :capability_release_mode, fn ->
+        configured = Application.get_env(:ash_a2a, :capability_release_mode)
+
         cond do
+          configured == :standing_strict -> :standing_strict
           Keyword.has_key?(opts, :capability_release_closure) -> :strict
-          Application.get_env(:ash_a2a, :capability_release_mode) == :strict -> :strict
+          configured == :strict -> :strict
           true -> :legacy
         end
       end)
@@ -305,6 +405,39 @@ defmodule AshA2A.CapabilityRelease do
     end
   end
 
+  defp require_standing(capabilities) do
+    Enum.reduce_while(capabilities, :ok, fn
+      %Capability{} = capability, :ok ->
+        case validate_standing_binding(capability) do
+          :ok -> {:cont, :ok}
+          {:error, _} = error -> {:halt, error}
+        end
+    end)
+  end
+
+  defp validate_standing_binding(%Capability{standing_binding: nil} = capability),
+    do: {:error, {:technical_standing_required, capability.id}}
+
+  defp validate_standing_binding(
+         %Capability{standing_binding: %StandingBinding{} = standing} = capability
+       ) do
+    with true <-
+           standing.capability_id == capability.id ||
+             {:error, {:standing_capability_id_mismatch, capability.id}},
+         true <-
+           standing.capability_digest == capability.digest ||
+             {:error, {:standing_capability_digest_mismatch, capability.id}},
+         true <-
+           standing.subject_revision == capability.subject_revision ||
+             {:error, {:standing_subject_revision_mismatch, capability.id}},
+         true <-
+           capability.release_digest == standing.portable_identity ||
+             {:error, {:standing_release_identity_mismatch, capability.id}},
+         :ok <- StandingBinding.verify(standing) do
+      :ok
+    end
+  end
+
   defp require_unique_ids(capabilities) do
     ids = Enum.map(capabilities, & &1.id)
 
@@ -315,13 +448,18 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   defp closure_projection(%Capability{} = capability) do
-    {
+    legacy = {
       capability.id,
       capability.version,
       capability.digest,
       capability.admission_digest,
       capability.release_digest
     }
+
+    case capability.standing_binding do
+      nil -> legacy
+      %StandingBinding{} = standing -> {legacy, standing.portable_identity}
+    end
   end
 
   @doc """
@@ -334,27 +472,54 @@ defmodule AshA2A.CapabilityRelease do
   """
   @spec portable_digest([Capability.t()]) :: String.t()
   def portable_digest(capabilities) when is_list(capabilities) do
+    standing? = Enum.any?(capabilities, &match?(%StandingBinding{}, &1.standing_binding))
+
     members =
       capabilities
       |> Enum.sort_by(&{&1.id, &1.version, &1.digest})
-      |> Enum.map(fn capability ->
-        %{
-          "capability_id" => capability.id,
-          "version" => capability.version,
-          "capability_digest" => capability.digest,
-          "admission_digest" => capability.admission_digest,
-          "release_digest" => capability.release_digest
-        }
-      end)
+      |> Enum.map(&portable_member(&1, standing?))
 
     payload = %{
-      "schema" => "chatman.release-closure/v1",
+      "schema" => if(standing?, do: "chatman.release-closure/v2", else: "chatman.release-closure/v1"),
       "members" => members
     }
 
     "sha256:" <>
       (:crypto.hash(:sha256, Jcs.encode(payload))
        |> Base.encode16(case: :lower))
+  end
+
+  defp portable_member(capability, false) do
+    %{
+      "capability_id" => capability.id,
+      "version" => capability.version,
+      "capability_digest" => capability.digest,
+      "admission_digest" => capability.admission_digest,
+      "release_digest" => capability.release_digest
+    }
+  end
+
+  defp portable_member(
+         %Capability{standing_binding: %StandingBinding{} = standing} = capability,
+         true
+       ) do
+    portable_member(capability, false)
+    |> Map.put("technical_standing", %{
+      "binding_identity" => standing.portable_identity,
+      "subject_revision" => standing.subject_revision,
+      "court" => standing.court,
+      "technical_standing" => standing.technical_standing,
+      "required_standing" => standing.required_standing,
+      "receipt_digest" => standing.receipt_digest,
+      "receipt_source" => standing.receipt_source,
+      "external_standing" => standing.external_standing,
+      "runtime_authority" => standing.runtime_authority
+    })
+  end
+
+  defp portable_member(%Capability{} = capability, true) do
+    portable_member(capability, false)
+    |> Map.put("technical_standing", nil)
   end
 
   defp digest_term(term) do
