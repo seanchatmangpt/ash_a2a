@@ -184,10 +184,18 @@ defmodule AshA2A.CapabilityRelease do
   capability id may occur only once. The digest is stable under input ordering.
   """
   @spec freeze([Capability.t()]) :: {:ok, Closure.t()} | {:error, term()}
-  def freeze(capabilities) when is_list(capabilities) do
+  def freeze(capabilities), do: freeze(capabilities, [])
+
+  @doc """
+  Freeze only after every released member's exact durable standing evidence
+  replays and re-admits at the closure boundary. Structural digest-shaped data
+  is insufficient to manufacture an executable fleet closure.
+  """
+  @spec freeze([Capability.t()], keyword()) :: {:ok, Closure.t()} | {:error, term()}
+  def freeze(capabilities, opts) when is_list(capabilities) and is_list(opts) do
     with :ok <- require_released(capabilities),
-         :ok <- require_standing_bound(capabilities),
-         :ok <- require_unique_ids(capabilities) do
+         :ok <- require_unique_ids(capabilities),
+         :ok <- require_standing_bound(capabilities, opts) do
       ordered = Enum.sort_by(capabilities, &{&1.id, &1.version, &1.digest})
       digest = digest_term(Enum.map(ordered, &closure_projection/1))
       portable_digest = portable_digest(ordered)
@@ -367,14 +375,27 @@ defmodule AshA2A.CapabilityRelease do
     end
   end
 
-  defp require_standing_bound(capabilities) do
+  defp require_standing_bound(capabilities, opts) do
     Enum.reduce_while(capabilities, :ok, fn
-      %Capability{id: id, digest: digest, subject_revision: subject,
-                  standing_binding: %StandingBinding{} = binding}, :ok ->
+      %Capability{
+        id: id,
+        digest: digest,
+        release_digest: release_digest,
+        subject_revision: subject,
+        standing_binding: %StandingBinding{} = binding
+      },
+      :ok ->
         with true <- binding.capability_id == id || {:error, {:standing_capability_id_mismatch, id}},
-             true <- binding.capability_digest == digest || {:error, {:standing_capability_digest_mismatch, id}},
-             true <- binding.subject_revision == subject || {:error, {:standing_subject_revision_mismatch, id}},
-             :ok <- StandingBinding.verify(binding) do
+             true <-
+               binding.capability_digest == digest ||
+                 {:error, {:standing_capability_digest_mismatch, id}},
+             true <-
+               binding.subject_revision == subject ||
+                 {:error, {:standing_subject_revision_mismatch, id}},
+             true <-
+               release_digest == binding.portable_identity ||
+                 {:error, {:standing_release_digest_mismatch, id}},
+             :ok <- StandingBinding.verify_durable(binding, opts) do
           {:cont, :ok}
         else
           {:error, reason} -> {:halt, {:error, reason}}
