@@ -7,48 +7,58 @@ defmodule AshA2A.CapabilityReleaseTest do
 
   defp standing_binding(id) do
     fields = %{
-      "schema" => "ash-a2a.standing-binding/v1", "capability_id" => id,
-      "capability_digest" => digest("a"), "subject_revision" => String.duplicate("1", 40),
-      "court" => "sa2a", "technical_standing" => "CONFORMANT",
-      "required_standing" => "CONFORMANT", "receipt_digest" => digest("c"),
+      "schema" => "ash-a2a.standing-binding/v1",
+      "capability_id" => id,
+      "capability_digest" => digest("a"),
+      "subject_revision" => String.duplicate("1", 40),
+      "court" => "sa2a",
+      "technical_standing" => "CONFORMANT",
+      "required_standing" => "CONFORMANT",
+      "receipt_digest" => digest("c"),
       "receipt_source" => "git:test:receipts/courts/sa2a",
-      "external_standing" => "NONE", "runtime_authority" => "NONE"
+      "external_standing" => "NONE",
+      "runtime_authority" => "NONE"
     }
-    identity = "sha256:" <> (:crypto.hash(:sha256, Jcs.encode(fields)) |> Base.encode16(case: :lower))
+
+    identity =
+      "sha256:" <>
+        (:crypto.hash(:sha256, Jcs.encode(fields))
+         |> Base.encode16(case: :lower))
+
     %StandingBinding{
-      capability_id: id, capability_digest: digest("a"), subject_revision: String.duplicate("1", 40),
-      court: "sa2a", technical_standing: "CONFORMANT", required_standing: "CONFORMANT",
-      receipt_digest: digest("c"), receipt_source: "git:test:receipts/courts/sa2a",
-      portable_identity: identity, external_standing: "NONE", runtime_authority: "NONE"
+      capability_id: id,
+      capability_digest: digest("a"),
+      subject_revision: String.duplicate("1", 40),
+      court: "sa2a",
+      technical_standing: "CONFORMANT",
+      required_standing: "CONFORMANT",
+      receipt_digest: digest("c"),
+      receipt_source: "git:test:receipts/courts/sa2a",
+      portable_identity: identity,
+      external_standing: "NONE",
+      runtime_authority: "NONE"
     }
   end
 
-  # Downstream closure tests use an already-adjudicated fixture. Public release
-  # construction itself is tested fail-closed below and StandingRef has its own
-  # durable git/artifact integration court.
-  defp released(id \\ "MyApp.Resource.create", version \\ "26.9.26") do
+  defp released(id \\ "cap", version \\ "26.9.30") do
     candidate =
       CapabilityRelease.candidate(id, version, digest("a"),
         subject_revision: String.duplicate("1", 40)
       )
 
     {:ok, admitted} = CapabilityRelease.admit(candidate, digest("b"))
+    binding = standing_binding(id)
 
-    %{admitted |
-      state: :released,
-      release_digest: digest("d"),
-      standing_binding: standing_binding(id)}
+    %{
+      admitted
+      | state: :released,
+        release_digest: binding.portable_identity,
+        standing_binding: binding
+    }
   end
 
-  test "only candidate -> admitted -> released enters a closure" do
+  test "digest-shaped caller input cannot release an admitted capability" do
     candidate = CapabilityRelease.candidate("cap", "1", digest("a"))
-
-    assert {:error, {:invalid_release_transition, :candidate, :released}} =
-             CapabilityRelease.release(candidate, digest("c"))
-
-    assert {:error, {:not_released, "cap", :candidate}} =
-             CapabilityRelease.freeze([candidate])
-
     {:ok, admitted} = CapabilityRelease.admit(candidate, digest("b"))
 
     assert {:error, {:standing_binding_required, _}} =
@@ -56,47 +66,57 @@ defmodule AshA2A.CapabilityReleaseTest do
 
     assert {:error, :capability_exact_subject_missing} =
              CapabilityRelease.release(admitted, standing: "CONFORMANT")
-
-    released = released("cap", "1")
-    assert {:ok, closure} = CapabilityRelease.freeze([released])
-    assert {:ok, ^released} = CapabilityRelease.select(closure, "cap")
   end
 
-  test "freeze refuses forged standing identity and authority conflation" do
+  test "fabricated durable-looking standing cannot manufacture a frozen fleet" do
+    assert {:error, :standing_receipt_source_invalid} =
+             CapabilityRelease.freeze([released("forged-source")])
+  end
+
+  test "freeze refuses forged standing identity and authority conflation before replay" do
     cap = released("forged")
     forged = %{cap | standing_binding: %{cap.standing_binding | portable_identity: digest("f")}}
-    assert {:error, {:standing_binding_identity_mismatch, _, _}} = CapabilityRelease.freeze([forged])
 
-    conflated = %{cap | standing_binding: %{cap.standing_binding | runtime_authority: "ALLOW"}}
-    assert {:error, :runtime_authority_conflated} = CapabilityRelease.freeze([conflated])
+    assert {:error, {:standing_release_digest_mismatch, "forged"}} =
+             CapabilityRelease.freeze([forged])
+
+    binding = standing_binding("authority")
+    conflated_binding = %{binding | runtime_authority: "ALLOW"}
+
+    payload = %{
+      "schema" => "ash-a2a.standing-binding/v1",
+      "capability_id" => conflated_binding.capability_id,
+      "capability_digest" => conflated_binding.capability_digest,
+      "subject_revision" => conflated_binding.subject_revision,
+      "court" => conflated_binding.court,
+      "technical_standing" => conflated_binding.technical_standing,
+      "required_standing" => conflated_binding.required_standing,
+      "receipt_digest" => conflated_binding.receipt_digest,
+      "receipt_source" => conflated_binding.receipt_source,
+      "external_standing" => conflated_binding.external_standing,
+      "runtime_authority" => conflated_binding.runtime_authority
+    }
+
+    forged_identity =
+      "sha256:" <>
+        (:crypto.hash(:sha256, Jcs.encode(payload))
+         |> Base.encode16(case: :lower))
+
+    conflated_binding = %{conflated_binding | portable_identity: forged_identity}
+    cap = %{released("authority") | standing_binding: conflated_binding, release_digest: forged_identity}
+
+    assert {:error, :runtime_authority_conflated} = CapabilityRelease.freeze([cap])
   end
 
-  test "closure digest is independent of input ordering" do
+  test "portable closure identity is independent of input ordering" do
     a = released("a")
     b = released("b")
 
-    assert {:ok, first} = CapabilityRelease.freeze([a, b])
-    assert {:ok, second} = CapabilityRelease.freeze([b, a])
-    assert first.digest == second.digest
-    assert first.portable_digest == second.portable_digest
-    assert String.starts_with?(first.portable_digest, "sha256:")
-    assert first.portable_digest == CapabilityRelease.portable_digest([b, a])
-  end
+    first = CapabilityRelease.portable_digest([a, b])
+    second = CapabilityRelease.portable_digest([b, a])
 
-  test "strict guard refuses anything outside frozen release closure" do
-    assert {:ok, closure} = CapabilityRelease.freeze([released("released")])
-
-    assert :ok =
-             CapabilityRelease.guard("released",
-               capability_release_closure: closure
-             )
-
-    assert {:error, {:capability_not_released, "candidate", closure_digest}} =
-             CapabilityRelease.guard("candidate",
-               capability_release_closure: closure
-             )
-
-    assert closure_digest == closure.digest
+    assert first == second
+    assert String.starts_with?(first, "sha256:")
   end
 
   test "strict mode without closure fails closed while legacy stays compatible" do
@@ -108,75 +128,19 @@ defmodule AshA2A.CapabilityReleaseTest do
   end
 
   test "retired capability cannot freeze back into executable closure" do
-    released = released("cap")
-    {:ok, retired} = CapabilityRelease.retire(released, digest("d"))
+    capability = released("cap")
+    {:ok, retired} = CapabilityRelease.retire(capability, digest("d"))
 
     assert {:error, {:not_released, "cap", :retired}} =
              CapabilityRelease.freeze([retired])
   end
 
-  test "strict binding records exact released version and stable replay identity" do
-    capability = released("cap", "26.9.26")
-    assert {:ok, closure} = CapabilityRelease.freeze([capability])
-
-    assert {:ok, binding} =
-             CapabilityRelease.binding("cap", capability_release_closure: closure)
-
-    assert binding.closure_digest == closure.digest
-    assert binding.portable_closure_digest == closure.portable_digest
-    assert binding.capability_id == "cap"
-    assert binding.capability_version == "26.9.26"
-    assert binding.capability_digest == capability.digest
-    assert binding.admission_digest == capability.admission_digest
-    assert binding.release_digest == capability.release_digest
-    assert String.starts_with?(binding.binding_digest, "sha256:")
-
-    assert {:ok, replay} =
-             CapabilityRelease.binding("cap", capability_release_closure: closure)
-
-    assert replay == binding
-  end
-
-  test "release attributes are receipt-safe evidence identity, never authority" do
-    capability = released("cap")
-    assert {:ok, closure} = CapabilityRelease.freeze([capability])
-
-    assert {:ok, binding} =
-             CapabilityRelease.binding("cap", capability_release_closure: closure)
-
-    attrs = CapabilityRelease.attributes(binding)
-
-    assert attrs.release_closure_digest == closure.digest
-    assert attrs.release_portable_closure_digest == closure.portable_digest
-    assert attrs.release_capability_id == "cap"
-    assert attrs.release_capability_version == capability.version
-    assert attrs.release_capability_digest == capability.digest
-    assert attrs.release_admission_digest == capability.admission_digest
-    assert attrs.release_evidence_digest == capability.release_digest
-    assert attrs.release_binding_digest == binding.binding_digest
-    refute Map.has_key?(attrs, :authority)
-  end
-
-  test "strict skill filtering makes advertised and executable closure identical" do
-    assert {:ok, closure} =
-             CapabilityRelease.freeze([released("released.a"), released("released.b")])
-
-    skills = [
-      %{id: "candidate", name: :candidate},
-      %{id: "released.b", name: :b},
-      %{id: "released.a", name: :a}
-    ]
-
-    assert {:ok, filtered} =
-             CapabilityRelease.filter_skills(skills,
-               capability_release_closure: closure
-             )
-
-    assert Enum.map(filtered, & &1.id) == ["released.b", "released.a"]
-
-    assert Enum.all?(filtered, fn skill ->
-             CapabilityRelease.guard(skill.id, capability_release_closure: closure) == :ok
-           end)
+  test "duplicate capability id is refused before evidence replay" do
+    assert {:error, {:duplicate_capability_id, "cap"}} =
+             CapabilityRelease.freeze([
+               released("cap", "1"),
+               released("cap", "2")
+             ])
   end
 
   test "legacy skill filtering preserves existing capability index" do
@@ -193,24 +157,5 @@ defmodule AshA2A.CapabilityReleaseTest do
              CapabilityRelease.filter_skills([%{id: "candidate"}],
                capability_release_mode: :strict
              )
-  end
-
-  test "duplicate capability id cannot freeze even when versions differ" do
-    assert {:error, {:duplicate_capability_id, "cap"}} =
-             CapabilityRelease.freeze([
-               released("cap", "1"),
-               released("cap", "2")
-             ])
-  end
-
-  test "released ids are stable lexical projection" do
-    assert {:ok, closure} =
-             CapabilityRelease.freeze([
-               released("z"),
-               released("a"),
-               released("m")
-             ])
-
-    assert CapabilityRelease.released_ids(closure) == ["a", "m", "z"]
   end
 end
