@@ -13,7 +13,7 @@ once it reaches 1.0.
 - Standing-closed capability release: `CapabilityRelease.release_from_standing/2`
   resolves durable exact-subject Chicago evidence through `StandingRef`,
   `freeze_standing/1` freezes only standing-bound members, and the additive
-  `:standing_strict` runtime mode refuses digest-only closures without
+  `:standing_strict` runtime mode recomputes the standing binding and refuses\n  digest-only, downgraded, or inconsistent closures without
   changing existing `:strict` behavior. Standing-bound portable closures use
   `chatman.release-closure/v2`; technical standing remains evidence, never
   external standing or runtime authority.
