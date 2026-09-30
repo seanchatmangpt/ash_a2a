@@ -1,0 +1,10 @@
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "graphlaw_standing_release",
+  "subject": "seanchatmangpt/graphlaw@55164d4fe1cdb2e073a98fddd287cc07216663fa",
+  "capability": "standing_closed_release",
+  "falsifier": "execution against a subject lacking exact admitted standing must refuse",
+  "expected": "REFUSED",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}
