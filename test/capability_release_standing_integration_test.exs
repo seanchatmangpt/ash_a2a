@@ -34,6 +34,45 @@ defmodule AshA2A.CapabilityReleaseStandingIntegrationTest do
              CapabilityRelease.release(stale, repo: repo, standing: "CONFORMANT")
   end
 
+
+  test "mutated artifact receipt is refused at strict runtime replay", %{tmp_dir: dir} do
+    repo = init_repo!(Path.join(dir, "artifact-case"))
+    sha = commit!(repo, "app.txt", "v1")
+    receipt = receipt!(repo)
+    artifacts = Path.join(dir, "artifacts")
+    artifact_dir = Path.join(artifacts, "sa2a-conformance-" <> sha)
+    receipt_path = Path.join([artifact_dir, AshA2A.StandingRef.standing_file("sa2a")])
+    File.mkdir_p!(Path.dirname(receipt_path))
+    File.write!(receipt_path, JSON.encode!(receipt))
+
+    candidate =
+      CapabilityRelease.candidate("artifact.cap", "26.9.30", digest("d"),
+        subject_revision: sha
+      )
+
+    {:ok, admitted} = CapabilityRelease.admit(candidate, digest("e"))
+
+    assert {:ok, released} =
+             CapabilityRelease.release(admitted,
+               repo: repo,
+               artifacts_dir: artifacts,
+               standing: "CONFORMANT"
+             )
+
+    assert String.starts_with?(released.standing_binding.receipt_source, "artifact:")
+    assert {:ok, closure} = CapabilityRelease.freeze([released])
+
+    mutated = Map.put(receipt, "claim", "mutated after release")
+    File.write!(receipt_path, JSON.encode!(mutated))
+
+    assert {:error, _reason} =
+             CapabilityRelease.binding("artifact.cap",
+               capability_release_closure: closure,
+               repo: repo,
+               artifacts_dir: artifacts
+             )
+  end
+
   defp init_repo!(dir) do
     repo = Path.join(dir, "subject"); File.mkdir_p!(repo)
     git!(repo, ["init", "-q", "-b", "main"])
