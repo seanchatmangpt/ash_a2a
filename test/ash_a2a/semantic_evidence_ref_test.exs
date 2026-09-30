@@ -50,8 +50,15 @@ defmodule AshA2A.Semantic.EvidenceRefTest do
       }
       |> deep_merge(overrides)
 
-    {:ok, digest} = Canonical.digest(body)
-    Map.put(body, "envelopeDigest", digest)
+    Map.put(body, "envelopeDigest", producer_digest(body))
+  end
+
+  defp producer_digest(body) do
+    {:ok, canonical} = Canonical.encode(body)
+
+    "sha256:" <>
+      (:crypto.hash(:sha256, ["ashr2rml.vkg.canonical.v1\n", canonical])
+       |> Base.encode16(case: :lower))
   end
 
   defp deep_merge(left, right) when is_map(left) and is_map(right) do
