@@ -220,7 +220,6 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
     assert b.semantic_evidence["authority"] == "NONE"
   end
 
-
   test "v26.9.29 FIBO profile is backed by the canonical Chicago agent courts" do
     profile =
       "priv/sa2a/fibo_v26_9_29_chicago_profile.json"
