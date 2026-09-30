@@ -1,15 +1,41 @@
 defmodule AshA2A.CapabilityReleaseTest do
   use ExUnit.Case, async: true
 
-  alias AshA2A.CapabilityRelease
+  alias AshA2A.{CapabilityRelease, StandingBinding}
 
   defp digest(char), do: "sha256:" <> String.duplicate(char, 64)
 
+  defp standing_binding(id) do
+    %StandingBinding{
+      capability_id: id,
+      capability_digest: digest("a"),
+      subject_revision: String.duplicate("1", 40),
+      court: "sa2a",
+      technical_standing: "CONFORMANT",
+      required_standing: "CONFORMANT",
+      receipt_digest: digest("c"),
+      receipt_source: "git:test:receipts/courts/sa2a",
+      portable_identity: digest("d"),
+      external_standing: "NONE",
+      runtime_authority: "NONE"
+    }
+  end
+
+  # Downstream closure tests use an already-adjudicated fixture. Public release
+  # construction itself is tested fail-closed below and StandingRef has its own
+  # durable git/artifact integration court.
   defp released(id \\ "MyApp.Resource.create", version \\ "26.9.26") do
-    candidate = CapabilityRelease.candidate(id, version, digest("a"))
+    candidate =
+      CapabilityRelease.candidate(id, version, digest("a"),
+        subject_revision: String.duplicate("1", 40)
+      )
+
     {:ok, admitted} = CapabilityRelease.admit(candidate, digest("b"))
-    {:ok, released} = CapabilityRelease.release(admitted, digest("c"))
-    released
+
+    %{admitted |
+      state: :released,
+      release_digest: digest("d"),
+      standing_binding: standing_binding(id)}
   end
 
   test "only candidate -> admitted -> released enters a closure" do
@@ -22,7 +48,14 @@ defmodule AshA2A.CapabilityReleaseTest do
              CapabilityRelease.freeze([candidate])
 
     {:ok, admitted} = CapabilityRelease.admit(candidate, digest("b"))
-    {:ok, released} = CapabilityRelease.release(admitted, digest("c"))
+
+    assert {:error, {:standing_binding_required, _}} =
+             CapabilityRelease.release(admitted, digest("c"))
+
+    assert {:error, :capability_exact_subject_missing} =
+             CapabilityRelease.release(admitted, standing: "CONFORMANT")
+
+    released = released("cap", "1")
     assert {:ok, closure} = CapabilityRelease.freeze([released])
     assert {:ok, ^released} = CapabilityRelease.select(closure, "cap")
   end
