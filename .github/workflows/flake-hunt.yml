@@ -70,7 +70,7 @@ jobs:
           mix test.all --seed "$SEED" --max-cases 64 --slowest 20 2>&1 | tee "test-seed-$SEED.log"
       - name: Preserve failing seed
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: flake-seed-${{ matrix.seed }}-${{ github.sha }}
           path: test-seed-*.log
@@ -118,7 +118,7 @@ jobs:
             test/ash_a2a/receipt_store/actuation_claim_lease_test.exs 2>&1 | tee repeat.log
       - name: Preserve repeat log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: flake-repeat-${{ github.sha }}
           path: repeat.log
