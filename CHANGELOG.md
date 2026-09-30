@@ -10,6 +10,13 @@ once it reaches 1.0.
 
 ### Added
 
+- Standing-closed capability release: `CapabilityRelease.release_from_standing/2`
+  resolves durable exact-subject Chicago evidence through `StandingRef`,
+  `freeze_standing/1` freezes only standing-bound members, and the additive
+  `:standing_strict` runtime mode refuses digest-only closures without
+  changing existing `:strict` behavior. Standing-bound portable closures use
+  `chatman.release-closure/v2`; technical standing remains evidence, never
+  external standing or runtime authority.
 - `AshA2A.SpgIdentity` module (d660a9e) — SPG evidence identity for commands:
   `graph_id`/`graph_version`/`node_id` required, `edge_id`/`projection_family`
   optional; evidence only, grants neither capability nor authority;
@@ -47,6 +54,11 @@ once it reaches 1.0.
 
 ### Changed
 
+- `AshA2A.Semantic.EvidenceRef` now directly admits the v26.9.29 AshR2RML
+  exact-source evidence envelope (nested source identity, RDFC-1.0,
+  provenance, replay identity and recomputed JCS envelope digest) while
+  retaining the historical flat evidence-reference shape. The FIBO Chicago
+  path now exercises this exact producer/consumer contract.
 - `AshA2A.Command` carries an optional `:spg_identity` (`AshA2A.SpgIdentity`);
   its token joins the deterministic fingerprint digest, and receipts,
   `SemanticProjection` output, and OCEL events forward the five `spg_*`
