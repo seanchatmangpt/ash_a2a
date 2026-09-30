@@ -15,19 +15,19 @@ WHERE {
          dfcm:owner ?owner ;
          dfcm:authority ?authority ;
          dfcm:consequence ?consequence ;
-         dfcm:falsifier ?falsifier .
-  OPTIONAL { ?donor dfcm:standingSource ?standing_source . }
-  OPTIONAL { ?donor dfcm:technicalStanding ?technical_standing . }
-  OPTIONAL { ?donor dfcm:externalStanding ?external_standing . }
-  OPTIONAL { ?donor dfcm:runtimeAuthority ?runtime_authority . }
-  OPTIONAL { ?donor dfcm:requiresExactSubject ?requires_exact_subject . }
-  OPTIONAL { ?donor dfcm:requiresReleaseBinding ?requires_release_binding . }
-  OPTIONAL { ?donor dfcm:requiresFrozenClosure ?requires_frozen_closure . }
-  OPTIONAL { ?donor dfcm:requiresReceiptReplayBinding ?requires_receipt_replay_binding . }
+         dfcm:falsifier ?falsifier ;
+         dfcm:standingSource ?standing_source ;
+         dfcm:technicalStanding ?technical_standing ;
+         dfcm:externalStanding ?external_standing ;
+         dfcm:runtimeAuthority ?runtime_authority ;
+         dfcm:requiresExactSubject ?requires_exact_subject ;
+         dfcm:requiresReleaseBinding ?requires_release_binding ;
+         dfcm:requiresFrozenClosure ?requires_frozen_closure ;
+         dfcm:requiresReceiptReplayBinding ?requires_receipt_replay_binding .
   OPTIONAL { ?donor dfcm:reuse ?reuse . }
   OPTIONAL { ?donor dfcm:negativeKnowledge ?negative . }
+  FILTER (?id = "graphlaw_standing_release")
 }
 GROUP BY ?id ?module_name ?repository ?sha ?subject ?capability ?owner ?authority ?consequence ?falsifier
          ?standing_source ?technical_standing ?external_standing ?runtime_authority
          ?requires_exact_subject ?requires_release_binding ?requires_frozen_closure ?requires_receipt_replay_binding
-ORDER BY ?id

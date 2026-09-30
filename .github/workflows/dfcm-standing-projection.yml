@@ -1,0 +1,48 @@
+name: DfCM standing projection parity
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ggen-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - name: Regenerate exact standing donor projections with native ggen_igniter
+        run: |
+          set -euo pipefail
+          out_dir="tmp/dfcm-parity"
+          manifest_dir="$out_dir/manifest"
+          mkdir -p "$out_dir"
+          common="--engine sparql --ontology priv/ggen/ash_a2a/dfcm/ontology.ttl --query donor=priv/ggen/ash_a2a/dfcm/queries/standing_release_donor.rq --manifest-dir $manifest_dir"
+          mix ggen_igniter.sync $common             --template priv/ggen/ash_a2a/dfcm/templates/standing_release.json.eex             --out "$out_dir/standing-release.json"
+          mix ggen_igniter.sync $common             --template priv/ggen/ash_a2a/dfcm/templates/donor.ex.eex             --out "$out_dir/graphlaw_standing_release.ex"
+          mix ggen_igniter.sync $common             --template priv/ggen/ash_a2a/dfcm/templates/court.json.eex             --out "$out_dir/graphlaw_standing_release.json"
+      - name: Refuse projection drift
+        run: |
+          set -euo pipefail
+          cmp "$out_dir/graphlaw_standing_release.ex" lib/ash_a2a/dfcm/generated/graphlaw_standing_release.ex
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          pairs = [
+              (Path("tmp/dfcm-parity/standing-release.json"), Path("priv/dfcm/fleet/standing-release.json")),
+              (Path("tmp/dfcm-parity/graphlaw_standing_release.json"), Path("priv/dfcm/fleet/courts/graphlaw_standing_release.json")),
+          ]
+          for generated, committed in pairs:
+              if json.loads(generated.read_text()) != json.loads(committed.read_text()):
+                  raise SystemExit(f"REFUSED[GENERATED_DRIFT]:{committed}")
+          PY

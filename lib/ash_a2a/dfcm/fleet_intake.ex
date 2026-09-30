@@ -14,13 +14,18 @@ defmodule AshA2A.DfCM.FleetIntake do
   alias AshA2A.Semantic.Envelope
 
   @manifest_path Path.expand("../../../priv/dfcm/fleet/manifest.json", __DIR__)
+  @standing_manifest_path Path.expand("../../../priv/dfcm/fleet/standing-release.json", __DIR__)
   @external_resource @manifest_path
+  @external_resource @standing_manifest_path
   @manifest @manifest_path |> File.read!() |> Jason.decode!()
-  @donors Map.new(@manifest["donors"], fn donor -> {donor["id"], donor} end)
+  @standing_donor @standing_manifest_path |> File.read!() |> Jason.decode!()
+  @all_donors @manifest["donors"] ++ [@standing_donor]
+  @composed_manifest Map.put(@manifest, "donors", @all_donors)
+  @donors Map.new(@all_donors, fn donor -> {donor["id"], donor} end)
   @sha40 ~r/\A[0-9a-f]{40}\z/
 
   @spec manifest() :: map()
-  def manifest, do: @manifest
+  def manifest, do: @composed_manifest
 
   @spec ids() :: [String.t()]
   def ids, do: @donors |> Map.keys() |> Enum.sort()
@@ -79,7 +84,8 @@ defmodule AshA2A.DfCM.FleetIntake do
          "payloadDigest" => payload_digest,
          "authority" => "NONE",
          "consequence" => "EVIDENCE_ONLY",
-         "standing" => "CANDIDATE"
+         "standing" => "CANDIDATE",
+         "standingBinding" => standing_binding(donor)
        }}
     end
   end
@@ -89,16 +95,21 @@ defmodule AshA2A.DfCM.FleetIntake do
     with {:ok, donor} <- fetch(id),
          :ok <- validate_donor(donor),
          {:ok, donor_digest} <- Canonical.digest(donor),
-         :ok <- require(projection["schema"] == "ash-a2a.dfcm-fleet-projection.v1", :schema),
-         :ok <- require(projection["donor"] == id, :donor),
-         :ok <- require(projection["subject"] == donor["subject"], :subject),
-         :ok <- require(projection["capability"] == donor["capability"], :capability),
-         :ok <- require(projection["owner"] == donor["owner"], :owner),
-         :ok <- require(projection["donorDigest"] == donor_digest, :donor_digest),
+         :ok <- require_projection(projection["schema"] == "ash-a2a.dfcm-fleet-projection.v1", :schema),
+         :ok <- require_projection(projection["donor"] == id, :donor),
+         :ok <- require_projection(projection["subject"] == donor["subject"], :subject),
+         :ok <- require_projection(projection["capability"] == donor["capability"], :capability),
+         :ok <- require_projection(projection["owner"] == donor["owner"], :owner),
+         :ok <- require_projection(projection["donorDigest"] == donor_digest, :donor_digest),
          :ok <- require_projection(digest?(projection["payloadDigest"]), :payload_digest),
-         :ok <- require(projection["authority"] == "NONE", :authority),
-         :ok <- require(projection["consequence"] == "EVIDENCE_ONLY", :consequence),
-         :ok <- require(projection["standing"] == "CANDIDATE", :standing) do
+         :ok <- require_projection(projection["authority"] == "NONE", :authority),
+         :ok <- require_projection(projection["consequence"] == "EVIDENCE_ONLY", :consequence),
+         :ok <- require_projection(projection["standing"] == "CANDIDATE", :standing),
+         :ok <-
+           require(
+             projection["standingBinding"] == standing_binding(donor),
+             :standing_binding
+           ) do
       {:ok, projection}
     end
   end
@@ -119,14 +130,16 @@ defmodule AshA2A.DfCM.FleetIntake do
           "dfcm" => true,
           "repository" => donor["repository"],
           "sha" => donor["sha"],
-          "owner" => donor["owner"]
+          "owner" => donor["owner"],
+          "standing_binding" => standing_binding(donor)
         },
         consequence_class: "none",
         authority_requirement: "none",
         bounds: %{
           "authority" => "NONE",
           "consequence" => "EVIDENCE_ONLY",
-          "falsifier" => donor["falsifier"]
+          "falsifier" => donor["falsifier"],
+          "standing_binding" => standing_binding(donor)
         }
       })
     end
@@ -146,6 +159,23 @@ defmodule AshA2A.DfCM.FleetIntake do
 
       donor["subject"] != donor["repository"] <> "@" <> donor["sha"] ->
         refusal(:subject, donor["subject"])
+
+      standing_closed?(donor) and donor["technical_standing"] != "QUALIFIED" ->
+        refusal(:technical_standing, donor["technical_standing"])
+
+      standing_closed?(donor) and donor["external_standing"] != "UNSPECIFIED" ->
+        refusal(:external_standing, donor["external_standing"])
+
+      standing_closed?(donor) and donor["runtime_authority"] != "NONE" ->
+        refusal(:runtime_authority, donor["runtime_authority"])
+
+      standing_closed?(donor) and
+          Enum.any?(
+            ["requires_exact_subject", "requires_release_binding", "requires_frozen_closure",
+             "requires_receipt_replay_binding"],
+            &(donor[&1] != true)
+          ) ->
+        refusal(:standing_requirements, standing_binding(donor))
 
       donor["authority"] != "NONE" ->
         refusal(:authority, donor["authority"])
@@ -167,11 +197,28 @@ defmodule AshA2A.DfCM.FleetIntake do
     end
   end
 
+  defp standing_closed?(donor), do: is_binary(donor["standing_source"])
+
+  defp standing_binding(donor) do
+    %{
+      "source" => donor["standing_source"],
+      "technicalStanding" => donor["technical_standing"],
+      "externalStanding" => donor["external_standing"],
+      "runtimeAuthority" => donor["runtime_authority"],
+      "requiresExactSubject" => donor["requires_exact_subject"],
+      "requiresReleaseBinding" => donor["requires_release_binding"],
+      "requiresFrozenClosure" => donor["requires_frozen_closure"],
+      "requiresReceiptReplayBinding" => donor["requires_receipt_replay_binding"]
+    }
+  end
+
   defp digest?(value),
     do: is_binary(value) and Regex.match?(~r/\Asha256:[0-9a-f]{64}\z/, value)
 
   defp require_projection(true, _field), do: :ok
-  defp require_projection(false, field), do: {:error, %{code: :refused_dfcm_projection, field: field}}
+
+  defp require_projection(false, field),
+    do: {:error, %{code: :refused_dfcm_projection, field: field}}
 
   defp refusal(field, observed),
     do: {:error, %{code: :invalid_dfcm_donor, field: field, observed: observed}}

@@ -13,6 +13,20 @@ defmodule AshA2A.StandingBinding do
     :technical_standing, :required_standing, :receipt_digest, :receipt_source,
     :portable_identity, external_standing: "NONE", runtime_authority: "NONE"]
 
+  @type t :: %__MODULE__{
+          capability_id: String.t(),
+          capability_digest: String.t(),
+          subject_revision: String.t(),
+          court: String.t(),
+          technical_standing: String.t(),
+          required_standing: String.t(),
+          receipt_digest: String.t(),
+          receipt_source: String.t(),
+          portable_identity: String.t(),
+          external_standing: String.t(),
+          runtime_authority: String.t()
+        }
+
   @sha ~r/\A[0-9a-f]{40}\z/
   @levels %{"REFUSED" => 0, "UNKNOWN" => 1, "BUILD_BROKEN" => 1,
     "NONCONFORMANT" => 1, "PARTIAL_ALIVE" => 2, "CONFORMANT" => 3}
