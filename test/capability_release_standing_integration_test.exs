@@ -22,8 +22,24 @@ defmodule AshA2A.CapabilityReleaseStandingIntegrationTest do
     assert released.standing_binding.technical_standing == "CONFORMANT"
     assert released.standing_binding.external_standing == "NONE"
     assert released.standing_binding.runtime_authority == "NONE"
-    assert {:ok, closure} = CapabilityRelease.freeze([released])
-    assert {:ok, binding} = CapabilityRelease.binding("standing.cap", capability_release_closure: closure, repo: repo)
+    assert released.release_digest == released.standing_binding.portable_identity
+    assert {:ok, closure} = CapabilityRelease.freeze([released], repo: repo)
+    assert {:ok, ^released} = CapabilityRelease.select(closure, "standing.cap")
+    assert CapabilityRelease.released_ids(closure) == ["standing.cap"]
+    assert :ok = CapabilityRelease.guard("standing.cap", capability_release_closure: closure, repo: repo)
+    assert {:ok, binding} =
+             CapabilityRelease.binding("standing.cap",
+               capability_release_closure: closure,
+               repo: repo
+             )
+
+    assert {:ok, [%{id: "standing.cap"}]} =
+             CapabilityRelease.filter_skills(
+               [%{id: "candidate"}, %{id: "standing.cap"}],
+               capability_release_closure: closure,
+               repo: repo
+             )
+
     attrs = CapabilityRelease.attributes(binding)
     assert attrs.standing_subject_revision == sha
     assert attrs.external_standing == "NONE"
@@ -60,7 +76,8 @@ defmodule AshA2A.CapabilityReleaseStandingIntegrationTest do
              )
 
     assert String.starts_with?(released.standing_binding.receipt_source, "artifact:")
-    assert {:ok, closure} = CapabilityRelease.freeze([released])
+    assert {:ok, closure} =
+             CapabilityRelease.freeze([released], repo: repo, artifacts_dir: artifacts)
 
     mutated = Map.put(receipt, "claim", "mutated after release")
     File.write!(receipt_path, JSON.encode!(mutated))
