@@ -16,7 +16,7 @@ defmodule AshA2A.DfCM.FleetIntake do
   @manifest_path Path.expand("../../../priv/dfcm/fleet/manifest.json", __DIR__)
   @external_resource @manifest_path
   @manifest @manifest_path |> File.read!() |> Jason.decode!()
-  @donors Map.new(@manifest["donors"], &{&1["id"], &1})
+  @donors Map.new(@manifest["donors"], fn donor -> {donor["id"], donor} end)
   @sha40 ~r/\A[0-9a-f]{40}\z/
 
   @spec manifest() :: map()
@@ -167,7 +167,8 @@ defmodule AshA2A.DfCM.FleetIntake do
     end
   end
 
-  defp digest?(value), do: is_binary(value) and Regex.match?(~r/\Asha256:[0-9a-f]{64}\z/, value)
+  defp digest?(value),
+    do: is_binary(value) and Regex.match?(~r/\Asha256:[0-9a-f]{64}\z/, value)
 
   defp require(true, _field), do: :ok
   defp require(false, field), do: {:error, %{code: :refused_dfcm_projection, field: field}}
