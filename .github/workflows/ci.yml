@@ -148,21 +148,27 @@ jobs:
       - name: Serial solo lane
         if: ${{ matrix.name == 'solo' }}
         run: mix test.serial.solo --cover --export-coverage solo
-      - name: Serial shard ${{ matrix.dbs }} of 3
+      - name: Serial shard (${{ matrix.name }})
         if: ${{ startsWith(matrix.name, 'shard-') }}
         env:
           MIX_TEST_PARTITION: ${{ matrix.dbs }}
         run: mix test.serial.shard --partitions 3 --cover --export-coverage ${{ matrix.name }}
+      # Uploaded even when a test failed: Mix exports coverage regardless, and
+      # the `test` job merges whatever exists so the merge path is exercised and
+      # a coverage number is reported on every run, not only fully-green ones.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
         with:
           name: coverdata-${{ matrix.name }}
           path: cover/*.coverdata
           retention-days: 1
-          if-no-files-found: error
+          if-no-files-found: warn
 
   # The required check `test`: green only if every lane succeeded AND the
   # merged coverage meets the mix.exs floor. One job instead of a separate
   # coverage job plus an aggregate -- each extra stage costs a queue wait.
+  # The merge runs whatever the lanes did (so it is exercised on every run);
+  # the lane verdict is asserted last and can still fail the job.
   test:
     needs: lane
     if: ${{ always() }}
@@ -171,12 +177,6 @@ jobs:
     env:
       MIX_ENV: test
     steps:
-      - name: Require every lane to have succeeded
-        env:
-          LANE: ${{ needs.lane.result }}
-        run: |
-          echo "lane=$LANE"
-          test "$LANE" = success
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -195,3 +195,10 @@ jobs:
           name: coverage-${{ github.event.pull_request.head.sha || github.sha }}
           path: cover/
           if-no-files-found: warn
+      - name: Require every lane to have succeeded
+        if: ${{ always() }}
+        env:
+          LANE: ${{ needs.lane.result }}
+        run: |
+          echo "lane=$LANE"
+          test "$LANE" = success
