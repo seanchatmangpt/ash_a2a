@@ -48,6 +48,29 @@ defmodule AshA2A.StandingBinding do
   end
   def resolve(_, _), do: {:error, :standing_binding_invalid_input}
 
+  @doc "Verify canonical standing-binding identity before composition."
+  def verify(%__MODULE__{} = b) do
+    with :ok <- durable(%{receipt_source: b.receipt_source}),
+         :ok <- standing_at_least(b.technical_standing, b.required_standing),
+         :ok <- subject_present(%{subject_revision: b.subject_revision}),
+         true <- b.external_standing == "NONE" || {:error, :external_standing_conflated},
+         true <- b.runtime_authority == "NONE" || {:error, :runtime_authority_conflated},
+         expected = portable_digest(payload(b)),
+         true <- expected == b.portable_identity || {:error, {:standing_binding_identity_mismatch, expected, b.portable_identity}} do
+      :ok
+    end
+  end
+  def verify(_), do: {:error, :standing_binding_invalid_input}
+
+  defp payload(b), do: %{
+    "schema" => "ash-a2a.standing-binding/v1", "capability_id" => b.capability_id,
+    "capability_digest" => b.capability_digest, "subject_revision" => b.subject_revision,
+    "court" => b.court, "technical_standing" => b.technical_standing,
+    "required_standing" => b.required_standing, "receipt_digest" => b.receipt_digest,
+    "receipt_source" => b.receipt_source, "external_standing" => b.external_standing,
+    "runtime_authority" => b.runtime_authority
+  }
+
   def attributes(%__MODULE__{} = b), do: %{
     standing_binding_identity: b.portable_identity,
     standing_subject_revision: b.subject_revision,
