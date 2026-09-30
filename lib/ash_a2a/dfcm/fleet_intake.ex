@@ -100,7 +100,11 @@ defmodule AshA2A.DfCM.FleetIntake do
          :ok <- require(projection["authority"] == "NONE", :authority),
          :ok <- require(projection["consequence"] == "EVIDENCE_ONLY", :consequence),
          :ok <- require(projection["standing"] == "CANDIDATE", :standing),
-         :ok <- require(projection["standingBinding"] == standing_binding(donor), :standing_binding) do
+         :ok <-
+           require(
+             projection["standingBinding"] == standing_binding(donor),
+             :standing_binding
+           ) do
       {:ok, projection}
     end
   end
