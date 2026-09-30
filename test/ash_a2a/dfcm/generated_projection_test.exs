@@ -5,6 +5,7 @@ defmodule AshA2A.DfCM.GeneratedProjectionTest do
 
   @modules [
     Generated.GraphLaw,
+    Generated.GraphLawStandingRelease,
     Generated.Affidavit,
     Generated.AshR2RML,
     Generated.GgenCreate,
@@ -21,7 +22,7 @@ defmodule AshA2A.DfCM.GeneratedProjectionTest do
   ]
 
   test "all generated donor modules resolve through the shared DfCM membrane" do
-    assert length(@modules) == 14
+    assert length(@modules) == 15
 
     for module <- @modules do
       id = module.donor_id()
