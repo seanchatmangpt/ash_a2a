@@ -15,7 +15,8 @@ defmodule AshA2A.C2.PolicyEvidence.PdpClient do
           {:ok, PolicyEvidence.t()} | {:error, atom()}
   def evidence(%AuthorityRequest{} = r, pdp, req_options \\ []) when is_binary(pdp) do
     with :ok <- https(pdp),
-         {:ok, metadata} <- request(:get, String.trim_trailing(pdp, "/") <> @metadata_path, nil, req_options),
+         {:ok, metadata} <-
+           request(:get, String.trim_trailing(pdp, "/") <> @metadata_path, nil, req_options),
          :ok <- PolicyEvidence.validate_metadata(metadata, pdp),
          {:ok, sarc} <- PolicyEvidence.sarc_request(r),
          {:ok, endpoint} <- endpoint(metadata),

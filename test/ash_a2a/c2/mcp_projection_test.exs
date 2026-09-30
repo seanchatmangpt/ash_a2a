@@ -13,6 +13,7 @@ defmodule AshA2A.C2.PolicyEvidence.McpProjectionTest do
 
   test "malformed calls are refused" do
     assert {:error, :mcp_tool_name_missing} = McpProjection.project("alice", %{})
+
     assert {:error, :mcp_arguments_malformed} =
              McpProjection.project("alice", %{"name" => "x", "arguments" => [1]})
   end

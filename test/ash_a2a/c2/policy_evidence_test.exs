@@ -109,6 +109,7 @@ defmodule AshA2A.C2.PolicyEvidenceAdmissionTest do
 
   test "allow without evidence is refused when evidence is required" do
     ctx = Map.put(@ctx, :policy_evidence_required, true)
+
     assert {:ok, %{decision: :refuse, reason: :policy_evidence_missing}} =
              AuthorityService.authorize(Policy, request(), ctx)
   end
