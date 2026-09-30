@@ -400,6 +400,7 @@ defmodule AshA2A.Semantic.Refusal do
     # itself is absent, the execution cannot be grounded -- provenance is
     # absent where it is required, not a judgement about the capability.
     capability_release_closure_missing: :refused_provenance,
+    technical_standing_required: :refused_provenance,
 
     # --- REFUSED_PROFILE --------------------------------------------------
     profile_invalid: :refused_profile,
