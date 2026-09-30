@@ -3,7 +3,7 @@ to: "priv/dfcm/fleet/standing-release.json"
 ---
 <%
 bool = fn value -> to_string(value) == "true" end
-split = fn value -> value |> to_string() |> String.split("||", trim: true) end
+split = fn value -> value |> to_string() |> String.split("||", trim: true) |> Enum.sort() end
 doc = %{
   "id" => @id,
   "module" => @module_name,
