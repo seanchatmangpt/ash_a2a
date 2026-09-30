@@ -236,7 +236,8 @@ defmodule AshA2A.CapabilityRelease do
         {:ok, nil}
 
       {:strict, %Closure{} = closure} ->
-        with {:ok, capability} <- select(closure, capability_id) do
+        with {:ok, capability} <- select(closure, capability_id),
+             :ok <- StandingBinding.verify_durable(capability.standing_binding, opts) do
           {:ok, build_binding(closure, capability)}
         end
 
@@ -268,8 +269,20 @@ defmodule AshA2A.CapabilityRelease do
         {:ok, skills}
 
       {:strict, %Closure{} = closure} ->
-        released = MapSet.new(released_ids(closure))
-        {:ok, Enum.filter(skills, &MapSet.member?(released, &1.id))}
+        Enum.reduce_while(skills, {:ok, []}, fn skill, {:ok, acc} ->
+          if Map.has_key?(closure.capabilities, skill.id) do
+            case binding(skill.id, opts) do
+              {:ok, %Binding{}} -> {:cont, {:ok, [skill | acc]}}
+              {:error, reason} -> {:halt, {:error, reason}}
+            end
+          else
+            {:cont, {:ok, acc}}
+          end
+        end)
+        |> case do
+          {:ok, admitted} -> {:ok, Enum.reverse(admitted)}
+          error -> error
+        end
 
       {:strict, nil} ->
         {:error, :capability_release_closure_missing}
