@@ -1,8 +1,8 @@
 {
   "qme_profile": "QME-1/EcosystemReference",
   "version": "26.9.29",
-  "canonical_spec_subject": "seanchatmangpt/chatman-ecosystem@32c47032a9cefd0ab4f0980efc32fa84505031b2",
-  "local_subject": "seanchatmangpt/ash_a2a@b812fe0b77693424654a460219a4322b55b2f026",
+  "canonical_spec_subject": "seanchatmangpt/chatman-ecosystem@88b276f71e2c8e606553942cb721bceb6836a87e",
+  "local_subject": "seanchatmangpt/ash_a2a@3db54bce26741c893226b8e2e5c9789a643952a4",
   "role": "PreparedEffect, receipt and replay consequence protocol",
   "normative": false,
   "weakens_core": false,
