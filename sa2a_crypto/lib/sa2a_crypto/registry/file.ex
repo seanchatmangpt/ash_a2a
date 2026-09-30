@@ -205,7 +205,7 @@ defmodule Sa2aCrypto.Registry.File do
     with {:ok, bin} <- Elixir.File.read(path),
          {:ok, %{"v" => @v, "epoch" => e, "keys" => keys} = doc}
          when is_integer(e) and e >= 0 and is_list(keys) and map_size(doc) == 3 <-
-           Jason.decode(bin) do
+           Sa2aCrypto.StrictJson.decode(bin, canonical: false) do
       {:ok, doc}
     else
       {:error, :enoent} -> {:error, :registry_missing}

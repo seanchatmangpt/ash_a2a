@@ -2,7 +2,7 @@
 
 `mix ash_a2a.verify_conformance --profile c0|c1|c2|c3` computes the RFC-SA2A-007
 section 4 conformance statement from executed probes. The statement is an output of
-the verifier, never hand-written. Version marker: v26.9.28.
+the verifier, never hand-written. Version marker: v26.9.29.
 
 ## Quick reference
 
@@ -31,7 +31,7 @@ boot preflight refuses to start. Without `--profile` the legacy RFC-SA2A-001 rep
 ## Claim grammar
 
 ```text
-SA2A v26.9.28 conforms to profile Cn at independence tier Ti, hosting scope S, on subject SHA H
+SA2A v<verifier-emitted version> conforms to profile Cn at independence tier Ti, hosting scope S, on subject SHA H
 ```
 
 Emitted only if every check of `C0..Cn` (cumulative) plus the claim-scope checks and,

@@ -85,7 +85,7 @@ defmodule Sa2aCrypto.Envelope do
   @doc "Decode wire JSON. `signature` stays base64url text until `signature_bytes/1`."
   @spec decode(binary()) :: {:ok, t()} | {:error, :malformed_envelope}
   def decode(json) when is_binary(json) do
-    with {:ok, m} when is_map(m) <- Jason.decode(json),
+    with {:ok, m} when is_map(m) <- Sa2aCrypto.StrictJson.decode(json),
          {:ok, e} <- from_map(m),
          {:ok, sig} <- b64(e.signature) do
       {:ok, %{e | signature: sig}}

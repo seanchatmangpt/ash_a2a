@@ -19,7 +19,7 @@ defmodule Actuator.Wire do
   @spec handle(GenServer.server(), (-> {:ok, Actuator.Context.t()} | {:error, atom()}), binary()) ::
           binary()
   def handle(store, ctx_fun, frame) when is_binary(frame) and byte_size(frame) <= @max_frame do
-    case Jason.decode(frame) do
+    case Actuator.StrictJson.decode(frame) do
       {:ok, %{"op" => "execute", "effect" => e, "certificate" => c}}
       when is_binary(e) and is_binary(c) ->
         execute(store, ctx_fun, e, c)

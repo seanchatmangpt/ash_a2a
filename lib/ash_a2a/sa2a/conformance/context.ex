@@ -24,7 +24,7 @@ defmodule AshA2A.SA2A.Conformance.Context do
   def build(%{} = opts) do
     defaults = %{
       root: File.cwd!(),
-      version: "v26.9.28",
+      version: "v26.9.29",
       tier: "I1",
       scope: "same-host-os-user",
       github: false,

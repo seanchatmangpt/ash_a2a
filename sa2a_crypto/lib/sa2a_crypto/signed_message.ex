@@ -129,7 +129,7 @@ defmodule Sa2aCrypto.SignedMessage do
 
     case bytes do
       <<^pre::binary-size(^n), json::binary>> ->
-        case Jason.decode(json) do
+        case Sa2aCrypto.StrictJson.decode(json) do
           {:ok, m} when is_map(m) -> {:ok, m}
           _ -> {:error, :malformed_message}
         end

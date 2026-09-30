@@ -38,7 +38,7 @@ defmodule Actuator.Certificate do
 
   @spec decode(binary()) :: {:ok, t()} | {:error, atom()}
   def decode(bytes) when is_binary(bytes) and byte_size(bytes) <= @max_bytes do
-    with {:ok, m} when is_map(m) <- Jason.decode(bytes),
+    with {:ok, m} when is_map(m) <- Actuator.StrictJson.decode(bytes),
          true <- Enum.sort(Map.keys(m)) == Enum.sort(@keys),
          true <- ints?(m),
          true <-

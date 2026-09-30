@@ -36,7 +36,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "issues a certificate only for the exact digest; verifies with the public key only", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     bytes = effect_bytes(e)
     req = request(e, two_approvals(ctx, digest(bytes)))
     assert {:ok, cert} = issue(ctx, req)
@@ -55,7 +55,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "digest that does not match the presented bytes is refused", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     good = digest(effect_bytes(e))
     forged = request(e, two_approvals(ctx, good), %{"effect_digest" => digest("something else")})
     assert {:refused, :digest_mismatch, _} = issue(ctx, forged)
@@ -63,7 +63,7 @@ defmodule AuthorityServiceTest do
 
   test "approvals signed over a different effect are not counted", ctx do
     other = digest(effect_bytes(effect(%{"amount" => 1})))
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     req = request(e, two_approvals(ctx, other))
     assert {:refused, :insufficient_approvals, detail} = issue(ctx, req)
     assert :approval_effect_mismatch in detail
@@ -81,7 +81,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "insufficient approvals are refused", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     req = request(e, [approval(signer_named(ctx, "alice"), d)])
     assert {:refused, :insufficient_approvals, []} = issue(ctx, req)
@@ -89,7 +89,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "a duplicate signer counts once", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     alice = signer_named(ctx, "alice")
     req = request(e, [approval(alice, d), approval(alice, d)])
@@ -100,7 +100,7 @@ defmodule AuthorityServiceTest do
     alice2 = signer("alice", :i3)
     base = start_issuer()
     ctx = start_issuer(%{approvers: [alice2 | base.approvers], dir: nil})
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     alice1 = Enum.find(base.approvers, &(&1.custodian == "alice"))
     req = request(e, [approval(alice1, d), approval(alice2, d)])
@@ -128,7 +128,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "a forged approval signature is not counted", ctx do
-    e = effect()
+    e = refund()
     d = digest(effect_bytes(e))
     a = approval(signer_named(ctx, "alice"), d)
     other = signer("alice")
@@ -139,7 +139,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "automated tier issues without approvals with the 900s automated TTL", ctx do
-    e = effect(%{"amount" => 5_000, "idem" => "small"})
+    e = notify(%{"idem" => "small"})
     assert {:ok, cert} = issue(ctx, request(e))
     {:ok, b} = Base.url_decode64(cert["message"], padding: false)
     {:ok, msg} = Sa2aCrypto.SignedMessage.parse(b)
@@ -225,14 +225,14 @@ defmodule AuthorityServiceTest do
   end
 
   test "the same (effect, generation) is issued once; an approval is consumed once", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     approvals = two_approvals(ctx, d)
     assert {:ok, _} = issue(ctx, request(e, approvals))
     assert {:refused, :already_issued, _} = issue(ctx, request(e, approvals))
 
     # the same (kid, nonce) twice inside one request counts once
-    e2 = effect(%{"amount" => 500_000, "idem" => "e-3"})
+    e2 = effect(%{"idem" => "e-3"})
     d2 = digest(effect_bytes(e2))
     a = approval(signer_named(ctx, "alice"), d2)
     assert {:refused, :insufficient_approvals, detail} = issue(ctx, request(e2, [a, a]))
@@ -240,7 +240,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "solicits registered approvers through the pluggable channel", _ do
-    e = effect()
+    e = refund()
     d = digest(effect_bytes(e))
     alice = signer("alice")
     a = approval(alice, d)
@@ -256,7 +256,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "restart keeps the nonce journal: nothing is reissued", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     approvals = two_approvals(ctx, d)
     {:ok, cert} = issue(ctx, request(e, approvals))
@@ -269,7 +269,7 @@ defmodule AuthorityServiceTest do
 
     assert File.read!(ctx.config.journal_path) =~ msg["nonce"]
     assert {:refused, :already_issued, _} = issue(ctx2, request(e, approvals))
-    e2 = effect(%{"amount" => 500_000, "idem" => "e-2"})
+    e2 = effect(%{"idem" => "e-2"})
     d2 = digest(effect_bytes(e2))
     assert {:ok, cert2} = issue(ctx2, request(e2, two_approvals(ctx2, d2)))
     {:ok, b2} = Base.url_decode64(cert2["message"], padding: false)
@@ -278,7 +278,7 @@ defmodule AuthorityServiceTest do
   end
 
   test "a tampered journal refuses to start", ctx do
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     {:ok, _} = issue(ctx, request(e, two_approvals(ctx, d)))
     GenServer.stop(ctx.issuer)

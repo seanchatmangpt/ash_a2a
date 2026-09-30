@@ -15,7 +15,7 @@ defmodule Actuator.Application do
     path = System.get_env("ACTUATOR_CONFIG") || raise "ACTUATOR_CONFIG is required"
     ctx_fun = fn -> Actuator.Config.load(path) end
     {:ok, ctx} = ctx_fun.()
-    raw = path |> File.read!() |> Jason.decode!()
+    {:ok, raw} = path |> File.read!() |> Actuator.StrictJson.decode()
     wire = raw["wire"] || %{}
 
     [{Actuator.Store, [state_dir: ctx.state_dir, name: Actuator.Store]}] ++

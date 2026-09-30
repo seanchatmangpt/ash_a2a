@@ -40,6 +40,7 @@ defmodule Actuator.CrashTest do
         "audience" => Kit.audience(),
         "policy_epoch" => 3,
         "allowed_subjects" => ["subject:orders/42"],
+        "quorum_default" => 1,
         "registry" => registry
       })
     )

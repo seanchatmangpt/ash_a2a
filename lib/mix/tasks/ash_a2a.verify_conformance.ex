@@ -25,7 +25,7 @@ defmodule Mix.Tasks.AshA2a.VerifyConformance do
 
   Evaluates the requirement-check table of `AshA2A.SA2A.Conformance.Profiles`
   (cumulative C0..Cn) and prints one `PASS` / `FAIL` / `UNVERIFIED` line per
-  check, then the RFC-SA2A-007 claim line -- `SA2A v26.9.28 conforms to profile
+  check, then the RFC-SA2A-007 claim line -- `SA2A v26.9.29 conforms to profile
   Cn at independence tier Ti, hosting scope S, on subject SHA H` ONLY when every
   check passed, else `NOT CONFORMANT to Cn: ...` listing the failing and
   unverified checks. `:dev_bypass` / `:legacy_compat` always yield NOT
@@ -123,9 +123,12 @@ defmodule Mix.Tasks.AshA2a.VerifyConformance do
 
     # Load config and compile; deliberately NOT app.start: the gate must be able
     # to report on a tree whose boot preflight refuses to start.
-    # (Skipped when the app is already loaded, e.g. when invoked from a running
-    # test suite: recompiling mid-run would purge modules under probe.)
-    if Application.spec(:ash_a2a, :vsn) == nil, do: Mix.Task.run("app.config")
+    # (Skipped only when invoked from a running test suite: recompiling mid-run
+    # would purge modules under probe. A plain `mix` invocation always runs it,
+    # because `app.config` is what applies config/runtime.exs -- the durable
+    # claim store, keyed journal dir and HMAC key of the :strict build --
+    # even though compilation has already loaded the application spec.)
+    unless test_suite_running?(), do: Mix.Task.run("app.config")
 
     ctx =
       opts
@@ -160,6 +163,10 @@ defmodule Mix.Tasks.AshA2a.VerifyConformance do
     else
       Mix.raise("ash_a2a.verify_conformance: " <> report.claim)
     end
+  end
+
+  defp test_suite_running? do
+    List.keymember?(Application.started_applications(), :ex_unit, 0)
   end
 
   defp run_legacy(opts) do

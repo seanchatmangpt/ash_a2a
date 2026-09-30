@@ -8,6 +8,13 @@ defmodule AshA2A.SecurityProfile.Boot do
 
     * `:outbox_key_missing` - neither `:receipt_outbox_key` nor
       `:receipt_binding_key` is a non-empty binary
+    * `:outbox_key_weak` - the outbox/journal HMAC key is shorter than 32 bytes
+    * `:claim_store_missing` - no `:claim_store` configured (snapshot carries
+      `:claim_store`; evaluated whenever that key is present, always at boot)
+    * `:claim_store_not_durable` - the claim store is in-memory/ETS or does not
+      export `durable?/0 == true`
+    * `:claim_store_dir_not_durable` - the durable-file claim store's
+      `:claim_store_dir` is unset or under a volatile tmp path
     * `:outbox_dir_not_durable` - `:receipt_outbox_dir` unset or under a
       volatile tmp path (`AshA2A.ReceiptStore.durable_path?/1`)
     * `:receipt_store_in_memory` - `AshA2A.ReceiptStore.Memory`
@@ -60,6 +67,10 @@ defmodule AshA2A.SecurityProfile.Boot do
   def __sa2a_refusal_codes__ do
     %{
       outbox_key_missing: :refused_receipt,
+      outbox_key_weak: :refused_receipt,
+      claim_store_missing: :refused_receipt,
+      claim_store_not_durable: :refused_receipt,
+      claim_store_dir_not_durable: :refused_receipt,
       outbox_dir_not_durable: :refused_receipt,
       receipt_store_in_memory: :refused_receipt,
       receipt_store_boot_check_failed: :refused_receipt,
@@ -75,6 +86,8 @@ defmodule AshA2A.SecurityProfile.Boot do
   def snapshot do
     %{
       outbox_key: AshA2A.ReceiptOutbox.integrity_key(),
+      claim_store: Application.get_env(:ash_a2a, :claim_store),
+      claim_store_dir: Application.get_env(:ash_a2a, :claim_store_dir),
       outbox_dir: Application.get_env(:ash_a2a, :receipt_outbox_dir),
       receipt_store: Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory),
       capability_release_mode:
@@ -101,6 +114,9 @@ defmodule AshA2A.SecurityProfile.Boot do
             :outbox_key_missing,
             "receipt outbox is unkeyed; set :receipt_outbox_key or :receipt_binding_key"
           )
+      ),
+      if(is_binary(s.outbox_key) and byte_size(s.outbox_key) in 1..31,
+        do: v(:outbox_key_weak, "receipt outbox/journal HMAC key is shorter than 32 bytes")
       ),
       if(not ReceiptStore.durable_path?(s.outbox_dir),
         do:
@@ -134,9 +150,54 @@ defmodule AshA2A.SecurityProfile.Boot do
       )
     ]
     |> Enum.reject(&is_nil/1)
+    |> Kernel.++(claim_store_violations(s))
   end
 
   def violations(_profile, _snapshot), do: []
+
+  # Evaluated only when the snapshot carries the claim-store facts (the real
+  # `snapshot/0` always does; older partial snapshots do not).
+  defp claim_store_violations(s) do
+    case Map.fetch(s, :claim_store) do
+      :error ->
+        []
+
+      {:ok, nil} ->
+        [v(:claim_store_missing, "no :claim_store configured; nothing durable backs claims")]
+
+      {:ok, mod} ->
+        dir_ok? =
+          mod != AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile or
+            ReceiptStore.durable_path?(Map.get(s, :claim_store_dir))
+
+        [
+          if(not durable_claim_store?(mod),
+            do:
+              v(
+                :claim_store_not_durable,
+                ":claim_store #{inspect(mod)} is in-memory or does not export durable?/0 == true"
+              )
+          ),
+          if(not dir_ok?,
+            do:
+              v(
+                :claim_store_dir_not_durable,
+                ":claim_store_dir #{inspect(Map.get(s, :claim_store_dir))} is unset or under a tmp directory"
+              )
+          )
+        ]
+        |> Enum.reject(&is_nil/1)
+    end
+  end
+
+  defp durable_claim_store?(mod) when is_atom(mod) do
+    Code.ensure_loaded(mod)
+
+    not (Module.split(mod) |> List.last() =~ ~r/Memory|ETS/) and
+      function_exported?(mod, :durable?, 0) and mod.durable?() == true
+  end
+
+  defp durable_claim_store?(_), do: false
 
   @doc "Enforces the compiled profile against the real env. Raises or returns `:ok`."
   @spec run!() :: :ok

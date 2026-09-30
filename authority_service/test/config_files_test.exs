@@ -33,6 +33,7 @@ defmodule AuthorityService.ConfigFilesTest do
                policy_path: Path.join(dir, "policy.json"),
                registry_path: Path.join(dir, "approvers.json"),
                authority_audience: authority_audience(),
+               actuator_audience: actuator(),
                journal_path: Path.join(dir, "j.log")
              )
 
@@ -51,7 +52,25 @@ defmodule AuthorityService.ConfigFilesTest do
                policy_path: Path.join(dir, "bad.json"),
                registry_path: Path.join(dir, "approvers.json"),
                authority_audience: "x",
+               actuator_audience: actuator(),
                journal_path: Path.join(dir, "j2.log")
+             )
+  end
+
+  test "a config with no registered actuator audience is refused (fail closed)" do
+    dir = tmp_dir("cfg-noact")
+    key = write_key(dir, signer("authority-service", :i2).priv)
+    File.write!(Path.join(dir, "policy.json"), ~s({"epoch": 1, "approvers": ["a"],
+      "classes": {"p": [{"max_amount": "infinity", "k": 1}]}}))
+    File.write!(Path.join(dir, "approvers.json"), "[]")
+
+    assert {:error, :actuator_audience_missing} =
+             Config.from_files(
+               key_path: key,
+               policy_path: Path.join(dir, "policy.json"),
+               registry_path: Path.join(dir, "approvers.json"),
+               authority_audience: "x",
+               journal_path: Path.join(dir, "j.log")
              )
   end
 end

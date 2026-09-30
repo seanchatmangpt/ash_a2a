@@ -44,6 +44,9 @@ defmodule AuthorityService.TestKit do
     )
   end
 
+  def refund(over \\ %{}), do: effect(Map.merge(%{"effect_class" => "refund"}, over))
+  def notify(over \\ %{}), do: effect(Map.merge(%{"effect_class" => "notify"}, over))
+
   def effect_bytes(effect), do: Jcs.encode(effect)
   def digest(bytes), do: SignedMessage.digest(bytes)
 
@@ -136,11 +139,11 @@ defmodule AuthorityService.TestKit do
           approvers: ["alice", "bob", "carol"],
           min_approver_tier: :i3,
           classes: %{
-            "payment" => [
-              %{max_amount: 10_000, k: 0},
-              %{max_amount: 100_000, k: 1},
-              %{max_amount: :infinity, k: 2}
-            ]
+            "payment" => [%{max_amount: :infinity, k: 2}],
+            "refund" => [%{max_amount: :infinity, k: 1}],
+            "notify" => [%{max_amount: :infinity, k: 0}],
+            # amount tiers are ignored: the class requires its most restrictive k
+            "tiered" => [%{max_amount: 10_000, k: 0}, %{max_amount: :infinity, k: 2}]
           }
         ],
         over
@@ -161,8 +164,11 @@ defmodule AuthorityService.TestKit do
       AuthorityService.Config.new(
         service_key: key,
         policy: Map.get(ctx, :policy) || policy(),
-        approver_registry: Sa2aCrypto.Registry.Static.view(Enum.map(approvers, & &1.record)),
+        approver_registry:
+          Map.get(ctx, :registry) ||
+            Sa2aCrypto.Registry.Static.view(Enum.map(approvers, & &1.record)),
         authority_audience: @authority_audience,
+        actuator_audience: @actuator,
         journal_path: Path.join(dir, "journal.log"),
         channel: Map.get(ctx, :channel),
         clock: &__MODULE__.now/0
@@ -170,6 +176,28 @@ defmodule AuthorityService.TestKit do
 
     {:ok, pid} = AuthorityService.Issuer.start_link(config: config, name: nil)
     %{issuer: pid, dir: dir, svc: svc, approvers: approvers, config: config}
+  end
+
+  defmodule LiveRegistry do
+    @moduledoc false
+    # A registry view whose lookups read live state (an Agent), so a revocation can land at
+    # any instant, including in the middle of an issuance.
+    @behaviour Sa2aCrypto.Registry
+    def start(records), do: Agent.start_link(fn -> Map.new(records, &{&1.kid, &1}) end)
+    def view(agent), do: {__MODULE__, agent}
+
+    def revoke(agent, kid),
+      do: Agent.update(agent, fn m -> Map.update!(m, kid, &%{&1 | state: :compromised}) end)
+
+    # key rotated to a new revocation epoch while still `:active`
+    def rotate(agent, kid),
+      do:
+        Agent.update(agent, fn m ->
+          Map.update!(m, kid, &%{&1 | revocation_epoch: &1.revocation_epoch + 1})
+        end)
+
+    @impl true
+    def lookup(agent, kid), do: Agent.get(agent, &Map.fetch(&1, kid))
   end
 
   def signer_named(ctx, name), do: Enum.find(ctx.approvers, &(&1.custodian == name))

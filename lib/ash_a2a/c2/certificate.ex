@@ -39,6 +39,17 @@ defmodule AshA2A.C2.Certificate do
 
   @max_seconds 9_007_199_254_740_991
 
+  @doc """
+  Decode a certificate from wire JSON bytes (or an already-decoded wire map). Duplicate JSON
+  object keys at any depth are refused with `{:error, :duplicate_json_key}`.
+  """
+  @spec decode(binary() | map()) ::
+          {:ok, t()} | {:error, :duplicate_json_key | :invalid_certificate_wire}
+  def decode(json_or_wire) when is_binary(json_or_wire) or is_map(json_or_wire),
+    do: AshA2A.C2.Wire.decode_certificate(json_or_wire)
+
+  def decode(_), do: {:error, :invalid_certificate_wire}
+
   def bound?(c, e), do: c.effect_digest == e.digest and c.principal == e.principal
 
   @doc "Milliseconds to the whole unix seconds the signed message binds; refuses sub-second values."

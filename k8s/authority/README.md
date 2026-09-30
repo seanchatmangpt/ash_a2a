@@ -3,7 +3,7 @@
 Issue-only AuthorityService (RFC-SA2A-006 s7.4/s13) in its own namespace
 `authority-system`. Source: `authority_service/` (separate OTP release, depends only on
 `sa2a_crypto`). Hand-authored, following the conventions of `k8s/` and `swarm/`; no
-generator was run. Last Updated: 2026-09-29 (v26.9.28).
+generator was run. Last Updated: 2026-09-29 (v26.9.29).
 
 ## Layout
 

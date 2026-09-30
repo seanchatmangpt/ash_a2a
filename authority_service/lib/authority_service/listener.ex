@@ -3,7 +3,8 @@ defmodule AuthorityService.Listener do
   Typed wire: one length-prefixed JSON frame per connection (`<<len::32, json>>`), size
   bounded by `:max_bytes`, response in the same framing. No Erlang distribution.
 
-  Transports: `{:unix, path}` (socket file mode 0660) or
+  Transports: `{:unix, path}` (socket file mode 0660, bound under a 0700 directory and renamed into place,
+  never world-accessible at listen time) or
   `{:tls, port, [certfile:, keyfile:, cacertfile:]}` (TLS 1.3, mutual authentication:
   `verify_peer` + `fail_if_no_peer_cert`).
 
@@ -55,19 +56,33 @@ defmodule AuthorityService.Listener do
   defp kind({:unix, _}), do: :unix
   defp kind({:tls, _, _}), do: :tls
 
+  # The socket is bound inside a fresh 0700 directory, chmod-ed to 0660 there, and only then
+  # renamed onto `path`: it is never reachable by group/other at any instant of listening,
+  # whatever the process umask.
   defp listen({:unix, path}) do
     File.rm(path)
+    dir = path <> ".lst"
+    File.rm_rf(dir)
 
-    with {:ok, l} <-
+    with :ok <- File.mkdir(dir),
+         :ok <- File.chmod(dir, 0o700),
+         tmp = Path.join(dir, "s"),
+         {:ok, l} <-
            :gen_tcp.listen(0, [
              :binary,
-             {:ifaddr, {:local, String.to_charlist(path)}},
+             {:ifaddr, {:local, String.to_charlist(tmp)}},
              {:active, false},
              {:packet, :raw},
              {:backlog, 128}
-           ]) do
-      File.chmod(path, 0o660)
+           ]),
+         :ok <- File.chmod(tmp, 0o660),
+         :ok <- File.rename(tmp, path) do
+      File.rmdir(dir)
       {:ok, l}
+    else
+      {:error, _} = e ->
+        File.rm_rf(dir)
+        e
     end
   end
 
@@ -143,7 +158,7 @@ defmodule AuthorityService.Listener do
            true <- len <= st.max or {:refuse, :request_too_large},
            {:ok, body} <-
              if(len == 0, do: {:ok, <<>>}, else: recv(st.kind, sock, len)) |> or_malformed(),
-           {:ok, req} <- Jason.decode(body) |> or_malformed(),
+           {:ok, req} <- Sa2aCrypto.StrictJson.decode(body, canonical: false) |> or_malformed(),
            true <- is_map(req) or {:refuse, :malformed_request} do
         dispatch(req, st)
       else

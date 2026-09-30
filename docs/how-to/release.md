@@ -2,7 +2,7 @@
 
 The Hex release has one path: `.github/workflows/release.yml`. A pushed
 `v<version>` tag publishes; `workflow_dispatch` is a dry run that publishes
-nothing. Version: v26.9.28.
+nothing. Version: v26.9.29.
 
 ## Contents
 
@@ -15,8 +15,8 @@ nothing. Version: v26.9.28.
 
 1. Set `version` in `mix.exs`; keep the `Version:` lines in
    `docs/reference/a2a-spec-version-mapping.md` and
-   `docs/jira/v26.9.28-kernel/HANDOFF.md` equal to it (a policy test checks).
-2. Merge to `main`, then push the tag `v<version>` (for example `v26.9.28`).
+   `docs/jira/v26.9.29/HANDOFF.md` equal to it (`release_path_test` checks it against `mix.exs`).
+2. Merge to `main`, then push the tag `v<version>` (for example `v26.9.29`).
 3. Approve the `hex-release` environment deployment when prompted.
 
 The workflow refuses if the tag differs from `mix.exs`, if `mix.lock` drifts, if

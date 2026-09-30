@@ -23,6 +23,8 @@ if config_env() == :prod do
     policy_path: Path.join(dir, "policy/policy.json"),
     registry_path: Path.join(dir, "policy/approvers.json"),
     authority_audience: System.get_env("AUTHORITY_AUDIENCE", "authority:default"),
+    # registered actuator identity (server-side); unset => config refused, release stops
+    actuator_audience: System.get_env("AUTHORITY_ACTUATOR_AUDIENCE"),
     journal_path: System.get_env("AUTHORITY_JOURNAL", "/var/lib/authority/journal.log"),
     transport: transport
 end
