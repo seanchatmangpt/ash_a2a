@@ -122,6 +122,41 @@ defmodule AshA2A.CapabilityReleaseStandingTest do
              )
   end
 
+  test "configured standing_strict cannot be weakened by merely supplying a closure", %{tmp_dir: dir} do
+    repo = init_repo!(dir)
+    subject_sha = commit!(repo, "app.txt", "v1")
+    receipt = build_receipt!(repo)
+    file_receipt!(repo, subject_sha, receipt)
+    commit_receipts!(repo)
+
+    assert {:ok, standing_released} =
+             CapabilityRelease.release_from_standing(admitted(), repo: repo)
+
+    assert {:ok, standing_closure} = CapabilityRelease.freeze_standing([standing_released])
+
+    {:ok, digest_only} = CapabilityRelease.release(admitted("digest-only.cap"), digest("c"))
+    assert {:ok, digest_only_closure} = CapabilityRelease.freeze([digest_only])
+
+    previous = Application.get_env(:ash_a2a, :capability_release_mode)
+    Application.put_env(:ash_a2a, :capability_release_mode, :standing_strict)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:ash_a2a, :capability_release_mode),
+        else: Application.put_env(:ash_a2a, :capability_release_mode, previous)
+    end)
+
+    assert :ok =
+             CapabilityRelease.guard("standing.cap",
+               capability_release_closure: standing_closure
+             )
+
+    assert {:error, {:technical_standing_required, "digest-only.cap"}} =
+             CapabilityRelease.guard("digest-only.cap",
+               capability_release_closure: digest_only_closure
+             )
+  end
+
   test "standing_strict advertising equals its executable closure", %{tmp_dir: dir} do
     repo = init_repo!(dir)
     subject_sha = commit!(repo, "app.txt", "v1")
