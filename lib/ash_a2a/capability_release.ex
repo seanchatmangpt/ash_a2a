@@ -80,6 +80,10 @@ defmodule AshA2A.CapabilityRelease do
       :capability_digest,
       :admission_digest,
       :release_digest,
+      :standing_binding_identity,
+      :standing_subject_revision,
+      :technical_standing,
+      :standing_receipt_digest,
       :binding_digest
     ]
 
