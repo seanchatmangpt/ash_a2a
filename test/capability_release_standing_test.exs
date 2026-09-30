@@ -84,6 +84,44 @@ defmodule AshA2A.CapabilityReleaseStandingTest do
              CapabilityRelease.release_from_standing(admitted(), repo: repo)
   end
 
+  test "standing_strict recomputes the binding instead of trusting a non-null marker", %{tmp_dir: dir} do
+    repo = init_repo!(dir)
+    subject_sha = commit!(repo, "app.txt", "v1")
+    receipt = build_receipt!(repo)
+    file_receipt!(repo, subject_sha, receipt)
+    commit_receipts!(repo)
+
+    assert {:ok, released} =
+             CapabilityRelease.release_from_standing(admitted(), repo: repo)
+
+    tampered = put_in(released.standing_binding.binding_digest, digest("f"))
+    assert {:ok, closure} = CapabilityRelease.freeze([tampered])
+
+    assert {:error, {:technical_standing_invalid, "standing.cap", :binding_digest}} =
+             CapabilityRelease.guard("standing.cap",
+               capability_release_mode: :standing_strict,
+               capability_release_closure: closure
+             )
+
+    assert {:error, {:technical_standing_invalid, "standing.cap", :binding_digest}} =
+             CapabilityRelease.freeze_standing([tampered])
+  end
+
+  test "nonconformant court evidence cannot be promoted into executable release", %{tmp_dir: dir} do
+    repo = init_repo!(dir)
+    subject_sha = commit!(repo, "app.txt", "v1")
+    receipt = build_receipt!(repo, :nonconformant)
+    assert receipt["standing"] == "NONCONFORMANT"
+    file_receipt!(repo, subject_sha, receipt)
+    commit_receipts!(repo)
+
+    assert {:error, {:technical_standing_not_releasable, "NONCONFORMANT"}} =
+             CapabilityRelease.release_from_standing(admitted(),
+               repo: repo,
+               standing: "NONCONFORMANT"
+             )
+  end
+
   test "standing_strict advertising equals its executable closure", %{tmp_dir: dir} do
     repo = init_repo!(dir)
     subject_sha = commit!(repo, "app.txt", "v1")
@@ -146,16 +184,18 @@ defmodule AshA2A.CapabilityReleaseStandingTest do
     git!(repo, ["rev-parse", "HEAD"])
   end
 
-  defp build_receipt!(repo) do
+  defp build_receipt!(repo, standing \\ :conformant) do
     falsifiers = ObserverQualification.falsifiers()
     falsifier = Enum.find(falsifiers, &(&1.kind == :negative))
 
     results =
       for gate <- 1..3 do
+        survived? = standing == :nonconformant and gate == 2
+
         %{
           Result.negative(falsifier,
             attempt_observed?: true,
-            forbidden_outcome_observed?: false
+            forbidden_outcome_observed?: survived?
           )
           | gate: gate,
             ocel_corroborated?: true
