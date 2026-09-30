@@ -15,12 +15,14 @@ defmodule AshA2A.Semantic.EvidenceRef do
 
   Exact-source envelopes are admitted fail-closed: source identity is complete,
   authority is `NONE`, consequence is `EVIDENCE_ONLY`, canonicalization is
-  `RDFC-1.0`, and the envelope digest must recompute from RFC 8785/JCS bytes.
+  `RDFC-1.0`, and the envelope digest must recompute under AshR2RML's
+  versioned canonical-JSON digest domain.
   """
 
   @schema "sa2a.semantic-evidence-envelope.v1"
   @contract_version "v26.9.29"
   @canonicalization "RDFC-1.0"
+  @ash_r2rml_digest_domain "ashr2rml.vkg.canonical.v1\n"
   @digest_pattern ~r/\Asha256:[0-9a-f]{64}\z/
 
   @flat_required ~w(schema contractVersion subject sourceDigest graphDigest replayIdentity envelopeDigest authority consequence)
@@ -161,8 +163,14 @@ defmodule AshA2A.Semantic.EvidenceRef do
   defp valid_source?(_), do: false
 
   defp envelope_digest_valid?(ref) do
-    case AshA2A.Identity.Canonical.digest(Map.delete(ref, "envelopeDigest")) do
-      {:ok, expected} -> expected == ref["envelopeDigest"]
+    with {:ok, canonical} <- AshA2A.Identity.Canonical.encode(Map.delete(ref, "envelopeDigest")) do
+      expected =
+        "sha256:" <>
+          (:crypto.hash(:sha256, [@ash_r2rml_digest_domain, canonical])
+           |> Base.encode16(case: :lower))
+
+      expected == ref["envelopeDigest"]
+    else
       {:error, _reason} -> false
     end
   end
