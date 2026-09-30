@@ -1,0 +1,30 @@
+{
+  "id": "graphlaw_standing_release",
+  "module": "GraphLawStandingRelease",
+  "repository": "seanchatmangpt/graphlaw",
+  "sha": "55164d4fe1cdb2e073a98fddd287cc07216663fa",
+  "subject": "seanchatmangpt/graphlaw@55164d4fe1cdb2e073a98fddd287cc07216663fa",
+  "capability": "standing_closed_release",
+  "owner": "GraphLaw",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY",
+  "reuse": [
+    "canonical standing/release primitive",
+    "exact-subject admission",
+    "frozen dependency-standing closure"
+  ],
+  "negative_knowledge": [
+    "stale or forged standing refuses",
+    "technical standing is not external standing",
+    "technical standing is not runtime authority"
+  ],
+  "falsifier": "execution against a subject lacking exact admitted standing must refuse",
+  "standing_source": "contracts/fleet/standing-release.ttl@1c78ee0a6c0ce9612933f92ea4eebe22e08dafd9",
+  "technical_standing": "QUALIFIED",
+  "external_standing": "UNSPECIFIED",
+  "runtime_authority": "NONE",
+  "requires_exact_subject": true,
+  "requires_release_binding": true,
+  "requires_frozen_closure": true,
+  "requires_receipt_replay_binding": true
+}
