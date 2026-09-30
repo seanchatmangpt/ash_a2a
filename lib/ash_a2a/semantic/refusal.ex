@@ -158,6 +158,18 @@ defmodule AshA2A.Semantic.Refusal do
   # a time. Codes here are NEVER renamed -- this is a projection of the
   # existing vocabulary, not a replacement for it.
   @mapping %{
+    # --- AuthZEN PolicyEvidence / PDP client / MCP projection (below authority)
+    decision_malformed: :refused_structure,
+    mcp_arguments_malformed: :refused_structure,
+    mcp_tool_name_missing: :refused_structure,
+    pdp_bad_response: :refused_structure,
+    pdp_endpoint_missing: :refused_structure,
+    pdp_endpoint_not_https: :refused_profile,
+    pdp_not_https: :refused_profile,
+    pdp_mismatch: :refused_identity,
+    pdp_unreachable: :blocked_resource,
+    policy_evidence_mismatch: :refused_authority,
+    policy_evidence_missing: :refused_authority,
     # --- merged C1/C2 consequence-kernel + replan-port codes (v26.9.28) ----
     # --- v26.9.29 hardening codes (authority/actuator/strict JSON) ----------
     duplicate_json_key: :refused_structure,

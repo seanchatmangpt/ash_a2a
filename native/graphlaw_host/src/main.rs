@@ -16,7 +16,7 @@
 //! stdout: one JSON object, always carrying artifact identity:
 //!           {"ok":"<string>","fn":"graph_hash","wasm_sha256":"<hex>",
 //!            "wasm_bytes":N,"wasm_path":"...","runtime":"wasmtime",
-//!            "runtime_version":"48.0.1","host":"graphlaw_host/0.1.0"}
+//!            "runtime_version":"48.0.3","host":"graphlaw_host/0.1.0"}
 //!         or, for a batch, `{"results":[ {"ok":..}|{"error":..}, .. ], ..}`
 //!         or, on failure, `{"error":"...","code":"..."}` (plus identity when known).
 //!
@@ -61,9 +61,9 @@ use wasmtime::{
 const HOST_ID: &str = concat!("graphlaw_host/", env!("CARGO_PKG_VERSION"));
 
 /// The Wasmtime version this binary is pinned to. Kept in lockstep with the
-/// `wasmtime = "=48.0.1"` exact-version pin in `Cargo.toml`; reported in every
+/// `wasmtime = "=48.0.3"` exact-version pin in `Cargo.toml`; reported in every
 /// response so a conformance receipt records which engine produced the answer.
-const WASMTIME_VERSION: &str = "48.0.1";
+const WASMTIME_VERSION: &str = "48.0.3";
 
 /// Deterministic stand-in for `crypto.getRandomValues`.
 ///

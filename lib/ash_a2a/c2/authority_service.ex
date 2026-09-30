@@ -10,11 +10,31 @@ defmodule AshA2A.C2.AuthorityService do
   def authorize(policy, %AuthorityRequest{} = r, ctx) do
     with :ok <- preserve_principal(r),
          :ok <- current_epochs(r, ctx),
+         :ok <- policy_evidence(r, ctx),
          :ok <- policy.admit(r, ctx),
          {:ok, cert} <- policy.issue(r, ctx) do
       {:ok, AuthorityResponse.admit(cert)}
     else
       {:error, reason} -> {:ok, AuthorityResponse.refuse(reason)}
+    end
+  end
+
+  # Opt-in precondition (`policy_evidence_required: true`): an external PDP
+  # allow is evidence only. It must bind this exact request and never replaces
+  # `policy.admit/2` or certificate issuance.
+  defp policy_evidence(r, ctx) do
+    if Map.get(ctx, :policy_evidence_required, false) do
+      case Map.get(ctx, :policy_evidence) do
+        %AshA2A.C2.PolicyEvidence{decision: :allow} = e ->
+          if AshA2A.C2.PolicyEvidence.binds?(e, r),
+            do: :ok,
+            else: {:error, :policy_evidence_mismatch}
+
+        _ ->
+          {:error, :policy_evidence_missing}
+      end
+    else
+      :ok
     end
   end
 
