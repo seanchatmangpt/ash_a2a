@@ -23,7 +23,7 @@ defmodule AshA2A.CapabilityReleaseStandingIntegrationTest do
     assert released.standing_binding.external_standing == "NONE"
     assert released.standing_binding.runtime_authority == "NONE"
     assert {:ok, closure} = CapabilityRelease.freeze([released])
-    assert {:ok, binding} = CapabilityRelease.binding("standing.cap", capability_release_closure: closure)
+    assert {:ok, binding} = CapabilityRelease.binding("standing.cap", capability_release_closure: closure, repo: repo)
     attrs = CapabilityRelease.attributes(binding)
     assert attrs.standing_subject_revision == sha
     assert attrs.external_standing == "NONE"
