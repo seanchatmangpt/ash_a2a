@@ -73,3 +73,62 @@ defmodule AshA2A.C2.PolicyEvidenceTest do
     assert sarc["context"]["generation"] == 7
   end
 end
+
+defmodule AshA2A.C2.PolicyEvidenceAdmissionTest do
+  use ExUnit.Case, async: true
+
+  alias AshA2A.C2.{AuthorityRequest, AuthorityService, PolicyEvidence, PreparedEffect}
+  alias AshA2A.C2.PolicyEvidence.PdpClient
+
+  defmodule Policy do
+    def admit(_r, _c), do: :ok
+    def issue(_r, _c), do: {:ok, :cert}
+  end
+
+  @pdp "https://pdp.example.com"
+  @ctx %{policy_epoch: 1, revocation_epoch: 1, generation: 1, audience: "a"}
+
+  defp request do
+    AuthorityRequest.new(PreparedEffect.new("alice", "cap", %{}, %{}), @ctx)
+  end
+
+  defp stub(name, decision) do
+    Req.Test.stub(name, fn conn ->
+      case conn.request_path do
+        "/.well-known/authzen-configuration" ->
+          Req.Test.json(conn, %{
+            "policy_decision_point" => @pdp,
+            "access_evaluation_endpoint" => @pdp <> "/access/v1/evaluation"
+          })
+
+        _ ->
+          Req.Test.json(conn, %{"decision" => decision})
+      end
+    end)
+  end
+
+  test "allow without evidence is refused when evidence is required" do
+    ctx = Map.put(@ctx, :policy_evidence_required, true)
+    assert {:ok, %{decision: :refuse, reason: :policy_evidence_missing}} =
+             AuthorityService.authorize(Policy, request(), ctx)
+  end
+
+  test "bound allow evidence admits only through the authority" do
+    stub(:allow, true)
+    {:ok, e} = PdpClient.evidence(request(), @pdp, plug: {Req.Test, :allow})
+    ctx = Map.merge(@ctx, %{policy_evidence_required: true, policy_evidence: e})
+    assert {:ok, %{decision: :admit}} = AuthorityService.authorize(Policy, request(), ctx)
+    refute PolicyEvidence.grants_do_authority?(e)
+  end
+
+  test "deny evidence is refused" do
+    stub(:deny, false)
+    {:ok, e} = PdpClient.evidence(request(), @pdp, plug: {Req.Test, :deny})
+    ctx = Map.merge(@ctx, %{policy_evidence_required: true, policy_evidence: e})
+    assert {:ok, %{decision: :refuse}} = AuthorityService.authorize(Policy, request(), ctx)
+  end
+
+  test "non-HTTPS PDP is refused before any request" do
+    assert {:error, :pdp_not_https} = PdpClient.evidence(request(), "http://pdp.example.com")
+  end
+end
