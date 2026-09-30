@@ -20,6 +20,7 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
 
   alias AshA2A.{EffectInstance, PreparedEffect}
   alias AshA2A.Chicago
+  alias AshA2A.Identity.Canonical
   alias AshA2A.Semantic.Allocator
 
   @fibo_market_transaction "https://spec.edmcouncil.org/fibo/ontology/FND/TransactionsExt/MarketTransactions/MarketTransaction"
@@ -74,17 +75,34 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
   end
 
   defp evidence_ref(graph_char \\ "b") do
-    %{
+    body = %{
       "schema" => "sa2a.semantic-evidence-envelope.v1",
       "contractVersion" => "v26.9.29",
+      "canonicalization" => "RDFC-1.0",
+      "authority" => "NONE",
+      "consequence" => "EVIDENCE_ONLY",
       "subject" => "urn:sa2a:fibo:transaction:tx-25m-usd-001",
-      "sourceDigest" => "sha256:" <> String.duplicate("a", 64),
+      "source" => %{
+        "id" => "fibo-market-transaction",
+        "uri" => "urn:source:fibo:market-transaction",
+        "graph" => "urn:graph:fibo:market-transaction",
+        "subjectTemplate" => "urn:sa2a:fibo:transaction:{id}",
+        "version" => "v26.9.29",
+        "digest" => "sha256:" <> String.duplicate("a", 64)
+      },
       "graphDigest" => "sha256:" <> String.duplicate(graph_char, 64),
       "replayIdentity" => "replay:fibo:tx-25m-usd-001:v26.9.29",
-      "envelopeDigest" => "sha256:" <> String.duplicate("c", 64),
-      "authority" => "NONE",
-      "consequence" => "EVIDENCE_ONLY"
+      "receiptDigest" => nil,
+      "provenance" => %{
+        "producer" => "ash_r2rml",
+        "producerVersion" => "v26.9.29",
+        "graphlawContractCommit" => "48a7bbd801b8df1d7ffab879b10d58d7f14ef7bc",
+        "sourceIdentityDigest" => "sha256:" <> String.duplicate("a", 64)
+      }
     }
+
+    {:ok, envelope_digest} = Canonical.digest(body)
+    Map.put(body, "envelopeDigest", envelope_digest)
   end
 
   defp prepared(subject, evidence \\ evidence_ref()) do
