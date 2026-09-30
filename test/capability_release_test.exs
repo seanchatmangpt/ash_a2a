@@ -73,11 +73,22 @@ defmodule AshA2A.CapabilityReleaseTest do
              CapabilityRelease.freeze([released("forged-source")])
   end
 
-  test "freeze refuses forged standing identity and authority conflation before replay" do
+  test "freeze refuses release mismatch, forged standing identity, and authority conflation" do
     cap = released("forged")
-    forged = %{cap | standing_binding: %{cap.standing_binding | portable_identity: digest("f")}}
+
+    release_mismatch = %{cap | release_digest: digest("e")}
 
     assert {:error, {:standing_release_digest_mismatch, "forged"}} =
+             CapabilityRelease.freeze([release_mismatch])
+
+    forged_identity = digest("f")
+    forged = %{
+      cap
+      | release_digest: forged_identity,
+        standing_binding: %{cap.standing_binding | portable_identity: forged_identity}
+    }
+
+    assert {:error, {:standing_binding_identity_mismatch, _, ^forged_identity}} =
              CapabilityRelease.freeze([forged])
 
     binding = standing_binding("authority")
