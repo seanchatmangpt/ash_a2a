@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# 80/20 shape: `supply-chain` (fast: lock drift + Hex advisories) and `test`
+# (format -> compile -> tests, cheap checks first) gate every PR. Rust
+# advisories/licenses and the package-closure check live in
+# supply-chain-deep.yml (lock-touching PRs + weekly), so a newly published
+# advisory cannot turn unrelated PRs red.
+#
 # A cancelled superseded PR head yields no receipt by design: only the latest
 # head of a PR is admitted; main/dispatch runs are never cancelled.
 concurrency:
@@ -22,11 +28,11 @@ env:
   EKV_BUILD: "1"
 
 jobs:
-  # Supply-chain gate (SC-02): dependency advisories, lock drift and Rust
-  # advisories/licenses/sources. Fails closed; runs in parallel with `test`.
+  # Fast supply-chain gate (SC-02): lock drift and retired / advisory Hex
+  # packages. Rust checks: see supply-chain-deep.yml.
   supply-chain:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -42,61 +48,17 @@ jobs:
         run: mix deps.get --check-locked
       - name: Refuse retired / security-advisory Hex packages
         run: mix hex.audit
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.1 --profile minimal
-      - name: Install cargo-deny
-        run: cargo +1.97.1 install cargo-deny --locked --version 0.20.2
-      - name: cargo-deny (hddl_cli)
-        run: >-
-          cargo deny --manifest-path native/hddl_cli/Cargo.toml
-          --config .github/cargo-deny.toml --locked
-          check advisories bans licenses sources
-      - name: cargo-deny (graphlaw_host)
-        run: >-
-          cargo deny --manifest-path native/graphlaw_host/Cargo.toml
-          --config .github/cargo-deny.toml --locked
-          check advisories bans licenses sources
-      # SC-10: lib/ reads native/*/Cargo.toml; the Hex tarball must carry the
-      # exact native sources the composition lock pins, or consumers resolve
-      # to missing files.
-      - name: Package closure carries the native sources lib/ references
-        run: |
-          set -euo pipefail
-          pkg="$RUNNER_TEMP/pkg"
-          mix hex.build --unpack -o "$pkg"
-          for crate in hddl_cli graphlaw_host; do
-            for f in Cargo.toml Cargo.lock rust-toolchain.toml src/main.rs; do
-              test -f "$pkg/native/$crate/$f" || { echo "REFUSED(package:missing native/$crate/$f)" >&2; exit 2; }
-            done
-            test ! -e "$pkg/native/$crate/target" || { echo "REFUSED(package:ships native/$crate/target)" >&2; exit 2; }
-          done
-          mix run --no-start -e '
-            lock = AshA2A.Chicago.Release.CompositionLock.build!(repo: System.fetch_env!("PKG"))
-            if Enum.any?(Map.values(lock.native_pins), &is_nil/1), do: System.halt(2)
-            IO.inspect(lock.native_pins, label: "unpacked native_pins")'
-        env:
-          PKG: ${{ runner.temp }}/pkg
-          # test env: avoids compiling the dev-only ggen_igniter Rustler tree.
-          MIX_ENV: test
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       # test env: one compile, and skips the dev-only ggen_igniter Rustler
-      # build (no lib/ branch reads Mix.env() == :dev). Same env as the
-      # court workflows so the _build cache is shared.
+      # build (no lib/ branch reads Mix.env() == :dev).
       MIX_ENV: test
-    # Real PostgreSQL for AshA2A.Test.Repo (config/test.exs) --
-    # test/ash_a2a/oban_delivery_qualification_test.exs (GAP D real Oban
-    # integration) needs a real, reachable Postgres to create and query
-    # Oban's real `oban_jobs` table against; its own setup_all raises a
-    # clear diagnostic (rather than failing opaquely) when none is
-    # reachable, which is exactly what a hosted-CI run without this
-    # service produced: 0 failures, 4 invalid ("failure on setup_all
-    # callback, all tests have been invalidated"), exit code 2. Host port
-    # 55432 and the postgres/postgres/ash_a2a_test credentials match
-    # config/test.exs's `AshA2A.Test.Repo` config exactly -- the same
-    # values this repo's own local development Postgres container uses.
+    # Real PostgreSQL for AshA2A.Test.Repo (config/test.exs); credentials and
+    # host port 55432 match it exactly. Without it the Oban qualification
+    # tests are invalidated in setup_all.
     services:
       postgres:
         image: postgres:16
@@ -136,35 +98,28 @@ jobs:
           restore-keys: |
             ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-
             ash-a2a-v2-${{ runner.os }}-test-
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.1 --profile minimal
-      - name: Build exact ferroplan-backed HDDL CLI
-        run: cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked
-      - name: Build graphlaw_host (wasmtime runtime B)
-        run: cargo +1.97.1 build --manifest-path native/graphlaw_host/Cargo.toml --release --locked
-      - name: Preserve Cargo lock candidate
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: hddl-cli-cargo-lock
-          path: native/hddl_cli/Cargo.lock
-          if-no-files-found: error
-      - name: Verify Cargo locks are tracked and current
-        run: |
-          git ls-files --error-unmatch native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
-          git diff --exit-code -- native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
       - run: mix local.hex --force
       - run: mix local.rebar --force
       - run: mix deps.get --check-locked
       # test-env deps.get skips dev-only deps: fail if it had to rewrite the lock.
       - name: Verify mix.lock unchanged
         run: git diff --exit-code -- mix.lock
+      # Cheapest check first: fail in seconds, before any Rust or BEAM build.
       - run: mix format --check-formatted
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Build exact ferroplan-backed HDDL CLI
+        run: cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked
+      - name: Build graphlaw_host (wasmtime runtime B)
+        run: cargo +1.97.1 build --manifest-path native/graphlaw_host/Cargo.toml --release --locked
+      - name: Verify Cargo locks are tracked and current
+        run: |
+          git ls-files --error-unmatch native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
+          git diff --exit-code -- native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
       - id: compile
         run: mix compile --warnings-as-errors
-      # Immutable-key discipline: save only a COMPLETE build (compile step succeeded),
-      # even if a later step fails, under a per-run unique key so a later good run
-      # can save again; never after cancel or a failed compile (no partial cache).
+      # Immutable-key discipline: save only a COMPLETE build (compile succeeded),
+      # under a per-run unique key; never after cancel or a failed compile.
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         with:
@@ -174,11 +129,8 @@ jobs:
             native/hddl_cli/target
             native/graphlaw_host/target
           key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-${{ github.run_id }}
-      # TQ-09: coverage is measured and gated (threshold in mix.exs
-      # test_coverage/0). Plain `--cover` is required: with
-      # `--export-coverage` Mix only writes .coverdata and never evaluates the
-      # threshold (witnessed: exit 0 at 33% under a 99% floor), so the gate
-      # would be vacuous. The HTML report in cover/ is kept as evidence.
+      # TQ-09: coverage is gated by the threshold in mix.exs test_coverage/0.
+      # Plain `--cover` is required: `--export-coverage` never evaluates it.
       - run: mix test.all --cover
       - name: Preserve coverage evidence
         if: always()
