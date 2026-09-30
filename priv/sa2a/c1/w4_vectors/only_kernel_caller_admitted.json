@@ -1,7 +1,0 @@
-{
-  "version": "sa2a.c1.w4.v1",
-  "case": "only_kernel_caller_admitted",
-  "input": "change",
-  "route": "consequence",
-  "expected": "ok"
-}

@@ -1,6 +1,0 @@
-{
-  "id": "C2C3-wrong_principal",
-  "family": "authority-actuator-resource",
-  "invariant": "wrong_principal",
-  "expected": "explicit-decision"
-}

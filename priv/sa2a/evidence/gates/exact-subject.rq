@@ -1,1 +1,0 @@
-ASK { ?e <urn:sa2a:subject> ?s ; <urn:sa2a:effectSubject> ?x . FILTER(?s != ?x) }

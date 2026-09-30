@@ -1,5 +1,0 @@
-## vm.args for the authority_service release.
-## Distribution is off (RELEASE_DISTRIBUTION=none in env.sh.eex): the node has no
-## long/short node name and epmd is never started.
--start_epmd false
-+Q 4096

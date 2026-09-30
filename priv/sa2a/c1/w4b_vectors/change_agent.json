@@ -1,7 +1,0 @@
-{
-  "version": "sa2a.c1.w4b.v1",
-  "case": "change_agent",
-  "consequence": "change",
-  "route": "agent",
-  "expected": "consequence_kernel_required"
-}

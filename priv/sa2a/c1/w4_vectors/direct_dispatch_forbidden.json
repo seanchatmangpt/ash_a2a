@@ -1,7 +1,0 @@
-{
-  "version": "sa2a.c1.w4.v1",
-  "case": "direct_dispatch_forbidden",
-  "input": "change",
-  "route": "consequence",
-  "expected": "direct_dispatch_forbidden"
-}

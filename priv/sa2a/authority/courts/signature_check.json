@@ -1,6 +1,0 @@
-{
-  "id": "C2C3-signature_check",
-  "family": "authority-actuator-resource",
-  "invariant": "signature_check",
-  "expected": "explicit-decision"
-}

@@ -1,7 +1,0 @@
-{
-  "version": "sa2a-c1-w4c-1",
-  "case": "dynamic_and_dispatch",
-  "closure": "open",
-  "raw_effect_edge_count": 1,
-  "law": "zero consequential raw-effect edges outside ConsequenceKernel"
-}

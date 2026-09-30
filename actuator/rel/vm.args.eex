@@ -1,2 +1,0 @@
-## No -name/-sname on purpose: RELEASE_DISTRIBUTION=none (no epmd, no dist listener).
-+sbwt none

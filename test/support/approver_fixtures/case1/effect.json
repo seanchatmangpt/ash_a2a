@@ -1,1 +1,0 @@
-{"capability":"deploy.release","inputs":{"env":"prod","replicas":3},"target":"svc/payments"}

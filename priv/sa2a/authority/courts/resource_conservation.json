@@ -1,6 +1,0 @@
-{
-  "id": "C2C3-resource_conservation",
-  "family": "authority-actuator-resource",
-  "invariant": "resource_conservation",
-  "expected": "explicit-decision"
-}

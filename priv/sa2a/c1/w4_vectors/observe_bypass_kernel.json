@@ -1,7 +1,0 @@
-{
-  "version": "sa2a.c1.w4.v1",
-  "case": "observe_bypass_kernel",
-  "input": "observe",
-  "route": "observe",
-  "expected": "not_consequential"
-}

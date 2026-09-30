@@ -1,1 +1,0 @@
-{"capability":"secret.rotate","inputs":{"keys":["a","b"],"reason":"quarterly"},"target":"vault/prod"}

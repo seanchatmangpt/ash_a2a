@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a/resource-envelope/v1",
-  "required": [
-    "subject",
-    "version"
-  ],
-  "additionalProperties": false
-}

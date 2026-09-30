@@ -166,8 +166,12 @@ defmodule AshA2A.DfCM.FleetIntake do
 
       standing_closed?(donor) and
           Enum.any?(
-            ["requires_exact_subject", "requires_release_binding", "requires_frozen_closure",
-             "requires_receipt_replay_binding"],
+            [
+              "requires_exact_subject",
+              "requires_release_binding",
+              "requires_frozen_closure",
+              "requires_receipt_replay_binding"
+            ],
             &(donor[&1] != true)
           ) ->
         refusal(:standing_requirements, standing_binding(donor))

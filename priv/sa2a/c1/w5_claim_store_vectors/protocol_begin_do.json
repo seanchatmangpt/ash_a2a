@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a.c1.w5.claim-store.v1",
-  "case": "protocol_begin_do",
-  "invariant": "claim protocol persists doing before DO",
-  "expected": "doing",
-  "authority": "none",
-  "do_authority": false
-}

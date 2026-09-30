@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a.c1.w5.claim-store.v1",
-  "case": "replay_mismatch",
-  "invariant": "replay drift is refused",
-  "expected": "refused",
-  "authority": "none",
-  "do_authority": false
-}

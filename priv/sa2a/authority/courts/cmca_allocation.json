@@ -1,6 +1,0 @@
-{
-  "id": "C2C3-cmca_allocation",
-  "family": "authority-actuator-resource",
-  "invariant": "cmca_allocation",
-  "expected": "explicit-decision"
-}

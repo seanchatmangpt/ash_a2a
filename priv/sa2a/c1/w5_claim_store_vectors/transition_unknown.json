@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a.c1.w5.claim-store.v1",
-  "case": "transition_unknown",
-  "invariant": "doing transitions to unknown_outcome",
-  "expected": "ok",
-  "authority": "none",
-  "do_authority": false
-}

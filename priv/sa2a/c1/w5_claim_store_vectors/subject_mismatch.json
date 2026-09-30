@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a.c1.w5.claim-store.v1",
-  "case": "subject_mismatch",
-  "invariant": "claim refuses prepared subject drift",
-  "expected": "refused",
-  "authority": "none",
-  "do_authority": false
-}

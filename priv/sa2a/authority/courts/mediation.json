@@ -1,6 +1,0 @@
-{
-  "id": "C2C3-mediation",
-  "family": "authority-actuator-resource",
-  "invariant": "mediation",
-  "expected": "explicit-decision"
-}

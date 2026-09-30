@@ -1,6 +1,0 @@
-{
-  "id": "C2C3-signer_independence",
-  "family": "authority-actuator-resource",
-  "invariant": "signer_independence",
-  "expected": "explicit-decision"
-}

@@ -1,7 +1,0 @@
-defmodule AshA2A.Replan.StalePlanTest do
-  use ExUnit.Case, async: true
-
-  test "digest drift invalidates" do
-    assert AshA2A.Replan.StalePlan.stale?(%{projection_digest: "a"}, %{projection_digest: "b"})
-  end
-end

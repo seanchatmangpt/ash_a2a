@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a/budget-allocation/v1",
-  "required": [
-    "subject",
-    "version"
-  ],
-  "additionalProperties": false
-}

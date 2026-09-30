@@ -1,8 +1,0 @@
-(define (domain malformed-syntax
-  (:types phase)
-  (:predicates (current-phase ?p - phase))
-  (:task run-sequence :parameters (?start - phase))
-  (:action advance
-    :parameters (?from - phase ?to - phase
-    :precondition (current-phase ?from)
-    :effect (and (not (current-phase ?from)) (current-phase ?to)))

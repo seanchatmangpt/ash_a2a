@@ -1,3 +1,0 @@
-@prefix zz: <http://example.org/> .
-zz:b zz:p zz:c .
-zz:a zz:p zz:b .

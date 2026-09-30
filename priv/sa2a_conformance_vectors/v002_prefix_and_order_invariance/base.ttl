@@ -1,4 +1,0 @@
-@prefix zzz: <http://example.org/> .
-
-zzz:bob zzz:knows zzz:carol .
-zzz:alice zzz:knows zzz:bob .

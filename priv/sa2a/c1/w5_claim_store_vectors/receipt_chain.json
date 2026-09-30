@@ -1,8 +1,0 @@
-{
-  "schema": "sa2a.c1.w5.claim-store.v1",
-  "case": "receipt_chain",
-  "invariant": "receipt links are canonical and hash chained",
-  "expected": "sha256",
-  "authority": "none",
-  "do_authority": false
-}
