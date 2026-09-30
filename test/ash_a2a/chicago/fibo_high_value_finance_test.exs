@@ -217,10 +217,7 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
 
     refute a.prepared_digest == b.prepared_digest
     assert a.semantic_evidence["authority"] == "NONE"
-    assert b.semantic_evidence["authority"] == "NONE"
-  end
-
-  test "v26.9.29 FIBO profile is backed by the canonical Chicago agent courts" do
+    assert b.semantic_evidence["authority"] == "NONE"\n  end\n  test "v26.9.29 FIBO profile is backed by the canonical Chicago agent courts" do
     profile =
       "priv/sa2a/fibo_v26_9_29_chicago_profile.json"
       |> File.read!()
@@ -230,6 +227,9 @@ defmodule AshA2A.Chicago.FiboHighValueFinanceTest do
 
     assert profile["schema"] == "sa2a.fibo-chicago-profile.v1"
     assert profile["version"] == "v26.9.29"
+    assert profile["inherits"] == ["chicago.universal.v1"]
+    assert profile["authority"] == "NONE"
+    assert profile["consequence"] == "EVIDENCE_ONLY"
     assert profile["policyBoundary"]["currency"] == "USD"
     assert profile["policyBoundary"]["amountMicros"] == @usd_10m_micros
 
