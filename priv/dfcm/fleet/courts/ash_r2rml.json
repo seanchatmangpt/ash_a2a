@@ -1,0 +1,10 @@
+{
+  "schema": "ash-a2a.dfcm-court.v1",
+  "donor": "ash_r2rml",
+  "subject": "seanchatmangpt/ash_r2rml@36f25a30f2f60acde7da1a965626451dbc40b6f8",
+  "capability": "exact_source_semantic_evidence",
+  "falsifier": "authority other than NONE in semantic evidence is refused",
+  "expected": "REFUSED",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
+}
