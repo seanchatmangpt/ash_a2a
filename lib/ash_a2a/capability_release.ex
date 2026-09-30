@@ -66,6 +66,10 @@ defmodule AshA2A.CapabilityRelease do
       :capability_digest,
       :admission_digest,
       :release_digest,
+      :standing_binding_identity,
+      :standing_subject_revision,
+      :technical_standing,
+      :standing_receipt_digest,
       :binding_digest
     ]
     defstruct [
@@ -87,6 +91,10 @@ defmodule AshA2A.CapabilityRelease do
             capability_digest: String.t(),
             admission_digest: String.t(),
             release_digest: String.t(),
+            standing_binding_identity: String.t(),
+            standing_subject_revision: String.t(),
+            technical_standing: String.t(),
+            standing_receipt_digest: String.t(),
             binding_digest: String.t()
           }
   end
@@ -280,6 +288,12 @@ defmodule AshA2A.CapabilityRelease do
       release_capability_digest: binding.capability_digest,
       release_admission_digest: binding.admission_digest,
       release_evidence_digest: binding.release_digest,
+      standing_binding_identity: binding.standing_binding_identity,
+      standing_subject_revision: binding.standing_subject_revision,
+      technical_standing: binding.technical_standing,
+      standing_receipt_digest: binding.standing_receipt_digest,
+      external_standing: "NONE",
+      runtime_authority: "NONE",
       release_binding_digest: binding.binding_digest
     }
   end
@@ -304,6 +318,10 @@ defmodule AshA2A.CapabilityRelease do
       capability_digest: capability.digest,
       admission_digest: capability.admission_digest,
       release_digest: capability.release_digest,
+      standing_binding_identity: capability.standing_binding.portable_identity,
+      standing_subject_revision: capability.standing_binding.subject_revision,
+      technical_standing: capability.standing_binding.technical_standing,
+      standing_receipt_digest: capability.standing_binding.receipt_digest,
       binding_digest: digest_term(projection)
     }
   end
@@ -357,7 +375,8 @@ defmodule AshA2A.CapabilityRelease do
       capability.version,
       capability.digest,
       capability.admission_digest,
-      capability.release_digest
+      capability.release_digest,
+      capability.standing_binding.portable_identity
     }
   end
 
@@ -380,7 +399,11 @@ defmodule AshA2A.CapabilityRelease do
           "version" => capability.version,
           "capability_digest" => capability.digest,
           "admission_digest" => capability.admission_digest,
-          "release_digest" => capability.release_digest
+          "release_digest" => capability.release_digest,
+          "standing_binding_identity" => capability.standing_binding.portable_identity,
+          "standing_subject_revision" => capability.standing_binding.subject_revision,
+          "technical_standing" => capability.standing_binding.technical_standing,
+          "standing_receipt_digest" => capability.standing_binding.receipt_digest
         }
       end)
 
