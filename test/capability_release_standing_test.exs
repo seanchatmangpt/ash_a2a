@@ -84,7 +84,7 @@ defmodule AshA2A.CapabilityReleaseStandingTest do
              CapabilityRelease.release_from_standing(admitted(), repo: repo)
   end
 
-  test "standing_strict advertising equals its executable closure" , %{tmp_dir: dir} do
+  test "standing_strict advertising equals its executable closure", %{tmp_dir: dir} do
     repo = init_repo!(dir)
     subject_sha = commit!(repo, "app.txt", "v1")
     receipt = build_receipt!(repo)
