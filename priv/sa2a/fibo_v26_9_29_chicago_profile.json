@@ -122,5 +122,10 @@
         "SA2A-ENGINE"
       ]
     }
-  ]
+  ],
+  "inherits": [
+    "chicago.universal.v1"
+  ],
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY"
 }
