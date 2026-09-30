@@ -163,15 +163,26 @@ defmodule AshA2A.Semantic.EvidenceRef do
   defp valid_source?(_), do: false
 
   defp envelope_digest_valid?(ref) do
-    with {:ok, canonical} <- AshA2A.Identity.Canonical.encode(Map.delete(ref, "envelopeDigest")) do
-      expected =
-        "sha256:" <>
-          (:crypto.hash(:sha256, [@ash_r2rml_digest_domain, canonical])
-           |> Base.encode16(case: :lower))
+    body = Map.delete(ref, "envelopeDigest")
 
-      expected == ref["envelopeDigest"]
+    expected =
+      if Code.ensure_loaded?(AshR2RML.VKG.Serializer) and
+           function_exported?(AshR2RML.VKG.Serializer, :digest, 1) do
+        "sha256:" <> apply(AshR2RML.VKG.Serializer, :digest, [body])
+      else
+        fallback_ash_r2rml_digest(body)
+      end
+
+    expected == ref["envelopeDigest"]
+  end
+
+  defp fallback_ash_r2rml_digest(body) do
+    with {:ok, canonical} <- AshA2A.Identity.Canonical.encode(body) do
+      "sha256:" <>
+        (:crypto.hash(:sha256, [@ash_r2rml_digest_domain, canonical])
+         |> Base.encode16(case: :lower))
     else
-      {:error, _reason} -> false
+      {:error, _reason} -> nil
     end
   end
 
