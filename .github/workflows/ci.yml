@@ -5,8 +5,9 @@ on:
     branches: [main]
   pull_request:
 
-# 80/20 shape: `supply-chain` (fast: lock drift + Hex advisories) and `test`
-# (format -> compile -> tests, cheap checks first) gate every PR. Rust
+# Shape: `supply-chain` (fast) + `lane` x5 (the suite split along the repo's own
+# documented, measured seams) -> `coverage` (merged, threshold-gated) -> `test`
+# (aggregate; keeps the required check name). Rust
 # advisories/licenses and the package-closure check live in
 # supply-chain-deep.yml (lock-touching PRs + weekly), so a newly published
 # advisory cannot turn unrelated PRs red.
@@ -49,16 +50,30 @@ jobs:
       - name: Refuse retired / security-advisory Hex packages
         run: mix hex.audit
 
-  test:
+  # The suite, split along the seams mix.exs already documents: the async fast
+  # lane, the `:serial_solo` files (host-level shared resources: fixed ports,
+  # :peer, shared Postgres, native subprocess -- never sharded), and the
+  # `:serial_shard` files (VM-local shared state -- safe as N OS processes).
+  # Each lane is its own runner with its own Postgres service, so no
+  # cross-lane resource can collide. Setup is ~1 min warm; tests dominate.
+  lane:
+    name: lane (${{ matrix.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # one push should reveal every red lane, not the first
+      matrix:
+        include:
+          - { name: fast, cmd: "mix test", format: "true", save: "true" }
+          - { name: solo, cmd: "mix test.serial.solo" }
+          - { name: shard-1, cmd: "mix test.serial.shard --partitions 3", partition: "1" }
+          - { name: shard-2, cmd: "mix test.serial.shard --partitions 3", partition: "2" }
+          - { name: shard-3, cmd: "mix test.serial.shard --partitions 3", partition: "3" }
     env:
-      # test env: one compile, and skips the dev-only ggen_igniter Rustler
-      # build (no lib/ branch reads Mix.env() == :dev).
       MIX_ENV: test
     # Real PostgreSQL for AshA2A.Test.Repo (config/test.exs); credentials and
-    # host port 55432 match it exactly. Without it the Oban qualification
-    # tests are invalidated in setup_all.
+    # host port 55432 match it exactly. config/test.exs names the database
+    # `ash_a2a_test<MIX_TEST_PARTITION>`; shard lanes create theirs below.
     services:
       postgres:
         image: postgres:16
@@ -78,60 +93,48 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Admit exact subject
+      - uses: ./.github/actions/build
+        with:
+          format: ${{ matrix.format || 'false' }}
+          save-cache: ${{ matrix.save || 'false' }}
+      - name: Create partition database
+        if: ${{ matrix.partition }}
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-      # One toolchain identity everywhere (SC-09): .tool-versions is the pin.
-      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+          MIX_TEST_PARTITION: ${{ matrix.partition }}
+        run: mix ecto.create
+      # TQ-09: each lane exports coverage; the threshold is evaluated once, on
+      # the merged data, by the `coverage` job (`--export-coverage` alone never
+      # evaluates it).
+      - name: Run lane
+        env:
+          MIX_TEST_PARTITION: ${{ matrix.partition }}
+        run: ${{ matrix.cmd }} --cover --export-coverage ${{ matrix.name }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          version-file: .tool-versions
-          version-type: strict
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+          name: coverdata-${{ matrix.name }}
+          path: cover/*.coverdata
+          retention-days: 1
+          if-no-files-found: error
+
+  # Merge every lane's coverdata and evaluate the mix.exs coverage floor.
+  coverage:
+    needs: lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          path: |
-            deps
-            _build
-            native/hddl_cli/target
-            native/graphlaw_host/target
-          key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}
-          restore-keys: |
-            ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-
-            ash-a2a-v2-${{ runner.os }}-test-
-      - run: mix local.hex --force
-      - run: mix local.rebar --force
-      - run: mix deps.get --check-locked
-      # test-env deps.get skips dev-only deps: fail if it had to rewrite the lock.
-      - name: Verify mix.lock unchanged
-        run: git diff --exit-code -- mix.lock
-      # Cheapest check first: fail in seconds, before any Rust or BEAM build.
-      - run: mix format --check-formatted
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.1 --profile minimal
-      - name: Build exact ferroplan-backed HDDL CLI
-        run: cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked
-      - name: Build graphlaw_host (wasmtime runtime B)
-        run: cargo +1.97.1 build --manifest-path native/graphlaw_host/Cargo.toml --release --locked
-      - name: Verify Cargo locks are tracked and current
-        run: |
-          git ls-files --error-unmatch native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
-          git diff --exit-code -- native/hddl_cli/Cargo.lock native/graphlaw_host/Cargo.lock
-      - id: compile
-        run: mix compile --warnings-as-errors
-      # Immutable-key discipline: save only a COMPLETE build (compile succeeded),
-      # under a per-run unique key; never after cancel or a failed compile.
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/build
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: |
-            deps
-            _build
-            native/hddl_cli/target
-            native/graphlaw_host/target
-          key: ash-a2a-v2-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock', 'native/hddl_cli/Cargo.lock', 'native/graphlaw_host/Cargo.lock') }}-${{ github.run_id }}
-      # TQ-09: coverage is gated by the threshold in mix.exs test_coverage/0.
-      # Plain `--cover` is required: `--export-coverage` never evaluates it.
-      - run: mix test.all --cover
+          pattern: coverdata-*
+          merge-multiple: true
+          path: cover
+      - run: mix test.coverage
       - name: Preserve coverage evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -139,3 +142,18 @@ jobs:
           name: coverage-${{ github.event.pull_request.head.sha || github.sha }}
           path: cover/
           if-no-files-found: warn
+
+  # Aggregate, keeping the required check name `test`: green only if every
+  # lane and the coverage gate succeeded (skipped/cancelled count as red).
+  test:
+    needs: [lane, coverage]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          LANE: ${{ needs.lane.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: |
+          echo "lane=$LANE coverage=$COVERAGE"
+          test "$LANE" = success && test "$COVERAGE" = success
