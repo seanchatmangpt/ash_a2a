@@ -56,7 +56,7 @@ once it reaches 1.0.
 
 - `AshA2A.Semantic.EvidenceRef` now directly admits the v26.9.29 AshR2RML
   exact-source evidence envelope (nested source identity, RDFC-1.0,
-  provenance, replay identity and recomputed JCS envelope digest) while
+  provenance, replay identity and recomputed producer-domain envelope digest) while
   retaining the historical flat evidence-reference shape. The FIBO Chicago
   path now exercises this exact producer/consumer contract.
 - `AshA2A.Command` carries an optional `:spg_identity` (`AshA2A.SpgIdentity`);
