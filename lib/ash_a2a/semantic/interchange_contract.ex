@@ -47,9 +47,11 @@ defmodule AshA2A.Semantic.InterchangeContract do
       subject_revision: c.source_revision)
   end
 
-  defp text(attrs, key), do: case Map.get(attrs, key) do
-    v when is_binary(v) and byte_size(v) > 0 -> {:ok, v}
-    _ -> {:error, {:semantic_interchange_field_required, key}}
+  defp text(attrs, key) do
+    case Map.get(attrs, key) do
+      v when is_binary(v) and byte_size(v) > 0 -> {:ok, v}
+      _ -> {:error, {:semantic_interchange_field_required, key}}
+    end
   end
   defp exact_sha(attrs, key) do
     with {:ok, v} <- text(attrs, key),
