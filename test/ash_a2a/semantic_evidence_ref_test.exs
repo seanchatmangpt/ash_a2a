@@ -54,11 +54,16 @@ defmodule AshA2A.Semantic.EvidenceRefTest do
   end
 
   defp producer_digest(body) do
-    {:ok, canonical} = Canonical.encode(body)
+    if Code.ensure_loaded?(AshR2RML.VKG.Serializer) and
+         function_exported?(AshR2RML.VKG.Serializer, :digest, 1) do
+      "sha256:" <> apply(AshR2RML.VKG.Serializer, :digest, [body])
+    else
+      {:ok, canonical} = Canonical.encode(body)
 
-    "sha256:" <>
-      (:crypto.hash(:sha256, ["ashr2rml.vkg.canonical.v1\n", canonical])
-       |> Base.encode16(case: :lower))
+      "sha256:" <>
+        (:crypto.hash(:sha256, ["ashr2rml.vkg.canonical.v1\n", canonical])
+         |> Base.encode16(case: :lower))
+    end
   end
 
   defp deep_merge(left, right) when is_map(left) and is_map(right) do
