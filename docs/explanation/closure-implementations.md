@@ -6,6 +6,13 @@ The redundant modules have since been removed (see "Deduplication" below); this 
 
 ## Standing and authority
 
+Release closure now has two compatible enforcement levels:
+
+- `:strict` preserves the historical frozen released-capability closure.
+- `:standing_strict` additionally requires each released member to have been produced by `CapabilityRelease.release_from_standing/2`, which resolves a durable exact-subject court receipt through `StandingRef`.
+
+The standing binding is technical qualification evidence only. It is included in the v2 portable release-closure projection and receipt attributes, but it is not external institutional standing and it is not an authority token. Legacy closures with no standing binding retain their v1 portable identity.
+
 Everything in these three trees is evidence or candidate only. None of it grants authority.
 Their outputs are `{:ok, map}` / `{:error, refusal}` values that describe a candidate; they do not
 act. Authority to DO exists only in `AshA2A.CommandBus` and the `AshA2A.BrceAnchor` sole-DO fence.
