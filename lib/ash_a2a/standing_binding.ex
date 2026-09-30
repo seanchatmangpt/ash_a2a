@@ -21,7 +21,7 @@ defmodule AshA2A.StandingBinding do
     required = Keyword.get(opts, :standing, "CONFORMANT")
     with :ok <- subject_present(capability),
          true <- Map.has_key?(@levels, required) || {:error, {:unknown_required_standing, required}},
-         {:ok, r} <- AshA2A.StandingRef.resolve(opts),
+         {:ok, r} <- resolve_at_least(opts, required),
          :ok <- exact_subject(capability.subject_revision, r),
          :ok <- durable(r),
          :ok <- standing_at_least(r.standing, required) do
@@ -73,6 +73,28 @@ defmodule AshA2A.StandingBinding do
   defp durable(%{receipt_source: "git:" <> _}), do: :ok
   defp durable(%{receipt_source: "artifact:" <> _}), do: :ok
   defp durable(_), do: {:error, :standing_evidence_not_durable}
+
+  # StandingRef addresses an exact court standing; release law is >= required.
+  defp resolve_at_least(opts, required) do
+    required_rank = Map.fetch!(@levels, required)
+
+    @levels
+    |> Enum.filter(fn {_standing, rank} -> rank >= required_rank end)
+    |> Enum.sort_by(fn {standing, rank} -> {-rank, standing} end)
+    |> Enum.reduce_while({:error, {:no_standing_at_or_above, required, []}}, fn {standing, _},
+                                                                                 {:error, {_, _, refused}} ->
+      case AshA2A.StandingRef.resolve(Keyword.put(opts, :standing, standing)) do
+        {:ok, resolution} -> {:halt, {:ok, resolution}}
+        {:error, reason} ->
+          {:cont, {:error, {:no_standing_at_or_above, required, [{standing, reason} | refused]}}}
+      end
+    end)
+    |> case do
+      {:error, {:no_standing_at_or_above, req, refused}} ->
+        {:error, {:no_standing_at_or_above, req, Enum.reverse(refused)}}
+      other -> other
+    end
+  end
 
   defp standing_at_least(observed, required) do
     with {:ok, o} <- Map.fetch(@levels, observed), {:ok, r} <- Map.fetch(@levels, required) do
