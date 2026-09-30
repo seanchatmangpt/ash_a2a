@@ -108,6 +108,7 @@ defmodule AshA2A.CapabilityRelease do
       :capability_digest,
       :admission_digest,
       :release_digest,
+      :standing_binding,
       :binding_digest
     ]
 
