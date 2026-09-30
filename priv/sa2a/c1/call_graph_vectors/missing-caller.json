@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "missing-caller",
+  "edge": {
+    "caller": "",
+    "callee": "Elixir.Adapter",
+    "operation": "observe"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "incomplete_call_edge"
+  }
+}

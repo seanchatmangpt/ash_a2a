@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "refusal-registry",
+  "edge": {
+    "caller": "Elixir.AshA2A.ConsequenceKernel.Runtime.Pipeline",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.RefusalRegistry",
+    "operation": "classify"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}

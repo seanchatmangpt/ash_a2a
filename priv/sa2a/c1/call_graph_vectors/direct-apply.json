@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "direct-apply",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.Adapter",
+    "operation": "apply"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "direct_consequence_operation"
+  }
+}

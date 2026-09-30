@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "w5-claim",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.W5.ClaimProtocol",
+    "operation": "claim"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}

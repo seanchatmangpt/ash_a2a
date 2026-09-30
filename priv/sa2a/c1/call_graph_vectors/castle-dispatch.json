@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "castle-dispatch",
+  "edge": {
+    "caller": "Elixir.Castle.Adapter",
+    "callee": "Elixir.AshA2A.Dispatcher",
+    "operation": "dispatch"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "legacy_bypass"
+  }
+}

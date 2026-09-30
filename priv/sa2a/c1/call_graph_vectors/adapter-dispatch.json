@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "adapter-dispatch",
+  "edge": {
+    "caller": "Elixir.Adapter.C",
+    "callee": "Elixir.Provider.C",
+    "operation": "dispatch"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "direct_consequence_operation"
+  }
+}

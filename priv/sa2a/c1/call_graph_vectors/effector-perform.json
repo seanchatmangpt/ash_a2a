@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "effector-perform",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.AshA2A.Effector",
+    "operation": "perform"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "legacy_bypass"
+  }
+}

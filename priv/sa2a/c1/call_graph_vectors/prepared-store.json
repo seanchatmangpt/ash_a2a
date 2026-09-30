@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "prepared-store",
+  "edge": {
+    "caller": "Elixir.AshA2A.ConsequenceKernel.Runtime.PrepareStage",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.PreparedEffectStore",
+    "operation": "put"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}

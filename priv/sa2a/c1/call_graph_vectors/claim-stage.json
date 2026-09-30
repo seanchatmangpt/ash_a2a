@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "claim-stage",
+  "edge": {
+    "caller": "Elixir.AshA2A.ConsequenceKernel.Runtime.Pipeline",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Runtime.ClaimStage",
+    "operation": "claim"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}
