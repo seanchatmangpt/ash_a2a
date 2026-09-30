@@ -24,7 +24,9 @@ defmodule AshA2A.CapabilityRelease do
       :state,
       :admission_digest,
       :release_digest,
-      :retirement_digest
+      :retirement_digest,
+      :subject_revision,
+      :standing_binding
     ]
 
     @type state :: :candidate | :admitted | :released | :retired
@@ -36,7 +38,9 @@ defmodule AshA2A.CapabilityRelease do
             state: state(),
             admission_digest: String.t() | nil,
             release_digest: String.t() | nil,
-            retirement_digest: String.t() | nil
+            retirement_digest: String.t() | nil,
+            subject_revision: String.t() | nil,
+            standing_binding: AshA2A.StandingBinding.t() | nil
           }
   end
 
@@ -62,6 +66,10 @@ defmodule AshA2A.CapabilityRelease do
       :capability_digest,
       :admission_digest,
       :release_digest,
+      :standing_binding_identity,
+      :standing_subject_revision,
+      :technical_standing,
+      :standing_receipt_digest,
       :binding_digest
     ]
     defstruct [
@@ -72,6 +80,10 @@ defmodule AshA2A.CapabilityRelease do
       :capability_digest,
       :admission_digest,
       :release_digest,
+      :standing_binding_identity,
+      :standing_subject_revision,
+      :technical_standing,
+      :standing_receipt_digest,
       :binding_digest
     ]
 
@@ -83,18 +95,32 @@ defmodule AshA2A.CapabilityRelease do
             capability_digest: String.t(),
             admission_digest: String.t(),
             release_digest: String.t(),
+            standing_binding_identity: String.t(),
+            standing_subject_revision: String.t(),
+            technical_standing: String.t(),
+            standing_receipt_digest: String.t(),
             binding_digest: String.t()
           }
   end
 
   alias __MODULE__.{Binding, Capability, Closure}
+  alias AshA2A.StandingBinding
 
   @spec candidate(String.t(), String.t(), String.t()) :: Capability.t()
-  def candidate(id, version, digest) do
+  def candidate(id, version, digest), do: candidate(id, version, digest, [])
+
+  @spec candidate(String.t(), String.t(), String.t(), keyword()) :: Capability.t()
+  def candidate(id, version, digest, opts) when is_list(opts) do
     validate_text!(:id, id)
     validate_text!(:version, version)
     validate_digest!(:digest, digest)
-    %Capability{id: id, version: version, digest: digest, state: :candidate}
+    %Capability{
+      id: id,
+      version: version,
+      digest: digest,
+      state: :candidate,
+      subject_revision: Keyword.get(opts, :subject_revision)
+    }
   end
 
   @spec admit(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
@@ -112,19 +138,30 @@ defmodule AshA2A.CapabilityRelease do
   def admit(%Capability{state: state}, _digest),
     do: {:error, {:invalid_release_transition, state, :admitted}}
 
-  @spec release(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
-  def release(%Capability{state: :admitted} = capability, release_digest) do
-    with :ok <- validate_digest(:release_digest, release_digest) do
+  @doc """
+  Release only after resolving durable admitted standing for the exact subject.
+
+  Digest-shaped caller input is intentionally not accepted. The options are
+  resolved by StandingBinding/StandingRef against git-tracked or CI-artifact
+  court evidence.
+  """
+  @spec release(Capability.t(), keyword()) :: {:ok, Capability.t()} | {:error, term()}
+  def release(%Capability{state: :admitted} = capability, opts) when is_list(opts) do
+    with {:ok, standing_binding} <- StandingBinding.resolve(capability, opts) do
       {:ok,
        %{
          capability
          | state: :released,
-           release_digest: release_digest
+           release_digest: standing_binding.portable_identity,
+           standing_binding: standing_binding
        }}
     end
   end
 
-  def release(%Capability{state: state}, _digest),
+  def release(%Capability{state: :admitted}, release_digest) when is_binary(release_digest),
+    do: {:error, {:standing_binding_required, release_digest}}
+
+  def release(%Capability{state: state}, _evidence),
     do: {:error, {:invalid_release_transition, state, :released}}
 
   @spec retire(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
@@ -149,6 +186,7 @@ defmodule AshA2A.CapabilityRelease do
   @spec freeze([Capability.t()]) :: {:ok, Closure.t()} | {:error, term()}
   def freeze(capabilities) when is_list(capabilities) do
     with :ok <- require_released(capabilities),
+         :ok <- require_standing_bound(capabilities),
          :ok <- require_unique_ids(capabilities) do
       ordered = Enum.sort_by(capabilities, &{&1.id, &1.version, &1.digest})
       digest = digest_term(Enum.map(ordered, &closure_projection/1))
@@ -198,7 +236,8 @@ defmodule AshA2A.CapabilityRelease do
         {:ok, nil}
 
       {:strict, %Closure{} = closure} ->
-        with {:ok, capability} <- select(closure, capability_id) do
+        with {:ok, capability} <- select(closure, capability_id),
+             :ok <- StandingBinding.verify_durable(capability.standing_binding, opts) do
           {:ok, build_binding(closure, capability)}
         end
 
@@ -230,8 +269,20 @@ defmodule AshA2A.CapabilityRelease do
         {:ok, skills}
 
       {:strict, %Closure{} = closure} ->
-        released = MapSet.new(released_ids(closure))
-        {:ok, Enum.filter(skills, &MapSet.member?(released, &1.id))}
+        Enum.reduce_while(skills, {:ok, []}, fn skill, {:ok, acc} ->
+          if Map.has_key?(closure.capabilities, skill.id) do
+            case binding(skill.id, opts) do
+              {:ok, %Binding{}} -> {:cont, {:ok, [skill | acc]}}
+              {:error, reason} -> {:halt, {:error, reason}}
+            end
+          else
+            {:cont, {:ok, acc}}
+          end
+        end)
+        |> case do
+          {:ok, admitted} -> {:ok, Enum.reverse(admitted)}
+          error -> error
+        end
 
       {:strict, nil} ->
         {:error, :capability_release_closure_missing}
@@ -254,6 +305,12 @@ defmodule AshA2A.CapabilityRelease do
       release_capability_digest: binding.capability_digest,
       release_admission_digest: binding.admission_digest,
       release_evidence_digest: binding.release_digest,
+      standing_binding_identity: binding.standing_binding_identity,
+      standing_subject_revision: binding.standing_subject_revision,
+      technical_standing: binding.technical_standing,
+      standing_receipt_digest: binding.standing_receipt_digest,
+      external_standing: "NONE",
+      runtime_authority: "NONE",
       release_binding_digest: binding.binding_digest
     }
   end
@@ -266,7 +323,8 @@ defmodule AshA2A.CapabilityRelease do
       capability.version,
       capability.digest,
       capability.admission_digest,
-      capability.release_digest
+      capability.release_digest,
+      capability.standing_binding.portable_identity
     }
 
     %Binding{
@@ -277,6 +335,10 @@ defmodule AshA2A.CapabilityRelease do
       capability_digest: capability.digest,
       admission_digest: capability.admission_digest,
       release_digest: capability.release_digest,
+      standing_binding_identity: capability.standing_binding.portable_identity,
+      standing_subject_revision: capability.standing_binding.subject_revision,
+      technical_standing: capability.standing_binding.technical_standing,
+      standing_receipt_digest: capability.standing_binding.receipt_digest,
       binding_digest: digest_term(projection)
     }
   end
@@ -305,6 +367,24 @@ defmodule AshA2A.CapabilityRelease do
     end
   end
 
+  defp require_standing_bound(capabilities) do
+    Enum.reduce_while(capabilities, :ok, fn
+      %Capability{id: id, digest: digest, subject_revision: subject,
+                  standing_binding: %StandingBinding{} = binding}, :ok ->
+        with true <- binding.capability_id == id || {:error, {:standing_capability_id_mismatch, id}},
+             true <- binding.capability_digest == digest || {:error, {:standing_capability_digest_mismatch, id}},
+             true <- binding.subject_revision == subject || {:error, {:standing_subject_revision_mismatch, id}},
+             :ok <- StandingBinding.verify(binding) do
+          {:cont, :ok}
+        else
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+
+      %Capability{id: id}, :ok ->
+        {:halt, {:error, {:standing_binding_missing, id}}}
+    end)
+  end
+
   defp require_unique_ids(capabilities) do
     ids = Enum.map(capabilities, & &1.id)
 
@@ -320,7 +400,8 @@ defmodule AshA2A.CapabilityRelease do
       capability.version,
       capability.digest,
       capability.admission_digest,
-      capability.release_digest
+      capability.release_digest,
+      capability.standing_binding.portable_identity
     }
   end
 
@@ -343,7 +424,11 @@ defmodule AshA2A.CapabilityRelease do
           "version" => capability.version,
           "capability_digest" => capability.digest,
           "admission_digest" => capability.admission_digest,
-          "release_digest" => capability.release_digest
+          "release_digest" => capability.release_digest,
+          "standing_binding_identity" => capability.standing_binding.portable_identity,
+          "standing_subject_revision" => capability.standing_binding.subject_revision,
+          "technical_standing" => capability.standing_binding.technical_standing,
+          "standing_receipt_digest" => capability.standing_binding.receipt_digest
         }
       end)
 
