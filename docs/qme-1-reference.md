@@ -12,7 +12,7 @@ Local conformance is additive. A local profile MUST NOT weaken exact-subject bin
 
 The reference path now consumes the current AshR2RML exact-source semantic-evidence envelope directly. SA2A admits the nested immutable source identity, RDFC-1.0 canonicalization, graph digest, replay identity, producer provenance and replayable envelope digest while preserving `authority = NONE` and `consequence = EVIDENCE_ONLY`. PreparedEffect therefore binds the exact semantic source without reimplementing RDF semantics.
 
-Capability release also has an additive standing-closed mode. `release_from_standing/2` resolves a durable exact-subject Chicago receipt through `AshA2A.StandingRef`; `freeze_standing/1` freezes only capabilities carrying that technical-standing binding; and `:standing_strict` makes the advertised/executable closure fail closed when standing evidence is absent.
+Capability release also has an additive standing-closed mode. `release_from_standing/2` resolves a durable exact-subject Chicago receipt through `AshA2A.StandingRef`; `freeze_standing/1` freezes only capabilities carrying a recomputable CONFORMANT technical-standing binding; and `:standing_strict` makes the advertised/executable closure fail closed when standing evidence is absent, downgraded, or internally inconsistent.
 
 The boundaries remain distinct:
 
