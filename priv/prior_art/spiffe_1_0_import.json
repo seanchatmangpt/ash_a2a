@@ -1,0 +1,19 @@
+{
+  "schema": "prior-art-import/v1",
+  "donor": {
+    "standard": "SPIFFE",
+    "version": "1.0",
+    "source": "https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/"
+  },
+  "required_capability": "workload-identity",
+  "existing_entails_required": true,
+  "semantic_delta": "NONE",
+  "authority_ceiling": "IDENTITY_ONLY",
+  "do_authority": false,
+  "negative_knowledge": [
+    "workload identity is not authorization",
+    "SVID possession is not consequential authority",
+    "trust-domain membership is not external standing",
+    "authentication is not effect admission"
+  ]
+}
