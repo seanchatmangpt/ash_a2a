@@ -1,0 +1,19 @@
+{
+  "schema": "prior-art-import/v1",
+  "donor": {
+    "standard": "OpenID AuthZEN",
+    "version": "1.0",
+    "source": "https://openid.net/specs/authorization-api-1_0.html"
+  },
+  "required_capability": "authorization-decision-interchange",
+  "existing_entails_required": true,
+  "semantic_delta": "NONE",
+  "authority_ceiling": "SELECT",
+  "do_authority": false,
+  "negative_knowledge": [
+    "authorization decision is not effect execution",
+    "decision transport is not resource mutation",
+    "subject identity is not authorization",
+    "policy decision is not external standing"
+  ]
+}
