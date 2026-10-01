@@ -1,8 +1,12 @@
 defmodule AuthorityService.Policy do
   @moduledoc """
-  Static policy: `(effect_class, amount)` tiers -> required `k` distinct human custodians
-  out of the `n` registered `approvers`; policy epoch; TTLs (300s human / 900s automated);
-  clock skew allowance (5s). `k = 0` is the automated tier.
+  Static policy: `effect_class` -> required `k` distinct human custodians out of the `n`
+  registered `approvers`; policy epoch; TTLs (300s human / 900s automated); clock skew
+  allowance (5s). `k = 0` is the automated tier.
+
+  The approval tier derives from the server-side policy class ONLY. A class's `k` is the
+  maximum `k` among its configured tiers (most restrictive); any amount the requester put
+  in the effect never lowers it (B3: tier confusion).
   """
   @tiers [:i1, :i2, :i3, :i4]
 
@@ -37,25 +41,16 @@ defmodule AuthorityService.Policy do
     %{p | approvers: Enum.uniq(p.approvers)}
   end
 
-  @doc "Required distinct approvers for an effect; fail closed on an unknown class."
-  @spec required(t(), String.t(), integer()) :: {:ok, non_neg_integer()} | {:error, atom()}
-  def required(%__MODULE__{classes: classes}, class, amount)
-      when is_binary(class) and is_integer(amount) and amount >= 0 do
-    with {:ok, tiers} <- Map.fetch(classes, class) |> or_unknown(),
-         %{k: k} <- Enum.find(tiers, &within?(amount, &1.max_amount)) do
-      {:ok, k}
-    else
+  @doc "Required distinct approvers for a policy class; fail closed on an unknown class."
+  @spec required(t(), String.t()) :: {:ok, non_neg_integer()} | {:error, atom()}
+  def required(%__MODULE__{classes: classes}, class) when is_binary(class) do
+    case Map.fetch(classes, class) do
+      {:ok, [_ | _] = tiers} -> {:ok, tiers |> Enum.map(& &1.k) |> Enum.max()}
       _ -> {:error, :unknown_effect_class}
     end
   end
 
-  def required(_, _, _), do: {:error, :malformed_effect}
-
-  defp or_unknown({:ok, _} = ok), do: ok
-  defp or_unknown(:error), do: {:error, :unknown_effect_class}
-
-  defp within?(_, :infinity), do: true
-  defp within?(amount, max), do: amount <= max
+  def required(_, _), do: {:error, :malformed_effect}
 
   @doc "Ordering of custody tiers."
   def tier_rank(t), do: Enum.find_index(@tiers, &(&1 == t))
@@ -63,7 +58,7 @@ defmodule AuthorityService.Policy do
   @doc "Load from a JSON file (`epoch`, `approvers`, `min_approver_tier`, `classes`)."
   @spec from_json(binary()) :: {:ok, t()} | {:error, :policy_malformed}
   def from_json(json) do
-    with {:ok, m} <- Jason.decode(json),
+    with {:ok, m} <- Sa2aCrypto.StrictJson.decode(json, canonical: false),
          classes <-
            Map.new(m["classes"], fn {c, tiers} ->
              {c,

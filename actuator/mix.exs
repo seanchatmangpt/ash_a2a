@@ -4,7 +4,7 @@ defmodule Actuator.MixProject do
   def project do
     [
       app: :actuator,
-      version: "26.9.28",
+      version: "26.9.29",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),

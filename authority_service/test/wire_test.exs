@@ -34,7 +34,7 @@ defmodule AuthorityService.WireTest do
     sock = Path.join(ctx.dir, "a.sock")
     {:ok, _} = Listener.start_link(issuer: ctx.issuer, transport: {:unix, sock}, max_bytes: 4096)
 
-    e = effect(%{"amount" => 500_000})
+    e = effect()
     d = digest(effect_bytes(e))
     apps = for n <- ~w(alice bob), do: approval(signer_named(ctx, n), d)
 
@@ -49,7 +49,7 @@ defmodule AuthorityService.WireTest do
                sock,
                frame(
                  Map.put(
-                   request(effect(%{"amount" => 500_000, "idem" => "z"}), []),
+                   request(effect(%{"idem" => "z"}), []),
                    "op",
                    "issue"
                  )

@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "standing",
+  "edge": {
+    "caller": "Elixir.AshA2A.ConsequenceKernel.Runtime.OutcomeStage",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Standing",
+    "operation": "derive"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "kernel_mediated"
+  }
+}

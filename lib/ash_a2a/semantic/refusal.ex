@@ -171,6 +171,11 @@ defmodule AshA2A.Semantic.Refusal do
     policy_evidence_mismatch: :refused_authority,
     policy_evidence_missing: :refused_authority,
     # --- merged C1/C2 consequence-kernel + replan-port codes (v26.9.28) ----
+    # --- v26.9.29 hardening codes (authority/actuator/strict JSON) ----------
+    duplicate_json_key: :refused_structure,
+    audience_not_registered: :refused_authority,
+    audience_unconfigured: :refused_authority,
+    approver_revoked_during_issuance: :refused_authority,
     already_claimed: :refused_consequence,
     effect_claim_missing: :refused_consequence,
     effect_in_flight: :refused_consequence,

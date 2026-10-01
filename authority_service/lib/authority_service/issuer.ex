@@ -14,6 +14,8 @@ defmodule AuthorityService.Issuer do
 
   Refusal codes: `:malformed_request`, `:digest_mismatch`, `:malformed_effect`,
   `:non_canonical_effect`, `:unknown_effect_class`, `:already_issued`,
+  `:audience_not_registered` (request named an audience other than the server-side registered
+  actuator identity), `:audience_unconfigured`, `:approver_revoked_during_issuance`,
   `:insufficient_approvals` (detail = per-approval refusal codes), `:journal_failed`,
   `:sign_failed`.
   """
@@ -43,7 +45,7 @@ defmodule AuthorityService.Issuer do
 
   @impl true
   def init(%Config{} = config) do
-    case Journal.open(config.journal_path) do
+    case Journal.open(config.journal_path, config.anchor_path) do
       {:ok, journal} -> {:ok, %{config: config, journal: journal}}
       {:error, reason} -> {:stop, reason}
     end
@@ -53,11 +55,20 @@ defmodule AuthorityService.Issuer do
   def handle_call({:issue, request, now}, _from, %{config: c, journal: j} = st) do
     now = now || now(c)
 
+    # The registry/revocation view is resolved HERE, inside the serialized step (the GenServer
+    # mailbox is the store's dequeue), and re-checked immediately before the journal append.
+    c = %{c | approver_registry: resolve_registry(c.approver_registry)}
+
     case do_issue(request, now, c, j) do
       {:ok, cert, j2} -> {:reply, {:ok, cert}, %{st | journal: j2}}
+      # the journal file may be ahead of our state: fail closed, restart re-validates the chain
+      {:refused, :journal_failed, _} = r -> {:stop, :journal_failed, r, st}
       {:refused, _, _} = r -> {:reply, r, st}
     end
   end
+
+  defp resolve_registry(f) when is_function(f, 0), do: f.()
+  defp resolve_registry(view), do: view
 
   defp now(%Config{clock: f}) when is_function(f, 0), do: f.()
   defp now(_), do: System.os_time(:second)
@@ -66,7 +77,7 @@ defmodule AuthorityService.Issuer do
   def terminate(_, %{journal: j}), do: Journal.close(j)
 
   defp do_issue(request, now, c, j) do
-    with {:ok, req} <- parse_request(request, c.policy),
+    with {:ok, req} <- parse_request(request, c),
          :ok <- digest_ok(req),
          {:ok, effect} <- parse_effect(req.effect),
          {:ok, k} <- required(c.policy, effect),
@@ -81,26 +92,39 @@ defmodule AuthorityService.Issuer do
 
   # ---- request ----------------------------------------------------------
 
+  # The certificate audience is the server-side registered actuator identity. A request MAY
+  # echo an audience, but only that exact registered one; anything else is refused (B1).
   defp parse_request(
-         %{"effect" => eff, "effect_digest" => dig, "audience" => aud, "generation" => gen} = r,
-         policy
+         %{"effect" => eff, "effect_digest" => dig, "generation" => gen} = r,
+         %{actuator_audience: aud, policy: policy}
        )
-       when is_binary(eff) and is_binary(dig) and is_binary(aud) and aud != "" and
-              is_integer(gen) and gen >= 0 do
+       when is_binary(eff) and is_binary(dig) and is_integer(gen) and gen >= 0 do
     approvals = Map.get(r, "approvals", [])
 
-    with {:ok, bytes} <- Envelope.b64(eff) |> tag(:malformed_request),
+    with :ok <- audience_ok(Map.get(r, "audience"), aud),
+         {:ok, bytes} <- Envelope.b64(eff) |> tag(:malformed_request),
          true <- byte_size(bytes) <= @max_effect_bytes or {:error, :malformed_request},
          true <-
            (is_list(approvals) and length(approvals) <= policy.max_approvals) or
              {:error, :malformed_request} do
       {:ok, %{effect: bytes, digest: dig, audience: aud, generation: gen, approvals: approvals}}
     else
-      _ -> {:error, :malformed_request}
+      {:error, code} when code in [:audience_not_registered, :audience_unconfigured] ->
+        {:error, code}
+
+      _ ->
+        {:error, :malformed_request}
     end
   end
 
   defp parse_request(_, _), do: {:error, :malformed_request}
+
+  defp audience_ok(_, aud) when not is_binary(aud) or aud == "",
+    do: {:error, :audience_unconfigured}
+
+  defp audience_ok(nil, _), do: :ok
+  defp audience_ok(aud, aud), do: :ok
+  defp audience_ok(_, _), do: {:error, :audience_not_registered}
 
   defp tag({:ok, _} = ok, _), do: ok
   defp tag(_, code), do: {:error, code}
@@ -112,7 +136,8 @@ defmodule AuthorityService.Issuer do
   # The digest is recomputed from the presented bytes; class/amount/principal are read from
   # those bytes, never from side fields of the request.
   defp parse_effect(bytes) do
-    with {:ok, term} <- Jason.decode(bytes) |> tag(:malformed_effect),
+    with {:ok, term} <-
+           Sa2aCrypto.StrictJson.decode(bytes, canonical: false) |> tag(:malformed_effect),
          {:ok, map} <- SignedMessage.normalize(term) |> tag(:malformed_effect),
          true <- Jcs.encode(map) == bytes or {:error, :non_canonical_effect},
          {:ok, _class, _amount} <- class_and_amount(map),
@@ -126,19 +151,21 @@ defmodule AuthorityService.Issuer do
     _ -> {:error, :malformed_effect}
   end
 
+  # Tier from the policy class ONLY; the effect's amount is validated for shape but never
+  # consulted for the tier (B3).
   defp required(policy, effect) do
-    with {:ok, cls, amt} <- class_and_amount(effect) do
-      Policy.required(policy, cls, amt)
+    with {:ok, cls, _amount_ignored} <- class_and_amount(effect) do
+      Policy.required(policy, cls)
     else
       {:error, code} -> {:error, code}
     end
   end
 
   # Two effect shapes carry their policy class in the signed bytes themselves:
-  #   * authority shape: top-level `effect_class` + integer `amount` (tiered by amount);
+  #   * authority shape: top-level `effect_class` + integer `amount` (shape-checked, never used for the tier);
   #   * actuator shape (`Actuator.Effect`: `effect_type`, `consequence_class`, `params`, no
-  #     amount): the class is the effect's `consequence_class` and the tier is the class's
-  #     lowest-amount tier (amount 0), because an actuator effect declares no monetary amount.
+  #     amount): the class is the effect's `consequence_class` and the tier is the policy
+  #     class's own tier (see `Policy`); an actuator effect declares no amount.
   #     An unknown class still refuses (`:unknown_effect_class`), so nothing is issued for a
   #     class the operator's policy does not name. This is what lets ONE canonical byte string
   #     be both what the authority certifies and what the actuator executes.
@@ -176,7 +203,7 @@ defmodule AuthorityService.Issuer do
 
   defp parse_approval(%{"envelope" => env, "message" => msg})
        when is_map(env) and is_binary(msg) do
-    with {:ok, json} <- Jason.encode(env) |> tag(:malformed_approval),
+    with {:ok, json} <- jcs(env),
          {:ok, e} <- Envelope.decode(json) |> tag(:malformed_approval),
          {:ok, bytes} <- Envelope.b64(msg) |> tag(:malformed_approval) do
       {:ok, %{envelope: e, message: bytes}}
@@ -186,6 +213,12 @@ defmodule AuthorityService.Issuer do
   end
 
   defp parse_approval(_), do: {:error, :malformed_approval}
+
+  defp jcs(env) do
+    {:ok, Jcs.encode(env)}
+  rescue
+    _ -> {:error, :malformed_approval}
+  end
 
   defp take({:error, code}, acc, _ctx), do: %{acc | detail: [code | acc.detail]}
 
@@ -201,6 +234,7 @@ defmodule AuthorityService.Issuer do
           rec = %{
             custodian: standing.custodian_id,
             kid: standing.kid,
+            epoch: standing.epoch,
             nonce: a.envelope.nonce,
             expires: msg["expires"]
           }
@@ -341,7 +375,7 @@ defmodule AuthorityService.Issuer do
       "nonce" => nonce,
       "not_before" => now,
       "expires" => expires,
-      "audience" => req.audience
+      "audience" => c.actuator_audience
     }
 
     entry = %{
@@ -349,13 +383,14 @@ defmodule AuthorityService.Issuer do
       "nonce" => nonce,
       "effect_digest" => req.digest,
       "generation" => req.generation,
-      "audience" => req.audience,
+      "audience" => c.actuator_audience,
       "expires" => expires,
       "approvals" => Enum.map(counted, &[&1.kid, &1.nonce])
     }
 
     # reserve durably (fsync) BEFORE signing: a crash after this point burns the nonce
     with {:ok, bytes} <- SignedMessage.build(fields) |> tag(:sign_failed),
+         :ok <- still_standing(counted, c),
          {:ok, j2} <- Journal.append(j, entry) |> tag(:journal_failed),
          {:ok, sig} <-
            Sa2aCrypto.Native.sign(key.alg, bytes, key.private_key) |> tag(:sign_failed) do
@@ -369,7 +404,7 @@ defmodule AuthorityService.Issuer do
         nonce: nonce,
         not_before: now,
         expires: expires,
-        audience: req.audience
+        audience: c.actuator_audience
       }
 
       {:ok, json} = Envelope.encode(env)
@@ -381,6 +416,21 @@ defmodule AuthorityService.Issuer do
        }, j2}
     else
       {:error, code} -> {:refused, code, []}
+    end
+  end
+
+  # T4: last check under the same serialized step, immediately before the journal append.
+  # Every counted approver must STILL be active at the epoch it was verified at.
+  defp still_standing(counted, c) do
+    view = resolve_registry(c.approver_registry)
+    live = Enum.all?(counted, &live?(view, &1))
+    if live, do: :ok, else: {:error, :approver_revoked_during_issuance}
+  end
+
+  defp live?(view, %{kid: kid, epoch: epoch}) do
+    case Sa2aCrypto.Registry.lookup(view, kid) do
+      {:ok, %{state: :active, revocation_epoch: ^epoch}} -> true
+      _ -> false
     end
   end
 

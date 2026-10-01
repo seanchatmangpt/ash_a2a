@@ -36,7 +36,7 @@ spec:
       containers:
         - name: actuator
           # Pin by digest in an overlay; the tag is a placeholder for the release build.
-          image: registry.invalid/sa2a/actuator:26.9.28
+          image: registry.invalid/sa2a/actuator:26.9.29
           imagePullPolicy: IfNotPresent
           command: ["/app/bin/actuator"]
           args: ["start"]

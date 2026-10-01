@@ -1,7 +1,7 @@
 # Migrate from legacy to strict behavior
 
 This guide lists the seven behavior changes already present in `ash_a2a` on
-`main` (v26.9.28 line) that can break a host written against the pre-v26.9.26
+`main` (v26.9.29 line) that can break a host written against the pre-v26.9.26
 defaults, what each breaks, and the exact fix. Every default named here is
 checked against the code by `test/ash_a2a/docs_truth_test.exs` where the key
 is one of `:actuation_dedup`, `:capability_release_mode`, `:authority_policy`;

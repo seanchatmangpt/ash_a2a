@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "legacy-perform",
+  "edge": {
+    "caller": "Elixir.Legacy.A",
+    "callee": "Elixir.Legacy.B",
+    "operation": "perform"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "direct_consequence_operation"
+  }
+}

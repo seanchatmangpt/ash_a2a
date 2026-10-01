@@ -647,12 +647,12 @@ defmodule AshA2A.SA2A.Conformance.ProfilesTest do
       line =
         Claim.statement(
           :c1,
-          %{version: "v26.9.28", tier: "I1", scope: "same-host-os-user"},
+          %{version: "v26.9.29", tier: "I1", scope: "same-host-os-user"},
           "a" |> String.duplicate(40)
         )
 
       assert line ==
-               "SA2A v26.9.28 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA #{String.duplicate("a", 40)}"
+               "SA2A v26.9.29 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA #{String.duplicate("a", 40)}"
     end
   end
 
@@ -739,7 +739,7 @@ defmodule AshA2A.SA2A.Conformance.ProfilesTest do
       assert report.conformant?
 
       assert report.claim ==
-               "SA2A v26.9.28 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA #{report.subject_sha}"
+               "SA2A v26.9.29 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA #{report.subject_sha}"
     end
 
     test "reverting one guard (Memory claim store) withdraws the claim" do

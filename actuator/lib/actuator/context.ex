@@ -7,8 +7,10 @@ defmodule Actuator.Context do
   builds it from the operator-pinned config file and the state directory, on every request,
   so a policy-epoch or revocation refresh takes effect without a restart.
   """
-  @enforce_keys [:state_dir, :registry, :audience, :policy_epoch]
+  # quorum_default is enforced: there is no fail-open default (an operator must pin it).
+  @enforce_keys [:state_dir, :registry, :audience, :policy_epoch, :quorum_default]
   defstruct [
+    :quorum_default,
     :state_dir,
     :registry,
     :audience,
@@ -18,7 +20,6 @@ defmodule Actuator.Context do
     allowed_subjects: [],
     allowed_capabilities: :all,
     quorum: %{},
-    quorum_default: 1,
     generations: %{},
     generation_default: 1,
     skew: 30,
@@ -34,5 +35,14 @@ defmodule Actuator.Context do
   def system_clock, do: System.os_time(:second)
   def now(%__MODULE__{clock: c}), do: c.()
 
-  def quorum_for(%__MODULE__{quorum: q, quorum_default: d}, class), do: Map.get(q, class, d)
+  # A non-positive or non-integer quorum can never open the gate: it is treated as
+  # unsatisfiable (fail closed), not as 0.
+  @unsatisfiable 1_000_000
+
+  def quorum_for(%__MODULE__{quorum: q, quorum_default: d}, class) do
+    case Map.get(q, class, d) do
+      n when is_integer(n) and n >= 1 -> n
+      _ -> @unsatisfiable
+    end
+  end
 end

@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.30] - 2026-09-30
+
+Release preparation only: version bumped in `mix.exs`; no tag, no publish. Verified by
+`mix hex.build` and `mix hex.publish --dry-run`. The SA2A contract version strings
+(`v26.9.29`) and the pinned graphlaw engine/wasm are unchanged.
+
+## [26.9.29] - 2026-09-29
+
+Release preparation only: version bumped in `mix.exs`; no tag, no publish. Built from
+`git log v26.9.22..HEAD` (533 commits; there is no `v26.9.28` tag, and
+26.9.23 to 26.9.28 were never tagged or documented here). No conformance
+profile is claimed: `mix ash_a2a.verify_conformance --profile c0..c3` reports NOT CONFORMANT
+in the development build (see `docs/jira/v26.9.29/HANDOFF.md`). C1, C2 and C3 remain
+not-yet-claimed.
+
+### Added
+
+- Consequence kernel (C1 lane): W3 runtime hardening (prepare, claim, crash-window,
+  outcome stages, authenticated prepared-effect store), W4 dispatch inversion
+  (`CommandBus` dispatch now routes through `ConsequenceKernel.W4.DispatchInversion`),
+  W4C graph-derived closure court and raw effect edge projection, and W5
+  authenticated effect claims and recovery.
+- C2/C3 authority: portable RFC 8785 (JCS) SHA-256 `PreparedEffect` identity, portable
+  certificate fields and wire, external `authority_service/` and `actuator/` mix projects
+  (16-check fence, write-ahead claims, hash-chained ledger), `sa2a_crypto/` standing
+  project (key registry, revocation epochs, durable nonce store, custodian-distinct quorum),
+  and certificate signature verification.
+- `AshA2A.SecurityProfile` (`:strict` default, `:legacy_compat`, `:dev_bypass` compiled out
+  of prod) and `SecurityProfile.Boot` enforcement at `Application.start/2`.
+- `mix ash_a2a.verify_conformance --profile c0..c3`: computes the claim from executed
+  probes; refuses on a dirty tree, non-strict profile and any failing probe.
+- Semantic evidence reference (`Semantic.EvidenceRef`) bound into prepared-effect identity;
+  SA2A semantic gates (authority-none, evidence-only, exact-subject, source-digest).
+- Replanning (`replan`): recovery core, provider ports, bounded failover, portable SA2A
+  consequence envelope, AshPPlan owner-side provider preference.
+- CASTLE SA2A edge capability intake (ttl, module, tests).
+- GALL bounded-intervention closure with receipt and replay paths; SPG conformance corpus
+  executed at runtime; semantic-work identity and replay boundaries.
+- Diataxis SA2A documentation set; RFC-SA2A-003..007 and RFC-007 errata; production
+  k8s/swarm manifests; lane map and HANDOFF for the v26.9.28 kernel milestone.
+
+### Changed
+
+- Build toolchain moved to Elixir 1.20.4 / OTP 29.1.1.
+- CI: single release path (`release.yml`), first-step authority check, non-publishing
+  attested dry run, Dependabot, Scorecard; historical per-version publishers retired.
+- Refusal classification extended (S42 totality) for merged GALL, semantic-work, SPG,
+  castle and W5 codes.
+
+### Fixed
+
+- SafeExec allowlist and `CallbackRegistry` replace raw `System.cmd` and `apply/3` sites;
+  SSRF admission for the OCEL forwarder, HDDL subprocess timeout, ERC path sanitization.
+- GraphLaw subprocess release race; dispatcher fence reconciled with the sole-DO gate and
+  `CommandBus`; telemetry, port-allocation and timing deflakes.
+
+### Known not done
+
+- No C1/C2/C3 claim; c1 probes failing in dev build: `closure_report` (failed at probe time: ClosureCourt.report/0 absent; module now in tree, not re-run),
+  `durable_claim_store`, `keyed_journal`, `security_profile_strict`.
+- Supply-chain facts (`--github`) and built-release `RELEASE_DISTRIBUTION=none` inspection
+  were not run.
+
 ## [Unreleased] - 2026-09-25
 
 ### Added

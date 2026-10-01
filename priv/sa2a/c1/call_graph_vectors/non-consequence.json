@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "non-consequence",
+  "edge": {
+    "caller": "Elixir.Consumer",
+    "callee": "Elixir.Telemetry",
+    "operation": "emit"
+  },
+  "expected": {
+    "decision": "admit",
+    "reason": "non_consequence_edge"
+  }
+}

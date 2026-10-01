@@ -15,6 +15,7 @@ defmodule AuthorityService.Runtime do
              :policy_path,
              :registry_path,
              :authority_audience,
+             :actuator_audience,
              :journal_path
            ])
          ) do

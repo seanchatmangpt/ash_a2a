@@ -50,7 +50,7 @@ compiled index:
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.9"}
+    {:ash_a2a, "~> 26.9.30"}
   ]
 end
 ```

@@ -14,7 +14,7 @@ defmodule Actuator.Store do
   certificate returns the recorded evidence and performs nothing.
   """
   use GenServer
-  alias Actuator.{Effect, EffectorRegistry, Fence, Ledger}
+  alias Actuator.{Anchor, Effect, EffectorRegistry, Fence, Journal, Ledger, StateLock}
 
   @fault Application.compile_env(:actuator, :fault_hook, false)
 
@@ -46,15 +46,57 @@ defmodule Actuator.Store do
   def init(dir) do
     File.mkdir_p!(dir)
     File.chmod!(dir, 0o700)
+    Process.flag(:trap_exit, true)
+
+    case StateLock.acquire(dir) do
+      :ok ->
+        case boot(dir) do
+          {:ok, _} = ok ->
+            ok
+
+          stop ->
+            StateLock.release(dir)
+            stop
+        end
+
+      {:error, reason} ->
+        {:stop, {:store_boot_refused, reason}}
+    end
+  end
+
+  @impl true
+  def terminate(_reason, %{dir: dir}), do: StateLock.release(dir)
+  def terminate(_reason, _), do: :ok
+
+  defp boot(dir) do
     jpath = Path.join(dir, "journal.jsonl")
     File.touch!(jpath)
     Ledger.trim_torn_tail(jpath)
-    {records, nonce_owner} = fold(jpath)
 
     with {:ok, ledger} <- Ledger.open(dir),
+         entries = Ledger.read(dir),
+         {:ok, j} <- Journal.verify(jpath),
+         :ok <- Anchor.check(dir, j.hashes, Enum.map(entries, & &1["hash"])),
+         :ok <- Journal.cross_check(j.events, entries),
          {:ok, fd} <- :file.open(jpath, [:append, :binary, :raw]) do
-      st = %{dir: dir, fd: fd, ledger: ledger, records: records, nonce_owner: nonce_owner}
-      {:ok, mark_unknown_on_restart(st)}
+      {records, nonce_owner} = fold(j.events)
+
+      st = %{
+        dir: dir,
+        fd: fd,
+        ledger: ledger,
+        records: records,
+        nonce_owner: nonce_owner,
+        jseq: j.count,
+        jhead: j.head
+      }
+
+      st = mark_unknown_on_restart(st)
+
+      case Anchor.write(dir, anchor_fields(st)) do
+        :ok -> {:ok, st}
+        {:error, reason} -> {:stop, {:store_boot_refused, {:anchor_unwritable, reason}}}
+      end
     else
       {:error, reason} -> {:stop, {:store_boot_refused, reason}}
     end
@@ -98,11 +140,11 @@ defmodule Actuator.Store do
         }
 
         case journal(st, ev) do
-          :ok ->
+          {:ok, st} ->
             rec = %{rec | state: new}
             {:reply, {:ok, evidence(rec)}, %{st | records: Map.put(st.records, id, rec)}}
 
-          {:error, _} ->
+          {{:error, _}, st} ->
             {:reply, {:error, :journal_unavailable}, st}
         end
 
@@ -124,6 +166,10 @@ defmodule Actuator.Store do
 
   def handle_call(:snapshot, _from, st), do: {:reply, st.records, st}
 
+  @impl true
+  def handle_info({:EXIT, _port, _reason}, st), do: {:noreply, st}
+  def handle_info(_msg, st), do: {:noreply, st}
+
   # -- execution -----------------------------------------------------------
 
   defp do_execute(ctx, req, seen, st) do
@@ -134,43 +180,53 @@ defmodule Actuator.Store do
     nonces = Enum.map(req.cert.signatures, &[&1.kid, &1.nonce])
 
     # compare-and-set: the record must still be exactly what the fence observed
-    if Map.get(st.records, id) != seen do
-      {:reply, {:error, 14, :claim_conflict}, st}
-    else
-      claim = %{
-        "t" => "executing",
-        "instance_id" => id,
-        "generation" => req.cert.generation,
-        "effect_digest" => digest,
-        "nonces" => nonces,
-        "at" => System.os_time(:second)
-      }
+    cond do
+      Map.get(st.records, id) != seen ->
+        {:reply, {:error, 14, :claim_conflict}, st}
 
-      case journal(st, claim) do
-        {:error, _} ->
-          {:reply, {:error, 14, :journal_unavailable}, st}
+      # No new claim while the anchor cannot be brought current: refuse before anything durable.
+      Anchor.write(st.dir, anchor_fields(st)) != :ok ->
+        {:reply, {:error, 14, :journal_unavailable}, st}
 
-        :ok ->
-          rec = %{
-            instance_id: id,
-            state: :executing,
-            generation: req.cert.generation,
-            effect_digest: digest,
-            ledger_seq: nil,
-            ledger_hash: nil,
-            at: claim["at"]
-          }
+      true ->
+        claim_and_perform(req, seen, eff, id, digest, nonces, st)
+    end
+  end
 
-          st = %{
-            st
-            | records: Map.put(st.records, id, rec),
-              nonce_owner:
-                Enum.reduce(nonces, st.nonce_owner, fn [k, n], m -> Map.put(m, {k, n}, id) end)
-          }
+  defp claim_and_perform(req, _seen, eff, id, digest, nonces, st) do
+    claim = %{
+      "t" => "executing",
+      "instance_id" => id,
+      "generation" => req.cert.generation,
+      "effect_digest" => digest,
+      "nonces" => nonces,
+      "at" => System.os_time(:second)
+    }
 
-          fault(:after_write_ahead)
-          perform(eff, digest, rec, st)
-      end
+    case journal(st, claim) do
+      {{:error, _}, st} ->
+        {:reply, {:error, 14, :journal_unavailable}, st}
+
+      {:ok, st} ->
+        rec = %{
+          instance_id: id,
+          state: :executing,
+          generation: req.cert.generation,
+          effect_digest: digest,
+          ledger_seq: nil,
+          ledger_hash: nil,
+          at: claim["at"]
+        }
+
+        st = %{
+          st
+          | records: Map.put(st.records, id, rec),
+            nonce_owner:
+              Enum.reduce(nonces, st.nonce_owner, fn [k, n], m -> Map.put(m, {k, n}, id) end)
+        }
+
+        fault(:after_write_ahead)
+        perform(eff, digest, rec, st)
     end
   end
 
@@ -200,12 +256,15 @@ defmodule Actuator.Store do
           "at" => System.os_time(:second)
         }
 
+        # anchor the ledger head as soon as the effect is durable, before the completion record
+        _ = Anchor.write(st.dir, anchor_fields(st))
+
         case journal(st, ev) do
-          :ok ->
+          {:ok, st} ->
             {:reply, {:ok, %{status: :performed, evidence: evidence(done)}},
              %{st | records: Map.put(st.records, id, done)}}
 
-          {:error, _} ->
+          {{:error, _}, st} ->
             unknown(st, rec, :completion_not_durable)
         end
 
@@ -222,7 +281,7 @@ defmodule Actuator.Store do
       "at" => System.os_time(:second)
     }
 
-    _ = journal(st, ev)
+    {_, st} = journal(st, ev)
     rec = %{rec | state: :unknown_outcome}
 
     {:reply, {:error, :execution, :unknown_outcome},
@@ -231,15 +290,34 @@ defmodule Actuator.Store do
 
   # -- journal ---------------------------------------------------------------
 
-  defp journal(%{fd: fd}, event) do
-    with :ok <- :file.write(fd, Jason.encode!(event) <> "\n"), do: :file.sync(fd)
+  # Returns `{:ok | {:error, term}, state}`. The record is chained (seq/prev/hash), fsync'd,
+  # and then the head anchor is replaced atomically (best effort, may lag). `{:error, _}` means
+  # the append itself failed and the state is unchanged.
+  defp journal(st, event) do
+    {line, hash} = Journal.encode(event, st.jseq, st.jhead)
+
+    with :ok <- :file.write(st.fd, line), :ok <- :file.sync(st.fd) do
+      st = %{st | jseq: st.jseq + 1, jhead: hash}
+      # The append is durable; an anchor failure only makes the anchor lag (allowed), and is
+      # re-attempted before the next claim (see `do_execute/4`). It must never be reported as an
+      # append failure.
+      _ = Anchor.write(st.dir, anchor_fields(st))
+      {:ok, st}
+    else
+      {:error, _} = e -> {e, st}
+    end
   end
 
-  defp fold(path) do
-    path
-    |> File.read!()
-    |> String.split("\n", trim: true)
-    |> Enum.map(&Jason.decode!/1)
+  defp anchor_fields(st),
+    do: %{
+      journal_seq: st.jseq,
+      journal_head: st.jhead,
+      ledger_seq: st.ledger.seq,
+      ledger_head: st.ledger.head
+    }
+
+  defp fold(events) do
+    events
     |> Enum.reduce({%{}, %{}}, fn ev, {recs, owners} ->
       id = ev["instance_id"]
 
@@ -294,7 +372,7 @@ defmodule Actuator.Store do
           "at" => System.os_time(:second)
         }
 
-        :ok = journal(acc, ev)
+        {:ok, acc} = journal(acc, ev)
         %{acc | records: Map.put(acc.records, id, %{rec | state: :unknown_outcome})}
 
       _, acc ->

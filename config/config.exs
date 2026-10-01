@@ -13,6 +13,7 @@ case config_env() do
   :test -> config :ash_a2a, :security_profile, :dev_bypass
   :dev -> import_config "dev.exs"
   :prod -> import_config "prod.exs"
+  :conformance -> import_config "conformance.exs"
   _ -> :ok
 end
 

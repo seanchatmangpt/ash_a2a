@@ -78,17 +78,38 @@ Production hardening checklist (see
   and is stamped on receipts via `AshA2A.SecurityProfile.stamp/1`.
   `config/runtime.exs` is a prod-like template for `:strict`.
 - **What boot enforces.** `AshA2A.Application.start/2` calls
-  `AshA2A.SecurityProfile.Boot.run!/0` before any child starts. Under
-  `:strict` it raises unless: the outbox is keyed (`:receipt_outbox_key` or
-  `:receipt_binding_key`) and its dir is not under a tmp path; the receipt
-  store is not in-memory; `:capability_release_mode` is `:strict`; an
-  `:authority_broker` and a `:kill_switch_class` are configured; and the
-  `:transport_verified_grants_capability` policy is absent. It also runs
-  `AshA2A.Authority.SecurityPreflight.check!/1` (legacy authority policy,
-  missing/in-memory broker, in-memory receipt store, EKV data dir under the
-  OS temp dir) and `AshA2A.ReceiptStore.boot_check/0`. `:legacy_compat` logs
-  the same findings as warnings. Boot does not verify credentials, broker
-  contents or key strength; it checks configuration only.
+  `AshA2A.SecurityProfile.Boot.run!/0` before any child starts, against the
+  profile compiled into the build. Under `:strict` it raises
+  `AshA2A.Authority.SecurityPreflight.Error` listing every violation of:
+  `:receipt_outbox_key`/`:receipt_binding_key` set (`outbox_key_missing`);
+  `:receipt_outbox_dir` set and not under a tmp path (`outbox_dir_not_durable`);
+  `:receipt_store` not `AshA2A.ReceiptStore.Memory` (`receipt_store_in_memory`);
+  `:capability_release_mode` equal to `:strict`
+  (`capability_release_mode_legacy`); an `:authority_broker` configured
+  (`authority_broker_missing`); `:kill_switch_class` non-nil
+  (`kill_switch_class_missing`); and `:authority_policy` not
+  `:transport_verified_grants_capability`
+  (`transport_verified_policy_forbidden`); the outbox/journal HMAC key shorter than
+  32 bytes (`outbox_key_weak`); and the claim store: `:claim_store` unset
+  (`claim_store_missing`), in-memory/ETS or non-durable
+  (`claim_store_not_durable`), or a durable-file store whose `:claim_store_dir` is
+  unset or under a tmp path (`claim_store_dir_not_durable`). It then runs
+  `AshA2A.Authority.SecurityPreflight.check!(force: true)` and
+  `AshA2A.ReceiptStore.boot_check/0`. `:legacy_compat` logs the same strict
+  violations as warnings (it does not raise on them), still applies the
+  ordinary `SecurityPreflight` rules, and raises on a failing
+  `ReceiptStore.boot_check/0` only when `:production` is true. `:dev_bypass`
+  prints a banner, applies only the ordinary preflight and a non-raising
+  store check, and never conforms. Boot checks configuration presence and
+  shape only: it does not verify credentials, broker contents, key strength,
+  or that the configured store is reachable beyond `boot_check/0`. Boot
+  enforcement is not a conformance claim: C1, C2 and C3 are claimed only by
+  `mix ash_a2a.verify_conformance --profile cN` on a clean, exact subject
+  (see `docs/reference/conformance-claim.md`). Courts:
+  `test/ash_a2a/security_profile/boot_test.exs` (strict refuses each
+  violation, system tmp outbox refused, dev_bypass banner and telemetry, code
+  classification). No court yet asserts that `Application.start/2` itself
+  refuses to boot under a violating strict config.
 - `config :ash_a2a, :strict_security, bool` still overrides
   `SecurityPreflight.strict?/0` (otherwise it follows the profile).
 - Leave `config :ash_a2a, :require_authenticated_caller` at its default

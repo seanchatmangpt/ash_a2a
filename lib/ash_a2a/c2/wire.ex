@@ -78,6 +78,19 @@ defmodule AshA2A.C2.Wire do
   defp decode_signature(%{} = m), do: {:ok, m}
   defp decode_signature(_), do: :error
 
+  @doc """
+  Decode certificate wire bytes with a strict JSON reader: a duplicate object key at any depth is
+  `{:error, :duplicate_json_key}` (a parser that keeps the last or first duplicate would let two
+  verifiers read different certificates from one byte string).
+  """
+  def decode_certificate(json) when is_binary(json) do
+    case strict_json(json) do
+      {:ok, %{} = wire} -> decode_certificate(wire)
+      {:ok, _} -> {:error, :invalid_certificate_wire}
+      {:error, _} = error -> error
+    end
+  end
+
   def decode_certificate(%{} = wire) do
     required =
       ~w(version effect_digest principal policy_epoch revocation_epoch generation nonce not_before_ms expires_at_ms audience threshold signatures)
@@ -105,6 +118,37 @@ defmodule AshA2A.C2.Wire do
     else
       _ -> {:error, :invalid_certificate_wire}
     end
+  end
+
+  @doc false
+  @spec strict_json(binary()) ::
+          {:ok, term()} | {:error, :duplicate_json_key | :invalid_certificate_wire}
+  def strict_json(json) when is_binary(json) do
+    decoders = %{object_finish: &finish_object/2}
+
+    try do
+      case :json.decode(json, :ok, decoders) do
+        {value, :ok, rest} ->
+          if json_ws_only?(rest), do: {:ok, value}, else: {:error, :invalid_certificate_wire}
+      end
+    catch
+      {:duplicate_json_key, _key} -> {:error, :duplicate_json_key}
+      _, _ -> {:error, :invalid_certificate_wire}
+    end
+  end
+
+  # RFC 8259 insignificant whitespace: space, tab, LF, CR only (never Unicode whitespace).
+  defp json_ws_only?(<<>>), do: true
+  defp json_ws_only?(<<c, rest::binary>>) when c in [?\s, ?\t, ?\n, ?\r], do: json_ws_only?(rest)
+  defp json_ws_only?(_), do: false
+
+  defp finish_object(pairs, acc) do
+    map =
+      Enum.reduce(pairs, %{}, fn {k, v}, m ->
+        if Map.has_key?(m, k), do: throw({:duplicate_json_key, k}), else: Map.put(m, k, v)
+      end)
+
+    {map, acc}
   end
 
   defp decode_signatures(sigs) do

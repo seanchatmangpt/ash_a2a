@@ -15,7 +15,9 @@ defmodule Actuator.Config do
   @spec load(Path.t()) :: {:ok, Context.t()} | {:error, atom()}
   def load(path) do
     with {:ok, raw} <- File.read(path),
-         {:ok, c} when is_map(c) <- Jason.decode(raw),
+         {:ok, c} when is_map(c) <- Actuator.StrictJson.decode(raw),
+         {:ok, qd} <- quorum_default(c),
+         :ok <- quorum_map(c["quorum"]),
          {:ok, records} <- records(c["registry"]),
          {:ok, profile} <- profile(c["required_profile"] || "classical") do
       dir = c["state_dir"]
@@ -30,7 +32,7 @@ defmodule Actuator.Config do
          allowed_subjects: c["allowed_subjects"] || [],
          allowed_capabilities: c["allowed_capabilities"] || :all,
          quorum: c["quorum"] || %{},
-         quorum_default: c["quorum_default"] || 1,
+         quorum_default: qd,
          generations: c["generations"] || %{},
          generation_default: c["generation_default"] || 1,
          skew: c["skew"] || 30,
@@ -44,6 +46,16 @@ defmodule Actuator.Config do
   rescue
     _ -> {:error, :config_unavailable}
   end
+
+  defp quorum_default(%{"quorum_default" => n}) when is_integer(n) and n >= 1, do: {:ok, n}
+  defp quorum_default(_), do: :error
+
+  defp quorum_map(nil), do: :ok
+
+  defp quorum_map(m) when is_map(m),
+    do: if(Enum.all?(m, fn {_, v} -> is_integer(v) and v >= 1 end), do: :ok, else: :error)
+
+  defp quorum_map(_), do: :error
 
   defp profile(p) when p in ["classical", "hybrid", "pqc"], do: {:ok, String.to_atom(p)}
   defp profile(_), do: :error
@@ -90,7 +102,7 @@ defmodule Actuator.Config do
   defp revocation(dir) do
     with {:ok, raw} <- File.read(Path.join(dir, "revocation.json")),
          {:ok, %{"refreshed_at" => at, "epoch" => ep, "revoked" => rv}}
-         when is_integer(at) and is_integer(ep) and is_list(rv) <- Jason.decode(raw) do
+         when is_integer(at) and is_integer(ep) and is_list(rv) <- Actuator.StrictJson.decode(raw) do
       %{refreshed_at: at, epoch: ep, revoked: MapSet.new(rv)}
     else
       _ -> nil

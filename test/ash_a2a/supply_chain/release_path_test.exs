@@ -62,7 +62,7 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
     release = yaml!(Path.join(@root, ".github/workflows/release.yml"))
     refute get_in(release, ["on", "schedule"])
     refute get_in(release, ["on", "push", "branches"])
-    refute File.exists?(Path.join(@root, ".github/workflows/release-v26.9.28.yml"))
+    refute File.exists?(Path.join(@root, ".github/workflows/release-v26.9.29.yml"))
   end
 
   test "every workflow that runs mix sets EKV_BUILD" do
@@ -142,8 +142,8 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
       docs = %{
         "docs/reference/a2a-spec-version-mapping.md" =>
           File.read!(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md")),
-        "docs/jira/v26.9.28-kernel/HANDOFF.md" =>
-          File.read!(Path.join(@root, "docs/jira/v26.9.28-kernel/HANDOFF.md"))
+        "docs/jira/v26.9.29/HANDOFF.md" =>
+          File.read!(Path.join(@root, "docs/jira/v26.9.29/HANDOFF.md"))
       }
 
       assert version_findings(mix_version(), docs) == []

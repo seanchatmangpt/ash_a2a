@@ -3,21 +3,40 @@ defmodule AuthorityService.Config do
   alias AuthorityService.{KeyFile, Policy}
   alias Sa2aCrypto.{KeyRecord, KeyRef}
 
-  @enforce_keys [:service_key, :policy, :approver_registry, :authority_audience, :journal_path]
+  @enforce_keys [
+    :service_key,
+    :policy,
+    :approver_registry,
+    :authority_audience,
+    :actuator_audience,
+    :journal_path
+  ]
   defstruct [
     :service_key,
     :policy,
     :approver_registry,
     :authority_audience,
+    :actuator_audience,
     :journal_path,
+    :anchor_path,
     channel: nil,
     clock: nil
   ]
 
   @type t :: %__MODULE__{}
 
+  @doc """
+  `actuator_audience` is the registered actuator identity, fixed server-side: every issued
+  certificate carries it and a request naming any other audience is refused (B1).
+  `approver_registry` is a `{module, state}` view or a zero-arity function returning one; a
+  function is resolved inside the serialized issuance step, never before it (T4).
+  `anchor_path` (default `journal_path <> ".anchor"`) holds the journal head anchor (B2).
+  """
   @spec new(keyword()) :: t()
-  def new(opts), do: struct!(__MODULE__, opts)
+  def new(opts) do
+    c = struct!(__MODULE__, opts)
+    %{c | anchor_path: c.anchor_path || c.journal_path <> ".anchor"}
+  end
 
   @doc """
   Build from files. Key material only ever comes from `key_path` (0600 file). The registry
@@ -30,13 +49,15 @@ defmodule AuthorityService.Config do
          {:ok, pjson} <- File.read(Keyword.fetch!(opts, :policy_path)),
          {:ok, policy} <- Policy.from_json(pjson),
          {:ok, rjson} <- File.read(Keyword.fetch!(opts, :registry_path)),
-         {:ok, records} <- registry(rjson) do
+         {:ok, records} <- registry(rjson),
+         {:ok, actuator} <- fetch_actuator(opts) do
       {:ok,
        new(
          service_key: key,
          policy: policy,
          approver_registry: Sa2aCrypto.Registry.Static.view(records),
          authority_audience: Keyword.fetch!(opts, :authority_audience),
+         actuator_audience: actuator,
          journal_path: Keyword.fetch!(opts, :journal_path)
        )}
     else
@@ -45,8 +66,15 @@ defmodule AuthorityService.Config do
     end
   end
 
+  defp fetch_actuator(opts) do
+    case Keyword.get(opts, :actuator_audience) do
+      a when is_binary(a) and a != "" -> {:ok, a}
+      _ -> {:error, :actuator_audience_missing}
+    end
+  end
+
   defp registry(json) do
-    with {:ok, list} when is_list(list) <- Jason.decode(json) do
+    with {:ok, list} when is_list(list) <- Sa2aCrypto.StrictJson.decode(json, canonical: false) do
       Enum.reduce_while(list, {:ok, []}, fn r, {:ok, acc} ->
         with {:ok, pub} <- Base.url_decode64(r["public_key"] || "", padding: false),
              {:ok, kid} <- KeyRef.kid("ES256", pub) do

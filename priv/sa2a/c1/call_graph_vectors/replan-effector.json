@@ -1,0 +1,13 @@
+{
+  "version": "sa2a-c1-call-graph-v1",
+  "id": "replan-effector",
+  "edge": {
+    "caller": "Elixir.AshA2A.Replan.Loop",
+    "callee": "Elixir.AshA2A.Effector",
+    "operation": "perform"
+  },
+  "expected": {
+    "decision": "refuse",
+    "reason": "legacy_bypass"
+  }
+}
