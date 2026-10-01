@@ -1,0 +1,2 @@
+semantic-interchange-manufacturing/v1
+TechnicalStanding != ExternalStanding != RuntimeAuthority
