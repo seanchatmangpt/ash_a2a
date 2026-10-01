@@ -1,0 +1,18 @@
+@prefix dfcm: <https://seanchatmangpt.github.io/ash-a2a/dfcm#> .
+
+# Factory C canonical semantic manufacturing contract.
+# Source-only: generated projections derive from this contract; consumers do not reimplement it.
+dfcm:standingProjectionV1
+  a dfcm:StandingProjectionContract ;
+  dfcm:standingSubject "seanchatmangpt/ash_a2a@130d6a2168490b9bb02b27fa198ec66b629abcad" ;
+  dfcm:technicalStanding "REQUIRED" ;
+  dfcm:externalStanding "UNSPECIFIED" ;
+  dfcm:runtimeAuthority "NONE" ;
+  dfcm:requiresExactSubject true ;
+  dfcm:requiresFrozenClosure true ;
+  dfcm:requiresReceiptReplayBinding true .
+
+dfcm:graphlaw dfcm:requiresStandingContract dfcm:standingProjectionV1 .
+dfcm:affidavit dfcm:requiresStandingContract dfcm:standingProjectionV1 .
+dfcm:castle dfcm:requiresStandingContract dfcm:standingProjectionV1 .
+dfcm:xaas dfcm:requiresStandingContract dfcm:standingProjectionV1 .
