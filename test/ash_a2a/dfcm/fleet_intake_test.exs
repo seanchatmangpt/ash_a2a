@@ -5,7 +5,7 @@ defmodule AshA2A.DfCM.FleetIntakeTest do
 
   test "canonical fleet manifest is structurally admitted" do
     assert :ok = FleetIntake.validate()
-    assert length(FleetIntake.ids()) == 14
+    assert length(FleetIntake.ids()) == 15
   end
 
   test "every donor stays powerless at the SA2A boundary" do

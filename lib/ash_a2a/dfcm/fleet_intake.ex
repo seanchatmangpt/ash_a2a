@@ -95,7 +95,8 @@ defmodule AshA2A.DfCM.FleetIntake do
     with {:ok, donor} <- fetch(id),
          :ok <- validate_donor(donor),
          {:ok, donor_digest} <- Canonical.digest(donor),
-         :ok <- require_projection(projection["schema"] == "ash-a2a.dfcm-fleet-projection.v1", :schema),
+         :ok <-
+           require_projection(projection["schema"] == "ash-a2a.dfcm-fleet-projection.v1", :schema),
          :ok <- require_projection(projection["donor"] == id, :donor),
          :ok <- require_projection(projection["subject"] == donor["subject"], :subject),
          :ok <- require_projection(projection["capability"] == donor["capability"], :capability),
@@ -148,49 +149,53 @@ defmodule AshA2A.DfCM.FleetIntake do
   defp validate_donor(donor) do
     cond do
       not is_binary(donor["id"]) or donor["id"] == "" ->
-        refusal(:id, donor["id"])
+        invalid_field(:id, donor["id"])
 
       not is_binary(donor["repository"]) or
           not String.starts_with?(donor["repository"], "seanchatmangpt/") ->
-        refusal(:repository, donor["repository"])
+        invalid_field(:repository, donor["repository"])
 
       not is_binary(donor["sha"]) or not Regex.match?(@sha40, donor["sha"]) ->
-        refusal(:sha, donor["sha"])
+        invalid_field(:sha, donor["sha"])
 
       donor["subject"] != donor["repository"] <> "@" <> donor["sha"] ->
-        refusal(:subject, donor["subject"])
+        invalid_field(:subject, donor["subject"])
 
       standing_closed?(donor) and donor["technical_standing"] != "QUALIFIED" ->
-        refusal(:technical_standing, donor["technical_standing"])
+        invalid_field(:technical_standing, donor["technical_standing"])
 
       standing_closed?(donor) and donor["external_standing"] != "UNSPECIFIED" ->
-        refusal(:external_standing, donor["external_standing"])
+        invalid_field(:external_standing, donor["external_standing"])
 
       standing_closed?(donor) and donor["runtime_authority"] != "NONE" ->
-        refusal(:runtime_authority, donor["runtime_authority"])
+        invalid_field(:runtime_authority, donor["runtime_authority"])
 
       standing_closed?(donor) and
           Enum.any?(
-            ["requires_exact_subject", "requires_release_binding", "requires_frozen_closure",
-             "requires_receipt_replay_binding"],
+            [
+              "requires_exact_subject",
+              "requires_release_binding",
+              "requires_frozen_closure",
+              "requires_receipt_replay_binding"
+            ],
             &(donor[&1] != true)
           ) ->
-        refusal(:standing_requirements, standing_binding(donor))
+        invalid_field(:standing_requirements, standing_binding(donor))
 
       donor["authority"] != "NONE" ->
-        refusal(:authority, donor["authority"])
+        invalid_field(:authority, donor["authority"])
 
       donor["consequence"] != "EVIDENCE_ONLY" ->
-        refusal(:consequence, donor["consequence"])
+        invalid_field(:consequence, donor["consequence"])
 
       not is_list(donor["reuse"]) or donor["reuse"] == [] ->
-        refusal(:reuse, donor["reuse"])
+        invalid_field(:reuse, donor["reuse"])
 
       not is_list(donor["negative_knowledge"]) or donor["negative_knowledge"] == [] ->
-        refusal(:negative_knowledge, donor["negative_knowledge"])
+        invalid_field(:negative_knowledge, donor["negative_knowledge"])
 
       not is_binary(donor["falsifier"]) or donor["falsifier"] == "" ->
-        refusal(:falsifier, donor["falsifier"])
+        invalid_field(:falsifier, donor["falsifier"])
 
       true ->
         :ok
@@ -220,6 +225,6 @@ defmodule AshA2A.DfCM.FleetIntake do
   defp require_projection(false, field),
     do: {:error, %{code: :refused_dfcm_projection, field: field}}
 
-  defp refusal(field, observed),
+  defp invalid_field(field, observed),
     do: {:error, %{code: :invalid_dfcm_donor, field: field, observed: observed}}
 end
