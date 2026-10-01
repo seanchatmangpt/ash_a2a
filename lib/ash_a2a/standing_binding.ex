@@ -77,7 +77,8 @@ defmodule AshA2A.StandingBinding do
   def verify(_), do: {:error, :standing_binding_invalid_input}
 
   @doc "Re-admit the exact durable receipt behind this binding before consequential composition."
-  def verify_durable(%__MODULE__{} = b, opts \\ []) do
+  def verify_durable(b, opts \\ [])
+  def verify_durable(%__MODULE__{} = b, opts) do
     with :ok <- verify(b),
          {:ok, %{receipt: receipt}} <-
            AshA2A.StandingRef.replay(

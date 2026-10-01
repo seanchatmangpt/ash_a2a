@@ -4,7 +4,7 @@ Maps every A2A JSON-RPC method (canonical slash name and v0.3 PascalCase
 alias) to the wire behavior observed through two transports: the vendored
 `:a2a` 0.2 `A2A.Plug`, and the ash_a2a-owned `AshA2A.A2ATransport.Plug`.
 
-Version: v26.9.29
+Version: v26.9.30
 
 The method table is not hand-maintained prose:
 `test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs` drives every row

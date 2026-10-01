@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.9.30] - 2026-09-30
+
+Release preparation only: version bumped in `mix.exs`; no tag, no publish. Verified by
+`mix hex.build` and `mix hex.publish --dry-run`. The SA2A contract version strings
+(`v26.9.29`) and the pinned graphlaw engine/wasm are unchanged.
+
 ## [26.9.29] - 2026-09-29
 
 Release preparation only: version bumped in `mix.exs`; no tag, no publish. Built from

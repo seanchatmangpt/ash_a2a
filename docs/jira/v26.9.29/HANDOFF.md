@@ -3,7 +3,7 @@
 State handoff for v26.9.29 in `ash_a2a`. Subject: `main` at
 `b812fe0b77693424654a460219a4322b55b2f026` plus 38 uncommitted paths from concurrent lanes
 (OBSERVED by `git rev-parse HEAD` and the verifier's dirty-tree probe). Labels: OBSERVED =
-run or read in this session; UNVERIFIED = not run. Version: v26.9.29.
+run or read in this session; UNVERIFIED = not run. Version: v26.9.30.
 Last Updated: 2026-09-29.
 
 ## Contents
