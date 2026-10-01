@@ -1,9 +1,7 @@
 PREFIX dfcm: <https://seanchatmangpt.github.io/ash-a2a/dfcm#>
 SELECT ?id ?module_name ?repository ?sha ?subject ?capability ?owner ?authority ?consequence ?falsifier
        ?standing_contract ?standing_subject ?technical_standing ?external_standing ?runtime_authority
-       ?requires_exact_subject ?requires_frozen_closure ?requires_receipt_replay_binding
-       ?standing_source ?technical_standing ?external_standing ?runtime_authority
-       ?requires_exact_subject ?requires_release_binding ?requires_frozen_closure ?requires_receipt_replay_binding
+       ?standing_source ?requires_release_binding
        (GROUP_CONCAT(DISTINCT ?reuse; separator="||") AS ?reuse_items)
        (GROUP_CONCAT(DISTINCT ?negative; separator="||") AS ?negative_items)
 WHERE {
@@ -41,7 +39,5 @@ WHERE {
 }
 GROUP BY ?id ?module_name ?repository ?sha ?subject ?capability ?owner ?authority ?consequence ?falsifier
          ?standing_contract ?standing_subject ?technical_standing ?external_standing ?runtime_authority
-         ?requires_exact_subject ?requires_frozen_closure ?requires_receipt_replay_binding
-         ?standing_source ?technical_standing ?external_standing ?runtime_authority
-         ?requires_exact_subject ?requires_release_binding ?requires_frozen_closure ?requires_receipt_replay_binding
+         ?standing_source ?requires_release_binding
 ORDER BY ?id
