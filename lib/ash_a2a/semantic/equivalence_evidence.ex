@@ -8,9 +8,9 @@ defmodule AshA2A.Semantic.EquivalenceEvidence do
   """
   alias AshA2A.Semantic.InterchangeContract
 
-  @enforce_keys [:left_identity, :right_identity, :court, :observation_digest,
+  @enforce_keys [:left_identity, :right_identity, :court, :profile, :context_digest, :observation_digest,
     :falsifier_digest, :portable_identity]
-  defstruct [:left_identity, :right_identity, :court, :observation_digest,
+  defstruct [:left_identity, :right_identity, :court, :profile, :context_digest, :observation_digest,
     :falsifier_digest, :portable_identity,
     technical_standing: "CANDIDATE", external_standing: "NONE", runtime_authority: "NONE"]
 
@@ -23,6 +23,8 @@ defmodule AshA2A.Semantic.EquivalenceEvidence do
          :ok <- same_semantics(left, right),
          :ok <- distinct_projection(left, right),
          {:ok, court} <- text(attrs, :court),
+         {:ok, profile} <- text(attrs, :profile),
+         {:ok, context} <- digest(attrs, :context_digest),
          {:ok, observations} <- digest(attrs, :observation_digest),
          {:ok, falsifiers} <- digest(attrs, :falsifier_digest),
          :ok <- none(attrs, :external_standing),
@@ -32,6 +34,8 @@ defmodule AshA2A.Semantic.EquivalenceEvidence do
         "left_identity" => left.portable_identity,
         "right_identity" => right.portable_identity,
         "court" => court,
+        "profile" => profile,
+        "context_digest" => context,
         "observation_digest" => observations,
         "falsifier_digest" => falsifiers,
         "technical_standing" => "CANDIDATE",
@@ -43,6 +47,8 @@ defmodule AshA2A.Semantic.EquivalenceEvidence do
         left_identity: left.portable_identity,
         right_identity: right.portable_identity,
         court: court,
+        profile: profile,
+        context_digest: context,
         observation_digest: observations,
         falsifier_digest: falsifiers,
         portable_identity: portable(payload))}
@@ -53,7 +59,8 @@ defmodule AshA2A.Semantic.EquivalenceEvidence do
 
   def verify(%__MODULE__{} = evidence, %InterchangeContract{} = left,
       %InterchangeContract{} = right) do
-    attrs = %{court: evidence.court, observation_digest: evidence.observation_digest,
+    attrs = %{court: evidence.court, profile: evidence.profile,
+      context_digest: evidence.context_digest, observation_digest: evidence.observation_digest,
       falsifier_digest: evidence.falsifier_digest,
       external_standing: evidence.external_standing,
       runtime_authority: evidence.runtime_authority}
