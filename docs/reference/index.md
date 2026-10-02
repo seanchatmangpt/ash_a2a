@@ -16,7 +16,7 @@ Status legend:
   `AshA2A.Agent.__dispatch__`'s default path under any condition; reached only via an
   explicit alternate caller (Reactor step, planner output, etc.).
 
-As of v26.9.14 (re-verified at v26.9.21), every module previously listed
+As of v26.9.14 (re-verified at v26.9.31), every module previously listed
 `ADAPTER-SEAM (no real provider)` has a real, dependency-satisfied, tested
 integration -- see
 [Architecture](../explanation/architecture.md#the-ecosystem-adapters-are-real-integrations-not-just-seams)
@@ -30,7 +30,7 @@ Reference pages in this quadrant:
   environment variable the library reads.
 - [Telemetry events](telemetry.md) — the production event catalog with
   payloads.
-- [Mix tasks](mix-tasks.md) — the 13 shipped tasks.
+- [Mix tasks](mix-tasks.md) — the 15 shipped tasks.
 - [A2A endpoint contract](a2a-endpoint-contract.md) — the served HTTP
   wire surface: card, JSON-RPC, errors, streaming, auth.
 
@@ -59,6 +59,22 @@ ExDoc module documentation (HexDocs).
 | [`AshA2A.Transformers.BuildCapabilityIndex`](https://hexdocs.pm/ash_a2a/AshA2A.Transformers.BuildCapabilityIndex.html) | Spark DSL transformer that persists residual overrides and subject kind (resource/domain) at compile time. | ALIVE |
 | [`AshA2A.MetadataKey`](https://hexdocs.pm/ash_a2a/AshA2A.MetadataKey.html) | Shared atom-or-string map lookup helper used by `ContextResolver`, `Agent`, and `Dispatcher`. | ALIVE |
 | [`AshA2A.Application`](https://hexdocs.pm/ash_a2a/AshA2A.Application.html) | OTP application starting the A2A agent supervisor and the configured receipt store (`Memory` by default, `Ekv` or a host-supplied module otherwise). | ALIVE |
+
+## Transport (HTTP surface)
+
+Host-mounted plug surfaces — real code exercised by the drift courts and the
+transport qualification tests, reached when the host mounts the plug (the
+vendored `A2A.Plug` remains the tutorial default). See
+[A2A endpoint contract](a2a-endpoint-contract.md) for the wire behavior of
+both plugs and [A2A spec version mapping](a2a-spec-version-mapping.md) for
+the per-method matrix.
+
+| Module | Description | Status |
+| --- | --- | --- |
+| [`AshA2A.A2ATransport`](https://hexdocs.pm/ash_a2a/AshA2A.A2ATransport.html) | Supervised transport tree behind the owned plug: SSE stream pump with fan-out, push-config store, webhook delivery. | PARTIAL (not default path) |
+| [`AshA2A.A2ATransport.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.A2ATransport.Plug.html) | ash_a2a-owned drop-in wrapper around the vendored `A2A.Plug`: supervised `message/stream` SSE fan-out with `tasks/resubscribe` Last-Event-ID replay, `tasks/pushNotificationConfig/*` RPCs with signed SSRF-admitted webhook delivery, and `agent/getAuthenticatedExtendedCard`. | PARTIAL (not default path) |
+| [`AshA2A.Transport.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.Transport.Plug.html) | Owner-scoped drop-in replacement for the vendored `A2A.Plug`: owner-filtered `tasks/list`, transport-verified principal extraction, safe-error responses. | PARTIAL (not default path) |
+| [`AshA2A.Health.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.Health.Plug.html) | GET liveness/readiness JSON (kill-switch classes, OCEL forwarder health, degraded status opt). | PARTIAL (not default path) |
 
 ## LLM resolution
 
@@ -96,6 +112,7 @@ See [Architecture](../explanation/architecture.md).
 | [`AshA2A.Receipt.EvidenceChain`](https://hexdocs.pm/ash_a2a/AshA2A.Receipt.EvidenceChain.html) | Durable, hash-linked receipt evidence chain for offline replay (RFC-SA2A-001 S32; RFC-SA2A-002 §41 Gate 10, §92 B8). | PARTIAL (not default path) |
 | [`AshA2A.Receipt.OfflineReplay`](https://hexdocs.pm/ash_a2a/AshA2A.Receipt.OfflineReplay.html) | Fresh offline replay engine over the evidence chain (RFC-SA2A-001 S32; RFC-SA2A-002 §41 Gate 10, §92 B8). | PARTIAL (not default path) |
 | [`AshA2A.Receipt.Replay`](https://hexdocs.pm/ash_a2a/AshA2A.Receipt.Replay.html) | RFC-SA2A-001 S32 replay: reconstructs the semantic basis of an execution from its receipt without repeating the execution; consumed by `Semantic.Attestation` and the replay courts. | PARTIAL (not default path) |
+| [`AshA2A.Receipt.RProjection`](https://hexdocs.pm/ash_a2a/AshA2A.Receipt.RProjection.html) | Projects an S31 command receipt onto the fleet R schema v2 — `R = {identity, authority, consequence, replay, standing}` plus the v2 additions (`work_order_id`, `origin_authority`, `provider`, `replay_binding`). `project/2` requires `:repo`/`:subject_sha`/`:base_sha` anchors; the standing table is evidence-only and every violation is a typed refusal. | PARTIAL (not default path) |
 | [`AshA2A.Authority.Grant`](https://hexdocs.pm/ash_a2a/AshA2A.Authority.Grant.html) | The grant decision layer: standing `grant/3`/`revoke/3`/`renew/3`/`granted?/3` plus enumeration `list_grants/2` (via the broker's OPTIONAL `list_grants/2` callback; third-party brokers without it degrade to `:error`) for admin/audit tooling. Closes the S29 authentication-vs-authority escalation. | ALIVE (opt-in trigger) |
 | [`AshA2A.Authority.Broker`](https://hexdocs.pm/ash_a2a/AshA2A.Authority.Broker.html) | Broker behaviour for standing grants; shipped reference implementations `Broker.InMemory` (single node, dev/tests) and `Broker.Ekv` (durable). | ALIVE (opt-in trigger) |
 | [`AshA2A.C2.PolicyEvidence`](https://hexdocs.pm/ash_a2a/AshA2A.C2.PolicyEvidence.html) | Evidence from an external OpenID AuthZEN PDP (Authorization API 1.0 evaluation) absorbed below SA2A authority: builds the SARC request for an `AuthorityRequest`, binds the PDP response to the exact request (PDP identifier bound, HTTPS-only metadata, strict-boolean `decision`), and never confers DO authority (`grants_do_authority?/1` is always `false`). | PARTIAL (not default path) |
@@ -114,6 +131,32 @@ See [Architecture](../explanation/architecture.md).
 | [`AshA2A.Planning.BoundedPlan`](https://hexdocs.pm/ash_a2a/AshA2A.Planning.BoundedPlan.html) | The whole bounded plan presented for execution (RFC-SA2A-001 S24/S34/S35): a digest-identified `Semantic.PlanPackage` plus the execution envelope (steps, fan-out/cascade/parallelism bounds, budgets, `:authority_requirement`, `:semantic_subject`) and `:work_order_digest` -- the admitted work-order identity the plan was manufactured under (`nil` outside an admitted work order). Evidence bound by the preflight identity, never authority. | PARTIAL (not default path) |
 | [`AshA2A.Planning.Preflight`](https://hexdocs.pm/ash_a2a/AshA2A.Planning.Preflight.html) | Digest-identity preflight over a `BoundedPlan` before execution: folds the admitted `:work_order_digest` into the preflight identity, so a step claiming a different work-order identity is refused `:preflight_work_order_mismatch` (naming the planned `:plan_digest` and the claimed `:work_order_digest`), classified S42 `:refused_identity`. | PARTIAL (not default path) |
 | [`AshA2A.TaskLifecycle`](https://hexdocs.pm/ash_a2a/AshA2A.TaskLifecycle.html) | Adapter over host-owned `AshStateMachine` task truth; declares A2A task vocabulary. `:ash_state_machine` is now a real dependency with a real qualification test. | REAL_INTEGRATED (provider, opt-in) |
+
+## Workload identity & policy evidence (SPIFFE / AuthZEN)
+
+Absorbed boundary vocabulary (RFC-SA2A-005 SPIFFE absorption, AuthZEN
+Authorization API 1.0 interchange): real, tested modules reached only via the
+C2 authority-service paths (`AuthorityService.authorize/3` ctx opts, PDP
+binding) or explicit host wiring — never part of `Agent.__dispatch__`'s
+default path. See [C2 wire interop](c2-wire-interop.md).
+
+| Module | Description | Status |
+| --- | --- | --- |
+| [`AshA2A.SPIFFE.Identity`](https://hexdocs.pm/ash_a2a/AshA2A.SPIFFE.Identity.html) | Strict SPIFFE ID parse (`parse/1`): scheme/trust-domain/path decomposition; query, fragment, userinfo, and port are refused. | PARTIAL (not default path) |
+| [`AshA2A.SPIFFE.AttestedIdentity`](https://hexdocs.pm/ash_a2a/AshA2A.SPIFFE.AttestedIdentity.html) | Attested workload identity built from an already-verified identity (`from_verified/2`): SVID type (`:x509`/`:jwt`), bundle digest, observation timestamp. Evidence only. | PARTIAL (not default path) |
+| [`AshA2A.SPIFFE.PDPBinding`](https://hexdocs.pm/ash_a2a/AshA2A.SPIFFE.PDPBinding.html) | Binds an attested SPIFFE identity to the expected AuthZEN policy decision point before its evidence is admitted (`admit/3`; JWT SVIDs require opt-in `allow_jwt`). | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Metadata`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Metadata.html) | AuthZEN provider metadata (`decode/1`): known-member validation, HTTPS-only `policy_decision_point`; `bind_expected/2` detects PDP mixup. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Client`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Client.html) | Transport-injected AuthZEN client; `evaluate/2` runs an access evaluation against the bound PDP and yields `PolicyEvidence` only — it never calls the authority or an actuator. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Types`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Types.html) | Lossless internal projection of AuthZEN SARC values (entities, subjects, resources, actions, decisions); policy inputs, never ActuationCertificates. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Wire`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Wire.html) | JSON wire encoding for AuthZEN requests and decisions. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.PolicyEvidence`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.PolicyEvidence.html) | Authority-free result of an external AuthZEN policy evaluation; evidence only, never a substitute for a C2 certificate. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.PolicyEvidenceFactory`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.PolicyEvidenceFactory.html) | Builds a `PolicyEvidence` from a `Types.Decision`, the `PreparedEffect` it digests, and the bound `Metadata`. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.DecisionGate`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.DecisionGate.html) | Admission gate over policy evidence: expected-PDP, effect-digest, principal, and strict-boolean decision checks before a prepared effect may proceed. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.AuthorityPolicy`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.AuthorityPolicy.html) | `AuthorityRequest` admission policy composing `DecisionGate` — a PDP allow is evidence, never authority. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Projection`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Projection.html) | Projects a `PreparedEffect` into AuthZEN access-evaluation subject/resource/action values. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.SearchBinding`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.SearchBinding.html) | Request-digest-keyed pagination binding for AuthZEN search flows. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Receipt`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Receipt.html) | Evidence receipt of one AuthZEN evaluation: request/effect digests, PDP, decision, observation time. | PARTIAL (not default path) |
+| [`AshA2A.AuthZEN.Absorption`](https://hexdocs.pm/ash_a2a/AshA2A.AuthZEN.Absorption.html) | Composition surface wiring the AuthZEN family (client, factory, gate, projection, receipt) into the C2 authority/actuator boundary. | PARTIAL (not default path) |
 
 ## Semantic pipeline (opt-in production surface)
 
@@ -166,6 +209,7 @@ dependency of this project with a real qualification test exercising it -- see
 | --- | --- | --- |
 | [`AshA2A.Telemetry.OcelForwarder`](https://hexdocs.pm/ash_a2a/AshA2A.Telemetry.OcelForwarder.html) | Best-effort OCEL v2 telemetry egress. Exactly one event per CommandBus-routed dispatch (dispatch-span and receipt-committed fields merged, deduplicated); a direct `Dispatcher.dispatch/6` caller still gets its own dispatch event. Observational only. | ALIVE |
 | [`AshA2A.Telemetry.RouterCounters`](https://hexdocs.pm/ash_a2a/AshA2A.Telemetry.RouterCounters.html) | In-process `:counters`-backed RequestRouter tier-split instrument: `new/0`, `attach!/2` and `attach!/3`, `counts/1`, `detach/1`. `attach!/3`'s `:owner` option isolates sources per emitter: `:any` (default) counts every emitter -- the exact pre-existing union behavior -- while a pid counts only events emitted by that process. | PARTIAL (not default path) |
+| [`AshA2A.Telemetry.Metrics`](https://hexdocs.pm/ash_a2a/AshA2A.Telemetry.Metrics.html) | Dependency-free SLO metric definitions (`definitions/0`) over the production event catalog, plus the same as `Telemetry.Metrics` structs (`metrics/0`) for Prometheus/OTel/LiveDashboard reporters; the host supplies `:telemetry_metrics`. | PARTIAL (not default path) |
 | [`AshA2A.SemanticProjection`](https://hexdocs.pm/ash_a2a/AshA2A.SemanticProjection.html) | Read-only projection of committed receipts and capabilities into machine-readable evidence; joins `ash_r2rml` mapping results when available (real, asserted mapping as of v26.9.14, not just the refusal path). Receipt metadata and projected OCEL events carry `spg_graph_id`, `spg_graph_version`, `spg_node_id`, `spg_edge_id`, and `spg_projection_family` when SPG identity is present (since v26.9.25, d660a9e). | PARTIAL (not default path) |
 | [`AshA2A.Research.ERC`](https://hexdocs.pm/ash_a2a/AshA2A.Research.ERC.html) | Executable Research Claim receipt emitter; writes a machine-readable JSON receipt from this project's own test-run evidence. | PARTIAL (not default path) |
 

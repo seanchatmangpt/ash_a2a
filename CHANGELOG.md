@@ -10,9 +10,26 @@ once it reaches 1.0.
 
 ## [26.9.31] - 2026-10-02
 
-Release preparation only: version bumped in `mix.exs`; no tag, no publish. Verified by
-`mix hex.build` and `mix hex.publish --dry-run`. The SA2A contract version strings
-(`v26.9.30`) and the pinned graphlaw engine/wasm are unchanged.
+Release preparation and documentation alignment: version bumped in `mix.exs`; no tag, no
+publish. Verified by `mix hex.build` and `mix hex.publish --dry-run`. The SA2A profile
+constants (`SA2A-*-v26.9.20`) and the pinned graphlaw engine/wasm are unchanged.
+
+### Fixed
+
+- Documentation alignment pass: README and connected docs restated the implementation.
+  Version lines synced across `mix.exs`, `a2a-spec-version-mapping.md`,
+  `v26.9.29/HANDOFF.md`, and `how-to/release.md` (release-path court green). `mix-tasks.md`
+  and the module index now cover all 15 shipped tasks (added `ash_a2a.c2.court`,
+  `ash_a2a.standing_ref`). `configuration.md` gained the keys the library reads but the
+  catalog omitted (`:security_profile`, `:allow_legacy_authority_policy`,
+  `:claim_store*`, `:receipt_outbox_key`, `:prepared_journal_dir`, `:outbox_ready_max`,
+  HDDL/graphlaw/OCel runtime bounds, ...) and corrected the `:graph_law` default
+  (WasmexHost-first since PERF-01) and the env-var reader module names. `telemetry.md`
+  gained the undocumented event families (`:dispatch, :exception`, `:health, :checked`,
+  OCEL `:delivered`/`:failed`, the `:semantic, *` pipeline families). `index.md` gained
+  the transport plugs, `Receipt.RProjection`, and the SPIFFE/AuthZEN absorbed-boundary
+  families; README gained the owned-transport pointer, the SPIFFE/AuthZEN security note,
+  RFC-SA2A-001–007 inventory, and the control-plane doc pointers.
 
 ### Added
 

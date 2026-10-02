@@ -30,12 +30,14 @@ These are the repo's own regression gates (run by or alongside
 | `mix ash_a2a.chicago.mutate` | Runs the RFC-SA2A-002 §22/§97 anti-vacuity mutation catalog. |
 | `mix ash_a2a.chicago.pin_court_manifest` | Rebuilds `priv/sa2a/chicago_court_manifest.json` from the compiled courts. |
 | `mix ash_a2a.sa2a.pin_root_manifest` | Rebuilds `priv/sa2a/root_manifest.json` from the real conformance corpus. |
+| `mix ash_a2a.c2.court` | Runs the RFC-SA2A-006 s26 C2 compromise court against the real `authority_service` and `actuator` OS processes — plays an attacker controlling the control-plane node and judges every attack from the actuator's hash-chained effect ledger. `--n` repetitions, `--only` attack selection, `--no-mutation` skips the mutation court; tagged `:c2_court` (`:serial`, `:serial_solo`). See [C2 compromise court](c2-compromise-court.md). |
 
 ## Tooling
 
 | Task | Shortdoc |
 | --- | --- |
 | `mix ash_a2a.vendor_graphlaw` | Rebuilds, executes, and vendors the GraphLaw wasm law package into `priv/graphlaw` (needs the praxis checkout and `wasm-pack`; dev tooling only). |
+| `mix ash_a2a.standing_ref` | Prints the newest SHA with a durable court receipt at a given standing (`--court sa2a --standing CONFORMANT`), so consumers pin that exact SHA as a git `ref:` instead of a version number. See `AshA2A.StandingRef`. |
 | `mix eds.ledger` | Prints the real ERC (Executable Research Claim) ledger for this repo. |
 
 ## Benchmarks (non-task)

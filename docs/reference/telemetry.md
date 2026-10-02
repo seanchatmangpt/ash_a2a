@@ -19,6 +19,8 @@ end, nil)
 | Event | Measurements | Metadata | Emitted by |
 | --- | --- | --- | --- |
 | `[:ash_a2a, :dispatch, :start]` / `[:ash_a2a, :dispatch, :stop]` (a `:telemetry.span`) | `duration` (native) on stop | `resource_or_domain`, `skill_name`; stop adds reply outcome, stage-tagged error `{:error, {stage, reason}}` on failure, and `object_id` (real identity of the acted-on record/instance, when one exists — never fabricated) | `AshA2A.Dispatcher.dispatch/6` (arities `/3`–`/5` remain valid via defaults) |
+| `[:ash_a2a, :dispatch, :exception]` | `duration` | raised-exception metadata — emitted automatically by the span when dispatch raises | `AshA2A.Dispatcher.dispatch/6` |
+| `[:ash_a2a, :health, :checked]` | `duration` | `status` (aggregated liveness/readiness verdict) | `AshA2A.Health` on every check run |
 | `[:ash_a2a, :dispatch, :brce_gate]` | `system_time` | skill metadata + outcome/reason (sole-DO fence verdict) | `AshA2A.BrceAnchor` |
 | `[:ash_a2a, :dispatch, :actuate]` | `system_time` | skill metadata + `anchored: boolean` | `AshA2A.BrceAnchor` |
 
@@ -67,6 +69,27 @@ end, nil)
 | `[:ash_a2a, :hook_reactor, :intent, :constructed / :idempotency]` | `duration_us` | intent construction / idempotency-check metadata + `:outcome` | `AshA2A.Semantic.HookReactor` |
 | `[:ash_a2a, :hook_reactor, :cascade, :bound]` | `requested`, `ceiling` | cascade-bound metadata | `AshA2A.Semantic.HookReactor` |
 
+### Semantic pipeline (opt-in surfaces)
+
+All events below carry `outcome` in metadata (family-specific verdict, e.g.
+`:digested`/`:refused`, `:built`/`:refused`, `:admitted`/`:refused`) and empty
+measurements unless noted. They fire only on the opt-in semantic paths.
+
+| Event | Emitted by |
+| --- | --- |
+| `[:ash_a2a, :semantic, :canonical_graph, :digest / :pin / :compare]` | `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 canonicalization, pin verification, graph comparison) |
+| `[:ash_a2a, :semantic, :iri, :mint_private / :resolve]` | `AshA2A.Semantic.Iri` |
+| `[:ash_a2a, :semantic, :ontology, :project]` / `[:ash_a2a, :semantic, :ontology_cache, :load]` | `AshA2A.Semantic.Ontology`, `AshA2A.Semantic.OntologyCache` |
+| `[:ash_a2a, :semantic, :mapping_registry, :register / :reconcile]` | `AshA2A.Semantic.MappingRegistry` (`ash_r2rml` mapping admission and reconciliation) |
+| `[:ash_a2a, :semantic, :plan_package, :build / :verify]`, `[:ash_a2a, :semantic, :plan_projection, :verify]` | `AshA2A.Semantic.PlanPackage`, `AshA2A.Semantic.PlanProjection` |
+| `[:ash_a2a, :semantic, :root_manifest, :load]` | `AshA2A.Semantic.RootManifest` |
+| `[:ash_a2a, :semantic, :sparql_update, :decision]` | `AshA2A.Semantic.FalsifierSuite` (SPARQL-update admission decision) |
+| `[:ash_a2a, :semantic, :term_registry, :build / :operational_use]` | `AshA2A.Semantic.TermRegistry` |
+| `[:ash_a2a, :semantic, :unknown, :admit_for_do]` | `AshA2A.Semantic.Unknown` (`count: 1` measurement; `class` metadata) |
+| `[:ash_a2a, :semantic, :falsifier_suite, :admit]` | `AshA2A.Semantic.FalsifierSuite` |
+| `[:ash_a2a, :episode \| suffix]` | `AshA2A.Semantic.Episode` — suffixed sub-events over one semantic episode |
+| `[:ash_a2a, :logic, :closure, event]` | `AshA2A.Semantic.LogicClosure` — per-closure-stage events |
+
 ### Chicago / QA harness events (internal)
 
 A large `[:ash_a2a, :chicago, ...]` family (mutation, observer, court
@@ -87,8 +110,21 @@ receipt-derived event), never two. Concurrent POSTs are bounded by
 `config :ash_a2a, :ocel_max_in_flight` (default 256); beyond the ceiling
 events are shed, counted, and reported via `[:ash_a2a, :ocel, :shed]`.
 Forwarding is best-effort: non-2xx responses and network failures are
-logged and swallowed, never raised into dispatch. See
+logged and swallowed, never raised into dispatch. Delivery outcomes are
+observable as `[:ash_a2a, :ocel, :delivered]` and
+`[:ash_a2a, :ocel, :failed]` (alongside the `:shed` counter above). See
 [Observe dispatch with OCEL](../how-to/observe-dispatch-with-ocel.md).
+
+## SLO metric definitions
+
+`AshA2A.Telemetry.Metrics` ships plain-data metric definitions
+(`definitions/0`: `%{type, name, event, measurement, tags, unit}`) and the
+same as `Telemetry.Metrics` structs (`metrics/0`) for
+`TelemetryMetricsPrometheus`, OpenTelemetry, or LiveDashboard — so a host
+can build SLO dashboards without hand-pairing start/stop events. The host
+must depend on `:telemetry_metrics` itself (`metrics/0` raises a clear
+error without it); durations are `:native` and pre-tagged for
+`unit: {:native, :millisecond}` conversion.
 
 ## Router tier counters
 

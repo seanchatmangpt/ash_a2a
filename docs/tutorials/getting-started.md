@@ -19,7 +19,7 @@ it only if you call `A2A.*` yourself):
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.9"}
+    {:ash_a2a, "~> 26.9.31"}
   ]
 end
 ```

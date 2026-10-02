@@ -50,7 +50,7 @@ compiled index:
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.9.30"}
+    {:ash_a2a, "~> 26.9.31"}
   ]
 end
 ```
@@ -121,7 +121,12 @@ To boot supervised agent processes, serve them over HTTP (agent card +
 JSON-RPC + SSE), and drive them with `A2A.Client`, continue with the
 [Getting Started tutorial](docs/tutorials/getting-started.md); for the exact
 wire contract, see the
-[A2A endpoint reference](docs/reference/a2a-endpoint-contract.md).
+[A2A endpoint reference](docs/reference/a2a-endpoint-contract.md). Beyond the
+vendored SDK plug, the library ships its own
+`AshA2A.A2ATransport.Plug` — a drop-in wrapper implementing the methods the
+vendored plug refuses: supervised `message/stream` fan-out with
+`tasks/resubscribe` replay, push-notification config RPCs with signed
+webhook delivery, and the authenticated extended card (same reference).
 
 ## Local development setup
 
@@ -200,7 +205,7 @@ reference for lookup, and explanation for understanding. It is published on
     config key and environment variable the library reads.
   - [Telemetry events](docs/reference/telemetry.md) — the event catalog
     with payloads.
-  - [Mix tasks](docs/reference/mix-tasks.md) — the 13 shipped tasks.
+  - [Mix tasks](docs/reference/mix-tasks.md) — the 15 shipped tasks.
   - [A2A endpoint contract](docs/reference/a2a-endpoint-contract.md) —
     served HTTP surface: agent card, JSON-RPC methods, error codes,
     streaming, auth.
@@ -215,12 +220,22 @@ reference for lookup, and explanation for understanding. It is published on
     request end to end, from wire to receipt.
   - [Canonical graph identity](docs/explanation/canonical-graph-identity.md)
     and [GraphLaw WASM integration](docs/explanation/graphlaw-wasm-integration.md).
+- **Control plane & conformance** (shipped with the repo, beyond the HexDocs
+  set): [C2 certificate model](docs/reference/c2-certificate.md),
+  [C2 wire interop](docs/reference/c2-wire-interop.md) (external
+  authority/actuator projects, AuthZEN PDP policy evidence),
+  [C2 compromise court](docs/reference/c2-compromise-court.md),
+  [conformance claim](docs/reference/conformance-claim.md) and
+  [profiles](docs/reference/conformance-profiles.md),
+  [GALL closure ownership](docs/explanation/closure-implementations.md),
+  the [approver app](docs/how-to/approver-apps.md), and the
+  [release path](docs/how-to/release.md).
 
 ### Internal evidence and reports (not user documentation)
 
 These artifacts are deliberately published with the repository but are
-point-in-time engineering records, not guides. As of v26.9.21 they live
-under `docs/archive/`, grouped by kind:
+point-in-time engineering records, not guides. As of v26.9.31 the audit-era
+records live under `docs/archive/`, grouped by kind:
 
 - `docs/archive/reports/` — measured evidence: the v26.9.17 hardening/
   benchmark/stress pass (`chicago-benchmark-report.md`,
@@ -240,7 +255,10 @@ under `docs/archive/`, grouped by kind:
 - `docs/explanation/chicago-conformance-court.md` — what the RFC-SA2A-002
   conformance court is (kept in place: a durable explanation, not a
   point-in-time record).
-- `docs/rfc/` — RFC-SA2A-001/002 (Proposed Standard status; kept in place).
+- `docs/rfc/` — RFC-SA2A-001–007 (Proposed Standard status; kept in place —
+  001/002 date from v26.9.16, 003–007 from v26.9.28, plus the
+  `adoption/SPIFFE_ABSORPTION.md` record and the v26.9.26 ABB/SBB
+  implementation notes).
 - `research/` — kept in place, outside `docs/archive/`.
 
 ## Security
@@ -250,9 +268,12 @@ transport-verified `A2A.Plug.Auth` output, and consequential
 (`:change`/`:external_do`) skills additionally require a standing grant from
 `AshA2A.Authority.Grant` — authentication alone never confers authority
 (RFC-SA2A-001 S29). Neither shipped broker (`InMemory`, `Ekv`) is
-Sybil-resistant; bring your own identity system for production. See
-[the authentication how-to](docs/how-to/authenticate-agent-requests.md) and
-[SECURITY.md](SECURITY.md).
+Sybil-resistant; bring your own identity system for production. Optional
+absorbed boundaries extend that identity system: SPIFFE workload-attested
+identities (`AshA2A.SPIFFE.*`) and OpenID AuthZEN PDP policy evidence
+(`AshA2A.AuthZEN.*`) bind external decisions in as evidence — never as
+authority. See [the authentication how-to](docs/how-to/authenticate-agent-requests.md)
+and [SECURITY.md](SECURITY.md).
 
 ## Status
 
