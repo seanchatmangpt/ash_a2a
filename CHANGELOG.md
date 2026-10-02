@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [Unreleased]
+
+### Added
+
+- `AshA2A.C2.PolicyEvidence` (AuthZEN PDP adapter: SARC request builder, response binding, HTTPS-only metadata validation) and the Req-based `PolicyEvidence.PdpClient` PEP-side client (04eec80/42671ef).
+- `AuthorityService.authorize/3` opt-in policy-evidence precondition (`policy_evidence_required`/`policy_evidence` ctx opts; refusals `:policy_evidence_missing`/`:policy_evidence_mismatch`) — a PDP allow is evidence, never a substitute for admission.
+- `AshA2A.C2.PolicyEvidence.McpProjection`: projects an MCP `tools/call` (COAZ-MCP) into a powerless `PreparedEffect` with capability id `mcp.tool:<name>` (6226254).
+- `AshA2A.Semantic.InterchangeContract`: evidence-only identity for a semantic interchangeable implementation, schema `ash-a2a.semantic-interchange/v1` (bb4a6c0).
+- `AshA2A.DfCM.FleetIntake` and `AshA2A.DfCM.Court`: evidence-only DfCM fleet-capability intake from a JSON donor manifest and loader/validator for DfCM-generated fleet courts.
+- CHI-FIN synthetic-finance Chicago court (`AshA2A.Chicago.Courts.FiboFinance` + fixtures) over the graphlaw ABI: synthetic `fin:` vocabulary, ETS-ledger subject, authority NONE.
+- 33 new S42 refusal classifications for SPIFFE identity, DfCM court, semantic-interchange and standing-receipt codes (fbea18c).
+- HILT two-port graph-digest integrity: `AshA2A.Hilt.WorkOrder` optionally carries `graph_digest` (sha256:64-hex validated, carried from the command subject by default, explicit-opt override) and `admit_command/2` pins it against the executing command's `semantic_subject.graph_digest` via `checkpoint_graph_digest/2`, refusing `:stale_graph_identity` before claim — SA2A work-order identity (`identity_digest/1`) deliberately excludes it. Qualified by gate-1 court `CHI-HILT` (5 falsifiers) and anti-vacuity mutant `hilt_graph_digest_ok` (killed by CHI-HILT-001/002).
+- `AshA2A.Receipt.RProjection` — projects S31 command receipts onto the fleet R schema v2 (`work_order_id`/`origin_authority`/`provider`/`provider_execution_id` + `provider_ext.ash_a2a` self-digest), evidence-only: standing derives from `terminal_status` × store standing (ALIVE requires `:durable`; an `:observed` executed receipt refuses `:r_projection_standing_not_durable`), the authority ceiling is a fixed map of the receipt's own consequence with no caller override, and the git anchor (`repo`/`subject_sha`/`base_sha`) is caller-supplied and pattern-validated only — the projector runs no git and `consequence.commits` is always `[]`. Deterministic (no wall-clock fields).
+
+### Changed
+
+- AuthZEN wire request `action` now emits the canonical Authorization API 1.0 shape `{"name": ..., "properties": ...}` (c3a4be8/ca2e43f).
+- `CapabilityRelease.freeze/2` replays and re-admits each member's durable standing evidence (`AshA2A.StandingBinding.verify_durable/2`) at the closure boundary and refuses `:standing_release_digest_mismatch` when the release digest differs from the binding's portable identity (1ad83d9).
+
 ## [26.9.30] - 2026-09-30
 
 Release preparation only: version bumped in `mix.exs`; no tag, no publish. Verified by
