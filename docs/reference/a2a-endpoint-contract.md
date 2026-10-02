@@ -1,10 +1,15 @@
 # A2A Endpoint Reference
 
-The exact HTTP surface an AshA2A-served agent exposes, per the vendored
-`:a2a` SDK (`deps/a2a/lib/a2a/plug.ex`, `jsonrpc.ex`, `jsonrpc/error.ex`).
+The exact HTTP surface an AshA2A-served agent exposes: the vendored
+`:a2a` SDK (`deps/a2a/lib/a2a/plug.ex`, `jsonrpc.ex`, `jsonrpc/error.ex`)
+plus the ash_a2a-owned wrapper `AshA2A.A2ATransport.Plug` (30b486f), which
+implements the methods the vendored plug hard-codes to refusals.
 Protocol level: **A2A v0.3, JSON-RPC 2.0 over HTTP POST**, with SSE
-streaming for `message/stream`. The gRPC binding is not implemented, and
-push notifications/webhooks are explicitly unsupported.
+streaming for `message/stream`. The gRPC binding is not implemented. Push
+notifications/webhooks are supported only through the owned transport with
+`push_notifications: true` (see below); the bare vendored plug still
+refuses `tasks/resubscribe` (`-32004`) and `tasks/pushNotificationConfig/*`
+(`-32003`).
 
 ## Endpoints
 
@@ -60,8 +65,8 @@ projected card is an `A2A.AgentCard`:
 | `message/send` | Synchronous dispatch; result is an A2A task object. |
 | `message/stream` | SSE streaming response (`text/event-stream`): initial task snapshot, then per-part events, final `StatusUpdate` with `final: true`. |
 | `tasks/get` / `tasks/cancel` / `tasks/list` | Task management within the agent process's lifetime (the task store is in-memory ETS, single node). |
-| `tasks/resubscribe` | Unsupported → `-32004`. |
-| `tasks/pushNotificationConfig/*` | Unsupported → `-32003`. |
+| `tasks/resubscribe` | Supported via the owned transport (`AshA2A.A2ATransport.Plug` with a running `AshA2A.A2ATransport` instance): SSE response carrying the current task snapshot, then the logged backlog after the SSE `Last-Event-ID` (if sent), then live events until the final event; every frame is `id: <task-local seq>`. Owner-scoped: a foreign or unknown task is `-32001`. Falls back to the vendored plug's `-32004` when the transport instance is not running. |
+| `tasks/pushNotificationConfig/*` | `set`/`get`/`list`/`delete` via the owned transport when `push_notifications: true` (A2A 0.3 wire shapes; the PascalCase aliases route identically). Configs are owner-scoped (unknown/foreign task → `-32001`), bounded to 16 per task (`:max_per_task`, beyond it the typed refusal `:refused_push_config_limit`); webhook URLs are admitted by `AshA2A.A2ATransport.WebhookPolicy` at `set` time (refused URL → `-32602` with `data.code: "refused_webhook_*"`); `authentication.credentials` is write-only (never echoed back). Without `push_notifications: true` (the default): `-32003`. |
 | anything else | `-32601` method not found. |
 
 ## Error codes
@@ -140,8 +145,16 @@ Authentication is separate from authority: consequential
   dispatch.
 - **In-memory task store** — `tasks/get|cancel|list` see only tasks from
   the current process lifetime, single node.
-- **No push notifications** — poll `tasks/get` or use
-  `message/stream` while connected.
+- **Push notifications/webhooks (opt-in, owned transport only)** — with
+  `push_notifications: true` and a running `AshA2A.A2ATransport`, each task
+  status transition POSTs the A2A `Task`/`TaskStatusUpdateEvent` payload to
+  every stored config's webhook URL (`AshA2A.A2ATransport.PushDelivery`):
+  delivery is unordered — order with the `x-a2a-delivery-id` sequence header
+  (`"<task_id>:<config_id>:<seq>"`, bounded exponential-backoff retries);
+  every attempt re-admits the URL through `WebhookPolicy` and connects to the
+  admitted IP (no redirects), and an optional `:signing_secret` adds
+  `X-A2A-Timestamp`/`X-A2A-Signature` HMAC-SHA256 signing. Otherwise, poll
+  `tasks/get` or use `message/stream` while connected.
 
 ## "Conformance" disambiguation
 

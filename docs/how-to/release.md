@@ -2,7 +2,7 @@
 
 The Hex release has one path: `.github/workflows/release.yml`. A pushed
 `v<version>` tag publishes; `workflow_dispatch` is a dry run that publishes
-nothing. Version: v26.9.29.
+nothing. Version: v26.9.31.
 
 ## Contents
 

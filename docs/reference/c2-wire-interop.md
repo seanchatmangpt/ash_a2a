@@ -1,12 +1,13 @@
 # c2-wire-interop
 
 How the control-plane clients reach the separate `authority_service` and `actuator` releases,
-what had to be reconciled, and what remains open. Last updated 2026-09-29 (v26.9.28).
+what had to be reconciled, and what remains open. Last updated 2026-09-30 (v26.9.30).
 
 ## Contents
 
 - Findings
 - Reconciliation
+- Policy evidence (AuthZEN PDP)
 - Proof
 - Open gaps
 
@@ -37,6 +38,37 @@ Smallest change on each side:
 3. Actuator profile `PreparedEffect`: payload keys exactly
    `effect_type, consequence_class, effect_instance_id, resource_bounds, params`; `capability`
    and `subject` are the actuator's own strings.
+
+## Policy evidence (AuthZEN PDP)
+
+Below the authority boundary, the control plane can absorb evidence from an external policy
+decision point speaking the OpenID AuthZEN Authorization API 1.0 evaluation
+(`AshA2A.C2.PolicyEvidence`, commits 04eec80/42671ef):
+
+- `PolicyEvidence` is pure and offline: `sarc_request/1` builds the AuthZEN SARC request
+  (subject/action/resource/context) for an `AuthorityRequest`; `from_response/4` binds a PDP
+  response to the exact request it answered and refuses `:pdp_mismatch` unless the discovered
+  metadata names the configured PDP identifier, `:pdp_not_https`/`:pdp_endpoint_not_https`
+  for non-HTTPS endpoints, and `:decision_malformed` unless `decision` is a strict JSON
+  boolean (unknown metadata keys are ignored). `binds?/2` re-checks the
+  digest/principal/policy-epoch/revocation-epoch/generation fence, and
+  `grants_do_authority?/1` is always `false`: an `:allow` is an input to
+  `AshA2A.C2.AuthorityService.authorize/3`, never a substitute for it.
+- `PolicyEvidence.PdpClient` is the Req-based PEP side: it discovers the PDP via
+  `GET /.well-known/authzen-configuration`, requires HTTPS, disables redirects so a response
+  cannot come from a PDP other than the configured identifier, and POSTs the SARC request to
+  the metadata's `access_evaluation_endpoint`.
+- `AuthorityService.authorize/3` makes the evidence opt-in via ctx opts
+  `policy_evidence_required` / `policy_evidence`: when required, a `:allow` evidence bound to
+  the exact request must be present, else the refusals `:policy_evidence_missing` /
+  `:policy_evidence_mismatch`; it never replaces `policy.admit/2` or certificate issuance.
+- The AuthZEN wire request `action` now emits the canonical Authorization API 1.0 shape
+  `{"name": ..., "properties": ...}` (c3a4be8/ca2e43f) instead of the entity
+  `{"type": ..., "id": ...}` projection.
+- `PolicyEvidence.McpProjection.project/2` projects an MCP `tools/call` request (the COAZ-MCP
+  shape) into a powerless `PreparedEffect` with capability id `mcp.tool:<name>` (6226254);
+  the principal comes from the authenticated caller, never from tool arguments; non-map
+  `arguments` refuse `:mcp_arguments_malformed`.
 
 ## Proof
 
