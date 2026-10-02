@@ -18,11 +18,14 @@ defmodule AshA2A.Hilt.WorkOrder do
   @authority_levels [:observe, :select, :construct, :do]
   @consequence_classes [:observe, :change, :external_do, :unknown]
 
+  @graph_digest_error "graph_digest must be nil or \"sha256:\" followed by 64 lowercase hex"
+
   @refusal_codes %{
     stale_task_identity: :refused_identity,
     stale_candidate_identity: :refused_identity,
     stale_subject_identity: :refused_identity,
     stale_work_order_identity: :refused_identity,
+    stale_graph_identity: :refused_identity,
     stale_capability_identity: :refused_capability,
     authority_ceiling_exceeded: :refused_authority
   }
@@ -56,6 +59,12 @@ defmodule AshA2A.Hilt.WorkOrder do
     :consequence_class,
     :process_evidence_digest,
     :falsifier_digest,
+    # Deliberately NOT in @identity_fields (v26.10.1-loop RESOLUTIONS R5):
+    # identity_digest/1 is SA2A work-order identity; graph_digest is carried
+    # checkpoint evidence on the two-port plane, pinned by its own comparison
+    # (checkpoint_graph_digest/2) against the executing command's
+    # semantic_subject.graph_digest -- never folded into identity.
+    :graph_digest,
     metadata: %{}
   ]
 
@@ -73,6 +82,7 @@ defmodule AshA2A.Hilt.WorkOrder do
           consequence_class: consequence_class(),
           process_evidence_digest: String.t(),
           falsifier_digest: String.t(),
+          graph_digest: String.t() | nil,
           metadata: map()
         }
 
@@ -123,6 +133,12 @@ defmodule AshA2A.Hilt.WorkOrder do
       raise ArgumentError, "consequence_class must be one of #{inspect(@consequence_classes)}"
     end
 
+    case work_order.graph_digest do
+      nil -> :ok
+      "sha256:" <> hex when byte_size(hex) == 64 -> valid_graph_hex!(hex)
+      _ -> raise ArgumentError, @graph_digest_error
+    end
+
     %{work_order | metadata: Map.new(work_order.metadata || %{})}
   end
 
@@ -165,6 +181,11 @@ defmodule AshA2A.Hilt.WorkOrder do
       consequence_class: consequence_class,
       process_evidence_digest: digest_bound(Keyword.fetch!(opts, :process_evidence)),
       falsifier_digest: digest_bound(Keyword.fetch!(opts, :falsifier)),
+      # Two-port carry-by-default (v26.10.1-loop lane A1): the order carries the
+      # command subject's graph_digest as checkpoint evidence; an explicit
+      # opts[:graph_digest] overrides the carried value (nil opts out of the
+      # checkpoint entirely).
+      graph_digest: Keyword.get(opts, :graph_digest, subject_graph_digest(command.semantic_subject)),
       metadata: Keyword.get(opts, :metadata, %{})
     )
   end
@@ -223,6 +244,11 @@ defmodule AshA2A.Hilt.WorkOrder do
              subject_digest(command.semantic_subject)
            ),
          :ok <-
+           checkpoint_graph_digest(
+             work_order.graph_digest,
+             subject_graph_digest(command.semantic_subject)
+           ),
+         :ok <-
            same(
              :work_order,
              identity_digest(work_order),
@@ -247,6 +273,30 @@ defmodule AshA2A.Hilt.WorkOrder do
     do: Actuation.digest(SemanticSubject.fingerprint_token(subject))
 
   defp subject_digest(_), do: nil
+
+  defp subject_graph_digest(%SemanticSubject{} = subject), do: subject.graph_digest
+  defp subject_graph_digest(_), do: nil
+
+  # Two-port graph-digest checkpoint (v26.10.1-loop lane A1). The order carries
+  # the semantic subject's graph_digest as checkpoint evidence; at admission the
+  # carried digest is pinned against the executing command's own subject, so a
+  # re-pointed or substituted graph cannot ride a still-valid work-order
+  # identity into DO. Precedent: Planning.Preflight.work_order_bound/2 -- both
+  # present and disagreeing -> refuse; either absent -> skip. Evidence, never
+  # authority: this names the graph, it never grants it.
+  defp checkpoint_graph_digest(nil, _subject_digest), do: :ok
+  defp checkpoint_graph_digest(_order_digest, nil), do: :ok
+  defp checkpoint_graph_digest(order_digest, order_digest), do: :ok
+  defp checkpoint_graph_digest(_order_digest, _subject_digest),
+    do: {:error, :stale_graph_identity}
+
+  defp valid_graph_hex!(hex) do
+    if String.match?(hex, ~r/\A[0-9a-f]{64}\z/) do
+      :ok
+    else
+      raise ArgumentError, @graph_digest_error
+    end
+  end
 
   defp consequence_within_ceiling(%__MODULE__{consequence_class: :unknown}, _command),
     do: {:error, :consequence_unclassified}

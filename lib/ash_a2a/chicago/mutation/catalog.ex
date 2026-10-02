@@ -237,6 +237,25 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         # the replay branch.
         guard: "CommandBus replay branch: a committed receipt is returned, never re-actuated",
         killers: ["CHI-REPLAY", "CHI-BRCE", @guard_court]
+      },
+      # v26.10.1-loop lane A1: the two-port graph-digest checkpoint. The
+      # carried order graph_digest is pinned against the executing command's
+      # semantic_subject.graph_digest; deleting the pin lets a re-pointed
+      # semantic graph ride a still-valid work-order identity into claim
+      # and DO (CHI-HILT-001/002 observe the forbidden admission).
+      %Mutation{
+        id: "hilt_graph_digest_ok",
+        rfc_mutation: "carry without pinning (drop the two-port graph-digest checkpoint)",
+        module: AshA2A.Hilt.WorkOrder,
+        function: :checkpoint_graph_digest,
+        arity: 2,
+        clauses: :all,
+        operator: {:replace_body, "ok."},
+        guard:
+          "Hilt.WorkOrder.checkpoint_graph_digest/2 two-port pin: the carried order " <>
+            "graph_digest must equal the executing command's semantic_subject.graph_digest " <>
+            "(both present and disagreeing -> refuse :stale_graph_identity; either absent -> skip)",
+        killers: ["CHI-HILT"]
       }
     ]
   end
