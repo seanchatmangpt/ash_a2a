@@ -8,6 +8,12 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+## [26.9.31] - 2026-10-02
+
+Release preparation only: version bumped in `mix.exs`; no tag, no publish. Verified by
+`mix hex.build` and `mix hex.publish --dry-run`. The SA2A contract version strings
+(`v26.9.30`) and the pinned graphlaw engine/wasm are unchanged.
+
 ### Added
 
 - `AshA2A.C2.PolicyEvidence` (AuthZEN PDP adapter: SARC request builder, response binding, HTTPS-only metadata validation) and the Req-based `PolicyEvidence.PdpClient` PEP-side client (04eec80/42671ef).
