@@ -116,6 +116,18 @@ jobs:
         env:
           MIX_ENV: test
         run: mix ash_a2a.chicago.pin_court_manifest --check
+      # §22/§97 anti-vacuity mutation court, full catalog (15 entries): each
+      # mutant is hot-loaded into this exact checkout and the courts expected
+      # to kill it are run against baseline and mutant. --require-killed makes
+      # this step gating: mutant_survived is a falsifier that passes with its
+      # guard deleted (§11 vacuity), and blocked/unknown fail it too. No
+      # continue-on-error -- unlike the recorded-only corpus steps below, a
+      # surviving mutant is a red workflow by construction.
+      - name: Chicago mutation court (full catalog, require-killed)
+        timeout-minutes: 20
+        env:
+          MIX_ENV: test
+        run: mix ash_a2a.chicago.mutate --require-killed
       # The strict conformance corpus is RECORDED, not gating: its
       # v006_blank_nodes vector fails deterministically on every host ("input
       # identity is not a function of the input graph" -- graph_hash/1 is not
