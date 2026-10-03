@@ -256,6 +256,70 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
             "graph_digest must equal the executing command's semantic_subject.graph_digest " <>
             "(both present and disagreeing -> refuse :stale_graph_identity; either absent -> skip)",
         killers: ["CHI-HILT"]
+      },
+      # v26.10.2 loops-of-loops lane L1: the algebraic two-port lease gate.
+      # One entry per conjunct-bypass -- replacing any conjunct's verdict with
+      # `false` (never failed) lets a tampered lease ride into claim and DO.
+      # CHI-TWO-PORT's single-bit tamper falsifiers observe the forbidden
+      # admission on each.
+      %Mutation{
+        id: "lease_scope_check_ok",
+        rfc_mutation: "scope conjunct never fails (two-port lease gate)",
+        module: AshA2A.Authority.TwoPortGate,
+        function: :scope_failed?,
+        arity: 2,
+        clauses: :all,
+        operator: {:replace_body, "false."},
+        guard:
+          "TwoPortGate scope_failed?/2 conjunct (a): the lease's scope_digest " <>
+            "must equal H(scope_of(command)) or the mask carries 0x1 " <>
+            "(:lease_scope_mismatch)",
+        killers: ["CHI-TWO-PORT"]
+      },
+      %Mutation{
+        id: "lease_root_check_ok",
+        rfc_mutation: "root conjunct never fails (two-port lease gate)",
+        module: AshA2A.Authority.TwoPortGate,
+        function: :root_failed?,
+        arity: 3,
+        clauses: :all,
+        operator: {:replace_body, "false."},
+        guard:
+          "TwoPortGate root_failed?/3 conjunct (b): the lease's root_digest must " <>
+            "equal the command's RDFC-1.0 root (recomputed via CanonicalGraph when " <>
+            "rdf_state is carried; opaque compare of the carried graph_digest " <>
+            "otherwise) or the mask carries 0x2 (:lease_root_mismatch)",
+        killers: ["CHI-TWO-PORT"]
+      },
+      %Mutation{
+        id: "lease_clock_check_ok",
+        rfc_mutation: "clock conjunct never fails (two-port lease gate)",
+        module: AshA2A.Authority.TwoPortGate,
+        function: :clock_failed?,
+        arity: 3,
+        clauses: :all,
+        operator: {:replace_body, "false."},
+        guard:
+          "TwoPortGate clock_failed?/3 conjunct (c): the hybrid clock window " <>
+            "(same-VM monotonic [T_start, T_exp]; cross-VM wall " <>
+            "[not_before, expires_at]) must contain the captured clock or the " <>
+            "mask carries 0x4 (:lease_expired)",
+        killers: ["CHI-TWO-PORT"]
+      },
+      %Mutation{
+        id: "lease_signature_check_ok",
+        rfc_mutation: "signature conjunct never fails (two-port lease gate)",
+        module: AshA2A.Authority.TwoPortGate,
+        function: :signature_failed?,
+        arity: 2,
+        clauses: :all,
+        operator: {:replace_body, "false."},
+        guard:
+          "TwoPortGate signature_failed?/2 conjunct (d): the lease's Ed25519 " <>
+            "signature must verify under the authorizing authority's public key " <>
+            "(fail closed on missing key or signature) or the mask carries 0x8 " <>
+            "(:lease_signature_invalid)",
+        killers: ["CHI-TWO-PORT"]
       }
     ]
   end

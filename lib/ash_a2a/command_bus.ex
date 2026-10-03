@@ -151,7 +151,8 @@ defmodule AshA2A.CommandBus do
     KillSwitch,
     Postcondition,
     Receipt,
-    ReceiptOutbox
+    ReceiptOutbox,
+    Authority.TwoPortGate
   }
 
   @type result :: {:ok, Receipt.t()} | {:error, map()}
@@ -168,6 +169,7 @@ defmodule AshA2A.CommandBus do
       authority_expired: :refused_authority,
       authority_constraint_mismatch: :refused_authority,
       authority_revalidation_unavailable: :blocked_resource,
+      refused_lease: :refused_authority,
       stale_execution: :refused_identity,
       dispatch_timeout: :blocked_resource,
       dispatch_lost: :blocked_resource
@@ -200,6 +202,7 @@ defmodule AshA2A.CommandBus do
          {:ok, opts} <- preflight_plan_step(command, opts),
          :ok <- observe_admission(command, consequence, admit(command, consequence)),
          :ok <- observe_kill_switch(command, check_kill_switch(opts)),
+         :ok <- observe_lease_gate(command, check_lease_gate(command, opts)),
          claim <- observe_claim(command, claim_receipt(store, command, store_opts)) do
       case claim do
         {:replay, receipt} ->
@@ -1000,6 +1003,48 @@ defmodule AshA2A.CommandBus do
     Keyword.get(opts, :kill_switch_class) || kill_switch_class()
   end
 
+  # Loops-of-loops spec §1 Loop 1: the algebraic two-port gate, evaluated
+  # against an explicitly presented authority lease. Strictly OPT-IN, exactly
+  # like hilt_work_order/2 above: `opts[:lease]` absent -> :ok with no event,
+  # so run/4 is byte-for-byte unchanged for every existing caller. When a
+  # lease is presented it is evaluated by
+  # `AshA2A.Authority.TwoPortGate.evaluate/3` BEFORE claim_receipt/3 (and
+  # therefore before any receipt is claimed or DO ever runs), and the refusal
+  # carries the branchless conjunct mask (`mask: 0x1` scope, `0x2` root,
+  # `0x4` clock, `0x8` signature). NOT default-on: the HILT precedent holds —
+  # default-on is a separate flip with its own witness.
+  defp check_lease_gate(command, opts) do
+    case Keyword.get(opts, :lease) do
+      nil ->
+        # Opt-in skip: NO lease presented. Returns :skip (distinct from
+        # :admitted) so the boundary observer never records an admission
+        # that never happened.
+        :skip
+
+      %AshA2A.Authority.Lease{} = lease ->
+        gate_opts = Keyword.take(opts, [:lease_public_key, :rdf_state])
+
+        case TwoPortGate.evaluate(command, lease, gate_opts) do
+          :admitted ->
+            :admitted
+
+          {:error, {:refused_lease, mask, %{codes: codes}}} ->
+            {:error,
+             %{
+               code: :refused_lease,
+               detail:
+                 "lease refused by the two-port gate; mask=0x#{Integer.to_string(mask, 16)} " <>
+                   "(" <> Enum.join(Enum.map(codes, &Atom.to_string/1), ", ") <> ")",
+               mask: mask,
+               codes: codes
+             }}
+        end
+
+      _other ->
+        {:error, refusal(:invalid_command_input)}
+    end
+  end
+
   # RFC-SA2A-004 S10/S11: AUTHORITY_REVALIDATED. Immediately before DO --
   # after the anchor is persisted and the claim confirmed -- authority is
   # re-checked against the authoritative broker (when one is configured) and
@@ -1318,6 +1363,22 @@ defmodule AshA2A.CommandBus do
   defp observe_kill_switch(command, {:error, %{code: code}} = error) do
     emit_boundary([:kill_switch], command, %{outcome: :tripped, code: code})
     error
+  end
+
+  # Boundary telemetry for the two-port lease gate (§1 Loop 1). Emits ONLY
+  # when a lease was actually presented: the opt-in skip is SILENT (absence
+  # of the `lease_gate` activity is the evidence of skip), an evaluated
+  # lease emits admitted (mask 0x0) or refused (mask = failed conjuncts).
+  defp observe_lease_gate(_command, :skip), do: :ok
+
+  defp observe_lease_gate(command, :admitted) do
+    emit_boundary([:lease_gate], command, %{outcome: :admitted, mask: 0x0})
+    :ok
+  end
+
+  defp observe_lease_gate(command, {:error, %{code: code, mask: mask} = error}) do
+    emit_boundary([:lease_gate], command, %{outcome: :refused, code: code, mask: mask})
+    {:error, error}
   end
 
   defp observe_claim(command, {:execute, execution_id} = claim) do
