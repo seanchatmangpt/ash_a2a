@@ -125,3 +125,30 @@ pre-existing `lib/ash_a2a/consequence_kernel/call_graph_court.ex:20` and
   `reference/index.md` adapter row).
 - No TLS on the framed C2 clients (disclosed in `reference/c2-wire-interop.md`).
 - mTLS declared-but-unsupported (`how-to/authenticate-agent-requests.md`).
+## Cycle 2 (2026-10-02) — RD1 allowlist shrink (5-lane fan-out) + deferred-list closure
+
+Five coordinator-dispatched lanes over disjoint files (contract: single-site
+readers, no git, no shared-file edits, syntax-proofs without _build writes;
+integration of the shared docs-truth court serialized to the coordinator):
+
+- [x] **RD1 shrink** — 36 execution oracles (up from 22): CommandBus
+      `receipt_commit_retry_delays_ms/0` (7 sites unified) + `kill_switch_class/0`;
+      Application `receipt_store/0`, `receipt_store_ekv_opts/0`,
+      `outbox_reconciler?/0`; ClaimLease `lease_ms/0`; Semantic.Conformance
+      `planning_bounds/0`/`semantic_engine/0`/`admitted_vocabulary/0`/
+      `root_manifest/0`; Semantic.Compiler `max_batch/1`; Telemetry.Redact
+      `raw_errors?/0`; OcelForwarder `ingest_url/0`; `:evidence_class` verified
+      via the existing `Evidence.Class.default/0`. Allowlist: 54 → 19
+      reason-carrying entries. configuration.md now states the semantic trio's
+      real `nil` defaults and the `100` max_batch bound.
+- [x] **Deferred warnings** — already eliminated at current head by the
+      concurrent fleet-R lane (`1d7dc2e`); WRN lane proved it by reproducing
+      both historical clause shapes and recompiling clean. `mix compile` now
+      emits ZERO warnings (one lane-introduced @doc stacking in redact.ex
+      caught by the forced-recompile check and fixed at integration).
+
+Receipt: `7c13f1e` on `main` (stacked on the concurrent lane's `619bbb3`/
+`1d7dc2e`). Ladder 67 passed; `mix hex.build` clean at 26.10.2
+(checksum 4c8f9742…). Deferred remainder: the 19 allowlist entries (each
+carries its reason; further shrinkage needs readers on per-call-override
+keys or is blocked by computed/conditional defaults by design).
