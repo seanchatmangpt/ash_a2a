@@ -8,6 +8,26 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Chicago court strengthening (C7, 619bbb3): six new falsifiers kill the three
+  authority/envelope courts that passed vacuously. SA2A-AUTH-022/023/024 pin
+  subject/capability binding and expiry through the real Grant -> CommandBus
+  path; SA2A-AUTH-GRANT-012/013 pin grant-layer binding and past-`expires_at`
+  refusal; CHI-ADM-014 witnesses an envelope declaring its own standing being
+  refused `:standing_self_declared` (the guard previously made 0 calls on the
+  court path). The SA2A-ENV/CHI-BRCE courts no longer hand-mint authority:
+  they start a court-owned broker and mint through the real Grant API.
+  Mutation run: 14 killed / 1 unknown (was 3 survived + 2 unknown); the
+  mutation manifest is re-pinned.
+- Legacy-compat census and audit (D6, 0bdc6b7): 46 non-chicago Memory
+  receipt-store consumers censused -- 2 incidental Memory stores migrated to
+  real on-disk EKV instances (with a `receipt.standing == :durable`
+  post-condition so the swap is falsifiable), the rest lawfully classified by
+  the store-as-subject law. `docs/jira/v26.10.2/LEGACY-COMPAT-AUDIT.md`
+  states the retirement criterion: `:legacy_compat` is deprecable -- zero
+  in-repo consumers boot under it, and no documented host path recommends it.
+
 ## [26.10.2] - 2026-10-02
 
 Documentation drift closure (ERRC) per `docs/jira/v26.10.2/ARD.md` + `PRD.md`. No wire,
@@ -24,7 +44,7 @@ authority, or dispatch-path change; one test-harness code default changed.
 ### Reduced
 
 - `AshA2A.DocsTruthTest` generalized: every documented configuration default row is either
-  verified by running the real consumer (22 execution oracles, up from 3) or explicitly
+  verified by running the real consumer (36 execution oracles, up from 3) or explicitly
   allowlisted with a reason; unaccounted literal defaults are a court failure (RD1).
 - New courts: telemetry-catalog court (every emitted literal event family documented,
   variable families declared per emitter), mix-task catalog court (rows vs `@shortdoc`,

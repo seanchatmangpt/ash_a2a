@@ -31,7 +31,12 @@ compiled index:
   through a real supervised `A2A.Agent` process (`AshA2A.Agent`) — routing
   consequence-bearing skills (`:change`/`:external_do`) through the
   receipted `AshA2A.CommandBus` with authority admission and replay-safe
-  receipts.
+  receipts,
+- and carries the HILT work-order binding plane (`AshA2A.Hilt.WorkOrder`):
+  `bind_command/2` places the work order's content-addressed identity into
+  command metadata for `CommandBus` to verify before admission, and the
+  carried `graph_digest` is pinned against the executing command's semantic
+  subject (`checkpoint_graph_digest/2`) — drift refuses `:stale_graph_identity`.
 
 ## Requirements
 
