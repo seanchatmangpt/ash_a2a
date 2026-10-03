@@ -61,6 +61,10 @@ defmodule AshA2A.Telemetry.Redact do
 
   def error_summary(other), do: %{kind: :other, shape: term_shape(other)}
 
+  @doc "Raw (unredacted) error payloads in telemetry metadata: `config :ash_a2a, :telemetry_raw_errors` (default `false`)."
+  @spec raw_errors?() :: boolean()
+  def raw_errors?, do: Application.get_env(:ash_a2a, :telemetry_raw_errors, false) == true
+
   @doc """
   Returns the error term a `:telemetry` handler should see: the redacted
   summary by default, the raw term only when the host opted in with
@@ -68,7 +72,7 @@ defmodule AshA2A.Telemetry.Redact do
   """
   @spec telemetry_error(term()) :: term()
   def telemetry_error(reason) do
-    if Application.get_env(:ash_a2a, :telemetry_raw_errors, false) == true,
+    if raw_errors?(),
       do: reason,
       else: error_summary(reason)
   end

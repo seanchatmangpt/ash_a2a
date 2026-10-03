@@ -826,7 +826,7 @@ defmodule AshA2A.Semantic.Conformance do
   @spec check_meta_admission() :: requirement_status()
   def check_meta_admission do
     constant? = Vocabulary.prefixes() == Vocabulary.prefixes()
-    configured = Application.get_env(:ash_a2a, :admitted_vocabulary)
+    configured = admitted_vocabulary()
 
     if constant? and is_nil(configured) do
       {:unmet,
@@ -848,7 +848,7 @@ defmodule AshA2A.Semantic.Conformance do
   """
   @spec check_admitted_root_manifest() :: requirement_status()
   def check_admitted_root_manifest do
-    configured = Application.get_env(:ash_a2a, :root_manifest)
+    configured = root_manifest()
     module? = Code.ensure_loaded?(AshA2A.Semantic.RootManifest)
 
     if is_nil(configured) and not module? do
@@ -1014,9 +1014,9 @@ defmodule AshA2A.Semantic.Conformance do
   @spec check_explicit_finite_resource_bounds() :: requirement_status()
   def check_explicit_finite_resource_bounds do
     retry = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
-    bounds = Application.get_env(:ash_a2a, :planning_bounds)
+    bounds = planning_bounds()
 
-    if is_nil(bounds) do
+    if bounds == [] do
       {:unmet,
        "the only real finite bound in the :ash_a2a environment is " <>
          ":receipt_commit_retry_delays_ms (#{inspect(retry)}), which bounds one receipt-commit " <>
@@ -1627,6 +1627,37 @@ defmodule AshA2A.Semantic.Conformance do
   # ===========================================================================
 
   @doc """
+  The configured planning-bounds envelope (`config :ash_a2a,
+  :planning_bounds`), `[]` when unset -- the documented default. The single
+  read site for every `:planning_bounds` consumer in this module.
+  """
+  @spec planning_bounds() :: keyword() | map()
+  def planning_bounds, do: Application.get_env(:ash_a2a, :planning_bounds, [])
+
+  @doc """
+  The configured external semantic engine (`config :ash_a2a,
+  :semantic_engine`), `nil` when unset. This repo deliberately implements no
+  Elixir ShEx/SHACL/SPARQL/Datalog/N3 engine, so unset is the honest default.
+  """
+  @spec semantic_engine() :: module() | nil
+  def semantic_engine, do: Application.get_env(:ash_a2a, :semantic_engine)
+
+  @doc """
+  The configured admitted vocabulary override (`config :ash_a2a,
+  :admitted_vocabulary`), `nil` when unset -- no inline default exists at
+  the read site.
+  """
+  @spec admitted_vocabulary() :: term()
+  def admitted_vocabulary, do: Application.get_env(:ash_a2a, :admitted_vocabulary)
+
+  @doc """
+  The configured root-manifest pin (`config :ash_a2a, :root_manifest`),
+  `nil` when unset -- no inline default exists at the read site.
+  """
+  @spec root_manifest() :: term()
+  def root_manifest, do: Application.get_env(:ash_a2a, :root_manifest)
+
+  @doc """
   Real check of one capability on the configured external semantic engine
   (`config :ash_a2a, semantic_engine: MyEngine`).
 
@@ -1636,7 +1667,7 @@ defmodule AshA2A.Semantic.Conformance do
   """
   @spec engine_capability(atom(), arity()) :: requirement_status()
   def engine_capability(function, arity) do
-    case Application.get_env(:ash_a2a, :semantic_engine) do
+    case semantic_engine() do
       nil ->
         {:unmet,
          "no :semantic_engine is configured, so #{function}/#{arity} is unavailable. This " <>
@@ -1656,7 +1687,7 @@ defmodule AshA2A.Semantic.Conformance do
   end
 
   defp planning_bound(key, label) do
-    bounds = Application.get_env(:ash_a2a, :planning_bounds, [])
+    bounds = planning_bounds()
     value = if is_list(bounds), do: Keyword.get(bounds, key), else: Map.get(bounds, key)
 
     cond do

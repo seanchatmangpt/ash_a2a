@@ -46,13 +46,22 @@ defmodule AshA2A.ReceiptStore.ClaimLease do
   @default_lease_ms 300_000
 
   @doc """
+  The configured claim lease in milliseconds:
+  `config :ash_a2a, :claim_lease_ms`, default #{@default_lease_ms}.
+  `duration_ms/1` layers the per-call `opts[:claim_lease_ms]` override on
+  top of this value.
+  """
+  @spec lease_ms() :: non_neg_integer()
+  def lease_ms, do: Application.get_env(:ash_a2a, :claim_lease_ms, @default_lease_ms)
+
+  @doc """
   The claim lease duration in milliseconds: `opts[:claim_lease_ms]` when
-  given, else `config :ash_a2a, :claim_lease_ms`, else #{300_000}.
+  given, else `lease_ms/0` (`config :ash_a2a, :claim_lease_ms`, else
+  #{300_000}).
   """
   @spec duration_ms(keyword()) :: non_neg_integer()
   def duration_ms(opts \\ []) do
-    Keyword.get(opts, :claim_lease_ms) ||
-      Application.get_env(:ash_a2a, :claim_lease_ms, @default_lease_ms)
+    Keyword.get(opts, :claim_lease_ms) || lease_ms()
   end
 
   @doc "Wall-clock reading to stamp a fresh (or reclaimed) claim's `claimed_at` with."

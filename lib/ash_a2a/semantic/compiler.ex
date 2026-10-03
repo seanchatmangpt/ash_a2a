@@ -55,6 +55,13 @@ defmodule AshA2A.Semantic.Compiler do
     |> bound_or_default(@default_max_text_bytes)
   end
 
+  @doc "The effective `compile_many/3` batch-size ceiling."
+  @spec max_batch(keyword()) :: pos_integer()
+  def max_batch(opts \\ []) do
+    (Keyword.get(opts, :max_batch) || Application.get_env(:ash_a2a, :semantic_max_batch))
+    |> bound_or_default(@default_max_batch)
+  end
+
   # Fail closed on a malformed bound: a non-integer (e.g. an unparsed
   # `System.get_env/1` string) would otherwise compare as larger than every
   # integer under Erlang term order and silently disable the cap.
@@ -126,9 +133,7 @@ defmodule AshA2A.Semantic.Compiler do
   end
 
   def compile_many(resource_or_domain, texts, opts \\ []) when is_list(texts) do
-    max_batch =
-      (Keyword.get(opts, :max_batch) || Application.get_env(:ash_a2a, :semantic_max_batch))
-      |> bound_or_default(@default_max_batch)
+    max_batch = max_batch(opts)
 
     if length(texts) > max_batch do
       {:error,

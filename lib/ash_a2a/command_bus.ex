@@ -446,7 +446,7 @@ defmodule AshA2A.CommandBus do
       |> Receipt.mark_unknown_outcome(code)
       |> mark_standing(store)
 
-    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    delays = receipt_commit_retry_delays_ms()
     commit_result = commit_with_retries(store, receipt, store_opts, delays)
 
     emit_boundary([:commit], command, %{
@@ -543,7 +543,7 @@ defmodule AshA2A.CommandBus do
            store,
            receipt,
            store_opts,
-           Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+           receipt_commit_retry_delays_ms()
          ) do
       :ok ->
         emit_receipt(receipt)
@@ -579,7 +579,7 @@ defmodule AshA2A.CommandBus do
       store,
       receipt,
       store_opts,
-      Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+      receipt_commit_retry_delays_ms()
     )
 
     {:error, %{code: reason, detail: actuation_refusal_detail(reason), receipt: receipt}}
@@ -685,7 +685,7 @@ defmodule AshA2A.CommandBus do
   defp commit_actuation(store, actuation, receipt, consequence, store_opts, opts)
        when consequence in [:change, :external_do] do
     if enforce_actuation?(store, actuation, opts) do
-      delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+      delays = receipt_commit_retry_delays_ms()
       result = commit_actuation_with_retries(store, actuation, receipt, store_opts, delays)
 
       if result != :ok do
@@ -786,7 +786,7 @@ defmodule AshA2A.CommandBus do
       |> Receipt.from_reply(execution_id, consequence, reply, receipt_opts)
       |> mark_standing(store)
 
-    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    delays = receipt_commit_retry_delays_ms()
 
     commit_result = commit_with_retries(store, receipt, store_opts, delays)
 
@@ -813,7 +813,7 @@ defmodule AshA2A.CommandBus do
   end
 
   defp commit_receipt(store, receipt, store_opts) do
-    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    delays = receipt_commit_retry_delays_ms()
 
     case commit_with_retries(store, receipt, store_opts, delays) do
       :ok ->
@@ -997,7 +997,7 @@ defmodule AshA2A.CommandBus do
   # RFC-SA2A-004 S11: the class may be named per call or host-wide
   # (`config :ash_a2a, :kill_switch_class`); the per-call opt wins.
   defp kill_switch_class(opts) do
-    Keyword.get(opts, :kill_switch_class) || Application.get_env(:ash_a2a, :kill_switch_class)
+    Keyword.get(opts, :kill_switch_class) || kill_switch_class()
   end
 
   # RFC-SA2A-004 S10/S11: AUTHORITY_REVALIDATED. Immediately before DO --
@@ -1184,7 +1184,7 @@ defmodule AshA2A.CommandBus do
       |> Receipt.from_reply(execution_id, consequence, {:error, error}, receipt_opts)
       |> mark_standing(store)
 
-    delays = Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+    delays = receipt_commit_retry_delays_ms()
     _ = commit_with_retries(store, receipt, store_opts, delays)
     emit_boundary([:pre_do_gate], command, %{outcome: :refused, code: code})
 
@@ -1496,6 +1496,23 @@ defmodule AshA2A.CommandBus do
   def dispatch_timeout_ms(opts \\ []) do
     Keyword.get(opts, :dispatch_timeout_ms) ||
       Application.get_env(:ash_a2a, :dispatch_timeout_ms, @default_dispatch_timeout_ms)
+  end
+
+  @doc """
+  Receipt-commit retry backoff delays: `config :ash_a2a, :receipt_commit_retry_delays_ms`
+  (default `[50, 150]`).
+  """
+  @spec receipt_commit_retry_delays_ms() :: [pos_integer()]
+  def receipt_commit_retry_delays_ms do
+    Application.get_env(:ash_a2a, :receipt_commit_retry_delays_ms, [50, 150])
+  end
+
+  @doc """
+  Kill-switch class in force: `config :ash_a2a, :kill_switch_class` (`nil` default).
+  """
+  @spec kill_switch_class() :: atom() | nil
+  def kill_switch_class do
+    Application.get_env(:ash_a2a, :kill_switch_class)
   end
 
   defp safe_dispatch(skill, message, resource_or_domain, opts, anchor) do

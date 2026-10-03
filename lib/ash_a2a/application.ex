@@ -129,6 +129,18 @@ defmodule AshA2A.Application do
   @doc "Boot-time durability enforcement switch: `config :ash_a2a, :require_durable_receipts` (default `false`)."
   def require_durable_receipts?, do: Application.get_env(:ash_a2a, :require_durable_receipts, false)
 
+  @doc "Configured receipt store module: `config :ash_a2a, :receipt_store` (default `AshA2A.ReceiptStore.Memory`)."
+  @spec receipt_store() :: module()
+  def receipt_store, do: Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory)
+
+  @doc "Raw EKV options for the default-wired receipt store: `config :ash_a2a, :receipt_store_ekv_opts` (default `[]`; `:name`/`:data_dir`/`:cluster_size` wiring defaults are added by the supervision tree)."
+  @spec receipt_store_ekv_opts() :: keyword()
+  def receipt_store_ekv_opts, do: Application.get_env(:ash_a2a, :receipt_store_ekv_opts, [])
+
+  @doc "Outbox reconciler enabled switch: `config :ash_a2a, :outbox_reconciler` (default `true`)."
+  @spec outbox_reconciler?() :: boolean()
+  def outbox_reconciler?, do: Application.get_env(:ash_a2a, :outbox_reconciler, true)
+
   defp start_supervisor(agents) do
     children =
       receipt_store_children() ++
@@ -180,7 +192,7 @@ defmodule AshA2A.Application do
   # against the real config without restarting the application.
   @spec outbox_reconciler_children() :: [Supervisor.child_spec() | {module(), keyword()}]
   def outbox_reconciler_children do
-    if Application.get_env(:ash_a2a, :outbox_reconciler, true) == false,
+    if outbox_reconciler?() == false,
       do: [],
       else: [{AshA2A.ReceiptOutbox.Reconciler, []}]
   end
@@ -221,7 +233,7 @@ defmodule AshA2A.Application do
   defp non_durable?(facts), do: not facts.durable or facts.receipt_outbox_dir_tmp
 
   defp receipt_store_children do
-    case Application.get_env(:ash_a2a, :receipt_store, AshA2A.ReceiptStore.Memory) do
+    case receipt_store() do
       AshA2A.ReceiptStore.Memory ->
         [{AshA2A.ReceiptStore.Memory, []}]
 
@@ -233,7 +245,7 @@ defmodule AshA2A.Application do
         # store's behalf so choosing `AshA2A.ReceiptStore.Ekv` gets the same
         # automatic wiring the default store gets, rather than requiring
         # every host to hand-start `EKV` itself.
-        [{EKV, receipt_store_ekv_opts()}]
+        [{EKV, receipt_store_ekv_children_opts()}]
 
       _custom_store ->
         []
@@ -248,11 +260,10 @@ defmodule AshA2A.Application do
   # the tmp-dir default below is fine for local/dev use, where surviving a
   # single BEAM restart is the point, but is not guaranteed to survive a
   # host reboot on every platform).
-  defp receipt_store_ekv_opts do
+  defp receipt_store_ekv_children_opts do
     default_data_dir = Path.join(System.tmp_dir!(), "ash_a2a_receipt_store_ekv")
 
-    :ash_a2a
-    |> Application.get_env(:receipt_store_ekv_opts, [])
+    receipt_store_ekv_opts()
     |> Keyword.put_new(:name, AshA2A.ReceiptStore.Ekv)
     |> Keyword.put_new(:data_dir, default_data_dir)
     |> Keyword.put_new(:cluster_size, 1)
@@ -282,7 +293,7 @@ defmodule AshA2A.Application do
   end
 
   # Deliberately a DIFFERENT default `:name` and `:data_dir` than
-  # `receipt_store_ekv_opts/0`: `AshA2A.Authority.Broker.Ekv`'s own moduledoc
+  # `receipt_store_ekv_children_opts/0`: `AshA2A.Authority.Broker.Ekv`'s own moduledoc
   # states distinct `EKV` instances are how more than one independently
   # configured broker/store avoids colliding on unrelated key spaces (grant
   # revocation state vs. receipt/claim state) -- reusing the receipt store's

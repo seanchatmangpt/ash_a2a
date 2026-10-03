@@ -87,8 +87,8 @@ fail-closed defaults are deliberate.
 | `:evidence_class` | `AshA2A.Evidence.LocalTest` | Evidence classification module. |
 | `:graph_law` | `AshA2A.Semantic.GraphLaw.WasmexHost` while it serves the same wasm bytes the node runner resolves, else `AshA2A.Semantic.GraphLaw.Wasm` | Semantic-pipeline law engine (`AshA2A.Semantic.GraphLaw.impl/1`). Select explicitly with the per-module form below. |
 | `:planning_bounds` | `[]` | Planning bound guards (`AshA2A.Semantic.Conformance`). |
-| `:semantic_max_text_bytes`, `:semantic_max_batch` | — | `AshA2A.Semantic.Compiler` input bounds (per-request text size, batch size). |
-| `:semantic_engine`, `:admitted_vocabulary`, `:root_manifest` | — | `AshA2A.Semantic.Conformance` engine/vocabulary/manifest overrides. |
+| `:semantic_max_text_bytes`, `:semantic_max_batch` | `—`, `100` | `AshA2A.Semantic.Compiler` input bounds (`Compiler.max_text_bytes/1`, `Compiler.max_batch/1`). |
+| `:semantic_engine`, `:admitted_vocabulary`, `:root_manifest` | `nil`, `nil`, `nil` | `AshA2A.Semantic.Conformance` engine/vocabulary/manifest overrides — `nil` = unset (no engine/vocabulary/manifest is compiled in). |
 | `:semantic_package_store_max_entries`, `:semantic_package_store_ttl_ms` | — | `AshA2A.Semantic.PackageStore` fingerprint→package correlation bounds. |
 | `:graphlaw_wasm_path` | vendored `priv/graphlaw/praxis_graphlaw.wasm` | WASM artifact path — read by **seven** modules (`AshA2A.GraphLaw.Wasm`, `.Runtime`, `.WasmDriver`, `.WasmtimeRuntime`, `.WasmexHost`, `AshA2A.Semantic.GraphLawBridge`, `AshA2A.Semantic.RootManifest.EngineProbe`); prefer this app-env key over env vars. |
 | `:graphlaw_wasm_sha256` | — | Expected wasm digest, checked by `AshA2A.GraphLaw.EngineLoad`. |

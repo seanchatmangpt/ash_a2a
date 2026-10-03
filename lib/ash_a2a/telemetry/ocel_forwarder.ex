@@ -162,7 +162,9 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     end
   end
 
-  defp ingest_url, do: Application.get_env(:ash_a2a, :ocel_ingest_url)
+  @doc "Configured OCEL ingest URL: `config :ash_a2a, :ocel_ingest_url` (default `nil` = forwarding disabled)."
+  @spec ingest_url() :: String.t() | nil
+  def ingest_url, do: Application.get_env(:ash_a2a, :ocel_ingest_url)
 
   defp async_post_event(url, event) do
     # OBS-12: Task.Supervisor children do not inherit Logger metadata; carry
