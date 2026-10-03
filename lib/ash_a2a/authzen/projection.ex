@@ -1,4 +1,10 @@
 defmodule AshA2A.AuthZEN.Projection do
+  @moduledoc """
+  Projects an `AshA2A.C2.PreparedEffect` into an AuthZEN request by `from_effect/2`,
+  carrying principal and effect digest as policy inputs. A projection only asks the PDP
+  a question; its answer is evidence, not authority.
+  """
+
   alias AshA2A.AuthZEN.Types
   alias AshA2A.C2.PreparedEffect
 

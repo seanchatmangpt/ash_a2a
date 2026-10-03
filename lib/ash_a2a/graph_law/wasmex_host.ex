@@ -751,8 +751,11 @@ defmodule AshA2A.GraphLaw.WasmexHost do
 
   defp route(server), do: shed(server)
 
+  @doc "Per-member mailbox shed ceiling: `config :ash_a2a, :graphlaw_max_queue` (default `64`)."
+  def max_queue, do: Application.get_env(:ash_a2a, :graphlaw_max_queue, @default_max_queue)
+
   defp shed(target) do
-    max = Application.get_env(:ash_a2a, :graphlaw_max_queue, @default_max_queue)
+    max = max_queue()
 
     case GenServer.whereis(target) do
       pid when is_pid(pid) ->

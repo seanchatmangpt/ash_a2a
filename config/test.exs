@@ -67,3 +67,9 @@ config :ash_a2a, :authority_broker, AshA2A.Authority.Broker.InMemory
 # transport court passes `require_authenticated_caller: true` explicitly per
 # case, so fail-closed behavior stays witnessed there.
 config :ash_a2a, :require_authenticated_caller, false
+
+# CR2 (v26.10.2): `:chicago_topology_root` has no library default anymore —
+# unset refuses `:chicago_topology_root_unset`. The suite pins the checkout
+# itself (machine-independent); the v26.9.17 topology court self-skips when
+# its 11 sibling repos are absent under the configured root.
+config :ash_a2a, :chicago_topology_root, File.cwd!()

@@ -1,4 +1,10 @@
 defmodule AshA2A.AuthZEN.DecisionGate do
+  @moduledoc """
+  Re-checks observed AuthZEN policy evidence against a `AshA2A.C2.PreparedEffect` in
+  `admit/3`: allow, expected PDP, effect digest, and principal must all hold. A PDP
+  allow is evidence only and never substitutes for admission.
+  """
+
   alias AshA2A.AuthZEN.PolicyEvidence
   alias AshA2A.C2.PreparedEffect
 

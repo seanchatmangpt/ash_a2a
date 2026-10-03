@@ -1,4 +1,11 @@
 defmodule AshA2A.AuthZEN.AuthorityPolicy do
+  @moduledoc """
+  Authority policy admitting an `AshA2A.C2.AuthorityRequest` in `admit/2` only when
+  digest-consistent AuthZEN evidence from the expected PDP passes `admit/3` of
+  `AshA2A.AuthZEN.DecisionGate`; `issue/2` still delegates to the local certificate
+  issuer. A PDP allow never substitutes for the certificate.
+  """
+
   alias AshA2A.AuthZEN.DecisionGate
   alias AshA2A.C2.AuthorityRequest
 

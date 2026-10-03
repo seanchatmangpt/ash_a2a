@@ -1,4 +1,10 @@
 defmodule AshA2A.SPIFFE.PDPBinding do
+  @moduledoc """
+  Binding of a policy decision point to an attested SPIFFE identity, checked by `admit/3`
+  against `AshA2A.AuthZEN.Metadata` to prevent PDP mixup and impersonation. A passing
+  binding is evidence only; it never substitutes for a C2 certificate.
+  """
+
   alias AshA2A.AuthZEN.Metadata
   alias AshA2A.SPIFFE.AttestedIdentity
 

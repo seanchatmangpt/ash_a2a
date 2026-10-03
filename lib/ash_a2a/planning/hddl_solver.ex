@@ -15,6 +15,8 @@ defmodule AshA2A.Planning.HddlSolver do
   """
 
   @default_cli_path Path.expand("../../../native/hddl_cli/target/release/hddl_cli", __DIR__)
+  @default_timeout_ms 30_000
+  @default_max_output_bytes 8_000_000
 
   @doc """
   Resolves the real `hddl_cli` binary path: `opts[:cli_path]`, else
@@ -28,6 +30,26 @@ defmodule AshA2A.Planning.HddlSolver do
   def cli_path(opts \\ []) do
     Keyword.get(opts, :cli_path) ||
       Application.get_env(:ash_a2a, :hddl_cli_path, @default_cli_path)
+  end
+
+  @doc """
+  Resolved subprocess timeout: `opts[:timeout_ms]`, else
+  `config :ash_a2a, :hddl_timeout_ms` (default `30_000`).
+  """
+  @spec timeout_ms(keyword()) :: pos_integer()
+  def timeout_ms(opts \\ []) do
+    Keyword.get(opts, :timeout_ms) ||
+      Application.get_env(:ash_a2a, :hddl_timeout_ms, @default_timeout_ms)
+  end
+
+  @doc """
+  Resolved subprocess output cap: `opts[:max_output_bytes]`, else
+  `config :ash_a2a, :hddl_max_output_bytes` (default `8_000_000`).
+  """
+  @spec max_output_bytes(keyword()) :: pos_integer()
+  def max_output_bytes(opts \\ []) do
+    Keyword.get(opts, :max_output_bytes) ||
+      Application.get_env(:ash_a2a, :hddl_max_output_bytes, @default_max_output_bytes)
   end
 
   @doc """

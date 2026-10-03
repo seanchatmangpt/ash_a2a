@@ -1,4 +1,10 @@
 defmodule AshA2A.AuthZEN.Wire do
+  @moduledoc """
+  Wire encoding for OpenID AuthZEN Authorization API 1.0: `entity/1`, `action/1`, and
+  `request/1` render `AshA2A.AuthZEN.Types` structs, and `decode_decision/1` decodes raw
+  decision payloads. Transport shapes only; decoded decisions remain evidence.
+  """
+
   alias AshA2A.AuthZEN.Types
 
   def entity(%Types.Entity{} = e) do

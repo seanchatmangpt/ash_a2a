@@ -191,9 +191,20 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     end
   end
 
-  defp task_supervisor do
-    Application.get_env(:ash_a2a, :ocel_task_supervisor, AshA2A.Telemetry.TaskSupervisor)
-  end
+  @doc "Concurrent-POST ceiling: `config :ash_a2a, :ocel_max_in_flight` (default `256`)."
+  def max_in_flight, do: Application.get_env(:ash_a2a, :ocel_max_in_flight, 256)
+
+  @doc "Forwarder HTTP timeout: `config :ash_a2a, :ocel_ingest_timeout_ms` (default `2_000`)."
+  def ingest_timeout_ms, do: Application.get_env(:ash_a2a, :ocel_ingest_timeout_ms, 2_000)
+
+  @doc "Body-logging switch: `config :ash_a2a, :ocel_log_body` (default `false`)."
+  def log_body?, do: Application.get_env(:ash_a2a, :ocel_log_body, false) == true
+
+  @doc "Warning-throttle interval: `config :ash_a2a, :ocel_log_interval_ms` (default `60_000`)."
+  def log_interval_ms, do: Application.get_env(:ash_a2a, :ocel_log_interval_ms, 60_000)
+
+  @doc "Forwarder task supervisor name: `config :ash_a2a, :ocel_task_supervisor` (default `AshA2A.Telemetry.TaskSupervisor`)."
+  def task_supervisor, do: Application.get_env(:ash_a2a, :ocel_task_supervisor, AshA2A.Telemetry.TaskSupervisor)
 
   defp shed_event(url, reason) do
     :counters.add(shed_counter(), 1, 1)
@@ -310,7 +321,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   defp transport_reason(reason), do: AshA2A.Telemetry.Redact.error_summary(reason).kind
 
   defp body_excerpt(body) do
-    if Application.get_env(:ash_a2a, :ocel_log_body, false) == true do
+    if log_body?() do
       text = if is_binary(body), do: body, else: inspect(body, limit: 20)
       ": " <> binary_part(text, 0, min(byte_size(text), 200))
     else
@@ -324,7 +335,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   # racy across concurrent POST tasks by design (a rare duplicate warning is
   # acceptable; an unbounded warning flood is not).
   def rate_limited_warning(message_fun) do
-    interval = Application.get_env(:ash_a2a, :ocel_log_interval_ms, 60_000)
+    interval = log_interval_ms()
     now = System.monotonic_time(:millisecond)
     last = :persistent_term.get(@last_warning_key, nil)
 
@@ -450,5 +461,5 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     end
   end
 
-  defp receive_timeout_ms, do: Application.get_env(:ash_a2a, :ocel_ingest_timeout_ms, 2_000)
+  defp receive_timeout_ms, do: ingest_timeout_ms()
 end

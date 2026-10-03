@@ -89,7 +89,7 @@ defmodule AshA2A.Application do
     # RFC-SA2A-007: profile enforcement runs before any child (or hook) starts.
     :ok = AshA2A.SecurityProfile.Boot.run!()
 
-    agents = Application.get_env(:ash_a2a, :agents, [])
+    agents = agents()
 
     # `AshA2A.Telemetry.OcelForwarder.attach!/0` is real and correct
     # (`ocel_forwarder.ex`) but was never called from anywhere in `lib/` --
@@ -120,6 +120,15 @@ defmodule AshA2A.Application do
     end
   end
 
+  @doc "Configured agent modules: `config :ash_a2a, :agents` (default `[]`)."
+  def agents, do: Application.get_env(:ash_a2a, :agents, [])
+
+  @doc "Host-declared env posture: `config :ash_a2a, :env` (default `:prod`)."
+  def env, do: Application.get_env(:ash_a2a, :env, :prod)
+
+  @doc "Boot-time durability enforcement switch: `config :ash_a2a, :require_durable_receipts` (default `false`)."
+  def require_durable_receipts?, do: Application.get_env(:ash_a2a, :require_durable_receipts, false)
+
   defp start_supervisor(agents) do
     children =
       receipt_store_children() ++
@@ -135,7 +144,7 @@ defmodule AshA2A.Application do
           # tune per host via `config :ash_a2a, :ocel_max_in_flight, n`.
           {Task.Supervisor,
            name: AshA2A.Telemetry.TaskSupervisor,
-           max_children: Application.get_env(:ash_a2a, :ocel_max_in_flight, 256)},
+           max_children: AshA2A.Telemetry.OcelForwarder.max_in_flight()},
           {AshA2A.Semantic.PackageStore, []},
           # `AshA2A.KillSwitch`: a real, standalone class-level halt
           # primitive (see its moduledoc). Started here as a node-wide

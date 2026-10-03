@@ -126,25 +126,34 @@ defmodule AshA2A.ReceiptOutbox.Reconciler do
     GenServer.call(name, :tick)
   end
 
+  @doc """
+  Resolved tick period: `opts[:interval_ms]`, else
+  `config :ash_a2a, :outbox_reconciler_interval_ms` (default `60_000`).
+  """
+  @spec interval_ms(keyword()) :: pos_integer()
+  def interval_ms(opts \\ []) do
+    Keyword.get(opts, :interval_ms) ||
+      Application.get_env(:ash_a2a, :outbox_reconciler_interval_ms, @default_interval_ms)
+  end
+
+  @doc """
+  Resolved stuck threshold: `opts[:stuck_attempts_threshold]`, else
+  `config :ash_a2a, :outbox_stuck_attempts_threshold` (default `5`).
+  """
+  @spec stuck_attempts_threshold(keyword()) :: non_neg_integer()
+  def stuck_attempts_threshold(opts \\ []) do
+    Keyword.get(opts, :stuck_attempts_threshold) ||
+      Application.get_env(
+        :ash_a2a,
+        :outbox_stuck_attempts_threshold,
+        @default_stuck_attempts_threshold
+      )
+  end
+
   @impl true
   def init(opts) do
-    interval_ms =
-      Keyword.get(
-        opts,
-        :interval_ms,
-        Application.get_env(:ash_a2a, :outbox_reconciler_interval_ms, @default_interval_ms)
-      )
-
-    stuck_attempts_threshold =
-      Keyword.get(
-        opts,
-        :stuck_attempts_threshold,
-        Application.get_env(
-          :ash_a2a,
-          :outbox_stuck_attempts_threshold,
-          @default_stuck_attempts_threshold
-        )
-      )
+    interval_ms = interval_ms(opts)
+    stuck_attempts_threshold = stuck_attempts_threshold(opts)
 
     store = Keyword.get(opts, :store, CommandBus.default_store())
     store_opts = Keyword.get(opts, :store_opts, [])

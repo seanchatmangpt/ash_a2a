@@ -2,10 +2,11 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
   @moduledoc """
   Release-path court: one publisher, no scheduled publisher, EKV_BUILD wherever
   `mix` runs, authority admitted first, and version coherence across mix.exs and
-  the two docs that restate it. Reads the real workflow files with the real
-  `YamlElixir` parser; the version comparison is a pure function that is also
-  exercised on a deliberately mismatched pair (red-first: the detector must
-  report the mismatch).
+  the one admitted restatement site (`docs/reference/a2a-spec-version-mapping.md`),
+  refusing any second restatement (v26.10.2 EL1). Reads the real workflow files
+  with the real `YamlElixir` parser; the version comparison is a pure function
+  that is also exercised on a deliberately mismatched pair (red-first: the
+  detector must report the mismatch).
   """
 
   use ExUnit.Case, async: true
@@ -52,15 +53,23 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
     assert publishers == ["release.yml"]
   end
 
+  # `on:` may be a bare string (`on: push`) — Access would crash on a binary.
+  defp trigger(wf, key) do
+    case Map.get(wf, "on") do
+      m when is_map(m) -> Map.get(m, key)
+      _ -> nil
+    end
+  end
+
   test "no workflow with a schedule trigger publishes, and release.yml has none" do
     scheduled =
-      for p <- @workflows, wf = yaml!(p), get_in(wf, ["on", "schedule"]), do: {p, wf}
+      for p <- @workflows, wf = yaml!(p), trigger(wf, "schedule"), do: {p, wf}
 
     assert scheduled != [], "anti-vacuity: flake-hunt/conformance are scheduled"
     assert Enum.all?(scheduled, fn {_p, wf} -> not publishes?(wf) end)
 
     release = yaml!(Path.join(@root, ".github/workflows/release.yml"))
-    refute get_in(release, ["on", "schedule"])
+    refute trigger(release, "schedule")
     refute get_in(release, ["on", "push", "branches"])
     refute File.exists?(Path.join(@root, ".github/workflows/release-v26.9.29.yml"))
   end
@@ -70,10 +79,28 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
       for p <- @workflows,
           wf = yaml!(p),
           Enum.any?(run_lines(wf), &(&1 =~ ~r/(^|\s)mix\s/)),
-          get_in(wf, ["env", "EKV_BUILD"]) != "1",
+          not ekv_build_set?(wf),
           do: Path.basename(p)
 
     assert offenders == []
+  end
+
+  # EKV_BUILD is lawful at workflow, job, or step level.
+  defp ekv_build_set?(wf) do
+    workflow_level = get_in(wf, ["env", "EKV_BUILD"]) == "1"
+
+    job_level =
+      wf
+      |> Map.get("jobs", %{})
+      |> Map.values()
+      |> Enum.any?(fn job ->
+        get_in(job, ["env", "EKV_BUILD"]) == "1" or
+          Enum.any?(job["steps"] || [], fn step ->
+            get_in(step, ["env", "EKV_BUILD"]) == "1"
+          end)
+      end)
+
+    workflow_level or job_level
   end
 
   test "release.yml's first step admits HEX_API_KEY presence before any build work" do
@@ -138,15 +165,46 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
       assert version_findings("26.9.28", %{"c" => "Version: v26.9.28."}) == []
     end
 
-    test "mix.exs, the spec-version mapping and HANDOFF agree" do
+    test "mix.exs and the one admitted restatement site (spec-version mapping) agree" do
       docs = %{
         "docs/reference/a2a-spec-version-mapping.md" =>
-          File.read!(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md")),
-        "docs/jira/v26.9.29/HANDOFF.md" =>
-          File.read!(Path.join(@root, "docs/jira/v26.9.29/HANDOFF.md"))
+          File.read!(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md"))
       }
 
       assert version_findings(mix_version(), docs) == []
+    end
+
+    test "no other doc restates the package version (EL1: one admitted site)" do
+      guarded =
+        [
+          "README.md",
+          "CHANGELOG.md",
+          "docs/reference",
+          "docs/how-to",
+          "docs/tutorials",
+          "docs/explanation",
+          "docs/jira"
+        ]
+        |> Enum.flat_map(fn path ->
+          full = Path.join(@root, path)
+
+          if File.dir?(full) do
+            Path.wildcard(Path.join(full, "**/*.md"))
+          else
+            [full]
+          end
+        end)
+        |> List.delete(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md"))
+
+      restatements =
+        for path <- guarded,
+            Regex.match?(~r/Version:\s*v?\d+\.\d+\.\d+/, File.read!(path)),
+            do: Path.relative_to(path, @root)
+
+      assert restatements == [],
+             "docs outside mix.exs restate the package version; the one admitted " <>
+               "site is docs/reference/a2a-spec-version-mapping.md — remove the " <>
+               "restatements instead of syncing them: #{inspect(restatements)}"
     end
   end
 end

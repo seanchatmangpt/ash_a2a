@@ -1,4 +1,10 @@
 defmodule AshA2A.AuthZEN.SearchBinding do
+  @moduledoc """
+  Pagination state for AuthZEN search: `start/1` binds to the canonical digest of the
+  initial request and `next/3` refuses mutated requests. Request-integrity evidence
+  only; it grants no authority.
+  """
+
   alias AshA2A.Identity.Canonical
   @enforce_keys [:request_digest]
   defstruct [:request_digest, :page_token]

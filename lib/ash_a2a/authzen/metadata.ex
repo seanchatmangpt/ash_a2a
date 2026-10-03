@@ -1,7 +1,21 @@
 defmodule AshA2A.AuthZEN.Metadata do
+  @moduledoc """
+  OpenID AuthZEN discovery metadata for a policy decision point, decoded by `decode/1`
+  with HTTPS enforced and pinned to an expected PDP by `bind_expected/2`. Evidence only.
+  """
+
   @known ~w(policy_decision_point access_evaluation_endpoint access_evaluations_endpoint search_subject_endpoint search_resource_endpoint search_action_endpoint capabilities signed_metadata)
   @enforce_keys [:policy_decision_point, :access_evaluation_endpoint]
-  defstruct @enforce_keys ++ [:access_evaluations_endpoint, :search_subject_endpoint, :search_resource_endpoint, :search_action_endpoint, capabilities: [], signed_metadata: nil, extensions: %{}]
+  defstruct @enforce_keys ++
+              [
+                :access_evaluations_endpoint,
+                :search_subject_endpoint,
+                :search_resource_endpoint,
+                :search_action_endpoint,
+                capabilities: [],
+                signed_metadata: nil,
+                extensions: %{}
+              ]
 
   def decode(raw) when is_map(raw) do
     map = Map.new(raw, fn {k, v} -> {to_string(k), v} end)
@@ -11,17 +25,18 @@ defmodule AshA2A.AuthZEN.Metadata do
     with :ok <- validate_pdp(pdp),
          :ok <- validate_https(endpoint),
          :ok <- validate_optional(map) do
-      {:ok, %__MODULE__{
-        policy_decision_point: pdp,
-        access_evaluation_endpoint: endpoint,
-        access_evaluations_endpoint: map["access_evaluations_endpoint"],
-        search_subject_endpoint: map["search_subject_endpoint"],
-        search_resource_endpoint: map["search_resource_endpoint"],
-        search_action_endpoint: map["search_action_endpoint"],
-        capabilities: List.wrap(map["capabilities"]),
-        signed_metadata: map["signed_metadata"],
-        extensions: Map.drop(map, @known)
-      }}
+      {:ok,
+       %__MODULE__{
+         policy_decision_point: pdp,
+         access_evaluation_endpoint: endpoint,
+         access_evaluations_endpoint: map["access_evaluations_endpoint"],
+         search_subject_endpoint: map["search_subject_endpoint"],
+         search_resource_endpoint: map["search_resource_endpoint"],
+         search_action_endpoint: map["search_action_endpoint"],
+         capabilities: List.wrap(map["capabilities"]),
+         signed_metadata: map["signed_metadata"],
+         extensions: Map.drop(map, @known)
+       }}
     end
   end
 
@@ -48,7 +63,8 @@ defmodule AshA2A.AuthZEN.Metadata do
     ~w(access_evaluations_endpoint search_subject_endpoint search_resource_endpoint search_action_endpoint)
     |> Enum.reduce_while(:ok, fn key, :ok ->
       case map[key] do
-        nil -> {:cont, :ok}
+        nil ->
+          {:cont, :ok}
 
         url ->
           case validate_https(url) do

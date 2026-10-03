@@ -185,8 +185,11 @@ defmodule AshA2A.Health do
   # Custom stores own their own lifecycle; nothing here can observe them.
   defp store_running?(_custom), do: true
 
+  @doc "Outbox ready-count above which readiness degrades: `config :ash_a2a, :outbox_ready_max` (default `1_000`)."
+  def outbox_ready_max, do: Application.get_env(:ash_a2a, :outbox_ready_max, @default_outbox_ready_max)
+
   defp receipt_outbox_check do
-    max = Application.get_env(:ash_a2a, :outbox_ready_max, @default_outbox_ready_max)
+    max = outbox_ready_max()
     depth = safe(fn -> AshA2A.ReceiptOutbox.count() end, :unreadable)
     reconciler? = is_pid(Process.whereis(AshA2A.ReceiptOutbox.Reconciler))
 
@@ -207,11 +210,17 @@ defmodule AshA2A.Health do
       else: %{status: :degraded, engine: :unavailable}
   end
 
+  @doc "Kill-switch classes that degrade readiness: `config :ash_a2a, :health_kill_switch_classes` (default `[]`)."
+  def health_kill_switch_classes,
+    do: Application.get_env(:ash_a2a, :health_kill_switch_classes, [])
+
+  @doc "OCEL failed-count ceiling: `config :ash_a2a, :health_ocel_failed_max` (default `nil` = unchecked)."
+  def health_ocel_failed_max, do: Application.get_env(:ash_a2a, :health_ocel_failed_max)
+
   defp kill_switch_check do
     if is_pid(Process.whereis(AshA2A.KillSwitch)) do
       tripped =
-        :ash_a2a
-        |> Application.get_env(:health_kill_switch_classes, [])
+        health_kill_switch_classes()
         |> Enum.filter(fn class -> AshA2A.KillSwitch.tripped?(class) != false end)
 
       if tripped == [],
@@ -224,7 +233,7 @@ defmodule AshA2A.Health do
 
   defp ocel_check do
     failed = OcelForwarder.failed_count()
-    max = Application.get_env(:ash_a2a, :health_ocel_failed_max)
+    max = health_ocel_failed_max()
 
     status = if is_integer(max) and failed > max, do: :degraded, else: :ok
 

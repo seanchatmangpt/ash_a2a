@@ -94,8 +94,6 @@ defmodule AshA2A.Chicago.Courts.SA2AV269_17Topology do
     {"wasm4pm", "wasm4pm", "cap-portable-runtime", false}
   ]
 
-  @default_root "/Users/sac"
-
   @impl true
   def id, do: @court
 
@@ -121,13 +119,31 @@ defmodule AshA2A.Chicago.Courts.SA2AV269_17Topology do
   def repos, do: @repos
 
   @doc """
-  Root directory the 11 sibling repos live under on this machine. Overridable
-  via `config :ash_a2a, :chicago_topology_root, path` for a machine with a
-  different layout; defaults to this session's real, confirmed-present
-  `/Users/sac`.
+  Root directory the 11 sibling repos live under. Configured via
+  `config :ash_a2a, :chicago_topology_root, path` — unset refuses with an
+  `ArgumentError` naming `:chicago_topology_root_unset`. The previous
+  `/Users/sac` fallback was one machine's layout, never a library default.
+  (`config/test.exs` pins the checkout itself; the topology tests self-skip
+  when the siblings are absent under the configured root.)
   """
   @spec root() :: Path.t()
-  def root, do: Application.get_env(:ash_a2a, :chicago_topology_root, @default_root)
+  def root do
+    case Application.get_env(:ash_a2a, :chicago_topology_root) do
+      nil ->
+        raise ArgumentError,
+              "config :ash_a2a, :chicago_topology_root is unset " <>
+                "(refused :chicago_topology_root_unset) — set it to the " <>
+                "directory that contains the 11 sibling repos"
+
+      path when is_binary(path) ->
+        path
+
+      other ->
+        raise ArgumentError,
+              "config :ash_a2a, :chicago_topology_root must be a path binary, " <>
+                "got: #{inspect(other)} (refused :chicago_topology_root_unset)"
+    end
+  end
 
   @doc "Real absolute path for one sibling directory name under `root/0`."
   @spec repo_path(String.t()) :: Path.t()
