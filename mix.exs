@@ -22,7 +22,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.9.31",
+      version: "26.10.2",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -135,6 +135,8 @@ defmodule AshA2A.MixProject do
             "docs/how-to/observe-dispatch-with-ocel.md",
             "docs/how-to/use-role-based-llm-resolution.md",
             "docs/how-to/test-your-ash_a2a-app.md",
+            "docs/how-to/test-governed-actions.md",
+            "docs/how-to/migrate-legacy-to-strict.md",
             # Reference
             "docs/reference/index.md",
             "docs/reference/dsl.md",
@@ -143,6 +145,10 @@ defmodule AshA2A.MixProject do
             "docs/reference/mix-tasks.md",
             "docs/reference/a2a-endpoint-contract.md",
             "docs/reference/a2a-spec-version-mapping.md",
+            "docs/reference/c2-certificate.md",
+            "docs/reference/c2-wire-interop.md",
+            "docs/reference/conformance-claim.md",
+            "docs/reference/conformance-profiles.md",
             # Explanation
             "docs/explanation/architecture.md",
             "docs/explanation/message-lifecycle.md",

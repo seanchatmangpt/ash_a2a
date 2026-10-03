@@ -40,7 +40,11 @@ end, nil)
 | `[:ash_a2a, :command_bus, :postcondition]` | — | outcome, reason, `postcondition_id`, verifier, `independent` | `AshA2A.Postcondition` |
 | `[:ash_a2a, :receipt, :outboxed]` | — | receipt (journaled `:pending` pre-dispatch) | `AshA2A.CommandBus` |
 | `[:ash_a2a, :receipt, :committed]` | — | receipt (final, post-dispatch) | `AshA2A.CommandBus` |
+| `[:ash_a2a, :receipt, :binding, :bind / :verify]` | — | receipt-binding outcome (RFC-SA2A-002 §40 Gate 9) | `AshA2A.Receipt.Binding` |
+| `[:ash_a2a, :replay, :chain_sealed]` | — | evidence-chain seal outcome | `AshA2A.Receipt.EvidenceChain` |
+| `[:ash_a2a, :replay, :verified]` | — | offline replay verdict | `AshA2A.Receipt.OfflineReplay` |
 | `[:ash_a2a, :receipt_outbox, :reconciler, :tick]` | `committed`, `remaining` | — (drain summary; opt-in reconciler) | `AshA2A.ReceiptOutbox.Reconciler` |
+| `[:ash_a2a, :receipt_outbox, :reconciler, :corrupt]` | `count` | `filenames`, `reasons` — undecodable journal files, once per tick | `AshA2A.ReceiptOutbox.Reconciler` |
 | `[:ash_a2a, :receipt_outbox, :reconciler, :stuck]` | `attempts` | `command_id`, `receipt_id`, `threshold` — one event per stuck journal entry past the threshold (opt-in reconciler) | `AshA2A.ReceiptOutbox.Reconciler` |
 | `[:ash_a2a, :reconciliation, :classified / :reconciled / :compensated]` | `system_time` | `command_id`, `receipt_id`, receipt status, `resolved_as`, label | `AshA2A.Reconciliation` |
 
@@ -51,13 +55,16 @@ end, nil)
 | `[:ash_a2a, :authority, :decision]` | `system_time` | `outcome: :granted \| :refused`, `reason`/`code` (refusal code; `nil` when granted), capability, policy | `AshA2A.Authority.Grant` — the one decision event (RFC-SA2A-002 §12/§18) |
 | `[:ash_a2a, :authority, :grant, :issue / :revoke / :renew]` | `system_time` | lifecycle outcome + reason | `AshA2A.Authority.Grant` |
 | `[:ash_a2a, :authority, :decision_envelope, :verdict]` | — | envelope verdict (`:outcome`, `:code`) | `AshA2A.Authority.Decision` |
+| `[:ash_a2a, :authority, :broker, :lookup]` | — | broker grant-lookup outcome | `AshA2A.Authority.Broker` |
 
 ### Planning, semantic, evidence
 
 | Event | Measurements | Metadata | Emitted by |
 | --- | --- | --- | --- |
 | `[:ash_a2a, :planning, :admit]` | `capability_count` | outcome/code, planner, formalism, fingerprint, standing, authority | `AshA2A.Planning` |
+| `[:ash_a2a, :planning, :preflight]` | — | preflight verdict over a `BoundedPlan` | `AshA2A.Planning.Preflight` |
 | `[:ash_a2a, :router, :tier_selected]` | — | router tier | `AshA2A.Planning.RequestRouter` |
+| `[:ash_a2a, :router, :tier_refused]` | — | router tier refusal | `AshA2A.Planning.RequestRouter` |
 | `[:ash_a2a, :planner, :invoke]` | — | planner invocation | `HddlSolver`, `SemanticSynthesis` |
 | `[:ash_a2a, :llm, :invoke]` | — | LLM role invocation | `AshA2A.Semantic.Compiler` |
 | `[:ash_a2a, :reconciliation, ...]` (above) | | | |
@@ -80,15 +87,50 @@ measurements unless noted. They fire only on the opt-in semantic paths.
 | `[:ash_a2a, :semantic, :canonical_graph, :digest / :pin / :compare]` | `AshA2A.Semantic.CanonicalGraph` (RDFC-1.0 canonicalization, pin verification, graph comparison) |
 | `[:ash_a2a, :semantic, :iri, :mint_private / :resolve]` | `AshA2A.Semantic.Iri` |
 | `[:ash_a2a, :semantic, :ontology, :project]` / `[:ash_a2a, :semantic, :ontology_cache, :load]` | `AshA2A.Semantic.Ontology`, `AshA2A.Semantic.OntologyCache` |
-| `[:ash_a2a, :semantic, :mapping_registry, :register / :reconcile]` | `AshA2A.Semantic.MappingRegistry` (`ash_r2rml` mapping admission and reconciliation) |
+| `[:ash_a2a, :semantic, :mapping, :register]` / `[:ash_a2a, :semantic, :mapping_registry, :register / :reconcile]` | `AshA2A.Semantic.MappingRegistry` (`ash_r2rml` mapping admission and reconciliation; the unprefixed `:mapping` spelling is the legacy call site) |
+| `[:ash_a2a, :semantic, :term_registry, :build / :operational_use]`, `[:ash_a2a, :semantic, :term, :operational_use]` | `AshA2A.Semantic.TermRegistry` (the `:term` spelling is the second call site of the same registry) |
 | `[:ash_a2a, :semantic, :plan_package, :build / :verify]`, `[:ash_a2a, :semantic, :plan_projection, :verify]` | `AshA2A.Semantic.PlanPackage`, `AshA2A.Semantic.PlanProjection` |
-| `[:ash_a2a, :semantic, :root_manifest, :load]` | `AshA2A.Semantic.RootManifest` |
+| `[:ash_a2a, :semantic, :root_manifest, :load / :verify / :mutate]` | `AshA2A.Semantic.RootManifest` |
 | `[:ash_a2a, :semantic, :sparql_update, :decision]` | `AshA2A.Semantic.FalsifierSuite` (SPARQL-update admission decision) |
-| `[:ash_a2a, :semantic, :term_registry, :build / :operational_use]` | `AshA2A.Semantic.TermRegistry` |
-| `[:ash_a2a, :semantic, :unknown, :admit_for_do]` | `AshA2A.Semantic.Unknown` (`count: 1` measurement; `class` metadata) |
+| `[:ash_a2a, :semantic, :unknown, :admit_for_do]`, `[:ash_a2a, :semantic, :allocation]` | `AshA2A.Semantic.Unknown` (`count: 1` measurement; `class` metadata) |
 | `[:ash_a2a, :semantic, :falsifier_suite, :admit]` | `AshA2A.Semantic.FalsifierSuite` |
+| `[:ash_a2a, :semantic, :ir_admission]` | `AshA2A.Semantic.Admission` (IR admission verdict) |
+| `[:ash_a2a, :semantic, :hooks, :run]` | `AshA2A.Semantic.GraphLawBridge` (GraphLaw hook execution) |
+| `[:ash_a2a, :semantic, :llm_boundary, :candidate]` | `AshA2A.Semantic.LlmBoundary` |
+| `[:ash_a2a, :semantic, :select]` / `[:ash_a2a, :semantic, :construct]` | `AshA2A.Semantic.Select`, `AshA2A.Semantic.Construct` (SELECT vs CONSTRUCT pipeline stages) |
+| `[:ash_a2a, :semantic, :bounds, :delegate]` | `AshA2A.Semantic.Bounds` |
+| `[:ash_a2a, :semantic, :allocator, :decision]` | `AshA2A.Semantic.Allocator` |
+| `[:ash_a2a, :semantic, :meta_admission, :confer / :standing]` | `AshA2A.Semantic.MetaAdmission` |
+| `[:ash_a2a, :semantic, :standing, :transition]` | `AshA2A.Semantic.Standing` (HMAC-sealed ledger transition) |
+| `[:ash_a2a, :semantic, :extension, :negotiate]` | `AshA2A.Semantic.Extension` |
+| `[:ash_a2a, :semantic, :peer \| suffix]` | `AshA2A.Semantic.Peer` (`:receive`, `:admission, :start`, `:decision`) |
+| `[:ash_a2a, :replan \| suffix]` | `AshA2A.Replan.Telemetry` — suffixed replan-loop events |
+| `[:ash_a2a, :attestation, :build / :verify]` | `AshA2A.Semantic.Attestation` |
 | `[:ash_a2a, :episode \| suffix]` | `AshA2A.Semantic.Episode` — suffixed sub-events over one semantic episode |
-| `[:ash_a2a, :logic, :closure, event]` | `AshA2A.Semantic.LogicClosure` — per-closure-stage events |
+| `[:ash_a2a, :logic, :closure, event]` | `AshA2A.Semantic.LogicClosure` — per-closure-stage events (`:start`, `:entailment`, `:engine`, `:decision`, `:stop`) |
+
+### Runtime, transport & security
+
+| Event | Emitted by |
+| --- | --- |
+| `[:ash_a2a, :runtime, :configured]` | `AshA2A.Application` (boot-time runtime posture report) |
+| `[:ash_a2a, :a2a_transport, :push, :attempt]` | `AshA2A.A2ATransport.PushDelivery` (one signed webhook delivery attempt) |
+| `[:ash_a2a, :security_profile, :dev_bypass]` | `AshA2A.SecurityProfile.Template` (a `:dev_bypass` build stamped its receipts) |
+| `[:ash_a2a, :security_profile, :legacy_compat]` | `AshA2A.SecurityProfile.Boot` |
+
+### GraphLaw engine
+
+| Event | Emitted by |
+| --- | --- |
+| `[:ash_a2a, :graphlaw, :engine, :call]` | `AshA2A.GraphLaw.EngineTelemetry` |
+| `[:ash_a2a, :graphlaw, :engine, :load, :start / :stop]` | `AshA2A.GraphLaw.EngineLoad` |
+| `[:ash_a2a, :graphlaw, :host, :recycle]` | `AshA2A.GraphLaw.WasmexHost` (warm-instance recycle) |
+| `[:ash_a2a, :graph_law, :wasm, :batch]` | `AshA2A.Semantic.GraphLaw.Wasm` — note the historical `:graph_law` spelling, distinct from the `:graphlaw` engine family above |
+
+> The `AshA2A.Transport.Runtime` wrapper emits the **vendored SDK's** span
+> `[:a2a, :agent, :start / :stop / :exception]` (prefix `:a2a`, not
+> `:ash_a2a`) around agent message handling; it belongs to the `:a2a`
+> dependency's own namespace, not this catalog.
 
 ### Chicago / QA harness events (internal)
 

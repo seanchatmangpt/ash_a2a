@@ -66,10 +66,16 @@ Without it those tests fail in `setup_all` — 8 tests on a clean run.
 ### Commands
 
 ```sh
-mix test                      # fast-iteration default (~1400 tests, ~4 min)
-mix test.all --max-cases 6    # full suite, what CI runs (~2122 tests, ~12-20 min)
+mix test                      # fast-iteration default (~4 min)
+mix test.all --max-cases 6    # full suite, what CI runs (~12-20 min)
 mix test.serial               # just the excluded serial tail (96 files)
 ```
+
+Counts drift release to release; the commands above are the source of truth
+for the exact numbers on your tree (the dry-run count under-reports because
+ExUnit enumerates lazily — run the command). Order of magnitude as shipped:
+the fast lane is ~1000 tests, the full suite ~2200 plus doctests and
+properties (historically ~1400/~2122 at v26.9.21, re-stamped v26.10.2).
 
 `mix test` excludes the `:serial` tag by default (96 files, `async: false`
 for real shared-state reasons -- mostly a shared global `:telemetry`
@@ -124,7 +130,8 @@ mix test.serial.solo
 
 ### What's in the suite
 
-~2122 tests plus 58 doctests and 29 properties (`mix test.all`): unit/DSL
+`mix test.all` (~2200 tests, re-stamped v26.10.2; historically ~2122 plus 58
+doctests and 29 properties at v26.9.21): unit/DSL
 tests, real-Plug HTTP tests, property/fuzz (StreamData),
 Oban-on-real-Postgres integration, multinode `:peer` tests, the SA2A
 conformance court (dual real WASM/JS runtimes over

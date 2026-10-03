@@ -4,7 +4,7 @@ Remote-agent handoff for the v26.9.28 consequence-kernel milestone in `ash_a2a`.
 `ash_a2a` main at `e2e02ebd9d674a70f1d1cdc0e08fc22a07e4b108` (section 1.1 truth table pinned to it; sections 1.2 onward were observed at `9cda21c9` and are not re-verified).
 This document integrates 8 composition-adapter designs (A1-A8), 4 court designs (C2,
 CHI-CLOSURE, CHI-CONSERVE, CHI-FAULT) and fleet-repo verification. Labels: OBSERVED = read
-or run; DERIVED = design inference; UNVERIFIED = not run or not read. Version: v26.9.28.
+or run; DERIVED = design inference; UNVERIFIED = not run or not read.
 Last Updated: 2026-09-28 (section 1.1 refreshed at e2e02eb).
 
 ## Contents

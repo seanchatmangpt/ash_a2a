@@ -10,16 +10,77 @@ Item ids match the ARD's ERRC quadrants and the PRD's functional
 requirements (1:1). Every executed item appends its cycle entry below with:
 subject SHA, commands + exits, and what the court now covers.
 
-## Cycle 0 (2026-10-02) — categorization, nothing executed
+## Cycle 1 (2026-10-02) — full execution of EL1/EL2/RD1–RD5/RA1–RA3/CR1–CR2
+
+Executed in one integrated batch on `main` (concurrent-writer lanes active in
+the same checkout; only this milestone's paths staged). Standing after the
+verification ladder: see the cycle's receipt in the release commit.
+
+- [x] **EL1** — `Version:` lines removed from `how-to/release.md`,
+      `v26.9.29/HANDOFF.md`, `v26.9.29/README.md`, `v26.9.28-kernel/HANDOFF.md`;
+      `release_path_test` shrunk to `mix.exs` ↔ spec-mapping and now REFUSES any
+      second `Version: v\d+` restatement across README/CHANGELOG/reference/
+      how-to/tutorials/explanation/jira. Red-first witness: the pre-existing
+      mismatched-pair test plus the new refusal message naming the admitted site.
+- [x] **EL2** — stray `## [Unreleased] - 2026-09-25` header deleted;
+      `unreleased_header_count/1 == 1` court + witness.
+- [x] **EL3** — retired by construction: RD1–RD4 courts now flag drift; the
+      hand-alignment pass class is no longer the process.
+- [x] **RD1** — `AshA2A.DocsTruthTest` generalized: 22 execution oracles (up
+      from 3), each running the real consumer with app env deleted; positional
+      parsing of multi-key rows; every documented literal default must be
+      oracle-verified or allowlisted with a reason (`@documented_not_executable`
+      = the shrink-never-grow map); row-scan vacuity floor (>30 gated keys).
+      New public readers added to give single-site oracles (see CHANGELOG).
+- [x] **RD2** — telemetry catalog court: every literal `[:ash_a2a, ...]` emit
+      site in lib (non-Chicago) must be documented; 10 variable-built families
+      declared per emitter file with documented prefixes; `[:a2a, ...]` span
+      namespace quarantined with a doc note. telemetry.md gained ~35 previously
+      undocumented families (inventory-derived).
+- [x] **RD3** — mix-task catalog court: shipped tasks ↔ mix-tasks.md rows, both
+      directions; every row must embed the task's exact `@shortdoc`
+      (backtick/whitespace normalized). Doc rows normalized (chicago.bench,
+      eds.ledger, verify_adapters).
+- [x] **RD4** — module-citation court: `AshA2A.*` citations across README +
+      indexed docs resolve against lib defmodules (+ registered-name
+      allowlist); relative `docs/` links resolve.
+- [x] **RD5** — README usage-example court: the DSL block compiles under a
+      unique namespace and `AshA2A.Dispatcher.dispatch(:echo, ...)` returns the
+      documented `{:reply, [%A2A.Part.Data{data: %{results: []}}]}`.
+- [x] **RA1** — `@moduledoc` written for all 13 SPIFFE/AuthZEN files
+      (evidence-only law stated per module); ExDoc pages non-empty.
+- [x] **RA2** — extras: `test-governed-actions.md`, `migrate-legacy-to-strict.md`,
+      `c2-certificate.md`, `c2-wire-interop.md`, `conformance-claim.md`,
+      `conformance-profiles.md` added to `mix.exs` docs(); README control-plane
+      entries not in extras marked `repo-only`; court enforces README-links ⊆
+      extras ∪ repo-only.
+- [x] **RA3** — test-your-ash_a2a-app.md counts restated with the reproduce
+      commands; stale "as of v26.9.21" figures replaced (see the doc).
+- [x] **CR1** — every new court carries a red-first witness (planted event,
+      dropped task row + mutated shortdoc, ghost module/link, second
+      Unreleased header).
+- [x] **CR2** — `:chicago_topology_root` unset refuses
+      `:chicago_topology_root_unset` (no more `/Users/sac` default);
+      `config/test.exs` pins the checkout; configuration.md row updated.
+      Deviation from the PRD's "outside :dev" carve-out: refusal is total
+      when unset (simpler, fail-closed; dev users configure it explicitly).
+- [x] **CR3** — this tracker.
+
+Deferred (recorded, not done): RD1 allowlist shrinkage (add readers for
+`:receipt_commit_retry_delays_ms`, `:claim_lease_ms`, `:receipt_store`);
+pre-existing `lib/ash_a2a/consequence_kernel/call_graph_court.ex:20` and
+`receipt/r_projection.ex:177` compile warnings (other lanes' files).
+
+## Cycle 0 (2026-10-02) — categorization (every item executed in cycle 1)
 
 ### ELIMINATE
 
-- [ ] **EL1** — hand-synced `Version:` sites: `docs/jira/v26.9.29/HANDOFF.md`
+- [x] **EL1** — hand-synced `Version:` sites: `docs/jira/v26.9.29/HANDOFF.md`
       and `docs/how-to/release.md` stop restating the package version;
       `release_path_test` shrinks to `mix.exs` ↔ spec-mapping and refuses any
       new restatement site. (This pass's Lane A went red→green purely on
       these two lines; the ritual is the defect.)
-- [ ] **EL2** — stray duplicate `## [Unreleased] - 2026-09-25` header,
+- [x] **EL2** — stray duplicate `## [Unreleased] - 2026-09-25` header,
       `CHANGELOG.md:114`; plus a one-header structure guard.
 - [x] **EL3** — manual catalog re-derivation passes (the 26.9.31 pass itself)
       — retired the moment RD1–RD4 land; until then any future drift fix must
@@ -28,32 +89,32 @@ subject SHA, commands + exits, and what the court now covers.
 
 ### REDUCE
 
-- [ ] **RD1** — `AshA2A.DocsTruthTest`: 3 gated keys → every default row in
+- [x] **RD1** — `AshA2A.DocsTruthTest`: 3 gated keys → every default row in
       `configuration.md`, oracle = run the real consumer with app env deleted.
-- [ ] **RD2** — telemetry catalog court (doc families ↔ beam-file emit-site
+- [x] **RD2** — telemetry catalog court (doc families ↔ beam-file emit-site
       registry, both directions; Chicago harness families quarantined).
-- [ ] **RD3** — mix-task catalog court (rows ↔ `@shortdoc`, both directions).
-- [ ] **RD4** — module-index court (claim lint as ExUnit: `AshA2A.*`
+- [x] **RD3** — mix-task catalog court (rows ↔ `@shortdoc`, both directions).
+- [x] **RD4** — module-index court (claim lint as ExUnit: `AshA2A.*`
       citations, relative docs links, task names over README + reference).
-- [ ] **RD5** — README example court (compile + execute the README's
+- [x] **RD5** — README example court (compile + execute the README's
       DSL/dispatch snippets on real fixtures).
 
 ### RAISE
 
-- [ ] **RA1** — `@moduledoc` for the 13 undocumented SPIFFE/AuthZEN files
+- [x] **RA1** — `@moduledoc` for the 13 undocumented SPIFFE/AuthZEN files
       (`grep -rln @moduledoc lib/ash_a2a/{spiffe,authzen}/` → 2 of 15 today).
-- [ ] **RA2** — HexDocs extras: add `test-governed-actions.md` +
+- [x] **RA2** — HexDocs extras: add `test-governed-actions.md` +
       `migrate-legacy-to-strict.md`; admit or repo-only-mark the control-plane
       pointer group; court enforces README-links ↔ extras consistency.
-- [ ] **RA3** — test-taxonomy counts: re-measure with stamped commands or
+- [x] **RA3** — test-taxonomy counts: re-measure with stamped commands or
       replace with reproduce-command + ranges (`test-your-ash_a2a-app.md`
       still says "as of v26.9.21").
 
 ### CREATE
 
-- [ ] **CR1** — red-first witness for every new court (anti-vacuity law;
+- [x] **CR1** — red-first witness for every new court (anti-vacuity law;
       `docs_truth_test`'s deliberate-mismatch test is the pattern).
-- [ ] **CR2** — `:chicago_topology_root` `/Users/sac` default → typed
+- [x] **CR2** — `:chicago_topology_root` `/Users/sac` default → typed
       `:chicago_topology_root_unset` refusal outside `:dev`
       (`sa2a_v26_9_17_topology.ex:97`) + doc row in the same change.
 - [x] **CR3** — this tracker seeded (cycle 0).

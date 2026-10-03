@@ -92,11 +92,11 @@ fail-closed defaults are deliberate.
 | `:semantic_package_store_max_entries`, `:semantic_package_store_ttl_ms` | — | `AshA2A.Semantic.PackageStore` fingerprint→package correlation bounds. |
 | `:graphlaw_wasm_path` | vendored `priv/graphlaw/praxis_graphlaw.wasm` | WASM artifact path — read by **seven** modules (`AshA2A.GraphLaw.Wasm`, `.Runtime`, `.WasmDriver`, `.WasmtimeRuntime`, `.WasmexHost`, `AshA2A.Semantic.GraphLawBridge`, `AshA2A.Semantic.RootManifest.EngineProbe`); prefer this app-env key over env vars. |
 | `:graphlaw_wasm_sha256` | — | Expected wasm digest, checked by `AshA2A.GraphLaw.EngineLoad`. |
-| `:graphlaw_pool_size`, `:graphlaw_max_queue` | — , `64` | `AshA2A.GraphLaw.WasmexHost`/`WasmexPool` sizing (warm instances, queue ceiling). |
+| `:graphlaw_pool_size`, `:graphlaw_max_queue` | `—`, `64` | `AshA2A.GraphLaw.WasmexHost`/`WasmexPool` sizing (warm instances, queue ceiling). |
 | `:graphlaw_subprocess_timeout_ms`, `:graphlaw_subprocess_max_concurrency` | `30_000`, — | `AshA2A.GraphLaw.Subprocess` bounds. |
 | `:graphlaw_host_path`, `:graphlaw_probe_host_path`, `:graphlaw_node_path`, `:node_executable`, `:graphlaw_host_script`, `:graphlaw_runtime_b_executable`, `:graphlaw_conformance_vectors_path` | — (vectors default to the vendored `priv/graphlaw/conformance_vectors.json`) | Runtime-B host/node/executable overrides; see the respective modules under `lib/ash_a2a/graph_law/` (runtimes) and `lib/ash_a2a/graphlaw/` (vendoring, manifest, JS host). |
 | `:sa2a_corpus_dir`, `:sa2a_graphlaw_wasm` | — | SA2A conformance corpus location and wasm override (`AshA2A.SA2A.Graphlaw`). |
-| `:chicago_topology_root` | `/Users/sac` (the author's machine — **always set this explicitly**) | Root the Chicago topology court walks for its fixture tree (`AshA2A.Chicago` `sa2a_v26_9_17_topology` court). |
+| `:chicago_topology_root` | — (unset refuses `:chicago_topology_root_unset`; `config/test.exs` pins the checkout) | Root the Chicago topology court walks for its fixture tree (`AshA2A.Chicago` `sa2a_v26_9_17_topology` court); the court self-skips when the sibling repos are absent under it. |
 
 Per-module form is also supported where noted, e.g.
 `config :ash_a2a, AshA2A.Semantic.GraphLaw.Wasm, [...]`.

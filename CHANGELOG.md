@@ -8,6 +8,51 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+## [26.10.2] - 2026-10-02
+
+Documentation drift closure (ERRC) per `docs/jira/v26.10.2/ARD.md` + `PRD.md`. No wire,
+authority, or dispatch-path change; one test-harness code default changed.
+
+### Eliminated
+
+- Hand-synced `Version:` sites: `HANDOFF.md` and `how-to/release.md` no longer restate the
+  package version; `release_path_test` now checks `mix.exs` against the one admitted site
+  (`a2a-spec-version-mapping.md`) and refuses any second `Version: v` restatement (EL1).
+- Stray duplicate `## [Unreleased] - 2026-09-25` CHANGELOG header removed; a one-header
+  structure guard now enforces it (EL2).
+
+### Reduced
+
+- `AshA2A.DocsTruthTest` generalized: every documented configuration default row is either
+  verified by running the real consumer (22 execution oracles, up from 3) or explicitly
+  allowlisted with a reason; unaccounted literal defaults are a court failure (RD1).
+- New courts: telemetry-catalog court (every emitted literal event family documented,
+  variable families declared per emitter), mix-task catalog court (rows vs `@shortdoc`,
+  both directions), module-citation/link court (README + indexed docs), README usage-example
+  court (the DSL example compiles and dispatches as documented) — each with a red-first
+  witness (RD2/RD3/RD4/RD5, CR1).
+
+### Raised
+
+- `@moduledoc` for all 13 previously undocumented SPIFFE/AuthZEN modules (RA1).
+- HexDocs extras now ship `test-governed-actions.md`, `migrate-legacy-to-strict.md`,
+  `c2-certificate.md`, `c2-wire-interop.md`, `conformance-claim.md`,
+  `conformance-profiles.md`; the rest of the README control-plane group is marked
+  repo-only, court-enforced (RA2).
+- Public default readers added where courts needed single-site oracles:
+  `Application.agents/0`, `.env/0`, `.require_durable_receipts?/0`;
+  `Telemetry.OcelForwarder.max_in_flight/0`, `.ingest_timeout_ms/0`, `.log_body?/0`,
+  `.log_interval_ms/0`, `.task_supervisor/0`; `ReceiptOutbox.Reconciler.interval_ms/0`,
+  `.stuck_attempts_threshold/0`; `Health.outbox_ready_max/0`, `.health_kill_switch_classes/0`,
+  `.health_ocel_failed_max/0`; `Planning.HddlSolver.timeout_ms/0`, `.max_output_bytes/0`;
+  `GraphLaw.WasmexHost.max_queue/0` (part of RD1).
+
+### Created
+
+- `:chicago_topology_root` no longer defaults to a machine path: unset refuses
+  `:chicago_topology_root_unset`; `config/test.exs` pins the checkout (CR2).
+- `docs/jira/v26.10.2/` ARD/PRD/ERRC tracker seeded and executed (CR3).
+
 ## [26.9.31] - 2026-10-02
 
 Release preparation and documentation alignment: version bumped in `mix.exs`; no tag, no
@@ -110,8 +155,6 @@ not-yet-claimed.
   `durable_claim_store`, `keyed_journal`, `security_profile_strict`.
 - Supply-chain facts (`--github`) and built-release `RELEASE_DISTRIBUTION=none` inspection
   were not run.
-
-## [Unreleased] - 2026-09-25
 
 ### Added
 

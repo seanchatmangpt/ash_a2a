@@ -1,7 +1,7 @@
 # v26.9.29 Release Preparation
 
 Release engineering state for `ash_a2a` v26.9.29. Nothing is published: no tag, no `mix
-hex.publish`, no push. Version: v26.9.29. Last Updated: 2026-09-29.
+hex.publish`, no push. Last Updated: 2026-09-29.
 
 ## Contents
 

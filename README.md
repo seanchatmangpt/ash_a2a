@@ -220,16 +220,16 @@ reference for lookup, and explanation for understanding. It is published on
     request end to end, from wire to receipt.
   - [Canonical graph identity](docs/explanation/canonical-graph-identity.md)
     and [GraphLaw WASM integration](docs/explanation/graphlaw-wasm-integration.md).
-- **Control plane & conformance** (shipped with the repo, beyond the HexDocs
-  set): [C2 certificate model](docs/reference/c2-certificate.md),
+- **Control plane & conformance** (shipped with the repo): [C2 certificate
+  model](docs/reference/c2-certificate.md),
   [C2 wire interop](docs/reference/c2-wire-interop.md) (external
   authority/actuator projects, AuthZEN PDP policy evidence),
-  [C2 compromise court](docs/reference/c2-compromise-court.md),
   [conformance claim](docs/reference/conformance-claim.md) and
   [profiles](docs/reference/conformance-profiles.md),
-  [GALL closure ownership](docs/explanation/closure-implementations.md),
-  the [approver app](docs/how-to/approver-apps.md), and the
-  [release path](docs/how-to/release.md).
+  [C2 compromise court](docs/reference/c2-compromise-court.md) (repo-only),
+  [GALL closure ownership](docs/explanation/closure-implementations.md) (repo-only),
+  the [approver app](docs/how-to/approver-apps.md) (repo-only),
+  and the [release path](docs/how-to/release.md) (repo-only).
 
 ### Internal evidence and reports (not user documentation)
 
