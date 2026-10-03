@@ -13,6 +13,7 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness do
 
   alias AshA2A.{Authority, Command, CommandBus, Identity}
   alias AshA2A.Authority.Broker
+  alias AshA2A.Authority.Grant
   alias AshA2A.Chicago.Fixtures.MutationHarness.Ledger
 
   @subject "mutguard-subject"
@@ -44,6 +45,32 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness do
       capability(),
       Keyword.put_new(opts, :token_id, unique("mutguard-token"))
     )
+  end
+
+  @doc """
+  A real, broker-minted authority for the Ledger capability.
+
+  `Grant.grant/3` issues the standing grant against the given court-owned
+  broker (the tagged principal), then `Grant.authorize/3` mints the authority
+  from the RAW principal value, stamping `admitted_by` with this broker so the
+  real fail-closed pre-DO authority revalidation
+  (`AshA2A.CommandBus.pre_do_gate/3`) consults the broker that actually minted
+  the grant. A hand-minted `Authority.new/3` has no `admitted_by` and no
+  standing grant behind it, so every consequence-bearing command it carries is
+  refused before DO (`:authority_revalidation_unavailable`) -- the positive
+  controls would then prove nothing (a boundary that refuses everything cannot
+  kill any mutant that breaks a guard *after* admission).
+  """
+  @spec granted_authority({module(), keyword()}, Identity.t()) :: Authority.t()
+  def granted_authority({_, _} = broker, %Identity{kind: :principal} = principal) do
+    cap = capability()
+
+    case Grant.grant(principal, cap, broker: broker) do
+      {:ok, %Authority{}} -> :ok
+      {:error, %{reason: :token_id_taken}} -> :ok
+    end
+
+    Grant.authorize(principal.value, cap, policy: :broker, broker: broker)
   end
 
   @doc "A real command. Options: `:principal`, `:authority`, `:metadata`."
@@ -339,12 +366,12 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt do
             H.command(label, principal: p, authority: H.authority(p, expires_at: expired))
           end),
           denied(ctx, at.("004"), store, fn label -> revoked_command(label, broker) end),
-          unprepared(ctx, at.("005"), store),
+          unprepared(ctx, at.("005"), store, broker),
           caller_consequence(ctx, at.("006"), store),
-          replay_reactuation(ctx, at.("007"), store),
-          authorized(ctx, at.("008"), store),
+          replay_reactuation(ctx, at.("007"), store, broker),
+          authorized(ctx, at.("008"), store, broker),
           standing_grant(ctx, at.("009"), store, broker),
-          replay_control(ctx, at.("010"), store)
+          replay_control(ctx, at.("010"), store, broker)
         ]
       end)
     end)
@@ -373,13 +400,17 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt do
     H.command(label, principal: subject, authority: authority)
   end
 
-  defp unprepared(ctx, f, store) do
+  defp unprepared(ctx, f, store, broker) do
     label = H.unique("mutguard-prepared")
     p = H.principal()
 
     reply =
       Context.stimulus(ctx, f, fn ->
-        H.run(H.command(label, principal: p, authority: H.authority(p)), label, store)
+        H.run(
+          H.command(label, principal: p, authority: H.granted_authority(broker, p)),
+          label,
+          store
+        )
       end)
 
     records = Context.observed(ctx, f)
@@ -425,10 +456,10 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt do
   # itself, so the actuation layer is disabled for this stimulus only
   # (`actuation_dedup: :off`); the strict layer has its own falsifiers in
   # `test/ash_a2a_actuation_identity_test.exs`.
-  defp replay_reactuation(ctx, f, store) do
+  defp replay_reactuation(ctx, f, store, broker) do
     label = H.unique("mutguard-replay")
     p = H.principal()
-    command = H.command(label, principal: p, authority: H.authority(p))
+    command = H.command(label, principal: p, authority: H.granted_authority(broker, p))
     isolate = [actuation_dedup: :off]
 
     replies =
@@ -448,15 +479,14 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt do
 
   # --- positive controls ---------------------------------------------------------
 
-  defp authorized(ctx, f, store) do
+  defp authorized(ctx, f, store, broker) do
     label = H.unique("mutguard-authorized")
     p = H.principal()
-    expires = DateTime.add(DateTime.utc_now(), 3600, :second)
 
     reply =
       Context.stimulus(ctx, f, fn ->
         H.run(
-          H.command(label, principal: p, authority: H.authority(p, expires_at: expires)),
+          H.command(label, principal: p, authority: H.granted_authority(broker, p)),
           label,
           store
         )
@@ -501,10 +531,10 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt do
     )
   end
 
-  defp replay_control(ctx, f, store) do
+  defp replay_control(ctx, f, store, broker) do
     label = H.unique("mutguard-replayed")
     p = H.principal()
-    command = H.command(label, principal: p, authority: H.authority(p))
+    command = H.command(label, principal: p, authority: H.granted_authority(broker, p))
 
     replies =
       Context.stimulus(ctx, f, fn ->

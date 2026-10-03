@@ -35,6 +35,7 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
   """
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, ReceiptOutbox}
+  alias AshA2A.Authority.{Broker, Grant}
   alias AshA2A.Chicago.Fixtures.ChaosReconciliation.{Effect, Environment}
   alias AshA2A.Receipt.{EvidenceChain, OfflineReplay}
   alias AshA2A.ReceiptStore.Ekv
@@ -120,6 +121,18 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
     prefix = "chicago-replay-#{unique}-"
     handler = {__MODULE__, :prepared, unique}
 
+    # The commands must carry an authority the real fail-closed pre-DO
+    # revalidation gate can actually consult: a hand-minted `Authority.new/3`
+    # is refused before DO (`:authority_revalidation_unavailable`), which
+    # would turn every effect into a pre-DO refusal and the chain into a
+    # sequence of refused receipts. Mint through the real `Grant` API against
+    # this producer's own broker instead (the CHI-MUTGUARD pattern).
+    broker_name = Module.concat(__MODULE__, "Broker#{unique}")
+    {:ok, broker_pid} = Broker.InMemory.start_link(name: broker_name)
+    broker = {Broker.InMemory, [name: broker_name]}
+    {:ok, _issued} = Grant.grant(Identity.principal(@principal), Environment.capability(), broker: broker)
+    Process.unlink(broker_pid)
+
     :ok =
       :telemetry.attach(handler, @prepare_event, &__MODULE__.capture_prepared/4, %{
         collector: self(),
@@ -154,7 +167,7 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
       chain =
         Enum.reduce_while(steps, {:ok, EvidenceChain.new("#{prefix}chain")}, fn {spec, bus_opts},
                                                                                 {:ok, chain} ->
-          case record_command(env, chain, spec, bus_opts) do
+          case record_command(env, chain, spec, broker, bus_opts) do
             {:ok, chain} -> {:cont, {:ok, chain}}
             {:error, reason} -> {:halt, {:error, reason}}
           end
@@ -173,11 +186,14 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
       end
     after
       :telemetry.detach(handler)
+
+      if Process.alive?(broker_pid), do: GenServer.stop(broker_pid, :normal)
     end
   end
 
-  defp record_command(env, chain, spec, bus_opts) do
-    reply = CommandBus.run(command(spec), message(spec), Effect, bus_opts(env, bus_opts))
+  defp record_command(env, chain, spec, broker, bus_opts) do
+    reply =
+      CommandBus.run(command(spec, authority: granted_authority(broker)), message(spec), Effect, bus_opts(env, bus_opts))
 
     prepared =
       receive do
@@ -258,14 +274,21 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
           command_id: spec.command_id,
           agent_id: @agent,
           principal_id: principal,
-          authority:
-            Authority.new(principal, capability, token_id: "chicago-replay-" <> spec.command_id),
+          authority: Authority.new(principal, capability, token_id: "chicago-replay-" <> spec.command_id),
           input: %{"operation_id" => spec.operation_id},
           metadata: %{idempotency_key: spec.token}
         ],
         overrides
       )
     )
+  end
+
+  # `Grant.authorize/3` takes the RAW principal value (it re-wraps via
+  # `Identity.principal/1` internally); `Grant.grant/3` above took the tagged
+  # struct. The minted authority carries `admitted_by` = this broker, so the
+  # pre-DO revalidation asks the broker that actually issued the grant.
+  defp granted_authority({_, _} = broker) do
+    Grant.authorize(@principal, Environment.capability(), policy: :broker, broker: broker)
   end
 
   @spec message(map()) :: A2A.Message.t()

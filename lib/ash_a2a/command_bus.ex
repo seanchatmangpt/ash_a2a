@@ -1179,9 +1179,21 @@ defmodule AshA2A.CommandBus do
     if anchor, do: ReceiptOutbox.remove(anchor)
     release_actuation(store, actuation, consequence, store_opts, opts)
 
+    # §40/§41: once an anchor was persisted, its receipt identity is law.
+    # The pre-DO refusal receipt must FINALIZE that anchor -- preserving its
+    # `receipt_id` and its `prepared -> final` binding chain -- or the
+    # evidence chain carries a prepared anchor and a final receipt under two
+    # different identities (`replay_identity_divergence` on an intact chain,
+    # CHI-REPLAY-001). Minting a fresh `from_reply` here was exactly that
+    # divergence.
     receipt =
-      command
-      |> Receipt.from_reply(execution_id, consequence, {:error, error}, receipt_opts)
+      case anchor do
+        %Receipt{} = anchor ->
+          Receipt.finalize(anchor, {:error, error})
+
+        nil ->
+          Receipt.from_reply(command, execution_id, consequence, {:error, error}, receipt_opts)
+      end
       |> mark_standing(store)
 
     delays = receipt_commit_retry_delays_ms()
