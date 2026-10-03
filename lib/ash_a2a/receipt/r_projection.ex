@@ -174,9 +174,6 @@ defmodule AshA2A.Receipt.RProjection do
          %{code: :r_projection_anchor_malformed, detail: %{field: field, observed: sha}}}
   end
 
-  defp valid_sha(field, observed),
-    do: {:error, %{code: :r_projection_anchor_malformed, detail: %{field: field, observed: observed}}}
-
   # metadata.work_order_digest wins over the opts fallback (R5: it is bound
   # into the receipt's own metadata at the consequence boundary; an opts
   # value is the caller's say-so about a receipt that cannot name its order).

@@ -17,6 +17,5 @@ defmodule AshA2A.ConsequenceKernel.CallGraphCourt do
   def classify(_), do: {:refuse, :invalid_call_edge}
   defp normalize(v) when is_atom(v), do: Atom.to_string(v)
   defp normalize(v) when is_binary(v), do: v
-  defp normalize(nil), do: ""
   defp normalize(v), do: to_string(v)
 end
