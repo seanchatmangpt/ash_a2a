@@ -89,19 +89,35 @@ defmodule AshA2A.Telemetry.OcelForwarderCommandBusTest do
     Application.put_env(:ash_a2a, :ocel_ingest_url, base_url)
     :ok = AshA2A.Telemetry.OcelForwarder.attach!()
 
-    name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
-    start_supervised!({AshA2A.ReceiptStore.Memory, name: name})
+    # Real on-disk EKV receipt store (the receipt_store_ekv_test.exs:25-36
+    # pattern: unique name + unique data_dir + cluster_size: 1 + on_exit
+    # cleanup) rather than the library-default Memory store -- the OCEL
+    # forwarder court's subject is event dedup on the wire, not store
+    # durability, so the durable store is the honest default here and the
+    # in-repo Memory consumption is one fewer legacy-default consumer.
+    ekv_name = :"ash_a2a_ocel_fwd_ekv_#{System.unique_integer([:positive])}"
+
+    data_dir =
+      Path.join(
+        System.tmp_dir!(),
+        "ash_a2a_ocel_fwd_ekv_test_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf!(data_dir) end)
+
+    start_supervised!({EKV, name: ekv_name, data_dir: data_dir, cluster_size: 1})
 
     on_exit(fn ->
       AshA2A.Telemetry.OcelForwarder.detach()
       Application.delete_env(:ash_a2a, :ocel_ingest_url)
     end)
 
-    {:ok, base_url: base_url, store_opts: [name: name]}
+    {:ok, base_url: base_url,
+     store: AshA2A.ReceiptStore.Ekv, store_opts: [name: ekv_name]}
   end
 
   test "a real CommandBus-routed :next_phase dispatch produces exactly ONE OCEL event, carrying both receipt and dispatch evidence",
-       %{store_opts: store_opts} do
+       %{store: store, store_opts: store_opts} do
     plan_name = :"ocel_dedupe_command_bus_test_#{System.unique_integer([:positive])}"
     capability_id = "AshA2A.Test.Fixture.FreedomGym.Facilitator.next_phase"
     principal = Identity.principal("subject-1")
@@ -119,10 +135,17 @@ defmodule AshA2A.Telemetry.OcelForwarderCommandBusTest do
     message = data_message(%{plan_name: plan_name, prompt_text: "next real phase, please"})
 
     assert {:ok, receipt} =
-             CommandBus.run(command, message, Facilitator, store_opts: store_opts)
+             CommandBus.run(command, message, Facilitator,
+               store: store,
+               store_opts: store_opts
+             )
 
     assert receipt.status == :completed
     assert receipt.consequence == :change
+
+    # The durable store is real, not nominal: a committed receipt over
+    # on-disk EKV stands :durable (Memory would leave it :observed).
+    assert receipt.standing == :durable
 
     # Before the fix, two events would have landed here (one from the raw
     # `[:ash_a2a, :dispatch, :stop]` span, one from

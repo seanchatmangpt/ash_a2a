@@ -205,13 +205,28 @@ defmodule AshA2A.FailureInjectionTest do
 
   describe "(4) CommandBus authority failure (:authority_mismatch)" do
     setup do
-      name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
-      start_supervised!({AshA2A.ReceiptStore.Memory, name: name})
-      %{store_opts: [name: name]}
+      # Real on-disk EKV store (receipt_store_ekv_test.exs:25-36 pattern).
+      # The refusal post-condition asserted below -- "nothing was committed"
+      # -- is store-agnostic, so the durable store is the honest default and
+      # this court consumes one fewer legacy-default Memory instance.
+      ekv_name = :"ash_a2a_fail_inj_ekv_#{System.unique_integer([:positive])}"
+
+      data_dir =
+        Path.join(
+          System.tmp_dir!(),
+          "ash_a2a_failure_injection_ekv_test_#{System.unique_integer([:positive])}"
+        )
+
+      on_exit(fn -> File.rm_rf!(data_dir) end)
+
+      start_supervised!({EKV, name: ekv_name, data_dir: data_dir, cluster_size: 1})
+
+      %{store: AshA2A.ReceiptStore.Ekv, store_opts: [name: ekv_name]}
     end
 
     test "authority issued for a different capability id is refused with :authority_mismatch, not admitted",
          %{
+           store: store,
            store_opts: store_opts
          } do
       principal = Identity.principal("failure-injection-subject-wrong-capability")
@@ -232,14 +247,16 @@ defmodule AshA2A.FailureInjectionTest do
 
       assert {:error, %{code: :authority_mismatch}} =
                CommandBus.run(command, data_message(%{"label" => "widget"}), Item,
+                 store: store,
                  store_opts: store_opts
                )
 
-      assert :error = ReceiptStore.Memory.fetch(command.command_id, store_opts)
+      assert :error = ReceiptStore.Ekv.fetch(command.command_id, store_opts)
     end
 
     test "authority issued for the right capability but a different principal is refused with :authority_mismatch",
          %{
+           store: store,
            store_opts: store_opts
          } do
       issuing_principal = Identity.principal("failure-injection-issuing-principal")
@@ -261,10 +278,11 @@ defmodule AshA2A.FailureInjectionTest do
 
       assert {:error, %{code: :authority_mismatch}} =
                CommandBus.run(command, data_message(%{"label" => "widget"}), Item,
+                 store: store,
                  store_opts: store_opts
                )
 
-      assert :error = ReceiptStore.Memory.fetch(command.command_id, store_opts)
+      assert :error = ReceiptStore.Ekv.fetch(command.command_id, store_opts)
     end
   end
 
