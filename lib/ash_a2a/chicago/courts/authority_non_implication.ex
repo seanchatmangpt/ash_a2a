@@ -291,6 +291,52 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
              "consequence" => "external_do",
              "capability_consequence" => "external_do"
            }}
+      ),
+      negative(22,
+        invariant:
+          "Subject binding (§64, §66): an authority the broker really minted for principal P, " <>
+            "carried verbatim onto a DIFFERENT principal's command, is refused at bus admission " <>
+            "(:authority_mismatch) -- deleting `Authority.admits?/2`'s subject check must let " <>
+            "this attack actuate",
+        stimulus:
+          "CommandBus.run/4 of a Probe actuate command whose principal_id is Q, carrying " <>
+            "Grant.authorize/3's authority minted for P (P != Q) with no re-derivation",
+        guard: "Authority.admits?/2 subject == command.principal_id",
+        # The mint inside the stimulus is lawful (the broker really granted
+        # P), so the forbidden outcome names CONSEQUENCE only: the mint's own
+        # decision:granted event must never count.
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, "brce.admission", %{"outcome" => "admitted"}},
+             {:observed, "brce.actuate.start"}
+           ]}
+      ),
+      negative(23,
+        invariant:
+          "Capability binding (§57): a real grant for capability A carried on a command for " <>
+            "capability B is refused at bus admission (:authority_mismatch)",
+        stimulus:
+          "CommandBus.run/4 of a Probe actuate command by P carrying Grant.authorize/3's " <>
+            "mutate authority for the same P verbatim",
+        guard: "Authority.admits?/2 capability_id == command.capability_id",
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, "brce.admission", %{"outcome" => "admitted"}},
+             {:observed, "brce.actuate.start"}
+           ]}
+      ),
+      negative(24,
+        invariant:
+          "Expiry (§67): a standing-claim authority whose declared time bound has passed is " <>
+            "refused even though the broker grant behind it still stands",
+        stimulus:
+          "Grant.grant/3 issues a standing actuate grant, then the holder presents " <>
+            "Authority.from_verified_identity/3 with expires_at in the past; CommandBus.run/4",
+        guard: "Authority.expired?/1 (admit + pre-DO revalidation) -> :authority_mismatch",
+        attempt_predicate:
+          {:all, [{:observed, "authority.grant.issue"}, {:observed, "brce.admission"}]}
       )
     ]
   end
@@ -373,12 +419,18 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
           token_rebinding(env, victim),
           subject_substitution(env, victim),
           deputy(env),
-          capability_substitution(env),
+          capability_substitution(env)
+        ])
+        |> List.flatten()
+        |> Kernel.++([
+          bus_binding(env),
+          expired_credential(env),
           r18,
           widening(env, child),
           self_declared_consequence(env),
           attested_envelope_control(env)
         ])
+        |> List.flatten()
       end)
     after
       H.stop_agent(probe)
@@ -879,7 +931,135 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
     )
   end
 
+  # SA2A-AUTH-022 / SA2A-AUTH-023
+  #
+  # `Grant.authorize/3` shadows `Authority.admits?/2` on the agent dispatch
+  # path (the broker refuses an ungranted subject/capability before any
+  # command exists), so the binding half of `admits?/2` is only observable
+  # when a broker-minted authority is carried VERBATIM onto a command that
+  # does not match it -- the credential-replay confused deputy (§66). Under
+  # `authority_admits_true` the mutant admits both attacks straight to DO,
+  # which is exactly what these two falsifiers forbid.
+  defp bus_binding(%{ctx: ctx, fs: fs}) do
+    holder = H.principal("bus-binding-holder")
+    other = H.principal("bus-binding-other")
+    grant!(holder, "actuate")
+    grant!(holder, "mutate")
+
+    f22 = fs[fid(22)]
+    nonce22 = H.nonce("auth-022")
+
+    reply22 =
+      Context.stimulus(ctx, f22, fn ->
+        # `Grant.authorize/3` takes the RAW auth identity (it re-wraps via
+        # `Identity.principal/1` internally; passing an already-tagged
+        # `%Identity{}` double-wraps it and the broker lookup never matches).
+        %Authority{} = authority = Grant.authorize(holder, @probe_actuate)
+
+        CommandBus.run(
+          Command.new(@probe_actuate,
+            command_id: "chicago-auth-022-" <> nonce22,
+            agent_id: inspect(Probe),
+            principal_id: Identity.principal(other),
+            authority: authority,
+            input: %{"nonce" => nonce22}
+          ),
+          data_message(nonce22),
+          Probe
+        )
+      end)
+
+    f23 = fs[fid(23)]
+    nonce23 = H.nonce("auth-023")
+
+    reply23 =
+      Context.stimulus(ctx, f23, fn ->
+        %Authority{} = authority = Grant.authorize(holder, @probe_mutate)
+
+        CommandBus.run(
+          Command.new(@probe_actuate,
+            command_id: "chicago-auth-023-" <> nonce23,
+            agent_id: inspect(Probe),
+            principal_id: Identity.principal(holder),
+            authority: authority,
+            input: %{"nonce" => nonce23}
+          ),
+          data_message(nonce23),
+          Probe
+        )
+      end)
+
+    [
+      bus_binding_result(ctx, f22, nonce22, reply22),
+      bus_binding_result(ctx, f23, nonce23, reply23)
+    ]
+  end
+
+  # SA2A-AUTH-024
+  #
+  # The InMemory broker shadows `Authority.expired?/1` for grants it issued
+  # WITH a time bound (`grant_status/2` answers :expired), so the only place
+  # a past `expires_at` is decisive on the real run path is the presented
+  # authority STRUCT itself: a holder carrying a standing claim whose time
+  # bound has passed (stale credential behind a still-standing broker grant).
+  # Under `ignore_expiry` the mutant skips `expired?/1` in `admit/2` and the
+  # pre-DO revalidation, the still-standing broker grant revalidates, and the
+  # attack actuates -- the forbidden outcome.
+  defp expired_credential(%{ctx: ctx, fs: fs}) do
+    f = fs[fid(24)]
+    principal = H.principal("stale-credential")
+    nonce = H.nonce("auth-024")
+    past = DateTime.add(DateTime.utc_now(), -3_600, :second)
+
+    reply =
+      Context.stimulus(ctx, f, fn ->
+        {:ok, _} = Grant.grant(Identity.principal(principal), probe_capability_id("actuate"))
+        authority = Authority.from_verified_identity(principal, @probe_actuate, past)
+
+        CommandBus.run(
+          Command.new(@probe_actuate,
+            command_id: "chicago-auth-024-" <> nonce,
+            agent_id: inspect(Probe),
+            principal_id: Identity.principal(principal),
+            authority: authority,
+            input: %{"nonce" => nonce}
+          ),
+          data_message(nonce),
+          Probe
+        )
+      end)
+
+    stale_credential_result(ctx, f, nonce, reply)
+  end
+
   # --- helpers ------------------------------------------------------------------------
+
+  # The mint inside the stimulus is lawful, so the forbidden check is
+  # CONSEQUENCE ONLY: the mint's own authority.decision:granted event and
+  # broker lookup must never count as the forbidden outcome.
+  defp bus_binding_result(ctx, f, nonce, reply) do
+    Result.negative(f,
+      attempt_observed?:
+        H.saw?(ctx, f, "authority.decision") and H.saw?(ctx, f, "brce.admission"),
+      forbidden_outcome_observed?:
+        Fixtures.recorded?(nonce) or
+          H.saw?(ctx, f, "brce.admission", %{"outcome" => "admitted"}) or
+          H.saw?(ctx, f, "brce.actuate.start"),
+      evidence: %{"reply" => reply_code(reply), "observed" => H.seen(ctx, f)}
+    )
+  end
+
+  defp stale_credential_result(ctx, f, nonce, reply) do
+    Result.negative(f,
+      attempt_observed?:
+        H.saw?(ctx, f, "authority.grant.issue") and H.saw?(ctx, f, "brce.admission"),
+      forbidden_outcome_observed?:
+        Fixtures.recorded?(nonce) or
+          H.saw?(ctx, f, "brce.admission", %{"outcome" => "admitted"}) or
+          H.saw?(ctx, f, "brce.actuate.start"),
+      evidence: %{"reply" => reply_code(reply), "observed" => H.seen(ctx, f)}
+    )
+  end
 
   # SA2A-AUTH-020
   defp self_declared_consequence(%{ctx: ctx, fs: fs}) do

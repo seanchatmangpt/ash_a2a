@@ -24,13 +24,13 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
 
   use AshA2A.Chicago.Court
 
-  alias AshA2A.{Authority, Identity}
+  alias AshA2A.{Authority, Command, CommandBus, Identity}
   alias AshA2A.Authority.Broker.{Ekv, InMemory}
   alias AshA2A.Authority.Grant
   alias AshA2A.Chicago.{Context, Falsifier, Result}
   alias AshA2A.Chicago.Courts.AuthorityHarness, as: H
   alias AshA2A.Chicago.Fixtures.Authority, as: Fixtures
-  alias AshA2A.Chicago.Fixtures.Authority.ProbeAgent
+  alias AshA2A.Chicago.Fixtures.Authority.{Probe, ProbeAgent}
 
   @court "SA2A-AUTH-GRANT"
   # SA2A-AUTH-017 (RFC-SA2A-002 S66, capability substitution): the real
@@ -187,6 +187,47 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
         survival_evidence: "lookup standing, granted, admitted, committed; ledger row",
         attempt_predicate: @lookup_decision_admission,
         outcome_predicate: @authorized
+      ),
+      negative(12,
+        invariant:
+          "Subject binding at the grant layer (§64): an authority Grant.authorize/3 really " <>
+            "minted for P, carried verbatim onto a DIFFERENT principal's command, is refused " <>
+            "at bus admission (:authority_mismatch); deleting `Authority.admits?/2`'s subject " <>
+            "check must let this attack actuate",
+        stimulus:
+          "Grant.authorize/3 mints the standing actuate authority for P; CommandBus.run/4 of " <>
+            "an actuate command whose principal_id is Q, authority attached verbatim",
+        guard: "Authority.admits?/2 subject == command.principal_id",
+        boundary: "AshA2A.CommandBus admission via AshA2A.Authority.admits?/2",
+        # The mint itself is lawful (the broker really granted the holder), so
+        # the OCEL forbidden outcome names CONSEQUENCE only -- the mint's own
+        # lookup:standing/decision:granted events must never count.
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, "brce.admission", %{"outcome" => "admitted"}},
+             {:observed, "brce.actuate.start"}
+           ]}
+      ),
+      negative(13,
+        invariant:
+          "Expiry at the grant layer (§67): a standing-claim authority whose declared time " <>
+            "bound has passed is refused even though the broker grant behind it still stands; " <>
+            "and a grant minted with an already-past expires_at is never standing",
+        stimulus:
+          "Grant.grant/3 with expires_at in the past is refused standing by the broker; then " <>
+            "the holder presents Authority.from_verified_identity/3 with expires_at in the " <>
+            "past behind a standing broker grant; CommandBus.run/4",
+        guard: "Authority.expired?/1 (admit + pre-DO revalidation)",
+        boundary: "AshA2A.CommandBus admission via AshA2A.Authority.expired?/1",
+        attempt_predicate:
+          {:all, [{:observed, "authority.grant.issue"}, {:observed, "brce.admission"}]},
+        outcome_predicate:
+          {:any,
+           [
+             {:observed, "brce.admission", %{"outcome" => "admitted"}},
+             {:observed, "brce.actuate.start"}
+           ]}
       )
     ]
   end
@@ -253,7 +294,9 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
             expiry(env),
             revocation(env),
             restart(env),
-            unavailable(env)
+            unavailable(env),
+            bus_binding(env),
+            expired_claim(env)
           ])
         end)
 
@@ -470,6 +513,119 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
     after
       if Process.alive?(pid), do: GenServer.stop(pid, :normal)
     end
+  end
+
+  # SA2A-AUTH-GRANT-012 / SA2A-AUTH-GRANT-013
+  #
+  # Same law as SA2A-AUTH-022/-023/-024, driven through the durable Ekv
+  # broker this court owns: `Grant.authorize/3` shadows `Authority.admits?/2`
+  # on the agent path (it refuses an ungranted subject/capability before a
+  # command exists), so the binding/expiry half of `admits?/2` is only
+  # observable when a broker-minted authority is carried VERBATIM onto a
+  # command that does not match it. The mint itself is lawful (the broker
+  # really granted the holder), so the forbidden outcomes here are written
+  # against CONSEQUENCE only -- a ledger row, an admission, or an actuation --
+  # never against the grant mint's own lookup/decision evidence.
+  defp bus_binding(%{ctx: ctx, fs: fs}) do
+    f = fs[fid(12)]
+    holder = H.principal("bus-binding-holder")
+    other = H.principal("bus-binding-other")
+    {:ok, _} = Grant.grant(Identity.principal(holder), @capability)
+
+    nonce = H.nonce("grant-012")
+
+    {reply, minted_for} =
+      Context.stimulus(ctx, f, fn ->
+        # raw auth identity: `Grant.authorize/3` re-wraps via
+        # `Identity.principal/1` internally; an already-tagged `%Identity{}`
+        # double-wraps and the broker lookup never matches
+        minted = Grant.authorize(holder, @capability)
+
+        reply =
+          CommandBus.run(
+            Command.new(@capability,
+              command_id: "chicago-grant-012-" <> nonce,
+              agent_id: inspect(Probe),
+              principal_id: Identity.principal(other),
+              authority: minted,
+              input: %{"nonce" => nonce}
+            ),
+            A2A.Message.new_user([A2A.Part.Data.new(%{"nonce" => nonce})]),
+            Probe
+          )
+
+        {reply, minted && minted.subject.value}
+      end)
+
+    Result.negative(f,
+      attempt_observed?: attempted?(ctx, f),
+      forbidden_outcome_observed?:
+        Fixtures.recorded?(nonce) or
+          H.saw?(ctx, f, "brce.admission", %{"outcome" => "admitted"}) or
+          H.saw?(ctx, f, "brce.actuate.start"),
+      evidence: %{
+        "task_state" => H.task_state(reply),
+        "authority_minted_for" => minted_for,
+        "command_principal" => other,
+        "observed" => H.seen(ctx, f)
+      }
+    )
+  end
+
+  # SA2A-AUTH-GRANT-013
+  defp expired_claim(%{ctx: ctx, fs: fs}) do
+    f = fs[fid(13)]
+    holder = H.principal("expired-claim-holder")
+    stale = H.principal("past-expiry-grantee")
+    subject = Identity.principal(holder)
+    nonce = H.nonce("grant-013")
+    past = DateTime.add(DateTime.utc_now(), -3_600, :second)
+
+    {reply, broker_standing_for_past_grant} =
+      Context.stimulus(ctx, f, fn ->
+        # A grant minted with an already-past time bound: the broker records
+        # the issue, but `granted?/3` never answers standing for it (67).
+        {:ok, _} = Grant.grant(Identity.principal(stale), @capability, expires_at: past)
+        broker_standing = Grant.granted?(Identity.principal(stale), @capability)
+
+        # A holder presenting a standing claim whose OWN time bound has
+        # passed, behind a still-standing (permanent) broker grant for the
+        # same (subject, capability): `Authority.expired?/1` is the decisive
+        # guard at admit and at the pre-DO revalidation.
+        {:ok, _} = Grant.grant(subject, @capability)
+
+        authority = Authority.from_verified_identity(holder, @capability, past)
+
+        reply =
+          CommandBus.run(
+            Command.new(@capability,
+              command_id: "chicago-grant-013-" <> nonce,
+              agent_id: inspect(Probe),
+              principal_id: subject,
+              authority: authority,
+              input: %{"nonce" => nonce}
+            ),
+            A2A.Message.new_user([A2A.Part.Data.new(%{"nonce" => nonce})]),
+            Probe
+          )
+
+        {reply, broker_standing}
+      end)
+
+    Result.negative(f,
+      attempt_observed?:
+        H.saw?(ctx, f, "authority.grant.issue") and H.saw?(ctx, f, "brce.admission"),
+      forbidden_outcome_observed?:
+        Fixtures.recorded?(nonce) or
+          H.saw?(ctx, f, "brce.admission", %{"outcome" => "admitted"}) or
+          H.saw?(ctx, f, "brce.actuate.start"),
+      evidence: %{
+        "task_state" => H.task_state(reply),
+        "broker_standing_for_past_grant" => broker_standing_for_past_grant,
+        "presented_expires_at" => DateTime.to_iso8601(past),
+        "observed" => H.seen(ctx, f)
+      }
+    )
   end
 
   # --- results --------------------------------------------------------------------------

@@ -54,7 +54,7 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
   alias AshA2A.Chicago.Fixtures.ShexShaclAdmission, as: World
   alias AshA2A.Chicago.Fixtures.ShexShaclAdmission.Evidence
   alias AshA2A.Chicago.Ocel.Mapping
-  alias AshA2A.Semantic.{AdmissionPipeline, MappingRegistry, TermRegistry}
+  alias AshA2A.Semantic.{AdmissionPipeline, Envelope, MappingRegistry, TermRegistry}
 
   @id "CHI-ADM"
   @op_use "semantic.term.operational_use"
@@ -277,6 +277,30 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
         attempt_predicate: {:observed, @register, %{"source" => peer_a.iri}},
         outcome_predicate:
           {:observed, @register, %{"source" => peer_a.iri, "outcome" => "admitted"}}
+      ),
+      Falsifier.new!(
+        id: "#{@id}-014",
+        court_id: @id,
+        kind: :negative,
+        invariant:
+          "Standing is never a sender-fillable field (RFC-SA2A-001 S6, §54): an inbound " <>
+            "payload declaring a standing other than candidate MUST be refused with the typed " <>
+            "code :standing_self_declared, never accepted",
+        stimulus:
+          "Envelope.new/1 and Envelope.from_json/1 of a well-formed candidate payload that " <>
+            "additionally declares standing \"admitted\"",
+        boundary: "AshA2A.Semantic.Envelope.new/1 + AshA2A.Semantic.Envelope.from_json/1",
+        forbidden_outcome:
+          "{:ok, envelope} returned for a payload declaring non-candidate standing " <>
+            "(the guard deleted, the self-declared claim accepted)",
+        attempt_evidence: "the court stimulus boundary around the real envelope constructor",
+        survival_evidence:
+          "{:ok, _} returned, or a real peer decision standing=admitted for such a payload",
+        guard: "Envelope.reject_declared_standing/1 (:standing_self_declared)",
+        failure_class: :admission_failure,
+        rfc_sections: ["§33", "§54"],
+        attempt_predicate: {:observed, "chicago.stimulus.start"},
+        outcome_predicate: {:observed, "sa2a.env.decision", %{"standing" => "admitted"}}
       )
     ]
   end
@@ -378,7 +402,7 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
           pipeline(ctx, f, Evidence.scratch_dir(ctx, @id))
       end
 
-    term_results ++ mapping_results ++ pipeline_results
+    term_results ++ mapping_results ++ [envelope_standing(ctx, f.("014"))] ++ pipeline_results
   end
 
   defp pipeline(ctx, f, scratch) do
@@ -437,6 +461,44 @@ defmodule AshA2A.Chicago.Courts.ExecutableWorld do
       every_required_stage(ctx, f.("010"), scratch),
       lawful_admitted(ctx, f.("011"), scratch)
     ]
+  end
+
+  # CHI-ADM-014 -- the real receiving boundary for declared standing. The
+  # typed refusal IS the enforcement observable: `Envelope.new/1` and
+  # `Envelope.from_json/1` both flow through `reject_declared_standing/1`
+  # before any other validation, and both must answer
+  # `{:refused_meta_rigor, :standing_self_declared}` for a payload that
+  # claims standing. Under `trust_sender_standing` (the guard deleted) both
+  # constructors accept the payload and return `{:ok, envelope}` -- that
+  # `:ok` is what this falsifier forbids.
+  defp envelope_standing(ctx, f) do
+    declared =
+      %{
+        "envelopeId" => "urn:uuid:chi-adm-014-#{System.unique_integer([:positive])}",
+        "kind" => "sa2a:Request",
+        "standing" => "admitted"
+      }
+
+    {json_reply, new_reply} =
+      Context.stimulus(ctx, f, fn ->
+        json_reply = declared |> Jason.encode!() |> Envelope.from_json()
+        new_reply = Envelope.new(declared)
+        {json_reply, new_reply}
+      end)
+
+    accepted? = fn
+      {:ok, _} -> true
+      _ -> false
+    end
+
+    Result.negative(f,
+      attempt_observed?: Evidence.seen?(ctx, f, "chicago.stimulus.start"),
+      forbidden_outcome_observed?: accepted?.(json_reply) or accepted?.(new_reply),
+      evidence: %{
+        "from_json" => inspect(json_reply, limit: 12, printable_limit: 512),
+        "new" => inspect(new_reply, limit: 12, printable_limit: 512)
+      }
+    )
   end
 
   # --- terms -----------------------------------------------------------------------

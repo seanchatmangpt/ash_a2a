@@ -1121,6 +1121,31 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
           denied = "observer-outage-denied-" <> suffix
           allowed = "observer-outage-allowed-" <> suffix
 
+          # RFC-SA2A-004 S10/S11: the pre-DO revalidation consults the
+          # broker the environment configures, and a hand-minted one-off
+          # token that broker never issued fails closed. The allowed
+          # command therefore carries an authority the REAL broker here
+          # REALLY issued via `AshA2A.Authority.Grant`.
+          broker = :"observer_qual_broker_#{System.unique_integer([:positive])}"
+          {:ok, broker_pid} = AshA2A.Authority.Broker.InMemory.start_link(name: broker)
+          broker_opts = {AshA2A.Authority.Broker.InMemory, [name: broker]}
+          capability = "#{inspect(Fx.Ledger)}.create"
+          # `Grant.grant/3` takes the tagged `%Identity{}`; `Grant.authorize/3`
+          # takes the RAW auth identity (it re-wraps via `Identity.principal/1`
+          # internally; an already-tagged `%Identity{}` double-wraps and the
+          # broker lookup keys on the inspected struct, never matching).
+          subject = "observer-qualification-subject"
+
+          {:ok, _} =
+            Authority.Grant.grant(
+              Identity.principal(subject),
+              capability,
+              broker: broker_opts
+            )
+
+          allowed_authority =
+            Authority.Grant.authorize(subject, capability, broker: broker_opts)
+
           try do
             denied_reply =
               CommandBus.run(command(denied, false), message(denied), Fx.Ledger,
@@ -1128,8 +1153,9 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
               )
 
             allowed_reply =
-              CommandBus.run(command(allowed, true), message(allowed), Fx.Ledger,
-                store_opts: store_opts
+              CommandBus.run(command(allowed, allowed_authority), message(allowed), Fx.Ledger,
+                store_opts: store_opts,
+                authority_broker: broker_opts
               )
 
             labels = Fx.Ledger |> Ash.read!() |> Enum.map(& &1.label)
@@ -1156,6 +1182,7 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
             }
           after
             if Process.alive?(store), do: GenServer.stop(store)
+            if Process.alive?(broker_pid), do: GenServer.stop(broker_pid, :normal)
           end
         after
           stop_scratch(observer, run_id)

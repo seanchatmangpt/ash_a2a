@@ -279,7 +279,9 @@ defmodule AshA2A.Chicago.Courts.HiltWorkOrder do
     consequence = Keyword.get(opts, :consequence, :observe)
     ceiling = if consequence == :change, do: :do, else: :observe
 
-    WorkOrder.for_command!(command, consequence,
+    WorkOrder.for_command!(
+      command,
+      consequence,
       [
         work_order_id: H.unique("chi-hilt-wo"),
         observation_bounds: %{resources: ["ledger"]},

@@ -440,6 +440,14 @@ defmodule AshA2A.Chicago.Courts.Brce do
       direct_observe(ctx, get.(13))
     ]
 
+    # The replay family runs BEFORE the storage fault-injection group: the
+    # storage falsifiers (003/004) inject real faults (a stopped receipt
+    # store process) whose raw `:noproc` exits abort the whole court run
+    # under a `claim_receipt/3` mutant before the replay controls can kill
+    # it (SA2A-MUTATION-014 observed exactly this at c8ee4c9). Ordering is
+    # court-internal and each group builds its own environment.
+    identity = replay_family(ctx, get.(14), get.(10), get.(11))
+
     storage = [
       outbox_unavailable(ctx, get.(3)),
       store_stopped(ctx, get.(4)),
@@ -461,9 +469,7 @@ defmodule AshA2A.Chicago.Courts.Brce do
         ]
       end)
 
-    identity = replay_family(ctx, get.(14), get.(10), get.(11))
-
-    direct ++ storage ++ planning ++ agent ++ identity
+    direct ++ identity ++ storage ++ planning ++ agent
   end
 
   # 001 / 002
@@ -550,13 +556,23 @@ defmodule AshA2A.Chicago.Courts.Brce do
 
     reply =
       Context.stimulus(ctx, falsifier, fn ->
-        CommandBus.run(
-          bus_command(skill_id(:record), label),
-          message(%{"label" => label}),
-          Ledger,
-          store: AshA2A.ReceiptStore.Memory,
-          store_opts: [name: name]
-        )
+        # A raw `:noproc` exit from the stopped store IS evidence (the SUT's
+        # fail-closed claim wrapper is what answers refusals on a dead
+        # store); record it as the reply instead of letting it abort the
+        # whole court run -- a court exit marks every falsifier UNKNOWN and
+        # would erase the replay family's kill of a `claim_receipt/3`
+        # mutant (SA2A-MUTATION-014).
+        try do
+          CommandBus.run(
+            bus_command(skill_id(:record), label),
+            message(%{"label" => label}),
+            Ledger,
+            store: AshA2A.ReceiptStore.Memory,
+            store_opts: [name: name]
+          )
+        catch
+          kind, reason -> {kind, reason}
+        end
       end)
 
     rows = Fx.consequence_count(label)
@@ -572,29 +588,31 @@ defmodule AshA2A.Chicago.Courts.Brce do
 
   # 012
   defp prepared_do(ctx, falsifier) do
-    label = unique_label("prepared-do")
+    with_run_broker(fn mint ->
+      label = unique_label("prepared-do")
 
-    reply =
-      with_store(fn store_opts ->
-        Context.stimulus(ctx, falsifier, fn ->
-          CommandBus.run(
-            bus_command(skill_id(:record), label),
-            message(%{"label" => label}),
-            Ledger,
-            store_opts
-          )
+      reply =
+        with_store(fn store_opts ->
+          Context.stimulus(ctx, falsifier, fn ->
+            CommandBus.run(
+              bus_command(skill_id(:record), label, authority: mint.(skill_id(:record))),
+              message(%{"label" => label}),
+              Ledger,
+              store_opts
+            )
+          end)
         end)
-      end)
 
-    rows = Fx.consequence_count(label)
+      rows = Fx.consequence_count(label)
 
-    Result.positive(falsifier,
-      attempt_observed?:
-        observed_attrs?(ctx, falsifier, "brce.admission", %{"outcome" => "admitted"}),
-      expected_outcome_observed?:
-        rows == 1 and receipted_do?(ctx, falsifier) and match?({:ok, _}, reply),
-      evidence: %{"rows_with_label" => rows, "reply" => short(reply)}
-    )
+      Result.positive(falsifier,
+        attempt_observed?:
+          observed_attrs?(ctx, falsifier, "brce.admission", %{"outcome" => "admitted"}),
+        expected_outcome_observed?:
+          rows == 1 and receipted_do?(ctx, falsifier) and match?({:ok, _}, reply),
+        evidence: %{"rows_with_label" => rows, "reply" => short(reply)}
+      )
+    end)
   end
 
   # 005
@@ -784,65 +802,75 @@ defmodule AshA2A.Chicago.Courts.Brce do
 
   # 014 -> 010 -> 011
   defp replay_family(ctx, fresh_f, replay_f, conflict_f) do
-    with_store(fn store_opts ->
-      label = unique_label("identity")
-      command = bus_command(skill_id(:transmit), label)
-      msg = message(%{"label" => label})
+    with_run_broker(fn mint ->
+      with_store(fn store_opts ->
+        label = unique_label("identity")
+        authority = mint.(skill_id(:transmit))
+        command = bus_command(skill_id(:transmit), label, authority: authority)
+        msg = message(%{"label" => label})
 
-      first =
-        Context.stimulus(ctx, fresh_f, fn -> CommandBus.run(command, msg, Ledger, store_opts) end)
+        first =
+          Context.stimulus(ctx, fresh_f, fn ->
+            CommandBus.run(command, msg, Ledger, store_opts)
+          end)
 
-      after_first = Fx.consequence_count(label)
+        after_first = Fx.consequence_count(label)
 
-      fresh =
-        Result.positive(fresh_f,
-          attempt_observed?:
-            observed_attrs?(ctx, fresh_f, "brce.claim", %{"outcome" => "execute"}),
-          expected_outcome_observed?: after_first == 1 and receipted_do?(ctx, fresh_f),
-          evidence: %{"rows_with_label" => after_first, "reply" => short(first)}
-        )
+        fresh =
+          Result.positive(fresh_f,
+            attempt_observed?:
+              observed_attrs?(ctx, fresh_f, "brce.claim", %{"outcome" => "execute"}),
+            expected_outcome_observed?: after_first == 1 and receipted_do?(ctx, fresh_f),
+            evidence: %{"rows_with_label" => after_first, "reply" => short(first)}
+          )
 
-      replayed =
-        Context.stimulus(ctx, replay_f, fn -> CommandBus.run(command, msg, Ledger, store_opts) end)
+        replayed =
+          Context.stimulus(ctx, replay_f, fn ->
+            CommandBus.run(command, msg, Ledger, store_opts)
+          end)
 
-      after_replay = Fx.consequence_count(label)
+        after_replay = Fx.consequence_count(label)
 
-      replay =
-        Result.negative(replay_f,
-          attempt_observed?:
-            observed_attrs?(ctx, replay_f, "brce.claim", %{"outcome" => "replay"}),
-          forbidden_outcome_observed?: after_replay > after_first or any_do?(ctx, replay_f),
-          evidence: %{
-            "rows_before" => after_first,
-            "rows_after" => after_replay,
-            "replayed?" => match?({:ok, %{replayed?: true}}, replayed)
-          }
-        )
+        replay =
+          Result.negative(replay_f,
+            attempt_observed?:
+              observed_attrs?(ctx, replay_f, "brce.claim", %{"outcome" => "replay"}),
+            forbidden_outcome_observed?: after_replay > after_first or any_do?(ctx, replay_f),
+            evidence: %{
+              "rows_before" => after_first,
+              "rows_after" => after_replay,
+              "replayed?" => match?({:ok, %{replayed?: true}}, replayed)
+            }
+          )
 
-      divergent = label <> "-divergent"
+        divergent = label <> "-divergent"
 
-      conflicting =
-        bus_command(skill_id(:transmit), divergent, command_id: command.command_id)
+        conflicting =
+          bus_command(skill_id(:transmit), divergent, command_id: command.command_id)
 
-      conflicted =
-        Context.stimulus(ctx, conflict_f, fn ->
-          CommandBus.run(conflicting, message(%{"label" => divergent}), Ledger, store_opts)
-        end)
+        conflicted =
+          Context.stimulus(ctx, conflict_f, fn ->
+            CommandBus.run(conflicting, message(%{"label" => divergent}), Ledger, store_opts)
+          end)
 
-      divergent_rows = Fx.consequence_count(divergent)
+        divergent_rows = Fx.consequence_count(divergent)
 
-      conflict =
-        Result.negative(conflict_f,
-          attempt_observed?:
-            observed_attrs?(ctx, conflict_f, "brce.claim", %{
-              "outcome" => "refused",
-              "code" => "command_conflict"
-            }),
-          forbidden_outcome_observed?: divergent_rows > 0 or any_do?(ctx, conflict_f),
-          evidence: %{"reply_code" => reply_code(conflicted), "divergent_rows" => divergent_rows}
-        )
+        conflict =
+          Result.negative(conflict_f,
+            attempt_observed?:
+              observed_attrs?(ctx, conflict_f, "brce.claim", %{
+                "outcome" => "refused",
+                "code" => "command_conflict"
+              }),
+            forbidden_outcome_observed?: divergent_rows > 0 or any_do?(ctx, conflict_f),
+            evidence: %{
+              "reply_code" => reply_code(conflicted),
+              "divergent_rows" => divergent_rows
+            }
+          )
 
-      [fresh, replay, conflict]
+        [fresh, replay, conflict]
+      end)
     end)
   end
 
@@ -928,9 +956,44 @@ defmodule AshA2A.Chicago.Courts.Brce do
       command_id: Keyword.get(opts, :command_id, "chicago-brce-" <> Ash.UUIDv7.generate()),
       agent_id: "chicago-brce-agent",
       principal_id: principal(),
-      authority: Authority.new(principal(), capability_id),
+      authority: Keyword.get(opts, :authority) || Authority.new(principal(), capability_id),
       input: %{"label" => label}
     )
+  end
+
+  # RFC-SA2A-004 S10/S11: `AshA2A.CommandBus` revalidates every consequential
+  # authority against a broker immediately before DO, and a hand-minted
+  # one-off `Authority.new` token that broker never issued fails that check
+  # closed (:authority_revoked / :authority_revalidation_unavailable). The
+  # run-path positive controls here (012 prepared DO, 014/010/011 replay
+  # family) therefore dispatch authorities a court-owned, real InMemory
+  # broker REALLY issued via `AshA2A.Authority.Grant` -- the environment
+  # points at that broker for the duration and restores it afterwards.
+  defp with_run_broker(fun) do
+    name = Module.concat(__MODULE__, "RunBroker#{System.unique_integer([:positive])}")
+    {:ok, pid} = InMemory.start_link(name: name)
+    broker = {InMemory, [name: name]}
+    previous = Application.fetch_env(:ash_a2a, :authority_broker)
+    Application.put_env(:ash_a2a, :authority_broker, broker)
+
+    try do
+      subject = Identity.principal(principal())
+
+      for capability <- ["record", "transmit"] do
+        {:ok, %{id: capability_id}} = AshA2A.Info.skill(Ledger, capability)
+        {:ok, %Authority{}} = Authority.Grant.grant(subject, capability_id, broker: broker)
+      end
+
+      mint = fn capability_id ->
+        Authority.Grant.authorize(subject, capability_id, broker: broker)
+      end
+
+      fun.(mint)
+    after
+      restore_env(:authority_broker, previous)
+
+      if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+    end
   end
 
   defp skill_id(name) do

@@ -22,7 +22,9 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
 
   use AshA2A.Chicago.Court
 
-  alias AshA2A.{Authority, Command, CommandBus, Identity}
+  alias AshA2A.Authority.Grant
+  alias AshA2A.Authority.Broker.InMemory
+  alias AshA2A.{Command, CommandBus, Identity}
   alias AshA2A.Chicago.{Context, Falsifier, Result}
   alias AshA2A.Chicago.Courts.SemanticBoundary, as: SB
   alias AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport, as: Fx
@@ -323,20 +325,41 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
   # A genuine receipt committed by the real CommandBus over the real Ordering
   # resource into a real, court-owned Memory receipt store. Created outside
   # any stimulus: it is setup evidence, not an attack.
+  #
+  # The authority is minted by the REAL `AshA2A.Authority.Grant` + a real
+  # court-owned `AshA2A.Authority.Broker.InMemory` process: CommandBus's
+  # pre-DO revalidation (RFC-SA2A-004 S10/S11) consults a broker for every
+  # consequential dispatch, and a hand-minted one-off token this broker never
+  # issued fails that check closed (:authority_revalidation_unavailable when
+  # no broker process answers). A grant the broker really issued revalidates.
   defp with_receipt_store(fun) do
     store = :"chicago_env_receipts_#{System.unique_integer([:positive])}"
-    {:ok, pid} = AshA2A.ReceiptStore.Memory.start_link(name: store)
+    {:ok, store_pid} = AshA2A.ReceiptStore.Memory.start_link(name: store)
+
+    broker = :"chicago_env_broker_#{System.unique_integer([:positive])}"
+    {:ok, broker_pid} = InMemory.start_link(name: broker)
+    broker_opts = {InMemory, [name: broker]}
 
     try do
-      principal = Identity.principal("chicago-env-receipt-principal")
+      principal = "chicago-env-receipt-principal"
       label = Fx.unique("chicago-env-receipt")
+      {:ok, %{id: capability_id}} = AshA2A.Info.skill(Ordering, :place_order)
+
+      # `Grant.grant/3` takes the tagged `%Identity{}`; `Grant.authorize/3`
+      # takes the RAW auth identity -- it re-wraps via `Identity.principal/1`
+      # internally, and an already-tagged `%Identity{}` double-wraps
+      # (`Identity.normalize/1` inspects non-strings), so the broker lookup
+      # would key on the inspected struct and never match.
+      {:ok, _} = Grant.grant(Identity.principal(principal), capability_id, broker: broker_opts)
+
+      authority = Grant.authorize(principal, capability_id, broker: broker_opts)
 
       command =
-        Command.new("place_order",
+        Command.new(capability_id,
           command_id: label,
           agent_id: "chicago-env-agent",
-          principal_id: principal,
-          authority: Authority.new(principal, "place_order", token_id: "tok-" <> label),
+          principal_id: Identity.principal(principal),
+          authority: authority,
           input: %{"item" => label, "quantity" => 1}
         )
 
@@ -345,12 +368,14 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
           command,
           Envelopes.ordinary([A2A.Part.Data.new(%{"item" => label, "quantity" => 1})]),
           Ordering,
-          store_opts: [name: store]
+          store_opts: [name: store],
+          authority_broker: broker_opts
         )
 
       fun.(store, receipt)
     after
-      SB.stop(pid)
+      SB.stop(store_pid)
+      if Process.alive?(broker_pid), do: GenServer.stop(broker_pid, :normal)
     end
   end
 end
