@@ -276,6 +276,8 @@ defmodule AshA2A.MixProject do
       # `MIX_ENV=test mix compile --warnings-as-errors` fails. Pure Elixir,
       # test-only (Ash declares it optional).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
+      {:ash_pplan, "~> 26.10", only: :test},
+      {:opentelemetry_api, "~> 1.4", only: :test},
       {:req_llm, "~> 1.18"},
       {:ash_r2rml, "~> 26.8"},
       # `:plug` is an optional dep of `:a2a` (A2A.Plug/A2A.Plug.Auth). Also
@@ -304,7 +306,7 @@ defmodule AshA2A.MixProject do
       # state transition is not a DO -- both still funnel any real
       # consequence through AshA2A.CommandBus).
       {:oban, "~> 2.24"},
-      {:ash_oban, "~> 0.8"},
+      {:ash_oban, "~> 0.8 or ~> 0.9"},
       {:ash_state_machine, "~> 0.2"},
       # Oban's real PostgreSQL storage engine driver, exercised for real
       # against a real disposable local Postgres instance in this repo's
