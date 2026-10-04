@@ -15,6 +15,7 @@ defmodule AshA2A.Semantic.Vocabulary do
     "ssn" => "http://www.w3.org/ns/ssn/",
     "saref" => "https://saref.etsi.org/core/",
     "qudt" => "http://qudt.org/schema/qudt/",
+    "a2a" => "https://a2a-protocol.org/ontology#",
     "sa2a-fnd" => "https://spec.seanchatmangpt.dev/sa2a/ontology/FND/",
     "sa2a-cap" => "https://spec.seanchatmangpt.dev/sa2a/ontology/CAP/",
     "sa2a-bp" => "https://spec.seanchatmangpt.dev/sa2a/ontology/BP/",

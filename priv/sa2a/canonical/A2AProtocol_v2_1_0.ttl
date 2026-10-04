@@ -1,0 +1,370 @@
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+@prefix a2a:     <https://a2a-protocol.org/ontology#> .
+
+#################################################################
+#    Ontology Declaration
+#################################################################
+
+<https://a2a-protocol.org/ontology#>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "2.1.0" ;
+    dcterms:title "Agent2Agent (A2A) Unified Protocol & Validation Ontology"@en ;
+    dcterms:description "Consolidated OWL-DL vocabulary and SHACL constraint profiles defining AgentCards, Task lifecycles, Message turns, polymorphic Parts, and Artifact deliverables."@en ;
+    rdfs:seeAlso <https://github.com/a2aproject/A2A> .
+
+#################################################################
+#    Classes: Identity & Discovery
+#################################################################
+
+a2a:AgentCard
+    rdf:type owl:Class ;
+    rdfs:subClassOf prov:Entity ;
+    rdfs:label "Agent Card"@en ;
+    rdfs:comment "Self-describing discovery manifest advertising endpoints, capabilities, and authentication requirements."@en .
+
+a2a:Skill
+    rdf:type owl:Class ;
+    rdfs:label "Skill"@en ;
+    rdfs:comment "A discrete capability exposed by an agent with explicit input/output mode declarations."@en .
+
+a2a:SecurityScheme
+    rdf:type owl:Class ;
+    rdfs:label "Security Scheme"@en ;
+    rdfs:comment "Authentication specification governing endpoint access."@en .
+
+a2a:APIKeyAuth
+    rdf:type owl:Class ;
+    rdfs:subClassOf a2a:SecurityScheme ;
+    rdfs:label "API Key Auth"@en .
+
+a2a:HTTPAuth
+    rdf:type owl:Class ;
+    rdfs:subClassOf a2a:SecurityScheme ;
+    rdfs:label "HTTP Bearer / Basic Auth"@en .
+
+a2a:OAuth2Auth
+    rdf:type owl:Class ;
+    rdfs:subClassOf a2a:SecurityScheme ;
+    rdfs:label "OAuth2 Auth"@en .
+
+#################################################################
+#    Classes: Execution Lifecycle & Communication
+#################################################################
+
+a2a:Task
+    rdf:type owl:Class ;
+    rdfs:subClassOf prov:Activity ;
+    rdfs:label "Task"@en ;
+    rdfs:comment "Stateful execution unit initiated by a client and processed by an agent."@en .
+
+a2a:TaskState
+    rdf:type owl:Class ;
+    rdfs:label "Task State"@en ;
+    rdfs:comment "Finite lifecycle states for a task."@en .
+
+a2a:Context
+    rdf:type owl:Class ;
+    rdfs:label "Execution Context"@en ;
+    rdfs:comment "Grouping identifier binding related tasks and multi-turn message exchanges."@en .
+
+a2a:Message
+    rdf:type owl:Class ;
+    rdfs:subClassOf prov:Entity ;
+    rdfs:label "Message Turn"@en ;
+    rdfs:comment "An exchange unit containing ordered multimodal content parts."@en .
+
+a2a:MessageRole
+    rdf:type owl:Class ;
+    rdfs:label "Message Role"@en ;
+    rdfs:comment "Originator identity of a message turn."@en .
+
+a2a:Part
+    rdf:type owl:Class ;
+    rdfs:label "Content Part"@en ;
+    rdfs:comment "Polymorphic payload atom carrying text, raw binary data, external URIs, or structured JSON."@en .
+
+a2a:Artifact
+    rdf:type owl:Class ;
+    rdfs:subClassOf prov:Entity ;
+    rdfs:label "Task Artifact"@en ;
+    rdfs:comment "Concrete intermediate or final output produced during task execution."@en .
+
+#################################################################
+#    Object Properties
+#################################################################
+
+a2a:advertisesSkill
+    rdf:type owl:ObjectProperty ;
+    rdfs:domain a2a:AgentCard ;
+    rdfs:range a2a:Skill ;
+    rdfs:label "advertises skill"@en .
+
+a2a:requiresAuth
+    rdf:type owl:ObjectProperty ;
+    rdfs:domain a2a:AgentCard ;
+    rdfs:range a2a:SecurityScheme ;
+    rdfs:label "requires auth"@en .
+
+a2a:hasTaskState
+    rdf:type owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:Task ;
+    rdfs:range a2a:TaskState ;
+    rdfs:label "has task state"@en .
+
+a2a:hasMessage
+    rdf:type owl:ObjectProperty ;
+    rdfs:domain a2a:Task ;
+    rdfs:range a2a:Message ;
+    rdfs:label "has message"@en .
+
+a2a:hasRole
+    rdf:type owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:Message ;
+    rdfs:range a2a:MessageRole ;
+    rdfs:label "has role"@en .
+
+a2a:hasPart
+    rdf:type owl:ObjectProperty ;
+    rdfs:domain [ owl:unionOf (a2a:Message a2a:Artifact) ] ;
+    rdfs:range a2a:Part ;
+    rdfs:label "has content part"@en .
+
+a2a:yieldsArtifact
+    rdf:type owl:ObjectProperty ;
+    rdfs:subPropertyOf prov:generated ;
+    rdfs:domain a2a:Task ;
+    rdfs:range a2a:Artifact ;
+    rdfs:label "yields artifact"@en .
+
+a2a:belongsToContext
+    rdf:type owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:Task ;
+    rdfs:range a2a:Context ;
+    rdfs:label "belongs to context"@en .
+
+#################################################################
+#    Datatype Properties
+#################################################################
+
+a2a:serviceEndpoint
+    rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:AgentCard ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "service endpoint"@en .
+
+a2a:protocolVersion
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain a2a:AgentCard ;
+    rdfs:range xsd:string ;
+    rdfs:label "protocol version"@en .
+
+a2a:agentName
+    rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:AgentCard ;
+    rdfs:range xsd:string ;
+    rdfs:label "agent name"@en .
+
+a2a:skillId
+    rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:Skill ;
+    rdfs:range xsd:string ;
+    rdfs:label "skill ID"@en .
+
+a2a:taskId
+    rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:Task ;
+    rdfs:range xsd:string ;
+    rdfs:label "task ID"@en .
+
+a2a:contextId
+    rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain a2a:Context ;
+    rdfs:range xsd:string ;
+    rdfs:label "context ID"@en .
+
+a2a:partText
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain a2a:Part ;
+    rdfs:range xsd:string ;
+    rdfs:label "text body"@en .
+
+a2a:partRaw
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain a2a:Part ;
+    rdfs:range xsd:base64Binary ;
+    rdfs:label "raw base64 bytes"@en .
+
+a2a:partUrl
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain a2a:Part ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "remote URL"@en .
+
+a2a:partData
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain a2a:Part ;
+    rdfs:range xsd:string ; # JSON serialized string
+    rdfs:label "structured JSON data"@en .
+
+a2a:mimeType
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain [ owl:unionOf (a2a:Part a2a:Artifact) ] ;
+    rdfs:range xsd:string ;
+    rdfs:label "MIME type"@en .
+
+a2a:artifactName
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain a2a:Artifact ;
+    rdfs:range xsd:string ;
+    rdfs:label "artifact name"@en .
+
+a2a:timestamp
+    rdf:type owl:DatatypeProperty ;
+    rdfs:domain [ owl:unionOf (a2a:Task a2a:Message a2a:Artifact) ] ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "creation timestamp"@en .
+
+#################################################################
+#    Controlled Vocabulary Individuals
+#################################################################
+
+a2a:Submitted       rdf:type a2a:TaskState ; rdfs:label "submitted"@en .
+a2a:Working         rdf:type a2a:TaskState ; rdfs:label "working"@en .
+a2a:InputRequired   rdf:type a2a:TaskState ; rdfs:label "input-required"@en .
+a2a:Completed       rdf:type a2a:TaskState ; rdfs:label "completed"@en .
+a2a:Failed          rdf:type a2a:TaskState ; rdfs:label "failed"@en .
+a2a:Cancelled       rdf:type a2a:TaskState ; rdfs:label "cancelled"@en .
+
+a2a:RoleUser        rdf:type a2a:MessageRole ; rdfs:label "user"@en .
+a2a:RoleAgent       rdf:type a2a:MessageRole ; rdfs:label "agent"@en .
+
+#################################################################
+#    SHACL Constraint Shapes
+#################################################################
+
+a2a:AgentCardShape
+    rdf:type sh:NodeShape ;
+    sh:targetClass a2a:AgentCard ;
+    sh:property [
+        sh:path a2a:serviceEndpoint ;
+        sh:datatype xsd:anyURI ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:protocolVersion ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:agentName ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:advertisesSkill ;
+        sh:class a2a:Skill ;
+        sh:minCount 1 ;
+    ] .
+
+a2a:TaskShape
+    rdf:type sh:NodeShape ;
+    sh:targetClass a2a:Task ;
+    sh:property [
+        sh:path a2a:taskId ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:hasTaskState ;
+        sh:class a2a:TaskState ;
+        sh:in ( a2a:Submitted a2a:Working a2a:InputRequired a2a:Completed a2a:Failed a2a:Cancelled ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:hasMessage ;
+        sh:class a2a:Message ;
+    ] ;
+    sh:property [
+        sh:path a2a:yieldsArtifact ;
+        sh:class a2a:Artifact ;
+    ] .
+
+a2a:MessageShape
+    rdf:type sh:NodeShape ;
+    sh:targetClass a2a:Message ;
+    sh:property [
+        sh:path a2a:hasRole ;
+        sh:class a2a:MessageRole ;
+        sh:in ( a2a:RoleUser a2a:RoleAgent ) ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:hasPart ;
+        sh:class a2a:Part ;
+        sh:minCount 1 ;
+    ] .
+
+a2a:PartPayloadShape
+    rdf:type sh:NodeShape ;
+    sh:targetClass a2a:Part ;
+    sh:message "An a2a:Part instance must encapsulate exactly one payload property (partText, partRaw, partUrl, or partData)."@en ;
+    sh:xone (
+        [
+            sh:property [
+                sh:path a2a:partText ;
+                sh:datatype xsd:string ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+            ]
+        ]
+        [
+            sh:property [
+                sh:path a2a:partRaw ;
+                sh:datatype xsd:base64Binary ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+            ]
+        ]
+        [
+            sh:property [
+                sh:path a2a:partUrl ;
+                sh:datatype xsd:anyURI ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+            ]
+        ]
+        [
+            sh:property [
+                sh:path a2a:partData ;
+                sh:datatype xsd:string ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+            ]
+        ]
+    ) .
+
+a2a:ArtifactShape
+    rdf:type sh:NodeShape ;
+    sh:targetClass a2a:Artifact ;
+    sh:property [
+        sh:path a2a:hasPart ;
+        sh:class a2a:Part ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path a2a:artifactName ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+    ] .
