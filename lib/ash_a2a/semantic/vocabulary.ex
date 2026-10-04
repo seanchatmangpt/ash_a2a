@@ -14,7 +14,11 @@ defmodule AshA2A.Semantic.Vocabulary do
     "sosa" => "http://www.w3.org/ns/sosa/",
     "ssn" => "http://www.w3.org/ns/ssn/",
     "saref" => "https://saref.etsi.org/core/",
-    "qudt" => "http://qudt.org/schema/qudt/"
+    "qudt" => "http://qudt.org/schema/qudt/",
+    "sa2a-fnd" => "https://spec.seanchatmangpt.dev/sa2a/ontology/FND/",
+    "sa2a-cap" => "https://spec.seanchatmangpt.dev/sa2a/ontology/CAP/",
+    "sa2a-bp" => "https://spec.seanchatmangpt.dev/sa2a/ontology/BP/",
+    "sa2a-evi" => "https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/"
   }
 
   def prefixes, do: @prefixes

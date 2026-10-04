@@ -1,0 +1,15 @@
+@prefix dct:     <http://purl.org/dc/terms/> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/AboutSA2ADev/>
+    a owl:Ontology ;
+    rdfs:label "About SA2A Development" ;
+    dct:abstract "Development umbrella ontology loading all canonical release and provisional modules of the Semantic Agent-to-Agent (SA2A) Ontology standard, modeled after AboutFIBODev." ;
+    dct:issued "2026-10-04T00:00:00"^^xsd:dateTime ;
+    dct:modified "2026-10-04T09:00:00"^^xsd:dateTime ;
+    dct:license "MIT" ;
+    owl:imports <https://spec.seanchatmangpt.dev/sa2a/ontology/AboutSA2AProd/> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Equivalence/RuntimeBridge/> .

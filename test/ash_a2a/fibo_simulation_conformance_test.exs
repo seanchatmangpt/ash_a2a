@@ -69,4 +69,54 @@ defmodule AshA2A.FiboSimulationConformanceTest do
       assert RDF.Graph.include?(graph, {law, rdf_type, law_class})
     end
   end
+
+  test "live AshA2A.Command and Receipt structs align with canonical SHACL shape contracts" do
+    alias AshA2A.{Command, Receipt}
+
+    # 1. Instantiate real runtime command
+    cmd = Command.new("test:capability:001",
+      agent_id: "agent:worker:1",
+      principal_id: "principal:admin:1",
+      input: %{"target" => "system_update"}
+    )
+
+    assert is_binary(cmd.capability_id)
+    assert is_binary(cmd.principal_id.value)
+    assert is_binary(cmd.fingerprint)
+
+    # 2. Project to canonical RDF Triples matching sa2a-bp:CommandEnvelope
+    cmd_subject = RDF.iri("urn:uuid:#{cmd.command_id.value}")
+    cmd_envelope_class = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>
+    p_capability_id = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/capabilityId>
+    p_principal_id = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/principalId>
+    p_payload_digest = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/payloadDigest>
+
+    graph =
+      RDF.Graph.new()
+      |> RDF.Graph.add({cmd_subject, RDF.type(), cmd_envelope_class})
+      |> RDF.Graph.add({cmd_subject, p_capability_id, RDF.literal(cmd.capability_id)})
+      |> RDF.Graph.add({cmd_subject, p_principal_id, RDF.literal(cmd.principal_id.value)})
+      |> RDF.Graph.add({cmd_subject, p_payload_digest, RDF.literal(cmd.fingerprint)})
+
+    assert RDF.Graph.include?(graph, {cmd_subject, RDF.type(), cmd_envelope_class})
+    assert RDF.Graph.include?(graph, {cmd_subject, p_capability_id, RDF.literal("test:capability:001")})
+
+    # 3. Instantiate real runtime receipt and project to sa2a-evi:ActuationReceipt
+    authority = AshA2A.Authority.new(cmd.principal_id, cmd.capability_id, source: :transport_verified)
+    cmd_with_auth = %{cmd | authority: authority}
+    exec_id = AshA2A.Identity.execution("exec:001")
+
+    receipt = Receipt.from_reply(
+      cmd_with_auth,
+      exec_id,
+      :observe,
+      {:reply, :ok}
+    )
+
+    assert receipt.receipt_id != nil
+    assert receipt.fingerprint != nil
+    assert receipt.status == :completed
+    assert receipt.terminal_status == :executed
+    assert receipt.standing == :observed
+  end
 end

@@ -1,0 +1,24 @@
+@prefix dct:      <http://purl.org/dc/terms/> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix a2a-urn:  <urn:ash-a2a:vocab:> .
+@prefix sa2a-bp:  <https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/> .
+@prefix sa2a-evi: <https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Equivalence/RuntimeBridge/>
+    a owl:Ontology ;
+    rdfs:label "SA2A Runtime Dialect and Equivalence Bridge" ;
+    dct:abstract "Declares formal OWL equivalence axioms between local BEAM URN identifiers and canonical FIBO-grade public HTTP ontology IRIs." ;
+    dct:license "MIT" ;
+    owl:versionIRI <https://spec.seanchatmangpt.dev/sa2a/ontology/20261004/FND/Equivalence/RuntimeBridge/> .
+
+# Class Equivalences
+a2a-urn:Command owl:equivalentClass sa2a-bp:CommandEnvelope .
+a2a-urn:Receipt owl:equivalentClass sa2a-evi:ActuationReceipt .
+
+# Property Equivalences
+a2a-urn:capabilityId  owl:equivalentProperty sa2a-bp:capabilityId .
+a2a-urn:principalId   owl:equivalentProperty sa2a-bp:principalId .
+a2a-urn:payloadDigest owl:equivalentProperty sa2a-bp:payloadDigest .
