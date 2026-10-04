@@ -1,0 +1,103 @@
+@prefix rdf:          <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:          <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:           <http://www.w3.org/ns/shacl#> .
+@prefix sa2a-fnd-agr: <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agreements/Leases/> .
+@prefix sa2a-fnd-law: <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/> .
+@prefix sa2a-cap:     <https://spec.seanchatmangpt.dev/sa2a/ontology/CAP/CoreCapabilities/> .
+@prefix sa2a-bp:      <https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/> .
+@prefix sa2a-evi:     <https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/> .
+@prefix ex-shacl:     <https://spec.seanchatmangpt.dev/sa2a/shapes/core#> .
+
+#################################################################
+# 1. DOCTRINE LAW DISJOINTNESS AXIOMS (OWL-DL INVARIANTS)
+#################################################################
+
+# Construct Not Do: Planning/generating artifacts cannot be an execution act
+sa2a-cap:ConstructCapability owl:disjointWith sa2a-cap:DoCapability .
+
+# Intent Not Authority / Receipt Not Success: Command intent != Executed evidence
+sa2a-bp:CommandEnvelope owl:disjointWith sa2a-evi:ActuationReceipt .
+
+#################################################################
+# 2. EVIDENCE ENUMERATION & LEASE CRYPTOGRAPHY
+#################################################################
+
+sa2a-evi:VerificationStanding a owl:Class ;
+    rdfs:label "verification standing" ;
+    rdfs:comment "Formal outcome emitted by an sa2a-fnd-agt:VerificationCourt." .
+
+sa2a-evi:StandingPass    a sa2a-evi:VerificationStanding ; rdfs:label "PASS" .
+sa2a-evi:StandingRefused a sa2a-evi:VerificationStanding ; rdfs:label "REFUSED" .
+sa2a-evi:StandingBlocked a sa2a-evi:VerificationStanding ; rdfs:label "BLOCKED" .
+
+sa2a-evi:hasStanding a owl:ObjectProperty ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range sa2a-evi:VerificationStanding .
+
+sa2a-fnd-agr:leaseTokenHash a owl:DatatypeProperty ;
+    rdfs:domain sa2a-fnd-agr:ActuationLease ;
+    rdfs:range xsd:string ;
+    rdfs:comment "SHA-256 digest of the cryptographic bearer token granting bounded actuation." .
+
+sa2a-evi:executedAt a owl:DatatypeProperty ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range xsd:dateTime .
+
+#################################################################
+# 3. EXTENDED SHACL CONFORMANCE SHAPES
+#################################################################
+
+ex-shacl:ActuationLeaseShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-fnd-agr:ActuationLease ;
+    sh:property [
+        sh:path sa2a-fnd-agr:leaseHolder ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path sa2a-fnd-agr:hasCeiling ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path sa2a-fnd-agr:leaseExpiration ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+    ] ;
+    sh:property [
+        sh:path sa2a-fnd-agr:leaseTokenHash ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:pattern "^[a-fA-F0-9]{64}$" ;
+    ] .
+
+ex-shacl:CommandEnvelopeIdempotencyShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-bp:CommandEnvelope ;
+    sh:property [
+        sh:path sa2a-bp:idempotencyKey ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
+ex-shacl:ActuationReceiptVerificationShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-evi:ActuationReceipt ;
+    sh:property [
+        sh:path sa2a-evi:hasStanding ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( sa2a-evi:StandingPass sa2a-evi:StandingRefused sa2a-evi:StandingBlocked ) ;
+    ] ;
+    sh:property [
+        sh:path sa2a-evi:executedAt ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+    ] .

@@ -426,3 +426,67 @@ a2a:ArtifactShape
         sh:datatype xsd:string ;
         sh:maxCount 1 ;
     ] .
+
+#################################################################
+#    4. FORMAL OWL-DL DISJOINTNESS & EXTENDED SHAPES
+#################################################################
+
+sa2a-evi:VerificationStanding a owl:Class ;
+    rdfs:label "verification standing" ;
+    rdfs:comment "Formal outcome emitted by an sa2a-fnd-agt:VerificationCourt." .
+
+sa2a-evi:StandingPass    a sa2a-evi:VerificationStanding ; rdfs:label "PASS" .
+sa2a-evi:StandingRefused a sa2a-evi:VerificationStanding ; rdfs:label "REFUSED" .
+sa2a-evi:StandingBlocked a sa2a-evi:VerificationStanding ; rdfs:label "BLOCKED" .
+
+sa2a-evi:hasStanding a owl:ObjectProperty ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range sa2a-evi:VerificationStanding .
+
+sa2a-agr:leaseTokenHash a owl:DatatypeProperty ;
+    rdfs:domain sa2a-agr:ActuationLease ;
+    rdfs:range xsd:string ;
+    rdfs:comment "SHA-256 digest of the cryptographic bearer token granting bounded actuation." .
+
+sa2a-agr:ActuationLeaseShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-agr:ActuationLease ;
+    sh:property [
+        sh:path sa2a-agr:leaseHolder ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path sa2a-agr:hasCeiling ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path sa2a-agr:leaseExpiration ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+    ] ;
+    sh:property [
+        sh:path sa2a-agr:leaseTokenHash ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:pattern "^[a-fA-F0-9]{64}$" ;
+    ] .
+
+sa2a-evi:ActuationReceiptVerificationShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-evi:ActuationReceipt ;
+    sh:property [
+        sh:path sa2a-evi:hasStanding ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( sa2a-evi:StandingPass sa2a-evi:StandingRefused sa2a-evi:StandingBlocked ) ;
+    ] ;
+    sh:property [
+        sh:path sa2a-evi:executedAt ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+    ] .
