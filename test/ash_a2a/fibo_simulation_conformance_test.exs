@@ -119,4 +119,48 @@ defmodule AshA2A.FiboSimulationConformanceTest do
     assert receipt.terminal_status == :executed
     assert receipt.standing == :observed
   end
+
+  test "monolithic canonical AllSA2A.ttl contains the entire consolidated ontology suite" do
+    all_path = Path.join(@canonical_dir, "AllSA2A.ttl")
+    assert File.exists?(all_path)
+
+    {:ok, graph} = RDF.Turtle.read_file(all_path)
+    assert RDF.Graph.triple_count(graph) >= 50
+
+    # 1. Check classes from all domains
+    rdf_type = RDF.type()
+    owl_class = ~I<http://www.w3.org/2002/07/owl#Class>
+    sh_nodeshape = ~I<http://www.w3.org/ns/shacl#NodeShape>
+
+    expected_classes = [
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agents/Agents/AutonomousAgent>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agreements/Leases/AuthorityCeiling>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agreements/Leases/ActuationLease>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/DoctrineLaw>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/CAP/CoreCapabilities/Capability>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/ActuationReceipt>
+    ]
+
+    for cls <- expected_classes do
+      assert RDF.Graph.include?(graph, {cls, rdf_type, owl_class})
+    end
+
+    # 2. Check SHACL shapes
+    expected_shapes = [
+      ~I<https://spec.seanchatmangpt.dev/sa2a/shapes/core#CommandEnvelopeShape>,
+      ~I<https://spec.seanchatmangpt.dev/sa2a/shapes/core#ActuationReceiptShape>
+    ]
+
+    for shape <- expected_shapes do
+      assert RDF.Graph.include?(graph, {shape, rdf_type, sh_nodeshape})
+    end
+
+    # 3. Check OWL equivalence axioms
+    owl_equivalent_class = ~I<http://www.w3.org/2002/07/owl#equivalentClass>
+    a2a_urn_cmd = ~I<urn:ash-a2a:vocab:Command>
+    sa2a_bp_cmd = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>
+
+    assert RDF.Graph.include?(graph, {a2a_urn_cmd, owl_equivalent_class, sa2a_bp_cmd})
+  end
 end
