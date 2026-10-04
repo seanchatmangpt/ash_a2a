@@ -26,4 +26,24 @@ defmodule AshA2A.Reactor.ExecuteCommand do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @impl true
+  def compensate(reason, arguments, _context, options) do
+    # Log or trigger compensation event if the step executed or failed downstream
+    command = Map.get(arguments, :command)
+
+    if command && is_map(command) do
+      :telemetry.execute(
+        [:ash_a2a, :reactor, :compensate],
+        %{count: 1},
+        %{
+          command_id: Map.get(command, :id),
+          reason: reason,
+          options: options
+        }
+      )
+    end
+
+    :ok
+  end
 end

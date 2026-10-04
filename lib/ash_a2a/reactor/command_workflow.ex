@@ -37,6 +37,10 @@ defmodule AshA2A.Reactor.CommandWorkflow do
 
   use Reactor
 
+  middlewares do
+    middleware AshEx4pm.Reactor.OcelMiddleware
+  end
+
   input(:capability_id)
   input(:agent_id)
   input(:principal_id)

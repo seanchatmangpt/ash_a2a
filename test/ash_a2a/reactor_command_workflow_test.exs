@@ -147,5 +147,38 @@ defmodule AshA2A.Reactor.CommandWorkflowTest do
   defp flatten_error(%{errors: nested}) when is_list(nested),
     do: Enum.flat_map(nested, &flatten_error/1)
 
-  defp flatten_error(other), do: [other]
+    defp flatten_error(other), do: [other]
+
+  test "AshEx4pm.Reactor.OcelMiddleware emits telemetry events on step execution" do
+    command_id = "reactor-workflow-telemetry-#{System.unique_integer([:positive])}"
+    test_pid = self()
+    handler_id = {:test_reactor_telemetry, System.unique_integer([:positive])}
+
+    :telemetry.attach(
+      handler_id,
+      [:ash_ex4pm, :reactor, :event],
+      fn event_name, measurements, metadata, _config ->
+        send(test_pid, {:telemetry_event, event_name, measurements, metadata})
+      end,
+      nil
+    )
+
+    inputs = %{
+      capability_id: "AshA2A.Test.Fixture.Echo.read",
+      agent_id: "reactor-workflow-agent",
+      principal_id: "anonymous",
+      command_input: %{},
+      resource_or_domain: Echo,
+      message: data_message(%{}),
+      authority: nil,
+      command_id: command_id
+    }
+
+    try do
+      assert {:ok, %Receipt{}} = Reactor.run(AshA2A.Reactor.CommandWorkflow, inputs, %{})
+      assert_receive {:telemetry_event, [:ash_ex4pm, :reactor, :event], _meas, _meta}, 1000
+    after
+      :telemetry.detach(handler_id)
+    end
+  end
 end

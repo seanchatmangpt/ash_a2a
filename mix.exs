@@ -22,7 +22,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.10.2",
+      version: "26.10.3",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -258,6 +258,7 @@ defmodule AshA2A.MixProject do
       {:ggen_igniter, "~> 26.9", only: :dev},
       {:ash_graphlaw, "~> 26.10"},
       {:ash_affidavit, "~> 26.10"},
+      {:ash_ex4pm, "~> 26.10"},
       {:a2a, "~> 0.2"},
       {:ash_ai, "~> 1.0"},
       # AshA2A.Telemetry.OcelForwarder's real HTTP POST to beam4pm's real
