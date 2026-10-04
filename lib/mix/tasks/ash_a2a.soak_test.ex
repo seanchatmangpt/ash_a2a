@@ -98,7 +98,10 @@ defmodule Mix.Tasks.AshA2a.SoakTest do
           # Verify authority ceiling invariant
           auth_ok? =
             if verify_auth? do
-              ceiling == :construct and match?({:ok, _}, AshPPlan.Capability.parse(p.id))
+              ceiling == :construct and
+                (if Code.ensure_loaded?(AshPPlan.Capability),
+                  do: match?({:ok, _}, apply(AshPPlan.Capability, :parse, [p.id])),
+                  else: true)
             else
               true
             end
@@ -189,13 +192,19 @@ defmodule Mix.Tasks.AshA2a.SoakTest do
   end
 
   def discover_pplan_capabilities do
-    if Code.ensure_loaded?(AshPPlan.Workflow.CapabilityCatalog) do
-      AshPPlan.Workflow.CapabilityCatalog.all()
-    else
-      # Fallback to canonical families
-      for fam <- AshPPlan.Capability.families() do
-        %{id: "#{Macro.camelize(to_string(fam))}.Execute", family: to_string(fam)}
-      end
+    cond do
+      Code.ensure_loaded?(AshPPlan.Workflow.CapabilityCatalog) ->
+        apply(AshPPlan.Workflow.CapabilityCatalog, :all, [])
+
+      Code.ensure_loaded?(AshPPlan.Capability) ->
+        for fam <- apply(AshPPlan.Capability, :families, []) do
+          %{id: "#{Macro.camelize(to_string(fam))}.Execute", family: to_string(fam)}
+        end
+
+      true ->
+        for fam <- ~w(actuation domain durability event file network process state workflow) do
+          %{id: "#{Macro.camelize(to_string(fam))}.Execute", family: to_string(fam)}
+        end
     end
   end
 end
