@@ -1,0 +1,258 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix prd: <https://seanchatmangpt.dev/ash_a2a/sjira/v26.10.3#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ARD-PRD.ttl — Product Requirements Document for ash_a2a, serialized as RDF.
+#
+# Format exemplar: xaas docs/sjira/v26.9.23/goal.ttl. Vocabulary: the
+# semantic-jira-pack sj: namespace (ggen_igniter
+# priv/ggen/semantic-jira-pack/ontology.ttl) plus a small local prd: prefix
+# for project-identity terms the pack does not define.
+#
+# Grounding rules of this document:
+# - Every capability claim is anchored to real paths in this repository
+#   (test, lib, docs, or receipts) named in the claim's prd:evidencePath.
+# - Every goal carries at least one sj:Falsifier: the observation that would
+#   show the claim false.
+# - This document never asserts a receipt and never declares standing; all
+#   sj:standing values here are the literal "UNKNOWN" placeholders.
+# - This document is a prose-equivalent projection: it asserts no authority
+#   and its sj:authorityCeiling values never exceed "CONSTRUCT".
+# - Factual descriptions only. No goal below claims approval by itself; each
+#   standing value is observed from executed courts, never written into
+#   effect here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Project identity ─────────────────────────────────────────────────────────
+
+prd:Product a rdfs:Class ; rdfs:label "Software product" .
+prd:version a rdf:Property ; rdfs:range xsd:string .
+prd:versionSource a rdf:Property ; rdfs:range xsd:string .
+prd:license a rdf:Property ; rdfs:range xsd:string .
+prd:repository a rdf:Property ; rdfs:range xsd:string .
+prd:protocolDependency a rdf:Property ; rdfs:range xsd:string .
+prd:frameworkDependency a rdf:Property ; rdfs:range xsd:string .
+prd:runtime a rdf:Property ; rdfs:range xsd:string .
+prd:nativeComponents a rdf:Property ; rdfs:range xsd:string .
+prd:evidencePath a rdf:Property ; rdfs:range xsd:string .
+prd:limitation a rdf:Property ; rdfs:comment "A stated, current limitation of the subject this document describes." .
+
+prd:ash-a2a a prd:Product ;
+    rdfs:label "AshA2A product identity" ;
+    dcterms:identifier "ash_a2a" ;
+    dcterms:title "AshA2A — A2A protocol + SA2A semantic computation boundary for Ash" ;
+    dcterms:description "A Spark.Dsl.Extension exposing Ash.Resource/Ash.Domain actions as A2A protocol agent skills, built on the :a2a Elixir SDK (A2A protocol v0.3, JSON-RPC 2.0/HTTP with SSE streaming). Identity source of truth: mix.exs; capability claims in this document are anchored to evidence paths, not asserted from this description." ;
+    prd:version "26.10.2" ;
+    prd:versionSource "mix.exs" ;
+    prd:license "MIT" ;
+    prd:repository "seanchatmangpt/ash_a2a" ;
+    prd:protocolDependency "a2a ~> 0.2 (A2A protocol v0.3, JSON-RPC 2.0/HTTP with SSE streaming)" ;
+    prd:frameworkDependency "ash ~> 3.0" ;
+    prd:runtime "Elixir ~> 1.19 (developed and tested on Elixir 1.20.4 / OTP 29.1.1)" ;
+    prd:nativeComponents "native/hddl_cli (Rust FOND/HTN planner binding ferroplan; not shipped on Hex; required to run this repo's test suite) and native/graphlaw_host (optional GraphLaw WASM runtime B; not built by CI; its one test reports a named skip when absent)" .
+
+# ── Shared courts, criteria, falsifiers ──────────────────────────────────────
+
+prd:court-chicago-real-collaborators a sj:Court ;
+    rdfs:label "Chicago real-collaborator court" ;
+    dcterms:description "test/support/chicago/collaborators.ex plus the machine-enforced mock-discipline gate (test/support/chicago/collaborators/mock_scan.ex, test/ash_a2a_mock_discipline_test.exs): tests must drive real collaborators and the scan refuses new mock usage at test time." .
+
+prd:court-evidence-path-existence a sj:Court ;
+    rdfs:label "Evidence-path existence court" ;
+    dcterms:description "Every prd:evidencePath on a goal must resolve to a real file in the repository checkout; a goal whose evidence path is missing fails this document's grounding rule." .
+
+prd:falsifier-evidence-path-missing a sj:Falsifier ;
+    rdfs:label "Evidence path missing" ;
+    dcterms:description "Any prd:evidencePath in this document no longer resolves to a file in the repository: the anchoring requirement is falsified and this document must be re-grounded against the new tree." .
+
+prd:falsifier-self-approval a sj:Falsifier ;
+    rdfs:label "Self-approval" ;
+    dcterms:description "This document, or any description inside it, is treated as proof of a capability. Descriptions here are requirements prose anchored to evidence paths; standing is observed from executed courts, never declared here." .
+
+# ── Goal 1: A2A capability projection ────────────────────────────────────────
+
+prd:G1 a sj:WorkOrder ;
+    rdfs:label "G1 — A2A capability projection from Ash actions" ;
+    dcterms:description "Every public Ash action on an extended resource/domain is projected into a verified capability index with no declaration required; an optional a2a do skill ... end block adds A2A-only metadata overrides; AshA2A.Info.agent_card/2 builds a real A2A.AgentCard advertising each exposed skill; AshA2A.Verify fails closed at compile time when an override names a nonexistent action (:REFUSED_ACTION_NOT_FOUND) or duplicates a skill name (:REFUSED_DUPLICATE_SKILL_NAME); AshA2A.Dispatcher.dispatch/6 routes an inbound A2A.Message to the right Ash action, as a bare call or through a supervised A2A.Agent process (AshA2A.Agent), routing consequence-bearing (:change/:external_do) skills through the receipted AshA2A.CommandBus." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "README.md", "lib/ash_a2a/capability_index.ex", "lib/ash_a2a/dispatcher.ex", "lib/ash_a2a/agent.ex", "docs/tutorials/getting-started.md" ;
+    sj:acceptance prd:G1-acceptance ;
+    sj:falsifier prd:G1-falsifier ;
+    sj:requiresCourt prd:court-chicago-real-collaborators .
+
+prd:G1-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G1 acceptance" ;
+    dcterms:description "The getting-started walkthrough (docs/tutorials/getting-started.md) compiles and dispatches as documented; the README usage-example court (landed v26.10.2, CHANGELOG) compiles and dispatches the README DSL example; a skill override naming a nonexistent action or duplicating a skill name is refused at compile time." .
+
+prd:G1-falsifier a sj:Falsifier ;
+    rdfs:label "G1 falsifier" ;
+    dcterms:description "The README DSL example fails to compile or dispatch, or a skill override naming a nonexistent action compiles cleanly, while the capability-projection courts still exit 0." .
+
+# ── Goal 2: JSON-RPC transport over real Bandit/Plug ─────────────────────────
+
+prd:G2 a sj:WorkOrder ;
+    rdfs:label "G2 — JSON-RPC transport over real Bandit/Plug" ;
+    dcterms:description "Supervised agent processes are served over HTTP (agent card + JSON-RPC + SSE) and driven with A2A.Client; beyond the vendored SDK plug the library ships AshA2A.A2ATransport.Plug, a drop-in wrapper implementing methods the vendored plug refuses: supervised message/stream fan-out with tasks/resubscribe replay, push-notification config RPCs with signed webhook delivery, and the authenticated extended card. Identity arrives only from transport-verified A2A.Plug.Auth, never from message metadata." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/a2a_transport", "docs/reference/a2a-endpoint-contract.md", "docs/how-to/authenticate-agent-requests.md", "docs/reference/a2a-spec-version-mapping.md" ;
+    sj:acceptance prd:G2-acceptance ;
+    sj:falsifier prd:G2-falsifier ;
+    sj:requiresCourt prd:court-chicago-real-collaborators .
+
+prd:G2-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G2 acceptance" ;
+    dcterms:description "The endpoint-contract reference (docs/reference/a2a-endpoint-contract.md) matches the served HTTP surface; the authentication how-to drives a real transport-verified credential into context.actor/context.tenant; SSE streaming, resubscribe replay, and signed webhook push behave as the reference documents." .
+
+prd:G2-falsifier a sj:Falsifier ;
+    rdfs:label "G2 falsifier" ;
+    dcterms:description "context.actor or context.tenant resolves from inbound message metadata rather than A2A.Plug.Auth output, or a documented JSON-RPC method of the endpoint contract is unimplemented on the served surface, while the transport courts still exit 0." .
+
+# ── Goal 3: Machine-enforced mock-discipline gate ────────────────────────────
+
+prd:G3 a sj:WorkOrder ;
+    rdfs:label "G3 — Machine-enforced Chicago mock-discipline gate" ;
+    dcterms:description "Testing discipline is Chicago-school (real collaborators, assert on final state), enforced by a machine gate, not convention: Chicago.Collaborators.MockScan scans the test tree and the mock-discipline test (test/ash_a2a_mock_discipline_test.exs) fails the suite when banned mock usage appears; the real-collaborators court (test/ash_a2a/chicago/real_collaborators_test.exs) qualifies the gate itself." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "test/support/chicago/collaborators.ex", "test/support/chicago/collaborators/mock_scan.ex", "test/ash_a2a_mock_discipline_test.exs", "test/ash_a2a/chicago/real_collaborators_test.exs" ;
+    sj:acceptance prd:G3-acceptance ;
+    sj:falsifier prd:G3-falsifier ;
+    sj:requiresCourt prd:court-chicago-real-collaborators .
+
+prd:G3-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G3 acceptance" ;
+    dcterms:description "test/ash_a2a_mock_discipline_test.exs passes on the current tree and fails when a banned mock usage is introduced; the gate's own behavior is qualified by a dedicated court over the real scan." .
+
+prd:G3-falsifier a sj:Falsifier ;
+    rdfs:label "G3 falsifier" ;
+    dcterms:description "A file introducing banned mock usage is added under test/ and the mock-discipline test still passes (the gate is vacuous), or the gate fires on lawful real-collaborator usage (the gate is over-broad and unqualified)." .
+
+# ── Goal 4: plan → execute → OCEL → conformance end-to-end ───────────────────
+
+prd:G4 a sj:WorkOrder ;
+    rdfs:label "G4 — plan-execute-OCEL-conformance end-to-end" ;
+    dcterms:description "A deterministic FOND/HTN planning path (native/hddl_cli binding ferroplan) plans, executes, emits OCEL v2 events, and a conformance check closes the loop end to end, exercised as one real subprocess-driving test (test/ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs); OCEL forwarding of every dispatch is a documented operational surface (docs/how-to/observe-dispatch-with-ocel.md)." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "test/ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs", "native/hddl_cli", "docs/how-to/observe-dispatch-with-ocel.md" ;
+    sj:acceptance prd:G4-acceptance ;
+    sj:falsifier prd:G4-falsifier ;
+    sj:requiresCourt prd:court-chicago-real-collaborators .
+
+prd:G4-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G4 acceptance" ;
+    dcterms:description "The e2e test drives the real hddl_cli binary as a subprocess (never a mock), observes the executed plan, and asserts conformance over the emitted OCEL events; a missing binary raises a named, actionable hddl_cli_not_built error rather than a silent skip." .
+
+prd:G4-falsifier a sj:Falsifier ;
+    rdfs:label "G4 falsifier" ;
+    dcterms:description "The e2e test passes without the native planner binary present, or without emitting OCEL events, or the conformance assertion is removed while the suite stays green." .
+
+# ── Goal 5: GraphLaw WASM vendor admission ───────────────────────────────────
+
+prd:G5 a sj:WorkOrder ;
+    rdfs:label "G5 — GraphLaw WASM vendor admission" ;
+    dcterms:description "A vendored GraphLaw WASM kernel (priv/graphlaw/praxis_graphlaw.wasm) is admitted through manifests (priv/graphlaw/MANIFEST.json, priv/graphlaw/WASMEX_HOST_MANIFEST.json) and executed via a wasmex host with a driver/probe/peer script family in priv/graphlaw; runtime B (native/graphlaw_host) is optional and not built by CI, with a named skip when absent; the pinned engine/wasm are unchanged across recent releases per CHANGELOG." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "priv/graphlaw/praxis_graphlaw.wasm", "priv/graphlaw/MANIFEST.json", "priv/graphlaw/WASMEX_HOST_MANIFEST.json", "docs/explanation/graphlaw-wasm-integration.md", "docs/explanation/canonical-graph-identity.md" ;
+    sj:acceptance prd:G5-acceptance ;
+    sj:falsifier prd:G5-falsifier ;
+    sj:requiresCourt prd:court-chicago-real-collaborators .
+
+prd:G5-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G5 admission acceptance" ;
+    dcterms:description "The vendored wasm executes through the wasmex host under its manifest identity; the graphlaw explanation docs describe the integration as shipped; a mutation of the vendored artifact is detectable against the manifest." .
+
+prd:G5-falsifier a sj:Falsifier ;
+    rdfs:label "G5 admission falsifier" ;
+    dcterms:description "A mutated or re-substituted praxis_graphlaw.wasm passes vendor admission unchanged, or a graphlaw-court failure is silently swallowed while the suite stays green." .
+
+# ── Goal 6: two-port authority gate (Ed25519 leases) ─────────────────────────
+
+prd:G6 a sj:WorkOrder ;
+    rdfs:label "G6 — two-port authority gate with Ed25519 leases" ;
+    dcterms:description "Authentication and authority are separate ports: identity arrives only from transport-verified A2A.Plug.Auth, and consequential (:change/:external_do) skills additionally require a standing grant from AshA2A.Authority.Grant; AshA2A.Authority.Lease leases authority over one semantic root for a bounded clock window under an Ed25519 signature (Sa2aCrypto.Native EdDSA verify); ObanAuthority.verify_live!/3 re-verifies grants on async paths so a revoked grant cannot actuate from a stale queue payload; the HILT work-order plane pins a carried graph_digest against the executing command's semantic subject and refuses :stale_graph_identity." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/authority/lease.ex", "lib/ash_a2a/command_bus.ex", "docs/how-to/verify-authority-on-async-paths.md", "docs/how-to/test-governed-actions.md", "SECURITY.md" ;
+    sj:acceptance prd:G6-acceptance ;
+    sj:falsifier prd:G6-falsifier ;
+    sj:requiresCourt prd:court-chicago-real-collaborators .
+
+prd:G6-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G6 acceptance" ;
+    dcterms:description "A consequential skill without a standing grant is refused; an expired or revoked lease is refused through the real Grant -> CommandBus path (SA2A-AUTH-022/023/024, SA2A-AUTH-GRANT-012/013 per the CHANGELOG Chicago-court strengthening); a revoked grant acting from a stale Oban payload is refused by verify_live!/3; a stale graph digest is refused :stale_graph_identity before claim." .
+
+prd:G6-falsifier a sj:Falsifier ;
+    rdfs:label "G6 falsifier" ;
+    dcterms:description "A consequential actuation succeeds on authentication alone, on an expired/revoked lease, or from a stale queue payload, or with a mutated graph digest, while the authority courts still exit 0." .
+
+# ── Goal 7: cross-runtime court receipts ─────────────────────────────────────
+
+prd:G7 a sj:WorkOrder ;
+    rdfs:label "G7 — cross-runtime court receipts" ;
+    dcterms:description "Court evidence is written as durable receipts under receipts/ (receipts/courts/sa2a, receipts/ocel, receipts/v26.9.22, receipts/v26.9.26), recording court runs across runtimes and release checkpoints; the conformance-claim and conformance-profiles references define the claim and profile schema these receipts serve (docs/reference/conformance-claim.md, docs/reference/conformance-profiles.md, docs/conformance/)." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "receipts/courts/sa2a", "receipts/ocel", "receipts/v26.9.22", "receipts/v26.9.26", "docs/reference/conformance-claim.md", "docs/conformance/v26.9.28-conformance-report.md" ;
+    sj:acceptance prd:G7-acceptance ;
+    sj:falsifier prd:G7-falsifier ;
+    sj:requiresCourt prd:court-evidence-path-existence .
+
+prd:G7-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G7 acceptance" ;
+    dcterms:description "Receipts exist for the named court families and release checkpoints; a conformance claim references a receipt that exists on disk; the v26.9.28 conformance report is present under docs/conformance/." .
+
+prd:G7-falsifier a sj:Falsifier ;
+    rdfs:label "G7 falsifier" ;
+    dcterms:description "A receipt directory named as evidence is empty or absent, or a conformance claim cites a receipt that does not exist on disk." .
+
+# ── Honest limitations ───────────────────────────────────────────────────────
+
+prd:limitations a prd:Limitations ;
+    rdfs:label "Current, stated limitations" ;
+    dcterms:description "Known, honestly stated limitations of the current subject (mix.exs 26.10.2 working tree). These are not goals and are not claimed as resolved by this document." ;
+    prd:limitation "DETS coverage is thin: durable receipt-store coverage across consumers is partial; the v26.10.2 legacy-compat census (docs/jira/v26.10.2/LEGACY-COMPAT-AUDIT.md) migrated only 2 incidental Memory stores to real on-disk EKV instances, with the rest lawfully classified under the store-as-subject law." ,
+        "No Celonis-style public-log case study exists: the OCEL/conformance surface is exercised by repository-local tests and fixtures (test/ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs, receipts/ocel), not against a public real-world event-log benchmark corpus." ,
+        "6 current suite failures exist on the working tree at the time this document was authored; the suite is not fully green and this document records that state rather than claiming otherwise." ,
+        "Neither shipped broker (InMemory, EKV) is Sybil-resistant; bring-your-own identity system for production (README Security section)." ,
+        "The native planner binary (native/hddl_cli) is not shipped on Hex; consumers wanting the deterministic planning path must build it themselves." ,
+        "The optional GraphLaw runtime B (native/graphlaw_host) is not built by CI; its one dependent test is a named skip rather than an executed check." .
+
+prd:Limitations a rdfs:Class ; rdfs:label "Limitations statement" .
+
+# ── Non-goals ────────────────────────────────────────────────────────────────
+
+prd:non-goals a prd:Limitations ;
+    rdfs:label "Non-goals of this document" ;
+    dcterms:description "This document does not assert standing beyond UNKNOWN, does not grant or claim authority (all authority ceilings are CONSTRUCT), does not approve itself as evidence for any capability, and is not a substitute for running the repository's courts (mix test.all --max-cases 6)." .
+
+# ── Document-level falsifiers ────────────────────────────────────────────────
+
+prd:falsifier-requirements-unanchored a sj:Falsifier ;
+    rdfs:label "Unanchored requirement" ;
+    dcterms:description "A goal in this document whose dcterms:description asserts a behavior with no corresponding prd:evidencePath: the requirement is unanchored and falsified by construction." .
+
+prd:falsifier-suite-divergence a sj:Falsifier ;
+    rdfs:label "Suite divergence" ;
+    dcterms:description "The suite state this document records (6 current failures) diverges from observed reality without this document being updated: the limitations section is stale and must be re-measured before this PRD is relied on." .

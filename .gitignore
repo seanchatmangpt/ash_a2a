@@ -34,3 +34,7 @@ ash_a2a-*.tar
 # root-level entries above.
 /swarm/_build/
 /swarm/deps/
+
+# Local zcode work / plan artifacts
+/.zcode/
+

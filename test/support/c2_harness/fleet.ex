@@ -450,6 +450,7 @@ defmodule C2Harness.Fleet do
                  {"AUTHORITY_CONFIG_DIR", a},
                  {"AUTHORITY_LISTEN_UNIX", st.auth_sock},
                  {"AUTHORITY_AUDIENCE", @authority_audience},
+                  {"AUTHORITY_ACTUATOR_AUDIENCE", @audience},
                  {"AUTHORITY_JOURNAL", st.auth_journal}
                ],
            ready:

@@ -134,6 +134,7 @@ defmodule AshA2A.C2.FramedInteropTest do
               {"AUTHORITY_CONFIG_DIR", dirs["auth"]},
               {"AUTHORITY_LISTEN_UNIX", auth_sock},
               {"AUTHORITY_AUDIENCE", @authority_audience},
+              {"AUTHORITY_ACTUATOR_AUDIENCE", @audience},
               {"AUTHORITY_JOURNAL", Path.join(dirs["auth"], "journal.log")}
             ],
         ready:

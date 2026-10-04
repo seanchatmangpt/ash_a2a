@@ -2,6 +2,10 @@ import Config
 
 config :ash, default_string_length_count: :codepoints
 
+config :ash_a2a, semantic_engine: AshA2A.Semantic.Engine.AshGraphLaw
+
+config :ash_graphlaw, start_pool: true, pool: [size: 2, timeout_ms: 5_000]
+
 # RFC-SA2A-007 security profile (build-time only; default :strict).
 # Read via Application.compile_env/3 in AshA2A.SecurityProfile. Applies to
 # this repository's own builds; a host application chooses its own profile in

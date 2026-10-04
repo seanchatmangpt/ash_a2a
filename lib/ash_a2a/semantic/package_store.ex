@@ -81,8 +81,9 @@ defmodule AshA2A.Semantic.PackageStore do
   # Fail closed on a malformed bound: a non-integer max_entries (e.g. an
   # unparsed env string) compares larger than every integer and would disable
   # eviction; a non-integer ttl_ms would crash every put.
-  defp bound_or_default(value, _default) when is_integer(value) and value > 0, do: value
-  defp bound_or_default(_value, default), do: default
+  # Shared fail-closed bound helper lives in AshA2A.Semantic.Compiler.
+  defp bound_or_default(value, default),
+    do: AshA2A.Semantic.Compiler.bound_or_default(value, default)
 
   @doc "Stores `package`, keyed by its own real `fingerprint`."
   @spec put(ExecutionPackage.t(), keyword()) :: :ok

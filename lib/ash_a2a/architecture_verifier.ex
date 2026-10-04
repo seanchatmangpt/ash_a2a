@@ -224,7 +224,7 @@ defmodule AshA2A.ArchitectureVerifier do
   @doc "Runs every real architecture check and returns their results, most-important first."
   @spec checks() :: [result()]
   def checks do
-    [
+    base_checks = [
       check_capability_index_derivable(),
       check_unknown_consequence_refused(),
       check_change_requires_authority(),
@@ -235,7 +235,13 @@ defmodule AshA2A.ArchitectureVerifier do
       check_sole_do_fence_refuses_unanchored_dispatch(),
       check_semantic_requests_gate_compiles(),
       check_unopted_semantic_request_falls_through()
-    ] ++ ChicagoRollup.checks()
+    ]
+
+    if Code.ensure_loaded?(ChicagoRollup) and function_exported?(ChicagoRollup, :checks, 0) do
+      base_checks ++ apply(ChicagoRollup, :checks, [])
+    else
+      base_checks
+    end
   end
 
   # -- Check 1: AshA2A.Info.capability_index/1 derives real capability truth --

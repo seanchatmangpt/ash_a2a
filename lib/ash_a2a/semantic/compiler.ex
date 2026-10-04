@@ -41,6 +41,14 @@ defmodule AshA2A.Semantic.Compiler do
   @default_max_text_bytes 16_384
   @default_max_batch 100
 
+  @doc """
+  Fail-closed bound coercion: returns `value` only when it is a positive
+  integer, otherwise `default`. Shared with other bound-taking modules
+  (e.g. `AshA2A.Semantic.PackageStore`).
+  """
+  def bound_or_default(value, _default) when is_integer(value) and value > 0, do: value
+  def bound_or_default(_value, default), do: default
+
   @doc false
   # S42 refusal totality.
   def __sa2a_refusal_codes__ do
@@ -61,12 +69,6 @@ defmodule AshA2A.Semantic.Compiler do
     (Keyword.get(opts, :max_batch) || Application.get_env(:ash_a2a, :semantic_max_batch))
     |> bound_or_default(@default_max_batch)
   end
-
-  # Fail closed on a malformed bound: a non-integer (e.g. an unparsed
-  # `System.get_env/1` string) would otherwise compare as larger than every
-  # integer under Erlang term order and silently disable the cap.
-  defp bound_or_default(value, _default) when is_integer(value) and value > 0, do: value
-  defp bound_or_default(_value, default), do: default
 
   def compile(resource_or_domain, text, opts \\ []) when is_binary(text) do
     with :ok <- check_text_size(text, opts) do

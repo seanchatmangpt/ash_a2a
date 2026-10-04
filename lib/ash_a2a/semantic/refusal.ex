@@ -242,9 +242,19 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- transport / receipt-store codes (merge reconciliation) ------------
     bad_signature: :refused_authority,
+    bad_key: :refused_authority,
+    malformed: :refused_structure,
     stale_timestamp: :refused_bounds,
     unconfirmed: :refused_receipt,
     receipt_store_not_configured: :blocked_resource,
+    # --- R projection receipt codes (lib/ash_a2a/receipt/r_projection.ex) -
+    r_projection_receipt_required: :refused_receipt,
+    r_projection_binding_unverified: :refused_receipt,
+    r_projection_anchor_missing: :refused_provenance,
+    r_projection_anchor_malformed: :refused_structure,
+    r_projection_work_order_unavailable: :refused_receipt,
+    r_projection_consequence_unknown: :refused_consequence,
+    r_projection_standing_not_durable: :refused_receipt,
     # --- C1 canonical identity / prepared-effect store (merged factory branches) ---
     canonical_depth_exceeded: :refused_bounds,
     canonical_digest_mismatch: :refused_identity,

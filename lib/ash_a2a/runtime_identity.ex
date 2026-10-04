@@ -75,7 +75,7 @@ defmodule AshA2A.RuntimeIdentity do
            inspect(Enum.filter(identities, &unobservable?/1))}
 
       true ->
-        {:ok, identities |> Enum.uniq() |> Enum.sort_by(&AshA2A.Chicago.Json.canonical/1)}
+        {:ok, identities |> Enum.uniq() |> Enum.sort_by(&AshA2A.Json.canonical/1)}
     end
   end
 
@@ -83,7 +83,7 @@ defmodule AshA2A.RuntimeIdentity do
   @spec digest([map()]) :: String.t()
   def digest(identities) when is_list(identities) do
     identities
-    |> AshA2A.Chicago.Json.canonical()
+    |> AshA2A.Json.canonical()
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end

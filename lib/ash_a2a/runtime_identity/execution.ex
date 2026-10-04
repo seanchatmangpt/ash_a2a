@@ -96,7 +96,7 @@ defmodule AshA2A.RuntimeIdentity.Execution do
        "an engine resource the probe reached could not be identified: " <>
          inspect(Enum.filter(engines, &unobservable?/1))}
     else
-      engines = Enum.sort_by(engines, &AshA2A.Chicago.Json.canonical/1)
+      engines = Enum.sort_by(engines, &AshA2A.Json.canonical/1)
 
       {:ok,
        %{
@@ -118,7 +118,7 @@ defmodule AshA2A.RuntimeIdentity.Execution do
   @doc "True when two engine sets share no engine identity."
   @spec disjoint?([map()], [map()]) :: boolean()
   def disjoint?(engines_a, engines_b) do
-    keys = fn engines -> MapSet.new(engines, &AshA2A.Chicago.Json.canonical/1) end
+    keys = fn engines -> MapSet.new(engines, &AshA2A.Json.canonical/1) end
     MapSet.disjoint?(keys.(engines_a), keys.(engines_b))
   end
 

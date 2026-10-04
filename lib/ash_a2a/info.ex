@@ -138,4 +138,22 @@ defmodule AshA2A.Info do
     Extension.get_persisted(resource_or_domain, :ash_a2a_semantic_requests_enabled, false) ==
       true
   end
+
+  @doc "The compiled authority admission gate (:two_port, :open, or :disabled)."
+  @spec authority_gate(module()) :: atom()
+  def authority_gate(resource_or_domain) do
+    Extension.get_persisted(resource_or_domain, :ash_a2a_authority_gate, :two_port)
+  end
+
+  @doc "The compiled lease duration in milliseconds."
+  @spec lease_duration_ms(module()) :: pos_integer()
+  def lease_duration_ms(resource_or_domain) do
+    Extension.get_persisted(resource_or_domain, :ash_a2a_lease_duration_ms, 60_000)
+  end
+
+  @doc "The compiled knowledge hooks map (%{pre_dispatch: [...], post_dispatch: [...]})."
+  @spec hooks(module()) :: %{pre_dispatch: [atom()], post_dispatch: [atom()]}
+  def hooks(resource_or_domain) do
+    Extension.get_persisted(resource_or_domain, :ash_a2a_hooks, %{pre_dispatch: [], post_dispatch: []})
+  end
 end

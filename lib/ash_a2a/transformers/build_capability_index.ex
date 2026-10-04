@@ -58,12 +58,19 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
     |> case do
       {:ok, dsl, overrides} ->
         semantic_requests? = Transformer.get_option(dsl, [:a2a], :semantic_requests, false)
+        authority_gate = Transformer.get_option(dsl, [:authority], :gate, :two_port)
+        lease_duration_ms = Transformer.get_option(dsl, [:authority], :lease_duration_ms, 60_000)
+        pre_hooks = Transformer.get_option(dsl, [:hooks], :pre_dispatch, [])
+        post_hooks = Transformer.get_option(dsl, [:hooks], :post_dispatch, [])
 
         dsl =
           dsl
           |> Transformer.persist(:ash_a2a_skill_overrides, Enum.reverse(overrides))
           |> Transformer.persist(:ash_a2a_subject_kind, subject_kind)
           |> Transformer.persist(:ash_a2a_semantic_requests_enabled, semantic_requests?)
+          |> Transformer.persist(:ash_a2a_authority_gate, authority_gate)
+          |> Transformer.persist(:ash_a2a_lease_duration_ms, lease_duration_ms)
+          |> Transformer.persist(:ash_a2a_hooks, %{pre_dispatch: pre_hooks, post_dispatch: post_hooks})
 
         {:ok, dsl}
 

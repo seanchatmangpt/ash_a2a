@@ -256,6 +256,8 @@ defmodule AshA2A.MixProject do
       # this feature's own swarm-test release) simply no longer fetches
       # or compiles it.
       {:ggen_igniter, "~> 26.9", only: :dev},
+      {:ash_graphlaw, "~> 26.10"},
+      {:ash_affidavit, "~> 26.10"},
       {:a2a, "~> 0.2"},
       {:ash_ai, "~> 1.0"},
       # AshA2A.Telemetry.OcelForwarder's real HTTP POST to beam4pm's real

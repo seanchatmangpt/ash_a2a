@@ -24,7 +24,9 @@ defmodule AshA2A.Verify do
       overrides ->
         case AshA2A.CapabilityIndex.validate(overrides) do
           :ok ->
-            dead_argument_warning(overrides)
+            with :ok <- verify_consequence_topology(dsl, overrides) do
+              dead_argument_warning(overrides)
+            end
 
           {:error, refusals} ->
             {:error,
@@ -34,6 +36,24 @@ defmodule AshA2A.Verify do
                location: override_location(dsl, overrides)
              )}
         end
+    end
+  end
+
+  defp verify_consequence_topology(dsl, overrides) do
+    gate = Spark.Dsl.Transformer.get_option(dsl, [:authority], :gate, :two_port)
+
+    # Fail closed at compile time: external_do action without an active gate
+    case Enum.find(overrides, &(&1.consequence == :external_do)) do
+      %{name: name} when gate in [:open, :disabled] ->
+        {:error,
+         Spark.Error.DslError.exception(
+           path: [:authority, :gate],
+           message: "Action #{inspect(name)} has consequence: :external_do but authority gate is #{inspect(gate)}. An external DO consequence requires an active gate.",
+           location: Spark.Dsl.Transformer.get_section_anno(dsl, [:authority])
+         )}
+
+      _ ->
+        :ok
     end
   end
 

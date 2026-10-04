@@ -52,7 +52,7 @@ defmodule AshA2A.Authority.Lease do
 
   `sign/2` signs the canonical sorted-key JSON of the lease's public map
   (every field except `:signature`), prefixed with a domain-separation tag.
-  Encoding is `AshA2A.Chicago.Json.canonical/1` — recursively sorted object
+  Encoding is `AshA2A.Json.canonical/1` — recursively sorted object
   keys — so signing and verification frame byte-identically on any VM. The
   signature is Ed25519 (`Sa2aCrypto.Native.verify("EdDSA", msg, sig, pub)`,
   which fails closed on `{:error, :bad_signature}` / `:bad_key` / malformed
@@ -176,7 +176,7 @@ defmodule AshA2A.Authority.Lease do
   """
   @spec signing_input(t()) :: binary()
   def signing_input(%__MODULE__{} = lease) do
-    @domain_tag <> AshA2A.Chicago.Json.canonical(public_map(lease))
+    @domain_tag <> AshA2A.Json.canonical(public_map(lease))
   end
 
   @doc """

@@ -125,13 +125,20 @@ defmodule AshA2ASemanticConformanceTest do
       core = Conformance.level_status(:sa2a_core, results)
       refute core.conformant?
 
-      assert Enum.map(core.unmet, & &1.id) |> Enum.sort() ==
-               [
-                 :canonical_graph_identity,
-                 :shacl_validation,
-                 :shex_validation,
-                 :sparql_falsifiers
-               ]
+      case Application.get_env(:ash_a2a, :semantic_engine) do
+        nil ->
+          assert Enum.map(core.unmet, & &1.id) |> Enum.sort() ==
+                   [
+                     :canonical_graph_identity,
+                     :shacl_validation,
+                     :shex_validation,
+                     :sparql_falsifiers
+                   ]
+
+        _engine ->
+          assert Enum.map(core.unmet, & &1.id) |> Enum.sort() ==
+                   [:canonical_graph_identity]
+      end
     end
 
     test "level_status/2 partitions every cumulative requirement exactly once" do
@@ -374,7 +381,10 @@ defmodule AshA2ASemanticConformanceTest do
 
   describe "engine_capability/2 (the real external-engine seam)" do
     test "reports the exact missing function when no :semantic_engine is configured" do
-      assert Application.get_env(:ash_a2a, :semantic_engine) == nil
+      prev = Application.get_env(:ash_a2a, :semantic_engine)
+      Application.put_env(:ash_a2a, :semantic_engine, nil)
+      on_exit(fn -> Application.put_env(:ash_a2a, :semantic_engine, prev) end)
+
       assert {:unmet, detail} = Conformance.engine_capability(:validate_shacl, 2)
       assert detail =~ "validate_shacl/2"
       assert detail =~ ":semantic_engine"
@@ -384,8 +394,9 @@ defmodule AshA2ASemanticConformanceTest do
       # A real module with real behavior, not a mock: `Enum` genuinely exports
       # `count/1` and genuinely does not export `validate_shacl/2`, so both
       # branches of the real reflection are exercised against real code.
+      prev = Application.get_env(:ash_a2a, :semantic_engine)
       Application.put_env(:ash_a2a, :semantic_engine, Enum)
-      on_exit(fn -> Application.delete_env(:ash_a2a, :semantic_engine) end)
+      on_exit(fn -> Application.put_env(:ash_a2a, :semantic_engine, prev) end)
 
       assert Conformance.engine_capability(:count, 1) == :met
       assert {:unmet, detail} = Conformance.engine_capability(:validate_shacl, 2)

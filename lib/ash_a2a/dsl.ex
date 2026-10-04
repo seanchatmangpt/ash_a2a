@@ -158,5 +158,39 @@ defmodule AshA2A.Dsl do
     ]
   }
 
-  def sections, do: [@a2a]
+  @authority %Spark.Dsl.Section{
+    name: :authority,
+    describe: "Declarative two-port gate policies and lease constraints for A2A actions.",
+    schema: [
+      gate: [
+        type: {:one_of, [:two_port, :open, :disabled]},
+        default: :two_port,
+        doc: "Default admission gate applied to consequence-bearing actions."
+      ],
+      lease_duration_ms: [
+        type: :pos_integer,
+        default: 60_000,
+        doc: "Default lease lifetime in milliseconds."
+      ]
+    ]
+  }
+
+  @hooks %Spark.Dsl.Section{
+    name: :hooks,
+    describe: "Declarative binding of GraphLaw knowledge hooks to action lifecycle points.",
+    schema: [
+      pre_dispatch: [
+        type: {:list, :atom},
+        default: [],
+        doc: "Hook identifiers evaluated before action dispatch."
+      ],
+      post_dispatch: [
+        type: {:list, :atom},
+        default: [],
+        doc: "Hook identifiers evaluated after action execution."
+      ]
+    ]
+  }
+
+  def sections, do: [@a2a, @authority, @hooks]
 end
