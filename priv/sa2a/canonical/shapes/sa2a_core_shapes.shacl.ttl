@@ -1,0 +1,59 @@
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix sa2a-bp:  <https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/> .
+@prefix sa2a-evi: <https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/> .
+@prefix sa2a-agr: <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agreements/Leases/> .
+@prefix ex:       <https://spec.seanchatmangpt.dev/sa2a/shapes/core#> .
+
+ex:CommandEnvelopeShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-bp:CommandEnvelope ;
+    sh:property [
+        sh:path sa2a-bp:capabilityId ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path sa2a-bp:principalId ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path sa2a-bp:payloadDigest ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
+ex:ActuationReceiptShape
+    a sh:NodeShape ;
+    sh:targetClass sa2a-evi:ActuationReceipt ;
+    sh:property [
+        sh:path sa2a-evi:subjectIdentity ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path sa2a-evi:authorizingLease ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class sa2a-agr:ActuationLease ;
+    ] ;
+    sh:property [
+        sh:path sa2a-evi:consequenceSummary ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path sa2a-evi:replayCommand ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path sa2a-evi:verificationStanding ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .

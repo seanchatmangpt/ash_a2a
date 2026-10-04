@@ -1,0 +1,19 @@
+@prefix dct:     <http://purl.org/dc/terms/> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/AboutSA2AProd/>
+    a owl:Ontology ;
+    rdfs:label "About SA2A Production" ;
+    dct:abstract "Top-level convenience ontology loading all canonical production modules of the Semantic Agent-to-Agent (SA2A) Ontology standard." ;
+    dct:issued "2026-10-04T00:00:00"^^xsd:dateTime ;
+    dct:modified "2026-10-04T09:00:00"^^xsd:dateTime ;
+    dct:license "MIT" ;
+    owl:imports <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agents/Agents/> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agreements/Leases/> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/CAP/CoreCapabilities/> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/> .

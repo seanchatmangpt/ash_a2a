@@ -1,0 +1,38 @@
+@prefix dct:          <http://purl.org/dc/terms/> .
+@prefix owl:          <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:          <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:         <http://www.w3.org/2004/02/skos/core#> .
+@prefix sa2a-fnd-law: <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/>
+    a owl:Ontology ;
+    rdfs:label "Operating Doctrine & Fundamental Explanation Laws" ;
+    dct:abstract "Formalizes the operational axioms of the Sean Chatman Operating Doctrine, establishing structural barriers against unearned execution authority." ;
+    dct:license "MIT" ;
+    owl:versionIRI <https://spec.seanchatmangpt.dev/sa2a/ontology/20261004/FND/Law/OperatingDoctrine/> .
+
+sa2a-fnd-law:DoctrineLaw
+    a owl:Class ;
+    rdfs:label "doctrine law" ;
+    skos:definition "A fundamental operational invariance invariant across all agent interactions." .
+
+sa2a-fnd-law:SelectNotConstruct
+    a sa2a-fnd-law:DoctrineLaw ;
+    rdfs:label "Select Not Construct" ;
+    skos:definition "Selecting from existing admitted options precedes constructing novel artifacts. Novelty must be minimized." .
+
+sa2a-fnd-law:ConstructNotDo
+    a sa2a-fnd-law:DoctrineLaw ;
+    rdfs:label "Construct Not Do" ;
+    skos:definition "Generating, modeling, or compiling code/plans does not constitute execution authority. Planning is strictly distinct from actuating." .
+
+sa2a-fnd-law:IntentNotAuthority
+    a sa2a-fnd-law:DoctrineLaw ;
+    rdfs:label "Intent Not Authority" ;
+    skos:definition "Prompts, plans, LLM completions, and user intentions are candidate hypotheses, never execution authority." .
+
+sa2a-fnd-law:ReceiptNotSuccess
+    a sa2a-fnd-law:DoctrineLaw ;
+    rdfs:label "Receipt Not Success" ;
+    skos:definition "A receipt records five-part factual evidence of an actuation event; it is not synonymous with arbitrary subjective claims of success." .

@@ -1,0 +1,50 @@
+@prefix dct:      <http://purl.org/dc/terms/> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix sa2a-evi: <https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/> .
+@prefix sa2a-agr: <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agreements/Leases/> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/>
+    a owl:Ontology ;
+    rdfs:label "Evidence, Receipts and Verification Standing Ontology" ;
+    dct:abstract "Formalizes the 5-field Chatman receipt equation R = receipt(A) = {identity, authority, consequence, replay, standing}." ;
+    dct:license "MIT" ;
+    owl:versionIRI <https://spec.seanchatmangpt.dev/sa2a/ontology/20261004/EVI/Receipts/> .
+
+sa2a-evi:ActuationReceipt
+    a owl:Class ;
+    rdfs:label "actuation receipt" ;
+    skos:definition "Cryptographic and factual record of an executed actuation." .
+
+sa2a-evi:subjectIdentity
+    a owl:DatatypeProperty ;
+    rdfs:label "exact subject identity SHA" ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range xsd:string .
+
+sa2a-evi:authorizingLease
+    a owl:ObjectProperty ;
+    rdfs:label "authorizing lease" ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range sa2a-agr:ActuationLease .
+
+sa2a-evi:consequenceSummary
+    a owl:DatatypeProperty ;
+    rdfs:label "consequence summary" ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range xsd:string .
+
+sa2a-evi:replayCommand
+    a owl:DatatypeProperty ;
+    rdfs:label "deterministic replay command" ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range xsd:string .
+
+sa2a-evi:verificationStanding
+    a owl:DatatypeProperty ;
+    rdfs:label "derived standing status" ;
+    rdfs:domain sa2a-evi:ActuationReceipt ;
+    rdfs:range xsd:string .

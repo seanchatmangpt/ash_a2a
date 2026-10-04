@@ -1,0 +1,27 @@
+@prefix dct:     <http://purl.org/dc/terms/> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix sa2a-spec: <https://spec.seanchatmangpt.dev/sa2a/ontology/MetadataSA2A/> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/MetadataSA2A/>
+    a owl:Ontology ;
+    rdfs:label "Metadata for SA2A" ;
+    dct:abstract "Top-level metadata vocabulary used to describe the Semantic Agent-to-Agent (SA2A) Ontology standard, modeled after FIBO and OMG Commons architectural patterns." ;
+    dct:issued "2026-10-04T00:00:00"^^xsd:dateTime ;
+    dct:modified "2026-10-04T09:00:00"^^xsd:dateTime ;
+    dct:license "MIT" ;
+    owl:versionIRI <https://spec.seanchatmangpt.dev/sa2a/ontology/20261004/MetadataSA2A/> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/MetadataSA2A/SA2ASpecification>
+    a owl:NamedIndividual ;
+    rdfs:label "Semantic Agent-to-Agent (SA2A) Specification" ;
+    dct:title "Semantic Agent-to-Agent (SA2A) Specification" ;
+    dct:abstract "SA2A defines the standardized conceptual architecture for verifiable agentic coordination, zero-mock semantic actuation, and authority-bounded receipt generation." ;
+    dct:hasPart <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/MetadataFND/FNDDomain> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/CAP/MetadataCAP/CAPDomain> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/BP/MetadataBP/BPDomain> ,
+                <https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/MetadataEVI/EVIDomain> ;
+    skos:altLabel "SA2A Specification" .

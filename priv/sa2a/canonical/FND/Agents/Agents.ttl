@@ -1,0 +1,42 @@
+@prefix dct:          <http://purl.org/dc/terms/> .
+@prefix owl:          <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:          <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:         <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:         <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:          <http://www.w3.org/2001/XMLSchema#> .
+@prefix sa2a-fnd-agt: <https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agents/Agents/> .
+
+<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Agents/Agents/>
+    a owl:Ontology ;
+    rdfs:label "Agents and Autonomous Actors Ontology" ;
+    dct:abstract "Foundational ontology modeling autonomous software systems, agent archetypes, and verifier roles, aligned with OMG Commons and FIBO Foundations." ;
+    dct:license "MIT" ;
+    owl:versionIRI <https://spec.seanchatmangpt.dev/sa2a/ontology/20261004/FND/Agents/Agents/> .
+
+sa2a-fnd-agt:AutonomousAgent
+    a owl:Class ;
+    rdfs:label "autonomous agent" ;
+    skos:definition "A computational entity capable of sensing environment states, reasoning over goals, and dispatching bounded actuations without immediate step-by-step human intervention." .
+
+sa2a-fnd-agt:SoftwareSystem
+    a owl:Class ;
+    rdfs:subClassOf sa2a-fnd-agt:AutonomousAgent ;
+    rdfs:label "software system" ;
+    skos:definition "A discrete executable program or GenServer process runtime." .
+
+sa2a-fnd-agt:VerificationCourt
+    a owl:Class ;
+    rdfs:subClassOf sa2a-fnd-agt:AutonomousAgent ;
+    rdfs:label "verification court" ;
+    skos:definition "An adversarial evaluation agent whose authority is strictly bounded to issuing verifiable PASS, REFUSED, or BLOCKED judgments over candidate artifacts." .
+
+sa2a-fnd-agt:Principal
+    a owl:Class ;
+    rdfs:label "principal" ;
+    skos:definition "The entity (human or organization) in whose legal or administrative authority an agent acts." .
+
+sa2a-fnd-agt:actsOnBehalfOf
+    a owl:ObjectProperty ;
+    rdfs:label "acts on behalf of" ;
+    rdfs:domain sa2a-fnd-agt:AutonomousAgent ;
+    rdfs:range sa2a-fnd-agt:Principal .
