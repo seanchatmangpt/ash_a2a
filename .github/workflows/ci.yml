@@ -82,6 +82,50 @@ jobs:
           --config .github/cargo-deny.toml --locked
           check advisories bans licenses sources
 
+  # Security gate (sobelow). hex.audit is already gated in `supply-chain`
+  # above (and release.yml), so this job owns the static-analysis half only:
+  # `mix sobelow --exit high` -- the same threshold `.check.exs` gates locally
+  # (line 100: {:sobelow, [["mix", "sobelow", "--exit", "high"]]}). Sobelow is
+  # a dev-only dep (mix.exs:507, only: :dev), so this runs in MIX_ENV=dev with
+  # the same dev cache shape as the `docs` job below. No Postgres needed:
+  # sobelow is static analysis over lib/.
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build
+          key: ash-a2a-v2-dev-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: |
+            ash-a2a-v2-dev-${{ runner.os }}-
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - name: Verify mix.lock unchanged
+        run: git diff --exit-code -- mix.lock
+      - name: Sobelow static analysis (fail on high-confidence findings)
+        run: mix sobelow --exit high
+
+  # TCK in CI: REFUSED(ci:tck-not-in-tree) -- the official a2aproject/a2a-tck
+  # suite is an external repo at a moving `main` ref, and the SUT it ran
+  # against (tck_sut.exs, per docs/reference/a2a-v1-conformance.md) is
+  # session-ephemeral (/tmp/z19/...), not in this tree. A dispatch-only job
+  # would reference an artifact that does not exist on any checkout. Land the
+  # SUT in-tree first, then promote to a scheduled/dispatch job.
+
   # The suite, split along the seams mix.exs already documents: the async fast
   # lane, the `:serial_solo` files (host-level shared resources: fixed ports,
   # :peer, shared Postgres, native subprocess -- never sharded), and the
