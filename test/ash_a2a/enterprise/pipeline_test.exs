@@ -80,14 +80,22 @@ defmodule AshA2A.Enterprise.PipelineCourt.PDP do
     case Jason.decode(body) do
       {:ok, %{"subject" => subject, "action" => action, "resource" => resource}} ->
         :ets.update_counter(table, :request_count, {2, 1}, {:request_count, 0})
-        :ets.insert(table, {:last_request, %{subject: subject, action: action, resource: resource}})
+
+        :ets.insert(
+          table,
+          {:last_request, %{subject: subject, action: action, resource: resource}}
+        )
 
         if resource["id"] == "boom" do
           json(conn, 500, %{error: "internal"})
         else
           allowed =
             try do
-              :ets.lookup_element(table, {:allow, subject["id"], action["name"], resource["id"]}, 2)
+              :ets.lookup_element(
+                table,
+                {:allow, subject["id"], action["name"], resource["id"]},
+                2
+              )
             rescue
               ArgumentError -> false
             end
@@ -121,8 +129,8 @@ defmodule AshA2A.Enterprise.PipelineCourt.TrustBundle do
             roots =
               pem
               |> :public_key.pem_decode()
-              |> Enum.filter(&match?({:'Certificate', _, :not_encrypted}, &1))
-              |> Enum.map(fn {:'Certificate', der, :not_encrypted} -> der end)
+              |> Enum.filter(&match?({:Certificate, _, :not_encrypted}, &1))
+              |> Enum.map(fn {:Certificate, der, :not_encrypted} -> der end)
 
             {:ok, %{trust_domain: "court.test", root_certificates: roots}}
 
@@ -202,6 +210,7 @@ defmodule AshA2A.Enterprise.PipelineCourt do
   use ExUnit.Case, async: false
 
   @moduletag :serial
+  @moduletag timeout: 180_000
 
   alias AshA2A.AuthZEN.{Client, Metadata}
   alias AshA2A.Enterprise.Pipeline
@@ -219,7 +228,11 @@ defmodule AshA2A.Enterprise.PipelineCourt do
 
   setup ctx do
     table =
-      :ets.new(:"pipeline_court_#{System.unique_integer()}", [:set, :public, read_concurrency: true])
+      :ets.new(:"pipeline_court_#{System.unique_integer()}", [
+        :set,
+        :public,
+        read_concurrency: true
+      ])
 
     :ets.insert(table, [{:request_count, 0}, {:inner_calls, 0}, {:ocel_events, 0}])
 
@@ -303,30 +316,88 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       out
     end
 
-    run!.(["req", "-x509", "-newkey", "rsa:2048", "-nodes",
-          "-keyout", "ca.key", "-out", "ca.crt", "-days", "2",
-          "-subj", "/CN=pipeline-court-ca"])
+    run!.([
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      "ca.key",
+      "-out",
+      "ca.crt",
+      "-days",
+      "2",
+      "-subj",
+      "/CN=pipeline-court-ca"
+    ])
 
-    run!.(["req", "-newkey", "rsa:2048", "-nodes",
-          "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=localhost"])
+    run!.([
+      "req",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      "server.key",
+      "-out",
+      "server.csr",
+      "-subj",
+      "/CN=localhost"
+    ])
 
     File.write!(Path.join(tmp_dir, "server.ext"), "subjectAltName=DNS:localhost,IP:127.0.0.1")
 
-    run!.(["x509", "-req", "-in", "server.csr",
-          "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial",
-          "-out", "server.crt", "-days", "2",
-          "-extfile", "server.ext"])
+    run!.([
+      "x509",
+      "-req",
+      "-in",
+      "server.csr",
+      "-CA",
+      "ca.crt",
+      "-CAkey",
+      "ca.key",
+      "-CAcreateserial",
+      "-out",
+      "server.crt",
+      "-days",
+      "2",
+      "-extfile",
+      "server.ext"
+    ])
 
     # The client SVID carries the SPIFFE URI SAN the validator inspects.
-    run!.(["req", "-newkey", "rsa:2048", "-nodes",
-          "-keyout", "client.key", "-out", "client.csr", "-subj", "/CN=pipeline-court-client"])
+    run!.([
+      "req",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      "client.key",
+      "-out",
+      "client.csr",
+      "-subj",
+      "/CN=pipeline-court-client"
+    ])
 
     File.write!(Path.join(tmp_dir, "client.ext"), "subjectAltName=URI:#{@spiffe}")
 
-    run!.(["x509", "-req", "-in", "client.csr",
-          "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial",
-          "-out", "client.crt", "-days", "2",
-          "-extfile", "client.ext"])
+    run!.([
+      "x509",
+      "-req",
+      "-in",
+      "client.csr",
+      "-CA",
+      "ca.crt",
+      "-CAkey",
+      "ca.key",
+      "-CAcreateserial",
+      "-out",
+      "client.crt",
+      "-days",
+      "2",
+      "-extfile",
+      "client.ext"
+    ])
 
     %{
       ca_crt: Path.join(tmp_dir, "ca.crt"),
@@ -357,14 +428,31 @@ defmodule AshA2A.Enterprise.PipelineCourt do
         "params" => params
       })
 
-    {:ok, resp} =
-      Req.post(server.url, req_opts(server, body: body, headers: [{"content-type", "application/json"}]))
+    task =
+      Task.async(fn ->
+        Req.post(
+          server.url,
+          req_opts(server, body: body, headers: [{"content-type", "application/json"}])
+        )
+      end)
 
-    resp
+    case Task.yield(task, 30_000) do
+      {:ok, {:ok, resp}} ->
+        resp
+
+      {:ok, {:error, exception}} ->
+        flunk("HTTP request failed: #{inspect(exception)}")
+
+      nil ->
+        Task.shutdown(task, :kill)
+        flunk("HTTP request hung >30s to #{server.url}")
+    end
   end
 
   defp skill_params(skill, extra_params \\ %{}) do
-    msg = struct(Message.new_user([Part.Data.new(%{"say" => @pan})]), metadata: %{"skill" => skill})
+    msg =
+      struct(Message.new_user([Part.Data.new(%{"say" => @pan})]), metadata: %{"skill" => skill})
+
     {:ok, encoded} = JSON.encode(msg)
 
     Map.merge(%{"message" => encoded}, extra_params)
@@ -377,7 +465,10 @@ defmodule AshA2A.Enterprise.PipelineCourt do
     :ok =
       :telemetry.attach_many(
         id,
-        [[:ash_a2a, :enterprise, :pipeline, :completed], [:ash_a2a, :enterprise, :pipeline, :refused]],
+        [
+          [:ash_a2a, :enterprise, :pipeline, :completed],
+          [:ash_a2a, :enterprise, :pipeline, :refused]
+        ],
         fn event, measurements, metadata, _ ->
           send(parent, {:pipeline_telemetry, event, measurements, metadata})
         end,
@@ -387,8 +478,8 @@ defmodule AshA2A.Enterprise.PipelineCourt do
     on_exit(fn -> :telemetry.detach(id) end)
   end
 
-  # Req decodes JSON responses automatically; resp.body is already a map.
-  defp wire(resp), do: if(is_map(resp.body), do: resp.body, else: wire(resp))
+  # Resp bodies are raw JSON bytes (decode_body: false); decode once here.
+  defp wire(resp), do: if(is_map(resp.body), do: resp.body, else: Jason.decode!(resp.body))
 
   defp inner_calls(table), do: :ets.lookup_element(table, :inner_calls, 2)
 
@@ -405,6 +496,7 @@ defmodule AshA2A.Enterprise.PipelineCourt do
         ref = Process.monitor(pid)
 
         GenServer.stop(pid)
+
         receive do
           {:DOWN, ^ref, :process, ^pid, _} -> :ok
         after
@@ -417,10 +509,11 @@ defmodule AshA2A.Enterprise.PipelineCourt do
 
   describe "disabled stages pass through" do
     @tag :tmp_dir
-    test "a pipeline with no stages enabled is a pure wrapper: real transport serves a real task", %{
-      table: table,
-      agent: agent
-    } do
+    test "a pipeline with no stages enabled is a pure wrapper: real transport serves a real task",
+         %{
+           table: table,
+           agent: agent
+         } do
       {_pdp_url, _client} = start_pdp!(table)
 
       opts = [
@@ -431,16 +524,19 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       resp = post(%{url: url}, skill_params("converse"))
 
       assert resp.status == 200
-      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} = wire(resp)
+
+      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+               wire(resp)
     end
   end
 
   describe "svid stage" do
     @tag :tmp_dir
-    test "a caller without an SVID is refused 401 by the real validator; dispatch never happens", %{
-      table: table,
-      tmp_dir: tmp_dir
-    } do
+    test "a caller without an SVID is refused 401 by the real validator; dispatch never happens",
+         %{
+           table: table,
+           tmp_dir: tmp_dir
+         } do
       certs = generate_certs!(tmp_dir)
       :persistent_term.put({TrustBundle, :ca_path}, certs.ca_crt)
       on_exit(fn -> :persistent_term.erase({TrustBundle, :ca_path}) end)
@@ -476,8 +572,7 @@ defmodule AshA2A.Enterprise.PipelineCourt do
   describe "authzen stage" do
     @tag :tmp_dir
     test "a PDP deny is a 403 authzen refusal; dispatch and budget never run", %{
-      table: table,
-      agent: agent
+      table: table
     } do
       {_url, client} = start_pdp!(table)
       store = start_store!()
@@ -538,7 +633,9 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       resp = post(%{url: url}, skill_params("converse", %{"id" => "boom"}))
 
       assert resp.status == 403
-      assert %{"error" => "authzen_refused", "reason" => "pdp_error", "status" => 500} = wire(resp)
+
+      assert %{"error" => "authzen_refused", "reason" => "pdp_error", "status" => 500} =
+               wire(resp)
     end
 
     @tag :tmp_dir
@@ -564,10 +661,11 @@ defmodule AshA2A.Enterprise.PipelineCourt do
     end
 
     @tag :tmp_dir
-    test "an attempted privilege escalation over a delegation chain is the typed non-monotonic refusal", %{
-      table: table,
-      agent: agent
-    } do
+    test "an attempted privilege escalation over a delegation chain is the typed non-monotonic refusal",
+         %{
+           table: table,
+           agent: agent
+         } do
       {_url, client} = start_pdp!(table)
 
       opts = [
@@ -622,7 +720,9 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       resp = post(%{url: url}, params)
 
       assert resp.status == 200
-      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} = wire(resp)
+
+      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+               wire(resp)
     end
 
     @tag :tmp_dir
@@ -659,7 +759,12 @@ defmodule AshA2A.Enterprise.PipelineCourt do
         })
 
       assert resp.status == 403
-      assert %{"error" => "refused_data_residency_violation", "stage" => "residency", "detail" => _} =
+
+      assert %{
+               "error" => "refused_data_residency_violation",
+               "stage" => "residency",
+               "detail" => _
+             } =
                wire(resp)
     end
 
@@ -681,7 +786,9 @@ defmodule AshA2A.Enterprise.PipelineCourt do
         })
 
       assert resp.status == 200
-      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} = wire(resp)
+
+      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+               wire(resp)
     end
 
     @tag :tmp_dir
@@ -817,9 +924,10 @@ defmodule AshA2A.Enterprise.PipelineCourt do
 
   describe "fixed ARD order" do
     @tag :tmp_dir
-    test "the first refusing stage answers: authzen denial wins over later residency/budget violations", %{
-      table: table
-    } do
+    test "the first refusing stage answers: authzen denial wins over later residency/budget violations",
+         %{
+           table: table
+         } do
       {_url, client} = start_pdp!(table)
       store = AshA2A.FinOps.BudgetStore.new([])
       AshA2A.FinOps.BudgetStore.set_budget(store, "acct-court", 10)
@@ -859,6 +967,7 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       resp2 = post(%{url: residency_url}, violating)
 
       assert resp2.status == 403
+
       assert %{"error" => "refused_data_residency_violation", "stage" => "residency"} =
                wire(resp2)
     end
@@ -889,19 +998,20 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       assert %{"error" => "refused_affidavit_receipt_failed", "stage" => "outbound"} =
                wire(resp)
 
-      assert_receive {:pipeline_telemetry,
-                      [:ash_a2a, :enterprise, :pipeline, :refused],
-                      _, %{stage: :outbound}}, 5_000
+      assert_receive {:pipeline_telemetry, [:ash_a2a, :enterprise, :pipeline, :refused], _,
+                      %{stage: :outbound}},
+                     5_000
     end
   end
 
   describe "end-to-end integration (all stages enabled, real mTLS)" do
     @tag :tmp_dir
-    test "SVID -> AuthZEN -> DLP -> residency -> budget -> dispatch -> DLP out -> CMEK -> affidavit -> OCEL", %{
-      table: table,
-      agent: agent,
-      tmp_dir: tmp_dir
-    } do
+    test "SVID -> AuthZEN -> DLP -> residency -> budget -> dispatch -> DLP out -> CMEK -> affidavit -> OCEL",
+         %{
+           table: table,
+           agent: agent,
+           tmp_dir: tmp_dir
+         } do
       {_pdp_url, client} = start_pdp!(table)
       allow(table, @spiffe, "converse", "task")
 
@@ -935,7 +1045,6 @@ defmodule AshA2A.Enterprise.PipelineCourt do
 
       mtls = mtls_server!(tmp_dir, opts)
       attach_pipeline_telemetry!()
-      IO.puts("E2E-DEBUG: server up")
 
       delivered_before = AshA2A.Telemetry.OcelForwarder.delivered_count()
 
@@ -946,13 +1055,13 @@ defmodule AshA2A.Enterprise.PipelineCourt do
           "budget_account_id" => "acct-court"
         })
 
-      IO.puts("E2E-DEBUG: posting")
       resp = post(mtls, params)
-      IO.puts("E2E-DEBUG: got resp #{resp.status}")
 
       assert resp.status == 200
       decoded = wire(resp)
-      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} = decoded
+
+      assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+               decoded
 
       # DLP: tokenized on the wire, reversible under the key.
       assert resp.body =~ "dlt1_"
@@ -969,10 +1078,9 @@ defmodule AshA2A.Enterprise.PipelineCourt do
       # Outbound chain: CMEK envelope + affidavit receipt.
       assert get_resp_header(resp, "x-a2a-affidavit-digest") != []
 
-      assert_receive {:pipeline_telemetry,
-                      [:ash_a2a, :enterprise, :pipeline, :completed],
-                      _measurements,
-                      %{cmek: envelope, affidavit: assembled}}, 5_000
+      assert_receive {:pipeline_telemetry, [:ash_a2a, :enterprise, :pipeline, :completed],
+                      _measurements, %{cmek: envelope, affidavit: assembled}},
+                     5_000
 
       assert %{"receipt" => receipt} = assembled
       assert {:ok, true} = AshA2A.Evidence.Affidavit.verify_receipt(receipt)
@@ -1026,7 +1134,11 @@ defmodule AshA2A.Enterprise.PipelineCourt do
   end
 
   defp skill_message_raw(skill) do
-    msg = struct(Message.new_user([Part.Data.new(%{"say" => "hello"})]), metadata: %{"skill" => skill})
+    msg =
+      struct(Message.new_user([Part.Data.new(%{"say" => "hello"})]),
+        metadata: %{"skill" => skill}
+      )
+
     {:ok, encoded} = JSON.encode(msg)
     encoded
   end

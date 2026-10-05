@@ -233,7 +233,12 @@ defmodule AshA2A.Enterprise.Pipeline do
             case Jason.decode(body) do
               {:ok, %{} = envelope} ->
                 {serve(conn, body),
-                 %{envelope: envelope, params: envelope["params"], body: body, method: conn.method}}
+                 %{
+                   envelope: envelope,
+                   params: envelope["params"],
+                   body: body,
+                   method: conn.method
+                 }}
 
               _ ->
                 # Undecodable: re-serve the original bytes; the inner
@@ -518,7 +523,9 @@ defmodule AshA2A.Enterprise.Pipeline do
   end
 
   defp gate_refusal(:denied), do: authzen_refusal("denied", "PDP decision denied the request")
-  defp gate_refusal(:pdp_mixup), do: authzen_refusal("pdp_mixup", "decision not from the expected PDP")
+
+  defp gate_refusal(:pdp_mixup),
+    do: authzen_refusal("pdp_mixup", "decision not from the expected PDP")
 
   defp gate_refusal(:effect_digest_mismatch),
     do: authzen_refusal("effect_digest_mismatch", "evidence does not bind this exact effect")
