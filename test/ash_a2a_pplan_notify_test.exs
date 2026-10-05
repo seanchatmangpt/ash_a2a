@@ -16,7 +16,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
        stops when the task is unwatched.
     3. **Restart dedup**: killing and re-opening the store produces NO
        duplicate delivery — the `notified` dedup set is keyed
-       `{task_id, config_id, record.version}` and held in the notifier, so a
+       `{task_id, config_id, record.status}` and held in the notifier, so a
        store restart cannot duplicate a notified transition.
 
   ## Durability-court skip discipline
@@ -268,6 +268,37 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
 
   defp delivery_count(notify), do: length(AshA2A.Providers.PPlanNotify.deliveries(notify))
 
+  # Bounded wait until the durable record's write-counter `version` moves past
+  # `seq` (post-terminal bookkeeping writes bump it without a new terminal
+  # transition). Returns :bumped when observed, :quiet on timeout — both are
+  # valid outcomes for the exactly-once pin that follows; only a REDLIVERY
+  # after the bump would be a failure.
+  defp wait_version_past(_dets_name, _task_id, _seq, 0), do: :quiet
+
+  defp wait_version_past(dets_name, task_id, seq, tries) do
+    case record_version(dets_name, task_id, seq) do
+      :quiet ->
+        Process.sleep(20)
+        wait_version_past(dets_name, task_id, seq, tries - 1)
+
+      :bumped ->
+        :bumped
+    end
+  end
+
+  defp record_version(dets_name, task_id, delivered_seq) do
+    case AshPPlan.Reactor.Durable.Engine.fetch(dets_name, task_id, store_module: @dets) do
+      nil ->
+        :quiet
+
+      %{version: v} when v > delivered_seq ->
+        :bumped
+
+      _record ->
+        :quiet
+    end
+  end
+
   # -- (1) the bridge ------------------------------------------------------------
 
   test "resumed parked run completes and the real receiver gets the signed wrapped body exactly once",
@@ -328,7 +359,15 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
     assert [%{attempt: 1, outcome: {:ok, 200}, config_id: "cfg-ok"}] =
              TaskEvents.attempts(transport, task_id)
 
-    # Exactly-once: the ticks keep coming, no second webhook, no second delivery.
+    # Exactly-once: the durable record's write-counter `version` may advance
+    # AFTER the terminal transition (post-completion bookkeeping writes bump
+    # it without a new transition — ash_pplan put_run bumps on every write),
+    # so wait out any such post-terminal bump before pinning the silence: no
+    # second webhook, no second delivery.
+    delivered_seq = entry.seq
+
+    wait_version_past(dets_name, task_id, delivered_seq, 25)
+
     Process.sleep(120)
     refute_received {:webhook, "POST", _h, _b}
     assert delivery_count(notify) == 1
@@ -368,7 +407,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
 
   # -- (3) store restart: no duplicate delivery (dedup scope pinned) ---------------
 
-  test "store restart produces no duplicate delivery (dedup scope {task, config, version} holds)",
+  test "store restart produces no duplicate delivery (dedup scope {task, config, status} holds)",
        %{
          fx: fx,
          store: store,

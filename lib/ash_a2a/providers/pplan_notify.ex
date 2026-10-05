@@ -27,10 +27,15 @@ defmodule AshA2A.Providers.PPlanNotify do
 
   ## Exactly-once scope (pinned)
 
-  Dedup is per `{task_id, config_id, record.version}` in this process's local
+  Dedup is per `{task_id, config_id, record.status}` in this process's local
   state, marked ONLY on a successful (`:ok`) delivery: a failed delivery is
   retried on the next tick (at-least-once toward the receiver until success,
-  exactly-once per terminal transition on success). The dedup set lives in
+  exactly-once per terminal status on success). The dedup key is the terminal
+  STATUS, not `record.version`: the durable record's `version` is a write
+  counter in ash_pplan (bumped on every `put_run` write, including
+  post-terminal bookkeeping), so keying on it re-delivered the same completed
+  transition when a post-completion write advanced the version under a
+  `completed` status. The dedup set lives in
   the notifier process, so it survives store restarts (re-open the store at
   the same registered name and the poll loop re-binds transparently) but NOT
   a restart of the notifier itself: a notifier started fresh against an
@@ -209,7 +214,7 @@ defmodule AshA2A.Providers.PPlanNotify do
     if apply(@status, :terminal?, [record.status]) do
       {payload, seq} = wrapped_body(task_id, record)
       configs = AshA2A.A2ATransport.PushConfigStore.list(state.push_store, task_id)
-      deliver_all(state, task_id, payload, seq, configs)
+      deliver_all(state, task_id, payload, seq, record.status, configs)
     else
       state
     end
@@ -233,11 +238,14 @@ defmodule AshA2A.Providers.PPlanNotify do
   defp wire_state(:failed), do: "TASK_STATE_FAILED"
   defp wire_state(:canceled), do: "TASK_STATE_CANCELED"
 
-  # Exactly-once scope: dedup key {task_id, config_id, record.version},
-  # marked only on a successful delivery; failures retry next tick.
-  defp deliver_all(state, task_id, payload, seq, configs) do
+  # Exactly-once scope: dedup key {task_id, config_id, terminal status},
+  # marked only on a successful delivery; failures retry next tick. The
+  # record's `version` is a write counter in ash_pplan (bumped on every
+  # put_run write, including post-terminal bookkeeping), NOT a terminal
+  # transition identity — keying on it re-delivered completed runs.
+  defp deliver_all(state, task_id, payload, seq, status, configs) do
     Enum.reduce(configs, state, fn config, state ->
-      key = {task_id, config.id, seq}
+      key = {task_id, config.id, status}
 
       if MapSet.member?(state.notified, key) do
         state
