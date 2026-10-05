@@ -123,16 +123,18 @@ defmodule AshA2A.TraceTest do
     assert doc["taskId"] == task_id
     assert Regex.match?(~r/\A[0-9a-f]{32}\z/, doc["traceId"])
 
-    # full span tree, correct parent links
+    # full span tree, correct parent links. The real saga nests
+    # task -> actuation (the command bus's actuate span) -> dispatch
+    # (the dispatcher's span inside the actuation).
     assert %{"name" => "a2a.task", "spanId" => task_sid, "parentSpanId" => ""} =
              span_named(doc, "a2a.task")
 
-    assert %{"spanId" => dispatch_sid, "parentSpanId" => ^task_sid} =
-             span_named(doc, "a2a.dispatch")
+    assert %{"spanId" => actuation_sid, "parentSpanId" => ^task_sid} =
+             span_named(doc, "a2a.actuation")
 
-    assert %{"parentSpanId" => ^dispatch_sid} = span_named(doc, "a2a.actuation")
+    assert %{"parentSpanId" => ^actuation_sid} = span_named(doc, "a2a.dispatch")
 
-    assert Enum.map(doc["spans"], & &1["name"]) == ["a2a.task", "a2a.dispatch", "a2a.actuation"]
+    assert Enum.map(doc["spans"], & &1["name"]) == ["a2a.task", "a2a.actuation", "a2a.dispatch"]
     assert span_named(doc, "a2a.task")["kind"] == "SPAN_KIND_SERVER"
 
     for span <- doc["spans"] do
@@ -147,23 +149,32 @@ defmodule AshA2A.TraceTest do
     assert task_span["attributes"]["a2a.task.state"] == "TASK_STATE_COMPLETED"
     assert task_span["attributes"]["a2a.principal"] == "id:user-trace-1"
 
-    # dispatch attributes + authority/receipt saga boundaries as span events
+    # dispatch attributes from the dispatcher telemetry
     dispatch = span_named(doc, "a2a.dispatch")
     assert dispatch["attributes"]["a2a.skill"] == "create_note"
+    assert dispatch["attributes"]["a2a.reply_type"] == "reply"
 
-    event_names = Enum.map(dispatch["events"], & &1["name"])
+    # authority/actuation/receipt saga boundaries as span events on the
+    # enclosing task span (the command bus fires them outside the dispatch
+    # span, before/after the actuation stage)
+    event_names = Enum.map(task_span["events"], & &1["name"])
 
     assert "authority.decision" in event_names
 
-    authority = Enum.find(dispatch["events"], &match?(%{"name" => "authority.decision"}, &1))
+    authority = Enum.find(task_span["events"], &match?(%{"name" => "authority.decision"}, &1))
     assert authority["attributes"]["authority.outcome"] == "granted"
 
+    assert "command_bus.target" in event_names
     assert "command_bus.admission" in event_names
     assert "command_bus.claim" in event_names
+    assert "command_bus.prepare" in event_names
+    assert "command_bus.postcondition" in event_names
+    assert "command_bus.commit" in event_names
     assert "receipt.committed" in event_names
 
-    receipt = Enum.find(dispatch["events"], &match?(%{"name" => "receipt.committed"}, &1))
+    receipt = Enum.find(task_span["events"], &match?(%{"name" => "receipt.committed"}, &1))
     assert receipt["attributes"]["receipt.terminal_status"] == "executed"
+    assert receipt["attributes"]["receipt.command_id"] =~ ~r/\Amsg-/
 
     # TaskEvents wire log as events on the task span, with the wire task id
     wire_events = Enum.filter(task_span["events"], &match?(%{"name" => "task"}, &1))
@@ -199,7 +210,7 @@ defmodule AshA2A.TraceTest do
 
     assert scope["scope"]["name"] == "ash_a2a.trace"
     spans = scope["spans"]
-    assert Enum.map(spans, & &1["name"]) == ["a2a.task", "a2a.dispatch", "a2a.actuation"]
+    assert Enum.map(spans, & &1["name"]) == ["a2a.task", "a2a.actuation", "a2a.dispatch"]
 
     trace_id = AshA2A.Trace.trace_id(task["id"])
 
@@ -218,16 +229,14 @@ defmodule AshA2A.TraceTest do
       end
     end
 
-    [task_span, dispatch_span, actuation_span] = spans
+    [task_span, actuation_span, dispatch_span] = spans
     assert task_span["parentSpanId"] == ""
-    assert dispatch_span["parentSpanId"] == task_span["spanId"]
-    assert actuation_span["parentSpanId"] == dispatch_span["spanId"]
+    assert actuation_span["parentSpanId"] == task_span["spanId"]
+    assert dispatch_span["parentSpanId"] == actuation_span["spanId"]
 
     # wire-log events survive OTLP typing (seq as intValue)
-    wire =
-      Enum.find(task_span["events"], fn e ->
-        match?(%{"name" => "task", "attributes" => [%{"key" => "a2a.event.seq"} | _]}, e)
-      end)
+    wire = Enum.find(task_span["events"], &match?(%{"name" => "task"}, &1))
+    assert wire
 
     assert %{"value" => %{"intValue" => 1}} =
              Enum.find(wire["attributes"], &match?(%{"key" => "a2a.event.seq"}, &1))

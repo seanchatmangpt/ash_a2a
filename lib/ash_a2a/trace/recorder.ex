@@ -227,8 +227,9 @@ defmodule AshA2A.Trace.Recorder do
         n = Process.get(@dispatch_n_key, 0) + 1
         Process.put(@dispatch_n_key, n)
         key = "dispatch:#{n}"
+        parent = innermost_span_key()
         push(task_id, entry(key, false, dispatch_attrs(meta)))
-        write_open(task_id, key, "a2a.dispatch", "task", dispatch_attrs(meta))
+        write_open(task_id, key, "a2a.dispatch", parent, dispatch_attrs(meta))
       end
     end)
   end
@@ -236,12 +237,12 @@ defmodule AshA2A.Trace.Recorder do
   def handle_event([:ash_a2a, :dispatch, suffix], _m, meta, _c) when suffix in [:stop, :exception] do
     safe(fn ->
       case pop() do
-        %{key: "dispatch:" <> _n, task_id: task_id} ->
+        %{key: "dispatch:" <> _n = key, task_id: task_id} ->
           attrs =
             dispatch_attrs(meta)
             |> Map.merge(close_attrs(suffix, meta))
 
-          write_close(task_id, "dispatch", status(suffix), attrs)
+          write_close(task_id, key, status(suffix), attrs)
 
         _ ->
           :ok
@@ -254,7 +255,7 @@ defmodule AshA2A.Trace.Recorder do
       if task_id = bound_task() do
         write_event(
           task_id,
-          innermost_dispatch_key(),
+          innermost_span_key(),
           event_name(event),
           boundary_attrs(event, measurements, metadata)
         )
@@ -267,7 +268,7 @@ defmodule AshA2A.Trace.Recorder do
   def handle_event([:ash_a2a, :command_bus, :actuate, :start], _m, meta, _c) do
     safe(fn ->
       with task_id when is_binary(task_id) <- bound_task(),
-           key when is_binary(key) <- innermost_dispatch_key() do
+           key when is_binary(key) <- innermost_span_key() do
         n = Process.get(@actuation_n_key, 0) + 1
         Process.put(@actuation_n_key, n)
         span_key = "actuation:#{n}"
@@ -285,8 +286,8 @@ defmodule AshA2A.Trace.Recorder do
   def handle_event([:ash_a2a, :command_bus, :actuate, :stop], _m, meta, _c) do
     safe(fn ->
       case pop() do
-        %{key: "actuation:" <> _n, task_id: task_id} ->
-          write_close(task_id, "actuation", status(:stop), %{
+        %{key: "actuation:" <> _n = key, task_id: task_id} ->
+          write_close(task_id, key, status(:stop), %{
             "command_bus.outcome" => text(meta[:outcome]),
             "command_bus.receipt_id" => text(meta[:receipt_id])
           })
@@ -301,10 +302,10 @@ defmodule AshA2A.Trace.Recorder do
       when kind in [:committed, :outboxed] do
     safe(fn ->
       if task_id = bound_task() do
-        write_event(task_id, innermost_dispatch_key(), "receipt.#{kind}", %{
-          "receipt.command_id" => text(receipt.command_id),
+        write_event(task_id, innermost_span_key(), "receipt.#{kind}", %{
+          "receipt.command_id" => identity_text(receipt.command_id),
           "receipt.capability_id" => text(receipt.capability_id),
-          "receipt.principal_id" => text(receipt.principal_id),
+          "receipt.principal_id" => identity_text(receipt.principal_id),
           "receipt.status" => text(receipt.status),
           "receipt.terminal_status" => text(receipt.terminal_status)
         })
@@ -339,14 +340,11 @@ defmodule AshA2A.Trace.Recorder do
 
   defp bound_task, do: Process.get(@task_binding_key)
 
-  # The innermost open dispatch span key ("dispatch:<n>"), or nil.
-  defp innermost_dispatch_key do
-    case Enum.find(Process.get(@stack_key, []), fn
-           %{key: "dispatch:" <> _} -> true
-           _ -> false
-         end) do
-      %{key: key} -> key
-      _ -> nil
+  # The innermost open span key ("task", "actuation:<n>", "dispatch:<n>").
+  defp innermost_span_key do
+    case Process.get(@stack_key, []) do
+      [%{key: key} | _] -> key
+      [] -> nil
     end
   end
 
@@ -473,6 +471,11 @@ defmodule AshA2A.Trace.Recorder do
   defp resource_label(resource) when is_atom(resource), do: inspect(resource)
 
   defp resource_label(other), do: text(other)
+
+  # Receipt identities are %AshA2A.Identity{} structs; the trace carries
+  # their value, never the struct inspect.
+  defp identity_text(%{value: value}), do: text(value)
+  defp identity_text(other), do: text(other)
 
   defp text(nil), do: nil
   defp text(v) when is_binary(v), do: v
