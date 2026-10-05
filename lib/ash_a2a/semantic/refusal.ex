@@ -960,11 +960,30 @@ defmodule AshA2A.Semantic.Refusal do
     not_a_list: :refused_structure,
     # BLOCKED_RESOURCE
     drain_manager_unavailable: :blocked_resource,
+    pool_not_started: :blocked_resource,
     kms_unavailable: :blocked_resource,
     no_last_known_good: :blocked_resource,
     no_svid: :blocked_resource,
     no_trust_bundle: :blocked_resource,
     trust_bundle_expired: :blocked_resource,
+    # v26.10.4 fix-forward (wave 3): OCEL2 evidence, SIEM telemetry, finops
+    # budget and enterprise-pipeline stage-refusal labels.
+    # REFUSED_STRUCTURE
+    bad_field: :refused_structure,
+    bad_json: :refused_structure,
+    config_not_keyword: :refused_structure,
+    endpoint_missing: :refused_structure,
+    unknown_object_type: :refused_structure,
+    # REFUSED_BOUNDS
+    budget: :refused_bounds,
+    residency: :refused_bounds,
+    # BLOCKED_UNKNOWN
+    # (`:outbound` is a pipeline STAGE label in `AshA2A.Enterprise.Pipeline`
+    # stage_refusal/3, not a specific failure class; the honest explicit
+    # classification is "no specific class exists".)
+    outbound: :blocked_unknown,
+    # UNSUPPORTED_PROFILE
+    unknown_platform: :unsupported_profile,
     # v26.10.3 fix-forward: codes introduced by the protocol/agent, plug,
     # sse, client, card-cache, evidence, domain and grpc-framing modules
     # (wire/lifecycle codes on the A2A task, stream and framing surfaces),

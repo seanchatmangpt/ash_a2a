@@ -27,7 +27,8 @@ defmodule AshA2A.Cluster.HealthPlug do
   @default_retry_after_s 30
 
   @impl Plug
-  def init(opts), do: Keyword.validate!(opts, [:drain_manager, retry_after_s: @default_retry_after_s])
+  def init(opts),
+    do: Keyword.validate!(opts, [:drain_manager, retry_after_s: @default_retry_after_s])
 
   @impl Plug
   def call(%Plug.Conn{method: "GET", path_info: ["healthz"]} = conn, opts) do

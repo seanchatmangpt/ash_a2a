@@ -146,7 +146,7 @@ defmodule AshA2A.V1AuthFailureDedupTest do
 
   test "no duplicated clause patterns inside the family" do
     heads = defp_clauses(@runtime_ast, :auth_failure?, 1)
-    patterns = Enum.map(heads, &elem(&1, 0))
+    patterns = Enum.map(heads, fn {_, _, [pattern]} -> pattern end)
     assert Enum.uniq(patterns) == patterns
   end
 
@@ -155,13 +155,13 @@ defmodule AshA2A.V1AuthFailureDedupTest do
     # name/arity shapes; exclude the definition heads by filtering to the
     # guard form `auth_failure?(reason)` inside the cond.
     sites = call_sites(@runtime_ast, :auth_failure?, 1)
-    assert Enum.count(sites, fn {_name, _meta, args} -> match?([{^:reason, _, nil}], args) end) == 1
+    assert Enum.count(sites, fn {_name, _meta, args} -> match?([{:reason, _, nil}], args) end) == 1
   end
 
-  test "sibling admission_refusal?/1 family is untouched (seven clauses, unique)" do
+  test "sibling admission_refusal?/1 family is untouched (eight clauses, unique)" do
     heads = defp_clauses(@runtime_ast, :admission_refusal?, 1)
-    assert length(heads) == 7
-    patterns = Enum.map(heads, &elem(&1, 0))
+    assert length(heads) == 8
+    patterns = Enum.map(heads, fn {_, _, [pattern]} -> pattern end)
     assert Enum.uniq(patterns) == patterns
   end
 
@@ -171,16 +171,15 @@ defmodule AshA2A.V1AuthFailureDedupTest do
     families =
       @runtime_ast
       |> Macro.prewalk(%{}, fn
-        {:defp, _, [{name, _, args} = head, _]} = form, acc when is_atom(name) ->
-          arity = length(args || [])
-          {form, Map.update(acc, {name, arity}, [elem(head, 0)], &[elem(head, 0) | &1])}
+        {:defp, _, [{name, _, [pattern]}, _]} = form, acc when is_atom(name) ->
+          {form, Map.update(acc, name, [pattern], &[pattern | &1])}
 
         form, acc ->
           {form, acc}
       end)
       |> elem(1)
 
-    for {_key, patterns} <- families do
+    for {_name, patterns} <- families do
       assert Enum.uniq(patterns) == patterns
     end
   end

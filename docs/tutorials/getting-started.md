@@ -19,7 +19,7 @@ inside the package — no separate protocol dependency):
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.9.31"}
+    {:ash_a2a, "~> 26.10.3"}
   ]
 end
 ```
@@ -122,9 +122,20 @@ resource as a long-lived, addressable agent, define a module with
 
 ```elixir
 defmodule MyApp.EchoAgent do
-  use AshA2A.Agent, resource_or_domain: MyApp.Echo, name: "echo_agent"
+  use AshA2A.Agent,
+    resource_or_domain: MyApp.Echo,
+    name: "echo_agent",
+    # read-only quickstart: let identity-less callers reach the :echo skill
+    require_authenticated_caller: false
 end
 ```
+
+By default `use AshA2A.Agent` requires an authenticated caller: with no
+identity, dispatch is refused `%{code: :unauthenticated}` before any skill
+runs. The quickstart's echo is a read-only skill with no actor-dependent
+behavior, so it opts out explicitly; production agents keep the default and
+wire real credentials (see
+[Authenticate inbound A2A requests](../how-to/authenticate-agent-requests.md)).
 
 The simplest way to boot it is config: `ash_a2a` ships its own OTP
 application (`AshA2A.Application`) whose supervision tree already starts an
@@ -197,16 +208,24 @@ curl -X POST http://localhost:4000/ \
   -d '{"jsonrpc":"2.0","id":1,"method":"message/send",
        "params":{"message":{"messageId":"m-1","role":"user",
                             "parts":[{"data":{}}]}}}'
-# {"jsonrpc":"2.0","id":1,"result":{"id":"...","contextId":"...",
-#  "status":{"state":"TASK_STATE_COMPLETED"},...}}
+# {"jsonrpc":"2.0","id":1,"result":{"task":{"id":"...","contextId":"...",
+#  "status":{"state":"TASK_STATE_COMPLETED"},...}}}
 ```
 
-Streaming uses the same v1.0 wire shapes: `message/stream` (supported
-through the owned `AshA2A.A2ATransport.Plug`, or the bare plug when the
-agent declares `streaming: true`) answers with SSE frames wrapped in
-`StreamResponse` envelopes — `{"task": ...}`, `{"statusUpdate": ...}`,
-`{"artifactUpdate": ...}` — and no `final` boolean; the stream simply
-ends once the task reaches a terminal state.
+The `message/send` result wraps the task under a `"task"` key (a Message
+reply would wrap under `"message"` — the v1.0 `SendMessageResponse` oneof).
+Streaming uses the same v1.0 wire shapes: `message/stream` answers with SSE
+frames wrapped in `StreamResponse` envelopes — `{"task": ...}`,
+`{"statusUpdate": ...}`, `{"artifactUpdate": ...}` — and no `final`
+boolean; the stream simply ends once the task reaches a terminal state.
+
+Serve streaming through the owned `AshA2A.A2ATransport.Plug` (a supervised
+wrapper around the bare plug). Do not route `message/stream` at the bare
+`AshA2A.Protocol.Plug` alone: an `AshA2A.Agent`'s card declares
+`streaming: true` by default, so the bare plug accepts the method and then
+answers `-32603` with `data` `{:not_streaming, task}` when the agent
+process returns a task with no stream attached. `AshA2A.A2ATransport.Plug`
+attaches a real SSE stream for every skill.
 
 ### Choose a transport binding
 
@@ -235,7 +254,9 @@ curl -X POST http://localhost:4000/message:send \
 ```
 
 Read the task back with `GET /tasks/{id}` and cancel it with
-`POST /tasks/{id}:cancel` — a terminal task answers `400`.
+`POST /tasks/{id}:cancel` — cancelling a task that already reached a
+terminal state answers `409` with a `google.rpc.ErrorInfo` payload
+(`reason: "TASK_NOT_CANCELABLE"`, domain `a2a-protocol.org`).
 
 Or drive it from Elixir with `AshA2A.Protocol.Client` (requires the `:req` package):
 

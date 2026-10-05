@@ -189,6 +189,7 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
             {"AshA2A.Cluster.Checkpoint.land/4", "?:put/2"},
             {"AshA2A.Cluster.Handover.rehydrate_one/3", "?:put/2"},
             {"AshA2A.Eval.Scorers.apply_custom/4", "apply/3"},
+            {"AshA2A.Enterprise.Pipeline.budget_check/3", "apply/3"},
             {"AshA2A.Execution.PPlan.resolve_value/1", "apply/3"},
             {"AshA2A.Chicago.Courts.Shacl.run/1", "apply/3"},
             {"AshA2A.Chicago.Courts.Shex.run/1", "apply/3"},

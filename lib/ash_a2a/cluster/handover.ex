@@ -58,11 +58,11 @@ defmodule AshA2A.Cluster.Handover do
     :telemetry.execute([:ash_a2a, :cluster, :handover], %{count: 1}, event)
 
     case pubsub() do
-      nil ->
-        :ok
-
-      {pubsub_name, topic} ->
+      {pubsub_name, topic} when is_atom(pubsub_name) and pubsub_name != nil ->
         Phoenix.PubSub.broadcast(pubsub_name, topic, {:ash_a2a_cluster_handover, event})
+
+      _ ->
+        :ok
     end
 
     :ok

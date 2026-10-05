@@ -19,7 +19,7 @@ this livebook needs no Mix project behind it.
 ## Setup
 
 ```elixir
-Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.9.31"}],
+Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.10.3"}],
   consolidate_protocols: false,
   config: [
     ash: [
@@ -158,6 +158,61 @@ text_msg =
 :completed = task2.status.state
 ```
 
+## Sending a change: identity plus a grant
+
+`list_todos` is an `:observe` skill — reads are admitted unconditionally.
+`create_todo` is a `:change` skill: it routes through the receipted
+`AshA2A.CommandBus`, which refuses any caller without a standing grant for
+that exact capability. Two things are required, separately: a verified
+identity (authentication) and a grant (authority). Here the identity arrives
+in the call's `"a2a.auth"` metadata — the process-level form of what
+`AshA2A.Protocol.Plug.Auth` injects on the wire (never anything read from
+message content).
+
+```elixir
+create_msg =
+  AshA2A.Protocol.Message.new_user([
+    AshA2A.Protocol.Part.Data.new(%{"title" => "Write livebooks"})
+  ])
+  |> struct!(metadata: %{"skill" => "create_todo"})
+
+identity = %{id: "user-42", tenant: "acme"}
+
+{:ok, task} =
+  AshA2A.Protocol.call(Tutorial.TodoAgent, create_msg,
+    metadata: %{"a2a.auth" => %{identity: identity}}
+  )
+
+task.status.state
+#=> :failed
+```
+
+The refusal is typed, not a mystery: the failed task carries the
+`:authority_required` code and nothing was written, executed, or receipted.
+
+```elixir
+AshA2A.Protocol.Message.text(task.status.message)
+#=> "Error: %{code: :authority_required}"
+```
+
+Now issue the standing grant — the subject must be built from the same
+identity term the call carries — and retry the same message:
+
+```elixir
+user_42 = AshA2A.Identity.principal(identity)
+
+{:ok, _authority} = AshA2A.Authority.Grant.grant(user_42, "Tutorial.Todo.create")
+true = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Todo.create")
+
+{:ok, task} =
+  AshA2A.Protocol.call(Tutorial.TodoAgent, create_msg,
+    metadata: %{"a2a.auth" => %{identity: identity}}
+  )
+
+task.status.state
+#=> :completed
+```
+
 ## The agent card
 
 The running agent's card is built from the exact same verified capability
@@ -179,10 +234,12 @@ Enum.map(card.skills, & &1.id)
 You now have: a real Ash resource whose public actions are projected into a
 verified capability index, a working direct dispatch, a supervised
 `AshA2A.Agent` process serving the read skill publicly, and a card derived
-from that same index.
+from that same index. You also sent a real `:change` skill through the
+receipted `AshA2A.CommandBus`: refused `:authority_required` before the
+grant, `:completed` after it.
 
-Sending changes (`create`, `update`, `destroy`) through the agent needs one
-more piece — an authority grant. Wire it in
-[Secure Your Agent](secure-your-agent.livemd), then come back for lazy
-streaming and resumable `:input_required` pauses in
+For the full trust boundary — transport-verified credentials via
+`AshA2A.Protocol.Plug.Auth`, owner-scoped reads, revocation, and card
+signing — continue in [Secure Your Agent](secure-your-agent.livemd), then
+come back for lazy streaming and resumable `:input_required` pauses in
 [Stream and Elicit](stream-and-elicit.livemd).

@@ -19,6 +19,9 @@ defmodule AshA2A.Test.DrainCourtPeer do
   end
 
   def install_event_forwarder(test_pid) do
+    # The peer boots as a bare distribution node; :telemetry's handler
+    # table GenServer only exists once the app is started.
+    {:ok, _} = Application.ensure_all_started(:telemetry)
     handler_id = :"drain_court_forwarder_#{System.unique_integer([:positive])}"
 
     :ok =
@@ -42,12 +45,22 @@ defmodule AshA2A.Test.DrainCourtPeer do
         drain_timeout_ms: timeout,
         forwarder: _forwarder
       }) do
+    # The peer boots as a bare distribution node: start the applications
+    # the tree's children need before supervising them.
+    {:ok, _} = Application.ensure_all_started(:telemetry)
+    {:ok, _} = Application.ensure_all_started(:ekv)
+    :persistent_term.put({__MODULE__, :port}, port)
+
     id = System.unique_integer([:positive])
     store_name = :"store_drain_court_#{id}"
     dm_name = :"dm_drain_court_#{id}"
     sup_name = :"tasksup_drain_court_#{id}"
 
-    {:ok, _sup} =
+    # The erpc worker process that runs this function exits as soon as it
+    # returns, and a start_link-ed tree dies with its linked parent -- so
+    # unlink the tree from this transient process: the tree's lifetime is
+    # the node's lifetime, exactly like a real node's supervision tree.
+    {:ok, sup} =
       Supervisor.start_link(
         [
           {Task.Supervisor, name: sup_name},
@@ -60,15 +73,18 @@ defmodule AshA2A.Test.DrainCourtPeer do
            halt_after_drain: true},
           {Bandit,
            plug: {HealthPlug, drain_manager: dm_name, retry_after_s: 30},
-            port: port,
-            ip: {127, 0, 0, 1}}
+           port: port,
+           ip: {127, 0, 0, 1}}
         ],
         strategy: :one_for_one
       )
 
-  %{
+    true = Process.unlink(sup)
+
+    %{
       drain_manager: dm_name,
       task_supervisor: sup_name,
+      supervisor: sup,
       store_name: store_name,
       store_tuple: {Ekv, store_name},
       http_port: port
@@ -86,6 +102,7 @@ defmodule AshA2A.Test.DrainCourtPeer do
   end
 
   def task_loop(dm, task_id, progress_path, test_pid, frame) do
+    :ok = DrainManager.track(dm, task_id, frame: frame)
     :ok = DrainManager.update_frame(dm, task_id, frame)
 
     receive do
@@ -106,6 +123,21 @@ defmodule AshA2A.Test.DrainCourtPeer do
     end
   end
 
+  # Diagnostic: perform a local loopback HTTP GET /healthz from this peer.
+  def healthz_self do
+    {:ok, _} = Application.ensure_all_started(:inets)
+
+    case :httpc.request(
+           :get,
+           {~c"http://127.0.0.1:#{:persistent_term.get({__MODULE__, :port})}/healthz", []},
+           [timeout: 2_000, connect_timeout: 2_000],
+           []
+         ) do
+      {:ok, {{_v, status, _p}, _h, body}} -> {status, body}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   def resume_fun(progress_path) do
     fn _task, frame ->
       Enum.each(frame.remaining, &append_step(progress_path, &1))
@@ -123,4 +155,3 @@ defmodule AshA2A.Test.DrainCourtPeer do
 
   defp initial_frame, do: %{done: [], remaining: @all_steps}
 end
-

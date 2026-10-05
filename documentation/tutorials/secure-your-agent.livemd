@@ -20,7 +20,7 @@ two are configured separately and fail closed independently.
 ## Setup
 
 ```elixir
-Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.9.31"}, {:plug, "~> 1.16"}],
+Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.10.3"}, {:plug, "~> 1.16"}],
   consolidate_protocols: false,
   config: [
     ash: [

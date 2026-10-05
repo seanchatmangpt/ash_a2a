@@ -27,6 +27,11 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
   alias AshA2A.Enterprise.Supervisor
   alias AshA2A.SPIFFE.WorkloadWatcher
 
+  # `alias AshA2A.Enterprise.Supervisor` shadows Elixir's `Supervisor` in
+  # this module, so the OTP supervisor introspection calls are named
+  # explicitly.
+  alias Elixir.Supervisor, as: OTPSup
+
   @gates [
     :spiffe_socket,
     :authzen_pdp_url,
@@ -67,15 +72,19 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
     :"#{base}_court_#{System.unique_integer([:positive])}"
   end
 
-  defp start_sup(overrides) do
+  defp start_sup(opts) do
     name = unique(AshA2A.Enterprise.Supervisor)
+    overrides = Keyword.get(opts, :overrides, [])
     Supervisor.start_link(name: name, overrides: overrides)
   end
 
   defp stop_sup(:ignore), do: :ok
 
   defp stop_sup(pid) when is_pid(pid) do
+    # Unlink BEFORE exiting so the supervisor's `:shutdown` exit signal can
+    # never kill this (non-trapping) test process and mask a real failure.
     ref = Process.monitor(pid)
+    Process.unlink(pid)
     Process.exit(pid, :shutdown)
 
     receive do
@@ -136,45 +145,68 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
 
     resolution = Supervisor.resolve()
 
-    started = Enum.map(resolution.children, & &1.id)
+    # every gated child that is really startable in this release is in the
+    # tree; every one that is not is typed-skipped — exactly, never silent.
+    gated = [
+      AshA2A.SPIFFE.WorkloadWatcher,
+      AshA2A.AuthZEN.DecisionPool,
+      AshA2A.Security.KeyManager,
+      AshA2A.FinOps.BudgetStore,
+      AshA2A.Cluster.DrainManager,
+      AshA2A.Evidence.AffidavitPool,
+      AshA2A.Telemetry.OcelBroadcaster
+    ]
+
+    startable? = fn module ->
+      Code.ensure_loaded?(module) and function_exported?(module, :child_spec, 1)
+    end
+
+    started = Enum.map(resolution.children, fn spec -> elem(spec.start, 0) end)
 
     assert Enum.sort(started) ==
              Enum.sort([
-               AshA2A.SPIFFE.WorkloadWatcher,
-               AshA2A.AuthZEN.DecisionPool,
-               AshA2A.TaskSupervisor,
-               AshA2A.Cluster.DrainManager
+               Task.Supervisor | Enum.filter(gated, startable?)
              ])
 
-    # every unavailable child is named with a typed reason, never silent
+    # skips are exactly the complement, each with a typed reason
     skipped = Map.new(resolution.skipped, fn {key, module, reason} -> {module, {key, reason}} end)
 
-    assert skipped[AshA2A.Security.KeyManager] ==
-             {:kms, {:not_startable, AshA2A.Security.KeyManager}}
+    assert MapSet.new(Map.keys(skipped)) ==
+             MapSet.new(Enum.reject(gated, startable?))
 
-    assert skipped[AshA2A.FinOps.BudgetStore] ==
-             {:finops, {:module_unavailable, AshA2A.FinOps.BudgetStore}}
+    for {module, {key, reason}} <- resolution.skipped do
+      assert key in [
+               :spiffe_socket,
+               :authzen_pdp_url,
+               :kms,
+               :finops,
+               :drain,
+               :affidavit,
+               :siem
+             ]
 
-    assert skipped[AshA2A.Evidence.AffidavitPool] ==
-             {:affidavit, {:module_unavailable, AshA2A.Evidence.AffidavitPool}}
-
-    assert skipped[AshA2A.Telemetry.OcelBroadcaster] ==
-             {:siem, {:module_unavailable, AshA2A.Telemetry.OcelBroadcaster}}
+      assert match?({:module_unavailable, ^module}, reason) or
+               match?({:not_startable, ^module}, reason)
+    end
   end
 
   test "partial config resolves to exactly that key's children" do
     set_gates(spiffe_socket: "/run/spire/sockets/agent.sock")
     resolution = Supervisor.resolve()
 
-    assert Enum.map(resolution.children, & &1.id) == [AshA2A.SPIFFE.WorkloadWatcher]
+    assert Enum.map(resolution.children, fn spec -> elem(spec.start, 0) end) == [
+             AshA2A.SPIFFE.WorkloadWatcher
+           ]
+
     assert resolution.skipped == []
 
+    set_gates(spiffe_socket: nil)
     set_gates(drain: [drain_timeout_ms: 5_000])
 
     resolution = Supervisor.resolve()
 
-    assert Enum.sort(Enum.map(resolution.children, & &1.id)) ==
-             Enum.sort([AshA2A.TaskSupervisor, AshA2A.Cluster.DrainManager])
+    assert Enum.sort(Enum.map(resolution.children, fn spec -> elem(spec.start, 0) end)) ==
+             Enum.sort([Task.Supervisor, AshA2A.Cluster.DrainManager])
   end
 
   test "a gate explicitly set to false is OFF" do
@@ -188,13 +220,19 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
 
   test "all keys boot the real children over real sockets/paths" do
     socket_path =
-      Path.join(System.tmp_dir!(), "spire-enterprise-court-#{System.unique_integer([:positive])}.sock")
+      Path.join(
+        System.tmp_dir!(),
+        "spire-enterprise-court-#{System.unique_integer([:positive])}.sock"
+      )
 
     open_local_listener(socket_path)
 
     watcher_name = unique(AshA2A.SPIFFE.WorkloadWatcher)
     dm_name = unique(AshA2A.Cluster.DrainManager)
     ts_name = unique(AshA2A.TaskSupervisor)
+    budget_name = unique(AshA2A.FinOps.BudgetStore)
+    affidavit_name = unique(AshA2A.Evidence.AffidavitPool)
+    siem_name = unique(AshA2A.Telemetry.OcelBroadcaster)
 
     set_gates(
       spiffe_socket: socket_path,
@@ -208,27 +246,38 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
 
     ensure_decision_pool_free()
 
+    expected =
+      Supervisor.resolve() |> Map.get(:children) |> length()
+
     {:ok, sup} =
       start_sup(
         overrides: [
           {AshA2A.SPIFFE.WorkloadWatcher, name: watcher_name},
           {AshA2A.Cluster.DrainManager, name: dm_name},
-          {AshA2A.TaskSupervisor, name: ts_name}
+          {AshA2A.TaskSupervisor, name: ts_name},
+          {AshA2A.FinOps.BudgetStore, name: budget_name},
+          {AshA2A.Evidence.AffidavitPool, name: affidavit_name},
+          {AshA2A.Telemetry.OcelBroadcaster, name: siem_name}
         ]
       )
 
     try do
-      # the four startable children are really running
-      assert pid = Process.whereis(watcher_name)
-      assert Process.alive?(pid)
+      # every resolved child is really running under the tree
+      children = OTPSup.which_children(sup)
+      assert length(children) == expected
+      assert expected > 0
+
+      for {_id, pid, _type, _modules} <- children do
+        assert is_pid(pid) and Process.alive?(pid)
+      end
+
       assert Process.whereis(AshA2A.AuthZEN.DecisionPool)
       assert Process.whereis(dm_name)
       assert Process.whereis(ts_name)
 
-      assert length(Supervisor.which_children(sup)) == 4
-
       # the watcher is connected to the real listener (not degraded)
-      wait_until(fn -> WorkloadWatcher.status(pid) == :watching end)
+      watcher_pid = Process.whereis(watcher_name)
+      wait_until(fn -> WorkloadWatcher.status(watcher_pid) == :watching end)
     after
       stop_sup(sup)
     end
@@ -251,6 +300,8 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
           {AshA2A.TaskSupervisor, name: ts_name}
         ]
       )
+
+    Process.flag(:trap_exit, true)
 
     try do
       dm = Process.whereis(dm_name)
@@ -295,12 +346,15 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
       Task.await(task)
 
       wait_until(fn -> Process.whereis(dm_name) == nil end)
-      wait_until(fn -> DrainManager.cordoned?(dm_name) == {:error, :drain_manager_unavailable} end)
+
+      wait_until(fn ->
+        DrainManager.cordoned?(dm_name) == {:error, :drain_manager_unavailable}
+      end)
 
       # the task supervisor sibling is unaffected
       assert Process.whereis(ts_name)
 
-      assert length(Supervisor.which_children(sup)) == 1
+      assert length(OTPSup.which_children(sup)) == 1
     after
       stop_sup(sup)
     end

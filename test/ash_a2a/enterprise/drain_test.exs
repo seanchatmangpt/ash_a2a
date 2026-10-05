@@ -77,6 +77,14 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     {peer_a, node_a} = start_peer("a")
     on_exit(fn -> File.rm_rf!(base) end)
 
+    try do
+      run_court(node_a, port_a, data_dir, progress)
+    after
+      DrainCourtPeer.stop_peer(peer_a)
+    end
+  end
+
+  defp run_court(node_a, port_a, data_dir, progress) do
     tree_a =
       :erpc.call(node_a, DrainCourtPeer, :start_tree, [
         %{
@@ -89,8 +97,10 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
 
     dm_a = tree_a.drain_manager
 
-    # Before cordon: the real HTTP surface serves 200 on /healthz.
-    assert {200, _headers, _body} = get_healthz(port_a)
+    # Before cordon: the real HTTP surface serves 200 on /healthz (poll
+    # until the peer's listener is accepting, then demand 200).
+    now = System.monotonic_time(:millisecond)
+    assert {200, _headers, _body} = poll_healthz_until(port_a, 200, 10_000, now)
 
     # Two real in-flight tasks under the peer's real Task.Supervisor.
     fast = :erpc.call(node_a, DrainCourtPeer, :run_task, [tree_a, "fast", progress, self()])
@@ -107,7 +117,6 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     t_kill = System.monotonic_time(:millisecond)
     assert {_, 0} = System.cmd("kill", ["-TERM", to_string(os_pid)])
 
-    # -- Phase 1 witnessed: 503 + Retry-After on the real HTTP surface --
     assert {503, headers, _body} = poll_healthz_until(port_a, 503, @cordon_budget_ms, t_kill)
 
     assert {"retry-after", @retry_after} in headers
@@ -182,8 +191,6 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     after
       DrainCourtPeer.stop_peer(peer_c)
     end
-
-    DrainCourtPeer.stop_peer(peer_a)
   end
 
   # ------------------------------------------------------------------
@@ -210,14 +217,15 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     # delivers on SIGTERM (whose OS-level delivery the peer court above
     # witnesses against a real OS process).
     dm = ctx.drain_manager
-    drain_ref = Process.monitor(dm)
+    dm_pid = GenServer.whereis(dm)
+    drain_ref = Process.monitor(dm_pid)
     t0 = System.monotonic_time(:millisecond)
     send(dm, :sigterm)
 
     # Cordon is immediate: new work is refused with the typed reason.
     assert {:error, :cordoned} = DrainManager.track(ctx.drain_manager, "late", [])
 
-    assert_receive {:DOWN, ^drain_ref, :process, ^dm, :shutdown}, 15_000
+    assert_receive {:DOWN, ^drain_ref, :process, ^dm_pid, :shutdown}, 15_000
     elapsed = System.monotonic_time(:millisecond) - t0
 
     # The drain concluded on the finisher, not on the 25s deadline.
@@ -296,7 +304,6 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     assert still_suspended.id == "rehydrate-me-2"
   end
 
-
   # ------------------------------------------------------------------
   # Primary-side helpers
   # ------------------------------------------------------------------
@@ -344,19 +351,31 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     {:ok, frame}
   end
 
+  # curl, not :httpc: inets' httpc does not surface a 503+Retry-After
+  # response to the caller -- it schedules an automatic retry and blocks
+  # for the Retry-After period. curl returns the real response bytes.
   defp get_healthz(port) do
-    url = ~c"http://127.0.0.1:#{port}/healthz"
+    {raw, 0} = System.cmd("curl", ["-s", "-i", "-m", "3", "http://127.0.0.1:#{port}/healthz"])
 
-    case :httpc.request(:get, {url, []}, [timeout: 2_000, connect_timeout: 2_000], []) do
-      {:ok, {{_version, status, _phrase}, headers, body}} ->
-        headers =
-          for {k, v} <- headers,
-              do: {String.downcase(to_string(k)), to_string(v)}
+    [head | rest] = String.split(raw, "\r\n\r\n", parts: 2)
+    body = Enum.join(rest, "\r\n\r\n")
 
-        {status, headers, body}
+    [status_line | header_lines] = String.split(head, "\r\n")
+    status = parse_status(status_line)
 
-      {:error, reason} ->
-        {:error, reason}
+    headers =
+      for line <- header_lines,
+          [k, v] = String.split(line, ":", parts: 2) do
+        {String.downcase(String.trim(k)), String.trim(v)}
+      end
+
+    {status, headers, body}
+  end
+
+  defp parse_status(line) do
+    case String.split(line, " ") do
+      [_http_version, code | _rest] -> String.to_integer(code)
+      _other -> 0
     end
   end
 
@@ -390,14 +409,28 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
   end
 
   defp court_dir(name) do
-    Path.join(System.tmp_dir!(), "ash_a2a_drain_court_#{name}_#{System.unique_integer([:positive])}")
+    Path.join(
+      System.tmp_dir!(),
+      "ash_a2a_drain_court_#{name}_#{System.unique_integer([:positive])}"
+    )
   end
 
+  # Bind-probe in a NON-ephemeral range: ports from the OS ephemeral range
+  # are routinely handed out as source ports to concurrent outbound
+  # connections (httpc, :peer, distribution), and a listener that binds one
+  # of those can shadow/conflict with the peer's Bandit listener, making
+  # the court's HTTP witnesses unreliable.
   defp free_port do
-    {:ok, socket} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
-    {:ok, port} = :inet.port(socket)
-    :gen_tcp.close(socket)
-    port
+    Enum.find_value(46_900..46_999, fn port ->
+      case :gen_tcp.listen(port, [:binary, active: false, ip: {127, 0, 0, 1}]) do
+        {:ok, socket} ->
+          :gen_tcp.close(socket)
+          port
+
+        {:error, _in_use} ->
+          nil
+      end
+    end) || raise ExUnit.AssertionError, "no free drain-court port in 46900..46999"
   end
 
   defp wait_until(timeout_ms, fun) do
@@ -412,7 +445,7 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
     else
       now = System.monotonic_time(:millisecond)
 
-      if now >= deadline, do: raise ExUnit.AssertionError, "condition not met within timeout"
+      if now >= deadline, do: raise(ExUnit.AssertionError, "condition not met within timeout")
 
       Process.sleep(50)
       wait_loop(fun, deadline)

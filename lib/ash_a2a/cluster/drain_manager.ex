@@ -70,6 +70,7 @@ defmodule AshA2A.Cluster.DrainManager do
     :deadline,
     :cordon_at,
     :drained_at,
+    :signal_handler,
     phase: :serving,
     tracked: %{},
     finished: %{},
@@ -96,10 +97,15 @@ defmodule AshA2A.Cluster.DrainManager do
       (default `2_000`).
     * `:halt_after_drain` -- when `true`, shut the whole runtime down once
       the drain completes (container mode; default `false`).
-    * `:install_signal_handler` -- when `true` (default), `init/1` installs
-      `:os.set_signal(:sigterm, :handle)` so the OS `SIGTERM` arrives as the
-      `:sigterm` message this GenServer traps. Pass `false` when another
-      component owns the node's signal disposition.
+    * `:install_signal_handler` -- when `true` (default), `init/1` swaps the
+      kernel's default `:erl_signal_handler` out of the `:erl_signal_server`
+      `gen_event` manager for `AshA2A.Cluster.DrainManager.SignalHandler`,
+      which routes a real OS `SIGTERM` into `drain/2` and delegates every
+      other signal to the kernel handler's logic. This is the supported
+      interception point on OTP 26+, where `SIGTERM` never reaches
+      `:os.set_signal(:sigterm, :handle)` (the kernel handler calls
+      `init:stop()` directly). Pass `false` when another component owns the
+      node's signal disposition.
   """
   @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
   def start_link(opts) when is_list(opts) do
@@ -156,22 +162,44 @@ defmodule AshA2A.Cluster.DrainManager do
 
   @doc """
   Initiates the drain (Phase 1) without an OS `SIGTERM` -- the exact state
-  transition `handle_info(:sigterm)` performs. Returns `{:ok, deadline}`.
+  transition the signal handler performs. Returns `{:ok, deadline}`.
+
+  With `halt: true` (what the SIGTERM signal handler passes), the runtime
+  itself shuts down once Phase 3 completes -- container SIGTERM semantics.
   """
-  @spec drain(GenServer.server()) :: {:ok, non_neg_integer()} | {:error, :already_draining}
-  def drain(server \\ __MODULE__) do
-    GenServer.call(server, :drain)
+  @spec drain(GenServer.server(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, :already_draining}
+  def drain(server \\ __MODULE__, opts \\ []) do
+    GenServer.call(server, {:drain, Keyword.get(opts, :halt, false)})
   end
 
   # -- GenServer callbacks
 
   @impl true
   def init(opts) do
-    if Keyword.get(opts, :install_signal_handler, true) do
-      :os.set_signal(:sigterm, :handle)
-    end
+    install_signal_handler? = Keyword.get(opts, :install_signal_handler, true)
+    state = base_state(opts)
 
-    state = %__MODULE__{
+    signal_handler =
+      if install_signal_handler? do
+        install_signal_handler(state.name)
+      else
+        :not_installed
+      end
+
+    state = %{state | signal_handler: signal_handler}
+
+    :telemetry.execute([:ash_a2a, :cluster, :drain, :init], %{count: 1}, %{
+      drain_manager: state.name,
+      drain_timeout_ms: state.drain_timeout_ms,
+      signal_handler: install_signal_handler?
+    })
+
+    {:ok, state}
+  end
+
+  defp base_state(opts) do
+    %__MODULE__{
       name: Keyword.get(opts, :name, __MODULE__),
       task_supervisor: Keyword.get(opts, :task_supervisor),
       task_store: Keyword.get(opts, :task_store),
@@ -180,13 +208,32 @@ defmodule AshA2A.Cluster.DrainManager do
       exit_grace_ms: Keyword.get(opts, :exit_grace_ms, @default_exit_grace_ms),
       halt_after_drain: Keyword.get(opts, :halt_after_drain, false)
     }
+  end
 
-    :telemetry.execute([:ash_a2a, :cluster, :drain, :init], %{count: 1}, %{
-      drain_manager: state.name,
-      drain_timeout_ms: state.drain_timeout_ms
-    })
+  # OTP 26+: SIGTERM is handled by the kernel's `:erl_signal_handler` (which
+  # calls `init:stop()` outright) and never reaches `:os.set_signal/2`. The
+  # supported interception point is the `:erl_signal_server` gen_event
+  # manager: swap the default handler out and put ours in. Every signal we
+  # do not own is delegated to the kernel handler's real logic.
+  defp install_signal_handler(name) do
+    case :gen_event.swap_handler(
+           :erl_signal_server,
+           {:erl_signal_handler, []},
+           {__MODULE__.SignalHandler, name}
+         ) do
+      :ok ->
+        :ok
 
-    {:ok, state}
+      {:error, {:module_already_present, _}} ->
+        # Another DrainManager on this node already owns the signal.
+        :ok
+
+      {:error, _other} ->
+        # Fall back to adding alongside the kernel handler: SIGTERM will
+        # both begin our drain and trigger the kernel's init:stop(); the
+        # drain deadline still bounds Phase 2 and System.stop is idempotent.
+        :gen_event.add_handler(:erl_signal_server, __MODULE__.SignalHandler, name)
+    end
   end
 
   @impl true
@@ -231,18 +278,21 @@ defmodule AshA2A.Cluster.DrainManager do
     {:reply, {:ok, MapSet.to_list(state.checkpointed)}, state}
   end
 
-  def handle_call(:drain, _from, %__MODULE__{phase: :serving} = state) do
-    cordoned_state = begin_drain(state, :explicit)
+  def handle_call({:drain, halt?}, _from, %__MODULE__{phase: :serving} = state) do
+    cordoned_state = begin_drain(state, :explicit, halt?)
+
     {:reply, {:ok, cordoned_state.deadline}, cordoned_state}
   end
 
-  def handle_call(:drain, _from, %__MODULE__{} = state) do
+  def handle_call({:drain, _halt?}, _from, %__MODULE__{} = state) do
     {:reply, {:error, :already_draining}, state}
   end
 
   @impl true
   def handle_info(:sigterm, %__MODULE__{phase: :serving} = state) do
-    {:noreply, begin_drain(state, :sigterm)}
+    # Message-level path. The OS-level SIGTERM arrives through
+    # SignalHandler (below), which calls drain/2 with halt: true.
+    {:noreply, begin_drain(state, :sigterm, false)}
   end
 
   def handle_info(:sigterm, %__MODULE__{} = state), do: {:noreply, state}
@@ -283,7 +333,7 @@ defmodule AshA2A.Cluster.DrainManager do
 
   # -- Drain sequencing
 
-  defp begin_drain(%__MODULE__{} = state, reason) do
+  defp begin_drain(%__MODULE__{} = state, reason, halt?) do
     now = System.monotonic_time(:millisecond)
 
     Process.send_after(self(), :drain_tick, @tick_interval_ms)
@@ -299,7 +349,8 @@ defmodule AshA2A.Cluster.DrainManager do
       state
       | phase: :cordoned,
         cordon_at: now,
-        deadline: now + state.drain_timeout_ms
+        deadline: now + state.drain_timeout_ms,
+        halt_after_drain: state.halt_after_drain or halt?
     }
   end
 
@@ -390,7 +441,75 @@ defmodule AshA2A.Cluster.DrainManager do
       tracked: Map.keys(state.tracked),
       finished: Map.to_list(state.finished),
       checkpointed: MapSet.to_list(state.checkpointed),
-      deadline: state.deadline
+      deadline: state.deadline,
+      signal_handler: state.signal_handler
     }
   end
+end
+
+defmodule AshA2A.Cluster.DrainManager.SignalHandler do
+  @moduledoc """
+  The `:erl_signal_server` handler that gives a drained node its
+  `SIGTERM`-initiated two-phase drain.
+
+  Installed by `AshA2A.Cluster.DrainManager` in place of the kernel's
+  default `:erl_signal_handler` (which on OTP 26+ answers SIGTERM with an
+  immediate `init:stop()` -- no cordon, no drain). Every signal this
+  handler does not own is delegated to the kernel handler's real logic, so
+  `SIGQUIT`/`SIGUSR1`/`SIGINT` semantics are preserved.
+  """
+
+  @behaviour :gen_event
+
+  # swap_handler/3 calls init({Args, OldHandlerTerminate}); add_handler/3
+  # calls init(Args). Accept both shapes and keep only the manager name.
+  @impl :gen_event
+  def init({name, _swapped_out_handler_value}), do: {:ok, name}
+  def init(name), do: {:ok, name}
+
+  @impl :gen_event
+  def handle_event(:sigterm, name) do
+    # Operational observability: when the last SIGTERM was really received
+    # (read via :persistent_term.get({__MODULE__, :last_sigterm_at})).
+    :persistent_term.put({__MODULE__, :last_sigterm_at}, System.system_time(:millisecond))
+
+    # Fast, non-blocking: drain/2 only flips Phase 1 state and schedules
+    # the drain tick loop; Phase 3 calls System.stop/1 itself. A missing
+    # manager must not take the node's signal handling down with it, so a
+    # failed drain is recorded, never raised into the signal server.
+    try do
+      AshA2A.Cluster.DrainManager.drain(name, halt: true)
+    rescue
+      e ->
+        :persistent_term.put(
+          {__MODULE__, :last_drain_error},
+          {:rescue, Exception.message(e)}
+        )
+
+        :ok
+    catch
+      :exit, reason ->
+        :persistent_term.put({__MODULE__, :last_drain_error}, {:exit, reason})
+        :ok
+    end
+
+    {:ok, name}
+  end
+
+  @impl :gen_event
+  def handle_event(other_signal, name) do
+    # Preserve the kernel handler's semantics for every signal we do not
+    # own (real kernel logic, not a stub).
+    :erl_signal_handler.handle_event(other_signal, {})
+    {:ok, name}
+  end
+
+  @impl :gen_event
+  def handle_info(_info, name), do: {:ok, name}
+
+  @impl :gen_event
+  def handle_call(_request, name), do: {:ok, :ok, name}
+
+  @impl :gen_event
+  def terminate(_reason, _name), do: :ok
 end

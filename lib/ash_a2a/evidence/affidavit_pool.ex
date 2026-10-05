@@ -158,6 +158,7 @@ defmodule AshA2A.Evidence.AffidavitPool do
   """
   @spec call(name(), map(), keyword()) :: AshAffidavit.result()
   @spec call(map(), keyword()) :: AshAffidavit.result()
+  @spec call(name(), map()) :: AshAffidavit.result()
   def call(request, opts \\ [])
 
   def call(request, opts) when is_map(request) and is_list(opts) do

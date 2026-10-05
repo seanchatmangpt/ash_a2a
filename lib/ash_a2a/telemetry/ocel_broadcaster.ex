@@ -350,9 +350,13 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
     Map.merge(dispatch_attributes(measurements, metadata, :stop), %{
       "kind" => to_string_or_nil(Map.get(metadata, :kind)),
       "error_code" =>
+        # `Redact.error_summary/1` always returns a map with a `:kind` key
+        # (its final `error_summary(other)` clause is total), so the former
+        # catch-all `_ -> nil` clause was unreachable (dialyzer
+        # pattern_match_cov) and is removed; the remaining clause is total
+        # over the actual return type.
         case AshA2A.Telemetry.Redact.error_summary(Map.get(metadata, :reason)) do
           %{kind: kind} -> to_string(kind)
-          _ -> nil
         end
     })
   end

@@ -49,10 +49,10 @@ defmodule AshA2A.Enterprise.Supervisor do
       `AshA2A.SPIFFE.SvidValidator` refuses on an absent/expired bundle).
       Configure the key only when the release carrying the child is pinned.
     * `{:not_startable, module}` — the module is compiled but defines no
-      `child_spec/1` (the stateless `AshA2A.Security.KeyManager` facade
-      today). No process is fabricated for a stateless module; when the
-      KeyManager GenServer (ARD §3.3 "DEK caching") lands with a
-      `child_spec/1`, this gate starts it with no supervisor change.
+      `child_spec/1`. No process is fabricated for a stateless module. As of
+      V4-22 every gated child (`AshA2A.Security.KeyManager` included, via its
+      supervised `child_spec/1`) is startable, so this skip is a fail-closed
+      guard for future children, not a live case.
 
   Exception: the `:kms` binding is applied even while no process child is
   startable. When `kms: [client: mod, ...]` names a client and the host has

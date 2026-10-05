@@ -146,6 +146,34 @@ refuses to boot instead of falling back to the library's dev defaults.
 | `SWARM_A2A_HTTP`, `SWARM_A2A_PORT`, `SWARM_A2A_BASE_URL` | Opt-in A2A JSON-RPC surface (`AshA2A.Transport.Plug` at `/a2a`, port 4000). Off by default. |
 | `SWARM_LOG_LEVEL` | Logger level; prod logs are JSON lines (`SwarmNode.JsonLogFormatter`). |
 
+## Dev-profile recipe: `:dev_bypass` and path deps
+
+`AshA2A.SecurityProfile` is a build constant.
+`AshA2A.SecurityProfile.Template` reads
+`Application.compile_env(:ash_a2a, :security_profile, :strict)` and the
+compiling `Mix.env()` when ash_a2a itself is compiled, so the profile is
+frozen into the `.beam` files — a host's `config/dev.exs` cannot change it
+afterwards.
+
+Mix compiles dependencies with `Mix.env() == :prod` by default. In a fresh
+consumer application ash_a2a therefore compiles under `:prod`, where
+`:dev_bypass` is compiled out entirely: setting
+`config :ash_a2a, security_profile: :dev_bypass` in a consumer and
+recompiling the dep raises a `CompileError`
+("the dev_bypass profile is compiled out of prod builds"). A consumer
+`:dev` env does not get the library's own `config/dev.exs` shortcut, and
+recompiling the dep under `MIX_ENV=dev` just to reach `:dev_bypass` is a
+deliberate, explicit act — not something a plain `mix deps.compile` run
+does.
+
+`:legacy_compat` is the working dev escape. Unlike `:dev_bypass` it is
+allowed in every build env (`:prod` included), so a `:prod`-compiled path
+dep boots without the `CompileError`; `AshA2A.SecurityProfile.Boot` treats
+its strict-mode violations as loud warnings (telemetry event
+`[:ash_a2a, :security_profile, :legacy_compat]`) instead of boot failures.
+Set `config :ash_a2a, security_profile: :legacy_compat` in the host's
+`:dev` config while the dep stays `:prod`-compiled.
+
 ## Production checklist
 
 Every item below has an unsafe dev default in the library; a production host

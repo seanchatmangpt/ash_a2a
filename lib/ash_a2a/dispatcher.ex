@@ -348,7 +348,10 @@ defmodule AshA2A.Dispatcher do
 
       conf ->
         store = finops_store(conf)
-        request = metadata || %{}
+        # `Message.metadata` is typed `map()` (struct default `%{}`) -- never
+        # nil, so the old `metadata || %{}` guard was unconditionally false
+        # (dialyzer guard_fail) and is replaced by the direct bind.
+        request = metadata
         estimate = Keyword.get(opts, :estimated_tokens, 0)
 
         case BudgetEnforcer.authorize(store, request, estimated_tokens: estimate) do
