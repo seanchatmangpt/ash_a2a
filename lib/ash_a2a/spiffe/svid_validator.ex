@@ -291,19 +291,7 @@ if Code.ensure_loaded?(Plug) do
 
     # -- Refusal response ----------------------------------------------------------
 
-    @reason_strings %{
-      missing_svid: "missing_svid",
-      svid_malformed: "svid_malformed",
-      svid_expired: "svid_expired",
-      svid_untrusted: "svid_untrusted",
-      svid_identity_absent: "svid_identity_absent",
-      svid_multiple_uris: "svid_multiple_uris",
-      trust_domain_mismatch: "trust_domain_mismatch",
-      identity_path_invalid: "identity_path_invalid",
-      bundle_source_unavailable: "bundle_source_unavailable",
-      trust_bundle_unavailable: "trust_bundle_unavailable",
-      trust_bundle_empty: "trust_bundle_empty"
-    }
+    @reason_strings Map.new(@refusal_reasons, &{&1, Atom.to_string(&1)})
 
     defp refuse(conn, status, reason) when status in [401, 503] do
       body = %{"error" => "spiffe_svid_refused", "reason" => Map.fetch!(@reason_strings, reason)}
