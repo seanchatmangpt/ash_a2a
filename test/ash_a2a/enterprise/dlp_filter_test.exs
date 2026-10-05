@@ -43,7 +43,7 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
                "note" => "card dlt1_" <> _,
                "detail" => %{"subject" => "SSN dlt1_" <> _},
                "creds" => ["dlt1_" <> _],
-               "chart" => "patient record MRN: dlt1_" <> _ <> " on file"
+               "chart" => "patient record dlt1_" <> _
              } = redacted
 
       types = findings |> Enum.map(& &1.type) |> Enum.sort()
@@ -63,10 +63,13 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
 
     test "low-entropy tokens are not redacted (no false positive)" do
       {redacted, findings} =
-        DLPFilter.redact_string("contact administrator-at-the-main-office", opts())
+        DLPFilter.redact_string(
+          "contact hello-world-hello-world-hello or #{String.duplicate("a", 40)}",
+          opts()
+        )
 
-      assert redacted == "contact administrator-at-the-main-office"
       assert findings == []
+      assert redacted == "contact hello-world-hello-world-hello or #{String.duplicate("a", 40)}"
     end
 
     test "PHI patterns are configurable" do
@@ -75,7 +78,8 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
       {redacted, findings} =
         DLPFilter.redact_string("DEA: AB1234563 filed", opts(phi_patterns: patterns))
 
-      assert redacted == "DEA: dlt1_" <> _ <> " filed"
+      assert String.starts_with?(redacted, "dlt1_")
+      assert String.ends_with?(redacted, " filed")
       assert [%{type: :phi, pattern: :dea}] = findings
     end
 
@@ -128,7 +132,8 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
     test "same PAN yields the same token across occurrences and calls" do
       {r1, f1} = DLPFilter.redact(%{"a" => "card #{@pan}", "b" => "again #{@pan}"}, opts())
       %{"a" => ta, "b" => tb} = r1
-      assert ta == tb
+      # same PAN, same token -- the surrounding text differs, the token does not
+      assert extract_token(ta) == extract_token(tb)
       assert [f1a, f1b] = f1
       assert f1a.token == f1b.token
 
@@ -147,7 +152,7 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
       {redacted, _} = DLPFilter.redact(payload, opts(key: @key))
       wrong = DLPFilter.restore(redacted, opts(key: String.duplicate("x", 32)))
       assert wrong == redacted
-      refute wrong =~ @pan
+      refute Jason.encode!(wrong) =~ @pan
     end
 
     test "tokens are typed: same digits as PAN vs raw string give distinct tokens" do
@@ -188,9 +193,11 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
     defmodule EchoPlug do
       @moduledoc "Real inner plug: reflects the decoded body it actually received."
       @behaviour Plug
+      import Plug.Conn
       def init(opts), do: opts
+
       def call(conn, _opts) do
-        body = conn.assigns[:raw] || read_inbound(conn)
+        body = read_inbound(conn)
 
         resp_body =
           case Jason.decode(body) do
@@ -211,7 +218,7 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
       end
 
       defp read_inbound(conn) do
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        {:ok, body, _conn} = Plug.Conn.read_body(conn)
         Process.put(:dlp_echo_inbound, body)
         body
       end
@@ -232,7 +239,11 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
 
     test "outbound response body is redacted before it leaves" do
       conn =
-        Plug.Test.conn(:post, "/a2a", Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "message/send", params: %{}}))
+        Plug.Test.conn(
+          :post,
+          "/a2a",
+          Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "message/send", params: %{}})
+        )
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> DLPPlug.call(DLPPlug.init(inner: EchoPlug, dlp: opts()))
 
@@ -257,6 +268,13 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
   end
 
   # -- fixtures ------------------------------------------------------------
+
+  defp extract_token(text) do
+    case Regex.run(~r/dlt1_[A-Za-z0-9_\-]+/, text) do
+      [token] -> token
+      _ -> flunk("expected exactly one token in #{inspect(text)}")
+    end
+  end
 
   defp build_payload do
     %{

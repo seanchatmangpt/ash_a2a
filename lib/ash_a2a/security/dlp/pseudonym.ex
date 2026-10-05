@@ -50,7 +50,9 @@ defmodule AshA2A.Security.DLP.Pseudonym do
     {ct, tag} =
       :crypto.crypto_one_time_aead(:aes_256_gcm, aes_key, nonce, plaintext, aad(code, name), true)
 
-    header = <<code::8, byte_size(name)::8, name::binary, nonce::binary-size(12), tag::binary-size(16)>>
+    header =
+      <<code::8, byte_size(name)::8, name::binary, nonce::binary-size(12), tag::binary-size(16)>>
+
     @prefix <> Base.url_encode64(header <> ct, padding: false)
   end
 

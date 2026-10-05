@@ -73,8 +73,10 @@ defmodule AshA2A.Security.DLPFilter do
 
   @default_phi_patterns [
     %{id: :mrn, pattern: ~r/(?i)\bMRN[:#\s]*[A-Z0-9][A-Z0-9-]{5,}/},
-    %{id: :patient_id,
-      pattern: ~r/(?i)\b(?:patient|member)[\s_-]*(?:id|no|number)[:#\s]*[A-Z0-9][A-Z0-9-]{5,}/}
+    %{
+      id: :patient_id,
+      pattern: ~r/(?i)\b(?:patient|member)[\s_-]*(?:id|no|number)[:#\s]*[A-Z0-9][A-Z0-9-]{5,}/
+    }
   ]
 
   @pan ~r/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/
@@ -94,7 +96,8 @@ defmodule AshA2A.Security.DLPFilter do
 
     if cfg.enabled do
       started = System.monotonic_time()
-      {term, findings} = walk_redact(term, cfg, [])
+      {term, nested} = walk_redact(term, cfg, [])
+      findings = List.flatten(nested)
       duration = System.monotonic_time() - started
 
       :telemetry.execute(
@@ -197,6 +200,7 @@ defmodule AshA2A.Security.DLPFilter do
             {start, len} = finding.span
             plain = binary_part(binary, start, len)
             token = Pseudonym.token(plain, finding.type, cfg.key, Map.get(finding, :pattern, ""))
+            finding = Map.put(finding, :token, token)
 
             chunk = if start == off, do: "", else: binary_part(binary, off, start - off)
 
@@ -249,7 +253,7 @@ defmodule AshA2A.Security.DLPFilter do
 
           :error ->
             {parts, off}
-          end
+        end
       end)
 
     if offset == 0 do
@@ -262,15 +266,76 @@ defmodule AshA2A.Security.DLPFilter do
 
   # -- detection ------------------------------------------------------------
 
+  # Inspection is chunked: payloads larger than one chunk are partitioned
+  # into owned windows (+ an overlap tail so a match is only ever missed if
+  # a single sensitive run exceeds @chunk_overlap bytes) and scanned in
+  # parallel across schedulers. This is what keeps FR-02's <= 2.5ms/64KB
+  # budget: per-chunk scan cost is bounded and scales out with cores.
+  @chunk_size 4096
+  @chunk_overlap 1024
+
   defp spans(binary, cfg) do
-    [
-      pan_spans(binary),
-      ssn_spans(binary),
-      phi_spans(binary, cfg.phi_patterns),
-      api_key_spans(binary, cfg.entropy_floor)
-    ]
+    ranges = chunk_ranges(byte_size(binary))
+    size = byte_size(binary)
+
+    results =
+      if ranges == [{0, size}] do
+        Enum.map(ranges, &scan_chunk(binary, &1, cfg, size))
+      else
+        ranges
+        |> Task.async_stream(&scan_chunk(binary, &1, cfg, size),
+          max_concurrency: System.schedulers_online(),
+          timeout: 30_000,
+          ordered: true
+        )
+        |> Enum.map(fn {:ok, result} -> result end)
+      end
+
+    {pans, ssns, phis, keys} =
+      Enum.reduce(results, {[], [], [], []}, fn {p, s, ph, k}, {ap, as, aph, ak} ->
+        {ap ++ p, as ++ s, aph ++ ph, ak ++ k}
+      end)
+
+    [pans, ssns, phis, keys]
     |> claim_non_overlapping()
     |> Enum.sort_by(fn %{span: {start, _}} -> start end)
+  end
+
+  defp chunk_ranges(size) when size <= @chunk_size, do: [{0, size}]
+
+  defp chunk_ranges(size) do
+    for start <- 0..(size - 1)//@chunk_size do
+      owned_end = min(start + @chunk_size, size)
+      {start, min(owned_end + @chunk_overlap, size) - start}
+    end
+  end
+
+  defp scan_chunk(binary, {offset, scan_len}, cfg, size) do
+    text = binary_part(binary, offset, scan_len)
+    owned_end = min(offset + @chunk_size, size)
+
+    local =
+      [
+        pan_spans(text),
+        ssn_spans(text),
+        phi_spans(text, cfg.phi_patterns),
+        api_key_spans(text, cfg.entropy_floor)
+      ]
+
+    kept =
+      local
+      |> claim_non_overlapping()
+      |> Enum.filter(fn %{span: {start, _}} -> offset + start < owned_end end)
+      |> Enum.map(fn %{span: {start, len}} = finding ->
+        %{finding | span: {offset + start, len}}
+      end)
+
+    {
+      Enum.filter(kept, &(&1.type == :pan)),
+      Enum.filter(kept, &(&1.type == :ssn)),
+      Enum.filter(kept, &(&1.type == :phi)),
+      Enum.filter(kept, &(&1.type == :api_key))
+    }
   end
 
   defp pan_spans(binary) do
@@ -347,7 +412,11 @@ defmodule AshA2A.Security.DLPFilter do
       enabled: Keyword.get(opts, :enabled, Keyword.get(env, :enabled, true)),
       key: key(Keyword.get(opts, :key, Keyword.get(env, :key))),
       entropy_floor:
-        Keyword.get(opts, :entropy_floor, Keyword.get(env, :entropy_floor, @default_entropy_floor)),
+        Keyword.get(
+          opts,
+          :entropy_floor,
+          Keyword.get(env, :entropy_floor, @default_entropy_floor)
+        ),
       phi_patterns:
         compile_phi(
           Keyword.get(opts, :phi_patterns, Keyword.get(env, :phi_patterns, @default_phi_patterns))

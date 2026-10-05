@@ -50,16 +50,21 @@ defmodule AshA2A.Security.DLPFilter.Plug do
     @behaviour Plug.Conn.Adapter
 
     @doc false
-    def init({mod, state}, body), do: {mod, state, body, false}
+    def init({mod, state}, body), do: {__MODULE__, {mod, state, body, false}}
 
     @doc false
     def read_req_body({mod, state, body, sent} = payload, opts) do
       max_length = Keyword.get(opts, :length, 8_000_000)
 
       cond do
-        sent -> {:ok, "", payload}
-        body == "" -> {:ok, "", {mod, state, "", true}}
-        byte_size(body) <= max_length -> {:ok, body, {mod, state, "", true}}
+        sent ->
+          {:ok, "", payload}
+
+        body == "" ->
+          {:ok, "", {mod, state, "", true}}
+
+        byte_size(body) <= max_length ->
+          {:ok, body, {mod, state, "", true}}
 
         true ->
           part = binary_part(body, 0, max_length)

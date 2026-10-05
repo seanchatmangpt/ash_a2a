@@ -36,7 +36,7 @@ defmodule AshA2A.Security.DLP.Luhn do
     sum =
       if double? do
         doubled = d * 2
-        sum + (if doubled > 9, do: doubled - 9, else: doubled)
+        sum + if doubled > 9, do: doubled - 9, else: doubled
       else
         sum + d
       end

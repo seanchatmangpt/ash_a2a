@@ -30,7 +30,7 @@ defmodule AshA2A.Security.DLP.Entropy do
       |> Map.values()
       |> Enum.reduce(0.0, fn count, acc ->
         p = count / total
-        acc - p * (:math.log2(p))
+        acc - p * :math.log2(p)
       end)
     end
   end
