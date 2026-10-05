@@ -199,7 +199,7 @@ defmodule AshA2A.MixProject do
         ),
       groups_for_extras: [
         Project: ~r"README|CHANGELOG|PHOENIX|usage-rules",
-        Tutorials: ~r"docs/tutorials",
+        Tutorials: ~r"(docs|documentation)/tutorials",
         "How-to guides": ~r"docs/how-to",
         Reference: ~r"docs/reference",
         Explanation: ~r"docs/explanation"

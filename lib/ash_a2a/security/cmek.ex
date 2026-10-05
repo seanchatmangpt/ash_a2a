@@ -62,7 +62,7 @@ defmodule AshA2A.Security.CMEK do
     iv = :crypto.strong_rand_bytes(12)
 
     {ciphertext, tag} =
-      :crypto.crypto_one_time(:aes_256_gcm, dek, iv, plaintext, aad: aad(), encrypt: true)
+      :crypto.crypto_one_time_aead(:aes_256_gcm, dek, iv, plaintext, aad(), true)
 
     {:ok, %{ciphertext: ciphertext, iv: iv, tag: tag}}
   end
@@ -76,14 +76,14 @@ defmodule AshA2A.Security.CMEK do
   def decrypt_payload(envelope, dek) do
     with :ok <- validate_envelope(envelope) do
       try do
-        :crypto.crypto_one_time(
+        :crypto.crypto_one_time_aead(
           :aes_256_gcm,
           dek,
           envelope.iv,
           envelope.ciphertext,
-          aad: aad(),
-          tag: envelope.tag,
-          encrypt: false
+          aad(),
+          envelope.tag,
+          false
         )
       rescue
         _ ->

@@ -197,13 +197,13 @@ defmodule AshA2A.Security.KMS.Local do
 
   defp wrap_under(kek, dek) do
     iv = :crypto.strong_rand_bytes(12)
-    {ct, tag} = :crypto.crypto_one_time(:aes_256_gcm, kek, iv, dek, true)
+    {ct, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, kek, iv, dek, <<>>, true)
     <<iv::binary-size(12), tag::binary-size(16), ct::binary>>
   end
 
   defp unwrap_under(kek, <<iv::binary-size(12), tag::binary-size(16), ct::binary>>) do
     try do
-      case :crypto.crypto_one_time(:aes_256_gcm, kek, iv, ct, tag: tag, flag: false) do
+      case :crypto.crypto_one_time_aead(:aes_256_gcm, kek, iv, ct, <<>>, tag, false) do
         plaintext when is_binary(plaintext) -> {:ok, plaintext}
         _ -> {:error, :unwrap_auth_failed}
       end

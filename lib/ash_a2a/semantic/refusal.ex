@@ -934,6 +934,37 @@ defmodule AshA2A.Semantic.Refusal do
     # `AshA2A.A2ATransport.Plug`'s typed no-op branch for a bare
     # `AshA2A.Protocol.Agent` (the agent does not support the operation).
     unsupported: :unsupported_profile,
+    # v26.10.3 fix-forward (wave 2): cluster drain, SPIFFE identity, CMEK/KMS,
+    # DLP, AuthZEN, passport-merkle and eval-scorer codes.
+    # REFUSED_AUTHORITY
+    refused_non_monotonic_grant: :refused_authority,
+    unwrap_auth_failed: :refused_authority,
+    # REFUSED_IDENTITY
+    identity_path_invalid: :refused_identity,
+    invalid_subject: :refused_identity,
+    # REFUSED_CONSEQUENCE
+    already_draining: :refused_consequence,
+    cordoned: :refused_consequence,
+    # REFUSED_BOUNDS
+    dlp_body_too_large: :refused_bounds,
+    # REFUSED_STRUCTURE
+    bundle_raised: :refused_structure,
+    empty: :refused_structure,
+    envelope_not_a_map: :refused_structure,
+    invalid_action: :refused_structure,
+    invalid_request: :refused_structure,
+    invalid_svid_frame: :refused_structure,
+    kek_version_id: :refused_structure,
+    malformed_wrapped_dek: :refused_structure,
+    no_data_part: :refused_structure,
+    not_a_list: :refused_structure,
+    # BLOCKED_RESOURCE
+    drain_manager_unavailable: :blocked_resource,
+    kms_unavailable: :blocked_resource,
+    no_last_known_good: :blocked_resource,
+    no_svid: :blocked_resource,
+    no_trust_bundle: :blocked_resource,
+    trust_bundle_expired: :blocked_resource,
     # v26.10.3 fix-forward: codes introduced by the protocol/agent, plug,
     # sse, client, card-cache, evidence, domain and grpc-framing modules
     # (wire/lifecycle codes on the A2A task, stream and framing surfaces),
@@ -1003,7 +1034,7 @@ defmodule AshA2A.Semantic.Refusal do
   # :authority_admitted}}`). Giving them a refusal class would be false; they
   # are listed so the drift test can tell them apart from unclassified codes.
   # `:x` is the SafeError.redact/1 doctest's placeholder code, not a refusal.
-  @non_refusal_codes [:authority_admitted, :x]
+  @non_refusal_codes [:authority_admitted, :x, :normal]
 
   @doc "Outcome codes that are not refusals and therefore carry no S42 class."
   @spec non_refusal_codes() :: [atom()]

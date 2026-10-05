@@ -66,6 +66,7 @@ defmodule AshA2A.V1PbFidelityTest do
   use ExUnit.Case, async: true
 
   alias AshA2A.Protocol.JSON
+
   alias AshA2A.Protocol.{
     AgentCard,
     AgentExtension,
@@ -148,7 +149,11 @@ defmodule AshA2A.V1PbFidelityTest do
         # keeping the REQUIRED-est entry.
         fields =
           Map.new(fields, fn {name, req} -> {name, req} end)
-          |> Map.merge(fields |> Map.filter(fn {_n, req} -> req end) |> Map.new(fn {n, true} -> {n, true} end))
+          |> Map.merge(
+            fields
+            |> Map.filter(fn {_n, req} -> req end)
+            |> Map.new(fn {n, true} -> {n, true} end)
+          )
 
         vocab = MapSet.new(fields, fn {name, _} -> camel(name) end)
         required = MapSet.new(for {name, true} <- fields, do: camel(name))
@@ -374,6 +379,7 @@ defmodule AshA2A.V1PbFidelityTest do
 
         drift =
           Comparator.compare(codec, pb, required)
+
         # (a) codec ⊆ pb — the fail-open direction
         assert drift.missing == [],
                "#{row.label}: codec emits keys absent from the pb descriptor " <>
@@ -496,10 +502,16 @@ defmodule AshA2A.V1PbFidelityTest do
               %Pb.Artifact{
                 artifact_id: "a1",
                 name: "out",
-                parts: [%Pb.Part{text: "result"}]
+                parts: [%Pb.Part{content: {:text, "result"}}]
               }
             ],
-            history: [%Pb.Message{message_id: "m1", role: :ROLE_AGENT, parts: [%Pb.Part{text: "hi"}]}],
+            history: [
+              %Pb.Message{
+                message_id: "m1",
+                role: :ROLE_AGENT,
+                parts: [%Pb.Part{content: {:text, "hi"}}]
+              }
+            ],
             metadata: pb_struct(%{"k" => "v"})
           }
         end,
@@ -522,7 +534,11 @@ defmodule AshA2A.V1PbFidelityTest do
         pb: fn ->
           %Pb.TaskStatus{
             state: :TASK_STATE_INPUT_REQUIRED,
-            message: %Pb.Message{message_id: "sm", role: :ROLE_AGENT, parts: [%Pb.Part{text: "need input"}]},
+            message: %Pb.Message{
+              message_id: "sm",
+              role: :ROLE_AGENT,
+              parts: [%Pb.Part{content: {:text, "need input"}}]
+            },
             timestamp: %Google.Protobuf.Timestamp{seconds: 1_767_225_600}
           }
         end,
@@ -543,7 +559,7 @@ defmodule AshA2A.V1PbFidelityTest do
             context_id: "c1",
             task_id: "t1",
             role: :ROLE_AGENT,
-            parts: [%Pb.Part{text: "hi"}],
+            parts: [%Pb.Part{content: {:text, "hi"}}],
             metadata: pb_struct(%{"mk" => "mv"}),
             extensions: ["https://ext.example"],
             reference_task_ids: ["r1"]
@@ -565,7 +581,7 @@ defmodule AshA2A.V1PbFidelityTest do
       },
       %{
         label: "Part.text",
-        pb: fn -> %Pb.Part{text: "hello", metadata: pb_struct(%{"pk" => "pv"})} end,
+        pb: fn -> %Pb.Part{content: {:text, "hello"}, metadata: pb_struct(%{"pk" => "pv"})} end,
         decode: fn m -> JSON.decode(m, :part) end,
         value_asserts: fn s ->
           [
@@ -577,7 +593,11 @@ defmodule AshA2A.V1PbFidelityTest do
       %{
         label: "Part.raw (file bytes)",
         pb: fn ->
-          %Pb.Part{raw: <<1, 2, 3>>, filename: "f.bin", media_type: "application/octet-stream"}
+          %Pb.Part{
+            content: {:raw, <<1, 2, 3>>},
+            filename: "f.bin",
+            media_type: "application/octet-stream"
+          }
         end,
         decode: fn m -> JSON.decode(m, :part) end,
         value_asserts: fn s ->
@@ -590,7 +610,9 @@ defmodule AshA2A.V1PbFidelityTest do
       },
       %{
         label: "Part.url (file url)",
-        pb: fn -> %Pb.Part{url: "https://x.example/i.png", media_type: "image/png"} end,
+        pb: fn ->
+          %Pb.Part{content: {:url, "https://x.example/i.png"}, media_type: "image/png"}
+        end,
         decode: fn m -> JSON.decode(m, :part) end,
         value_asserts: fn s ->
           [
@@ -603,7 +625,7 @@ defmodule AshA2A.V1PbFidelityTest do
         label: "Part.data",
         pb: fn ->
           %Pb.Part{
-            data: %Google.Protobuf.Value{kind: {:string_value, "x"}},
+            content: {:data, %Google.Protobuf.Value{kind: {:string_value, "x"}}},
             metadata: pb_struct(%{"dk" => "dv"})
           }
         end,
@@ -622,7 +644,7 @@ defmodule AshA2A.V1PbFidelityTest do
             artifact_id: "a1",
             name: "out",
             description: "d",
-            parts: [%Pb.Part{text: "result"}],
+            parts: [%Pb.Part{content: {:text, "result"}}],
             metadata: pb_struct(%{"ak" => "av"}),
             extensions: ["https://ext.example"]
           }
@@ -664,7 +686,10 @@ defmodule AshA2A.V1PbFidelityTest do
           %Pb.TaskArtifactUpdateEvent{
             task_id: "t1",
             context_id: "c1",
-            artifact: %Pb.Artifact{artifact_id: "a1", parts: [%Pb.Part{text: "chunk"}]},
+            artifact: %Pb.Artifact{
+              artifact_id: "a1",
+              parts: [%Pb.Part{content: {:text, "chunk"}}]
+            },
             append: true,
             last_chunk: true
           }
@@ -707,11 +732,13 @@ defmodule AshA2A.V1PbFidelityTest do
         label: "StreamResponse.statusUpdate",
         pb: fn ->
           %Pb.StreamResponse{
-            status_update: %Pb.TaskStatusUpdateEvent{
-              task_id: "t1",
-              context_id: "c1",
-              status: %Pb.TaskStatus{state: :TASK_STATE_WORKING}
-            }
+            payload:
+              {:status_update,
+               %Pb.TaskStatusUpdateEvent{
+                 task_id: "t1",
+                 context_id: "c1",
+                 status: %Pb.TaskStatus{state: :TASK_STATE_WORKING}
+               }}
           }
         end,
         decode: fn m -> JSON.decode(m, :event) end,
@@ -801,14 +828,18 @@ defmodule AshA2A.V1PbFidelityTest do
 
   defp part_sample("raw"),
     do: %Part.File{
-          file: %AshA2A.Protocol.FileContent{bytes: <<1, 2, 3>>, name: "f.bin", mime_type: "application/octet-stream"},
-          metadata: %{"pk" => "pv"}
-        }
+      file: %AshA2A.Protocol.FileContent{
+        bytes: <<1, 2, 3>>,
+        name: "f.bin",
+        mime_type: "application/octet-stream"
+      },
+      metadata: %{"pk" => "pv"}
+    }
 
   defp part_sample("url"),
     do: %Part.File{
-          file: %AshA2A.Protocol.FileContent{uri: "https://x.example/i.png", mime_type: "image/png"}
-        }
+      file: %AshA2A.Protocol.FileContent{uri: "https://x.example/i.png", mime_type: "image/png"}
+    }
 
   defp part_sample("data"), do: %Part.Data{data: %{"dk" => "dv"}, metadata: %{"pk" => "pv"}}
 
@@ -871,7 +902,12 @@ defmodule AshA2A.V1PbFidelityTest do
         push_notifications: true,
         extended_agent_card: true,
         extensions: [
-          %AgentExtension{uri: "https://ext.example", required: true, description: "d", params: %{"a" => "b"}}
+          %AgentExtension{
+            uri: "https://ext.example",
+            required: true,
+            description: "d",
+            params: %{"a" => "b"}
+          }
         ]
       },
       default_input_modes: ["text/plain"],

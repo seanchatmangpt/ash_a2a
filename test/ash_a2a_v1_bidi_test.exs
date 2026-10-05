@@ -249,24 +249,24 @@ defmodule AshA2A.V1BidiTest do
     # Input 1 lands mid-stream; artifact 1 comes back only after it.
     r1 = post_input(url, task_id, "one")
     assert r1.status == 200
-    assert %{"result" => %{"accepted" => true}} = Jason.decode!(r1.body)
+    assert %{"result" => %{"accepted" => true}} = r1.body
     acc = await_artifacts(a, acc, ["echo: one"])
 
     # Input 2 only after artifact 1: proves the running skill pulls client
     # input while it is streaming, not up front.
     r2 = post_input(url, task_id, "two")
-    assert %{"result" => %{"accepted" => true}} = Jason.decode!(r2.body)
+    assert %{"result" => %{"accepted" => true}} = r2.body
     acc = await_artifacts(a, acc, ["echo: one", "echo: two"])
 
     r3 = post_input(url, task_id, "three")
-    assert %{"result" => %{"accepted" => true}} = Jason.decode!(r3.body)
+    assert %{"result" => %{"accepted" => true}} = r3.body
     acc = await_artifacts(a, acc, ["echo: one", "echo: two", "echo: three"])
 
     # Explicit close finalizes: the skill's input stream ends, the enum ends
     # normally, and the task completes on the real wire.
     rc = post_close(url, task_id)
     assert rc.status == 200
-    assert %{"result" => %{"closed" => true, "taskId" => ^task_id}} = Jason.decode!(rc.body)
+    assert %{"result" => %{"closed" => true, "taskId" => ^task_id}} = rc.body
 
     {frames, _acc} = await_terminal(a, acc)
 
@@ -279,7 +279,7 @@ defmodule AshA2A.V1BidiTest do
 
     # Late input after completion: typed refusal, not a silent drop.
     late = post_input(url, task_id, "late")
-    body = Jason.decode!(late.body)
+    body = late.body
     assert %{"code" => -32_004, "data" => [info]} = body["error"]
     assert info["reason"] == "BIDI_INPUT_CLOSED"
   end

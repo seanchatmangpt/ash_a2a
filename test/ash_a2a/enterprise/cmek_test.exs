@@ -182,8 +182,8 @@ defmodule AshA2A.Enterprise.CMEKTest do
 
     assert {:error, :refused_cmek_kms_unavailable, _} = KeyManager.rotate(envelope)
 
-    # No plaintext fallback: nothing in any refusal resembles the payload.
-    refute {:ok, @plaintext} = KeyManager.decrypt(envelope)
+    # No plaintext fallback: the refusal is typed, never a payload.
+    refute match?({:ok, _}, KeyManager.decrypt(envelope))
   end
 
   test "opts :kms_client overrides configuration" do

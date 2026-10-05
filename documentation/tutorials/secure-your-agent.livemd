@@ -51,17 +51,21 @@ defmodule Tutorial.Note do
   end
 
   actions do
-    defaults([:read])
+    read :read do
+      primary? true
+      filter expr(owner == ^actor(:id))
+    end
 
     create :create do
       accept([:body])
 
-      change set_attribute(:owner, actor(:id))
+      change set_attribute(:owner, expr(^actor(:id)))
     end
   end
 
-  preparations do
-    prepare :read, filter expr(owner == actor(:id))
+  a2a do
+    skill(:create_note, :create, description: "Create a note")
+    skill(:list_notes, :read)
   end
 end
 ```
@@ -143,14 +147,17 @@ pair: granting create grants create, never destroy. Make sure the `ash_a2a`
 supervision tree (which hosts the authority broker) is running:
 
 ```elixir
-{:ok, [:ash_a2a]} = Application.ensure_all_started(:ash_a2a)
+{:ok, _apps} = Application.ensure_all_started(:ash_a2a)
 
-create_msg = fn identity ->
+create_msg =
   AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"body" => "hello, securely"})])
-  |> struct!(metadata: %{"skill" => "create_note", "a2a.auth" => %{identity: identity}})
-end
+  |> struct!(metadata: %{"skill" => "create_note"})
 
-{:ok, task} = AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg.(%{id: "user-42", tenant: "acme"}))
+{:ok, task} =
+  AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg,
+    metadata: %{"a2a.auth" => %{identity: %{id: "user-42", tenant: "acme"}}}
+  )
+
 task.status.state
 #=> :failed
 ```
@@ -160,8 +167,8 @@ The refusal is typed, not a mystery. The failed task carries the
 receipted.
 
 ```elixir
-task.status.message
-#=> "authority required for capability Tutorial.Note.create"
+AshA2A.Protocol.Message.text(task.status.message)
+#=> "Error: %{code: :authority_required}"
 ```
 
 Now issue the standing grant — the subject must be built from the same
@@ -170,20 +177,17 @@ identity term your `verify` callback returns — and retry the same call:
 ```elixir
 user_42 = AshA2A.Identity.principal(%{id: "user-42", tenant: "acme"})
 
-:ok = AshA2A.Authority.Grant.grant(user_42, "Tutorial.Note.create")
+{:ok, _authority} = AshA2A.Authority.Grant.grant(user_42, "Tutorial.Note.create")
 true = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.create")
 false = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.update")
 
-{:ok, task} = AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg.(%{id: "user-42", tenant: "acme"}))
+{:ok, task} =
+  AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg,
+    metadata: %{"a2a.auth" => %{identity: %{id: "user-42", tenant: "acme"}}}
+  )
+
 task.status.state
 #=> :completed
-```
-
-Revocation is the symmetric counterpart, and the next dispatch fails closed:
-
-```elixir
-:ok = AshA2A.Authority.Grant.revoke(user_42, "Tutorial.Note.create")
-false = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.create")
 ```
 
 ## Owner scoping: callers only see their own rows
@@ -194,34 +198,47 @@ dispatch passes `auth_identity` directly, the process-level form of what
 `Plug.Auth` injects on the wire.
 
 ```elixir
-# user-42 creates one note (re-grant first; we revoked above).
-:ok = AshA2A.Authority.Grant.grant(user_42, "Tutorial.Note.create")
+# A second note, created fresh (an identical message id would replay the
+# stored receipt instead of writing a new row).
+scoped_msg =
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"body" => "user-42's second note"})])
+  |> struct!(metadata: %{"skill" => "create_note"})
 
-{:ok, task} = AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg.(%{id: "user-42", tenant: "acme"}))
+{:ok, task} =
+  AshA2A.Protocol.call(Tutorial.NoteAgent, scoped_msg,
+    metadata: %{"a2a.auth" => %{identity: %{id: "user-42", tenant: "acme"}}}
+  )
+
 :completed = task.status.state
 
 list_msg = fn identity ->
   AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
-  |> struct!(metadata: %{"skill" => "list_notes", "a2a.auth" => %{identity: identity}})
+  |> struct!(metadata: %{"skill" => "list_notes"})
 end
 
 {:reply, [own]} =
-  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(%{id: "user-42", tenant: "acme"}), Tutorial.Domain)
+  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(nil), Tutorial.Domain, [], %{id: "user-42", tenant: "acme"})
 
 {:reply, [others]} =
-  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(%{id: "user-7", tenant: "acme"}), Tutorial.Domain)
+  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(nil), Tutorial.Domain, [], %{id: "user-7", tenant: "acme"})
 
-{:reply, [anon]} =
+# No identity at all: the action refuses (`actor is required`) rather than
+# returning an empty page — fail closed.
+{:input_required, [_prompt]} =
   AshA2A.Dispatcher.dispatch("list_notes", list_msg.(nil), Tutorial.Domain)
 
-length(own.data["results"])
+length(own.data[:results])
 #=> 1
 
-others.data["results"]
+others.data[:results]
 #=> []
+```
 
-anon.data["results"]
-#=> []
+Revocation is the symmetric counterpart, and the next dispatch fails closed:
+
+```elixir
+:ok = AshA2A.Authority.Grant.revoke(user_42, "Tutorial.Note.create")
+false = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.create")
 ```
 
 ## Card signing: trust the card you discovered

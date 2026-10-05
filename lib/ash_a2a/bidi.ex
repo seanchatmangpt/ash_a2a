@@ -223,21 +223,17 @@ defmodule AshA2A.Bidi do
   end
 
   @doc "Look up the live channel pid for a task id, or `:error`."
-  @spec lookup(String.t(), keyword()) :: {:ok, pid()} | :error
-  def lookup(task_id, opts \\ []) when is_list(opts) do
+  @spec lookup(String.t(), keyword() | atom()) :: {:ok, pid()} | :error
+  def lookup(task_id, opts \\ [])
+
+  def lookup(task_id, opts) when is_list(opts) do
     lookup(task_id, Keyword.get(opts, :name, @default_name))
   end
 
-  @doc false
-  @spec lookup(String.t(), atom()) :: {:ok, pid()} | :error
   def lookup(task_id, name) when is_atom(name) do
     case Registry.lookup(registry_name(name), task_id) do
       [{pid, _value} | _] -> {:ok, pid}
       [] -> :error
     end
   end
-end
-
-defmodule AshA2A.Bidi.Debug do
-  def whereis, do: Process.whereis(AshA2A.Bidi)
 end

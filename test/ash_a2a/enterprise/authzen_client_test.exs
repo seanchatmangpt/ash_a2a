@@ -56,6 +56,12 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt.PDP do
         {200, %{decision: allowed, context: %{}}}
     end
   end
+
+  defp respond(conn, {status, payload}) do
+    conn
+    |> Plug.Conn.put_resp_content_type("application/json")
+    |> Plug.Conn.send_resp(status, Jason.encode!(payload))
+  end
 end
 
 defmodule AshA2A.Enterprise.AuthZENClientCourt do

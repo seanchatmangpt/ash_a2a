@@ -42,7 +42,12 @@ defmodule Tutorial.Ticket do
   end
 
   actions do
-    defaults([:read, :create])
+    defaults([:read])
+
+    create :create do
+      primary? true
+      accept([:subject])
+    end
   end
 
   a2a do
@@ -60,7 +65,10 @@ defmodule Tutorial.Domain do
 end
 
 defmodule Tutorial.TicketAgent do
-  use AshA2A.Agent, resource_or_domain: Tutorial.Domain, name: "tutorial_tickets"
+  use AshA2A.Agent,
+    resource_or_domain: Tutorial.Domain,
+    name: "tutorial_tickets",
+    public_skills: ["list_tickets"]
 end
 
 {:ok, _pid} = Tutorial.TicketAgent.start_link([])
@@ -75,18 +83,33 @@ for subject <- ["Disk full on db-1", "Token expiry storms", "Flaky SSE reconnect
   Ash.create!(Tutorial.Ticket, %{subject: subject})
 end
 
-:ok = Application.ensure_all_started(:ash_a2a)
+{:ok, _apps} = Application.ensure_all_started(:ash_a2a)
+
 user = AshA2A.Identity.principal(%{id: "user-42", tenant: "acme"})
-:ok = AshA2A.Authority.Grant.grant(user, "Tutorial.Ticket.create")
+{:ok, _authority} = AshA2A.Authority.Grant.grant(user, "Tutorial.Ticket.create")
+
+# Every consequential call carries the verified identity in metadata and
+# must match its grant; tasks are owned by the principal that created them,
+# so resumes must present the same identity.
+auth = %{id: "user-42", tenant: "acme"}
+
+# Consequential calls present their verified identity as *call options* --
+# the same thing AshA2A.Protocol.Plug.Auth injects on the wire.
+ticket_msg = fn input ->
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
+  |> struct!(metadata: %{"skill" => "create_ticket"})
+end
+
+ticket_opts = [metadata: %{"a2a.auth" => %{identity: auth}}]
 ```
 
 ## Stream a read
 
 A Data part carrying `"stream" => true` on a `:read` skill produces a lazy
 per-record stream — the query runs through `Ash.stream!/2` and one
-`Part.Data` arrives per record, instead of one materialized list. The task
-stays `:working` while the caller consumes and completes when the stream
-ends.
+`Part.Data` arrives per record (the record map itself), instead of one
+materialized list. The task stays `:working` while the caller consumes and
+completes when the stream ends.
 
 ```elixir
 stream_msg =
@@ -97,11 +120,10 @@ stream_msg =
 
 subjects =
   stream
-  |> Enum.map(& &1.data)
-  |> Enum.map(& &1["record"]["subject"])
+  |> Enum.map(& &1.data.subject)
   |> Enum.sort()
 
-{:ok, done} = AshA2A.Protocol.get_task(Tutorial.TicketAgent, task.id)
+{:ok, done} = Tutorial.TicketAgent.get_task(task.id)
 done.status.state
 #=> :completed
 ```
@@ -114,33 +136,33 @@ missing-argument error, which the dispatcher maps to `{:input_required, parts}`
 actionable prompt in `status.message`.
 
 ```elixir
-incomplete_msg =
-  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
-  |> struct!(metadata: %{"skill" => "create_ticket"})
+incomplete_msg = ticket_msg.(%{})
 
-{:ok, task} = AshA2A.Protocol.call(Tutorial.TicketAgent, incomplete_msg)
+{:ok, task} = AshA2A.Protocol.call(Tutorial.TicketAgent, incomplete_msg, ticket_opts)
 
 task.status.state
 #=> :input_required
 
 task.status.message
-#=> "Missing required input: :subject"
+|> AshA2A.Protocol.Message.text()
+|> String.contains?("attribute subject is required")
+#=> true
 ```
 
 Resume the same task by sending a new message with `task_id:`. The full
 conversation history rides along in the task, so the agent sees both turns.
 
 ```elixir
-completed_msg =
-  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"subject" => "Disk full on db-2"})])
-
 {:ok, task} =
-  AshA2A.Protocol.call(Tutorial.TicketAgent, completed_msg, task_id: task.id)
+  AshA2A.Protocol.call(Tutorial.TicketAgent, ticket_msg.(%{"subject" => "Disk full on db-2"}),
+    task_id: task.id,
+    metadata: %{"a2a.auth" => %{identity: auth}}
+  )
 
 task.status.state
 #=> :completed
 
-[AshA2A.Protocol.Part.Data{data: %{"result" => %{"subject" => "Disk full on db-2"}}}] =
+[%AshA2A.Protocol.Part.Data{data: %{subject: "Disk full on db-2"}}] =
   hd(task.artifacts).parts
 ```
 

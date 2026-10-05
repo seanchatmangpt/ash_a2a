@@ -118,14 +118,16 @@ defmodule AshA2A.SPIFFE.TrustBundle do
   end
 
   @doc """
-  Pre-expiry rotation deadline for `bundle`: the instant the watcher must force
-  a re-push (reconnect) so the cache rotates before `:expires_at`. Earlier of
-  `expires_at - lead_ms` and `now + lead_ms`.
+  Pre-expiry rotation deadline for `bundle` (Unix-epoch seconds): the instant
+  the watcher must force a re-push (reconnect) so the cache rotates before
+  `:expires_at`. `lead_ms` is a millisecond policy knob, converted to seconds
+  internally; deadline is the earlier of `expires_at - lead` and `now + lead`.
   """
   @spec rotation_due_at(t(), integer(), integer()) :: integer()
   def rotation_due_at(%__MODULE__{expires_at: expires_at}, now, lead_ms)
-      when is_integer(now) and is_integer(lead_ms) do
-    min(expires_at - lead_ms, now + lead_ms)
+      when is_integer(now) and is_integer(lead_ms) and lead_ms >= 0 do
+    lead_secs = div(lead_ms, 1000)
+    min(expires_at - lead_secs, now + lead_secs)
   end
 
   @doc """
@@ -133,8 +135,8 @@ defmodule AshA2A.SPIFFE.TrustBundle do
   `lead_ms` — rotation must be forced now.
   """
   @spec due?(t(), integer(), integer()) :: boolean()
-  def due?(%__MODULE__{expires_at: expects_at}, now, lead_ms),
-    do: now >= expects_at - lead_ms
+  def due?(%__MODULE__{expires_at: expires_at}, now, lead_ms),
+    do: now >= expires_at - div(lead_ms, 1000)
 
   @doc """
   Earliest `notAfter` across DER certificates (infinity when the list is empty
@@ -163,13 +165,19 @@ defmodule AshA2A.SPIFFE.TrustBundle do
   ## ------------------------------------------------------------------
 
   defp cert_not_after(der) when is_binary(der) do
-    case :public_key.pkix_decode_cert(der, :otp) do
-      {:OTPCertificate, tbs, _sig_alg, _} ->
-        {:Validity, _not_before, not_after} = elem(tbs, 5)
-        parse_time(elem(not_after, 1))
+    # Undecodable material fails closed: epoch 0, so any delivery containing it
+    # is refused rather than trusted with an infinite expiry.
+    try do
+      case :public_key.pkix_decode_cert(der, :otp) do
+        {:OTPCertificate, tbs, _sig_alg, _} ->
+          {:Validity, _not_before, not_after} = elem(tbs, 5)
+          parse_time(elem(not_after, 1))
 
-      _ ->
-        :infinity
+        _ ->
+          0
+      end
+    rescue
+      _ -> 0
     end
   end
 

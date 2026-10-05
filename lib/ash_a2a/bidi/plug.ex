@@ -51,6 +51,7 @@ defmodule AshA2A.Bidi.Plug do
   @a2a_domain "a2a-protocol.org"
 
   @doc false
+  @impl Plug
   def init(opts), do: A2ATransport.Plug.init(opts)
 
   @impl Plug

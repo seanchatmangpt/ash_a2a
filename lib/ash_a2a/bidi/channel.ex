@@ -162,12 +162,12 @@ defmodule AshA2A.Bidi.Channel do
     cond do
       state.closed? ->
         send(pid, {:bidi_input, req, :eof})
-        state
+        {:noreply, state}
 
       state.size > 0 ->
         {input, state} = pop(state)
         send(pid, {:bidi_input, req, {:ok, input}})
-        state
+        {:noreply, state}
 
       true ->
         # Nothing buffered: park this pull. Replacing a parked pull is
@@ -177,7 +177,7 @@ defmodule AshA2A.Bidi.Channel do
           send(elem(state.waiter, 0), {:bidi_input, elem(state.waiter, 1), :eof})
         end
 
-        %{state | waiter: {pid, req}, waiter_mref: Process.monitor(pid)}
+        {:noreply, %{state | waiter: {pid, req}, waiter_mref: Process.monitor(pid)}}
     end
   end
 
@@ -187,7 +187,7 @@ defmodule AshA2A.Bidi.Channel do
       state.waiter_mref == mref ->
         # The waiting puller died (its process, not a timeout — timeouts drain
         # their own reply). Unpark.
-        %{state | waiter: nil, waiter_mref: nil}
+        {:noreply, %{state | waiter: nil, waiter_mref: nil}}
 
       state.consumer_mref == mref ->
         # The consumer is gone: the skill's output stream can no longer be
@@ -196,7 +196,7 @@ defmodule AshA2A.Bidi.Channel do
         {:stop, :shutdown, %{state | closed?: true}}
 
       true ->
-        state
+        {:noreply, state}
     end
   end
 

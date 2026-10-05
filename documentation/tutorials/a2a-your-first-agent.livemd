@@ -71,9 +71,18 @@ defmodule Tutorial.Domain do
 end
 
 defmodule Tutorial.TodoAgent do
-  use AshA2A.Agent, resource_or_domain: Tutorial.Domain, name: "tutorial_todos"
+  use AshA2A.Agent,
+    resource_or_domain: Tutorial.Domain,
+    name: "tutorial_todos",
+    public_skills: ["list_todos"]
 end
 ```
+
+The `public_skills` opt lists skills an unauthenticated caller may still
+invoke — without it (or an identity) the agent fails closed with
+`:unauthenticated`. Sending changes through the agent additionally needs an
+authority grant, which is exactly what
+[Secure Your Agent](secure-your-agent.livemd) wires up.
 
 ## Inspect the compiled capability index
 
@@ -95,16 +104,13 @@ AshA2A.Info.capability_index!(Tutorial.Domain)
 
 The `:consequence` classification decides how each skill is served: `:observe`
 skills are plain reads, while `:change` skills route through the receipted
-`AshA2A.CommandBus` when served by an agent (authority comes in
-[Secure Your Agent](secure-your-agent.livemd)).
+`AshA2A.CommandBus` and demand an authority grant.
 
 ## Direct dispatch (no process)
 
 Dispatch an inbound `AshA2A.Protocol.Message` straight to the domain — no
 agent process required. The message's Data part becomes the action input;
 with more than one skill on the card, the skill goes in `metadata["skill"]`.
-Here we dispatch the `:observe` skill, which is served straight from the
-capability index with no authority wiring.
 
 ```elixir
 list_msg =
@@ -120,29 +126,28 @@ data_part.data
 
 ## Call the agent
 
-A bare `dispatch/6` call is synchronous and process-free. To run the same
-resource as a long-lived, addressable agent, `use AshA2A.Agent` and start it
-directly. In an OTP app you would instead register it with
+`use AshA2A.Agent` turns the same domain into a long-lived, addressable agent
+process. In an OTP app you would register it with
 `config :ash_a2a, :agents, [Tutorial.TodoAgent]` and let the `ash_a2a`
-application supervise it.
+application supervise it; here we start it directly.
 
 ```elixir
 {:ok, _pid} = Tutorial.TodoAgent.start_link([])
 
-create_msg =
-  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"title" => "Write livebooks"})])
-  |> struct!(metadata: %{"skill" => "create_todo"})
+list_msg =
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+  |> struct!(metadata: %{"skill" => "list_todos"})
 
-{:ok, task} = AshA2A.Protocol.call(Tutorial.TodoAgent, create_msg)
-task.status.state
-#=> :completed
+{:ok, task} = AshA2A.Protocol.call(Tutorial.TodoAgent, list_msg)
+:completed = task.status.state
+
+data = hd(hd(task.artifacts).parts).data
+#=> %{"results" => []}
 ```
 
-## Read the task back and read history
+## Text-only messages dispatch with empty input
 
-Every turn is a real `AshA2A.Protocol.Task` with its own id. A text-only
-message (no Data part) dispatches with an empty input map — handy for
-skills whose action needs no arguments.
+A text-only message (no Data part) dispatches with an empty input map.
 
 ```elixir
 text_msg =
@@ -151,12 +156,6 @@ text_msg =
 
 {:ok, task2} = AshA2A.Protocol.call(Tutorial.TodoAgent, text_msg)
 :completed = task2.status.state
-
-hd(task2.artifacts).parts
-|> hd()
-|> then(& &1.data["results"])
-|> Enum.map(& &1["title"])
-#=> ["Write livebooks"]
 ```
 
 ## The agent card
@@ -178,15 +177,12 @@ Enum.map(card.skills, & &1.id)
 ## What you built, and what's next
 
 You now have: a real Ash resource whose public actions are projected into a
-verified capability index, a working direct dispatch, and a supervised
-`AshA2A.Agent` process whose card is derived from that same index.
+verified capability index, a working direct dispatch, a supervised
+`AshA2A.Agent` process serving the read skill publicly, and a card derived
+from that same index.
 
-From here:
-
-- authenticate callers and grant per-capability authority in
-  [Secure Your Agent](secure-your-agent.livemd);
-- stream large reads lazily and resolve `:input_required` pauses in
-  [Stream and Elicit](stream-and-elicit.livemd);
-- serve the agent over HTTP (JSON-RPC, SSE streaming, `AshA2A.Protocol.Client`)
-  with the plain-markdown
-  [Getting Started](../docs/tutorials/getting-started.md) tutorial.
+Sending changes (`create`, `update`, `destroy`) through the agent needs one
+more piece — an authority grant. Wire it in
+[Secure Your Agent](secure-your-agent.livemd), then come back for lazy
+streaming and resumable `:input_required` pauses in
+[Stream and Elicit](stream-and-elicit.livemd).
