@@ -85,7 +85,12 @@ if Code.ensure_loaded?(Plug) do
 
     @impl Plug
     def init(opts) do
-      trust_domain = Keyword.fetch!(opts, :trust_domain)
+      trust_domain =
+        case Keyword.fetch(opts, :trust_domain) do
+          {:ok, td} -> td
+          :error -> raise ArgumentError, "AshA2A.SPIFFE.SvidValidator requires :trust_domain option"
+        end
+
       bundle_source = Keyword.get(opts, :bundle_source, @default_bundle_source)
       assign = Keyword.get(opts, :assign, @default_assign)
 

@@ -73,12 +73,20 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
   defp call_plug(ssl_cert, opts_overrides \\ []) do
     peer_data = %{address: {127, 0, 0, 1}, port: 111_317, ssl_cert: ssl_cert}
-    base = %Plug.Conn{adapter: {Plug.Adapters.Test.Conn, %{peer_data: peer_data}}}
+
+    adapter_state = %{
+      peer_data: peer_data,
+      sock_data: %{address: {127, 0, 0, 1}, port: 111_318},
+      ssl_data: nil,
+      http_protocol: :"HTTP/1.1"
+    }
+
+    base = %Plug.Conn{adapter: {Plug.Adapters.Test.Conn, adapter_state}}
     conn = Plug.Adapters.Test.Conn.conn(base, :get, "/tasks", nil)
 
     opts =
       SvidValidator.init(
-        [trust_domain: @trust_domain, bundle_source: BundleSource] ++ opts_overrides
+        opts_overrides ++ [trust_domain: @trust_domain, bundle_source: BundleSource]
       )
 
     SvidValidator.call(conn, opts)
@@ -91,7 +99,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
   end
 
   setup do
-    start_supervised!({Agent, {fn -> %{} end, [name: BundleSource]}})
+    start_supervised!(%{
+      id: BundleSource,
+      start: {Agent, :start_link, [fn -> %{} end, [name: BundleSource]]}
+    })
+
     :ok
   end
 
@@ -146,7 +158,7 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
   describe "fail-closed refusals" do
     test "missing client certificate -> 401 missing_svid" do
-      {leaf, inter, root} =
+      {_leaf, inter, root} =
         CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
 
       BundleSource.put(
@@ -158,6 +170,14 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
     end
 
     test "malformed SVID bytes -> 401 svid_malformed" do
+      {_leaf, inter, root} =
+        CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
+
+      BundleSource.put(
+        {:ok,
+         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+      )
+
       assert {401, "svid_malformed"} = refusal_reason(call_plug(<<0, 1, 2, 3, "not a certificate">>))
     end
 
