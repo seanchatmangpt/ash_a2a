@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Bench.B5Authority do
   @moduledoc """
   RFC-SA2A-002 §89 benchmark `SA2A-B5` -- authority and BRCE latency.
@@ -251,7 +255,7 @@ defmodule AshA2A.Chicago.Bench.B5Authority do
         input: %{label: label}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
     reply =
       CommandBus.run(command, message, Ledger,

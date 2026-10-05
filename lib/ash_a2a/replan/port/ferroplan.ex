@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Replan.Port.Ferroplan do
   @behaviour AshA2A.Replan.Provider
   def supports?(f), do: f in [:hddl, :fond, :pddl]

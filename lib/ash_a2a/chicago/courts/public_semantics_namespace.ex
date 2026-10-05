@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.PublicSemanticsNamespace do
   @moduledoc """
   RFC-SA2A-002 §51 Public-Semantics and Namespace court (RFC-SA2A-001 S7.1-S7.3,

@@ -1,11 +1,15 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   @moduledoc """
   Shared, real-collaborator plumbing for the RFC-SA2A-002 authority courts
   (`AshA2A.Chicago.Courts.AuthorityNonImplication`,
   `AshA2A.Chicago.Courts.GrantLifecycle`). Not a court.
 
-  Everything here drives the real SUT: real `A2A.Agent` GenServers generated
-  by `use AshA2A.Agent`, the real `A2A.Plug.Auth` + `A2A.Plug` HTTP pipeline
+  Everything here drives the real SUT: real `AshA2A.Protocol.Agent` GenServers generated
+  by `use AshA2A.Agent`, the real `AshA2A.Protocol.Plug.Auth` + `AshA2A.Protocol.Plug` HTTP pipeline
   (driven with `Plug.Test`, a real `Plug.Conn`), the real
   `AshA2A.Authority.Grant` decision, real brokers, and the real
   `AshA2A.CommandBus`. The only thing a court changes is the ENVIRONMENT
@@ -164,14 +168,14 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
 
   @doc """
   Sends a real message to a real agent as `identity` (the transport-verified
-  identity `A2A.Plug.Auth` would have stored; `nil` for none). Returns
+  identity `AshA2A.Protocol.Plug.Auth` would have stored; `nil` for none). Returns
   `{:ok, task}`, `{:error, reason}` or `{:exit, reason}` -- an agent crash is
   evidence, never swallowed into a pass.
   """
   @spec agent_call(module(), atom(), term(), map(), map()) ::
-          {:ok, A2A.Task.t()} | {:error, term()} | {:exit, term()}
+          {:ok, AshA2A.Protocol.Task.t()} | {:error, term()} | {:exit, term()}
   def agent_call(agent_module, name, identity, data, message_metadata) do
-    message = %{A2A.Message.new_user([A2A.Part.Data.new(data)]) | metadata: message_metadata}
+    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)]) | metadata: message_metadata}
 
     call_metadata =
       if identity == nil,
@@ -190,7 +194,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   def task_state({:exit, reason}), do: "exit:" <> to_string(reason)
   def task_state(other), do: inspect(other, limit: 10)
 
-  @bearer_schemes %{"bearer_auth" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}}
+  @bearer_schemes %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}}
 
   @doc """
   Sends a real JSON-RPC `message/send` through `Plug.Test` into the real
@@ -199,8 +203,8 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   Options:
 
     * `:tokens` -- `%{bearer_token => identity}`; when given, the pipeline is
-      `A2A.Plug.Auth` (bearer scheme, verifying against this table) then
-      `A2A.Plug`. When absent the pipeline is `A2A.Plug` alone (a deployment
+      `AshA2A.Protocol.Plug.Auth` (bearer scheme, verifying against this table) then
+      `AshA2A.Protocol.Plug`. When absent the pipeline is `AshA2A.Protocol.Plug` alone (a deployment
       that never wired transport authentication).
     * `:bearer` -- the `Authorization: Bearer` credential to present.
     * `:params_metadata` -- the client-controlled JSON-RPC `params.metadata`.
@@ -209,8 +213,8 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   """
   @spec http_send(atom(), String.t(), map(), keyword()) :: map()
   def http_send(agent_name, skill, data, opts) do
-    message = %{A2A.Message.new_user([A2A.Part.Data.new(data)]) | metadata: %{"skill" => skill}}
-    {:ok, message_json} = A2A.JSON.encode(message)
+    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)]) | metadata: %{"skill" => skill}}
+    {:ok, message_json} = AshA2A.Protocol.JSON.encode(message)
 
     params =
       case Keyword.get(opts, :params_metadata) do
@@ -235,9 +239,9 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
         if conn.halted,
           do: conn,
           else:
-            A2A.Plug.call(
+            AshA2A.Protocol.Plug.call(
               conn,
-              A2A.Plug.init(agent: agent_name, base_url: "http://localhost:4000/a2a")
+              AshA2A.Protocol.Plug.init(agent: agent_name, base_url: "http://localhost:4000/a2a")
             )
       end)
 
@@ -274,7 +278,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
         {:error, "unsupported scheme"}
     end
 
-    A2A.Plug.Auth.call(conn, A2A.Plug.Auth.init(schemes: @bearer_schemes, verify: verify))
+    AshA2A.Protocol.Plug.Auth.call(conn, AshA2A.Protocol.Plug.Auth.init(schemes: @bearer_schemes, verify: verify))
   end
 
   # --- predicates ---------------------------------------------------------------

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 # C2 compromise court: instrumented Actuator host (RFC-SA2A-006 s26 harness).
 #
 # Run as `cd actuator && MIX_ENV=test mix run --no-halt --no-compile ... <this file>` in its

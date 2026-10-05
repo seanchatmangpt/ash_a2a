@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.GraphLaw.Wasm do
   @moduledoc """
   Real invocation of the prebuilt `praxis-graphlaw` WebAssembly module.
@@ -96,11 +100,17 @@ defmodule AshA2A.GraphLaw.Wasm do
   """
   @spec availability(keyword()) :: :ok | {:error, map()}
   def availability(opts \\ []) do
+    # `wasm_path/1` and `host_script/1` are typed `String.t()` (never nil), so
+    # the old `(path = ...) && not File.exists?(path)` truthiness checks had a
+    # dead nil branch; plain existence checks are behavior-identical.
+    path = wasm_path(opts)
+    script = host_script(opts)
+
     cond do
-      (path = wasm_path(opts)) && not File.exists?(path) ->
+      not File.exists?(path) ->
         {:error, %{code: :graphlaw_wasm_not_found, path: path}}
 
-      (script = host_script(opts)) && not File.exists?(script) ->
+      not File.exists?(script) ->
         {:error, %{code: :graphlaw_host_script_not_found, path: script}}
 
       node_executable(opts) == nil ->

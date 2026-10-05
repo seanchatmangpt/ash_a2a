@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Application do
   @moduledoc """
   Starts the A2A agent supervisor, the default replay receipt store, and the
@@ -181,7 +185,7 @@ defmodule AshA2A.Application do
           # authorizes and never actuates (RFC S4.4/S17), so starting it
           # changes no existing admission or dispatch behavior.
           {AshA2A.GraphLaw.WasmexHost, []},
-          {A2A.AgentSupervisor, agents: agents}
+          {AshA2A.Protocol.AgentSupervisor, agents: agents}
         ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: AshA2A.Supervisor)

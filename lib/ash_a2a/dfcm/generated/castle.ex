@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 # Generated from priv/ggen/ash_a2a/dfcm/ontology.ttl. NEVER HAND EDIT.
 defmodule AshA2A.DfCM.Generated.Castle do
   @moduledoc false

@@ -1,18 +1,22 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SemanticExtensionTest do
   @moduledoc """
   RFC-SA2A-001 S9 -- Semantic A2A profile negotiation over the real A2A
   extension mechanism.
 
-  Everything here runs against the real, unmodified vendored `:a2a` library:
-  the real `A2A.JSON` encoder/decoder, a real `A2A.Agent` GenServer, and a
-  real `A2A.Plug` HTTP pipeline driven by `Plug.Test.conn/3`. No mock, no
+  Everything here runs against the real, unmodified in-repo `AshA2A.Protocol.*`
+  codec: the real `AshA2A.Protocol.JSON` encoder/decoder, a real `AshA2A.Protocol.Agent` GenServer, and a
+  real `AshA2A.Protocol.Plug` HTTP pipeline driven by `Plug.Test.conn/3`. No mock, no
   stub, no patched transport -- the assertions are on real encoded JSON and
   real HTTP response bodies.
 
-  One of these tests asserts a *negative* fact about the vendored library
-  (that `capabilities.extensions` is dropped on the wire). That is measured
-  here rather than assumed, because `AshA2A.Semantic.Extension` routes its
-  advertisement around that drop and the reason must stay checkable.
+  One of these tests asserts a *measured* fact about the codec (whether
+  `capabilities.extensions` survives the wire). That is measured here rather
+  than assumed, because `AshA2A.Semantic.Extension`'s choice of advertisement
+  site depends on it and the reason must stay checkable.
   """
 
   use ExUnit.Case, async: true
@@ -59,8 +63,8 @@ defmodule AshA2A.SemanticExtensionTest do
   end
 
   describe "measured constraint: where the advertisement can actually ride" do
-    test "the real vendored :a2a encoder DROPS capabilities.extensions" do
-      card = %A2A.AgentCard{
+    test "the ported encoder PRESERVES capabilities.extensions (a2a 0.3.0 semantics)" do
+      card = %AshA2A.Protocol.AgentCard{
         name: "probe",
         description: "probe",
         url: @base_url,
@@ -68,24 +72,50 @@ defmodule AshA2A.SemanticExtensionTest do
         skills: []
       }
 
+      declaration = Extension.capability_declaration()
+
       encoded =
-        A2A.JSON.encode_agent_card(card,
+        AshA2A.Protocol.JSON.encode_agent_card(card,
           url: @base_url,
           capabilities: %{
             streaming: true,
-            extensions: [Extension.capability_declaration()]
+            extensions: [
+              struct(AshA2A.Protocol.AgentExtension, Map.to_list(declaration))
+            ]
           }
         )
 
-      # The real, measured behavior of `A2A.JSON.encode_capabilities/1`: a
-      # four-key whitelist. This is why `Extension.advertise/1` uses
-      # `supportedInterfaces` instead of the specification's own site.
-      assert encoded["capabilities"] == %{"streaming" => true}
-      refute Map.has_key?(encoded["capabilities"], "extensions")
+      # The real, measured behavior of `AshA2A.Protocol.JSON.encode_capabilities/1`
+      # after the 0.3.0 port: `capabilities.extensions` rides the wire. The
+      # encoder accepts only `%AshA2A.Protocol.AgentExtension{}` structs
+      # (a plain declaration map raises FunctionClauseError), so the
+      # spec-shaped declaration is carried as the struct.
+      assert encoded["capabilities"]["streaming"] == true
+
+      assert encoded["capabilities"]["extensions"] == [
+               %{
+                 "uri" => Extension.profile_uri(),
+                 "description" => declaration.description,
+                 "required" => false,
+                 "params" => declaration.params
+               }
+             ]
+
+      # And it makes a real JSON round trip: the decoded card carries the
+      # declaration back as an `AshA2A.Protocol.AgentExtension` struct.
+      {:ok, decoded} =
+        encoded |> Jason.encode!() |> Jason.decode!() |> AshA2A.Protocol.JSON.decode_agent_card()
+
+      assert [%AshA2A.Protocol.AgentExtension{} = carried] = decoded.capabilities.extensions
+
+      assert carried.uri == Extension.profile_uri()
+      assert carried.description == declaration.description
+      assert carried.required == false
+      assert carried.params == declaration.params
     end
 
     test "supportedInterfaces DOES survive a real encode/decode round trip" do
-      card = %A2A.AgentCard{
+      card = %AshA2A.Protocol.AgentCard{
         name: "probe",
         description: "probe",
         url: @base_url,
@@ -94,7 +124,7 @@ defmodule AshA2A.SemanticExtensionTest do
       }
 
       opts = Extension.advertise(url: @base_url)
-      encoded = A2A.JSON.encode_agent_card(card, opts)
+      encoded = AshA2A.Protocol.JSON.encode_agent_card(card, opts)
 
       assert %{"protocolBinding" => "SA2A-PROFILE-v26.9.20", "protocolVersion" => "v26.9.20"} =
                Enum.find(
@@ -105,7 +135,7 @@ defmodule AshA2A.SemanticExtensionTest do
       # Round trip through the real JSON codec, exactly as a remote peer
       # fetching the card over HTTP would.
       {:ok, decoded} =
-        encoded |> Jason.encode!() |> Jason.decode!() |> A2A.JSON.decode_agent_card()
+        encoded |> Jason.encode!() |> Jason.decode!() |> AshA2A.Protocol.JSON.decode_agent_card()
 
       assert Extension.advertised?(decoded)
     end
@@ -125,12 +155,12 @@ defmodule AshA2A.SemanticExtensionTest do
     end
   end
 
-  describe "the advertisement over a real A2A.Plug HTTP pipeline" do
+  describe "the advertisement over a real AshA2A.Protocol.Plug HTTP pipeline" do
     test "a real GET to the agent-card path serves the SA2A profile advertisement", %{
       agent: agent
     } do
       plug_opts =
-        A2A.Plug.init(
+        AshA2A.Protocol.Plug.init(
           agent: agent,
           base_url: @base_url,
           agent_card_opts: Extension.advertise(url: @base_url)
@@ -138,23 +168,23 @@ defmodule AshA2A.SemanticExtensionTest do
 
       conn =
         Plug.Test.conn(:get, "/.well-known/agent-card.json")
-        |> A2A.Plug.call(plug_opts)
+        |> AshA2A.Protocol.Plug.call(plug_opts)
 
       assert conn.status == 200
       served = Jason.decode!(conn.resp_body)
 
       assert Extension.advertised?(served)
 
-      {:ok, card} = A2A.JSON.decode_agent_card(served)
+      {:ok, card} = AshA2A.Protocol.JSON.decode_agent_card(served)
       assert Extension.advertised?(card)
     end
 
     test "an agent that does NOT advertise serves a card with no SA2A binding", %{agent: agent} do
-      plug_opts = A2A.Plug.init(agent: agent, base_url: @base_url)
+      plug_opts = AshA2A.Protocol.Plug.init(agent: agent, base_url: @base_url)
 
       conn =
         Plug.Test.conn(:get, "/.well-known/agent-card.json")
-        |> A2A.Plug.call(plug_opts)
+        |> AshA2A.Protocol.Plug.call(plug_opts)
 
       served = Jason.decode!(conn.resp_body)
       refute Extension.advertised?(served)
@@ -164,8 +194,8 @@ defmodule AshA2A.SemanticExtensionTest do
   describe "negotiate/2 requires BOTH peers (S9)" do
     setup do
       advertising =
-        A2A.JSON.encode_agent_card(
-          %A2A.AgentCard{
+        AshA2A.Protocol.JSON.encode_agent_card(
+          %AshA2A.Protocol.AgentCard{
             name: "a",
             description: "a",
             url: @base_url,
@@ -176,8 +206,8 @@ defmodule AshA2A.SemanticExtensionTest do
         )
 
       plain =
-        A2A.JSON.encode_agent_card(
-          %A2A.AgentCard{
+        AshA2A.Protocol.JSON.encode_agent_card(
+          %AshA2A.Protocol.AgentCard{
             name: "b",
             description: "b",
             url: @base_url,
@@ -187,8 +217,8 @@ defmodule AshA2A.SemanticExtensionTest do
           url: @base_url
         )
 
-      {:ok, advertising_card} = A2A.JSON.decode_agent_card(advertising)
-      {:ok, plain_card} = A2A.JSON.decode_agent_card(plain)
+      {:ok, advertising_card} = AshA2A.Protocol.JSON.decode_agent_card(advertising)
+      {:ok, plain_card} = AshA2A.Protocol.JSON.decode_agent_card(plain)
 
       %{advertising: advertising_card, plain: plain_card}
     end
@@ -224,23 +254,23 @@ defmodule AshA2A.SemanticExtensionTest do
 
   describe "ordinary A2A traffic is NEVER silently semantic" do
     test "a plain text message is not activated" do
-      refute Extension.activated?(A2A.Message.new_user("place an order"))
+      refute Extension.activated?(AshA2A.Protocol.Message.new_user("place an order"))
     end
 
     test "a message whose text happens to be Turtle is still not activated" do
       turtle = "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\n"
-      refute Extension.activated?(A2A.Message.new_user(turtle))
+      refute Extension.activated?(AshA2A.Protocol.Message.new_user(turtle))
     end
 
     test "a message carrying some OTHER A2A extension is not activated" do
-      message = %{A2A.Message.new_user("hi") | extensions: %{"some-other-ext" => %{"x" => 1}}}
+      message = %{AshA2A.Protocol.Message.new_user("hi") | extensions: %{"some-other-ext" => %{"x" => 1}}}
       refute Extension.activated?(message)
       assert {:error, %{code: :profile_not_activated}} = Extension.payload(message)
     end
 
     test "activate/1 marks a message and preserves other extensions" do
       message =
-        %{A2A.Message.new_user("hi") | extensions: %{"other" => %{"keep" => true}}}
+        %{AshA2A.Protocol.Message.new_user("hi") | extensions: %{"other" => %{"keep" => true}}}
         |> Extension.activate(%{"profile" => Extension.profile_id()})
 
       assert Extension.activated?(message)
@@ -248,12 +278,12 @@ defmodule AshA2A.SemanticExtensionTest do
       assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.20"}} = Extension.payload(message)
     end
 
-    test "activation survives a real A2A.JSON message encode/decode round trip" do
+    test "activation survives a real AshA2A.Protocol.JSON message encode/decode round trip" do
       message =
-        Extension.activate(A2A.Message.new_user("hi"), %{"profile" => Extension.profile_id()})
+        Extension.activate(AshA2A.Protocol.Message.new_user("hi"), %{"profile" => Extension.profile_id()})
 
-      {:ok, encoded} = A2A.JSON.encode(message)
-      {:ok, decoded} = encoded |> Jason.encode!() |> Jason.decode!() |> A2A.JSON.decode(:message)
+      {:ok, encoded} = AshA2A.Protocol.JSON.encode(message)
+      {:ok, decoded} = encoded |> Jason.encode!() |> Jason.decode!() |> AshA2A.Protocol.JSON.decode(:message)
 
       assert Extension.activated?(decoded)
       assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.20"}} = Extension.payload(decoded)

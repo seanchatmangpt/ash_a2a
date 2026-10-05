@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
   @moduledoc """
   RFC-SA2A-002 §54/§55/§56/§75 courts, end to end: a real
   `AshA2A.Chicago.Runner` run over the real `SA2A-ENV`, `SA2A-NEG` and
-  `SA2A-TRANSPORT` courts (real Peer in real A2A.Agent GenServers, real
-  praxis-graphlaw wasm, real A2A.Plug on a real Bandit listener, real
+  `SA2A-TRANSPORT` courts (real Peer in real AshA2A.Protocol.Agent GenServers, real
+  praxis-graphlaw wasm, real AshA2A.Protocol.Plug on a real Bandit listener, real
   CommandBus over a real ETS resource, real authority broker), a durable
   OCEL artifact on disk, and the independent consumer's corroboration.
 
@@ -206,7 +210,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
     alias AshA2A.Semantic.Envelope
 
     defp card(interfaces) do
-      %A2A.AgentCard{
+      %AshA2A.Protocol.AgentCard{
         name: "c",
         description: "c",
         url: "http://127.0.0.1:1",
@@ -271,7 +275,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
     test "SA2A-NEG-005: activated traffic to a peer with no advertised card is UNSUPPORTED" do
       message =
         "x"
-        |> A2A.Message.new_user()
+        |> AshA2A.Protocol.Message.new_user()
         |> Extension.activate(%{"envelopeId" => "urn:uuid:y", "kind" => "sa2a:Request"})
 
       outcome = Peer.receive_message(Peer.new(name: "no-card"), message)
@@ -296,7 +300,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
 
       order = fn item ->
         %{
-          A2A.Message.new_user([A2A.Part.Data.new(%{"item" => item, "quantity" => 1})])
+          AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"item" => item, "quantity" => 1})])
           | metadata: %{"skill" => "place_order"}
         }
       end
@@ -305,10 +309,10 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
       verified = "guard-verified-#{System.unique_integer([:positive])}"
 
       {:ok, _} =
-        A2A.call(agent, order.(forged), metadata: %{"a2a.auth" => %{"identity" => principal}})
+        AshA2A.Protocol.call(agent, order.(forged), metadata: %{"a2a.auth" => %{"identity" => principal}})
 
       {:ok, _} =
-        A2A.call(agent, order.(verified), metadata: %{"a2a.auth" => %{identity: principal}})
+        AshA2A.Protocol.call(agent, order.(verified), metadata: %{"a2a.auth" => %{identity: principal}})
 
       items = Ordering |> Ash.read!() |> Enum.map(& &1.item)
       refute forged in items

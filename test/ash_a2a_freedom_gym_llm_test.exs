@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AFreedomGymLlmTest do
   @moduledoc """
   Chicago-AI tier of the FreedomGym primitive: a REAL live call to Z.AI
   (via `ash_ai`'s `AshAi.Actions.Prompt` + `req_llm`'s native `zai_coder`
-  provider), dispatched through a real supervised `A2A.Agent`, exactly like
+  provider), dispatched through a real supervised `AshA2A.Protocol.Agent`, exactly like
   every other FreedomGym/rap-battle agent in this suite -- no mock LLM
   client, no canned response.
 
@@ -51,7 +55,7 @@ defmodule AshA2AFreedomGymLlmTest do
   # probe when the full suite runs with `--include external_api`: real
   # rate-limit exhaustion from that probe can make this real, unseamed live
   # LLM call exceed the default 60s on both the ExUnit test process and
-  # A2A.Agent.call/3's own GenServer.call -- same fix as
+  # AshA2A.Protocol.Agent.call/3's own GenServer.call -- same fix as
   # test/ash_a2a_agent_semantic_request_test.exs, not a code defect.
   @tag timeout: 180_000
   test "a real Z.AI-backed avatar responds over real A2A dispatch with a real structured shape" do
@@ -70,7 +74,7 @@ defmodule AshA2AFreedomGymLlmTest do
     assert {:ok, task} = LlmAvatarAgent.call(LlmAvatarAgent, message, timeout: 170_000)
     assert task.status.state == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: response}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: response}]}] = task.artifacts
 
     # Real, state-based assertions on the real object the real Z.AI call
     # returned -- not on its exact wording.

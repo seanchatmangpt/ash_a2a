@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.AdmissionHash do
   @moduledoc """
   The RFC-SA2A-001 admission hash (S12, S31, S33, S52, S60).

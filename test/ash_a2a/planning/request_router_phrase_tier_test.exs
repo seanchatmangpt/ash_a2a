@@ -75,7 +75,7 @@ defmodule AshA2A.Planning.RequestRouterPhraseTierTest do
     }
   end
 
-  defp text_message(text), do: A2A.Message.new_user(text)
+  defp text_message(text), do: AshA2A.Protocol.Message.new_user(text)
 
   defp raise_on_call(label) do
     fn _model_spec, _prompt, _schema, _llm_opts ->

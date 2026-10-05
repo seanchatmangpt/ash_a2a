@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Research.ERCSanitizeTest do
   @moduledoc "CWE-22 court: traversal ids never write outside the receipt dir. DB-free."
   use ExUnit.Case, async: true

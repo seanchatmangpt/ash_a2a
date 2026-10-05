@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Collaborators.MockScan do
   @moduledoc """
   Zero-mock static scan (RFC-SA2A-002 §10, §34) over Elixir source trees.
@@ -179,8 +183,9 @@ defmodule AshA2A.Chicago.Collaborators.MockScan do
   end
 
   defp error_line(meta) when is_list(meta), do: Keyword.get(meta, :line, 0)
-  defp error_line(line) when is_integer(line), do: line
-  defp error_line(_), do: 0
+
+  # (the old integer and catch-all `error_line/1` clauses were dead: every
+  # caller passes a keyword metadata list, the live clause covers the type)
 
   defp error_detail(message, token) when is_binary(message) and is_binary(token),
     do: message <> token

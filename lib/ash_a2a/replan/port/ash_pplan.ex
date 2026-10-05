@@ -1,7 +1,19 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Replan.Port.AshPPlan do
   # MERGE NOTE: main's owner-adapter-first port kept (candidates only: authority :none, standing
   # :candidate). r2's legacy direct-AshPPlan behaviour is preserved in legacy_propose/2, including
   # r2's `{:ok, plan}` unwrapping for :powl plans.
+  #
+  # SEAM DIVISION (docs/explanation/pplan-seams.md): this port is the REPLAN
+  # CANDIDATE POLICY seam — it never touches
+  # `AshPPlan.Reactor.Durable.Engine` and never starts a durable run. Task
+  # durability (Engine start/attempt/signal/fetch/cancel) lives exclusively in
+  # `AshA2A.Providers.PPlan`. xaas consumes this port via
+  # `AshA2A.Replan.Loop.run/4`; `supports?/1` and `propose/2` are
+  # source-compatible contracts. Do not delegate one seam to the other.
   @behaviour AshA2A.Replan.Provider
 
   @owner_provider AshPPlan.SA2A.Provider

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Receipt.RProjection do
   @moduledoc """
   Projects an S31 command receipt (`AshA2A.Receipt`) onto the fleet R schema

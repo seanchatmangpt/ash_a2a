@@ -1,12 +1,12 @@
 {
-  "_comment": "Frozen capability-release closure for the prod swarm release (capability_release_mode :strict). Loaded by SwarmNode.ReleaseClosure.load!/2 from config/runtime.exs; its frozen digest is pinned by ASH_A2A_CAPABILITY_RELEASE_DIGEST. Only skills listed here may be advertised or dispatched.",
+  "_comment": "Frozen capability-release closure for the prod swarm release (capability_release_mode :strict). Loaded by SwarmNode.ReleaseClosure.load!/3 from config/runtime.exs; its frozen digest is pinned by ASH_A2A_CAPABILITY_RELEASE_DIGEST, and the court standing evidence backing release is resolved offline from ASH_A2A_STANDING_ARTIFACTS_DIR (rel/overlays/standing/, vendored byte-identically from the ash_a2a checkout's real receipts/courts/sa2a/<sha>/ artifacts). Only skills listed here, with an admitted CONFORMANT court receipt at the exact declared subject_revision, may be advertised or dispatched.",
   "capabilities": [
     {
       "id": "SwarmNode.Echo.ping",
       "version": "0.1.0",
       "digest": "sha256:b89a7c43f7c5bf6f03c43053ab740ec3696e6495c570a3bd3097d604292c4097",
       "admission_digest": "sha256:69758e95da222496cbed616fc9fc25505f0a28c1a59c0bde918144cff7320ecd",
-      "release_digest": "sha256:27821c006122d2592486261fca926a64320a49b97998cc6b385ce791881c36e3"
+      "subject_revision": "501a4fdbc427dc6ae50c64368126f2156d3b99c9"
     }
   ]
 }

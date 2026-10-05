@@ -1,10 +1,14 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AZaiConcurrencyOcelTest do
   @moduledoc """
   Real concurrency validation: fires N real, live A2A dispatches to the
   Z.AI-backed `ZaiLlmAvatar` (`test/support/freedom_gym_llm_fixture.ex`)
   concurrently via `Task.async_stream`, calling
   `AshA2A.Dispatcher.dispatch/5` DIRECTLY per task rather than through
-  `ZaiLlmAvatarAgent.call/3` -- `A2A.Agent` is a single `GenServer`, so
+  `ZaiLlmAvatarAgent.call/3` -- `AshA2A.Protocol.Agent` is a single `GenServer`, so
   routing N concurrent tasks through its one mailbox serializes them
   (confirmed: a real first attempt this way produced real
   `GenServer.call` timeouts under load, not genuine concurrency).

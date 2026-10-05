@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.SemanticBoundary do
   @moduledoc """
   Shared, non-court plumbing for the RFC-SA2A-002 §54/§55/§56/§75 courts.
@@ -125,16 +129,16 @@ defmodule AshA2A.Chicago.Courts.SemanticBoundary do
   end
 
   @doc "The agent card the real Plug pipeline serves for `agent` (decoded)."
-  @spec served_card!(atom(), :compatible | :none | {:version, String.t()}) :: A2A.AgentCard.t()
+  @spec served_card!(atom(), :compatible | :none | {:version, String.t()}) :: AshA2A.Protocol.AgentCard.t()
   def served_card!(agent, advertise) do
     {:ok, card, _json} = Http.served_card(agent: agent, advertise: advertise)
     card
   end
 
-  @doc "In-process A2A binding: a real `A2A.call/3` into the agent GenServer."
-  @spec call(atom(), A2A.Message.t(), keyword()) :: map() | {:error, term()}
+  @doc "In-process A2A binding: a real `AshA2A.Protocol.call/3` into the agent GenServer."
+  @spec call(atom(), AshA2A.Protocol.Message.t(), keyword()) :: map() | {:error, term()}
   def call(agent, message, opts \\ []) do
-    case A2A.call(agent, message, opts) do
+    case AshA2A.Protocol.call(agent, message, opts) do
       {:ok, task} -> Http.reply_data(task) || %{"task_state" => to_string(task.status.state)}
       {:error, reason} -> {:error, reason}
     end

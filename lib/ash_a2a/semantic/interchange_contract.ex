@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.InterchangeContract do
   @moduledoc "Evidence-only identity for a semantic interchangeable implementation."
   @enforce_keys [:source_repository, :source_revision, :semantic_vocabulary,

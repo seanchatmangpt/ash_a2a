@@ -13,15 +13,15 @@ below).
 `AshA2A.Info.agent_card/2` and `AshA2A.CapabilityIndex.Compiler` turn a
 resource or domain's `AshA2A` DSL entities into a compiled, persisted
 capability index, and `AshA2A.CapabilityIndex.AgentCardBuilder` projects that
-index into an `A2A.AgentCard` (name, skills). `AshA2A.Agent.__using__`
+index into an `AshA2A.Protocol.AgentCard` (name, skills). `AshA2A.Agent.__using__`
 reads this same compiled card at macro-expansion time via
-`__card_opts__/2`, so the `A2A.Agent` GenServer generated for a resource can
+`__card_opts__/2`, so the `AshA2A.Protocol.Agent` GenServer generated for a resource can
 never advertise a skill the compiler didn't actually see.
 
 When a message arrives, `AshA2A.Agent.__dispatch__` resolves the skill name,
-pulls `history` off the `A2A.Agent.context()` and `auth_identity` out of
-`context.metadata["a2a.auth"]` (populated only by `A2A.Plug.Auth` after real
-credential verification -- never from caller-controlled `A2A.Message.metadata`),
+pulls `history` off the `AshA2A.Protocol.Agent.context()` and `auth_identity` out of
+`context.metadata["a2a.auth"]` (populated only by `AshA2A.Protocol.Plug.Auth` after real
+credential verification -- never from caller-controlled `AshA2A.Protocol.Message.metadata`),
 and calls `AshA2A.Dispatcher.dispatch/6` directly. `Dispatcher` resolves
 actor/tenant through `AshA2A.ContextResolver.from_a2a_message/4` and invokes
 the real Ash action with the non-bang `Ash.Changeset.for_create/3` /
@@ -133,7 +133,7 @@ query) from a real mutating/externally-effecting one, which is exactly why
 this is a real, separate capability-truth field rather than an inline
 `if action.type == :read` check (see "Consequence semantics" below).
 
-`command_id` is the real, protocol-native `A2A.Message.message_id` -- not a
+`command_id` is the real, protocol-native `AshA2A.Protocol.Message.message_id` -- not a
 freshly generated id per dispatch -- so a genuine client retry (the same
 `message_id` resent after a dropped response) engages `CommandBus`'s real
 replay/conflict detection through this default path too: the same
@@ -217,8 +217,8 @@ honored.
   real `arguments` (plus, for `:create`/`:update`, `action.accept`-derived
   attributes) instead of the previous hardcoded `arguments: []`. Consumed via
   `AshA2A.Info.capability_index/1`/`AshA2A.Info.skill/2` -- the wire
-  `A2A.AgentCard` projection still cannot carry per-argument schema data (no
-  such field on that vendored struct).
+  `AshA2A.Protocol.AgentCard` projection still cannot carry per-argument schema data (no
+  such field on the `AgentCard` struct).
 - **OCEL: one event per dispatch, not two.** A CommandBus-routed dispatch
   used to fire both `[:ash_a2a, :dispatch, :stop]` and
   `[:ash_a2a, :receipt, :committed]` as two separate HTTP-posted events for
@@ -300,16 +300,16 @@ above or the ordinary skill-resolution path ever runs:
   `AshA2A.Transformers.BuildCapabilityIndex` and read back via
   `AshA2A.Info.semantic_requests_enabled?/1`). Real compiled DSL truth, not a runtime
   check; defaults to `false`, so no existing resource's behavior changes.
-- **Gate 2** — the caller's own inbound `A2A.Message.metadata` sets
+- **Gate 2** — the caller's own inbound `AshA2A.Protocol.Message.metadata` sets
   `:semantic_request`/`"semantic_request"` to `true`, resolved through the same
   atom-then-string `AshA2A.MetadataKey.get/2` convention `:skill` metadata already uses.
 
 Only when **both** are true does dispatch reach the private `dispatch_semantic/2`, which
-extracts the message's real text (`A2A.Message.text/1`) and calls
+extracts the message's real text (`AshA2A.Protocol.Message.text/1`) and calls
 `AshA2A.Semantic.Compiler.compile/3` for real, converting the resulting
 `AshA2A.Semantic.ExecutionPackage` into a real `AshA2A.Dispatcher.reply()` via the new
 `AshA2A.Semantic.ExecutionPackage.to_reply/1`. Either gate false, or a message with no
-`A2A.Part.Text` part, falls straight through to the ordinary skill-resolution path
+`AshA2A.Protocol.Part.Text` part, falls straight through to the ordinary skill-resolution path
 (`dispatch_skill/4`) unchanged — this is a new, explicit route added beside the existing
 one, never a content sniff of unstructured text and never a silent fallback for an
 unrecognized skill name.
@@ -326,7 +326,7 @@ package that fails the same `standing: :candidate, authority: :none` fence
 unlike every other `AshA2A.Dispatcher` path's deliberately non-raising contract —
 so `dispatch_semantic/2` wraps the whole compile in a real `rescue`, turning any real
 compilation failure (misconfigured profile or otherwise) into a typed
-`:semantic_compilation_failed` reply rather than crashing the shared `A2A.Agent`
+`:semantic_compilation_failed` reply rather than crashing the shared `AshA2A.Protocol.Agent`
 GenServer and taking down every other in-flight task it is managing.
 
 See [Enable semantic requests](../how-to/enable-semantic-requests.md) for the concrete

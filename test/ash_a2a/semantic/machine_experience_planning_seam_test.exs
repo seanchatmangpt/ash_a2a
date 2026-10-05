@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.MachineExperiencePlanningSeamTest do
   @moduledoc """
   RFC S39/S65's compile-back, wired into this codebase's **existing**

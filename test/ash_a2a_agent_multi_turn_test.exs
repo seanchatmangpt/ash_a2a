@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AAgentMultiTurnTest do
   @moduledoc """
-  Real multi-turn `task_id:` continuation through a real `A2A.Agent`
+  Real multi-turn `task_id:` continuation through a real `AshA2A.Protocol.Agent`
   GenServer process (not a bare `AshA2A.Dispatcher.dispatch/5` call, and not
   just an assertion on the paused task struct's shape).
 
@@ -8,15 +12,15 @@ defmodule AshA2AAgentMultiTurnTest do
   research: every existing `{:input_required, _}` test in this suite
   (`test/ash_a2a_dispatcher_*_test.exs`) proves only the *first* turn --
   that a missing-argument `Ash.Error.Invalid` maps to `{:input_required, _}`
-  -- and stops there. None of them sends a real follow-up `A2A.Message` back
-  through `A2A.Agent.call/3` with `task_id:` set to prove the paused task
-  actually resumes, nor that `A2A.Agent.Runtime`'s real accumulated
+  -- and stops there. None of them sends a real follow-up `AshA2A.Protocol.Message` back
+  through `AshA2A.Protocol.Agent.call/3` with `task_id:` set to prove the paused task
+  actually resumes, nor that `AshA2A.Protocol.Agent.Runtime`'s real accumulated
   `history` genuinely reaches `AshA2A.Dispatcher`'s
   `context[:a2a_history]` on the second turn.
 
-  Chicago-style throughout: a real supervised `A2A.Agent` process
-  (`AshA2A.Test.Fixture.MultiTurnConversationAgent`), real `A2A.Agent.call/3`
-  calls, real state-based assertions on the real returned `A2A.Task.t()` and
+  Chicago-style throughout: a real supervised `AshA2A.Protocol.Agent` process
+  (`AshA2A.Test.Fixture.MultiTurnConversationAgent`), real `AshA2A.Protocol.Agent.call/3`
+  calls, real state-based assertions on the real returned `AshA2A.Protocol.Task.t()` and
   on real values the fixture's own Ash action computed from real
   `input.context[:a2a_history]` -- no Mock/mox/patch/monkeypatch.
   """
@@ -40,7 +44,7 @@ defmodule AshA2AAgentMultiTurnTest do
     # Turn 1: omit the required `:text` argument. `Ash.ActionInput.for_action/3`
     # raises a real `Ash.Error.Invalid` (missing argument), which
     # `AshA2A.Dispatcher.to_reply/1` maps to a real `{:input_required, _}`
-    # reply -- pausing the real task under a real `A2A.Agent`-assigned
+    # reply -- pausing the real task under a real `AshA2A.Protocol.Agent`-assigned
     # `task_id`.
     assert {:ok, turn1} =
              MultiTurnConversationAgent.call(MultiTurnConversationAgent, data_message(%{}))
@@ -50,13 +54,13 @@ defmodule AshA2AAgentMultiTurnTest do
     task_id = turn1.id
 
     # The paused task's real history already carries the real inbound user
-    # message from turn 1 (A2A.Agent.Runtime's own bookkeeping, not this
+    # message from turn 1 (AshA2A.Protocol.Agent.Runtime's own bookkeeping, not this
     # test's).
     assert Enum.any?(turn1.history, &(&1.role == :user))
 
     # Turn 2: continue the SAME real task_id, this time supplying `:text`.
     # This is the actual multi-turn continuation this item targets -- a real
-    # follow-up `A2A.Agent.call/3` naming the paused task, not a fresh call.
+    # follow-up `AshA2A.Protocol.Agent.call/3` naming the paused task, not a fresh call.
     assert {:ok, turn2} =
              MultiTurnConversationAgent.call(
                MultiTurnConversationAgent,
@@ -68,13 +72,13 @@ defmodule AshA2AAgentMultiTurnTest do
     assert turn2.id == task_id
     assert turn2.status.state == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = turn2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = turn2.artifacts
 
     # The fixture's real Ash action itself counted
     # `length(input.context[:a2a_history])` on this second, real dispatch --
     # proof (produced by real Ash action code, not asserted from outside)
     # that the real turn-1 history (the original user message, plus the
-    # real `:input_required` agent reply `A2A.Agent.Runtime` appended) was
+    # real `:input_required` agent reply `AshA2A.Protocol.Agent.Runtime` appended) was
     # genuinely threaded into this second call's Ash `context:` opt, not
     # just present on the task struct this test can already see directly.
     assert result[:text] == "second turn"

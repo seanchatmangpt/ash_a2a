@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ObanDeliveryDedupTest do
   @moduledoc """
   R11: `AshA2A.Delivery.Oban.enqueue/3` must hold at most one live job per
@@ -115,7 +119,7 @@ defmodule AshA2A.ObanDeliveryDedupTest do
     # A real claim held by a first executor that has not committed yet.
     assert {:execute, _execution_id} = store.claim(command, [])
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "i-#{suffix}"})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => "i-#{suffix}"})])
     result = CommandBus.run(command, message, AshA2A.Test.Fixture.Item)
 
     assert {:error, %{code: :in_flight}} = result

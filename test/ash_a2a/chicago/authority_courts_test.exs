@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.AuthorityCourtsTest do
   @moduledoc """
   RFC-SA2A-002 §57/§64-§67 authority courts, run end to end through the real
@@ -56,7 +60,10 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
     "SA2A-AUTH-018" => :positive_control_passed,
     "SA2A-AUTH-019" => :falsifier_killed,
     "SA2A-AUTH-020" => :falsifier_killed,
-    "SA2A-AUTH-021" => :positive_control_passed
+    "SA2A-AUTH-021" => :positive_control_passed,
+    "SA2A-AUTH-022" => :falsifier_killed,
+    "SA2A-AUTH-023" => :falsifier_killed,
+    "SA2A-AUTH-024" => :falsifier_killed
   }
 
   @grant_verdicts %{
@@ -70,7 +77,9 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
     "SA2A-AUTH-GRANT-008" => :falsifier_killed,
     "SA2A-AUTH-GRANT-009" => :positive_control_passed,
     "SA2A-AUTH-GRANT-010" => :falsifier_killed,
-    "SA2A-AUTH-GRANT-011" => :positive_control_passed
+    "SA2A-AUTH-GRANT-011" => :positive_control_passed,
+    "SA2A-AUTH-GRANT-012" => :falsifier_killed,
+    "SA2A-AUTH-GRANT-013" => :falsifier_killed
   }
 
   describe "end-to-end Chicago run" do
@@ -289,7 +298,7 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
       on_exit(fn -> :telemetry.detach(handler) end)
 
       message = %{
-        A2A.Message.new_user([A2A.Part.Data.new(%{"nonce" => "guard"})])
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => "guard"})])
         | metadata: %{"skill" => "actuate"}
       }
 

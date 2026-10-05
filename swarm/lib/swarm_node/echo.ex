@@ -5,7 +5,7 @@ defmodule SwarmNode.Echo do
   the entire swarm-test payload: dispatching this skill against a peer
   pod's registered `SwarmNode.EchoAgent` and observing a `node` field that
   differs from the caller's own `node()` is the real, falsifiable proof
-  that a live, distributed cross-pod `A2A.Agent` dispatch occurred --
+  that a live, distributed cross-pod `AshA2A.Protocol.Agent` dispatch occurred --
   never a same-process/same-node stand-in.
   """
 

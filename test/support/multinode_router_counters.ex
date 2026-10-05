@@ -122,10 +122,10 @@ defmodule AshA2A.Test.MultinodeRouterCounters do
       )
 
   defp facts_message do
-    A2A.Message.new_user([A2A.Part.Data.new(%{"goal_facts" => goal_facts_envelope()})])
+    AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => goal_facts_envelope()})])
   end
 
-  defp phrase_message, do: A2A.Message.new_user("create a labeled item")
+  defp phrase_message, do: AshA2A.Protocol.Message.new_user("create a labeled item")
 
   defp phrase_template do
     %{regex: @phrase_regex, to_envelope: fn _captures -> goal_facts_envelope() end}

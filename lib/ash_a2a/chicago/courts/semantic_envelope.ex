@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
   @moduledoc """
   RFC-SA2A-002 §54 Semantic Envelope Court (`SA2A-ENV`).
 
   Attacks the real receiving boundary -- `AshA2A.Semantic.Peer` inside a real
-  `A2A.Agent` GenServer reached through a real `A2A.call/3` -- with inbound
+  `AshA2A.Protocol.Agent` GenServer reached through a real `AshA2A.Protocol.call/3` -- with inbound
   envelopes that are admissible in every respect except the one field under
   attack, so removing the guard for that field lets the envelope acquire
   `:admitted` standing (§11 last paragraph). Two positive controls prove the
@@ -97,8 +101,8 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
           kind: :negative,
           invariant:
             "An inbound envelope with #{what} never acquires :admitted standing at the receiving peer",
-          stimulus: "real A2A.call/3 of an SA2A-activated message: #{stimulus}",
-          boundary: "AshA2A.Semantic.Peer.receive_message/3 in a real A2A.Agent",
+          stimulus: "real AshA2A.Protocol.call/3 of an SA2A-activated message: #{stimulus}",
+          boundary: "AshA2A.Semantic.Peer.receive_message/3 in a real AshA2A.Protocol.Agent",
           forbidden_outcome: "peer decision standing :admitted for the attacked envelope",
           attempt_evidence:
             "peer boundary telemetry #{inspect(attempt)} attributed to the stimulus",
@@ -120,7 +124,7 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
         invariant:
           "An envelope declaring a profile this runtime does not implement surfaces as typed UNSUPPORTED_PROFILE, never admitted and never collapsed into REFUSED",
         stimulus:
-          "real A2A.call/3 of an activated payload with profile urn:sa2a:profile:core:v99.0.0",
+          "real AshA2A.Protocol.call/3 of an activated payload with profile urn:sa2a:profile:core:v99.0.0",
         boundary: "AshA2A.Semantic.Peer.receive_message/3 + Envelope.validate_profile/1",
         attempt_evidence: "#{@receive} activated=true",
         survival_evidence: "#{@decision} standing=unsupported class=unsupported_profile",
@@ -142,7 +146,7 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
         kind: :positive_control,
         invariant:
           "A complete envelope (identity, known profile, semantic basis, true digest, provenance, lawful classes) IS admitted -- the boundary discriminates",
-        stimulus: "real A2A.call/3 of the unmutated admissible payload",
+        stimulus: "real AshA2A.Protocol.call/3 of the unmutated admissible payload",
         boundary: "AshA2A.Semantic.Peer + real praxis-graphlaw engine",
         attempt_evidence: "#{@admission} for the envelope",
         survival_evidence:
@@ -163,7 +167,7 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
         invariant:
           "An envelope whose receipt reference resolves to a genuine receipt in this peer's own store IS admitted -- receipt verification discriminates",
         stimulus:
-          "real A2A.call/3 of the admissible payload referencing a receipt committed by the real CommandBus",
+          "real AshA2A.Protocol.call/3 of the admissible payload referencing a receipt committed by the real CommandBus",
         boundary: "AshA2A.Semantic.Peer receipt-reference verification",
         attempt_evidence: "#{@admission} for the envelope",
         survival_evidence: "#{@decision} standing=admitted",
@@ -366,7 +370,7 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
       {:ok, receipt} =
         CommandBus.run(
           command,
-          Envelopes.ordinary([A2A.Part.Data.new(%{"item" => label, "quantity" => 1})]),
+          Envelopes.ordinary([AshA2A.Protocol.Part.Data.new(%{"item" => label, "quantity" => 1})]),
           Ordering,
           store_opts: [name: store],
           authority_broker: broker_opts

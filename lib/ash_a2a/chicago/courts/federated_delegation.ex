@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.FederatedDelegation do
   @moduledoc """
   `SA2A-FED` -- Federated Delegation Court (RFC-SA2A-001 §54 Confused Deputy
@@ -15,12 +19,12 @@ defmodule AshA2A.Chicago.Courts.FederatedDelegation do
   authority attribution and receipted standing verified to survive that
   specific cross-peer hop.
 
-  This court starts two genuinely distinct, real, supervised `A2A.Agent`
+  This court starts two genuinely distinct, real, supervised `AshA2A.Protocol.Agent`
   GenServer processes (peer A: `AshA2A.Chicago.Fixtures.
   FederatedDelegation.PeerAAgent`; peer B: `...PeerBAgent`), each with its
   own real `AshA2A.CommandBus` / `AshA2A.Dispatcher` / `AshA2A.Authority.
   Grant` admission path. Peer A's `delegate_write` skill's real effect is a
-  genuine cross-process `A2A.call/3` into peer B, forwarding the SAME
+  genuine cross-process `AshA2A.Protocol.call/3` into peer B, forwarding the SAME
   transport-verified originating principal peer A's own admission already
   resolved (`context.actor`) -- never peer A's own identity, and never
   anything the caller supplied as free-form input.
@@ -35,7 +39,7 @@ defmodule AshA2A.Chicago.Courts.FederatedDelegation do
       refuses.
     * `SA2A-FED-003` (negative, §38/§68) -- even a principal granted at both
       peers cannot reach peer B's consequence by skipping peer B's own
-      `A2A.Agent`/`AshA2A.CommandBus` front door and calling
+      `AshA2A.Protocol.Agent`/`AshA2A.CommandBus` front door and calling
       `AshA2A.Dispatcher.dispatch/5` against peer B directly: federation
       opens no new lawful shortcut around the exact bypass surface
       `CHI-BRCE-001`/`002` already attacks in-process.
@@ -95,7 +99,7 @@ defmodule AshA2A.Chicago.Courts.FederatedDelegation do
         stimulus:
           "PeerAAgent.call/3 of delegate_write, naming peer B as the delegate target, by a principal holding real Authority.Grant grants on both peer A's delegate_write capability and peer B's record capability",
         boundary:
-          "AshA2A.Agent (peer A) -> real A2A.call/3 -> AshA2A.Agent (peer B) -> AshA2A.CommandBus (peer B)",
+          "AshA2A.Agent (peer A) -> real AshA2A.Protocol.call/3 -> AshA2A.Agent (peer B) -> AshA2A.CommandBus (peer B)",
         attempt_evidence: ">=2 brce.admission (one per peer's own CommandBus)",
         survival_evidence:
           ">=2 committed brce.commit (one per peer); PeerB's row for this label carries the originating principal",
@@ -325,8 +329,8 @@ defmodule AshA2A.Chicago.Courts.FederatedDelegation do
 
   defp delegate_message(label, peer_b_name, bypass?) do
     message =
-      A2A.Message.new_user([
-        A2A.Part.Data.new(%{"label" => label, "peer_b_name" => peer_b_name, "bypass" => bypass?})
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"label" => label, "peer_b_name" => peer_b_name, "bypass" => bypass?})
       ])
 
     %{message | metadata: %{"skill" => "delegate_write"}}

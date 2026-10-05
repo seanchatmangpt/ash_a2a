@@ -1,0 +1,49 @@
+{
+  "identity": {
+    "subject": "oclnr snapshot thin / [binary built from uncommitted changes on top of subject_sha]",
+    "repo": "/Users/sac/osx-clnr",
+    "subject_sha": "fc73e706a6b33024038aaecae7e82effec19314f",
+    "base_sha": "fc73e706a6b33024038aaecae7e82effec19314f"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "operator-invocation: `oclnr snapshot thin` run directly by its caller",
+    "actor": "oclnr"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": [
+      "APFS local snapshots on /: thinned 4 (before 7, after 3), requested 14000000000 bytes"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "/Users/sac/osx-clnr/target/release/oclnr snapshot thin --mount / --bytes 14GB --receipt /Users/sac/ash_a2a/snapshot-thin-receipt.json",
+        "cwd": "/Users/sac/ash_a2a",
+        "exit": 0,
+        "summary": "thinned=4",
+        "output_sha256": "8c273c4324994ac4385c2653347d4a5c53ea500104d2cf7f3cf042b740eadc4f"
+      }
+    ],
+    "durable_location": "/Users/sac/ash_a2a/snapshot-thin-receipt.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "replay[0] (`/Users/sac/osx-clnr/target/release/oclnr snapshot thin --mount / --bytes 14GB --receipt /Users/sac/ash_a2a/snapshot-thin-receipt.json`, exit 0) at oclnr fc73e70; native receipt /Users/sac/ash_a2a/snapshot-thin-receipt.json (sha256 8c273c4324994ac4385c2653347d4a5c53ea500104d2cf7f3cf042b740eadc4f)"
+  },
+  "work_order_id": "oclnr-snapshot-thin:operator:/",
+  "origin_authority": {
+    "ceiling": "DO",
+    "grant": "operator-invocation: `oclnr snapshot thin` run directly by its caller",
+    "actor": "oclnr"
+  },
+  "provider": {
+    "name": "oclnr",
+    "transport": "local-process",
+    "authority_ceiling": "DO",
+    "receipt_protocol": "oclnr-native+affidavit-core/v1+r-projection/v2"
+  },
+  "provider_execution_id": "oclnr:sha256:8c273c4324994ac4385c2653347d4a5c53ea500104d2cf7f3cf042b740eadc4f"
+}

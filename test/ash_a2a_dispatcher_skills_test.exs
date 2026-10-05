@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ADispatcherSkillsTest do
   @moduledoc """
   Chicago-style coverage for `AshA2A.Dispatcher.dispatch/3` branches that had
@@ -46,7 +50,7 @@ defmodule AshA2ADispatcherSkillsTest do
   test "dispatch/3 runs a real :create skill end to end" do
     message = data_message(%{"label" => "widget"})
 
-    assert {:reply, [%A2A.Part.Data{data: %{label: "widget", id: id}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{label: "widget", id: id}}]} =
              ReceiptedDispatch.dispatch(:create_item, message, Item)
 
     refute is_nil(id)
@@ -57,7 +61,7 @@ defmodule AshA2ADispatcherSkillsTest do
   test "dispatch/3's :update skill maps a real missing id to {:input_required, _} (to_reply/1)" do
     message = data_message(%{"label" => "no id here"})
 
-    assert {:input_required, [%A2A.Part.Text{text: text}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{text: text}]} =
              ReceiptedDispatch.dispatch(:update_item, message, Item)
 
     assert text =~ "id"
@@ -66,7 +70,7 @@ defmodule AshA2ADispatcherSkillsTest do
   test "dispatch/3's :update skill still fails closed for a real missing atom-keyed id" do
     message = data_message(%{label: "no id here either"})
 
-    assert {:input_required, [%A2A.Part.Text{text: text}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{text: text}]} =
              ReceiptedDispatch.dispatch(:update_item, message, Item)
 
     assert text =~ "id"
@@ -75,7 +79,7 @@ defmodule AshA2ADispatcherSkillsTest do
   test "dispatch/3's :destroy skill maps a real missing id to {:input_required, _} (to_reply/1)" do
     message = data_message(%{})
 
-    assert {:input_required, [%A2A.Part.Text{text: text}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{text: text}]} =
              ReceiptedDispatch.dispatch(:destroy_item, message, Item)
 
     assert text =~ "id"
@@ -84,7 +88,7 @@ defmodule AshA2ADispatcherSkillsTest do
   test "dispatch/3 runs a real generic :action skill" do
     message = data_message(%{})
 
-    assert {:reply, [%A2A.Part.Data{data: %{result: "pong"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{result: "pong"}}]} =
              AshA2A.Dispatcher.dispatch(:ping, message, Item)
   end
 
@@ -94,7 +98,7 @@ defmodule AshA2ADispatcherSkillsTest do
     # `Ash.Changeset.for_create/3`/`Ash.create/2`, not a hand-built error.
     message = data_message(%{})
 
-    assert {:input_required, [%A2A.Part.Text{text: text}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{text: text}]} =
              ReceiptedDispatch.dispatch(:create_item, message, Item)
 
     assert is_binary(text)

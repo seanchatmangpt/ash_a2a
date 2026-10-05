@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.AuthZEN.Types do
   @moduledoc """
   Lossless internal projection of OpenID AuthZEN Authorization API 1.0 SARC values.

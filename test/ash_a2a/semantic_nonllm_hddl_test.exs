@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.NonllmHddlTest do
   @moduledoc """
   Task 4 + 5 of the deterministic (non-LLM) HDDL planning path: real,
@@ -118,7 +122,7 @@ defmodule AshA2A.Semantic.NonllmHddlTest do
       # the real submitted capability_ids and the real solved hddl/fond text
       # -- the same contract the LLM-driven semantic path returns, satisfied
       # here by a genuinely different, non-LLM producer.
-      assert {:reply, [%A2A.Part.Data{} = part]} = ExecutionPackage.to_reply(package)
+      assert {:reply, [%AshA2A.Protocol.Part.Data{} = part]} = ExecutionPackage.to_reply(package)
       assert part.data["standing"] == "candidate"
       assert part.data["authority"] == "none"
       assert part.data["capability_ids"] == [@advance_id, @unlock_id]

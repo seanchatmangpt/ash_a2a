@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.GallClosure.FindingBinding do
   @moduledoc "Bounded GALL-029/030 guard for finding_id."
   def admit(%{finding_id: v} = s) when v not in [nil, false, ""],

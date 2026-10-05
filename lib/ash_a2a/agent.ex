@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Agent do
   @moduledoc """
-  Generates a real, runnable `A2A.Agent` GenServer for an `AshA2A`-extended
+  Generates a real, runnable `AshA2A.Protocol.Agent` GenServer for an `AshA2A`-extended
   resource or domain, so a compiled capability index has an actual supervised
-  process a caller can send an `A2A.Message` to -- not just a synchronous
+  process a caller can send an `AshA2A.Protocol.Message` to -- not just a synchronous
   `AshA2A.Dispatcher.dispatch/6` function call.
 
       defmodule MyApp.EchoAgent do
@@ -11,7 +15,7 @@ defmodule AshA2A.Agent do
 
       # under a supervisor:
       children = [
-        {A2A.AgentSupervisor, agents: [MyApp.EchoAgent]}
+        {AshA2A.Protocol.AgentSupervisor, agents: [MyApp.EchoAgent]}
       ]
 
   The generated `agent_card/0` is built from the real, persisted, verified
@@ -20,7 +24,7 @@ defmodule AshA2A.Agent do
   can't serve.
 
   `handle_message/2` reads the target skill name from the inbound
-  `A2A.Message`'s `metadata[:skill]` (or `"skill"` string key, matching
+  `AshA2A.Protocol.Message`'s `metadata[:skill]` (or `"skill"` string key, matching
   `AshA2A.ContextResolver`'s own atom-then-string metadata lookup
   convention). A resource/domain with exactly one compiled skill lets the
   caller omit `:skill` metadata entirely -- that single skill is dispatched
@@ -29,9 +33,9 @@ defmodule AshA2A.Agent do
   built with this macro can never diverge from what `AshA2A.Info.agent_card/2`
   advertises.
 
-  The full `A2A.Agent.context()` (`task_id`, `context_id`, `history`,
+  The full `AshA2A.Protocol.Agent.context()` (`task_id`, `context_id`, `history`,
   `metadata`) that `handle_message/2` receives is never discarded: `history`
-  -- the accumulated multi-turn transcript `A2A.Agent.Runtime` builds for a
+  -- the accumulated multi-turn transcript `AshA2A.Protocol.Agent.Runtime` builds for a
   continued (`task_id:`) task (`~/xaas/deps/a2a/lib/a2a/agent.ex:69-90,
   130-135`) -- is threaded straight through to
   `AshA2A.Dispatcher.dispatch/6`, which folds it into the Ash `context:` opt
@@ -40,7 +44,7 @@ defmodule AshA2A.Agent do
   ## Concurrency, ownership and admission
 
   The generated GenServer no longer runs handlers inside its own mailbox.
-  `AshA2A.Transport.Runtime` replaces `A2A.Agent`'s `{:message, ...}` clause:
+  `AshA2A.Transport.Runtime` replaces `AshA2A.Protocol.Agent`'s `{:message, ...}` clause:
   by default (`execution: [mode: :async]`) each message runs in a monitored
   worker, so a slow Ash action or LLM compile does not block `tasks/get`,
   `tasks/list`, `tasks/cancel` or other callers, and a crashing handler
@@ -53,7 +57,7 @@ defmodule AshA2A.Agent do
   principal continuing a task gets `{:error, :not_found}`, and a continuation
   always runs under the *current* call's verified auth. Serve agents over
   HTTP with `AshA2A.Transport.Plug` (owner-scoped `tasks/*`, no credential
-  echo, truthful AgentCard capabilities), not the raw `A2A.Plug`.
+  echo, truthful AgentCard capabilities), not the raw `AshA2A.Protocol.Plug`.
 
   ## Authentication (fail closed)
 
@@ -88,7 +92,7 @@ defmodule AshA2A.Agent do
   defmacro __using__(opts) do
     {resource_or_domain_ast, agent_opts_ast} = Keyword.pop!(opts, :resource_or_domain)
 
-    # `use A2A.Agent, card_opts` (below) expands `A2A.Agent.__using__/1` at
+    # `use AshA2A.Protocol.Agent, card_opts` (below) expands `AshA2A.Protocol.Agent.__using__/1` at
     # *this* macro-expansion time, and that macro reads `card_opts` with
     # `Keyword.has_key?/2` directly on the AST it's given -- it cannot accept
     # a runtime function-call expression. `resource_or_domain` and the rest
@@ -96,7 +100,7 @@ defmodule AshA2A.Agent do
     # so both are resolved for real right here at compile time --
     # `Macro.expand/2` for the module alias, `Code.eval_quoted/3` for the
     # rest -- and the resulting card is embedded as a literal keyword list
-    # via `bind_quoted`, exactly what `A2A.Agent.__using__/1` requires.
+    # via `bind_quoted`, exactly what `AshA2A.Protocol.Agent.__using__/1` requires.
     resource_or_domain = Macro.expand(resource_or_domain_ast, __CALLER__)
     {agent_opts, _bindings} = Code.eval_quoted(agent_opts_ast, [], __CALLER__)
     {execution_opts, agent_opts} = Keyword.pop(agent_opts, :execution, [])
@@ -105,23 +109,23 @@ defmodule AshA2A.Agent do
 
     # `unquote(Macro.escape(card_opts))` (not `bind_quoted`) splices the
     # already-computed literal keyword list directly into the AST this
-    # macro returns -- so when the caller's `use A2A.Agent, <that literal>`
-    # expands, `A2A.Agent.__using__/1` receives the real keyword list AST,
+    # macro returns -- so when the caller's `use AshA2A.Protocol.Agent, <that literal>`
+    # expands, `AshA2A.Protocol.Agent.__using__/1` receives the real keyword list AST,
     # not a runtime variable reference it can't inspect at macro-expansion
     # time (which is what `bind_quoted` would produce here).
     quote do
-      use A2A.Agent, unquote(Macro.escape(card_opts))
+      use AshA2A.Protocol.Agent, unquote(Macro.escape(card_opts))
 
       @ash_a2a_resource_or_domain unquote(resource_or_domain)
       @ash_a2a_execution unquote(Macro.escape(execution_opts))
       @ash_a2a_dispatch_opts unquote(Macro.escape(dispatch_opts))
 
-      # SEC-01/SEC-03: `A2A.Agent`'s own `{:message, ...}` clause runs the
+      # SEC-01/SEC-03: `AshA2A.Protocol.Agent`'s own `{:message, ...}` clause runs the
       # handler inside this GenServer and continues a task under its STORED
       # auth. `AshA2A.Transport.Runtime` replaces that clause (owner check,
       # auth rebinding, CSPRNG task ids, admission limits, off-mailbox
       # execution) and adds the owner-scoped reads `AshA2A.Transport.Plug`
-      # uses. Every other call falls through to `A2A.Agent` unchanged.
+      # uses. Every other call falls through to `AshA2A.Protocol.Agent` unchanged.
       defoverridable handle_call: 3
 
       @impl GenServer
@@ -154,17 +158,39 @@ defmodule AshA2A.Agent do
 
       def handle_call(request, from, state), do: super(request, from, state)
 
+      # Generated catch-all: every `handle_info` clause the ported
+      # `AshA2A.Protocol.Agent` defines (task_done, DOWN/subscriber cleanup)
+      # precedes this wrapper in clause order, so only messages NONE of those
+      # clauses match land here. The runtime recognizes `:ash_a2a_task_done`
+      # and its own (watcher-era, backup) DOWN shape; anything else unhandled
+      # falls through to `unexpected_info/3`. A DOWN-shaped message that no
+      # table matched is still a subscriber's monitor firing (SSE disconnect)
+      # -- dropping the registration here, exactly as the ported agent's own
+      # DOWN-miss branch does, keeps that cleanup clause-order-proof instead
+      # of leaking it into the log-and-continue swallow.
       @impl GenServer
       def handle_info(msg, state) do
         case AshA2A.Transport.Runtime.handle_info(msg, state) do
-          :unhandled -> AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
-          reply -> reply
+          :unhandled ->
+            state =
+              case msg do
+                {:DOWN, ref, :process, _pid, _reason} ->
+                  AshA2A.Protocol.Agent.State.drop_subscriber(state, ref)
+
+                _other ->
+                  state
+              end
+
+            AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
+
+          reply ->
+            reply
         end
       end
 
       defoverridable handle_call: 3, handle_info: 2
 
-      @impl A2A.Agent
+      @impl AshA2A.Protocol.Agent
       def handle_message(message, context) do
         AshA2A.Agent.__dispatch__(
           @ash_a2a_resource_or_domain,
@@ -176,13 +202,13 @@ defmodule AshA2A.Agent do
 
       defoverridable handle_message: 2
 
-      # `A2A.Agent.__using__/1` (`~/xaas/deps/a2a/lib/a2a/agent.ex:192-195`)
+      # `AshA2A.Protocol.Agent.__using__/1` (`~/xaas/deps/a2a/lib/a2a/agent.ex:192-195`)
       # already `defoverridable`s its own `handle_cancel(_context), do: :ok`
       # default, so this real override -- rather than the inherited no-op --
       # is what actually runs from `handle_call({:cancel, task_id}, ...)`
       # (`~/xaas/deps/a2a/lib/a2a/agent.ex:305-343`) once the state machine
       # has already confirmed the task is cancelable (not terminal).
-      @impl A2A.Agent
+      @impl AshA2A.Protocol.Agent
       def handle_cancel(context) do
         AshA2A.Agent.__cancel__(@ash_a2a_resource_or_domain, context)
       end
@@ -200,7 +226,14 @@ defmodule AshA2A.Agent do
       name: agent_card.name,
       description: agent_card.description,
       version: agent_card.version,
-      skills: agent_card.skills
+      skills: agent_card.skills,
+      capabilities: agent_card.capabilities,
+      default_input_modes: agent_card.default_input_modes,
+      default_output_modes: agent_card.default_output_modes,
+      supported_interfaces: agent_card.supported_interfaces,
+      security_schemes: agent_card.security_schemes,
+      security: agent_card.security,
+      signatures: agent_card.signatures
     ]
   end
 
@@ -213,7 +246,7 @@ defmodule AshA2A.Agent do
   # (capability/action resolution), a claim against the configured
   # `ReceiptStore` (real replay/conflict detection for a caller-supplied
   # stable `command_id`), and a committed `AshA2A.Receipt` for every real
-  # outcome. Before this change, the default `A2A.Agent` path -- the only
+  # outcome. Before this change, the default `AshA2A.Protocol.Agent` path -- the only
   # path any deployed agent actually uses -- called `Dispatcher.dispatch/6`
   # directly and left `CommandBus` reachable only from the parallel,
   # opt-in `Reactor.ExecuteCommand`/`Delivery.Oban`/`Execution.FLAME` routes,
@@ -221,7 +254,7 @@ defmodule AshA2A.Agent do
   # not, in fact, the sole DO path its own moduledoc claims to be.
   #
   # `command_id` is the real, canonical, protocol-native
-  # `A2A.Message.message_id` (see `build_command/4` below for the full
+  # `AshA2A.Protocol.Message.message_id` (see `build_command/4` below for the full
   # rationale), not a fresh id generated per call -- so a genuine client
   # retry (same `message_id`) engages `CommandBus`'s real replay/conflict
   # detection through this default path too, the same as it always did for
@@ -294,11 +327,11 @@ defmodule AshA2A.Agent do
   # `%{code: :unauthenticated}` before any `:observe` skill or semantic
   # compilation runs, unless the skill is listed in `:public_skills`.
   @doc false
-  @spec __dispatch__(module(), A2A.Message.t(), A2A.Agent.context() | map(), keyword()) ::
+  @spec __dispatch__(module(), AshA2A.Protocol.Message.t(), AshA2A.Protocol.Agent.context() | map(), keyword()) ::
           AshA2A.Dispatcher.reply()
   def __dispatch__(resource_or_domain, message, context, opts \\ [])
 
-  def __dispatch__(resource_or_domain, %A2A.Message{} = message, context, opts) do
+  def __dispatch__(resource_or_domain, %AshA2A.Protocol.Message{} = message, context, opts) do
     with :ok <- validate_message(message) do
       history = task_history(context)
       auth_identity = verified_auth_identity(context)
@@ -346,7 +379,7 @@ defmodule AshA2A.Agent do
   # Shape checks on the untrusted wire message: `metadata` must be a map,
   # `metadata["context"]` absent or a bounded map, and every Data part's
   # `data` a map. Each failure is a typed refusal, never an exception.
-  defp validate_message(%A2A.Message{metadata: metadata, parts: parts}) do
+  defp validate_message(%AshA2A.Protocol.Message{metadata: metadata, parts: parts}) do
     cond do
       not (is_nil(metadata) or is_map(metadata)) ->
         {:error, %{code: :invalid_metadata}}
@@ -379,7 +412,7 @@ defmodule AshA2A.Agent do
     end
   end
 
-  defp valid_part?(%A2A.Part.Data{data: data}), do: is_map(data)
+  defp valid_part?(%AshA2A.Protocol.Part.Data{data: data}), do: is_map(data)
   defp valid_part?(_part), do: true
 
   defp authenticated(auth_identity, skill_name, opts) do
@@ -407,7 +440,7 @@ defmodule AshA2A.Agent do
   end
 
   # A2A's `:input_required` continuation calls `handle_message/2` with only the
-  # follow-up message; the first turn's `A2A.Part.Data` arguments live solely in
+  # follow-up message; the first turn's `AshA2A.Protocol.Part.Data` arguments live solely in
   # `context.history`. Fold every prior `:user` turn's Data, oldest to newest,
   # under the current message's Data (current turn wins on key collision), so a
   # follow-up that supplies only the missing field completes the action.
@@ -415,14 +448,14 @@ defmodule AshA2A.Agent do
   # skill/actor/context metadata stays exactly what the current caller sent.
   # (Carried from preserve/v26.9.22/stash-4 `merge_turn_history/2`, minus its
   # cross-turn metadata merge.)
-  defp merge_turn_history(%A2A.Message{} = message, [_ | _] = history) do
+  defp merge_turn_history(%AshA2A.Protocol.Message{} = message, [_ | _] = history) do
     prior =
       history
-      |> Enum.filter(&match?(%A2A.Message{role: :user}, &1))
+      |> Enum.filter(&match?(%AshA2A.Protocol.Message{role: :user}, &1))
       |> Enum.reject(&(&1.message_id == message.message_id))
-      |> Enum.reduce(%{}, fn %A2A.Message{parts: parts}, acc ->
+      |> Enum.reduce(%{}, fn %AshA2A.Protocol.Message{parts: parts}, acc ->
         Enum.reduce(parts, acc, fn
-          %A2A.Part.Data{data: data}, acc when is_map(data) -> Map.merge(acc, data)
+          %AshA2A.Protocol.Part.Data{data: data}, acc when is_map(data) -> Map.merge(acc, data)
           _other, acc -> acc
         end)
       end)
@@ -430,20 +463,20 @@ defmodule AshA2A.Agent do
     if prior == %{} do
       message
     else
-      {data_parts, other_parts} = Enum.split_with(message.parts, &match?(%A2A.Part.Data{}, &1))
+      {data_parts, other_parts} = Enum.split_with(message.parts, &match?(%AshA2A.Protocol.Part.Data{}, &1))
 
       current =
-        Enum.reduce(data_parts, %{}, fn %A2A.Part.Data{data: data}, acc ->
+        Enum.reduce(data_parts, %{}, fn %AshA2A.Protocol.Part.Data{data: data}, acc ->
           Map.merge(acc, data)
         end)
 
-      %{message | parts: [A2A.Part.Data.new(Map.merge(prior, current)) | other_parts]}
+      %{message | parts: [AshA2A.Protocol.Part.Data.new(Map.merge(prior, current)) | other_parts]}
     end
   end
 
   defp merge_turn_history(message, _history), do: message
 
-  defp semantic_request?(resource_or_domain, %A2A.Message{metadata: metadata}) do
+  defp semantic_request?(resource_or_domain, %AshA2A.Protocol.Message{metadata: metadata}) do
     AshA2A.Info.semantic_requests_enabled?(resource_or_domain) and
       AshA2A.MetadataKey.get(metadata || %{}, :semantic_request) == true
   end
@@ -472,7 +505,7 @@ defmodule AshA2A.Agent do
   # one extra real dispatch hop instead of a direct call.
   defp dispatch_semantic(
          resource_or_domain,
-         %A2A.Message{metadata: metadata} = message,
+         %AshA2A.Protocol.Message{metadata: metadata} = message,
          principal
        ) do
     case AshA2A.MetadataKey.get(metadata || %{}, :continuation_fingerprint) do
@@ -528,9 +561,13 @@ defmodule AshA2A.Agent do
   #
   # `detect_tier/1` itself is never modified by this wiring -- it is called
   # exactly as it already existed and is already tested.
-  @spec dispatch_semantic_route(module(), A2A.Message.t(), String.t()) ::
+  # 3rd arg is the transport-verified principal, threaded as the
+  # `AshA2A.Identity` struct produced by `continuation_principal/1` (see
+  # `__bind_package__/2` below), not a bare string -- a stale post-v1.0
+  # retyping spec that dialyzer correctly refused.
+  @spec dispatch_semantic_route(module(), AshA2A.Protocol.Message.t(), AshA2A.Identity.t()) ::
           AshA2A.Dispatcher.reply()
-  defp dispatch_semantic_route(resource_or_domain, %A2A.Message{} = message, principal) do
+  defp dispatch_semantic_route(resource_or_domain, %AshA2A.Protocol.Message{} = message, principal) do
     case AshA2A.Planning.RequestRouter.detect_tier(message) do
       {:facts, _envelope} ->
         dispatch_semantic_goal_facts(resource_or_domain, message, principal)
@@ -569,9 +606,9 @@ defmodule AshA2A.Agent do
   # as replan-able later (`dispatch_semantic_replan/2` above) as an
   # LLM-compiled one; the two tiers converge on one real, shared package
   # lifecycle from this point on.
-  @spec dispatch_semantic_goal_facts(module(), A2A.Message.t(), String.t()) ::
+  @spec dispatch_semantic_goal_facts(module(), AshA2A.Protocol.Message.t(), AshA2A.Identity.t()) ::
           AshA2A.Dispatcher.reply()
-  defp dispatch_semantic_goal_facts(resource_or_domain, %A2A.Message{} = message, principal) do
+  defp dispatch_semantic_goal_facts(resource_or_domain, %AshA2A.Protocol.Message{} = message, principal) do
     case AshA2A.Planning.RequestRouter.route(resource_or_domain, message) do
       {:ok, package} ->
         package = bind_package_principal(package, principal)
@@ -583,7 +620,7 @@ defmodule AshA2A.Agent do
     end
   end
 
-  # `A2A.Message.text/1` returns the first real `A2A.Part.Text` part's
+  # `AshA2A.Protocol.Message.text/1` returns the first real `AshA2A.Protocol.Part.Text` part's
   # string, or `nil` if the message carries none (~/xaas/deps/a2a/lib/
   # a2a/message.ex) -- a caller opting into this explicit surface must
   # actually send text to compile; a flagged message with no text is a real
@@ -596,7 +633,7 @@ defmodule AshA2A.Agent do
   # path in this codebase (`AshA2A.Dispatcher`) is careful to never raise,
   # resolving each step through a non-bang API specifically so one caller's
   # malformed/misconfigured request can never crash the real, shared
-  # `A2A.Agent` GenServer process (which would terminate every other
+  # `AshA2A.Protocol.Agent` GenServer process (which would terminate every other
   # in-flight task that process happens to be managing, not just this
   # request). This branch is held to the identical contract: a
   # misconfigured LLM profile becomes a real, typed `{:error, ...}` reply,
@@ -607,8 +644,8 @@ defmodule AshA2A.Agent do
   # same real store `dispatch_semantic_replan/2` below reads from, so a
   # caller that later presents this package's `"execution_package_fingerprint"`
   # back as a `:continuation_fingerprint` can resolve it for real.
-  defp dispatch_semantic_compile(resource_or_domain, %A2A.Message{} = message, principal) do
-    case A2A.Message.text(message) do
+  defp dispatch_semantic_compile(resource_or_domain, %AshA2A.Protocol.Message{} = message, principal) do
+    case AshA2A.Protocol.Message.text(message) do
       nil ->
         {:error, %{code: :semantic_request_missing_text}}
 
@@ -757,7 +794,7 @@ defmodule AshA2A.Agent do
   #
   # Held to the identical no-raise contract as `dispatch_semantic_compile/2`
   # above, for the identical reason (a misconfigured/failing LLM role must
-  # become a typed reply, never crash the shared `A2A.Agent` process).
+  # become a typed reply, never crash the shared `AshA2A.Protocol.Agent` process).
   defp replan(resource_or_domain, package, receipt, principal) do
     try do
       case AshA2A.Semantic.Compiler.replan(resource_or_domain, package, receipt) do
@@ -918,9 +955,9 @@ defmodule AshA2A.Agent do
   # token id is the deterministic `Authority.grant_token_id/2` that
   # `Command.fingerprint/1` depends on.
   #
-  # `command_id` is the real, canonical, protocol-native `A2A.Message.
+  # `command_id` is the real, canonical, protocol-native `AshA2A.Protocol.Message.
   # message_id` (`~/xaas/deps/a2a/lib/a2a/message.ex:10-22,41,57` --
-  # `A2A.ID.generate("msg")` when the caller supplies none, but a caller
+  # `AshA2A.Protocol.ID.generate("msg")` when the caller supplies none, but a caller
   # retrying the same logical request after a dropped response is expected
   # to resend the SAME `message_id`, the same way any idempotency-key
   # convention works) rather than a fresh UUID generated here on every call.
@@ -961,7 +998,7 @@ defmodule AshA2A.Agent do
   # fingerprint `:command_conflict` refusal above -- only one real closing
   # dispatch may claim a given execution package this way, exactly the
   # single-writer semantics the correlation depends on.
-  @spec build_command(module(), AshA2A.Dispatcher.skill_name(), A2A.Message.t(), term()) ::
+  @spec build_command(module(), AshA2A.Dispatcher.skill_name(), AshA2A.Protocol.Message.t(), term()) ::
           AshA2A.Command.t()
   defp build_command(resource_or_domain, skill_name, message, auth_identity) do
     # Both the command's own `capability_id` (its DO/receipt/OCEL/fingerprint
@@ -1026,14 +1063,14 @@ defmodule AshA2A.Agent do
     end
   end
 
-  defp command_id(%A2A.Message{metadata: metadata} = message) do
+  defp command_id(%AshA2A.Protocol.Message{metadata: metadata} = message) do
     case continuation_fingerprint(metadata) do
       nil -> message.message_id
       fingerprint -> fingerprint
     end
   end
 
-  defp command_metadata(%A2A.Message{metadata: metadata}) do
+  defp command_metadata(%AshA2A.Protocol.Message{metadata: metadata}) do
     case continuation_fingerprint(metadata) do
       nil -> %{}
       fingerprint -> %{"execution_package_fingerprint" => fingerprint}
@@ -1041,15 +1078,17 @@ defmodule AshA2A.Agent do
   end
 
   defp continuation_fingerprint(metadata) do
-    case AshA2A.MetadataKey.get(metadata || %{}, :continuation_fingerprint) do
+    # `metadata` comes from `%AshA2A.Protocol.Message{metadata: metadata}` and
+    # is typed `map()` (never nil), so the old `|| %{}` fallback was dead.
+    case AshA2A.MetadataKey.get(metadata, :continuation_fingerprint) do
       fingerprint when is_binary(fingerprint) and fingerprint != "" -> fingerprint
       _other -> nil
     end
   end
 
   # Extracts the transport-verified caller identity from
-  # `A2A.Agent.context().metadata["a2a.auth"]` -- the key `A2A.Plug` populates
-  # exclusively from `A2A.Plug.Auth`'s real credential-verification result
+  # `AshA2A.Protocol.Agent.context().metadata["a2a.auth"]` -- the key `AshA2A.Protocol.Plug` populates
+  # exclusively from `AshA2A.Protocol.Plug.Auth`'s real credential-verification result
   # (`~/xaas/deps/a2a/lib/a2a/plug.ex:159`,
   # `Map.put(metadata, "a2a.auth", auth)`, reached only after
   # `evaluate_alternatives/2` -> `opts.verify.(scheme, credential, conn)`
@@ -1058,19 +1097,19 @@ defmodule AshA2A.Agent do
   # resource author's own `verify` callback returned) into
   # `AshA2A.Dispatcher.dispatch/6` as `auth_identity`. This is the ONLY path
   # `actor`/`tenant` ever reach `AshA2A.ContextResolver.from_a2a_message/4`
-  # from -- `message.metadata` (the inbound `A2A.Message`'s own,
+  # from -- `message.metadata` (the inbound `AshA2A.Protocol.Message`'s own,
   # unauthenticated, remote-caller-controlled field) is never consulted for
   # either, per the PRD §3.5 trust boundary documented on
   # `AshA2A.ContextResolver`.
   #
   # `context.metadata` is absent/`nil` for a direct unit-test call to
-  # `handle_message/2` (bypassing `A2A.Plug` entirely) or for a deployment
-  # that hasn't wired `A2A.Plug.Auth` at all -- both fall through to `nil`,
+  # `handle_message/2` (bypassing `AshA2A.Protocol.Plug` entirely) or for a deployment
+  # that hasn't wired `AshA2A.Protocol.Plug.Auth` at all -- both fall through to `nil`,
   # so dispatch fails closed (unauthenticated: no actor, no tenant) instead
   # of fabricating an identity out of unverified input.
   #
   # ATOM KEY ONLY: the `%{scheme: _, identity: _}` shape
-  # `A2A.Plug.Auth.build_identity/2` produces is the one accepted. `A2A.Plug`
+  # `AshA2A.Protocol.Plug.Auth.build_identity/2` produces is the one accepted. `AshA2A.Protocol.Plug`
   # merges the caller's own JSON-RPC `params.metadata` OVER the plug metadata
   # (later wins), so a remote caller can overwrite `"a2a.auth"` with any JSON
   # map, e.g. `{"identity": "<any principal>"}` -- JSON decoding can only ever
@@ -1081,10 +1120,10 @@ defmodule AshA2A.Agent do
   # actuating), or a caller with no credential at all name any principal, and
   # act with that principal's grants. One fix, two courts: RFC-SA2A-002
   # SA2A-TRANSPORT-004 (reproduced over a real Bandit listener) and §66
-  # SA2A-AUTH-014/-015 (real `A2A.Plug.Auth` + `A2A.Plug` pipeline). An
+  # SA2A-AUTH-014/-015 (real `AshA2A.Protocol.Plug.Auth` + `AshA2A.Protocol.Plug` pipeline). An
   # overwritten `"a2a.auth"` now yields no identity: unauthenticated, fail
   # closed.
-  @spec verified_auth_identity(A2A.Agent.context() | map()) :: term()
+  @spec verified_auth_identity(AshA2A.Protocol.Agent.context() | map()) :: term()
   defp verified_auth_identity(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "a2a.auth") do
       %{identity: identity} -> identity
@@ -1094,7 +1133,7 @@ defmodule AshA2A.Agent do
 
   defp verified_auth_identity(_context), do: nil
 
-  # `A2A.Agent.context().history` (`~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`)
+  # `AshA2A.Protocol.Agent.context().history` (`~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`)
   # is the accumulated multi-turn transcript the runtime builds when a caller
   # continues a paused (`:input_required`) task by passing `task_id:` on the
   # next call (`continue_task/4` -> `run_task/4`,
@@ -1112,7 +1151,7 @@ defmodule AshA2A.Agent do
   defp task_history(%{history: history}) when is_list(history), do: history
   defp task_history(_context), do: []
 
-  # `handle_cancel/1` (`A2A.Agent.context()`,
+  # `handle_cancel/1` (`AshA2A.Protocol.Agent.context()`,
   # `~/xaas/deps/a2a/lib/a2a/agent.ex:148-153`) is called by the real state
   # machine's `handle_call({:cancel, task_id}, ...)`
   # (`~/xaas/deps/a2a/lib/a2a/agent.ex:305-343`) only after it has already
@@ -1122,7 +1161,7 @@ defmodule AshA2A.Agent do
   # parked in `:input_required` awaiting a follow-up message (ash_a2a task
   # #13). Unlike `handle_message/2`, the `context()` passed here
   # (`%{task_id, context_id, history, metadata}`) is not wrapped in an
-  # `A2A.Message` -- a synthetic, never-dispatched `A2A.Message` is built
+  # `AshA2A.Protocol.Message` -- a synthetic, never-dispatched `AshA2A.Protocol.Message` is built
   # here purely to reuse `AshA2A.ContextResolver.from_a2a_message/4`'s
   # `:context` extraction (atom-or-string `metadata[:context]`) rather than
   # re-implementing it a second time. `actor`/`tenant` are NOT read from
@@ -1136,7 +1175,7 @@ defmodule AshA2A.Agent do
   # This function provides two real, observable things on cancel:
   #
   #   1. A `:telemetry.execute/3` event (`:telemetry` is a real transitive
-  #      dep already used the identical way by `A2A.Agent` itself for
+  #      dep already used the identical way by `AshA2A.Protocol.Agent` itself for
   #      `[:a2a, :agent, :cancel]`, `~/xaas/deps/a2a/lib/a2a/agent.ex:290-294`)
   #      carrying the resolved `AshA2A.ExecutionContext` (actor/tenant/domain)
   #      plus `task_id`/`context_id` -- a real, attachable hook a resource
@@ -1157,13 +1196,21 @@ defmodule AshA2A.Agent do
   #      telemetry-only, exactly the prior behavior -- this is purely
   #      additive.
   @doc false
-  @spec __cancel__(module(), A2A.Agent.context()) :: :ok
+  @spec __cancel__(module(), AshA2A.Protocol.Agent.context()) :: :ok
   def __cancel__(resource_or_domain, %{metadata: metadata} = context) do
     metadata = metadata || %{}
 
     exec_context =
       AshA2A.ContextResolver.from_a2a_message(
-        %A2A.Message{role: :user, parts: [], metadata: metadata},
+        %AshA2A.Protocol.Message{
+          role: :user,
+          parts: [],
+          metadata: metadata,
+          # `AshA2A.Protocol.Message.t()` declares `message_id: String.t()`;
+          # leaving it nil here made dialyzer prove this whole call path
+          # (`__cancel__` -> `from_a2a_message/4`) to have no local return.
+          message_id: AshA2A.Protocol.ID.generate("msg")
+        },
         resource_or_domain,
         [],
         verified_auth_identity(context)
@@ -1195,25 +1242,25 @@ defmodule AshA2A.Agent do
   # `on_cancel:`, invokes it. Any exception/exit the hook raises, or a
   # non-`:ok` return, is caught here and reported via
   # `[:ash_a2a, :agent, :cancel_hook_error]` telemetry rather than
-  # propagated -- `handle_cancel/1`'s `:ok` contract with `A2A.Agent`'s own
+  # propagated -- `handle_cancel/1`'s `:ok` contract with `AshA2A.Protocol.Agent`'s own
   # state machine must never break because a resource author's hook
   # misbehaves (see `AshA2A.OnCancel`'s @moduledoc, "Failure handling").
   #
   # Skill resolution here reads `:skill` metadata from the real inbound
   # caller message via `context.history` -- NOT `context.metadata`, unlike
-  # the `exec_context` telemetry above. `A2A.Agent.Runtime.run_task/4` sets
+  # the `exec_context` telemetry above. `AshA2A.Protocol.Agent.Runtime.run_task/4` sets
   # a cancel/message context's `metadata` field to the real *task's own*
   # runtime metadata (`task.metadata`, e.g. `%{stream: fun}` for an
   # in-flight streaming task -- `~/xaas/deps/a2a/lib/a2a/agent/
   # runtime.ex:63-71`), which is a distinct map from the caller-supplied
-  # `A2A.Message.metadata` that actually carries `:skill`/`"skill"`
+  # `AshA2A.Protocol.Message.metadata` that actually carries `:skill`/`"skill"`
   # (confirmed: `process_message/5`, runtime.ex:22-26, only ever populates
   # `task.metadata` from a separate `opts[:metadata]` GenServer-call
   # option, which `AshA2A.Agent`'s own `handle_message/2`/`handle_cancel/1`
   # overrides never pass -- so `task.metadata` starts, and for every
   # real caller in this library, stays `%{}` aside from the `:stream` key).
   # `context.history` (`task.history`, runtime.ex:23-24,40-41), by
-  # contrast, always includes the real caller-constructed `A2A.Message`
+  # contrast, always includes the real caller-constructed `AshA2A.Protocol.Message`
   # (`role: :user`) that started or continued the task -- the same message
   # a live `handle_message/2` dispatch would have resolved `:skill` from --
   # so the *last* such message in history (a continued multi-turn task can
@@ -1231,12 +1278,12 @@ defmodule AshA2A.Agent do
     end
   end
 
-  @empty_user_message %A2A.Message{role: :user, parts: [], metadata: %{}}
+  @empty_user_message %AshA2A.Protocol.Message{role: :user, parts: [], metadata: %{}}
 
   defp last_user_message(%{history: history}) when is_list(history) do
     history
     |> Enum.reverse()
-    |> Enum.find(&match?(%A2A.Message{role: :user}, &1))
+    |> Enum.find(&match?(%AshA2A.Protocol.Message{role: :user}, &1))
     |> case do
       nil -> @empty_user_message
       message -> message
@@ -1297,7 +1344,7 @@ defmodule AshA2A.Agent do
     :ok
   end
 
-  defp resolve_skill_name(resource_or_domain, %A2A.Message{metadata: metadata}) do
+  defp resolve_skill_name(resource_or_domain, %AshA2A.Protocol.Message{metadata: metadata}) do
     metadata = if is_map(metadata), do: metadata, else: %{}
 
     case AshA2A.MetadataKey.get(metadata, :skill) do

@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago do
   @moduledoc """
-  RFC-SA2A-002 v26.9.16 Chicago conformance court for Semantic A2A.
+  RFC-SA2A-002 v26.9.16 Chicago conformance court for Semantic AshA2A.Protocol.
 
   Conformance is earned by executing qualification courts that attempt to
   falsify the architecture against the exact implementation subject -- not by

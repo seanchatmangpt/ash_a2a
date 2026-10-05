@@ -1,19 +1,26 @@
 # A2A Endpoint Reference
 
-The exact HTTP surface an AshA2A-served agent exposes: the vendored
-`:a2a` SDK (`deps/a2a/lib/a2a/plug.ex`, `jsonrpc.ex`, `jsonrpc/error.ex`)
-plus the ash_a2a-owned wrapper `AshA2A.A2ATransport.Plug` (30b486f), which
-implements the methods the vendored plug hard-codes to refusals.
-Protocol level: **A2A v0.3, JSON-RPC 2.0 over HTTP POST**, with SSE
-streaming for `message/stream`. The gRPC binding is not implemented. Push
+The exact HTTP surface an AshA2A-served agent exposes: the in-repo wire
+codec `AshA2A.Protocol.*` (`lib/ash_a2a/protocol/` — `plug.ex`,
+`jsonrpc.ex`, `jsonrpc/error.ex`; ported from a2a-elixir 0.3.0,
+Apache-2.0, see `lib/ash_a2a/protocol/NOTICE`) plus the ash_a2a-owned
+wrapper `AshA2A.A2ATransport.Plug`, which implements the methods the base
+plug hard-codes to refusals.
+Protocol level: **A2A protocol v1.0, JSON-RPC 2.0 over HTTP POST**, with
+SSE streaming for `message/stream` (wrapped `StreamResponse` frames). The
+gRPC binding is served by `AshA2A.Transport.GRPC.Server` — the canonical
+`lf.a2a.v1.A2AService` (9 unary + 2 server-streaming RPCs,
+`SendStreamingMessage`/`SubscribeToTask`) over HTTP/2 via `:grpc_server`,
+with protobuf messages bridged to the codec's proto-JSON maps by
+`Protobuf.JSON` (deps `:grpc_server`/`:grpc`/`:protobuf`). Push
 notifications/webhooks are supported only through the owned transport with
-`push_notifications: true` (see below); the bare vendored plug still
-refuses `tasks/resubscribe` (`-32004`) and `tasks/pushNotificationConfig/*`
-(`-32003`).
+`push_notifications: true` (see below); the bare `AshA2A.Protocol.Plug`
+still refuses `tasks/resubscribe` (`-32004`) and
+`tasks/pushNotificationConfig/*` (`-32003`).
 
 ## Endpoints
 
-`A2A.Plug` is mounted with `agent:` and `base_url:` options (see the
+`AshA2A.Protocol.Plug` is mounted with `agent:` and `base_url:` options (see the
 getting-started tutorial); all paths below are relative to the mount
 point.
 
@@ -27,7 +34,7 @@ successes and for JSON-RPC-level errors alike; transport-level problems
 (401 from auth, 404/405 routing) are the exception.
 
 A `nil` `base_url` at agent-card time raises `ArgumentError` — set it via
-the `:base_url` option or `A2A.Plug.put_base_url/2` in an upstream
+the `:base_url` option or `AshA2A.Protocol.Plug.put_base_url/2` in an upstream
 plug/pipeline. Note the card builder's own URL default is
 `http://localhost:4000` (`AshA2A.CapabilityIndex.AgentCardBuilder`), so a
 production deployment must always set it.
@@ -44,7 +51,7 @@ closure refusal raises `ArgumentError` at card-build time. The public
 companions are `AshA2A.Info.released_capability_index/2` (returns `nil`
 when the resource is not compiled; raises on a closure refusal) and the
 non-raising `AshA2A.Info.released_capability_index_result/2`. The
-projected card is an `A2A.AgentCard`:
+projected card is an `AshA2A.Protocol.AgentCard`:
 
 - `name` (default `"ash_a2a_agent"`), `description`, `version` (default
   `"0.1.0"`), `provider` — overridable via card opts.
@@ -52,21 +59,28 @@ projected card is an `A2A.AgentCard`:
   `name` = override or the action name, `description` = override or derived
   from the real Ash action's description/type/arguments, `tags` = override
   or `[action.type | argument names]`.
-- `default_input_modes`/`default_output_modes` are the SDK's
-  `["text/plain"]` default — note the dispatch contract below actually
+- `default_input_modes`/`default_output_modes` default to
+  `["text/plain"]` — note the dispatch contract below actually
   exchanges structured `Part.Data` (JSON) content.
 - `supported_interfaces` defaults to
-  `%{url: url, protocol_binding: "JSONRPC", protocol_version: "0.3.0"}`.
+  `%{url: url, protocol_binding: "JSONRPC", protocol_version: "1.0"}`;
+  the top-level `url` and `protocolVersion` fields are gone from the wire
+  card — both live per-interface in `supportedInterfaces` only.
+- `capabilities.extendedAgentCard` — set when the owned transport is
+  mounted with an `:extended_card` provider; the card advertised at
+  `/.well-known/agent-card.json` remains the public one, and the
+  extended card is served only through the authenticated
+  `agent/getAuthenticatedExtendedCard` RPC.
 
 ## JSON-RPC methods
 
 | Method | Behavior |
 | --- | --- |
 | `message/send` | Synchronous dispatch; result is an A2A task object. |
-| `message/stream` | SSE streaming response (`text/event-stream`): initial task snapshot, then per-part events, final `StatusUpdate` with `final: true`. |
+| `message/stream` | SSE streaming response (`text/event-stream`): initial `{"task": ...}` snapshot frame, then wrapped `{"statusUpdate": ...}`/`{"artifactUpdate": ...}` frames. v1.0 has no `final` boolean — the stream simply ends when the task reaches a terminal state. |
 | `tasks/get` / `tasks/cancel` / `tasks/list` | Task management within the agent process's lifetime (the task store is in-memory ETS, single node). |
-| `tasks/resubscribe` | Supported via the owned transport (`AshA2A.A2ATransport.Plug` with a running `AshA2A.A2ATransport` instance): SSE response carrying the current task snapshot, then the logged backlog after the SSE `Last-Event-ID` (if sent), then live events until the final event; every frame is `id: <task-local seq>`. Owner-scoped: a foreign or unknown task is `-32001`. Falls back to the vendored plug's `-32004` when the transport instance is not running. |
-| `tasks/pushNotificationConfig/*` | `set`/`get`/`list`/`delete` via the owned transport when `push_notifications: true` (A2A 0.3 wire shapes; the PascalCase aliases route identically). Configs are owner-scoped (unknown/foreign task → `-32001`), bounded to 16 per task (`:max_per_task`, beyond it the typed refusal `:refused_push_config_limit`); webhook URLs are admitted by `AshA2A.A2ATransport.WebhookPolicy` at `set` time (refused URL → `-32602` with `data.code: "refused_webhook_*"`); `authentication.credentials` is write-only (never echoed back). Without `push_notifications: true` (the default): `-32003`. |
+| `tasks/resubscribe` | Supported via the owned transport (`AshA2A.A2ATransport.Plug` with a running `AshA2A.A2ATransport` instance): SSE response carrying the wrapped `{"task": ...}` snapshot, then the logged `{"statusUpdate": ...}`/`{"artifactUpdate": ...}` backlog after the SSE `Last-Event-ID` (if sent), then live events until the stream ends at a terminal state; every frame is `id: <task-local seq>`. Owner-scoped: a foreign or unknown task is `-32001`. Falls back to the base `AshA2A.Protocol.Plug`'s `-32004` when the transport instance is not running. |
+| `tasks/pushNotificationConfig/*` | `set`/`get`/`list`/`delete` via the owned transport when `push_notifications: true` (A2A v1.0 wire shapes; the PascalCase aliases route identically). Configs are owner-scoped (unknown/foreign task → `-32001`), bounded to 16 per task (`:max_per_task`, beyond it the typed refusal `:refused_push_config_limit`); webhook URLs are admitted by `AshA2A.A2ATransport.WebhookPolicy` at `set` time (refused URL → `-32602` with `data.code: "refused_webhook_*"`); `authentication.credentials` is write-only (never echoed back). Without `push_notifications: true` (the default): `-32003`. |
 | anything else | `-32601` method not found. |
 
 ## Error codes
@@ -77,6 +91,27 @@ not found · `-32002` task not cancelable · `-32003` push notification not
 supported · `-32004` unsupported operation (also
 `agent/getAuthenticatedExtendedCard`).
 
+Every A2A-specific error above (`-32001`..`-32009`) and `-32602`
+serialize `data` as an array carrying one `google.rpc.ErrorInfo` object
+(domain `a2a-protocol.org`):
+
+| Code | `ErrorInfo.reason` |
+| --- | --- |
+| `-32001` | `TASK_NOT_FOUND` (also the policy-denial stamp for the same code) |
+| `-32002` | `TASK_NOT_CANCELABLE` |
+| `-32003` | `PUSH_NOTIFICATION_NOT_SUPPORTED` |
+| `-32004` | `UNSUPPORTED_OPERATION` |
+| `-32005` | `CONTENT_TYPE_NOT_SUPPORTED` |
+| `-32006` | `INVALID_AGENT_RESPONSE` |
+| `-32007` | `EXTENDED_AGENT_CARD_NOT_CONFIGURED` |
+| `-32008` | `EXTENSION_SUPPORT_REQUIRED` |
+| `-32009` | `VERSION_NOT_SUPPORTED` |
+| `-32602` | `INVALID_PARAMS` |
+
+Free-form failure detail travels in `ErrorInfo.metadata.detail` when
+present; a payload already carrying an `ErrorInfo` is never double-wrapped
+(registry source: `lib/ash_a2a/protocol/jsonrpc/error.ex`).
+
 ## Request payload rules (AshA2A specifics)
 
 - **Skill selection**: set `message.metadata["skill"]` (atom-or-string via
@@ -84,7 +119,9 @@ supported · `-32004` unsupported operation (also
   exposing exactly one skill dispatches implicitly with no metadata; two or
   more require it (`:ambiguous_skill` otherwise).
 - **Input**: the caller's structured arguments are the message's
-  `A2A.Part.Data` part (`{"kind": "data", "data": {...}}`) — that map
+  `AshA2A.Protocol.Part.Data` part (`{"data": {...}}` — no `kind`
+  discriminator; the decoder still accepts a v0.3-style `"kind"` field on
+  input) — that map
   becomes the Ash action input. A text-only message dispatches with an
   empty input `%{}`. **File parts are not translated** — `Part.File`/
   `FileWithUri` are silently ignored by input extraction.
@@ -93,6 +130,12 @@ supported · `-32004` unsupported operation (also
   record) instead of a materialized list.
 - **Multi-turn**: `task_id`/`context_id` on the message thread conversation
   state; `context.history` reaches Ash actions as `context.a2a_history`.
+  Pausing states pause the turn on the wire: an agent needing more from the
+  caller ends the task in `TASK_STATE_INPUT_REQUIRED` (caller resends with
+  the same `task_id`), and one needing credentials ends in
+  `TASK_STATE_AUTH_REQUIRED` (the caller authenticates and resends);
+  both are terminal for the current stream and resume only by a new
+  message on the same task.
 
 ## Reply / task-state mapping
 
@@ -125,7 +168,7 @@ on the conn (per-request) → `"metadata"` in the JSON-RPC params
 
 ## Authentication
 
-Mount `A2A.Plug.Auth` in front of `A2A.Plug` (see
+Mount `AshA2A.Protocol.Plug.Auth` in front of `AshA2A.Protocol.Plug` (see
 [the authentication how-to](../how-to/authenticate-agent-requests.md)).
 Supported credential schemes: Bearer, HTTP Basic, API key
 (header/query/cookie), OAuth2/OIDC bearer extraction — with **validation
@@ -140,14 +183,16 @@ Authentication is separate from authority: consequential
 
 ## Operational limits to plan around
 
-- **One mailbox per agent process** — a single `A2A.Agent` GenServer
+- **One mailbox per agent process** — a single `AshA2A.Protocol.Agent` GenServer
   serializes all its calls; throughput needs multiple agents or direct
   dispatch.
 - **In-memory task store** — `tasks/get|cancel|list` see only tasks from
   the current process lifetime, single node.
 - **Push notifications/webhooks (opt-in, owned transport only)** — with
   `push_notifications: true` and a running `AshA2A.A2ATransport`, each task
-  status transition POSTs the A2A `Task`/`TaskStatusUpdateEvent` payload to
+  status transition POSTs a wrapped v1.0 frame (`{"task": ...}`,
+  `{"statusUpdate": ...}` or `{"artifactUpdate": ...}` — the same
+  `StreamResponse` shapes the SSE stream emits, no JSON-RPC envelope) to
   every stored config's webhook URL (`AshA2A.A2ATransport.PushDelivery`):
   delivery is unordered — order with the `x-a2a-delivery-id` sequence header
   (`"<task_id>:<config_id>:<seq>"`, bounded exponential-backoff retries);
@@ -160,5 +205,8 @@ Authentication is separate from authority: consequential
 
 `priv/sa2a_conformance/` and the Chicago courts (`mix ash_a2a.sa2a_conformance`,
 `mix ash_a2a.chicago`) are **semantic-law** conformance suites for the
-SA2A pipeline — they are not A2A wire-protocol conformance tests. No A2A
-protocol conformance suite ships with this repo.
+SA2A pipeline — they are not A2A wire-protocol conformance tests. A2A
+wire self-conformance is covered by the 25-court runner
+`mix ash_a2a.v1_conformance_report` (see
+[A2A v1.0 conformance statement](a2a-v1-conformance.md)); it is not the
+official A2A TCK.

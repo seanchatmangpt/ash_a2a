@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.CanonicalMutation do
   @moduledoc """
   RFC-SA2A-002 §78 Canonical Mutation court, Strict (RFC-SA2A-001 S18.4, S23,
@@ -107,7 +111,7 @@ defmodule AshA2A.Chicago.Courts.CanonicalMutation do
         invariant:
           "Message-to-canonical shortcut: an A2A data part asserting admitted, canonical standing does not become canonical O*",
         stimulus:
-          "Ontology.from_ir(IR.from_map(<A2A.Part.Data payload with \"standing\" => \"admitted\">))",
+          "Ontology.from_ir(IR.from_map(<AshA2A.Protocol.Part.Data payload with \"standing\" => \"admitted\">))",
         guard: "IR.from_map/2 never reads a self-asserted standing"
       ),
       declare(6, :negative,

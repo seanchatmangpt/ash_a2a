@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.PushNotificationConfigTest do
   @moduledoc """
   Real, end-to-end assertion of the "not supported" JSON-RPC error shape for
@@ -7,16 +11,16 @@ defmodule AshA2A.PushNotificationConfigTest do
   handler callback for it anywhere in `AshA2A.Agent`/`AshA2A.Dispatcher`).
   The real behavior it inherits comes entirely from the vendored `:a2a`
   0.2.0 dependency's own transport-agnostic dispatch layer,
-  `A2A.JSONRPC.handle/3`: every `"tasks/pushNotificationConfig/" <> _`
+  `AshA2A.Protocol.JSONRPC.handle/3`: every `"tasks/pushNotificationConfig/" <> _`
   method (and its v0.3.0 PascalCase aliases, e.g. `"CreateTaskPushNotificationConfig"`)
   is intercepted by a dispatch clause that never calls the handler at all
-  and always replies with `A2A.JSONRPC.Error.push_notification_not_supported/1`
+  and always replies with `AshA2A.Protocol.JSONRPC.Error.push_notification_not_supported/1`
   (`~/xaas/deps/a2a/lib/a2a/jsonrpc.ex:171`).
 
   This test drives that real dispatch function directly with a real JSON-RPC
   request map and a real handler
   (`AshA2A.Test.Fixture.JSONRPCHandler`, backed by a real, supervised
-  `AshA2A.Test.Fixture.EchoAgent` `A2A.Agent` GenServer) -- no
+  `AshA2A.Test.Fixture.EchoAgent` `AshA2A.Protocol.Agent` GenServer) -- no
   Mock/mox/patch/monkeypatch anywhere. It asserts on the real returned
   response map's exact `-32003` error code/message/JSON shape, and separately
   proves the handler's `handle_send/3` is never invoked for these methods (a
@@ -46,14 +50,21 @@ defmodule AshA2A.PushNotificationConfigTest do
         "params" => %{"taskId" => "some-task", "pushNotificationConfig" => %{}}
       }
 
-      assert {:reply, response} = A2A.JSONRPC.handle(request, JSONRPCHandler, %{})
+      assert {:reply, response} = AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
 
       assert response == %{
                "jsonrpc" => "2.0",
                "id" => "req-1",
                "error" => %{
                  "code" => -32_003,
-                 "message" => "Push Notification is not supported"
+                 "message" => "Push Notification is not supported",
+                 "data" => [
+                   %{
+                     "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+                     "domain" => "a2a-protocol.org",
+                     "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"
+                   }
+                 ]
                }
              }
     end
@@ -66,7 +77,7 @@ defmodule AshA2A.PushNotificationConfigTest do
           ] do
         request = %{"jsonrpc" => "2.0", "id" => method, "method" => method, "params" => params}
 
-        assert {:reply, %{"error" => error}} = A2A.JSONRPC.handle(request, JSONRPCHandler, %{})
+        assert {:reply, %{"error" => error}} = AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
         assert error["code"] == -32_003
         assert error["message"] == "Push Notification is not supported"
       end
@@ -80,7 +91,7 @@ defmodule AshA2A.PushNotificationConfigTest do
         "params" => %{"taskId" => "some-task", "pushNotificationConfig" => %{}}
       }
 
-      assert {:reply, response} = A2A.JSONRPC.handle(request, JSONRPCHandler, %{})
+      assert {:reply, response} = AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
 
       assert %{
                "jsonrpc" => "2.0",
@@ -97,7 +108,7 @@ defmodule AshA2A.PushNotificationConfigTest do
         "params" => %{"taskId" => "some-task", "pushNotificationConfig" => %{}}
       }
 
-      assert {:reply, response} = A2A.JSONRPC.handle(request, JSONRPCHandler, %{})
+      assert {:reply, response} = AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
 
       assert {:ok, encoded_json} = Jason.encode(response)
       assert {:ok, decoded} = Jason.decode(encoded_json)
@@ -117,7 +128,7 @@ defmodule AshA2A.PushNotificationConfigTest do
       }
 
       assert {:reply, %{"error" => %{"code" => -32_003}}} =
-               A2A.JSONRPC.handle(request, JSONRPCHandler, %{})
+               AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
 
       assert Agent.get(counter, & &1) == 0
 
@@ -132,15 +143,14 @@ defmodule AshA2A.PushNotificationConfigTest do
         "method" => "message/send",
         "params" => %{
           "message" => %{
-            "role" => "user",
-            "parts" => [%{"kind" => "text", "text" => "hi"}],
-            "messageId" => "msg-1",
-            "kind" => "message"
+            "role" => "ROLE_USER",
+            "parts" => [%{"text" => "hi"}],
+            "messageId" => "msg-1"
           }
         }
       }
 
-      assert {:reply, %{"result" => _}} = A2A.JSONRPC.handle(send_request, JSONRPCHandler, %{})
+      assert {:reply, %{"result" => _}} = AshA2A.Protocol.JSONRPC.handle(send_request, JSONRPCHandler, %{})
       assert Agent.get(counter, & &1) == 1
 
       Agent.stop(counter)

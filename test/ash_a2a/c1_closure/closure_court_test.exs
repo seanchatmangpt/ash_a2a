@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.C1Closure.ClosureCourtTest do
   @moduledoc """
   Kernel-only DO closure court over the real compiled application (BEAM abstract code), plus
@@ -202,7 +206,7 @@ defmodule AshA2A.C1Closure.ClosureCourtTest do
     test "dispatch_observe refuses a consequence-bearing skill and performs no effect" do
       label = "c1-observe-#{System.unique_integer([:positive])}"
 
-      msg = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+      msg = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
       assert {:error, _} = AshA2A.Dispatcher.dispatch_observe(:record, msg, Ledger)
       refute label in AshA2A.Chicago.Fixtures.Brce.ledger_labels()

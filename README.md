@@ -6,10 +6,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A `Spark.Dsl.Extension` that exposes `Ash.Resource`/`Ash.Domain` actions as
-[A2A protocol](https://github.com/a2aproject/A2A) agent skills, built on the
-[`:a2a` Elixir SDK](https://github.com/actioncard/a2a-elixir) (a published
-Hex package, `{:a2a, "~> 0.2"}`, implementing A2A protocol v0.3 over
-JSON-RPC 2.0/HTTP with SSE streaming).
+[A2A protocol](https://github.com/a2aproject/A2A) agent skills, with the
+wire codec hosted in-repo as `AshA2A.Protocol.*` (ported from
+[a2a-elixir](https://github.com/actioncard/a2a-elixir) 0.3.0, Apache-2.0 —
+see `lib/ash_a2a/protocol/NOTICE`) over JSON-RPC 2.0/HTTP with SSE
+streaming.
 
 > **Naming**: the library and module prefix is **AshA2A**, the Hex package
 > is `ash_a2a`, and **SA2A** is the internal project codename used by the
@@ -20,15 +21,15 @@ into a verified capability index — no declaration required. An optional
 `a2a do skill ... end` block adds A2A-only metadata overrides, and the
 compiled index:
 
-- builds a real `A2A.AgentCard` (`AshA2A.Info.agent_card/2`) advertising each
+- builds a real `AshA2A.Protocol.AgentCard` (`AshA2A.Info.agent_card/2`) advertising each
   exposed skill,
 - fails closed at compile time (`AshA2A.Verify`) if a skill override names a
   nonexistent action (`:REFUSED_ACTION_NOT_FOUND`) or duplicates a skill
   name (`:REFUSED_DUPLICATE_SKILL_NAME`),
-- and dispatches an inbound `A2A.Message` to the right Ash action
+- and dispatches an inbound `AshA2A.Protocol.Message` to the right Ash action
   (`AshA2A.Dispatcher.dispatch/6`; arities `/3`–`/5` remain valid via
   defaults), either as a bare function call or
-  through a real supervised `A2A.Agent` process (`AshA2A.Agent`) — routing
+  through a real supervised `AshA2A.Protocol.Agent` process (`AshA2A.Agent`) — routing
   consequence-bearing skills (`:change`/`:external_do`) through the
   receipted `AshA2A.CommandBus` with authority admission and replay-safe
   receipts,
@@ -37,6 +38,45 @@ compiled index:
   command metadata for `CommandBus` to verify before admission, and the
   carried `graph_digest` is pinned against the executing command's semantic
   subject (`checkpoint_graph_digest/2`) — drift refuses `:stale_graph_identity`.
+
+Around that core, the v1.0 surfaces ship in the same package:
+
+- **HTTP+JSON binding** — `AshA2A.Transport.HTTPJSON` serves the A2A v1.0
+  spec's native REST shape (§5.3): `POST /message:send`,
+  `GET /tasks/{id}`, `POST /tasks/{id}:cancel`, plus the §8.2 well-known
+  agent card, with the same owner-scoped auth as the JSON-RPC plug.
+- **gRPC binding** — `AshA2A.Transport.GRPC.Server` serves the canonical
+  `lf.a2a.v1.A2AService` proto over HTTP/2: 9 unary RPCs plus the
+  server-streaming `SendStreamingMessage`/`SubscribeToTask` (pumping the
+  same per-task event log as SSE), routed through the same dispatch
+  layer as the HTTP binding. The proto is vendored at
+  `priv/proto/a2a.proto` with a SHA-256 provenance header and the full
+  `protoc` regeneration recipe in that header.
+- **Signed agent cards** — `AshA2A.Protocol.CardSigning` signs a card's
+  `signatures` JWS entries and verifies each against the JCS
+  canonicalization of the card payload (`CardSigning.verify/3`).
+- **Discovery caching** — `AshA2A.Protocol.CardCache.fetch/2` implements
+  A2A §8.6 client caching: `ETag`/`If-None-Match` revalidation, a
+  persistent on-disk cache, and stale fallback when revalidation fails.
+- **Compile-time skill verification** — `AshA2A.Verifiers.VerifySkills`
+  and `AshA2A.Verify` fail compilation closed on bad projections
+  (`:REFUSED_ACTION_NOT_FOUND`, `:REFUSED_ACTION_NOT_PUBLIC`,
+  `:REFUSED_DUPLICATE_SKILL_NAME`).
+- **Domain-level agent configuration** — `AshA2A.Domain` declares agent
+  identity, transport placement and the security envelope once per
+  `Ash.Domain` (`agent` / `transport` / `security` blocks, read back
+  through `AshA2A.Domain.Info`).
+- **JSON-Schema skill schemas** — `AshA2A.Schema` derives JSON Schema for
+  a skill's inputs; `AshA2A.Protocol.Extensions.Schema` projects one
+  `urn:sa2a:extension:schema:v1` card extension advertising every
+  advertised skill's typed input contract.
+- **Executor and typed errors** — `AshA2A.Executor.execute/3` is the
+  verified-identity-to-Ash-action ingress pipeline;
+  `AshA2A.ToA2AError.to_a2a_error/2` maps a failed Ash outcome onto an
+  A2A error envelope by protocol dispatch, never string matching.
+- **Durable async dispatch** — `AshA2A.Providers.PPlan` is the
+  ash_pplan-backed durability provider, mapping ash_pplan runs onto A2A
+  task states for async / multi-turn skills.
 
 ## Requirements
 
@@ -55,13 +95,14 @@ compiled index:
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.9.31"}
+    {:ash_a2a, "~> 26.10.3"}
   ]
 end
 ```
 
-`:a2a` arrives transitively; pin `{:a2a, "~> 0.2"}` explicitly only if your
-own code calls `A2A.*` modules directly.
+There is no separate wire-protocol dependency to pin: the codec ships
+inside `ash_a2a` as the `AshA2A.Protocol.*` modules, so call them directly
+whenever your own code needs protocol-level types.
 
 `mix ash_a2a.install` (an Igniter task) wires the extension into an
 existing project; see `Mix.Tasks.AshA2a.Install`.
@@ -105,9 +146,9 @@ after compilation.
 Dispatch a message directly (no process):
 
 ```elixir
-message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
-{:reply, [%A2A.Part.Data{data: %{results: []}}]} =
+{:reply, [%AshA2A.Protocol.Part.Data{data: %{results: []}}]} =
   AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
 ```
 
@@ -119,17 +160,17 @@ e.g. `:resolved_skill` carries the exact resolved skill through a
 default `nil`, `context.actor`/`context.tenant` resolve to `nil` and
 dispatch fails closed for anything your Ash policies gate on identity —
 identity only ever arrives from transport-verified auth
-(`A2A.Plug.Auth`), never from message metadata. See
+(`AshA2A.Protocol.Plug.Auth`), never from message metadata. See
 [Authenticate inbound A2A requests](docs/how-to/authenticate-agent-requests.md).
 
 To boot supervised agent processes, serve them over HTTP (agent card +
-JSON-RPC + SSE), and drive them with `A2A.Client`, continue with the
+JSON-RPC + SSE), and drive them with `AshA2A.Protocol.Client`, continue with the
 [Getting Started tutorial](docs/tutorials/getting-started.md); for the exact
 wire contract, see the
-[A2A endpoint reference](docs/reference/a2a-endpoint-contract.md). Beyond the
-vendored SDK plug, the library ships its own
+[A2A endpoint reference](docs/reference/a2a-endpoint-contract.md). On top of
+the base `AshA2A.Protocol.Plug`, the library ships its own
 `AshA2A.A2ATransport.Plug` — a drop-in wrapper implementing the methods the
-vendored plug refuses: supervised `message/stream` fan-out with
+base plug refuses: supervised `message/stream` fan-out with
 `tasks/resubscribe` replay, push-notification config RPCs with signed
 webhook delivery, and the authenticated extended card (same reference).
 
@@ -180,7 +221,7 @@ reference for lookup, and explanation for understanding. It is published on
   dispatch, a supervised agent process, and serving the agent over HTTP.
 - **How-to guides**:
   - [Authenticate inbound A2A requests](docs/how-to/authenticate-agent-requests.md)
-    — wire `A2A.Plug.Auth` so a verified credential becomes
+    — wire `AshA2A.Protocol.Plug.Auth` so a verified credential becomes
     `context.actor`/`context.tenant`, and grants — not authentication —
     decide consequential authority.
   - [Verify authority on async (Oban) paths](docs/how-to/verify-authority-on-async-paths.md)
@@ -269,7 +310,7 @@ records live under `docs/archive/`, grouped by kind:
 ## Security
 
 Identity is a trust boundary: `actor`/`tenant` only ever come from
-transport-verified `A2A.Plug.Auth` output, and consequential
+transport-verified `AshA2A.Protocol.Plug.Auth` output, and consequential
 (`:change`/`:external_do`) skills additionally require a standing grant from
 `AshA2A.Authority.Grant` — authentication alone never confers authority
 (RFC-SA2A-001 S29). Neither shipped broker (`InMemory`, `Ekv`) is

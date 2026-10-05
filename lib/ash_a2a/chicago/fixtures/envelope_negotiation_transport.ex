@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
   @moduledoc """
   Real collaborators for the RFC-SA2A-002 §54/§55/§56/§75 courts
@@ -6,10 +10,10 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
   `AshA2A.Chicago.Courts.TransportIndependence`).
 
   Nothing here replaces a component under qualification. The receiving
-  boundary is the real `AshA2A.Semantic.Peer` inside a real `A2A.Agent`
+  boundary is the real `AshA2A.Semantic.Peer` inside a real `AshA2A.Protocol.Agent`
   GenServer; the engine is the real praxis-graphlaw wasm; the HTTP binding is
-  the real, unmodified `A2A.Plug` (optionally behind the real
-  `A2A.Plug.Auth`) on a real local Bandit listener; the consequence path is
+  the real, unmodified `AshA2A.Protocol.Plug` (optionally behind the real
+  `AshA2A.Protocol.Plug.Auth`) on a real local Bandit listener; the consequence path is
   the real `AshA2A.Agent` -> `AshA2A.CommandBus` over a real ETS-backed Ash
   resource.
   """
@@ -66,7 +70,7 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
   defmodule Envelopes do
     @moduledoc """
     Wire-shaped (RFC-SA2A-001 S11, camelCase) envelope payloads and activated
-    `A2A.Message`s, as a remote sender would put them on the wire.
+    `AshA2A.Protocol.Message`s, as a remote sender would put them on the wire.
     """
 
     @doc """
@@ -98,17 +102,17 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
       )
     end
 
-    @doc "An `A2A.Message` that explicitly activates the SA2A extension."
-    @spec activated(map(), map()) :: A2A.Message.t()
+    @doc "An `AshA2A.Protocol.Message` that explicitly activates the SA2A extension."
+    @spec activated(map(), map()) :: AshA2A.Protocol.Message.t()
     def activated(payload, metadata \\ %{}) do
-      message = A2A.Message.new_user([A2A.Part.Text.new("semantic request")])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Text.new("semantic request")])
       %{Extension.activate(message, payload) | metadata: metadata}
     end
 
-    @doc "An ordinary (never activated) `A2A.Message`."
-    @spec ordinary([A2A.Part.t()] | String.t(), map()) :: A2A.Message.t()
+    @doc "An ordinary (never activated) `AshA2A.Protocol.Message`."
+    @spec ordinary([AshA2A.Protocol.Part.t()] | String.t(), map()) :: AshA2A.Protocol.Message.t()
     def ordinary(parts, metadata \\ %{}) do
-      %{A2A.Message.new_user(parts) | metadata: metadata}
+      %{AshA2A.Protocol.Message.new_user(parts) | metadata: metadata}
     end
   end
 
@@ -189,16 +193,16 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
 
   defmodule SemanticPeerAgent do
     @moduledoc """
-    Real `A2A.Agent` GenServer whose `handle_message/2` runs the real
+    Real `AshA2A.Protocol.Agent` GenServer whose `handle_message/2` runs the real
     `AshA2A.Semantic.Peer` boundary. Its reply is a projection of the real
     outcome, never an independent claim.
 
     The peer configuration is keyed in `:persistent_term` by the process's
-    registered name, because `use A2A.Agent`'s generated `start_link/1` owns
+    registered name, because `use AshA2A.Protocol.Agent`'s generated `start_link/1` owns
     the GenServer's init arguments.
     """
 
-    use A2A.Agent,
+    use AshA2A.Protocol.Agent,
       name: "chicago_semantic_peer",
       description: "Semantic A2A receiving peer under Chicago qualification.",
       skills: [
@@ -227,11 +231,9 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     @doc false
     def __sa2a_refusal_codes__, do: %{peer_not_configured: :blocked_resource}
 
-    @impl A2A.Agent
+    @impl AshA2A.Protocol.Agent
     def handle_message(message, _context) do
-      {:registered_name, name} = Process.info(self(), :registered_name)
-
-      case :persistent_term.get({__MODULE__, name}, nil) do
+      case peer_config() do
         nil ->
           {:error, :peer_not_configured}
 
@@ -246,15 +248,38 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
               {Atom.to_string(k), if(is_atom(v), do: Atom.to_string(v), else: v)}
             end)
 
-          {:reply, [A2A.Part.Data.new(payload)]}
+          {:reply, [AshA2A.Protocol.Part.Data.new(payload)]}
       end
+    end
+
+    # SEC-02/SEC-08: `handle_message/2` runs in a monitored task worker rooted
+    # at the agent GenServer via `$callers` (`spawn_task_worker/4` in
+    # `AshA2A.Protocol.Agent`), so the calling process is never the registered
+    # GenServer and `Process.info(self(), :registered_name)` resolves to `[]`.
+    # Resolve the agent's registered name from the worker's `$callers` root
+    # (the documented worker-rooting scheme), falling back to `self()` for any
+    # inline dispatch path.
+    defp peer_config do
+      root =
+        case Process.get(:"$callers", []) do
+          [parent | _] -> parent
+          [] -> self()
+        end
+
+      name =
+        case Process.info(root, :registered_name) do
+          {:registered_name, name} when is_atom(name) -> name
+          _ -> nil
+        end
+
+      :persistent_term.get({__MODULE__, name}, nil)
     end
   end
 
   defmodule Endpoint do
     @moduledoc """
-    Real Plug endpoint: optional real `A2A.Plug.Auth` (bearer tokens resolved
-    to verified identities), then the real `A2A.Plug`.
+    Real Plug endpoint: optional real `AshA2A.Protocol.Plug.Auth` (bearer tokens resolved
+    to verified identities), then the real `AshA2A.Protocol.Plug`.
 
     Options: `:agent` (required), `:advertise` (`:compatible` | `:none` |
     `{:version, v}`), `:tokens` (`%{token => identity}`; omit for no auth).
@@ -274,8 +299,8 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
             nil
 
           tokens ->
-            A2A.Plug.Auth.init(
-              schemes: %{"bearer_auth" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}},
+            AshA2A.Protocol.Plug.Auth.init(
+              schemes: %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}},
               verify: fn "bearer_auth", token, _conn ->
                 case Map.fetch(tokens, token) do
                   {:ok, identity} -> {:ok, identity}
@@ -295,14 +320,14 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     @impl Plug
     def call(conn, %{agent: agent, advertise: advertise, auth: auth}) do
       base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}"
-      conn = if auth, do: A2A.Plug.Auth.call(conn, auth), else: conn
+      conn = if auth, do: AshA2A.Protocol.Plug.Auth.call(conn, auth), else: conn
 
       if conn.halted do
         conn
       else
-        A2A.Plug.call(
+        AshA2A.Protocol.Plug.call(
           conn,
-          A2A.Plug.init(
+          AshA2A.Protocol.Plug.init(
             agent: agent,
             base_url: base_url,
             agent_card_opts: card_opts(advertise, base_url)
@@ -364,7 +389,7 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     end
 
     @doc "GETs the agent card through the real Plug pipeline and decodes it."
-    @spec served_card(keyword()) :: {:ok, A2A.AgentCard.t(), map()} | {:error, term()}
+    @spec served_card(keyword()) :: {:ok, AshA2A.Protocol.AgentCard.t(), map()} | {:error, term()}
     def served_card(endpoint_opts) do
       conn =
         :get
@@ -373,7 +398,7 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
 
       with 200 <- conn.status,
            {:ok, json} <- Jason.decode(conn.resp_body),
-           {:ok, card} <- A2A.JSON.decode_agent_card(json) do
+           {:ok, card} <- AshA2A.Protocol.JSON.decode_agent_card(json) do
         {:ok, card, json}
       else
         other -> {:error, {:agent_card_not_served, other}}
@@ -384,9 +409,9 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     POSTs a real JSON-RPC `message/send` through the real Plug pipeline
     in-process. Returns the decoded JSON-RPC response body.
     """
-    @spec post_message(keyword(), A2A.Message.t(), keyword()) :: {integer(), map()}
-    def post_message(endpoint_opts, %A2A.Message{} = message, opts \\ []) do
-      {:ok, encoded} = A2A.JSON.encode(message)
+    @spec post_message(keyword(), AshA2A.Protocol.Message.t(), keyword()) :: {integer(), map()}
+    def post_message(endpoint_opts, %AshA2A.Protocol.Message{} = message, opts \\ []) do
+      {:ok, encoded} = AshA2A.Protocol.JSON.encode(message)
 
       params =
         case Keyword.get(opts, :metadata) do
@@ -415,11 +440,11 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     end
 
     @doc "The first `Part.Data` payload of a completed task's first artifact."
-    @spec reply_data(A2A.Task.t() | map()) :: map() | nil
-    def reply_data(%A2A.Task{artifacts: [%A2A.Artifact{parts: parts} | _]}),
+    @spec reply_data(AshA2A.Protocol.Task.t() | map()) :: map() | nil
+    def reply_data(%AshA2A.Protocol.Task{artifacts: [%AshA2A.Protocol.Artifact{parts: parts} | _]}),
       do:
         Enum.find_value(parts, fn
-          %A2A.Part.Data{data: data} -> data
+          %AshA2A.Protocol.Part.Data{data: data} -> data
           _ -> nil
         end)
 

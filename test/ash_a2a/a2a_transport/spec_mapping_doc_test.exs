@@ -1,13 +1,17 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.SpecMappingDocTest.DocAgent do
   @moduledoc false
-  # Real A2A.Agent: replies, or streams when the text is "stream".
-  use A2A.Agent, name: "doc-agent", description: "spec mapping fixture"
+  # Real AshA2A.Protocol.Agent: replies, or streams when the text is "stream".
+  use AshA2A.Protocol.Agent, name: "doc-agent", description: "spec mapping fixture"
 
-  @impl A2A.Agent
+  @impl AshA2A.Protocol.Agent
   def handle_message(message, _context) do
-    case A2A.Message.text(message) do
-      "stream" -> {:stream, [A2A.Part.Text.new("s1")]}
-      _ -> {:reply, [A2A.Part.Text.new("ok")]}
+    case AshA2A.Protocol.Message.text(message) do
+      "stream" -> {:stream, [AshA2A.Protocol.Part.Text.new("s1")]}
+      _ -> {:reply, [AshA2A.Protocol.Part.Text.new("ok")]}
     end
   end
 end
@@ -15,7 +19,7 @@ end
 defmodule AshA2A.A2ATransport.SpecMappingDocTest do
   @moduledoc """
   Drift court for `docs/reference/a2a-spec-version-mapping.md`: every method
-  row is driven through the real vendored `A2A.Plug` and the real
+  row is driven through the real vendored `AshA2A.Protocol.Plug` and the real
   `AshA2A.A2ATransport.Plug` (real agent GenServer, real transport tree,
   real `Plug.Test` conns), and the observed outcome must equal the doc cell.
   The alias surface is read from the dependency's own source so a new
@@ -35,7 +39,7 @@ defmodule AshA2A.A2ATransport.SpecMappingDocTest do
     start_supervised!({DocAgent, name: agent})
     start_supervised!({AshA2A.A2ATransport, name: transport})
 
-    vendored = A2A.Plug.init(agent: agent, base_url: "http://x/a2a")
+    vendored = AshA2A.Protocol.Plug.init(agent: agent, base_url: "http://x/a2a")
 
     ours =
       TransportPlug.init(
@@ -48,7 +52,7 @@ defmodule AshA2A.A2ATransport.SpecMappingDocTest do
         heartbeat_ms: 100
       )
 
-    %{vendored: {A2A.Plug, vendored}, ours: {TransportPlug, ours}}
+    %{vendored: {AshA2A.Protocol.Plug, vendored}, ours: {TransportPlug, ours}}
   end
 
   defp doc_rows do
@@ -64,7 +68,9 @@ defmodule AshA2A.A2ATransport.SpecMappingDocTest do
   end
 
   defp dep_aliases do
-    src = File.read!(Path.join(Mix.Project.deps_paths()[:a2a], "lib/a2a/jsonrpc.ex"))
+    # Source of truth is now the ported in-repo JSON-RPC dispatcher
+    # (lib/ash_a2a/protocol/jsonrpc.ex) — the hex `:a2a` package was removed.
+    src = File.read!("lib/ash_a2a/protocol/jsonrpc.ex")
     [_, block] = Regex.run(~r/@method_aliases %\{(.*?)\n  \}/s, src)
 
     ~r/"(\w+)" => "([^"]+)"/
@@ -79,7 +85,7 @@ defmodule AshA2A.A2ATransport.SpecMappingDocTest do
       :post
       |> Plug.Test.conn("/", body)
       |> Plug.Conn.put_req_header("content-type", "application/json")
-      |> A2A.Plug.Auth.put_identity(%{sub: "doc-test"})
+      |> AshA2A.Protocol.Plug.Auth.put_identity(%{sub: "doc-test"})
       |> mod.call(opts)
 
     ct = conn |> Plug.Conn.get_resp_header("content-type") |> List.first("")
@@ -94,7 +100,7 @@ defmodule AshA2A.A2ATransport.SpecMappingDocTest do
   defp outcome(%{"result" => _}), do: "result"
 
   defp msg(text) do
-    {:ok, encoded} = A2A.JSON.encode(A2A.Message.new_user(text))
+    {:ok, encoded} = AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Message.new_user(text))
     encoded
   end
 
@@ -142,7 +148,7 @@ defmodule AshA2A.A2ATransport.SpecMappingDocTest do
     |> get_in(["result", "task", "id"])
   end
 
-  test "the doc's alias table equals A2A.JSONRPC's dispatch surface and the plug's routing table" do
+  test "the doc's alias table equals AshA2A.Protocol.JSONRPC's dispatch surface and the plug's routing table" do
     rows = doc_rows()
     documented = Map.new(rows, fn {a, m, _, _} -> {a, m} end)
 

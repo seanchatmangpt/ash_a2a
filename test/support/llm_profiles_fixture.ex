@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.SemanticReasoner do
   @moduledoc """
   Real fixture proving `AshA2A.LLMProfiles`: this action's source names no
@@ -55,7 +59,7 @@ end
 
 defmodule AshA2A.Test.Fixture.SemanticReasonerAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.SemanticReasoner`.
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.SemanticReasoner`.
   """
 
   use AshA2A.Agent,

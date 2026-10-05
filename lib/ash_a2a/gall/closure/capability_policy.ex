@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.Closure.CapabilityPolicy do
   @moduledoc "Requires the capability to come from an admitted semantic rule and never from finding self-assertion."
 

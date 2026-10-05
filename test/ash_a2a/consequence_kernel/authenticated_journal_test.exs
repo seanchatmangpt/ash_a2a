@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ConsequenceKernel.AuthenticatedJournalTest do
   @moduledoc """
   Kernel with the authenticated prepared journal (`:key_provider`) over the REAL in-memory store

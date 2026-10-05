@@ -1,10 +1,14 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AFreedomGymChicagoCoreTest do
   @moduledoc """
   Chicago-Core deterministic tier of the "FreedomGym Chicago" primitive:
   five separately-`AshA2A`-extended Ash apps (one facilitator, four
   participant avatars), each standing in for its own
-  independently-deployable service, exchanging real `A2A.Message`s through
-  real `A2A.Agent` GenServers under one real `A2A.AgentSupervisor` --
+  independently-deployable service, exchanging real `AshA2A.Protocol.Message`s through
+  real `AshA2A.Protocol.Agent` GenServers under one real `AshA2A.Protocol.AgentSupervisor` --
   exactly the cross-app pattern proven in
   `test/ash_a2a_rap_battle_integration_test.exs`.
 
@@ -59,7 +63,7 @@ defmodule AshA2AFreedomGymChicagoCoreTest do
              )
 
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
     result
   end
 
@@ -69,7 +73,7 @@ defmodule AshA2AFreedomGymChicagoCoreTest do
 
     assert {:ok, task} = agent.call(agent, message)
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
     result
   end
 

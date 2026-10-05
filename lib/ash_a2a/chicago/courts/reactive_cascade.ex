@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.ReactiveCascade do
   @moduledoc """
   RFC-SA2A-002 §63 Reactive Cascade court plus Benchmarks B3 (§87 Knowledge

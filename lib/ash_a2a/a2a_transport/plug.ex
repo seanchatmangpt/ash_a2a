@@ -1,15 +1,19 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.Plug do
   @moduledoc """
-  ash_a2a-owned A2A HTTP transport: a drop-in wrapper around `A2A.Plug` that
+  ash_a2a-owned A2A HTTP transport: a drop-in wrapper around `AshA2A.Protocol.Plug` that
   implements the methods the vendored plug hard-codes to refusals.
 
-  | method | `A2A.Plug` | this plug |
+  | method | `AshA2A.Protocol.Plug` | this plug |
   |--------|------------|-----------|
   | `message/stream` | SSE, stream consumed inline by the first connection | SSE; stream pumped by a supervised process, fan-out to every subscriber |
   | `tasks/resubscribe` | -32004 | SSE: snapshot, backlog replay (`Last-Event-ID` aware), live events until final |
   | `tasks/pushNotificationConfig/*` | -32003 | -32003 unless `push_notifications: true`; then set/get/list/delete + signed, SSRF-admitted webhook delivery |
   | `agent/getAuthenticatedExtendedCard` | -32004 | -32007 unless an `:extended_card` provider is configured; 401 for unauthenticated callers |
-  | everything else | -- | delegated to `A2A.Plug` unchanged |
+  | everything else | -- | delegated to `AshA2A.Protocol.Plug` unchanged |
 
   PascalCase v0.3 aliases (`SubscribeToTask`, `GetExtendedAgentCard`,
   `CreateTaskPushNotificationConfig`, ...) route identically.
@@ -28,12 +32,12 @@ defmodule AshA2A.A2ATransport.Plug do
 
   ## Options
 
-  All `A2A.Plug` options, plus:
+  All `AshA2A.Protocol.Plug` options, plus:
 
     * `:transport` -- `AshA2A.A2ATransport` instance name (default
       `AshA2A.A2ATransport`). When that instance is **not running**,
       `message/stream`, `tasks/resubscribe` and push config fall back to
-      `A2A.Plug`'s behavior (inline stream, -32004, -32003) -- nothing is
+      `AshA2A.Protocol.Plug`'s behavior (inline stream, -32004, -32003) -- nothing is
       silently half-enabled.
     * `:push_notifications` -- default `false` (fail closed). When `false`,
       push-config methods answer -32003 and a `message/send` or
@@ -53,11 +57,11 @@ defmodule AshA2A.A2ATransport.Plug do
 
   import Plug.Conn
 
-  alias A2A.JSONRPC.{Error, Request, Response}
+  alias AshA2A.Protocol.JSONRPC.{Error, Request, Response}
   alias AshA2A.A2ATransport
   alias AshA2A.A2ATransport.{ExtendedCard, Ownership, PushConfigRPC, SSE, TaskEvents}
 
-  # Mirrors A2A.JSONRPC's private @method_aliases (deps/a2a/lib/a2a/jsonrpc.ex);
+  # Mirrors AshA2A.Protocol.JSONRPC's private @method_aliases (deps/a2a/lib/a2a/jsonrpc.ex);
   # test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs fails on drift.
   @method_aliases %{
     "SendMessage" => "message/send",
@@ -88,7 +92,7 @@ defmodule AshA2A.A2ATransport.Plug do
       ])
 
     %{
-      a2a: A2A.Plug.init(a2a),
+      a2a: AshA2A.Protocol.Plug.init(a2a),
       transport: Keyword.get(own, :transport, A2ATransport.default_name()),
       push_notifications: Keyword.get(own, :push_notifications, false),
       extended_card: validate_provider!(Keyword.get(own, :extended_card)),
@@ -109,7 +113,7 @@ defmodule AshA2A.A2ATransport.Plug do
 
   @impl Plug
   def call(%{method: "GET", path_info: path} = conn, %{a2a: %{agent_card_path: path}} = opts),
-    do: A2A.Plug.call(conn, advertise(opts))
+    do: AshA2A.Protocol.Plug.call(conn, advertise(opts))
 
   def call(%{method: "POST", path_info: path} = conn, %{a2a: %{json_rpc_path: path}} = opts) do
     case read_json(conn) do
@@ -118,7 +122,7 @@ defmodule AshA2A.A2ATransport.Plug do
     end
   end
 
-  def call(conn, opts), do: A2A.Plug.call(conn, opts.a2a)
+  def call(conn, opts), do: AshA2A.Protocol.Plug.call(conn, opts.a2a)
 
   # -- routing ------------------------------------------------------------------
 
@@ -130,7 +134,7 @@ defmodule AshA2A.A2ATransport.Plug do
          :ok <- Request.validate_params(req) do
       dispatch(conn, req, decoded, opts)
     else
-      # Malformed envelopes: A2A.Plug produces the canonical error.
+      # Malformed envelopes: AshA2A.Protocol.Plug produces the canonical error.
       _ -> delegate(conn, decoded, opts)
     end
   end
@@ -174,10 +178,78 @@ defmodule AshA2A.A2ATransport.Plug do
     end)
   end
 
+  defp dispatch(conn, %Request{method: "tasks/list"} = req, _raw, opts) do
+    # Owner-scoped listing (SEC-01): delegating `tasks/list` to the vendored
+    # plug answers with an UNscoped list — its `{:list_tasks, params}` call
+    # carries no principal, so any caller (even anonymous) could enumerate
+    # other principals' tasks. The full `AshA2A.Agent` surface answers the
+    # owner-scoped `{:ash_a2a_list_tasks, principal, params}` message; a bare
+    # `AshA2A.Protocol.Agent` (no such clause) falls back to the delegate,
+    # preserving its unscoped-but-documented behavior.
+    principal = Ownership.caller(conn)
+
+    try do
+      # Transport opts nest the agent under :a2a (see init/1) — reading
+      # opts.agent directly is a KeyError that escapes the rescue below
+      # (only FunctionClauseError is caught) and kills the connection with
+      # an empty body. Tasks are encoded through the codec (wire_task/1
+      # returns the struct; the wire needs the JSON map). A bare
+      # `AshA2A.Protocol.Agent` (no owner-scoped clause) makes GenServer.call
+      # EXIT — caught below and delegated, preserving its documented behavior.
+      case GenServer.call(opts.a2a.agent, {:ash_a2a_list_tasks, principal, req.params}) do
+        {:ok, %{tasks: tasks} = result} ->
+          wire_tasks =
+            Enum.map(tasks, fn task ->
+              task
+              |> AshA2A.Transport.Runtime.wire_task()
+              |> AshA2A.Protocol.JSON.encode!()
+            end)
+
+          # The runtime's list result is atom/snake-keyed; the wire envelope
+          # is camelCase string-keyed (mirror of jsonrpc.ex encode_list_result).
+          send_json(
+            conn,
+            Response.success(req.id, %{
+              "tasks" => wire_tasks,
+              "totalSize" => Map.get(result, :total_size, 0),
+              "pageSize" => Map.get(result, :page_size, 0),
+              "nextPageToken" => Map.get(result, :next_page_token, "")
+            })
+          )
+
+        {:error, :invalid_page_token} ->
+          send_json(conn, Response.error(req.id, Error.invalid_params("\"pageToken\" is invalid")))
+
+        {:error, :unsupported} ->
+          # Bare `AshA2A.Protocol.Agent` — the typed (non-lethal) branch of
+          # the same refusal the `catch :exit` backstop answers below; the
+          # agent now survives the probe and keeps serving later requests.
+          send_json(conn, Response.error(req.id, Error.unsupported_operation()))
+
+        {:error, reason} ->
+          send_json(conn, Response.error(req.id, Error.internal_error(AshA2A.Transport.SafeError.redact(reason))))
+      end
+    rescue
+      # Client-side encode failures fall back to the vendored delegate
+      # rather than killing the connection with an empty body.
+      _ -> delegate_fallback(conn, req, opts)
+    catch
+      # A bare `AshA2A.Protocol.Agent` (no owner-scoped clause) makes the
+      # GenServer.call EXIT server-side (FunctionClauseError raised in the
+      # agent's handle_call reaches the client as an exit). Answer the typed
+      # refusal instead of delegating into the vendored plug's own crash
+      # (observed -32700 on this exact path).
+      :exit, _exit ->
+        send_json(conn, Response.error(req.id, Error.unsupported_operation()))
+    end
+  end
+
   defp dispatch(conn, %Request{method: "tasks/get"} = req, raw, opts),
     do: if_owned(conn, req, req.params["id"], opts, &delegate(&1, raw, opts))
 
   defp dispatch(conn, _req, raw, opts), do: delegate(conn, raw, opts)
+
+  defp delegate_fallback(conn, _req, opts), do: AshA2A.Protocol.Plug.call(conn, opts.a2a)
 
   defp dispatch_message(conn, req, raw, opts) do
     case inline_push(req.params) do
@@ -219,7 +291,7 @@ defmodule AshA2A.A2ATransport.Plug do
   end
 
   defp stream(conn, req, opts, push_config) do
-    case A2A.JSON.decode(req.params["message"], :message) do
+    case AshA2A.Protocol.JSON.decode(req.params["message"], :message) do
       {:ok, message} ->
         call_opts =
           req.params
@@ -258,7 +330,9 @@ defmodule AshA2A.A2ATransport.Plug do
 
       final? = task |> get_in(["status", "state"]) |> closed_wire_state?()
 
-      TaskEvents.publish(opts.transport, task_id, "task", task, final?)
+      # StreamResponse wrapper: kind-"task" payloads are `{"task" => ...}` so
+      # SSE frames and webhook bodies are the same v1.0 shape as sse.ex's.
+      TaskEvents.publish(opts.transport, task_id, "task", %{"task" => task}, final?)
     end
 
     conn
@@ -285,7 +359,7 @@ defmodule AshA2A.A2ATransport.Plug do
     conn
     |> register_before_send(&strip_response/1)
     |> Map.put(:body_params, decoded)
-    |> A2A.Plug.call(opts.a2a)
+    |> AshA2A.Protocol.Plug.call(opts.a2a)
   end
 
   # Owner scope for methods naming an existing task: a task the verified
@@ -355,7 +429,7 @@ defmodule AshA2A.A2ATransport.Plug do
     end
   end
 
-  # Same 3-layer metadata merge and auth propagation as A2A.Plug.
+  # Same 3-layer metadata merge and auth propagation as AshA2A.Protocol.Plug.
   defp resolved_metadata(conn, opts) do
     overrides = Map.get(conn.private, :a2a, %{})
     base = opts.a2a.metadata

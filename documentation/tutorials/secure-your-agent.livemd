@@ -1,0 +1,267 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a>
+
+SPDX-License-Identifier: MIT
+-->
+
+<!-- livebook:{"persist_outputs":true} -->
+
+# Secure Your Agent
+
+"A2A Your First Agent" built a working agent. This one locks it down:
+authentication (who is calling), authority (what that caller may do), owner
+scoping (callers only see their own rows), and card signing (how a client
+trusts the card it discovered).
+
+Authentication is NOT authority (RFC-SA2A-001 S29). A verified Bearer token
+proves identity; a *grant* is what allows a consequential skill to run. The
+two are configured separately and fail closed independently.
+
+## Setup
+
+```elixir
+Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.9.31"}, {:plug, "~> 1.16"}],
+  consolidate_protocols: false,
+  config: [
+    ash: [
+      validate_domain_resource_inclusion?: false,
+      validate_domain_config_inclusion?: false
+    ]
+  ]
+)
+```
+
+## Define a note resource with an owner
+
+`owner` is stamped from the caller's identity on create, and reads are
+filtered to the caller. A caller with no identity sees no rows — dispatch
+fails closed rather than trusting anything from message metadata.
+
+```elixir
+defmodule Tutorial.Note do
+  use Ash.Resource,
+    domain: Tutorial.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:body, :string, allow_nil?: false, public?: true)
+    attribute(:owner, :string, allow_nil?: false, public?: true)
+  end
+
+  actions do
+    defaults([:read])
+
+    create :create do
+      accept([:body])
+
+      change set_attribute(:owner, actor(:id))
+    end
+  end
+
+  preparations do
+    prepare :read, filter expr(owner == actor(:id))
+  end
+end
+```
+
+```elixir
+defmodule Tutorial.Domain do
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(Tutorial.Note)
+  end
+end
+
+defmodule Tutorial.NoteAgent do
+  use AshA2A.Agent, resource_or_domain: Tutorial.Domain, name: "tutorial_notes"
+end
+
+{:ok, _pid} = Tutorial.NoteAgent.start_link([])
+```
+
+## Authenticate: a verified credential becomes the actor
+
+Identity only ever arrives from transport-verified auth — never from message
+metadata. At the process level that is the `auth_identity` argument of
+`AshA2A.Dispatcher.dispatch/6`; on the wire it is what
+`AshA2A.Protocol.Plug.Auth` extracts from a real credential. Here is the
+whole verification story: a callback you own.
+
+```elixir
+verify_callback = fn
+  "bearer_auth", "valid-token-42", _conn -> {:ok, %{id: "user-42", tenant: "acme"}}
+  "bearer_auth", "user-7s-token", _conn -> {:ok, %{id: "user-7", tenant: "acme"}}
+  _scheme, _credential, _conn -> {:error, "invalid token"}
+end
+```
+
+On the wire the same callback sits in the plug pipeline. Missing or rejected
+credentials halt the conn with a `401` before `AshA2A.Protocol.Plug` ever
+runs; a verified credential flows into `metadata["a2a.auth"]` and then into
+`context.actor`/`context.tenant` inside your Ash action.
+
+```elixir
+schemes = %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}}
+auth_opts = AshA2A.Protocol.Plug.Auth.init(schemes: schemes, verify: verify_callback)
+
+# No credential: halted with 401.
+anon_conn =
+  Plug.Test.conn("post", "/", "")
+  |> AshA2A.Protocol.Plug.Auth.call(auth_opts)
+
+{anon_conn.status, anon_conn.resp_body}
+#=> {401, "{\"error\":\"Unauthorized\"}"}
+true = anon_conn.halted
+
+# A valid credential: passes through, identity recorded on the conn.
+authed_conn =
+  Plug.Test.conn("post", "/", "")
+  |> Plug.Conn.put_req_header("authorization", "bearer valid-token-42")
+  |> AshA2A.Protocol.Plug.Auth.call(auth_opts)
+
+false = authed_conn.halted
+%{id: "user-42", tenant: "acme"} = authed_conn.private[:a2a][:auth][:identity]
+
+# An invalid credential: halted with 401 too.
+bad_conn =
+  Plug.Test.conn("post", "/", "")
+  |> Plug.Conn.put_req_header("authorization", "bearer forged-token")
+  |> AshA2A.Protocol.Plug.Auth.call(auth_opts)
+
+{bad_conn.status, true = bad_conn.halted}
+```
+
+## Authorize: consequential skills need a grant
+
+`:change` skills (create/update/destroy) route through the receipted
+`AshA2A.CommandBus`, which refuses any caller that does not hold a standing
+grant for that exact capability. Grants are per `(principal, capability)`
+pair: granting create grants create, never destroy. Make sure the `ash_a2a`
+supervision tree (which hosts the authority broker) is running:
+
+```elixir
+{:ok, [:ash_a2a]} = Application.ensure_all_started(:ash_a2a)
+
+create_msg = fn identity ->
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"body" => "hello, securely"})])
+  |> struct!(metadata: %{"skill" => "create_note", "a2a.auth" => %{identity: identity}})
+end
+
+{:ok, task} = AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg.(%{id: "user-42", tenant: "acme"}))
+task.status.state
+#=> :failed
+```
+
+The refusal is typed, not a mystery. The failed task carries the
+`:authority_required` refusal code, and nothing was written, executed, or
+receipted.
+
+```elixir
+task.status.message
+#=> "authority required for capability Tutorial.Note.create"
+```
+
+Now issue the standing grant — the subject must be built from the same
+identity term your `verify` callback returns — and retry the same call:
+
+```elixir
+user_42 = AshA2A.Identity.principal(%{id: "user-42", tenant: "acme"})
+
+:ok = AshA2A.Authority.Grant.grant(user_42, "Tutorial.Note.create")
+true = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.create")
+false = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.update")
+
+{:ok, task} = AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg.(%{id: "user-42", tenant: "acme"}))
+task.status.state
+#=> :completed
+```
+
+Revocation is the symmetric counterpart, and the next dispatch fails closed:
+
+```elixir
+:ok = AshA2A.Authority.Grant.revoke(user_42, "Tutorial.Note.create")
+false = AshA2A.Authority.Grant.granted?(user_42, "Tutorial.Note.create")
+```
+
+## Owner scoping: callers only see their own rows
+
+Identity flows into the Ash action as `context.actor`, so plain Ash
+authorization patterns — here a preparation filter — scope every read. This
+dispatch passes `auth_identity` directly, the process-level form of what
+`Plug.Auth` injects on the wire.
+
+```elixir
+# user-42 creates one note (re-grant first; we revoked above).
+:ok = AshA2A.Authority.Grant.grant(user_42, "Tutorial.Note.create")
+
+{:ok, task} = AshA2A.Protocol.call(Tutorial.NoteAgent, create_msg.(%{id: "user-42", tenant: "acme"}))
+:completed = task.status.state
+
+list_msg = fn identity ->
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+  |> struct!(metadata: %{"skill" => "list_notes", "a2a.auth" => %{identity: identity}})
+end
+
+{:reply, [own]} =
+  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(%{id: "user-42", tenant: "acme"}), Tutorial.Domain)
+
+{:reply, [others]} =
+  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(%{id: "user-7", tenant: "acme"}), Tutorial.Domain)
+
+{:reply, [anon]} =
+  AshA2A.Dispatcher.dispatch("list_notes", list_msg.(nil), Tutorial.Domain)
+
+length(own.data["results"])
+#=> 1
+
+others.data["results"]
+#=> []
+
+anon.data["results"]
+#=> []
+```
+
+## Card signing: trust the card you discovered
+
+A discovered card is only as trustworthy as its transport. Sign the card
+server-side and verify the detached JWS client-side — `verify/2` recomputes
+the JCS digest of the wire-projected card and checks every `signatures`
+entry.
+
+```elixir
+card = AshA2A.Info.agent_card(Tutorial.Domain)
+signing_key = "a-real-secret-key"
+
+signed = AshA2A.Protocol.CardSigning.sign(card, signing_key)
+:ok = AshA2A.Protocol.CardSigning.verify(signed, signing_key)
+```
+
+Tampering with the payload breaks the digest; a different key breaks the
+signature. Both fail closed:
+
+```elixir
+{:error, {:digest_mismatch, _}} =
+  AshA2A.Protocol.CardSigning.verify(%{signed | description: "tampered"}, signing_key)
+
+{:error, {:bad_signature, _}} =
+  AshA2A.Protocol.CardSigning.verify(signed, "a-different-key")
+```
+
+## What you built, and what's next
+
+You now have an agent that authenticates callers with a callback you own,
+refuses ungranted consequential calls with a typed `:authority_required`,
+scopes reads to their owners, and signs its card for wire clients.
+
+From here:
+
+- [Stream and Elicit](stream-and-elicit.livemd) for lazy reads and
+  `:input_required` resumes;
+- [Authenticate inbound A2A requests](../docs/how-to/authenticate-agent-requests.md)
+  for the full trust-boundary discussion, broker backends, and the async
+  (Oban) re-verification requirement;
+- [A2A endpoint reference](../docs/reference/a2a-endpoint-contract.md) for
+  error codes and metadata merge order.

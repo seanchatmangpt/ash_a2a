@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AFreedomGymHddlPlanTest do
   @moduledoc """
   Proves the FreedomGym facilitator's phase sequence is now real-HDDL-plan-
@@ -16,19 +20,19 @@ defmodule AshA2AFreedomGymHddlPlanTest do
      `[:open, :trust_god, :clean_house, :help_others, :fellowship, :close]`,
      asserted on the real returned list, not a description of it.
   2. Driving the facilitator's new `:next_phase` A2A skill (real dispatch,
-     real `A2A.Agent`, same pattern as the Chicago-Core test) repeatedly
+     real `AshA2A.Protocol.Agent`, same pattern as the Chicago-Core test) repeatedly
      over a real, isolated in-memory plan position yields exactly that same
      real ordered sequence -- proving the facilitator consults the real
      plan rather than re-implementing/echoing a hardcoded list.
   """
 
   # async: false -- this test's `FacilitatorAgent` is the same
-  # `A2A.Agent`-generated process name
+  # `AshA2A.Protocol.Agent`-generated process name
   # `AshA2AFreedomGymChicagoCoreTest`'s async: true test uses; running both
   # concurrently is a real process-name collision, not something this test
   # can or should route around (see `AshA2A.Test.AgentSupervisorCase`'s
   # moduledoc -- the per-case supervisor/registry names are unique, but the
-  # `A2A.Agent` process itself is registered under its own module name).
+  # `AshA2A.Protocol.Agent` process itself is registered under its own module name).
   use ExUnit.Case, async: false
 
   @moduletag :serial
@@ -83,7 +87,7 @@ defmodule AshA2AFreedomGymHddlPlanTest do
                )
 
       assert task.status.state == :completed
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = task.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
       result
     end
 

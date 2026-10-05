@@ -13,6 +13,7 @@ defmodule SwarmNode.RuntimeConfigTest do
 
   @vars ~w(ASH_A2A_EKV_CLUSTER_SIZE ASH_A2A_RECEIPT_DATA_DIR ASH_A2A_BROKER_DATA_DIR
            ASH_A2A_OUTBOX_DIR ASH_A2A_CAPABILITY_RELEASE_MANIFEST ASH_A2A_CAPABILITY_RELEASE_DIGEST
+           ASH_A2A_STANDING_ARTIFACTS_DIR
            ASH_A2A_RECEIPT_BINDING_KEY ASH_A2A_STANDING_LEDGER_KEY SWARM_REQUIRE_GRAPHLAW
            SWARM_K8S_SERVICE SWARM_K8S_NAMESPACE SWARM_A2A_HTTP SWARM_MIN_PEERS)
 
@@ -31,7 +32,10 @@ defmodule SwarmNode.RuntimeConfigTest do
   end
 
   defp complete_env do
-    digest = SwarmNode.ReleaseClosure.load!(@manifest).portable_digest
+    digest =
+      SwarmNode.ReleaseClosure.load!(@manifest, nil,
+        standing_artifacts_dir: Path.expand("../../rel/overlays/standing", __DIR__)
+      ).portable_digest
 
     %{
       "ASH_A2A_EKV_CLUSTER_SIZE" => "3",
@@ -40,6 +44,8 @@ defmodule SwarmNode.RuntimeConfigTest do
       "ASH_A2A_OUTBOX_DIR" => "/var/lib/ash_a2a/outbox",
       "ASH_A2A_CAPABILITY_RELEASE_MANIFEST" => @manifest,
       "ASH_A2A_CAPABILITY_RELEASE_DIGEST" => digest,
+      "ASH_A2A_STANDING_ARTIFACTS_DIR" =>
+        Path.expand("../../rel/overlays/standing", __DIR__),
       "ASH_A2A_RECEIPT_BINDING_KEY" => Base.encode64(:crypto.strong_rand_bytes(32)),
       "ASH_A2A_STANDING_LEDGER_KEY" => Base.encode64(:crypto.strong_rand_bytes(32))
     }

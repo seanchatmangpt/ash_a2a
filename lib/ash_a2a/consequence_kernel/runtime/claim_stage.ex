@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ConsequenceKernel.Runtime.ClaimStage do
   @moduledoc """
   Request and effect claims on the prepared-effect journal: `claim_request/3` and `finalize/2` are

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.TransportCourt.Probe do
   @moduledoc false
   use Ash.Resource,
@@ -125,12 +129,44 @@ defmodule AshA2A.TransportCourt.CrashAgent do
     require_authenticated_caller: false
 
   # A handler bug: raises for "raise", kills its own process for "kill".
-  @impl A2A.Agent
-  def handle_message(%A2A.Message{} = message, context) do
-    case A2A.Message.text(message) do
+  @impl AshA2A.Protocol.Agent
+  def handle_message(%AshA2A.Protocol.Message{} = message, context) do
+    case AshA2A.Protocol.Message.text(message) do
       "raise" -> raise "SELECT secret_column FROM credentials -- internal detail"
       "kill" -> Process.exit(self(), :kill)
       _ -> super(message, context)
+    end
+  end
+end
+
+defmodule AshA2A.TransportCourt.MessageAgent do
+  @moduledoc false
+  use AshA2A.Agent,
+    resource_or_domain: AshA2A.TransportCourt.Probe,
+    name: "transport_court_message_agent",
+    require_authenticated_caller: true
+
+  # Thin TCK-SUT-style wrapper: skill metadata "dm" replies out-of-band
+  # (`{:message, parts}` — a bare Message, no task); "file-artifact" replies
+  # with a typed file part. Everything else falls through to the real
+  # AshA2A dispatch.
+  @impl AshA2A.Protocol.Agent
+  def handle_message(%AshA2A.Protocol.Message{} = message, context) do
+    case message.metadata["skill"] do
+      "dm" ->
+        {:message, [AshA2A.Protocol.Part.Text.new("Direct message response")]}
+
+      "file-artifact" ->
+        file =
+          AshA2A.Protocol.FileContent.from_bytes("tck",
+            name: "output.txt",
+            mime_type: "text/plain"
+          )
+
+        {:reply, [AshA2A.Protocol.Part.File.new(file)]}
+
+      _ ->
+        super(message, context)
     end
   end
 end
@@ -139,7 +175,7 @@ defmodule AshA2A.TransportCourt.Pipeline do
   @moduledoc false
   @behaviour Plug
 
-  @schemes %{"bearer_auth" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}}
+  @schemes %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}}
 
   @impl Plug
   def init(opts), do: opts
@@ -150,7 +186,7 @@ defmodule AshA2A.TransportCourt.Pipeline do
 
     conn =
       if auth?,
-        do: A2A.Plug.Auth.call(conn, A2A.Plug.Auth.init(schemes: @schemes, verify: &verify/3)),
+        do: AshA2A.Protocol.Plug.Auth.call(conn, AshA2A.Protocol.Plug.Auth.init(schemes: @schemes, verify: &verify/3)),
         else: conn
 
     if conn.halted,
@@ -172,13 +208,25 @@ end
 defmodule AshA2A.TransportCourtTest do
   @moduledoc """
   Chicago court for the transport lane (SEC-01/02/03/05/08/11, TQ-05,
-  CONF-06/09): real `AshA2A.Agent` GenServers, real `A2A.Plug.Auth` +
+  CONF-06/09): real `AshA2A.Agent` GenServers, real `AshA2A.Protocol.Plug.Auth` +
   `AshA2A.Transport.Plug` behind a real Bandit listener on an ephemeral
   port, real HTTP via Req. No mocks.
   """
   use ExUnit.Case, async: false
 
   alias AshA2A.TransportCourt
+
+  @error_info_type "type.googleapis.com/google.rpc.ErrorInfo"
+  @a2a_domain "a2a-protocol.org"
+
+  # v1.0 registry ErrorInfo shapes (AshA2A.Protocol.JSONRPC.Error): -32001 is
+  # TASK_NOT_FOUND (also the owner-scope answer: a foreign task is
+  # indistinguishable from a missing one), -32002 is TASK_NOT_CANCELABLE.
+  defp task_not_found_info,
+    do: %{"@type" => @error_info_type, "domain" => @a2a_domain, "reason" => "TASK_NOT_FOUND"}
+
+  defp task_not_cancelable_info,
+    do: %{"@type" => @error_info_type, "domain" => @a2a_domain, "reason" => "TASK_NOT_CANCELABLE"}
 
   defp start_http!(agent, extra \\ []) do
     name = :"#{inspect(agent)}_#{System.unique_integer([:positive])}"
@@ -218,11 +266,11 @@ defmodule AshA2A.TransportCourtTest do
 
   defp message(skill, data, extra_metadata \\ %{}) do
     msg = %{
-      A2A.Message.new_user([A2A.Part.Data.new(data)])
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)])
       | metadata: Map.put(extra_metadata, "skill", skill)
     }
 
-    {:ok, json} = A2A.JSON.encode(msg)
+    {:ok, json} = AshA2A.Protocol.JSON.encode(msg)
     json
   end
 
@@ -249,16 +297,19 @@ defmodule AshA2A.TransportCourtTest do
       refute Jason.encode!(a) =~ "SECRET"
 
       # B continues A's task: refused, indistinguishable from unknown id.
-      cont = %{A2A.Message.new_user([A2A.Part.Data.new(%{"right" => "R"})]) | task_id: task_id}
-      {:ok, cont} = A2A.JSON.encode(%{cont | metadata: %{"skill" => "pair"}})
+      cont = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"right" => "R"})]) | task_id: task_id}
+      {:ok, cont} = AshA2A.Protocol.JSON.encode(%{cont | metadata: %{"skill" => "pair"}})
       b = rpc_json(url, "message/send", %{"message" => cont}, "tok-bob")
-      assert %{"error" => %{"code" => -32001}} = b
+
+      # v1.0 registry: -32001 carries a TASK_NOT_FOUND google.rpc.ErrorInfo.
+      not_found = task_not_found_info()
+      assert %{"error" => %{"code" => -32001, "data" => [^not_found]}} = b
 
       # B cannot read / cancel / list it.
-      assert %{"error" => %{"code" => -32001}} =
+      assert %{"error" => %{"code" => -32001, "data" => [^not_found]}} =
                rpc_json(url, "tasks/get", %{"id" => task_id}, "tok-bob")
 
-      assert %{"error" => %{"code" => -32001}} =
+      assert %{"error" => %{"code" => -32001, "data" => [^not_found]}} =
                rpc_json(url, "tasks/cancel", %{"id" => task_id}, "tok-bob")
 
       %{"result" => %{"tasks" => b_tasks}} = rpc_json(url, "tasks/list", %{}, "tok-bob")
@@ -361,9 +412,9 @@ defmodule AshA2A.TransportCourtTest do
     end
 
     test "non-map Data part data is refused before dispatch" do
-      message = %A2A.Message{
+      message = %AshA2A.Protocol.Message{
         role: :user,
-        parts: [%A2A.Part.Data{data: "x"}],
+        parts: [%AshA2A.Protocol.Part.Data{data: "x"}],
         metadata: %{"skill" => "whoami"}
       }
 
@@ -372,7 +423,7 @@ defmodule AshA2A.TransportCourtTest do
     end
 
     test "an exception inside dispatch becomes a typed internal_error with a ref" do
-      message = %{A2A.Message.new_user("hi") | metadata: %{"skill" => "whoami"}}
+      message = %{AshA2A.Protocol.Message.new_user("hi") | metadata: %{"skill" => "whoami"}}
 
       assert {:error, %{code: :internal_error, ref: ref}} =
                AshA2A.Agent.__dispatch__(:not_an_ash_module, message, %{}, [])
@@ -388,14 +439,14 @@ defmodule AshA2A.TransportCourtTest do
 
     test "a raising handler fails its task without leaking detail; a killed worker fails its task",
          %{url: url, agent: agent} do
-      raise_msg = A2A.JSON.encode!(A2A.Message.new_user("raise"))
+      raise_msg = AshA2A.Protocol.JSON.encode!(AshA2A.Protocol.Message.new_user("raise"))
       resp = rpc(url, "message/send", %{"message" => raise_msg}, "tok-alice")
       body = Jason.decode!(resp.body)
       assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_FAILED"}}}} = body
       refute resp.body =~ "secret_column"
       assert resp.body =~ "internal_error"
 
-      kill_msg = A2A.JSON.encode!(A2A.Message.new_user("kill"))
+      kill_msg = AshA2A.Protocol.JSON.encode!(AshA2A.Protocol.Message.new_user("kill"))
       body = rpc_json(url, "message/send", %{"message" => kill_msg}, "tok-alice")
       assert %{"result" => %{"task" => %{"status" => %{"state" => "TASK_STATE_FAILED"}}}} = body
 
@@ -496,11 +547,18 @@ defmodule AshA2A.TransportCourtTest do
         |> String.split("\n\n", trim: true)
         |> Enum.map(fn "data: " <> json -> json |> Jason.decode!() |> Map.fetch!("result") end)
 
-      assert [%{"kind" => "task"} | _] = events
-      assert Enum.any?(events, &(&1["kind"] == "artifact-update"))
+      # v1.0 StreamResponse frames: the JSON-RPC result is discriminated by the
+      # wrapper key -- {"task" => ...}, {"artifactUpdate" => ...},
+      # {"statusUpdate" => ...} -- with no "kind" discriminator and no "final"
+      # boolean anywhere on the wire (finality is the terminal status state).
+      assert [%{"task" => %{"id" => _, "status" => _}} | _] = events
+      assert Enum.any?(events, &match?(%{"artifactUpdate" => %{"artifact" => _}}, &1))
 
-      assert %{"final" => true, "status" => %{"state" => "TASK_STATE_COMPLETED"}} =
+      assert %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
                List.last(events)
+
+      refute resp.body =~ ~s("kind")
+      refute resp.body =~ ~s("final")
 
       refute resp.body =~ "SECRET"
     end
@@ -572,7 +630,9 @@ defmodule AshA2A.TransportCourtTest do
 
       assert is_binary(task_id)
 
-      assert %{"error" => %{"code" => -32002}} =
+      not_cancelable = task_not_cancelable_info()
+
+      assert %{"error" => %{"code" => -32002, "data" => [^not_cancelable]}} =
                rpc_json(ctx.url, "tasks/cancel", %{"id" => task_id}, "tok-alice")
 
       done = Task.await(slow, 10_000)
@@ -620,6 +680,181 @@ defmodule AshA2A.TransportCourtTest do
       a = AshA2A.Transport.Principal.key(%{sub: "alice", iss: "https://idp-a"})
       b = AshA2A.Transport.Principal.key(%{sub: "alice", iss: "https://idp-b"})
       refute a == b
+    end
+  end
+
+  # ===========================================================================
+  # TCK-driven transport pins (wrap-up of the Z19 TCK fixes over
+  # `AshA2A.Transport.Plug`): the A2A-Version gate (TCK VER-SERVER-002),
+  # `tasks/resubscribe` not-found (TCK STREAM-SUB-004), and agent-card
+  # caching headers (TCK CARD-CACHE-001). Real HTTP through the real
+  # `AshA2A.Transport.Plug`, real agent GenServers, zero mocks.
+  # ===========================================================================
+  describe "TCK-driven transport pins: version gate, resubscribe not-found, card caching headers" do
+    @describetag :serial
+    setup do
+      start_http!(TransportCourt.Agent)
+    end
+
+    @tag :serial
+    test "(VER-SERVER-002) A2A-Version 9.9 is refused -32009 VERSION_NOT_SUPPORTED",
+         %{url: url} do
+      resp =
+        Req.post!(url,
+          json: %{
+            "jsonrpc" => "2.0",
+            "id" => 1,
+            "method" => "message/send",
+            "params" => %{"message" => message("whoami", %{})}
+          },
+          headers: [{"authorization", "Bearer tok-alice"}, {"a2a-version", "9.9"}],
+          retry: false,
+          receive_timeout: 15_000,
+          decode_body: false
+        )
+
+      assert resp.status == 200
+
+      assert %{
+               "error" => %{
+                 "code" => -32_009,
+                 "message" => "Version not supported",
+                 "data" => [
+                   %{
+                     "@type" => @error_info_type,
+                     "domain" => @a2a_domain,
+                     "reason" => "VERSION_NOT_SUPPORTED",
+                     "metadata" => %{"detail" => "9.9"}
+                   }
+                 ]
+               }
+             } = Jason.decode!(resp.body)
+
+      # Fixed (coordinator): the rejection path now echoes the rejected
+      # version in the `a2a-version` response header too (spec §3.6.2).
+      assert Req.Response.get_header(resp, "a2a-version") == ["9.9"]
+    end
+
+    @tag :serial
+    test "(VER-SERVER-002) an absent A2A-Version header is tolerated at the default and echoes 0.3",
+         %{url: url} do
+      resp = rpc(url, "message/send", %{"message" => message("whoami", %{})}, "tok-alice")
+
+      assert %{"result" => %{"task" => %{"id" => _, "status" => _}}} =
+               Jason.decode!(resp.body)
+
+      assert Enum.join(Req.Response.get_header(resp, "a2a-version"), "") == "0.3"
+    end
+
+    @tag :serial
+    test "(STREAM-SUB-004) tasks/resubscribe: unknown task is -32001; an owned task on this plug is -32004",
+         %{url: url} do
+      unknown = task_not_found_info()
+
+      assert %{"error" => %{"code" => -32_001, "data" => [^unknown]}} =
+               rpc_json(url, "tasks/resubscribe", %{"id" => "tsk-unknown"}, "tok-alice")
+
+      # An owned (input_required) task on this plug is addressable but has no
+      # resubscribe stream to attach: UnsupportedOperationError (-32004).
+      started = send_msg(url, "pair", %{"left" => "L"}, "tok-alice")
+      assert %{"result" => %{"task" => %{"id" => task_id}}} = started
+
+      unsupported = %{
+        "@type" => @error_info_type,
+        "domain" => @a2a_domain,
+        "reason" => "UNSUPPORTED_OPERATION"
+      }
+
+      assert %{"error" => %{"code" => -32_004, "data" => [^unsupported]}} =
+               rpc_json(url, "tasks/resubscribe", %{"id" => task_id}, "tok-alice")
+    end
+
+    @tag :serial
+    test "(CARD-CACHE-001) the agent card serves Cache-Control max-age=60, ETag and Last-Modified",
+         %{url: url} do
+      resp = Req.get!(url <> "/.well-known/agent-card.json", retry: false)
+
+      assert resp.status == 200
+      assert Enum.join(Req.Response.get_header(resp, "cache-control"), "") == "max-age=60"
+
+      assert [etag] = Req.Response.get_header(resp, "etag")
+      assert String.starts_with?(etag, "\"") and String.ends_with?(etag, "\"")
+
+      assert [_last_modified] = Req.Response.get_header(resp, "last-modified")
+    end
+  end
+
+  # ===========================================================================
+  # TCK-driven transport pins (lane G-F wrap-up of the Z19 TCK follow-up):
+  # A2A v1.0 SendMessageResponse is a Task/Message oneof — a `{:message,
+  # parts}` handler reply answers message/send with a bare Message (TCK
+  # DM-MSG-001), and artifact parts carry the flat v1.0 part shapes (TCK
+  # DM-ART-001). Real HTTP through the real `AshA2A.Transport.Plug`, real
+  # agent GenServers, zero mocks.
+  # ===========================================================================
+  describe "TCK-driven transport pins: direct Message reply and typed artifact parts" do
+    @describetag :serial
+    setup do
+      start_http!(TransportCourt.MessageAgent)
+    end
+
+    @tag :serial
+    test "(DM-MSG-001) a `{:message, parts}` handler reply is a bare Message result, not a task",
+         %{url: url} do
+      assert %{
+               "result" => %{
+                 "message" => %{
+                   "role" => "ROLE_AGENT",
+                   "messageId" => message_id,
+                   "parts" => [%{"text" => "Direct message response"}]
+                 }
+               }
+             } = send_msg(url, "dm", %{}, "tok-alice")
+
+      assert is_binary(message_id) and message_id != ""
+      refute match?(%{"result" => %{"task" => _}}, send_msg(url, "dm", %{}, "tok-alice"))
+    end
+
+    @tag :serial
+    test "(DM-ART-001) file artifact parts carry the flat v1.0 file shape (raw/filename/mediaType)",
+         %{url: url} do
+      assert %{
+               "result" => %{
+                 "task" => %{
+                   "artifacts" => [
+                     %{
+                       "artifactId" => artifact_id,
+                       "parts" => [
+                         %{"raw" => raw, "filename" => "output.txt", "mediaType" => "text/plain"}
+                       ]
+                     }
+                   ]
+                 }
+               }
+             } = send_msg(url, "file-artifact", %{}, "tok-alice")
+
+      assert is_binary(artifact_id) and artifact_id != ""
+      assert is_binary(raw)
+    end
+
+    @tag :serial
+    test "(DM-MSG-001) the direct-message task is finalized completed server-side, never stranded working",
+         %{url: url} do
+      # The transport runtime persists the turn's task before the handler
+      # runs; after a `{:message, parts}` reply it must be terminal, and the
+      # wire answer is still the bare Message.
+      assert %{"result" => %{"message" => %{}}} = send_msg(url, "dm", %{}, "tok-alice")
+
+      tasks =
+        url
+        |> rpc_json("tasks/list", %{}, "tok-alice")
+        |> then(fn %{"result" => %{"tasks" => tasks}} -> tasks end)
+
+      assert tasks != []
+
+      assert Enum.all?(tasks, fn task ->
+               task["status"]["state"] in ["TASK_STATE_COMPLETED", "TASK_STATE_INPUT_REQUIRED"]
+             end)
     end
   end
 

@@ -1,0 +1,192 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a>
+
+SPDX-License-Identifier: MIT
+-->
+
+<!-- livebook:{"persist_outputs":true} -->
+
+# A2A Your First Agent
+
+This tutorial builds one Ash resource, projects its public actions into A2A
+skills, and talks to the result three ways: a direct dispatch, a supervised
+`AshA2A.Agent` process, and the agent card. By the end you will have sent a
+message to a real agent and gotten a real task back.
+
+Every code cell runs as-is: the setup cell installs `ash` and `ash_a2a`, so
+this livebook needs no Mix project behind it.
+
+## Setup
+
+```elixir
+Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.9.31"}],
+  consolidate_protocols: false,
+  config: [
+    ash: [
+      validate_domain_resource_inclusion?: false,
+      validate_domain_config_inclusion?: false
+    ]
+  ]
+)
+```
+
+## Define the resource, domain, and agent
+
+An `AshA2A` resource is a normal Ash resource. Its *public actions* are the
+capability surface: public actions need no `a2a` declaration at all. The
+optional `a2a do skill/2` block only overrides display metadata and routing
+names; it cannot manufacture a capability for an action that doesn't exist.
+
+```elixir
+defmodule Tutorial.Todo do
+  use Ash.Resource,
+    domain: Tutorial.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:title, :string, allow_nil?: false, public?: true)
+    attribute(:done, :boolean, default: false, public?: true)
+  end
+
+  actions do
+    defaults([:read, :create, :update, :destroy])
+  end
+
+  a2a do
+    skill(:create_todo, :create, description: "Create a new todo")
+    skill(:list_todos, :read)
+  end
+end
+```
+
+```elixir
+defmodule Tutorial.Domain do
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(Tutorial.Todo)
+  end
+end
+
+defmodule Tutorial.TodoAgent do
+  use AshA2A.Agent, resource_or_domain: Tutorial.Domain, name: "tutorial_todos"
+end
+```
+
+## Inspect the compiled capability index
+
+Compilation projects the public actions into a capability index. Dispatch
+resolves skills by full id (`"Tutorial.Todo.create"`) or display name
+(`:create_todo`); a resource or domain exposing exactly one skill routes
+implicitly, two or more require `metadata["skill"]` on the message.
+
+```elixir
+AshA2A.Info.capability_index!(Tutorial.Domain)
+|> Enum.map(&{&1.id, &1.name, &1.action, &1.consequence})
+#=> [
+#=>   {"Tutorial.Todo.create", :create_todo, :create, :change},
+#=>   {"Tutorial.Todo.read", :list_todos, :read, :observe},
+#=>   {"Tutorial.Todo.update", :update, :update, :change},
+#=>   {"Tutorial.Todo.destroy", :destroy, :destroy, :change}
+#=> ]
+```
+
+The `:consequence` classification decides how each skill is served: `:observe`
+skills are plain reads, while `:change` skills route through the receipted
+`AshA2A.CommandBus` when served by an agent (authority comes in
+[Secure Your Agent](secure-your-agent.livemd)).
+
+## Direct dispatch (no process)
+
+Dispatch an inbound `AshA2A.Protocol.Message` straight to the domain — no
+agent process required. The message's Data part becomes the action input;
+with more than one skill on the card, the skill goes in `metadata["skill"]`.
+Here we dispatch the `:observe` skill, which is served straight from the
+capability index with no authority wiring.
+
+```elixir
+list_msg =
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+  |> struct!(metadata: %{"skill" => "list_todos"})
+
+{:reply, [data_part]} =
+  AshA2A.Dispatcher.dispatch("list_todos", list_msg, Tutorial.Domain)
+
+data_part.data
+#=> %{"results" => []}
+```
+
+## Call the agent
+
+A bare `dispatch/6` call is synchronous and process-free. To run the same
+resource as a long-lived, addressable agent, `use AshA2A.Agent` and start it
+directly. In an OTP app you would instead register it with
+`config :ash_a2a, :agents, [Tutorial.TodoAgent]` and let the `ash_a2a`
+application supervise it.
+
+```elixir
+{:ok, _pid} = Tutorial.TodoAgent.start_link([])
+
+create_msg =
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"title" => "Write livebooks"})])
+  |> struct!(metadata: %{"skill" => "create_todo"})
+
+{:ok, task} = AshA2A.Protocol.call(Tutorial.TodoAgent, create_msg)
+task.status.state
+#=> :completed
+```
+
+## Read the task back and read history
+
+Every turn is a real `AshA2A.Protocol.Task` with its own id. A text-only
+message (no Data part) dispatches with an empty input map — handy for
+skills whose action needs no arguments.
+
+```elixir
+text_msg =
+  AshA2A.Protocol.Message.new_user("list my todos")
+  |> struct!(metadata: %{"skill" => "list_todos"})
+
+{:ok, task2} = AshA2A.Protocol.call(Tutorial.TodoAgent, text_msg)
+:completed = task2.status.state
+
+hd(task2.artifacts).parts
+|> hd()
+|> then(& &1.data["results"])
+|> Enum.map(& &1["title"])
+#=> ["Write livebooks"]
+```
+
+## The agent card
+
+The running agent's card is built from the exact same verified capability
+index dispatch serves, so the card can never advertise a skill dispatch
+can't actually run.
+
+```elixir
+card = AshA2A.Info.agent_card(Tutorial.Domain)
+card.name
+#=> "tutorial_todos"
+
+Enum.map(card.skills, & &1.id)
+#=> ["Tutorial.Todo.create", "Tutorial.Todo.read",
+#=>  "Tutorial.Todo.update", "Tutorial.Todo.destroy"]
+```
+
+## What you built, and what's next
+
+You now have: a real Ash resource whose public actions are projected into a
+verified capability index, a working direct dispatch, and a supervised
+`AshA2A.Agent` process whose card is derived from that same index.
+
+From here:
+
+- authenticate callers and grant per-capability authority in
+  [Secure Your Agent](secure-your-agent.livemd);
+- stream large reads lazily and resolve `:input_required` pauses in
+  [Stream and Elicit](stream-and-elicit.livemd);
+- serve the agent over HTTP (JSON-RPC, SSE streaming, `AshA2A.Protocol.Client`)
+  with the plain-markdown
+  [Getting Started](../docs/tutorials/getting-started.md) tutorial.

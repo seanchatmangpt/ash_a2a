@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.FiboFinance.Abi do
   @moduledoc """
   Real host for the graphlaw JSON ABI (`gl_alloc` / `gl_call` / `gl_free`)

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule C2Harness.AuthorityAttacks do
   @moduledoc """
   Attacks against the REAL AuthorityService (separate OS process, release-style entrypoint,

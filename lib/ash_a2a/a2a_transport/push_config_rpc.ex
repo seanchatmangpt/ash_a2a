@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.PushConfigRPC do
   @moduledoc """
   JSON-RPC handlers for `tasks/pushNotificationConfig/{set,get,list,delete}`
@@ -18,7 +22,7 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
   but never echoed back by get/list.
   """
 
-  alias A2A.JSONRPC.{Error, Response}
+  alias AshA2A.Protocol.JSONRPC.{Error, Response}
   alias AshA2A.A2ATransport
   alias AshA2A.A2ATransport.{PushConfigStore, WebhookPolicy}
 

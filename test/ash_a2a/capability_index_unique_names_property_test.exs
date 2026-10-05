@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CapabilityIndexUniqueNamesPropertyTest do
   @moduledoc """
   Property-based test for `AshA2A.CapabilityIndex.validate_unique_names/1`

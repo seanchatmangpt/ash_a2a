@@ -1,0 +1,35 @@
+{
+  "volume": "/",
+  "requested_bytes": 14000000000,
+  "timestamp_unix": 1791173266,
+  "snapshots_before": [
+    "com.apple.TimeMachine.2026-10-04-125233.local",
+    "com.apple.TimeMachine.2026-10-04-134918.local",
+    "com.apple.TimeMachine.2026-10-04-152154.local",
+    "com.apple.TimeMachine.2026-10-04-172157.local",
+    "com.apple.TimeMachine.2026-10-04-183036.local",
+    "com.apple.TimeMachine.2026-10-04-193005.local",
+    "com.apple.TimeMachine.2026-10-04-203044.local"
+  ],
+  "snapshots_after": [
+    "com.apple.TimeMachine.2026-10-04-183036.local",
+    "com.apple.TimeMachine.2026-10-04-193005.local",
+    "com.apple.TimeMachine.2026-10-04-203044.local"
+  ],
+  "snapshots_thinned": [
+    "com.apple.TimeMachine.2026-10-04-125233.local",
+    "com.apple.TimeMachine.2026-10-04-134918.local",
+    "com.apple.TimeMachine.2026-10-04-152154.local",
+    "com.apple.TimeMachine.2026-10-04-172157.local"
+  ],
+  "iterations": [
+    {
+      "iteration": 1,
+      "snapshots_before_count": 7,
+      "snapshots_after_count": 3,
+      "free_bytes_before": 63426285568,
+      "free_bytes_after": 114101731328,
+      "stop_reason": "target_met"
+    }
+  ]
+}

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Replan.Loop do
   # MERGE NOTE: main's implementation kept (superset of r2's): adds :excluded and :replay_key to the
   # result and sorts exclusions deterministically. r2's step semantics (budget consumed per attempt,

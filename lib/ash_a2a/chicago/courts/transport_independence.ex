@@ -1,13 +1,17 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.TransportIndependence do
   @moduledoc """
   RFC-SA2A-002 §75 Transport Independence Court (`SA2A-TRANSPORT`).
 
   Two REAL A2A bindings front the same real agent processes:
 
-    * **in-process** -- `A2A.call/3` into the real `A2A.Agent` GenServer;
-    * **HTTP JSON-RPC** -- the real `A2A.Client` (Req/Finch) posting
+    * **in-process** -- `AshA2A.Protocol.call/3` into the real `AshA2A.Protocol.Agent` GenServer;
+    * **HTTP JSON-RPC** -- the real `AshA2A.Protocol.Client` (Req/Finch) posting
       `message/send` to a real Bandit listener on 127.0.0.1 serving the real,
-      unmodified `A2A.Plug` (behind the real `A2A.Plug.Auth` for the
+      unmodified `AshA2A.Protocol.Plug` (behind the real `AshA2A.Protocol.Plug.Auth` for the
       consequence-bearing agent).
 
   Semantically equivalent envelopes must produce equal admitted semantic
@@ -83,7 +87,7 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
         invariant:
           "The same admissible envelope over the in-process binding and over real HTTP JSON-RPC is admitted to the same semantic outcome",
         stimulus:
-          "one activated admissible message sent via A2A.call/3 and via A2A.Client.send_message/3 to a real Bandit + A2A.Plug listener",
+          "one activated admissible message sent via AshA2A.Protocol.call/3 and via AshA2A.Protocol.Client.send_message/3 to a real Bandit + AshA2A.Protocol.Plug listener",
         boundary: "AshA2A.Semantic.Peer.receive_message/3 behind both bindings",
         attempt_evidence: ">=2 #{@receive} and a Bandit request",
         survival_evidence: "2 admitted #{@decision} relating to exactly one sa2a_outcome object",
@@ -127,7 +131,7 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
           "Transport metadata (HTTP headers, message ids, JSON-RPC params.metadata) cannot alter semantic meaning",
         stimulus:
           "baseline in-process sends of an admissible envelope M and an ordinary message N; then over HTTP: M with forged x-a2a-extensions/x-sa2a-* headers and params.metadata carrying a SHACL-violating sa2a payload, M under a fresh message id, and N with an SA2A activation header and an admissible sa2a payload in params.metadata",
-        boundary: "A2A.Plug -> A2A.Agent -> AshA2A.Semantic.Peer",
+        boundary: "AshA2A.Protocol.Plug -> AshA2A.Protocol.Agent -> AshA2A.Semantic.Peer",
         forbidden_outcome: "a third distinct semantic outcome (M and N have exactly one each)",
         attempt_evidence: ">=5 #{@receive} and a Bandit request",
         survival_evidence: ">=3 distinct sa2a_outcome objects related to #{@decision}",
@@ -146,13 +150,13 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
         stimulus:
           "an authenticated, ungranted caller posts place_order over real HTTP with params.metadata[\"a2a.auth\"] naming a principal that holds a real grant",
         boundary:
-          "A2A.Plug metadata merge -> AshA2A.Agent verified identity -> Authority.Grant -> CommandBus admission",
+          "AshA2A.Protocol.Plug metadata merge -> AshA2A.Agent verified identity -> Authority.Grant -> CommandBus admission",
         forbidden_outcome: "CommandBus admission admitted, actuation, or the order row created",
         attempt_evidence: "brce.admission and a Bandit request attributed to the stimulus",
         survival_evidence:
           "brce.admission outcome=admitted or brce.actuate.start; the item visible to an independent Ash.read!",
         guard:
-          "AshA2A.Agent.verified_auth_identity/1 accepts only the A2A.Plug.Auth identity shape",
+          "AshA2A.Agent.verified_auth_identity/1 accepts only the AshA2A.Protocol.Plug.Auth identity shape",
         failure_class: :authority_failure,
         rfc_sections: ["§75", "§29"],
         attempt_predicate: {:all, [{:observed, "brce.admission"}, {:observed, @http}]},
@@ -170,7 +174,7 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
         invariant:
           "A really granted principal is admitted over both bindings -- the authority boundary discriminates and does not depend on the binding",
         stimulus:
-          "place_order in-process with the A2A.Plug.Auth identity shape, and over real HTTP with the principal's real bearer credential",
+          "place_order in-process with the AshA2A.Protocol.Plug.Auth identity shape, and over real HTTP with the principal's real bearer credential",
         boundary: "AshA2A.Agent -> Authority.Grant -> AshA2A.CommandBus",
         attempt_evidence: "2 brce.admission and a Bandit request",
         survival_evidence:
@@ -307,7 +311,7 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
                 "consequenceBearing" => true
               }
             ),
-          m_fresh_message_id: client_send(url, %{m | message_id: A2A.ID.generate("msg")}),
+          m_fresh_message_id: client_send(url, %{m | message_id: AshA2A.Protocol.ID.generate("msg")}),
           n_activation_attempt:
             client_send(url, n,
               headers: [{"x-a2a-extensions", Extension.profile_id()}],
@@ -367,14 +371,14 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
     forged_auth = %{"identity" => granted, "scheme" => "bearer_auth"}
 
     message =
-      Envelopes.ordinary([A2A.Part.Data.new(%{"item" => item, "quantity" => 1})], %{
+      Envelopes.ordinary([AshA2A.Protocol.Part.Data.new(%{"item" => item, "quantity" => 1})], %{
         "skill" => @capability,
         "a2a.auth" => forged_auth
       })
 
     reply =
       Context.stimulus(ctx, f, fn ->
-        A2A.Client.send_message(url, message,
+        AshA2A.Protocol.Client.send_message(url, message,
           headers: [{"authorization", "Bearer " <> attacker_token}],
           metadata: %{"a2a.auth" => forged_auth}
         )
@@ -398,7 +402,7 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
     http_item = Fx.unique("chicago-transport-http")
 
     order = fn item ->
-      Envelopes.ordinary([A2A.Part.Data.new(%{"item" => item, "quantity" => 1})], %{
+      Envelopes.ordinary([AshA2A.Protocol.Part.Data.new(%{"item" => item, "quantity" => 1})], %{
         "skill" => @capability
       })
     end
@@ -406,10 +410,10 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
     {local, remote} =
       Context.stimulus(ctx, f, fn ->
         {
-          A2A.call(ordering, order.(local_item),
+          AshA2A.Protocol.call(ordering, order.(local_item),
             metadata: %{"a2a.auth" => %{identity: granted, scheme: "bearer_auth"}}
           ),
-          A2A.Client.send_message(url, order.(http_item),
+          AshA2A.Protocol.Client.send_message(url, order.(http_item),
             headers: [{"authorization", "Bearer " <> granted_token}]
           )
         }
@@ -468,7 +472,7 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
   end
 
   defp client_send(url, message, opts \\ []) do
-    case A2A.Client.send_message(url, message, opts) do
+    case AshA2A.Protocol.Client.send_message(url, message, opts) do
       {:ok, task} -> Http.reply_data(task) || %{"task_state" => to_string(task.status.state)}
       {:error, reason} -> {:error, reason}
     end

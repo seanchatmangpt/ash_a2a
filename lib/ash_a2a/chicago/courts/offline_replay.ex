@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.OfflineReplay do
   @moduledoc """
   Gate 10 -- Offline Replay, and Benchmark B8 (RFC-SA2A-002 §41, §92; §84,

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule Mix.Tasks.AshA2a.Chicago.PinCourtManifest do
   @shortdoc "Rebuilds priv/sa2a/chicago_court_manifest.json from the compiled courts"
 

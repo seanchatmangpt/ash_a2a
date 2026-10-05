@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.SemanticEnabled.Resource do
   @moduledoc """
   Real fixture resource, private to this test file: a single real `:read`
@@ -36,7 +40,7 @@ defmodule AshA2A.Test.Fixture.SemanticEnabled.Domain do
 end
 
 defmodule AshA2A.Test.Fixture.SemanticEnabledAgent do
-  @moduledoc "Real `A2A.Agent` GenServer over `SemanticEnabled.Resource` above."
+  @moduledoc "Real `AshA2A.Protocol.Agent` GenServer over `SemanticEnabled.Resource` above."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.SemanticEnabled.Resource,
@@ -49,10 +53,10 @@ defmodule AshA2AAgentSemanticRequestTest do
   gates -- both must be true before any real dispatch reaches
   `AshA2A.Semantic.Compiler.compile/3` -- and that a genuinely-gated request
   fails closed with a real, typed error rather than crashing the real
-  `A2A.Agent` process when the required LLM profile is unconfigured (the
+  `AshA2A.Protocol.Agent` process when the required LLM profile is unconfigured (the
   real, unmodified test environment has no `:semantic_reasoner` profile
   configured). No Mock/mox/patch/monkeypatch anywhere in this file; every
-  assertion is against real dispatch through a real supervised `A2A.Agent`
+  assertion is against real dispatch through a real supervised `AshA2A.Protocol.Agent`
   process.
   """
 
@@ -85,7 +89,7 @@ defmodule AshA2AAgentSemanticRequestTest do
     # `:read` skill resolves via the ordinary default-skill path.
     assert {:ok, task} = SemanticEnabledAgent.call(SemanticEnabledAgent, data_message(%{}))
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{}]}] = task.artifacts
   end
 
   test "gate 2: message carries the semantic_request flag, but the resource never opted in -- falls through to ordinary skill dispatch" do
@@ -124,9 +128,9 @@ defmodule AshA2AAgentSemanticRequestTest do
   test "both gates true: a real dispatch reaches the real semantic compiler and fails closed (not a crash) with no injected generate_object seam" do
     message =
       data_message(%{}, %{metadata: %{semantic_request: true}})
-      |> Map.put(:parts, [A2A.Part.Text.new("advance the admitted workflow")])
+      |> Map.put(:parts, [AshA2A.Protocol.Part.Text.new("advance the admitted workflow")])
 
-    # `A2A.Agent.call/3`'s own real GenServer.call timeout defaults to
+    # `AshA2A.Protocol.Agent.call/3`'s own real GenServer.call timeout defaults to
     # 60_000ms (deps/a2a/lib/a2a/agent.ex) -- independent of, and enforced
     # inside, this test's own `@tag timeout:` (ExUnit's outer test-process
     # timeout). Under the real rate-limit contention documented above, the
@@ -146,7 +150,7 @@ defmodule AshA2AAgentSemanticRequestTest do
     # `{:error, %{code: :semantic_compilation_failed, ...}}` reply -- caught
     # by `Compiler.compile_source/3`'s own non-raising `with`/`else`
     # contract, never propagating as an uncaught exception. The real
-    # `A2A.Agent` process is still alive and can still serve the next real
+    # `AshA2A.Protocol.Agent` process is still alive and can still serve the next real
     # call afterward, proving this was a typed refusal, not a process crash.
     assert task.status.state == :failed
 

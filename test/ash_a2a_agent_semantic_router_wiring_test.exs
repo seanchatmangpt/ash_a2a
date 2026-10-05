@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.SemanticRouterWired.Resource do
   @moduledoc """
   Real fixture resource, private to this test file: the SAME two-action
@@ -73,7 +77,7 @@ defmodule AshA2A.Test.Fixture.SemanticRouterWired.Domain do
 end
 
 defmodule AshA2A.Test.Fixture.SemanticRouterWiredAgent do
-  @moduledoc "Real `A2A.Agent` GenServer over `SemanticRouterWired.Resource` above."
+  @moduledoc "Real `AshA2A.Protocol.Agent` GenServer over `SemanticRouterWired.Resource` above."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.SemanticRouterWired.Resource,
@@ -84,7 +88,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
   @moduledoc """
   v26.9.16 (`docs/archive/jira/v26.9.16/PRFAQ.md` item 1) real, Chicago-style
   end-to-end coverage for the new production call site: a real dispatch
-  through the real, supervised `A2A.Agent` process
+  through the real, supervised `AshA2A.Protocol.Agent` process
   (`AshA2AAgentSemanticRouterWiringTest`'s own `SemanticRouterWiredAgent`)
   now reaches `AshA2A.Planning.RequestRouter` for real, not just in
   `RequestRouter`'s own dedicated unit/structural tests. No Mock/mox/patch/
@@ -96,7 +100,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
        Agent entry point produces a real, solver-synthesized
        `ExecutionPackage` reply (`standing: "candidate"`,
        `authority: "none"`, the expected `capability_ids`) -- not asserted
-       from reading the code, but from the actual returned `A2A.Task`.
+       from reading the code, but from the actual returned `AshA2A.Protocol.Task`.
     2. The wired agent-level `goal_facts` path structurally never reaches
        the LLM seam. `request_router_llm_never_called_test.exs`'s own
        `raise_on_call/1` idiom injects a raising function via
@@ -187,7 +191,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
 
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: body}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: body}]}] = task.artifacts
 
     # Real, solver-synthesized reply body (`ExecutionPackage.to_reply/1`) --
     # never `standing: "candidate"`/`authority: "none"` by construction
@@ -221,7 +225,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
 
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :failed
-    assert A2A.Message.text(task.status.message) =~ "semantic_request_missing_text"
+    assert AshA2A.Protocol.Message.text(task.status.message) =~ "semantic_request_missing_text"
   end
 
   # Mirrors `ash_a2a_agent_semantic_request_test.exs`'s own established
@@ -246,7 +250,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
   test "3b: real text with no goal_facts key still falls through to dispatch_semantic_compile/2 (real, unseamed LLM path)" do
     message =
       data_message(%{}, %{metadata: %{semantic_request: true}})
-      |> Map.put(:parts, [A2A.Part.Text.new("advance the admitted workflow")])
+      |> Map.put(:parts, [AshA2A.Protocol.Part.Text.new("advance the admitted workflow")])
 
     assert {:ok, task} =
              SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message, timeout: 170_000)
@@ -268,7 +272,7 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
 
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :failed
-    assert A2A.Message.text(task.status.message) =~ "invalid_goal_facts"
+    assert AshA2A.Protocol.Message.text(task.status.message) =~ "invalid_goal_facts"
   end
 
   test "5: a goal_facts key nested one level under a wrapper key (absent at the top level), alongside real text, fails closed with :ambiguous_goal_facts_shape through the full wired agent-level path" do
@@ -291,10 +295,10 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
       data_message(%{"payload" => %{"goal_facts" => envelope}}, %{
         metadata: %{semantic_request: true}
       })
-      |> Map.update!(:parts, &(&1 ++ [A2A.Part.Text.new("advance the admitted workflow")]))
+      |> Map.update!(:parts, &(&1 ++ [AshA2A.Protocol.Part.Text.new("advance the admitted workflow")]))
 
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :failed
-    assert A2A.Message.text(task.status.message) =~ "ambiguous_goal_facts_shape"
+    assert AshA2A.Protocol.Message.text(task.status.message) =~ "ambiguous_goal_facts_shape"
   end
 end

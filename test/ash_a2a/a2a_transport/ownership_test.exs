@@ -1,10 +1,14 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.OwnershipTest.ReplyAgent do
   @moduledoc false
-  # Real A2A.Agent GenServer that completes every message synchronously.
-  use A2A.Agent, name: "owner-reply", description: "replies ok"
+  # Real AshA2A.Protocol.Agent GenServer that completes every message synchronously.
+  use AshA2A.Protocol.Agent, name: "owner-reply", description: "replies ok"
 
-  @impl A2A.Agent
-  def handle_message(_message, _context), do: {:reply, [A2A.Part.Text.new("ok")]}
+  @impl AshA2A.Protocol.Agent
+  def handle_message(_message, _context), do: {:reply, [AshA2A.Protocol.Part.Text.new("ok")]}
 end
 
 defmodule AshA2A.A2ATransport.OwnershipTest.Receiver do
@@ -26,9 +30,9 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
   Owner scope and credential hygiene of `AshA2A.A2ATransport.Plug`
   (adversarial court for CONF-02/CONF-04, overlapping SEC-01).
 
-  Callers authenticate through the real `A2A.Plug.Auth` (bearer scheme, a
+  Callers authenticate through the real `AshA2A.Protocol.Plug.Auth` (bearer scheme, a
   real `verify/3` callback) in front of the real transport plug; tasks live
-  in a real `A2A.Agent` GenServer; webhook deliveries hit a real Bandit
+  in a real `AshA2A.Protocol.Agent` GenServer; webhook deliveries hit a real Bandit
   receiver on loopback. The verified identity deliberately carries a raw
   credential (`token`) so any echo of `"a2a.auth"` is observable on the
   wire. No mocks.
@@ -40,7 +44,7 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
   alias AshA2A.A2ATransport.Plug, as: TransportPlug
   alias AshA2A.Test.EphemeralHttp
 
-  @schemes %{"bearer" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}}
+  @schemes %{"bearer" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}}
 
   # Real verify callback: the bearer token names the user; the identity
   # carries the raw credential, as real JWT/OIDC identities often do.
@@ -63,7 +67,7 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
     %{
       transport: transport,
       hook: hook.base_url <> "/hook",
-      auth: A2A.Plug.Auth.init(schemes: @schemes, verify: &__MODULE__.verify/3),
+      auth: AshA2A.Protocol.Plug.Auth.init(schemes: @schemes, verify: &__MODULE__.verify/3),
       plug:
         TransportPlug.init(
           agent: agent,
@@ -84,7 +88,7 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
       Plug.Test.conn(:post, "/", body)
       |> Plug.Conn.put_req_header("content-type", "application/json")
       |> Plug.Conn.put_req_header("authorization", "Bearer " <> user)
-      |> A2A.Plug.Auth.call(ctx.auth)
+      |> AshA2A.Protocol.Plug.Auth.call(ctx.auth)
 
     refute conn.halted
     TransportPlug.call(conn, ctx.plug)
@@ -94,7 +98,7 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
     do: call(ctx, user, method, params).resp_body |> Jason.decode!()
 
   defp message(extra \\ %{}) do
-    {:ok, encoded} = A2A.JSON.encode(A2A.Message.new_user("go"))
+    {:ok, encoded} = AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Message.new_user("go"))
     Map.merge(encoded, extra)
   end
 
@@ -117,7 +121,12 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
             {"tasks/pushNotificationConfig/get", %{"id" => task_id}},
             {"message/send", %{"message" => message(%{"taskId" => task_id})}}
           ] do
-        assert %{"error" => %{"code" => -32_001}} = rpc(ctx, "bob", method, params),
+        assert %{
+                 "error" => %{
+                   "code" => -32_001,
+                   "data" => [%{"domain" => "a2a-protocol.org", "reason" => "TASK_NOT_FOUND"}]
+                 }
+               } = rpc(ctx, "bob", method, params),
                "#{method} answered bob for alice's task"
       end
 
@@ -133,7 +142,9 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
 
       conn = call(ctx, "alice", "tasks/resubscribe", %{"id" => task_id})
       assert conn.resp_body =~ task_id
-      assert conn.resp_body =~ ~s("final":true)
+      # v1.0 wire shape: finality rides on the terminal status state, not a
+      # "final" boolean.
+      assert conn.resp_body =~ ~s("state":"TASK_STATE_COMPLETED")
     end
 
     test "params.metadata cannot forge a2a.auth to act as another principal", ctx do

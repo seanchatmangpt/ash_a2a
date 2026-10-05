@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.ExactIdentity do
   @moduledoc """
   Gate 1 -- Exact Identity Fenced (RFC-SA2A-002 §5, §6, §32, §119, §120, §126).

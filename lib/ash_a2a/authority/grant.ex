@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Authority.Grant do
   @moduledoc """
   The capability-GRANT decision that sits between "this caller's identity was
@@ -7,7 +11,7 @@ defmodule AshA2A.Authority.Grant do
   ## The escalation this closes (RFC-SA2A-001 S29)
 
   `AshA2A.Agent.build_command/4` builds a real `AshA2A.Command` from an
-  inbound `A2A.Message`, taking `capability_id` straight from the message's
+  inbound `AshA2A.Protocol.Message`, taking `capability_id` straight from the message's
   own `skill` metadata -- a CALLER-SUPPLIED value. Before this module, it
   handed that value directly to
   `AshA2A.Authority.from_verified_identity/2`, which is a pure constructor:
@@ -507,7 +511,7 @@ defmodule AshA2A.Authority.Grant do
 
   # A real, visible, once-per-VM warning. `:persistent_term` rather than a
   # process dictionary or an Agent: the dispatch path runs in whichever
-  # `A2A.Agent` process handled the message, so per-process state would warn
+  # `AshA2A.Protocol.Agent` process handled the message, so per-process state would warn
   # once per agent process instead of once per node, and a supervised
   # counter process would be one more thing to start before the library
   # could safely log.

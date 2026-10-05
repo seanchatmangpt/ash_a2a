@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Telemetry.Metrics do
   @moduledoc """
   Metric definitions for `:ash_a2a` telemetry, so a host can build SLO

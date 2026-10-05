@@ -5,7 +5,7 @@ defmodule SwarmNode.Health do
 
   * `live/0` -- the supervision trees that make this node useful are running:
     `AshA2A.Supervisor` (receipt store, broker, GraphLaw host, agents) and
-    `A2A.AgentSupervisor`. A wedged or crashed tree fails liveness, so the
+    `AshA2A.Protocol.AgentSupervisor`. A wedged or crashed tree fails liveness, so the
     kubelet restarts the container.
   * `ready/0` -- live, not draining, GraphLaw loaded when
     `config :swarm_node, :require_graphlaw` is true, and at least
@@ -40,7 +40,7 @@ defmodule SwarmNode.Health do
   def live do
     []
     |> check(alive?(AshA2A.Supervisor), :ash_a2a_supervisor_down)
-    |> check(alive?(A2A.AgentSupervisor), :agent_supervisor_down)
+    |> check(alive?(AshA2A.Protocol.AgentSupervisor), :agent_supervisor_down)
     |> result()
   end
 

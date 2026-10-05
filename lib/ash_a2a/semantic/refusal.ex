@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.Refusal do
   @moduledoc """
   RFC-SA2A-001 S42 refusal-class taxonomy for the semantic boundary.
@@ -926,7 +930,36 @@ defmodule AshA2A.Semantic.Refusal do
     plan_package_unknown_profile: :unsupported_profile,
     profile_not_activated: :unsupported_profile,
     semantic_profile_unknown: :unsupported_profile,
-    unsupported_profile: :unsupported_profile
+    unsupported_profile: :unsupported_profile,
+    # `AshA2A.A2ATransport.Plug`'s typed no-op branch for a bare
+    # `AshA2A.Protocol.Agent` (the agent does not support the operation).
+    unsupported: :unsupported_profile,
+    # v26.10.3 fix-forward: codes introduced by the protocol/agent, plug,
+    # sse, client, card-cache, evidence, domain and grpc-framing modules
+    # (wire/lifecycle codes on the A2A task, stream and framing surfaces),
+    # classified per the S42 class docs above.
+    # REFUSED_AUTHORITY
+    unauthorized: :refused_authority,
+    verify_raised: :refused_authority,
+    # REFUSED_CAPABILITY
+    no_such_run: :refused_capability,
+    scheme_not_found: :refused_capability,
+    task_not_found: :refused_capability,
+    # REFUSED_CONSEQUENCE
+    message_on_task: :refused_consequence,
+    not_cancellable: :refused_consequence,
+    terminal: :refused_consequence,
+    # REFUSED_STRUCTURE
+    bad_compressed_flag: :refused_structure,
+    incomplete: :refused_structure,
+    invalid_base64: :refused_structure,
+    invalid_card_body: :refused_structure,
+    # BLOCKED_RESOURCE
+    ash_affidavit_unavailable: :blocked_resource,
+    closed: :blocked_resource,
+    no_signal_waiter: :blocked_resource,
+    # UNSUPPORTED_PROFILE
+    compression_unsupported: :unsupported_profile
   }
 
   @doc "All 18 S42 classes, in RFC order."

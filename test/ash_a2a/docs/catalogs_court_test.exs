@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Docs.CatalogsCourtTest do
   @moduledoc """
   Documentation catalog courts (v26.10.2 ERRC RD2/RD3/EL1/EL2), re-derived

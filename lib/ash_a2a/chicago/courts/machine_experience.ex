@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.MachineExperience do
   @moduledoc """
   `SA2A-MX` -- Machine Experience Qualification (RFC-SA2A-002 §82, §134).

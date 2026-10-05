@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.RealCollaborators do
   @moduledoc """
   RFC-SA2A-002 gate 3 -- Real Collaborators / Zero Mocks (§9, §10, §34).

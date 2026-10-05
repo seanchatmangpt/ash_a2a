@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.WorkLease do
   @moduledoc """
   The `gall:WorkLease` message (PRD §41 canonical shape, transported by the

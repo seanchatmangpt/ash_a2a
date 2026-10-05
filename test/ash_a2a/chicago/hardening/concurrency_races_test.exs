@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Hardening.ConcurrencyRacesTest do
   @moduledoc """
   Real BEAM concurrency-race hardening for the mechanisms named in this

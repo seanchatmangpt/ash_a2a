@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.Brce.Ledger do
   @moduledoc """
   Real Ash resource the `CHI-BRCE` court (RFC-SA2A-002 §38, §68, §69) attacks.
@@ -169,7 +173,7 @@ defmodule AshA2A.Chicago.Fixtures.Brce.LedgerAgent do
   @moduledoc """
   The generated `use AshA2A.Agent` projection over `Ledger` -- the A2A task
   handler and generated-artifact surfaces the court attacks. Started as a
-  real `A2A.Agent` GenServer per stimulus; never registered globally.
+  real `AshA2A.Protocol.Agent` GenServer per stimulus; never registered globally.
   """
 
   use AshA2A.Agent,

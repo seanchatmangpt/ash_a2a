@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.KeyedActuationCounter do
   @moduledoc """
   A real, observable side-effect counter for RFC-SA2A-001 S32/S55 tests.

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.HddlDeterministicPlanningTest do
   @moduledoc """
   Real, Chicago-style (no mocks) coverage for Task 2 of the deterministic

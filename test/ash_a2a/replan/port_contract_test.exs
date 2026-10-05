@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Replan.PortContractTest do
   use ExUnit.Case, async: true
 
@@ -25,9 +29,13 @@ defmodule AshA2A.Replan.PortContractTest do
   end
 
   test "AshPPlan uses the live select_policy/3 boundary" do
+    # The port prefers the owner-side AshPPlan.SA2A.Provider adapter (see
+    # AshA2A.Replan.AshPPlanPortTest). To exercise the legacy select_policy/3
+    # boundary directly, disable the owner adapter with an unloadable module.
     assert {:ok, %{subject: "s", policy: :candidate}} =
              AshA2A.Replan.Port.AshPPlan.propose(
                %{subject: "s", formalism: :fond, domain: %{d: 1}, initial: :s0},
+               ash_pplan_provider_module: :missing_owner_adapter,
                ash_pplan_module: FakeAshPPlan
              )
   end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Rfc004.Scope.Item do
   @moduledoc "Real fixture resource for RFC-SA2A-004 S21 agent-scope tests."
 
@@ -146,7 +150,7 @@ defmodule AshA2A.Rfc004AgentScopeTest do
     task
   end
 
-  defp error_text(%{status: %{message: %A2A.Message{} = m}}), do: A2A.Message.text(m)
+  defp error_text(%{status: %{message: %AshA2A.Protocol.Message{} = m}}), do: AshA2A.Protocol.Message.text(m)
   defp error_text(_), do: nil
 
   test "principal B cannot replan principal A's continuation; refusal equals not-found" do
