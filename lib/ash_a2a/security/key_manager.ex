@@ -51,7 +51,6 @@ defmodule AshA2A.Security.KeyManager do
   """
 
   alias AshA2A.Security.CMEK
-  alias AshA2A.Security.KMS.Client
 
   @default_kek_id "ash-a2a/cmek-kek"
   @typedoc false
@@ -105,16 +104,19 @@ defmodule AshA2A.Security.KeyManager do
   end
 
   @doc """
-  Re-wraps the DEK under the KEK's current version without decrypting
-  the payload. Returns an envelope whose `ciphertext`, `iv`, and `tag`
-  are byte-identical to the input's; only `wrapped_dek` and
-  `kek_version_id` move.
+  Re-wraps the DEK under a NEW KEK version without decrypting the
+  payload: the KMS first advances the KEK to its next version
+  (`rotate_version/1` — the cloud-side rotation event), then the still
+  unwrapped DEK is wrapped under that new current version. Returns an
+  envelope whose `ciphertext`, `iv`, and `tag` are byte-identical to
+  the input's; only `wrapped_dek` and `kek_version_id` move.
   """
   @spec rotate(envelope(), opts()) :: {:ok, envelope()} | {:error, refusal_code(), String.t()}
   def rotate(envelope, opts \\ []) do
     with {:ok, kms, kek_id} <- resolve_kms(opts),
          :ok <- CMEK.validate_envelope(envelope),
          {:ok, dek} <- unwrap_dek(kms, envelope_kek_id(envelope, kek_id), envelope),
+         {:ok, _new_version} <- rotate_version(kms, kek_id),
          {:ok, wrapped_dek, kek_version_id} <- wrap_dek(kms, kek_id, dek) do
       {:ok,
        %{
@@ -156,6 +158,29 @@ defmodule AshA2A.Security.KeyManager do
   end
 
   defp kek_id_env, do: Application.get_env(:ash_a2a, :cmek_kek_id)
+
+  defp rotate_version(kms, kek_id) do
+    case kms.rotate_version(kek_id) do
+      {:ok, _version} = ok ->
+        ok
+
+      {:error, :kms_unavailable} ->
+        {:error, :refused_cmek_kms_unavailable,
+         "KMS reports unavailability during KEK version rotation; refusing fail-closed"}
+
+      {:error, reason} ->
+        {:error, :refused_cmek_kms_unavailable,
+         "KEK version rotation failed (#{inspect(reason)}); refusing fail-closed"}
+    end
+  catch
+    :error, reason ->
+      {:error, :refused_cmek_kms_unavailable,
+       "KEK version rotation raised #{inspect(reason)}; refusing fail-closed"}
+
+    :exit, reason ->
+      {:error, :refused_cmek_kms_unavailable,
+       "KEK version rotation exited #{inspect(reason)}; refusing fail-closed"}
+  end
 
   defp wrap_dek(kms, kek_id, dek) do
     case kms.wrap(kek_id, dek) do

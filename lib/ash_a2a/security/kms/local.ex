@@ -56,6 +56,12 @@ defmodule AshA2A.Security.KMS.Local do
     call({:current_version, kek_id})
   end
 
+  @impl true
+  @doc "Behaviour callback: mints the next KEK version and makes it current."
+  def rotate_version(kek_id) do
+    call({:rotate, kek_id})
+  end
+
   # --- harness controls ---
 
   @doc """

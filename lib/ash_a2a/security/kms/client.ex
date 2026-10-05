@@ -44,4 +44,6 @@ defmodule AshA2A.Security.KMS.Client do
               {:ok, dek()} | {:error, term()}
 
   @callback current_version(kek_id()) :: {:ok, kek_version_id()} | {:error, term()}
+
+  @callback rotate_version(kek_id()) :: {:ok, kek_version_id()} | {:error, term()}
 end

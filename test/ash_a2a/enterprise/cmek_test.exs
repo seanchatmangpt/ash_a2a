@@ -210,13 +210,19 @@ defmodule AshA2A.Enterprise.CMEKTest do
 
     @impl true
     def current_version(_kek_id), do: {:error, :other_tenancy}
+
+    @impl true
+    def rotate_version(_kek_id), do: {:error, :other_tenancy}
   end
 
   # --- helpers ---
 
   defp flip_byte(binary) do
-    <<head::binary-size(8), byte::binary-size(1), tail::binary>> = binary
-    <<head::binary, :erlang.bxor(byte, <<0x01>>)::binary, tail::binary>>
+    size = byte_size(binary)
+    head = :binary.part(binary, 0, 8)
+    byte = :binary.at(binary, 8)
+    tail = :binary.part(binary, 9, size - 9)
+    <<head::binary, :erlang.bxor(byte, 1)::integer-size(8), tail::binary>>
   end
 
   defp plaintext_absent?(plaintext, envelope) do
