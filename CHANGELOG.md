@@ -92,6 +92,10 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+_Nothing unreleased._
+
+## [26.10.5] - 2026-10-05
+
 ### Changed
 
 - Chicago court strengthening (C7, 619bbb3): six new falsifiers kill the three
