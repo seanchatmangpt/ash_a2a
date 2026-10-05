@@ -161,18 +161,25 @@ defmodule AshA2A.Protocol.Agent do
   """
 
   @type card :: %{
-          name: String.t(),
-          description: String.t(),
-          version: String.t(),
-          skills: [skill()],
-          opts: keyword()
+          required(:name) => String.t(),
+          required(:description) => String.t(),
+          required(:version) => String.t(),
+          required(:skills) => [skill()],
+          required(:opts) => keyword(),
+          optional(:capabilities) => map(),
+          optional(:default_input_modes) => [String.t()],
+          optional(:default_output_modes) => [String.t()],
+          optional(:supported_interfaces) => [map()],
+          optional(:security_schemes) => map(),
+          optional(:security) => list(),
+          optional(:signatures) => list()
         }
 
   @type skill :: %{
           id: String.t(),
           name: String.t(),
           description: String.t(),
-          tags: [String.t()]
+          tags: [term()]
         }
 
   @type context :: %{

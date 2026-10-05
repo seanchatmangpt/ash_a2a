@@ -26,5 +26,12 @@ defmodule AshA2A.AuthZEN.Types do
   defmodule Decision do
     @enforce_keys [:decision]
     defstruct [:decision, context: %{}, source: nil, observed_at: nil]
+
+    @type t :: %__MODULE__{
+            decision: boolean(),
+            context: map(),
+            source: term(),
+            observed_at: integer() | nil
+          }
   end
 end

@@ -13,6 +13,13 @@ defmodule AshA2A.SPIFFE.AttestedIdentity do
   @enforce_keys [:identity, :svid_type, :bundle_digest, :observed_at]
   defstruct @enforce_keys
 
+  @type t :: %__MODULE__{
+          identity: Identity.t(),
+          svid_type: :x509 | :jwt,
+          bundle_digest: String.t(),
+          observed_at: integer()
+        }
+
   def from_verified(raw_spiffe_id, opts) when is_list(opts) do
     with {:ok, identity} <- Identity.parse(raw_spiffe_id),
          svid_type when svid_type in [:x509, :jwt] <- Keyword.get(opts, :svid_type),

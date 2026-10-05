@@ -39,6 +39,17 @@ defmodule AshA2A.Bidi.Channel do
             consumer_mref: nil,
             closed?: false
 
+  @type t :: %__MODULE__{
+          task_id: String.t() | nil,
+          queue: :queue.queue(term()),
+          size: non_neg_integer(),
+          waiter: {pid(), reference()} | nil,
+          waiter_mref: reference() | nil,
+          consumer: pid() | nil,
+          consumer_mref: reference() | nil,
+          closed?: boolean()
+        }
+
   # -- client API ----------------------------------------------------------------
 
   @doc "Starts (and registers) the channel for `task_id`."

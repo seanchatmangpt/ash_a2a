@@ -9,6 +9,18 @@ defmodule AshA2A.AuthZEN.Metadata do
   """
 
   @known ~w(policy_decision_point access_evaluation_endpoint access_evaluations_endpoint search_subject_endpoint search_resource_endpoint search_action_endpoint capabilities signed_metadata)
+
+  @type t :: %__MODULE__{
+          policy_decision_point: String.t(),
+          access_evaluation_endpoint: String.t(),
+          access_evaluations_endpoint: String.t() | nil,
+          search_subject_endpoint: String.t() | nil,
+          search_resource_endpoint: String.t() | nil,
+          search_action_endpoint: String.t() | nil,
+          capabilities: list(),
+          signed_metadata: term() | nil,
+          extensions: %{optional(String.t()) => term()}
+        }
   @enforce_keys [:policy_decision_point, :access_evaluation_endpoint]
   defstruct @enforce_keys ++
               [

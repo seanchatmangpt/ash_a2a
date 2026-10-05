@@ -11,6 +11,12 @@ defmodule AshA2A.SPIFFE.Identity do
   @enforce_keys [:uri, :trust_domain, :path]
   defstruct @enforce_keys
 
+  @type t :: %__MODULE__{
+          uri: String.t(),
+          trust_domain: String.t(),
+          path: String.t()
+        }
+
   def parse(raw) when is_binary(raw) do
     uri = URI.parse(raw)
 

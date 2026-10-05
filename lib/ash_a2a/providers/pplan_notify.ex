@@ -263,7 +263,7 @@ defmodule AshA2A.Providers.PPlanNotify do
     end)
   end
 
-  defp deliver(%{deliver: fun} = state, config, payload, seq) when is_function(fun, 4),
+  defp deliver(%{deliver: fun} = state, config, payload, seq) when is_function(fun, 5),
     do: fun.(state.transport, config, payload, seq, state.push_opts)
 
   defp deliver(state, config, payload, seq),
