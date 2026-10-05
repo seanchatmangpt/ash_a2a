@@ -114,7 +114,8 @@ defmodule AshA2A.V1PbFidelityTest do
   defp pb_names(mod) do
     mod.__message_props__().field_props
     |> Map.new(fn {_fnum, %Protobuf.FieldProps{} = prop} -> {prop.json_name, true} end)
-    |> MapSet.new(Map.keys())
+    |> Map.keys()
+    |> MapSet.new()
   end
 
   # ------------------------------------------------------------------
@@ -138,24 +139,25 @@ defmodule AshA2A.V1PbFidelityTest do
           |> Enum.flat_map(fn line ->
             case Regex.run(@field_re, line) do
               [_, _label, _type, name, _num, annotation] ->
-                [{name, annotation != nil and String.contains?(annotation, "REQUIRED")}]
+                [{name, String.contains?(annotation, "REQUIRED")}]
+
+              # Non-participating annotation group is omitted by Regex.run/3.
+              [_, _label, _type, name, _num] ->
+                [{name, false}]
 
               nil ->
                 []
             end
           end)
 
-        # A field may appear in both a oneof block and nowhere else; dedupe by
-        # keeping the REQUIRED-est entry.
+        # Dedupe by field name, OR-ing the REQUIRED flags (a field name could
+        # in principle be matched twice).
         fields =
-          Map.new(fields, fn {name, req} -> {name, req} end)
-          |> Map.merge(
-            fields
-            |> Map.filter(fn {_n, req} -> req end)
-            |> Map.new(fn {n, true} -> {n, true} end)
-          )
+          Enum.reduce(fields, %{}, fn {name, req}, acc ->
+            Map.update(acc, name, req, fn prev -> prev or req end)
+          end)
 
-        vocab = MapSet.new(fields, fn {name, _} -> camel(name) end)
+        vocab = MapSet.new(fields, fn {name, _req} -> camel(name) end)
         required = MapSet.new(for {name, true} <- fields, do: camel(name))
 
         %{name => %{vocab: vocab, required: required}}
@@ -315,14 +317,14 @@ defmodule AshA2A.V1PbFidelityTest do
         label: "AgentCard",
         pb_mod: Pb.AgentCard,
         corpus: "AgentCard",
-        codec_keys: fn -> card_map() |> MapSet.new(Map.keys()) end,
+        codec_keys: fn -> card_map() |> Map.keys() |> MapSet.new() end,
         ledger: []
       },
       %{
         label: "AgentCapabilities",
         pb_mod: Pb.AgentCapabilities,
         corpus: "AgentCapabilities",
-        codec_keys: fn -> card_map()["capabilities"] |> MapSet.new(Map.keys()) end,
+        codec_keys: fn -> card_map()["capabilities"] |> Map.keys() |> MapSet.new() end,
         ledger: []
       },
       %{
@@ -330,7 +332,7 @@ defmodule AshA2A.V1PbFidelityTest do
         pb_mod: Pb.AgentInterface,
         corpus: "AgentInterface",
         codec_keys: fn ->
-          card_map()["supportedInterfaces"] |> hd() |> MapSet.new(Map.keys())
+          card_map()["supportedInterfaces"] |> hd() |> Map.keys() |> MapSet.new()
         end,
         # Pb AgentInterface.tenant (field 3) is not emitted: the card's
         # supportedInterfaces entries carry no tenant (single-tenant hosts).
@@ -340,14 +342,14 @@ defmodule AshA2A.V1PbFidelityTest do
         label: "AgentProvider",
         pb_mod: Pb.AgentProvider,
         corpus: "AgentProvider",
-        codec_keys: fn -> card_map()["provider"] |> MapSet.new(Map.keys()) end,
+        codec_keys: fn -> card_map()["provider"] |> Map.keys() |> MapSet.new() end,
         ledger: []
       },
       %{
         label: "AgentSkill",
         pb_mod: Pb.AgentSkill,
         corpus: "AgentSkill",
-        codec_keys: fn -> card_map()["skills"] |> hd() |> MapSet.new(Map.keys()) end,
+        codec_keys: fn -> card_map()["skills"] |> hd() |> Map.keys() |> MapSet.new() end,
         # Pb AgentSkill.examples (field 5) is not emitted: the codec's skill
         # projection has no examples field.
         ledger: ["examples"]
@@ -357,7 +359,7 @@ defmodule AshA2A.V1PbFidelityTest do
         pb_mod: Pb.AgentExtension,
         corpus: "AgentExtension",
         codec_keys: fn ->
-          card_map()["capabilities"]["extensions"] |> hd() |> MapSet.new(Map.keys())
+          card_map()["capabilities"]["extensions"] |> hd() |> Map.keys() |> MapSet.new()
         end,
         ledger: []
       }
@@ -436,7 +438,8 @@ defmodule AshA2A.V1PbFidelityTest do
       Pb.Task.__message_props__().field_props
       |> Map.update!(2, fn %Protobuf.FieldProps{} = p -> %{p | json_name: "contextIdX"} end)
       |> Map.new(fn {_fnum, %Protobuf.FieldProps{} = p} -> {p.json_name, true} end)
-      |> MapSet.new(Map.keys())
+      |> Map.keys()
+      |> MapSet.new()
 
     drift = Comparator.compare(codec, mutated_rename)
 
