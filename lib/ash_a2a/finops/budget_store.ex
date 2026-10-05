@@ -118,8 +118,11 @@ defmodule AshA2A.FinOps.BudgetStore do
   non-integer ceiling/window -- programmer error, not a runtime refusal.
   """
   @spec set_budget(store(), account_id(), pos_integer(), keyword()) :: :ok
-  def set_budget(store, account_id, ceiling, opts \\ [])
-      when is_integer(ceiling) and ceiling > 0 do
+  def set_budget(store, account_id, ceiling, opts \\ []) do
+    unless is_integer(ceiling) and ceiling > 0 do
+      raise ArgumentError, "ceiling must be a positive integer, got: #{inspect(ceiling)}"
+    end
+
     window_ms = Keyword.get(opts, :window_ms, @default_window_ms)
 
     unless is_integer(window_ms) and window_ms > 0 do

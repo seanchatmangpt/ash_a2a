@@ -110,7 +110,9 @@ defmodule AshA2A.Evidence.Ocel2 do
   receipt shape.
   """
   @spec from_receipt(map(), keyword()) :: {:ok, [map()]} | refusal()
-  def from_receipt(%{"format_version" => format_version, "events" => events} = receipt, opts \\ [])
+  def from_receipt(receipt, opts \\ [])
+
+  def from_receipt(%{"format_version" => format_version, "events" => events} = receipt, opts)
       when is_binary(format_version) and is_list(events) do
     time = Keyword.get(opts, :time, DateTime.utc_now())
 
@@ -205,7 +207,7 @@ defmodule AshA2A.Evidence.Ocel2 do
 
   def encode_ndjson(_other), do: {:error, %{code: :bad_field, detail: "ndjson payload must be a list of lines"}}
 
-  @doc "Line sort key: events before objects, then by id."
+  # Line sort key: events before objects, then by id.
   defp line_sort_key(%{"event_id" => id}) when is_binary(id), do: {0, id}
   defp line_sort_key(%{"object_id" => id}) when is_binary(id), do: {1, id}
   defp line_sort_key(_other), do: {2, ""}
@@ -345,26 +347,22 @@ defmodule AshA2A.Evidence.Ocel2 do
   defp relationships_field(line, declared, vocabulary) do
     case Map.get(line, "relationships") do
       relationships when is_list(relationships) ->
-        Enum.reduce_while(relationships, :ok, fn
-          relationship, :ok ->
-            with %{"qualifier" => q, "object_id" => oid, "object_type" => otype} <- relationship,
-                 true <- is_binary(q) and is_binary(oid) and otype in vocabulary,
-                 true <- Map.has_key?(declared, oid) do
-              {:cont, :ok}
-            else
-              _ ->
-                {:halt,
-                 {:error,
-                  %{
-                    code: relationship_refusal_code(relationship, declared, vocabulary),
-                    detail:
-                      "relationship is not a well-formed {qualifier, object_id, object_type} naming a " <>
-                        "declared object of the stream: #{inspect(relationship)}"
-                  }}}
-            end
-
-          other, :ok ->
-            {:halt, {:error, %{code: :bad_field, detail: "relationship must be a map, got #{inspect(other)}"}}}
+        Enum.reduce_while(relationships, :ok, fn relationship, :ok ->
+          with %{"qualifier" => q, "object_id" => oid, "object_type" => otype} <- relationship,
+               true <- is_binary(q) and is_binary(oid) and otype in vocabulary,
+               true <- Map.has_key?(declared, oid) do
+            {:cont, :ok}
+          else
+            _ ->
+              {:halt,
+               {:error,
+                %{
+                  code: relationship_refusal_code(relationship, declared, vocabulary),
+                  detail:
+                    "relationship is not a well-formed {qualifier, object_id, object_type} naming a " <>
+                      "declared object of the stream: #{inspect(relationship)}"
+                }}}
+          end
         end)
 
       value ->
@@ -394,7 +392,7 @@ defmodule AshA2A.Evidence.Ocel2 do
     case Map.get(line, "attributes") do
       rows when is_list(rows) ->
         if Enum.all?(rows, fn
-             %{"name" => n, "time" => t, "value" => _v} -> is_binary(n)
+             %{"name" => n, "time" => _t, "value" => _v} -> is_binary(n)
              _ -> false
            end) and
              Enum.all?(rows, fn %{"time" => t} ->

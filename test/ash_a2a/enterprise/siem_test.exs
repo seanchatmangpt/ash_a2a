@@ -422,6 +422,26 @@ defmodule AshA2A.Enterprise.SIEMTest do
       assert detail.attempts == 2
       assert requests() == []
     end
+
+    test "an adapter raise collapses into the typed error; the broadcaster never crashes" do
+      defmodule RaisingAdapter do
+        @behaviour AshA2A.Telemetry.SIEM
+
+        @impl true
+        def platform, do: :splunk_hec
+
+        @impl true
+        def validate_config(_config), do: {:ok, []}
+
+        @impl true
+        def send_events(_events, _config), do: raise("boom")
+      end
+
+      assert {:error, {:siem_delivery_failed, :splunk_hec, {:raised, summary}}} =
+               SIEM.deliver(RaisingAdapter, events(1), [])
+
+      assert match?(%{kind: :exception}, summary)
+    end
   end
 
   # -- fail-closed validation ------------------------------------------------------
@@ -529,12 +549,20 @@ defmodule AshA2A.Enterprise.SIEMTest do
     end
 
     test "adapters implement the behaviour" do
-      for adapter <- [SplunkHEC, Chronicle, DatadogLogs] do
-        assert adapter.platform() in [:splunk_hec, :chronicle, :datadog_logs]
+      assert {:ok, _} =
+               SplunkHEC.validate_config(endpoint: "https://splunk.example:8088", token: "t")
 
-        assert {:ok, _} =
-                 adapter.validate_config(endpoint: "https://splunk.example:8088", token: "t")
-      end
+      assert {:ok, _} =
+               Chronicle.validate_config(
+                 endpoint: "https://malachiteingestion-pa.googleapis.com",
+                 api_key: "k"
+               )
+
+      assert {:ok, _} =
+               DatadogLogs.validate_config(
+                 endpoint: "https://http-intake.logs.datadoghq.com",
+                 api_key: "k"
+               )
     end
   end
 

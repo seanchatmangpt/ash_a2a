@@ -115,12 +115,21 @@ defmodule AshA2A.Telemetry.SIEM do
 
   def adapter(platform) when is_atom(platform) do
     case Map.fetch(@adapters, platform) do
-      {:ok, module} -> {:ok, module}
-      :error -> {:error, :unknown_platform}
+      {:ok, module} ->
+        {:ok, module}
+
+      :error ->
+        if behaviour_impl?(platform), do: {:ok, platform}, else: {:error, :unknown_platform}
     end
   end
 
   def adapter(_other), do: {:error, :unknown_platform}
+
+  defp behaviour_impl?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :platform, 0) and
+      function_exported?(module, :validate_config, 1) and
+      function_exported?(module, :send_events, 2)
+  end
 
   @doc """
   Delivers `events` (IEEE OCEL v2 maps; module doc) to `platform`
@@ -134,8 +143,22 @@ defmodule AshA2A.Telemetry.SIEM do
           | {:error, {:siem_invalid_event, platform(), pos_integer(), [String.t()]}}
   def deliver(platform_or_module, events, config) when is_list(events) and is_list(config) do
     with {:ok, adapter} <- adapter(platform_or_module),
-         platform = adapter.platform(),
-         {:ok, config} <- validate_with(adapter, platform, config),
+         platform = adapter.platform() do
+      try do
+        do_deliver(adapter, platform, events, config)
+      rescue
+        error ->
+          {:error, {:siem_delivery_failed, platform, {:raised, Redact.error_summary(error)}}}
+      catch
+        kind, reason ->
+          {:error,
+           {:siem_delivery_failed, platform, {:raised, {kind, Redact.error_summary(reason)}}}}
+      end
+    end
+  end
+
+  defp do_deliver(adapter, platform, events, config) do
+    with {:ok, config} <- validate_with(adapter, platform, config),
          {:ok, batches, event_count} <-
            ocel_batches(events, platform, opt(config, :batch_size, 500)) do
       started = System.monotonic_time()
@@ -431,13 +454,22 @@ defmodule AshA2A.Telemetry.SIEM do
   defp validate_transport_opts([]), do: :ok
 
   defp validate_transport_opts(opts) when is_list(opts) do
-    with :ok <- validate_tls_files(opts),
+    with :ok <- validate_keyword_shape(opts),
+         :ok <- validate_tls_files(opts),
          :ok <- validate_tls_verify(opts[:verify]) do
       :ok
     end
   end
 
   defp validate_transport_opts(_other), do: {:error, {:transport_opts, :not_a_keyword}}
+
+  defp validate_keyword_shape(opts) do
+    if Enum.all?(opts, &match?({key, _} when is_atom(key), &1)) do
+      :ok
+    else
+      {:error, {:transport_opts, :not_a_keyword}}
+    end
+  end
 
   defp validate_tls_files(opts) do
     Enum.reduce_while(@tls_file_keys, :ok, fn key, :ok ->

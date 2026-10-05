@@ -373,7 +373,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
              )
 
     assert get_error.message == "Version not supported"
-    assert_error_info(get_error, "VERSION_NOT_SUPPORTED", "tsk-whatever")
+
+    # The gate's ErrorInfo metadata.detail carries the REJECTED version, not
+    # the request's parameters — same trailer on both RPCs.
+    assert_error_info(get_error, "VERSION_NOT_SUPPORTED", "99.0")
   end
 
   test "W7 supported versions (1.0, 0.3) and the absent-header 0.3 default are all accepted", %{
@@ -447,14 +450,22 @@ defmodule AshA2A.V1.GrpcMustCourt do
       assert decoded.status.state == state
 
       # Emission: the pb proto-JSON spelling of each state is the canonical
-      # TASK_STATE_* string, and the internal codec's vocabulary agrees.
+      # TASK_STATE_* string — except the proto3 zero value, which proto3 JSON
+      # omits by default (the server's ingest side still decodes it back to
+      # the zero value). The internal codec's vocabulary agrees otherwise.
       emission = Protobuf.JSON.encode!(pb_task)
-      assert emission =~ ~s("state":"#{Atom.to_string(state)}")
 
-      codec_state = emission |> Jason.decode!() |> get_in(["status", "state"])
+      if state == :TASK_STATE_UNSPECIFIED do
+        # proto3 JSON default-omits the zero enum value on emission.
+        refute emission =~ "TASK_STATE_"
+        assert {:ok, :unknown} = AshA2A.Protocol.JSON.decode_state("TASK_STATE_UNSPECIFIED")
+      else
+        assert emission =~ ~s("state":"#{Atom.to_string(state)}")
+        codec_state = emission |> Jason.decode!() |> get_in(["status", "state"])
 
-      assert codec_state == Atom.to_string(state)
-      assert {:ok, _} = AshA2A.Protocol.JSON.decode_state(codec_state)
+        assert codec_state == Atom.to_string(state)
+        assert {:ok, _} = AshA2A.Protocol.JSON.decode_state(codec_state)
+      end
     end
 
     # The codec's emission vocabulary covers exactly the pb enum's real

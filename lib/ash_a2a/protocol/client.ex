@@ -1078,8 +1078,6 @@ if Code.ensure_loaded?(Req) do
       "TASK_NOT_CANCELABLE" => :task_not_cancelable,
       "UNSUPPORTED_OPERATION" => :unsupported_operation,
       "INVALID_PARAMS" => :invalid_params,
-      "TASK_NOT_CANCELABLE" => :task_not_cancelable,
-      "UNSUPPORTED_OPERATION" => :unsupported_operation,
       "INVALID_REQUEST" => :invalid_request,
       "PUSH_NOTIFICATION_NOT_SUPPORTED" => :push_notification_not_supported,
       "CONTENT_TYPE_NOT_SUPPORTED" => :content_type_not_supported,

@@ -300,20 +300,20 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
     # A Host pointed at bytes that do not exist starts fine (load failure is
     # deferred to call time, per the host contract) and answers every request
     # with a typed refusal.
-    ref = make_ref()
+    host_name = :"affidavit_host_unavailable_#{System.unique_integer([:positive, :monotonic])}"
 
     start_supervised!(
       {AshAffidavit.Host,
-       name: ref,
+       name: host_name,
        wasm_path: "/nonexistent/affidavit-unavailable-in-test.wasm",
        expected_sha256: :unpinned}
     )
 
     assert {:error, %AshAffidavit.Refusal{} = refusal} =
-             AshAffidavit.Host.request(ref, %{"op" => "capabilities"})
+             AshAffidavit.Host.request(host_name, %{"op" => "capabilities"})
 
     assert refusal.code in ~w(wasm_unreadable wasm_not_vendored wasm_invalid)a
-    assert refusal.detail =~ "affidavit-unavailable-in-test.wasm"
+    assert refusal.message =~ "affidavit-unavailable-in-test.wasm"
   end
 
   # ---------------------------------------------------------------------------

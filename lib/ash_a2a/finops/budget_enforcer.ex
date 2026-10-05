@@ -71,23 +71,30 @@ defmodule AshA2A.FinOps.BudgetEnforcer do
   def authorize(store, request, opts \\ []) do
     now = System.system_time(:millisecond)
 
-    with {:ok, {cost_center, budget_account_id}} <- resolve_attribution(request),
-         {:ok, reservation} <- reserve(store, request, budget_account_id, opts) do
-      tag = %Chargeback{
-        cost_center: cost_center,
-        budget_account_id: budget_account_id,
-        ceiling: reservation.ceiling,
-        window_started_at: reservation.window_started_at,
-        window_ms: reservation.window_ms,
-        requested: reservation.requested,
-        consumed: reservation.consumed
-      }
+    case resolve_attribution(request) do
+      {:ok, {cost_center, budget_account_id}} ->
+        case reserve(store, request, budget_account_id, opts) do
+          {:ok, reservation} ->
+            tag = %Chargeback{
+              cost_center: cost_center,
+              budget_account_id: budget_account_id,
+              ceiling: reservation.ceiling,
+              window_started_at: reservation.window_started_at,
+              window_ms: reservation.window_ms,
+              requested: reservation.requested,
+              consumed: reservation.consumed
+            }
 
-      emit(tag, now, true, nil)
-      {:ok, tag}
-    else
-      {:error, %{code: code} = refusal} ->
-        emit_partial(refusal, now, false)
+            emit(tag, now, true, nil)
+            {:ok, tag}
+
+          {:error, refusal} ->
+            emit_partial(refusal, now, false, cost_center)
+            {:error, refusal}
+        end
+
+      {:error, refusal} ->
+        emit_partial(refusal, now, false, nil)
         {:error, refusal}
     end
   end
@@ -232,11 +239,11 @@ defmodule AshA2A.FinOps.BudgetEnforcer do
 
   # A refusal that carries no tag (attribution or budget unresolvable):
   # still chargeback-tagged with whatever attribution resolved.
-  defp emit_partial(%{code: code, detail: detail}, now, admitted) do
+  defp emit_partial(%{code: code, detail: detail}, now, admitted, cost_center) do
     account = detail[:budget_account_id] || detail[:missing]
 
     :telemetry.execute(@chargeback_event, %{tokens: detail[:requested] || 0, system_time: now}, %{
-      cost_center: detail[:cost_center],
+      cost_center: cost_center,
       budget_account_id: account,
       ceiling: detail[:ceiling],
       window_started_at: detail[:window_started_at],

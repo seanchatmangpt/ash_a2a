@@ -110,7 +110,7 @@ defmodule AshA2A.Security.KMS.Local do
 
     case GenServer.whereis(name) do
       nil -> :ok
-      pid -> GenServer.stop(name)
+      _pid -> GenServer.stop(name)
     end
 
     :ok
