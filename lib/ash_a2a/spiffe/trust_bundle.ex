@@ -57,10 +57,6 @@ defmodule AshA2A.SPIFFE.TrustBundle do
   def from_update(svids, bundle_certs, now) when is_list(svids) and is_list(bundle_certs) do
     expires_at = earliest_expiry(bundle_certs ++ Enum.map(svids, & &1.cert))
 
-    if System.get_env("ASH_A2A_SPIFFE_DEBUG") do
-      IO.inspect({now, expires_at}, label: "[spiffe-debug] from_update now/expires_at")
-    end
-
     if now < expires_at do
       {:ok,
        %__MODULE__{
@@ -175,7 +171,7 @@ defmodule AshA2A.SPIFFE.TrustBundle do
       case :public_key.pkix_decode_cert(der, :otp) do
         {:OTPCertificate, tbs, _sig_alg, _} ->
           {:Validity, _not_before, not_after} = elem(tbs, 5)
-          parse_time(elem(not_after, 1))
+          parse_time(not_after)
 
         _ ->
           0

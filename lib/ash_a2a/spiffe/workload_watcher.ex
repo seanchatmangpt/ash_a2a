@@ -66,7 +66,8 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
 
   @doc "The currently streamed SVID; refuses with the bundle's fail-closed errors."
   @spec current_svid(GenServer.server()) ::
-          {:ok, TrustBundle.svid()} | {:error, :no_svid | :no_trust_bundle | :trust_bundle_expired}
+          {:ok, TrustBundle.svid()}
+          | {:error, :no_svid | :no_trust_bundle | :trust_bundle_expired}
   def current_svid(server) do
     case GenServer.call(server, :trust_bundle) do
       {:ok, %TrustBundle{svids: [svid | _]}} -> {:ok, svid}
@@ -198,9 +199,18 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
     schedule_reconnect(%{state | socket: nil, buffer: <<>>, status: :degraded})
   end
 
+  # in-flight frames from a socket the watcher just closed (forced rotation) —
+  # the bytes are stale; the fresh push arrives on the reconnected stream
+  def handle_info({:tcp, _stale_socket, _data}, state), do: {:noreply, state}
+  def handle_info({:tcp_closed, _stale_socket}, state), do: {:noreply, state}
+  def handle_info({:tcp_error, _stale_socket, _reason}, state), do: {:noreply, state}
+
   def handle_info(:reconnect, %{socket: nil} = state) do
     {:noreply, state, {:continue, :connect}}
   end
+
+  # stale reconnect timer after a successful (re)connect — no-op
+  def handle_info(:reconnect, state), do: {:noreply, state}
 
   def handle_info(:rotate, %{bundle: %TrustBundle{} = bundle} = state) do
     now = System.system_time(:second)
@@ -347,7 +357,13 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
          cert when is_binary(cert) <- Map.get(fields, :cert) do
       expires_at = TrustBundle.earliest_expiry([cert])
 
-      {:ok, %{identity: identity, cert: cert, chain: Map.get(fields, :chain, []), expires_at: expires_at}}
+      {:ok,
+       %{
+         identity: identity,
+         cert: cert,
+         chain: Map.get(fields, :chain, []),
+         expires_at: expires_at
+       }}
     else
       _ -> :error
     end
@@ -392,11 +408,23 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
     end
   end
 
-  defp walk_value(<<_fixed::unsigned-big-integer-size(64), rest::binary>>, field, 1, acc, collector) do
+  defp walk_value(
+         <<_fixed::unsigned-big-integer-size(64), rest::binary>>,
+         field,
+         1,
+         acc,
+         collector
+       ) do
     do_walk(rest, collector.(field, :fixed64, nil, acc), collector)
   end
 
-  defp walk_value(<<_fixed::unsigned-big-integer-size(32), rest::binary>>, field, 5, acc, collector) do
+  defp walk_value(
+         <<_fixed::unsigned-big-integer-size(32), rest::binary>>,
+         field,
+         5,
+         acc,
+         collector
+       ) do
     do_walk(rest, collector.(field, :fixed32, nil, acc), collector)
   end
 

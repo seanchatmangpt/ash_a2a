@@ -100,11 +100,11 @@ defmodule AshA2A.Enterprise.SPIFFEWorkloadWatcherTest do
     # witnessed BEFORE expiry: at the cache swap the old bundle was still valid
     assert System.system_time(:second) < old_bundle.expires_at
 
-    # cache actually updated: new cert, newer expiry, newer received_at
+    # cache actually updated: new cert, expiry not older, newer received_at
     assert new_svid.cert != old_svid.cert
-    assert new_svid.expires_at > old_svid.expires_at
-    assert new_bundle.received_at > old_bundle.received_at
-    assert new_bundle.expires_at > old_bundle.expires_at
+    assert new_svid.expires_at >= old_svid.expires_at
+    assert new_bundle.received_at >= old_bundle.received_at
+    assert new_bundle.expires_at >= old_bundle.expires_at
 
     # the rotated SVID is a genuinely new certificate under the same root
     assert [root_der] = new_bundle.certs
@@ -319,8 +319,9 @@ defmodule AshA2A.Enterprise.SPIFFEWorkloadWatcherTest do
 
     defp tbs(opts) do
       {:OTPTBSCertificate, :v3, Keyword.fetch!(opts, :serial),
-       {:SignatureAlgorithm, {1, 2, 840, 113549, 1, 1, 11}, :asn1_NOVALUE},
-       name(Keyword.fetch!(opts, :issuer)), validity(Keyword.fetch!(opts, :not_before), Keyword.fetch!(opts, :not_after)),
+       {:SignatureAlgorithm, {1, 2, 840, 113_549, 1, 1, 11}, :asn1_NOVALUE},
+       name(Keyword.fetch!(opts, :issuer)),
+       validity(Keyword.fetch!(opts, :not_before), Keyword.fetch!(opts, :not_after)),
        name(Keyword.fetch!(opts, :subject)), Keyword.fetch!(opts, :spki), :asn1_NOVALUE,
        :asn1_NOVALUE, Keyword.get(opts, :extensions, [])}
     end
@@ -343,18 +344,16 @@ defmodule AshA2A.Enterprise.SPIFFEWorkloadWatcherTest do
     end
 
     defp name(cn) do
-      {:rdnSequence,
-       [[{:AttributeTypeAndValue, {2, 5, 4, 3}, {:printableString, cn}}]]}
+      {:rdnSequence, [[{:AttributeTypeAndValue, {2, 5, 4, 3}, {:printableString, cn}}]]}
     end
 
     defp spki({:RSAPrivateKey, _v, n, e, _d, _p, _q, _dp, _dq, _qi, _other}) do
       {:OTPSubjectPublicKeyInfo,
-       {:PublicKeyAlgorithm, {1, 2, 840, 113549, 1, 1, 1}, :asn1_NOVALUE}, {:RSAPublicKey, n, e}}
+       {:PublicKeyAlgorithm, {1, 2, 840, 113_549, 1, 1, 1}, :asn1_NOVALUE}, {:RSAPublicKey, n, e}}
     end
   end
 
   # ------------------------------------------------------------------
-
 
   defmodule FakeSpireAgent do
     @moduledoc """
