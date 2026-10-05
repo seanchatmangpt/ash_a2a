@@ -156,9 +156,14 @@ defmodule AshA2A.Evidence.AffidavitPool do
   (`{:refused | :trap | :unsupported, %AshAffidavit.Refusal{}}`) passes
   through verbatim.
   """
-  @spec call(name(), map(), keyword()) :: AshAffidavit.result()
-  @spec call(map(), keyword()) :: AshAffidavit.result()
-  @spec call(name(), map()) :: AshAffidavit.result()
+  @typedoc "Outcome of a routed pool call: the engine result plus the two typed pool failures."
+  @type result ::
+          AshAffidavit.result()
+          | {:error, :pool_not_started | :ash_affidavit_unavailable}
+
+  @spec call(name(), map(), keyword()) :: result()
+  @spec call(map(), keyword()) :: result()
+  @spec call(name(), map()) :: result()
   def call(request, opts \\ [])
 
   def call(request, opts) when is_map(request) and is_list(opts) do
