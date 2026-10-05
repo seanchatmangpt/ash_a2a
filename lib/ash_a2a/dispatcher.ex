@@ -84,6 +84,7 @@ defmodule AshA2A.Dispatcher do
   either.
   """
 
+  alias AshA2A.FinOps.BudgetEnforcer
   alias AshA2A.Protocol.Message
   alias AshA2A.Protocol.Part
 
@@ -296,7 +297,15 @@ defmodule AshA2A.Dispatcher do
          {:ok, action} <- tag_stage(fetch_action(skill), :action_resolution),
          {:ok, admitted_anchor} <-
            tag_stage(AshA2A.BrceAnchor.admit(skill, anchor), :brce_gate),
-         :ok <- tag_stage(kernel_fence(admitted_anchor), :kernel_fence) do
+         :ok <- tag_stage(kernel_fence(admitted_anchor), :kernel_fence),
+         # FR-05 FinOps gate (PRD §4.5 / ARD §3.5, lane V4-18): the V4-9
+         # `AshA2A.FinOps.BudgetEnforcer` enforcement point, invoked here so a
+         # budget breach refuses typed (`:budget_exceeded` -> S42
+         # `:refused_bounds`) BEFORE any execution side effect. Config-gated:
+         # an absent `config :ash_a2a, :finops` is a no-op passthrough, so
+         # every consumer without FinOps wiring keeps its exact prior
+         # behavior.
+         :ok <- tag_stage(finops_gate(a2a_message, opts), :finops_gate) do
       :ok = AshA2A.BrceAnchor.actuating(skill, admitted_anchor)
       {reply, object_id} = run_skill(skill, action, input, exec_context)
       {tag_stage(reply, :execution), object_id}
@@ -314,6 +323,43 @@ defmodule AshA2A.Dispatcher do
       do: :ok,
       else: {:error, :consequence_kernel_required}
   end
+
+  # FR-05 FinOps gate (PRD §4.5 / ARD §3.5, lane V4-18): delegates the real
+  # check-and-reserve to `AshA2A.FinOps.BudgetEnforcer.authorize/3` against
+  # the configured ETS `AshA2A.FinOps.BudgetStore`. The store handle comes
+  # from `config :ash_a2a, :finops, budget_store: pid_or_name` (a missing
+  # `:budget_store` key while FinOps is configured is programmer error and
+  # raises, the same convention `BudgetStore.set_budget/4` uses). Attribution
+  # (FR-05.1) resolves from the A2A message's own metadata map -- the same
+  # `:cost_center` / `"cost_center"` / `"x-cost-center"` (and
+  # `budget_account_id` / `"x-budget-account-id"`) field shapes
+  # `BudgetEnforcer` resolves, plus the configured
+  # `default_cost_center:` / `default_budget_account_id:`; the reservation
+  # estimate comes from the request metadata's `estimated_tokens` / `tokens`
+  # field, falling back to the dispatcher `opts`' `:estimated_tokens`.
+  #
+  # Config-gated passthrough: when `config :ash_a2a, :finops` is absent
+  # (`Application.get_env/3` -> nil) the gate returns `:ok` without touching
+  # the enforcer, so dispatch is byte-for-byte the pre-V4-18 behavior.
+  defp finops_gate(%Message{metadata: metadata}, opts) do
+    case Application.get_env(:ash_a2a, :finops) do
+      nil ->
+        :ok
+
+      conf ->
+        store = finops_store(conf)
+        request = metadata || %{}
+        estimate = Keyword.get(opts, :estimated_tokens, 0)
+
+        case BudgetEnforcer.authorize(store, request, estimated_tokens: estimate) do
+          {:ok, _chargeback_tag} -> :ok
+          {:error, _refusal} = refusal -> refusal
+        end
+    end
+  end
+
+  defp finops_store(conf) when is_list(conf), do: Keyword.fetch!(conf, :budget_store)
+  defp finops_store(conf) when is_map(conf), do: Map.fetch!(conf, :budget_store)
 
   # `fetch_skill/2` and `fetch_action/1` already return `{:ok, _} | {:error, reason}`;
   # this only annotates which pipeline stage an `{:error, reason}` came from,
@@ -343,7 +389,7 @@ defmodule AshA2A.Dispatcher do
   # redacted. `config :ash_a2a, :telemetry_raw_errors, true` restores raw
   # terms for in-VM handlers.
   defp stop_meta({:error, {stage, reason}})
-       when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :execution] do
+       when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :finops_gate, :execution] do
     %{stage: stage, error: AshA2A.Telemetry.Redact.telemetry_error(reason)}
   end
 

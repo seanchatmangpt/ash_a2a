@@ -6,6 +6,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.10.4] - 2026-10-05
+
+### Added
+
+- Enterprise surface (PRD v26.10.4, `docs/jira/v26.10.4/PRD.md`
+  FR-01..FR-06): a config-gated, default-OFF supervision subtree
+  (`AshA2A.Enterprise.Supervisor`, court
+  `test/ash_a2a/enterprise/supervisor_test.exs`) plus one ordered inbound
+  pipeline plug (`AshA2A.Enterprise.Pipeline`, court
+  `test/ash_a2a/enterprise/pipeline_test.exs`) wiring the landed gates in
+  ARD §2 order around any inner transport plug. Gate keys `:spiffe_socket`,
+  `:authzen_pdp_url`, `:kms`, `:finops`, `:drain`, `:affidavit`, `:siem`
+  each start their child only when configured; a gated-on child whose
+  module is not compiled in is a typed skip, logged, never silent. The
+  `:affidavit` and `:siem` gate children (affidavit pool, OCEL broadcaster)
+  are landed as gate keys and typed skips; the child modules are landed,
+  court pending. Reference: `docs/reference/enterprise.md`.
+- FR-01 zero-trust identity and policy: SPIFFE workload identity
+  (`lib/ash_a2a/spiffe/` — `AshA2A.SPIFFE.WorkloadWatcher`,
+  `AshA2A.SPIFFE.SvidValidator`, `AshA2A.SPIFFE.TrustBundle`; courts
+  `test/ash_a2a/enterprise/spiffe_workload_watcher_test.exs`,
+  `test/ash_a2a/enterprise/svid_validator_test.exs`) streaming and
+  rotating X.509 SVIDs from a real SPIRE agent socket over the Workload
+  API framing, fail-closed on bundle expiry; OpenID AuthZEN evaluation
+  (`lib/ash_a2a/authzen/` — `AshA2A.AuthZEN.Client`,
+  `AshA2A.AuthZEN.DecisionPool`, `AshA2A.AuthZEN.DecisionGate`; courts
+  `test/ash_a2a/enterprise/authzen_client_test.exs`,
+  `test/ash_a2a/authzen/decision_gate_test.exs`) through a real Finch pool
+  with typed `:pdp_unreachable` fail-closed refusals; monotonic delegation
+  narrowing (`AshA2A.AuthZEN.Monotonic`, court
+  `test/ash_a2a/enterprise/monotonic_grant_test.exs`) refusing
+  `:refused_non_monotonic_grant` on any delegation expansion
+  (`C_child ⊆ C_parent` at every hop).
+- FR-02 inline DLP and data residency: `AshA2A.Security.DLPFilter`
+  (`lib/ash_a2a/security/dlp_filter.ex`, court
+  `test/ash_a2a/enterprise/dlp_filter_test.exs`) tokenizing PCI-DSS PAN,
+  US SSN, high-entropy API keys, and PHI spans in both wire directions
+  (`AshA2A.Security.DLPFilter.Plug`); `AshA2A.Security.DataResidency`
+  (`lib/ash_a2a/security/data_residency.ex`, court
+  `test/ash_a2a/enterprise/data_residency_test.exs`) refusing
+  jurisdiction-tagged workloads outside the node region or group,
+  fail-closed on unknown node region.
+- FR-03 CMEK envelope encryption: `AshA2A.Security.KeyManager` with the
+  `AshA2A.Security.CMEK` AES-256-GCM payload layer and the
+  `AshA2A.Security.KMS.Client` binding (`lib/ash_a2a/security/cmek.ex`,
+  `lib/ash_a2a/security/key_manager.ex`, `lib/ash_a2a/security/kms/`;
+  court `test/ash_a2a/enterprise/cmek_test.exs`) — per-task DEKs wrapped
+  under a customer KEK, rotation without payload rewrite, typed
+  `:refused_cmek_*` refusals, fail-closed with no KMS binding.
+- FR-04 two-phase drain: `AshA2A.Cluster.DrainManager`
+  (`lib/ash_a2a/cluster/`, court `test/ash_a2a/enterprise/drain_test.exs`,
+  covering `AshA2A.Cluster.HealthPlug`, `AshA2A.Cluster.Checkpoint`, and
+  `AshA2A.Cluster.Handover`) — real OS SIGTERM disposition, cordon (503 +
+  `Retry-After`, `{:error, :cordoned}` on new work), tracked-task drain
+  deadline, checkpoint plus handover of unfinished frames, clean exit
+  inside the 30s grace period.
+- FR-05 FinOps hard quotas: `AshA2A.FinOps.BudgetEnforcer`
+  (`lib/ash_a2a/finops/`, court `test/ash_a2a/enterprise/finops_test.exs`)
+  — pre-dispatch hard-ceiling reservation (`:budget_exceeded` before any
+  downstream token spend), fail-closed `:missing_evidence` when no ceiling
+  is configured, `:invalid_request` on unresolvable attribution,
+  `[:ash_a2a, :finops, :chargeback]` telemetry on every verdict.
+- FR-06 affidavit trust plane and SIEM egress: `AshA2A.Evidence.Affidavit`
+  and `AshA2A.Evidence.Ocel2` (`lib/ash_a2a/evidence/`; courts
+  `test/ash_a2a/evidence/affidavit_test.exs`,
+  `test/ash_a2a/enterprise/affidavit_ocel2_test.exs`) bridging receipts,
+  traces, and identity claims to the real `AshAffidavit` WASM engine and
+  serializing IEEE OCEL v2 event logs; `AshA2A.Telemetry.SIEM`
+  (`lib/ash_a2a/telemetry/siem.ex`, court
+  `test/ash_a2a/enterprise/siem_test.exs`) batched, retried,
+  SSRF-admitted egress of OCEL v2 events to Splunk HEC, Google Chronicle,
+  and Datadog Logs, fail-fast per batch with typed
+  `{:error, {:siem_delivery_failed, platform, reason}}` exhaustion.
+- Adjacent protocol surfaces landed with the release: `AshA2A.Passport`
+  (signed, portable agent identity document: agent card, capability
+  attestations, and evidence chain under one Merkle root and detached JWS;
+  court `test/ash_a2a_passport_test.exs`), `AshA2A.Trace`
+  (TRACE-compliant, OTLP/JSON-exportable task-saga traces with
+  task-derived deterministic ids; court `test/ash_a2a_trace_test.exs`),
+  `AshA2A.Bidi` (bidirectional streaming over the SSE transport via
+  per-stream POST input endpoints; court `test/ash_a2a_v1_bidi_test.exs`),
+  and `AshA2A.Elicitation` (typed, schema-constrained `INPUT_REQUIRED`
+  contract; court `test/ash_a2a_v1_elicitation_test.exs`).
+
 ## [Unreleased]
 
 ### Changed

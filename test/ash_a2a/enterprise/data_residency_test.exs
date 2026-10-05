@@ -7,6 +7,18 @@ defmodule AshA2A.Enterprise.DataResidencyTest do
 
   alias AshA2A.Security.DataResidency
 
+  @moduledoc """
+  FR-02.3 data-residency acceptance court (PRD §6.2).
+
+  Cross-region dispatches fail closed with the typed
+  `:refused_data_residency_violation` (PRD `REFUSED_DATA_RESIDENCY_VIOLATION`)
+  and zero downstream execution. The PII/PHI-never-persisted-in-plaintext
+  half of FR-02 is court-pinned separately by
+  `test/ash_a2a/enterprise/dlp_filter_test.exs` ("raw store scan: redacted
+  payload persists with zero plaintext bytes") and is cited here, not
+  duplicated.
+  """
+
   # A real provider implementation (Chicago: a hand-written real interface
   # implementation is not a mock) standing in for a cloud node-metadata
   # source. Region is configurable via :persistent_term so each court sets
@@ -223,6 +235,112 @@ defmodule AshA2A.Enterprise.DataResidencyTest do
     Application.put_env(:ash_a2a, :node_region, "EU-Central-1")
 
     assert {:ok, %{matched_via: :exact}} =
+             DataResidency.admit(%{"data_jurisdiction" => "eu-central-1"})
+  end
+
+  # --- FR-02.3 acceptance: dispatch-level fail-closed ---------------------------
+  #
+  # The gate above is the admission function; these courts drive the real
+  # dispatch path (AshA2A.Enterprise.Pipeline residency stage) with a real
+  # inner plug that writes a side-effect marker. A violating dispatch must
+  # answer the typed refusal and never reach the inner plug.
+
+  defmodule DispatchMarkerPlug do
+    @moduledoc false
+
+    @behaviour Plug
+
+    @impl Plug
+    def init(opts), do: opts
+
+    @impl Plug
+    def call(conn, opts) do
+      :persistent_term.put({__MODULE__, :executed, opts[:ref]}, true)
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(200, Jason.encode!(%{"ok" => true}))
+    end
+  end
+
+  defp dispatch(workload_params, residency_opts, ref) do
+    %{base_url: url} =
+      AshA2A.Test.EphemeralHttp.start!(
+        {AshA2A.Enterprise.Pipeline,
+         [
+           inner: {DispatchMarkerPlug, [ref: ref]},
+           residency: residency_opts
+         ]}
+      )
+
+    on_exit(fn -> :persistent_term.erase({DispatchMarkerPlug, :executed, ref}) end)
+
+    body =
+      Jason.encode!(%{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "message/send",
+        "params" => workload_params
+      })
+
+    {:ok, resp} = Req.post(url, body: body, headers: [{"content-type", "application/json"}])
+
+    resp
+  end
+
+  defp executed?(ref), do: :persistent_term.get({DispatchMarkerPlug, :executed, ref}, false)
+
+  test "violation: tagged eu-central-1 workload dispatched on a us-east-1 node is refused with zero downstream execution" do
+    ref = make_ref()
+
+    resp =
+      dispatch(%{"metadata" => %{"data_jurisdiction" => "eu-central-1"}},
+        [node_region: "us-east-1"],
+        ref
+      )
+
+    assert resp.status == 403
+    # Req decodes the JSON refusal body.
+    assert %{"error" => "refused_data_residency_violation", "stage" => "residency", "detail" => detail} =
+             resp.body
+
+    assert detail =~ "us-east-1"
+    assert detail =~ "eu-central-1"
+
+    # Zero downstream execution: the inner plug's side-effect marker was
+    # never written.
+    refute executed?(ref)
+  end
+
+  test "matching region: dispatch proceeds through the residency stage and reaches the inner plug" do
+    ref = make_ref()
+
+    resp = dispatch(%{"metadata" => %{"data_jurisdiction" => "eu-central-1"}}, [node_region: "eu-central-1"], ref)
+
+    assert resp.status == 200
+    assert executed?(ref)
+  end
+
+  test "untagged workload: dispatch proceeds (no residency gate applies)" do
+    ref = make_ref()
+
+    resp = dispatch(%{"skill" => "converse"}, [node_region: "us-east-1"], ref)
+
+    assert resp.status == 200
+    assert executed?(ref)
+  end
+
+  test "fail closed: invalid (non-binary) region metadata refuses, never silently passes" do
+    assert {:error, :refused_data_residency_unknown_region, _} =
+             DataResidency.admit(%{"data_jurisdiction" => "eu-central-1"}, node_region: 1234)
+
+    # A provider returning a non-binary region falls through to the next
+    # source; with no further source, the gate still refuses.
+    Application.delete_env(:ash_a2a, :node_region)
+    Application.put_env(:ash_a2a, :node_region_provider, StaticRegionProvider)
+    StaticRegionProvider.put({:ok, 1234})
+
+    assert {:error, :refused_data_residency_unknown_region, _} =
              DataResidency.admit(%{"data_jurisdiction" => "eu-central-1"})
   end
 end

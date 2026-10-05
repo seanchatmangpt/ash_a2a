@@ -13,8 +13,9 @@
 # Full target set (the ash-project bar, in gate order):
 #
 #   compile         mix compile --warnings-as-errors
-#   test            mix test                       (fast lane; the `test`
-#                    alias runs `--exclude serial`, full suite is test.all)
+#   test            mix test  THEN  mix test.serial (fast lane plus the
+#                    serial tail as an explicit serial sub-stage: a green
+#                    staged run must not hide serial-shard failures)
 #   spark_formatter mix spark.formatter --check
 #   conformance     ash_a2a.v1_conformance_report, gated on
 #                    totals.fail == 0 (the report task itself always
@@ -35,7 +36,11 @@
 #   test            RED  -- fast lane carries 2 failures owned by OTHER
 #                    lanes (stale PolicyPhenotype bench receipt; unmapped
 #                    :unsupported refusal code, test/ash_a2a/semantic_refusal_test.exs
-#                    scans lib/); both pass in isolation once their owners land
+#                    scans lib/); both pass in isolation once their owners
+#                    land. Serial tail now runs as an explicit sub-stage
+#                    (X16: closing the `:serial`-inclusion blind spot -- a
+#                    green staged run must not be able to hide serial-shard
+#                    failures).
 #   spark_formatter RED  -- `mix spark.formatter --check` raises without
 #                    import_deps in .formatter.exs (ownership: formatter config)
 #   conformance     WIRED, not yet run to completion here (tens of minutes;
@@ -53,35 +58,46 @@
 
 stages =
   [
-    # {name, [command, args...]} -- executed as real OS subprocesses with
-    # streamed output, pass = exit 0. MIX_ENV per stage: `test` (and only
-    # `test`) runs in MIX_ENV=test -- config/test.exs sets keys the suite
-    # refuses without (e.g. :chicago_topology_root); analysis stages run in
-    # the default :dev.
-    {:compile, ["mix", "compile", "--warnings-as-errors"]},
-    {:test, ["mix", "test"]},
+    # {name, [[command, args...], ...]} -- a stage runs ONE OR MORE
+    # sub-commands as real OS subprocesses with streamed output, in order,
+    # fail-fast within the stage; pass = every sub-command exits 0.
+    # MIX_ENV per stage: `test` (and only `test`) runs in MIX_ENV=test --
+    # config/test.exs sets keys the suite refuses without (e.g.
+    # :chicago_topology_root); analysis stages run in the default :dev.
+    {:compile, [["mix", "compile", "--warnings-as-errors"]]},
 
-    {:spark_formatter, ["mix", "spark.formatter", "--check"]},
+    # X16 fix: the staged test stage previously ran ONLY the fast lane
+    # (`mix test`, whose alias excludes :serial), so a green staged run
+    # could hide serial-shard failures (X9-era adversarial probe). The
+    # serial tail now runs as an explicit second sub-stage via the
+    # `test.serial` alias (`--only serial` -- covers both :serial_solo and
+    # :serial_shard files, i.e. the full excluded tail). Stage stays
+    # fail-fast: a serial sub-stage failure fails the :test stage.
+    {:test, [["mix", "test"], ["mix", "test.serial"]]},
+
+    {:spark_formatter, [["mix", "spark.formatter", "--check"]]},
     {:conformance,
      [
-       "mix",
-       "run",
-       "-e",
-       """
-       alias Mix.Tasks.AshA2a.V1ConformanceReport
-       out = Path.join("tmp", "v1_conformance_check.json")
-       File.mkdir_p!("tmp")
-       V1ConformanceReport.run(["--out", out])
-       totals = out |> File.read!() |> JSON.decode!() |> Map.fetch!("totals")
-       fail = Map.get(totals, "fail")
-       IO.puts("[conformance] totals.fail = " <> to_string(fail))
-       if fail in [nil, 0], do: IO.puts("[conformance] GATE PASS"), else: exit({:shutdown, 1})
-       """
+       [
+         "mix",
+         "run",
+         "-e",
+         """
+         alias Mix.Tasks.AshA2a.V1ConformanceReport
+         out = Path.join("tmp", "v1_conformance_check.json")
+         File.mkdir_p!("tmp")
+         V1ConformanceReport.run(["--out", out])
+         totals = out |> File.read!() |> JSON.decode!() |> Map.fetch!("totals")
+         fail = Map.get(totals, "fail")
+         IO.puts("[conformance] totals.fail = " <> to_string(fail))
+         if fail in [nil, 0], do: IO.puts("[conformance] GATE PASS"), else: exit({:shutdown, 1})
+         """
+       ]
      ]},
-    {:docs, ["mix", "docs"]},
-    {:credo, ["mix", "credo", "--strict"]},
-    {:dialyzer, ["mix", "dialyzer"]},
-    {:sobelow, ["mix", "sobelow", "--exit", "high"]}
+    {:docs, [["mix", "docs"]]},
+    {:credo, [["mix", "credo", "--strict"]]},
+    {:dialyzer, [["mix", "dialyzer"]]},
+    {:sobelow, [["mix", "sobelow", "--exit", "high"]]}
   ]
 
 default_stages = ~w(compile test)a
@@ -121,17 +137,35 @@ IO.puts("== mix check (stages: #{Enum.join(requested, ", ")}) ==")
     if failed? do
       {acc, failed?}
     else
-      cmd = Map.fetch!(named, stage)
-      IO.puts("\n==> STAGE #{stage}: mix #{Enum.drop(cmd, 1) |> Enum.join(" ")}")
-
+      cmds = Map.fetch!(named, stage)
+      total = length(cmds)
       stage_env = %{"MIX_ENV" => if(stage == :test, do: "test", else: "dev")}
 
-      case System.cmd(hd(cmd), tl(cmd), env: stage_env, into: IO.stream()) do
-        {_, 0} ->
+      {stage_outcome, _} =
+        Enum.reduce_while(cmds, {nil, nil}, fn cmd, {_, _} ->
+          label =
+            if total == 1 do
+              "STAGE #{stage}"
+            else
+              "STAGE #{stage} (#{Enum.find_index(cmds, &(&1 == cmd)) + 1}/#{total})"
+            end
+
+          IO.puts("\n==> #{label}: mix #{Enum.join(cmd |> tl(), " ")}")
+
+          case System.cmd(hd(cmd), tl(cmd), env: stage_env, into: IO.stream()) do
+            {_, 0} ->
+              {:cont, {nil, nil}}
+
+            {_, code} -> {:halt, {{:fail, code}, nil}}
+          end
+        end)
+
+      case stage_outcome do
+        nil ->
           IO.puts("==> STAGE #{stage}: PASS")
           {[{stage, :pass} | acc], failed?}
 
-        {_, code} ->
+        {:fail, code} ->
           IO.puts("==> STAGE #{stage}: FAIL (exit #{code})")
           {[{stage, {:fail, code}} | acc], true}
       end

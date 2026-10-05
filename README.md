@@ -77,6 +77,11 @@ Around that core, the v1.0 surfaces ship in the same package:
 - **Durable async dispatch** — `AshA2A.Providers.PPlan` is the
   ash_pplan-backed durability provider, mapping ash_pplan runs onto A2A
   task states for async / multi-turn skills.
+- **Enterprise hardening** — config-gated, default-OFF gates: SPIFFE
+  workload identity, AuthZEN evaluation with monotonic delegation
+  narrowing, inline DLP and data residency, CMEK envelope encryption,
+  two-phase drain, FinOps budget ceilings, and affidavit/OCEL v2 evidence
+  ([reference](docs/reference/enterprise.md) (repo-only)).
 
 ## Requirements
 
