@@ -291,8 +291,20 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
       error = assert_wire_error(canceled, -32002, "TASK_NOT_CANCELABLE")
 
       # Pin the exact observed shape: the in-flight refusal carries the
-      # agent-level `:not_cancelable` reason in the ErrorInfo metadata.
-      assert [%{"metadata" => %{"detail" => ":not_cancelable"}}] = error["data"]
+      # spec ErrorInfo (domain a2a-protocol.org, reason TASK_NOT_CANCELABLE)
+      # and — SEC-08 redaction — does NOT leak the internal `:not_cancelable`
+      # reason verbatim onto the wire.
+      assert [
+               %{
+                 "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+                 "domain" => "a2a-protocol.org",
+                 "reason" => "TASK_NOT_CANCELABLE"
+               }
+             ] = error["data"]
+
+      refute error["data"]
+             |> Enum.any?(fn d -> get_in(d, ["metadata", "detail"]) == ":not_cancelable" end),
+             "SEC-08: internal not_cancelable reason must not appear verbatim in wire data"
 
       # Same refusal at the agent GenServer surface (the exact atom the
       # in-flight guard in lib/ash_a2a/agent.ex:149-153 returns).
