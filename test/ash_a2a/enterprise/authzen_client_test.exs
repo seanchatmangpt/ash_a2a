@@ -84,7 +84,8 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
 
   setup do
     table =
-      :ets.new(:"authzen_client_court_#{System.unique_integer()}",
+      :ets.new(
+        :"authzen_client_court_#{System.unique_integer()}",
         [:set, :public, read_concurrency: true]
       )
 
@@ -217,7 +218,12 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
     assert request_count(table) == 2
   end
 
-  test "fail-closed: PDP down is a typed refusal", %{client: client, table: table, server_pid: server_pid} do
+  test "fail-closed: PDP down is a typed refusal", %{
+    client: client,
+    table: table,
+    port: port,
+    server_pid: server_pid
+  } do
     allow(table, "frank", "read", "doc-6", true)
     assert {decision, 1} = eval(client, table, "frank", "read", "doc-6")
     assert {:ok, %Types.Decision{decision: true}} = decision

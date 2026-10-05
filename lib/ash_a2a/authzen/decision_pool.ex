@@ -54,7 +54,8 @@ defmodule AshA2A.AuthZEN.DecisionPool do
           {:error, {:already_started, _pid}} -> :ok
         end
 
-      pid when is_pid(pid) -> :ok
+      pid when is_pid(pid) ->
+        :ok
     end
   end
 
