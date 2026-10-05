@@ -81,6 +81,32 @@ defmodule AshA2A.V1AuthRequired.TransportAgent do
   end
 end
 
+defmodule AshA2A.V1AuthRequired.WireAgent do
+  @moduledoc """
+  Real `use AshA2A.Agent` GenServer fronted by the REAL
+  `AshA2A.Protocol.Plug` + `AshA2A.Protocol.Plug.Auth` HTTP pipeline for the
+  full-flow wire court. Its `handle_message/2` override emits the exact
+  `{:error, {:auth_required, reason}}` producer shape, so the transport
+  runtime's `apply_reply/2` auth arm parks the task `:auth_required` behind
+  a genuinely authenticated HTTP request.
+  """
+
+  use AshA2A.Agent,
+    resource_or_domain: AshA2A.V1AuthRequired.Fixture,
+    name: "v1_auth_required_wire_agent"
+
+  @impl AshA2A.Protocol.Agent
+  def handle_message(message, _context) do
+    case AshA2A.Protocol.Message.text(message) do
+      "expired" ->
+        {:error, {:auth_required, "credentials expired"}}
+
+      text ->
+        {:reply, [AshA2A.Protocol.Part.Text.new("ok: " <> text)]}
+    end
+  end
+end
+
 defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
   @moduledoc """
   v1.0 AUTH_REQUIRED non-terminal state: real producer proof.
@@ -107,6 +133,9 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
   """
 
   use ExUnit.Case, async: true
+
+  import Plug.Test
+  import Plug.Conn
 
   alias AshA2A.Protocol.{JSON, Message, Part, Task}
 
@@ -352,5 +381,136 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
 
     assert task.status.state == :failed
     assert Task.terminal?(task)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Full-flow wire court: RFC 7235 challenge (HTTP layer) joined to the
+  # wire-visible TASK_STATE_AUTH_REQUIRED task and its re-auth resume, all
+  # through the real Plug.Auth -> Protocol.Plug -> agent pipeline.
+  # ---------------------------------------------------------------------------
+
+  setup :start_wire_agent
+
+  def start_wire_agent(_context) do
+    name = :"v1_auth_required_wire_#{System.unique_integer([:positive])}"
+    {:ok, pid} = AshA2A.V1AuthRequired.WireAgent.start_link(name: name)
+    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    {:ok, agent: name}
+  end
+
+  # Real verify callback: only the well-formed bearer token authenticates.
+  defp wire_verify("bearer_auth", "x13-bearer-token", _conn),
+    do: {:ok, %{id: "x13-user", tenant: "acme"}}
+
+  defp wire_verify(_scheme, _credential, _conn), do: {:error, "invalid credentials"}
+
+  # Builds the conn->pipeline runner from the context's uniquely-named agent.
+  defp run_wire(conn, agent) do
+    auth_opts =
+      AshA2A.Protocol.Plug.Auth.init(
+        schemes: %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}},
+        verify: &wire_verify/3
+      )
+
+    plug_opts =
+      AshA2A.Protocol.Plug.init(
+        agent: agent,
+        base_url: "http://localhost:4000/a2a"
+      )
+
+    conn
+    |> AshA2A.Protocol.Plug.Auth.call(auth_opts)
+    |> then(fn conn ->
+      if conn.halted, do: conn, else: AshA2A.Protocol.Plug.call(conn, plug_opts)
+    end)
+  end
+
+  defp wire_bearer_conn(body, agent) do
+    conn(:post, "/", body)
+    |> put_req_header("content-type", "application/json")
+    |> put_req_header("authorization", "Bearer x13-bearer-token")
+    |> run_wire(agent)
+  end
+
+  defp wire_unauth_conn(body, agent) do
+    conn(:post, "/", body)
+    |> put_req_header("content-type", "application/json")
+    |> run_wire(agent)
+  end
+
+  defp wire_send_body(text, task_id \\ nil) do
+    {:ok, message_json} = AshA2A.Protocol.JSON.encode(Message.new_user(text))
+
+    message_json =
+      if task_id, do: Map.put(message_json, "taskId", task_id), else: message_json
+
+    Jason.encode!(%{
+      "jsonrpc" => "2.0",
+      "id" => "req-1",
+      "method" => "message/send",
+      "params" => %{"message" => message_json}
+    })
+  end
+
+  defp wire_tasks_get_body(task_id) do
+    Jason.encode!(%{
+      "jsonrpc" => "2.0",
+      "id" => "req-2",
+      "method" => "tasks/get",
+      "params" => %{"id" => task_id}
+    })
+  end
+
+  test "full flow: unauthenticated message/send gets the RFC 7235 challenge and no task is reachable", %{agent: agent} do
+    conn = wire_unauth_conn(wire_send_body("expired"), agent)
+
+    assert conn.halted
+    assert conn.status == 401
+    assert get_resp_header(conn, "www-authenticate") == [~s(Bearer realm="a2a")]
+    assert Jason.decode!(conn.resp_body) == %{"error" => "Unauthorized"}
+  end
+
+  test "full flow: authenticated auth-failing request parks a wire-visible redacted TASK_STATE_AUTH_REQUIRED task", %{agent: agent} do
+    conn = wire_bearer_conn(wire_send_body("expired"), agent)
+
+    assert conn.status == 200
+    body = Jason.decode!(conn.resp_body)
+    assert %{"result" => %{"task" => task}} = body
+
+    # Exact v1.0 enum spelling on the wire.
+    assert task["status"]["state"] == "TASK_STATE_AUTH_REQUIRED"
+    assert is_binary(task["id"]) and task["id"] != ""
+
+    # SEC-08 on the wire: the reason never leaks; the redacted status
+    # message is the only wire-visible trace of the credentials gap.
+    assert %{"parts" => [%{"text" => text}]} = task["status"]["message"]
+    assert text =~ "Auth required:"
+    refute text =~ "credentials expired"
+
+    # Non-terminal through the real codec (resumable, not failed).
+    assert {:ok, decoded} = AshA2A.Protocol.JSON.decode(task, :task)
+    refute AshA2A.Protocol.Task.terminal?(decoded)
+  end
+
+  test "full flow: the parked task is re-fetchable in state AUTH_REQUIRED and resumes to completed on the same task id", %{agent: agent} do
+    conn = wire_bearer_conn(wire_send_body("expired"), agent)
+    body = Jason.decode!(conn.resp_body)
+    assert %{"result" => %{"task" => %{"id" => parked_id}}} = body
+
+    # Re-fetch over the wire: still parked AUTH_REQUIRED.
+    get_conn = wire_bearer_conn(wire_tasks_get_body(parked_id), agent)
+    assert get_conn.status == 200
+    get_body = Jason.decode!(get_conn.resp_body)
+    assert %{"result" => %{"status" => %{"state" => "TASK_STATE_AUTH_REQUIRED"}}} = get_body
+
+    # Re-auth continue: a follow-up message carrying the SAME task id runs
+    # the parked task to completion.
+    resume_conn = wire_bearer_conn(wire_send_body("here are fresh credentials", parked_id), agent)
+    assert resume_conn.status == 200
+    resume_body = Jason.decode!(resume_conn.resp_body)
+    assert %{"result" => %{"task" => resumed}} = resume_body
+
+    assert resumed["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert resumed["id"] == parked_id
   end
 end

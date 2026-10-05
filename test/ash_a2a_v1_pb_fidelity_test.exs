@@ -160,7 +160,7 @@ defmodule AshA2A.V1PbFidelityTest do
         vocab = MapSet.new(fields, fn {name, _req} -> camel(name) end)
         required = MapSet.new(for {name, true} <- fields, do: camel(name))
 
-        %{name => %{vocab: vocab, required: required}}
+        {name, %{vocab: vocab, required: required}}
       end)
     end
 

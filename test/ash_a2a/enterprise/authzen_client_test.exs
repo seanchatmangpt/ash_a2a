@@ -83,7 +83,7 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
   @pdp "https://court-pdp.example"
 
   setup do
-    {:ok, table} =
+    table =
       :ets.new(:"authzen_client_court_#{System.unique_integer()}",
         [:set, :public, read_concurrency: true]
       )
@@ -103,7 +103,9 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
     client = Client.new(metadata, timeout: 2_000)
 
     on_exit(fn ->
-      :ets.delete(table)
+      if :ets.info(table) != :undefined do
+        :ets.delete(table)
+      end
     end)
 
     %{table: table, client: client, port: port, server_pid: server_pid}
@@ -126,6 +128,22 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
   defp request_count(table), do: :ets.lookup_element(table, :request_count, 2)
 
   defp allow(table, s, a, r, value), do: :ets.insert(table, {{:allow, s, a, r}, value})
+
+  defp wait_down(port, attempts \\ 50)
+
+  defp wait_down(_port, 0), do: flunk("PDP port never closed")
+
+  defp wait_down(port, attempts) do
+    case :gen_tcp.connect(~c"127.0.0.1", port, [], 100) do
+      {:error, _} ->
+        :ok
+
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        Process.sleep(50)
+        wait_down(port, attempts - 1)
+    end
+  end
 
   test "permits: an allow decision round-trips as observed evidence", %{
     client: client,
@@ -206,6 +224,7 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
 
     true = Process.unlink(server_pid)
     Process.exit(server_pid, :shutdown)
+    wait_down(port)
 
     assert {:error, :pdp_unreachable} =
              eval(client, table, "frank", "read", "doc-9") |> elem(0)

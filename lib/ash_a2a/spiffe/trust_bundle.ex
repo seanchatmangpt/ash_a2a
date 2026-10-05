@@ -57,6 +57,10 @@ defmodule AshA2A.SPIFFE.TrustBundle do
   def from_update(svids, bundle_certs, now) when is_list(svids) and is_list(bundle_certs) do
     expires_at = earliest_expiry(bundle_certs ++ Enum.map(svids, & &1.cert))
 
+    if System.get_env("ASH_A2A_SPIFFE_DEBUG") do
+      IO.inspect({now, expires_at}, label: "[spiffe-debug] from_update now/expires_at")
+    end
+
     if now < expires_at do
       {:ok,
        %__MODULE__{

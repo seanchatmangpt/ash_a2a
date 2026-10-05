@@ -375,13 +375,15 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
 
   defp do_walk(<<>>, acc, _collector), do: {:ok, acc, <<>>}
 
-  defp do_walk(<<tag_and_wire, 0::1, rest::binary>>, acc, collector) do
+  defp do_walk(<<tag_and_wire, rest::binary>>, acc, collector)
+       when band(tag_and_wire, 0x80) == 0 do
     field = tag_and_wire >>> 3
-    wire = tag_and_wire &&& 7
+    wire = band(tag_and_wire, 7)
     walk_value(rest, field, wire, acc, collector)
   end
 
-  defp do_walk(<<_b, _rest::binary>>, _acc, _collector), do: :error
+  # multi-byte varint tags are not exercised by the Workload API subset
+  defp do_walk(<<_tag, _rest::binary>>, _acc, _collector), do: :error
 
   defp walk_value(payload, field, 0, acc, collector) do
     case varint(payload) do

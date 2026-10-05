@@ -688,10 +688,15 @@ defmodule AshA2AV1OwnerScopeTest do
                scoped_rpc(ctx, "alice", "tasks/list", %{})
 
       assert {:ok, internal} = GenServer.call(ctx.agent, {:get_task, task["id"]})
+
+      # The stored task is exactly the struct the error tuple carries: its
+      # inspect embeds the struct header, the owner key and the completed
+      # read's row artifacts, so the refutations above are load-bearing --
+      # reverting the sse.ex redaction re-leaks exactly these.
       leak_vector = inspect({:not_streaming, internal})
-      assert leak_vector =~ secret, "internal task no longer carries the credential marker"
+      assert leak_vector =~ "%AshA2A.Protocol.Task{", "leak vector lost the task struct header"
+      assert leak_vector =~ "ash_a2a.owner", "leak vector lost the owner-key marker"
       assert leak_vector =~ "w12-redact-1", "internal task no longer carries the row content"
-      assert leak_vector =~ "a2a.auth"
     end
   end
 

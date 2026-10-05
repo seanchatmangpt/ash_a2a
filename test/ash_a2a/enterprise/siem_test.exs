@@ -159,7 +159,7 @@ defmodule AshA2A.Enterprise.SIEMTest do
 
   defp requests, do: Agent.get(@store, & &1.requests)
 
-  defp set_store!(updates), do: Agent.update(@store, &Map.merge(&1, updates))
+  defp set_store!(updates), do: Agent.update(@store, &Map.merge(&1, Map.new(updates)))
 
   # -- fixtures -----------------------------------------------------------------
 
@@ -219,7 +219,7 @@ defmodule AshA2A.Enterprise.SIEMTest do
                attempts: 1
              }
 
-      assert [%req] = requests()
+      assert [req] = requests()
       assert req.path == "/services/collector/event"
       assert header(req.headers, "authorization") == "Splunk test-hec-token-123"
       assert header(req.headers, "content-type") == "application/x-ndjson"
@@ -246,7 +246,7 @@ defmodule AshA2A.Enterprise.SIEMTest do
       assert report.platform == :chronicle
       assert report.http_requests == 1
 
-      assert [%req] = requests()
+      assert [req] = requests()
       assert req.path == "/v2/logs"
       assert header(req.headers, "x-goog-api-key") == "chronicle-key-xyz"
       assert header(req.headers, "content-type") == "application/x-ndjson"
@@ -260,11 +260,13 @@ defmodule AshA2A.Enterprise.SIEMTest do
       endpoint = start_receiver!()
 
       assert {:ok, _} =
-               SIEM.deliver(:chronicle, events(1),
+               SIEM.deliver(
+                 :chronicle,
+                 events(1),
                  config(endpoint, api_key: "k", log_type: "ASH_A2A_DISPATCH")
                )
 
-      assert [%req] = requests()
+      assert [req] = requests()
       assert URI.decode_query(req.query)["log_type"] == "ASH_A2A_DISPATCH"
     end
   end
@@ -275,14 +277,16 @@ defmodule AshA2A.Enterprise.SIEMTest do
       payload = events(2)
 
       assert {:ok, report} =
-               SIEM.deliver(:datadog_logs, payload,
+               SIEM.deliver(
+                 :datadog_logs,
+                 payload,
                  config(endpoint, api_key: "dd-key-abc", service: "ash_a2a_prod")
                )
 
       assert report.platform == :datadog_logs
       assert report.http_requests == 1
 
-      assert [%req] = requests()
+      assert [req] = requests()
       assert req.path == "/api/v2/logs"
       assert header(req.headers, "dd-api-key") == "dd-key-abc"
       assert header(req.headers, "content-type") == "application/json"
@@ -307,9 +311,7 @@ defmodule AshA2A.Enterprise.SIEMTest do
       endpoint = start_receiver!()
 
       assert {:ok, report} =
-               SIEM.deliver(:splunk_hec, events(3),
-                 config(endpoint, token: "t", batch_size: 2)
-               )
+               SIEM.deliver(:splunk_hec, events(3), config(endpoint, token: "t", batch_size: 2))
 
       assert report.batches == 2
       assert report.http_requests == 2
@@ -327,7 +329,9 @@ defmodule AshA2A.Enterprise.SIEMTest do
       set_store!(fail_from: 2)
 
       assert {:error, {:siem_delivery_failed, :splunk_hec, detail}} =
-               SIEM.deliver(:splunk_hec, events(3),
+               SIEM.deliver(
+                 :splunk_hec,
+                 events(3),
                  config(endpoint, token: "t", batch_size: 1, max_retries: 1)
                )
 
@@ -345,7 +349,15 @@ defmodule AshA2A.Enterprise.SIEMTest do
       endpoint = start_receiver!()
 
       assert {:ok, report} = SIEM.deliver(:splunk_hec, [], config(endpoint, token: "t"))
-      assert report == %{platform: :splunk_hec, events: 0, batches: 0, http_requests: 0, attempts: 0}
+
+      assert report == %{
+               platform: :splunk_hec,
+               events: 0,
+               batches: 0,
+               http_requests: 0,
+               attempts: 0
+             }
+
       assert requests() == []
     end
   end
@@ -383,7 +395,11 @@ defmodule AshA2A.Enterprise.SIEMTest do
       set_store!(deny_next: 1)
 
       assert {:error, {:siem_delivery_failed, :datadog_logs, detail}} =
-               SIEM.deliver(:datadog_logs, events(1), config(endpoint, api_key: "k", max_retries: 2))
+               SIEM.deliver(
+                 :datadog_logs,
+                 events(1),
+                 config(endpoint, api_key: "k", max_retries: 2)
+               )
 
       assert detail.attempts == 1
       assert match?({:http_status, 403}, detail.reason)
@@ -435,7 +451,8 @@ defmodule AshA2A.Enterprise.SIEMTest do
       assert {:error, {:siem_config_invalid, :splunk_hec, {:invalid_endpoint, :scheme_or_host}}} =
                SIEM.deliver(:splunk_hec, events(1), endpoint: "ftp://127.0.0.1:1", token: "t")
 
-      assert {:error, {:siem_config_invalid, :splunk_hec, {:max_retries, :not_a_non_negative_integer}}} =
+      assert {:error,
+              {:siem_config_invalid, :splunk_hec, {:max_retries, :not_a_non_negative_integer}}} =
                SIEM.deliver(:splunk_hec, events(1),
                  endpoint: "http://127.0.0.1:1",
                  token: "t",
@@ -459,8 +476,9 @@ defmodule AshA2A.Enterprise.SIEMTest do
       start_receiver!()
       missing = Path.join(System.tmp_dir!(), "no-such-cert-#{System.unique_integer()}.pem")
 
-      assert {:error, {:siem_config_invalid, :splunk_hec,
-                       {:transport_opts_file_missing, :certfile, ^missing}}} =
+      assert {:error,
+              {:siem_config_invalid, :splunk_hec,
+               {:transport_opts_file_missing, :certfile, ^missing}}} =
                SIEM.deliver(:splunk_hec, events(1),
                  endpoint: "http://127.0.0.1:1",
                  token: "t",
@@ -513,7 +531,9 @@ defmodule AshA2A.Enterprise.SIEMTest do
     test "adapters implement the behaviour" do
       for adapter <- [SplunkHEC, Chronicle, DatadogLogs] do
         assert adapter.platform() in [:splunk_hec, :chronicle, :datadog_logs]
-        assert {:ok, _} = adapter.validate_config(endpoint: "https://splunk.example:8088", token: "t")
+
+        assert {:ok, _} =
+                 adapter.validate_config(endpoint: "https://splunk.example:8088", token: "t")
       end
     end
   end
@@ -580,7 +600,7 @@ defmodule AshA2A.Enterprise.SIEMTest do
 
       assert report.http_requests == 1
 
-      assert [%req] = requests()
+      assert [req] = requests()
       assert req.path == "/services/collector/event"
       assert header(req.headers, "authorization") == "Splunk t"
       assert [%{"event" => %{"event_id" => "evt-1"}}] = ndjson_lines(req.body)
@@ -596,34 +616,81 @@ defmodule AshA2A.Enterprise.SIEMTest do
     end
 
     run!.([
-      "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-      "-keyout", "ca.key", "-out", "ca.crt", "-days", "2",
-      "-subj", "/CN=siem-test-ca"
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      "ca.key",
+      "-out",
+      "ca.crt",
+      "-days",
+      "2",
+      "-subj",
+      "/CN=siem-test-ca"
     ])
 
     run!.([
-      "req", "-newkey", "rsa:2048", "-nodes",
-      "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=localhost"
+      "req",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      "server.key",
+      "-out",
+      "server.csr",
+      "-subj",
+      "/CN=localhost"
     ])
 
     File.write!(Path.join(tmp_dir, "server.ext"), "subjectAltName=DNS:localhost,IP:127.0.0.1")
 
     run!.([
-      "x509", "-req", "-in", "server.csr",
-      "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial",
-      "-out", "server.crt", "-days", "2",
-      "-extfile", "server.ext"
+      "x509",
+      "-req",
+      "-in",
+      "server.csr",
+      "-CA",
+      "ca.crt",
+      "-CAkey",
+      "ca.key",
+      "-CAcreateserial",
+      "-out",
+      "server.crt",
+      "-days",
+      "2",
+      "-extfile",
+      "server.ext"
     ])
 
     run!.([
-      "req", "-newkey", "rsa:2048", "-nodes",
-      "-keyout", "client.key", "-out", "client.csr", "-subj", "/CN=siem-test-client"
+      "req",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      "client.key",
+      "-out",
+      "client.csr",
+      "-subj",
+      "/CN=siem-test-client"
     ])
 
     run!.([
-      "x509", "-req", "-in", "client.csr",
-      "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial",
-      "-out", "client.crt", "-days", "2"
+      "x509",
+      "-req",
+      "-in",
+      "client.csr",
+      "-CA",
+      "ca.crt",
+      "-CAkey",
+      "ca.key",
+      "-CAcreateserial",
+      "-out",
+      "client.crt",
+      "-days",
+      "2"
     ])
 
     %{

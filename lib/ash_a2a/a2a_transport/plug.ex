@@ -112,17 +112,27 @@ defmodule AshA2A.A2ATransport.Plug do
       )
 
   @impl Plug
-  def call(%{method: "GET", path_info: path} = conn, %{a2a: %{agent_card_path: path}} = opts),
+  def call(conn, opts) do
+    conn = AshA2A.Trace.Plug.call(conn, %{agent: opts.a2a.agent, transport: opts.transport})
+
+    if conn.halted do
+      conn
+    else
+      do_call(conn, opts)
+    end
+  end
+
+  defp do_call(%{method: "GET", path_info: path} = conn, %{a2a: %{agent_card_path: path}} = opts),
     do: AshA2A.Protocol.Plug.call(conn, advertise(opts))
 
-  def call(%{method: "POST", path_info: path} = conn, %{a2a: %{json_rpc_path: path}} = opts) do
+  defp do_call(%{method: "POST", path_info: path} = conn, %{a2a: %{json_rpc_path: path}} = opts) do
     case read_json(conn) do
       {:ok, decoded, conn} -> route(conn, decoded, opts)
       {:error, error, conn} -> send_json(conn, Response.error(nil, error))
     end
   end
 
-  def call(conn, opts), do: AshA2A.Protocol.Plug.call(conn, opts.a2a)
+  defp do_call(conn, opts), do: AshA2A.Protocol.Plug.call(conn, opts.a2a)
 
   # -- routing ------------------------------------------------------------------
 

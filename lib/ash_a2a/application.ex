@@ -53,6 +53,16 @@ defmodule AshA2A.Application do
   supervises its own instance with custom options). Behaviour change: before
   this, the reconciler was opt-in and never started here.
 
+  ## Enterprise supervision (ARD v26.10.4 §2)
+
+  `AshA2A.Enterprise.Supervisor` is listed unconditionally as the last child
+  of this tree. With no enterprise key configured (the dev/test default) its
+  `init/1` returns `:ignore` -- dev/test boots are unchanged, no extra
+  process. Setting any enterprise key (`:spiffe_socket`, `:authzen_pdp_url`,
+  `:kms`, `:finops`, `:drain`, `:affidavit`, `:siem`) starts that key's
+  children under it; see `AshA2A.Enterprise.Supervisor`'s moduledoc for the
+  key table and its fail-closed skip semantics.
+
   ## Runtime configuration facts (OBS-07)
 
   At boot this application emits `[:ash_a2a, :runtime, :configured]` with
@@ -131,7 +141,8 @@ defmodule AshA2A.Application do
   def env, do: Application.get_env(:ash_a2a, :env, :prod)
 
   @doc "Boot-time durability enforcement switch: `config :ash_a2a, :require_durable_receipts` (default `false`)."
-  def require_durable_receipts?, do: Application.get_env(:ash_a2a, :require_durable_receipts, false)
+  def require_durable_receipts?,
+    do: Application.get_env(:ash_a2a, :require_durable_receipts, false)
 
   @doc "Configured receipt store module: `config :ash_a2a, :receipt_store` (default `AshA2A.ReceiptStore.Memory`)."
   @spec receipt_store() :: module()
@@ -146,6 +157,10 @@ defmodule AshA2A.Application do
   def outbox_reconciler?, do: Application.get_env(:ash_a2a, :outbox_reconciler, true)
 
   defp start_supervisor(agents) do
+    # ARD v26.10.4 §2: the enterprise subtree is listed unconditionally;
+    # with no enterprise key configured (dev/test default) it starts as
+    # `:ignore` and the boot is unchanged. See
+    # `AshA2A.Enterprise.Supervisor` for the per-key gate table.
     children =
       receipt_store_children() ++
         authority_broker_children() ++
@@ -186,7 +201,8 @@ defmodule AshA2A.Application do
           # changes no existing admission or dispatch behavior.
           {AshA2A.GraphLaw.WasmexHost, []},
           {AshA2A.Protocol.AgentSupervisor, agents: agents}
-        ]
+        ] ++
+        [{AshA2A.Enterprise.Supervisor, []}]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: AshA2A.Supervisor)
   end

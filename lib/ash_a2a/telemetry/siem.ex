@@ -141,6 +141,7 @@ defmodule AshA2A.Telemetry.SIEM do
       started = System.monotonic_time()
 
       run_batches(adapter, platform, batches, config, %{
+        platform: platform,
         events: event_count,
         batches: length(batches),
         http_requests: 0,
@@ -265,16 +266,19 @@ defmodule AshA2A.Telemetry.SIEM do
   defp validate_events([], _platform, _ix), do: :ok
 
   defp validate_events([event | rest], platform, ix) do
-    missing =
-      @required_keys
-      |> Enum.reject(&is_map_key(event, &1))
-      |> Enum.concat(missing_shape(event))
-
-    case missing do
+    case event_shape_errors(event) do
       [] -> validate_events(rest, platform, ix + 1)
       missing -> {:error, {:siem_invalid_event, platform, ix + 1, missing}}
     end
   end
+
+  defp event_shape_errors(event) when is_map(event) do
+    @required_keys
+    |> Enum.reject(&is_map_key(event, &1))
+    |> Enum.concat(missing_shape(event))
+  end
+
+  defp event_shape_errors(_other), do: ["not_a_map"]
 
   defp missing_shape(event) when is_map(event) do
     [] =
@@ -380,8 +384,8 @@ defmodule AshA2A.Telemetry.SIEM do
   # Under Mix env :test the default admits loopback http so the suite's local
   # receivers work; prod default is strict (https, public only).
   @default_egress_policy if Mix.env() == :test,
-                         do: [allow_http: true, allow_cidrs: ["127.0.0.0/8", "::1/128"]],
-                         else: []
+                           do: [allow_http: true, allow_cidrs: ["127.0.0.0/8", "::1/128"]],
+                           else: []
 
   defp egress_policy do
     case Application.fetch_env(:ash_a2a, :siem_egress_policy) do
@@ -461,20 +465,28 @@ defmodule AshA2A.Telemetry.SIEM do
   # -- telemetry -----------------------------------------------------------------
 
   defp emit_telemetry({:ok, report}, platform, config, started) do
-    :telemetry.execute([:ash_a2a, :siem, :delivered], %{
-      events: report.events,
-      duration: System.monotonic_time() - started
-    }, %{platform: platform, endpoint: Redact.endpoint(config[:endpoint])})
+    :telemetry.execute(
+      [:ash_a2a, :siem, :delivered],
+      %{
+        events: report.events,
+        duration: System.monotonic_time() - started
+      },
+      %{platform: platform, endpoint: Redact.endpoint(config[:endpoint])}
+    )
 
     {:ok, report}
   end
 
   defp emit_telemetry({:error, _} = failure, platform, config, started) do
-    :telemetry.execute([:ash_a2a, :siem, :failed], %{events: 0, duration: System.monotonic_time() - started}, %{
-      platform: platform,
-      endpoint: Redact.endpoint(config[:endpoint]),
-      reason: failure
-    })
+    :telemetry.execute(
+      [:ash_a2a, :siem, :failed],
+      %{events: 0, duration: System.monotonic_time() - started},
+      %{
+        platform: platform,
+        endpoint: Redact.endpoint(config[:endpoint]),
+        reason: failure
+      }
+    )
 
     failure
   end

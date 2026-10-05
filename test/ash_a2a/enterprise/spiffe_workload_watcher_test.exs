@@ -238,15 +238,22 @@ defmodule AshA2A.Enterprise.SPIFFEWorkloadWatcherTest do
   defp do_wait_until(fun, deadline) do
     case fun.() do
       nil ->
-        if System.monotonic_time(:millisecond) > deadline do
-          flunk("wait_until: condition not met within #{deadline} deadline")
-        else
-          Process.sleep(20)
-          do_wait_until(fun, deadline)
-        end
+        retry_or_flunk(fun, deadline)
+
+      {:error, :no_trust_bundle} ->
+        retry_or_flunk(fun, deadline)
 
       value ->
         value
+    end
+  end
+
+  defp retry_or_flunk(fun, deadline) do
+    if System.monotonic_time(:millisecond) > deadline do
+      flunk("wait_until: condition not met within deadline")
+    else
+      Process.sleep(20)
+      do_wait_until(fun, deadline)
     end
   end
 

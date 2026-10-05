@@ -565,10 +565,6 @@ defmodule AshA2A.Transport.Runtime do
         error_msg = AshA2A.Protocol.Message.new_agent("Auth required: #{inspect(SafeError.redact(reason))}")
         State.transition(task, :auth_required, error_msg)
 
-      auth_failure?(reason) ->
-        error_msg = AshA2A.Protocol.Message.new_agent("Auth required: #{inspect(SafeError.redact(reason))}")
-        State.transition(task, :auth_required, error_msg)
-
       true ->
         error_msg = AshA2A.Protocol.Message.new_agent("Error: #{inspect(SafeError.redact(reason))}")
         State.transition(task, :failed, error_msg)
@@ -596,15 +592,6 @@ defmodule AshA2A.Transport.Runtime do
     agent_msg = AshA2A.Protocol.Message.new_agent(parts)
     State.transition(task, :canceled, agent_msg)
   end
-
-  # Reproduction of the landed `auth_failure?/1` classifier in
-  # `AshA2A.Protocol.Agent.Runtime` (protocol/agent/runtime.ex:154-158); no
-  # shared public classifier exists, so both task-finalizing paths carry the
-  # identical four-arm classifier.
-  defp auth_failure?(:unauthorized), do: true
-  defp auth_failure?({:unauthorized, _}), do: true
-  defp auth_failure?({:auth_required, _}), do: true
-  defp auth_failure?(_), do: false
 
   # Reproduction of the landed `auth_failure?/1` classifier in
   # `AshA2A.Protocol.Agent.Runtime` (protocol/agent/runtime.ex:154-158); no

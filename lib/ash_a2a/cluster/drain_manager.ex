@@ -220,7 +220,7 @@ defmodule AshA2A.Cluster.DrainManager do
   end
 
   def handle_call({:release, task_id}, _from, state) do
-    {:noreply, release_task(state, task_id, :released)}
+    {:reply, :ok, release_task(state, task_id, :released)}
   end
 
   def handle_call(:tracked, _from, state) do
@@ -250,9 +250,11 @@ defmodule AshA2A.Cluster.DrainManager do
   def handle_info(:drain_tick, state) do
     now = System.monotonic_time(:millisecond)
 
+    # finish_drain/2 already returns a valid handle_info result: either
+    # {:stop, :shutdown, state} or (container mode) {:noreply, state}.
     cond do
       state.tracked == %{} or now >= state.deadline ->
-        {:noreply, finish_drain(state, now)}
+        finish_drain(state, now)
 
       true ->
         Process.send_after(self(), :drain_tick, @tick_interval_ms)
