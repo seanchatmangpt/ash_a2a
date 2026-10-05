@@ -48,7 +48,25 @@ defmodule AshA2A.Security.KeyManager do
 
   All refusals are `{:error, code, detail}` triples; expected failure
   paths never raise.
+
+  ## Supervision (enterprise supervisor `:kms` gate)
+
+  The module is also a startable OTP child: `child_spec/1` (from
+  `use GenServer`) starts a thin supervised holder process via
+  `start_link/1`. The holder owns the resolved KMS binding (`kms_client`,
+  `kek_id`) and, in `init/1`, applies the same `:kms` -> `:cmek_kms_client`
+  projection the enterprise supervisor performs, so a supervised
+  KeyManager is self-sufficient wherever it is placed. The encrypt /
+  decrypt / rotate functions stay pure and resolve their KMS binding
+  per call (opts first, then `config :ash_a2a, :cmek_kms_client`), so
+  starting or stopping the holder never changes the fail-closed
+  behavior of the API. `AshA2A.Enterprise.Supervisor` starts this child
+  when `config :ash_a2a, :kms` is set; with no KMS client configured the
+  holder still starts and every operation refuses
+  `:refused_cmek_kms_unavailable` exactly as before.
   """
+
+  use GenServer
 
   alias AshA2A.Security.CMEK
 
@@ -139,6 +157,71 @@ defmodule AshA2A.Security.KeyManager do
   @doc "The KEK id used when none is configured."
   @spec default_kek_id() :: String.t()
   def default_kek_id, do: @default_kek_id
+
+  # --- supervised holder child (enterprise supervisor :kms gate) ---
+
+  @typedoc "KMS binding owned by the supervised holder."
+  @type kms_binding :: %{kms_client: module() | nil, kek_id: String.t()}
+
+  @doc """
+  Starts the supervised KeyManager holder (the enterprise supervisor's
+  `:kms` child). `opts` accepts `:name` (default `__MODULE__`),
+  `:kms_client`, and `:kek_id`; anything unset is resolved from
+  `config :ash_a2a, :cmek_kms_client` / `:cmek_kek_id` in `init/1`,
+  after applying the `:kms` -> `:cmek_kms_client` projection. The holder
+  owns the binding only — the encrypt/decrypt/rotate API is unchanged.
+  """
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(opts \\ []) when is_list(opts) do
+    GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
+  end
+
+  @doc """
+  The KMS binding the supervised holder resolved at start:
+  `%{kms_client: module() | nil, kek_id: String.t()}`. A `nil`
+  `kms_client` means the holder started fail-closed (no KMS configured);
+  every operation still refuses `:refused_cmek_kms_unavailable`.
+  """
+  @spec kms_binding(GenServer.server()) :: {:ok, kms_binding()} | {:error, term()}
+  def kms_binding(server \\ __MODULE__), do: GenServer.call(server, :binding)
+
+  @impl true
+  def init(opts) do
+    :ok = project_kms_binding()
+
+    {:ok,
+     %{
+       kms_client:
+         Keyword.get(opts, :kms_client) || Application.get_env(:ash_a2a, :cmek_kms_client),
+       kek_id:
+         Keyword.get(opts, :kek_id) || Application.get_env(:ash_a2a, :cmek_kek_id) ||
+           @default_kek_id
+     }}
+  end
+
+  @impl true
+  def handle_call(:binding, _from, state), do: {:reply, {:ok, state}, state}
+
+  # Mirrors `AshA2A.Enterprise.Supervisor`'s `:kms` projection: when the
+  # `:kms` gate names a client module and the host has not set
+  # `:cmek_kms_client`, project it. Explicit host config always wins and
+  # the fail-closed resolution order is untouched.
+  defp project_kms_binding do
+    case Application.get_env(:ash_a2a, :kms) do
+      binding when is_list(binding) ->
+        client = Keyword.get(binding, :client)
+
+        if is_atom(client) and client != nil and
+             Application.get_env(:ash_a2a, :cmek_kms_client) in [nil, false] do
+          Application.put_env(:ash_a2a, :cmek_kms_client, client)
+        end
+
+        :ok
+
+      _other ->
+        :ok
+    end
+  end
 
   # --- internals ---
 
