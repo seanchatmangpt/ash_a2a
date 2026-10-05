@@ -96,70 +96,85 @@ binding landed after these courts ran (see the TCK section and
 is reported in the next section.
 
 Full-suite context: `mix test.all` includes the serial tail; CI runs
-`mix test.all --cover`.
+`mix test.all --cover`. Machine verdict across all 25 courts at once:
+`mix ash_a2a.v1_conformance_report --out receipts/v1-conformance.json`
+— at subject `059ff0e3` (2026-10-05T23:24:48Z) it reported **25 PASS /
+0 FAIL**; the gate is `totals.fail == 0`.
 
 ## A2A TCK compatibility run
 
 The official `a2aproject/a2a-tck` compatibility suite ran against a
-real `ash_a2a` JSONRPC server on 2026-10-05 (lane Z19). Environment:
-TCK at `a2aproject/a2a-tck` `main`, Python 3.12 venv,
-`python run_tck.py --transport jsonrpc` against the in-repo SUT
-(`tck_sut.exs`). Framing: this was the compatibility suite run, and the
-result is a point-in-time verdict on the JSONRPC binding — not TCK
-certification and not a verdict on any other binding or release.
+real `ash_a2a` SUT server on 2026-10-05 (final post-hardening run,
+AT2 lane; reports at `/tmp/a2a-tck/reports/compatibility.json`,
+timestamp `2026-10-05T23:17:14Z`, SUT `http://127.0.0.1:9999` driven
+by the in-repo-style `tck_sut.exs` on Bandit). Environment: TCK at
+`a2aproject/a2a-tck` `main` (external repo, moving ref), Python venv,
+`./run_tck.py --sut-host http://127.0.0.1:9999 --transport jsonrpc,http_json`.
+Framing: this is a point-in-time compatibility verdict on the
+JSONRPC + HTTP+JSON bindings — not TCK certification and not a
+verdict on any other binding or release.
 
 Per-transport matrix (from the suite's `compatibility.json`):
 
 | Transport  | Total | Pass | Fail | Skip |
 | --- | --- | --- | --- | --- |
 | agent_card | 10  | 10 | 0 | 0  |
-| jsonrpc    | 88  | 68 | 5 | 15 |
+| jsonrpc    | 96  | 81 | 0 | 15 |
 | grpc       | 72  | 0  | 0 | 72 |
-| http_json  | 83  | 3  | 0 | 80 |
+| http_json  | 91  | 77 | 0 | 14 |
 
-The `grpc` and `http_json` transports are skipped because the served
-agent card declared the `JSONRPC` interface only at run time. The gRPC
-binding landed after this run: `AshA2A.Transport.GRPC.Server` now serves
-the canonical `lf.a2a.v1.A2AService` — 9 unary RPCs plus the 2
-server-streaming RPCs (`SendStreamingMessage`, `SubscribeToTask`, both
-pumping the same `AshA2A.A2ATransport.TaskEvents` log the SSE transport
-uses) — over HTTP/2 via `:grpc_server`, with protobuf messages bridged
-to the codec's proto-JSON maps by `Protobuf.JSON`. The binding is
-verified by a real over-the-wire suite
+**Zero test failures on every transport that ran** (agent_card 10/10,
+jsonrpc 81/81 run, http_json 77/77 run). The `grpc` transport is
+skipped: the served agent card declares the `JSONRPC` interface only
+at run time, so the suite has no gRPC endpoint to target; the in-tree
+gRPC binding (`AshA2A.Transport.GRPC.Server`, canonical
+`lf.a2a.v1.A2AService` — 9 unary RPCs plus the 2 server-streaming
+RPCs over HTTP/2) is verified by a real over-the-wire suite
 (`test/ash_a2a_transport_grpc_server_test.exs` drives a real gRPC
 channel; `test/ash_a2a_transport_grpc_test.exs` covers dispatch and
-framing), but the TCK has not been run over gRPC.
-Overall compatibility: **69.2%** (MUST 70.4%, SHOULD 42.9%, MAY 100%).
+framing), but the TCK has not been run over gRPC. `http_json` ran
+77 tests with 0 failures against the extended card.
 
-All MUST-category infrastructure failures observed pre-fix (MUST
-70.4%) were fixed in-session in
-`lib/ash_a2a/transport/plug.ex`: the `A2A-Version` header gate now
-answers the spec-mandated `-32009`; `tasks/resubscribe` on an unknown
-or foreign task answers `-32001` TaskNotFound instead of `-32004`
-(spec §3.16, TCK STREAM-SUB-004); the agent card serves
-`Cache-Control`/`ETag` caching headers (spec §8.6.1).
+Overall compatibility: **76.0%** (MUST 76.4%, SHOULD 63.6%, MAY
+100%). Per-requirement: 129 requirements total — 79 PASS, 0 FAIL,
+25 SKIPPED, 25 NOT TESTED. The compatibility percentage is a function
+of the skipped surface: nothing that executed failed.
 
-The 5 remaining jsonrpc failures are pinned as **not spec violations**.
-They are the TCK echo-SUT behavioral contract (DM-ART-001, DM-MSG-001):
-prefix-keyed canned responses that the reference Python SUT
-hand-implements. The repo dispatcher cannot reproduce them without
-faking that contract — `fetch_input/1`
-(`lib/ash_a2a/dispatcher.ex`) drops `messageId` for text-only messages
-(it extracts data-part payloads only, an empty map otherwise), so the
-prefix-keyed echo behavior lives in the SUT harness, not the protocol
-implementation.
+What is not counted, and why (the remaining gap to 100% is
+entirely not-run surface, not failures):
+
+| Class | Requirements | Why not run |
+| --- | --- | --- |
+| SKIPPED — gRPC (`GRPC-SVC-*`, `GRPC-ERR-*`, `GRPC-META-*`) | 9 | card declares JSONRPC only; no TCK run over gRPC yet |
+| SKIPPED — push (`PUSH-*`) | 11 | card advertises `pushNotifications: false` at run time |
+| SKIPPED — stream/capability/extension (`STREAM-SUB-*`, `STREAM-ORDER-*`, `CORE-CAP-*`, `CARD-EXT-*`) | 5 | SUT configuration did not enable those capabilities |
+| NOT TESTED — card signing (`CARD-SIGN-*`) | 4 | requires a signed-card setup the SUT did not serve |
+| NOT TESTED — auth/TLS (`AUTH-TLS-*`, `AUTH-SERVER-*`, `AUTH-INTASK-*`, `AUTH-SCOPE-*`) | 10 | requires TLS/auth-server prerequisites not present in the run |
+| NOT TESTED — verification/binding equivalence (`VER-*`, `BIND-EQUIV-*`) | 7 | requires those setups; not exercised |
+
+The MUST-category infrastructure failures from the earlier 2026-10-05
+lane-Z19 run (MUST 70.4%: missing `A2A-Version` `-32009` gate,
+`tasks/resubscribe` answering `-32004` instead of `-32001` on unknown
+tasks, missing card `Cache-Control`/`ETag` per spec §8.6.1) were
+fixed in `lib/ash_a2a/transport/plug.ex` and are green in this run —
+0 jsonrpc failures (was 5, the echo-SUT class included).
 
 Raw TCK reports (JUnit, HTML, `compatibility.json`) live in
-`/tmp/z19/tck_reports_ash_a2a_final` — session-ephemeral, not
-committed; re-run the suite to regenerate them.
+`/tmp/a2a-tck/reports` — session-ephemeral, not committed; re-run the
+suite to regenerate them. TCK in CI is a documented refusal
+(`REFUSED(ci:tck-not-in-tree)`, `.github/workflows/ci.yml`): the
+suite is an external repo at a moving main ref and the SUT is
+session-ephemeral, not in this tree.
 
 ## What is not claimed
 
 - **A2A TCK certification: not claimed.** The compatibility suite ran
-  once against the JSONRPC binding (2026-10-05, section above).
-  `CONFORMANT` in the table still means "the pinned court in this repo
-  passes" — not TCK-certified — and the 69.2% figure is a point-in-time
-  verdict, not a standing certification.
+  against the JSONRPC + HTTP+JSON bindings (2026-10-05, section
+  above; 76.0% with zero test failures on all run transports, the
+  residue being not-run surface — gRPC, push, signed-card, TLS/auth
+  setups). `CONFORMANT` in the table still means "the pinned court in
+  this repo passes" — not TCK-certified — and the 76.0% figure is a
+  point-in-time verdict, not a standing certification.
 - **A gRPC conformance claim: not made.** The gRPC binding now exists —
   `AshA2A.Transport.GRPC.Server` serves the canonical
   `lf.a2a.v1.A2AService` (9 unary + 2 server-streaming RPCs over

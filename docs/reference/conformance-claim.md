@@ -95,6 +95,25 @@ interface and fails until it exists:
 - `authority_service/` and `actuator/` mix projects under the repo root, with
   `rel/env.sh.eex` setting `RELEASE_DISTRIBUTION=none`
 
+## Standing receipt — post-hardening wave (2026-10-05, subject `059ff0e3`)
+
+Standing-scoped verdicts from the post-hardening verification wave. Each
+row: verdict, the executed command that produced it, and its falsifier
+(the observation that would retire the claim). All three are
+point-in-time at subject `059ff0e3` (branch `feat/tck-vuln-hardening`);
+none is a certification.
+
+| Verdict surface | Verdict | Command (executed) | Falsifier |
+|---|---|---|---|
+| Official A2A TCK compatibility | GREEN on every transport that ran — 0 test failures (agent_card 10/10, jsonrpc 81/81 run, http_json 77/77 run); overall **76.0%** (MUST 76.4%, SHOULD 63.6%, MAY 100%); 129 requirements: 79 PASS / 0 FAIL / 25 SKIPPED / 25 NOT TESTED; residue is entirely not-run surface (gRPC, push, signed-card, TLS/auth setups) | `./run_tck.py --sut-host http://127.0.0.1:9999 --transport jsonrpc,http_json` against the SUT on Bandit; reports `/tmp/a2a-tck/reports/compatibility.json` (`2026-10-05T23:17:14Z`) | any TCK test that executes and fails, or a fix landing without a corresponding re-run verdict flip |
+| In-repo v1.0 conformance runner | **25 PASS / 0 FAIL** across all 25 courts (machine report `/tmp/at8_conformance_report.json`, `2026-10-05T23:24:48Z`); the intermediate AT4 run (23:13Z) showed 2 FAIL (`ash_a2a_v1_cancellation_test.exs` 1 failure, `ash_a2a_v1_oban_delivery_test.exs` 6 invalid) that do not reproduce at `059ff0e3` — both courts pass standalone (`--include serial`) and in the full re-run | `MIX_ENV=test mix ash_a2a.v1_conformance_report --out /tmp/at8_conformance_report.json` | `totals.fail > 0` in a fresh report, or a court failing standalone with `--include serial` |
+| Vulnerability scan (sobelow) | **NOT GREEN — 11 high-confidence findings** (1 `Config.HTTPS`, `config/prod.exs`; 10 `Misc.BinToTerm` in receipt/journal/fixture file-decode paths) + 343 low-confidence, at `059ff0e3`; `mix sobelow --exit high` exits 1. The gate landed in CI (`security` job, `059ff0e3`) and will fail until the 11 are fixed or `# sobelow-ignore`-dispositioned | `MIX_ENV=dev mix sobelow --exit high` (2026-10-05) | the scan exiting 0 on `--exit high`, or a finding class fixed without re-scan |
+
+Also gated: hex.audit (supply-chain job, `ci.yml` + `release.yml`).
+TCK-in-CI is a documented refusal: `REFUSED(ci:tck-not-in-tree)`
+(`.github/workflows/ci.yml`) — external suite at a moving main ref,
+SUT session-ephemeral.
+
 ## See also
 
 - `docs/rfc/RFC-SA2A-007-errata-v26.9.28.md` section 4 (claim grammar)
