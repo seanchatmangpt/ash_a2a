@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Info do
   @moduledoc """
   Introspection for the `AshA2A` extension.
@@ -91,12 +95,14 @@ defmodule AshA2A.Info do
   Legacy mode advertises the full derived capability index. Strict mode
   advertises only exact skill ids present in the frozen released closure.
   """
-  @spec agent_card(module(), keyword()) :: A2A.AgentCard.t()
+  @spec agent_card(module(), keyword()) :: AshA2A.Protocol.AgentCard.t()
   def agent_card(resource_or_domain, opts \\ []) do
     case released_capability_index_result(resource_or_domain, opts) do
       {:ok, index} ->
         card_opts =
-          Keyword.drop(opts, [:capability_release_closure, :capability_release_mode])
+          opts
+          |> Keyword.drop([:capability_release_closure, :capability_release_mode])
+          |> default_supported_interfaces(resource_or_domain)
 
         AshA2A.CapabilityIndex.build_agent_card(index, card_opts)
 
@@ -113,6 +119,24 @@ defmodule AshA2A.Info do
       {:ok, index} -> index
       {:error, :not_compiled} -> nil
       {:error, reason} -> raise ArgumentError, "capability release refused: #{inspect(reason)}"
+    end
+  end
+
+  # Lane ZD4: when the subject domain declares per-agent transport mounts on
+  # its `AshA2A.Domain` `transport` section, the emitted card carries one
+  # `supported_interface` per declared mount (`AshA2A.Domain.Info.supported_interfaces/1`)
+  # instead of the legacy single-JSONRPC default -- the card stops
+  # under-declaring the transports the domain really serves. An explicit
+  # `:supported_interfaces` opt (e.g. the demo's manual list) still wins.
+  @spec default_supported_interfaces(keyword(), module()) :: keyword()
+  defp default_supported_interfaces(card_opts, resource_or_domain) do
+    if Keyword.has_key?(card_opts, :supported_interfaces) do
+      card_opts
+    else
+      case AshA2A.Domain.Info.supported_interfaces(resource_or_domain) do
+        [] -> card_opts
+        interfaces -> Keyword.put(card_opts, :supported_interfaces, interfaces)
+      end
     end
   end
 

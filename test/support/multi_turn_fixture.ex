@@ -1,14 +1,18 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.MultiTurnConversation do
   @moduledoc """
-  Real fixture resource for a real multi-turn `A2A.Agent` continuation test
+  Real fixture resource for a real multi-turn `AshA2A.Protocol.Agent` continuation test
   (`test/ash_a2a_agent_multi_turn_test.exs`). Every existing test in this
   suite that exercises `{:input_required, _}` (`AshA2A.Test.Fixture.Item`'s
   `create_item` skill, `test/ash_a2a_dispatcher_*_test.exs`) only proves the
   *first* turn -- a missing-argument `Ash.Error.Invalid` mapped to
   `{:input_required, _}` -- and never actually sends a real follow-up
-  `A2A.Message` with `task_id:` back through a real `A2A.Agent` GenServer to
+  `AshA2A.Protocol.Message` with `task_id:` back through a real `AshA2A.Protocol.Agent` GenServer to
   prove the task actually resumes and the real accumulated `history` (built
-  by `A2A.Agent.Runtime`, not by this test) is genuinely threaded into the
+  by `AshA2A.Protocol.Agent.Runtime`, not by this test) is genuinely threaded into the
   second dispatch's Ash `context[:a2a_history]`
   (`AshA2A.Dispatcher.build_opts/2`, `lib/ash_a2a/dispatcher.ex:305-312`).
 
@@ -21,7 +25,7 @@ defmodule AshA2A.Test.Fixture.MultiTurnConversation do
   that count back in its result, so the *second* real dispatch (continuing
   the same real `task_id`, this time supplying `:text`) can assert on real,
   action-observed evidence that the first turn's real history entry
-  (the paused agent message A2A.Agent.Runtime itself appended, plus the
+  (the paused agent message AshA2A.Protocol.Agent.Runtime itself appended, plus the
   original inbound user message) was actually delivered -- not asserted by
   inspecting the task struct alone, which every other test in this suite
   already does.
@@ -67,11 +71,11 @@ end
 
 defmodule AshA2A.Test.Fixture.MultiTurnConversationAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer for `AshA2A.Test.Fixture.MultiTurnConversation`,
-  started under a real `A2A.AgentSupervisor` by
+  Real `AshA2A.Protocol.Agent` GenServer for `AshA2A.Test.Fixture.MultiTurnConversation`,
+  started under a real `AshA2A.Protocol.AgentSupervisor` by
   `test/ash_a2a_agent_multi_turn_test.exs` -- multi-turn `task_id:`
   continuation only exercises real behavior when driven through the actual
-  supervised `A2A.Agent` process (`A2A.Agent.Runtime`'s real task/history
+  supervised `AshA2A.Protocol.Agent` process (`AshA2A.Protocol.Agent.Runtime`'s real task/history
   state machine), not a bare `AshA2A.Dispatcher.dispatch/5` call.
   """
 
@@ -85,7 +89,7 @@ defmodule AshA2A.Test.Fixture.MultiTurnPair do
   Real fixture for multi-turn argument carry-over: `:pair` requires both
   `:left` and `:right`. Turn 1 supplies only `:left` (paused
   `:input_required`); turn 2 supplies only `:right`. The action can only
-  complete if the dispatcher folds turn 1's `A2A.Part.Data` forward.
+  complete if the dispatcher folds turn 1's `AshA2A.Protocol.Part.Data` forward.
   """
 
   use Ash.Resource,

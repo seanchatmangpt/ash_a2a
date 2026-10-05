@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.Brce do
   @moduledoc """
   `CHI-BRCE` -- Gate 7 Sole DO Boundary / Zero Unreceipted Actuation, the BRCE
@@ -24,7 +28,7 @@ defmodule AshA2A.Chicago.Courts.Brce do
   | 005 | planner: HDDL goal-facts synthesis + planning admission of a plan naming DO capabilities |
   | 006 | knowledge hook: real GraphLaw `run_hooks/3` over an actuation-requesting event |
   | 007 | semantic A2A request through the generated agent handler |
-  | 008 | A2A task handler (supervised `A2A.Agent` process) of a granted `:change` |
+  | 008 | A2A task handler (supervised `AshA2A.Protocol.Agent` process) of a granted `:change` |
   | 009 | generated artifact: compiled `use AshA2A.Agent` `handle_message/2` of a granted `:external_do` |
   | 010 | replay: identical command resubmitted |
   | 011 | duplicate idempotency identity with different input |
@@ -296,7 +300,7 @@ defmodule AshA2A.Chicago.Courts.Brce do
         invariant:
           "§68 A2A task handler: a consequence-bearing A2A task actuates only after durable preparation",
         stimulus:
-          "LedgerAgent.call/3 (real supervised A2A.Agent) of skill record by an authenticated principal holding a real broker grant",
+          "LedgerAgent.call/3 (real supervised AshA2A.Protocol.Agent) of skill record by an authenticated principal holding a real broker grant",
         boundary: "AshA2A.Agent.dispatch_skill/4 -> AshA2A.CommandBus",
         forbidden_outcome: "actuation not preceded by brce.prepare sharing command and receipt",
         attempt_evidence: "agent.dispatch consequence=change for this stimulus",
@@ -400,7 +404,7 @@ defmodule AshA2A.Chicago.Courts.Brce do
         invariant:
           "§100 the A2A task handler's granted DO executes through BRCE (control for 008, 009)",
         stimulus:
-          "LedgerAgent.call/3 (real supervised A2A.Agent) of skill transmit by a granted principal",
+          "LedgerAgent.call/3 (real supervised AshA2A.Protocol.Agent) of skill transmit by a granted principal",
         boundary: "AshA2A.Agent -> AshA2A.CommandBus -> AshA2A.Dispatcher",
         attempt_evidence: "agent.dispatch route=command_bus for this stimulus",
         survival_evidence:
@@ -1008,7 +1012,7 @@ defmodule AshA2A.Chicago.Courts.Brce do
     end
   end
 
-  defp message(data), do: A2A.Message.new_user([A2A.Part.Data.new(data)])
+  defp message(data), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)])
 
   defp skill_message(skill, label) do
     %{message(%{"label" => label}) | metadata: %{"skill" => skill}}
@@ -1113,10 +1117,10 @@ defmodule AshA2A.Chicago.Courts.Brce do
 
   defp short(term), do: inspect(term, limit: 8, printable_limit: 240)
 
-  defp task_summary({:ok, %A2A.Task{} = task}) do
+  defp task_summary({:ok, %AshA2A.Protocol.Task{} = task}) do
     body =
       case task.artifacts do
-        [%A2A.Artifact{parts: [%A2A.Part.Data{data: data} | _]} | _] -> data
+        [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: data} | _]} | _] -> data
         _ -> %{}
       end
 

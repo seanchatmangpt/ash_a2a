@@ -8,14 +8,19 @@ those for tables; read this for the shape.
 
 ## 1. Arrival
 
-An HTTP request hits `A2A.Plug` (standalone Bandit or Phoenix `forward`).
+An HTTP request hits `AshA2A.Protocol.Plug` (standalone Bandit or Phoenix `forward`).
 Card discovery (`GET /.well-known/agent-card.json`) never touches Ash —
 it is the compiled capability index projected by
 `AshA2A.CapabilityIndex.AgentCardBuilder`. Everything else is a JSON-RPC
 `message/send` or `message/stream` POST, always answered with HTTP 200
-(transport auth failures excepted).
+(transport auth failures excepted). A streaming response is a sequence of
+wrapped v1.0 frames — `{"task": ...}`, `{"statusUpdate": ...}`,
+`{"artifactUpdate": ...}` — never a bare task or a `final: true` flag:
+finality is the stream ending after a terminal state
+(`TASK_STATE_COMPLETED`, `TASK_STATE_INPUT_REQUIRED`,
+`TASK_STATE_AUTH_REQUIRED`, ...).
 
-If `A2A.Plug.Auth` sits in front, it extracts a credential (Bearer, Basic,
+If `AshA2A.Protocol.Plug.Auth` sits in front, it extracts a credential (Bearer, Basic,
 API key, OAuth2/OIDC bearer), hands it to **your** `verify/3` callback,
 and on success stores the identity map in `conn.private[:a2a][:auth]` —
 on failure it halts 401 before the A2A plug runs at all. The plug merges
@@ -24,7 +29,7 @@ static/per-request/per-call metadata layers.
 
 ## 2. The agent process
 
-`A2A.call/3` lands in the `A2A.Agent` GenServer that
+`AshA2A.Protocol.Agent.call/3` lands in the `AshA2A.Protocol.Agent` GenServer that
 `use AshA2A.Agent` generated — one mailbox per agent, so calls to one
 agent serialize. The runtime creates/looks up the A2A task
 (`task_id`/`context_id` give you multi-turn continuity) and invokes the

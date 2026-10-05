@@ -6,7 +6,7 @@ defmodule SwarmNode.Probe do
   process on this same node. Every collaborator here is real: real
   distributed-Erlang peer nodes (`Node.list/0`, populated by libcluster's
   real `Cluster.Strategy.Kubernetes.DNS` polling against the real headless
-  Service), a real cross-node `GenServer.call` via `A2A.Agent`'s own
+  Service), a real cross-node `GenServer.call` via `AshA2A.Protocol.Agent`'s own
   `call/3` (`SwarmNode.EchoAgent.call({SwarmNode.EchoAgent, peer}, msg)`),
   and a real Ash action (`SwarmNode.Echo`'s `:ping`) whose reply names the
   REAL node that executed it (`Kernel.node/0`, not a caller-supplied or
@@ -44,12 +44,12 @@ defmodule SwarmNode.Probe do
   end
 
   defp dispatch_one(peer, timeout) do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"from" => to_string(node())})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"from" => to_string(node())})])
 
     case SwarmNode.EchoAgent.call({SwarmNode.EchoAgent, peer}, message, timeout: timeout) do
       {:ok, task} ->
         case task.artifacts do
-          [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{node: reply_node}}]} | _] ->
+          [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{node: reply_node}}]} | _] ->
             %{peer: peer, status: :ok, reply_node: reply_node, task_state: task.status.state}
 
           other ->

@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.StreamingWidget do
   @moduledoc """
   Real fixture resource for `test/ash_a2a_sse_stream_test.exs` (assignment
-  #8: real `message/stream` parsed via `A2A.Client.SSE.feed/2`).
+  #8: real `message/stream` parsed via `AshA2A.Protocol.Client.SSE.feed/2`).
 
   A genuine `Ash.Resource` (ETS-backed, `extensions: [AshA2A]`) with exactly
   one real `a2a do skill(:widgets, :read) end` declaration -- same shape as
@@ -51,9 +55,9 @@ end
 
 defmodule AshA2A.Test.Fixture.StreamingWidgetAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer over `StreamingWidget`, started under a real
-  `A2A.AgentSupervisor` (via `AshA2A.Test.AgentSupervisorCase`) so
-  `test/ash_a2a_sse_stream_test.exs` can call the real `A2A.stream/3` public
+  Real `AshA2A.Protocol.Agent` GenServer over `StreamingWidget`, started under a real
+  `AshA2A.Protocol.AgentSupervisor` (via `AshA2A.Test.AgentSupervisorCase`) so
+  `test/ash_a2a_sse_stream_test.exs` can call the real `AshA2A.Protocol.stream/3` public
   API against an actual supervised process -- not a bare
   `AshA2A.Dispatcher.dispatch/3` function call -- matching the pattern
   `test/ash_a2a_test.exs`'s `EchoAgent` already establishes for `:call`.

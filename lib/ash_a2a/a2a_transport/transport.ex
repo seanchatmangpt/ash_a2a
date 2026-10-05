@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport do
   @moduledoc """
   Supervision root for the ash_a2a-owned A2A transport runtime used by

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ApplicationTest do
   use ExUnit.Case, async: false
 
@@ -5,10 +9,10 @@ defmodule AshA2A.ApplicationTest do
   @moduletag :serial_shard
   @moduledoc """
   Exercises `AshA2A.Application.start/2` for real. Every other test in this
-  suite that needs a running `A2A.AgentSupervisor` bypasses this module and
-  calls `A2A.AgentSupervisor.start_link/1` directly (see
+  suite that needs a running `AshA2A.Protocol.AgentSupervisor` bypasses this module and
+  calls `AshA2A.Protocol.AgentSupervisor.start_link/1` directly (see
   `test/ash_a2a_test.exs` and `test/ash_a2a_registry_test.exs`) -- so
-  `AshA2A.Application.start/2` itself, and the real `A2A.AgentSupervisor`
+  `AshA2A.Application.start/2` itself, and the real `AshA2A.Protocol.AgentSupervisor`
   child spec it wires under `AshA2A.Supervisor`, were never actually
   invoked anywhere in the suite. This file closes that gap.
 
@@ -42,26 +46,26 @@ defmodule AshA2A.ApplicationTest do
     Supervisor.stop(pid)
   end
 
-  test "start/2 actually starts a real A2A.AgentSupervisor child under it" do
+  test "start/2 actually starts a real AshA2A.Protocol.AgentSupervisor child under it" do
     {:ok, pid} = AshA2A.Application.start(:normal, [])
 
     children = Supervisor.which_children(pid)
 
     # The real supervision tree also carries the intentional
     # AshA2A.ReceiptStore.Memory worker (added by the receipted command
-    # bus work) -- locate A2A.AgentSupervisor specifically rather than
+    # bus work) -- locate AshA2A.Protocol.AgentSupervisor specifically rather than
     # requiring an exhaustive one-child list.
-    assert {A2A.AgentSupervisor, child_pid, :supervisor, _modules} =
-             List.keyfind(children, A2A.AgentSupervisor, 0)
+    assert {AshA2A.Protocol.AgentSupervisor, child_pid, :supervisor, _modules} =
+             List.keyfind(children, AshA2A.Protocol.AgentSupervisor, 0)
 
     assert is_pid(child_pid)
     assert Process.alive?(child_pid)
 
-    # The A2A.AgentSupervisor child is a real, independently-running
-    # supervisor (not a mock/stub) -- it starts its own real A2A.Registry
+    # The AshA2A.Protocol.AgentSupervisor child is a real, independently-running
+    # supervisor (not a mock/stub) -- it starts its own real AshA2A.Protocol.Registry
     # child underneath, with no agents configured for this test app.
-    assert Process.whereis(A2A.Registry) != nil
-    assert [{A2A.Registry, registry_pid, _, _}] = Supervisor.which_children(child_pid)
+    assert Process.whereis(AshA2A.Protocol.Registry) != nil
+    assert [{AshA2A.Protocol.Registry, registry_pid, _, _}] = Supervisor.which_children(child_pid)
     assert Process.alive?(registry_pid)
 
     Supervisor.stop(pid)
@@ -75,8 +79,8 @@ defmodule AshA2A.ApplicationTest do
 
     {:ok, pid} = AshA2A.Application.start(:normal, [])
 
-    {A2A.AgentSupervisor, agent_sup_pid, :supervisor, _} =
-      List.keyfind(Supervisor.which_children(pid), A2A.AgentSupervisor, 0)
+    {AshA2A.Protocol.AgentSupervisor, agent_sup_pid, :supervisor, _} =
+      List.keyfind(Supervisor.which_children(pid), AshA2A.Protocol.AgentSupervisor, 0)
 
     agent_children = Supervisor.which_children(agent_sup_pid)
 

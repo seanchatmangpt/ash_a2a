@@ -1,19 +1,23 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.AgentSupervisorCase do
   @moduledoc """
-  Shared real-supervisor bootstrap for tests that start `A2A.AgentSupervisor`
+  Shared real-supervisor bootstrap for tests that start `AshA2A.Protocol.AgentSupervisor`
   (ash_a2a ERRC finding: duplicated start/on_exit boilerplate).
 
   Collapses the verbatim-duplicated pattern that appeared in both
   `test/ash_a2a_registry_test.exs` and `test/ash_a2a_test.exs`: start a real
-  `A2A.AgentSupervisor` with a per-test `name:`/`registry:`, and register a
+  `AshA2A.Protocol.AgentSupervisor` with a per-test `name:`/`registry:`, and register a
   real `on_exit` that stops it (tolerating the supervisor already being
   down). No Mock/mox/patch involved -- this wraps the same real
-  `A2A.AgentSupervisor.start_link/1` and real `Supervisor.stop/1` call sites
+  `AshA2A.Protocol.AgentSupervisor.start_link/1` and real `Supervisor.stop/1` call sites
   it replaces.
   """
 
   @doc """
-  Starts a real `A2A.AgentSupervisor` for `agents`, registers a real
+  Starts a real `AshA2A.Protocol.AgentSupervisor` for `agents`, registers a real
   `on_exit` teardown, and returns `{sup, registry_name}`.
 
   `case_module` should be the calling test module's `__MODULE__`, used (as
@@ -31,7 +35,7 @@ defmodule AshA2A.Test.AgentSupervisorCase do
     registry_name = :"#{case_module}.Registry"
 
     {:ok, sup} =
-      A2A.AgentSupervisor.start_link(
+      AshA2A.Protocol.AgentSupervisor.start_link(
         agents: agents,
         name: sup_name,
         registry: registry_name

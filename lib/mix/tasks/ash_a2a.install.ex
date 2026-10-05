@@ -10,11 +10,6 @@
 # prints manual instructions when Igniter isn't a project dependency).
 #
 # Deviation from the bare template (per the PRD/ARD, §3.6/FR6):
-#   - Adds `{:a2a, "~> 0.2"}` as a project dependency via
-#     `Igniter.Project.Deps.add_dep/2` -- ash_a2a wraps the real `:a2a` runtime
-#     (~/xaas/deps/a2a), so installing ash_a2a must also wire in its own real
-#     dependency, not just the formatter plugin. Neither the bare template nor
-#     ash_r2rml's own installer does this (ash_r2rml has no runtime dep to add).
 #   - Supports both `Ash.Resource` and `Ash.Domain` targets (FR1: `skill :name,
 #     :action` on a Resource vs. `skill :name, Resource, :action` on a Domain) via
 #     a `--type` option (`resource` | `domain`, default `resource`), since AshA2A
@@ -33,13 +28,50 @@
 if Code.ensure_loaded?(Igniter) do
   defmodule Mix.Tasks.AshA2a.Install do
     @moduledoc """
-    Installs `ash_a2a` into the current project: adds `{:a2a, "~> 0.2"}` as a
-    dependency, wires up the `AshA2A.Formatter` formatter plugin, and -- when
+    Installs `ash_a2a` into the current project: wires up the `Spark.Formatter`
+    plugin and `import_deps: [:ash_a2a]`, and -- when
     `--target` is given -- patches the target module's `extensions:` list to
-    include `AshA2A` (the one extension module, usable on both an
-    `Ash.Resource` and an `Ash.Domain` -- `--type domain` selects the
-    `skill :name, Resource, :action` DSL shape but does not change which
-    extension module is added), plus a starter `a2a do end` block.
+    include `AshA2A` on `use Ash.Resource` (or `AshA2A.Domain` on `use
+    Ash.Domain` with `--type domain`; `AshA2A.Domain` is the domain-target
+    extension module and, like the resource path, also provides the
+    `skill :name, Resource, :action` DSL shape), plus a starter `a2a do end`
+    block.
+
+    ## Optional plan provider (`--with-pplan`)
+
+        mix ash_a2a.install --with-pplan
+
+    Also adds `{:ash_pplan, "~> 26.10"}` to the project's dependencies (the
+    same constraint ash_a2a itself pins for integration testing) and prints
+    the `AshA2A.Providers.PPlan` provider config snippet in the post-install
+    notice. `AshA2A.Providers.PPlan` is referenced by name only; the
+    provider integration lives in `AshA2A.Providers.PPlan`'s own docs.
+
+    ## Generated files
+
+    In addition to patching the target module, the installer appends (or
+    creates, via `Igniter.create_new_file/4`) a versioned "AshA2A skills"
+    section to `AGENTS.md` -- usage rules for writing skills: the
+    `a2a do skill ... end` grammar, the consequence value set, and the
+    authority gate semantics. Idempotent by a versioned marker comment;
+    an existing section is never duplicated.
+
+    The same run also emits a marker-checked `usage-rules.md` at the
+    project root (the ash-ecosystem convention: packages ship
+    `usage-rules.md` so `mix usage_rules.sync` can combine them into your
+    own agent rules file). If the file already exists without the
+    AshA2A marker, the section is appended rather than overwriting your
+    content; an existing marked section is never duplicated.
+
+    ## Router forward
+
+    The post-install notice always carries the exact router snippet
+    (`forward "/a2a", AshA2A.Transport.Plug, agent: MyApp.Agent`).
+    When a Phoenix router is detectable, the notice names it; the snippet
+    is disclosed as a manual step either way (the same honest fallback
+    shape as the no-target notice -- router-body injection has no safe,
+    non-interactive Igniter helper in this vendored version, so nothing is
+    silently guessed at or half-patched).
 
     Detects an existing `extensions:` option on the target module's `use
     Ash.Resource` / `use Ash.Domain` call and merges `AshA2A` into it instead of
@@ -52,6 +84,7 @@ if Code.ensure_loaded?(Igniter) do
         mix igniter.install ash_a2a
         mix ash_a2a.install --target MyApp.SomeResource
         mix ash_a2a.install --target MyApp.SomeDomain --type domain
+        mix ash_a2a.install --with-pplan
 
     ## Explicit skill consequences (`--skill`)
 
@@ -82,6 +115,140 @@ if Code.ensure_loaded?(Igniter) do
 
     @consequences [:observe, :change, :external_do, :unknown]
 
+    # Version marker for the generated AGENTS.md section (bump to re-issue the
+    # section after a content revision; see add_agents_md/1). v2 re-issues the
+    # section onto installs still carrying the v1 text, documenting the `skill`
+    # entity's `argument_mapping` / `get?` / `lease_required?` fields and the
+    # compile-time VerifySkills refusals.
+    @agents_md_marker "<!-- ash_a2a:agents:v2 -->"
+
+    # Version marker for the generated usage-rules.md section (same convention
+    # as the AGENTS.md marker: bump to re-issue after a content revision). The
+    # emitted section condenses the package's own usage-rules.md (the repo-root
+    # file that ships in the hex package and is combined into consumer rule
+    # files via `mix usage_rules.sync`); the install court in
+    # test/mix/tasks/ash_a2a_install_test.exs asserts that the invariant rule
+    # lines appear in BOTH documents, so the two cannot silently drift apart.
+    @usage_rules_marker "<!-- ash_a2a:usage-rules:v1 -->"
+
+    # Usage rules emitted as a `usage-rules.md` section at the consumer
+    # project root. Deliberately the same do/don't pairs as the package's
+    # usage-rules.md, condensed: the consequence value set and fail-closed
+    # defaults, the authentication-is-not-authority boundary, and the
+    # compile-time refusals -- all quoted from AshA2A.Dsl,
+    # AshA2A.Verifiers.VerifySkills and the security how-to, not invented.
+    @usage_rules_md_section """
+    #{@usage_rules_marker}
+    <!-- ash_a2a:install-generated. Do not edit between the markers; bump the version marker to re-issue. -->
+
+    # Rules for working with AshA2A
+
+    Ash is the source of truth. `skill` declarations cannot create actions,
+    change action arguments, or expose `public?: false` actions -- they only
+    override A2A metadata or suppress exposure (`expose?: false`).
+
+    ## Consequences
+
+    `consequence` is one of `:observe`, `:change`, `:external_do`, `:unknown`.
+
+    - `:observe` -- read-only; skips authority, admission and receipts.
+      Declare it only on reads; on a mutating action it is a compile-time
+      DslError (`observe_on_mutating_action`).
+    - `:change` / `:external_do` -- require a valid authority grant for this
+      exact `(principal, capability)`. Declare `consequence: :external_do`
+      explicitly on external side-effecting skills; a generic `:action` skill
+      defaults to the fail-closed `:unknown`.
+    - `:unknown` -- refused at dispatch with `:consequence_unclassified`,
+      regardless of authority.
+
+    ## Authority is not authentication
+
+    `AshA2A.Protocol.Plug.Auth` establishes who the caller is (and never
+    trusts `actor`/`tenant` from message metadata). What the caller may do
+    is a separate decision: per-`(principal, capability)` standing grants via
+    `AshA2A.Authority.Grant`, checked fail-closed by the `:broker` authority
+    policy (the default). An ungranted consequential call is refused with
+    `:authority_required` before the Ash action runs. Re-verify grants live
+    on async paths. The shipped brokers are reference implementations, not a
+    production identity system.
+
+    ## Compile-time enforcement
+
+    `AshA2A.Verifiers.VerifySkills` refuses, at compile time: unknown or
+    non-public actions (`REFUSED_ACTION_NOT_FOUND` /
+    `REFUSED_ACTION_NOT_PUBLIC`), `argument_mapping` targets that are not
+    real action arguments (`refused_argument_mapping_target`),
+    non-JSON-serializable argument types
+    (`refused_type_not_json_serializable`), and `lease_required?: true`
+    without a lease-capable authorizer
+    (`refused_lease_required_no_authorizer`).
+
+    ## Syncing these rules
+
+    Combine into your own agent rules file with the `usage_rules` package:
+
+        mix usage_rules.sync AGENTS.md --all
+    """
+
+    # Usage rules for agents writing skills against ash_a2a: the `a2a do skill
+    # ... end` grammar, the consequence value set, and the authority gate
+    # semantics. Kept deliberately small and truthful to `AshA2A.Dsl` (the
+    # consequence list and the fail-closed defaults are quoted from there, not
+    # invented here).
+    @agents_md_section """
+    #{@agents_md_marker}
+    <!-- ash_a2a:install-generated. Do not edit between the markers; bump the version marker to re-issue. -->
+
+    ## AshA2A skills (usage rules)
+
+    Declare an A2A skill inside `a2a do ... end` on an `Ash.Resource` (or an
+    `Ash.Domain` extended with `AshA2A.Domain`):
+
+        a2a do
+          skill :name, :action                            # resource shape
+          skill :name, SomeResource, :action              # domain shape
+          skill :name, :action, consequence: :external_do
+        end
+
+    `consequence` is one of `:observe`, `:change`, `:external_do`, `:unknown`.
+    A generic `:action` skill defaults to the fail-closed `:unknown`
+    consequence. `consequence: :external_do` declares an external
+    side-effecting actuation: dispatch under such a skill is subject to the
+    fail-closed `:broker` authority policy (a valid authority lease is
+    required). `consequence: :observe` marks a pure read -- :observe skills
+    skip authority, admission and receipts, so declare it only on reads. A
+    task refused at admission (an authority-gate denial or a
+    capability-resolution refusal that fired before the handler had any
+    effect) transitions to the terminal `REJECTED` task state
+    (`TASK_STATE_REJECTED` on the wire).
+
+    Every skill also accepts:
+
+        skill :get_item, :get,
+          get?: true,
+          argument_mapping: %{"id" => :id},
+          lease_required?: true
+
+    - `argument_mapping` maps inbound A2A wire argument names (strings) onto
+      the action's atom argument names; the default (`%{}`) passes wire names
+      through unchanged.
+    - `get?` marks a read skill as a single-record get (mirroring
+      ash_json_api's `get?` semantic); consumers read it via the compiled
+      capability index.
+    - `lease_required?` requires a valid authority lease to dispatch under
+      this skill.
+
+    Declarations are enforced at compile time by
+    `AshA2A.Verifiers.VerifySkills`: an unknown or non-public action fails
+    with `REFUSED_ACTION_NOT_FOUND` / `REFUSED_ACTION_NOT_PUBLIC`; an
+    `argument_mapping` target that is not a real argument on the action
+    fails with `refused_argument_mapping_target`; a known non-JSON-
+    serializable argument type fails with `refused_type_not_json_serializable`
+    (unknown custom types warn instead); and `lease_required?: true` without
+    a lease-capable authorizer on the subject fails with
+    `refused_lease_required_no_authorizer`.
+    """
+
     @impl Igniter.Mix.Task
     def info(_argv, _composing_task) do
       %Igniter.Mix.Task.Info{
@@ -89,8 +256,8 @@ if Code.ensure_loaded?(Igniter) do
         example:
           "mix ash_a2a.install --target MyApp.SomeResource --skill advance_item:advance:external_do",
         positional: [],
-        schema: [target: :string, type: :string, skill: :keep],
-        defaults: [type: "resource", skill: []],
+        schema: [target: :string, type: :string, skill: :keep, with_pplan: :boolean],
+        defaults: [type: "resource", skill: [], with_pplan: false],
         required: []
       }
     end
@@ -98,12 +265,22 @@ if Code.ensure_loaded?(Igniter) do
     @impl Igniter.Mix.Task
     def igniter(igniter) do
       skills = parse_skills!(igniter.args.options[:skill] || [])
+      type = igniter.args.options[:type] || "resource"
+      with_pplan? = igniter.args.options[:with_pplan] || false
+
+      # Detect a Phoenix router up front (non-interactive: `list_routers/1`
+      # scans, `select_router/2` prompts, so the latter is never called here).
+      # The detected name personalizes the router snippet in the post-install
+      # notice; the snippet stays a disclosed manual step either way.
+      {igniter, routers} = Igniter.Libs.Phoenix.list_routers(igniter)
 
       base =
         igniter
-        |> Igniter.Project.Deps.add_dep({:a2a, "~> 0.2"})
         |> Igniter.Project.Formatter.import_dep(:ash_a2a)
-        |> Igniter.Project.Formatter.add_formatter_plugin(AshA2A.Formatter)
+        |> Igniter.Project.Formatter.add_formatter_plugin(Spark.Formatter)
+        |> maybe_add_pplan_dep(with_pplan?)
+        |> add_agents_md()
+        |> add_usage_rules_md()
 
       case igniter.args.options[:target] do
         nil ->
@@ -116,29 +293,126 @@ if Code.ensure_loaded?(Igniter) do
           # invocation).
           base
           |> maybe_warn_skill_needs_target(skills)
-          |> Igniter.add_notice("""
-          AshA2A installed successfully!
-
-          Add `extensions: [AshA2A]` to your Ash.Resource or Ash.Domain modules
-          (the same `AshA2A` extension module works on both):
-
-              use Ash.Resource,
-                extensions: [AshA2A]
-
-              a2a do
-              end
-
-          Or re-run with `--target MyApp.SomeResource` (or `--target
-          MyApp.SomeDomain --type domain`) to patch a specific module automatically.
-          """)
+          |> Igniter.add_notice(install_notice(nil, type, with_pplan?, routers))
 
         target ->
           target_module = Igniter.Project.Module.parse(target)
 
           base
-          |> add_extension(target_module)
+          |> add_extension(target_module, type)
           |> add_dsl_block(target_module, skills)
+          |> Igniter.add_notice(install_notice(target, type, with_pplan?, routers))
       end
+    end
+
+    # `--with-pplan` adds the plan-provider dependency, mirroring ash_a2a's own
+    # test-only pin (mix.exs: `{:ash_pplan, "~> 26.10", only: :test}`; ash_pplan
+    # is at 26.10.3). Consumer projects get it as a real dependency (no `only:`,
+    # since the AshA2A.Providers.PPlan provider is runtime, not test-only).
+    defp maybe_add_pplan_dep(igniter, true) do
+      Igniter.Project.Deps.add_dep(igniter, {:ash_pplan, "~> 26.10"})
+    end
+
+    defp maybe_add_pplan_dep(igniter, _with_pplan?), do: igniter
+
+    # Appends (or creates) a versioned AshA2A skills section in AGENTS.md:
+    # usage rules for writing skills. Idempotent by the marker comment -- an
+    # existing section is never duplicated; a file without one gets it appended.
+    defp add_agents_md(igniter) do
+      if Igniter.exists?(igniter, "AGENTS.md") do
+        Igniter.update_file(igniter, "AGENTS.md", fn source ->
+          content = Rewrite.Source.get(source, :content)
+
+          if String.contains?(content, @agents_md_marker) do
+            source
+          else
+            Rewrite.Source.update(source, :content, content <> "\n" <> @agents_md_section)
+          end
+        end)
+      else
+        Igniter.create_new_file(igniter, "AGENTS.md", @agents_md_section)
+      end
+    end
+
+    # Emits (or appends to) a marker-checked `usage-rules.md` at the consumer
+    # project root -- the ash-ecosystem convention (`deps/ash/usage-rules.md`,
+    # `deps/ash_ai/usage-rules.md`, ...): packages ship a rules file so AI
+    # tools and newcomers get correct-usage guidance, combined into a project's
+    # own rules file via `mix usage_rules.sync`. Idempotent by the version
+    # marker, exactly like add_agents_md/1 above: an existing marked section
+    # is never duplicated; a file without the marker keeps its content and
+    # gets the AshA2A section appended.
+    defp add_usage_rules_md(igniter) do
+      if Igniter.exists?(igniter, "usage-rules.md") do
+        Igniter.update_file(igniter, "usage-rules.md", fn source ->
+          content = Rewrite.Source.get(source, :content)
+
+          if String.contains?(content, @usage_rules_marker) do
+            source
+          else
+            Rewrite.Source.update(source, :content, content <> "\n" <> @usage_rules_md_section)
+          end
+        end)
+      else
+        Igniter.create_new_file(igniter, "usage-rules.md", @usage_rules_md_section)
+      end
+    end
+
+    # Post-install notice: one notice per run, carrying the manual steps that
+    # are disclosed rather than guessed at (router forward snippet, provider
+    # config snippet when --with-pplan was passed).
+    defp install_notice(target, type, with_pplan?, routers) do
+      Enum.join(
+        [
+          target_summary(target, type),
+          router_section(routers),
+          pplan_section(with_pplan?)
+        ],
+        "\n"
+      )
+    end
+
+    defp target_summary(nil, _type), do: "AshA2A installed successfully!\n"
+
+    defp target_summary(target, type) do
+      "AshA2A installed into #{inspect(target)} (--type #{type}).\n"
+    end
+
+    # Honest fallback: this installer never patches router files -- the vendored
+    # Igniter has no safe, non-interactive injection point for a top-level
+    # `forward/3` in a router body -- so the exact snippet is disclosed in the
+    # notice instead, naming the detected router when one was found.
+    defp router_section([]) do
+      """
+
+      No Phoenix router was detected. To serve A2A over HTTP, add to your router:
+
+          forward "/a2a", AshA2A.Transport.Plug, agent: MyApp.Agent
+      """
+    end
+
+    defp router_section(routers) do
+      router = routers |> Enum.sort() |> hd()
+
+      """
+
+      Phoenix router detected: #{inspect(router)}. To serve A2A over HTTP, add to it:
+
+          forward "/a2a", AshA2A.Transport.Plug, agent: MyApp.Agent
+      """
+    end
+
+    defp pplan_section(false), do: ""
+
+    defp pplan_section(true) do
+      """
+
+      `ash_pplan` was added to your dependencies (`{:ash_pplan, "~> 26.10"}`).
+      To enable the plan-provider integration, configure the provider by name:
+
+          # config/config.exs
+          config :ash_a2a, :providers, [AshA2A.Providers.PPlan]
+      """
     end
 
     # `--skill` declarations patch a specific target module's `a2a do` block;
@@ -215,7 +489,23 @@ if Code.ensure_loaded?(Igniter) do
     # and appends `extensions: [AshA2A]` as the call's second argument when the
     # `use` call has no options at all -- covering the "no prior `extensions:`"
     # case without a separate fallback branch here.
-    defp add_extension(igniter, target_module) do
+    # `--type domain` injects `AshA2A.Domain` (the domain-target extension,
+    # being built in parallel -- referenced by name only) onto the target's
+    # `use Ash.Domain` call. The default resource path is unchanged: `AshA2A`
+    # is merged into the `use Ash.Resource` / `use Ash.Domain` call exactly as
+    # before, keeping `Spark.Igniter.add_extension/5`'s idempotent
+    # detect-and-merge behavior on both paths.
+    defp add_extension(igniter, target_module, "domain") do
+      Spark.Igniter.add_extension(
+        igniter,
+        target_module,
+        [Ash.Domain],
+        :extensions,
+        AshA2A.Domain
+      )
+    end
+
+    defp add_extension(igniter, target_module, _type) do
       Spark.Igniter.add_extension(
         igniter,
         target_module,
@@ -339,12 +629,11 @@ else
       AshA2A: Igniter is not installed, so `ash_a2a.install` cannot patch files
       automatically. Install manually:
 
-      1. Add `:a2a` and `:ash_a2a` to your `mix.exs` dependencies:
+      1. Add `:ash_a2a` to your `mix.exs` dependencies:
 
-             {:a2a, "~> 0.2"},
              {:ash_a2a, "~> 0.1"}
 
-      2. Add `import_deps: [:ash_a2a]` and `plugins: [AshA2A.Formatter]` to your
+      2. Add `import_deps: [:ash_a2a]` and `plugins: [Spark.Formatter]` to your
          `.formatter.exs`.
 
       3. Add `extensions: [AshA2A]` to your Ash.Resource or Ash.Domain modules
@@ -355,6 +644,10 @@ else
 
              a2a do
              end
+
+      4. Optional plan provider: add `{:ash_pplan, "~> 26.10"}` to your
+         dependencies and `config :ash_a2a, :providers, [AshA2A.Providers.PPlan]`
+         to your config (the same steps `--with-pplan` would automate).
       """)
     end
   end

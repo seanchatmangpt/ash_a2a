@@ -127,10 +127,11 @@ measurements unless noted. They fire only on the opt-in semantic paths.
 | `[:ash_a2a, :graphlaw, :host, :recycle]` | `AshA2A.GraphLaw.WasmexHost` (warm-instance recycle) |
 | `[:ash_a2a, :graph_law, :wasm, :batch]` | `AshA2A.Semantic.GraphLaw.Wasm` — note the historical `:graph_law` spelling, distinct from the `:graphlaw` engine family above |
 
-> The `AshA2A.Transport.Runtime` wrapper emits the **vendored SDK's** span
+> The `AshA2A.Transport.Runtime` wrapper emits the span
 > `[:a2a, :agent, :start / :stop / :exception]` (prefix `:a2a`, not
-> `:ash_a2a`) around agent message handling; it belongs to the `:a2a`
-> dependency's own namespace, not this catalog.
+> `:ash_a2a`) around agent message handling; the prefix is historical and
+> now originates from the in-repo `AshA2A.Protocol.Telemetry` module, not
+> this catalog's `[:ash_a2a, ...]` families.
 
 ### Chicago / QA harness events (internal)
 

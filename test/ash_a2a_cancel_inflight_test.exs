@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CancelInflightTest do
   @moduledoc """
   Real, unmocked coverage for research item #5: cancellation of a genuinely
-  in-flight `AshA2A`-dispatched task, driven through a real `A2A.Agent`
-  GenServer under a real `A2A.AgentSupervisor` -- not a bare
+  in-flight `AshA2A`-dispatched task, driven through a real `AshA2A.Protocol.Agent`
+  GenServer under a real `AshA2A.Protocol.AgentSupervisor` -- not a bare
   `AshA2A.Dispatcher.dispatch/5` function call, and not a synthetic
   `context()` map handed straight to `AshA2A.Agent.__cancel__/2`.
 
@@ -75,17 +79,17 @@ defmodule AshA2A.CancelInflightTest do
 
     # Real, in-flight, non-terminal state: the GenServer already replied
     # (mailbox free), but the stream in `task.metadata[:stream]` has
-    # deliberately not been consumed, so `A2A.Agent.Runtime.wrap_stream/3`'s
+    # deliberately not been consumed, so `AshA2A.Protocol.Agent.Runtime.wrap_stream/3`'s
     # `{:stream_done, ...}` finalizing cast has never fired.
     assert task.status.state == :working
     assert is_function(task.metadata[:stream])
 
     assert :ok = StreamItemAgent.cancel(StreamItemAgent, task.id)
 
-    # Real evidence that `AshA2A.Agent.__cancel__/2` (not just `A2A.Agent`'s
+    # Real evidence that `AshA2A.Agent.__cancel__/2` (not just `AshA2A.Protocol.Agent`'s
     # own state machine) actually ran: it is the one call site that emits
     # this telemetry event, and it only fires from inside
-    # `A2A.Agent.Runtime.run_cancel/2`, which only runs for a real
+    # `AshA2A.Protocol.Agent.Runtime.run_cancel/2`, which only runs for a real
     # non-terminal task (`~/xaas/deps/a2a/lib/a2a/agent.ex:305-309`).
     # Pinned on task_id: async modules cancel concurrently and fire the same
     # global telemetry event, so the first message may belong to another test.
@@ -100,7 +104,8 @@ defmodule AshA2A.CancelInflightTest do
     assert canceled_task.status.state == :canceled
 
     # Real proof the state is actually terminal now: a second cancel on the
-    # same task_id must be refused by `A2A.Agent`'s own real state machine.
-    assert {:error, :not_cancelable} = StreamItemAgent.cancel(StreamItemAgent, task.id)
+    # same task_id is idempotent success (v1.0 §3.3.1 — the canceled task is
+    # returned unchanged, no second on_cancel hook).
+    assert :ok = StreamItemAgent.cancel(StreamItemAgent, task.id)
   end
 end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SecurityProfile.Template do
   @moduledoc """
   Compile-time generator behind `AshA2A.SecurityProfile` (RFC-SA2A-007).

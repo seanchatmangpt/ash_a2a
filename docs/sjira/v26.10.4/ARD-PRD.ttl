@@ -1,0 +1,172 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix prd: <https://seanchatmangpt.dev/ash_a2a/sjira/v26.10.4#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ARD-PRD.ttl — Semantic Jira Specification for ash_a2a v26.10.4
+#
+# Fortune 5 Enterprise Hardening & Affidavit Cryptographic Trust Plane
+# Grounded against real repository paths and falsifiable verification gates.
+# Authority ceiling: CONSTRUCT only. Standing: UNKNOWN pending execution courts.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Project Identity ─────────────────────────────────────────────────────────
+
+prd:Product a rdfs:Class ; rdfs:label "Software product" .
+prd:version a rdf:Property ; rdfs:range xsd:string .
+prd:versionSource a rdf:Property ; rdfs:range xsd:string .
+prd:license a rdf:Property ; rdfs:range xsd:string .
+prd:repository a rdf:Property ; rdfs:range xsd:string .
+prd:evidencePath a rdf:Property ; rdfs:range xsd:string .
+
+prd:ash-a2a a prd:Product ;
+    rdfs:label "AshA2A v26.10.4 Enterprise Release" ;
+    dcterms:identifier "ash_a2a" ;
+    dcterms:title "AshA2A — Fortune 5 Hardened A2A Protocol & Cryptographic Trust Plane" ;
+    dcterms:description "AshA2A extension providing zero-trust SPIFFE/SPIRE workload identity, OpenID AuthZEN monotonic policy enforcement, inline DLP/residency filters, Cloud KMS envelope encryption, two-phase graceful DRAIN, FinOps budget ceilings, and NIST Post-Quantum (ML-DSA-65) receipts via affidavit WASM." ;
+    prd:version "26.10.4" ;
+    prd:versionSource "mix.exs" ;
+    prd:license "MIT" ;
+    prd:repository "seanchatmangpt/ash_a2a" ;
+    prd:evidencePath "docs/jira/v26.10.4/PRD.md", "docs/jira/v26.10.4/ARD.md", "lib/ash_a2a.ex" .
+
+# ── Shared Courts & Falsifiers ──────────────────────────────────────────────
+
+prd:court-chicago-enterprise a sj:Court ;
+    rdfs:label "Chicago Enterprise Integration Court" ;
+    dcterms:description "Verifies real collaborator integration (SPIRE sockets, AuthZEN endpoints, KMS envelope mocking, and affidavit WASM engine) without synthetic test doubles." .
+
+# ── Goal 1: Zero-Trust SPIFFE & AuthZEN Monotonic Policy ─────────────────────
+
+prd:G1-ZeroTrust a sj:WorkOrder ;
+    rdfs:label "G1 — SPIFFE Workload Identity & AuthZEN Monotonic Narrowing" ;
+    dcterms:description "Validates incoming X.509 SVIDs via streaming SPIRE workload agent connection; evaluates authorization via OpenID AuthZEN PDP; enforces monotonic grant narrowing preventing child task privilege escalation." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/spiffe/workload_watcher.ex", "lib/ash_a2a/authzen/decision_gate.ex" ;
+    sj:acceptance prd:G1-acceptance ;
+    sj:falsifier prd:G1-falsifier ;
+    sj:requiresCourt prd:court-chicago-enterprise .
+
+prd:G1-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G1 Acceptance: Monotonic grant enforcement" ;
+    dcterms:description "A delegated child task requesting permissions disjoint from or exceeding its parent is rejected with :REFUSED_NON_MONOTONIC_GRANT." .
+
+prd:G1-falsifier a sj:Falsifier ;
+    rdfs:label "G1 Falsifier" ;
+    dcterms:description "A child subtask acquires a capability not granted to the parent agent while tests pass." .
+
+# ── Goal 2: Inline DLP & Sovereign Data Residency ────────────────────────────
+
+prd:G2-DLPResidency a sj:WorkOrder ;
+    rdfs:label "G2 — Inline DLP Redaction & Data Residency Locks" ;
+    dcterms:description "Bidirectional redaction of PII/PHI and enforcement of geographic boundary policies; halts illegal cross-border data flows." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/security/dlp_filter.ex", "lib/ash_a2a/security/data_residency.ex" ;
+    sj:acceptance prd:G2-acceptance ;
+    sj:falsifier prd:G2-falsifier ;
+    sj:requiresCourt prd:court-chicago-enterprise .
+
+prd:G2-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G2 Acceptance: PII redaction and residency refusal" ;
+    dcterms:description "Payloads containing SSNs are pseudonymized before downstream transit; dispatch to node outside declared jurisdiction yields :REFUSED_DATA_RESIDENCY_VIOLATION." .
+
+prd:G2-falsifier a sj:Falsifier ;
+    rdfs:label "G2 Falsifier" ;
+    dcterms:description "Unredacted PII is recorded in telemetry or a task executes on a foreign node without residency refusal." .
+
+# ── Goal 3: CMEK / BYOK Envelope Encryption ──────────────────────────────────
+
+prd:G3-CMEK a sj:WorkOrder ;
+    rdfs:label "G3 — Cloud KMS / HSM Envelope Encryption" ;
+    dcterms:description "Envelope encryption using AES-256-GCM DEKs wrapped by customer KEKs managed in Google Cloud KMS, AWS KMS, or Vault PKCS#11." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/security/key_manager.ex", "lib/ash_a2a/security/cmek.ex" ;
+    sj:acceptance prd:G3-acceptance ;
+    sj:falsifier prd:G3-falsifier ;
+    sj:requiresCourt prd:court-chicago-enterprise .
+
+prd:G3-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G3 Acceptance: DEK wrapping and AEAD validation" ;
+    dcterms:description "Task state is encrypted with unique DEK; tampered ciphertext fails GCM authentication; key rotation re-wraps DEKs without decrypting payload." .
+
+prd:G3-falsifier a sj:Falsifier ;
+    rdfs:label "G3 Falsifier" ;
+    dcterms:description "State is persisted in plaintext or tampering does not produce an AEAD tag mismatch." .
+
+# ── Goal 4: SRE Two-Phase Graceful DRAIN ──────────────────────────────────────
+
+prd:G4-Drain a sj:WorkOrder ;
+    rdfs:label "G4 — Two-Phase Graceful DRAIN Protocol" ;
+    dcterms:description "Coordinates node evacuation upon SIGTERM: Phase 1 HTTP 503 cordon; Phase 2 task checkpointing and cluster state handover within 25s." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/cluster/drain_manager.ex" ;
+    sj:acceptance prd:G4-acceptance ;
+    sj:falsifier prd:G4-falsifier ;
+    sj:requiresCourt prd:court-chicago-enterprise .
+
+prd:G4-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G4 Acceptance: Zero task loss during shutdown" ;
+    dcterms:description "Receiving SIGTERM triggers immediate 503 cordon; running workflows checkpoint frame state and resume cleanly on peer nodes." .
+
+prd:G4-falsifier a sj:Falsifier ;
+    rdfs:label "G4 Falsifier" ;
+    dcterms:description "In-flight task is killed abruptly without state serialization upon SIGTERM." .
+
+# ── Goal 5: FinOps Hard Budget Ceilings ───────────────────────────────────────
+
+prd:G5-FinOps a sj:WorkOrder ;
+    rdfs:label "G5 — Token Budget Ceilings & Chargeback Attribution" ;
+    dcterms:description "Tracks organizational cost-center consumption and enforces hard budget ceilings prior to LLM/action dispatch." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/finops/budget_store.ex", "lib/ash_a2a/finops/budget_ceiling.ex" ;
+    sj:acceptance prd:G5-acceptance ;
+    sj:falsifier prd:G5-falsifier ;
+    sj:requiresCourt prd:court-chicago-enterprise .
+
+prd:G5-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G5 Acceptance: Pre-dispatch quota refusal" ;
+    dcterms:description "Action dispatch exceeding cost-center quota returns :REFUSED_BUDGET_EXCEEDED with zero tokens consumed." .
+
+prd:G5-falsifier a sj:Falsifier ;
+    rdfs:label "G5 Falsifier" ;
+    dcterms:description "An action dispatches successfully when accumulated usage exceeds the allocated quota ceiling." .
+
+# ── Goal 6: Affidavit Trust Plane & IEEE OCEL v2 Telemetry ───────────────────
+
+prd:G6-Affidavit a sj:WorkOrder ;
+    rdfs:label "G6 — Affidavit WASM PQC Receipts & IEEE OCEL v2 Streams" ;
+    dcterms:description "Integrates affidavit WASM for post-quantum (ML-DSA-65) receipts and streams correlated IEEE OCEL v2 events directly to enterprise SIEMs." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    prd:evidencePath "lib/ash_a2a/evidence/affidavit.ex", "lib/ash_a2a/telemetry/ocel_forwarder.ex" ;
+    sj:acceptance prd:G6-acceptance ;
+    sj:falsifier prd:G6-falsifier ;
+    sj:requiresCourt prd:court-chicago-enterprise .
+
+prd:G6-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G6 Acceptance: Validated ML-DSA-65 receipt and OCEL v2 schema" ;
+    dcterms:description "Affidavit WASM signs receipts using PQ-SEAL-v1; replay test passes; OCEL v2 stream validates against IEEE ndjson schema." .
+
+prd:G6-falsifier a sj:Falsifier ;
+    rdfs:label "G6 Falsifier" ;
+    dcterms:description "Receipt verification succeeds on altered payload bytes or OCEL v2 logs fail schema validation." .

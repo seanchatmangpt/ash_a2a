@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Effect do
   @moduledoc """
   External-domain ledger for the `SA2A-CHAOS` court (RFC-SA2A-002 §70, §71,
@@ -252,8 +256,8 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Environment do
     )
   end
 
-  @spec message(map()) :: A2A.Message.t()
-  def message(input), do: A2A.Message.new_user([A2A.Part.Data.new(input)])
+  @spec message(map()) :: AshA2A.Protocol.Message.t()
+  def message(input), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
 
   @doc "One real `CommandBus.run/4` against this environment's durable stores."
   @spec run(t(), String.t(), map(), atom()) :: CommandBus.result()

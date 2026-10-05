@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.SemanticReplan.Item do
   @moduledoc """
   Real fixture resource, private to this test file: mirrors `AshA2A.Test.
@@ -47,7 +51,7 @@ defmodule AshA2A.Test.Fixture.SemanticReplan.Domain do
 end
 
 defmodule AshA2A.Test.Fixture.SemanticReplanAgent do
-  @moduledoc "Real `A2A.Agent` GenServer over `SemanticReplan.Item` above."
+  @moduledoc "Real `AshA2A.Protocol.Agent` GenServer over `SemanticReplan.Item` above."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.SemanticReplan.Item,
@@ -112,7 +116,7 @@ defmodule AshA2A.Test.Fixture.SemanticReplan.ForbiddenDomain do
 end
 
 defmodule AshA2A.Test.Fixture.SemanticReplanForbiddenAgent do
-  @moduledoc "Real `A2A.Agent` GenServer over `SemanticReplan.Forbidden` above."
+  @moduledoc "Real `AshA2A.Protocol.Agent` GenServer over `SemanticReplan.Forbidden` above."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.SemanticReplan.Forbidden,
@@ -365,7 +369,7 @@ defmodule AshA2AAgentSemanticReplanTest do
     # its real committed `command_id` and real `Compiler.replan/4` was
     # actually reached (a distinct, later failure mode than
     # `:continuation_receipt_not_found`), never silently skipped.
-    # A2A.Agent.call/3's own real GenServer.call timeout defaults to
+    # AshA2A.Protocol.Agent.call/3's own real GenServer.call timeout defaults to
     # 60_000ms (deps/a2a/lib/a2a/agent.ex), independent of this test's own
     # `@tag timeout:` -- raising both layers, see the note on this test's
     # own @tag above.
@@ -380,7 +384,7 @@ defmodule AshA2AAgentSemanticReplanTest do
     refute_continuation_receipt_not_found(continuation_task)
 
     if continuation_task.status.state == :completed do
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: body}]}] = continuation_task.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: body}]}] = continuation_task.artifacts
       assert body["standing"] == "candidate"
       assert body["authority"] == "none"
     end
@@ -410,7 +414,7 @@ defmodule AshA2AAgentSemanticReplanTest do
 
     # A real `Ash.Policy.Authorizer` denial (`class: :forbidden`) maps to a
     # real `{:error, _}` reply (`Dispatcher.to_reply/1`), which
-    # `A2A.Agent.Runtime` surfaces as a failed task -- but `CommandBus.run/4`
+    # `AshA2A.Protocol.Agent.Runtime` surfaces as a failed task -- but `CommandBus.run/4`
     # still committed a real `AshA2A.Receipt` for this real outcome (the
     # action genuinely ran and was genuinely denied; that IS the real
     # observation), distinct from REFUSED below where `CommandBus.admit/2`
@@ -544,10 +548,10 @@ defmodule AshA2AAgentSemanticReplanTest do
   end
 
   # A `{:error, _}` reply is surfaced on `task.status.message`, not appended
-  # to `task.history` (`A2A.Agent.Runtime.handle_reply/2`'s `{:error,
+  # to `task.history` (`AshA2A.Protocol.Agent.Runtime.handle_reply/2`'s `{:error,
   # reason}` clause -- unlike its `{:reply, _}`/`{:input_required, _}`
   # clauses, which do append to history).
-  defp error_text(%{status: %{message: %A2A.Message{} = message}}), do: A2A.Message.text(message)
+  defp error_text(%{status: %{message: %AshA2A.Protocol.Message{} = message}}), do: AshA2A.Protocol.Message.text(message)
   defp error_text(_task), do: nil
 
   defp refute_continuation_receipt_not_found(task) do

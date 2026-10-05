@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule Mix.Tasks.AshA2a.VendorGraphlaw do
   @shortdoc "Rebuilds, executes, and vendors the GraphLaw wasm law package into priv/graphlaw"
 
@@ -176,6 +180,8 @@ defmodule Mix.Tasks.AshA2a.VendorGraphlaw do
     """)
   end
 
+  # Intentional `no_return`: this helper's only exit is `Mix.raise/1`.
+  @spec report_failure(map()) :: no_return()
   defp report_failure(%{code: code} = error) do
     detail =
       case Map.get(error, :log) do

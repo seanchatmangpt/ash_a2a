@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Telemetry.OcelForwarderTest do
   @moduledoc """
   Chicago-school test: real `:telemetry` emission from `AshA2A.Dispatcher`'s
@@ -26,8 +30,8 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
 
   @moduletag :serial
   @moduletag :serial_shard
-  alias A2A.Message
-  alias A2A.Part
+  alias AshA2A.Protocol.Message
+  alias AshA2A.Protocol.Part
   alias AshA2A.{Command, Identity, Receipt}
   alias AshA2A.Test.Fixture.FreedomGym.Facilitator
 
@@ -336,7 +340,7 @@ defmodule AshA2A.Telemetry.OcelForwarderTest do
     # `Req.post/2` executed synchronously inside `handle_event/4`, which
     # `:telemetry.span/3` (`dispatcher.ex:137`) runs synchronously in the
     # calling process -- so `AshA2A.Dispatcher.dispatch/5` itself would have
-    # blocked until the response. In the real single-mailbox `A2A.Agent`
+    # blocked until the response. In the real single-mailbox `AshA2A.Protocol.Agent`
     # GenServer (`agent.ex`), that means every other caller queued behind it
     # would have blocked too.
     #

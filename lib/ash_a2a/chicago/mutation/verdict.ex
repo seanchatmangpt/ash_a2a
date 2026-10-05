@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Mutation.Verdict do
   @moduledoc """
   Outcome of `AshA2A.Chicago.Mutation.qualify/2` for one mutation (§22, §97).

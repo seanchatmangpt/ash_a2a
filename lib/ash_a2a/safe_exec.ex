@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SafeExec do
   @moduledoc """
   Closed-allowlist external process execution (RFC-SA2A-006 s22; CWE-77/78).

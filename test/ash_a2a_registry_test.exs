@@ -1,13 +1,17 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ARegistryTest do
   @moduledoc """
-  Chicago-style multi-agent `A2A.Registry` collision test (ash_a2a task #22).
+  Chicago-style multi-agent `AshA2A.Protocol.Registry` collision test (ash_a2a task #22).
 
   Compiles two distinct real fixture resources
   (`AshA2A.Test.Fixture.Echo`/`AshA2A.Test.Fixture.Widget`,
   `test/support/fixture.ex`) into two distinct real `AshA2A.Agent` modules
   (`EchoAgent`/`WidgetAgent`), starts both under one real
-  `A2A.AgentSupervisor` (the same child spec `AshA2A.Application.start/2`
-  wires in) with its integrated `A2A.Registry`, and asserts on the real
+  `AshA2A.Protocol.AgentSupervisor` (the same child spec `AshA2A.Application.start/2`
+  wires in) with its integrated `AshA2A.Protocol.Registry`, and asserts on the real
   registry state -- no Mock/mox/patch, no hand-built registry entries.
   """
 
@@ -15,7 +19,7 @@ defmodule AshA2ARegistryTest do
 
   alias AshA2A.Test.Fixture.{EchoAgent, WidgetAgent}
 
-  test "two distinct AshA2A.Agent modules register distinct A2A.Registry identities" do
+  test "two distinct AshA2A.Agent modules register distinct AshA2A.Protocol.Registry identities" do
     {sup, registry_name} =
       AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [
         EchoAgent,
@@ -34,12 +38,12 @@ defmodule AshA2ARegistryTest do
     assert is_pid(widget_pid)
     refute echo_pid == widget_pid
 
-    # `A2A.Registry` keys its ETS table by agent *module* (registry.ex:104-111),
+    # `AshA2A.Protocol.Registry` keys its ETS table by agent *module* (registry.ex:104-111),
     # populated at real `init/1` time from each agent's own real
     # `agent_card/0` -- assert on the actual registered entries, not on the
     # agent modules' identity alone.
-    assert {:ok, echo_card} = A2A.Registry.get(registry_name, EchoAgent)
-    assert {:ok, widget_card} = A2A.Registry.get(registry_name, WidgetAgent)
+    assert {:ok, echo_card} = AshA2A.Protocol.Registry.get(registry_name, EchoAgent)
+    assert {:ok, widget_card} = AshA2A.Protocol.Registry.get(registry_name, WidgetAgent)
 
     assert echo_card.name == "echo_agent"
     assert widget_card.name == "widget_agent"
@@ -55,7 +59,7 @@ defmodule AshA2ARegistryTest do
     assert [%{id: "AshA2A.Test.Fixture.Echo.read", name: "echo"}] = echo_card.skills
     assert [%{id: "AshA2A.Test.Fixture.Widget.read", name: "inspect"}] = widget_card.skills
 
-    all_entries = A2A.Registry.all(registry_name)
+    all_entries = AshA2A.Protocol.Registry.all(registry_name)
     registered_modules = Enum.map(all_entries, fn {mod, _card} -> mod end)
 
     assert length(all_entries) == 2
@@ -65,8 +69,8 @@ defmodule AshA2ARegistryTest do
 
     # Both agents are independently dispatchable through the shared
     # supervisor/registry -- distinct identity, not just distinct metadata.
-    echo_message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
-    widget_message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    echo_message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+    widget_message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
     assert {:ok, echo_task} = EchoAgent.call(EchoAgent, echo_message)
     assert {:ok, widget_task} = WidgetAgent.call(WidgetAgent, widget_message)

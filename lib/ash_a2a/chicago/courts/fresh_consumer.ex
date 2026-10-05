@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.FreshConsumer do
   @moduledoc """
   Gate 11 -- Fresh-Consumer Proof, and the Fresh Consumer and Durable Evidence

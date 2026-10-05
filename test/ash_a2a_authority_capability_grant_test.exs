@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AAuthorityCapabilityGrantTest do
   @moduledoc """
   Regression tests for the RFC-SA2A-001 S29 ("Authentication does NOT imply
@@ -15,7 +19,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
   therefore held authority for every consequential capability the agent
   exposed.
 
-  These tests run against the real `A2A.Agent` GenServer, a real
+  These tests run against the real `AshA2A.Protocol.Agent` GenServer, a real
   `AshA2A.Authority.Broker.InMemory` process, and a real
   `AshA2A.Test.Fixture.ActuationCounter` process. "Was the consequential
   action actually actuated" is answered by a real counter read, never by an
@@ -77,8 +81,8 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
   defp restore(key, nil), do: Application.delete_env(:ash_a2a, key)
   defp restore(key, value), do: Application.put_env(:ash_a2a, key, value)
 
-  # `A2A.Plug` populates `context.metadata["a2a.auth"]` only after real
-  # credential verification; `A2A.Agent.call/3`'s `opts` become exactly
+  # `AshA2A.Protocol.Plug` populates `context.metadata["a2a.auth"]` only after real
+  # credential verification; `AshA2A.Protocol.Agent.call/3`'s `opts` become exactly
   # `context.metadata`, so this is the same real shape a verified caller
   # arrives with (identical to the helper in
   # `test/ash_a2a_agent_command_bus_test.exs`).
@@ -164,7 +168,7 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       assert {:ok, task} = call("peek")
       assert task.status.state == :completed
 
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{peeked: true}}]}] = task.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{peeked: true}}]}] = task.artifacts
     end
   end
 
@@ -206,15 +210,15 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
       # The real proof of replay: the action body ran exactly ONCE across two
       # dispatches, and the second reply carries the first receipt's own
-      # recorded output. Compared at the `A2A.Part.Data` payload level rather
-      # than on the whole `A2A.Artifact`: `artifact_id` is freshly generated
+      # recorded output. Compared at the `AshA2A.Protocol.Part.Data` payload level rather
+      # than on the whole `AshA2A.Protocol.Artifact`: `artifact_id` is freshly generated
       # by `A2A` every time a reply is wrapped into an artifact and is not
       # part of the replay contract (verified by running this assertion both
       # ways -- the payloads match exactly, only the wrapper ids differ).
       assert ActuationCounter.count() == 1
 
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: first_data}]}] = first.artifacts
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: second_data}]}] = second.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: first_data}]}] = first.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: second_data}]}] = second.artifacts
       assert first_data == second_data
       assert first_data == %{actuated: true, note: "retry-me"}
     end

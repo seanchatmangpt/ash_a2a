@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.IrAdmissionSeal do
   @moduledoc """
   RFC-SA2A PRD §13-14 / ARD §12-13 anti-forgery seal for

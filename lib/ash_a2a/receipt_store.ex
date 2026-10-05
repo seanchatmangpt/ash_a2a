@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ReceiptStore do
   @moduledoc """
   Behaviour for replay-safe command receipt storage.
@@ -147,8 +151,35 @@ defmodule AshA2A.ReceiptStore do
     kill_switch_path = env.(:kill_switch_path, nil)
     allow_memory? = env.(:allow_memory_receipt_store, false) == true
 
+    boot_decision(
+      production?,
+      is_nil(explicit_store),
+      store,
+      outbox_dir,
+      ekv_opts,
+      kill_switch_path,
+      allow_memory?
+    )
+  end
+
+  # The production flag is threaded through a function boundary on purpose:
+  # it ORs a runtime env flag with `AshA2A.SecurityProfile.strict?/0`, which
+  # is a compile-time constant of the build (`true` under the default `:strict`
+  # profile). In a prod build the Elixir type checker proves the OR static and
+  # flags every runtime branch on it as a typing violation; as a clause-head
+  # parameter its type is the honest `boolean()` and the decision table below
+  # is checked against that, with identical behavior in every build.
+  defp boot_decision(
+         production?,
+         store_missing?,
+         store,
+         outbox_dir,
+         ekv_opts,
+         kill_switch_path,
+         allow_memory?
+       ) do
     cond do
-      production? and is_nil(explicit_store) ->
+      production? and store_missing? ->
         {:error, :receipt_store_not_configured}
 
       production? and store == AshA2A.ReceiptStore.Memory and not allow_memory? ->

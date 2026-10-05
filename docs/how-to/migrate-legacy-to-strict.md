@@ -79,7 +79,7 @@ the others are stated from the cited source lines.
   (`:require_authenticated_caller` defaults to `true`).
 - **Fix**: continue tasks as the creating principal, echo the fingerprint the
   agent returned, and serve HTTP through `AshA2A.Transport.Plug` (owner-scoped
-  `tasks/*`), not the raw `A2A.Plug`. Public skills are opt-in via
+  `tasks/*`), not the raw `AshA2A.Protocol.Plug`. Public skills are opt-in via
   `public_skills: [...]`.
 
 ## 5. Strict observe classification (opt-in)

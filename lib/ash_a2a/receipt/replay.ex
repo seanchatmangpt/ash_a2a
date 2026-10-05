@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Receipt.Replay do
   @moduledoc """
   RFC-SA2A-001 S32 replay: reconstruct the semantic basis of an execution

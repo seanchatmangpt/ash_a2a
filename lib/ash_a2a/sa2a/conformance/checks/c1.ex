@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SA2A.Conformance.Checks.C1 do
   @moduledoc """
   C1 checks: kernel-only DO closure, canonical digests at every boundary,

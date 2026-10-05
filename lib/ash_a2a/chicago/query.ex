@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Query do
   @moduledoc """
   Independent OCEL consumer and semantic-level conformance predicates
@@ -103,8 +107,9 @@ defmodule AshA2A.Chicago.Query do
     code =
       case reason do
         {code, _} when is_atom(code) -> code
+        # (the old `_ -> :ocel_unreadable` catch-all was dead: every `reason`
+        # is an atom or an `{atom, ...}` tuple, both covered above)
         code when is_atom(code) -> code
-        _ -> :ocel_unreadable
       end
 
     :telemetry.execute(

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Transport.Principal do
   @moduledoc """
   Stable, non-leaking owner key for a transport-verified caller identity.
@@ -5,7 +9,7 @@ defmodule AshA2A.Transport.Principal do
   Task ownership (SEC-01) compares the principal that created a task with the
   principal asking to read, continue, cancel or list it. The key must be:
 
-    * derived only from the verified identity `A2A.Plug.Auth` produced
+    * derived only from the verified identity `AshA2A.Protocol.Plug.Auth` produced
       (`metadata["a2a.auth"][:identity]`, atom-keyed; see
       `AshA2A.Agent`'s `verified_auth_identity/1` for why the string-keyed
       shape a remote caller can forge is never accepted);

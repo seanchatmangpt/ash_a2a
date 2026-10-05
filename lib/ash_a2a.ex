@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A do
   @moduledoc """
   Ash extension that projects canonical public Ash actions into A2A skills.
@@ -24,5 +28,5 @@ defmodule AshA2A do
   use Spark.Dsl.Extension,
     sections: AshA2A.Dsl.sections(),
     transformers: [AshA2A.Transformers.BuildCapabilityIndex],
-    verifiers: [AshA2A.Verify]
+    verifiers: [AshA2A.Verify, AshA2A.Verifiers.VerifySkills]
 end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Docs.ModuleIndexCourtTest do
   @moduledoc """
   Module-citation and doc-link court (v26.10.2 ERRC RD4 + RA2), re-derived

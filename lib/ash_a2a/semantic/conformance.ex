@@ -1867,7 +1867,7 @@ defmodule AshA2A.Semantic.Conformance do
     end
   end
 
-  defp probe_message, do: A2A.Message.new_user([A2A.Part.Data.new(%{})])
+  defp probe_message, do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
   defp unique, do: System.unique_integer([:positive, :monotonic])
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.GroupRealTopologyTest do
   @moduledoc """
   Exercises `AshA2A.Topology.Group` against a REAL `Group` registry/supervisor

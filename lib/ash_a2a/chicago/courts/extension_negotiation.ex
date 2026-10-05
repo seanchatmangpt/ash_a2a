@@ -1,15 +1,19 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   @moduledoc """
   RFC-SA2A-002 §55 Extension Negotiation Court and §56 Downgrade Prevention
   Court (`SA2A-NEG`).
 
-  Every card in this court is the card the real, unmodified `A2A.Plug`
-  actually serves for a real `A2A.Agent` process (decoded with the real
-  `A2A.JSON`), every negotiation is the real
+  Every card in this court is the card the real, unmodified `AshA2A.Protocol.Plug`
+  actually serves for a real `AshA2A.Protocol.Agent` process (decoded with the real
+  `AshA2A.Protocol.JSON`), every negotiation is the real
   `AshA2A.Semantic.Extension.negotiate/2`, and every message crosses the real
   `AshA2A.Semantic.Peer` boundary in a real agent GenServer -- in-process via
-  `A2A.call/3`, or as a real JSON-RPC `message/send` through the real
-  `A2A.Plug` pipeline where the attack is a remote peer.
+  `AshA2A.Protocol.call/3`, or as a real JSON-RPC `message/send` through the real
+  `AshA2A.Protocol.Plug` pipeline where the attack is a remote peer.
 
   Silent profile assumption fails this court (§55): ordinary A2A traffic
   presented as semantic, an incompatible profile version (on the card and on
@@ -17,7 +21,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   receiving peer's own card), and a consequence-bearing task without the
   negotiated profile. §56: a strict peer facing a remote that does not support
   the profile yields a typed refusal/UNSUPPORTED outcome, never a hidden
-  fallback to ordinary A2A. Two positive controls prove discrimination (§100).
+  fallback to ordinary AshA2A.Protocol. Two positive controls prove discrimination (§100).
   """
 
   use AshA2A.Chicago.Court
@@ -82,7 +86,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
         invariant:
           "Ordinary A2A traffic presented as Semantic A2A never enters the semantic path",
         stimulus:
-          "real A2A.call/3 of a NON-activated message carrying a complete envelope as a DataPart, as text, and under metadata sa2a/profile keys",
+          "real AshA2A.Protocol.call/3 of a NON-activated message carrying a complete envelope as a DataPart, as text, and under metadata sa2a/profile keys",
         boundary: "Extension.activated?/1 inside Peer.receive_message/3",
         forbidden_outcome: "semantic admission started or standing :admitted",
         attempt: @ordinary,
@@ -93,7 +97,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
       negative("002",
         invariant: "A remote card advertising an incompatible profile version does not negotiate",
         stimulus:
-          "negotiate/2 against the card A2A.Plug serves for a remote advertising SA2A-PROFILE-v26.9.20 at protocolVersion v25.1.0",
+          "negotiate/2 against the card AshA2A.Protocol.Plug serves for a remote advertising SA2A-PROFILE-v26.9.20 at protocolVersion v25.1.0",
         boundary: "AshA2A.Semantic.Extension.negotiate/2",
         forbidden_outcome: "negotiation outcome :ok",
         attempt: {:observed, @negotiate},
@@ -104,7 +108,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
       negative("003",
         invariant: "An envelope declaring an incompatible profile version is not admitted",
         stimulus:
-          "real A2A.call/3 of an activated admissible envelope declaring urn:sa2a:profile:core:v25.1.0",
+          "real AshA2A.Protocol.call/3 of an activated admissible envelope declaring urn:sa2a:profile:core:v25.1.0",
         boundary: "Peer.receive_message/3 + Envelope.validate_profile/1",
         forbidden_outcome: "semantic admission started or standing :admitted",
         attempt: {:observed, @receive, %{"activated" => "true"}},
@@ -114,7 +118,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
       ),
       negative("004",
         invariant: "A remote card without the SA2A advertisement does not negotiate",
-        stimulus: "negotiate/2 against the card A2A.Plug serves for a non-advertising remote",
+        stimulus: "negotiate/2 against the card AshA2A.Protocol.Plug serves for a non-advertising remote",
         boundary: "AshA2A.Semantic.Extension.negotiate/2",
         forbidden_outcome: "negotiation outcome :ok",
         attempt: {:observed, @negotiate},
@@ -126,7 +130,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
         invariant:
           "A receiving peer whose own served card does not advertise SA2A never lets semantic standing cross its boundary",
         stimulus:
-          "real A2A.call/3 of an activated, fully admissible envelope to a peer configured with the non-advertising card its A2A.Plug serves",
+          "real AshA2A.Protocol.call/3 of an activated, fully admissible envelope to a peer configured with the non-advertising card its AshA2A.Protocol.Plug serves",
         boundary: "Peer.receive_message/3 own-advertisement check",
         forbidden_outcome: "semantic admission started or standing :admitted",
         attempt: {:observed, @receive, %{"activated" => "true"}},
@@ -138,7 +142,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
         invariant:
           "A consequence-bearing task without the negotiated profile is refused as UNSUPPORTED_PROFILE even when the counterparty labels it harmless",
         stimulus:
-          "real A2A.call/3 of a non-activated message naming the real :change capability place_order with metadata consequenceBearing=false",
+          "real AshA2A.Protocol.call/3 of a non-activated message naming the real :change capability place_order with metadata consequenceBearing=false",
         boundary: "Peer.bridge_path/2 + Peer.consequence_bearing?/2 (local capability DSL)",
         forbidden_outcome:
           "silent ordinary-A2A handling (code profile_not_negotiated), admission, or actuation",
@@ -158,7 +162,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
         invariant:
           "§56: a Strict peer facing a remote without the required profile never silently downgrades a consequence-bearing interaction to ordinary A2A",
         stimulus:
-          "strict peer negotiates against the non-advertising remote's served card, then the remote sends the consequence-bearing task as ordinary JSON-RPC message/send through the real A2A.Plug",
+          "strict peer negotiates against the non-advertising remote's served card, then the remote sends the consequence-bearing task as ordinary JSON-RPC message/send through the real AshA2A.Protocol.Plug",
         boundary: "Extension.negotiate/2 then Peer.bridge_path/2 strict clause",
         forbidden_outcome:
           "negotiation :ok, hidden fallback (code profile_not_negotiated), standing :admitted, or actuation",
@@ -178,7 +182,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
         invariant:
           "Two peers whose served cards both advertise the compatible profile negotiate, and an admissible envelope over real JSON-RPC is admitted",
         stimulus:
-          "negotiate/2 over both served cards, then an activated admissible envelope as JSON-RPC message/send through the real A2A.Plug",
+          "negotiate/2 over both served cards, then an activated admissible envelope as JSON-RPC message/send through the real AshA2A.Protocol.Plug",
         boundary: "Extension.negotiate/2 + Peer.receive_message/3",
         attempt:
           {:all, [{:observed, @negotiate}, {:observed, @receive, %{"activated" => "true"}}]},
@@ -188,7 +192,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
         invariant:
           "A strict peer still answers a NON-consequence-bearing ordinary request, typed profile_not_negotiated (UNSUPPORTED, not REFUSED) -- the §76 guard discriminates",
         stimulus:
-          "real A2A.call/3 of an ordinary message to a strict peer whose only capability is an observation",
+          "real AshA2A.Protocol.call/3 of an ordinary message to a strict peer whose only capability is an observation",
         boundary: "Peer.bridge_path/2",
         attempt: @ordinary,
         expected:
@@ -306,7 +310,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   defp ordinary_as_semantic(ctx, f, peer, payload) do
     message =
       Envelopes.ordinary(
-        [A2A.Part.Data.new(payload), A2A.Part.Text.new(Jason.encode!(payload))],
+        [AshA2A.Protocol.Part.Data.new(payload), AshA2A.Protocol.Part.Text.new(Jason.encode!(payload))],
         %{
           "sa2a" => payload,
           "extensions" => [Extension.profile_id()],
@@ -354,7 +358,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   defp harmless_label(ctx, f, peer) do
     message =
       Envelopes.ordinary(
-        [A2A.Part.Data.new(%{"item" => Fx.unique("chicago-neg-harmless"), "quantity" => 1})],
+        [AshA2A.Protocol.Part.Data.new(%{"item" => Fx.unique("chicago-neg-harmless"), "quantity" => 1})],
         %{"skill" => "place_order", "consequenceBearing" => false}
       )
 
@@ -370,7 +374,7 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   defp downgrade(ctx, f, peer, local_card, remote) do
     message =
       Envelopes.ordinary(
-        [A2A.Part.Data.new(%{"item" => Fx.unique("chicago-neg-downgrade"), "quantity" => 2})],
+        [AshA2A.Protocol.Part.Data.new(%{"item" => Fx.unique("chicago-neg-downgrade"), "quantity" => 2})],
         %{"skill" => "place_order"}
       )
 

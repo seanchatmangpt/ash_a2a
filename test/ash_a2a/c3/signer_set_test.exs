@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.C3.SignerSetTest do
   # DB-free: real Ed25519 keys and signatures (:crypto), real Sa2aCrypto registry and
   # verifier; no Repo, no Oban.

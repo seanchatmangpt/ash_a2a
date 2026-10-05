@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.OcelDefaultPathItemAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the existing
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the existing
   `AshA2A.Test.Fixture.Item` fixture (real `:create`/`:update`/`:destroy`
   skills, `test/support/fixture.ex`) -- private to this test file.
 
@@ -23,7 +27,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
   @moduledoc """
   Proves the FULL real chain this session wired together, end to end:
 
-    real `A2A.Agent.call/3`
+    real `AshA2A.Protocol.Agent.call/3`
       -> `AshA2A.Agent.__dispatch__/3` (the DEFAULT dispatch path every
          generated agent uses -- no test-only bypass)
       -> real `AshA2A.CommandBus.run/4` (consequence `:change`/`:external_do`
@@ -46,7 +50,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
   No Mock/mox/patch/monkeypatch anywhere in this file: a real Bandit HTTP
   listener, a real Req.post (inside the real `OcelForwarder`), a real
   captured HTTP request body asserted on directly, and a real supervised
-  `A2A.Agent` GenServer process driving a real `Ash.Resource` through a real
+  `AshA2A.Protocol.Agent` GenServer process driving a real `Ash.Resource` through a real
   ETS data layer.
 
   ## Deduplication (see the first test below for the receipted assertion)
@@ -149,7 +153,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
     base_url
   end
 
-  # `A2A.Plug` only populates `context.metadata["a2a.auth"]` after real
+  # `AshA2A.Protocol.Plug` only populates `context.metadata["a2a.auth"]` after real
   # credential verification -- see the identical helper and citation in
   # `test/ash_a2a_agent_command_bus_test.exs`.
   defp authenticated_call_opts(identity) do
@@ -196,7 +200,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
     {:ok, base_url: base_url}
   end
 
-  test "a real create dispatched through the default CommandBus-wired A2A.Agent path lands exactly one real, merged receipt-derived OCEL event at the real sink" do
+  test "a real create dispatched through the default CommandBus-wired AshA2A.Protocol.Agent path lands exactly one real, merged receipt-derived OCEL event at the real sink" do
     message =
       data_message(%{"label" => "ocel-default-path-widget"}, %{
         metadata: %{skill: "create_item"}
@@ -210,7 +214,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
              )
 
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: created}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] = task.artifacts
     assert created.id
 
     events = wait_for_events(1, 2_000)
@@ -258,7 +262,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
                authenticated_call_opts("user-2")
              )
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: created}]}] = create_task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] = create_task.artifacts
     item_id = created.id
 
     # Drain the create's own real (single, merged) event before driving the
@@ -280,7 +284,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
              )
 
     assert update_task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: updated}]}] = update_task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: updated}]}] = update_task.artifacts
     assert updated.label == "after-update"
 
     events = wait_for_events(1, 2_000)

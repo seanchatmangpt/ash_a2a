@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AFreedomGymPhaseAdmissionTest do
   @moduledoc """
   Proves the real SELECT-vs-DO admission gate closes the gap where the
@@ -107,7 +111,7 @@ defmodule AshA2AFreedomGymPhaseAdmissionTest do
                )
 
       assert task.status.state == :completed
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = task.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
       assert result.phase == :open
     end
   end

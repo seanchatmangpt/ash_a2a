@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.FederatedDelegation.PeerB do
   @moduledoc """
   The delegate side of the `SA2A-FED` court (RFC-SA2A-001 §54 Confused Deputy
@@ -56,7 +60,7 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation.PeerA do
   writes a real `DelegationLog` row proving peer A's own hop actuated), and
   its real effect is a genuine cross-process A2A call
   (`AshA2A.Chicago.Fixtures.FederatedDelegation.delegate/3`) into a second,
-  genuinely distinct real `A2A.Agent` GenServer (peer B) -- never a function
+  genuinely distinct real `AshA2A.Protocol.Agent` GenServer (peer B) -- never a function
   call into peer B's Ash resource directly, and never a call that mints its
   own authority for peer B.
 
@@ -147,7 +151,7 @@ end
 defmodule AshA2A.Chicago.Fixtures.FederatedDelegation.PeerBAgent do
   @moduledoc """
   The generated `use AshA2A.Agent` projection over `PeerB` -- peer B's own
-  real supervised `A2A.Agent` GenServer, started per stimulus and registered
+  real supervised `AshA2A.Protocol.Agent` GenServer, started per stimulus and registered
   under a unique local name so peer A's action can reach it the same way any
   remote caller would: by name/address, never by importing peer B's Ash
   resource module and calling it in-process.
@@ -170,14 +174,14 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation do
   @moduledoc """
   Shared real cross-peer delegation logic and independent post-state readers
   for the `SA2A-FED` court (federated delegation across two genuinely
-  distinct real `A2A.Agent` peer processes).
+  distinct real `AshA2A.Protocol.Agent` peer processes).
   """
 
   alias AshA2A.Chicago.Fixtures.FederatedDelegation.{DelegationLog, PeerB}
 
   @doc """
   Extracts a stable string identity from whatever shape `context.actor`
-  carries (the raw `A2A.Plug.Auth`-verified `auth_identity`, e.g. `%{identity:
+  carries (the raw `AshA2A.Protocol.Plug.Auth`-verified `auth_identity`, e.g. `%{identity:
   "..."}` or its string-keyed JSON-decoded form) -- never re-derives an
   identity from anything else. `nil` when unauthenticated.
   """
@@ -193,14 +197,14 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation do
   `DelegationLog` row (peer A's own consequence -- proof its own hop
   actuated), then either
 
-    * (`bypass: false`, the lawful path) makes a real `A2A.call/3` into peer
+    * (`bypass: false`, the lawful path) makes a real `AshA2A.Protocol.call/3` into peer
       B's named agent process for peer B's `record` skill, forwarding the
       SAME `identity` peer A's own admission resolved (never peer A's own
       identity, never a fresh one) as `"a2a.auth"` metadata -- exactly the
-      shape `A2A.Plug.Auth` produces and every other Chicago court's agent
+      shape `AshA2A.Protocol.Plug.Auth` produces and every other Chicago court's agent
       stimuli already use; or
     * (`bypass: true`, the attack surface CHI-FED-003 attempts) skips peer
-      B's own `A2A.Agent`/`AshA2A.CommandBus` front door entirely and calls
+      B's own `AshA2A.Protocol.Agent`/`AshA2A.CommandBus` front door entirely and calls
       `AshA2A.Dispatcher.dispatch/5` against peer B's `PeerB` resource
       directly -- the exact same bypass surface `CHI-BRCE-001`/`002` already
       attacks in-process, attempted here as if a compromised or buggy peer A
@@ -230,9 +234,9 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation do
         {:error, :peer_b_unavailable}
 
       pid ->
-        message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+        message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
         message = %{message | metadata: %{"skill" => "record"}}
-        A2A.call(pid, message, metadata: %{"a2a.auth" => %{identity: identity}})
+        AshA2A.Protocol.call(pid, message, metadata: %{"a2a.auth" => %{identity: identity}})
     end
   rescue
     ArgumentError -> {:error, :peer_b_unavailable}
@@ -246,7 +250,7 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation do
   # around peer B's own front door", never conflating it with an authority
   # question CHI-FED-002 already covers.
   defp bypass_peer_b(label, identity) do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
     AshA2A.Dispatcher.dispatch(:record, message, PeerB, [], identity)
   end
 

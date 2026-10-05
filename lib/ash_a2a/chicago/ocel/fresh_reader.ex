@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Ocel.FreshReader do
   @moduledoc """
   Fresh-process OCEL read (RFC-SA2A-002 §139, §42).

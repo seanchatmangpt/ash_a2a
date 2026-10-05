@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ClosureFixtures.Sink do
   @moduledoc """
   Fixture effector wrapper for the closure court: `write/1` stands in for an

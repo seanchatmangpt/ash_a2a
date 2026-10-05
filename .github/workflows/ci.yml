@@ -7,8 +7,11 @@ on:
 
 # Shape: `supply-chain` (fast) + `lane` x4 (the suite split along the repo's own
 # documented, measured seams) -> `test` (merged coverage, threshold-gated; keeps
-# the required check name). Rust
-# advisories/licenses and the package-closure check live in
+# the required check name). `conformance` (A2A v1.0 court report, artifact +
+# totals.fail gate) and `docs` (ex_doc build) run in parallel as the CI half of
+# the `mix check` gap (G3); both are explicitly non-gating while the honest
+# staging ledger in `.check.exs` marks them not-yet-green on this tree.
+# Rust advisories/licenses and the package-closure check live in
 # supply-chain-deep.yml (lock-touching PRs + weekly), so a newly published
 # advisory cannot turn unrelated PRs red.
 #
@@ -202,3 +205,95 @@ jobs:
         run: |
           echo "lane=$LANE"
           test "$LANE" = success
+
+  # Lane CI-1 (G3, CI half of the `mix check` gap): the A2A v1.0 conformance
+  # court report. One command runs every pinned v1.0 court as a REAL OS
+  # subprocess (lib/mix/tasks/ash_a2a.v1_conformance_report.ex, 25-court
+  # @v1_courts list) and writes one machine-readable JSON verdict; the task
+  # always exits 0, so the gate is the JSON itself: totals.fail == 0.
+  #
+  # Non-gating on purpose, not silently: `.check.exs`' honest-staging ledger
+  # (measured 2026-10-04) records this stage "WIRED, not yet run to completion
+  # here". TODO(ci-g3): drop `continue-on-error` the moment a run witnesses
+  # totals.fail == 0 on main -- same promotion rule as the .check.exs ledger.
+  # The report is uploaded even on failure so the FAIL is durable evidence.
+  conformance:
+    name: conformance (v1 court report)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true # see TODO(ci-g3) above; promotion = witnessed green
+    env:
+      MIX_ENV: test
+    # Real PostgreSQL, identical to the `lane` job: several v1 courts run the
+    # suite's own test config (ash_a2a_test on host port 55432).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ash_a2a_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      # Same toolchain pin (.tool-versions), same deps, same compile gate as
+      # every lane: the courts run against the same admitted build.
+      - uses: ./.github/actions/build
+      - name: A2A v1.0 conformance court report (real subprocess per court)
+        run: mix ash_a2a.v1_conformance_report --out v1-conformance.json
+      - name: Gate on the report's own documented gate (totals.fail == 0)
+        run: jq -e '.totals.fail == 0' v1-conformance.json > /dev/null
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: v1-conformance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: v1-conformance.json
+          retention-days: 7
+          if-no-files-found: error
+
+  # Docs gate (G3): `mix docs` so doc breakage (bad extras list, broken
+  # doc references) is caught in CI. Known-red today, per the same ledger:
+  # "docs RED -- ExDoc.Extras.build/2 raises on the current extras list
+  # (mix.exs docs/0); ownership: mix.exs docs config". Included, not hidden.
+  # TODO(ci-g3): fix the extras list in mix.exs docs/0, then drop
+  # `continue-on-error` -- the ledger is the tracker item.
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true # TODO(ci-g3) above; see .check.exs docs RED entry
+    env:
+      MIX_ENV: dev # ex_doc is `only: :dev` (mix.exs); docs build in dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      # Dev-env cache, keyed on the real invalidators only (no Rust, no child
+      # projects: ex_doc needs neither).
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build
+          key: ash-a2a-v2-docs-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: |
+            ash-a2a-v2-docs-${{ runner.os }}-
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - name: Verify mix.lock unchanged
+        run: git diff --exit-code -- mix.lock
+      - run: mix docs

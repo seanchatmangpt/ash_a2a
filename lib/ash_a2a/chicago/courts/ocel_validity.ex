@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.OcelValidity do
   @moduledoc """
   `SA2A-OCEL` -- OCEL 2.0 validity and evidence-completeness court
@@ -544,7 +548,7 @@ defmodule AshA2A.Chicago.Courts.OcelValidity do
     )
   end
 
-  defp message(label), do: A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   defp reply_code({:error, %{code: code}}), do: inspect(code)
   defp reply_code({:ok, _}), do: "ok"

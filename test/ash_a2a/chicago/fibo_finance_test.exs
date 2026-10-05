@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.FiboFinanceTest do
   @moduledoc """
   Qualifies the `CHI-FIN` court, Chicago style: the real graphlaw JSON ABI

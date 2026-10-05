@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.RealCollaboratorsTest do
   @moduledoc """
   Gate 3 (RFC-SA2A-002 §9, §10, §34) qualified Chicago style: the real

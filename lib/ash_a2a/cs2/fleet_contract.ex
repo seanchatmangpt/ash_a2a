@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CS2.FleetContract do
   @moduledoc """
   Canonical RFC-CS2-001 fleet envelope (`cs2.fleet-contract.v1`, work

@@ -8,7 +8,7 @@ This guide establishes the architectural boundaries and generation workflows for
 
 `ash_a2a` is the generic protocol transport, supervision runtime, and consequence gateway for Semantic A2A:
 - **What belongs in `ash_a2a/lib`**:
-  - A2A protocol messaging and framing (`A2A.Message`, JSON-RPC, SSE).
+  - A2A protocol messaging and framing (`AshA2A.Protocol.Message`, JSON-RPC, SSE).
   - Agent supervision and AgentCard compilation (`AshA2A.Agent`, `AshA2A.CapabilityIndex`).
   - Semantic Reasoning delegation via `AshGraphLaw` (`AshA2A.Semantic.HookReactor`).
   - Authority, Leases, and BRCE Consequence Fencing (`AshA2A.Authority`, `AshA2A.CommandBus`, `AshA2A.Receipt`).
@@ -58,6 +58,6 @@ To create domain capabilities for an Ash application:
 | Pack Name | Purpose | Target Artifacts |
 |:---|:---|:---|
 | `sa2a-agent-economy-pack` | AP2 mandates, x402 micropayments, EU AI Act Art 12 & 14 governance | Economic resources & validation shapes |
-| `elixir-mcp-a2a-pack` | Generates unified Elixir MCP router scopes and A2A AgentCard skills | `A2A.Agent` and `AshAi.Mcp.Router` code |
+| `elixir-mcp-a2a-pack` | Generates unified Elixir MCP router scopes and A2A AgentCard skills | `AshA2A.Protocol.Agent` and `AshAi.Mcp.Router` code |
 | `graphlaw-ash-capability-pack` | Projects typed GraphLaw ABI operations into Ash capabilities | `AshGraphLaw.Capability.*` modules |
 | `chatman-marketplace-commerce-dod-pack` | Definition of Done for multi-marketplace commerce & billing authorities | Verification courts & compliance gates |

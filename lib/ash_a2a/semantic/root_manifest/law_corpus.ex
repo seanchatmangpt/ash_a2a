@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.RootManifest.LawCorpus do
   @moduledoc """
   Manufactures a content-addressed Root Manifest whose pins are a given set of

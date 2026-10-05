@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.C2.ActuatorClient.Framed do
   @moduledoc """
   Control-plane client for the separate `actuator` release (docs/reference/c2-wire-interop.md).

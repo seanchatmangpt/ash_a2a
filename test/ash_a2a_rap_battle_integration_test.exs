@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ARapBattleIntegrationTest do
   @moduledoc """
   Cross-app A2A integration test: three separately-`AshA2A`-extended Ash
   domains (50 Cent, Jadakiss, and a Judge Panel), each standing in for its
-  own independently-deployable service, exchanging real `A2A.Message`s
-  through real `A2A.Agent` GenServers under one real `A2A.AgentSupervisor`.
+  own independently-deployable service, exchanging real `AshA2A.Protocol.Message`s
+  through real `AshA2A.Protocol.Agent` GenServers under one real `AshA2A.Protocol.AgentSupervisor`.
 
   This is the first test in this suite proving `ash_a2a` works *across*
   separate Ash apps, not just within one process's dispatch table: every
@@ -12,7 +16,7 @@ defmodule AshA2ARapBattleIntegrationTest do
   actions -- it only receives their verses as plain string arguments over a
   real A2A message, exactly as a genuinely separate remote service would.
 
-  Chicago-style throughout: real `A2A.Agent.call/2`, real supervised
+  Chicago-style throughout: real `AshA2A.Protocol.Agent.call/2`, real supervised
   processes, real ETS-backed domains (implicitly -- these domains declare no
   resources, since their skills are pure generic actions), real deterministic
   judging logic. No Mock/mox/patch/monkeypatch.
@@ -40,7 +44,7 @@ defmodule AshA2ARapBattleIntegrationTest do
     assert {:ok, fifty_task} = FiftyCentAgent.call(FiftyCentAgent, data_message(%{}))
     assert fifty_task.status.state == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{result: fifty_verse}}]}] =
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{result: fifty_verse}}]}] =
              fifty_task.artifacts
 
     assert is_binary(fifty_verse)
@@ -50,7 +54,7 @@ defmodule AshA2ARapBattleIntegrationTest do
     assert {:ok, jada_task} = JadakissAgent.call(JadakissAgent, data_message(%{}))
     assert jada_task.status.state == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{result: jada_verse}}]}] =
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{result: jada_verse}}]}] =
              jada_task.artifacts
 
     assert is_binary(jada_verse)
@@ -69,7 +73,7 @@ defmodule AshA2ARapBattleIntegrationTest do
 
     assert {:ok, judge_task} = JudgePanelAgent.call(JudgePanelAgent, judge_message)
     assert judge_task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: verdict}]}] = judge_task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: verdict}]}] = judge_task.artifacts
 
     # Real, state-based assertions on the real verdict computed from the
     # real verses that actually crossed the real A2A boundary twice.
@@ -83,7 +87,7 @@ defmodule AshA2ARapBattleIntegrationTest do
     # real inputs (same judges, same real word/vowel/length computations).
     assert {:ok, judge_task_again} = JudgePanelAgent.call(JudgePanelAgent, judge_message)
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: verdict_again}]}] =
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: verdict_again}]}] =
              judge_task_again.artifacts
 
     assert verdict_again == verdict

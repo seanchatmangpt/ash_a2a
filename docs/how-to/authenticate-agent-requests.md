@@ -1,6 +1,6 @@
 # How to authenticate inbound A2A requests and thread identity into your Ash actions
 
-This guide wires a real `A2A.Plug.Auth` in front of a real `A2A.Plug`, so a Bearer
+This guide wires a real `AshA2A.Protocol.Plug.Auth` in front of a real `AshA2A.Protocol.Plug`, so a Bearer
 credential on an inbound A2A request becomes `context.actor`/`context.tenant` inside
 your Ash action. It is based directly on the working end-to-end test
 `test/ash_a2a_plug_auth_test.exs` and the trust-boundary code in
@@ -9,20 +9,20 @@ your Ash action. It is based directly on the working end-to-end test
 ## The trust boundary you need to understand first
 
 `AshA2A.ContextResolver.from_a2a_message/4` never reads `actor`/`tenant` out of the
-inbound `A2A.Message`'s own `metadata` field. That field is unauthenticated JSON-RPC
+inbound `AshA2A.Protocol.Message`'s own `metadata` field. That field is unauthenticated JSON-RPC
 request body content — any caller can put `%{"actor" => %{"id" => "admin"}}` in it.
 The only path an actor/tenant can take into your action is:
 
-1. `A2A.Plug.Auth` verifies a real credential and stores the result in
+1. `AshA2A.Protocol.Plug.Auth` verifies a real credential and stores the result in
    `conn.private[:a2a][:auth]`.
-2. `A2A.Plug` merges that into the call's `metadata["a2a.auth"]`.
+2. `AshA2A.Protocol.Plug` merges that into the call's `metadata["a2a.auth"]`.
 3. `AshA2A.Agent.__dispatch__` reads `metadata["a2a.auth"][:identity]` and passes it
    to `AshA2A.Dispatcher.dispatch/6` as `auth_identity`.
 4. `AshA2A.ContextResolver.from_a2a_message/4` sets `context.actor` to that
    `auth_identity` verbatim, and `context.tenant` to `auth_identity[:tenant]` (or the
    string-keyed `"tenant"`), or `nil` if the caller never wired auth at all.
 
-If you skip `A2A.Plug.Auth`, `context.actor` and `context.tenant` are always `nil` —
+If you skip `AshA2A.Protocol.Plug.Auth`, `context.actor` and `context.tenant` are always `nil` —
 dispatch fails closed rather than trusting anything from the wire.
 
 ## Authentication is NOT authority (RFC-SA2A-001 S29)
@@ -122,7 +122,7 @@ waiting for the next refusal (see the
 
 `AshA2A.CommandBus.admit/2` refuses before the Ash action runs at all — no record is
 written, no external effect happens, and no receipt is committed. The refusal surfaces
-the same way any dispatch failure does: a real `A2A.Task` whose own
+the same way any dispatch failure does: a real `AshA2A.Protocol.Task` whose own
 `status.state` is `failed` (not a JSON-RPC-level error), carrying the typed
 `:authority_required` refusal.
 
@@ -148,7 +148,7 @@ refusals are never mysterious.
 
 ## 1. Define a `:verify` callback
 
-`A2A.Plug.Auth.init/1` takes the security schemes your agent declares and a `:verify`
+`AshA2A.Protocol.Plug.Auth.init/1` takes the security schemes your agent declares and a `:verify`
 function of arity 3 (`scheme, credential, conn`). Return `{:ok, identity_map}` for a
 valid credential, `{:error, reason}` otherwise:
 
@@ -166,35 +166,35 @@ matching a literal string. The returned map's `:tenant` (or `"tenant"`) key is w
 
 ## 2. Build the plug pipeline
 
-Declare your security schemes, initialize `A2A.Plug.Auth` with them and your verify
-callback, then chain into `A2A.Plug` pointed at your `AshA2A.Agent` module:
+Declare your security schemes, initialize `AshA2A.Protocol.Plug.Auth` with them and your verify
+callback, then chain into `AshA2A.Protocol.Plug` pointed at your `AshA2A.Agent` module:
 
 ```elixir
-@schemes %{"bearer_auth" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}}
+@schemes %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}}
 
 auth_opts =
-  A2A.Plug.Auth.init(
+  AshA2A.Protocol.Plug.Auth.init(
     schemes: @schemes,
     verify: &verify_callback/3
   )
 
 plug_opts =
-  A2A.Plug.init(
+  AshA2A.Protocol.Plug.init(
     agent: AuthProbeAgent,
     base_url: "http://localhost:4000/a2a"
   )
 
 conn
-|> A2A.Plug.Auth.call(auth_opts)
+|> AshA2A.Protocol.Plug.Auth.call(auth_opts)
 |> then(fn conn ->
-  if conn.halted, do: conn, else: A2A.Plug.call(conn, plug_opts)
+  if conn.halted, do: conn, else: AshA2A.Protocol.Plug.call(conn, plug_opts)
 end)
 ```
 
-`A2A.Plug.Auth.call/2` halts the conn with a `401` and `%{"error" => "Unauthorized"}`
-body before `A2A.Plug` ever runs, both when the `Authorization` header is missing and
+`AshA2A.Protocol.Plug.Auth.call/2` halts the conn with a `401` and `%{"error" => "Unauthorized"}`
+body before `AshA2A.Protocol.Plug` ever runs, both when the `Authorization` header is missing and
 when `verify_callback/3` returns `{:error, _}` — checking `conn.halted` before chaining
-into `A2A.Plug` is required, exactly as shown above.
+into `AshA2A.Protocol.Plug` is required, exactly as shown above.
 
 ## 3. Read identity in the Ash action
 
@@ -226,10 +226,10 @@ exposes exactly one public action. `AshA2A.Info.capability_index/1` returning:
 
 A resource with `defaults([:read])` plus one custom action (like `AuthProbe`'s
 `:whoami` above) already has two public actions, so it hits the ambiguous case. Fix it
-by setting `metadata["skill"]` explicitly on the outbound `A2A.Message`:
+by setting `metadata["skill"]` explicitly on the outbound `AshA2A.Protocol.Message`:
 
 ```elixir
-message = %{A2A.Message.new_user([A2A.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
+message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
 ```
 
 The agent reads `metadata["skill"]` at skill resolution (via
@@ -242,9 +242,9 @@ not `actor`/`tenant`, and `ContextResolver` never touches it.
 ## What the plug does NOT do for you
 
 - **mTLS is declared-but-unsupported**: declaring a
-  `%A2A.SecurityScheme.MutualTLS{}` scheme makes credential extraction
+  `%AshA2A.Protocol.SecurityScheme.MutualTLS{}` scheme makes credential extraction
   return `:unsupported` (→ 401). There is no client-certificate identity
-  path in the SDK today.
+  path in the protocol layer today.
 - **Token validation is entirely yours**: the OAuth2/OIDC schemes extract
   a bearer string; no JWKS fetch, introspection, audience, or signature
   check ships with the library. Your `verify/3` callback is the whole

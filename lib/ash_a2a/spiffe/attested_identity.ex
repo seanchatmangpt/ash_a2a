@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SPIFFE.AttestedIdentity do
   @moduledoc """
   A `AshA2A.SPIFFE.Identity` attested with an SVID type, bundle digest, and observation
@@ -8,6 +12,13 @@ defmodule AshA2A.SPIFFE.AttestedIdentity do
   alias AshA2A.SPIFFE.Identity
   @enforce_keys [:identity, :svid_type, :bundle_digest, :observed_at]
   defstruct @enforce_keys
+
+  @type t :: %__MODULE__{
+          identity: Identity.t(),
+          svid_type: :x509 | :jwt,
+          bundle_digest: String.t(),
+          observed_at: integer()
+        }
 
   def from_verified(raw_spiffe_id, opts) when is_list(opts) do
     with {:ok, identity} <- Identity.parse(raw_spiffe_id),

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.UnknownLlm.Gate do
   @moduledoc """
   Real Ash resource for the Gate 12 / UNKNOWN / LLM / machine-experience
@@ -163,12 +167,12 @@ defmodule AshA2A.Chicago.Fixtures.UnknownLlm do
 
   @doc "A2A message carrying a typed goal-facts Data part."
   def facts_message(envelope, metadata \\ nil) do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"goal_facts" => envelope})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
     if metadata, do: %{message | metadata: metadata}, else: message
   end
 
   @doc "A2A message carrying free text only."
-  def text_message(text), do: A2A.Message.new_user(text)
+  def text_message(text), do: AshA2A.Protocol.Message.new_user(text)
 
   @doc "The KNOWN phrase compiled into `gate_phrase_template/0`."
   def known_phrase, do: @known_phrase
@@ -247,7 +251,7 @@ defmodule AshA2A.Chicago.Fixtures.UnknownLlm do
   end
 
   @doc "The Data-part message for a ledger DO."
-  def ledger_message(label), do: A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+  def ledger_message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   @doc "Labels currently persisted, read through an independent `Ash.read!/1`."
   def ledger_labels, do: Ledger |> Ash.read!() |> Enum.map(& &1.label)

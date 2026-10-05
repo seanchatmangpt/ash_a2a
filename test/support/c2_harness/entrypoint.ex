@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule C2Harness.Entrypoint do
   @moduledoc """
   The actuator through its PRODUCTION entrypoint (`MIX_ENV=prod mix run --no-halt`, where

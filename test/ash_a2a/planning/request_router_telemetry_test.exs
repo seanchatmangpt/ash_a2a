@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Planning.RequestRouterTelemetryTest do
   @moduledoc """
   Real, Chicago-style coverage for task 4's telemetry instrumentation: a
@@ -76,11 +80,11 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
   end
 
   defp facts_message(envelope) do
-    A2A.Message.new_user([A2A.Part.Data.new(%{"goal_facts" => envelope})])
+    AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
   end
 
   defp text_message(text) do
-    A2A.Message.new_user(text)
+    AshA2A.Protocol.Message.new_user(text)
   end
 
   # A real, fixed-response `:generate_object` seam function (schema-valid
@@ -187,7 +191,7 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      no_input_message = A2A.Message.new_user([A2A.Part.Data.new(%{"unrelated_key" => "value"})])
+      no_input_message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})])
 
       assert {:error, %{code: :request_router_missing_input}} =
                RequestRouter.route(HddlDeterministicFixture, no_input_message)

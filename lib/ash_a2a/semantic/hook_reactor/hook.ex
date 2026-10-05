@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.HookReactor.Hook do
   @moduledoc """
   A Knowledge Hook as a semantic artifact (RFC-SA2A-002 §61).
@@ -199,7 +203,8 @@ defmodule AshA2A.Semantic.HookReactor.Hook do
     error -> {:error, %{code: :hook_witness_invalid, detail: Exception.message(error)}}
   end
 
-  defp witness(_), do: {:error, %{code: :hook_witness_invalid, detail: "witness is not text"}}
+  # (the old `defp witness(_)` non-binary catch-all was dead: every caller
+  # passes a binary, the binary clause covers the full success type)
 
   defp canonical(%{} = map) when not is_struct(map),
     do: map |> Enum.map(fn {k, v} -> {to_string(k), canonical(v)} end) |> Enum.sort()

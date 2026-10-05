@@ -1,0 +1,498 @@
+{
+  "objectTypes": [
+    {
+      "name": "command",
+      "attributes": []
+    },
+    {
+      "name": "process",
+      "attributes": []
+    }
+  ],
+  "eventTypes": [
+    {
+      "name": "cli_invocation",
+      "attributes": []
+    }
+  ],
+  "objects": [
+    {
+      "id": "graph:validate",
+      "type": "command",
+      "attributes": []
+    },
+    {
+      "id": "proc-17720-18db811799d47648",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-17884-18db8119ee813210",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "packs:validate",
+      "type": "command",
+      "attributes": []
+    },
+    {
+      "id": "proc-20350-18db8136ced5e308",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "pack:query",
+      "type": "command",
+      "attributes": []
+    },
+    {
+      "id": "proc-24910-18db8170b2d847d8",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-57156-18db82012b43e098",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "sync:run",
+      "type": "command",
+      "attributes": []
+    },
+    {
+      "id": "proc-59991-18db82199ee96fa0",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-60124-18db821d516e9c10",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-60248-18db821e6d12e240",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-60493-18db82204bf30048",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-61336-18db822a24252eb0",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-61707-18db822e4b686358",
+      "type": "process",
+      "attributes": []
+    },
+    {
+      "id": "proc-52978-18db881df9128de0",
+      "type": "process",
+      "attributes": []
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-18db811799d47a30-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:26:55.174976+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "graph"
+        },
+        {
+          "name": "verb",
+          "value": "validate"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 0
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "graph:validate",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-17720-18db811799d47648",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db8119ee8135f8-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:27:05.185516+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "graph"
+        },
+        {
+          "name": "verb",
+          "value": "validate"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 0
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "graph:validate",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-17884-18db8119ee813210",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db8136ced5e6f0-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:29:09.208248+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "packs"
+        },
+        {
+          "name": "verb",
+          "value": "validate"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 3
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "packs:validate",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-20350-18db8136ced5e308",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db8170b2d84bc0-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:33:17.846745+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "pack"
+        },
+        {
+          "name": "verb",
+          "value": "query"
+        },
+        {
+          "name": "success",
+          "value": false
+        },
+        {
+          "name": "duration_ms",
+          "value": 0
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "pack:query",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-24910-18db8170b2d847d8",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db82012b43e868-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:43:38.342355+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "graph"
+        },
+        {
+          "name": "verb",
+          "value": "validate"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 0
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "graph:validate",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-57156-18db82012b43e098",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db82199ee97388-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:45:23.361802+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": false
+        },
+        {
+          "name": "duration_ms",
+          "value": 0
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-59991-18db82199ee96fa0",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db821d516e9ff8-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:45:39.241773+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 244
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-60124-18db821d516e9c10",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db821e6d12e628-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:45:44.000491+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 84
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-60248-18db821e6d12e240",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db82204bf30048-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:45:52.034687+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 59
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-60493-18db82204bf30048",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db822a24253298-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:46:34.316561+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": false
+        },
+        {
+          "name": "duration_ms",
+          "value": 2
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-61336-18db822a24252eb0",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db822e4b686358-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T02:46:52.155145+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 58
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-61707-18db822e4b686358",
+          "qualifier": "performed_by"
+        }
+      ]
+    },
+    {
+      "id": "evt-18db881df91291c8-0",
+      "type": "cli_invocation",
+      "time": "2026-10-05T04:35:39.124079+00:00",
+      "attributes": [
+        {
+          "name": "noun",
+          "value": "sync"
+        },
+        {
+          "name": "verb",
+          "value": "run"
+        },
+        {
+          "name": "success",
+          "value": true
+        },
+        {
+          "name": "duration_ms",
+          "value": 65
+        }
+      ],
+      "relationships": [
+        {
+          "objectId": "sync:run",
+          "qualifier": "regards"
+        },
+        {
+          "objectId": "proc-52978-18db881df9128de0",
+          "qualifier": "performed_by"
+        }
+      ]
+    }
+  ]
+}

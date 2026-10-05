@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.BuildCapabilityIndexMidListErrorTest do
   @moduledoc """
   Chicago-style, standalone from `test/ash_a2a_test.exs`: real repro for the

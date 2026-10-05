@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Planning.RequestRouterLLMNeverCalledTest do
   @moduledoc """
   Dedicated, standalone, permanently re-runnable structural proof closing
@@ -25,7 +29,7 @@ defmodule AshA2A.Planning.RequestRouterLLMNeverCalledTest do
 
   Test 1 (the closing proof) binds `:generate_object` and
   `:plan_generate_object` to real anonymous functions that unconditionally
-  `raise` on invocation, then routes a real typed-facts `A2A.Message.t()`
+  `raise` on invocation, then routes a real typed-facts `AshA2A.Protocol.Message.t()`
   through `RequestRouter.route/3` using the exact same `opts` keyword list
   the router would forward to `Compiler.compile_source/3` if (and only if)
   a future regression made the facts tier fall through to the text/LLM
@@ -73,11 +77,11 @@ defmodule AshA2A.Planning.RequestRouterLLMNeverCalledTest do
   end
 
   defp facts_message(envelope) do
-    A2A.Message.new_user([A2A.Part.Data.new(%{"goal_facts" => envelope})])
+    AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
   end
 
   defp text_message(text) do
-    A2A.Message.new_user(text)
+    AshA2A.Protocol.Message.new_user(text)
   end
 
   defp raise_on_call(label) do
@@ -118,7 +122,7 @@ defmodule AshA2A.Planning.RequestRouterLLMNeverCalledTest do
 
   test "no new false positive from the ambiguous-nested-goal_facts-shape refusal: a real structured payload with unrelated nested keys (no goal_facts anywhere) still reaches the real LLM path" do
     # Same raise-on-call idiom as the adversarial-completeness test above,
-    # but with a real `A2A.Part.Data` part present (unlike `text_message/1`,
+    # but with a real `AshA2A.Protocol.Part.Data` part present (unlike `text_message/1`,
     # which carries no data part at all) -- this is the shape the new
     # `detect_tier/1` nested scan actually walks. A caller sending genuinely
     # unrelated structured metadata alongside real text (no `goal_facts` key
@@ -129,11 +133,11 @@ defmodule AshA2A.Planning.RequestRouterLLMNeverCalledTest do
     text = "The goal is to advance and unlock the gate."
 
     message =
-      A2A.Message.new_user([
-        A2A.Part.Data.new(%{
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{
           "request_metadata" => %{"trace_id" => "abc-123", "tags" => [%{"name" => "priority"}]}
         }),
-        A2A.Part.Text.new(text)
+        AshA2A.Protocol.Part.Text.new(text)
       ])
 
     assert_raise RuntimeError, ~r/generate_object was invoked/, fn ->

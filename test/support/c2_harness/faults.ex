@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule C2Harness.Faults do
   @moduledoc """
   Fault-injection attacks against the actuator (RFC-SA2A-006 s26 crash items, s29). Each

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SecurityProfile.Boot do
   @moduledoc """
   Boot enforcement for the compiled `AshA2A.SecurityProfile`
@@ -53,14 +57,20 @@ defmodule AshA2A.SecurityProfile.Boot do
   alias AshA2A.SecurityProfile
 
   @type violation :: SecurityPreflight.violation()
+  # `Application.get_env/3` is success-typed `term()`, so every env-derived
+  # key here is honestly `term()`; typing them narrower (e.g. `module()`)
+  # made the `snapshot()` contract unsatisfiable, which collapsed `run!/0`
+  # to `none()` and cascaded `no_return` into `AshA2A.Application.start/2`.
   @type snapshot :: %{
           outbox_key: binary() | nil,
-          outbox_dir: String.t() | nil,
-          receipt_store: module(),
+          outbox_dir: term(),
+          claim_store: term(),
+          claim_store_dir: term(),
+          receipt_store: term(),
           capability_release_mode: atom(),
-          authority_broker: module() | nil,
+          authority_broker: atom(),
           kill_switch_class: term(),
-          authority_policy: atom() | nil
+          authority_policy: term()
         }
 
   @doc false

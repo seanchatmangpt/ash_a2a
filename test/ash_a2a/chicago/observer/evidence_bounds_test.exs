@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Observer.EvidenceBoundsTest do
   @moduledoc """
   PRD §48 / ARD §51 bounded evidence fan-out.

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SPIFFE.Identity do
   @moduledoc """
   Parsed SPIFFE workload identity (`spiffe://trust-domain/path`), validated by `parse/1`.
@@ -6,6 +10,12 @@ defmodule AshA2A.SPIFFE.Identity do
 
   @enforce_keys [:uri, :trust_domain, :path]
   defstruct @enforce_keys
+
+  @type t :: %__MODULE__{
+          uri: String.t(),
+          trust_domain: String.t(),
+          path: String.t()
+        }
 
   def parse(raw) when is_binary(raw) do
     uri = URI.parse(raw)

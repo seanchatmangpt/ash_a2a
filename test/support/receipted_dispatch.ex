@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.ReceiptedDispatch do
   @moduledoc """
   Reaches `AshA2A.Dispatcher` for a consequence-bearing skill the one lawful
@@ -18,7 +22,7 @@ defmodule AshA2A.Test.ReceiptedDispatch do
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, Receipt}
 
-  @spec dispatch(atom() | String.t(), A2A.Message.t(), module(), [A2A.Message.t()], term()) ::
+  @spec dispatch(atom() | String.t(), AshA2A.Protocol.Message.t(), module(), [AshA2A.Protocol.Message.t()], term()) ::
           AshA2A.Dispatcher.reply()
   def dispatch(skill_name, message, resource_or_domain, history \\ [], auth_identity \\ nil) do
     capability_id = to_string(skill_name)

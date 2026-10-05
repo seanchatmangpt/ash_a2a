@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.Episode do
   @moduledoc """
   Bounded autonomous episode executor (RFC-SA2A-002 §37 Gate 6, §83 resource
@@ -1278,7 +1282,7 @@ defmodule AshA2A.Semantic.Episode do
         metadata: %{plan_digest: s.package.plan_digest, episode_id: s.episode_id}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(t.input)])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(t.input)])
 
     {do_us, reply} =
       timed(fn ->
@@ -1363,7 +1367,7 @@ defmodule AshA2A.Semantic.Episode do
   # depth of the committed reply's data parts (nesting is not a bypass).
   defp resource_request(%Receipt{reply: {:reply, parts}}) when is_list(parts) do
     Enum.find_value(parts, fn
-      %A2A.Part.Data{data: data} -> find_request(data)
+      %AshA2A.Protocol.Part.Data{data: data} -> find_request(data)
       _ -> nil
     end)
   end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CommandFingerprintDeterminismTest do
   @moduledoc """
   Regression coverage for `AshA2A.Command.fingerprint/1`'s cross-node/replay

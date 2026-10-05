@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.BoardPersona.DeliberationTest do
   @moduledoc """
   Chicago-style: every `generate_object`/`plan_generate_object` seam here is

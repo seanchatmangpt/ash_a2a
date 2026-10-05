@@ -1,0 +1,27 @@
+@prefix map: <https://ggen.dev/ash-projection/map#> .
+@prefix apg: <https://ggen.dev/ash-projection#> .
+
+
+map:Issue a apg:SemanticBinding ;
+  apg:exactSubject "ash_atlassian:generated-resource-projection" ;
+  apg:domainIri <https://atlassian.com/ns/jira#Issue> ;
+  apg:sourceDigest "fixture:issue:v1" ;
+
+  apg:attribute map:Issue_key ;
+
+  apg:attribute map:Issue_summary .
+
+
+
+map:Issue_key a apg:Attribute ;
+  apg:attributeName "key" ;
+  apg:ashType "string" ;
+  apg:primaryKey true ;
+  apg:semanticPredicate <https://atlassian.com/ns/jira#key> .
+
+map:Issue_summary a apg:Attribute ;
+  apg:attributeName "summary" ;
+  apg:ashType "string" ;
+  apg:primaryKey false ;
+  apg:semanticPredicate <https://atlassian.com/ns/jira#summary> .
+

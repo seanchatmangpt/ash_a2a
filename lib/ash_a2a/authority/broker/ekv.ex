@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Authority.Broker.Ekv do
   @moduledoc """
   Durable, single-node-or-cluster reference implementation of
@@ -174,7 +178,7 @@ defmodule AshA2A.Authority.Broker.Ekv do
   rescue
     # A stopped EKV instance RAISES (its reader connections live in
     # `:persistent_term`, erased on shutdown -> `ArgumentError`) rather than
-    # exiting. Uncaught, that crashed the calling `A2A.Agent` process on the
+    # exiting. Uncaught, that crashed the calling `AshA2A.Protocol.Agent` process on the
     # dispatch path instead of refusing (RFC-SA2A-002 §67/§130, court
     # SA2A-AUTH-GRANT-008).
     _exception ->

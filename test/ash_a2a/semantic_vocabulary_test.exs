@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.VocabularyTest do
   use ExUnit.Case, async: true
 
@@ -7,8 +11,12 @@ defmodule AshA2A.Semantic.VocabularyTest do
     test "returns exactly the known prefix keys" do
       prefixes = Vocabulary.prefixes()
 
+      # Pin updated for the canonical-ontology integration (commit b9467b3), which added
+      # the a2a protocol namespace and the sa2a-fnd/cap/bp/evi FIBO-derived domains.
       assert MapSet.new(Map.keys(prefixes)) ==
-               MapSet.new(~w(rdf rdfs owl prov time odrl skos schema oa sosa ssn saref qudt))
+               MapSet.new(
+                 ~w(rdf rdfs owl prov time odrl skos schema oa sosa ssn saref qudt a2a sa2a-fnd sa2a-cap sa2a-bp sa2a-evi)
+               )
     end
 
     test "known prefixes resolve to their expected URIs" do

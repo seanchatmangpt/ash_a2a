@@ -14,7 +14,7 @@ defmodule SwarmNode.MixProject do
   fixtures uses), join a real Kubernetes-discovered BEAM cluster via
   `libcluster`, and expose one real probe (`SwarmNode.Probe.run/0`) that a
   `mix release`'s `bin/swarm_node rpc` command can invoke from inside a
-  running pod to prove real cross-pod `A2A.Agent` dispatch.
+  running pod to prove real cross-pod `AshA2A.Protocol.Agent` dispatch.
   """
 
   def project do
@@ -42,7 +42,7 @@ defmodule SwarmNode.MixProject do
     [
       # Real path dependency on the ash_a2a checkout this app lives beside
       # -- exercises the exact real capability index / dispatcher /
-      # CommandBus / A2A.Agent machinery this whole repo's test suite
+      # CommandBus / AshA2A.Protocol.Agent machinery this whole repo's test suite
       # already covers, never a reimplementation or a mock host.
       {:ash_a2a, path: ".."},
       {:libcluster, "~> 3.5"},

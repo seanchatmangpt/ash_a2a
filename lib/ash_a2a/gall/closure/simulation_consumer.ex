@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.Closure.SimulationConsumer do
   @moduledoc "Projects an admitted candidate into a simulation-only case that cannot cross DO."
 

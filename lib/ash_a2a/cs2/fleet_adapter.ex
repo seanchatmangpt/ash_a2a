@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CS2.FleetAdapter do
   @moduledoc """
   Adapter from the canonical CS2 fleet envelope to downstream workflow packets.

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.HooksCascade.Domain do
   @moduledoc "Ash domain for the knowledge-hook / reactive-cascade court fixtures."
   use Ash.Domain, validate_config_inclusion?: false

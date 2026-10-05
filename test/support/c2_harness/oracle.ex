@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule C2Harness.Oracle do
   @moduledoc """
   The court oracle: the Actuator's append-only hash-chained effect ledger and the

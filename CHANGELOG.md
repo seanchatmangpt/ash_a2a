@@ -6,6 +6,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [26.10.4] - 2026-10-05
+
+### Added
+
+- Enterprise surface (PRD v26.10.4, `docs/jira/v26.10.4/PRD.md`
+  FR-01..FR-06): a config-gated, default-OFF supervision subtree
+  (`AshA2A.Enterprise.Supervisor`, court
+  `test/ash_a2a/enterprise/supervisor_test.exs`) plus one ordered inbound
+  pipeline plug (`AshA2A.Enterprise.Pipeline`, court
+  `test/ash_a2a/enterprise/pipeline_test.exs`) wiring the landed gates in
+  ARD §2 order around any inner transport plug. Gate keys `:spiffe_socket`,
+  `:authzen_pdp_url`, `:kms`, `:finops`, `:drain`, `:affidavit`, `:siem`
+  each start their child only when configured; a gated-on child whose
+  module is not compiled in is a typed skip, logged, never silent. The
+  `:affidavit` and `:siem` gate children (affidavit pool, OCEL broadcaster)
+  are landed as gate keys and typed skips; the child modules are landed,
+  court pending. Reference: `docs/reference/enterprise.md`.
+- FR-01 zero-trust identity and policy: SPIFFE workload identity
+  (`lib/ash_a2a/spiffe/` — `AshA2A.SPIFFE.WorkloadWatcher`,
+  `AshA2A.SPIFFE.SvidValidator`, `AshA2A.SPIFFE.TrustBundle`; courts
+  `test/ash_a2a/enterprise/spiffe_workload_watcher_test.exs`,
+  `test/ash_a2a/enterprise/svid_validator_test.exs`) streaming and
+  rotating X.509 SVIDs from a real SPIRE agent socket over the Workload
+  API framing, fail-closed on bundle expiry; OpenID AuthZEN evaluation
+  (`lib/ash_a2a/authzen/` — `AshA2A.AuthZEN.Client`,
+  `AshA2A.AuthZEN.DecisionPool`, `AshA2A.AuthZEN.DecisionGate`; courts
+  `test/ash_a2a/enterprise/authzen_client_test.exs`,
+  `test/ash_a2a/authzen/decision_gate_test.exs`) through a real Finch pool
+  with typed `:pdp_unreachable` fail-closed refusals; monotonic delegation
+  narrowing (`AshA2A.AuthZEN.Monotonic`, court
+  `test/ash_a2a/enterprise/monotonic_grant_test.exs`) refusing
+  `:refused_non_monotonic_grant` on any delegation expansion
+  (`C_child ⊆ C_parent` at every hop).
+- FR-02 inline DLP and data residency: `AshA2A.Security.DLPFilter`
+  (`lib/ash_a2a/security/dlp_filter.ex`, court
+  `test/ash_a2a/enterprise/dlp_filter_test.exs`) tokenizing PCI-DSS PAN,
+  US SSN, high-entropy API keys, and PHI spans in both wire directions
+  (`AshA2A.Security.DLPFilter.Plug`); `AshA2A.Security.DataResidency`
+  (`lib/ash_a2a/security/data_residency.ex`, court
+  `test/ash_a2a/enterprise/data_residency_test.exs`) refusing
+  jurisdiction-tagged workloads outside the node region or group,
+  fail-closed on unknown node region.
+- FR-03 CMEK envelope encryption: `AshA2A.Security.KeyManager` with the
+  `AshA2A.Security.CMEK` AES-256-GCM payload layer and the
+  `AshA2A.Security.KMS.Client` binding (`lib/ash_a2a/security/cmek.ex`,
+  `lib/ash_a2a/security/key_manager.ex`, `lib/ash_a2a/security/kms/`;
+  court `test/ash_a2a/enterprise/cmek_test.exs`) — per-task DEKs wrapped
+  under a customer KEK, rotation without payload rewrite, typed
+  `:refused_cmek_*` refusals, fail-closed with no KMS binding.
+- FR-04 two-phase drain: `AshA2A.Cluster.DrainManager`
+  (`lib/ash_a2a/cluster/`, court `test/ash_a2a/enterprise/drain_test.exs`,
+  covering `AshA2A.Cluster.HealthPlug`, `AshA2A.Cluster.Checkpoint`, and
+  `AshA2A.Cluster.Handover`) — real OS SIGTERM disposition, cordon (503 +
+  `Retry-After`, `{:error, :cordoned}` on new work), tracked-task drain
+  deadline, checkpoint plus handover of unfinished frames, clean exit
+  inside the 30s grace period.
+- FR-05 FinOps hard quotas: `AshA2A.FinOps.BudgetEnforcer`
+  (`lib/ash_a2a/finops/`, court `test/ash_a2a/enterprise/finops_test.exs`)
+  — pre-dispatch hard-ceiling reservation (`:budget_exceeded` before any
+  downstream token spend), fail-closed `:missing_evidence` when no ceiling
+  is configured, `:invalid_request` on unresolvable attribution,
+  `[:ash_a2a, :finops, :chargeback]` telemetry on every verdict.
+- FR-06 affidavit trust plane and SIEM egress: `AshA2A.Evidence.Affidavit`
+  and `AshA2A.Evidence.Ocel2` (`lib/ash_a2a/evidence/`; courts
+  `test/ash_a2a/evidence/affidavit_test.exs`,
+  `test/ash_a2a/enterprise/affidavit_ocel2_test.exs`) bridging receipts,
+  traces, and identity claims to the real `AshAffidavit` WASM engine and
+  serializing IEEE OCEL v2 event logs; `AshA2A.Telemetry.SIEM`
+  (`lib/ash_a2a/telemetry/siem.ex`, court
+  `test/ash_a2a/enterprise/siem_test.exs`) batched, retried,
+  SSRF-admitted egress of OCEL v2 events to Splunk HEC, Google Chronicle,
+  and Datadog Logs, fail-fast per batch with typed
+  `{:error, {:siem_delivery_failed, platform, reason}}` exhaustion.
+- Adjacent protocol surfaces landed with the release: `AshA2A.Passport`
+  (signed, portable agent identity document: agent card, capability
+  attestations, and evidence chain under one Merkle root and detached JWS;
+  court `test/ash_a2a_passport_test.exs`), `AshA2A.Trace`
+  (TRACE-compliant, OTLP/JSON-exportable task-saga traces with
+  task-derived deterministic ids; court `test/ash_a2a_trace_test.exs`),
+  `AshA2A.Bidi` (bidirectional streaming over the SSE transport via
+  per-stream POST input endpoints; court `test/ash_a2a_v1_bidi_test.exs`),
+  and `AshA2A.Elicitation` (typed, schema-constrained `INPUT_REQUIRED`
+  contract; court `test/ash_a2a_v1_elicitation_test.exs`).
+
 ## [Unreleased]
 
 ### Changed
@@ -27,6 +111,151 @@ once it reaches 1.0.
   the store-as-subject law. `docs/jira/v26.10.2/LEGACY-COMPAT-AUDIT.md`
   states the retirement criterion: `:legacy_compat` is deprecable -- zero
   in-repo consumers boot under it, and no documented host path recommends it.
+
+## [26.10.3] - 2026-10-04
+
+### Breaking
+
+- **Removed the `:a2a` hex dependency; wire protocol retargeted to A2A
+  v1.0.0.** The wire surface is hosted in-repo as the `AshA2A.Protocol.*`
+  modules (`lib/ash_a2a/protocol/`, a mechanical `A2A.*` ->
+  `AshA2A.Protocol.*` namespace port of a2a-elixir 0.3.0, Apache-2.0;
+  attribution in `lib/ash_a2a/protocol/NOTICE`). `AshA2A.Protocol.Version`
+  makes `"1.0"` the default `protocolVersion`, carried per-entry on the
+  card's `supportedInterfaces` (`"0.3"` stays listed for negotiation; the
+  top-level `url`/`protocolVersion` card fields are gone from the wire
+  format). Docs swept to match: module references, auth/getting-started
+  mechanics, and the endpoint/spec-mapping references now describe the
+  in-repo codec.
+- **v1.0 wire shapes.** Parts and stream frames carry no `kind`
+  discriminator on emission — the wrapper key (`task`/`message`/
+  `statusUpdate`/`artifactUpdate`) is the discriminator; the decoder still
+  accepts a v0.3-style `"kind"` on input. Stream events carry no `final`
+  boolean; finality is a terminal state (`completed`/`failed`/`canceled`/
+  `rejected`/`input_required`/`auth_required`). Artifact streaming is true
+  chunking: `artifactUpdate` frames append to a stable `artifactId` under
+  the `append`/`lastChunk` flags.
+- **v1.0 error registry.** `AshA2A.ToA2AError` is the single failure
+  normalizer: a missing/unknown task maps to `-32001`
+  (`TaskNotFoundError`, ErrorInfo reason `TASK_NOT_FOUND`; policy denials
+  reuse `-32001`, distinguished on the wire only by the ErrorInfo reason),
+  and every A2A-range code — including `-32602` (`INVALID_PARAMS`) —
+  serializes a `google.rpc.ErrorInfo` `data` object.
+- **Multi-turn task states.** `TASK_STATE_INPUT_REQUIRED` and
+  `TASK_STATE_AUTH_REQUIRED` are first-class non-terminal, resumable states,
+  and `TASK_STATE_REJECTED` is in the emitted state registry.
+- **New surfaces.** `AshA2A.Executor` (verified transport call -> real,
+  policy-authorized Ash action -> JSON-RPC-shaped result via
+  `AshA2A.ToA2AError`), the `AshA2A.Domain` DSL,
+  `AshA2A.Verifiers.VerifySkills`, `AshA2A.Schema` (per-skill JSON Schema
+  projection), `AshA2A.Protocol.CardSigning`,
+  `AshA2A.Protocol.CardCache`, the HTTP+JSON binding
+  `AshA2A.Transport.HTTPJSON`, extension negotiation
+  (`AshA2A.Protocol.Extension`), the schema-advertisement extension
+  (`AshA2A.Protocol.Extensions.Schema`, URI `urn:sa2a:extension:schema:v1`),
+  and the pplan provider seam.
+- `mix ash_a2a.install` no longer adds `:a2a` to the generated `mix.exs`;
+  the only dependency it manages is `ash_a2a` itself.
+- **ash_pplan durability provider** (`AshA2A.Providers.PPlan`): ash_a2a
+  stays a thin declarative Spark gateway, with durability supplied by
+  `ash_pplan` behind `mix ash_a2a.install --with-pplan`; the swarm release
+  mints CONFORMANT standing receipts backed by real court evidence
+  (`swarm/rel/overlays/standing/`, chicago court manifest + digests; 187
+  falsifiers, 0 survived on the pinned subject).
+- **SEC-01 owner-scoped `tasks/list`.** The wrapper transport plug answers
+  `tasks/list` from the verified principal (owner-scoped
+  `{:ash_a2a_list_tasks, principal, params}`) instead of delegating to the
+  vendored plug's unscoped listing, closing anonymous/other-principal task
+  enumeration (`AshA2A.A2ATransport.Plug`).
+- **SEC-08 `message/stream` error redaction.** The SSE transport's error
+  reply sends a typed error class only — `SafeError.redact/1` strips the
+  task struct (and any `metadata["a2a.auth"]` credential it carried) before
+  `inspect/1` could echo it to the wire (`AshA2A.A2ATransport.SSE`).
+- **Auth plug hardening** (`AshA2A.Protocol.Plug.Auth`): RFC 7235 §2.1
+  case-insensitive scheme comparison, RFC 7235 §3.1 multi-challenge 401s
+  (one `WWW-Authenticate` header per scheme, appended not replaced), and
+  fail-closed `verify/3` — a raising verifier yields the generic 401, with
+  detail server-side only.
+- **Extended card key stripping.** The extended agent card deep-strips the
+  internal key convention (`a2a.auth`, `ash_a2a.owner`, `:stream`) from
+  every map in the card, not just top-level metadata
+  (`AshA2A.A2ATransport.ExtendedCard`).
+- **contextId integrity.** A continuation whose explicit, non-empty
+  `contextId` differs from the stored task's is refused as `:not_found`
+  (indistinguishable from a missing task), and new tasks get server-minted
+  CSPRNG context ids (`ctx-` + 128 bits) when the client supplies none
+  (`AshA2A.Transport.Runtime`).
+- **Admission refusals are terminal `rejected`.** Both task-finalizing
+  dispatch paths (`AshA2A.Protocol.Agent.Runtime` and
+  `AshA2A.Transport.Runtime`) classify pre-handler refusals
+  (forbidden/skill-miss/consequence-unclassified) as `:rejected`, never
+  `:failed`; auth-class failures stay resumable `:auth_required`.
+- **Artifact chunk ids minted once.** The streaming artifact id is minted a
+  single time per stream and shared by the SSE chunk emitter and the
+  `stream_done` fold, so v1.0 `append`/`lastChunk` frames reassemble under
+  one stable `artifactId` (`AshA2A.Transport.Runtime`).
+- **TCK-driven transport fixes** (`AshA2A.Transport.Plug`, pinned in
+  `test/ash_a2a/transport/transport_court_test.exs`): an unsupported
+  `A2A-Version` request header is refused `-32009` `VERSION_NOT_SUPPORTED`
+  as a `google.rpc.ErrorInfo` (TCK `VER-SERVER-002`; an absent header is
+  tolerated at the negotiated default and echoed back); `tasks/resubscribe`
+  on an unknown or foreign task answers `-32001` `TASK_NOT_FOUND` while an
+  owned task on this plug answers `-32004` `UNSUPPORTED_OPERATION`, since
+  only `message/stream` is a served streaming method (TCK
+  `STREAM-SUB-004`); and the agent card serves spec §8.6.1 caching headers
+  (`Cache-Control: max-age=60`, `ETag` body digest, `Last-Modified`)
+  (TCK `CARD-CACHE-001`).
+
+### Added
+
+- **TCK compatibility run (JSONRPC binding).** The official
+  `a2aproject/a2a-tck` suite ran against a real `ash_a2a` JSONRPC server
+  (2026-10-05, lane Z19): **69.2%** overall compatibility (MUST 70.4%,
+  SHOULD 42.9%, MAY 100%); the jsonrpc matrix is 68 pass / 5 fail / 15
+  skip of 88. The three MUST infrastructure failures were fixed
+  in-session (see the TCK-driven transport-fixes bullet above); the 5
+  remaining jsonrpc failures are pinned as the TCK echo-SUT behavioral
+  contract (DM-ART-001/DM-MSG-001), not spec violations. Full matrix and
+  scope: `docs/reference/a2a-v1-conformance.md`.
+- **gRPC binding** (`AshA2A.Transport.GRPC.Server`): the canonical
+  `lf.a2a.v1.A2AService` over HTTP/2 via `:grpc_server` — 9 unary RPCs
+  plus 2 server-streaming (`SendStreamingMessage`, `SubscribeToTask`)
+  pumping the same `TaskEvents` log as SSE. Protobuf messages are
+  codegen'd from the vendored `priv/proto/a2a.proto` into
+  `lib/ash_a2a/transport/grpc/pb/` and bridged to the codec's proto-JSON
+  maps via `Protobuf.JSON`; length-prefixed framing in
+  `AshA2A.Transport.Grpc.Framing`; new deps `:protobuf`/`:grpc_server`/
+  `:grpc` in `mix.exs`. Verified over a real gRPC channel
+  (`test/ash_a2a_transport_grpc_server_test.exs`); no TCK run over gRPC.
+- **HTTP+JSON REST surface** (`AshA2A.Transport.HTTPJSON`):
+  `POST /message:send`, `GET /tasks`, `GET /tasks/{id}`,
+  `POST /tasks/{id}:cancel`, the pushNotificationConfig CRUD routes
+  (`POST`/`GET`/`GET {cid}`/`DELETE {cid}`), the authenticated
+  extended-card route `POST /agent`, and the well-known agent card —
+  delegating to the same handlers as the JSON-RPC binding
+  (`PushConfigRPC`, `ExtendedCard`), so both bindings answer identical
+  error envelopes by construction.
+- **pplan deep integration.** `AshA2A.Execution.PPlan` — the `:pplan`
+  execution adapter (run id IS the A2A task id; fresh/resume/parked
+  pass-through semantics), `AshA2A.Providers.PPlanNotify` — the
+  durable-run completion -> push-notification webhook bridge, the seam
+  docs (`docs/explanation/pplan-seams.md`), and restart-proven
+  durability (`test/ash_a2a/durable_server_real_restart_test.exs`).
+- **Marketplace pack family.** Eight a2a/sa2a ggen-marketplace packs
+  (a2a-v1-protocol-pack, a2a-conformance-pack, a2a-security-pack,
+  a2a-durability-pack, a2a-hex-migration-pack, sa2a-bridge-pack,
+  sa2a-chicago-court-pack, sa2a-semantic-evidence-pack), qualified by a
+  run-derived baseline: `qualification/baseline.json` records 290 ALIVE
+  (6 REFUSED / 1 SKIPPED / 9 WARN) across the 306-pack qualify run
+  (ggen 26.9.28). ash_a2a self-hosts the capital via in-repo `ggen.toml`
+  (canonical-ash-projection-generator; `ggen sync run`).
+- **Docs set.** Conformance statement with the TCK per-transport matrix
+  (`docs/reference/a2a-v1-conformance.md`), security guide
+  (`docs/how-to/secure-an-a2a-deployment.md`), migration guide
+  (`docs/how-to/migrate-from-a2a-hex.md`), perf baseline
+  (`docs/reference/performance.md`), DSL reference
+  (`docs/reference/dsl.md`), and the resolutions ledger
+  (`docs/jira/v26.10.3-v1-protocol/_RESOLUTIONS.md`).
 
 ## [26.10.2] - 2026-10-02
 

@@ -1,33 +1,37 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.JSONRPCHandler do
   @moduledoc """
-  Real `A2A.JSONRPC` behaviour implementation backed by a real, running
-  `AshA2A.Test.Fixture.EchoAgent` `A2A.Agent` GenServer (started under a real
-  `A2A.AgentSupervisor` by the test via
+  Real `AshA2A.Protocol.JSONRPC` behaviour implementation backed by a real, running
+  `AshA2A.Test.Fixture.EchoAgent` `AshA2A.Protocol.Agent` GenServer (started under a real
+  `AshA2A.Protocol.AgentSupervisor` by the test via
   `AshA2A.Test.AgentSupervisorCase.start_supervised_agents!/2`).
 
   This exists so `test/ash_a2a_push_notification_config_test.exs` can drive
-  `A2A.JSONRPC.handle/3` -- the real transport-agnostic JSON-RPC dispatch
-  layer that `A2A.Plug` itself implements against
-  (`~/xaas/deps/a2a/lib/a2a/plug.ex:259-310`) -- with a handler that is
+  `AshA2A.Protocol.JSONRPC.handle/3` -- the real transport-agnostic JSON-RPC dispatch
+  layer that `AshA2A.Protocol.Plug` itself implements against (in the in-repo
+  ported codec, `lib/ash_a2a/protocol/plug.ex`) -- with a handler that is
   actually wired to real ash_a2a dispatch, instead of an unused stub module.
-  `handle_send/3` delegates to the real `EchoAgent.call/2`
-  (`~/xaas/deps/a2a/lib/a2a/agent.ex:220-222`), which in turn drives the real
+  `handle_send/3` delegates to the real `EchoAgent.call/2` (in the in-repo
+  ported codec, `lib/ash_a2a/protocol/agent.ex`), which in turn drives the real
   `AshA2A.Dispatcher.dispatch/5` behind the generated agent.
 
   `handle_get/3` and `handle_cancel/3` are real implementations too (not
-  mocks) -- they simply return `A2A.JSONRPC.Error.method_not_found/1` because
+  mocks) -- they simply return `AshA2A.Protocol.JSONRPC.Error.method_not_found/1` because
   this fixture only needs `handle_send/3` for the push-notification-config
-  test, which never reaches any of these three callbacks at all: per
-  `~/xaas/deps/a2a/lib/a2a/jsonrpc.ex:171`, every
+  test, which never reaches any of these three callbacks at all: per the
+  in-repo ported codec's `lib/ash_a2a/protocol/jsonrpc.ex`, every
   `"tasks/pushNotificationConfig/" <> _` method is intercepted by
-  `A2A.JSONRPC`'s own dispatch clause before any handler callback runs.
+  `AshA2A.Protocol.JSONRPC`'s own dispatch clause before any handler callback runs.
   """
 
-  @behaviour A2A.JSONRPC
+  @behaviour AshA2A.Protocol.JSONRPC
 
   alias AshA2A.Test.Fixture.EchoAgent
 
-  @impl A2A.JSONRPC
+  @impl AshA2A.Protocol.JSONRPC
   def handle_send(message, _params, _context) do
     case Process.get(:push_notification_call_counter) do
       nil -> :ok
@@ -37,13 +41,13 @@ defmodule AshA2A.Test.Fixture.JSONRPCHandler do
     EchoAgent.call(EchoAgent, message)
   end
 
-  @impl A2A.JSONRPC
+  @impl AshA2A.Protocol.JSONRPC
   def handle_get(task_id, _params, _context) do
-    {:error, A2A.JSONRPC.Error.task_not_found(task_id)}
+    {:error, AshA2A.Protocol.JSONRPC.Error.task_not_found(task_id)}
   end
 
-  @impl A2A.JSONRPC
+  @impl AshA2A.Protocol.JSONRPC
   def handle_cancel(task_id, _params, _context) do
-    {:error, A2A.JSONRPC.Error.task_not_cancelable(task_id)}
+    {:error, AshA2A.Protocol.JSONRPC.Error.task_not_cancelable(task_id)}
   end
 end

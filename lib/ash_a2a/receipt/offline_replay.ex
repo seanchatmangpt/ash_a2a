@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Receipt.OfflineReplay do
   @moduledoc """
   Fresh offline replay engine (RFC-SA2A-001 S32; RFC-SA2A-002 §41 Gate 10,
@@ -177,10 +181,14 @@ defmodule AshA2A.Receipt.OfflineReplay do
   them (no integrity checks). Used by `AshA2A.Receipt.EvidenceChain.write/2`
   to seal the basis root from the bytes actually written.
   """
-  @spec reconstruct_dir(Path.t(), map()) :: %{
+  # 2nd arg may be nil (decode_links/2 handles it) and failures carry the
+  # `failed/3` records' shape (not guaranteed all-maps), per success typing.
+  # The return also carries `:stages` (set by `finish/6`).
+  @spec reconstruct_dir(Path.t(), map() | nil) :: %{
           records: [map()],
-          failures: [map()],
-          basis_root: String.t()
+          failures: [term()],
+          basis_root: String.t(),
+          stages: non_neg_integer()
         }
   def reconstruct_dir(dir, manifest) do
     case decode_links(dir, manifest) do
