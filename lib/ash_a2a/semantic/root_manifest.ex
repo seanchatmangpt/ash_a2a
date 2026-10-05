@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.RootManifest do
   @moduledoc """
   RFC-SA2A-001 S21: the deliberately small, content-addressed semantic trust
@@ -466,7 +470,11 @@ defmodule AshA2A.Semantic.RootManifest do
   (default `true`), plus any `AshA2A.Semantic.RootManifest.EngineProbe`
   path overrides, which are forwarded.
   """
-  @spec load(Path.t(), keyword()) :: {:ok, t()} | {:error, refusal()}
+  # 1st arg is honestly `Path.t() | nil`: the `nil \\` default resolves to
+  # `default_path()` in the body. The old `(Path.t(), keyword())` contract
+  # made every `load(nil, ...)` caller a contract violation, which
+  # dialyzer escalated to `no_return` for the whole call path.
+  @spec load(Path.t() | nil, keyword()) :: {:ok, t()} | {:error, refusal()}
   def load(path \\ nil, opts \\ []) do
     path = path || default_path()
     root = Keyword.get(opts, :root, Path.dirname(path))

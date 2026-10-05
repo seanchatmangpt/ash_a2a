@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.LlmBoundary do
   @moduledoc """
   `SA2A-LLM` -- the LLM Boundary Court (RFC-SA2A-002 §81, §100).

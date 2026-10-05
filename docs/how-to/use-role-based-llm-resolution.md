@@ -70,7 +70,7 @@ Nothing in this module names `zai_coder` or `glm-5.3-flash` — only the role
 `test/support/llm_profiles_fixture.ex`
 (`AshA2A.Test.Fixture.SemanticReasoner`), exercised end to end by
 `test/ash_a2a_llm_profiles_test.exs` with a real, live LLM call over a real
-`A2A.Agent.call/2` dispatch.
+`AshA2A.Protocol.Agent.call/2` dispatch.
 
 ## 3. Switch providers with a config-only change
 

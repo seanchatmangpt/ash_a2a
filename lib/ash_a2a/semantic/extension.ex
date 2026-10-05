@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.Extension do
   @moduledoc """
   RFC-SA2A-001 S9 -- Semantic A2A profile negotiation over the real A2A
@@ -15,29 +19,30 @@ defmodule AshA2A.Semantic.Extension do
        cross the boundary. `negotiate/2` requires the profile on *both*
        cards and returns a typed refusal otherwise.
 
-  ## Where the advertisement actually rides -- a measured constraint
+  ## Where the advertisement rides -- the measured v1.0 reality
 
-  The A2A specification declares extensions under
-  `AgentCard.capabilities.extensions`. The vendored `:a2a` 0.2.0 encoder
-  does not carry that key: `A2A.JSON.encode_agent_card/2` passes
-  `capabilities` through `encode_capabilities/1`, which whitelists exactly
-  `streaming`, `pushNotifications`, `stateTransitionHistory` and
-  `extendedAgentCard`, and `decode_card_capabilities/1` whitelists the same
-  four on the way back. Any `extensions` key placed there is dropped on the
-  wire. `test/ash_a2a_semantic_extension_test.exs` asserts this drop
-  directly against the real encoder rather than taking it on trust.
+  The A2A v1.0 specification declares extensions under
+  `AgentCard.capabilities.extensions`, and the ported encoder carries that
+  key: `AshA2A.Protocol.JSON.encode_capabilities/1` ends with
+  `put_unless_empty("extensions", encode_agent_extensions(...))`
+  (lib/ash_a2a/protocol/json.ex:656), which passes each entry through
+  `encode_agent_extension/1` (json.ex:663) -- a clause accepting exactly
+  `%AshA2A.Protocol.AgentExtension{}` structs -- and the decoder rebuilds
+  the same struct on the way back (json.ex:984). The old 0.2.0 whitelist
+  that dropped any `extensions` key on the wire is gone; the workaround
+  detour through `AgentCard.supportedInterfaces` (binding-name
+  advertisement) is retired as the *only* ride.
 
-  So the wire-surviving advertisement is a real
-  `AgentCard.supportedInterfaces` entry whose `protocolBinding` is the
-  profile id. `encode_interfaces/1` carries `url`, `protocolBinding` and
-  `protocolVersion` verbatim, and `decode_card_interfaces/1` reads all
-  three back, so the advertisement makes a real HTTP round trip through the
-  unmodified `:a2a` library.
+  `capability_declaration/0` therefore returns the encoder's sole accepted
+  shape, the `%AshA2A.Protocol.AgentExtension{}` struct, so a host
+  advertises through the specification's own site directly:
 
-  `capability_declaration/0` still returns the spec-shaped
-  `%{uri:, description:, required:, params:}` map, so a host whose encoder
-  *does* carry `capabilities.extensions` can advertise through the
-  specification's own site without this module changing.
+      capabilities: %{extensions: [AshA2A.Semantic.Extension.capability_declaration()]}
+
+  `advertise/1` and `supported_interface/1` remain as an additional
+  `supportedInterfaces`-binding advertisement for callers that want the
+  profile visible at the binding site too; `advertisement/1`,
+  `advertised?/1` and `negotiate/2` classify that binding site.
   """
 
   @profile_id "SA2A-PROFILE-v26.9.20"
@@ -60,26 +65,24 @@ defmodule AshA2A.Semantic.Extension do
   @spec profile_version() :: String.t()
   def profile_version, do: @profile_version
 
-  @doc "The `A2A.Message.extensions` key this profile occupies."
+  @doc "The `AshA2A.Protocol.Message.extensions` key this profile occupies."
   @spec extension_key() :: String.t()
   def extension_key, do: @extension_key
 
   @doc """
   The A2A-specification-shaped extension declaration.
 
-  This is what belongs under `AgentCard.capabilities.extensions` on a host
-  whose encoder carries that key. `required: false` is deliberate: a
-  Semantic A2A agent must still answer ordinary A2A traffic (S75), it simply
-  grants that traffic no semantic standing.
+  This rides `AgentCard.capabilities.extensions` on the wire: the ported
+  encoder's `encode_capabilities/1` carries that key
+  (lib/ash_a2a/protocol/json.ex:656) and accepts exactly
+  `%AshA2A.Protocol.AgentExtension{}` structs (json.ex:663), so this
+  returns the struct itself. `required: false` is deliberate: a Semantic
+  A2A agent must still answer ordinary A2A traffic (S75), it simply grants
+  that traffic no semantic standing.
   """
-  @spec capability_declaration() :: %{
-          uri: String.t(),
-          description: String.t(),
-          required: boolean(),
-          params: map()
-        }
+  @spec capability_declaration() :: AshA2A.Protocol.AgentExtension.t()
   def capability_declaration do
-    %{
+    %AshA2A.Protocol.AgentExtension{
       uri: @profile_uri,
       description:
         "Semantic A2A: RDF-carrying envelopes admitted by the receiving peer's own " <>
@@ -98,7 +101,7 @@ defmodule AshA2A.Semantic.Extension do
 
   `url` is the peer's own A2A endpoint; the binding names the profile.
   """
-  @spec supported_interface(String.t()) :: A2A.AgentCard.supported_interface()
+  @spec supported_interface(String.t()) :: AshA2A.Protocol.AgentCard.supported_interface()
   def supported_interface(url) when is_binary(url) do
     %{url: url, protocol_binding: @profile_id, protocol_version: @profile_version}
   end
@@ -129,7 +132,7 @@ defmodule AshA2A.Semantic.Extension do
   end
 
   @doc """
-  Whether a real `A2A.AgentCard` advertises this profile at a compatible
+  Whether a real `AshA2A.Protocol.AgentCard` advertises this profile at a compatible
   version.
 
   Accepts a decoded card struct or the raw decoded JSON map, so a peer can
@@ -141,7 +144,7 @@ defmodule AshA2A.Semantic.Extension do
   binding name alone is silent profile assumption (RFC-SA2A-002 §55,
   `SA2A-NEG-002`). See `advertisement/1` for the three-way answer.
   """
-  @spec advertised?(A2A.AgentCard.t() | map() | nil) :: boolean()
+  @spec advertised?(AshA2A.Protocol.AgentCard.t() | map() | nil) :: boolean()
   def advertised?(card), do: advertisement(card) == :compatible
 
   @doc """
@@ -150,7 +153,7 @@ defmodule AshA2A.Semantic.Extension do
   `protocolVersion`s.
   """
   @spec advertisement(term()) :: :compatible | :absent | {:incompatible, [term()]}
-  def advertisement(%A2A.AgentCard{supported_interfaces: interfaces}) when is_list(interfaces) do
+  def advertisement(%AshA2A.Protocol.AgentCard{supported_interfaces: interfaces}) when is_list(interfaces) do
     classify_advertisement(
       for %{} = i <- interfaces,
           Map.get(i, :protocol_binding) == @profile_id,
@@ -195,7 +198,7 @@ defmodule AshA2A.Semantic.Extension do
   `:unsupported_profile` (an advertisement is absent) or
   `:profile_version_incompatible` (present only at another version).
   """
-  @spec negotiate(A2A.AgentCard.t() | map(), A2A.AgentCard.t() | map()) ::
+  @spec negotiate(AshA2A.Protocol.AgentCard.t() | map(), AshA2A.Protocol.AgentCard.t() | map()) ::
           {:ok, String.t()} | {:error, refusal()}
   def negotiate(local_card, remote_card) do
     local = advertisement(local_card)
@@ -254,14 +257,14 @@ defmodule AshA2A.Semantic.Extension do
   end
 
   @doc """
-  Marks a real `A2A.Message` as carrying Semantic A2A payload.
+  Marks a real `AshA2A.Protocol.Message` as carrying Semantic A2A payload.
 
   The payload map is placed under this profile's single extension key.
   Everything already in `message.extensions` is preserved, so a message may
   carry other A2A extensions alongside this one.
   """
-  @spec activate(A2A.Message.t(), map()) :: A2A.Message.t()
-  def activate(%A2A.Message{} = message, payload) when is_map(payload) do
+  @spec activate(AshA2A.Protocol.Message.t(), map()) :: AshA2A.Protocol.Message.t()
+  def activate(%AshA2A.Protocol.Message{} = message, payload) when is_map(payload) do
     %{message | extensions: Map.put(message.extensions, @extension_key, payload)}
   end
 
@@ -273,14 +276,14 @@ defmodule AshA2A.Semantic.Extension do
   no heuristic here, no content sniffing, no "it looks like Turtle so it
   probably is semantic".
   """
-  @spec activated?(A2A.Message.t() | map()) :: boolean()
-  def activated?(%A2A.Message{extensions: extensions}), do: is_map_key(extensions, @extension_key)
+  @spec activated?(AshA2A.Protocol.Message.t() | map()) :: boolean()
+  def activated?(%AshA2A.Protocol.Message{extensions: extensions}), do: is_map_key(extensions, @extension_key)
   def activated?(%{} = extensions), do: is_map_key(extensions, @extension_key)
   def activated?(_), do: false
 
   @doc "Extracts this profile's raw payload from a message, if activated."
-  @spec payload(A2A.Message.t()) :: {:ok, map()} | {:error, refusal()}
-  def payload(%A2A.Message{extensions: extensions}) do
+  @spec payload(AshA2A.Protocol.Message.t()) :: {:ok, map()} | {:error, refusal()}
+  def payload(%AshA2A.Protocol.Message{extensions: extensions}) do
     case Map.get(extensions, @extension_key) do
       %{} = payload ->
         {:ok, payload}

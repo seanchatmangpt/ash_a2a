@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.UnknownLlmGate12Test do
   @moduledoc """
   Qualifies `CHI-KNOWN` (Gate 12), `SA2A-UNKNOWN`, `SA2A-LLM` and `SA2A-MX`
@@ -175,7 +179,7 @@ defmodule AshA2A.Chicago.UnknownLlmGate12Test do
 
     def run(ctx) do
       [neg, pos] = falsifiers()
-      empty = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+      empty = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
       for f <- [neg, pos] do
         Context.stimulus(ctx, f, fn -> RequestRouter.route(Fx.gate(), empty) end)

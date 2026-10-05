@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Release.CompositionLockTest do
   @moduledoc """
   Qualifies `AshA2A.Chicago.Release.CompositionLock` Chicago style: real
@@ -30,15 +34,32 @@ defmodule AshA2A.Chicago.Release.CompositionLockTest do
       %{lock: CompositionLock.build!()}
     end
 
+    defp mix_lock_has_package?(name) do
+      {raw, _bindings} = Code.eval_file(Path.join(File.cwd!(), "mix.lock"))
+      Map.has_key?(raw, String.to_atom(name))
+    end
+
     test "tracked_dependencies pins real {version, checksum} for every tracked package present in mix.lock",
          %{lock: lock} do
       assert Map.keys(lock.tracked_dependencies) |> Enum.sort() ==
                Enum.sort(~w(ash a2a ekv wasmex rdf))
 
+      # Current truth (v26.10.3): `a2a` is in `tracked/0` as a load-bearing
+      # name but has NO mix.lock entry -- it is not a Hex dependency of this
+      # repo (the A2A protocol types are in-tree under lib/ash_a2a/protocol/,
+      # not a package). Only packages actually present in mix.lock can pin a
+      # real {version, checksum}; build!/1 honestly reports nil/nil for the
+      # rest (pinned explicitly by the mix.lock cross-check test below).
       for package <- ~w(ash a2a) do
         pin = lock.tracked_dependencies[package]
-        assert is_binary(pin["version"]), "#{package}: #{inspect(pin)}"
-        assert is_binary(pin["checksum"]), "#{package}: #{inspect(pin)}"
+
+        if mix_lock_has_package?(package) do
+          assert is_binary(pin["version"]), "#{package}: #{inspect(pin)}"
+          assert is_binary(pin["checksum"]), "#{package}: #{inspect(pin)}"
+        else
+          assert pin == %{"version" => nil, "checksum" => nil},
+                 "#{package}: absent from mix.lock must report nil/nil, got #{inspect(pin)}"
+        end
       end
     end
 

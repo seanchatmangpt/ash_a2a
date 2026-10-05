@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Support.CommandWorker do
   @moduledoc """
   Real `Oban.Worker` for GAP D's Oban delivery qualification
   (`test/ash_a2a/oban_delivery_qualification_test.exs`). `perform/1`
-  reconstructs a real `AshA2A.Command` -- and the `A2A.Message` carrying its
+  reconstructs a real `AshA2A.Command` -- and the `AshA2A.Protocol.Message` carrying its
   input, which `AshA2A.Dispatcher` actually reads -- from a real,
   DB-persisted `Oban.Job.args` map (the exact shape
   `AshA2A.Delivery.Oban.payload/1` produces), then re-admits it through
@@ -82,7 +86,7 @@ defmodule AshA2A.Test.Support.CommandWorker do
 
     with {:ok, live_authority} <- authority_result do
       command = %{reconstructed | authority: live_authority}
-      message = A2A.Message.new_user([A2A.Part.Data.new(args["input"] || %{})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(args["input"] || %{})])
 
       case CommandBus.run(command, message, AshA2A.Test.Fixture.Item) do
         {:ok, _receipt} -> :ok

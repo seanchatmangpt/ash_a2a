@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Bench.Environment do
   @moduledoc """
   RFC-SA2A-002 §102 benchmark environment receipt.
@@ -342,11 +346,10 @@ defmodule AshA2A.Chicago.Bench.Environment do
 
   defp hostname_digest do
     case :inet.gethostname() do
+      # (`:inet.gethostname/0`'s success type is `{:ok, binary()}` — the old
+      # catch-all `_ -> nil` clause was dead)
       {:ok, name} ->
         :crypto.hash(:sha256, to_string(name)) |> Base.encode16(case: :lower)
-
-      _ ->
-        nil
     end
   end
 

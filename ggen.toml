@@ -1,0 +1,58 @@
+# ggen.toml — ash_a2a self-hosts its marketplace packs (lane P5).
+#
+# ash_a2a is the truth source for canonical-ash-projection-generator (its
+# apg: capability vocabulary is grounded in lib/ash_a2a/capability_index/
+# compiler.ex, lib/ash_a2a/semantic/canonical_graph.ex, and
+# lib/ash_a2a/semantic/vocabulary.ex). Self-hosting doctrine: the repo
+# consumes its own marketplace capital — [ontology] points at ash_a2a's
+# canonical SA2A graph and the pack projects the capability surface back as
+# deterministic RDF under generated/.
+#
+# Consumer contract per M8 falsifier run (scratch /tmp/a2a-m8-falsifier):
+# `ggen sync run` with a [packs] path reference. ggen 26.9.28.
+#
+# Replay from a fresh clone: `mkdir -p templates` first — ggen requires the
+# [templates].dir to exist ([FM-CONFIG-004] otherwise) and git cannot track
+# the (intentionally empty) directory. Then `ggen sync run`.
+
+[project]
+name = "ash_a2a"
+
+[ontology]
+source = "priv/sa2a/AllSA2A.ttl"
+
+[templates]
+# Required by the ggen consumer contract ([FM-CONFIG-002] `missing field
+# templates` otherwise). Consumer-local templates dir is empty: every
+# rendered artifact comes from pack templates, nothing hand-written.
+dir = "templates"
+
+[packs]
+canonical-ash-projection-generator = { path = "/Users/sac/ggen-marketplace/packs/canonical-ash-projection-generator" }
+
+# Excluded packs — each would render files that shadow the repo's own source
+# of truth, which the self-hosting rule forbids (lib/ and test/ are canonical;
+# only RDF/projection outputs are consumed):
+#
+# a2a-v1-protocol-pack = { path = ".../packs/a2a-v1-protocol-pack" }
+#   Templates render error_envelope.ex + transport_mount.ex — Elixir code that
+#   would duplicate/shadow lib/ash_a2a/a2a_transport/*.ex. The repo's lib/ is
+#   the canonical transport; consuming a generated copy is a drift channel.
+#
+# a2a-conformance-pack = { path = ".../packs/a2a-conformance-pack" }
+#   Templates render conformance_court_skeleton.exs (duplicates the hand-built
+#   Chicago courts under lib/ash_a2a/chicago/) and spec_corpus_entry.json
+#   (priv/a2a_v1_spec_corpus is curated, not generated).
+#
+# sa2a-bridge-pack = { path = ".../packs/sa2a-bridge-pack" }
+#   Templates render sa2a-contract.ex / sa2a-edge-catalog.ex / .exs tests —
+#   code packs duplicating lib/ surfaces, not documentation/projection-shaped.
+#
+# readme-diataxis-pack = { path = ".../packs/readme-diataxis-pack" }
+#   Documentation-shaped but projects a flat boilerplate README into a NEW
+#   docs/ tree; ash_a2a's docs/ is curated Diataxis already (the pack's output
+#   would shadow it rather than project it).
+#
+# semantic-projection-pack / shacl-projection-pack = vocabulary/law packs with
+#   no consumer-facing templates relevant here (no renderable projection of
+#   this repo's surface); consuming them adds graph weight, not outputs.

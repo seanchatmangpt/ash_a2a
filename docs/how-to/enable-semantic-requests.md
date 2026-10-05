@@ -59,14 +59,14 @@ existing one.
 ## Gate 2: the caller's message sets the `semantic_request` flag
 
 A caller opts an individual message into the semantic surface by setting
-`:semantic_request`/`"semantic_request"` to `true` in the outbound `A2A.Message`'s
-`metadata`, and must send real text in a `A2A.Part.Text` part (the compiler has nothing
+`:semantic_request`/`"semantic_request"` to `true` in the outbound `AshA2A.Protocol.Message`'s
+`metadata`, and must send real text in a `AshA2A.Protocol.Part.Text` part (the compiler has nothing
 to compile otherwise):
 
 ```elixir
-message = %A2A.Message{
+message = %AshA2A.Protocol.Message{
   role: :user,
-  parts: [A2A.Part.Text.new("advance the admitted workflow")],
+  parts: [AshA2A.Protocol.Part.Text.new("advance the admitted workflow")],
   metadata: %{semantic_request: true}
 }
 
@@ -88,7 +88,7 @@ choosing a route:
   dispatch path (`dispatch_skill/4`) — the message is treated exactly as it would be if
   `semantic_requests` had never been declared.
 * **Both gates true** → routes to `dispatch_semantic/2`, which pulls the message's real
-  text via `A2A.Message.text/1` and calls `AshA2A.Semantic.Compiler.compile/3` for real.
+  text via `AshA2A.Protocol.Message.text/1` and calls `AshA2A.Semantic.Compiler.compile/3` for real.
   * No text part on the message → `{:error, %{code: :semantic_request_missing_text}}`,
     refused closed before any compilation is attempted.
   * `Compiler.compile/3` genuinely calls the configured `:semantic_reasoner` LLM role
@@ -96,7 +96,7 @@ choosing a route:
     role) — `dispatch_semantic/2` wraps this in a real `rescue` so a misconfigured LLM
     profile, or any other real compilation failure, becomes a typed
     `{:error, %{code: :semantic_compilation_failed, detail: ...}}` reply instead of
-    crashing the shared `A2A.Agent` GenServer process (which would otherwise terminate
+    crashing the shared `AshA2A.Protocol.Agent` GenServer process (which would otherwise terminate
     every other in-flight task that process is managing, not just this one request).
   * A successful compile produces a real `AshA2A.Semantic.ExecutionPackage`, converted to
     a reply by `to_reply/1` (see below).
@@ -109,8 +109,8 @@ identical ordinary skill-resolution route real dispatch has always taken.
 
 `AshA2A.Semantic.ExecutionPackage.to_reply/1` converts an admitted package into the same
 `AshA2A.Dispatcher.reply()` tuple contract every other dispatch path returns — one
-`{:reply, [%A2A.Part.Data{}]}` (or `{:error, reason}`) shape regardless of which real path
-produced it. For a successful compile, the `A2A.Part.Data` body carries exactly these
+`{:reply, [%AshA2A.Protocol.Part.Data{}]}` (or `{:error, reason}`) shape regardless of which real path
+produced it. For a successful compile, the `AshA2A.Protocol.Part.Data` body carries exactly these
 fields (read directly from `to_reply/1` — nothing here is invented):
 
 ```elixir
@@ -145,7 +145,7 @@ fields (read directly from `to_reply/1` — nothing here is invented):
 
 The real, working proof of all of the above is
 `test/ash_a2a_agent_semantic_request_test.exs`, run against a real supervised
-`A2A.Agent` process with no injected `generate_object` seam on this path (unlike
+`AshA2A.Protocol.Agent` process with no injected `generate_object` seam on this path (unlike
 `AshA2A.Semantic.Compiler`'s test-only injectable seam used elsewhere — this production
 entrypoint genuinely calls the configured LLM role every time, by design). In this
 repository's own unmodified test environment (no reachable/authorized LLM endpoint for

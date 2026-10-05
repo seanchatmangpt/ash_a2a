@@ -1,12 +1,16 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.FederatedDelegationTest do
   @moduledoc """
   `SA2A-FED` Federated Delegation Court run end to end (RFC-SA2A-001 §54
   Confused Deputy Prevention; RFC-SA2A-002 §75, §38, §68).
 
   Real collaborators throughout: two genuinely distinct, real supervised
-  `A2A.Agent` GenServer processes (peer A, peer B), each with its own real
+  `AshA2A.Protocol.Agent` GenServer processes (peer A, peer B), each with its own real
   `AshA2A.CommandBus` / `AshA2A.Dispatcher` / `AshA2A.Authority.Grant`
-  admission path, a real cross-process `A2A.call/3` hop between them, real
+  admission path, a real cross-process `AshA2A.Protocol.call/3` hop between them, real
   ETS resources read back through `Ash.read!/1`, real telemetry, and the
   durable OCEL artifact read by the independent consumer. No Mock/Mox/:meck/
   patch.

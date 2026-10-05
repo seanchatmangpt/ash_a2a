@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.Postcondition do
   @moduledoc """
   Gate 8 -- Independent Postcondition Observation, and the Independent
@@ -373,7 +377,7 @@ defmodule AshA2A.Chicago.Courts.Postcondition do
         input: %{key: key, value: @reported}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"key" => key, "value" => @reported})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => @reported})])
 
     postcondition =
       verifier &&
@@ -450,7 +454,7 @@ defmodule AshA2A.Chicago.Courts.Postcondition do
 
   defp reported_value(%Receipt{reply: {:reply, parts}}) when is_list(parts) do
     Enum.find_value(parts, fn
-      %A2A.Part.Data{data: data} when is_map(data) -> data[:value] || data["value"]
+      %AshA2A.Protocol.Part.Data{data: data} when is_map(data) -> data[:value] || data["value"]
       _ -> nil
     end)
   end

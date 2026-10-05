@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.ItemAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the existing
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the existing
   `AshA2A.Test.Fixture.Item` fixture (real `:create`/`:update`/`:destroy`/
   `:ping` skills, `test/support/fixture.ex`) -- private to this test file
   since no shared fixture wraps `Item` in a real agent process yet.
@@ -54,7 +58,7 @@ defmodule AshA2A.Test.Fixture.UnclassifiedAction.Domain do
 end
 
 defmodule AshA2A.Test.Fixture.UnclassifiedActionAgent do
-  @moduledoc "Real `A2A.Agent` GenServer over `UnclassifiedAction.Resource` above."
+  @moduledoc "Real `AshA2A.Protocol.Agent` GenServer over `UnclassifiedAction.Resource` above."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.UnclassifiedAction.Resource,
@@ -63,7 +67,7 @@ end
 
 defmodule AshA2AAgentCommandBusTest do
   @moduledoc """
-  Proves `AshA2A.CommandBus` is genuinely on the DEFAULT `A2A.Agent`/
+  Proves `AshA2A.CommandBus` is genuinely on the DEFAULT `AshA2A.Protocol.Agent`/
   `AshA2A.Agent.__dispatch__/3` dispatch path -- the only path any deployed
   agent actually uses -- for every skill whose real, compiled
   `AshA2A.Skill.consequence` is `:change`/`:external_do`, not just the
@@ -75,13 +79,13 @@ defmodule AshA2AAgentCommandBusTest do
   override), never by re-deriving a binary judgment from `action.type` at
   dispatch time.
 
-  Real `A2A.Agent.call/3` calls through real supervised agent processes;
+  Real `AshA2A.Protocol.Agent.call/3` calls through real supervised agent processes;
   real `:telemetry.attach/4` on the real `[:ash_a2a, :receipt, :committed]`
   event `AshA2A.CommandBus.emit_receipt/1` actually fires (the same real,
   attachable hook `AshA2A.Agent.__cancel__/2`'s own moduledoc points a
   resource author to) -- used here to observe the real committed
   `AshA2A.Receipt` a caller has no other way to retrieve (the default path
-  intentionally returns only the underlying `A2A.Agent.reply()`, not the
+  intentionally returns only the underlying `AshA2A.Protocol.Agent.reply()`, not the
   receipt itself, so a normal caller's contract is unchanged). No Mock/mox/
   patch/monkeypatch anywhere in this file.
   """
@@ -137,16 +141,16 @@ defmodule AshA2AAgentCommandBusTest do
     :ok
   end
 
-  # `A2A.Plug` populates `context.metadata["a2a.auth"]` only after real
+  # `AshA2A.Protocol.Plug` populates `context.metadata["a2a.auth"]` only after real
   # credential verification (`AshA2A.Agent.verified_auth_identity/1`'s own
-  # moduledoc comment). `A2A.Agent.call/3`'s own `opts` keyword list becomes
+  # moduledoc comment). `AshA2A.Protocol.Agent.call/3`'s own `opts` keyword list becomes
   # exactly `context.metadata` (`~/xaas/deps/a2a/lib/a2a/agent.ex:269-272,
   # 285-290` threads `Keyword.get(opts, :metadata, %{})` straight into
-  # `A2A.Agent.Runtime.process_message/5`'s `metadata` argument, which
+  # `AshA2A.Protocol.Agent.Runtime.process_message/5`'s `metadata` argument, which
   # becomes `Task.new(metadata: metadata)` and ultimately `context.metadata`
   # -- the second argument `handle_message/2` receives) -- so passing
   # `metadata:` here simulates an already-verified caller the same real way
-  # `A2A.Plug` would have populated it, without needing a real Plug.Conn/
+  # `AshA2A.Protocol.Plug` would have populated it, without needing a real Plug.Conn/
   # credential round-trip in this test.
   defp authenticated_call_opts(identity) do
     [metadata: %{"a2a.auth" => %{identity: identity}}]
@@ -181,7 +185,7 @@ defmodule AshA2AAgentCommandBusTest do
     assert create_receipt.status == :completed
     refute create_receipt.replayed?
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: created}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] = task.artifacts
     item_id = created.id
 
     # -- update -> Agent -> CommandBus -> Ash.update -> Receipt ----------
@@ -200,7 +204,7 @@ defmodule AshA2AAgentCommandBusTest do
     assert update_receipt.consequence == :change
     assert update_receipt.status == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: updated}]}] = update_task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: updated}]}] = update_task.artifacts
     assert updated.label == "widget-v2"
 
     # -- destroy -> Agent -> CommandBus -> Ash.destroy -> Receipt --------
@@ -227,7 +231,7 @@ defmodule AshA2AAgentCommandBusTest do
       })
 
     # A `handle_message/2` `{:error, _}` reply surfaces through
-    # `A2A.Agent.call/3` as a real `{:ok, task}` with the task's own status
+    # `AshA2A.Protocol.Agent.call/3` as a real `{:ok, task}` with the task's own status
     # failed -- not as a `{:error, _}` return from `call/3` itself (the same
     # real shape `test/ash_a2a_agent_multi_turn_test.exs` already
     # establishes for an unrelated `{:error, _}` dispatch reply).
@@ -251,7 +255,7 @@ defmodule AshA2AAgentCommandBusTest do
 
     assert {:ok, task} = ItemAgent.call(ItemAgent, message, authenticated_call_opts("user-1"))
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{result: "pong"}}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{result: "pong"}}]}] = task.artifacts
 
     refute_receive {:receipt_committed, _receipt}, 200
   end
@@ -308,8 +312,8 @@ defmodule AshA2AAgentCommandBusTest do
     assert task2.status.state == :completed
     refute_receive {:receipt_committed, _no_new_receipt_on_replay}, 200
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: created1}]}] = task1.artifacts
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: created2}]}] = task2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created1}]}] = task1.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created2}]}] = task2.artifacts
     assert created1.id == created2.id
 
     assert {:ok, all_items} =

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 # b4p-f5-10 (wave finding, beam4pm capability sweep 2026-09-18): on a
 # multi-resource domain -- the DEFAULT surface since every public Ash action
 # is exposed as a skill -- same-named `:change` skills (e.g. `create` on 597
@@ -71,7 +75,7 @@ defmodule AshA2A.Test.Fixture.Dup.Domain do
 end
 
 defmodule AshA2A.Test.Fixture.DupAgent do
-  @moduledoc "Real `A2A.Agent` over the whole two-resource domain (the default multi-skill surface)."
+  @moduledoc "Real `AshA2A.Protocol.Agent` over the whole two-resource domain (the default multi-skill surface)."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.Dup.Domain,

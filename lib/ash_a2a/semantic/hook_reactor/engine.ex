@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.HookReactor.Engine do
   @moduledoc """
   Hook evaluation through the canonical `AshGraphLaw` library and underlying
@@ -28,8 +32,8 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
       {:error, %AshGraphLaw.Refusal{message: msg}} ->
         {:error, %{code: :hook_engine_unavailable, detail: msg}}
 
-      {:error, reason} ->
-        {:error, %{code: :hook_engine_unavailable, detail: inspect(reason)}}
+      # (the old bare `{:error, reason}` catch-all was dead: every `{:error, _}`
+      # `AshGraphLaw.capabilities/1` can return is a `%AshGraphLaw.Refusal{}`)
     end
   rescue
     error -> {:error, %{code: :hook_engine_unavailable, detail: Exception.message(error)}}
@@ -125,8 +129,9 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
         {:error, %AshGraphLaw.Refusal{code: code, message: msg}} ->
           {:error, %{code: code, detail: msg}}
 
-        other ->
-          {:error, %{code: :hook_engine_unavailable, detail: inspect(other)}}
+        # (the old bare `other` catch-all was dead: the `{:ok, _}` and
+        # `{:error, %AshGraphLaw.Refusal{}}` clauses above cover the full
+        # success type of the engine call)
       end
     end
   end

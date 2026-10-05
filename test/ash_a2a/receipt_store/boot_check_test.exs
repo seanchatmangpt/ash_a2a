@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ReceiptStore.BootCheckTest do
   @moduledoc """
   Findings R2 / R12 / PERF-09: `AshA2A.ReceiptStore.boot_check/1` refuses

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.ObserverQualification do
   @moduledoc """
   Process observer qualification court (RFC-SA2A-002 §19, §20, §107, §108,
@@ -1215,7 +1219,7 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
     )
   end
 
-  defp message(label), do: A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   defp reply_code({:ok, _receipt}), do: "ok"
   defp reply_code({:error, %{code: code}}), do: inspect(code)

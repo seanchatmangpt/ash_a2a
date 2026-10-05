@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.FlamePlacementTest do
   use ExUnit.Case, async: true
 
@@ -15,7 +19,7 @@ defmodule AshA2A.FlamePlacementTest do
           principal_id: "anonymous"
         )
 
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
       assert {:error, {:unsupported, :flame}} =
                FLAME.run(:ash_a2a_pool, command, message, Echo)

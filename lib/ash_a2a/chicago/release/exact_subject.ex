@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Release.ExactSubject do
   @moduledoc """
   RFC-SA2A-003 v26.9.17 §84 `exact-subject.json` -- release composition

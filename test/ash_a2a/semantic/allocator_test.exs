@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.AllocatorTest do
   @moduledoc """
   RFC S38 (the CMCA allocation boundary) and RFC S73 (a model must not

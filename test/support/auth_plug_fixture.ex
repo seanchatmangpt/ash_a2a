@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.AuthProbe do
   @moduledoc """
   Real fixture resource for `test/ash_a2a_plug_auth_test.exs` -- exercises
-  the real end-to-end auth path: a real `A2A.Plug.Auth` verifies a real
+  the real end-to-end auth path: a real `AshA2A.Protocol.Plug.Auth` verifies a real
   Bearer credential and stores the resulting identity in
-  `conn.private[:a2a][:auth]`; real `A2A.Plug` merges it into the call-level
+  `conn.private[:a2a][:auth]`; real `AshA2A.Protocol.Plug` merges it into the call-level
   metadata as `"a2a.auth"`; `AshA2A.Agent.__dispatch__/3` reads
   `metadata["a2a.auth"][:identity]` and threads it into
   `AshA2A.Dispatcher.dispatch/5` as `auth_identity`; `AshA2A.ContextResolver`
@@ -53,10 +57,10 @@ end
 
 defmodule AshA2A.Test.Fixture.AuthProbeAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the fixture
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the fixture
   `AuthProbe` resource above, started directly (registered under its own
-  module name, the `A2A.Agent`-generated `start_link/1` default) so a real
-  `A2A.Plug` can front it with `agent: __MODULE__` in
+  module name, the `AshA2A.Protocol.Agent`-generated `start_link/1` default) so a real
+  `AshA2A.Protocol.Plug` can front it with `agent: __MODULE__` in
   `test/ash_a2a_plug_auth_test.exs`.
   """
 

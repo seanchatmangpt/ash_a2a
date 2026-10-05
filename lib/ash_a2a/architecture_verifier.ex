@@ -722,7 +722,7 @@ defmodule AshA2A.ArchitectureVerifier do
 
   @doc """
   Real check: the second of the two real production gates. A real
-  `A2A.Message` carrying `:semantic_request` metadata set to `true`,
+  `AshA2A.Protocol.Message` carrying `:semantic_request` metadata set to `true`,
   dispatched against `Fixture.Resource` (which never declared `a2a do
   semantic_requests true end`), real-falls-through
   `AshA2A.Agent.__dispatch__` to ordinary skill resolution --
@@ -732,7 +732,7 @@ defmodule AshA2A.ArchitectureVerifier do
   sufficient (that would make the explicit surface into exactly the
   silent-fallback-for-arbitrary-messages behavior v26.9.14 was designed
   to NOT be). `__dispatch__/3` is called directly, as a real plain
-  function call, with no supervised `A2A.Agent` process needed to prove
+  function call, with no supervised `AshA2A.Protocol.Agent` process needed to prove
   this branch.
   """
   @spec check_unopted_semantic_request_falls_through() :: result()
@@ -748,7 +748,7 @@ defmodule AshA2A.ArchitectureVerifier do
     # isolates exactly the real behavior under test.
     message =
       %{
-        A2A.Message.new_user([A2A.Part.Data.new(%{})])
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
         | metadata: %{semantic_request: true, skill: "probe"}
       }
 
@@ -798,7 +798,7 @@ defmodule AshA2A.ArchitectureVerifier do
     end
   end
 
-  defp probe_message, do: A2A.Message.new_user([A2A.Part.Data.new(%{})])
+  defp probe_message, do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
   defp unique, do: System.unique_integer([:positive, :monotonic])
 

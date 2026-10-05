@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.GrantLifecycle do
   @moduledoc """
   RFC-SA2A-002 §67 Grant Lifecycle court, id `SA2A-AUTH-GRANT`.
@@ -7,7 +11,7 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
   the real durable `AshA2A.Authority.Broker.Ekv` (a real on-disk `EKV`
   instance the court starts, stops and restarts) and the real
   `AshA2A.Authority.Broker.InMemory` process. Every refusal is driven through
-  the REAL dispatch path -- a real `A2A.Agent` message ->
+  the REAL dispatch path -- a real `AshA2A.Protocol.Agent` message ->
   `AshA2A.Authority.Grant.authorize/3` -> `AshA2A.CommandBus` -- because an
   expiry or revocation honoured only by an unused verification path does not
   satisfy §67.
@@ -550,7 +554,7 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
               authority: minted,
               input: %{"nonce" => nonce}
             ),
-            A2A.Message.new_user([A2A.Part.Data.new(%{"nonce" => nonce})]),
+            AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})]),
             Probe
           )
 
@@ -605,7 +609,7 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
               authority: authority,
               input: %{"nonce" => nonce}
             ),
-            A2A.Message.new_user([A2A.Part.Data.new(%{"nonce" => nonce})]),
+            AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})]),
             Probe
           )
 

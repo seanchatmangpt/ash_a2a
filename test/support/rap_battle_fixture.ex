@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.RapBattle.FiftyCent do
   @moduledoc """
   Real fixture resource for the cross-app A2A integration test
@@ -188,7 +192,7 @@ end
 
 defmodule AshA2A.Test.Fixture.RapBattle.FiftyCentAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.RapBattle.FiftyCent`, standing in
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.RapBattle.FiftyCent`, standing in
   for "50 Cent's own independently-deployed Ash app" in the cross-app A2A
   integration test.
   """
@@ -200,7 +204,7 @@ end
 
 defmodule AshA2A.Test.Fixture.RapBattle.JadakissAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.RapBattle.Jadakiss`, standing in
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.RapBattle.Jadakiss`, standing in
   for "Jadakiss's own independently-deployed Ash app."
   """
 
@@ -211,7 +215,7 @@ end
 
 defmodule AshA2A.Test.Fixture.RapBattle.JudgePanelAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.RapBattle.JudgePanel`, standing
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.RapBattle.JudgePanel`, standing
   in for "the judge panel's own independently-deployed Ash app."
   """
 

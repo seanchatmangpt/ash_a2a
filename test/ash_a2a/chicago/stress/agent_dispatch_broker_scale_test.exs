@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.BrokerScaleItemAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the existing
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the existing
   real `AshA2A.Test.Fixture.Item`/`AshA2A.Test.Fixture.ItemDomain` fixture
   (`test/support/fixture.ex`, real `:create`/`:update`/`:destroy`/`:ping`
   skills already used by `test/ash_a2a_command_bus_concurrency_test.exs`,
@@ -50,9 +54,9 @@ defmodule AshA2A.Chicago.Stress.AgentDispatchBrokerScaleTest do
   `granted?/3` whether THIS principal holds a standing grant for THIS
   capability, on every single dispatch. A real caller going through the full
   A2A dispatch path (a real `AshA2A.Agent`-based resource, a real inbound
-  `A2A.Message`) pays that broker-lookup cost per dispatch; a caller that
+  `AshA2A.Protocol.Message`) pays that broker-lookup cost per dispatch; a caller that
   only exercises `CommandBus.run/4` directly never does. This file drives
-  THAT full path -- `BrokerScaleItemAgent.call/3` (`A2A.Agent.call/3` ->
+  THAT full path -- `BrokerScaleItemAgent.call/3` (`AshA2A.Protocol.Agent.call/3` ->
   `AshA2A.Agent.__dispatch__/3` -> `build_command/4` -> `Authority.Grant.
   authorize/3` -> broker -> `AshA2A.CommandBus.run/4` -> real `Ash.create`
   -> `Receipt`), against the same real `AshA2A.Test.Fixture.Item`/
@@ -72,7 +76,7 @@ defmodule AshA2A.Chicago.Stress.AgentDispatchBrokerScaleTest do
   issued through the real `AshA2A.Authority.Grant.grant/3` seam (the same
   one `AshA2A.Test.AuthorityGrantCase.grant!/1` wraps for other tests), and
   every dispatch is a real `BrokerScaleItemAgent.call/3` round trip through
-  a real supervised `A2A.Agent` process -- never a bare function call into
+  a real supervised `AshA2A.Protocol.Agent` process -- never a bare function call into
   `AshA2A.Dispatcher` or a hand-built receipt. No Mock/mox/patch/monkeypatch
   anywhere in this file.
 
@@ -161,8 +165,8 @@ defmodule AshA2A.Chicago.Stress.AgentDispatchBrokerScaleTest do
   defp restore(key, nil), do: Application.delete_env(:ash_a2a, key)
   defp restore(key, value), do: Application.put_env(:ash_a2a, key, value)
 
-  # `A2A.Plug` populates `context.metadata["a2a.auth"]` only after real
-  # credential verification; `A2A.Agent.call/3`'s own `opts` become exactly
+  # `AshA2A.Protocol.Plug` populates `context.metadata["a2a.auth"]` only after real
+  # credential verification; `AshA2A.Protocol.Agent.call/3`'s own `opts` become exactly
   # `context.metadata` -- the same real shape
   # `test/ash_a2a_agent_command_bus_test.exs`'s `authenticated_call_opts/1`
   # already establishes, duplicated here (test-file-local, by this repo's own
@@ -397,7 +401,7 @@ defmodule AshA2A.Chicago.Stress.AgentDispatchBrokerScaleTest do
          {:ok,
           %{
             status: %{state: :completed},
-            artifacts: [%A2A.Artifact{parts: [%A2A.Part.Data{data: created}]}]
+            artifacts: [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}]
           }},
          duration_us
        ) do

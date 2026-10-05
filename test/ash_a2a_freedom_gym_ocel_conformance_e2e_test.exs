@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
   @moduledoc """
   Step 5: the real end-to-end "plan-execute-conform" loop --
 
     HDDL plan (Step 3's real `hddl_cli` solve) -> A2A/Ash execution (this
-    test's own real `A2A.Agent` dispatch against the real
+    test's own real `AshA2A.Protocol.Agent` dispatch against the real
     `FacilitatorAgent`'s `:next_phase` skill, same call pattern as
     `test/ash_a2a_freedom_gym_hddl_plan_test.exs`) -> OCEL v2 recording (a
     real HTTP POST of each real dispatch's real returned phase to
@@ -130,7 +134,7 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
                )
 
       assert task.status.state == :completed
-      assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{phase: phase}}]}] = task.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{phase: phase}}]}] = task.artifacts
 
       %{
         "event_id" => Ash.UUIDv7.generate(),

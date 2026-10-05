@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ConsequenceKernel.W5.ClaimFence do
   def admit(%{request_claim: r, effect_claim: e, prepared_digest: p, claimed_prepared_digest: p})
       when is_binary(r) and is_binary(e) and r != e, do: :ok

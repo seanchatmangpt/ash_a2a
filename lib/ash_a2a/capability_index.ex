@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CapabilityIndex do
   @moduledoc """
   Public facade for the derived Ash-to-A2A capability projection.
@@ -11,8 +15,8 @@ defmodule AshA2A.CapabilityIndex do
   @type skill :: AshA2A.Skill.t()
   @type refusal :: %{code: atom(), detail: String.t()}
 
-  @doc "Builds a deterministic real `A2A.AgentCard.t()` from a derived index."
-  @spec build_agent_card([skill()], keyword()) :: A2A.AgentCard.t()
+  @doc "Builds a deterministic real `AshA2A.Protocol.AgentCard.t()` from a derived index."
+  @spec build_agent_card([skill()], keyword()) :: AshA2A.Protocol.AgentCard.t()
   defdelegate build_agent_card(skills, opts \\ []), to: AshA2A.CapabilityIndex.AgentCardBuilder
 
   @doc """

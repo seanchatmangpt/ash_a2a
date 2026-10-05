@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.SemanticPeerFixture.Ordering do
   @moduledoc """
   Real `Ash.Resource` behind peer B's capability surface, used by
@@ -53,10 +57,10 @@ end
 
 defmodule AshA2A.Test.SemanticPeerFixture.PeerB do
   @moduledoc """
-  Real `A2A.Agent` GenServer standing in for a remote Semantic A2A peer.
+  Real `AshA2A.Protocol.Agent` GenServer standing in for a remote Semantic A2A peer.
 
   This is peer B in `Message_A -> Candidate_B -> GraphLaw_B -> O*_B`. It is
-  a genuine `use A2A.Agent` process fronted by a genuine `A2A.Plug`, and its
+  a genuine `use AshA2A.Protocol.Agent` process fronted by a genuine `AshA2A.Protocol.Plug`, and its
   `handle_message/2` runs the real `AshA2A.Semantic.Peer` boundary against
   its **own** shapes and its **own** `AshA2A.Semantic.GraphLaw` engine.
 
@@ -65,13 +69,21 @@ defmodule AshA2A.Test.SemanticPeerFixture.PeerB do
   supervised process, and the reply it sends is derived from the real
   outcome rather than scripted.
 
-  Configuration reaches it through `:persistent_term` keyed by the agent's
-  registered name, because `use A2A.Agent`'s generated `start_link/1` owns
-  the GenServer's own init arguments. Each test writes its own key and
-  deletes it on exit.
+  Configuration reaches it through `:persistent_term`. `configure/2` writes
+  the `Peer.t()` under both `{__MODULE__, agent_name}` (the per-agent key
+  `peer/1` reads, because `use AshA2A.Protocol.Agent`'s generated
+  `start_link/1` owns the GenServer's own init arguments) and the
+  name-independent key `{__MODULE__, nil}`, because SEC-02/SEC-08 worker
+  isolation runs `handle_message/2` in a spawned, unregistered worker where
+  no registered name exists at all. Each test deletes its per-agent key on
+  exit; `deconfigure/1` erases the shared key only when it still holds this
+  registration, so a concurrent peer's config is never wiped. The shared
+  key is last-writer-wins, which is sound here because the only consumer
+  that exercises `handle_message/2` (the cross-peer test) is `async: false`
+  and `:serial`.
   """
 
-  use A2A.Agent,
+  use AshA2A.Protocol.Agent,
     name: "sa2a_peer_b",
     description: "Semantic A2A peer B: admits nothing it did not itself check.",
     skills: [
@@ -88,25 +100,48 @@ defmodule AshA2A.Test.SemanticPeerFixture.PeerB do
   @doc "Installs a real peer configuration for the named agent process."
   @spec configure(atom(), keyword()) :: :ok
   def configure(agent_name, opts) do
-    :persistent_term.put({__MODULE__, agent_name}, Peer.new(opts))
+    peer = Peer.new(opts)
+
+    # One logical registration, mirrored under the name-independent key the
+    # spawned worker reads. Idempotent with any test-side mirror of the same
+    # struct (same key, same value), so mirroring twice registers once.
+    :persistent_term.put({__MODULE__, agent_name}, peer)
+    :persistent_term.put({__MODULE__, nil}, peer)
+    :ok
   end
 
   @doc "Removes a peer configuration."
   @spec deconfigure(atom()) :: :ok
   def deconfigure(agent_name) do
-    :persistent_term.erase({__MODULE__, agent_name})
-    :ok
+    named = {__MODULE__, agent_name}
+
+    case :persistent_term.get(named, nil) do
+      nil ->
+        :ok
+
+      peer ->
+        :persistent_term.erase(named)
+
+        # Erase the shared worker key only when this registration is the one
+        # still living there, so a concurrent peer's config is never wiped.
+        if :persistent_term.get({__MODULE__, nil}, nil) == peer do
+          :persistent_term.erase({__MODULE__, nil})
+        end
+
+        :ok
+    end
   end
 
   @doc "The real peer configuration currently installed for a process name."
   @spec peer(atom()) :: Peer.t()
   def peer(agent_name), do: :persistent_term.get({__MODULE__, agent_name})
 
-  @impl A2A.Agent
+  @impl AshA2A.Protocol.Agent
   def handle_message(message, _context) do
-    peer_name = registered_name()
-
-    case :persistent_term.get({__MODULE__, peer_name}, nil) do
+    # Resolved independently of any registered name: this runs in a spawned,
+    # unregistered worker, so the only key that exists here is the shared
+    # key configure/2 installs alongside the per-agent key.
+    case :persistent_term.get({__MODULE__, nil}, nil) do
       nil ->
         {:error, :peer_not_configured}
 
@@ -128,7 +163,7 @@ defmodule AshA2A.Test.SemanticPeerFixture.PeerB do
       |> Map.new(fn {k, v} -> {to_string(k), stringify(v)} end)
       |> Map.put("unexercised", Enum.map(Map.get(outcome, :unexercised, []), &stringify/1))
 
-    parts = [A2A.Part.Data.new(payload)]
+    parts = [AshA2A.Protocol.Part.Data.new(payload)]
 
     case outcome.standing do
       :admitted -> {:reply, parts}
@@ -148,7 +183,7 @@ defmodule AshA2A.Test.SemanticPeerFixture.PeerB do
   # from the message's own declared consequence class where the profile was
   # activated, and from an explicit metadata flag otherwise -- a
   # non-Semantic peer has no envelope to read it from.
-  defp consequence_bearing?(%A2A.Message{} = message) do
+  defp consequence_bearing?(%AshA2A.Protocol.Message{} = message) do
     cond do
       Extension.activated?(message) ->
         case Extension.payload(message) do
@@ -158,13 +193,6 @@ defmodule AshA2A.Test.SemanticPeerFixture.PeerB do
 
       true ->
         Map.get(message.metadata, "consequenceBearing") == true
-    end
-  end
-
-  defp registered_name do
-    case Process.info(self(), :registered_name) do
-      {:registered_name, name} when is_atom(name) -> name
-      _ -> nil
     end
   end
 end

@@ -38,7 +38,7 @@ case {System.get_env("SWARM_K8S_SERVICE"), System.get_env("SWARM_K8S_NAMESPACE")
 end
 
 # `AshA2A.Agent.__using__/1`'s generated module is registered under the
-# module's own name, and `A2A.AgentSupervisor` starts it as a supervised child.
+# module's own name, and `AshA2A.Protocol.AgentSupervisor` starts it as a supervised child.
 config :ash_a2a, agents: [SwarmNode.EchoAgent]
 
 # --- Production: fail closed (DEP-02 / DEP-03 / DEP-04 / DEP-12) -------------
@@ -134,7 +134,8 @@ if config_env() == :prod do
     capability_release_closure:
       SwarmNode.ReleaseClosure.load!(
         env!.("ASH_A2A_CAPABILITY_RELEASE_MANIFEST"),
-        env!.("ASH_A2A_CAPABILITY_RELEASE_DIGEST")
+        env!.("ASH_A2A_CAPABILITY_RELEASE_DIGEST"),
+        standing_artifacts_dir: abs_dir!.("ASH_A2A_STANDING_ARTIFACTS_DIR")
       ),
     receipt_binding_key: key!.("ASH_A2A_RECEIPT_BINDING_KEY", 32, 1024),
     standing_ledger_key: key!.("ASH_A2A_STANDING_LEDGER_KEY", 32, 32)

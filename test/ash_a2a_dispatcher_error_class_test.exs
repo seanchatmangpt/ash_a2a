@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ADispatcherErrorClassTest do
   @moduledoc """
   Assignment #9: real dispatcher error-class -> wire-message-text mapping.
@@ -8,7 +12,7 @@ defmodule AshA2ADispatcherErrorClassTest do
   `class_message/2` (`lib/ash_a2a/dispatcher.ex:564-582`). The ORIGINAL
   framing of this assignment ("verify the real resulting JSON-RPC error
   response uses the correct real error code") does not correspond to
-  anything ash_a2a actually does: `A2A.Agent.Runtime.handle_reply/2`
+  anything ash_a2a actually does: `AshA2A.Protocol.Agent.Runtime.handle_reply/2`
   (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:96-99`) never produces a
   top-level JSON-RPC error from a dispatch failure -- it always builds a
   real `TASK_STATE_FAILED` task with `Message.new_agent("Error:
@@ -58,7 +62,7 @@ defmodule AshA2ADispatcherErrorClassTest do
     assert {:error, {:execution, reason}} =
              AshA2A.Dispatcher.dispatch(:list, message, ErrorClassProbe)
 
-    # A real A2A client can only ever receive plain text (`A2A.Part.Text.new/1`
+    # A real A2A client can only ever receive plain text (`AshA2A.Protocol.Part.Text.new/1`
     # inside `Message.new_agent/1`) -- confirm the real reason is a legible
     # string, never literal `{:forbidden, ...}` tuple syntax a remote caller
     # could not parse into a structured class.

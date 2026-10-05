@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.Closure.Recovery do
   @moduledoc "Routes each typed refusal to an adjacent lawful repair edge without bypassing its failed guard."
 

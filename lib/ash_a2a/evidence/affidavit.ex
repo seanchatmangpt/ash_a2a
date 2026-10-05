@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Evidence.Affidavit do
   @moduledoc """
   Adapter bridging SA2A receipts, process traces, and identity claims
@@ -19,7 +23,8 @@ defmodule AshA2A.Evidence.Affidavit do
         {:refused, ref} -> {:error, {:refused_affidavit, ref}}
         {:trap, trap} -> {:error, {:affidavit_trap, trap}}
         {:unsupported, unsup} -> {:error, {:unsupported_affidavit, unsup}}
-        other -> {:error, other}
+        # (the old bare `other` catch-all was dead: `AshAffidavit.call/1`'s
+        # success type is exactly the four tagged tuples above)
       end
     else
       {:error, :ash_affidavit_unavailable}
@@ -35,7 +40,7 @@ defmodule AshA2A.Evidence.Affidavit do
         {:refused, ref} -> {:error, {:refused_affidavit, ref}}
         {:trap, trap} -> {:error, {:affidavit_trap, trap}}
         {:unsupported, unsup} -> {:error, {:unsupported_affidavit, unsup}}
-        other -> {:error, other}
+        # (same dead `other` catch-all as `assemble_receipt/1` above)
       end
     else
       {:error, :ash_affidavit_unavailable}
@@ -51,7 +56,6 @@ defmodule AshA2A.Evidence.Affidavit do
         {:refused, ref} -> {:error, {:refused_affidavit, ref}}
         {:trap, trap} -> {:error, {:affidavit_trap, trap}}
         {:unsupported, unsup} -> {:error, {:unsupported_affidavit, unsup}}
-        other -> {:error, other}
       end
     else
       {:error, :ash_affidavit_unavailable}

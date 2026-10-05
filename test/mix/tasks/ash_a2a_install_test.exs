@@ -267,6 +267,102 @@ defmodule Mix.Tasks.AshA2a.InstallTest do
     end
   end
 
+  # ZD7: usage-rules.md emission. The ash-ecosystem convention
+  # (deps/ash/usage-rules.md, deps/ash_ai/usage-rules.md, ...) is that packages
+  # ship a rules file so AI tools and newcomers get correct-usage guidance.
+  # The falsifier: a fresh install produces usage-rules.md.
+  describe "mix ash_a2a.install emits usage-rules.md" do
+    test "a fresh install creates usage-rules.md with the marker and the core rules" do
+      igniter =
+        test_project(files: %{@path => test_resource_source()})
+        |> Igniter.compose_task("ash_a2a.install", ["--target", "Test.Resource"])
+
+      content = source_content(igniter, "usage-rules.md")
+
+      assert content =~ "<!-- ash_a2a:usage-rules:v1 -->"
+      # The invariant do/don't pairs, all grounded in the real modules.
+      assert content =~ "Ash is the source of truth"
+      assert content =~ "`:observe`, `:change`, `:external_do`, `:unknown`"
+      assert content =~ ":consequence_unclassified"
+      assert content =~ ":authority_required"
+      assert content =~ "observe_on_mutating_action"
+      assert content =~ "REFUSED_ACTION_NOT_FOUND"
+    end
+
+    test "an existing usage-rules.md without the marker keeps its content; the section is appended" do
+      igniter =
+        test_project(
+          files: %{
+            @path => test_resource_source(),
+            "usage-rules.md" => "# My project rules\n\nBe nice.\n"
+          }
+        )
+        |> Igniter.compose_task("ash_a2a.install", [
+          "--target",
+          "Test.Resource"
+        ])
+
+      content = source_content(igniter, "usage-rules.md")
+
+      assert content =~ "# My project rules"
+      assert content =~ "Be nice."
+      assert content =~ "<!-- ash_a2a:usage-rules:v1 -->"
+    end
+
+    test "re-running install never duplicates the marked section" do
+      igniter =
+        test_project(files: %{@path => test_resource_source()})
+        |> Igniter.compose_task("ash_a2a.install", ["--target", "Test.Resource"])
+        |> apply_igniter!()
+        |> Igniter.compose_task("ash_a2a.install", ["--target", "Test.Resource"])
+
+      content = source_content(igniter, "usage-rules.md")
+
+      assert count_occurrences(content, "<!-- ash_a2a:usage-rules:v1 -->") == 1
+      assert count_occurrences(content, "Ash is the source of truth") == 1
+    end
+
+    # The emitted section and the package's own usage-rules.md must not drift
+    # apart: every invariant rule line asserted above must appear in the
+    # package file too. This reads the REAL repo-root file (Chicago-style, no
+    # mock), so editing one document without the other fails this court.
+    test "the emitted section and the package usage-rules.md do not drift" do
+      package_rules = File.read!(Path.expand("usage-rules.md", __DIR__ <> "/../../.."))
+
+      emitted =
+        test_project(files: %{@path => test_resource_source()})
+        |> Igniter.compose_task("ash_a2a.install", ["--target", "Test.Resource"])
+        |> then(&source_content(&1, "usage-rules.md"))
+
+      invariants = [
+        "`:observe`, `:change`, `:external_do`, `:unknown`",
+        ":consequence_unclassified",
+        ":authority_required",
+        "observe_on_mutating_action",
+        "REFUSED_ACTION_NOT_FOUND"
+      ]
+
+      Enum.each(invariants, fn line ->
+        assert package_rules =~ line, "package usage-rules.md lost the invariant #{inspect(line)}"
+        assert emitted =~ line, "emitted usage-rules.md lost the invariant #{inspect(line)}"
+      end)
+    end
+  end
+
+  defp test_resource_source do
+    """
+    defmodule Test.Resource do
+      use Ash.Resource,
+        domain: Test.Domain,
+        data_layer: Ash.DataLayer.Ets
+
+      attributes do
+        uuid_primary_key(:id)
+      end
+    end
+    """
+  end
+
   defp source_content(igniter, path) do
     igniter.rewrite
     |> Rewrite.source!(path)

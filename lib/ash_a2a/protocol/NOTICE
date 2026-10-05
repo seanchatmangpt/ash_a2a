@@ -1,0 +1,9 @@
+NOTICE — ported source attribution
+
+The Elixir source files in this directory tree (lib/ash_a2a/protocol/**) together with
+../protocol.ex are ported from the `a2a` hex package v0.3.0
+(https://github.com/actioncard/a2a-elixir, Apache License 2.0). Port applies a single
+mechanical namespace rename A2A.* -> AshA2A.Protocol.* (word-boundary guarded so the
+host project's own AshA2A.* modules are untouched). No other semantic changes; see
+git history of the port commit for the exact transform.
+

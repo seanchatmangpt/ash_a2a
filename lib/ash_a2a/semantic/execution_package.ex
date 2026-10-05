@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.ExecutionPackage do
   @moduledoc "Candidate-only bundle consumed by AshA2A planning/runtime boundaries."
 
-  alias A2A.Part
+  alias AshA2A.Protocol.Part
   alias AshA2A.Planning.Candidate
   alias AshA2A.Semantic.{IR, IrAdmissionSeal, Ontology, PlanningIR, Source}
 

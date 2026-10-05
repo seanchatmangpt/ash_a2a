@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.ExtendedCardTest do
   @moduledoc """
   `agent/getAuthenticatedExtendedCard` through the real
   `AshA2A.A2ATransport.Plug` fronting a real `AshA2A.Agent` GenServer. The
-  identity is placed on the conn with `A2A.Plug.Auth.put_identity/2` -- the
-  exact slot the real `A2A.Plug.Auth` writes after verifying a credential.
+  identity is placed on the conn with `AshA2A.Protocol.Plug.Auth.put_identity/2` -- the
+  exact slot the real `AshA2A.Protocol.Plug.Auth` writes after verifying a credential.
   No mocks.
   """
   use ExUnit.Case, async: true
@@ -37,7 +41,7 @@ defmodule AshA2A.A2ATransport.ExtendedCardTest do
       |> Plug.Test.conn("/", body)
       |> Plug.Conn.put_req_header("content-type", "application/json")
 
-    conn = if identity, do: A2A.Plug.Auth.put_identity(conn, identity), else: conn
+    conn = if identity, do: AshA2A.Protocol.Plug.Auth.put_identity(conn, identity), else: conn
     conn = TransportPlug.call(conn, opts)
     {conn.status, Jason.decode!(conn.resp_body)}
   end
@@ -64,7 +68,13 @@ defmodule AshA2A.A2ATransport.ExtendedCardTest do
     ids = Enum.map(card["skills"], & &1["id"])
     assert "admin" in ids
     assert List.last(card["skills"])["description"] == "for u1"
-    assert card["url"] == "http://x/a2a"
+    # v1.0 wire shape: the serving URL and protocol version ride inside
+    # `supportedInterfaces` (protocolVersion 1.0, the Version single source of
+    # truth); the card carries no top-level `url` or `protocolVersion`.
+    assert [%{"protocolVersion" => "1.0", "url" => url} | _] = card["supportedInterfaces"]
+    assert is_binary(url)
+    refute Map.has_key?(card, "url")
+    refute Map.has_key?(card, "protocolVersion")
   end
 
   test "a provider error or crash never falls back to the public card", %{agent: agent} do

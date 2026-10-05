@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.StandingLedgerKeyTest do
   @moduledoc """
   DEP-04: the standing-ledger sealing key must be configurable so a chain

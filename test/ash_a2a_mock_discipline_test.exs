@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.MockDisciplineTest do
   @moduledoc """
   The fleet mock-discipline grep, run for real over this tree (ERRC Cr4,

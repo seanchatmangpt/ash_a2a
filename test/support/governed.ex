@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Governed do
   @moduledoc """
   Test helpers for application developers: dispatch through the REAL
@@ -153,7 +157,7 @@ defmodule AshA2A.Test.Governed do
 
     CommandBus.run(
       command,
-      A2A.Message.new_user([A2A.Part.Data.new(stringify(input))]),
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(stringify(input))]),
       resource_or_domain,
       Keyword.merge(
         [store_opts: gov.store_opts, authority_broker: {InMemory, gov.broker_opts}],

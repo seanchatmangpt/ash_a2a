@@ -9,7 +9,7 @@ fail-closed defaults are deliberate.
 
 | Key | Default | Consumed by / meaning |
 | --- | --- | --- |
-| `:agents` | `[]` | `AshA2A.Application` — agent modules booted under its `A2A.AgentSupervisor`. |
+| `:agents` | `[]` | `AshA2A.Application` — agent modules booted under its `AshA2A.Protocol.AgentSupervisor`. |
 | `:receipt_store` | `AshA2A.ReceiptStore.Memory` | `AshA2A.Application` / `AshA2A.CommandBus` — replay-safe receipt storage. `Ekv` gets automatic EKV child wiring. A custom module must be supervised by the host (the app starts no children for it). |
 | `:receipt_store_ekv_opts` | `[]` | EKV options for `AshA2A.ReceiptStore.Ekv`. Defaults inject `name: AshA2A.ReceiptStore.Ekv`, `cluster_size: 1`, and `data_dir: System.tmp_dir!()/ash_a2a_receipt_store_ekv`. **The tmp-dir default is not guaranteed to survive a host reboot** — set a real persistent `:data_dir` for production. |
 | `:receipt_commit_retry_delays_ms` | `[50, 150]` | `CommandBus` receipt-commit retry backoff. |

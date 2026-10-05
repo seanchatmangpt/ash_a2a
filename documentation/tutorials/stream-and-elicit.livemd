@@ -1,0 +1,184 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a>
+
+SPDX-License-Identifier: MIT
+-->
+
+<!-- livebook:{"persist_outputs":true} -->
+
+# Stream and Elicit
+
+Two skills every real agent needs: streaming a large read lazily instead of
+materializing it, and pausing a task with `:input_required` when the caller
+hasn't supplied enough to act on — then resuming the same task once they do.
+
+## Setup
+
+```elixir
+Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.9.31"}],
+  consolidate_protocols: false,
+  config: [
+    ash: [
+      validate_domain_resource_inclusion?: false,
+      validate_domain_config_inclusion?: false
+    ]
+  ]
+)
+```
+
+## Define a ticket resource and agent
+
+```elixir
+defmodule Tutorial.Ticket do
+  use Ash.Resource,
+    domain: Tutorial.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:subject, :string, allow_nil?: false, public?: true)
+    attribute(:priority, :string, default: "normal", public?: true)
+  end
+
+  actions do
+    defaults([:read])
+
+    create :create do
+      primary? true
+      accept([:subject])
+    end
+  end
+
+  a2a do
+    skill(:create_ticket, :create, description: "Create a ticket")
+    skill(:list_tickets, :read)
+  end
+end
+
+defmodule Tutorial.Domain do
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(Tutorial.Ticket)
+  end
+end
+
+defmodule Tutorial.TicketAgent do
+  use AshA2A.Agent,
+    resource_or_domain: Tutorial.Domain,
+    name: "tutorial_tickets",
+    public_skills: ["list_tickets"]
+end
+
+{:ok, _pid} = Tutorial.TicketAgent.start_link([])
+```
+
+Seed a few tickets. (We create them with plain Ash here to keep this
+livebook focused; creating through the agent needs an authority grant, as
+[Secure Your Agent](secure-your-agent.livemd) shows.)
+
+```elixir
+for subject <- ["Disk full on db-1", "Token expiry storms", "Flaky SSE reconnects"] do
+  Ash.create!(Tutorial.Ticket, %{subject: subject})
+end
+
+{:ok, _apps} = Application.ensure_all_started(:ash_a2a)
+
+user = AshA2A.Identity.principal(%{id: "user-42", tenant: "acme"})
+{:ok, _authority} = AshA2A.Authority.Grant.grant(user, "Tutorial.Ticket.create")
+
+# Every consequential call carries the verified identity in metadata and
+# must match its grant; tasks are owned by the principal that created them,
+# so resumes must present the same identity.
+auth = %{id: "user-42", tenant: "acme"}
+
+# Consequential calls present their verified identity as *call options* --
+# the same thing AshA2A.Protocol.Plug.Auth injects on the wire.
+ticket_msg = fn input ->
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
+  |> struct!(metadata: %{"skill" => "create_ticket"})
+end
+
+ticket_opts = [metadata: %{"a2a.auth" => %{identity: auth}}]
+```
+
+## Stream a read
+
+A Data part carrying `"stream" => true` on a `:read` skill produces a lazy
+per-record stream — the query runs through `Ash.stream!/2` and one
+`Part.Data` arrives per record (the record map itself), instead of one
+materialized list. The task stays `:working` while the caller consumes and
+completes when the stream ends.
+
+```elixir
+stream_msg =
+  AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"stream" => true})])
+  |> struct!(metadata: %{"skill" => "list_tickets"})
+
+{:ok, task, stream} = AshA2A.Protocol.stream(Tutorial.TicketAgent, stream_msg)
+
+subjects =
+  stream
+  |> Enum.map(& &1.data.subject)
+  |> Enum.sort()
+
+{:ok, done} = Tutorial.TicketAgent.get_task(task.id)
+done.status.state
+#=> :completed
+```
+
+## Elicit: pause for missing input, then resume
+
+Send a `create_ticket` message with no subject. The Ash action fails with a
+missing-argument error, which the dispatcher maps to `{:input_required, parts}`
+— the task pauses in `:input_required` instead of failing, with a short,
+actionable prompt in `status.message`.
+
+```elixir
+incomplete_msg = ticket_msg.(%{})
+
+{:ok, task} = AshA2A.Protocol.call(Tutorial.TicketAgent, incomplete_msg, ticket_opts)
+
+task.status.state
+#=> :input_required
+
+task.status.message
+|> AshA2A.Protocol.Message.text()
+|> String.contains?("attribute subject is required")
+#=> true
+```
+
+Resume the same task by sending a new message with `task_id:`. The full
+conversation history rides along in the task, so the agent sees both turns.
+
+```elixir
+{:ok, task} =
+  AshA2A.Protocol.call(Tutorial.TicketAgent, ticket_msg.(%{"subject" => "Disk full on db-2"}),
+    task_id: task.id,
+    metadata: %{"a2a.auth" => %{identity: auth}}
+  )
+
+task.status.state
+#=> :completed
+
+[%AshA2A.Protocol.Part.Data{data: %{subject: "Disk full on db-2"}}] =
+  hd(task.artifacts).parts
+```
+
+## What you built, and what's next
+
+You now have an agent that streams large reads lazily per record, and turns
+caller-fixable input problems into resumable `:input_required` tasks instead
+of dead ends.
+
+From here:
+
+- [Secure Your Agent](secure-your-agent.livemd) if you landed here first —
+  streaming and eliciting both inherit its authentication and authority
+  rules;
+- [A2A endpoint contract](../docs/reference/a2a-endpoint-contract.md) for how
+  these map onto the wire (`message/stream` SSE frames,
+  `TASK_STATE_INPUT_REQUIRED`, resume-by-task-id);
+- [Message lifecycle](../docs/explanation/message-lifecycle.md) for the
+  dispatch-to-receipt pipeline underneath it all.

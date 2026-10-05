@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.Benchmarks do
   @moduledoc """
   RFC-SA2A-002 benchmark court `SA2A-BENCH` (§84, §85, §89, §93, §102, §122,

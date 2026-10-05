@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.LogicClosure.RuleDocument do
   @moduledoc """
   Shape recogniser for an SA2A-LOGIC N3 rule document (RFC-SA2A-002 §47-§48).

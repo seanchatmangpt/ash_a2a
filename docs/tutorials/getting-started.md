@@ -3,7 +3,7 @@
 This tutorial builds one Ash resource, exposes it as an A2A agent skill,
 and calls it three ways: a direct dispatch (no process), a real supervised
 `AshA2A.Agent`, and finally over HTTP as a served A2A endpoint driven by
-`A2A.Client`. By the end you'll have a working agent you can send a message
+`AshA2A.Protocol.Client`. By the end you'll have a working agent you can send a message
 to and get a reply from, on and off the network.
 
 Every step below matches genuine, compiling code already exercised by this
@@ -13,8 +13,8 @@ the snippets here are self-contained).
 
 ## Prerequisites
 
-Add `ash_a2a` to your `mix.exs` (the `:a2a` SDK arrives transitively; pin
-it only if you call `A2A.*` yourself):
+Add `ash_a2a` to your `mix.exs` (the `AshA2A.Protocol.*` wire codec ships
+inside the package — no separate protocol dependency):
 
 ```elixir
 def deps do
@@ -94,20 +94,20 @@ AshA2A.Info.capability_index(MyApp.Echo)
 
 ## 2. Dispatch a message directly (no process)
 
-With the capability index compiled, you can dispatch an inbound `A2A.Message`
+With the capability index compiled, you can dispatch an inbound `AshA2A.Protocol.Message`
 straight to the resource — no agent process required:
 
 ```elixir
-message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
-{:reply, [%A2A.Part.Data{data: %{results: []}}]} =
+{:reply, [%AshA2A.Protocol.Part.Data{data: %{results: []}}]} =
   AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
 ```
 
-`AshA2A.Dispatcher.dispatch/6` takes the skill name, the `A2A.Message`, and
+`AshA2A.Dispatcher.dispatch/6` takes the skill name, the `AshA2A.Protocol.Message`, and
 the resource (or domain), plus optional `history` and `auth_identity`
 arguments (both default to `nil`). It runs the underlying `:read` action
-for real through Ash and wraps the result back into an `A2A.Part.Data`
+for real through Ash and wraps the result back into an `AshA2A.Protocol.Part.Data`
 reply — there's no separate "A2A layer" logic re-deriving what the action
 does; the dispatcher just runs the real action. Note that `auth_identity`
 defaulting to `nil` is the trust boundary: identity only ever arrives from
@@ -128,7 +128,7 @@ end
 
 The simplest way to boot it is config: `ash_a2a` ships its own OTP
 application (`AshA2A.Application`) whose supervision tree already starts an
-`A2A.AgentSupervisor` under global names — so you register agents with it
+`AshA2A.Protocol.AgentSupervisor` under global names — so you register agents with it
 rather than starting a second supervisor:
 
 ```elixir
@@ -139,7 +139,7 @@ config :ash_a2a, :agents, [MyApp.EchoAgent]
 Restart your app, then call the agent:
 
 ```elixir
-message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 {:ok, task} = MyApp.EchoAgent.call(MyApp.EchoAgent, message)
 
 task.status.state
@@ -149,10 +149,10 @@ task.status.state
 (If you need to start an agent outside the library's supervisor tree —
 e.g. in tests — start the module directly with
 `MyApp.EchoAgent.start_link([])`. Starting a *second*
-`A2A.AgentSupervisor` with default names raises `:already_started`,
+`AshA2A.Protocol.AgentSupervisor` with default names raises `:already_started`,
 because `AshA2A.Application` already runs one.)
 
-`AshA2A.Agent` builds the running process's `A2A.AgentCard` from the exact
+`AshA2A.Agent` builds the running process's `AshA2A.Protocol.AgentCard` from the exact
 same verified capability index that `AshA2A.Info.agent_card/2` produces, so
 the agent can never advertise a skill dispatch can't actually serve.
 Because `MyApp.Echo` exposes exactly one public action, the inbound
@@ -164,12 +164,12 @@ skills (like this `:read`) go straight to `Dispatcher.dispatch/6`, while
 `AshA2A.CommandBus` (authority admission, replay-safe receipts) — see
 [Architecture](../explanation/architecture.md).
 
-## 4. Serve it over HTTP and call it with `A2A.Client`
+## 4. Serve it over HTTP and call it with `AshA2A.Protocol.Client`
 
-An `AshA2A.Agent` module is a real `A2A.Agent` GenServer, so the SDK's
-`A2A.Plug` can serve it directly. Add a web server to your app (here
-Bandit; `A2A.Plug` is a standard Plug, so a Phoenix `forward "/a2a",
-A2A.Plug, ...` works the same way):
+An `AshA2A.Agent` module is a real `AshA2A.Protocol.Agent` GenServer, so
+`AshA2A.Protocol.Plug` can serve it directly. Add a web server to your app (here
+Bandit; `AshA2A.Protocol.Plug` is a standard Plug, so a Phoenix `forward "/a2a",
+AshA2A.Protocol.Plug, ...` works the same way):
 
 ```elixir
 # mix.exs
@@ -177,7 +177,7 @@ A2A.Plug, ...` works the same way):
 
 # your Application's children
 children = [
-  {Bandit, plug: {A2A.Plug, agent: MyApp.EchoAgent, base_url: "http://localhost:4000"}}
+  {Bandit, plug: {AshA2A.Protocol.Plug, agent: MyApp.EchoAgent, base_url: "http://localhost:4000"}}
 ]
 ```
 
@@ -188,24 +188,62 @@ curl http://localhost:4000/.well-known/agent-card.json
 # ... "skills": [{"id": "MyApp.Echo.read", "name": "echo", ...}]
 ```
 
-Send a message over JSON-RPC (A2A v0.3 wire format):
+Send a message over JSON-RPC (parts carry no `kind` discriminator — a data
+part is just `{"data": {...}}`):
 
 ```sh
 curl -X POST http://localhost:4000/ \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"message/send",
        "params":{"message":{"messageId":"m-1","role":"user",
-                            "parts":[{"kind":"data","data":{}}]}}}'
-# {"jsonrpc":"2.0","id":1,"result":{"kind":"task",...,"status":{"state":"completed"},...}}
+                            "parts":[{"data":{}}]}}}'
+# {"jsonrpc":"2.0","id":1,"result":{"id":"...","contextId":"...",
+#  "status":{"state":"TASK_STATE_COMPLETED"},...}}
 ```
 
-Or drive it from Elixir with `A2A.Client` (requires the `:req` package):
+Streaming uses the same v1.0 wire shapes: `message/stream` (supported
+through the owned `AshA2A.A2ATransport.Plug`, or the bare plug when the
+agent declares `streaming: true`) answers with SSE frames wrapped in
+`StreamResponse` envelopes — `{"task": ...}`, `{"statusUpdate": ...}`,
+`{"artifactUpdate": ...}` — and no `final` boolean; the stream simply
+ends once the task reaches a terminal state.
+
+### Choose a transport binding
+
+Both bindings serve the same agent; pick by client. JSON-RPC 2.0
+(`AshA2A.Protocol.Plug` / `AshA2A.A2ATransport.Plug`, the `POST /` above)
+is the established wire shape with the wider tooling; the v1.0 HTTP+JSON
+binding (`AshA2A.Transport.HTTPJSON`) is the spec's native REST shape —
+mount it as a sibling plug:
 
 ```elixir
-{:ok, card} = A2A.Client.discover("http://localhost:4000")
-client = A2A.Client.new(card)
+plug AshA2A.Transport.HTTPJSON,
+  agent: MyApp.EchoAgent, base_url: "http://localhost:4000"
+```
 
-{:ok, task} = A2A.Client.send_message(client, "hello")
+Sending a message is `POST /message:send` with a `MessageSendParams` body
+— the same flat v1.0 part shapes as JSON-RPC (a text part is just
+`{"text": ...}`, no `kind` discriminator), and no `{"task": ...}` wrapper
+in the reply:
+
+```sh
+curl -X POST http://localhost:4000/message:send \
+  -H 'content-type: application/json' \
+  -d '{"message":{"messageId":"m-1","role":"user",
+       "parts":[{"text":"hello"}]}}'
+# 200 {"id":"tsk-...","contextId":"...","status":{"state":"TASK_STATE_COMPLETED"}}
+```
+
+Read the task back with `GET /tasks/{id}` and cancel it with
+`POST /tasks/{id}:cancel` — a terminal task answers `400`.
+
+Or drive it from Elixir with `AshA2A.Protocol.Client` (requires the `:req` package):
+
+```elixir
+{:ok, card} = AshA2A.Protocol.Client.discover("http://localhost:4000")
+client = AshA2A.Protocol.Client.new(card)
+
+{:ok, task} = AshA2A.Protocol.Client.send_message(client, "hello")
 task.status.state
 #=> :completed
 ```
@@ -214,12 +252,26 @@ The full endpoint surface — methods, error codes, SSE streaming via
 `message/stream`, auth wiring, and the exact metadata rules — is in the
 [A2A endpoint reference](../reference/a2a-endpoint-contract.md).
 
+If the serving agent signs its card (`AshA2A.Protocol.CardSigning.sign/3`
+server-side), verify that signature before trusting a discovered card:
+
+```elixir
+{:ok, card} = AshA2A.Protocol.Client.discover("http://localhost:4000")
+
+:ok = AshA2A.Protocol.CardSigning.verify(card, signing_key)
+```
+
+`CardSigning.verify/3` returns `:ok` when every `signatures` JWS entry
+verifies against the JCS canonicalization of the card payload, otherwise
+`{:error, {:bad_signature | :digest_mismatch | :malformed, detail}}` for
+the first failing entry.
+
 ## What you built, and what's next
 
 You now have: a real Ash resource whose public actions are projected into
 a verified capability index, a working direct dispatch call, a supervised
 `AshA2A.Agent` process, and an HTTP-served A2A endpoint exercised both by
-raw JSON-RPC and by `A2A.Client`.
+raw JSON-RPC and by `AshA2A.Protocol.Client`.
 
 From here, the how-to guides cover specific problems you'll hit next:
 handling actions that take arguments or mutate data (`:create`/`:update`/

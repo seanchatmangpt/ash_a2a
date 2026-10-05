@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.C2Compromise.OracleTest do
   @moduledoc """
   The court's oracle, tested with NO processes: the pass rule of `C2Harness.Oracle` against

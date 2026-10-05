@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.TenantActorNote do
   @moduledoc """
   Real fixture resource for `test/ash_a2a_plug_tenant_actor_test.exs` --
   assignment #10: proving real tenant+actor threading through a REAL
-  `A2A.Plug.Auth` + `A2A.Plug` HTTP pipeline into a REAL multitenant Ash
+  `AshA2A.Protocol.Plug.Auth` + `AshA2A.Protocol.Plug` HTTP pipeline into a REAL multitenant Ash
   resource, combining item #2's real-auth-pipeline proof
   (`test/ash_a2a_plug_auth_test.exs`, `AshA2A.Test.Fixture.AuthProbe`) with a
   genuine `multitenancy do strategy :attribute end` resource and a genuine
@@ -104,9 +108,9 @@ end
 
 defmodule AshA2A.Test.Fixture.TenantActorNoteAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer over `AshA2A.Test.Fixture.TenantActorNote`,
+  Real `AshA2A.Protocol.Agent` GenServer over `AshA2A.Test.Fixture.TenantActorNote`,
   started directly (registered under its own module name) so a real
-  `A2A.Plug` can front it with `agent: __MODULE__` in
+  `AshA2A.Protocol.Plug` can front it with `agent: __MODULE__` in
   `test/ash_a2a_plug_tenant_actor_test.exs`.
   """
 

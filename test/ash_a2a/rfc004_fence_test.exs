@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.RFC004FenceTest do
   @moduledoc "RFC-SA2A-004 §11.4/§21: forged resolved_skill and forged anchors are refused."
   use ExUnit.Case, async: false
@@ -87,5 +91,5 @@ defmodule AshA2A.RFC004FenceTest do
     Receipt.pending(command, Identity.execution(Ash.UUIDv7.generate()), :change)
   end
 
-  defp message(label), do: A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 end

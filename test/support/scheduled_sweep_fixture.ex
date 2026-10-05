@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.ScheduledSweep do
   @moduledoc """
   Real fixture resource proving `AshOban`'s `scheduled_actions` (cron) DSL

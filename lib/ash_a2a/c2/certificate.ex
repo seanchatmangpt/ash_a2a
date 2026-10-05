@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.C2.Certificate do
   @moduledoc """
   Canonical actuation certificate model of the C2 control plane (docs/reference/c2-certificate.md).

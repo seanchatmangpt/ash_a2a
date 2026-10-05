@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.ChicagoSelfTest do
   @moduledoc """
   Real, non-discoverable courts that qualify the Chicago court machinery
@@ -30,7 +34,7 @@ defmodule AshA2A.Test.ChicagoSelfTest do
 
   @doc false
   def message(label) do
-    A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+    AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
   end
 
   @doc false

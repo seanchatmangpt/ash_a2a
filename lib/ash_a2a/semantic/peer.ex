@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.Peer do
   @moduledoc """
   RFC-SA2A-001 S8/S49/S50/S51/S75/S76 -- the receiving side of a Semantic A2A
@@ -19,10 +23,10 @@ defmodule AshA2A.Semantic.Peer do
       `AshA2A.Semantic.Extension.activated?/1`. Ordinary A2A traffic never
       enters the semantic path.
     * **S49 (a Task is not authority)** -- `authority_from_task/1` returns
-      `:none` for every `A2A.Task`, in every state, including `:completed`.
+      `:none` for every `AshA2A.Protocol.Task`, in every state, including `:completed`.
       A completed task is a record that work happened, not a permit.
     * **S50 (an Artifact gains no standing from being an Artifact)** --
-      `standing_from_artifact/1` returns `:received` for every `A2A.Artifact`.
+      `standing_from_artifact/1` returns `:received` for every `AshA2A.Protocol.Artifact`.
       Artifact-ness is a container fact.
     * **S51 (received is not admitted)** -- every path through this module
       goes through `AshA2A.Semantic.Standing`, whose transition table has no
@@ -34,7 +38,7 @@ defmodule AshA2A.Semantic.Peer do
     * **S76 (no silent downgrade)** -- a peer in `:strict` mode receiving a
       consequence-bearing task without the negotiated profile returns the
       typed refusal `:unsupported_profile` rather than quietly handling it as
-      ordinary A2A. Whether the task is consequence-bearing is decided by
+      ordinary AshA2A.Protocol. Whether the task is consequence-bearing is decided by
       *this* peer's own capability DSL (`consequence_bearing?/2`), never by
       the counterparty the rule constrains.
 
@@ -60,7 +64,7 @@ defmodule AshA2A.Semantic.Peer do
   boundary itself (RFC-SA2A-002 §12, §18). Metadata always carries `:peer`
   and `:mode`.
 
-    * `[:receive]` -- an inbound `A2A.Message` reached `receive_message/3`
+    * `[:receive]` -- an inbound `AshA2A.Protocol.Message` reached `receive_message/3`
       (+ `:activated`, `:message_id`)
     * `[:admission, :start]` -- a parsed envelope reached admission
       (+ `:envelope_id`, `:standing`, `:profile`, `:consequence_class`,
@@ -107,7 +111,7 @@ defmodule AshA2A.Semantic.Peer do
           name: String.t(),
           ledger: Agent.agent() | nil,
           capabilities: module() | nil,
-          agent_card: A2A.AgentCard.t() | map() | nil,
+          agent_card: AshA2A.Protocol.AgentCard.t() | map() | nil,
           receipt_store: {module(), keyword()} | nil,
           shapes: String.t(),
           mode: mode(),
@@ -119,8 +123,11 @@ defmodule AshA2A.Semantic.Peer do
   The outcome of a boundary crossing. `standing` is authoritative; `report`
   carries the receiving peer's own engine output when one ran.
   """
+  # `Standing.t/0` does not exist (`AshA2A.Semantic.Standing` is a function
+  # module, not a struct); the outcome's `:standing` value is a lifecycle
+  # atom, which is exactly `AshA2A.Semantic.Standing.state/0`.
   @type outcome :: %{
-          required(:standing) => Standing.t(),
+          required(:standing) => Standing.state(),
           required(:envelope_id) => String.t(),
           optional(:envelope) => Envelope.t(),
           optional(:graph_digest) => String.t(),
@@ -182,7 +189,7 @@ defmodule AshA2A.Semantic.Peer do
   end
 
   @doc """
-  The full boundary crossing for a real inbound `A2A.Message`.
+  The full boundary crossing for a real inbound `AshA2A.Protocol.Message`.
 
   Whether the requested task is consequence-bearing -- the input S76 turns
   on -- is derived by `consequence_bearing?/2` from **this peer's own**
@@ -197,8 +204,8 @@ defmodule AshA2A.Semantic.Peer do
   Returns an `outcome/0` whose `:standing` is the only thing a caller may
   treat as decided.
   """
-  @spec receive_message(t(), A2A.Message.t(), keyword()) :: outcome()
-  def receive_message(%__MODULE__{} = peer, %A2A.Message{} = message, _opts \\ []) do
+  @spec receive_message(t(), AshA2A.Protocol.Message.t(), keyword()) :: outcome()
+  def receive_message(%__MODULE__{} = peer, %AshA2A.Protocol.Message{} = message, _opts \\ []) do
     activated? = Extension.activated?(message)
     emit(peer, [:receive], %{activated: activated?, message_id: message.message_id})
 
@@ -221,7 +228,7 @@ defmodule AshA2A.Semantic.Peer do
 
   S76 exists to constrain the *counterparty*: a peer that did not negotiate
   the profile must not get a consequence-bearing task quietly downgraded to
-  ordinary A2A. A guard whose controlling input is supplied by the party it
+  ordinary AshA2A.Protocol. A guard whose controlling input is supplied by the party it
   constrains is not a guard. An earlier revision read this from
   `message.metadata["consequenceBearing"]`, so the sender decided whether
   S76's typed refusal applied to the sender -- setting the flag to `false`
@@ -254,10 +261,10 @@ defmodule AshA2A.Semantic.Peer do
 
   Returns a boolean.
   """
-  @spec consequence_bearing?(t(), A2A.Message.t()) :: boolean()
-  def consequence_bearing?(%__MODULE__{capabilities: nil}, %A2A.Message{}), do: false
+  @spec consequence_bearing?(t(), AshA2A.Protocol.Message.t()) :: boolean()
+  def consequence_bearing?(%__MODULE__{capabilities: nil}, %AshA2A.Protocol.Message{}), do: false
 
-  def consequence_bearing?(%__MODULE__{capabilities: capabilities}, %A2A.Message{} = message) do
+  def consequence_bearing?(%__MODULE__{capabilities: capabilities}, %AshA2A.Protocol.Message{} = message) do
     case requested_consequence(capabilities, message) do
       :observe -> false
       consequence when consequence in [:change, :external_do] -> true
@@ -265,7 +272,7 @@ defmodule AshA2A.Semantic.Peer do
     end
   end
 
-  defp requested_consequence(capabilities, %A2A.Message{metadata: metadata}) do
+  defp requested_consequence(capabilities, %AshA2A.Protocol.Message{metadata: metadata}) do
     case AshA2A.MetadataKey.get(metadata || %{}, :skill) do
       nil -> sole_capability_consequence(capabilities)
       name -> named_capability_consequence(capabilities, name)
@@ -329,7 +336,7 @@ defmodule AshA2A.Semantic.Peer do
   end
 
   # Reconciled against the round-2-fixed `AshA2A.Semantic.Envelope`, which
-  # dropped its own `parse/1` (an `A2A.Message`-taking convenience) --
+  # dropped its own `parse/1` (an `AshA2A.Protocol.Message`-taking convenience) --
   # `Extension.payload/1` + `Envelope.from_map/1` is the same real two-step
   # pipeline `parse/1` used to wrap.
   defp semantic_path(%__MODULE__{} = peer, message) do
@@ -528,8 +535,8 @@ defmodule AshA2A.Semantic.Peer do
   through `AshA2A.Authority` and `AshA2A.CommandBus`, neither of which reads
   a task's state.
   """
-  @spec authority_from_task(A2A.Task.t() | map()) :: :none
-  def authority_from_task(%A2A.Task{}), do: :none
+  @spec authority_from_task(AshA2A.Protocol.Task.t() | map()) :: :none
+  def authority_from_task(%AshA2A.Protocol.Task{}), do: :none
   def authority_from_task(%{}), do: :none
 
   @doc """
@@ -540,8 +547,8 @@ defmodule AshA2A.Semantic.Peer do
   peer's own admission like anything else -- but the container contributes
   nothing.
   """
-  @spec standing_from_artifact(A2A.Artifact.t() | map()) :: :received
-  def standing_from_artifact(%A2A.Artifact{}), do: :received
+  @spec standing_from_artifact(AshA2A.Protocol.Artifact.t() | map()) :: :received
+  def standing_from_artifact(%AshA2A.Protocol.Artifact{}), do: :received
   def standing_from_artifact(%{}), do: :received
 
   @doc """
@@ -550,9 +557,9 @@ defmodule AshA2A.Semantic.Peer do
   Returns a `:candidate` envelope exactly as a message would: an artifact is
   a different container, not a shortcut past admission.
   """
-  @spec envelope_from_artifact(A2A.Artifact.t()) ::
+  @spec envelope_from_artifact(AshA2A.Protocol.Artifact.t()) ::
           {:ok, Envelope.t()} | {:error, %{code: atom(), detail: String.t()}}
-  def envelope_from_artifact(%A2A.Artifact{metadata: metadata}) do
+  def envelope_from_artifact(%AshA2A.Protocol.Artifact{metadata: metadata}) do
     case Map.get(metadata, Extension.extension_key()) do
       %{} = payload ->
         Envelope.from_map(payload)
@@ -773,6 +780,6 @@ defmodule AshA2A.Semantic.Peer do
   defp record(%__MODULE__{ledger: ledger}, envelope_id, edge, reason),
     do: Ledger.record(ledger, envelope_id, edge, reason)
 
-  defp bridge_envelope_id(%A2A.Message{message_id: nil}), do: "sa2a-unidentified"
-  defp bridge_envelope_id(%A2A.Message{message_id: id}), do: "sa2a-nonsemantic-" <> id
+  defp bridge_envelope_id(%AshA2A.Protocol.Message{message_id: nil}), do: "sa2a-unidentified"
+  defp bridge_envelope_id(%AshA2A.Protocol.Message{message_id: id}), do: "sa2a-nonsemantic-" <> id
 end

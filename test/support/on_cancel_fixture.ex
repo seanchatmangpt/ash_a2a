@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.OnCancelRecorder do
   @moduledoc """
   Real, observable recorder for `AshA2A.OnCancel` hook invocations
@@ -99,7 +103,7 @@ end
 
 defmodule AshA2A.Test.Fixture.OnCancelStreamItemAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer over `AshA2A.Test.Fixture.OnCancelStreamItem`,
+  Real `AshA2A.Protocol.Agent` GenServer over `AshA2A.Test.Fixture.OnCancelStreamItem`,
   mirroring `AshA2A.Test.Fixture.StreamItemAgent`.
   """
 
@@ -145,7 +149,7 @@ end
 
 defmodule AshA2A.Test.Fixture.OnCancelErrorStreamItemAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer over `AshA2A.Test.Fixture.OnCancelErrorStreamItem`.
+  Real `AshA2A.Protocol.Agent` GenServer over `AshA2A.Test.Fixture.OnCancelErrorStreamItem`.
   """
 
   use AshA2A.Agent,

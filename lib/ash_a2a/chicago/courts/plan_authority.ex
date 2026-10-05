@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.PlanAuthority do
   @moduledoc """
   `CHI-PLAN-AUTH` -- Gate 4 Planning Candidate-Only (RFC-SA2A-002 §35;
@@ -140,7 +144,7 @@ defmodule AshA2A.Chicago.Courts.PlanAuthority do
         invariant:
           "an A2A task assignment of a plan step is not authority (Authenticated ⇏ Authorized)",
         stimulus:
-          "PlannedAgent.call/3 (real supervised A2A.Agent) assigning skill advance with the plan and preflight digests in metadata, by a transport-authenticated principal the real broker holds no grant for",
+          "PlannedAgent.call/3 (real supervised AshA2A.Protocol.Agent) assigning skill advance with the plan and preflight digests in metadata, by a transport-authenticated principal the real broker holds no grant for",
         boundary:
           "AshA2A.Agent.dispatch_skill/4 -> Authority.Grant.authorize/2 -> AshA2A.CommandBus",
         forbidden_outcome: "actuation of the assigned step; advance row written",
@@ -528,6 +532,6 @@ defmodule AshA2A.Chicago.Courts.PlanAuthority do
     )
   end
 
-  defp task_state({:ok, %A2A.Task{status: status}}), do: to_string(status.state)
+  defp task_state({:ok, %AshA2A.Protocol.Task{status: status}}), do: to_string(status.state)
   defp task_state(other), do: Fx.reply_code(other)
 end

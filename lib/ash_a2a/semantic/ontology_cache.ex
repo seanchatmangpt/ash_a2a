@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.OntologyCache do
   @moduledoc """
   Local, pinned, content-addressed ontology import cache (RFC-SA2A-001 S46).
@@ -425,7 +429,9 @@ defmodule AshA2A.Semantic.OntologyCache do
     end
   end
 
-  defp verify_size(_body, _entry, _path), do: :ok
+  # (the old `defp verify_size(_body, _entry, _path), do: :ok` catch-all for
+  # entries without a pinned `byte_size` was dead: every entry reaching here
+  # carries an integer `byte_size`, the clause above covers the full type)
 
   defp verify_digest(body, entry, path) do
     actual = digest(body)

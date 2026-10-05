@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.PlanGates do
   @moduledoc """
   Real planning material for the `CHI-PLAN-AUTH` (Gate 4), `CHI-PREFLIGHT`
@@ -370,8 +374,8 @@ defmodule AshA2A.Chicago.Fixtures.PlanGates do
     )
   end
 
-  @spec step_message(BoundedPlan.step()) :: A2A.Message.t()
-  def step_message(%{input: input}), do: A2A.Message.new_user([A2A.Part.Data.new(input)])
+  @spec step_message(BoundedPlan.step()) :: AshA2A.Protocol.Message.t()
+  def step_message(%{input: input}), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
 
   @doc "Independent reader: persisted consequence rows (ledger + external) naming `token`."
   @spec consequence_rows(String.t()) :: non_neg_integer()

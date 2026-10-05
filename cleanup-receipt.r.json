@@ -1,0 +1,50 @@
+{
+  "identity": {
+    "subject": "oclnr delete execute (37 items) [binary built from uncommitted changes on top of subject_sha]",
+    "repo": "/Users/sac/osx-clnr",
+    "subject_sha": "fc73e706a6b33024038aaecae7e82effec19314f",
+    "base_sha": "fc73e706a6b33024038aaecae7e82effec19314f"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "plan-approval hmac:e837f9bb0ed71ed03e075d39aa7bf2e2ef2c06bece5915416dd9a99137863b26 plan_hash:d8c82760e145150e16c5786291992c6f8c6966071c84262cf92076e6289bb1e8 reason:Lane G-N disk cleanup: expired _build-lane* lease roots (F1/F2/GD/GO in-flight excluded) + /tmp scratch dirs; z4 postgres stopped cleanly before its pgdata deletion",
+    "actor": "lane-G-N"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": [
+      "local filesystem: deleted 37/37 plan items (16447700992 bytes claimed), 0 already missing, 0 failed, 0 refused",
+      "volume free-space delta measured: 2411593728 bytes"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "/Users/sac/osx-clnr/target/release/oclnr delete execute --plan /Users/sac/ash_a2a/cleanup-plan.json --receipt /Users/sac/ash_a2a/cleanup-receipt.json --yes --max-concurrent 4",
+        "cwd": "/Users/sac/ash_a2a",
+        "exit": 0,
+        "summary": "deleted=37 skipped=0 failed=0 refused=0",
+        "output_sha256": "9c10a494fc776c8634f840a066d1b871b2fc2a61d905a5b6dbf0af2f2153df73"
+      }
+    ],
+    "durable_location": "/Users/sac/ash_a2a/cleanup-receipt.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "replay[0] (`/Users/sac/osx-clnr/target/release/oclnr delete execute --plan /Users/sac/ash_a2a/cleanup-plan.json --receipt /Users/sac/ash_a2a/cleanup-receipt.json --yes --max-concurrent 4`, exit 0) at oclnr fc73e70; native receipt /Users/sac/ash_a2a/cleanup-receipt.json (sha256 9c10a494fc776c8634f840a066d1b871b2fc2a61d905a5b6dbf0af2f2153df73)"
+  },
+  "work_order_id": "oclnr-plan:d8c82760e145150e16c5786291992c6f8c6966071c84262cf92076e6289bb1e8",
+  "origin_authority": {
+    "ceiling": "DO",
+    "grant": "plan-approval hmac:e837f9bb0ed71ed03e075d39aa7bf2e2ef2c06bece5915416dd9a99137863b26 plan_hash:d8c82760e145150e16c5786291992c6f8c6966071c84262cf92076e6289bb1e8 reason:Lane G-N disk cleanup: expired _build-lane* lease roots (F1/F2/GD/GO in-flight excluded) + /tmp scratch dirs; z4 postgres stopped cleanly before its pgdata deletion",
+    "actor": "lane-G-N"
+  },
+  "provider": {
+    "name": "oclnr",
+    "transport": "local-process",
+    "authority_ceiling": "DO",
+    "receipt_protocol": "oclnr-native+affidavit-core/v1+r-projection/v2"
+  },
+  "provider_execution_id": "oclnr:sha256:9c10a494fc776c8634f840a066d1b871b2fc2a61d905a5b6dbf0af2f2153df73"
+}

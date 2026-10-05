@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Dispatcher do
   @moduledoc """
-  Dispatches an inbound `A2A.Message.t()` to the real Ash action a persisted
-  `AshA2A` skill maps to, and returns an `A2A.Agent` reply tuple.
+  Dispatches an inbound `AshA2A.Protocol.Message.t()` to the real Ash action a persisted
+  `AshA2A` skill maps to, and returns an `AshA2A.Protocol.Agent` reply tuple.
 
   Per the ash_a2a PRD/ARD (`~/ggen-marketplace/docs/explanation/ash-a2a-prd-ard.md`
   §3.2, §3.5):
@@ -15,7 +19,7 @@ defmodule AshA2A.Dispatcher do
       `actor`/`tenant` specifically come from the transport-verified
       `auth_identity` argument threaded through `dispatch/5` (sourced by
       `AshA2A.Agent.__dispatch__` from `context.metadata["a2a.auth"][:identity]`,
-      the field `A2A.Plug.Auth` populates only after real credential
+      the field `AshA2A.Protocol.Plug.Auth` populates only after real credential
       verification, `~/xaas/deps/a2a/lib/a2a/plug/auth.ex:6-16,175-176,226-242`
       and `~/xaas/deps/a2a/lib/a2a/plug.ex:159`) — **never** from
       `a2a_message.metadata`, which is unauthenticated wire input a remote
@@ -31,12 +35,12 @@ defmodule AshA2A.Dispatcher do
       (`~/xaas/deps/ash_ai/lib/ash_ai/tool/execution.ex:100-107`) but resolves
       each step through its non-bang counterpart instead.
 
-  The reply shapes returned match `A2A.Agent`'s `reply()` type exactly
+  The reply shapes returned match `AshA2A.Protocol.Agent`'s `reply()` type exactly
   (`~/xaas/deps/a2a/lib/a2a/agent.ex:160-164`):
 
       @type reply ::
-              {:reply, [A2A.Part.t()]}
-              | {:input_required, [A2A.Part.t()]}
+              {:reply, [AshA2A.Protocol.Part.t()]}
+              | {:input_required, [AshA2A.Protocol.Part.t()]}
               | {:stream, Enumerable.t()}
               | {:error, term()}
 
@@ -44,7 +48,7 @@ defmodule AshA2A.Dispatcher do
 
   `run_read/4` returns `{:stream, Enumerable.t()}` instead of fully
   materializing the result set whenever the caller explicitly opts in with
-  `"stream" => true` (or `%{stream: true}`) in the inbound `A2A.Part.Data`
+  `"stream" => true` (or `%{stream: true}`) in the inbound `AshA2A.Protocol.Part.Data`
   input map. This is deliberately a per-call caller choice, not a static
   property of the action: every default Ash `:read` action already carries a
   non-nil `%Ash.Resource.Actions.Read.Pagination{keyset?: true, offset?: true}`
@@ -74,14 +78,14 @@ defmodule AshA2A.Dispatcher do
   non-bang convention elsewhere. An error raised while the *caller* drains the
   returned stream (a query execution failure surfacing lazily on a later
   page) is not, and cannot be, intercepted here — the same limitation
-  `A2A.Agent.Runtime.wrap_stream/3`
+  `AshA2A.Protocol.Agent.Runtime.wrap_stream/3`
   (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:51-61`) has: it observes emitted
   parts to finalize the task, it does not wrap enumeration in a rescue
   either.
   """
 
-  alias A2A.Message
-  alias A2A.Part
+  alias AshA2A.Protocol.Message
+  alias AshA2A.Protocol.Part
 
   @type skill_name :: atom() | String.t()
   @type resource_or_domain :: module()
@@ -99,10 +103,10 @@ defmodule AshA2A.Dispatcher do
   resolves the Ash execution context from the message
   (`AshA2A.ContextResolver.from_a2a_message/4`), runs the real Ash action
   through the non-bang API matching the action's `type`, and maps the
-  outcome to an `A2A.Agent` reply tuple.
+  outcome to an `AshA2A.Protocol.Agent` reply tuple.
 
-  `history` is the prior-turn transcript from the caller's `A2A.Agent` task
-  context (`A2A.Agent.context().history`,
+  `history` is the prior-turn transcript from the caller's `AshA2A.Protocol.Agent` task
+  context (`AshA2A.Protocol.Agent.context().history`,
   `~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`) -- `[]` for a fresh task, the
   accumulated multi-turn history for a continued (`task_id:`) one. It is
   threaded into the resolved `AshA2A.ExecutionContext` and, from there, into
@@ -116,7 +120,7 @@ defmodule AshA2A.Dispatcher do
   input a remote caller fully controls end to end (PRD §3.5 trust boundary,
   see `AshA2A.ContextResolver`'s moduledoc). It defaults to `nil`
   (unauthenticated: both `actor` and `tenant` resolve to `nil`), so a caller
-  that hasn't wired `A2A.Plug.Auth` -- or a direct unit-test call to this
+  that hasn't wired `AshA2A.Protocol.Plug.Auth` -- or a direct unit-test call to this
   function -- fails closed instead of silently trusting the message. A
   correctly-wired `AshA2A.Agent`-generated agent sources this argument from
   `context.metadata["a2a.auth"][:identity]` for every real dispatch (see
@@ -318,7 +322,7 @@ defmodule AshA2A.Dispatcher do
   # reason term any existing caller pattern-matches on.
   #
   # Also doubles as the stage-tagger for `run_skill/4`'s result: that
-  # function returns an `A2A.Agent.reply()` tuple rather than
+  # function returns an `AshA2A.Protocol.Agent.reply()` tuple rather than
   # `{:ok, _} | {:error, _}`, but its `{:error, _}` shape matches the same
   # clause here, while `{:reply, _}`/`{:input_required, _}`/`{:stream, _}`
   # fall through to the catch-all below and pass through unchanged as the
@@ -455,7 +459,7 @@ defmodule AshA2A.Dispatcher do
 
   # `skill_name` originates from `AshA2A.Agent.resolve_skill_name/2`, which
   # reads it out of an unauthenticated, unschema'd remote-caller-controlled
-  # `A2A.Message.metadata` map with no type check -- match the real compiled
+  # `AshA2A.Protocol.Message.metadata` map with no type check -- match the real compiled
   # atom directly, or its string form for the real over-the-wire shape, and
   # fail closed for anything else (integer, list, map, etc.) rather than
   # ever raising.
@@ -484,7 +488,7 @@ defmodule AshA2A.Dispatcher do
 
   # -- Input extraction ---------------------------------------------------
 
-  # A2A carries the caller's structured arguments as a `A2A.Part.Data` part
+  # A2A carries the caller's structured arguments as a `AshA2A.Protocol.Part.Data` part
   # (`~/xaas/deps/a2a/lib/a2a/part.ex:58-74`, `data: map()`). Text-only
   # messages (no data part) dispatch with an empty input map so actions that
   # accept no arguments still work.
@@ -581,7 +585,9 @@ defmodule AshA2A.Dispatcher do
     end
   end
 
-  defp object_id(_result, _input), do: nil
+  # (the old `defp object_id(_result, _input), do: nil` catch-all was dead:
+  # every caller passes an `input` that is a map, so the two live clauses
+  # above already cover the full success type)
 
   # Same opts shape as `AshAi.Tool.Execution.build_opts/2`
   # (`~/xaas/deps/ash_ai/lib/ash_ai/tool/execution.ex:100-107`), sourced from
@@ -594,7 +600,7 @@ defmodule AshA2A.Dispatcher do
   # called with) when the resource has no statically configured domain
   # (`Ash.Resource.Info.domain/1` returns `nil` for a domain-less resource).
   #
-  # `exec_context.history` (the prior-turn `A2A.Agent` task transcript,
+  # `exec_context.history` (the prior-turn `AshA2A.Protocol.Agent` task transcript,
   # `~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`) is folded into the Ash
   # `context:` opt under `:a2a_history` rather than dropped -- Ash threads
   # this opt straight through to `changeset.context`/`query.context`/
@@ -607,11 +613,13 @@ defmodule AshA2A.Dispatcher do
       domain: Map.get(skill, :domain) || exec_context.domain,
       actor: exec_context.actor,
       tenant: exec_context.tenant,
-      context: Map.put(exec_context.context || %{}, :a2a_history, exec_context.history || [])
+      # ExecutionContext types `context` as `map()` and `history` as a list
+      # (both default non-nil), so the old `|| %{} / || []` fallbacks were dead.
+      context: Map.put(exec_context.context, :a2a_history, exec_context.history)
     ]
   end
 
-  # `{"stream" => true}` / `%{stream: true}` in the inbound `A2A.Part.Data`
+  # `{"stream" => true}` / `%{stream: true}` in the inbound `AshA2A.Protocol.Part.Data`
   # input map (`fetch_input/1`) is the caller's real, explicit opt-in signal
   # to stream this `:read` skill rather than fully materialize it (PRD §3.7).
   # This is deliberately a per-call caller choice, not a static property of
@@ -647,7 +655,8 @@ defmodule AshA2A.Dispatcher do
     {raw in [true, "true"], input}
   end
 
-  defp pop_stream_flag(input), do: {false, input}
+  # (the old non-map `pop_stream_flag/1` catch-all was dead: every caller
+  # passes a map, the single live clause covers the full success type)
 
   # Drives the query through the real `Ash.stream!/2` API
   # (`~/xaas/deps/ash/lib/ash.ex:2964`) instead of `Ash.read/2` (PRD §3.7).
@@ -657,7 +666,7 @@ defmodule AshA2A.Dispatcher do
   # dispatch contract for the eager part of the call (query validation,
   # domain/resource resolution); errors raised lazily while the caller drains
   # the returned `Enumerable.t()` are outside what a `{:stream, _}` reply can
-  # intercept, matching `A2A.Agent.Runtime.wrap_stream/3`'s own scope
+  # intercept, matching `AshA2A.Protocol.Agent.Runtime.wrap_stream/3`'s own scope
   # (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:51-61`: it observes completed
   # parts, it does not rescue mid-stream failures either).
   #
@@ -753,7 +762,8 @@ defmodule AshA2A.Dispatcher do
     AshA2A.MetadataKey.fetch(input, field)
   end
 
-  defp fetch_input_value(_input, _field), do: :error
+  # (the old non-map `fetch_input_value/2` catch-all was dead: every caller
+  # passes a map `input`, the single live clause covers the full success type)
 
   defp missing_argument_name([field]), do: field
   defp missing_argument_name(fields), do: fields
@@ -785,7 +795,7 @@ defmodule AshA2A.Dispatcher do
 
   # -- Reply mapping -------------------------------------------------------
 
-  # Maps every non-bang Ash outcome to the exact `A2A.Agent.reply()` shapes
+  # Maps every non-bang Ash outcome to the exact `AshA2A.Protocol.Agent.reply()` shapes
   # (`~/xaas/deps/a2a/lib/a2a/agent.ex:160-164`). `{:input_required, _}` is
   # reserved for a caller-facing "you must supply more input" signal — an Ash
   # invalid/missing-argument error is the closest existing analogue (PRD §1.5
@@ -800,7 +810,7 @@ defmodule AshA2A.Dispatcher do
   # pipeline used for a single non-streamed record, then wrapped in
   # `Part.Data.new/1` -- so a client draining the stream sees the same
   # per-record shape it would see inside a materialized `{:reply, _}`'s
-  # `results` list, one `A2A.Part.Data.t()` at a time.
+  # `results` list, one `AshA2A.Protocol.Part.Data.t()` at a time.
   defp to_reply({:stream_ok, stream}) do
     {:stream,
      Stream.map(stream, fn record ->
@@ -888,7 +898,7 @@ defmodule AshA2A.Dispatcher do
   # "you don't have access" and framework/unknown signal a server-side
   # fault, none of which "supply more input" (`:input_required`) would fix.
   #
-  # `A2A.Agent.Runtime.handle_reply/2` (the real A2A runtime this dispatcher
+  # `AshA2A.Protocol.Agent.Runtime.handle_reply/2` (the real A2A runtime this dispatcher
   # feeds) does not branch on the `{:error, reason}` tuple's shape at all --
   # it only ever does `Message.new_agent("Error: #{inspect(reason)}")`. A
   # tagged tuple like `{:forbidden, "msg"}` would therefore reach the wire
@@ -972,7 +982,7 @@ defmodule AshA2A.Dispatcher do
 
   defp encode_result(other), do: other
 
-  # `A2A.Part.Data.new/2` (`~/xaas/deps/a2a/lib/a2a/part.ex:74`) requires a
+  # `AshA2A.Protocol.Part.Data.new/2` (`~/xaas/deps/a2a/lib/a2a/part.ex:74`) requires a
   # map. `encode_result/1` returns a bare list for `:read` actions with no
   # `get?` (list results) and a scalar for `:action` results that return a
   # non-struct value (e.g. a plain integer/boolean) -- neither is a map, so

@@ -1,15 +1,19 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.ResubscribeTest.SlowStreamAgent do
   @moduledoc false
-  # Real A2A.Agent GenServer whose handle_message/2 returns a slow lazy stream
+  # Real AshA2A.Protocol.Agent GenServer whose handle_message/2 returns a slow lazy stream
   # (5 parts, 60 ms apart) so a second subscriber can attach mid-stream.
-  use A2A.Agent, name: "slow-stream", description: "streams five parts slowly"
+  use AshA2A.Protocol.Agent, name: "slow-stream", description: "streams five parts slowly"
 
-  @impl A2A.Agent
+  @impl AshA2A.Protocol.Agent
   def handle_message(_message, _context) do
     {:stream,
      Stream.map(1..5, fn i ->
        Process.sleep(60)
-       A2A.Part.Text.new("part #{i}")
+       AshA2A.Protocol.Part.Text.new("part #{i}")
      end)}
   end
 end
@@ -18,7 +22,7 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
   @moduledoc """
   `tasks/resubscribe` and multi-subscriber `message/stream` over a real
   Bandit listener serving `AshA2A.A2ATransport.Plug`, a real
-  `AshA2A.A2ATransport` supervision tree, and a real streaming `A2A.Agent`
+  `AshA2A.A2ATransport` supervision tree, and a real streaming `AshA2A.Protocol.Agent`
   GenServer. Clients are real HTTP connections (Req); SSE frames are parsed
   from the real wire bytes. No mocks.
   """
@@ -51,7 +55,7 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     }
 
   defp message do
-    {:ok, encoded} = A2A.JSON.encode(A2A.Message.new_user("go"))
+    {:ok, encoded} = AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Message.new_user("go"))
     encoded
   end
 
@@ -90,7 +94,7 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     receive do
       {:chunk, ^pid, data} ->
         case frames(data) do
-          [%{"id" => id, "status" => _} | _] -> id
+          [%{"task" => %{"id" => id, "status" => _}} | _] -> id
           _ -> await_task_id(pid)
         end
     after
@@ -116,14 +120,34 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     )
   end
 
+  # v1.0 wire shape: every stream frame's result is a StreamResponse oneof —
+  # the snapshot carries the task, updates arrive wrapped as
+  # {"statusUpdate": ...} / {"artifactUpdate": ...}.
+  defp unwrap(%{"task" => task}), do: {:task, task}
+  defp unwrap(%{"statusUpdate" => event}), do: {:status, event}
+  defp unwrap(%{"artifactUpdate" => event}), do: {:artifact, event}
+
   defp artifact_texts(results) do
-    for %{"artifact" => %{"parts" => [%{"text" => t}]}} <- results, do: t
+    for {:artifact, %{"artifact" => %{"parts" => [%{"text" => t}]}}} <- Enum.map(results, &unwrap/1),
+        do: t
   end
 
-  defp final(results), do: Enum.find(results, &(&1["final"] == true))
+  # Finality rides on the terminal status state — StatusUpdate events carry no
+  # "final" boolean on the wire.
+  @terminal_states ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
+                    "TASK_STATE_REJECTED", "TASK_STATE_AUTH_REQUIRED"]
+
+  defp final(results) do
+    Enum.find(results, fn result ->
+      case unwrap(result) do
+        {:status, %{"status" => %{"state" => state}}} -> state in @terminal_states
+        _ -> false
+      end
+    end)
+  end
 
   # TaskState wire spelling ("TASK_STATE_COMPLETED") normalized to "completed".
-  defp state(%{"status" => %{"state" => s}}),
+  defp state(%{"statusUpdate" => %{"status" => %{"state" => s}}}),
     do: s |> String.downcase() |> String.replace_prefix("task_state_", "")
 
   test "a second subscriber attached mid-stream sees the same tail and final state", %{url: url} do
@@ -137,8 +161,17 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     assert hd(Req.Response.get_header(resub, "content-type")) =~ "text/event-stream"
     b_results = frames(resub.body)
 
-    # first resubscribe frame is the task snapshot
-    assert %{"id" => ^task_id, "status" => _} = hd(b_results)
+    # first resubscribe frame is the task snapshot (StreamResponse {"task": ...})
+    assert %{"task" => %{"id" => ^task_id, "status" => _}} = hd(b_results)
+
+    # v1.0: no frame carries a "final" boolean — finality is the terminal state.
+    for frame <- a_results ++ b_results do
+      case unwrap(frame) do
+        {:status, event} -> refute Map.has_key?(event, "final")
+        {:task, _task} -> :ok
+        {:artifact, event} -> refute Map.has_key?(event, "final")
+      end
+    end
     # backlog replay + live: the resubscriber sees every part, in order
     assert artifact_texts(a_results) == for(i <- 1..5, do: "part #{i}")
     assert artifact_texts(b_results) == artifact_texts(a_results)
@@ -159,7 +192,7 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     assert artifact_texts(b_results) == for(i <- 1..5, do: "part #{i}")
     assert state(final(b_results)) == "completed"
 
-    assert {:ok, %A2A.Task{status: %{state: :completed}}} =
+    assert {:ok, %AshA2A.Protocol.Task{status: %{state: :completed}}} =
              GenServer.call(agent, {:get_task, task_id})
   end
 
@@ -181,28 +214,47 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     url: url,
     agent: agent
   } do
-    {:ok, task, enum} = A2A.stream(agent, A2A.Message.new_user("direct"))
+    {:ok, task, enum} = AshA2A.Protocol.stream(agent, AshA2A.Protocol.Message.new_user("direct"))
     Enum.to_list(enum)
 
     results = url |> resubscribe(task.id) |> Map.fetch!(:body) |> frames()
-    assert [%{"id" => id}, %{"final" => true} = last] = results
+    assert [%{"task" => %{"id" => id}}, last] = results
     assert id == task.id
     assert state(last) == "completed"
   end
 
-  test "an unknown task id is -32001", %{url: url} do
+  test "an unknown task id is -32001 with a TASK_NOT_FOUND ErrorInfo", %{url: url} do
     resp = resubscribe(url, "no-such-task")
-    assert %{"error" => %{"code" => -32_001}} = resp.body
+
+    assert %{
+             "error" => %{
+               "code" => -32_001,
+               "data" => [
+                 %{
+                   "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+                   "domain" => "a2a-protocol.org",
+                   "reason" => "TASK_NOT_FOUND"
+                 }
+               ]
+             }
+           } = resp.body
   end
 
   test "the v0.3 SubscribeToTask alias routes to resubscribe", %{url: url} do
     resp =
       Req.post!(url, json: envelope("SubscribeToTask", %{"id" => "no-such-task"}), retry: false)
 
-    assert %{"error" => %{"code" => -32_001}} = resp.body
+    assert %{
+             "error" => %{
+               "code" => -32_001,
+               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "TASK_NOT_FOUND"}]
+             }
+           } = resp.body
   end
 
-  test "without a running transport the plug falls back to A2A.Plug's -32004", %{agent: agent} do
+  test "without a running transport the plug falls back to AshA2A.Protocol.Plug's -32004", %{
+    agent: agent
+  } do
     opts =
       AshA2A.A2ATransport.Plug.init(agent: agent, base_url: "http://x", transport: :not_started)
 
@@ -212,6 +264,11 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
       |> Plug.Conn.put_req_header("content-type", "application/json")
       |> AshA2A.A2ATransport.Plug.call(opts)
 
-    assert %{"error" => %{"code" => -32_004}} = Jason.decode!(conn.resp_body)
+    assert %{
+             "error" => %{
+               "code" => -32_004,
+               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "UNSUPPORTED_OPERATION"}]
+             }
+           } = Jason.decode!(conn.resp_body)
   end
 end

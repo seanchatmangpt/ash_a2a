@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 # C2 compromise court: the KEYMASTER (court-side trust roots), a separate OS process.
 #
 # Run as `cd authority_service && MIX_ENV=test mix run --no-halt ... <this file>`.

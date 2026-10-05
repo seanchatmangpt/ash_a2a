@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.FalsifierSuite do
   @moduledoc """
   RFC-SA2A-001 v26.9.16 S18/S57/S61 minimum falsifier suite.

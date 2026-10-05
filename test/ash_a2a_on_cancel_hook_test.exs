@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.OnCancelHookTest do
   @moduledoc """
   Real, unmocked coverage for the ARD task-lifecycle gap: task cancellation
@@ -93,7 +97,7 @@ defmodule AshA2A.OnCancelHookTest do
     assert task.status.state == :working
 
     # The real assertion: a hook that raises does not crash the cancel
-    # call -- `handle_cancel/1`'s `:ok` contract with `A2A.Agent`'s own
+    # call -- `handle_cancel/1`'s `:ok` contract with `AshA2A.Protocol.Agent`'s own
     # state machine holds regardless.
     assert :ok = OnCancelErrorStreamItemAgent.cancel(OnCancelErrorStreamItemAgent, task.id)
 

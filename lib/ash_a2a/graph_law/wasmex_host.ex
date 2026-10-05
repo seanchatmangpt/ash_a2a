@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.GraphLaw.WasmexHost do
   @moduledoc """
   Real Elixir host for the `praxis-graphlaw` WebAssembly law package.
@@ -974,9 +978,11 @@ defmodule AshA2A.GraphLaw.WasmexHost do
 
     case call_raw(state, "__wbindgen_export2", [size, 1], @abi_timeout) do
       {:ok, [ptr]} ->
+        # `Wasmex.Memory.write_binary/4`'s success type is bare `:ok` (it
+        # raises on failure instead of returning an error tuple), so the old
+        # error catch-all clause here was dead.
         case Wasmex.Memory.write_binary(store, memory, ptr, binary) do
           :ok -> {:ok, ptr}
-          other -> {:error, %{code: :graphlaw_abi_failure, step: :write_binary, detail: other}}
         end
 
       other ->

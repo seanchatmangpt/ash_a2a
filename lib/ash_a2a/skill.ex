@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Skill do
   @moduledoc """
-  Derived reference to one public Ash action exposed through A2A.
+  Derived reference to one public Ash action exposed through AshA2A.Protocol.
 
   `AshA2A.Skill` is not a second action model. Its `{resource, action}` pair
   points back to the canonical `Ash.Resource` action, while `id`, `name`,
@@ -56,6 +60,18 @@ defmodule AshA2A.Skill do
   capability index by `AshA2A.CapabilityIndex.Compiler.project/3`. `nil`
   (the default) means no hook is declared -- cancellation stays telemetry-only,
   exactly as before this field existed.
+
+  ## `argument_mapping`, `get?`, `lease_required?`
+
+  Projection-metadata fields appended for wire/governance parity with the
+  Zach-Daniel target architecture. `argument_mapping` translates inbound
+  wire (string) argument names onto atom action argument names (default `%{}`
+  = pass through unchanged). `get?` marks a read skill as a single-record
+  get, mirroring ash_json_api's `get?` semantic. `lease_required?` declares
+  the governance boundary -- the authorizer consequence is enforced by the
+  architecture verifier, not by this struct. All three default to inert
+  values (`%{}`/`false`/`false`) so existing declarations compile and behave
+  unchanged.
   """
 
   @type consequence :: :observe | :change | :external_do | :unknown
@@ -72,7 +88,10 @@ defmodule AshA2A.Skill do
           consequence: consequence() | nil,
           arguments: [AshA2A.Argument.t()],
           hddl_operators: [AshA2A.HddlOperator.t()],
-          on_cancel: module() | mfa() | nil
+          on_cancel: module() | mfa() | nil,
+          argument_mapping: %{optional(String.t()) => atom()},
+          get?: boolean(),
+          lease_required?: boolean()
         }
 
   defstruct [
@@ -89,6 +108,9 @@ defmodule AshA2A.Skill do
     expose?: true,
     arguments: [],
     hddl_operators: [],
-    __spark_metadata__: nil
+    __spark_metadata__: nil,
+    argument_mapping: %{},
+    get?: false,
+    lease_required?: false
   ]
 end

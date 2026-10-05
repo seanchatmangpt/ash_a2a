@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ASA2ACorpusTest do
   @moduledoc """
   Chicago-school tests over the REAL SA2A conformance corpus on disk.

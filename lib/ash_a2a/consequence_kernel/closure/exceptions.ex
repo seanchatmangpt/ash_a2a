@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
   @moduledoc """
   Typed exceptions to the kernel-only-DO closure (`AshA2A.ConsequenceKernel.ClosureCourt`).
@@ -27,6 +31,10 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
       generated inside a real Spark resource/domain, never by a bare fixture-named module).
     * `:callback_dispatch`   -- configured callback/behaviour dynamic site outside the DO-adjacent
       modules with a DO-shaped name (`apply/N`, `execute`, `put`, ...).
+    * `:fenced_second_ingress` -- a verified second ingress (e.g. `AshA2A.Executor`) that crosses
+      the sole-DO fence itself with the identical gate sequence (`BrceAnchor.take/0` ->
+      `CapabilityRelease.guard/2` -> `BrceAnchor.admit/2` -> W4 `DispatcherFence`) before any Ash
+      call; the court proves an unanchored consequence-bearing dispatch is refused pre-Ash.
   """
 
   @type edge :: %{
@@ -101,6 +109,46 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
         callee: "AshA2A.Dispatcher.dispatch/5",
         reason: "federated-delegation court fixture: bypass:true is the negative stimulus",
         court: "test/ash_a2a/chicago/federated_delegation_test.exs"
+      },
+      %{
+        id: "executor-run-create",
+        class: :fenced_second_ingress,
+        caller: "AshA2A.Executor.run_create/4",
+        callee: "Ash.create/2",
+        reason:
+          "verified second ingress; crosses the sole-DO fence itself (BrceAnchor.take -> " <>
+            "CapabilityRelease.guard -> BrceAnchor.admit -> W4 DispatcherFence) before any Ash call",
+        court: "test/ash_a2a_zach_courts_test.exs"
+      },
+      %{
+        id: "executor-run-update",
+        class: :fenced_second_ingress,
+        caller: "AshA2A.Executor.run_update/4",
+        callee: "Ash.update/2",
+        reason:
+          "verified second ingress; crosses the sole-DO fence itself (BrceAnchor.take -> " <>
+            "CapabilityRelease.guard -> BrceAnchor.admit -> W4 DispatcherFence) before any Ash call",
+        court: "test/ash_a2a_zach_courts_test.exs"
+      },
+      %{
+        id: "executor-run-destroy",
+        class: :fenced_second_ingress,
+        caller: "AshA2A.Executor.run_destroy/4",
+        callee: "Ash.destroy/2",
+        reason:
+          "verified second ingress; crosses the sole-DO fence itself (BrceAnchor.take -> " <>
+            "CapabilityRelease.guard -> BrceAnchor.admit -> W4 DispatcherFence) before any Ash call",
+        court: "test/ash_a2a_zach_courts_test.exs"
+      },
+      %{
+        id: "executor-run-generic",
+        class: :fenced_second_ingress,
+        caller: "AshA2A.Executor.run_generic/4",
+        callee: "Ash.run_action/2",
+        reason:
+          "verified second ingress; crosses the sole-DO fence itself (BrceAnchor.take -> " <>
+            "CapabilityRelease.guard -> BrceAnchor.admit -> W4 DispatcherFence) before any Ash call",
+        court: "test/ash_a2a_zach_courts_test.exs"
       }
     ]
   end
@@ -137,6 +185,11 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
     callback_sites =
       for {caller, site} <- [
             {"AshA2A.CallbackRegistry.invoke/3", "apply/3"},
+            {"AshA2A.Chicago.Bench.B11Wire.start_listener/1", "apply/3"},
+            {"AshA2A.Cluster.Checkpoint.land/4", "?:put/2"},
+            {"AshA2A.Cluster.Handover.rehydrate_one/3", "?:put/2"},
+            {"AshA2A.Eval.Scorers.apply_custom/4", "apply/3"},
+            {"AshA2A.Execution.PPlan.resolve_value/1", "apply/3"},
             {"AshA2A.Chicago.Courts.Shacl.run/1", "apply/3"},
             {"AshA2A.Chicago.Courts.Shex.run/1", "apply/3"},
             {"AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport.Http.start_listener/1",
@@ -145,6 +198,9 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
             {"AshA2A.ConsequenceKernel.Runtime.StoreHandle.call/3", "apply/3"},
             {"AshA2A.ConsequenceKernel.W5.ClaimProtocol.claim/3", "?:put/2"},
             {"AshA2A.Durability.DurableServer.invoke/2", "apply/3"},
+            {"AshA2A.Protocol.Agent.Runtime.run_cancel/2", "apply/3"},
+            {"AshA2A.Protocol.Agent.State.put_task/2", "?:put/2"},
+            {"AshA2A.Protocol.Plug.call_authorizer/4", "apply/3"},
             {"AshA2A.ReceiptOutbox.safe/3", "apply/3"},
             {"AshA2A.Replan.Port.AshPPlan.legacy_propose/2", "apply/3"},
             {"AshA2A.Replan.Port.Beam4pm.propose/2", "apply/3"},

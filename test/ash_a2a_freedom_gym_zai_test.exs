@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AFreedomGymZaiTest do
   @moduledoc """
   Chicago-AI tier of the FreedomGym primitive: a REAL live call to Z.AI's
   GLM coding-plan endpoint (via `ash_ai`'s `AshAi.Actions.Prompt` +
   `req_llm`'s native `:zai_coder` provider), dispatched through a real
-  supervised `A2A.Agent` -- no mock LLM client, no canned response.
+  supervised `AshA2A.Protocol.Agent` -- no mock LLM client, no canned response.
   Functionally redundant with `ash_a2a_freedom_gym_llm_test.exs`'s
   `LlmAvatar` since that avatar's 2026-09 Groq->Z.AI conversion (same
   provider, same model); kept separate since only conversion, not
@@ -53,7 +57,7 @@ defmodule AshA2AFreedomGymZaiTest do
   # probe when the full suite runs with `--include external_api`: real
   # rate-limit exhaustion from that probe can make this real, unseamed live
   # LLM call exceed the default 60s on both the ExUnit test process and
-  # A2A.Agent.call/3's own GenServer.call -- confirmed reproducing (this
+  # AshA2A.Protocol.Agent.call/3's own GenServer.call -- confirmed reproducing (this
   # exact test timed out in a real full-suite `--include external_api` run)
   # -- same fix as test/ash_a2a_agent_semantic_request_test.exs, not a code
   # defect.
@@ -74,7 +78,7 @@ defmodule AshA2AFreedomGymZaiTest do
     assert {:ok, task} = ZaiLlmAvatarAgent.call(ZaiLlmAvatarAgent, message, timeout: 170_000)
     assert task.status.state == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: response}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: response}]}] = task.artifacts
 
     # Real, state-based assertions on the real object the real Z.AI call
     # returned -- not on its exact wording.

@@ -1,17 +1,21 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2APlugAuthTest do
   @moduledoc """
-  Real end-to-end auth test: a real `A2A.Plug.Auth` + real `A2A.Plug`
+  Real end-to-end auth test: a real `AshA2A.Protocol.Plug.Auth` + real `AshA2A.Protocol.Plug`
   pipeline, driven with `Plug.Test`, fronting a real `AshA2A.Agent`-generated
   agent. Sends a real HTTP POST with a real `Authorization: Bearer <token>`
   header through the real plug pipeline and asserts the verified identity
   actually threads into the real Ash action's `context.actor`/`context.tenant`
   -- proving the contract `AshA2A.Dispatcher`'s moduledoc documents actually
-  holds through a real `A2A.Plug` transport, not just via a direct
-  `dispatch/5` call that bypasses `A2A.Plug` entirely.
+  holds through a real `AshA2A.Protocol.Plug` transport, not just via a direct
+  `dispatch/5` call that bypasses `AshA2A.Protocol.Plug` entirely.
 
   Chicago-style throughout: real `Plug.Test.conn/3`, real
-  `A2A.Plug.Auth.call/2`, real `A2A.Plug.call/2`, real supervised
-  `A2A.Agent` GenServer, real JSON encode/decode via `A2A.JSON` and `Jason`.
+  `AshA2A.Protocol.Plug.Auth.call/2`, real `AshA2A.Protocol.Plug.call/2`, real supervised
+  `AshA2A.Protocol.Agent` GenServer, real JSON encode/decode via `AshA2A.Protocol.JSON` and `Jason`.
   No Mock/mox/patch/monkeypatch anywhere in this file.
   """
 
@@ -22,7 +26,7 @@ defmodule AshA2APlugAuthTest do
 
   alias AshA2A.Test.Fixture.AuthProbeAgent
 
-  @schemes %{"bearer_auth" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}}
+  @schemes %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}}
 
   # Real verify callback: accepts exactly the token "valid-token-42" and maps
   # it to a real identity map carrying an id and a tenant claim -- exactly
@@ -41,21 +45,21 @@ defmodule AshA2APlugAuthTest do
 
   defp run_pipeline(conn) do
     auth_opts =
-      A2A.Plug.Auth.init(
+      AshA2A.Protocol.Plug.Auth.init(
         schemes: @schemes,
         verify: &verify_callback/3
       )
 
     plug_opts =
-      A2A.Plug.init(
+      AshA2A.Protocol.Plug.init(
         agent: AuthProbeAgent,
         base_url: "http://localhost:4000/a2a"
       )
 
     conn
-    |> A2A.Plug.Auth.call(auth_opts)
+    |> AshA2A.Protocol.Plug.Auth.call(auth_opts)
     |> then(fn conn ->
-      if conn.halted, do: conn, else: A2A.Plug.call(conn, plug_opts)
+      if conn.halted, do: conn, else: AshA2A.Protocol.Plug.call(conn, plug_opts)
     end)
   end
 
@@ -65,8 +69,8 @@ defmodule AshA2APlugAuthTest do
     # "derive canonical skills from public Ash actions" -- explicit
     # `metadata["skill"]` is required to disambiguate (real regression,
     # confirmed via {:ambiguous_skill, ...} on a real failing run).
-    message = %{A2A.Message.new_user([A2A.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
-    {:ok, message_json} = A2A.JSON.encode(message)
+    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
+    {:ok, message_json} = AshA2A.Protocol.JSON.encode(message)
 
     Jason.encode!(%{
       "jsonrpc" => "2.0",
@@ -76,7 +80,7 @@ defmodule AshA2APlugAuthTest do
     })
   end
 
-  test "a verified Bearer identity threads through A2A.Plug.Auth + A2A.Plug into the real Ash action's actor/tenant" do
+  test "a verified Bearer identity threads through AshA2A.Protocol.Plug.Auth + AshA2A.Protocol.Plug into the real Ash action's actor/tenant" do
     conn =
       :post
       |> conn("/", whoami_request_body())
@@ -90,18 +94,23 @@ defmodule AshA2APlugAuthTest do
     body = Jason.decode!(conn.resp_body)
     assert %{"result" => %{"task" => task_json}} = body
 
+    # v1.0 wire contract: no "kind" discriminator anywhere on the wire.
+    refute Map.has_key?(task_json, "kind")
+
     assert %{"status" => %{"state" => "TASK_STATE_COMPLETED"}, "artifacts" => [artifact]} =
              task_json
 
-    assert %{"parts" => [%{"kind" => "data", "data" => data}]} = artifact
+    # Parts are flat v1.0 wire maps: {"data": ...} with no "kind" key.
+    assert %{"parts" => [%{"data" => data} = part]} = artifact
+    refute Map.has_key?(part, "kind")
 
     # Real state reached by the real Ash action, via the real Plug.Auth ->
-    # A2A.Plug -> AshA2A.Agent.__dispatch__ -> AshA2A.Dispatcher ->
+    # AshA2A.Protocol.Plug -> AshA2A.Agent.__dispatch__ -> AshA2A.Dispatcher ->
     # AshA2A.ContextResolver chain -- not asserted via any mock/interaction.
     assert %{"actor" => %{"id" => "user-42", "tenant" => "acme"}, "tenant" => "acme"} = data
   end
 
-  test "a missing Bearer credential is real-401-rejected by A2A.Plug.Auth before A2A.Plug ever runs" do
+  test "a missing Bearer credential is real-401-rejected by AshA2A.Protocol.Plug.Auth before AshA2A.Protocol.Plug ever runs" do
     conn =
       :post
       |> conn("/", whoami_request_body())

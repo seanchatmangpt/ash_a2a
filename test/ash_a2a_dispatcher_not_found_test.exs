@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ADispatcherNotFoundTest.Case do
   @moduledoc """
   Real fixture resource, private to this test file: a genuine `Ash.Resource`
@@ -122,7 +126,7 @@ defmodule AshA2ADispatcherNotFoundTest do
 
     message = data_message(%{"case_ref" => ref, "status" => "closed"})
 
-    assert {:reply, [%A2A.Part.Data{data: %{status: "closed"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{status: "closed"}}]} =
              ReceiptedDispatch.dispatch(:resolve_case, message, Case)
 
     assert Ash.get!(Case, ref).status == "closed"
@@ -134,7 +138,7 @@ defmodule AshA2ADispatcherNotFoundTest do
 
     message = data_message(%{"case_ref" => ref, "priority" => "not-an-integer"})
 
-    assert {:input_required, [%A2A.Part.Text{}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{}]} =
              ReceiptedDispatch.dispatch(:resolve_case, message, Case)
 
     assert Ash.get!(Case, ref).priority == 1

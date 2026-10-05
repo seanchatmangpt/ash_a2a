@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.DocsTruthTest do
   @moduledoc """
   Chicago court: `docs/reference/configuration.md` may not state a default for
@@ -268,9 +272,9 @@ defmodule AshA2A.DocsTruthTest do
       # Runtime-compiling the README text itself is not Ash-safe (Spark DSL
       # persistence is compile-environment-bound); the documented CONTRACT is
       # what this court executes.
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
-      assert {:reply, [%A2A.Part.Data{data: %{results: []}}]} =
+      assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{results: []}}]} =
                AshA2A.Dispatcher.dispatch(:echo, message, AshA2A.Test.Fixture.Echo)
     end
 

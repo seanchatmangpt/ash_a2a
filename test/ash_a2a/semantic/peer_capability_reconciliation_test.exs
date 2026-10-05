@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.PeerCapabilityReconciliationTest do
   @moduledoc """
   Chicago-school tests proving the PRD §14 / ARD §14 gap is closed:

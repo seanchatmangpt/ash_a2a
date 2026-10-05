@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.FreedomGym.LlmAvatar do
   @moduledoc """
   Real fixture resource for the "Chicago AI" tier of the FreedomGym
@@ -94,7 +98,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.LlmAvatarAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.LlmAvatar`, standing
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.LlmAvatar`, standing
   in for "the LLM-backed participant's own independently-deployed Ash app."
   """
 
@@ -186,7 +190,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatarAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatar`,
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.ZaiLlmAvatar`,
   standing in for "the Z.AI-backed participant's own
   independently-deployed Ash app."
   """

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Authority do
   @moduledoc """
   Explicit authority evidence bound to a principal and one capability.
@@ -5,7 +9,7 @@ defmodule AshA2A.Authority do
   This struct is not a bearer-token verifier and never manufactures trust.
   Construct it only after a transport or host authority broker has admitted
   the caller. `source: :transport_verified` is used by the A2A adapter for the
-  identity already verified by `A2A.Plug.Auth`.
+  identity already verified by `AshA2A.Protocol.Plug.Auth`.
 
   ## `from_verified_identity/2` is NOT a grant decision
 

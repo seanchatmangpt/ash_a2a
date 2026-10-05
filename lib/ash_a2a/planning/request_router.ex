@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Planning.RequestRouter do
   @moduledoc """
   New default-routing entry point (impossible-item #2 of the design plan):
@@ -87,7 +91,7 @@ defmodule AshA2A.Planning.RequestRouter do
 
   ## Detection heuristic
 
-  Given a real `A2A.Message.t()`, `detect_tier/1` classifies it, cheapest
+  Given a real `AshA2A.Protocol.Message.t()`, `detect_tier/1` classifies it, cheapest
   and most-specific check first:
 
     1. **Facts tier.** The message's real input data part
@@ -97,7 +101,7 @@ defmodule AshA2A.Planning.RequestRouter do
        `:semantic_request`/`:continuation_fingerprint` metadata already
        use) whose value is itself a map. Returns `{:facts, envelope}`.
     2. **Text tier.** No `goal_facts` map, but the message carries real
-       text (`A2A.Message.text/1` returns a non-nil, non-empty string).
+       text (`AshA2A.Protocol.Message.text/1` returns a non-nil, non-empty string).
        Returns `{:text, text}`.
     3. **No input.** Neither of the above. Returns `:error`.
 
@@ -136,7 +140,7 @@ defmodule AshA2A.Planning.RequestRouter do
           | :ambiguous_goal_facts_shape
 
   @doc """
-  Classifies a real inbound `A2A.Message.t()` into a routing tier. See the
+  Classifies a real inbound `AshA2A.Protocol.Message.t()` into a routing tier. See the
   moduledoc for the exact heuristic.
 
   A `goal_facts` key that is genuinely *absent* at the top level normally
@@ -166,8 +170,8 @@ defmodule AshA2A.Planning.RequestRouter do
   payload is a caller error to surface, never a silent excuse to fall
   back to a different, less strict admission model.
   """
-  @spec detect_tier(A2A.Message.t()) :: tier_detection()
-  def detect_tier(%A2A.Message{} = message) do
+  @spec detect_tier(AshA2A.Protocol.Message.t()) :: tier_detection()
+  def detect_tier(%AshA2A.Protocol.Message{} = message) do
     {:ok, input} = Dispatcher.fetch_input(message)
 
     case MetadataKey.fetch(input, :goal_facts) do
@@ -181,7 +185,7 @@ defmodule AshA2A.Planning.RequestRouter do
         if nested_goal_facts_key?(input) do
           :ambiguous_goal_facts_shape
         else
-          case A2A.Message.text(message) do
+          case AshA2A.Protocol.Message.text(message) do
             text when is_binary(text) and text != "" -> {:text, text}
             _no_text -> :error
           end
@@ -268,9 +272,9 @@ defmodule AshA2A.Planning.RequestRouter do
   None of `HddlDeterministicSynthesis`, `PhraseParser`, or `Compiler` is
   modified by this router -- each is called exactly as it already exists.
   """
-  @spec route(module(), A2A.Message.t(), keyword()) ::
+  @spec route(module(), AshA2A.Protocol.Message.t(), keyword()) ::
           {:ok, AshA2A.Semantic.ExecutionPackage.t()} | {:error, map()}
-  def route(resource_or_domain, %A2A.Message{} = message, opts \\ []) do
+  def route(resource_or_domain, %AshA2A.Protocol.Message{} = message, opts \\ []) do
     case detect_tier(message) do
       {:facts, envelope} ->
         emit_tier_selected(resource_or_domain, :facts)

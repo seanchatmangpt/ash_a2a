@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CryptoStanding do
   @moduledoc """
   Thin adapter over the standalone `sa2a_crypto` project (`Sa2aCrypto.*`).

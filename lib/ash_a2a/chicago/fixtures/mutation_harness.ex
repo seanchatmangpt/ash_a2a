@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.MutationHarness do
   @moduledoc """
   Real collaborators for the mutation-harness slice (RFC-SA2A-002 §22, §97):
@@ -34,8 +38,8 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness do
   @spec principal(String.t()) :: Identity.t()
   def principal(name \\ @subject), do: Identity.principal(name)
 
-  @spec message(String.t()) :: A2A.Message.t()
-  def message(label), do: A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+  @spec message(String.t()) :: AshA2A.Protocol.Message.t()
+  def message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   @doc "A real authority for the Ledger capability (`opts` go to `Authority.new/3`)."
   @spec authority(Identity.t(), keyword()) :: Authority.t()

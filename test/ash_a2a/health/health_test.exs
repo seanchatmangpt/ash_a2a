@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.HealthTest do
   @moduledoc """
   OBS-06/OBS-07/OBS-08 qualification against the real running `:ash_a2a`

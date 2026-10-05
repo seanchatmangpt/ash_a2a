@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.Episode.Envelope do
   @moduledoc """
   A handle to one admitted resource envelope (RFC-SA2A-002 §83, §127, §132).

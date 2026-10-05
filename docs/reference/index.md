@@ -31,8 +31,37 @@ Reference pages in this quadrant:
 - [Telemetry events](telemetry.md) — the production event catalog with
   payloads.
 - [Mix tasks](mix-tasks.md) — the 15 shipped tasks.
+- [Performance](performance.md) — the measured v1.0 wire-path baseline
+  (SA2A-B5/B9 bench run with its environment-identity receipt); a
+  point-in-time observation, not a benchmark claim.
+- [PPlan seams](../explanation/pplan-seams.md) — the two independent
+  ash_pplan seams (replan candidate policy vs task durability) and why
+  they do not delegate to each other.
 - [A2A endpoint contract](a2a-endpoint-contract.md) — the served HTTP
   wire surface: card, JSON-RPC, errors, streaming, auth.
+- [A2A v1.0 conformance statement](a2a-v1-conformance.md) — per-spec-
+  requirement CONFORMANT/PARTIAL/GAP claims, each citing the executed
+  v1 conformance court that backs it.
+- [A2A v1.1 readiness matrix](a2a-v1_1-readiness.md) — the a2a project
+  roadmap triaged against the code on disk: SUPPORTED / PARTIAL /
+  NOT-STARTED / NOT-APPLICABLE per upstream item, each row citing the
+  module or court that would prove it, plus the TCK cross-reference.
+- [Securing an A2A deployment](../how-to/secure-an-a2a-deployment.md) —
+  the deployed security surface: auth plug, owner scoping, credential
+  hygiene, wire-input hardening, card signatures, admission limits.
+- [Migrating from the a2a hex package](../how-to/migrate-from-a2a-hex.md) —
+  dropping `{:a2a, "~> 0.2"}`, the `A2A.*` → `AshA2A.Protocol.*` map,
+  v0.3 → v1.0 wire deltas, installer and DSL compatibility, rollback.
+- [C2 actuation certificate](c2-certificate.md) — the canonical
+  `AshA2A.C2.Certificate` wire form, its verifier input, and lossless
+  conversions to the actuator JSON and authority-service reply.
+- [C2 compromise court](c2-compromise-court.md) — the executable
+  RFC-SA2A-006 s26 court: attacker-controlled control plane vs the
+  actuator's append-only, hash-chained effect ledger.
+- [Conformance claim](conformance-claim.md) — the verifier-computed
+  RFC-SA2A-007 §4 statement (`mix ash_a2a.verify_conformance`).
+- [Conformance profiles](conformance-profiles.md) — the C0-C3 profiles and
+  the strict C1 run's security-profile/durable-store checks.
 
 The module rows below cover the dispatch-relevant public surface with its
 real integration status; full module API detail lives in the generated
@@ -42,14 +71,14 @@ ExDoc module documentation (HexDocs).
 
 | Module | Description | Status |
 | --- | --- | --- |
-| [`AshA2A.Agent`](https://hexdocs.pm/ash_a2a/AshA2A.Agent.html) | Generates a supervised `A2A.Agent` GenServer for an `AshA2A`-extended resource/domain. | ALIVE |
-| [`AshA2A.Dispatcher`](https://hexdocs.pm/ash_a2a/AshA2A.Dispatcher.html) | Dispatches an inbound `A2A.Message` to the Ash action a persisted skill maps to; the terminal execution layer `CommandBus.run/4` itself calls. | ALIVE |
+| [`AshA2A.Agent`](https://hexdocs.pm/ash_a2a/AshA2A.Agent.html) | Generates a supervised `AshA2A.Protocol.Agent` GenServer for an `AshA2A`-extended resource/domain. | ALIVE |
+| [`AshA2A.Dispatcher`](https://hexdocs.pm/ash_a2a/AshA2A.Dispatcher.html) | Dispatches an inbound `AshA2A.Protocol.Message` to the Ash action a persisted skill maps to; the terminal execution layer `CommandBus.run/4` itself calls. | ALIVE |
 | [`AshA2A.Info`](https://hexdocs.pm/ash_a2a/AshA2A.Info.html) | Introspection facade; derives the capability index from `Ash.Resource.Info.public_actions/1`, including real per-skill typed arguments. | ALIVE |
 | [`AshA2A.CapabilityIndex`](https://hexdocs.pm/ash_a2a/AshA2A.CapabilityIndex.html) | Public facade over the derived Ash-to-A2A capability projection. | ALIVE |
 | [`AshA2A.CapabilityIndex.Compiler`](https://hexdocs.pm/ash_a2a/AshA2A.CapabilityIndex.Compiler.html) | Derives the capability index from `Ash.Resource.Info.public_actions/1` plus residual overrides; derives real `AshA2A.Argument` entries from Ash action introspection. | ALIVE |
-| [`AshA2A.CapabilityIndex.AgentCardBuilder`](https://hexdocs.pm/ash_a2a/AshA2A.CapabilityIndex.AgentCardBuilder.html) | Deterministically projects a compiled capability index into `A2A.AgentCard.t()`. | ALIVE |
+| [`AshA2A.CapabilityIndex.AgentCardBuilder`](https://hexdocs.pm/ash_a2a/AshA2A.CapabilityIndex.AgentCardBuilder.html) | Deterministically projects a compiled capability index into `AshA2A.Protocol.AgentCard.t()`. | ALIVE |
 | [`AshA2A.CapabilityIndex.Validator`](https://hexdocs.pm/ash_a2a/AshA2A.CapabilityIndex.Validator.html) | Fail-closed validation that every residual skill override names a real, public Ash action. | ALIVE |
-| [`AshA2A.ContextResolver`](https://hexdocs.pm/ash_a2a/AshA2A.ContextResolver.html) | Resolves `actor`/`tenant`/`context`/`domain`/`history` from an `A2A.Message` at the trust boundary. | ALIVE |
+| [`AshA2A.ContextResolver`](https://hexdocs.pm/ash_a2a/AshA2A.ContextResolver.html) | Resolves `actor`/`tenant`/`context`/`domain`/`history` from an `AshA2A.Protocol.Message` at the trust boundary. | ALIVE |
 | [`AshA2A.ExecutionContext`](https://hexdocs.pm/ash_a2a/AshA2A.ExecutionContext.html) | Struct holding the resolved, trust-boundary-crossed dispatch context built by `ContextResolver`. | ALIVE |
 | [`AshA2A.Skill`](https://hexdocs.pm/ash_a2a/AshA2A.Skill.html) | Derived reference to one public Ash action exposed through A2A; also the DSL entity target. | ALIVE |
 | [`AshA2A.Argument`](https://hexdocs.pm/ash_a2a/AshA2A.Argument.html) | Spark DSL entity for `a2a do skill ... do argument ... end end`; kept for source compatibility, ignored by compilation (real arguments are derived from Ash introspection, not this DSL entity). | ALIVE |
@@ -64,7 +93,7 @@ ExDoc module documentation (HexDocs).
 
 Host-mounted plug surfaces — real code exercised by the drift courts and the
 transport qualification tests, reached when the host mounts the plug (the
-vendored `A2A.Plug` remains the tutorial default). See
+in-repo `AshA2A.Protocol.Plug` remains the tutorial default). See
 [A2A endpoint contract](a2a-endpoint-contract.md) for the wire behavior of
 both plugs and [A2A spec version mapping](a2a-spec-version-mapping.md) for
 the per-method matrix.
@@ -72,8 +101,9 @@ the per-method matrix.
 | Module | Description | Status |
 | --- | --- | --- |
 | [`AshA2A.A2ATransport`](https://hexdocs.pm/ash_a2a/AshA2A.A2ATransport.html) | Supervised transport tree behind the owned plug: SSE stream pump with fan-out, push-config store, webhook delivery. | PARTIAL (not default path) |
-| [`AshA2A.A2ATransport.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.A2ATransport.Plug.html) | ash_a2a-owned drop-in wrapper around the vendored `A2A.Plug`: supervised `message/stream` SSE fan-out with `tasks/resubscribe` Last-Event-ID replay, `tasks/pushNotificationConfig/*` RPCs with signed SSRF-admitted webhook delivery, and `agent/getAuthenticatedExtendedCard`. | PARTIAL (not default path) |
-| [`AshA2A.Transport.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.Transport.Plug.html) | Owner-scoped drop-in replacement for the vendored `A2A.Plug`: owner-filtered `tasks/list`, transport-verified principal extraction, safe-error responses. | PARTIAL (not default path) |
+| [`AshA2A.A2ATransport.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.A2ATransport.Plug.html) | ash_a2a-owned drop-in wrapper around the base `AshA2A.Protocol.Plug`: supervised `message/stream` SSE fan-out with `tasks/resubscribe` Last-Event-ID replay, `tasks/pushNotificationConfig/*` RPCs with signed SSRF-admitted webhook delivery, and `agent/getAuthenticatedExtendedCard`. | PARTIAL (not default path) |
+| [`AshA2A.Transport.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.Transport.Plug.html) | Owner-scoped drop-in replacement for the base `AshA2A.Protocol.Plug`: owner-filtered `tasks/list`, transport-verified principal extraction, safe-error responses. | PARTIAL (not default path) |
+| [`AshA2A.Transport.SchemaEndpoints`](https://hexdocs.pm/ash_a2a/AshA2A.Transport.SchemaEndpoints.html) | Machine-readable schema endpoints behind `serve_schemas: true`: `GET /.well-known/agent-card.schema.json` (static Draft 2020-12 JSON Schema of the v1.0 AgentCard wire shape, hand-authored from the v1.0 proto with line citations) and `GET /.well-known/skills.schema.json` (live per-skill schemas via `AshA2A.Schema.for_skill/2`, keyed by card skill id). Mounted by `AshA2A.Transport.Plug` and `AshA2A.Transport.HTTPJSON`. | PARTIAL (not default path) |
 | [`AshA2A.Health.Plug`](https://hexdocs.pm/ash_a2a/AshA2A.Health.Plug.html) | GET liveness/readiness JSON (kill-switch classes, OCEL forwarder health, degraded status opt). | PARTIAL (not default path) |
 
 ## LLM resolution

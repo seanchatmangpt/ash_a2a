@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.FreshConsumer do
   @moduledoc """
   Real fixtures for the Gate 11 fresh-consumer court
@@ -63,7 +67,7 @@ defmodule AshA2A.Chicago.Fixtures.FreshConsumer do
         input: %{label: label}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
     CommandBus.run(command, message, Ledger, store_opts: store_opts)
   end
 

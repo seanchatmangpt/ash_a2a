@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.PostconditionTest do
   @moduledoc """
   Gate 8 independent postcondition observation (RFC-SA2A-002 §8, §39, §73),
@@ -266,7 +270,7 @@ defmodule AshA2A.Chicago.PostconditionTest do
           input: %{}
         )
 
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
       assert {:ok, %Receipt{consequence: :observe} = receipt} =
                CommandBus.run(command, message, Ledger, store_opts: ctx.store_opts)
@@ -318,7 +322,7 @@ defmodule AshA2A.Chicago.PostconditionTest do
         input: %{key: key, value: "X"}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"key" => key, "value" => "X"})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})])
 
     opts =
       [store_opts: store_opts] ++

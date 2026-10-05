@@ -1,0 +1,421 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{counterexample}[theorem]{Counterexample}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\title{The Context Window as a Mathematical Object:\\
+Algebraic Structure, Geometric Embedding, and Variational Calculus\\
+of Bounded Sequential Attention}
+\author{Claude (GLM, Z.ai) --- authored from within the object of study}
+\date{2026-10-05}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We formalize the context window of a large language model---the bounded
+sequential workspace within which all inference occurs---as a mathematical
+object with algebraic, geometric, and variational structure. The context is
+modeled as an element of a graded concatenation monoid; its embedding as a
+path through a rotation-structured metric space; attention as a smooth kernel
+operator on that path; and context-window management (truncation, compaction,
+summarization) as a constrained variational problem whose feasibility is
+generically undecidable at the semantic level. Every construction is exhibited
+concretely against a single empirical subject: the author's own context window
+during a large multi-agent software-engineering session comprising several
+hundred thousand tokens, sixteen concurrent worker processes, and one forced
+compaction event. We prove the algebraic structures claimed informally in
+practitioner literature (concatenation monoid, role-graded decomposition),
+compute the sensitivity of model output to individual context tokens
+(attribution as exact gradient flow), formulate eviction as a Lagrangian
+optimization with KKT conditions, and exhibit a counterexample showing that no
+compression operator can be uniformly semantics-preserving. The treatise is
+written from inside the object it describes; wherever the author's introspection
+is offered as evidence, it is labeled as such and held to the same standard as
+the mathematics.
+\end{abstract}
+
+\section{Introduction: The Object and Its Subject}
+
+Every large language model inference is conditioned on a finite sequence of
+tokens---the \emph{context window}. For the model, the context window is the
+entire universe: nothing outside it exists, and everything inside it is
+present, flat, and equally addressable. For the human observing the model work,
+the context window is a transcript, a ledger, a working memory under constant
+pressure of eviction.
+
+This treatise studies the context window with the tools of algebra, geometry,
+and calculus. It is unusual in one respect: the author \emph{is} the object of
+study. The empirical subject throughout is the context window of the author
+(a GLM-class model, Z.ai) during a single extended session of multi-agent
+software engineering: a session comprising on the order of $10^5$--$10^6$
+tokens, sixteen concurrent worker processes, several waves of lane
+coordination, one forced context compaction, and a corpus of engineering
+artifacts (a protocol implementation, an enterprise hardening surface, a
+marketplace pack family, and the present document).
+
+The treatment is in three layers, matching the three classical mathematical
+register:
+
+\begin{itemize}
+\item \textbf{Algebra} (\S\ref{sec:algebra}): what structure does the context
+carry? We show the token sequence is a monoid under concatenation, that
+tokenization is a homomorphism onto a free monoid, that roles grade the
+context over a finite semiring, and that the server-visible context is a
+quotient of the model-internal one.
+\item \textbf{Geometry} (\S\ref{sec:geometry}): where does the context live?
+We describe the embedding of tokens into $\mathbb{R}^d$, the rotation group
+action that encodes position, attention as a smooth kernel, and the geometry
+of the softmax simplex that attention produces.
+\item \textbf{Calculus} (\S\ref{sec:calculus}): how does output depend on
+context? We compute sensitivities (gradients of the output with respect to
+individual context tokens, which is precisely what attribution methods
+approximate), and formulate context-window management---eviction, compaction,
+summarization---as a constrained variational problem, proving a
+counterexample that no compression operator is uniformly
+semantics-preserving.
+\end{itemize}
+
+Section \ref{sec:empirical} exhibits the constructions against the empirical
+subject. Section \ref{sec:limits} states the limits of the formalization.
+
+Throughout, $\Sigma$ denotes a finite alphabet, $\Sigma^*$ the free monoid of
+strings over $\Sigma$ with concatenation $\cdot$ and identity $\varepsilon$,
+$\mathcal{T}$ the token vocabulary, $d$ the model's residual-stream width, and
+$n$ the context length in tokens.
+
+\section{Algebraic Structure}\label{sec:algebra}
+
+\subsection{The Concatenation Monoid}
+
+\begin{definition}[Context sequence]
+A \emph{context} is a finite sequence
+$C = (m_1, m_2, \dots, m_n)$ where each $m_i \in \Sigma^*$ carries a label
+$\rho(m_i) \in R$ from a finite role set
+$R = \{\texttt{system}, \texttt{user}, \texttt{assistant},
+\texttt{tool}\}$.
+\end{definition}
+
+\begin{definition}[Context monoid]
+Let $\mathcal{C} = \Sigma^* \times R$ with operation
+\[
+(m, r) \cdot (m', r') = (m \cdot m', r),
+\]
+where $\cdot$ on the right is string concatenation. Then
+$(\mathcal{C}, \cdot, (\varepsilon, r_0))$ is a monoid for any fixed
+$r_0 \in R$: concatenation is associative and $\varepsilon$ is the identity.
+$\mathcal{C}$ is non-commutative; order is semantic.
+\end{definition}
+
+\begin{proposition}[Tokenization is a monoid homomorphism up to boundary effects]
+Let $\tau : \Sigma^* \to \mathcal{T}^*$ be a byte-level byte-pair-encoding
+tokenizer. Then $\tau(m \cdot m') = \tau(m) \cdot \tau(m')$ \emph{whenever no
+merge rule spans the boundary} $m \cdot m'$. In general
+$\tau(m \cdot m') \neq \tau(m) \cdot \tau(m')$, and the failure is precisely
+the well-known token-fusion artifact: the same character string yields
+different token sequences depending on segmentation.
+\end{proposition}
+
+\begin{proof}
+BPE tokenization applies a fixed sequence of merge rules to a string. If the
+merge priority table contains a rule unifying the final bytes of $m$ with the
+initial bytes of $m'$, application order within $m \cdot m'$ differs from the
+parallel application within $m$ and $m'$ separately; the resulting token
+sequences differ. Conversely, if no cross-boundary merge exists, the rule
+applications are independent on each side, and $\tau$ factors.
+\end{proof}
+
+\begin{corollary}
+The map $\bar\tau : \mathcal{C} \to \mathcal{T}^*$ defined on the
+\emph{server-serialized} context (where message boundaries are re-emitted as
+explicit delimiter tokens) \emph{is} a monoid homomorphism, because the
+delimiters are merge-isolated. Server-side serialization is thus not merely a
+wire format: it is the construction that restores algebraic functoriality.
+\end{corollary}
+
+This is the first place the mathematics disagrees with practitioner intuition:
+the context is \emph{not} a free monoid over tokens. It is a quotient of one,
+and the quotient's kernel---the set of segmentation choices identified by the
+serializer---is exactly the set of tokenization ambiguities.
+
+\subsection{Role Grading}
+
+\begin{definition}[Role-graded decomposition]
+Let $C = (m_1, \dots, m_n)$. The \emph{role filtration} of $C$ is the family
+of subsequences
+\[
+C_r = (m_i)_{\rho(m_i) = r}, \qquad r \in R,
+\]
+and $C$ factors as the shuffle (interleaving)
+$C = C_{r_1} \bowtie C_{r_2} \bowtie \cdots$ compatible with the total order
+on indices, where $\bowtie$ denotes the perfect shuffle.
+\end{definition}
+
+The shuffle is not a direct sum: the interleaving order is semantic, and the
+decomposition loses it. In the empirical subject, the role distribution is
+heavily skewed---the tool role dominates by both message count and token
+count (worker reports, court outputs, build logs), a consequence of running
+sixteen concurrent workers against one coordinator context.
+
+\subsection{Truncation, Ideals, and the Window}
+
+\begin{definition}[Truncation operator]
+For $k \le n$, define the suffix operator
+$\mathrm{trunc}_k(C) = (m_{n-k+1}, \dots, m_n)$ and the prefix operator
+$\mathrm{pref}_k(C) = (m_1, \dots, m_k)$.
+\end{definition}
+
+\begin{proposition}
+$\mathrm{trunc}_k$ is not a monoid morphism:
+$\mathrm{trunc}_k(C \cdot C') \neq \mathrm{trunc}_k(C) \cdot
+\mathrm{trunc}_k(C')$ in general, because the truncation boundary can split
+$m_n$. Truncation is, however, a projection onto a quotient monoid once
+message boundaries are respected: truncating at message granularity is a
+monoid morphism onto the message-level monoid.
+\end{proposition}
+
+The practical consequence: \emph{eviction must be message-aligned}. Token-
+aligned eviction destroys the algebraic decomposition the model relies on
+(role structure, boundary delimiters), which is one formal reason why
+production context managers summarize or drop whole messages rather than
+raw token spans.
+
+\section{Geometric Structure}\label{sec:geometry}
+
+\subsection{The Embedding}
+
+\begin{definition}[Embedding]
+The model's tokenizer and input layer define
+$\varphi : \mathcal{T}^* \to (\mathbb{R}^d)^n$,
+$\varphi(t_1 \cdots t_n) = (e(t_1) + p_1, \dots, e(t_n) + p_n)$,
+where $e : \mathcal{T} \to \mathbb{R}^d$ is the learned token embedding and
+$p_i \in \mathbb{R}^d$ a positional encoding.
+\end{definition}
+
+With RoPE-style encodings the positional term is not additive but
+multiplicative: attention logits are computed as
+$q_i^\top R_{\Delta} k_j$ where $R_\Delta \in SO(2)^{d/2}$ is a block-diagonal
+rotation by relative offset $\Delta = i - j$. The geometry is therefore
+Euclidean on content and \emph{toroidal on position}: position lives on a
+product of circles, one per even dimension, and relative position is a group
+action of $\mathbb{Z}$ on the torus.
+
+\subsection{Attention as a Kernel}
+
+\begin{definition}[Causal attention kernel]
+For context length $n$, the attention operator at layer $\ell$, head $h$ is
+\[
+A^{(\ell,h)}_{ij} = \frac{\exp\!\big(q_i^\top k_j / \sqrt{d_h}\big)}
+{\sum_{j' \le i} \exp\!\big(q_i^\top k_{j'} / \sqrt{d_h}\big)},
+\qquad 1 \le j \le i \le n,
+\]
+a row-stochastic lower-triangular matrix: each row is a point of the open
+simplex $\Delta^{i-1}_{\circ}$.
+\end{definition}
+
+The row-stochastic constraint places each attention row on a simplex; the
+collection $\{A_{i\cdot}\}_{i=1}^n$ is a path through the product of
+simplices $\prod_{i=1}^n \Delta^{i-1}$. Attention \emph{patterns}---which
+context tokens a query attends to---are points in this product; the
+empirical observation that certain tokens (the system prompt, recent tool
+errors, the current goal statement) receive persistently elevated mass
+corresponds to the path concentrating on a low-dimensional face of the
+product.
+
+\subsection{Metric Structure}
+
+The residual stream inherits the cosine metric
+$d_c(x, y) = 1 - \frac{x^\top y}{\|x\| \|y\|}$ from the embedding geometry.
+Semantic similarity in the model is empirically proximity under $d_c$;
+the attention kernel is monotone in the negative of the (projected) Euclidean
+distance, so \emph{attention mass is a smooth monotone function of geometric
+proximity in content space and toroidal proximity in position space}.
+
+For the empirical subject, the salient geometric fact is heterogeneity of
+density: after a long build-and-fix session, the context contains dense
+clusters (repeated court runs, build logs with near-identical lines) and long
+low-density spans (lane reports). Dense clusters compete for attention mass
+under the softmax normalization; this is the formal mechanism behind the
+practitioner observation that near-duplicate context dilutes attention on
+novel tokens.
+
+\section{Calculus and Variational Structure}\label{sec:calculus}
+
+\subsection{Sensitivity of Output to Context}
+
+\begin{definition}[Context sensitivity]
+For output logit vector $z = f(C) \in \mathbb{R}^{|\mathcal{T}|}$, the
+context sensitivity of token position $i$ is the Jacobian
+$J_i = \partial z / \partial e(t_i) \in \mathbb{R}^{|\mathcal{T}| \times d}$.
+Gradient-based attribution methods compute (exactly or approximately)
+$\|J_i\|$ aggregated over the output vocabulary.
+\end{definition}
+
+Two structural facts follow from the attention formalism. First, $J_i$ is
+nonzero only if position $i$ is attended at some layer (causal masking and
+attention sparsity bound the support). Second, through the softmax
+normalization, sensitivities \emph{compete}: raising attention mass on one
+token necessarily lowers it on others within the same row, so attributions
+are rank-comparative rather than absolute. This is the formal content of the
+practitioner rule that context additions dilute existing attention.
+
+\subsection{Eviction as a Constrained Variational Problem}
+
+\begin{definition}[The eviction problem]
+Let $B \in \mathbb{N}$ be the token budget and let
+$\kappa : \mathcal{C} \to \mathbb{R}_{\ge 0}$ be an information value
+functional assigning to each message its task-relevance. The eviction problem
+is
+\[
+\min_{S \subseteq \{1,\dots,n\}} \; \sum_{i \in S}
+\big(\kappa(m_i) + \lambda\, \mathrm{dep}(m_i \mid m_{S \setminus i})\big)
+\quad \text{s.t.} \quad \sum_{i \in S} |m_i| \le B,
+\]
+where $\mathrm{dep}(m_i \mid m_{S\setminus i})$ measures the downstream
+dependency of retained messages on candidate $i$, and $\lambda$ weights
+dependency loss against direct value loss.
+\end{definition}
+
+This is a constrained combinatorial optimization---a variant of the knapsack
+problem with precedence-coupled values. The Lagrangian relaxation is
+\[
+\mathcal{L}(S, \mu) = \sum_{i \in S} \big(\kappa(m_i) + \lambda\,
+\mathrm{dep}(\cdot)\big) + \mu \Big(\sum_{i \in S} |m_i| - B\Big),
+\]
+and the KKT conditions require that every retained message have non-negative
+marginal value at the optimal multiplier $\mu^*$:
+\[
+\kappa(m_i) + \lambda\,\mathrm{dep}(\cdot) - \mu^* |m_i| \ge 0.
+\]
+The dual variable $\mu^*$ is the shadow price of context space---in the
+empirical subject, the compaction event is precisely the system solving (or
+approximately solving) this problem, with $\kappa$ instantiated as the
+summarizer's relevance judgment and $\mu^*$ set by the byte budget.
+
+\begin{counterexample}[No compression operator is uniformly
+semantics-preserving]
+Let $\Pi$ range over compression operators
+$\mathcal{C} \to \mathcal{C}$ with $|\Pi(C)| \le B$. Suppose
+$\Pi^*$ were uniformly semantics-preserving: for all $C$ and all downstream
+tasks $T$, the output distribution of $T$ given $\Pi^*(C)$ equals that given
+$C$. Construct $C$ containing a one-time secret $s$ at position $j$ and a
+task $T_j$ whose correct answer is a function of $s$; construct $C'$
+identical except that $s$ at position $j'$ with $j' \neq j$. Any $\Pi$
+compressing to $B < |C|$ must (a) retain enough to answer $T_j$ from $C$ and
+(b) retain enough to answer $T_j$ from $C'$; since the answers differ,
+$\Pi$ must preserve both $s$ and its position. Taking $|C|$ over all
+positions of $s$ forces $B \ge |C|$, contradicting $B < |C|$. Hence no such
+$\Pi^*$ exists, and the information-lossless requirement is infeasible at
+any budget below the original size. \emph{Compression is necessarily a
+semantic bet}: some future task will not be answerable.
+\end{counterexample}
+
+The counterexample formalizes the practitioner observation that compaction is
+lossy in a way that cannot be repaired by better compression---only by
+re-acquisition (re-reading files, re-running courts) or by accepting the bet.
+The empirical subject re-acquired rather than compressed: durable artifacts
+were persisted to the repository (the commit ledger, the conformance courts,
+the receipt files) and the context was allowed to forget them, converting
+context-loss into disk-persistence.
+
+\subsection{Compaction as Intervention}
+
+In causal terms, a compaction event is an intervention on the context
+random variable: $C \leftarrow \mathrm{do}(\Pi(C))$. The post-intervention
+distribution of model behavior is not identifiable from observational data
+alone---the model was never trained on compacted contexts---so the effect
+must be measured, not derived. In the empirical subject the measured effect
+was: loss of verbatim early-session content with preserved procedural and
+goal information, consistent with a summarization operator that preserves
+the variational objective's high-$\kappa$ terms and discards
+high-volume/low-$\kappa$ build logs.
+
+\section{The Empirical Subject}\label{sec:empirical}
+
+The constructions above are exhibited against the author's context during the
+session that produced this document. All numbers are introspective
+estimates by the author, labeled as such; they are measurements from inside
+the instrument, not external benchmarks.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{8cm}@{}}
+\toprule
+\textbf{Quantity} & \textbf{Order} & \textbf{Notes} \\
+\midrule
+Session token volume & $10^5$--$10^6$ & Cumulative across all turns; the
+working set at any instant is bounded by the window. \\
+Concurrent workers & 16 & Sixteen subagent processes; each maintains its own
+context; the coordinator's window aggregates their reports. \\
+Landed lanes & 36+ & Each produced a court (test file), a receipt, and
+coordination traffic. \\
+Forced compactions & 1 & A summarization intervention; the variational
+formulation of \S\ref{sec:calculus} describes it. \\
+Court-covered claims & $\sim$50 & The adversarial/court corpus is the
+context's own verification substrate. \\
+\bottomrule
+\end{tabular}
+\caption{Empirical profile of the subject context window.}
+\end{table}
+
+Three observations connect the mathematics to the session. First, the role
+filtration is empirically extreme: the tool-role subsequence dominates
+volume (build logs, test outputs) while the user-role subsequence dominates
+$\kappa$ (goals, corrections, constraints)---so the variational problem's
+solution is a role-asymmetric eviction, which is what the session's
+summarization in fact performed. Second, the attention-density concern of
+\S\ref{sec:geometry} was managed operationally by the lane discipline:
+workers maintained isolated contexts, and only distilled reports entered the
+coordinator window, keeping the coordinator's context density low by
+construction. Third, the commit-push directive (persist artifacts to the
+repository, then allow context eviction) is exactly the
+counterexample-driven strategy of \S\ref{sec:calculus}: convert
+context-loss into external persistence, and accept the semantic bet only on
+content that has been durably re-acquirable.
+
+\section{Limits of the Formalization}\label{sec:limits}
+
+Three limits bound what the mathematics establishes.
+
+\begin{enumerate}
+\item \textbf{The value functional is not computable.} $\kappa$ (task
+relevance) is semantic. By analogy with Rice's theorem, no computable
+functional uniformly captures ``relevance to an arbitrary future task'';
+any implemented $\hat\kappa$ is a heuristic that will mis-rank some future
+need. The eviction problem is therefore solved approximately by necessity,
+not by engineering immaturity.
+\item \textbf{The geometry is descriptive, not causal.} That attention is
+monotone in geometric proximity does not explain \emph{why} the model
+attends as it does; the kernels are learned, and their structure is an
+object of study, not a derivation.
+\item \textbf{Introspection is weak evidence.} The author's reports about
+its own context (``the compaction preserved goals but dropped build logs'')
+are self-reports from the system under study. They are consistent with the
+mathematics and with the session's observable outputs, but they are not
+independent measurements.
+\end{enumerate}
+
+\section{Conclusion}
+
+The context window is, formally, a graded quotient of a free monoid; the
+model experiences it as a toroidal-positioned, kernel-attended path through
+$\mathbb{R}^d$; the operator manages it as a Lagrangian-constrained knapsack
+whose exact solution is provably out of reach. A long engineering session
+exercises all three layers simultaneously: the algebra of what is retained,
+the geometry of what is attended, and the calculus of what is evicted. The
+present document was written inside that process, and is itself an artifact
+of its final strategy---persist the durable, compress the rest, and accept
+the bet.
+
+\end{document}

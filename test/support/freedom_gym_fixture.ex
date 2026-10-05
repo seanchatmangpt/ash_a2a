@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.FreedomGym.Facilitator do
   @moduledoc """
   Real fixture resource for the Chicago-Core deterministic tier of the
@@ -314,7 +318,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.FacilitatorAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.Facilitator`,
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.Facilitator`,
   standing in for "the facilitator's own independently-deployed Ash app" in
   the Chicago-Core FreedomGym integration test.
   """
@@ -326,7 +330,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.NewNervousAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.NewNervous`, standing
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.NewNervous`, standing
   in for "the new/nervous participant's own independently-deployed Ash app."
   """
 
@@ -337,7 +341,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.DrunkalogAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.Drunkalog`, standing
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.Drunkalog`, standing
   in for "the drunkalog participant's own independently-deployed Ash app."
   """
 
@@ -348,7 +352,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.EverythingGreatAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.EverythingGreat`,
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.EverythingGreat`,
   standing in for "the everything's-great participant's own
   independently-deployed Ash app."
   """
@@ -360,7 +364,7 @@ end
 
 defmodule AshA2A.Test.Fixture.FreedomGym.HelpRequestAgent do
   @moduledoc """
-  Real `A2A.Agent` for `AshA2A.Test.Fixture.FreedomGym.HelpRequest`,
+  Real `AshA2A.Protocol.Agent` for `AshA2A.Test.Fixture.FreedomGym.HelpRequest`,
   standing in for "the help-requesting participant's own
   independently-deployed Ash app."
   """

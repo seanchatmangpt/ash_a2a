@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.AuthorityNonImplicationsTest do
   @moduledoc """
   RFC-SA2A-001 S29: the eight non-implications, each as its own individually
@@ -121,7 +125,7 @@ defmodule AshA2A.AuthorityNonImplicationsTest do
   test "Authentication NOT=> Authority: a transport-VERIFIED identity carrying authority for one capability cannot act on another",
        %{store_opts: store_opts} do
     # This is the strongest available form of "authenticated": the exact
-    # constructor the A2A adapter uses for an identity `A2A.Plug.Auth` has
+    # constructor the A2A adapter uses for an identity `AshA2A.Protocol.Plug.Auth` has
     # already verified. It really does produce `source: :transport_verified`.
     authenticated = Authority.from_verified_identity("principal-under-test", @observe_capability)
 

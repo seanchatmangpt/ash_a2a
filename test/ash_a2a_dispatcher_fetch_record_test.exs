@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ADispatcherFetchRecordTest.Ticket do
   @moduledoc """
   Real fixture resource, private to this test file (kept out of the shared
@@ -138,11 +142,11 @@ defmodule AshA2ADispatcherFetchRecordTest do
       |> Ash.create!()
 
     message =
-      A2A.Message.new_user([
-        A2A.Part.Data.new(%{"ticket_ref" => ticket.ticket_ref, "status" => "closed"})
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"ticket_ref" => ticket.ticket_ref, "status" => "closed"})
       ])
 
-    assert {:reply, [%A2A.Part.Data{data: %{status: "closed"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{status: "closed"}}]} =
              ReceiptedDispatch.dispatch(:close, message, Ticket)
 
     assert Ash.get!(Ticket, ticket.ticket_ref).status == "closed"
@@ -155,18 +159,18 @@ defmodule AshA2ADispatcherFetchRecordTest do
       |> Ash.create!()
 
     message =
-      A2A.Message.new_user([
-        A2A.Part.Data.new(%{ticket_ref: ticket.ticket_ref, status: "closed"})
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{ticket_ref: ticket.ticket_ref, status: "closed"})
       ])
 
-    assert {:reply, [%A2A.Part.Data{data: %{status: "closed"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{status: "closed"}}]} =
              ReceiptedDispatch.dispatch(:close, message, Ticket)
   end
 
   test "update dispatch still fails closed (missing_argument) when the real primary key is absent" do
     message = data_message(%{"status" => "closed"})
 
-    assert {:input_required, [%A2A.Part.Text{text: text}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{text: text}]} =
              ReceiptedDispatch.dispatch(:close, message, Ticket)
 
     assert text =~ "ticket_ref"
@@ -180,7 +184,7 @@ defmodule AshA2ADispatcherFetchRecordTest do
 
     message = data_message(%{"ticket_ref" => ticket.ticket_ref})
 
-    assert {:reply, [%A2A.Part.Data{}]} = ReceiptedDispatch.dispatch(:remove, message, Ticket)
+    assert {:reply, [%AshA2A.Protocol.Part.Data{}]} = ReceiptedDispatch.dispatch(:remove, message, Ticket)
 
     assert match?({:error, _}, Ash.get(Ticket, ticket.ticket_ref))
   end
@@ -192,15 +196,15 @@ defmodule AshA2ADispatcherFetchRecordTest do
       |> Ash.create!()
 
     message =
-      A2A.Message.new_user([
-        A2A.Part.Data.new(%{
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{
           "order_id" => line_item.order_id,
           "line_no" => line_item.line_no,
           "sku" => "WIDGET-B"
         })
       ])
 
-    assert {:reply, [%A2A.Part.Data{data: %{sku: "WIDGET-B"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{sku: "WIDGET-B"}}]} =
              ReceiptedDispatch.dispatch(:update_sku, message, LineItem)
 
     assert Ash.get!(LineItem, %{order_id: line_item.order_id, line_no: line_item.line_no}).sku ==
@@ -209,11 +213,11 @@ defmodule AshA2ADispatcherFetchRecordTest do
 
   test "update dispatch fails closed when only part of a composite primary key is supplied" do
     message =
-      A2A.Message.new_user([
-        A2A.Part.Data.new(%{"order_id" => "ORD-2", "sku" => "WIDGET-C"})
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"order_id" => "ORD-2", "sku" => "WIDGET-C"})
       ])
 
-    assert {:input_required, [%A2A.Part.Text{text: text}]} =
+    assert {:input_required, [%AshA2A.Protocol.Part.Text{text: text}]} =
              ReceiptedDispatch.dispatch(:update_sku, message, LineItem)
 
     assert text =~ "order_id"

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
   @moduledoc """
   Real inputs for the `SA2A-CANON`, `SA2A-NS`, `SA2A-PROJECTION` and
@@ -461,7 +465,7 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
   end
 
   @doc "An inbound A2A message whose data part asserts admitted, canonical standing."
-  @spec canonical_claim_message() :: A2A.Message.t()
+  @spec canonical_claim_message() :: AshA2A.Protocol.Message.t()
   def canonical_claim_message do
     payload =
       ir_payload()
@@ -479,14 +483,14 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
           ]
       end)
 
-    A2A.Message.new_user([A2A.Part.Data.new(payload)])
+    AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(payload)])
   end
 
   @doc "The data payload of the first data part of a message."
-  @spec message_data(A2A.Message.t()) :: map()
-  def message_data(%A2A.Message{parts: parts}) do
+  @spec message_data(AshA2A.Protocol.Message.t()) :: map()
+  def message_data(%AshA2A.Protocol.Message{parts: parts}) do
     Enum.find_value(parts, %{}, fn
-      %A2A.Part.Data{data: data} -> data
+      %AshA2A.Protocol.Part.Data{data: data} -> data
       _ -> nil
     end)
   end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.SA2APlanFixture do
   @moduledoc """
   Real, shared fixture for the RFC-SA2A-001 S23/S24/S25/S26/S27/S48 tests.

@@ -1,0 +1,35 @@
+version = 1
+
+# Blanket licensing for files that cannot carry comment headers (binary DER
+# fixtures, KID strings, message blobs) and for the docs tree, which is
+# blanket-covered instead of per-file headered (REUSE.toml per REUSE 3.3).
+# docs/archive is deliberately NOT covered: frozen history, carried as an
+# exception per REUSE rules (dep5-equivalent carried exception).
+
+[[annotations]]
+path = [
+  "test/support/approver_fixtures/**",
+  "test/support/hddl/**",
+  "test/support/hosts/**",
+  "test/support/sparql_oracle.py",
+]
+SPDX-FileCopyrightText = "2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "docs/*.md",
+  "docs/assurance/**",
+  "docs/conformance/**",
+  "docs/dfcm/**",
+  "docs/explanation/**",
+  "docs/how-to/**",
+  "docs/jira/**",
+  "docs/reference/**",
+  "docs/rfc/**",
+  "docs/sjira/**",
+  "docs/streams/**",
+  "docs/tutorials/**",
+]
+SPDX-FileCopyrightText = "2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
