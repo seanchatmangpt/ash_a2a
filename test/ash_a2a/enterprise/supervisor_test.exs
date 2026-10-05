@@ -364,6 +364,15 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
   # lazily-started instance from another suite would collide with the
   # supervised child. Stop any pre-existing instance (the pool is
   # self-healing: `ensure_started/0` rebuilds it on the next call).
+  #
+  # The GenServer owns TWO more globally-named resources that are released
+  # only asynchronously when it exits: the linked `DecisionPool.Finch`
+  # process (started inside `init/1`, decision_pool.ex:139-144) and the
+  # `DecisionPool.Cache` ETS table (owned by the GenServer pid). Waiting
+  # only for `whereis(DecisionPool) == nil` races the sibling name-release:
+  # the new supervised child's `init/1` then dies on
+  # `{:error, {:already_started, _}}` from `Finch.start_link` (and on
+  # `ArgumentError` from a still-registered ETS table). Wait for all three.
   defp ensure_decision_pool_free do
     case Process.whereis(AshA2A.AuthZEN.DecisionPool) do
       nil ->
@@ -371,7 +380,12 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
 
       pid ->
         GenServer.stop(pid, :shutdown)
-        wait_until(fn -> Process.whereis(AshA2A.AuthZEN.DecisionPool) == nil end)
+
+        wait_until(fn ->
+          Process.whereis(AshA2A.AuthZEN.DecisionPool) == nil and
+            Process.whereis(AshA2A.AuthZEN.DecisionPool.Finch) == nil and
+            :ets.whereis(AshA2A.AuthZEN.DecisionPool.Cache) == :undefined
+        end)
     end
   end
 end
