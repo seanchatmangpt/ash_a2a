@@ -30,17 +30,33 @@ defmodule AshA2A.AuthZEN.Client do
   @doc """
   Builds a client for the real-PDP path: `transport` defaults to the real
   `DecisionPool` HTTP transport, so the returned client needs no injected fn.
+  An `:transport` opt overrides the default (same contract as `evaluate/2`:
+  receives the encoded Wire map, returns `{:ok, raw_map}`).
   """
   @spec new(Metadata.t(), keyword()) :: t()
   def new(%Metadata{} = metadata, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5_000)
     cache_ttl = Keyword.get(opts, :cache_ttl, 60_000)
 
-    transport = fn endpoint, body ->
-      DecisionPool.post(endpoint, body, @headers, receive_timeout: timeout)
-    end
+    transport = Keyword.get(opts, :transport) || default_transport(timeout)
 
     %__MODULE__{metadata: metadata, transport: transport, cache_ttl: cache_ttl, timeout: timeout}
+  end
+
+  # The default transport owns both wire seams of the `evaluate/2` contract:
+  # it JSON-encodes the outbound Wire map (Finch requires iodata) and
+  # JSON-decodes the inbound 2xx body (decode_and_stamp requires a map).
+  # Transport failures and non-2xx pass through fail-closed.
+  defp default_transport(timeout) do
+    fn endpoint, body ->
+      payload = if is_binary(body), do: body, else: Jason.encode!(body)
+
+      with {:ok, _status, response} <-
+             DecisionPool.post(endpoint, payload, @headers, receive_timeout: timeout),
+           {:ok, raw} <- Jason.decode(response) do
+        {:ok, raw}
+      end
+    end
   end
 
   @doc """

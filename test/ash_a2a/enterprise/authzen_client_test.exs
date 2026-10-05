@@ -76,8 +76,10 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
 
   use ExUnit.Case, async: false
 
-  alias AshA2A.AuthZEN.{Client, DecisionPool, Metadata, Types}
+  alias AshA2A.AuthZEN.{Absorption, Client, DecisionPool, Metadata, Types}
+  alias AshA2A.C2.{AuthorityRequest, Certificate, PreparedEffect}
   alias AshA2A.Enterprise.AuthZENClientCourt.PDP
+  alias AshA2A.SPIFFE.{AttestedIdentity, PDPBinding}
   alias AshA2A.Test.EphemeralHttp
 
   @pdp "https://court-pdp.example"
@@ -143,6 +145,113 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
         :gen_tcp.close(socket)
         Process.sleep(50)
         wait_down(port, attempts - 1)
+    end
+  end
+
+  @spiffe_id "spiffe://prod.example/pdp/authzen"
+
+  defp binding! do
+    %PDPBinding{policy_decision_point: @pdp, spiffe_id: @spiffe_id, trust_domain: "prod.example"}
+  end
+
+  defp attested! do
+    {:ok, attested} =
+      AttestedIdentity.from_verified(@spiffe_id,
+        svid_type: :x509,
+        bundle_digest: "sha256:bundle",
+        observed_at: 1
+      )
+
+    attested
+  end
+
+  defp authority_ctx do
+    %{
+      policy_epoch: 1,
+      revocation_epoch: 2,
+      generation: 3,
+      audience: "actuator:payments",
+      local_certificate_issuer: __MODULE__.LocalIssuer
+    }
+  end
+
+  # V4-21 defect-handoff proof: the REAL `Client.new/2` default transport (no
+  # shim) carries `Absorption.authorize/5` end-to-end over the real PDP.
+  test "absorption: the real default transport admits end-to-end through Absorption.authorize/5",
+       %{
+         client: client,
+         table: table
+       } do
+    effect = PreparedEffect.new("principal:alice", :payments, %{"id" => 42}, %{"amount" => 100})
+    ctx = authority_ctx()
+    request = AuthorityRequest.new(effect, ctx)
+
+    allow(table, "principal:alice", "payments", effect.digest, true)
+
+    assert {:ok, response, receipt} =
+             Absorption.authorize(request, client, attested!(), binding!(), ctx)
+
+    assert %Certificate{} = response.certificate
+    assert response.certificate.effect_digest == effect.digest
+
+    assert %{
+             "subject" => %{"type" => "sa2a-principal", "id" => "principal:alice"},
+             "action" => %{"name" => "payments"},
+             "resource" => %{"type" => "sa2a-prepared-effect", "id" => resource_id}
+           } = :ets.lookup_element(table, :last_request, 2)
+
+    assert resource_id == effect.digest
+
+    assert receipt.authority == :none
+    assert receipt.consequence == :evidence_only
+  end
+
+  test "absorption: PDP down fail-closes through the real default transport", %{client: client} do
+    effect = PreparedEffect.new("principal:alice", :payments, %{"id" => 42}, %{})
+    ctx = authority_ctx()
+    request = AuthorityRequest.new(effect, ctx)
+
+    {:ok, latch} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, active: false, backlog: 1)
+    {:ok, dead_port} = :inet.port(latch)
+
+    dead_client =
+      Client.new(
+        %{
+          client.metadata
+          | access_evaluation_endpoint: "http://127.0.0.1:#{dead_port}/access/v1/evaluation"
+        },
+        timeout: 150
+      )
+
+    assert {:error, :pdp_unreachable} =
+             Absorption.authorize(request, dead_client, attested!(), binding!(), ctx)
+
+    :gen_tcp.close(latch)
+  end
+
+  defmodule LocalIssuer do
+    @moduledoc """
+    Real hand-written certificate issuer (same pattern as
+    `AshA2A.SPIFFE.PDPBindingTest.LocalIssuer`): a real interface
+    implementation, not a mock.
+    """
+
+    def issue(request, _ctx) do
+      {:ok,
+       %Certificate{
+         version: 1,
+         effect_digest: request.effect_digest,
+         principal: request.principal,
+         policy_epoch: request.policy_epoch,
+         revocation_epoch: request.revocation_epoch,
+         generation: request.generation,
+         nonce: "0123456789abcdef",
+         not_before_ms: 0,
+         expires_at_ms: 10_000,
+         audience: request.audience,
+         threshold: 1,
+         signatures: []
+       }}
     end
   end
 
