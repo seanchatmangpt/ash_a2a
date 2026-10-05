@@ -421,7 +421,7 @@ if Code.ensure_loaded?(Plug) do
           send_json(conn, Response.error(nil, Error.parse_error("Body too large")))
 
         {:error, reason} ->
-          send_json(conn, Response.error(nil, Error.internal_error(inspect(reason))))
+          send_json(conn, Response.error(nil, internal_error(reason)))
       end
     end
 
@@ -491,7 +491,7 @@ if Code.ensure_loaded?(Plug) do
             {:error, Error.invalid_agent_response("Message reply to a task-scoped request")}
 
           {:error, reason} ->
-            {:error, Error.internal_error(inspect(reason))}
+            {:error, internal_error(reason)}
         end
       end
     end
@@ -515,8 +515,10 @@ if Code.ensure_loaded?(Plug) do
           {:error, :not_found} ->
             {:error, Error.task_not_found()}
 
-          {:error, reason} ->
-            {:error, Error.task_not_cancelable(inspect(reason))}
+          {:error, _reason} ->
+            # The cancel failure reason is internal state; -32002 carries no
+            # detail (SEC-08 — same redaction discipline as internal_error/1).
+            {:error, Error.task_not_cancelable()}
         end
       else
         {:error, :not_found} -> {:error, Error.task_not_found()}
@@ -534,7 +536,7 @@ if Code.ensure_loaded?(Plug) do
           {:error, Error.invalid_params("\"pageToken\" is invalid")}
 
         {:error, reason} ->
-          {:error, Error.internal_error(inspect(reason))}
+          {:error, internal_error(reason)}
       end
     end
 
@@ -547,7 +549,7 @@ if Code.ensure_loaded?(Plug) do
 
         case GenServer.call(agent, {:set_push_config, config}) do
           {:ok, _config} = ok -> ok
-          {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+          {:error, reason} -> {:error, internal_error(reason)}
         end
       end
     end
@@ -589,6 +591,15 @@ if Code.ensure_loaded?(Plug) do
         {:ok, task} -> {:ok, task}
         {:error, :not_found} -> {:error, :not_found}
       end
+    end
+
+    # SEC-08: internal failure reasons never reach the wire verbatim — the
+    # caller gets -32603 with an opaque correlation `ref`; the full reason is
+    # logged server-side under the same ref (AshA2A.Transport.SafeError, the
+    # same convention AshA2A.Transport.Plug and AshA2A.ToA2AError use).
+    defp internal_error(reason) do
+      %{ref: ref} = AshA2A.Transport.SafeError.internal(:internal_error, reason)
+      Error.internal_error(%{"code" => "internal_error", "ref" => ref})
     end
 
     defp push_declared(plug_opts) do
@@ -668,8 +679,25 @@ if Code.ensure_loaded?(Plug) do
     defp merge_unless_nil(base, nil), do: base
     defp merge_unless_nil(base, override), do: Map.merge(base, override)
 
+    # Reserved metadata keys the CALLER may never set: `"a2a.auth"` is the
+    # verified identity the Auth plug stored on the conn (resolve_opts/2 puts
+    # it under plug_opts.metadata last), `"ash_a2a.owner"` is the transport's
+    # unforgeable owner key. Both are merged AFTER this function consumes
+    # params.metadata downstream, so a caller-supplied value must be dropped
+    # before the merge or it clobbers the verified identity (an attacker
+    # answering as a different principal, or silently downgrading auth to
+    # :anonymous). Mirrors AshA2A.Transport.Plug.call_opts/2, which drops the
+    # same keys for the same reason.
+    @reserved_metadata_keys ["a2a.auth", "ash_a2a.owner"]
+
     defp request_metadata(params, plug_opts) do
-      merge_unless_nil(plug_opts.metadata, params["metadata"])
+      caller_metadata =
+        case params["metadata"] do
+          %{} = m -> Map.drop(m, @reserved_metadata_keys)
+          _ -> nil
+        end
+
+      merge_unless_nil(plug_opts.metadata, caller_metadata)
     end
 
     defp maybe_put(opts, _key, nil), do: opts

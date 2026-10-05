@@ -39,11 +39,34 @@ if Code.ensure_loaded?(Req) do
 
     @impl AshA2A.Protocol.PushNotificationSender
     def deliver(config, payload, opts \\ []) do
-      with :ok <- validate_url(config.url, opts) do
+      with :ok <- validate_url(config.url, opts),
+           :ok <- validate_auth(config) do
         attempts = Keyword.get(opts, :attempts, @default_attempts)
         post_with_retry(config, payload, opts, attempts, 1)
       end
     end
+
+    # The configured credentials travel verbatim inside the `authorization`
+    # request header. A credential carrying CR/LF/NUL is a header-injection /
+    # request-smuggling vector (and would only crash the delivery process in
+    # Mint anyway), so it is refused typed before any connection is opened.
+    defp validate_auth(%{authentication: %{scheme: scheme, credentials: credentials}})
+         when is_binary(scheme) and is_binary(credentials) do
+      if safe_header_value?(scheme) and safe_header_value?(credentials),
+        do: :ok,
+        else: {:error, {:invalid_credentials, :control_characters}}
+    end
+
+    defp validate_auth(%{token: token}) when is_binary(token) do
+      if safe_header_value?(token),
+        do: :ok,
+        else: {:error, {:invalid_credentials, :control_characters}}
+    end
+
+    defp validate_auth(_config), do: :ok
+
+    defp safe_header_value?(value),
+      do: value != "" and not String.contains?(value, ["\r", "\n", "\0"])
 
     defp post_with_retry(config, payload, opts, attempts, attempt) do
       case post(config, payload, opts) do
@@ -99,6 +122,12 @@ if Code.ensure_loaded?(Req) do
       uri = URI.parse(url)
 
       cond do
+        # Only HTTP(S) delivery is defined; a caller-supplied config URL with
+        # any other scheme (file://, ftp://, gopher://...) is refused before
+        # Req ever sees it — unconditionally, dev-friendly defaults or not.
+        uri.scheme not in ["http", "https"] ->
+          {:error, {:unsupported_scheme, uri.scheme}}
+
         Keyword.get(opts, :require_https, false) and uri.scheme != "https" ->
           {:error, {:insecure_url, url}}
 
