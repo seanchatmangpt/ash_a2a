@@ -80,6 +80,9 @@ defmodule AshA2A.Protocol.CardSigning do
     `:crypto`) is supported. Any other value: `sign/3` raises
     `ArgumentError`; `verify/2` refuses entries whose protected header does
     not claim exactly `"HS256"` as `{:error, {:malformed, ...}}`.
+  - `:kid` — key identifier. When set, both the JWS protected header and the
+    unprotected `header` carry `"kid"` (A2A v1.0 spec §8.4.2
+    CARD-SIGN-003: the protected header MUST include `alg` AND `kid`).
   - `:url` — agent endpoint URL, forwarded to
     `AshA2A.Protocol.JSON.encode_agent_card/2` as the seed for the default
     `supportedInterfaces[0].url`. Defaults to the card's `url` field, then
@@ -118,7 +121,7 @@ defmodule AshA2A.Protocol.CardSigning do
       card = AshA2A.Protocol.CardSigning.sign(card, key)
       length(card.signatures) #=> 1
 
-  See the moduledoc for the JWS entry shape and the `:alg` / `:url` options.
+  See the moduledoc for the JWS entry shape and the `:alg` / `:kid` / `:url` options.
 
       iex> card = AshA2A.Info.agent_card(AshA2A.Test.Fixture.Echo)
       iex> key = :crypto.strong_rand_bytes(32)
@@ -131,18 +134,23 @@ defmodule AshA2A.Protocol.CardSigning do
   @spec sign(AgentCard.t(), binary(), keyword()) :: AgentCard.t()
   def sign(%AgentCard{} = card, key, opts \\ []) when is_binary(key) do
     alg = alg!(Keyword.get(opts, :alg, @alg))
+    kid = Keyword.get(opts, :kid)
 
     jcs_bytes = jcs_bytes(card, opts)
     digest = sha256_hex(jcs_bytes)
 
-    protected = Jason.encode!(%{"alg" => alg, "typ" => @typ, @digest_member => digest})
+    protected_map = %{"alg" => alg, "typ" => @typ, @digest_member => digest}
+    protected_map = if kid, do: Map.put(protected_map, "kid", kid), else: protected_map
+
+    protected = Jason.encode!(protected_map)
     protected_b64 = b64url_encode(protected)
 
-    signature = :crypto.mac(:hmac, :sha256, key, signing_input(protected_b64, jcs_bytes))
+    signature =
+      :crypto.mac(:hmac, :sha256, key, signing_input(protected_b64, jcs_bytes))
 
     entry = %{
       "protected" => protected_b64,
-      "header" => %{"alg" => alg, "typ" => @typ},
+      "header" => protected_map,
       "signature" => b64url_encode(signature)
     }
 
