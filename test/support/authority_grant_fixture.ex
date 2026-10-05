@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.ActuationCounter do
   @moduledoc """
   Real, separately-supervised counter process (a plain `Agent`) used as the
@@ -5,7 +9,7 @@ defmodule AshA2A.Test.Fixture.ActuationCounter do
   `test/ash_a2a_authority_capability_grant_test.exs`.
 
   Deliberately a real process rather than a `send(self(), ...)` marker: the
-  real Ash action body runs inside the `A2A.Agent` GenServer's own process,
+  real Ash action body runs inside the `AshA2A.Protocol.Agent` GenServer's own process,
   not the test process, so a `self()`-directed message can never reach the
   test and a `refute_receive` on one would pass vacuously whether or not the
   action ran. A named counter process is observed by the test with a real
@@ -101,7 +105,7 @@ defmodule AshA2A.Test.Fixture.GrantProbeDomain do
 end
 
 defmodule AshA2A.Test.Fixture.GrantProbeAgent do
-  @moduledoc "Real `A2A.Agent` GenServer over `AshA2A.Test.Fixture.GrantProbe`."
+  @moduledoc "Real `AshA2A.Protocol.Agent` GenServer over `AshA2A.Test.Fixture.GrantProbe`."
 
   use AshA2A.Agent,
     resource_or_domain: AshA2A.Test.Fixture.GrantProbe,

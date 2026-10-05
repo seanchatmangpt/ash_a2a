@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.OnCancel do
   @moduledoc """
   Behaviour for a resource author's real Ash-side compensation hook, run when
@@ -41,7 +45,7 @@ defmodule AshA2A.OnCancel do
   ## Failure handling
 
   `AshA2A.Agent.__cancel__/2` always returns `:ok` -- that is the contract
-  `A2A.Agent`'s own state machine requires from `handle_cancel/1`
+  `AshA2A.Protocol.Agent`'s own state machine requires from `handle_cancel/1`
   (`~/xaas/deps/a2a/lib/a2a/agent.ex:148-153`), and the task is already
   being transitioned to `:canceled` regardless of what a resource author's
   hook does. A hook that raises, exits, or returns anything other than `:ok`

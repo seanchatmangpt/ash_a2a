@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.Ownership do
   @moduledoc """
   Task ownership and credential hygiene for `AshA2A.A2ATransport.Plug`.
 
-  The vendored `A2A.Plug` stores the caller's verified identity in the call
-  metadata as `"a2a.auth"`, and `A2A.Agent` copies call metadata verbatim into
+  The vendored `AshA2A.Protocol.Plug` stores the caller's verified identity in the call
+  metadata as `"a2a.auth"`, and `AshA2A.Protocol.Agent` copies call metadata verbatim into
   `task.metadata`. Two consequences this module closes for the methods the
   transport implements itself:
 
@@ -28,7 +32,7 @@ defmodule AshA2A.A2ATransport.Ownership do
   @doc "Principal key of the verified caller on `conn` (`:anonymous` when none)."
   @spec caller(Plug.Conn.t()) :: Principal.key()
   def caller(conn) do
-    case A2A.Plug.Auth.get_identity(conn) do
+    case AshA2A.Protocol.Plug.Auth.get_identity(conn) do
       %{identity: identity} -> Principal.key(identity)
       _ -> :anonymous
     end
@@ -39,7 +43,7 @@ defmodule AshA2A.A2ATransport.Ownership do
   `{:error, :not_found}`, indistinguishable from a missing one.
   """
   @spec fetch(GenServer.server(), term(), Principal.key()) ::
-          {:ok, A2A.Task.t()} | {:error, :not_found}
+          {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found}
   def fetch(agent, task_id, principal) when is_binary(task_id) do
     with {:ok, task} <- GenServer.call(agent, {:get_task, task_id}),
          true <- Runtime.owned_by?(task, principal) do
@@ -52,8 +56,8 @@ defmodule AshA2A.A2ATransport.Ownership do
   def fetch(_agent, _task_id, _principal), do: {:error, :not_found}
 
   @doc "Removes verified auth, owner key and stream ref from a task's metadata."
-  @spec strip_task(A2A.Task.t()) :: A2A.Task.t()
-  def strip_task(%A2A.Task{metadata: metadata} = task) when is_map(metadata),
+  @spec strip_task(AshA2A.Protocol.Task.t()) :: AshA2A.Protocol.Task.t()
+  def strip_task(%AshA2A.Protocol.Task{metadata: metadata} = task) when is_map(metadata),
     do: %{task | metadata: Map.drop(metadata, @internal_keys)}
 
   def strip_task(task), do: task

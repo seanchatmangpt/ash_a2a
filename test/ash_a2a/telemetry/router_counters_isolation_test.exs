@@ -139,8 +139,8 @@ defmodule AshA2A.Telemetry.RouterCountersIsolationTest do
   end
 
   defp facts_message(driver_idx) do
-    A2A.Message.new_user([
-      A2A.Part.Data.new(%{"goal_facts" => goal_facts_envelope(driver_idx)})
+    AshA2A.Protocol.Message.new_user([
+      AshA2A.Protocol.Part.Data.new(%{"goal_facts" => goal_facts_envelope(driver_idx)})
     ])
   end
 
@@ -164,7 +164,7 @@ defmodule AshA2A.Telemetry.RouterCountersIsolationTest do
   end
 
   defp route_phrase_tier! do
-    RequestRouter.route(HddlDeterministicFixture, A2A.Message.new_user("create a labeled item"),
+    RequestRouter.route(HddlDeterministicFixture, AshA2A.Protocol.Message.new_user("create a labeled item"),
       phrase_templates: [phrase_template()]
     )
   end

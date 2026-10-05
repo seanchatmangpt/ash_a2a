@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SemanticProjectionR2RMLRealTest do
   @moduledoc """
   Real Chicago-style coverage for GAP D (Squad F agent 29): proves the

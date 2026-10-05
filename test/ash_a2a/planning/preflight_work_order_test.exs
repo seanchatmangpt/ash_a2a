@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Planning.PreflightWorkOrderTest do
   @moduledoc """
   The work-order binding edge of `AshA2A.Planning.Preflight` (v26.9.25 lane

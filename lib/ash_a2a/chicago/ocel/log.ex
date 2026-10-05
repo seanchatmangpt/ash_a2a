@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Ocel.Log do
   @moduledoc """
   Producer-side OCEL 2.0 log builder and JSON serializer (RFC-SA2A-002 §15).

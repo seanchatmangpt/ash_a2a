@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.SSE do
   @moduledoc """
   SSE side of `message/stream` and `tasks/resubscribe`.
@@ -18,14 +22,15 @@ defmodule AshA2A.A2ATransport.SSE do
       final event.
 
   Every SSE frame carries `id: <seq>` (the task-local event sequence) and a
-  JSON-RPC success envelope as `data:`. Idle connections get a `: keepalive`
-  comment every `:heartbeat_ms` and are closed after `:max_idle_ms` without
-  events.
+  JSON-RPC success envelope as `data:` whose `result` is a v1.0 `StreamResponse`
+  wrapper (`{"task" | "statusUpdate" | "artifactUpdate" => ...}`). Idle
+  connections get a `: keepalive` comment every `:heartbeat_ms` and are closed
+  after `:max_idle_ms` without events.
   """
 
   import Plug.Conn
 
-  alias A2A.JSONRPC.{Error, Response}
+  alias AshA2A.Protocol.JSONRPC.{Error, Response}
   alias AshA2A.A2ATransport
   alias AshA2A.A2ATransport.{Ownership, TaskEvents}
 
@@ -34,14 +39,14 @@ defmodule AshA2A.A2ATransport.SSE do
           Plug.Conn.t(),
           atom(),
           GenServer.server(),
-          A2A.Message.t(),
+          AshA2A.Protocol.Message.t(),
           term(),
           keyword(),
           keyword()
         ) ::
           Plug.Conn.t()
   def stream_message(conn, transport, agent, message, id, call_opts, sse_opts) do
-    with {:ok, task, enum} <- A2A.stream(agent, message, call_opts),
+    with {:ok, task, enum} <- AshA2A.Protocol.stream(agent, message, call_opts),
          _ = run_on_task(Keyword.get(sse_opts, :on_task), task),
          snapshot = encode_task(task),
          _seq = TaskEvents.publish(transport, task.id, "task", snapshot),
@@ -53,7 +58,18 @@ defmodule AshA2A.A2ATransport.SSE do
       |> replay_and_follow(transport, task.id, id, backlog, 0, sse_opts)
     else
       {:error, reason} ->
-        send_json(conn, Response.error(id, Error.internal_error(inspect(reason))))
+        # SEC-08/credential hygiene: `reason` can carry the task struct with
+        # metadata["a2a.auth"] (e.g. {:not_streaming, task}) — inspect/1 here
+        # streamed raw bearer tokens into the -32603 data. The wire gets the
+        # redacted class as a STRING (redact/1 returns tagged tuples, which
+        # are not JSON-encodable); detail stays server-side.
+        send_json(
+          conn,
+          Response.error(
+            id,
+            Error.internal_error(inspect(AshA2A.Transport.SafeError.redact(reason)))
+          )
+        )
     end
   end
 
@@ -107,11 +123,11 @@ defmodule AshA2A.A2ATransport.SSE do
     try do
       Enum.each(enum, fn part ->
         event =
-          A2A.Event.ArtifactUpdate.new(task.id, A2A.Artifact.new([part]),
+          AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, AshA2A.Protocol.Artifact.new([part]),
             context_id: task.context_id
           )
 
-        TaskEvents.publish(transport, task.id, "artifact-update", A2A.JSON.encode!(event))
+        TaskEvents.publish(transport, task.id, "artifact-update", encode_event(event))
       end)
 
       # The agent's stream wrapper casts {:stream_done, ...} from this process
@@ -243,11 +259,12 @@ defmodule AshA2A.A2ATransport.SSE do
 
   @doc false
   def encode_task(task) do
-    task |> Ownership.strip_task() |> A2A.JSON.encode!()
+    {:ok, wrapped} = task |> Ownership.strip_task() |> AshA2A.Protocol.JSON.encode_stream_response()
+    wrapped
   end
 
   # A stream closes for a resubscriber when the task is terminal or paused for input.
-  defp closed_state?(task), do: A2A.Task.terminal?(task) or task.status.state == :input_required
+  defp closed_state?(task), do: AshA2A.Protocol.Task.terminal?(task) or task.status.state == :input_required
 
   @doc false
   def final_status(task), do: status_event(task, task.status.state, task.status.message)
@@ -256,14 +273,22 @@ defmodule AshA2A.A2ATransport.SSE do
     message =
       case message do
         nil -> nil
-        text when is_binary(text) -> A2A.Message.new_agent(text)
-        %A2A.Message{} = m -> m
+        text when is_binary(text) -> AshA2A.Protocol.Message.new_agent(text)
+        %AshA2A.Protocol.Message{} = m -> m
       end
 
-    A2A.Event.StatusUpdate.new(task.id, A2A.Task.Status.new(state, message),
+    AshA2A.Protocol.Event.StatusUpdate.new(task.id, AshA2A.Protocol.Task.Status.new(state, message),
       context_id: task.context_id,
       final: true
     )
-    |> A2A.JSON.encode!()
+    |> encode_event()
+  end
+
+  # Every logged/published payload is a v1.0 `StreamResponse` wrapper
+  # (`{"task" | "statusUpdate" | "artifactUpdate" => ...}`): the SSE frame and
+  # the webhook body are both the payload encoded as-is.
+  defp encode_event(event) do
+    {:ok, wrapped} = AshA2A.Protocol.JSON.encode_stream_response(event)
+    wrapped
   end
 end

@@ -1,0 +1,965 @@
+{
+  "corpus": "a2a_v1_spec_corpus",
+  "lane": "X6",
+  "purpose": "Frozen corpus of REAL Agent2Agent (A2A) v1.0 wire examples extracted programmatically (byte-faithful) from the official specification, used to prove the AshA2A.Protocol.JSON codec accepts every one into its corresponding struct. Members the codec rejects are pinned as codec_gap findings with the exact decode error; members the codec accepts must survive decode -> encode -> decode with struct equality.",
+  "spec_source": {
+    "document": "Agent2Agent (A2A) Protocol Specification, v1.0 line (latest)",
+    "url": "https://a2a-protocol.org/latest/specification/",
+    "fetched_from": "https://raw.githubusercontent.com/a2aproject/A2A/main/docs/specification.md",
+    "fetched_at": "2026-10-04"
+  },
+  "conventions": {
+    "expect": {
+      "decode": "The real codec decode path must accept the member into its struct and survive decode -> encode -> decode struct-equality round trip.",
+      "codec_gap": "The real codec decode path demonstrably rejects a spec-real member, or no decode path exists. The exact decode error / probe outcome is pinned here as a regression spec; the member the codec does not accept is named in the finding. No lib/ code was edited to make these pass."
+    },
+    "decode_values": {
+      "agent_card": "AshA2A.Protocol.JSON.decode_agent_card/1",
+      "jsonrpc_request": "AshA2A.Protocol.JSONRPC.Request.parse/1",
+      "jsonrpc_error": "no decode path exists (Error is encode-only) - asserted via codec_gap probes",
+      "task|status|message|artifact|part|event": "AshA2A.Protocol.JSON.decode/2 with that domain atom"
+    },
+    "deviations": "Minimal normalization applied ONLY where an example is demonstrably pseudo-code at the syntax level. Each deviation is listed per-entry in `deviations`. Everything else is verbatim."
+  },
+  "excluded_as_pseudo_code": [
+    "L2282 JSON-RPC generic envelope with /* method-specific parameters */ comment",
+    "L2312 SendMessageResponse envelope with /* comment */ result body (no concrete member to decode)",
+    "HTTP example L848 push-notification webhook template with /* StreamResponse object */ comments",
+    "L1570 ListTasksSuccess example whose tasks array is `/* ... additional tasks */` (the page envelope also has no codec struct - noted in findings)",
+    "L1859 extended-card response with /* Extended skills */ comment",
+    "L2960/L2971 message:stream request/response templates with /* comment */ bodies",
+    "L1832/L2039/L2064 capability-extension partial snippets (AgentCapabilities fragments, not full members)",
+    "L2775/L2822/L2880/L2886/L2928 REST-binding illustrative fragments already captured or template-only"
+  ],
+  "findings_summary": [
+    "F1: spec Message examples without messageId (L1087 extensions/metadata example; the L1406 input-required status.message) are rejected by the codec: {:error, {:missing_field, \"messageId\"}}.",
+    "F2: JSON-RPC error-response envelopes (L2469, suite L2493) have no decode path into %AshA2A.Protocol.JSONRPC.Error{} - Error implements to_map/1 (encode) only; a proxy/relay cannot decode a peer's error envelope.",
+    "F3 (silent drop, decodes fine): AgentCard wire key `securityRequirements` (L2114 GeoSpatial card) is not read by decode_agent_card/1 - it only reads `security`, so the member decodes but security requirements are silently dropped and never re-encoded.",
+    "F4 (silent drop, decodes fine): per-skill `examples`, `inputModes`, `outputModes` and other card/skill extras are dropped by the card decoder; struct equality still holds because the first decode already dropped them.",
+    "F5: the spec's L1008 AgentCard example omits `version` even though a2a.proto marks AgentCard.version REQUIRED - the codec rejects the spec's own example with {:error, {:missing_field, \"version\"}}. The codec matches the spec's schema here; the spec example is internally non-conformant."
+  ],
+  "examples": [
+    {
+      "id": "agent-card-research-assistant",
+      "family": "agent_card",
+      "source": "specification.md L1008 - AgentCard example (Research Assistant Agent)",
+      "expect": "codec_gap",
+      "decode": "agent_card",
+      "deviations": [
+        "Spec snippet has a trailing comma after supportedInterfaces[0].protocolVersion (pseudo-code at the syntax level); removed so the member parses as JSON. No other change."
+      ],
+      "finding": "The codec requires the `version` member on AgentCard, which the proto marks REQUIRED (a2a.proto AgentCard.version field_behavior REQUIRED), but the spec's own L1008 example omits it - the spec example is non-conformant to the spec's own schema. The member the codec does not accept is the card as printed. Exact decode error: {:error, {:missing_field, \"version\"}}.",
+      "expected_error": [
+        "missing_field",
+        "version"
+      ],
+      "wire": {
+        "name": "Research Assistant Agent",
+        "description": "AI agent for academic research and fact-checking",
+        "supportedInterfaces": [
+          {
+            "url": "https://research-agent.example.com/a2a/v1",
+            "protocolBinding": "HTTP+JSON",
+            "protocolVersion": "0.3"
+          }
+        ],
+        "capabilities": {
+          "streaming": false,
+          "pushNotifications": false,
+          "extensions": [
+            {
+              "uri": "https://standards.org/extensions/citations/v1",
+              "description": "Provides citation formatting and source verification",
+              "required": false
+            },
+            {
+              "uri": "https://example.com/extensions/geolocation/v1",
+              "description": "Location-based search capabilities",
+              "required": false
+            }
+          ]
+        },
+        "defaultInputModes": [
+          "text/plain"
+        ],
+        "defaultOutputModes": [
+          "text/plain"
+        ],
+        "skills": [
+          {
+            "id": "academic-research",
+            "name": "Academic Research Assistant",
+            "description": "Provides research assistance with citations and source verification",
+            "tags": [
+              "research",
+              "citations",
+              "academic"
+            ],
+            "examples": [
+              "Find peer-reviewed articles on climate change"
+            ],
+            "inputModes": [
+              "text/plain"
+            ],
+            "outputModes": [
+              "text/plain"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "agent-card-geospatial",
+      "family": "agent_card",
+      "source": "specification.md L2114 - full AgentCard example (GeoSpatial Route Planner Agent)",
+      "expect": "decode",
+      "decode": "agent_card",
+      "deviations": [],
+      "wire": {
+        "name": "GeoSpatial Route Planner Agent",
+        "description": "Provides advanced route planning, traffic analysis, and custom map generation services. This agent can calculate optimal routes, estimate travel times considering real-time traffic, and create personalized maps with points of interest.",
+        "supportedInterfaces": [
+          {
+            "url": "https://georoute-agent.example.com/a2a/v1",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0"
+          },
+          {
+            "url": "https://georoute-agent.example.com/a2a/grpc",
+            "protocolBinding": "GRPC",
+            "protocolVersion": "1.0"
+          },
+          {
+            "url": "https://georoute-agent.example.com/a2a/json",
+            "protocolBinding": "HTTP+JSON",
+            "protocolVersion": "1.0"
+          }
+        ],
+        "provider": {
+          "organization": "Example Geo Services Inc.",
+          "url": "https://www.examplegeoservices.com"
+        },
+        "iconUrl": "https://georoute-agent.example.com/icon.png",
+        "version": "1.2.0",
+        "documentationUrl": "https://docs.examplegeoservices.com/georoute-agent/api",
+        "capabilities": {
+          "streaming": true,
+          "pushNotifications": true,
+          "extendedAgentCard": true
+        },
+        "securitySchemes": {
+          "google": {
+            "openIdConnectSecurityScheme": {
+              "openIdConnectUrl": "https://accounts.google.com/.well-known/openid-configuration"
+            }
+          }
+        },
+        "securityRequirements": [
+          {
+            "schemes": {
+              "google": {
+                "list": [
+                  "openid",
+                  "profile",
+                  "email"
+                ]
+              }
+            }
+          }
+        ],
+        "defaultInputModes": [
+          "application/json",
+          "text/plain"
+        ],
+        "defaultOutputModes": [
+          "application/json",
+          "image/png"
+        ],
+        "skills": [
+          {
+            "id": "route-optimizer-traffic",
+            "name": "Traffic-Aware Route Optimizer",
+            "description": "Calculates the optimal driving route between two or more locations, taking into account real-time traffic conditions, road closures, and user preferences (e.g., avoid tolls, prefer highways).",
+            "tags": [
+              "maps",
+              "routing",
+              "navigation",
+              "directions",
+              "traffic"
+            ],
+            "examples": [
+              "Plan a route from '1600 Amphitheatre Parkway, Mountain View, CA' to 'San Francisco International Airport' avoiding tolls.",
+              "{\"origin\": {\"lat\": 37.422, \"lng\": -122.084}, \"destination\": {\"lat\": 37.7749, \"lng\": -122.4194}, \"preferences\": [\"avoid_ferries\"]}"
+            ],
+            "inputModes": [
+              "application/json",
+              "text/plain"
+            ],
+            "outputModes": [
+              "application/json",
+              "application/vnd.geo+json",
+              "text/html"
+            ]
+          },
+          {
+            "id": "custom-map-generator",
+            "name": "Personalized Map Generator",
+            "description": "Creates custom map images or interactive map views based on user-defined points of interest, routes, and style preferences. Can overlay data layers.",
+            "tags": [
+              "maps",
+              "customization",
+              "visualization",
+              "cartography"
+            ],
+            "examples": [
+              "Generate a map of my upcoming road trip with all planned stops highlighted.",
+              "Show me a map visualizing all coffee shops within a 1-mile radius of my current location."
+            ],
+            "inputModes": [
+              "application/json"
+            ],
+            "outputModes": [
+              "image/png",
+              "image/jpeg",
+              "application/json",
+              "text/html"
+            ]
+          }
+        ],
+        "signatures": [
+          {
+            "protected": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpPU0UiLCJraWQiOiJrZXktMSIsImprdSI6Imh0dHBzOi8vZXhhbXBsZS5jb20vYWdlbnQvandrcy5qc29uIn0",
+            "signature": "QFdkNLNszlGj3z3u0YQGt_T9LixY3qtdQpZmsTdDHDe3fXV9y9-B3m2-XgCpzuhiLt8E0tV6HXoZKHv4GtHgKQ"
+          }
+        ]
+      }
+    },
+    {
+      "id": "message-extensions-metadata",
+      "family": "message",
+      "source": "specification.md L1087 - Message example with extensions + per-extension metadata",
+      "expect": "codec_gap",
+      "decode": "message",
+      "deviations": [],
+      "finding": "The codec requires messageId on Message; this spec-real Message carries role/parts/extensions/metadata only. The member the codec does not accept is the Message itself, rejected on the missing `messageId` member. Exact decode error: {:error, {:missing_field, \"messageId\"}}.",
+      "expected_error": [
+        "missing_field",
+        "messageId"
+      ],
+      "wire": {
+        "role": "ROLE_USER",
+        "parts": [
+          {
+            "text": "Find restaurants near me"
+          }
+        ],
+        "extensions": [
+          "https://example.com/extensions/geolocation/v1"
+        ],
+        "metadata": {
+          "https://example.com/extensions/geolocation/v1": {
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+            "accuracy": 10.0,
+            "timestamp": "2025-10-21T14:30:00Z"
+          }
+        }
+      }
+    },
+    {
+      "id": "message-send-weather",
+      "family": "message",
+      "source": "HTTP binding example, specification.md L1314 - SendMessageRequest body",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "message": {
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "What is the weather today?"
+            }
+          ],
+          "messageId": "msg-uuid"
+        }
+      }
+    },
+    {
+      "id": "message-with-part-metadata",
+      "family": "message",
+      "source": "HTTP binding example, specification.md L1759 - SendMessageRequest body with structured part metadata",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "message": {
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Show me a list of my open IT tickets",
+              "metadata": {
+                "mediaType": "application/json",
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ticketNumber": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "messageId": "85b26db5-ffbb-4278-a5da-a7b09dea1b47"
+        }
+      }
+    },
+    {
+      "id": "message-flat-file-part",
+      "family": "message",
+      "source": "HTTP binding example, specification.md L1698 - SendMessageRequest with flat v1.0 file part (raw/filename/mediaType)",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [
+        "Spec snippet is not valid JSON: missing comma after the part's `raw` value and a trailing comma after mediaType; both fixed. The truncated placeholder base64 `iVBORw0KGgo...` (pseudo-code ellipsis) replaced with valid base64 of the 8-byte PNG magic header."
+      ],
+      "wire": {
+        "message": {
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Analyze this image and highlight any faces."
+            },
+            {
+              "raw": "iVBORw0KGgo=",
+              "filename": "input_image.png",
+              "mediaType": "image/png"
+            }
+          ],
+          "messageId": "6dbc13b5-bd57-4c2b-b503-24e381b6c8d6"
+        }
+      }
+    },
+    {
+      "id": "message-accepted-output-modes",
+      "family": "message",
+      "source": "specification.md L2822 - SendMessageRequest with configuration.acceptedOutputModes",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "message": {
+          "messageId": "uuid",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        },
+        "configuration": {
+          "acceptedOutputModes": [
+            "text/plain"
+          ]
+        }
+      }
+    },
+    {
+      "id": "task-completed-weather",
+      "family": "task",
+      "source": "HTTP binding example, specification.md L1331 - SendMessageResponse body with completed Task",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "task": {
+          "id": "task-uuid",
+          "contextId": "context-uuid",
+          "status": {
+            "state": "TASK_STATE_COMPLETED"
+          },
+          "artifacts": [
+            {
+              "artifactId": "artifact-uuid",
+              "name": "Weather Report",
+              "parts": [
+                {
+                  "text": "Today will be sunny with a high of 75°F"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "task-input-required-clarification",
+      "family": "task",
+      "source": "HTTP binding example, specification.md L1406 - input-required Task with clarification message",
+      "expect": "codec_gap",
+      "decode": "event",
+      "deviations": [],
+      "finding": "The status.message inside the spec's input-required Task carries role/parts but no messageId, and the codec requires messageId on every Message. The member the codec does not accept is Task.status.message. Exact decode error: {:error, {:missing_field, \"messageId\"}}.",
+      "expected_error": [
+        "missing_field",
+        "messageId"
+      ],
+      "wire": {
+        "task": {
+          "id": "task-uuid",
+          "status": {
+            "state": "TASK_STATE_INPUT_REQUIRED",
+            "message": {
+              "role": "ROLE_AGENT",
+              "parts": [
+                {
+                  "text": "I need more details. Where would you like to fly from and to?"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "task-submitted-push",
+      "family": "task",
+      "source": "HTTP binding example, specification.md L1656 - SendMessageResponse with TASK_STATE_SUBMITTED and timestamp",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "task": {
+          "id": "43667960-d455-4453-b0cf-1bae4955270d",
+          "contextId": "c295ea44-7543-4f78-b524-7a38915ad6e4",
+          "status": {
+            "state": "TASK_STATE_SUBMITTED",
+            "timestamp": "2024-03-15T11:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "id": "task-completed-image",
+      "family": "task",
+      "source": "HTTP binding example, specification.md L1724 - completed Task with flat file-part artifact",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "task": {
+          "id": "43667960-d455-4453-b0cf-1bae4955270d",
+          "contextId": "c295ea44-7543-4f78-b524-7a38915ad6e4",
+          "status": {
+            "state": "TASK_STATE_COMPLETED",
+            "timestamp": "2024-03-15T12:05:00Z"
+          },
+          "artifacts": [
+            {
+              "artifactId": "9b6934dd-37e3-4eb1-8766-962efaab63a1",
+              "name": "processed_image_with_faces.png",
+              "parts": [
+                {
+                  "url": "https://storage.example.com/processed/task-bbb/output.png?token=xyz",
+                  "filename": "output.png",
+                  "mediaType": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "task-completed-tickets",
+      "family": "task",
+      "source": "HTTP binding example, specification.md L1793 - completed Task whose artifact text carries JSON-in-string ticket data",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "task": {
+          "id": "d8c6243f-5f7a-4f6f-821d-957ce51e856c",
+          "contextId": "c295ea44-7543-4f78-b524-7a38915ad6e4",
+          "status": {
+            "state": "TASK_STATE_COMPLETED",
+            "timestamp": "2025-04-17T17:47:09.680794Z"
+          },
+          "artifacts": [
+            {
+              "artifactId": "c5e0382f-b57f-4da7-87d8-b85171fad17c",
+              "parts": [
+                {
+                  "text": "[{\"ticketNumber\":\"REQ12312\",\"description\":\"request for VPN access\"},{\"ticketNumber\":\"REQ23422\",\"description\":\"Add to DL - team-gcp-onboarding\"}]"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "task-minimal-completed",
+      "family": "task",
+      "source": "specification.md L2842 - minimal completed Task response body",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "task": {
+          "id": "task-uuid",
+          "contextId": "context-uuid",
+          "status": {
+            "state": "TASK_STATE_COMPLETED"
+          }
+        }
+      }
+    },
+    {
+      "id": "task-working-listed",
+      "family": "task",
+      "source": "specification.md L1528 - Task member of a ListTasksSuccess page (working with status message)",
+      "expect": "decode",
+      "decode": "task",
+      "deviations": [
+        "The enclosing page envelope {\"tasks\": [...], \"totalSize\", \"pageSize\", \"nextPageToken\"} has no codec struct decode path and is excluded per header notes; only the Task member is captured."
+      ],
+      "wire": {
+        "id": "789abc-def0-1234-5678-9abcdef01234",
+        "contextId": "another-context-id",
+        "status": {
+          "state": "TASK_STATE_WORKING",
+          "message": {
+            "role": "ROLE_AGENT",
+            "parts": [
+              {
+                "text": "Processing your document analysis..."
+              }
+            ],
+            "messageId": "msg-status-update"
+          },
+          "timestamp": "2024-03-15T10:20:00Z"
+        }
+      }
+    },
+    {
+      "id": "status-completed",
+      "family": "status",
+      "source": "specification.md L1331 - TaskStatus member of the weather Task",
+      "expect": "decode",
+      "decode": "status",
+      "deviations": [],
+      "wire": {
+        "state": "TASK_STATE_COMPLETED"
+      }
+    },
+    {
+      "id": "status-with-timestamp",
+      "family": "status",
+      "source": "specification.md L1495 - TaskStatus member with timestamp from ListTasksSuccess page",
+      "expect": "decode",
+      "decode": "status",
+      "deviations": [],
+      "wire": {
+        "state": "TASK_STATE_COMPLETED",
+        "timestamp": "2024-03-15T10:15:00Z"
+      }
+    },
+    {
+      "id": "status-input-required-message",
+      "family": "status",
+      "source": "specification.md L1406 - TaskStatus member with clarification Message",
+      "expect": "codec_gap",
+      "decode": "status",
+      "deviations": [],
+      "finding": "Same root cause as task-input-required-clarification: the embedded Message has no messageId and the codec requires it. The member the codec does not accept is the embedded `message`. Exact decode error: {:error, {:missing_field, \"messageId\"}}.",
+      "expected_error": [
+        "missing_field",
+        "messageId"
+      ],
+      "wire": {
+        "state": "TASK_STATE_INPUT_REQUIRED",
+        "message": {
+          "role": "ROLE_AGENT",
+          "parts": [
+            {
+              "text": "I need more details. Where would you like to fly from and to?"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "artifact-research-summary",
+      "family": "artifact",
+      "source": "specification.md L1111 - Artifact example with extensions + per-extension metadata",
+      "expect": "decode",
+      "decode": "artifact",
+      "deviations": [],
+      "wire": {
+        "artifactId": "research-summary-001",
+        "name": "Climate Change Summary",
+        "parts": [
+          {
+            "text": "Global temperatures have risen by 1.1°C since pre-industrial times, with significant impacts on weather patterns and sea levels."
+          }
+        ],
+        "extensions": [
+          "https://standards.org/extensions/citations/v1"
+        ],
+        "metadata": {
+          "https://standards.org/extensions/citations/v1": {
+            "sources": [
+              {
+                "title": "Global Temperature Anomalies - 2023 Report",
+                "authors": [
+                  "Smith, J.",
+                  "Johnson, M."
+                ],
+                "url": "https://climate.gov/reports/2023-temperature",
+                "accessDate": "2025-10-21",
+                "relevantText": "Global temperatures have risen by 1.1°C"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "artifact-image-output",
+      "family": "artifact",
+      "source": "specification.md L1724 - Artifact member with flat file part",
+      "expect": "decode",
+      "decode": "artifact",
+      "deviations": [],
+      "wire": {
+        "artifactId": "9b6934dd-37e3-4eb1-8766-962efaab63a1",
+        "name": "processed_image_with_faces.png",
+        "parts": [
+          {
+            "url": "https://storage.example.com/processed/task-bbb/output.png?token=xyz",
+            "filename": "output.png",
+            "mediaType": "image/png"
+          }
+        ]
+      }
+    },
+    {
+      "id": "artifact-ticket-list",
+      "family": "artifact",
+      "source": "specification.md L1793 - Artifact member without artifactId/name",
+      "expect": "decode",
+      "decode": "artifact",
+      "deviations": [],
+      "wire": {
+        "artifactId": "c5e0382f-b57f-4da7-87d8-b85171fad17c",
+        "parts": [
+          {
+            "text": "[{\"ticketNumber\":\"REQ12312\",\"description\":\"request for VPN access\"},{\"ticketNumber\":\"REQ23422\",\"description\":\"Add to DL - team-gcp-onboarding\"}]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "part-text-kind",
+      "family": "part",
+      "source": "specification.md L3449 - v1.0 TextPart with kind discriminator",
+      "expect": "decode",
+      "decode": "part",
+      "deviations": [],
+      "wire": {
+        "kind": "text",
+        "text": "Hello, world!"
+      }
+    },
+    {
+      "id": "part-file-bytes",
+      "family": "part",
+      "source": "specification.md L3458 - v1.0 FilePart with kind discriminator, fileWithBytes",
+      "expect": "decode",
+      "decode": "part",
+      "deviations": [
+        "The spec's `fileWithBytes` value `iVBORw0KGgo...` is a truncated pseudo-code placeholder; replaced with valid base64 of the 8-byte PNG magic header so the member parses at the syntax level. Structure unchanged."
+      ],
+      "wire": {
+        "kind": "file",
+        "file": {
+          "name": "diagram.png",
+          "mimeType": "image/png",
+          "fileWithBytes": "iVBORw0KGgo="
+        }
+      }
+    },
+    {
+      "id": "part-text-flat",
+      "family": "part",
+      "source": "specification.md L3474 - v1.0 flat TextPart without kind",
+      "expect": "decode",
+      "decode": "part",
+      "deviations": [],
+      "wire": {
+        "text": "Hello, world!"
+      }
+    },
+    {
+      "id": "part-file-flat",
+      "family": "part",
+      "source": "specification.md L3482 - v1.0 flat FilePart (raw/filename/mediaType) without kind",
+      "expect": "decode",
+      "decode": "part",
+      "deviations": [
+        "The spec's `raw` value `iVBORw0KGgo...` is a truncated pseudo-code placeholder; replaced with valid base64 of the 8-byte PNG magic header. The snippet's missing/trailing commas were repaired. Structure unchanged."
+      ],
+      "wire": {
+        "raw": "iVBORw0KGgo=",
+        "filename": "diagram.png",
+        "mediaType": "image/png"
+      }
+    },
+    {
+      "id": "stream-task-frame",
+      "family": "event",
+      "source": "specification.md L1372 - message:stream SSE data frame 1 (StreamResponse task)",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "task": {
+          "id": "task-uuid",
+          "contextId": "context-uuid",
+          "status": {
+            "state": "TASK_STATE_WORKING"
+          }
+        }
+      }
+    },
+    {
+      "id": "stream-artifact-update-frame",
+      "family": "event",
+      "source": "specification.md L1372 - message:stream SSE data frame 2 (StreamResponse artifactUpdate / TaskArtifactUpdateEvent)",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "artifactUpdate": {
+          "taskId": "task-uuid",
+          "contextId": "context-uuid",
+          "artifact": {
+            "parts": [
+              {
+                "text": "# Climate Change Report\n\n"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "stream-status-update-frame",
+      "family": "event",
+      "source": "specification.md L1372 - message:stream SSE data frame 3 (StreamResponse statusUpdate / TaskStatusUpdateEvent)",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "statusUpdate": {
+          "taskId": "task-uuid",
+          "contextId": "context-uuid",
+          "status": {
+            "state": "TASK_STATE_COMPLETED"
+          }
+        }
+      }
+    },
+    {
+      "id": "push-webhook-status-update",
+      "family": "event",
+      "source": "specification.md L1674 - push-notification webhook body (StreamResponse statusUpdate with timestamp)",
+      "expect": "decode",
+      "decode": "event",
+      "deviations": [],
+      "wire": {
+        "statusUpdate": {
+          "taskId": "43667960-d455-4453-b0cf-1bae4955270d",
+          "contextId": "c295ea44-7543-4f78-b524-7a38915ad6e4",
+          "status": {
+            "state": "TASK_STATE_COMPLETED",
+            "timestamp": "2024-03-15T18:30:00Z"
+          }
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-get-task",
+      "family": "jsonrpc_request",
+      "source": "specification.md L2348 - GetTask request",
+      "expect": "decode",
+      "decode": "jsonrpc_request",
+      "deviations": [],
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "GetTask",
+        "params": {
+          "id": "task-uuid",
+          "historyLength": 10
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-list-tasks",
+      "family": "jsonrpc_request",
+      "source": "specification.md L2366 - ListTasks request",
+      "expect": "decode",
+      "decode": "jsonrpc_request",
+      "deviations": [],
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "ListTasks",
+        "params": {
+          "contextId": "context-uuid",
+          "status": "TASK_STATE_WORKING",
+          "pageSize": 50,
+          "pageToken": "cursor-token"
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-cancel-task",
+      "family": "jsonrpc_request",
+      "source": "specification.md L2386 - CancelTask request",
+      "expect": "decode",
+      "decode": "jsonrpc_request",
+      "deviations": [],
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "CancelTask",
+        "params": {
+          "id": "task-uuid"
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-subscribe-to-task",
+      "family": "jsonrpc_request",
+      "source": "specification.md L2405 - SubscribeToTask request",
+      "expect": "decode",
+      "decode": "jsonrpc_request",
+      "deviations": [],
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "SubscribeToTask",
+        "params": {
+          "id": "task-uuid"
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-get-extended-agent-card",
+      "family": "jsonrpc_request",
+      "source": "specification.md L2433 - GetExtendedAgentCard request",
+      "expect": "decode",
+      "decode": "jsonrpc_request",
+      "deviations": [
+        "Spec example carries only jsonrpc/id/method (no params); kept verbatim."
+      ],
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "GetExtendedAgentCard"
+      }
+    },
+    {
+      "id": "jsonrpc-send-message",
+      "family": "jsonrpc_request",
+      "source": "specification.md L2299 - SendMessage request",
+      "expect": "decode",
+      "decode": "jsonrpc_request",
+      "deviations": [
+        "The spec's params member is the pseudo-code comment `/* SendMessageRequest object */`; replaced with the concrete params from the v1.0 HTTP SendMessageRequest example (L1314). Envelope keys unchanged."
+      ],
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "text": "What is the weather today?"
+              }
+            ],
+            "messageId": "msg-uuid"
+          }
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-error-invalid-params",
+      "family": "jsonrpc_error",
+      "source": "specification.md L2469 - JSON-RPC error response (-32602 with google.rpc.BadRequest fieldViolations)",
+      "expect": "codec_gap",
+      "decode": "jsonrpc_error",
+      "deviations": [],
+      "finding": "The codec has no decode path for a JSON-RPC error envelope into %AshA2A.Protocol.JSONRPC.Error{}: Error implements to_map/1 (encode) only, so a client/relay cannot structurally admit a peer's spec-real error envelope. Pinned probes of the real paths: JSONRPC.Request.parse/1 rejects the envelope with {:error, %JSONRPC.Error{code: -32600}} (invalid_request - it is not a request), and AshA2A.Protocol.JSON.decode/2 on :event returns {:error, _}.",
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32602,
+          "message": "Invalid parameters",
+          "data": [
+            {
+              "@type": "type.googleapis.com/google.rpc.BadRequest",
+              "fieldViolations": [
+                {
+                  "field": "message.parts",
+                  "description": "At least one part is required"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "jsonrpc-error-task-not-found",
+      "family": "jsonrpc_error",
+      "source": "specification.md L2493 - JSON-RPC error response (-32001 with google.rpc.ErrorInfo)",
+      "expect": "codec_gap",
+      "decode": "jsonrpc_error",
+      "deviations": [],
+      "finding": "The codec has no decode path for a JSON-RPC error envelope into %AshA2A.Protocol.JSONRPC.Error{}: Error implements to_map/1 (encode) only, so a client/relay cannot structurally admit a peer's spec-real error envelope. Pinned probes of the real paths: JSONRPC.Request.parse/1 rejects the envelope with {:error, %JSONRPC.Error{code: -32600}} (invalid_request - it is not a request), and AshA2A.Protocol.JSON.decode/2 on :event returns {:error, _}.",
+      "wire": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+          "code": -32001,
+          "message": "Task not found",
+          "data": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "reason": "TASK_NOT_FOUND",
+              "domain": "a2a-protocol.org",
+              "metadata": {
+                "taskId": "nonexistent-task-id",
+                "timestamp": "2025-11-09T10:30:00.000Z"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

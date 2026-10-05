@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Planning.RequestRouterTest do
   @moduledoc """
   Real, Chicago-style coverage for `AshA2A.Planning.RequestRouter`: the core
@@ -8,7 +12,7 @@ defmodule AshA2A.Planning.RequestRouterTest do
   downstream functions are exercised for real, never asserted to be
   reachable by code inspection alone.
 
-  A real `A2A.Message.t()` (real `A2A.Part.Data`/`A2A.Part.Text` structs)
+  A real `AshA2A.Protocol.Message.t()` (real `AshA2A.Protocol.Part.Data`/`AshA2A.Protocol.Part.Text` structs)
   and a real compiled fixture resource
   (`AshA2A.Test.Fixture.HddlDeterministicFixture`, the same one
   `test/ash_a2a/semantic_nonllm_hddl_test.exs` uses) drive every test. The
@@ -68,11 +72,11 @@ defmodule AshA2A.Planning.RequestRouterTest do
   end
 
   defp facts_message(envelope) do
-    A2A.Message.new_user([A2A.Part.Data.new(%{"goal_facts" => envelope})])
+    AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
   end
 
   defp text_message(text) do
-    A2A.Message.new_user(text)
+    AshA2A.Protocol.Message.new_user(text)
   end
 
   # A real, fixed-response `:generate_object` seam function (schema-valid
@@ -122,9 +126,9 @@ defmodule AshA2A.Planning.RequestRouterTest do
       envelope = goal_facts_envelope()
 
       message =
-        A2A.Message.new_user([
-          A2A.Part.Text.new("advance the admitted workflow"),
-          A2A.Part.Data.new(%{"goal_facts" => envelope})
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Text.new("advance the admitted workflow"),
+          AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})
         ])
 
       assert {:facts, ^envelope} = RequestRouter.detect_tier(message)
@@ -132,7 +136,7 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
     test "a string-keyed \"goal_facts\" data key is detected identically to the atom key (MetadataKey convention)" do
       envelope = goal_facts_envelope()
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{"goal_facts" => envelope})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
 
       assert {:facts, ^envelope} = RequestRouter.detect_tier(message)
     end
@@ -146,9 +150,9 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
     test "a data part present but with no goal_facts key still falls through to text detection" do
       message =
-        A2A.Message.new_user([
-          A2A.Part.Data.new(%{"unrelated_key" => "value"}),
-          A2A.Part.Text.new("The goal is to read the people.")
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"}),
+          AshA2A.Protocol.Part.Text.new("The goal is to read the people.")
         ])
 
       assert {:text, "The goal is to read the people."} = RequestRouter.detect_tier(message)
@@ -165,9 +169,9 @@ defmodule AshA2A.Planning.RequestRouterTest do
       # because "no text" -- it refuses even though a text tier would
       # otherwise be reachable.
       message =
-        A2A.Message.new_user([
-          A2A.Part.Data.new(%{"goal_facts" => "not-a-map"}),
-          A2A.Part.Text.new("advance the admitted workflow")
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"goal_facts" => "not-a-map"}),
+          AshA2A.Protocol.Part.Text.new("advance the admitted workflow")
         ])
 
       assert :invalid_goal_facts = RequestRouter.detect_tier(message)
@@ -189,9 +193,9 @@ defmodule AshA2A.Planning.RequestRouterTest do
       envelope = goal_facts_envelope()
 
       message =
-        A2A.Message.new_user([
-          A2A.Part.Data.new(%{"payload" => %{"goal_facts" => envelope}}),
-          A2A.Part.Text.new("advance the admitted workflow")
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"payload" => %{"goal_facts" => envelope}}),
+          AshA2A.Protocol.Part.Text.new("advance the admitted workflow")
         ])
 
       assert :ambiguous_goal_facts_shape = RequestRouter.detect_tier(message)
@@ -204,11 +208,11 @@ defmodule AshA2A.Planning.RequestRouterTest do
       envelope = goal_facts_envelope()
 
       message =
-        A2A.Message.new_user([
-          A2A.Part.Data.new(%{
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{
             "items" => [%{"unrelated" => 1}, %{"goal_facts" => envelope}]
           }),
-          A2A.Part.Text.new("advance the admitted workflow")
+          AshA2A.Protocol.Part.Text.new("advance the admitted workflow")
         ])
 
       assert :ambiguous_goal_facts_shape = RequestRouter.detect_tier(message)
@@ -218,9 +222,9 @@ defmodule AshA2A.Planning.RequestRouterTest do
       envelope = goal_facts_envelope()
 
       message =
-        A2A.Message.new_user([
-          A2A.Part.Data.new(%{payload: %{goal_facts: envelope}}),
-          A2A.Part.Text.new("advance the admitted workflow")
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{payload: %{goal_facts: envelope}}),
+          AshA2A.Protocol.Part.Text.new("advance the admitted workflow")
         ])
 
       assert :ambiguous_goal_facts_shape = RequestRouter.detect_tier(message)
@@ -228,16 +232,16 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
     test "a nested structured payload with no goal_facts key anywhere is never flagged (no new false positive for a real structured request)" do
       message =
-        A2A.Message.new_user([
-          A2A.Part.Data.new(%{"payload" => %{"unrelated_key" => "value"}}),
-          A2A.Part.Text.new("The goal is to read the people.")
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"payload" => %{"unrelated_key" => "value"}}),
+          AshA2A.Protocol.Part.Text.new("The goal is to read the people.")
         ])
 
       assert {:text, "The goal is to read the people."} = RequestRouter.detect_tier(message)
     end
 
     test "ordinary free text that merely mentions \"goal facts\" in prose is never flagged -- the scan never inspects text content" do
-      # No `A2A.Part.Data` part at all here (`text_message/1` builds a
+      # No `AshA2A.Protocol.Part.Data` part at all here (`text_message/1` builds a
       # text-only message), so `Dispatcher.fetch_input/1` returns `%{}`
       # and the nested scan trivially finds nothing -- proving the scan is
       # bounded to the real structured Data-part payload, never message
@@ -251,13 +255,13 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
   describe "detect_tier/1 -- no input" do
     test "a message with neither goal_facts nor text is refused as :error" do
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{"unrelated_key" => "value"})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})])
 
       assert :error = RequestRouter.detect_tier(message)
     end
 
     test "a message with an empty-string text part is refused as :error" do
-      message = A2A.Message.new_user([A2A.Part.Text.new("")])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Text.new("")])
 
       assert :error = RequestRouter.detect_tier(message)
     end
@@ -329,7 +333,7 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
   describe "route/3 -- no input" do
     test "a message with neither goal_facts nor text fails closed with a typed error" do
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{"unrelated_key" => "value"})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})])
 
       assert {:error, %{code: :request_router_missing_input}} =
                RequestRouter.route(HddlDeterministicFixture, message)

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule C2Harness.Catalog do
   @moduledoc """
   The RFC-SA2A-006 s26 attack catalog against the real Actuator (fence attacks, wire,

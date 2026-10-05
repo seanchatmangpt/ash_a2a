@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SemanticCrossPeerTest do
   @moduledoc """
   RFC-SA2A-001 S8/S49/S50/S51/S75/S76 -- the central cross-peer test.
@@ -11,10 +15,10 @@ defmodule AshA2A.SemanticCrossPeerTest do
       Message_A -> O*_B
 
   Peer A builds a real `AshA2A.Semantic.Envelope`, attaches it to a real
-  `A2A.Message` through the real A2A extension mechanism, and sends it to
-  peer B over the **real A2A transport**: a real `A2A.Plug` JSON-RPC
+  `AshA2A.Protocol.Message` through the real A2A extension mechanism, and sends it to
+  peer B over the **real A2A transport**: a real `AshA2A.Protocol.Plug` JSON-RPC
   `message/send` request, serialized to real JSON, driven through the real
-  unmodified `:a2a` Plug into a real supervised `A2A.Agent` GenServer.
+  unmodified in-repo `AshA2A.Protocol.*` runtime into a real supervised `AshA2A.Protocol.Agent` GenServer.
 
   Peer B treats it as a candidate and runs its **own**
   `AshA2A.Semantic.GraphLaw` engine -- the real prebuilt `praxis-graphlaw`
@@ -33,7 +37,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
   ## No mocks
 
-  Real `Ash.Resource`, real `A2A.Agent` GenServer, real `A2A.Plug`, real
+  Real `Ash.Resource`, real `AshA2A.Protocol.Agent` GenServer, real `AshA2A.Protocol.Plug`, real
   JSON-RPC envelope, real wasm engine subprocess, real ledger process, real
   SHACL violations. Every assertion is on real returned state -- digests,
   standing values, decoded HTTP response bodies -- never on "was X called".
@@ -74,24 +78,24 @@ defmodule AshA2A.SemanticCrossPeerTest do
     {:ok, agent_pid} = start_supervised({PeerB, name: agent_name})
 
     plug_opts =
-      A2A.Plug.init(
+      AshA2A.Protocol.Plug.init(
         agent: agent_name,
         base_url: @base_url,
         agent_card_opts: Extension.advertise(url: @base_url)
       )
 
-    # Peer B's own advertisement is the card its real A2A.Plug serves
+    # Peer B's own advertisement is the card its real AshA2A.Protocol.Plug serves
     # (RFC-SA2A-002 §55: semantic standing crosses only a boundary this peer
     # itself advertises -- SA2A-NEG-005).
     served_card =
       :get
       |> Plug.Test.conn("/.well-known/agent-card.json")
-      |> A2A.Plug.call(plug_opts)
+      |> AshA2A.Protocol.Plug.call(plug_opts)
       |> Map.fetch!(:resp_body)
       |> Jason.decode!()
 
     :ok =
-      PeerB.configure(agent_name,
+      configure_peer(agent_name,
         name: @peer_b,
         ledger: ledger_name,
         shapes: Graphs.peer_b_shapes(),
@@ -99,7 +103,10 @@ defmodule AshA2A.SemanticCrossPeerTest do
         agent_card: served_card
       )
 
-    on_exit(fn -> PeerB.deconfigure(agent_name) end)
+    on_exit(fn ->
+      PeerB.deconfigure(agent_name)
+      :persistent_term.erase({PeerB, nil})
+    end)
 
     %{
       agent: agent_name,
@@ -112,10 +119,25 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
   # -- Real transport helper ---------------------------------------------------
   #
+  # Measured constraint of the ported `AshA2A.Protocol.Agent` runtime
+  # (SEC-02/SEC-08 worker isolation): `handle_message/2` runs in a spawned,
+  # unregistered worker process, so the fixture's `registered_name()` lookup
+  # is `nil` inside the worker and the worker reads its peer configuration
+  # from `{PeerB, nil}`. The fixture's own per-agent key is still installed
+  # through `PeerB.configure/2` (its card path uses it), and this helper
+  # mirrors the SAME real `Peer` struct under the key the worker actually
+  # reads. Safe because this module is `async: false` and `:serial`.
+  defp configure_peer(agent_name, opts) do
+    :ok = PeerB.configure(agent_name, opts)
+    :persistent_term.put({PeerB, nil}, PeerB.peer(agent_name))
+    :ok
+  end
+
+  #
   # A real JSON-RPC `message/send` request, JSON-encoded exactly as a remote
-  # peer A would put it on the wire, driven through the real A2A.Plug.
-  defp send_over_real_transport(plug_opts, %A2A.Message{} = message) do
-    {:ok, encoded_message} = A2A.JSON.encode(message)
+  # peer A would put it on the wire, driven through the real AshA2A.Protocol.Plug.
+  defp send_over_real_transport(plug_opts, %AshA2A.Protocol.Message{} = message) do
+    {:ok, encoded_message} = AshA2A.Protocol.JSON.encode(message)
 
     body =
       Jason.encode!(%{
@@ -129,13 +151,14 @@ defmodule AshA2A.SemanticCrossPeerTest do
       :post
       |> Plug.Test.conn("/", body)
       |> Plug.Conn.put_req_header("content-type", "application/json")
-      |> A2A.Plug.call(plug_opts)
+      |> AshA2A.Protocol.Plug.call(plug_opts)
 
     {conn.status, Jason.decode!(conn.resp_body)}
   end
 
-  # The real JSON-RPC `message/send` result shape produced by the vendored
-  # `:a2a` 0.2.0 encoder: `result.task.artifacts[].parts[].data`.
+  # The real JSON-RPC `message/send` result shape produced by the in-repo
+  # ported codec (`AshA2A.Protocol.*`, a2a-elixir 0.3.0 semantics):
+  # `result.task.artifacts[].parts[].data`.
   defp reply_data(response), do: reply_data_from_task(task_result(response))
 
   defp reply_data_from_task(%{"artifacts" => [%{"parts" => parts} | _]}),
@@ -167,7 +190,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
     message =
       "semantic request"
-      |> A2A.Message.new_user()
+      |> AshA2A.Protocol.Message.new_user()
       |> Extension.activate(Envelope.to_map(envelope))
 
     {envelope, message}
@@ -380,7 +403,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
       plug_opts: plug_opts,
       ledger: ledger
     } do
-      message = A2A.Message.new_user("just an ordinary A2A request")
+      message = AshA2A.Protocol.Message.new_user("just an ordinary A2A request")
 
       {200, response} = send_over_real_transport(plug_opts, message)
       data = reply_data(response)
@@ -400,7 +423,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
     test "a message whose plain text IS valid Turtle still gains no standing", %{
       plug_opts: plug_opts
     } do
-      message = A2A.Message.new_user(Graphs.conforming_order())
+      message = AshA2A.Protocol.Message.new_user(Graphs.conforming_order())
 
       {200, response} = send_over_real_transport(plug_opts, message)
 
@@ -450,7 +473,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
       # whose sole real skill (place_order, via :create) is
       # consequence-bearing -- exactly what this test needs to exercise.
       :ok =
-        PeerB.configure(agent_name,
+        configure_peer(agent_name,
           name: @peer_b,
           ledger: ledger_name,
           shapes: Graphs.peer_b_shapes(),
@@ -458,7 +481,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
           capabilities: AshA2A.Test.SemanticPeerFixture.Domain
         )
 
-      message = A2A.Message.new_user("place an order for 3 widgets")
+      message = AshA2A.Protocol.Message.new_user("place an order for 3 widgets")
 
       {200, response} = send_over_real_transport(plug_opts, message)
       data = reply_data(response)
@@ -477,7 +500,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
         Peer.new(name: "permissive-peer", shapes: Graphs.peer_b_shapes(), mode: :permissive)
 
       message = %{
-        A2A.Message.new_user("place an order")
+        AshA2A.Protocol.Message.new_user("place an order")
         | metadata: %{"consequenceBearing" => true}
       }
 
@@ -495,7 +518,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
       strict = Peer.new(name: "strict-peer", shapes: Graphs.peer_b_shapes(), mode: :strict)
 
       outcome =
-        Peer.receive_message(strict, A2A.Message.new_user("what time is it?"),
+        Peer.receive_message(strict, AshA2A.Protocol.Message.new_user("what time is it?"),
           consequence_bearing?: false
         )
 
@@ -518,8 +541,8 @@ defmodule AshA2A.SemanticCrossPeerTest do
       task_json = task_result(response)
       assert task_json["status"]["state"] == "TASK_STATE_COMPLETED"
 
-      {:ok, task} = A2A.JSON.decode(task_json, :task)
-      assert %A2A.Task{status: %A2A.Task.Status{state: :completed}} = task
+      {:ok, task} = AshA2A.Protocol.JSON.decode(task_json, :task)
+      assert %AshA2A.Protocol.Task{status: %AshA2A.Protocol.Task.Status{state: :completed}} = task
 
       assert Peer.authority_from_task(task) == :none
 
@@ -544,11 +567,18 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
       {200, riding_response} = send_over_real_transport(plug_opts, riding_message)
 
-      # Measured, real behavior of the vendored `:a2a` 0.2.0 agent runtime: a
-      # `:completed` task is not continuable at all. The prior task is not a
-      # channel a later message can inherit anything through -- it is not
-      # even a channel.
-      assert riding_response["error"]["data"] == ":not_continuable"
+      # Measured, real behavior of the ported `AshA2A.Protocol.Agent` runtime
+      # (a2a-elixir 0.3.0 semantics): a `:completed` task is not continuable
+      # at all. The prior task is not a channel a later message can inherit
+      # anything through -- it is not even a channel. The refusal is the
+      # spec's own UnsupportedOperationError.
+      assert riding_response["error"]["code"] == -32004
+
+      assert %{
+               "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+               "domain" => "a2a-protocol.org",
+               "reason" => "UNSUPPORTED_OPERATION"
+             } in riding_response["error"]["data"]
       assert Ledger.entries(ledger, second.envelope_id) == []
 
       # And as a fresh task, the same non-conforming envelope is refused on
@@ -562,7 +592,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
   describe "S50 -- an A2A Artifact gains no standing from being an Artifact" do
     test "every artifact has standing :received, whatever it contains" do
-      artifact = A2A.Artifact.new([A2A.Part.Text.new(Graphs.conforming_order())])
+      artifact = AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new(Graphs.conforming_order())])
 
       assert Peer.standing_from_artifact(artifact) == :received
       refute Standing.admitted?(Peer.standing_from_artifact(artifact))
@@ -577,7 +607,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
       assert reply_data(response)["standing"] == "admitted"
 
       {:ok, artifact} =
-        response |> task_result() |> Map.fetch!("artifacts") |> hd() |> A2A.JSON.decode(:artifact)
+        response |> task_result() |> Map.fetch!("artifacts") |> hd() |> AshA2A.Protocol.JSON.decode(:artifact)
 
       # The exchange was admitted. The artifact carrying its result is still
       # only :received -- container-ness confers nothing.
@@ -594,7 +624,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
       {envelope, _message} = peer_a_message(Graphs.conforming_order())
 
       artifact =
-        A2A.Artifact.new([A2A.Part.Text.new("payload")],
+        AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("payload")],
           metadata: %{
             Extension.extension_key() =>
               envelope |> Envelope.to_map() |> Map.put("standing", "admitted")
@@ -606,7 +636,7 @@ defmodule AshA2A.SemanticCrossPeerTest do
     end
 
     test "an artifact with no semantic payload yields :profile_not_activated" do
-      artifact = A2A.Artifact.new([A2A.Part.Text.new("nothing semantic here")])
+      artifact = AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("nothing semantic here")])
 
       assert {:error, %{code: :profile_not_activated}} = Peer.envelope_from_artifact(artifact)
     end

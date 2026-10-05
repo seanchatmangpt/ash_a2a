@@ -9,7 +9,7 @@ fail-closed defaults are deliberate.
 
 | Key | Default | Consumed by / meaning |
 | --- | --- | --- |
-| `:agents` | `[]` | `AshA2A.Application` — agent modules booted under its `A2A.AgentSupervisor`. |
+| `:agents` | `[]` | `AshA2A.Application` — agent modules booted under its `AshA2A.Protocol.AgentSupervisor`. |
 | `:receipt_store` | `AshA2A.ReceiptStore.Memory` | `AshA2A.Application` / `AshA2A.CommandBus` — replay-safe receipt storage. `Ekv` gets automatic EKV child wiring. A custom module must be supervised by the host (the app starts no children for it). |
 | `:receipt_store_ekv_opts` | `[]` | EKV options for `AshA2A.ReceiptStore.Ekv`. Defaults inject `name: AshA2A.ReceiptStore.Ekv`, `cluster_size: 1`, and `data_dir: System.tmp_dir!()/ash_a2a_receipt_store_ekv`. **The tmp-dir default is not guaranteed to survive a host reboot** — set a real persistent `:data_dir` for production. |
 | `:receipt_commit_retry_delays_ms` | `[50, 150]` | `CommandBus` receipt-commit retry backoff. |
@@ -145,6 +145,34 @@ refuses to boot instead of falling back to the library's dev defaults.
 | `SWARM_MIN_PEERS`, `SWARM_DRAIN_MS`, `SWARM_ADMIN_PORT` | Readiness peer floor (default and minimum `div(ASH_A2A_EKV_CLUSTER_SIZE, 2)`, the EKV write-quorum peers; a lower value refuses boot), preStop drain window (a fixed time window, not an in-flight tracker), admin HTTP port (4001: `/healthz`, `/readyz`, `/drain`). |
 | `SWARM_A2A_HTTP`, `SWARM_A2A_PORT`, `SWARM_A2A_BASE_URL` | Opt-in A2A JSON-RPC surface (`AshA2A.Transport.Plug` at `/a2a`, port 4000). Off by default. |
 | `SWARM_LOG_LEVEL` | Logger level; prod logs are JSON lines (`SwarmNode.JsonLogFormatter`). |
+
+## Dev-profile recipe: `:dev_bypass` and path deps
+
+`AshA2A.SecurityProfile` is a build constant.
+`AshA2A.SecurityProfile.Template` reads
+`Application.compile_env(:ash_a2a, :security_profile, :strict)` and the
+compiling `Mix.env()` when ash_a2a itself is compiled, so the profile is
+frozen into the `.beam` files — a host's `config/dev.exs` cannot change it
+afterwards.
+
+Mix compiles dependencies with `Mix.env() == :prod` by default. In a fresh
+consumer application ash_a2a therefore compiles under `:prod`, where
+`:dev_bypass` is compiled out entirely: setting
+`config :ash_a2a, security_profile: :dev_bypass` in a consumer and
+recompiling the dep raises a `CompileError`
+("the dev_bypass profile is compiled out of prod builds"). A consumer
+`:dev` env does not get the library's own `config/dev.exs` shortcut, and
+recompiling the dep under `MIX_ENV=dev` just to reach `:dev_bypass` is a
+deliberate, explicit act — not something a plain `mix deps.compile` run
+does.
+
+`:legacy_compat` is the working dev escape. Unlike `:dev_bypass` it is
+allowed in every build env (`:prod` included), so a `:prod`-compiled path
+dep boots without the `CompileError`; `AshA2A.SecurityProfile.Boot` treats
+its strict-mode violations as loud warnings (telemetry event
+`[:ash_a2a, :security_profile, :legacy_compat]`) instead of boot failures.
+Set `config :ash_a2a, security_profile: :legacy_compat` in the host's
+`:dev` config while the dep stays `:prod`-compiled.
 
 ## Production checklist
 

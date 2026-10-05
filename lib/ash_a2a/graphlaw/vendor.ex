@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.GraphLaw.Vendor do
   @moduledoc """
   The GraphLaw law-package vendor pipeline (RFC-SA2A-001 S21, S46, S79).

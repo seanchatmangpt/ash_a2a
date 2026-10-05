@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AAgentMultiTurnCarryTest do
   @moduledoc """
-  Real multi-turn argument carry-over through a real supervised `A2A.Agent`:
+  Real multi-turn argument carry-over through a real supervised `AshA2A.Protocol.Agent`:
   turn 1's Data arguments survive into turn 2's dispatch. No mocks.
   """
 
@@ -25,7 +29,7 @@ defmodule AshA2AAgentMultiTurnCarryTest do
              )
 
     assert turn2.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = turn2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = turn2.artifacts
     assert result[:left] == "a"
     assert result[:right] == "b"
   end
@@ -43,7 +47,7 @@ defmodule AshA2AAgentMultiTurnCarryTest do
                task_id: turn1.id
              )
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: result}]}] = turn2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = turn2.artifacts
     assert result[:left] == "new"
   end
 

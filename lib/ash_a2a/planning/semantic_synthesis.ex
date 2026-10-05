@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Planning.SemanticSynthesis do
   @moduledoc """
   Semantic plan synthesis for UNKNOWN boundaries.
@@ -88,8 +92,9 @@ defmodule AshA2A.Planning.SemanticSynthesis do
     {outcome, refusal_code, candidate} =
       case result do
         {:ok, %Planning.Candidate{} = candidate} -> {:candidate, nil, candidate}
+        # (every `{:error, _}` this can receive is a map carrying `:code`, so
+        # the old bare `{:error, _other}` clause below was dead)
         {:error, %{code: code}} -> {:refused, code, nil}
-        {:error, _other} -> {:refused, nil, nil}
       end
 
     :telemetry.execute([:ash_a2a, :planner, :invoke], %{count: 1}, %{

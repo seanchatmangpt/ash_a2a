@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Receipt.Binding do
   @moduledoc """
   RFC-SA2A-002 §40 (Gate 9) complete receipt identity binding, with the §128
@@ -527,7 +531,8 @@ defmodule AshA2A.Receipt.Binding do
     }
   end
 
-  defp subject(_other), do: %{receipt_id: nil, command_id: nil, capability_id: nil}
+  # (the old non-map `subject/1` catch-all was dead: every caller passes a
+  # receipt map, the single live clause covers the full success type)
 
   defp external(%Identity{} = identity), do: Identity.external(identity)
   defp external(value) when is_binary(value), do: value

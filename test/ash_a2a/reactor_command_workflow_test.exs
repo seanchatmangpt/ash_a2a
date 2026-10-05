@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Reactor.CommandWorkflowTest do
   @moduledoc """
   Real `Reactor.run/2..4` execution over `AshA2A.Reactor.CommandWorkflow` --

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.MixProject do
   use Mix.Project
 
@@ -22,7 +26,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.10.3",
+      version: "26.10.4",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -33,7 +37,15 @@ defmodule AshA2A.MixProject do
       deps: deps(),
       docs: docs(),
       aliases: aliases(),
-      test_coverage: test_coverage()
+      test_coverage: test_coverage(),
+      # `:mix` was missing from the analysis PLT: dialyzer flagged every
+      # `Mix.shell/0` / `Mix.raise/1` / `Mix.Task.run/1` call in every
+      # `lib/mix/tasks/*` module as `unknown_function`, and every
+      # `use Mix.Task` module as `callback_info_missing` (~110 warnings,
+      # all the same root cause). `:ex_unit` is added on the same
+      # principle; dialyxir re-adds these to the existing PLT without a
+      # full rebuild.
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
   end
 
@@ -99,7 +111,16 @@ defmodule AshA2A.MixProject do
       # files (.ex)" / "Generated ash_a2a app" to stdout ahead of the SHA.
       # Compile first with stdout on stderr, then run the real task (the
       # alias's own-name step reaches the task, not the alias).
-      "ash_a2a.standing_ref": [&compile_on_stderr/1, "ash_a2a.standing_ref"]
+      "ash_a2a.standing_ref": [&compile_on_stderr/1, "ash_a2a.standing_ref"],
+
+      # Lane G-G one-command quality gate. The alias dispatches to the
+      # `.check.exs` script (same shape as the ash-project PR bar: compile,
+      # tests, spark.formatter --check, conformance, docs, credo --strict,
+      # dialyzer, sobelow). `CHECK_STAGES` scopes the run to a subset, e.g.
+      #   CHECK_STAGES=compile,test mix check
+      # The default subset is the set currently green on this tree; the
+      # full set (and how to run any stage) is documented in `.check.exs`.
+      check: "run .check.exs"
     ]
   end
 
@@ -125,9 +146,13 @@ defmodule AshA2A.MixProject do
             # Project
             "README.md",
             "CHANGELOG.md",
+            "usage-rules.md",
             "docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md",
             # Tutorials
             "docs/tutorials/getting-started.md",
+            "documentation/tutorials/a2a-your-first-agent.livemd",
+            "documentation/tutorials/secure-your-agent.livemd",
+            "documentation/tutorials/stream-and-elicit.livemd",
             # How-to guides
             "docs/how-to/authenticate-agent-requests.md",
             "docs/how-to/verify-authority-on-async-paths.md",
@@ -139,6 +164,12 @@ defmodule AshA2A.MixProject do
             "docs/how-to/migrate-legacy-to-strict.md",
             # Reference
             "docs/reference/index.md",
+            {"documentation/dsls/DSL-AshA2A.md",
+             search_data:
+               if(Code.ensure_loaded?(Spark.Docs) and Code.ensure_loaded?(AshA2A),
+                 do: Spark.Docs.search_data_for(AshA2A),
+                 else: []
+               )},
             "docs/reference/dsl.md",
             "docs/reference/configuration.md",
             "docs/reference/telemetry.md",
@@ -146,6 +177,8 @@ defmodule AshA2A.MixProject do
             "docs/reference/a2a-endpoint-contract.md",
             "docs/reference/a2a-spec-version-mapping.md",
             "docs/reference/c2-certificate.md",
+            "docs/reference/a2a-v1-conformance.md",
+            "docs/reference/performance.md",
             "docs/reference/c2-wire-interop.md",
             "docs/reference/conformance-claim.md",
             "docs/reference/conformance-profiles.md",
@@ -155,11 +188,18 @@ defmodule AshA2A.MixProject do
             "docs/explanation/canonical-graph-identity.md",
             "docs/explanation/graphlaw-wasm-integration.md"
           ],
-          &{&1, []}
+          # Pass already-shaped {path, opts} tuples (the DSL cheat-sheet entry
+          # with its :search_data) through unchanged -- wrapping them as
+          # {{path, opts}, []} feeds ExDoc a tuple where it expects a path
+          # string (String.Chars crash in ExDoc.Extras.build_extra/3).
+          fn
+            {_, _} = entry -> entry
+            entry -> {entry, []}
+          end
         ),
       groups_for_extras: [
-        Project: ~r"README|CHANGELOG|PHOENIX",
-        Tutorials: ~r"docs/tutorials",
+        Project: ~r"README|CHANGELOG|PHOENIX|usage-rules",
+        Tutorials: ~r"(docs|documentation)/tutorials",
         "How-to guides": ~r"docs/how-to",
         Reference: ~r"docs/reference",
         Explanation: ~r"docs/explanation"
@@ -176,7 +216,10 @@ defmodule AshA2A.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/seanchatmangpt/ash_a2a"},
+      links: %{
+        "GitHub" => "https://github.com/seanchatmangpt/ash_a2a",
+        "Changelog" => "https://hexdocs.pm/ash_a2a/changelog.html"
+      },
       # The four Diataxis quadrants ship in the package so `mix hex.publish`
       # can build the ExDoc extras declared in docs/0 above. Internal trees
       # (docs/archive, docs/rfc, research) deliberately do NOT ship.
@@ -187,9 +230,16 @@ defmodule AshA2A.MixProject do
       # and resolves `native/*/target/release/*` binaries, so a Hex consumer
       # must be able to rebuild the exact locked closure from the tarball
       # (`cargo +1.97.1 build --release --locked --manifest-path ...`).
+      # `documentation/dsls/DSL-AshA2A.md` is a declared ExDoc extra in
+      # `docs/0` above (the generated DSL cheat sheet), so it must ship or
+      # `mix docs` fails for every Hex consumer. `generated/` (projections
+      # regenerable from priv/ ontology via ggen) and `examples/` (demo app,
+      # not library surface) deliberately do NOT ship.
       files:
         ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
-           docs/tutorials docs/how-to docs/reference docs/explanation sa2a_crypto/lib) ++
+           documentation/dsls
+           docs/tutorials docs/how-to docs/reference docs/explanation sa2a_crypto/lib
+           usage-rules.md) ++
           native_package_files()
     ]
   end
@@ -259,12 +309,10 @@ defmodule AshA2A.MixProject do
       {:ash_graphlaw, "~> 26.10"},
       {:ash_affidavit, "~> 26.10"},
       {:ash_ex4pm, "~> 26.10"},
-      {:a2a, "~> 0.2"},
       {:ash_ai, "~> 1.0"},
       # AshA2A.Telemetry.OcelForwarder's real HTTP POST to beam4pm's real
-      # OCEL ingest endpoint -- already transitively present (via :a2a's
-      # optional dep / :igniter), promoted to direct since this module
-      # calls it explicitly.
+      # OCEL ingest endpoint -- already transitively present (via :igniter),
+      # promoted to direct since this module calls it explicitly.
       {:req, "~> 0.5"},
       # Real local Bandit server for
       # test/ash_a2a_telemetry_ocel_forwarder_test.exs's fixture standing
@@ -280,12 +328,11 @@ defmodule AshA2A.MixProject do
       {:opentelemetry_api, "~> 1.4", only: :test},
       {:req_llm, "~> 1.18"},
       {:ash_r2rml, "~> 26.8"},
-      # `:plug` is an optional dep of `:a2a` (A2A.Plug/A2A.Plug.Auth). Also
-      # now pulled in transitively as a normal dep via `:ash_ai`'s
-      # `:websock_adapter` dependency, so it can no longer be restricted to
+      # `:plug` is required in the prod closure by :phoenix, :ash_json_api and
+      # :open_api_spex (via :ash_ai), so it can no longer be restricted to
       # `only: :test` (Mix rejects a narrower :only than a transitive dep
       # requires). test/ash_a2a_plug_agent_card_test.exs drives a REAL
-      # A2A.Plug HTTP pipeline via Plug.Test.
+      # AshA2A.Protocol.Plug HTTP pipeline via Plug.Test.
       {:plug, "~> 1.16"},
       # Real provider implementations for the three runtime-provider
       # boundaries: AshA2A.Execution.FLAME (Placement),
@@ -427,8 +474,37 @@ defmodule AshA2A.MixProject do
       # envelope, standing, refusal typing, authority, receipts and admission
       # orchestration, never the derivation itself.
       {:wasmex, "~> 0.15.1"},
+      # Lane Z20 (real gRPC server transport, A2A v1.0 §gRPC binding):
+      #
+      #   * `:protobuf` -- runtime for the committed generated projection
+      #     `lib/ash_a2a/transport/grpc/pb/**` (regenerated from the vendored
+      #     `priv/proto/a2a.proto` with protoc-gen-elixir; regen command is
+      #     documented in that proto's provenance header). Also supplies
+      #     Protobuf.JSON, the proto3-JSON bridge the gRPC server uses to
+      #     map protobuf messages to/from the SAME proto-JSON maps the HTTP
+      #     binding dispatches. The well-known types it bundles cover the
+      #     proto's google/protobuf imports.
+      #   * `:grpc_server` -- the cowboy-backed gRPC server runtime
+      #     (elixir-grpc 1.0 split the server out of `:grpc`).
+      #   * `:grpc` -- client + stub runtime; the generated
+      #     `Lf.A2a.V1.A2AService.Stub` does `use GRPC.Stub`, so this must
+      #     be in every env, and the wire test drives the server over a real
+      #     loopback HTTP/2 connection through it.
+      #
+      # All three are actively maintained (grpc/grpc_server 1.0.5,
+      # protobuf 0.17.0 as of vendoring) and required unconditionally: the
+      # generated modules are lib/ code compiled in every environment.
+      {:protobuf, "~> 0.17"},
+      {:grpc_server, "~> 1.0"},
+      {:grpc, "~> 1.0"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      # Lane G-G one-command quality gate (`mix check` -> `.check.exs`),
+      # mirroring the ash-project PR bar: `mix credo --strict` and
+      # `mix sobelow` run as gate stages from `.check.exs`. `only: :dev`:
+      # both are CI-grade analysis tools, never runtime deps.
+      {:credo, "~> 1.7", only: :dev, runtime: false},
+      {:sobelow, "~> 0.13", only: :dev, runtime: false}
     ]
   end
 end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.ProcessFinding do
   @moduledoc """
   GALL-029 process-finding admission.
@@ -308,13 +312,13 @@ defmodule AshA2A.Gall.ProcessFinding.Intervention do
 
   def construct(_admission, _attrs), do: refusal(:invalid_admission)
 
-  @spec execute(map(), A2A.Message.t(), module(), Authority.t(), keyword()) ::
+  @spec execute(map(), AshA2A.Protocol.Message.t(), module(), Authority.t(), keyword()) ::
           {:ok, map()} | {:error, map()}
   def execute(candidate, message, resource_or_domain, authority, opts \\ [])
 
   def execute(
         candidate,
-        %A2A.Message{} = message,
+        %AshA2A.Protocol.Message{} = message,
         resource_or_domain,
         %Authority{} = authority,
         opts

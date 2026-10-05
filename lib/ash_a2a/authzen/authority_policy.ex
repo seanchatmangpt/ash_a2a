@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.AuthZEN.AuthorityPolicy do
   @moduledoc """
   Authority policy admitting an `AshA2A.C2.AuthorityRequest` in `admit/2` only when

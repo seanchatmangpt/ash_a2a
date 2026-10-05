@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.TaskStoreEkvTest do
   @moduledoc """
   R3 (task durability, lane scope): `AshA2A.TaskStore.Ekv` against a real
@@ -26,10 +30,10 @@ defmodule AshA2A.TaskStoreEkvTest do
   end
 
   defp task(id, context_id, state \\ :submitted) do
-    %A2A.Task{
+    %AshA2A.Protocol.Task{
       id: id,
       context_id: context_id,
-      status: A2A.Task.Status.new(state),
+      status: AshA2A.Protocol.Task.Status.new(state),
       history: [],
       artifacts: []
     }
@@ -42,7 +46,7 @@ defmodule AshA2A.TaskStoreEkvTest do
     assert :ok = Store.put(name, task("t-2", "ctx-a", :completed))
     assert :ok = Store.put(name, task("t-3", "ctx-b"))
 
-    assert {:ok, %A2A.Task{id: "t-1", context_id: "ctx-a"}} = Store.get(name, "t-1")
+    assert {:ok, %AshA2A.Protocol.Task{id: "t-1", context_id: "ctx-a"}} = Store.get(name, "t-1")
     assert {:ok, ctx_a} = Store.list(name, "ctx-a")
     assert ctx_a |> Enum.map(& &1.id) |> Enum.sort() == ["t-1", "t-2"]
 
@@ -60,15 +64,15 @@ defmodule AshA2A.TaskStoreEkvTest do
     {:ok, pid} = EchoAgent.start_link(name: agent_name, task_store: store)
     Process.unlink(pid)
 
-    assert {:ok, %A2A.Task{id: task_id} = created} =
-             EchoAgent.call(agent_name, A2A.Message.new_user("hello"))
+    assert {:ok, %AshA2A.Protocol.Task{id: task_id} = created} =
+             EchoAgent.call(agent_name, AshA2A.Protocol.Message.new_user("hello"))
 
     ref = Process.monitor(pid)
     Process.exit(pid, :kill)
     assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
 
     {:ok, restarted} = EchoAgent.start_link(name: agent_name, task_store: store)
-    assert {:ok, %A2A.Task{id: ^task_id} = recovered} = EchoAgent.get_task(agent_name, task_id)
+    assert {:ok, %AshA2A.Protocol.Task{id: ^task_id} = recovered} = EchoAgent.get_task(agent_name, task_id)
     assert recovered.status.state == created.status.state
     GenServer.stop(restarted)
 
@@ -77,8 +81,8 @@ defmodule AshA2A.TaskStoreEkvTest do
     {:ok, control} = EchoAgent.start_link(name: control_name)
     Process.unlink(control)
 
-    assert {:ok, %A2A.Task{id: control_task_id}} =
-             EchoAgent.call(control_name, A2A.Message.new_user("hello"))
+    assert {:ok, %AshA2A.Protocol.Task{id: control_task_id}} =
+             EchoAgent.call(control_name, AshA2A.Protocol.Message.new_user("hello"))
 
     control_ref = Process.monitor(control)
     Process.exit(control, :kill)
@@ -97,7 +101,7 @@ defmodule AshA2A.TaskStoreEkvTest do
     assert :ok = stop_supervised(child_id)
     start_supervised!(Store.child_spec(name: name, data_dir: data_dir))
 
-    assert {:ok, %A2A.Task{id: "persist-1", context_id: "ctx-p"} = t} =
+    assert {:ok, %AshA2A.Protocol.Task{id: "persist-1", context_id: "ctx-p"} = t} =
              Store.get(name, "persist-1")
 
     assert t.status.state == :working

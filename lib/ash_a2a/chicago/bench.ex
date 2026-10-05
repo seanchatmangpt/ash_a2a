@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Bench do
   @moduledoc """
   RFC-SA2A-002 benchmark harness (§84, §102, §122, §135, Appendix E).
@@ -33,7 +37,10 @@ defmodule AshA2A.Chicago.Bench do
   `AshA2A.Chicago.Bench.B7CrossRuntime` (`SA2A-B7`),
   `AshA2A.Chicago.Bench.B8Replay` (`SA2A-B8`),
   `AshA2A.Chicago.Bench.B9OcelOverhead` (`SA2A-B9`),
-  `AshA2A.Chicago.Bench.B10Recovery` (`SA2A-B10`). The qualification court is
+  `AshA2A.Chicago.Bench.B10Recovery` (`SA2A-B10`), plus the wire-path category
+  `AshA2A.Chicago.Bench.B11Wire` (`SA2A-B11` -- real Bandit loopback, real
+  `AshA2A.A2ATransport.Plug`, real agent; blocked when Bandit is not loadable,
+  i.e. outside `MIX_ENV=test`). The qualification court is
   `AshA2A.Chicago.Courts.Benchmarks` (`SA2A-BENCH`).
   """
 
@@ -50,6 +57,7 @@ defmodule AshA2A.Chicago.Bench do
     B8Replay,
     B9OcelOverhead,
     B10Recovery,
+    B11Wire,
     Environment
   }
 
@@ -66,7 +74,8 @@ defmodule AshA2A.Chicago.Bench do
     {"B7", B7CrossRuntime},
     {"B8", B8Replay},
     {"B9", B9OcelOverhead},
-    {"B10", B10Recovery}
+    {"B10", B10Recovery},
+    {"B11", B11Wire}
   ]
 
   @default_iterations 10

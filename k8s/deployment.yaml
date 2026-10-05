@@ -167,11 +167,16 @@ spec:
             # Frozen capability-release closure (strict release gate). The
             # digest is the closure's portable_digest over
             # swarm/rel/overlays/capability_release.json; editing the manifest
-            # without updating this value refuses boot (by design).
+            # without updating this value refuses boot (by design). Release is
+            # standing-bound: the court receipt backing each entry is resolved
+            # from ASH_A2A_STANDING_ARTIFACTS_DIR (the rel/overlays/standing/
+            # artifact receipts vendored from the ash_a2a checkout).
             - name: ASH_A2A_CAPABILITY_RELEASE_MANIFEST
               value: "/app/capability_release.json"
             - name: ASH_A2A_CAPABILITY_RELEASE_DIGEST
-              value: "sha256:2abb0dd1996e225bd0e327ac8b3059fafab609aa30a70191c45a308010bf866a"
+              value: "sha256:6d80bcc8ad9921151c51a9425ea47c74c90ff152fa2550515d0446523300b3d4"
+            - name: ASH_A2A_STANDING_ARTIFACTS_DIR
+              value: "/app/standing"
             - name: ASH_A2A_RECEIPT_BINDING_KEY
               valueFrom:
                 secretKeyRef:

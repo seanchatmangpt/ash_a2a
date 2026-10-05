@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CommandBus do
   @moduledoc """
   Canonical receipted route from an admitted `AshA2A.Command` to the existing
@@ -188,8 +192,8 @@ defmodule AshA2A.CommandBus do
     ReceiptOutbox.reconcile(store, store_opts)
   end
 
-  @spec run(Command.t(), A2A.Message.t(), module(), keyword()) :: result()
-  def run(%Command{} = command, %A2A.Message{} = message, resource_or_domain, opts \\ []) do
+  @spec run(Command.t(), AshA2A.Protocol.Message.t(), module(), keyword()) :: result()
+  def run(%Command{} = command, %AshA2A.Protocol.Message{} = message, resource_or_domain, opts \\ []) do
     store = Keyword.get(opts, :store, default_store())
     store_opts = Keyword.get(opts, :store_opts, [])
 

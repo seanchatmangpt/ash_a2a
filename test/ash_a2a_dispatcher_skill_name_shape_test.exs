@@ -1,19 +1,23 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ADispatcherSkillNameShapeTest do
   @moduledoc """
   Chicago-style regression coverage for the ERRC "Raise" finding:
   `AshA2A.Dispatcher.to_skill_name/1` had no catch-all clause, contradicting
   its own documented fail-closed contract. `skill_name` reaches
   `AshA2A.Dispatcher.dispatch/5` from `AshA2A.Agent.resolve_skill_name/2`,
-  which pulls it out of an unauthenticated, unschema'd `A2A.Message.metadata`
+  which pulls it out of an unauthenticated, unschema'd `AshA2A.Protocol.Message.metadata`
   map with zero type checking -- so a remote caller can make `skill_name` any
   term at all (integer, list, map, ...), not just `atom()` or `String.t()`.
 
   Before the fix, `to_skill_name(123)` / `to_skill_name([1, 2])` /
   `to_skill_name(%{})` would raise `FunctionClauseError` instead of returning
   the documented `{:error, {:unknown_skill, skill_name}}`, crashing the
-  calling `A2A.Agent` process.
+  calling `AshA2A.Protocol.Agent` process.
 
-  No Mock/mox/patch/monkeypatch: this dispatches a real `A2A.Message` through
+  No Mock/mox/patch/monkeypatch: this dispatches a real `AshA2A.Protocol.Message` through
   the real `AshA2A.Dispatcher.dispatch/5` against the real
   `AshA2A.Test.Fixture.Item` resource and asserts on the real returned reply
   tuple (state-based), not on any mocked interaction.
@@ -31,7 +35,7 @@ defmodule AshA2ADispatcherSkillNameShapeTest do
         {"a float", 1.5}
       ] do
     test "dispatch/5 fails closed (no raise) for a skill_name that is #{label}" do
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{"label" => "widget"})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => "widget"})])
       bad_skill_name = unquote(Macro.escape(bad_skill_name))
 
       assert {:error, {:skill_lookup, {:unknown_skill, ^bad_skill_name}}} =
@@ -43,16 +47,16 @@ defmodule AshA2ADispatcherSkillNameShapeTest do
   # `:change` skill dispatched directly is refused by the sole-DO fence
   # (`AshA2A.BrceAnchor`) after -- and independently of -- skill lookup.
   test "dispatch/5 still resolves a real atom skill_name to a normal reply" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
-    assert {:reply, [%A2A.Part.Data{data: %{result: "pong"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{result: "pong"}}]} =
              AshA2A.Dispatcher.dispatch(:ping, message, Item)
   end
 
   test "dispatch/5 still resolves a real binary skill_name to a normal reply" do
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
-    assert {:reply, [%A2A.Part.Data{data: %{result: "pong"}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{result: "pong"}}]} =
              AshA2A.Dispatcher.dispatch("ping", message, Item)
   end
 end

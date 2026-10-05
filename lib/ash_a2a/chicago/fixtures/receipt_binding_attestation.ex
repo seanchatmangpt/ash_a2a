@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.ReceiptBindingAttestation do
   @moduledoc """
   Shared, real fixtures for the Gate 9 receipt-binding court
@@ -193,7 +197,7 @@ defmodule AshA2A.Chicago.Fixtures.ReceiptBindingAttestation do
         input: %{key: key, value: "X"}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{"key" => key, "value" => "X"})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})])
 
     reply =
       CommandBus.run(command, message, Ledger,

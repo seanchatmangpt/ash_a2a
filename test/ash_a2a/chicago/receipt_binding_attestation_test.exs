@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
   @moduledoc """
   Gate 9 complete receipt identity binding (`CHI-RECEIPT`, RFC-SA2A-002 §40,
@@ -283,7 +287,7 @@ defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
         )
       end
 
-      message = A2A.Message.new_user([A2A.Part.Data.new(%{"key" => key, "value" => "X"})])
+      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})])
       opts = [store_opts: store_opts, actuation_dedup: :strict]
       ledger = AshA2A.Chicago.Fixtures.Postcondition.Ledger
 

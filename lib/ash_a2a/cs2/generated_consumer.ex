@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.CS2.GeneratedConsumer do
   @moduledoc """
   Semantic values of the RFC-CS2-001 fleet consumer projection.

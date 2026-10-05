@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Repo.Migrations.AddObanJobsTable do
   @moduledoc """
   Real `Ecto.Migration` wrapping Oban's own real `Oban.Migrations.up/1` and

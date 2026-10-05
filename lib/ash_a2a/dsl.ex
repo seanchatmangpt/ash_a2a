@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Dsl do
   @moduledoc """
   Residual A2A projection configuration.
@@ -41,7 +45,7 @@ defmodule AshA2A.Dsl do
     expose?: [
       type: :boolean,
       default: true,
-      doc: "Whether this otherwise-public Ash action is exposed through A2A."
+      doc: "Whether this otherwise-public Ash action is exposed through AshA2A.Protocol."
     ],
     consequence: [
       type: {:one_of, [:observe, :change, :external_do, :unknown]},
@@ -65,6 +69,32 @@ defmodule AshA2A.Dsl do
           "`[exec_context, task_id, context_id | extra_args]`. Unset (the " <>
           "default) leaves cancellation telemetry-only, unchanged from before " <>
           "this option existed."
+    ],
+    argument_mapping: [
+      type: {:map, :string, :atom},
+      default: %{},
+      doc:
+        "Map of wire (string) argument name to atom action argument name, used to " <>
+          "translate inbound A2A message arguments onto the canonical Ash action's " <>
+          "arguments. Empty (the default) means wire names already match action " <>
+          "argument names and are passed through unchanged."
+    ],
+    get?: [
+      type: :boolean,
+      default: false,
+      doc:
+        "Marks a read skill as a single-record get (mirrors ash_json_api's `get?` " <>
+          "semantic). Purely declarative metadata on the skill entity; consumers " <>
+          "read it via the compiled capability index."
+    ],
+    lease_required?: [
+      type: :boolean,
+      default: false,
+      doc:
+        "Governance boundary: when `true`, dispatch under this skill requires a " <>
+          "valid authority lease. The authorizer consequence itself is enforced " <>
+          "outside this entity (see the architecture verifier), so declaring it " <>
+          "here changes no runtime behavior by itself."
     ]
   ]
 
@@ -147,7 +177,7 @@ defmodule AshA2A.Dsl do
         a caller stumbles into. Two gates must both be true before a real
         dispatch reaches `Compiler.compile/3`: (1) this option is `true` on
         the target resource/domain, and (2) the caller's inbound
-        `A2A.Message.metadata` sets `:semantic_request`/`"semantic_request"`
+        `AshA2A.Protocol.Message.metadata` sets `:semantic_request`/`"semantic_request"`
         to `true` (the same atom-then-string caller-facing convention
         `:skill` metadata already uses, via `AshA2A.MetadataKey`) -- a
         normal skill-targeted or unflagged free-text message never reaches

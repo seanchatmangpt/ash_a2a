@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ATest do
   @moduledoc """
   Chicago-style coverage against real compiled Ash resources and the real A2A
@@ -39,7 +43,7 @@ defmodule AshA2ATest do
   test "the built AgentCard uses canonical capability identity and residual display name" do
     agent_card = AshA2A.Info.agent_card(Echo, name: "echo_agent")
 
-    assert %A2A.AgentCard{name: "echo_agent"} = agent_card
+    assert %AshA2A.Protocol.AgentCard{name: "echo_agent"} = agent_card
 
     assert [%{id: "AshA2A.Test.Fixture.Echo.read", name: "echo"}] =
              agent_card.skills
@@ -85,7 +89,7 @@ defmodule AshA2ATest do
   test "AshA2A.Dispatcher.dispatch/3 dispatches the real :echo skill without a KeyError" do
     message = data_message(%{})
 
-    assert {:reply, [%A2A.Part.Data{data: %{results: []}}]} =
+    assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{results: []}}]} =
              AshA2A.Dispatcher.dispatch(:echo, message, Echo)
   end
 
@@ -214,7 +218,7 @@ defmodule AshA2ATest do
     assert error.message =~ "dup"
   end
 
-  test "a real A2A.AgentSupervisor-started AshA2A.Agent dispatches the real :echo skill" do
+  test "a real AshA2A.Protocol.AgentSupervisor-started AshA2A.Agent dispatches the real :echo skill" do
     alias AshA2A.Test.Fixture.EchoAgent
 
     {_sup, _registry_name} =
@@ -224,6 +228,6 @@ defmodule AshA2ATest do
 
     assert {:ok, task} = EchoAgent.call(EchoAgent, message)
     assert task.status.state == :completed
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{results: []}}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{results: []}}]}] = task.artifacts
   end
 end

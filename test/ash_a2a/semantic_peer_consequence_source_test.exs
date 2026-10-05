@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SemanticPeerConsequenceSourceTest do
   @moduledoc """
   Regression cover for RFC S76's anti-downgrade guard being controlled by the
@@ -12,7 +16,7 @@ defmodule AshA2A.SemanticPeerConsequenceSourceTest do
   Every collaborator is real: a real `Ash.Resource` with a real `AshA2A`
   capability surface (`AshA2A.Test.SA2AConsequenceFixture.Ledger`, carrying a
   real `:observe` `:read` skill and a real `:change` `:create` skill), real
-  `A2A.Message` structs, and the real `AshA2A.Semantic.Peer` boundary. The
+  `AshA2A.Protocol.Message` structs, and the real `AshA2A.Semantic.Peer` boundary. The
   consequence class is read from the compiled DSL through the real
   `AshA2A.Info.skill/2`, exactly as `AshA2A.CommandBus` reads it.
   """
@@ -29,7 +33,7 @@ defmodule AshA2A.SemanticPeerConsequenceSourceTest do
     do: Peer.new(name: "peer-b", mode: :strict, capabilities: capabilities)
 
   defp message(metadata),
-    do: %{A2A.Message.new_user("do the thing") | metadata: metadata}
+    do: %{AshA2A.Protocol.Message.new_user("do the thing") | metadata: metadata}
 
   describe "the real DSL is the only source of the consequence class" do
     test "the resource fixture really does carry both consequence classes" do

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.Message do
   @moduledoc """
   The validation entrypoint for GALL Semantic Work Fabric messages
@@ -103,7 +107,7 @@ defmodule AshA2A.Gall.Message do
       ...>   "graphDigest" => "sha256:abc",
       ...>   "capabilities" => %{"requires" => ["Read"]}
       ...> }
-      iex> {:ok, lease} = AshA2A.Gall.Message.validate(child)
+      iex> {:ok, _lease} = AshA2A.Gall.Message.validate(child)
       iex> {:refused, "REFUSED_CAPABILITY"} = AshA2A.Gall.Message.validate(child, parent: ["Write"])
       {:refused, "REFUSED_CAPABILITY"}
       iex> {:ok, %AshA2A.Gall.WorkLease{capabilities: %{requires: [:read]}}} =

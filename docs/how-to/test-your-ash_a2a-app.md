@@ -10,8 +10,8 @@ The cheapest high-information tests are direct dispatches — no process, no
 HTTP:
 
 ```elixir
-message = A2A.Message.new_user([A2A.Part.Data.new(%{"text" => "hi"})])
-assert {:reply, [%A2A.Part.Data{data: %{result: ...}}]} =
+message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"text" => "hi"})])
+assert {:reply, [%AshA2A.Protocol.Part.Data{data: %{result: ...}}]} =
          AshA2A.Dispatcher.dispatch(:my_skill, message, MyApp.Resource)
 ```
 
@@ -29,12 +29,12 @@ Assertions that pay for themselves:
   compiling your fixtures in `test/support`) is the guard.
 
 For agent-process tests, start modules directly
-(`MyApp.Agent.start_link([])`) rather than a second `A2A.AgentSupervisor`
+(`MyApp.Agent.start_link([])`) rather than a second `AshA2A.Protocol.AgentSupervisor`
 (the library's own application already runs one under global names — a
 duplicate raises `:already_started`). For plug-level tests,
 `test/ash_a2a_plug_agent_card_test.exs` and
 `test/ash_a2a_plug_auth_test.exs` in this repo are copyable patterns
-(`Plug.Test`-driven, real `A2A.Plug` pipeline).
+(`Plug.Test`-driven, real `AshA2A.Protocol.Plug` pipeline).
 
 ## Running this repo's own suite
 

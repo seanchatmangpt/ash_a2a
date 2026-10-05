@@ -1,11 +1,15 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.PlugFixture.Greeter do
   @moduledoc """
   Real fixture resource for `test/ash_a2a_plug_agent_card_test.exs` -- a
   genuine `Ash.Resource` with `extensions: [AshA2A]` and one real `a2a do
   skill ... end` declaration, distinct from `test/support/fixture.ex`'s
-  `AshA2A.Test.Fixture.Echo` so this file's real `A2A.Plug`-fronted agent
+  `AshA2A.Test.Fixture.Echo` so this file's real `AshA2A.Protocol.Plug`-fronted agent
   process can be started/stopped independently without colliding with other
-  concurrently-running test files' fixtures (assignment #3, ash_a2a A2A.Plug
+  concurrently-running test files' fixtures (assignment #3, ash_a2a AshA2A.Protocol.Plug
   agent-card serving hardening task).
   """
 
@@ -33,7 +37,7 @@ defmodule AshA2A.Test.PlugFixture.Domain do
   Real fixture domain pairing `AshA2A.Test.PlugFixture.Greeter` above, so
   `AshA2A.Info.agent_card/2` has a real, verified capability index to build
   from -- the same real card the `AshA2A.Agent`-generated GenServer below
-  advertises through a real `A2A.Plug` HTTP pipeline.
+  advertises through a real `AshA2A.Protocol.Plug` HTTP pipeline.
   """
 
   use Ash.Domain, extensions: [AshA2A]
@@ -45,14 +49,15 @@ end
 
 defmodule AshA2A.Test.PlugFixture.GreeterAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer (via `use AshA2A.Agent`) over the
+  Real `AshA2A.Protocol.Agent` GenServer (via `use AshA2A.Agent`) over the
   `AshA2A.Test.PlugFixture.Greeter` resource above, started directly (not
   under `AshA2A.Test.AgentSupervisorCase`'s shared supervisor) by
-  `test/ash_a2a_plug_agent_card_test.exs` so a real `A2A.Plug` `:agent`
+  `test/ash_a2a_plug_agent_card_test.exs` so a real `AshA2A.Protocol.Plug` `:agent`
   option can reference its real registered process name and receive a real
   `GenServer.call(agent, :get_agent_card)` -- the exact call
-  `A2A.Plug`'s `serve_agent_card/2` (`~/xaas/deps/a2a/lib/a2a/plug.ex:172-184`)
-  makes on every real HTTP GET to the agent-card path.
+  `AshA2A.Protocol.Plug`'s `serve_agent_card/2` (in the in-repo ported codec,
+  `lib/ash_a2a/protocol/plug.ex`) makes on every real HTTP GET to the
+  agent-card path.
   """
 
   use AshA2A.Agent, resource_or_domain: AshA2A.Test.PlugFixture.Greeter, name: "greeter_agent"

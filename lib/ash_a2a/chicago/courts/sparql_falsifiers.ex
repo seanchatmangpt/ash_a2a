@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.SparqlFalsifiers do
   @moduledoc """
   RFC-SA2A-002 §49 SPARQL falsifier court (RFC-SA2A-001 S18.2, S18.4, S61).

@@ -1,0 +1,279 @@
+{
+  "version": 1,
+  "created_unix": 1791173070,
+  "roots": [
+    "/Users/sac/ash_a2a",
+    "/tmp"
+  ],
+  "deps": false,
+  "aggressive": true,
+  "items": [
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneF10",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 428355584,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneF12",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 417976320,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneF13",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867368960,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneF15",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867368960,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneF16",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867368960,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneF5",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 439013376,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneGA",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 390262784,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneGB",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 390262784,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneGC",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 407871488,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneGM-prod",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 30777344,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneP1",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 439013376,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneP2",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 439009280,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneP3",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 439013376,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ1",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867295232,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ13",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 866922496,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ20",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 856924160,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ26",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867086336,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ31",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 438972416,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ33",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867291136,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ33b",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 439013376,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ7",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 450641920,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ8",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 859455488,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/_build-laneZ9",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 867176448,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/m14-qual",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 942305280,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/chi-pack-m4",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 577904640,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/z17_rehearsal",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 468783104,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/sa2a_spark_compile_test",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 1511424,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/sa2a-spark-falsifier",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 147456,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/a2a-m8-falsifier",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 65536,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/a2a-sec-falsifier",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 2838528,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/pack_lane_m6",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 24576,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/ema-pack-verify",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 53248,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/z19",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 202915840,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/f15_results",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 684032,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/tmp/z4_pgdata_ash_a2a",
+      "kind": "dir",
+      "reason": "lane lease build root / scratch dir (integration cleanup)",
+      "bytes": 49033216,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/erl_crash.dump",
+      "kind": "file",
+      "reason": "crash dump / regenerable audit artifact",
+      "bytes": 3127983,
+      "reversibility": "reversible"
+    },
+    {
+      "path": "/Users/sac/ash_a2a/disk-audit.jsonocel",
+      "kind": "file",
+      "reason": "crash dump / regenerable audit artifact",
+      "bytes": 75573,
+      "reversibility": "reversible"
+    }
+  ],
+  "tool_roots": [],
+  "approval": {
+    "approver": "lane-G-N",
+    "approval_reason": "Lane G-N disk cleanup: expired _build-lane* lease roots (F1/F2/GD/GO in-flight excluded) + /tmp scratch dirs; z4 postgres stopped cleanly before its pgdata deletion",
+    "approved_at_unix": 1791173088,
+    "plan_hash": "d8c82760e145150e16c5786291992c6f8c6966071c84262cf92076e6289bb1e8",
+    "hmac_signature": "e837f9bb0ed71ed03e075d39aa7bf2e2ef2c06bece5915416dd9a99137863b26"
+  }
+}

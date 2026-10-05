@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Gall.ProcessIntervention do
   @moduledoc """
   GALL-029 finding admission and GALL-030 bounded intervention.
@@ -117,12 +121,12 @@ defmodule AshA2A.Gall.ProcessIntervention do
     end
   end
 
-  @spec intervene(map(), Command.t(), A2A.Message.t(), module(), keyword()) ::
+  @spec intervene(map(), Command.t(), AshA2A.Protocol.Message.t(), module(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def intervene(
         candidate,
         %Command{} = command,
-        %A2A.Message{} = message,
+        %AshA2A.Protocol.Message{} = message,
         resource_or_domain,
         opts \\ []
       ) do
@@ -207,13 +211,17 @@ defmodule AshA2A.Gall.ProcessIntervention do
   end
 
   defp authority_binding(%Command{authority: nil}), do: {:error, :authority_required}
-  defp authority_binding(_), do: {:error, :authority_mismatch}
+
+  # (the old `defp authority_binding(_)` catch-all was dead: dialyzer proves
+  # `command.authority` is always nil at the only call site, so the clause
+  # above covers the full `%Command{}` success type)
 
   defp intervention_constraints(command, opts) do
     scope = Keyword.get(opts, :scope)
     max_consequences = Keyword.get(opts, :max_consequences)
     expected = Keyword.get(opts, :expected_postcondition)
-    idempotency_key = field(command.metadata || %{}, :idempotency_key)
+    # Command.metadata is typed `map()` (never nil), so the old `|| %{}` fallback was dead.
+    idempotency_key = field(command.metadata, :idempotency_key)
 
     cond do
       not is_map(scope) or map_size(scope) == 0 ->

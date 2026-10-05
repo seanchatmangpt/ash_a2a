@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.HookReactor do
   @moduledoc """
   Minimal real, bounded Knowledge Hook reactor (RFC-SA2A-002 §60-§63, §87,
@@ -526,7 +530,7 @@ defmodule AshA2A.Semantic.HookReactor do
               input: intent.input
             )
 
-          message = A2A.Message.new_user([A2A.Part.Data.new(intent.input)])
+          message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(intent.input)])
 
           {authority,
            CommandBus.run(command, message, cfg.resource_or_domain,

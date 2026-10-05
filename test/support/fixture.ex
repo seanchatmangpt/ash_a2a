@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.Echo do
   @moduledoc """
   Real fixture resource for `test/ash_a2a_test.exs` -- a genuine Ash.Resource
@@ -46,9 +50,9 @@ end
 
 defmodule AshA2A.Test.Fixture.EchoAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the fixture
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the fixture
   `Echo` resource above, for `test/ash_a2a_test.exs` to start under a real
-  `A2A.AgentSupervisor` and send a real `A2A.Message` to -- exercising
+  `AshA2A.Protocol.AgentSupervisor` and send a real `AshA2A.Protocol.Message` to -- exercising
   `AshA2A.Dispatcher.dispatch/3` through an actual supervised process
   instead of only as a bare synchronous function call.
   """
@@ -141,11 +145,11 @@ end
 defmodule AshA2A.Test.Fixture.Widget do
   @moduledoc """
   Second, distinct real fixture resource (ash_a2a task #22 -- multi-agent
-  `A2A.Registry` collision test in `test/ash_a2a_registry_test.exs`). A
+  `AshA2A.Protocol.Registry` collision test in `test/ash_a2a_registry_test.exs`). A
   genuine `Ash.Resource` with its own `extensions: [AshA2A]` and its own real
   `a2a do skill ... end` declaration, deliberately separate from
   `AshA2A.Test.Fixture.Echo` above so a real second `AshA2A.Agent` module can
-  be started under the *same* `A2A.AgentSupervisor`/`A2A.Registry` as
+  be started under the *same* `AshA2A.Protocol.AgentSupervisor`/`AshA2A.Protocol.Registry` as
   `EchoAgent` and both asserted to resolve to distinct, non-colliding real
   registry identities -- not two aliases of the same compiled fixture.
   """
@@ -187,10 +191,10 @@ end
 
 defmodule AshA2A.Test.Fixture.WidgetAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the fixture
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the fixture
   `Widget` resource above, for `test/ash_a2a_registry_test.exs` to start
   alongside `AshA2A.Test.Fixture.EchoAgent` under one real
-  `A2A.AgentSupervisor` -- exercising `A2A.Registry`'s real per-module ETS
+  `AshA2A.Protocol.AgentSupervisor` -- exercising `AshA2A.Protocol.Registry`'s real per-module ETS
   keying with two genuinely distinct agent modules/cards instead of just one.
   """
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SemanticIriPublicFirstTest do
   @moduledoc """
   Real tests for RFC-SA2A-001 S7 / S45 / S46 / S47.
@@ -730,11 +734,19 @@ defmodule AshA2A.SemanticIriPublicFirstTest do
 
       assert Enum.sort(backed) == ["owl", "rdf", "rdfs", "skos"]
 
+      # Current truth: the vocabulary registry grew the in-repo `a2a` and
+      # `sa2a-*` (FND/CAP/BP/EVI) namespaces; none of them ships a locally
+      # cached document yet, so they are honestly reported :prefix_only.
       assert Enum.sort(unbacked) == [
+               "a2a",
                "oa",
                "odrl",
                "prov",
                "qudt",
+               "sa2a-bp",
+               "sa2a-cap",
+               "sa2a-evi",
+               "sa2a-fnd",
                "saref",
                "schema",
                "sosa",

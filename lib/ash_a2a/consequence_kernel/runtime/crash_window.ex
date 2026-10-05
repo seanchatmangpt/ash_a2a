@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ConsequenceKernel.Runtime.CrashWindow do
   @moduledoc "Classifies restart evidence without converting ambiguity into retry."
   def disposition(:prepared), do: :safe_to_release

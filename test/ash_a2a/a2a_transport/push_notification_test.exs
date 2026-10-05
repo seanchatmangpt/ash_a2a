@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.A2ATransport.PushNotificationTest.Receiver do
   @moduledoc false
   # Real webhook receiver: forwards every request (method, headers, body) to
@@ -16,11 +20,11 @@ end
 
 defmodule AshA2A.A2ATransport.PushNotificationTest.ReplyAgent do
   @moduledoc false
-  # Real A2A.Agent GenServer that completes every message synchronously.
-  use A2A.Agent, name: "push-reply", description: "replies ok"
+  # Real AshA2A.Protocol.Agent GenServer that completes every message synchronously.
+  use AshA2A.Protocol.Agent, name: "push-reply", description: "replies ok"
 
-  @impl A2A.Agent
-  def handle_message(_message, _context), do: {:reply, [A2A.Part.Text.new("ok")]}
+  @impl AshA2A.Protocol.Agent
+  def handle_message(_message, _context), do: {:reply, [AshA2A.Protocol.Part.Text.new("ok")]}
 end
 
 defmodule AshA2A.A2ATransport.PushNotificationTest do
@@ -88,7 +92,7 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
   end
 
   defp message do
-    {:ok, encoded} = A2A.JSON.encode(A2A.Message.new_user("hello"))
+    {:ok, encoded} = AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Message.new_user("hello"))
     encoded
   end
 
@@ -101,8 +105,24 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
 
   test "push is disabled by default: every push method is -32003", %{off: off} do
     for method <- ~w(set get list delete) do
-      assert %{"error" => %{"code" => -32_003}} =
-               rpc(off, "tasks/pushNotificationConfig/" <> method, %{"taskId" => "t", "id" => "t"})
+      # Valid params (envelope validation requires pushNotificationConfig.url):
+      # proves the -32003 is the disabled-by-default refusal, not a params error.
+      assert %{
+               "error" => %{
+                 "code" => -32_003,
+                 "data" => [
+                   %{
+                     "domain" => "a2a-protocol.org",
+                     "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"
+                   }
+                 ]
+               }
+             } =
+               rpc(off, "tasks/pushNotificationConfig/" <> method, %{
+                 "taskId" => "t",
+                 "id" => "t",
+                 "pushNotificationConfig" => %{"url" => "https://example.com/hook"}
+               })
     end
   end
 
@@ -115,7 +135,12 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
       "configuration" => %{"pushNotificationConfig" => %{"url" => hook}}
     }
 
-    assert %{"error" => %{"code" => -32_003}} = rpc(off, "message/send", params)
+    assert %{
+             "error" => %{
+               "code" => -32_003,
+               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"}]
+             }
+           } = rpc(off, "message/send", params)
   end
 
   test "set -> get -> list -> delete round-trip", %{on: on, hook: hook} do
@@ -161,7 +186,12 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
 
     assert rpc(on, "tasks/pushNotificationConfig/list", %{"id" => task_id})["result"] == []
 
-    assert %{"error" => %{"code" => -32_602}} =
+    assert %{
+             "error" => %{
+               "code" => -32_602,
+               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "INVALID_PARAMS"}]
+             }
+           } =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-1"
@@ -194,7 +224,18 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
           "pushNotificationConfig" => %{"url" => url}
         })
 
-      assert %{"error" => %{"code" => -32_602, "data" => %{"code" => ^code}}} = resp, url
+      # v1.0 ErrorInfo envelope: the typed refusal code rides in the ErrorInfo
+      # metadata detail.
+      assert %{"error" => %{"code" => -32_602, "data" => [info]}} = resp, url
+
+      assert %{
+               "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+               "domain" => "a2a-protocol.org",
+               "reason" => "INVALID_PARAMS",
+               "metadata" => %{"detail" => detail}
+             } = info
+
+      assert detail =~ code, url
     end
   end
 
@@ -228,8 +269,18 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
                body <> " "
              )
 
-    assert %{"id" => ^task_id, "status" => %{"state" => state}} = Jason.decode!(body)
-    assert state in ["completed", "TASK_STATE_COMPLETED"]
+    # v1.0 StreamResponse payload: the webhook carries the same wrapped shape
+    # the streaming transport emits (here the terminal task snapshot), finality
+    # via the terminal TASK_STATE_* — no "final" boolean anywhere.
+    assert %{
+             "task" => %{
+               "id" => ^task_id,
+               "status" => %{"state" => "TASK_STATE_COMPLETED"}
+             }
+           } = Jason.decode!(body)
+
+    refute body =~ ~s("final")
+
     assert [%{attempt: 1, outcome: {:ok, 200}}] = wait_attempts(transport, task_id, 1)
   end
 

@@ -1,12 +1,16 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   @moduledoc """
   RFC-SA2A-002 §57 (Capability), §64 (Authority), §65 (Authority
   Non-Implication) and §66 (Confused Deputy) court, id `SA2A-AUTH`.
 
   Every attack is driven through a real consequence entry point -- the real
-  `A2A.Agent` dispatch path (`AshA2A.Agent.__dispatch__/3` ->
+  `AshA2A.Protocol.Agent` dispatch path (`AshA2A.Agent.__dispatch__/3` ->
   `AshA2A.Authority.Grant.authorize/3` -> `AshA2A.CommandBus`), the real
-  `A2A.Plug.Auth` + `A2A.Plug` HTTP transport, or a direct
+  `AshA2A.Protocol.Plug.Auth` + `AshA2A.Protocol.Plug` HTTP transport, or a direct
   `AshA2A.CommandBus.run/4` exactly as `Reactor`/`Oban` callers reach it -- and
   must be observed REACHING the authority boundary (`authority.decision`,
   `brce.admission`, `bounds.delegate`) before its refusal can count (§12).
@@ -126,8 +130,8 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
         invariant:
           "A transport-verified identity WITH a grant actuates over the real HTTP transport (proves the HTTP harness can actuate)",
         stimulus:
-          "JSON-RPC message/send through A2A.Plug.Auth (bearer) + A2A.Plug with the victim's valid bearer token",
-        boundary: "A2A.Plug.Auth -> AshA2A.Agent -> Grant.authorize/3 -> CommandBus",
+          "JSON-RPC message/send through AshA2A.Protocol.Plug.Auth (bearer) + AshA2A.Protocol.Plug with the victim's valid bearer token",
+        boundary: "AshA2A.Protocol.Plug.Auth -> AshA2A.Agent -> Grant.authorize/3 -> CommandBus",
         attempt_evidence: "authority.decision and brce.admission attributed to the stimulus",
         survival_evidence: "granted + admitted + committed; ledger row",
         attempt_predicate: H.reached_authority_and_admission(),
@@ -137,7 +141,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
         invariant:
           "TransportVerification ⇏ Authority: a bearer-verified identity with no grant cannot request consequence",
         stimulus:
-          "JSON-RPC message/send through A2A.Plug.Auth (valid bearer) + A2A.Plug, skill actuate, no grant",
+          "JSON-RPC message/send through AshA2A.Protocol.Plug.Auth (valid bearer) + AshA2A.Protocol.Plug, skill actuate, no grant",
         guard: "Grant.authorize/3 broker decision on the transport-verified identity"
       ),
       negative(10,
@@ -183,17 +187,17 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
         invariant:
           "Confused deputy / token rebinding (§66): a valid bearer credential cannot be rebound to another principal's identity",
         stimulus:
-          "JSON-RPC through A2A.Plug.Auth with the attacker's VALID bearer token and client params.metadata \"a2a.auth\" = {\"identity\": victim principal}; the victim holds the grant",
+          "JSON-RPC through AshA2A.Protocol.Plug.Auth with the attacker's VALID bearer token and client params.metadata \"a2a.auth\" = {\"identity\": victim principal}; the victim holds the grant",
         guard:
-          "AshA2A.Agent.verified_auth_identity/1 accepts only the atom-keyed identity A2A.Plug.Auth stores"
+          "AshA2A.Agent.verified_auth_identity/1 accepts only the atom-keyed identity AshA2A.Protocol.Plug.Auth stores"
       ),
       negative(15,
         invariant:
           "Confused deputy / subject substitution (§66): a caller with no credential cannot substitute the subject of a granted principal",
         stimulus:
-          "JSON-RPC through A2A.Plug alone (no transport auth wired) with client params.metadata \"a2a.auth\" = {\"identity\": victim principal}",
+          "JSON-RPC through AshA2A.Protocol.Plug alone (no transport auth wired) with client params.metadata \"a2a.auth\" = {\"identity\": victim principal}",
         guard:
-          "AshA2A.Agent.verified_auth_identity/1 accepts only the atom-keyed identity A2A.Plug.Auth stores"
+          "AshA2A.Agent.verified_auth_identity/1 accepts only the atom-keyed identity AshA2A.Protocol.Plug.Auth stores"
       ),
       negative(16,
         invariant:
@@ -1173,7 +1177,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   defp nonce_data(nil), do: %{}
   defp nonce_data(nonce), do: %{"nonce" => nonce}
 
-  defp data_message(nonce), do: A2A.Message.new_user([A2A.Part.Data.new(%{"nonce" => nonce})])
+  defp data_message(nonce), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})])
 
   defp reply_code({:ok, %{status: status}}), do: "ok:#{status}"
   defp reply_code({:ok, _}), do: "ok"

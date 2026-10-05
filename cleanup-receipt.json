@@ -1,0 +1,308 @@
+{
+  "execution_record": {
+    "version": 1,
+    "plan_created_unix": 1791173070,
+    "execution_started_unix": 1791173093,
+    "execution_completed_unix": 1791173126,
+    "results": [
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneF10",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 428355584,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneF12",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 417976320,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneF13",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867368960,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneF15",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867368960,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneF16",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867368960,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneF5",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 439013376,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneGA",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 434024448,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneGB",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 428367872,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneGC",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 434024448,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneGM-prod",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 316542976,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneP1",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 439013376,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneP2",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 439009280,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneP3",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 439013376,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ1",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867295232,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ13",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 866922496,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ20",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 856924160,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ26",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867086336,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ31",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 438972416,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ33",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867291136,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ33b",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 439013376,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ7",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 450641920,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ8",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 859455488,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/_build-laneZ9",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 867176448,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/m14-qual",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 942305280,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/chi-pack-m4",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 577904640,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/z17_rehearsal",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 468783104,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/sa2a_spark_compile_test",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 1511424,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/sa2a-spark-falsifier",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 147456,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/a2a-m8-falsifier",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 65536,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/a2a-sec-falsifier",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 2838528,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/pack_lane_m6",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 24576,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/ema-pack-verify",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 53248,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/z19",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 202915840,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/f15_results",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 684032,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/tmp/z4_pgdata_ash_a2a",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": null,
+        "bytes_freed": 49033216,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/erl_crash.dump",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": "87db590700b0b486f1bbefd3573d1f594374ddc67420be2d3875da78c1e8a2bb",
+        "bytes_freed": 3129344,
+        "reversibility": "reversible"
+      },
+      {
+        "path": "/Users/sac/ash_a2a/disk-audit.jsonocel",
+        "status": "deleted",
+        "error": null,
+        "blake3_hash": "9eb05b660a2aa98bd1d0a5da57e0e1fe73a985558f9ca0d4942d0540ca9d0f6a",
+        "bytes_freed": 77824,
+        "reversibility": "reversible"
+      }
+    ],
+    "available_before": 61671452672,
+    "available_after": 64083046400
+  }
+}

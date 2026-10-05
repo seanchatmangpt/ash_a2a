@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   @moduledoc """
   Real malformed/adversarial-input hardening of the Semantic A2A admission
@@ -9,8 +13,8 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   collaborators built this session (`lib/ash_a2a/chicago/fixtures/
   envelope_negotiation_transport.ex`, reused unchanged, never duplicated):
 
-    * `Http.post_message/3` -- a real `A2A.Plug` pipeline (`Endpoint`,
-      wrapping the real, unmodified `A2A.Plug`) driven in-process via
+    * `Http.post_message/3` -- a real `AshA2A.Protocol.Plug` pipeline (`Endpoint`,
+      wrapping the real, unmodified `AshA2A.Protocol.Plug`) driven in-process via
       `Plug.Test`. Used for every case expressible as syntactically valid
       JSON with a hostile *value* (wrong type, missing field, self-declared
       standing, forged digest, deep nesting, oversized fields).
@@ -36,7 +40,7 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
   had no equivalent of `AshA2A.Semantic.AdmissionPipeline`'s Parse-stage
   triple-existence witness (`admission_pipeline.ex`'s own moduledoc
   documents the exact same class of vacuous-pass defect and the fix it
-  applied). Confirmed for real, end to end, over the real `A2A.Plug` HTTP
+  applied). Confirmed for real, end to end, over the real `AshA2A.Protocol.Plug` HTTP
   JSON-RPC boundary, before this test was written (not asserted from
   reading the source alone).
 
@@ -493,7 +497,7 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
 
       payload = Envelopes.admissible(garbage, garbage_digest)
       message = Envelopes.activated(payload)
-      {:ok, encoded_message} = A2A.JSON.encode(message)
+      {:ok, encoded_message} = AshA2A.Protocol.JSON.encode(message)
 
       body =
         Jason.encode!(%{
@@ -523,7 +527,7 @@ defmodule AshA2A.Chicago.Hardening.AdversarialInputTest do
          %{listener: listener} = ctx do
       payload = base_payload(ctx)
       message = Envelopes.activated(payload)
-      {:ok, encoded_message} = A2A.JSON.encode(message)
+      {:ok, encoded_message} = AshA2A.Protocol.JSON.encode(message)
 
       body =
         Jason.encode!(%{

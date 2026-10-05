@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ACommandBusConcurrencyTest do
   @moduledoc """
   Squad H (replay/concurrency stress, agent 38) -- real BEAM concurrency

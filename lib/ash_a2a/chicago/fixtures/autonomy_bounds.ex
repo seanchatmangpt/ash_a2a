@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.AutonomyBounds.Domain do
   @moduledoc "Ash domain for the autonomy (CHI-AUTO) and resource-bounds (SA2A-BOUNDS) court fixtures."
   use Ash.Domain, validate_config_inclusion?: false

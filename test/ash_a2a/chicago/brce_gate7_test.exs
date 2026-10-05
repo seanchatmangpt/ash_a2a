@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.BrceGate7Test do
   @moduledoc """
   RFC-SA2A-002 Gate 7 (§38), BRCE Court (§68) and Prepared Receipt Court
@@ -274,5 +278,5 @@ defmodule AshA2A.Chicago.BrceGate7Test do
     Receipt.pending(command, Identity.execution(Ash.UUIDv7.generate()), consequence)
   end
 
-  defp message(label), do: A2A.Message.new_user([A2A.Part.Data.new(%{"label" => label})])
+  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 end

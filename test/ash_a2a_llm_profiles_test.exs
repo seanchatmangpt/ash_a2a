@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ALLMProfilesTest do
   @moduledoc """
   Real, live proof that `AshA2A.LLMProfiles` role-based resolution works
@@ -46,7 +50,7 @@ defmodule AshA2ALLMProfilesTest do
   # probe when the full suite runs with `--include external_api`: real
   # rate-limit exhaustion from that probe can make this real, unseamed live
   # LLM call exceed the default 60s on both the ExUnit test process and
-  # A2A.Agent.call/3's own GenServer.call -- same fix as
+  # AshA2A.Protocol.Agent.call/3's own GenServer.call -- same fix as
   # test/ash_a2a_agent_semantic_request_test.exs, not a code defect.
   @tag timeout: 180_000
   test "a role-resolved action dispatches to a real live LLM call over real A2A" do
@@ -62,7 +66,7 @@ defmodule AshA2ALLMProfilesTest do
 
     assert task.status.state == :completed
 
-    assert [%A2A.Artifact{parts: [%A2A.Part.Data{data: %{answer: answer}}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{answer: answer}}]}] = task.artifacts
     assert is_binary(answer)
     assert String.length(answer) > 0
   end

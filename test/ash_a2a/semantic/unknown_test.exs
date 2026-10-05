@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Semantic.UnknownTest do
   @moduledoc """
   RFC S36/S37/S64: UNKNOWN as an explicit state, and the algorithm that

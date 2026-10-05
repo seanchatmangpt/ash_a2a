@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ConsequenceKernel.W5.ReplayEvidence do
   def derive(%{claim_id: c, request_id: r, effect_id: e, prepared_digest: p, subject_digest: s})
       when is_binary(c) and is_binary(r) and is_binary(e) and is_binary(p) and is_binary(s),

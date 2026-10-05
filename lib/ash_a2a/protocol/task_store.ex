@@ -1,0 +1,98 @@
+defmodule AshA2A.Protocol.TaskStore do
+  @moduledoc """
+  Behaviour for pluggable task persistence.
+
+  Implementations store and retrieve `AshA2A.Protocol.Task` structs. Each callback
+  receives a store reference (opaque term) that the implementation uses
+  to locate its storage — e.g., an ETS table name or a connection PID.
+
+  ## Implementing a Custom Store
+
+      defmodule MyApp.RedisTaskStore do
+        @behaviour AshA2A.Protocol.TaskStore
+
+        @impl true
+        def get(conn, task_id) do
+          # ...
+        end
+
+        # ... other callbacks
+      end
+
+  ## Configuring an Agent with a Store
+
+      MyAgent.start_link(task_store: {AshA2A.Protocol.TaskStore.ETS, :my_tasks})
+  """
+
+  @type ref :: term()
+
+  @doc """
+  Retrieves a task by ID.
+  """
+  @callback get(ref(), task_id :: String.t()) :: {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found}
+
+  @doc """
+  Stores or updates a task.
+  """
+  @callback put(ref(), AshA2A.Protocol.Task.t()) :: :ok | {:error, term()}
+
+  @doc """
+  Deletes a task by ID.
+  """
+  @callback delete(ref(), task_id :: String.t()) :: :ok | {:error, term()}
+
+  @doc """
+  Lists all tasks for a given context ID.
+  """
+  @callback list(ref(), context_id :: String.t()) :: {:ok, [AshA2A.Protocol.Task.t()]}
+
+  @doc """
+  Lists tasks with filtering and pagination options.
+
+  ## Options
+
+  - `:context_id` — filter by context ID
+  - `:status` — filter by task state atom
+  - `:status_timestamp_after` — filter to tasks updated after this DateTime
+  - `:page_size` — max results to return (default 50)
+  - `:page_token` — opaque cursor for pagination
+  - `:history_length` — number of history entries to include (default 0)
+  - `:include_artifacts` — whether to include artifacts (default false)
+  """
+  @callback list_all(ref(), opts :: keyword()) :: {:ok, map()}
+
+  @doc """
+  Stores or replaces a push notification config.
+
+  Configs are identified by `id` within the scope of their `task_id`. Stores
+  that implement the push callbacks own them entirely — the agent keeps no
+  in-memory copy, so a delete here is authoritative.
+  """
+  @callback set_push_config(ref(), AshA2A.Protocol.PushNotificationConfig.t()) ::
+              {:ok, AshA2A.Protocol.PushNotificationConfig.t()} | {:error, term()}
+
+  @doc """
+  Retrieves a push notification config by task ID and config ID.
+  """
+  @callback get_push_config(ref(), task_id :: String.t(), config_id :: String.t()) ::
+              {:ok, AshA2A.Protocol.PushNotificationConfig.t()} | {:error, :not_found}
+
+  @doc """
+  Lists every push notification config registered for a task.
+  """
+  @callback list_push_configs(ref(), task_id :: String.t()) ::
+              {:ok, [AshA2A.Protocol.PushNotificationConfig.t()]}
+
+  @doc """
+  Deletes a push notification config.
+
+  Idempotent — deleting a config that is not present returns `:ok`.
+  """
+  @callback delete_push_config(ref(), task_id :: String.t(), config_id :: String.t()) :: :ok
+
+  @optional_callbacks list_all: 2,
+                      set_push_config: 2,
+                      get_push_config: 3,
+                      list_push_configs: 2,
+                      delete_push_config: 3
+end

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.Fixture.StreamItem do
   @moduledoc """
   Real fixture resource for `test/ash_a2a_cancel_inflight_test.exs` (item
@@ -13,21 +17,21 @@ defmodule AshA2A.Test.Fixture.StreamItem do
   interrupt.
 
   Why streaming, and not a plain synchronous action, is the only real
-  in-flight window `A2A.Agent` offers: `A2A.Agent`'s GenServer
-  (`~/xaas/deps/a2a/lib/a2a/agent.ex:253-283`) processes `{:message, ...}`
+  in-flight window `AshA2A.Protocol.Agent` offers: `AshA2A.Protocol.Agent`'s GenServer
+  (in the in-repo ported codec, `lib/ash_a2a/protocol/agent.ex`) processes `{:message, ...}`
   and `{:cancel, ...}` calls through the *same* serialized mailbox --
   `handle_message/2` runs synchronously inside `handle_call({:message, ...})`
   before the GenServer ever replies, so a `:cancel` call sent while an
   ordinary synchronous action is executing cannot be delivered until that
   call already finished (there is no window to interleave it; the mailbox
   is blocked on the very call being "canceled"). A `{:stream, enumerable}`
-  reply is different: `A2A.Agent.Runtime.run_task/4` transitions the task to
+  reply is different: `AshA2A.Protocol.Agent.Runtime.run_task/4` transitions the task to
   `:working` and returns the *unconsumed* stream to the caller as part of
   the `{:ok, task}` reply -- the GenServer call has already completed and
   the mailbox is free -- and the task stays `:working` (non-terminal) until
   a caller actually drains the stream (triggering the `{:stream_done, ...}`
-  cast that finalizes it to `:completed`,
-  `~/xaas/deps/a2a/lib/a2a/agent.ex:285-294`). A test that never drains the
+  cast that finalizes it to `:completed` in the in-repo ported codec's
+  `lib/ash_a2a/protocol/agent.ex`). A test that never drains the
   stream has a real, indefinitely-in-flight `:working` task to cancel.
   """
 
@@ -66,10 +70,10 @@ end
 
 defmodule AshA2A.Test.Fixture.StreamItemAgent do
   @moduledoc """
-  Real `A2A.Agent` GenServer built with `use AshA2A.Agent` over the
+  Real `AshA2A.Protocol.Agent` GenServer built with `use AshA2A.Agent` over the
   `StreamItem` fixture above, for
   `test/ash_a2a_cancel_inflight_test.exs` to start under a real
-  `A2A.AgentSupervisor` and dispatch a real streaming skill through, then
+  `AshA2A.Protocol.AgentSupervisor` and dispatch a real streaming skill through, then
   issue a real concurrent `cancel/2` against the same agent process while
   the resulting task is still genuinely `:working`.
   """

@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ContextResolverTest do
   @moduledoc """
   Real-collaborator tests for `AshA2A.ContextResolver.fetch/2`'s string-keyed
   fallback branch: `Map.fetch(metadata, key)` misses (the caller supplied the
-  key as a string, not an atom, since `A2A.Message.metadata` is parsed
+  key as a string, not an atom, since `AshA2A.Protocol.Message.metadata` is parsed
   straight from remote-caller JSON, per the moduledoc) and the private
   `fetch/2` helper falls back to `Map.get(metadata, Atom.to_string(key))`.
 
@@ -22,7 +26,7 @@ defmodule AshA2A.ContextResolverTest do
 
   describe "from_a2a_message/4 string-keyed fallback branches" do
     test "auth_identity keyed by string \"tenant\" is read via the string-key fallback" do
-      message = A2A.Message.new_user("hi")
+      message = AshA2A.Protocol.Message.new_user("hi")
 
       auth_identity = %{"id" => "user-1", "tenant" => "acme"}
 
@@ -47,8 +51,8 @@ defmodule AshA2A.ContextResolverTest do
     test "message metadata keyed by string \"context\" is read via the string-key fallback" do
       raw_context = %{foo: 1}
 
-      %A2A.Message{} = base_message = A2A.Message.new_user("hi")
-      message = %A2A.Message{base_message | metadata: %{"context" => raw_context}}
+      %AshA2A.Protocol.Message{} = base_message = AshA2A.Protocol.Message.new_user("hi")
+      message = %AshA2A.Protocol.Message{base_message | metadata: %{"context" => raw_context}}
 
       ctx =
         ContextResolver.from_a2a_message(
@@ -71,7 +75,7 @@ defmodule AshA2A.ContextResolverTest do
     end
 
     test "a caller cannot place a top-level key into the Ash context (SEC-11)" do
-      message = %{A2A.Message.new_user("hi") | metadata: %{"context" => %{"authorize?" => false}}}
+      message = %{AshA2A.Protocol.Message.new_user("hi") | metadata: %{"context" => %{"authorize?" => false}}}
       ctx = ContextResolver.from_a2a_message(message, AshA2A.Test.Fixture.Domain)
 
       assert Map.keys(ctx.context) == [:a2a_client_context]
@@ -79,10 +83,10 @@ defmodule AshA2A.ContextResolverTest do
     end
 
     test "non-map context or non-map metadata resolves to an empty context, never raises" do
-      bad_ctx = %{A2A.Message.new_user("hi") | metadata: %{"context" => "x"}}
+      bad_ctx = %{AshA2A.Protocol.Message.new_user("hi") | metadata: %{"context" => "x"}}
       assert ContextResolver.from_a2a_message(bad_ctx, AshA2A.Test.Fixture.Domain).context == %{}
 
-      bad_md = %{A2A.Message.new_user("hi") | metadata: [1]}
+      bad_md = %{AshA2A.Protocol.Message.new_user("hi") | metadata: [1]}
       assert ContextResolver.from_a2a_message(bad_md, AshA2A.Test.Fixture.Domain).context == %{}
     end
   end

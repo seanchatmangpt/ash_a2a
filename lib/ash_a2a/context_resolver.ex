@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.ContextResolver do
   @moduledoc """
-  Resolves a real `AshA2A.ExecutionContext` from an inbound `A2A.Message`.
+  Resolves a real `AshA2A.ExecutionContext` from an inbound `AshA2A.Protocol.Message`.
 
   This is the trust boundary named in the ash_a2a PRD/ARD §3.5: raw A2A message
   metadata must never be passed straight into an Ash call (`Ash.Changeset.for_create/3`,
@@ -12,7 +16,7 @@ defmodule AshA2A.ContextResolver do
 
   ## `actor`/`tenant` are never read from `message.metadata`
 
-  `A2A.Message.metadata` (`~/xaas/deps/a2a/lib/a2a/message.ex:10-18`,
+  `AshA2A.Protocol.Message.metadata` (`~/xaas/deps/a2a/lib/a2a/message.ex:10-18`,
   `metadata: map()`) is parsed straight from the caller's JSON-RPC request body
   (`~/xaas/deps/a2a/lib/a2a/plug.ex:198`, `message = params["message"]`) — an
   arbitrary, unauthenticated, remote-caller-controlled object with no schema
@@ -26,19 +30,19 @@ defmodule AshA2A.ContextResolver do
   directly (`fetch(metadata, :actor)`, `fetch(metadata, :tenant)`),
   contradicting this moduledoc's own trust-boundary contract.
 
-  The *verified* identity lives elsewhere entirely: `A2A.Plug.Auth` verifies
+  The *verified* identity lives elsewhere entirely: `AshA2A.Protocol.Plug.Auth` verifies
   real credentials and stores the result in `conn.private[:a2a][:auth]`
-  (`~/xaas/deps/a2a/lib/a2a/plug/auth.ex:6-16,60-76`), which `A2A.Plug` then
+  (`~/xaas/deps/a2a/lib/a2a/plug/auth.ex:6-16,60-76`), which `AshA2A.Protocol.Plug` then
   merges into the **call-level** `metadata` opt
   (`~/xaas/deps/a2a/lib/a2a/plug.ex:159`, `Map.put(metadata, "a2a.auth", auth)`
   on `opts.metadata` inside `resolve_opts/2`) — that opt flows into
   `GenServer.call(agent, {:message, message, opts})`
   (`~/xaas/deps/a2a/lib/a2a/plug.ex:275`) and from there into
-  `A2A.Agent.Runtime.process_message/5`'s `metadata` argument
+  `AshA2A.Protocol.Agent.Runtime.process_message/5`'s `metadata` argument
   (`~/xaas/deps/a2a/lib/a2a/agent.ex:272,286-291`), which becomes
   `Task.new(metadata: metadata)` and ultimately `context().metadata` — the
   **second argument** `handle_message/2` receives — **never the inbound
-  `A2A.Message.t()`'s own `:metadata` field**, which `A2A.Plug` never touches
+  `AshA2A.Protocol.Message.t()`'s own `:metadata` field**, which `AshA2A.Protocol.Plug` never touches
   at all. So a lookup keyed on `message.metadata["a2a.auth"]` could never
   observe the real verified identity (it structurally isn't there), and would
   only invite the same spoofing problem one key over.
@@ -46,8 +50,8 @@ defmodule AshA2A.ContextResolver do
   `from_a2a_message/4` therefore takes the verified identity as an explicit
   `auth_identity` argument rather than reading anything actor/tenant-shaped
   out of `a2a_message`. A correctly-wired dispatcher sources `auth_identity`
-  from `A2A.Agent.context().metadata["a2a.auth"]` (specifically its `:identity`
-  field, per `A2A.Plug.Auth.build_identity/2`,
+  from `AshA2A.Protocol.Agent.context().metadata["a2a.auth"]` (specifically its `:identity`
+  field, per `AshA2A.Protocol.Plug.Auth.build_identity/2`,
   `~/xaas/deps/a2a/lib/a2a/plug/auth.ex:226-242`) — never from `a2a_message`
   itself. It defaults to `nil` (unauthenticated / no actor, no tenant claim)
   when the caller supplies nothing, so an unauthenticated or not-yet-wired
@@ -59,7 +63,7 @@ defmodule AshA2A.ContextResolver do
     * `:actor`   — **never** read from `message.metadata`. Set to the explicit
       `auth_identity` argument (default `nil`) verbatim — `auth_identity` IS
       the actor, since it is already the verified identity map produced
-      out-of-band by the caller's `A2A.Plug.Auth` `:verify` callback.
+      out-of-band by the caller's `AshA2A.Protocol.Plug.Auth` `:verify` callback.
     * `:tenant`  — **never** read from `message.metadata`. Extracted from
       `auth_identity[:tenant]` (or `auth_identity["tenant"]`) when
       `auth_identity` is a map; `nil` when `auth_identity` is `nil` or has no
@@ -79,7 +83,7 @@ defmodule AshA2A.ContextResolver do
       argument passed by the dispatcher that already knows which Ash domain owns
       the skill being invoked.
     * `:history` — never read from message metadata either; it is the
-      `A2A.Agent.context().history` transcript the `A2A.Agent.Runtime` builds and
+      `AshA2A.Protocol.Agent.context().history` transcript the `AshA2A.Protocol.Agent.Runtime` builds and
       passes to `handle_message/2` on a continued (multi-turn) task
       (`~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`). Supplied explicitly by the
       dispatcher as a third argument, defaulting to `[]` for a fresh task.
@@ -88,9 +92,9 @@ defmodule AshA2A.ContextResolver do
   alias AshA2A.ExecutionContext
 
   @doc """
-  Builds an `AshA2A.ExecutionContext` from a real `A2A.Message` struct, the
+  Builds an `AshA2A.ExecutionContext` from a real `AshA2A.Protocol.Message` struct, the
   Ash domain module that owns the skill being dispatched, an optional
-  prior-turn `history` from the `A2A.Agent` task context (empty for a fresh
+  prior-turn `history` from the `AshA2A.Protocol.Agent` task context (empty for a fresh
   task), and the transport-verified `auth_identity` for the caller (or `nil`
   when unauthenticated / not yet wired by the caller).
 
@@ -99,9 +103,9 @@ defmodule AshA2A.ContextResolver do
   must not be able to name its own domain or fabricate prior-turn history.
 
   `auth_identity` MUST be sourced from a real, out-of-band-verified identity —
-  for an `A2A.Plug`-fronted agent, the `:identity` field of
-  `A2A.Agent.context().metadata["a2a.auth"]` (populated exclusively by
-  `A2A.Plug.Auth` after actual credential verification, see moduledoc) — and
+  for an `AshA2A.Protocol.Plug`-fronted agent, the `:identity` field of
+  `AshA2A.Protocol.Agent.context().metadata["a2a.auth"]` (populated exclusively by
+  `AshA2A.Protocol.Plug.Auth` after actual credential verification, see moduledoc) — and
   MUST NOT be read from `a2a_message.metadata`, which is unauthenticated wire
   input a remote caller fully controls end to end. Omitting this argument (or
   passing `nil`) resolves both `actor` and `tenant` to `nil`; neither ever
@@ -109,12 +113,12 @@ defmodule AshA2A.ContextResolver do
 
   ## Examples
 
-      iex> message = A2A.Message.new_user("hi")
+      iex> message = AshA2A.Protocol.Message.new_user("hi")
       iex> ctx = AshA2A.ContextResolver.from_a2a_message(message, AshA2A.Test.Fixture.Domain)
       iex> {ctx.actor, ctx.tenant, ctx.context, ctx.domain, ctx.history}
       {nil, nil, %{}, AshA2A.Test.Fixture.Domain, []}
 
-      iex> message = A2A.Message.new_user("hi")
+      iex> message = AshA2A.Protocol.Message.new_user("hi")
       iex> ctx = AshA2A.ContextResolver.from_a2a_message(
       ...>   message,
       ...>   AshA2A.Test.Fixture.Domain,
@@ -124,17 +128,17 @@ defmodule AshA2A.ContextResolver do
       iex> {ctx.actor, ctx.tenant}
       {%{id: "user-1", tenant: "acme"}, "acme"}
 
-      iex> message = A2A.Message.new_user("hi")
-      iex> reply = A2A.Message.new_user("prior turn")
+      iex> message = AshA2A.Protocol.Message.new_user("hi")
+      iex> reply = AshA2A.Protocol.Message.new_user("prior turn")
       iex> ctx = AshA2A.ContextResolver.from_a2a_message(message, AshA2A.Test.Fixture.Domain, [reply])
       iex> ctx.history
       [reply]
 
   """
-  @spec from_a2a_message(A2A.Message.t(), module(), [A2A.Message.t()], term()) ::
+  @spec from_a2a_message(AshA2A.Protocol.Message.t(), module(), [AshA2A.Protocol.Message.t()], term()) ::
           ExecutionContext.t()
   def from_a2a_message(
-        %A2A.Message{metadata: metadata},
+        %AshA2A.Protocol.Message{metadata: metadata},
         domain,
         history \\ [],
         auth_identity \\ nil

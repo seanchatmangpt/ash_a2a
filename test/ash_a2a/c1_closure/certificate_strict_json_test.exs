@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.C1Closure.CertificateStrictJsonTest do
   @moduledoc """
   Control-plane certificate decode refuses duplicate JSON object keys (last-wins /

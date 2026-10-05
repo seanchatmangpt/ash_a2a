@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Fixtures.Replay do
   @moduledoc """
   Real fixtures for the Gate 10 offline-replay court
@@ -291,7 +295,7 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
     Grant.authorize(@principal, Environment.capability(), policy: :broker, broker: broker)
   end
 
-  @spec message(map()) :: A2A.Message.t()
+  @spec message(map()) :: AshA2A.Protocol.Message.t()
   def message(spec), do: Environment.message(%{"operation_id" => spec.operation_id})
 
   @doc "Independent reader: total ledger rows across `operations`."

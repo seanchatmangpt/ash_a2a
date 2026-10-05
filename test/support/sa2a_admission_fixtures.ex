@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Test.SA2AAdmissionFixtures do
   @moduledoc """
   Real RDF/SHACL/ShExJ/N3/OWL fixtures for the RFC S13 admission pipeline tests.

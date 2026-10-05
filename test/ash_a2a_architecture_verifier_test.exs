@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2AArchitectureVerifierTest do
   @moduledoc """
   Direct ExUnit coverage of `AshA2A.ArchitectureVerifier`'s ten real
@@ -101,7 +105,7 @@ defmodule AshA2AArchitectureVerifierTest do
         input: %{}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
     assert {:error, %{code: :consequence_unclassified}} =
              CommandBus.run(command, message, Resource)
@@ -127,7 +131,7 @@ defmodule AshA2AArchitectureVerifierTest do
         input: %{}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
     assert {:error, %{code: :authority_required}} = CommandBus.run(command, message, Resource)
   end
@@ -201,7 +205,7 @@ defmodule AshA2AArchitectureVerifierTest do
         input: %{}
       )
 
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
     assert {:ok, %Receipt{status: :completed} = receipt} =
              CommandBus.run(command, message, Resource)
@@ -224,7 +228,7 @@ defmodule AshA2AArchitectureVerifierTest do
     principal = Identity.principal("test-principal")
     authority = Authority.new(principal, create_skill.id, source: :test)
     shared_command_id = "test-conflict-#{System.unique_integer([:positive])}"
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
     first =
       Command.new(create_skill.id,
@@ -263,7 +267,7 @@ defmodule AshA2AArchitectureVerifierTest do
     assert create_skill.consequence == :change
 
     :ok = BrceAnchor.clear()
-    message = A2A.Message.new_user([A2A.Part.Data.new(%{})])
+    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 
     assert {:error, {:brce_gate, %{code: :brce_prepared_receipt_required}}} =
              Dispatcher.dispatch(create_skill.name, message, Resource)
@@ -283,7 +287,7 @@ defmodule AshA2AArchitectureVerifierTest do
 
     message =
       %{
-        A2A.Message.new_user([A2A.Part.Data.new(%{})])
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
         | metadata: %{semantic_request: true, skill: "probe"}
       }
 

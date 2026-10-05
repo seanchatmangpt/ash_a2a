@@ -1,7 +1,15 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.EffectInstance do
   @enforce_keys [:request_id, :effect_id, :subject_digest]
   defstruct [:request_id, :effect_id, :subject_digest, :generation, :policy_epoch]
   alias AshA2A.ConsequenceKernel.{RequestIdentity, EffectIdentity, ExactSubject}
+
+  # Referenced as `AshA2A.EffectInstance.t()` from `AshA2A.PreparedEffect`'s
+  # type; without it dialyzer reports the reference as `unknown_type`.
+  @type t :: %__MODULE__{}
 
   def new(attrs) do
     with {:ok, request} <- fetch(attrs, :request),

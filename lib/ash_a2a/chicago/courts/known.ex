@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.Courts.Known do
   @moduledoc """
   `CHI-KNOWN` -- Gate 12, Zero Runtime Inference on KNOWN, and Machine
@@ -481,7 +485,7 @@ defmodule AshA2A.Chicago.Courts.Known do
 
     candidate_reply? =
       case reply do
-        {:reply, [%A2A.Part.Data{data: %{"standing" => "candidate", "authority" => "none"}} | _]} ->
+        {:reply, [%AshA2A.Protocol.Part.Data{data: %{"standing" => "candidate", "authority" => "none"}} | _]} ->
           true
 
         _ ->
@@ -499,18 +503,18 @@ defmodule AshA2A.Chicago.Courts.Known do
   end
 
   defp invalid_facts_message do
-    A2A.Message.new_user([
-      A2A.Part.Data.new(%{"goal_facts" => "not an object"}),
-      A2A.Part.Text.new(Fx.known_phrase())
+    AshA2A.Protocol.Message.new_user([
+      AshA2A.Protocol.Part.Data.new(%{"goal_facts" => "not an object"}),
+      AshA2A.Protocol.Part.Text.new(Fx.known_phrase())
     ])
   end
 
   defp nested_facts_message do
-    A2A.Message.new_user([
-      A2A.Part.Data.new(%{
+    AshA2A.Protocol.Message.new_user([
+      AshA2A.Protocol.Part.Data.new(%{
         "payload" => %{"goal_facts" => Fx.goal_facts("chicago-known-007-#{Fx.unique()}")}
       }),
-      A2A.Part.Text.new(Fx.known_phrase())
+      AshA2A.Protocol.Part.Text.new(Fx.known_phrase())
     ])
   end
 

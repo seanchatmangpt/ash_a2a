@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2ASA2AGraphlawLiveTest do
   @moduledoc """
   Live re-verification of the SA2A conformance corpus against the REAL pinned

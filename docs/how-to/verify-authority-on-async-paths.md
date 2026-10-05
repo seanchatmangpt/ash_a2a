@@ -76,7 +76,7 @@ defmodule MyApp.CommandWorker do
 
     with {:ok, live_authority} <- authority_result,
          command = %{command | authority: live_authority},
-         message = A2A.Message.new_user([A2A.Part.Data.new(command.input || %{})]) do
+         message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(command.input || %{})]) do
       AshA2A.CommandBus.run(command, message, @resource)
     end
   end

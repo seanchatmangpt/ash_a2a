@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.SupplyChain.ReleasePathTest do
   @moduledoc """
   Release-path court: one publisher, no scheduled publisher, EKV_BUILD wherever

@@ -109,6 +109,14 @@ measurements unless noted. They fire only on the opt-in semantic paths.
 | `[:ash_a2a, :episode \| suffix]` | `AshA2A.Semantic.Episode` — suffixed sub-events over one semantic episode |
 | `[:ash_a2a, :logic, :closure, event]` | `AshA2A.Semantic.LogicClosure` — per-closure-stage events (`:start`, `:entailment`, `:engine`, `:decision`, `:stop`) |
 
+### Cluster lifecycle & FinOps
+
+| Event | Measurements | Metadata | Emitted by |
+| --- | --- | --- | --- |
+| `[:ash_a2a, :cluster, :drain, :init / :cordon / :complete]` | `count` | `drain_manager` (registered name), `drain_timeout_ms`; `:init` adds `signal_handler` (whether the OS signal handler installed); `:cordon` adds `reason` and `tracked` (tracked tasks open at cordon); `:complete` adds `checkpointed` (drained task ids) and `cordon_to_exit_ms` | `AshA2A.Cluster.DrainManager` (drain lifecycle: supervisor init, cordon, two-phase drain completion) |
+| `[:ash_a2a, :cluster, :handover]` / `[:ash_a2a, :cluster, :handover, :completed]` | `count` | `task_id`, `source_node`, `reason` (default `:drain`), `checkpointed_at`; the `:completed` suffix narrows to `task_id` + `node` | `AshA2A.Cluster.Handover` (checkpoint handoff broadcast, then the resumed task's completion) |
+| `[:ash_a2a, :finops, :chargeback]` | `tokens`, `system_time` | `cost_center`, `budget_account_id`, `ceiling`, `window_started_at`, `window_ms`, `consumed`, `admitted` (boolean), `code` (admission code; `nil` when fully attributed) | `AshA2A.FinOps.BudgetEnforcer` (per-request chargeback tag; emitted on every admission decision, admitted or refused) |
+
 ### Runtime, transport & security
 
 | Event | Emitted by |
@@ -127,10 +135,11 @@ measurements unless noted. They fire only on the opt-in semantic paths.
 | `[:ash_a2a, :graphlaw, :host, :recycle]` | `AshA2A.GraphLaw.WasmexHost` (warm-instance recycle) |
 | `[:ash_a2a, :graph_law, :wasm, :batch]` | `AshA2A.Semantic.GraphLaw.Wasm` — note the historical `:graph_law` spelling, distinct from the `:graphlaw` engine family above |
 
-> The `AshA2A.Transport.Runtime` wrapper emits the **vendored SDK's** span
+> The `AshA2A.Transport.Runtime` wrapper emits the span
 > `[:a2a, :agent, :start / :stop / :exception]` (prefix `:a2a`, not
-> `:ash_a2a`) around agent message handling; it belongs to the `:a2a`
-> dependency's own namespace, not this catalog.
+> `:ash_a2a`) around agent message handling; the prefix is historical and
+> now originates from the in-repo `AshA2A.Protocol.Telemetry` module, not
+> this catalog's `[:ash_a2a, ...]` families.
 
 ### Chicago / QA harness events (internal)
 
@@ -156,6 +165,18 @@ logged and swallowed, never raised into dispatch. Delivery outcomes are
 observable as `[:ash_a2a, :ocel, :delivered]` and
 `[:ash_a2a, :ocel, :failed]` (alongside the `:shed` counter above). See
 [Observe dispatch with OCEL](../how-to/observe-dispatch-with-ocel.md).
+
+## OCEL broadcaster (SIEM egress)
+
+`AshA2A.Telemetry.OcelBroadcaster` buffers forwarded OCEL v2 events and
+flushes them to SIEM sinks on an interval (bounded, drop-oldest; a failed
+sink flush re-buffers the events at the front of the queue). Two events
+observe its health:
+
+| Event | Measurements | Metadata | Emitted by |
+| --- | --- | --- | --- |
+| `[:ash_a2a, :ocel_broadcaster, :dropped]` | `count` | `broadcaster` (registered name), `dropped_total` (cumulative drops) | `AshA2A.Telemetry.OcelBroadcaster` (drop-oldest bound enforcement) |
+| `[:ash_a2a, :ocel_broadcaster, :flush_failed]` | `count` | `broadcaster`, `reason` (the typed SIEM delivery failure) | `AshA2A.Telemetry.OcelBroadcaster` (a sink flush failed; events re-buffered, never lost silently) |
 
 ## SLO metric definitions
 

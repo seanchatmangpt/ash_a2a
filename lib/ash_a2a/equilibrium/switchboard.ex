@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Equilibrium.Switchboard do
   @moduledoc """
   Pure control-plane kernel for bounded planner/provider selection.
@@ -25,6 +29,8 @@ defmodule AshA2A.Equilibrium.Switchboard do
   defmodule WorkOrder do
     @enforce_keys [:id, :subject, :capability, :role, :policy, :authority, :epoch, :max_steps]
     defstruct @enforce_keys
+
+    @type t :: %__MODULE__{}
   end
 
   defmodule Planner do
@@ -39,11 +45,15 @@ defmodule AshA2A.Equilibrium.Switchboard do
       :provider_ids
     ]
     defstruct @enforce_keys ++ [priority: 0]
+
+    @type t :: %__MODULE__{}
   end
 
   defmodule Provider do
     @enforce_keys [:id, :epoch, :capabilities]
     defstruct @enforce_keys ++ [alive: true]
+
+    @type t :: %__MODULE__{}
   end
 
   defmodule Receipt do
@@ -59,6 +69,8 @@ defmodule AshA2A.Equilibrium.Switchboard do
       :digest
     ]
     defstruct @enforce_keys ++ [standing: :candidate, consequence: :none]
+
+    @type t :: %__MODULE__{}
   end
 
   defmodule Queue do
@@ -67,6 +79,8 @@ defmodule AshA2A.Equilibrium.Switchboard do
               leases: %{},
               completed: MapSet.new(),
               limit: 128
+
+    @type t :: %__MODULE__{}
   end
 
   @required_ttl ~w(Planner Policy Role Agent Authority DO Standing WorkOrder Selection Construct BRCEReceipt)a

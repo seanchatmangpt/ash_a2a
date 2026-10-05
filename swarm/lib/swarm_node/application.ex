@@ -3,7 +3,7 @@ defmodule SwarmNode.Application do
   Starts cluster membership (`:libcluster`) and the node's HTTP surfaces.
   `ash_a2a` itself declares `mod: {AshA2A.Application, []}` and is started
   first as a dependency (receipt store, broker, GraphLaw host,
-  `A2A.AgentSupervisor` booting `SwarmNode.EchoAgent`).
+  `AshA2A.Protocol.AgentSupervisor` booting `SwarmNode.EchoAgent`).
 
   Boot gate (DEP-01): before starting anything, `SwarmNode.Health.boot_gate/1`
   runs. With `config :swarm_node, :require_graphlaw` true (set by the prod

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
   @moduledoc """
   Gate 2 / admission pipeline / ShEx / SHACL courts (RFC-SA2A-002 §33, §44,
@@ -58,6 +62,7 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
     "CHI-ADM-011" => :positive_control_passed,
     "CHI-ADM-012" => :positive_control_passed,
     "CHI-ADM-013" => :positive_control_passed,
+    "CHI-ADM-014" => :falsifier_killed,
     "SA2A-SHEX-001" => :falsifier_killed,
     "SA2A-SHEX-002" => :falsifier_killed,
     "SA2A-SHEX-003" => :falsifier_killed,
@@ -124,7 +129,7 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
       receipt = JSON.decode!(File.read!(Path.join(dir, "standing_receipt.json")))
       refute receipt["standing"] in ["NONCONFORMANT", "CONFORMANT"]
       assert receipt["results"]["survived_ids"] == []
-      assert receipt["results"]["falsifiers_killed"] == 22
+      assert receipt["results"]["falsifiers_killed"] == 23
       assert receipt["results"]["positive_controls_passed"] == 7
       assert receipt["results"]["unresolved_ids"] == []
       assert run.ocel.dropped == 0
@@ -198,7 +203,7 @@ defmodule AshA2A.Chicago.ShexShaclAdmissionTest do
         end
       end
 
-      assert length(ExecutableWorld.falsifiers()) == 13
+      assert length(ExecutableWorld.falsifiers()) == 14
       assert length(Shex.falsifiers()) == 7
       assert length(Shacl.falsifiers()) == 9
     end
