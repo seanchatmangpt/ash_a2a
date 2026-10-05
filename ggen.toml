@@ -10,6 +10,10 @@
 #
 # Consumer contract per M8 falsifier run (scratch /tmp/a2a-m8-falsifier):
 # `ggen sync run` with a [packs] path reference. ggen 26.9.28.
+#
+# Replay from a fresh clone: `mkdir -p templates` first — ggen requires the
+# [templates].dir to exist ([FM-CONFIG-004] otherwise) and git cannot track
+# the (intentionally empty) directory. Then `ggen sync run`.
 
 [project]
 name = "ash_a2a"
