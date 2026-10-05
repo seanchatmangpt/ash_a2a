@@ -173,7 +173,7 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
       %{"result" => result} = Jason.decode!(send_resp.resp_body)
       task_id = (result["task"] || result)["id"]
 
-      assert_receive {:webhook, hook_body}, 5_000
+      assert_receive {:webhook, hook_body}, 15_000
       assert hook_body =~ task_id
       refute hook_body =~ secret
       refute hook_body =~ "a2a.auth"

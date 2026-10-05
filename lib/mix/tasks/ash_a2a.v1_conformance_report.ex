@@ -221,7 +221,10 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
     output
     |> String.split("\n")
     |> Enum.reverse()
-    |> Enum.find(&Regex.match?(~r/\d+ (tests?|properties), \d+ failures?/, &1))
+    |> Enum.find(fn line ->
+      Regex.match?(~r/\d+ (tests?|properties), \d+ failures?/, line) or
+        Regex.match?(~r/Result:\s+\d+(\/\d+)?\s+passed/, line)
+    end)
     |> case do
       nil -> output |> String.split("\n") |> Enum.reject(&(&1 == "")) |> List.last("")
       line -> String.trim(line)
