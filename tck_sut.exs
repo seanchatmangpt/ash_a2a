@@ -239,8 +239,15 @@ defmodule TckSut.Router do
   # CARD-EXT: the extended card over HTTP+JSON — GET /a2a/rest/extendedAgentCard
   # (the TCK's http_json client path). Explicit private cache headers: the
   # authenticated card must NOT inherit the public card's public caching.
+  # Matched BEFORE the REST passthrough clause below.
   def call(%{method: "GET", path_info: ["a2a", "rest", "extendedAgentCard"]} = conn, opts) do
     serve_extended_card(conn, opts)
+  end
+
+  # -- REST mount (HTTP+JSON binding; push CRUD surface included) -------------
+
+  def call(%{path_info: ["a2a", "rest" | rest]} = conn, opts) do
+    AshA2A.Transport.HTTPJSON.call(%{conn | path_info: rest}, opts.rest)
   end
 
   # CARD-EXT over JSON-RPC: GetExtendedAgentCard (PascalCase alias, the name
