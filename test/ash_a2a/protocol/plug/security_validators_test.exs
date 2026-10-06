@@ -132,7 +132,7 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     end
 
     test "unsupported algorithm refused (alg none)" do
-      header = %{"alg" => "none"}
+      header = Jason.encode!(%{"alg" => "none"})
       payload = Jason.encode!(claims())
 
       signing_input = b64(header) <> "." <> b64(payload)

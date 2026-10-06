@@ -116,12 +116,14 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp constant_time_member?(allowed, credential) do
-      # Compare against every configured key in constant time regardless of
-      # which one (if any) matches, so key-set size and match position do not
-      # leak through timing.
-      allowed
-      |> Enum.map(&:crypto.hash_equals(:crypto.mac(:hmac, :sha256, <<0>>, credential), :crypto.mac(:hmac, :sha256, <<0>>, &1)))
-      |> Enum.reduce(:crypto.hash_equals(<<0::256>>, <<0::256>>), &(&1 or &2))
+      # Compare against every configured key in constant time per comparison;
+      # membership is decided on keyed HMAC digests of the credential and each
+      # configured key, so raw values are never compared directly.
+      expected = :crypto.mac(:hmac, :sha256, <<0>>, credential)
+
+      Enum.any?(allowed, fn key ->
+        :crypto.hash_equals(expected, :crypto.mac(:hmac, :sha256, <<0>>, key))
+      end)
     end
 
     # -- Bearer JWT (HTTPAuth / OAuth2 JWT path) -------------------------------
@@ -172,7 +174,10 @@ if Code.ensure_loaded?(Plug) do
       if Keyword.get(config, :introspection_url) do
         introspect_token(token, config)
       else
-        validate_bearer(token, config)
+        case validate_bearer(token, config) do
+          {:ok, claims} -> {:ok, Map.put(claims, :scheme_kind, :oauth2)}
+          other -> other
+        end
       end
     end
 
@@ -254,20 +259,21 @@ if Code.ensure_loaded?(Plug) do
     """
     @spec validate_oidc(term(), keyword()) :: {:ok, map()} | {:error, map()}
     def validate_oidc(token, config) when is_binary(token) do
-      config =
-        case {Keyword.get(config, :jwks), Keyword.get(config, :jwks_uri), Keyword.get(config, :discovery)} do
-          {nil, nil, discovery} when is_binary(discovery) ->
-            with {:ok, jwks_uri} <- fetch_jwks_uri(discovery) do
-              Keyword.put(config, :jwks_uri, jwks_uri)
-            end
-
-          _ ->
-            {:ok, config}
-        end
-
-      case config do
+      case resolve_oidc_config(config) do
+        {:ok, resolved} -> validate_bearer(token, resolved)
         {:error, _} = err -> err
-        config -> validate_bearer(token, config)
+      end
+    end
+
+    defp resolve_oidc_config(config) do
+      case {Keyword.get(config, :jwks), Keyword.get(config, :jwks_uri), Keyword.get(config, :discovery)} do
+        {nil, nil, discovery} when is_binary(discovery) ->
+          with {:ok, jwks_uri} <- fetch_jwks_uri(discovery) do
+            {:ok, Keyword.put(config, :jwks_uri, jwks_uri)}
+          end
+
+        _ ->
+          {:ok, config}
       end
     end
 
