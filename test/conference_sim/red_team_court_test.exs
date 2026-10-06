@@ -740,16 +740,14 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
       # Positive control: bob's benign params metadata ("seat") still rides.
       assert get_in(response, ["result", "metadata", "seat"]) == "hall-b"
 
-      # -- OPEN FINDING EV10-F1 (publication gap, message-level metadata echo):
+      # -- CLOSED FINDING EV10-F1 (publication gap, message-level metadata echo):
       #
-      # The AT5 fix scrubs PARAMS-level metadata, but caller-supplied
-      # message.metadata keys ("a2a.auth", "ash_a2a.owner") ride inside the
-      # stored message and are echoed back UNSCRUBBED in the task's history
-      # (message/send response AND tasks/get). The forged values carry no
-      # authority (proven above: ownership/authority unaffected), but the
-      # publication scrub the owner-scope court (d) pins does not cover
-      # caller-supplied message metadata. This assertion PINS the vulnerable
-      # behavior so the fixing lane flips this court when lib/ scrubs it.
+      # The AT5 fix scrubs PARAMS-level metadata; caller-supplied
+      # message.metadata keys ("a2a.auth", "ash_a2a.owner") also ride inside the
+      # stored message and are echoed back in the task's history
+      # (message/send response AND tasks/get). Ownership.strip_wire/1 and
+      # strip_task/1 now scrub every history message's metadata as well, so
+      # the echo below is asserted ABSENT — the permanent court for EV10-F1.
       %{"id" => echo_task} =
         send_task(ctx, "bob", %{
           "message" => skill_message("converse", forged_metadata)
@@ -757,11 +755,20 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
 
       echo = rpc(ctx, "bob", "tasks/get", %{"id" => echo_task})
 
-      # PINS the vulnerable behavior: this assertion holds while the gap is
-      # open and FAILS the moment lib/ scrubs caller-supplied message
-      # metadata — the fixing lane then inverts it into the permanent court.
-      assert Jason.encode!(echo) =~ "ash_a2a.owner",
-             "EV10-F1 flipped: message-level internal keys are now scrubbed from history"
+      # Permanent court: no internal key may appear anywhere in the echoed
+      # task — task metadata, history message metadata, or any nested map.
+      encoded = Jason.encode!(echo)
+      refute encoded =~ "ash_a2a.owner", "owner key echoed in task history"
+      refute encoded =~ "a2a.auth", "auth key echoed in task history"
+
+      # Benign caller metadata inside history messages still rides.
+      history_meta =
+        echo
+        |> get_in(["result", "history"])
+        |> Enum.flat_map(fn m -> Map.get(m, "metadata") |> List.wrap() end)
+
+      assert Enum.any?(history_meta, &(&1["skill"] == "converse")),
+             "benign message metadata lost from history"
     end
   end
 
