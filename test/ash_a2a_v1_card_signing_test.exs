@@ -157,12 +157,33 @@ defmodule AshA2A.V1CardSigningTest do
         update_in(signed.signatures, fn [entry | rest] ->
           protected = entry |> Map.fetch!("protected") |> b64url_decode() |> Jason.decode!()
 
-          forged_protected = b64url_encode(Jason.encode!(%{protected | "alg" => "ES256"}))
+          # RS256/ES256 are now first-class (lane G4), so the alg-claim
+          # tamper court forges an alg that is NOT supported at all.
+          forged_protected = b64url_encode(Jason.encode!(%{protected | "alg" => "HS512"}))
 
           [%{entry | "protected" => forged_protected} | rest]
         end)
 
       assert {:error, {:malformed, %{reason: :unsupported_alg}}} =
+               CardSigning.verify(forged, key)
+    end
+
+    test "verify refuses an alg claim the verifier holds no key for" do
+      # An HS256 secret cannot satisfy an RS256/ES256 claim: forging the
+      # protected alg to a supported-but-wrong-family algorithm must still
+      # refuse (key type mismatch), never verify and never raise.
+      card = base_card()
+      key = :crypto.strong_rand_bytes(32)
+      signed = CardSigning.sign(card, key, kid: "k1")
+
+      forged =
+        update_in(signed.signatures, fn [entry | rest] ->
+          protected = entry |> Map.fetch!("protected") |> b64url_decode() |> Jason.decode!()
+          forged_protected = b64url_encode(Jason.encode!(%{protected | "alg" => "ES256"}))
+          [%{entry | "protected" => forged_protected} | rest]
+        end)
+
+      assert {:error, {:malformed, %{reason: :key_type_mismatch, alg: "ES256"}}} =
                CardSigning.verify(forged, key)
     end
   end
