@@ -112,6 +112,17 @@ report `2026-10-06T01:35:19Z`, /tmp/g6-report.json, final tree `2379635c`); the 
 
 ## A2A TCK compatibility run
 
+### Final verdict (2026-10-06, branch `feat/tck-vuln-hardening`, HEAD `cadb6534`)
+
+The full suite re-ran against the real `ash_a2a` SUT after the
+vuln-hardening fixes landed: **235 passed / 30 skipped / 0 FAIL,
+MUST 87/87, SHOULD 7/7, MAY 4/4 — overall 79.0%**. Zero failing
+requirements remain: the earlier enumerated gaps (push-lifecycle,
+gRPC extended-card, gRPC stream-close isolation, gRPC unauthenticated
+admission) are all green at this tree.
+
+## Earlier run (2026-10-05, G6 integration tree `2379635c`)
+
 The official `a2aproject/a2a-tck` compatibility suite ran against a
 real `ash_a2a` SUT server on 2026-10-05 (final G6 integration run;
 reports at `/tmp/a2a-tck/reports/compatibility.json`, timestamp
@@ -220,10 +231,12 @@ suite against the in-tree SUT; the earlier
 ## What is not claimed
 
 - **A2A TCK certification: not claimed.** The compatibility suite ran
-  against all three bindings (2026-10-05, section above; **73.6%**
-  overall, 92 PASS / 7 FAIL / 4 SKIPPED / 26 NOT TESTED — the 7 FAILs
-  are enumerated push-lifecycle, gRPC extended-card, and gRPC
-  stream-close-isolation gaps, not infrastructure flake).
+  against all three bindings — latest point-in-time verdict 2026-10-06
+  at `cadb6534` (**79.0%** overall, 235 passed / 30 skipped / 0 FAIL,
+  MUST 87/87, SHOULD 7/7, MAY 4/4, section above); the earlier
+  2026-10-05 run was **73.6%**
+  overall, 92 PASS / 7 FAIL / 4 SKIPPED / 26 NOT TESTED. Point-in-time
+  verdicts, not a standing certification.
   `CONFORMANT` in the table still means "the pinned court in
   this repo passes" — not TCK-certified — and the 73.6% figure is a
   point-in-time verdict, not a standing certification.
