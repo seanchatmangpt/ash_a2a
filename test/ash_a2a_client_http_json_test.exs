@@ -466,9 +466,9 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert :ok = Client.delete_push_config(push_client, task.id, stored.id)
     assert {:ok, []} = Client.list_push_configs(push_client, task.id)
 
-    # Negative: re-deleting the now-missing config maps the 400 to :invalid_params.
-    assert {:error, :invalid_params} =
-             Client.delete_push_config(push_client, task.id, stored.id)
+    # Idempotent per TCK PUSH-DEL-002 (fb2e844d): re-deleting an already-deleted
+    # config answers success, never an error — a delete outcome, not addressing.
+    assert :ok = Client.delete_push_config(push_client, task.id, stored.id)
   end
 
   test "delete_push_config/4 negative: an unknown task maps the 404 ErrorInfo to :task_not_found" do
