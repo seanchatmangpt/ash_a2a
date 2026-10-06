@@ -323,6 +323,42 @@ if Code.ensure_loaded?(Plug) do
       opts.transport && AshA2A.A2ATransport.running?(opts.transport)
     end
 
+    # After-response event-log publishing for non-streaming task replies
+    # (message/send, tasks/cancel): mirrors AshA2A.A2ATransport.Plug's
+    # publish_result so a LIVE subscriber of a task created/updated through
+    # the bare Protocol.Plug still observes the transition (STREAM-SUB-002).
+    # The inner plug under AshA2A.A2ATransport.Plug runs without a :transport
+    # option, so the two never double-publish.
+    defp publish_result(conn, opts) do
+      with 200 <- conn.status,
+           {:ok, %{"result" => %{"id" => task_id} = task}} <-
+             Jason.decode(IO.iodata_to_binary(conn.resp_body || "")),
+           %{"status" => %{"state" => state}} when is_binary(state) <- task do
+        final? = closed_wire_state?(state)
+
+        AshA2A.A2ATransport.TaskEvents.publish(
+          opts.transport,
+          task_id,
+          "task",
+          %{"task" => AshA2A.A2ATransport.Ownership.strip_wire(task)},
+          final?
+        )
+      else
+        _ -> :ok
+      end
+
+      conn
+    end
+
+    defp closed_wire_state?(state) when is_binary(state) do
+      state
+      |> String.downcase()
+      |> String.replace_prefix("task_state_", "")
+      |> then(& &1 in ~w(completed canceled cancelled failed rejected input-required input_required auth-required auth_required))
+    end
+
+    defp closed_wire_state?(_), do: false
+
     # A client may register a webhook on the initial send rather than through
     # the CRUD methods, which is how the spec's delivery flow reads and how the
     # compliance suite drives it. The task does not exist until the call
@@ -411,6 +447,11 @@ if Code.ensure_loaded?(Plug) do
 
           case AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, context) do
             {:reply, response} ->
+              conn =
+                if transport_streaming?(opts),
+                  do: register_before_send(conn, &publish_result(&1, opts)),
+                  else: conn
+
               send_json(conn, response)
 
             {:stream, "message/stream", params, id} ->
