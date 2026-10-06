@@ -246,8 +246,80 @@ defmodule TckSut.Router do
 
   # -- REST mount (HTTP+JSON binding; push CRUD surface included) -------------
 
+  # PUSH-DELIVER over the REST binding: the §5.3 message:send route answers
+  # through AshA2A.Transport.HTTPJSON (whose REST send path does not run the
+  # JSON-RPC binding's inline push-config registration), so the SUT wraps the
+  # route here — read the body, forward, then register the inline config
+  # against the created task exactly like register_inline_push_config does.
+  # The REST plug reads pre-set body_params without re-reading the socket.
+  def call(%{method: "POST", path_info: ["a2a", "rest", "message:send"]} = conn, opts) do
+    case Plug.Conn.read_body(conn) do
+      {:ok, body, conn} ->
+        case Jason.decode(body) do
+          {:ok, %{"configuration" => %{"taskPushNotificationConfig" => raw}} = decoded}
+          when is_map(raw) ->
+            conn =
+              AshA2A.Transport.HTTPJSON.call(
+                %{conn | path_info: ["message:send"], body_params: decoded},
+                opts.rest
+              )
+
+            rest_register_inline_push(decoded, conn, opts)
+
+          {:ok, decoded} ->
+            AshA2A.Transport.HTTPJSON.call(
+              %{conn | path_info: ["message:send"], body_params: decoded},
+              opts.rest
+            )
+
+          _ ->
+            send_json(conn, 400, "bad request")
+        end
+
+      {:error, _, conn} ->
+        send_json(conn, 400, "bad request")
+    end
+  end
+
   def call(%{path_info: ["a2a", "rest" | rest]} = conn, opts) do
     AshA2A.Transport.HTTPJSON.call(%{conn | path_info: rest}, opts.rest)
+  end
+
+  defp rest_register_inline_push(decoded, conn, _opts) do
+    with 200 <- conn.status,
+         {:ok, %{"task" => %{"id" => task_id}} = task} <- Jason.decode(conn.resp_body || ""),
+         {:ok, config} <-
+           AshA2A.Protocol.JSON.decode(decoded["configuration"]["taskPushNotificationConfig"], :push_notification_config) do
+      config = %{config | task_id: task_id, id: config.id || AshA2A.Protocol.ID.generate("pcfg")}
+      {:ok, _} = GenServer.call(TckSut.Agent, {:set_push_config, config})
+      GenServer.cast(TckSut.Agent, {:deliver_push, task_id})
+
+      # The REST send already served the task's final state before the webhook
+      # was registered, so force one delivery of the served snapshot (the same
+      # rule Protocol.Plug applies on the JSON-RPC side).
+      state = get_in(task, ["status", "state"]) || ""
+      final? = closed_state?(state)
+      payload = %{"task" => AshA2A.A2ATransport.Ownership.strip_wire(task)}
+
+      AshA2A.A2ATransport.TaskEvents.publish(
+        TckSut.Transport,
+        task_id,
+        "task",
+        payload,
+        final?
+      )
+
+      :ok
+    else
+      _ -> :ok
+    end
+  end
+
+  defp closed_state?(state) do
+    state
+    |> String.downcase()
+    |> String.replace_prefix("task_state_", "")
+    |> then(& &1 in ~w(completed canceled cancelled failed rejected))
   end
 
   # CARD-EXT over JSON-RPC: GetExtendedAgentCard (PascalCase alias, the name
@@ -363,6 +435,21 @@ interfaces = [
   )
 {:ok, _} = TckSut.CardKeys.start_link([])
 
+# Set-time webhook admission (WebhookPolicy via the transport's push opts)
+# must also admit the TCK receiver: http scheme + loopback addresses.
+{:ok, _} =
+  AshA2A.A2ATransport.start_link(
+    name: TckSut.Transport,
+    push: [allow_http: true, allow_cidrs: ["127.0.0.0/8", "::1/128"]]
+  )
+
+# The push sender delivers via Req/Finch; `mix run --no-start` boots no
+# dependency applications, so the Req.Finch pool (Finch instance named
+# Req.Finch) must be started here or every delivery dies with
+# `unknown registry: Req.Finch` (the observed silent webhook gap).
+{:ok, _} = Application.ensure_all_started(:finch)
+{:ok, _} = Finch.start_link(name: Req.Finch)
+
 {:ok, srv} =
   Bandit.start_link(
     plug:
@@ -373,7 +460,8 @@ interfaces = [
           agent_card_opts: [supported_interfaces: interfaces,
                             capabilities: %{streaming: true, push_notifications: true}]},
        rest:
-         {AshA2A.Transport.HTTPJSON, agent: TckSut.Agent, base_url: base_url}},
+         {AshA2A.Transport.HTTPJSON, agent: TckSut.Agent, base_url: base_url,
+          transport: TckSut.Transport, push_notifications: true}},
     port: port,
     ip: {127, 0, 0, 1}
   )
@@ -400,67 +488,132 @@ defmodule TckSut.GrpcHandler do
   # ctx the HTTP side would build for an unauthenticated request.
   @behaviour AshA2A.Protocol.JSONRPC
 
+  # The plug opts the HTTP JSON-RPC mount inits with (init/1's map shape),
+  # rebuilt here so the gRPC side dispatches through the SAME injected
+  # AshA2A.Protocol.Plug handlers the HTTP side uses — including inline push
+  # registration (register_inline_push_config gates on
+  # agent_card_opts capabilities push_notifications) and event-log publishing.
+  defp plug_opts do
+    %{
+      transport: TckSut.Transport,
+      metadata: %{},
+      authorize_task: nil,
+      agent_card_opts: [capabilities: %{streaming: true, push_notifications: true}]
+    }
+  end
+
+  defp agent_ctx do
+    %{agent: TckSut.Agent, opts: plug_opts(), conn: %Plug.Conn{private: %{}},
+      principal: :anonymous}
+  end
+
+  # The HTTP side's handle_json_rpc publish_result/1 equivalent for unary
+  # task replies: a task result must land in the named transport's event log
+  # or a later SubscribeToTask (STREAM-ORDER-*) sees an empty log.
+  defp publish_result(%AshA2A.Protocol.Task{} = task) do
+    # The HTTP side's handle_json_rpc publish_result/1 equivalent: a task
+    # result lands in the named transport's event log or a later
+    # SubscribeToTask (STREAM-ORDER-*) sees an empty log.
+    final? =
+      task.status.state in [
+        # Hard-terminal states only: input-required keeps the subscribe
+        # stream open (more input is expected), so it must not carry final?.
+        :completed, :canceled, :failed, :rejected
+      ]
+
+    {:ok, wire} = AshA2A.Protocol.JSON.encode(task)
+
+    AshA2A.A2ATransport.TaskEvents.publish(
+      TckSut.Transport,
+      task.id,
+      "task",
+      %{"task" => AshA2A.A2ATransport.Ownership.strip_wire(wire)},
+      final?
+    )
+
+    :ok
+  end
+
+  defp publish_result(_), do: :ok
+
   @impl AshA2A.Protocol.JSONRPC
   def handle_send(message, params, _ctx) do
-    # AshA2A.Transport.Plug.handle_send/3 builds its per-call opts via
-    # call_opts/3, whose clause requires a live Plug.Conn in ctx — a shape
-    # only the HTTP side has. The gRPC equivalent opts are built here: the
-    # same task/context threading, without conn metadata/auth layers (an
-    # unauthenticated caller has none).
-    metadata =
-      case params["metadata"] do
-        %{} = m -> Map.drop(m, ["a2a.auth"])
-        _ -> %{}
-      end
+    # gRPC dispatches through the SAME injected AshA2A.Protocol.Plug handlers
+    # the HTTP JSON-RPC binding uses (TckSut.Agent.handle_send/3), so inline
+    # push-config registration + the deliver_push cast (PUSH-DELIVER-*) run
+    # identically on both bindings.
+    case AshA2A.Protocol.Plug.handle_send(message, params, agent_ctx()) do
+      {:ok, result} ->
+        publish_result(result)
+        {:ok, wire_result(result)}
 
-    opts =
-      []
-      |> maybe_put(:task_id, params["id"] || message.task_id)
-      |> maybe_put(:context_id, params["contextId"] || message.context_id)
-      |> maybe_put(:metadata, if(metadata == %{}, do: nil, else: metadata))
+      {:error, %AshA2A.Protocol.JSONRPC.Error{} = error} ->
+        {:error, error}
 
-    case AshA2A.Protocol.call(TckSut.Agent, message, opts) do
-      {:ok, %AshA2A.Protocol.Task{} = task} -> {:ok, AshA2A.Transport.Runtime.wire_task(task)}
-      {:ok, %AshA2A.Protocol.Message{} = msg} -> {:ok, msg}
-      {:error, reason} -> {:error, AshA2A.Transport.Plug.wire_error(reason)}
+      {:error, reason} ->
+        {:error, AshA2A.Transport.Plug.wire_error(reason)}
     end
   end
 
-  @impl AshA2A.Protocol.JSONRPC
-  def handle_get(task_id, params, ctx), do: AshA2A.Transport.Plug.handle_get(task_id, params, ctx())
+  defp wire_result(%AshA2A.Protocol.Task{} = task), do: AshA2A.Transport.Runtime.wire_task(task)
+  defp wire_result(%AshA2A.Protocol.Message{} = msg), do: msg
+  defp wire_result(other), do: other
 
   @impl AshA2A.Protocol.JSONRPC
-  def handle_cancel(task_id, params, ctx), do: AshA2A.Transport.Plug.handle_cancel(task_id, params, ctx())
+  def handle_get(task_id, params, _ctx), do: AshA2A.Transport.Plug.handle_get(task_id, params, ctx())
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_cancel(task_id, params, _ctx), do: AshA2A.Transport.Plug.handle_cancel(task_id, params, ctx())
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_list(params, _ctx), do: AshA2A.Transport.Plug.handle_list(params, ctx())
 
+  # Push CRUD on the gRPC side routes through the SAME injected
+  # AshA2A.Protocol.Plug handlers the HTTP JSON-RPC binding uses (the
+  # transport-module delegation answered UndefinedFunctionError ->
+  # INTERNAL, the observed PUSH-CREATE-001 "Internal error").
   @impl AshA2A.Protocol.JSONRPC
   def handle_set_push_config(config, params, _ctx),
-    do: AshA2A.Transport.Plug.handle_set_push_config(config, params, ctx())
+    do: AshA2A.Protocol.Plug.handle_set_push_config(config, params, agent_ctx())
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_get_push_config(task_id, config_id, params, _ctx),
-    do: AshA2A.Transport.Plug.handle_get_push_config(task_id, config_id, params, ctx())
+    do: AshA2A.Protocol.Plug.handle_get_push_config(task_id, config_id, params, agent_ctx())
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_list_push_configs(task_id, params, _ctx),
-    do: AshA2A.Transport.Plug.handle_list_push_configs(task_id, params, ctx())
+    do: AshA2A.Protocol.Plug.handle_list_push_configs(task_id, params, agent_ctx())
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_delete_push_config(task_id, config_id, params, _ctx),
-    do: AshA2A.Transport.Plug.handle_delete_push_config(task_id, config_id, params, ctx())
+    do: AshA2A.Protocol.Plug.handle_delete_push_config(task_id, config_id, params, agent_ctx())
 
-  defp maybe_put(opts, _key, nil), do: opts
-  defp maybe_put(opts, key, value), do: [{key, value} | opts]
+  # CARD-EXT over the gRPC binding: the gRPC dispatch consults this opt-in
+  # callback (lib/.../grpc/dispatch.ex) before falling back to the JSON-RPC
+  # dispatcher's UNIMPLEMENTED refusal. Serves the same extended card the
+  # HTTP router serves (public card + admin skill, private cache intent is
+  # an HTTP header concept, so nothing to mirror on gRPC).
+  def handle_extended_card(_ctx) do
+    {:ok, TckSut.Cards.extended_card(base_url(), grpc_interfaces())}
+  end
+
+  defp base_url, do: "http://127.0.0.1:#{System.get_env("TCK_SUT_PORT", "9999")}"
+
+  defp grpc_interfaces do
+    grpc_port = System.get_env("TCK_SUT_GRPC_PORT", "#{String.to_integer(System.get_env("TCK_SUT_PORT", "9999")) + 1}")
+
+    [
+      %{url: base_url(), protocol_binding: "JSONRPC", protocol_version: "1.0"},
+      %{url: "#{base_url()}/a2a/rest", protocol_binding: "HTTP+JSON", protocol_version: "1.0"},
+      %{url: "127.0.0.1:#{grpc_port}", protocol_binding: "GRPC", protocol_version: "1.0"}
+    ]
+  end
 
   defp ctx do
     %{agent: TckSut.Agent, opts: [], transport: TckSut.Transport,
       conn: %Plug.Conn{private: %{}}, principal: :anonymous}
   end
 end
-
-{:ok, _} = AshA2A.A2ATransport.start_link(name: TckSut.Transport)
 
 Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
   handler: TckSut.GrpcHandler,
