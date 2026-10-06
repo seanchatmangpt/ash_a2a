@@ -60,6 +60,13 @@ if Code.ensure_loaded?(Plug) do
       `A2A-Extensions` response header to the URIs that were activated.
       Declarations are merged into `capabilities.extensions` on the
       served agent card.
+    - `:transport` — optional `AshA2A.A2ATransport` instance name. When set
+      **and running**, `message/stream` and `tasks/resubscribe` are served
+      through the transport's per-task, sequence-numbered event log
+      (`AshA2A.A2ATransport.TaskEvents`): multi-subscriber fan-out,
+      `Last-Event-ID` replay, and a supervised pump so a client disconnect
+      never truncates the task. When unset or not running, the legacy
+      connection-consumed streaming path is used. Default `nil`.
     - `:versions` — list of supported A2A protocol versions as
       `Major.Minor` strings (default: `AshA2A.Protocol.Version.supported_default/0`,
       currently `["0.3", "1.0"]`). The client's `A2A-Version` header is
@@ -158,7 +165,8 @@ if Code.ensure_loaded?(Plug) do
         authorize_task: Keyword.get(opts, :authorize_task),
         extensions: AshA2A.Protocol.Extension.compile(Keyword.get(opts, :extensions, [])),
         versions: Keyword.get(opts, :versions, AshA2A.Protocol.Version.supported_default()),
-        resubscribe_timeout: Keyword.get(opts, :resubscribe_timeout, 60_000)
+        resubscribe_timeout: Keyword.get(opts, :resubscribe_timeout, 60_000),
+        transport: Keyword.get(opts, :transport, nil)
       }
     end
 
@@ -194,10 +202,10 @@ if Code.ensure_loaded?(Plug) do
 
     # Serves the public keys backing card signatures as a JWKS document
     # (RFC 7517). Verifiers resolve the `kid` from a signature's PROTECTED
-    header against this document; key rotation publishes the old and new
-    generations side by side during the rotation window. Unconfigured
-    (`:jwks_keys` not set) the path 404s — a JWKS endpoint that silently
-    serves an empty key set would be a vacuous admission surface.
+    # header against this document; key rotation publishes the old and new
+    # generations side by side during the rotation window. Unconfigured
+    # (`:jwks_keys` not set) the path 404s — a JWKS endpoint that silently
+    # serves an empty key set would be a vacuous admission surface.
     defp serve_jwks(conn, opts) do
       json = AshA2A.Protocol.CardSigning.jwks(opts.jwks_keys) |> Jason.encode!()
 
@@ -307,6 +315,14 @@ if Code.ensure_loaded?(Plug) do
       |> Map.get(:streaming, false)
     end
 
+    # Transport-backed streaming is used only when a transport instance is
+    # both configured and actually running — a stale option value (e.g. a
+    # transport that was stopped) falls back to the legacy path rather than
+    # erroring.
+    defp transport_streaming?(opts) do
+      opts.transport && AshA2A.A2ATransport.running?(opts.transport)
+    end
+
     # A client may register a webhook on the initial send rather than through
     # the CRUD methods, which is how the spec's delivery flow reads and how the
     # compliance suite drives it. The task does not exist until the call
@@ -408,13 +424,19 @@ if Code.ensure_loaded?(Plug) do
                   |> maybe_put_fallback(:context_id, message.context_id)
                   |> Keyword.put(:extensions, AshA2A.Protocol.Extension.to_context_map(activations))
 
-                AshA2A.Protocol.Plug.SSE.stream_message(
-                  conn,
-                  opts.agent,
-                  message,
-                  id,
-                  call_opts
-                )
+                if transport_streaming?(opts) do
+                  AshA2A.A2ATransport.SSE.stream_message(
+                    conn,
+                    opts.transport,
+                    opts.agent,
+                    message,
+                    id,
+                    call_opts,
+                    []
+                  )
+                else
+                  AshA2A.Protocol.Plug.SSE.stream_message(conn, opts.agent, message, id, call_opts)
+                end
               else
                 send_json(conn, Response.error(id, Error.unsupported_operation()))
               end
@@ -426,13 +448,24 @@ if Code.ensure_loaded?(Plug) do
               with true <- streaming_declared?(opts),
                    {:ok, task} <-
                      authorized_task(opts.agent, params["id"], :resubscribe, params, opts) do
-                AshA2A.Protocol.Plug.SSE.subscribe_task(
-                  conn,
-                  opts.agent,
-                  task.id,
-                  id,
-                  opts.resubscribe_timeout
-                )
+                if transport_streaming?(opts) do
+                  AshA2A.A2ATransport.SSE.resubscribe(
+                    conn,
+                    opts.transport,
+                    opts.agent,
+                    %{"id" => task.id},
+                    id,
+                    []
+                  )
+                else
+                  AshA2A.Protocol.Plug.SSE.subscribe_task(
+                    conn,
+                    opts.agent,
+                    task.id,
+                    id,
+                    opts.resubscribe_timeout
+                  )
+                end
               else
                 false -> send_json(conn, Response.error(id, Error.unsupported_operation()))
                 {:error, error} -> send_json(conn, Response.error(id, error))
