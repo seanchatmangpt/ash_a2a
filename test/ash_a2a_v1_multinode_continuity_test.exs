@@ -768,8 +768,11 @@ defmodule AshA2A.V1MultinodeContinuityTest do
       assert [%{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_WORKING"}}} | rest] =
                frames
 
+      # G3 (2d874565): the terminating cancel publishes the spec wire form —
+      # a final StatusUpdate frame (S3.2.3 single-key `statusUpdate` wrapper),
+      # not a re-echoed task snapshot.
       assert Enum.any?(rest, fn
-               %{"task" => %{"status" => %{"state" => "TASK_STATE_CANCELED"}}} -> true
+               %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_CANCELED"}}} -> true
                _ -> false
              end)
 

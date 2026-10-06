@@ -314,16 +314,18 @@ defmodule AshA2A.V1SSEReplayTest do
     assert artifact_texts(Enum.map(garbage_frames, &elem(&1, 1))) == for(i <- 1..5, do: "part #{i}")
 
     # Same overshoot on a still-live task: the snapshot arrives, no backlog
-    # event replays (all seq <= last), the live final is dropped (its seq is
-    # <= last too), and the connection idles out via keepalives.
+    # event replays (all seq <= last), and the subscriber joins the live
+    # stream: the remaining parts and the terminal transition still close the
+    # connection (G3 2d874565 — live TaskEvents are delivered regardless of
+    # Last-Event-ID; the overshoot only bounds the backlog replay).
     heartbeat_url =
       EphemeralHttp.start!(
         {AshA2A.A2ATransport.Plug,
          agent: agent,
          base_url: "http://x/a2a",
          transport: transport,
-         heartbeat_ms: 50,
-         max_idle_ms: 300}
+         heartbeat_ms: 20,
+         max_idle_ms: 5_000}
       ).base_url
 
     b = open_stream(heartbeat_url)
@@ -333,9 +335,15 @@ defmodule AshA2A.V1SSEReplayTest do
     body = collect(r)
     Process.exit(b, :kill)
 
-    {:frames, frames2, keepalives} = parse_sse(body)
-    assert [{0, %{"task" => %{"id" => ^task_id2}}}] = frames2
-    assert keepalives >= 1
+    {:frames, frames2, _keepalives} = parse_sse(body)
+    assert [{0, %{"task" => %{"id" => ^task_id2}}} | _] = frames2
+    assert [_ | tail2] = frames2
+    # Nothing from the backlog replays ahead of the live sequence, and the
+    # stream terminates on the terminal statusUpdate, not on an error.
+    assert Enum.all?(tail2, fn {seq, frame} -> is_integer(seq) and is_map(frame) end)
+    assert %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
+             frames2 |> List.last() |> elem(1)
+    refute body =~ ~s("error")
   end
 
   @tag :serial
