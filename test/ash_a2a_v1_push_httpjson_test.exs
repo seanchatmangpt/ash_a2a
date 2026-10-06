@@ -324,9 +324,9 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
              }
            } = error
 
-    # Re-delete of the missing config: same envelope.
-    assert %{"error" => %{"code" => 400}} =
-             rest_json(:delete, "/tasks/#{task_id}/pushNotificationConfig/cfg-r2", rest)
+    # Re-delete of the missing config: idempotent 200 per TCK PUSH-DEL-002
+    # (the JSON-RPC and REST bindings share PushConfigRPC, so both answer it).
+    assert rest_json(:delete, "/tasks/#{task_id}/pushNotificationConfig/cfg-r2", rest) == nil
   end
 
   test "REST CRUD: unknown task is 404 with the -32001 envelope (owner scope, never 403)", %{
@@ -526,7 +526,7 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
 
   # -- (c) delete -> gone, get -> pinned not-found error -----------------------------
 
-  test "(c) delete removes the config; get and re-delete answer the pinned not-found error",
+  test "(c) delete removes the config; get answers not-found, re-delete is idempotent",
        %{on: on, hook: hook} do
     task_id = new_task(on)
 
@@ -567,13 +567,12 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
 
     assert get_error == not_found
 
-    assert %{"error" => delete_error} =
+    # Re-delete of the missing config: idempotent success per TCK PUSH-DEL-002.
+    assert %{"result" => nil} =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-c1"
              })
-
-    assert delete_error == not_found
   end
 
   # -- (d) SSRF admission refusal with the typed detail --------------------------------

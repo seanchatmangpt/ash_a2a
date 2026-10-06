@@ -69,10 +69,12 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
     with {:ok, task_id} <- task_id(params),
          {:ok, config_id} <- fetch_string(params, "pushNotificationConfigId"),
          :ok <- task_exists(ctx, task_id) do
-      case PushConfigStore.delete(store(ctx), task_id, config_id) do
-        :ok -> {:ok, nil}
-        :error -> {:error, Error.invalid_params("push notification config not found")}
-      end
+      # Idempotent per TCK PUSH-DEL-002: deleting an already-deleted (or
+      # never-existing) config answers success, never an error. The unknown
+      # *task* refusal above is unchanged — that is an addressing failure,
+      # not a delete outcome.
+      _ = PushConfigStore.delete(store(ctx), task_id, config_id)
+      {:ok, nil}
     end
   end
 

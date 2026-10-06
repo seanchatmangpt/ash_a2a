@@ -84,8 +84,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   list,delete}` against the named `:transport`'s `PushConfigStore`), so both
   bindings answer identical error envelopes by construction: unknown or foreign
   task -> `-32001` (404 here), refused webhook URL -> `-32602` with the
-  `refused_webhook_*` detail, missing config -> `-32602` with the
-  "push notification config not found" detail. When push notifications are not
+  `refused_webhook_*` detail, missing config on get -> `-32602` with the
+  "push notification config not found" detail (delete is idempotent per TCK
+  PUSH-DEL-002 and answers success on a miss). When push notifications are not
   enabled (`:push_notifications` false, the default, or no running `:transport`)
   every push route answers `400` with the `-32003`
   `PUSH_NOTIFICATION_NOT_SUPPORTED` `ErrorInfo` -- never a 404, so the routes'
