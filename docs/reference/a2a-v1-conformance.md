@@ -152,6 +152,40 @@ entirely not-run surface, not failures):
 | NOT TESTED — auth/TLS (`AUTH-TLS-*`, `AUTH-SERVER-*`, `AUTH-INTASK-*`, `AUTH-SCOPE-*`) | 10 | requires TLS/auth-server prerequisites not present in the run |
 | NOT TESTED — verification/binding equivalence (`VER-*`, `BIND-EQUIV-*`) | 7 | requires those setups; not exercised |
 
+### DY4 extension run: auth/TLS/VER-CLIENT/BIND-EQUIV (2026-10-05)
+
+The official suite at pin `263b9cfa` structurally cannot exercise these
+requirement IDs: every one of them has `operation: None` and is excluded from
+the parametrized runner's parameterization (no dedicated test module covers
+them), so they land NOT TESTED regardless of SUT capability. Lane DY4
+therefore added an extension court module — `priv/tck/test_dy4_auth_lanes.py`
+(copied into the TCK tree at run time so it shares the official
+`compatibility_collector`), run against the DY4 auth/TLS SUT variant
+`tck_sut_auth.exs` (JWT-gated HTTP listener via the real
+`AshA2A.Protocol.Plug.Auth` + HS256/scope, real openssl CA->localhost
+server-cert chain over TLS 1.3, an auth-required task flow, a gRPC binding,
+and an A2A-Version observation endpoint) with trust established through
+`SSL_CERT_FILE` — real chain + hostname validation by the TCK's own httpx,
+not a disabled verifier.
+
+Verdict (reports `/tmp/dy4_reports/compatibility.json`, SUT
+`http://localhost:9998` + `https://localhost:9443` + gRPC `127.0.0.1:9997`):
+
+| Requirement | Status | Evidence |
+| --- | --- | --- |
+| AUTH-TLS-001/002, AUTH-SERVER-001 | PASS | real TLS 1.3 handshake, httpx default-context chain+hostname validation of the SUT cert |
+| AUTH-SERVER-002, AUTH-SCOPE-001 | PASS | no-credential/garbage/unscoped-token requests refused 401+challenge; scoped JWT admitted |
+| AUTH-INTASK-001/002/003/006 | PASS | task parks TASK_STATE_AUTH_REQUIRED with explanatory status message, resumable to completed via same task id over the real TCK client |
+| VER-CLIENT-001/002 | PASS | A2A-Version: 1.0 present on every court-driven request (server-side observation diff) |
+| VER-SERVER-001 | PASS | both supported versions (0.3, 1.0) processed through the real client |
+| BIND-EQUIV-001/002/003 | PASS | same operation/result/typed-error mapping across live JSONRPC + HTTP+JSON + GRPC bindings |
+| BIND-EQUIV-004 | FAIL | genuine finding: the gRPC binding admits unauthenticated traffic — `AshA2A.Transport.GRPC.Server` exposes no auth-interceptor seam in this build, so gRPC is not behind the JWT gate the HTTP bindings enforce |
+| AUTH-INTASK-004/005, AUTH-SCOPE-002/003 | NOT TESTED | honest blockers: out-of-band credential channel observation, stream maintenance across auth_required, and a real per-caller authorization model are not implemented by the echo SUT variant |
+
+This is an extension-court verdict on the DY4 SUT variant at this pin, not
+TCK certification; the official suite's own compatibility.json (section
+above) is unchanged.
+
 The MUST-category infrastructure failures from the earlier 2026-10-05
 lane-Z19 run (MUST 70.4%: missing `A2A-Version` `-32009` gate,
 `tasks/resubscribe` answering `-32004` instead of `-32001` on unknown
