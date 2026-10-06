@@ -329,6 +329,46 @@ jobs:
           echo "lane=$LANE"
           test "$LANE" = success
 
+  # Conference-sim court suite (EV16 wiring): the AGNTCon event-model courts
+  # under test/conference_sim/. The court files are deliberately named
+  # `*_court.exs`, which ExUnit's default `*_test.exs` pattern does NOT
+  # collect, so this job passes the explicit path list (the minimal correct
+  # wiring -- no mix.exs :test_patterns change). fixture_test.exs IS collected
+  # by default, but the courts are gated on the shared ConferenceSim fixture
+  # being compiled (mix.exs elixirc_paths(:test) already includes
+  # test/conference_sim), so it is listed too to run the family in one
+  # process. No Postgres service: every court runs on real Ash/ETS resources
+  # and real GenServers (grep-verified: the only "Repo" mention in
+  # test/conference_sim/ is a comment), so no :requires_pg tag exists and
+  # none is excluded.
+  #
+  # Non-gating on purpose, not silently: the suite was measured red at wiring
+  # time (112 tests / 46 failures / 4 invalid across the EV lanes, which were
+  # still landing). TODO(ci-ev16): drop `continue-on-error` the moment a run
+  # witnesses a green suite on this branch -- same promotion rule as the
+  # `conformance` job's TODO(ci-g3) ledger.
+  conference-sim:
+    name: conference-sim (AGNTCon court suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true # TODO(ci-ev16): promote once witnessed green
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: ./.github/actions/build
+      - name: Conference-sim court suite
+        run: >-
+          mix test test/conference_sim/fixture_test.exs
+          test/conference_sim/*_court.exs
+
   # Lane CI-1 (G3, CI half of the `mix check` gap): the A2A v1.0 conformance
   # court report. One command runs every pinned v1.0 court as a REAL OS
   # subprocess (lib/mix/tasks/ash_a2a.v1_conformance_report.ex, 25-court
