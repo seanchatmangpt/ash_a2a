@@ -291,7 +291,7 @@ defmodule AshA2A.MixProject do
   # sa2a_crypto remains independently testable as a nested Mix project, while
   # its runtime modules are vendored into the root Hex package. Hex packages
   # cannot depend on local path projects.
-  defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support", "test/conference_sim"]
   defp elixirc_paths(_), do: ["lib", "sa2a_crypto/lib"]
 
   # MUZAK lane: muzak reads the project's `:test_paths` for its oracle file
