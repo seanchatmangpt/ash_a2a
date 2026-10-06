@@ -100,6 +100,13 @@ def mint_jwt(scope: str = "a2a", sub: str = "tck-client", exp_delta: int = 600,
     return f"{h}.{p}.{_b64(sig)}"
 
 
+def _grpc_message(msg_id: str, text: str = "hello from DY4") -> dict:
+    """protojson Part shape: a oneof content member, no ``kind`` discriminator."""
+    msg = _message(msg_id, text)
+    msg["parts"] = [{"text": text}]
+    return msg
+
+
 def _message(msg_id: str, text: str = "hello from DY4", task_id: str | None = None) -> dict:
     msg = {
         "messageId": msg_id,
@@ -135,6 +142,28 @@ def _record(collector, req_id: str, transport: str, passed: bool,
 
 def _rpc_success(resp) -> bool:
     return bool(getattr(resp, "success", False))
+
+
+def _task_of(resp) -> dict:
+    """Shape-agnostic task extraction: v1.0 JSON-RPC wraps the task under
+    "result"."task"; HTTP+JSON returns it directly; gRPC returns a protobuf
+    Task (converted via json_format)."""
+    raw = resp.raw_response
+    proto = raw
+    if isinstance(raw, dict) and hasattr(raw.get("task"), "DESCRIPTOR"):
+        proto = raw["task"]
+    if hasattr(proto, "DESCRIPTOR"):
+        from google.protobuf.json_format import MessageToDict
+        raw = MessageToDict(proto, preserving_proto_field_name=True)
+    if isinstance(raw, dict):
+        for wrapper in ("result", None):
+            node = raw.get(wrapper, raw) if wrapper else raw
+            if isinstance(node, dict) and "task" in node:
+                return node["task"]
+            if isinstance(node, dict) and "status" in node:
+                return node
+    return raw if isinstance(raw, dict) else {}
+
 
 
 # ---------------------------------------------------------------------------
@@ -235,8 +264,8 @@ def test_auth_required_task_flow(compatibility_collector):
     # Turn 1: park in TASK_STATE_AUTH_REQUIRED.
     resp = client.send_message(_message(msg_id))
     assert resp.success, f"send refused: {resp.error}"
-    raw = resp.raw_response["result"]["task"] if isinstance(resp.raw_response, dict) else None
-    assert raw is not None, f"no task in response: {resp.raw_response!r}"
+    raw = _task_of(resp)
+    assert raw, f"no task in response: {resp.raw_response!r}"
     state = raw["status"]["state"]
 
     # INTASK-002: transition to TASK_STATE_AUTH_REQUIRED.
@@ -247,7 +276,8 @@ def test_auth_required_task_flow(compatibility_collector):
     # (the task exists, is addressable, and is non-terminal = resumable).
     task_id = raw["id"]
     got = client.get_task(task_id)
-    assert got.success and got.raw_response["status"]["state"] == "TASK_STATE_AUTH_REQUIRED"
+    got_task = _task_of(got)
+    assert got.success and got_task["status"]["state"] == "TASK_STATE_AUTH_REQUIRED"
     _record(compatibility_collector, "AUTH-INTASK-001", "jsonrpc", True)
 
     # INTASK-003: the status message explains the required authorization.
@@ -265,7 +295,7 @@ def test_auth_required_task_flow(compatibility_collector):
         _message(f"tck-auth-required-{uuid.uuid4().hex[:8]}", task_id=task_id)
     )
     assert resume.success, f"follow-up refused: {resume.error}"
-    resumed = resume.raw_response["result"]["task"]
+    resumed = _task_of(resume)
     assert resumed["status"]["state"] == "TASK_STATE_COMPLETED", (
         f"resumed to {resumed['status']['state']!r}"
     )
@@ -286,25 +316,27 @@ def test_ver_client_headers_observed_server_side(compatibility_collector):
     VER-CLIENT-002: patch version numbers are not used in requests — every
     observed header value is a Major.Minor (<= 2 dot components).
     """
-    # Drive one more real request so the observation is fresh even if this
-    # test runs alone.
+    # Diff the server-side observation across ONE real request driven by this
+    # court, so unrelated traffic (other courts, other runs) cannot pollute
+    # the evidence.
+    before = httpx.get(f"{AUTH_URL}/__tck_observed").json()["a2a_version_headers"]
     client = _auth_client(JsonRpcClient, AUTH_URL, mint_jwt())
-    resp = client.send_message(_message(f"tck-passthrough-{uuid.uuid4().hex[:8]}"))
+    resp = client.send_message(_message(f"one-request-{uuid.uuid4().hex[:8]}"))
     assert resp.success
     client.close()
+    after = httpx.get(f"{AUTH_URL}/__tck_observed").json()["a2a_version_headers"]
 
-    obs = httpx.get(f"{AUTH_URL}/__tck_observed").json()
-    versions = obs.get("a2a_version_headers", [])
-    assert versions, "server observed no A2A-Version headers on any request"
+    new_versions = after[: len(after) - len(before)]
+    assert new_versions, "no request reached the server during this court"
     assert A2A_VERSION_HEADER == "A2A-Version"
 
-    assert all(v == A2A_VERSION for v in versions), (
-        f"client sent unexpected A2A-Version values: {sorted(set(versions))}"
+    assert all(v == A2A_VERSION for v in new_versions), (
+        f"client omitted or mis-sent A2A-Version: {new_versions!r}"
     )
     _record(compatibility_collector, "VER-CLIENT-001", "jsonrpc", True)
 
-    assert all(len(v.split(".")) <= 2 for v in versions), (
-        f"client sent patch versions: {sorted(set(versions))}"
+    assert all(len(v.split(".")) <= 2 for v in new_versions), (
+        f"client sent patch versions: {new_versions!r}"
     )
     _record(compatibility_collector, "VER-CLIENT-002", "jsonrpc", True)
 
@@ -362,7 +394,7 @@ def test_bind_equiv_across_bindings(compatibility_collector):
     results = {}
     results["jsonrpc"] = jr.send_message(msg)
     results["http_json"] = hj.send_message(msg)
-    results["grpc"] = gc.send_message(msg)
+    results["grpc"] = gc.send_message(_grpc_message(msg["messageId"], msg["parts"][0]["text"]))
     for name, resp in results.items():
         assert resp.success, f"{name} send_message failed: {resp.error}"
     _record(compatibility_collector, "BIND-EQUIV-001", "jsonrpc", True)
@@ -371,7 +403,8 @@ def test_bind_equiv_across_bindings(compatibility_collector):
     # task that completed with non-empty agent output.
     texts = {}
     for name, resp in results.items():
-        task = resp.raw_response["result"]["task"]
+        task = _task_of(resp)
+        assert task.get("status"), f"{name}: no status in {sorted(task.keys())}"
         assert task["status"]["state"] == "TASK_STATE_COMPLETED", (
             f"{name} ended {task['status']['state']!r}"
         )
@@ -409,11 +442,38 @@ def test_bind_equiv_across_bindings(compatibility_collector):
     # traffic.
     card = _card()
     assert card.get("securityRequirements"), "card declares no securityRequirements"
-    plain_jr = JsonRpcClient(AUTH_URL)
-    r = plain_jr.send_message(msg)
-    assert not r.success, "jsonrpc admitted unauthenticated traffic"
-    plain_jr.close()
-    _record(compatibility_collector, "BIND-EQUIV-004", "jsonrpc", True)
+    # Every binding must refuse unauthenticated traffic the same way. The
+    # gRPC server surface exposes no auth-interceptor seam in this build, so
+    # the gRPC binding ADMITS unauthenticated traffic — a genuine finding,
+    # recorded as a FAIL, not papered over.
+    refusals = {}
+    for name, client in (
+        ("jsonrpc", JsonRpcClient(AUTH_URL)),
+        ("http_json", HttpJsonClient(f"{AUTH_URL}/a2a/rest")),
+        ("grpc", GrpcClient(iface["url"])),
+    ):
+        wire_msg = _grpc_message(msg["messageId"], msg["parts"][0]["text"]) if name == "grpc" else msg
+        r = client.send_message(wire_msg)
+        refusals[name] = bool(r.success)
+        client.close()
+
+    # Record the honest verdict BEFORE asserting, so the finding lands in
+    # the report even when the assert fails the test.
+    all_refused = not any(refusals.values())
+    _record(compatibility_collector, "BIND-EQUIV-004", "jsonrpc", all_refused,
+            errors=[] if all_refused else [
+                f"grpc admitted unauthenticated traffic: AshA2A.Transport.GRPC.Server "
+                f"exposes no auth-interceptor seam, so the gRPC binding is not "
+                f"behind the JWT gate (refusals observed: {refusals})"
+            ])
+
+    assert not refusals["jsonrpc"], "jsonrpc admitted unauthenticated traffic"
+    assert not refusals["http_json"], "http_json admitted unauthenticated traffic"
+    assert not refusals["grpc"], (
+        "grpc admitted unauthenticated traffic: AshA2A.Transport.GRPC.Server "
+        "exposes no auth-interceptor seam, so the gRPC binding is not behind "
+        "the JWT gate (BIND-EQUIV-004 parity broken)"
+    )
 
     for c in (jr, hj, gc):
         c.close()

@@ -223,7 +223,9 @@ defmodule TckSutAuth.Router do
   end
 
   def call(conn, opts) do
-    TckSutAuth.Observed.record(List.first(Plug.Conn.get_req_header(conn, "a2a-version")))
+    TckSutAuth.Observed.record(
+      List.first(Plug.Conn.get_req_header(conn, "a2a-version")) || ""
+    )
 
     conn
     |> AshA2A.Protocol.Plug.Auth.call(opts.auth)
@@ -262,14 +264,15 @@ defmodule TckSutAuth.TLS do
       :ok
     else
       step(~w(req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem
-                    -subj /CN=tck-dy4-test-CA -days 2))
+                    -subj /CN=tck-dy4-test-CA -days 2
+                    -addext basicConstraints=critical,CA:TRUE
+                    -addext keyUsage=critical,keyCertSign,cRLSign))
 
       step(~w(req -newkey rsa:2048 -nodes -keyout server.key -out server.csr
                     -subj /CN=localhost))
 
-      File.write!(Path.join(@dir, "san.ext"), """
-      subjectAltName=DNS:localhost,IP:127.0.0.1
-      """)
+      File.write!(Path.join(@dir, "san.ext"),
+                  "subjectAltName=DNS:localhost,IP:127.0.0.1\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n")
 
       step(~w(x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial
                     -out server.crt -days 2 -extfile san.ext))
@@ -363,6 +366,7 @@ defmodule TckSutAuth.Main do
 
     http_port = System.get_env("TCK_SUT_AUTH_PORT", "9998") |> String.to_integer()
     tls_port = System.get_env("TCK_SUT_AUTH_TLS_PORT", "9443") |> String.to_integer()
+grpc_port = System.get_env("TCK_SUT_AUTH_GRPC_PORT", "9997") |> String.to_integer()
     base_url = "http://localhost:#{http_port}"
 
     interfaces = [
@@ -421,8 +425,6 @@ defmodule TckSutAuth.Main do
 
     # -- gRPC binding (mirrors the shared SUT's gRPC section: same handler
     #    shape, DY4-owned copy for the auth SUT) ----------------------------
-    grpc_port = System.get_env("TCK_SUT_AUTH_GRPC_PORT", "9997") |> String.to_integer()
-
     {:ok, _} = AshA2A.A2ATransport.start_link(name: TckSutAuth.Transport)
 
     Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
