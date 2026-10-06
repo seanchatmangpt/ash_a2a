@@ -93,19 +93,49 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
         {:error, 12, "Method not found: #{rpc}", []}
 
       _method ->
-        request = %{
-          "jsonrpc" => "2.0",
-          "id" => AshA2A.Protocol.ID.generate("grpc"),
-          "method" => short,
-          "params" => params
-        }
+        cond do
+          # The extended card is a host concern (its content, auth posture and
+          # cache semantics are the serving host's), so the gRPC binding opts
+          # in the same way the HTTP binding's router does: a handler that
+          # exports `handle_extended_card/1` answers GetExtendedAgentCard
+          # directly. Without the callback the dispatcher's UNIMPLEMENTED
+          # refusal stands — spec-correct (§3.3.2) exactly when the served
+          # card does not declare the extendedAgentCard capability.
+          short == "GetExtendedAgentCard" and exports?(handler, :handle_extended_card, 1) ->
+            case safe_extended_card(handler, ctx) do
+              {:ok, card} -> {:ok, card}
+              {:error, %AshA2A.Protocol.JSONRPC.Error{} = error} -> error_tuple(AshA2A.Protocol.JSONRPC.Error.to_map(error))
+            end
 
-        case AshA2A.Protocol.JSONRPC.handle(request, handler, ctx) do
-          {:reply, %{"result" => result}} -> {:ok, result}
-          {:reply, %{"error" => error}} -> error_tuple(error)
-          {:stream, m, p, id} -> {:stream, m, p, id}
+          true ->
+            request = %{
+              "jsonrpc" => "2.0",
+              "id" => AshA2A.Protocol.ID.generate("grpc"),
+              "method" => short,
+              "params" => params
+            }
+
+            case AshA2A.Protocol.JSONRPC.handle(request, handler, ctx) do
+              {:reply, %{"result" => result}} -> {:ok, result}
+              {:reply, %{"error" => error}} -> error_tuple(error)
+              {:stream, m, p, id} -> {:stream, m, p, id}
+            end
         end
     end
+  end
+
+  defp safe_extended_card(handler, ctx) do
+    try do
+      handler.handle_extended_card(ctx)
+    rescue
+      e -> {:error, AshA2A.Protocol.JSONRPC.Error.internal_error(inspect(e))}
+    end
+  end
+
+  defp exports?(handler, fun, arity) do
+    function_exported?(handler, fun, arity) or
+      (Code.ensure_loaded(handler) == {:module, handler} and
+         function_exported?(handler, fun, arity))
   end
 
   # gRPC status codes (google.golang.org/grpc/codes / grpc::StatusCode).

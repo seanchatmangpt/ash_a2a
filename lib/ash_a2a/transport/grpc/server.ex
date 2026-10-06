@@ -95,22 +95,20 @@ defmodule AshA2A.Transport.GRPC.Server do
 
   # -- server-streaming RPCs ------------------------------------------------
 
+  # Both streaming RPCs answer with a direct GRPC.Server.send_reply loop over
+  # the shared per-task event log instead of a Flow pipeline: the Flow-based
+  # path buffers until the stream halts (observed: backlog events never
+  # reached the client before halt, so any non-terminal task's subscribe
+  # stream stayed silent until the client deadline), while the send_reply loop
+  # emits each event the moment the log has it — true push semantics (spec
+  # §3.5.2, TCK STREAM-ORDER/STREAM-SUB).
   def send_streaming_message(req, mat) do
     auth!(mat)
     gate_version!(mat)
 
     case start_stream("SendStreamingMessage", req) do
-      {:ok, events} ->
-        # stages: 1 — the Flow partition is the single subscriber of the
-        # task's event log; more than one partition would subscribe the same
-        # Stream.resource more than once.
-        events
-        |> GRPC.Stream.from(stages: 1)
-        |> GRPC.Stream.map(fn {payload, _seq} -> to_pb!(Pb.StreamResponse, payload) end)
-        |> GRPC.Stream.run_with(mat)
-
-      {:error, %GRPC.RPCError{} = error} ->
-        raise error
+      {:ok, events} -> stream_loop(mat, events)
+      {:error, %GRPC.RPCError{} = error} -> raise error
     end
   end
 
@@ -119,17 +117,17 @@ defmodule AshA2A.Transport.GRPC.Server do
     gate_version!(mat)
 
     case start_stream("SubscribeToTask", req) do
-      {:ok, events} ->
-        # Emitted events carry no per-event status; the RPC ends OK when the
-        # final event has been sent, exactly like the SSE side.
-        events
-        |> GRPC.Stream.from(stages: 1)
-        |> GRPC.Stream.map(fn {payload, _seq} -> to_pb!(Pb.StreamResponse, payload) end)
-        |> GRPC.Stream.run_with(mat)
-
-      {:error, %GRPC.RPCError{} = error} ->
-        raise error
+      {:ok, events} -> stream_loop(mat, events)
+      {:error, %GRPC.RPCError{} = error} -> raise error
     end
+  end
+
+  defp stream_loop(mat, events) do
+    Enum.each(events, fn {payload, _seq} ->
+      GRPC.Server.send_reply(mat, to_pb!(Pb.StreamResponse, payload))
+    end)
+
+    {:ok, mat, :noreply}
   end
 
   # -- bridging -------------------------------------------------------------
@@ -243,7 +241,9 @@ defmodule AshA2A.Transport.GRPC.Server do
          )}
       else
         {:ok,
-         stream_enum(transport, task_id, fn -> TaskEvents.subscribe(transport, task_id) end)}
+         stream_enum(transport, task_id, fn -> TaskEvents.subscribe(transport, task_id) end,
+           include_task_events: true
+         )}
       end
     else
       {:error, code, msg, details} -> {:error, rpc_error(code, msg, details)}
@@ -273,12 +273,16 @@ defmodule AshA2A.Transport.GRPC.Server do
   # arity-2 fun, which GRPC.Stream.from/2's catch-all clause would wrap in a
   # list and enumerate the fun itself as a single (useless) element.
   @doc false
-  def stream_enum(transport, task_id, subscribe_fun) do
+  def stream_enum(transport, task_id, subscribe_fun, opts \\ []) do
+    include_task? = Keyword.get(opts, :include_task_events, false)
+
     Stream.resource(
 
       fn ->
         subscribe_fun.()
-        |> Enum.reject(fn {_seq, kind, _payload, _final?} -> kind == "task" end)
+        |> Enum.reject(fn {_seq, kind, _payload, _final?} ->
+          kind == "task" and not include_task?
+        end)
         |> Enum.map(fn {seq, _kind, payload, final?} -> {seq, {payload, final?}} end)
         |> then(&{&1, 0})
       end,
