@@ -142,9 +142,12 @@ defmodule AshA2A.A2ATransport.At5HardeningTest do
                PushHTTP.deliver(config, %{"taskId" => "t1"})
     end
 
+    # URL hardening is now ON by default, so these hygiene courts target
+    # https:// explicitly — they isolate credential validation, not the
+    # URL-scheme gate (which has its own courts below).
     test "credentials carrying control characters are refused before dialing" do
       config = %AshA2A.Protocol.PushNotificationConfig{
-        url: "http://example.invalid/hook",
+        url: "https://example.invalid/hook",
         authentication: %{scheme: "Bearer", credentials: "tok\r\nX-Injected: 1"}
       }
 
@@ -154,12 +157,47 @@ defmodule AshA2A.A2ATransport.At5HardeningTest do
 
     test "bearer token carrying CRLF is refused before dialing" do
       config = %AshA2A.Protocol.PushNotificationConfig{
-        url: "http://example.invalid/hook",
+        url: "https://example.invalid/hook",
         token: "tok\nX-Injected: 1"
       }
 
       assert {:error, {:invalid_credentials, :control_characters}} =
                PushHTTP.deliver(config, %{"taskId" => "t1"})
+    end
+
+    # -- SSRF hardening is the default; opting out is loud ----------------------
+
+    test "insecure http:// webhook URLs are refused by default" do
+      config = %AshA2A.Protocol.PushNotificationConfig{url: "http://example.invalid/hook"}
+
+      assert {:error, {:insecure_url, "http://example.invalid/hook"}} =
+               PushHTTP.deliver(config, %{"taskId" => "t1"})
+    end
+
+    test "private/loopback webhook hosts are refused by default" do
+      for url <- [
+            "https://localhost:4000/hook",
+            "https://127.0.0.1:4000/hook",
+            "https://10.1.2.3:4000/hook",
+            "https://192.168.1.5:4000/hook",
+            "https://172.16.0.9:4000/hook"
+          ] do
+        config = %AshA2A.Protocol.PushNotificationConfig{url: url}
+
+        assert {:error, {:private_host, _}} = PushHTTP.deliver(config, %{"taskId" => "t1"})
+      end
+    end
+
+    test "explicit dev opt-out admits a localhost receiver (which then really dials)" do
+      config = %AshA2A.Protocol.PushNotificationConfig{url: "http://127.0.0.1:1/hook"}
+
+      opts = [require_https: false, block_private_ips: false, attempts: 1, timeout: 250]
+
+      # The opt-out means the URL gate passes; the dial to the closed port
+      # fails with a connection error — proving validation admitted it.
+      assert {:error, reason} = PushHTTP.deliver(config, %{"taskId" => "t1"}, opts)
+      refute match?({:insecure_url, _}, reason)
+      refute match?({:private_host, _}, reason)
     end
   end
 end

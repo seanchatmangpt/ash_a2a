@@ -49,6 +49,47 @@ defmodule AshA2A.A2ATransport.ExtendedCardTest do
   defp opts(agent, extra),
     do: TransportPlug.init([agent: agent, base_url: "http://x/a2a"] ++ extra)
 
+  defp rpc_conn(opts, method, identity) do
+    body = Jason.encode!(%{"jsonrpc" => "2.0", "id" => 7, "method" => method, "params" => %{}})
+
+    conn =
+      :post
+      |> Plug.Test.conn("/", body)
+      |> Plug.Conn.put_req_header("content-type", "application/json")
+
+    conn = if identity, do: AshA2A.Protocol.Plug.Auth.put_identity(conn, identity), else: conn
+    TransportPlug.call(conn, opts)
+  end
+
+  # -- Cache semantics: the public card is shareable, the extended card is not -
+
+  test "public card is served cacheable; authenticated extended card is private, no-store", %{
+    agent: agent
+  } do
+    o = opts(agent, extended_card: &__MODULE__.add_admin_skill/2)
+
+    public =
+      :get
+      |> Plug.Test.conn("/.well-known/agent-card.json")
+      |> TransportPlug.call(o)
+
+    assert {200, %{"result" => _card}} =
+             rpc_conn(o, "agent/getAuthenticatedExtendedCard", %{sub: "u1"})
+             |> then(&{&1.status, Jason.decode!(&1.resp_body)})
+
+    assert get_cache_control(public) == "public, max-age=300"
+
+    extended =
+      rpc_conn(o, "agent/getAuthenticatedExtendedCard", %{sub: "u1"})
+      |> get_cache_control()
+
+    assert extended == "private, no-store"
+  end
+
+  defp get_cache_control(conn) do
+    conn |> Plug.Conn.get_resp_header("cache-control") |> List.first()
+  end
+
   test "no provider configured is -32007 (not configured), not -32004", %{agent: agent} do
     assert {200, %{"error" => %{"code" => -32_007}}} =
              rpc(opts(agent, []), "agent/getAuthenticatedExtendedCard", %{sub: "u1"})

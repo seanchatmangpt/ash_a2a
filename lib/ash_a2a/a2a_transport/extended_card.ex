@@ -60,7 +60,15 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
 
         case call_provider(opts.extended_card, identity, public) do
           {:ok, card} when is_map(card) ->
-            send_json(conn, 200, Response.success(id, strip_internal_keys(card)))
+            # The public well-known card is served with
+            # `Cache-Control: public, max-age=300`; the authenticated extended
+            # card MUST NOT inherit it — its body varies per verified caller,
+            # so a shared/intermediary cache hit would leak one principal's
+            # card to another. Explicit here (rather than relying on Plug's
+            # default) so a future handler change gets the safe default.
+            conn
+            |> put_resp_header("cache-control", "private, no-store")
+            |> send_json(200, Response.success(id, strip_internal_keys(card)))
 
           {:error, reason} ->
             send_json(
