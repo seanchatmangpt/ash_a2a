@@ -34,6 +34,17 @@ sec_files = [
   "lib/ash_a2a/protocol/push_notification_sender/http.ex"
 ]
 
+single_file_profile = fn file ->
+  [
+    mutations: 1_000,
+    mutation_filter: fn files ->
+      files
+      |> Enum.filter(&(&1 == file))
+      |> Enum.map(&{&1, nil})
+    end
+  ]
+end
+
 %{
   default: [
     mutations: 1_000,
@@ -42,7 +53,16 @@ sec_files = [
       |> Enum.filter(&(&1 in sec_files))
       |> Enum.map(&{&1, nil})
     end
-  ]
+  ],
+  # Per-module profiles (`--profile auth`, etc.): mutate exactly one module.
+  # The :default profile samples across all six; muzak's sampler is a seed-
+  # shuffled take(N), so a small bounded sample may land in one file only.
+  auth: single_file_profile.("lib/ash_a2a/protocol/plug/auth.ex"),
+  jwt: single_file_profile.("lib/ash_a2a/protocol/plug/jwt_verifier.ex"),
+  validators: single_file_profile.("lib/ash_a2a/protocol/plug/security_validators.ex"),
+  card: single_file_profile.("lib/ash_a2a/protocol/card_signing.ex"),
+  transport_plug: single_file_profile.("lib/ash_a2a/transport/plug.ex"),
+  push_http: single_file_profile.("lib/ash_a2a/protocol/push_notification_sender/http.ex")
 }
 # Oracle = the matching security courts. muzak requires ALL files under
 # `:test_paths` for every mutant, so the honest full-court oracle is the

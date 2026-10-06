@@ -629,5 +629,39 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp now_seconds, do: System.system_time(:second)
+
+    # S42 self-classification for the drift court
+    # (test/ash_a2a/semantic_refusal_test.exs): every emitted code gets an
+    # explicit class. Config/source-availability failures block rather than
+    # refuse; token/claim/key validation failures are identity refusals;
+    # scope shortfalls are bounds refusals.
+    def __sa2a_refusal_codes__ do
+      %{
+        unconfigured_scheme: :blocked_resource,
+        validator_crashed: :blocked_resource,
+        missing_secret: :blocked_resource,
+        missing_jwks: :blocked_resource,
+        jwks_error: :blocked_resource,
+        discovery_error: :blocked_resource,
+        introspection_error: :blocked_resource,
+        invalid_api_key: :refused_identity,
+        invalid_token: :refused_identity,
+        malformed_token: :refused_identity,
+        algorithm_mismatch: :refused_identity,
+        unsupported_algorithm: :refused_identity,
+        bad_signature: :refused_identity,
+        invalid_jwk: :refused_identity,
+        unsupported_jwk_type: :refused_identity,
+        unknown_kid: :refused_identity,
+        missing_claim: :refused_identity,
+        invalid_claim: :refused_identity,
+        invalid_issuer: :refused_identity,
+        invalid_audience: :refused_identity,
+        token_expired: :refused_identity,
+        token_not_yet_valid: :refused_identity,
+        token_inactive: :refused_identity,
+        insufficient_scope: :refused_bounds
+      }
+    end
   end
 end

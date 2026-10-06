@@ -6,6 +6,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+## [Unreleased]
+
+_Nothing unreleased._
+
+## [26.10.5] - 2026-10-05
+
+### Added
+
+- Official TCK surface (lanes AT2/DY3/G3/G6): the in-repo SUT harness
+  (`tck_sut.exs`) boots a real agent behind the owned transports with a
+  JWS-signed card, the extended-card endpoint, push-config RPCs, and a
+  gRPC `A2AService` handler; the official `a2aproject/a2a-tck`
+  compatibility suite ran against it across all three bindings
+  (jsonrpc, http_json, grpc) — 73.6% overall, 92 PASS / 7 FAIL /
+  4 SKIPPED / 26 NOT TESTED (full per-class verdict:
+  `docs/reference/a2a-v1-conformance.md`). CI gained a `tck` job
+  running the official suite against the in-tree SUT (`6342ab2d`).
+- Transport-backed streaming for `message/stream` and
+  `tasks/resubscribe` (lane G3, `62324a29`): replay streams from the
+  recorded task event log over SSE, converting the TCK streaming
+  classes (STREAM-SUB-001..003, STREAM-ORDER-001..003) to PASS on all
+  three bindings.
+- Card signing on the wire (lane DY3, `a1efe7e2` + `5003ac96`): the
+  agent card carries JWS `signatures`; `AshA2A.Protocol.CardSigning`
+  gained HS256/RS256/ES256 algorithms with `kid` in the JWS protected
+  header, exercised by CARD-SIGN courts.
+- Auth-scheme hardening surface (lane DY, `0115f188`,
+  `f5e34bea`): reserved-key metadata strip, ref-only internal error
+  payloads, push-sender URL scheme and CRLF gates, SSRF-safe push
+  sender defaults, private extended-card cache.
+
+### Changed
+
+- Chicago court strengthening (C7, 619bbb3): six new falsifiers kill the three
+  authority/envelope courts that passed vacuously. SA2A-AUTH-022/023/024 pin
+  subject/capability binding and expiry through the real Grant -> CommandBus
+  path; SA2A-AUTH-GRANT-012/013 pin grant-layer binding and past-`expires_at`
+  refusal; CHI-ADM-014 witnesses an envelope declaring its own standing being
+  refused `:standing_self_declared` (the guard previously made 0 calls on the
+  court path). The SA2A-ENV/CHI-BRCE courts no longer hand-mint authority:
+  they start a court-owned broker and mint through the real Grant API.
+  Mutation run: 14 killed / 1 unknown (was 3 survived + 2 unknown); the
+  mutation manifest is re-pinned.
+- Legacy-compat census and audit (D6, 0bdc6b7): 46 non-chicago Memory
+  receipt-store consumers censused -- 2 incidental Memory stores migrated to
+  real on-disk EKV instances (with a `receipt.standing == :durable`
+  post-condition so the swap is falsifiable), the rest lawfully classified by
+  the store-as-subject law. `docs/jira/v26.10.2/LEGACY-COMPAT-AUDIT.md`
+  states the retirement criterion: `:legacy_compat` is deprecable -- zero
+  in-repo consumers boot under it, and no documented host path recommends it.
+- Security: `ash` bumped 3.34.0 -> 3.34.4 closing CVE-2026-94201 (HIGH,
+  `91b93129`); cowlib EEF-CVE-2026-43966/43969 dispositioned
+  ACCEPT-TYPED:NOT-EXPOSED with evidence-backed exposure assessment
+  (`58fd4695`).
+
 ## [26.10.4] - 2026-10-05
 
 ### Added
@@ -90,31 +145,6 @@ once it reaches 1.0.
   and `AshA2A.Elicitation` (typed, schema-constrained `INPUT_REQUIRED`
   contract; court `test/ash_a2a_v1_elicitation_test.exs`).
 
-## [Unreleased]
-
-_Nothing unreleased._
-
-## [26.10.5] - 2026-10-05
-
-### Changed
-
-- Chicago court strengthening (C7, 619bbb3): six new falsifiers kill the three
-  authority/envelope courts that passed vacuously. SA2A-AUTH-022/023/024 pin
-  subject/capability binding and expiry through the real Grant -> CommandBus
-  path; SA2A-AUTH-GRANT-012/013 pin grant-layer binding and past-`expires_at`
-  refusal; CHI-ADM-014 witnesses an envelope declaring its own standing being
-  refused `:standing_self_declared` (the guard previously made 0 calls on the
-  court path). The SA2A-ENV/CHI-BRCE courts no longer hand-mint authority:
-  they start a court-owned broker and mint through the real Grant API.
-  Mutation run: 14 killed / 1 unknown (was 3 survived + 2 unknown); the
-  mutation manifest is re-pinned.
-- Legacy-compat census and audit (D6, 0bdc6b7): 46 non-chicago Memory
-  receipt-store consumers censused -- 2 incidental Memory stores migrated to
-  real on-disk EKV instances (with a `receipt.standing == :durable`
-  post-condition so the swap is falsifiable), the rest lawfully classified by
-  the store-as-subject law. `docs/jira/v26.10.2/LEGACY-COMPAT-AUDIT.md`
-  states the retirement criterion: `:legacy_compat` is deprecable -- zero
-  in-repo consumers boot under it, and no documented host path recommends it.
 
 ## [26.10.3] - 2026-10-04
 
