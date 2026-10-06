@@ -164,6 +164,7 @@ defmodule AshA2A.ConferenceSim.GRPCVenueHandler do
         end
     }
   end
+end
 
 defmodule AshA2A.ConferenceSim.GRPCVenueAuthVerify do
   @moduledoc """
