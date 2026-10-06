@@ -85,6 +85,12 @@ defmodule AshA2A.ConsequenceKernel.W5.EffectClaimStore.File do
 
   defp empty, do: %{claims: %{}, effects: %{}, receipts: %{}}
 
+  # Trust boundary: the store file is written by this module's persist path
+  # under the process-owned directory, `[:safe]`-decoded, and shape-validated
+  # (%{claims: _, effects: _, receipts: _}) with a fail-closed `empty()`
+  # fallback, so a corrupt or hostile file cannot mint atoms or deserialize
+  # funs.
+  # sobelow_skip ["Misc.BinToTerm"]
   defp load(path) do
     case File.read(path) do
       {:ok, b} ->

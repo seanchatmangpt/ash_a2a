@@ -99,6 +99,13 @@ defmodule AshA2A.BeamFile do
 
   defp intern_literal_terms(0, _), do: :ok
 
+  # Trust boundary: the bytes are literal-table entries read from this
+  # application's own compiled BEAM on the local lib path (`:code.which` /
+  # `:beam_lib.chunks`), never externally-received input. `[:safe]` is
+  # intentionally NOT passed -- interning those atoms is this function's
+  # purpose (it pre-loads atoms so a later `binary_to_term(bytes, [:safe])`
+  # in a fresh process succeeds).
+  # sobelow_skip ["Misc.BinToTerm"]
   defp intern_literal_terms(n, <<size::32, term::binary-size(size), rest::binary>>) do
     _ = :erlang.binary_to_term(term)
     intern_literal_terms(n - 1, rest)

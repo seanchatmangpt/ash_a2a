@@ -289,6 +289,11 @@ defmodule AshA2A.ExecutionSnapshot do
 
   @doc "Restores a snapshot only when both durable envelope digests verify."
   @spec decode!(binary()) :: t()
+  # Trust boundary: payloads are produced by this module's `encode/1`
+  # (`term_to_binary(envelope, [:deterministic])`) and verified against both
+  # durable envelope digests before use; `[:safe]` decode plus full struct
+  # shape-match (version + digests) fails closed on any foreign term.
+  # sobelow_skip ["Misc.BinToTerm"]
   def decode!(payload) when is_binary(payload) do
     case :erlang.binary_to_term(payload, [:safe]) do
       %{

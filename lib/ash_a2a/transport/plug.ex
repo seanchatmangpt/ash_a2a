@@ -52,6 +52,12 @@ defmodule AshA2A.Transport.Plug do
   (`AshA2A.Transport.SchemaEndpoints`): `GET /.well-known/agent-card.schema.json`
   and `GET /.well-known/skills.schema.json`. Default off -- both paths then
   answer `404` like any other unserved path.
+
+  A mount with `force_ssl: [rewrite_on: [:x_forwarded_proto]]` (the prod
+  posture `config/prod.exs` states for the transport) refuses plaintext
+  requests behind a proxy that sets `x-forwarded-proto: http` with
+  `400 Bad Request` and serves `strict-transport-security` on every response.
+  The default (`nil`) does not enforce.
   """
 
   @behaviour Plug
@@ -84,13 +90,34 @@ defmodule AshA2A.Transport.Plug do
       metadata: Keyword.get(opts, :metadata, %{}),
       max_body_bytes: Keyword.get(opts, :max_body_bytes, 1_000_000),
       push_notifications: Keyword.get(opts, :push_notifications, false),
-      extensions: Keyword.get(opts, :extensions, [])
+      extensions: Keyword.get(opts, :extensions, []),
+      force_ssl: Keyword.get(opts, :force_ssl, nil)
     }
     |> Map.merge(AshA2A.Transport.SchemaEndpoints.init(opts))
   end
 
   @impl Plug
   @spec call(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  # Prod hardening (sobelow Config.HTTPS): a mount that passes `:force_ssl`
+  # refuses plaintext behind a proxy (`x-forwarded-proto: http`) and serves
+  # HSTS. Correctness of the check precedes routing, so it runs before the
+  # agent-card / JSON-RPC / schema dispatch clauses below.
+  def call(conn, %{force_ssl: force_ssl} = opts) when force_ssl != nil do
+    conn =
+      put_resp_header(conn, "strict-transport-security", hsts_header(force_ssl))
+
+    case get_req_header(conn, "x-forwarded-proto") do
+      ["http" | _] ->
+        conn
+        |> put_resp_header("content-type", "text/plain; charset=utf-8")
+        |> send_resp(400, "HTTPS required")
+        |> halt()
+
+      _ ->
+        call(conn, Map.delete(opts, :force_ssl))
+    end
+  end
+
   def call(%{method: "GET", path_info: path} = conn, %{agent_card_path: path} = opts) do
     serve_agent_card(conn, opts)
   end
@@ -170,6 +197,22 @@ defmodule AshA2A.Transport.Plug do
 
   defp stringify(%{} = map), do: Map.new(map, fn {k, v} -> {to_string(k), stringify(v)} end)
   defp stringify(other), do: other
+
+  # Phoenix force_ssl-compatible HSTS: enabled whenever `:force_ssl` is set
+  # (its `:hsts` option defaulting to `true`; `:hsts_include_subdomains` adds
+  # `; includeSubDomains`). max-age is Phoenix's default (two years).
+  defp hsts_header(force_ssl) when is_list(force_ssl) do
+    max_age = Keyword.get(force_ssl, :hsts_max_age, 63_072_000)
+    include_subdomains = Keyword.get(force_ssl, :hsts_include_subdomains, false)
+
+    if include_subdomains do
+      "max-age=#{max_age}; includeSubDomains"
+    else
+      "max-age=#{max_age}"
+    end
+  end
+
+  defp hsts_header(_), do: "max-age=63072000"
 
   defp serve_agent_card(conn, opts) do
     base_url = AshA2A.Protocol.Plug.get_base_url(conn) || opts.base_url
