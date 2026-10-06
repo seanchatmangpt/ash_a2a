@@ -66,7 +66,16 @@ defmodule ConferenceSim.LoadCourt do
     end)
 
     {:ok, sup} = Task.Supervisor.start_link(name: ConferenceSimLoadTaskSup)
-    on_exit(fn -> if Process.alive?(sup), do: Supervisor.stop(sup) end)
+    on_exit(fn ->
+      # TOCTOU-safe: the supervisor may die between the alive? check and the
+      # stop (Supervisor.stop tail-calls GenServer.stop, whose :noproc exit
+      # would fail the test from the on_exit handler).
+      try do
+        if Process.alive?(sup), do: Supervisor.stop(sup)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
 
     IO.puts("""
     \n[load_court] configured scale: #{@load_scale} concurrent attendee-agents \

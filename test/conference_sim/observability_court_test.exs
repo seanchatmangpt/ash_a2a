@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: MIT
 
-defmodule ConferenceSim.Venue do
+defmodule ConferenceSim.ObservabilityVenue do
   @moduledoc """
-  Real conference venue agent (EV11 fixture, self-contained in this lane's
-  file: test/conference_sim/observability_court.exs owns it).
+  Real conference venue agent (EV11 fixture, named ObservabilityVenue so it does not collide with the
+  shared fixture's Ash resource `ConferenceSim.Venue`: test/conference_sim/observability_court.exs owns it).
 
   One AshA2A.Agent GenServer with three activities, routed on the inbound
   Part.Data payload:
@@ -116,7 +116,7 @@ defmodule ConferenceSim.ObservabilityCourt do
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Protocol
-  alias ConferenceSim.Venue
+  alias ConferenceSim.ObservabilityVenue
 
   # -- event-log read side ---------------------------------------------------
 
@@ -211,7 +211,7 @@ defmodule ConferenceSim.ObservabilityCourt do
     on_exit(fn -> EventLog.stop(handler_id) end)
 
     name = :"conference_sim_venue_#{System.unique_integer([:positive])}"
-    start_supervised!({Venue, name: name})
+    start_supervised!({ObservabilityVenue, name: name})
 
     %{table: table, venue: name}
   end
@@ -233,7 +233,7 @@ defmodule ConferenceSim.ObservabilityCourt do
     # The real {:stream_done, _} cast folds the task to :completed; poll the
     # real task store rather than sleeping blind.
     wait_until(2_000, fn ->
-      match?({:ok, %Protocol.Task{status: %{state: :completed}}}, Venue.get_task(venue, task.id))
+      match?({:ok, %Protocol.Task{status: %{state: :completed}}}, ObservabilityVenue.get_task(venue, task.id))
     end)
 
     task

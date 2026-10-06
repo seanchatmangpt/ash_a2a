@@ -542,6 +542,7 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
              "error" => %{
                "code" => 400,
                "message" => "Invalid parameters",
+               "status" => "INVALID_ARGUMENT",
                "details" => [
                  %{
                    "@type" => @error_info_type,
