@@ -149,7 +149,15 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   defp start_agent(agent_module) do
     name = :"v1_cancellation_#{System.unique_integer([:positive])}"
     {:ok, pid} = agent_module.start_link(name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    # TOCTOU-safe (same class as load_court): the agent may die between the
+    # alive? check and the stop; a :noproc exit from on_exit fails the test.
+    on_exit(fn ->
+      try do
+        if Process.alive?(pid), do: GenServer.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
     %{agent: name, plug_opts: AshA2A.Protocol.Plug.init(agent: name, base_url: "http://localhost:4104/a2a")}
   end
 
