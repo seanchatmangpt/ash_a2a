@@ -23,7 +23,16 @@ ExUnit.start(exclude: [:external_api, :benchmark])
 # A test that specifically needs isolated grant/revocation state -- e.g.
 # `test/ash_a2a_authority_capability_grant_test.exs`, which revokes -- starts
 # its own uniquely-named broker and is `async: false`.
-{:ok, _authority_broker} = AshA2A.Authority.Broker.InMemory.start_link([])
+# MUZAK lane (mutation testing): `mix muzak.sec` re-requires this helper
+# before every mutant's test run, after muzak has restarted all non-OTP
+# applications. The shared broker is NOT under the app supervisor, so it
+# survives those restarts -- start it only when actually absent, or every
+# mutant after the first dies here with `:already_started`.
+{:ok, _authority_broker} =
+  case Process.whereis(AshA2A.Authority.Broker.InMemory) do
+    nil -> AshA2A.Authority.Broker.InMemory.start_link([])
+    pid when is_pid(pid) -> {:ok, pid}
+  end
 
 # SA2A: the `:graphlaw` tests really execute the real praxis-graphlaw wasm
 # through a real `node` subprocess. On a machine without `node` or without the

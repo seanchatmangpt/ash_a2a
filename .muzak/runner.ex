@@ -1,0 +1,377 @@
+defmodule Muzak.Runner do
+  @moduledoc false
+
+  # All the code to actually run the tests and such
+  #
+  # MUZAK-PATCH (Elixir 1.19 / OTP 28): this is muzak 1.1.1's runner.ex with
+  # three targeted fixes applied for the current toolchain (muzak was last
+  # released 2022-12):
+  #   1. cleanup_processes/0 installs a 2022-era default state into
+  #      ExUnit.Server; the modern state shape adds :groups/:async_groups and
+  #      :async_modules is a :queue (KeyError :async_groups otherwise).
+  #   2. compile_dependencies/1 read the old compile.elixir manifest (list of
+  #      10-tuples with module_dependencies); the modern manifest (vsn 29) is
+  #      {29, modules, sources_map, ...} with source records carrying
+  #      compile_references/runtime_references.
+  #   3. ExUnit.Server.modules_loaded/0 no longer exists (now /1); the call is
+  #      simply dropped -- ExUnit.await_run/1 already performs it.
+
+  alias Muzak.{Config, Formatter}
+  import Record, only: [defrecordp: 2]
+
+  @doc false
+  def run_test_loop({_, _, _, mutations, opts} = test_info, runner \\ &require_and_run/1) do
+    num_mutations = length(mutations)
+
+    IO.puts("Beginning mutation testing - #{num_mutations} mutations generated\n")
+
+    start = System.monotonic_time(:microsecond)
+
+    results =
+      mutations
+      |> Enum.with_index()
+      |> Enum.reduce([], fn {mutation, idx}, acc ->
+        print("Running mutation #{idx + 1} of #{num_mutations}")
+
+        mutation
+        |> run_mutation(test_info, runner, opts)
+        |> handle_result(acc)
+      end)
+
+    finish_time = System.monotonic_time(:microsecond) - start
+
+    success_percentage =
+      if num_mutations > 0 do
+        num_failures = length(results)
+        success_percentage = Float.round((1 - num_failures / num_mutations) * 100, 2)
+
+        if success_percentage < Keyword.get(opts, :min_coverage, 100.0) do
+          System.at_exit(fn _ -> exit({:shutdown, 1}) end)
+        end
+
+        success_percentage
+      else
+        100.0
+      end
+
+    {results, num_mutations, finish_time, success_percentage, opts}
+  end
+
+  @doc false
+  defp run_mutation(mutation_info, test_info, runner, opts) do
+    restart_apps(opts)
+
+    fn ->
+      cleanup_processes()
+
+      print("""
+
+      Starting mutation at #{mutation_info.path}:#{mutation_info.line}
+
+      <<<<<<< ORIGINAL
+      #{mutation_info.original}
+      =======
+      #{mutation_info.mutation}
+      >>>>>>> MUTATION
+
+      """)
+
+      results =
+        with :ok <- compile_mutation(mutation_info),
+             :ok <- compile_dependencies(mutation_info) do
+          run_tests(mutation_info, test_info, runner)
+        end
+
+      recompile_original(mutation_info.original_file)
+      {results, mutation_info}
+    end
+    |> run_silent()
+    |> print_result()
+  end
+
+  @apps_to_keep [
+    # OTP basic apps
+
+    :compiler,
+    :erts,
+    :kernel,
+    :sasl,
+    :stdlib,
+    :os_mon,
+    :asn1,
+    :crypto,
+    :diameter,
+    :eldap,
+    :erl_interface,
+    :ftp,
+    :inets,
+    :jinterface,
+    :megaco,
+    :public_key,
+    :ssh,
+    :ssl,
+    :tftp,
+    :wx,
+    :xmerl,
+    :logger,
+    :parsetools,
+    :runtime_tools,
+    :hipe,
+
+    # Elixir basic apps
+
+    :elixir,
+    :mix,
+    :hex,
+    :muzak
+  ]
+
+  defp restart_apps(opts) do
+    Application.stop(Mix.Project.config()[:app])
+
+    apps_to_keep =
+      if System.get_env("MUZAK_TESTS") do
+        @apps_to_keep ++ [:ex_unit]
+      else
+        @apps_to_keep
+      end
+
+    for {dep, _, _} <- Application.started_applications(), dep not in apps_to_keep do
+      Application.stop(dep)
+    end
+
+    Mix.Task.reenable("app.start")
+    Mix.Task.run("app.start")
+
+    unless System.get_env("MUZAK_TESTS") do
+      Config.configure_ex_unit(opts)
+      Application.ensure_started(:ex_unit)
+    end
+  end
+
+  defp cleanup_processes() do
+    Code.purge_compiler_modules()
+
+    # This is a really weird hack because some files were stuck as being already required, and so
+    # we entered the compilation queue but never actually made it out of the queue.
+    #
+    # We should ask Jose what's going on here and how to _not_ do this.
+    :sys.replace_state(:elixir_code_server, &put_elem(&1, 1, %{}))
+
+    # We also need to update the ExUnit.Server, which I would love to not have to do, but looks
+    # like we need to.
+    :sys.replace_state(ExUnit.Server, fn _ ->
+      # MUZAK-PATCH (Elixir 1.19): modern default state shape.
+      %{
+        async_modules: :queue.new(),
+        async_groups: [],
+        groups: %{},
+        loaded: System.monotonic_time(),
+        sync_modules: [],
+        waiting: nil
+      }
+    end)
+
+    for pid <- Process.list(),
+        [links: [], monitors: [], dictionary: dict] <- [
+          Process.info(pid, [:links, :monitors, :dictionary])
+        ] do
+      case {Keyword.get(dict, :"$initial_call"), Keyword.get(dict, :elixir_compiler_pid)} do
+        # When the compiler has an error it can orphan processes, so we're cleaning them up here
+        {_, compiler_pid} when is_pid(compiler_pid) ->
+          Process.exit(pid, :kill)
+
+        # When ExUnit finishes, it leaves some processes orphaned, so we're cleaning them up
+        # here before we begin again
+        {{_, f, _}, _} ->
+          if f |> Atom.to_string() |> String.starts_with?("-test") do
+            Process.exit(pid, :kill)
+          end
+
+        _ ->
+          :ok
+      end
+    end
+  end
+
+  defp print_result({{:ok, %{failures: 0, total: total}}, _} = result) when total > 0 do
+    print(:failure)
+    result
+  end
+
+  defp print_result(result) do
+    print(:success)
+    result
+  end
+
+  defp handle_result({{:ok, %{failures: 0, total: t}}, info}, acc) when t > 0, do: [info | acc]
+  defp handle_result(_, acc), do: acc
+
+  defp compile_mutation(mutation_info) do
+    print(:"Mutating file")
+
+    try do
+      if hd(mutation_info.original) == "defmodule" do
+        [_, _ | module_info] = mutation_info.original
+        [_ | module_info] = Enum.reverse(module_info)
+        module = (module_info ++ ["Elixir"]) |> Enum.reverse() |> Module.concat()
+
+        path =
+          Enum.find_value(:code.all_loaded(), fn {mod, path} ->
+            if mod == module do
+              path
+            end
+          end)
+
+        :code.purge(module)
+        :code.delete(module)
+        File.rm!(path)
+      end
+
+      Code.compile_string(mutation_info.file)
+      print(:"Mutating completed")
+      :ok
+    rescue
+      _ ->
+        print(:"Mutation failed to compile")
+        :compilation_error
+    end
+  end
+
+  # MUZAK-PATCH: extracted so the vsn-29 manifest decode is in one place.
+  # MUZAK-PATCH: mirror of Mix.Compilers.Elixir's defrecord :source (fields in
+  # declaration order); Record.extract(from_module:) is not available in this
+  # compile context.
+  defrecordp :source,
+    size: 0,
+    mtime: 0,
+    digest: nil,
+    compile_references: [],
+    export_references: [],
+    runtime_references: [],
+    compile_env: [],
+    external: [],
+    compile_warnings: [],
+    runtime_warnings: [],
+    modules: []
+
+  defp manifest_term do
+    Mix.Project.manifest_path()
+    |> Path.join("compile.elixir")
+    |> File.read!()
+    |> :erlang.binary_to_term()
+  end
+
+  defp compile_dependencies(mutation_info) do
+    try do
+
+      # MUZAK-PATCH (Elixir 1.19 / Mix manifest vsn 29): sources are a map of
+      # path -> source record; per-source module dependency lists are now
+      # compile_references + runtime_references.
+      {29, _, sources, _, _, _, _, _, _, _, _} = manifest_term()
+
+      source_mods =
+        Enum.reduce(sources, %{}, fn {path, source(modules: modules)}, acc ->
+          Map.put(acc, path, modules)
+        end)
+
+      modules_defined = Map.get(source_mods, mutation_info.path, [])
+
+      case modules_defined do
+        [] ->
+          print(:"No modules defined in file")
+
+        [_ | _] ->
+          dependents =
+            Enum.reduce(sources, [], fn {path, source(compile_references: cr, runtime_references: rr)}, acc ->
+              if path != mutation_info.path and Enum.any?(cr ++ rr, &(&1 in modules_defined)) do
+                [path | acc]
+              else
+                acc
+              end
+            end)
+
+          case dependents do
+            [] ->
+              print(:"No dependencies of mutated file to compile")
+              :ok
+
+            paths ->
+              print(:"Compiling dependencies of mutated file")
+              Enum.each(paths, &Code.compile_file/1)
+              print(:"Compiling dependencies of mutated file completed")
+              :ok
+          end
+      end
+    rescue
+      _ ->
+        print(:"Compiling dependencies of mutated file failed")
+        :compilation_error
+    end
+  end
+
+  defp run_tests(_, {test_files, _, _, _, _}, runner) do
+    print(:"Tests starting")
+    parent = self()
+    spawn(fn -> send(parent, {:__muzak_test_run_results, runner.(test_files)}) end)
+
+    receive do
+      {:__muzak_test_run_results, results} ->
+        print(:"Tests finished")
+        results
+    end
+  end
+
+  defp require_and_run(matched_test_files) do
+    task = ExUnit.async_run()
+
+    try do
+      case Kernel.ParallelCompiler.require(matched_test_files, []) do
+        {:ok, _, _} ->
+          # MUZAK-PATCH (Elixir 1.19): modules_loaded/0 is now modules_loaded/1;
+          # ExUnit.await_run/1 already performs the call itself.
+          {:ok, ExUnit.await_run(task)}
+
+        {:error, _, _} ->
+          Task.shutdown(task, :brutal_kill)
+          {:ok, :compile_error}
+      end
+    catch
+      _, _ ->
+        Task.shutdown(task, :brutal_kill)
+        {:ok, :compile_error}
+    end
+  end
+
+  defp recompile_original(original_file) do
+    Code.compile_string(original_file)
+    print(:"Original file compiled")
+
+    Code.unrequire_files(Code.required_files())
+    print(:"Files unrequired")
+  end
+
+  defp run_silent(function) do
+    if System.get_env("DEBUG") do
+      function.()
+    else
+      me = self()
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        ExUnit.CaptureIO.capture_io(:standard_io, fn ->
+          ExUnit.CaptureIO.capture_io(:standard_error, fn ->
+            send(me, function.())
+          end)
+        end)
+      end)
+
+      receive do
+        response -> response
+      end
+    end
+  end
+
+  defp print(msg) do
+    send(Formatter, {msg, node()})
+  end
+end
