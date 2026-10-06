@@ -291,11 +291,11 @@ defmodule TckSutAuth.GrpcHandler do
   @moduledoc """
   gRPC handler for the auth SUT variant. Mirrors the shared SUT's
   `TckSut.GrpcHandler` (lane DY1's section of tck_sut.exs): delegates to the
-  same `AshA2A.Transport.Plug` JSONRPC handlers the HTTP side uses. NOTE
-  (honest blocker for BIND-EQUIV-004): the `AshA2A.Transport.GRPC.Server`
-  surface exposes no auth interceptor seam in this configuration, so the
-  gRPC binding is NOT behind the JWT gate — the HTTP bindings refuse
-  unauthenticated traffic while gRPC admits it.
+  same `AshA2A.Transport.Plug` JSONRPC handlers the HTTP side uses. The
+  binding IS behind the JWT gate since the auth-interceptor seam
+  (BIND-EQUIV-004 closure): the endpoint env carries
+  `auth: {AshA2A.Transport.GRPC.Auth, TckSutAuth.Pipeline.auth_opts()}`, so
+  unauthenticated gRPC traffic is refused UNAUTHENTICATED(16).
   """
 
   @behaviour AshA2A.Protocol.JSONRPC
@@ -430,6 +430,14 @@ grpc_port = System.get_env("TCK_SUT_AUTH_GRPC_PORT", "9997") |> String.to_intege
     Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
       handler: TckSutAuth.GrpcHandler,
       ctx: %{agent: TckSutAuth.Agent, opts: [], transport: TckSutAuth.Transport}
+    )
+
+    # BIND-EQUIV-004 closure: put the gRPC binding behind the SAME JWT gate
+    # the HTTP bindings enforce — the endpoint's auth interceptor reuses the
+    # real `AshA2A.Protocol.Plug.Auth` pipeline (TckSutAuth.Pipeline.auth_opts/
+    # 0) and refuses unauthenticated gRPC traffic with UNAUTHENTICATED(16).
+    Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server.Endpoint,
+      auth: {AshA2A.Transport.GRPC.Auth, TckSutAuth.Pipeline.auth_opts()}
     )
 
     {:ok, _} = Application.ensure_all_started(:grpc)
