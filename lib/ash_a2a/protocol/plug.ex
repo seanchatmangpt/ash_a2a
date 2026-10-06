@@ -150,6 +150,8 @@ if Code.ensure_loaded?(Plug) do
         base_url: Keyword.get(opts, :base_url),
         agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
+        jwks_path: Keyword.get(opts, :jwks_path, [".well-known", "jwks.json"]),
+        jwks_keys: Keyword.get(opts, :jwks_keys),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
         last_modified: Keyword.get(opts, :last_modified, DateTime.utc_now()),
         metadata: Keyword.get(opts, :metadata, %{}),
@@ -172,6 +174,12 @@ if Code.ensure_loaded?(Plug) do
       handle_json_rpc(conn, resolved)
     end
 
+    def call(%{method: "GET", path_info: path} = conn,
+             %{jwks_path: path, jwks_keys: jwks_keys} = opts)
+        when not is_nil(jwks_keys) do
+      serve_jwks(conn, opts)
+    end
+
     def call(%{path_info: path} = conn, %{agent_card_path: path}) do
       conn
       |> put_resp_header("allow", "GET")
@@ -180,6 +188,23 @@ if Code.ensure_loaded?(Plug) do
 
     def call(conn, _opts) do
       send_resp(conn, 404, "Not Found")
+    end
+
+    # -- JWKS publication ------------------------------------------------------
+
+    # Serves the public keys backing card signatures as a JWKS document
+    # (RFC 7517). Verifiers resolve the `kid` from a signature's PROTECTED
+    header against this document; key rotation publishes the old and new
+    generations side by side during the rotation window. Unconfigured
+    (`:jwks_keys` not set) the path 404s — a JWKS endpoint that silently
+    serves an empty key set would be a vacuous admission surface.
+    defp serve_jwks(conn, opts) do
+      json = AshA2A.Protocol.CardSigning.jwks(opts.jwks_keys) |> Jason.encode!()
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> put_resp_header("cache-control", "public, max-age=300")
+      |> send_resp(200, json)
     end
 
     # -- Option resolution -----------------------------------------------------
