@@ -353,7 +353,14 @@ interfaces = [
   %{url: "127.0.0.1:#{grpc_port}", protocol_binding: "GRPC", protocol_version: "1.0"}
 ]
 
-{:ok, _} = TckSut.Agent.start_link([])
+# TCK webhook receiver is http://localhost:<port> — the sender's SSRF-safe
+# defaults (require_https/block_private_ips, lane S2) must be explicitly
+# opted OUT for this compliance-suite SUT only; library defaults stay ON.
+{:ok, _} =
+  TckSut.Agent.start_link(
+    push_sender:
+      {AshA2A.Protocol.PushNotificationSender.HTTP, require_https: false, block_private_ips: false}
+  )
 {:ok, _} = TckSut.CardKeys.start_link([])
 
 {:ok, srv} =
