@@ -100,14 +100,14 @@ Full-suite context: `mix test.all` includes the serial tail; CI runs
 `mix ash_a2a.v1_conformance_report --out receipts/v1-conformance.json`
 — at subject `059ff0e3` (2026-10-05T23:24:48Z) it reported **25 PASS /
 0 FAIL** (25 courts); the G6 integration re-run (2026-10-06T01:0xZ,
-branch `feat/tck-vuln-hardening` at `58fd4695` + in-flight tree)
+branch `feat/tck-vuln-hardening`, final tree `2379635c`)
 selected 26 courts and reported 23 PASS / 3 FAIL — the 3 are the
 `tasks/resubscribe`/SSE-streaming semantics changes landing in the
 streaming lane (`test/ash_a2a_v1_owner_scope_test.exs` 2,
 `test/ash_a2a_v1_sse_replay_test.exs` 1,
 `test/ash_a2a_v1_multinode_continuity_test.exs` 1), reproducible
 standalone with `--include serial` (report
-`2026-10-06T00:56:55Z, /tmp/g6-report.json`); the gate is
+report `2026-10-06T01:35:19Z`, /tmp/g6-report.json, final tree `2379635c`); the gate is
 `totals.fail == 0`.
 
 ## A2A TCK compatibility run
@@ -125,8 +125,7 @@ moving ref), Python venv,
 jsonrpc,http_json,grpc`. Framing: this is a point-in-time
 compatibility verdict on all three wire bindings — not TCK
 certification and not a verdict on any release. The run happened on a
-branch state at `58fd4695` with hardening work still in flight in the
-tree (dirty checkout); the verdict is on that exact surface.
+branch tip `2379635c` (the G6 final integration tree).
 
 Per-transport matrix (from the suite's `compatibility.json`):
 
