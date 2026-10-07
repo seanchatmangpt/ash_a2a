@@ -328,7 +328,14 @@ defmodule AshA2A.Chicago.Closure do
         end
 
       if target && MapSet.member?(defined, target),
-        do: Map.update(acc, caller, [target], &[target | &1]),
+        do:
+          (
+            # dual-safe Map.update (absent key stores default unmodified)
+            case Map.fetch(acc, caller) do
+              :error -> Map.put(acc, caller, [target])
+              {:ok, prior} -> Map.put(acc, caller, [target | prior])
+            end
+          ),
         else: acc
     end)
   end

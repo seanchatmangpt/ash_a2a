@@ -838,14 +838,14 @@ defmodule AshA2A.Chicago.Ocel.Validator do
 
   defp warn(acc, code, path) do
     warnings =
-      Map.update(
-        acc.warnings,
-        code,
-        %{"code" => code, "count" => 1, "first_path" => path},
-        fn w ->
-          %{w | "count" => w["count"] + 1}
-        end
-      )
+      # dual-safe Map.update (absent key stores default unmodified)
+      case Map.fetch(acc.warnings, code) do
+        :error ->
+          Map.put(acc.warnings, code, %{"code" => code, "count" => 1, "first_path" => path})
+
+        {:ok, w} ->
+          Map.put(acc.warnings, code, %{w | "count" => w["count"] + 1})
+      end
 
     %{acc | warnings: warnings}
   end

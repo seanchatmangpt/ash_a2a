@@ -131,11 +131,19 @@ ExUnit.configure(exclude: excluded_tags)
 # A2A-2601: point the receipt outbox at a fresh per-run directory so tests
 # that exercise the outbox never read (or opportunistically reconcile) a
 # previous run's journal entries from the default OS-tmp location.
+# v26.10.6: sweep stale outbox dirs first — stale journal entries from prior
+# boots get reconciled by the run's outbox glob and poison command-bus tests
+# with spurious :receipt_store_unavailable refusals (W127/W77 diagnosis).
+case Path.wildcard(Path.join(System.tmp_dir!(), "ash_a2a_receipt_outbox_test_*")) do
+  [] -> :ok
+  stale -> Enum.each(stale, &File.rm_rf/1)
+end
+
 Application.put_env(
   :ash_a2a,
   :receipt_outbox_dir,
   Path.join(
     System.tmp_dir!(),
-    "ash_a2a_receipt_outbox_test_#{System.unique_integer([:positive])}"
+    "ash_a2a_receipt_outbox_test_#{System.unique_integer([:positive])}_#{System.system_time(:millisecond)}"
   )
 )

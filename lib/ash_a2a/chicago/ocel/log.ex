@@ -174,12 +174,26 @@ defmodule AshA2A.Chicago.Ocel.Log do
       Enum.reduce(attrs_fun.(entity), acc, fn {name, value}, acc2 ->
         kind = kind(value)
 
-        Map.update(acc2, type_fun.(entity), %{name => kind}, fn by_name ->
-          Map.update(by_name, name, kind, fn
-            ^kind -> kind
-            _other -> "string"
-          end)
-        end)
+        # dual-safe Map.update (absent key stores default unmodified)
+        type_key = type_fun.(entity)
+
+        by_type =
+          case Map.fetch(acc2, type_key) do
+            :error ->
+              Map.put(acc2, type_key, %{name => kind})
+
+            {:ok, by_name} ->
+              by_name =
+                case Map.fetch(by_name, name) do
+                  :error -> Map.put(by_name, name, kind)
+                  {:ok, ^kind} -> Map.put(by_name, name, kind)
+                  {:ok, _other} -> Map.put(by_name, name, "string")
+                end
+
+              Map.put(acc2, type_key, by_name)
+          end
+
+        by_type
       end)
     end)
   end

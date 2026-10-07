@@ -177,9 +177,21 @@ defmodule AshA2A.Trace do
           "attributes" => attrs || %{}
         }
 
-        Map.update(acc, :events, %{key => [event]}, fn events ->
-          Map.update(events, key, [event], &[event | &1])
-        end)
+        # dual-safe Map.update: absent key stores the default verbatim (no fun),
+        # immune to the documented/actual Map.update/4 semantics divergence.
+        case Map.fetch(acc, :events) do
+          :error ->
+            Map.put(acc, :events, %{key => [event]})
+
+          {:ok, events} ->
+            events =
+              case Map.fetch(events, key) do
+                :error -> Map.put(events, key, [event])
+                {:ok, prior} -> Map.put(events, key, [event | prior])
+              end
+
+            Map.put(acc, :events, events)
+        end
     end)
   end
 

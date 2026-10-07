@@ -773,19 +773,22 @@ defmodule AshA2A.Chicago.Courts.OcelValidity do
 
   defp undeclared_event_attribute(%{doc: doc}) do
     update_first(doc, "events", &is_map/1, fn event ->
-      Map.update(
-        event,
-        "attributes",
-        [undeclared_attr()],
-        &(&1 ++ [undeclared_attr()])
-      )
+      # dual-safe Map.update (absent key stores default unmodified)
+      case Map.fetch(event, "attributes") do
+        :error -> Map.put(event, "attributes", [undeclared_attr()])
+        {:ok, attrs} -> Map.put(event, "attributes", attrs ++ [undeclared_attr()])
+      end
     end)
   end
 
   defp undeclared_object_attribute(%{doc: doc}) do
     update_first(doc, "objects", &is_map/1, fn object ->
       attr = Map.put(undeclared_attr(), "time", "2026-09-16T00:00:00Z")
-      Map.update(object, "attributes", [attr], &(&1 ++ [attr]))
+      # dual-safe Map.update (absent key stores default unmodified)
+      case Map.fetch(object, "attributes") do
+        :error -> Map.put(object, "attributes", [attr])
+        {:ok, attrs} -> Map.put(object, "attributes", attrs ++ [attr])
+      end
     end)
   end
 

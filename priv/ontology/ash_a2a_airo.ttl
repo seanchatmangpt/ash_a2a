@@ -1,0 +1,210 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+#
+# AIRo (https://w3id.org/airo, v1.0, CC-BY-4.0, Delaram Golpayegani et al.)
+# description of the ash_a2a A2A protocol surface. The legacy_compat
+# security-profile warning classes (AshA2A.SecurityProfile.Boot strict
+# violations, logged as warnings under :legacy_compat) are described as
+# airo:RiskSource individuals; the enforcing modules are airo:RiskControl
+# individuals linked via airo:detectsRiskConcept; the receipt-durability
+# requirement is carried by airo:hasConsequence chains from each Risk.
+
+@prefix airo: <https://w3id.org/airo#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix a2a: <https://seanchatmangpt.github.io/ash_a2a/airo#> .
+
+#################################################################
+# The A2A protocol surface as an AI system
+#################################################################
+
+a2a:A2AProtocolSurface
+    rdf:type airo:AISystem ;
+    rdfs:label "ash_a2a A2A protocol surface"@en ;
+    dcterms:description
+      "The ash_a2a Agent-to-Agent protocol surface: dispatcher, command bus, authority gate, receipt chain."@en ;
+    airo:hasRisk
+      a2a:Risk-UnadmittedActuation ,
+      a2a:Risk-UndetectedFailure ,
+      a2a:Risk-ClaimLoss ,
+      a2a:Risk-LegacyCapability ,
+      a2a:Risk-TransportSpoofedAuthority ;
+    airo:hasRiskControl
+      a2a:Control-SecurityProfileBoot ,
+      a2a:Control-AuthorityBrokerEkv ,
+      a2a:Control-KillSwitch ,
+      a2a:Control-DurableClaimStore ,
+      a2a:Control-ReceiptStore .
+
+#################################################################
+# Risks and their consequences
+#################################################################
+
+a2a:Risk-UnadmittedActuation
+    rdf:type airo:Risk ;
+    rdfs:label "consequential DO proceeds without an admitted authority decision"@en ;
+    airo:hasConsequence
+      a2a:Consequence-UnreceiptedMutation .
+
+a2a:Risk-UndetectedFailure
+    rdf:type airo:Risk ;
+    rdfs:label "a tripped failure class cannot be halted"@en ;
+    airo:hasConsequence
+      a2a:Consequence-RunawayExecution .
+
+a2a:Risk-ClaimLoss
+    rdf:type airo:Risk ;
+    rdfs:label "effect claims are lost to a volatile store"@en ;
+    airo:hasConsequence
+      a2a:Consequence-SilentClaimLoss .
+
+a2a:Risk-LegacyCapability
+    rdf:type airo:Risk ;
+    rdfs:label "capabilities released unbound under :legacy release mode"@en ;
+    airo:hasConsequence
+      a2a:Consequence-UnboundCapability .
+
+a2a:Risk-TransportSpoofedAuthority
+    rdf:type airo:Risk ;
+    rdfs:label "transport verification alone grants capability"@en ;
+    airo:hasConsequence
+      a2a:Consequence-TransportSpoof .
+
+a2a:Consequence-UnreceiptedMutation
+    rdf:type airo:Consequence ;
+    rdfs:label "unreceipted mutation of subject state (zero unreceipted actuation violated)"@en .
+
+a2a:Consequence-RunawayExecution
+    rdf:type airo:Consequence ;
+    rdfs:label "unbounded continued execution after a known failure class trips"@en .
+
+a2a:Consequence-SilentClaimLoss
+    rdf:type airo:Consequence ;
+    rdfs:label "claim/receipt evidence vanishes on restart without durable storage"@en .
+
+a2a:Consequence-UnboundCapability
+    rdf:type airo:Consequence ;
+    rdfs:label "capability grants survive without a bound subject or lease"@en .
+
+a2a:Consequence-TransportSpoof
+    rdf:type airo:Consequence ;
+    rdfs:label "a spoofed transport peer is granted capability without an authority decision"@en .
+
+#################################################################
+# Risk sources: the legacy_compat warning classes
+# (AshA2A.SecurityProfile.Boot strict violation codes)
+#################################################################
+
+a2a:RiskSource-AuthorityBrokerMissing
+    rdf:type airo:RiskSource ;
+    rdfs:label "authority_broker_missing: no :authority_broker configured"@en ;
+    airo:isRiskSourceFor a2a:Risk-UnadmittedActuation .
+
+a2a:RiskSource-TransportVerifiedPolicyForbidden
+    rdf:type airo:RiskSource ;
+    rdfs:label "transport_verified_policy_forbidden: :authority_policy :transport_verified_grants_capability"@en ;
+    airo:isRiskSourceFor a2a:Risk-TransportSpoofedAuthority .
+
+a2a:RiskSource-KillSwitchClassMissing
+    rdf:type airo:RiskSource ;
+    rdfs:label "kill_switch_class_missing: :kill_switch_class is nil"@en ;
+    airo:isRiskSourceFor a2a:Risk-UndetectedFailure .
+
+a2a:RiskSource-ClaimStoreMissing
+    rdf:type airo:RiskSource ;
+    rdfs:label "claim_store_missing: no :claim_store configured"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-ClaimStoreNotDurable
+    rdf:type airo:RiskSource ;
+    rdfs:label "claim_store_not_durable: in-memory/ETS claim store or durable?/0 != true"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-ClaimStoreDirNotDurable
+    rdf:type airo:RiskSource ;
+    rdfs:label "claim_store_dir_not_durable: :claim_store_dir unset or under a volatile tmp path"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-ReceiptStoreInMemory
+    rdf:type airo:RiskSource ;
+    rdfs:label "receipt_store_in_memory: :receipt_store is AshA2A.ReceiptStore.Memory"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-OutboxDirNotDurable
+    rdf:type airo:RiskSource ;
+    rdfs:label "outbox_dir_not_durable: :receipt_outbox_dir unset or under a tmp path"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-OutboxKeyMissing
+    rdf:type airo:RiskSource ;
+    rdfs:label "outbox_key_missing / outbox_key_weak: unkeyed or weak HMAC key on the receipt outbox"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-ReceiptStoreBootCheckFailed
+    rdf:type airo:RiskSource ;
+    rdfs:label "receipt_store_boot_check_failed: AshA2A.ReceiptStore.boot_check/0 failed at boot"@en ;
+    airo:isRiskSourceFor a2a:Risk-ClaimLoss .
+
+a2a:RiskSource-CapabilityReleaseModeLegacy
+    rdf:type airo:RiskSource ;
+    rdfs:label "capability_release_mode_legacy: :capability_release_mode is not :strict"@en ;
+    airo:isRiskSourceFor a2a:Risk-LegacyCapability .
+
+#################################################################
+# Risk controls: the enforcing modules
+#################################################################
+
+a2a:Control-SecurityProfileBoot
+    rdf:type airo:RiskControl ;
+    rdfs:label "AshA2A.SecurityProfile.Boot"@en ;
+    rdfs:comment "Boot enforcement (lib/ash_a2a/security_profile/boot.ex): raises under :strict, warns under :legacy_compat; detects every strict violation class."@en ;
+    airo:detectsRiskConcept
+      a2a:RiskSource-AuthorityBrokerMissing ,
+      a2a:RiskSource-TransportVerifiedPolicyForbidden ,
+      a2a:RiskSource-KillSwitchClassMissing ,
+      a2a:RiskSource-ClaimStoreMissing ,
+      a2a:RiskSource-ClaimStoreNotDurable ,
+      a2a:RiskSource-ClaimStoreDirNotDurable ,
+      a2a:RiskSource-ReceiptStoreInMemory ,
+      a2a:RiskSource-OutboxDirNotDurable ,
+      a2a:RiskSource-OutboxKeyMissing ,
+      a2a:RiskSource-ReceiptStoreBootCheckFailed ,
+      a2a:RiskSource-CapabilityReleaseModeLegacy .
+
+a2a:Control-AuthorityBrokerEkv
+    rdf:type airo:RiskControl ;
+    rdfs:label "AshA2A.Authority.Broker.Ekv"@en ;
+    rdfs:comment "Default authority broker (lib/ash_a2a/authority/broker/ekv.ex): adjudicates capability grants before DO."@en ;
+    airo:detectsRiskConcept
+      a2a:RiskSource-AuthorityBrokerMissing ,
+      a2a:RiskSource-TransportVerifiedPolicyForbidden .
+
+a2a:Control-KillSwitch
+    rdf:type airo:RiskControl ;
+    rdfs:label "AshA2A.KillSwitch"@en ;
+    rdfs:comment "Kill switch (lib/ash_a2a/kill_switch.ex): class-gated halt before claim and DO (opts[:kill_switch_class])."@en ;
+    airo:detectsRiskConcept
+      a2a:RiskSource-KillSwitchClassMissing .
+
+a2a:Control-DurableClaimStore
+    rdf:type airo:Control ;
+    rdf:type airo:RiskControl ;
+    rdfs:label "AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile"@en ;
+    rdfs:comment "Durable-file claim store (lib/ash_a2a/consequence_kernel/effect_claim_store/durable_file.ex), gated by AshA2A.ReceiptStore.durable_path?/1."@en ;
+    airo:detectsRiskConcept
+      a2a:RiskSource-ClaimStoreMissing ,
+      a2a:RiskSource-ClaimStoreNotDurable ,
+      a2a:RiskSource-ClaimStoreDirNotDurable .
+
+a2a:Control-ReceiptStore
+    rdf:type airo:RiskControl ;
+    rdfs:label "AshA2A.ReceiptStore (Ekv / durable paths)"@en ;
+    rdfs:comment "Receipt store (lib/ash_a2a/receipt_store/ekv.ex) with durable-path gate AshA2A.ReceiptStore.durable_path?/1 and boot_check/0."@en ;
+    airo:detectsRiskConcept
+      a2a:RiskSource-ReceiptStoreInMemory ,
+      a2a:RiskSource-OutboxDirNotDurable ,
+      a2a:RiskSource-OutboxKeyMissing ,
+      a2a:RiskSource-ReceiptStoreBootCheckFailed .

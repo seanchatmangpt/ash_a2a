@@ -135,7 +135,12 @@ defmodule AshA2A.Protocol.Agent.State do
   def track_context(state, %{context_id: nil}), do: state
 
   def track_context(state, %{context_id: ctx_id, id: task_id}) do
-    contexts = Map.update(state.contexts, ctx_id, [task_id], &[task_id | &1])
+    # dual-safe Map.update (absent key stores default unmodified)
+    contexts =
+      case Map.fetch(state.contexts, ctx_id) do
+        :error -> Map.put(state.contexts, ctx_id, [task_id])
+        {:ok, prior} -> Map.put(state.contexts, ctx_id, [task_id | prior])
+      end
     %{state | contexts: contexts}
   end
 
