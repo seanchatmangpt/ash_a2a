@@ -86,7 +86,6 @@ Exact factual contracts:
 - [`reference/enterprise.md`](reference/enterprise.md) — enterprise reference.
 - [`reference/security-advisories.md`](reference/security-advisories.md) — security
   advisories disposition.
-- [`reference/tck-suite.md`](reference/tck-suite.md) — TCK suite.
 
 ## Explanation
 
