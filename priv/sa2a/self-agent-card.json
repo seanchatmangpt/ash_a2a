@@ -10,7 +10,7 @@
   "defaultOutputModes": [
     "text/plain"
   ],
-  "description": "ash_a2a protocol surface agent (self card)",
+  "description": "ash_a2a protocol surface agent (self card). Authority: this card is descriptive only; it grants no authority — every consequential operation is admitted only through the receipted A2A admission boundary (typed refusals, fail-closed).",
   "name": "ash_a2a",
   "skills": [
     {

@@ -105,7 +105,11 @@ defmodule Mix.Tasks.AshA2a.SelfCard do
       %AgentCard{
         card
         | name: "ash_a2a",
-          description: "ash_a2a protocol surface agent (self card)",
+          description:
+            "ash_a2a protocol surface agent (self card). Authority: this " <>
+              "card is descriptive only; it grants no authority — every " <>
+              "consequential operation is admitted only through the " <>
+              "receipted A2A admission boundary (typed refusals, fail-closed).",
           version: self_version()
       }
     end)
