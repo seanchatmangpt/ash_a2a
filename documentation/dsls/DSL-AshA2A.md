@@ -44,7 +44,7 @@ Optional residual A2A overrides. Public Ash actions are exposed without declarat
 
 
 
-### a2a.skill
+### a2a.skill {: #a2a-skill }
 ```elixir
 skill name, resource \\ nil, action
 ```
@@ -89,7 +89,7 @@ skill :echo, MyResource, :read
 | [`lease_required?`](#a2a-skill-lease_required?){: #a2a-skill-lease_required? } | `boolean` | `false` | Governance boundary: when `true`, dispatch under this skill requires a valid authority lease. The authorizer consequence itself is enforced outside this entity (see the architecture verifier), so declaring it here changes no runtime behavior by itself. |
 
 
-### a2a.skill.argument
+### a2a.skill.argument {: #a2a-skill-argument }
 ```elixir
 argument name, type
 ```
@@ -117,7 +117,7 @@ Deprecated compatibility-only argument declaration; canonical arguments come fro
 
 Target: `AshA2A.Argument`
 
-### a2a.skill.hddl_operator
+### a2a.skill.hddl_operator {: #a2a-skill-hddl_operator }
 
 
 Declares this skill's HDDL :action operator (parameters/precondition/effect) for the deterministic, non-LLM planning path.
