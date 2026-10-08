@@ -257,6 +257,8 @@ suite against the in-tree SUT; the earlier
 
 ## See also
 
+- [TCK suite](tck-suite.md) — how to run the in-repo conformance report
+  and the official TCK, the court inventory, and witnessed verdicts.
 - [A2A endpoint contract](a2a-endpoint-contract.md)
 - [A2A spec version mapping](a2a-spec-version-mapping.md)
 - [Conformance claim](conformance-claim.md)

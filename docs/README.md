@@ -66,6 +66,10 @@ Exact factual contracts:
   A2A spec-version mapping.
 - [`reference/a2a-v1-conformance.md`](reference/a2a-v1-conformance.md) — per-spec
   CONFORMANT/PARTIAL/GAP claims, each citing the executed v1 conformance court.
+- [`reference/tck-suite.md`](reference/tck-suite.md) — running the in-repo v1
+  conformance report (`mix ash_a2a.v1_conformance_report`) and the official
+  `a2aproject/a2a-tck` suite: court inventory, witnessed verdicts, and what
+  MUST-class failures convert to.
 - [`reference/a2a-v1_1-readiness.md`](reference/a2a-v1_1-readiness.md) — the a2a
   roadmap triaged against the code on disk, with the TCK cross-reference.
 - [`reference/c2-certificate.md`](reference/c2-certificate.md) — the canonical
@@ -116,3 +120,6 @@ Conceptual architecture and rationale:
 - When local execution is unavailable, exact-head GitHub CI may qualify the changed
   subject, but only successful runs on the exact head are admitted.
 - Semantic projections and generated/read models have no ambient execution authority.
+- [`reference/qme-1.md`](reference/qme-1.md) — QME-1 ecosystem reference: this
+  repository's role (PreparedEffect, receipt and replay consequence protocol) and its
+  binding to the canonical chatman-ecosystem specification.
