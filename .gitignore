@@ -38,3 +38,10 @@ ash_a2a-*.tar
 # Local zcode work / plan artifacts
 /.zcode/
 
+
+# lane-lease build roots (fan-out campaign)
+target/
+node_modules/
+.DS_Store
+_build-lane*/
+target-lane*/

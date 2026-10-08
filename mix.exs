@@ -26,7 +26,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.10.4",
+      version: "26.10.8",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -34,6 +34,14 @@ defmodule AshA2A.MixProject do
       package: package(),
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
+      # MUZAK lane (mutation testing): muzak's oracle file set comes from the
+      # project's `:test_paths`. Default (env unset) = whole `test/` tree (the
+      # honest full court; full runs are hours). Scoping it is how the bounded
+      # sample / per-module runs keep the oracle to the matching security
+      # courts, e.g.:
+      #   MUZAK_TEST_PATHS=test/ash_a2a/protocol/plug MIX_ENV=test mix muzak.sec
+      # Zero effect on `mix test` unless the env var is explicitly set.
+      test_paths: muzak_test_paths(),
       deps: deps(),
       docs: docs(),
       aliases: aliases(),
@@ -45,7 +53,9 @@ defmodule AshA2A.MixProject do
       # all the same root cause). `:ex_unit` is added on the same
       # principle; dialyxir re-adds these to the existing PLT without a
       # full rebuild.
-      dialyzer: [plt_add_apps: [:mix, :ex_unit]]
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
+      # `mix muzak.sec` (and `mix muzak` directly) runs in the :test env.
+      preferred_cli_env: [muzak: :test, "muzak.sec": :test]
     ]
   end
 
@@ -120,7 +130,16 @@ defmodule AshA2A.MixProject do
       #   CHECK_STAGES=compile,test mix check
       # The default subset is the set currently green on this tree; the
       # full set (and how to run any stage) is documented in `.check.exs`.
-      check: "run .check.exs"
+      check: "run .check.exs",
+
+      # Mutation testing over the security-critical auth/verify surface,
+      # scoped by `.muzak.exs`'s :default profile to exactly these modules:
+      #   Transport.Plug, Protocol.Plug.{Auth, SecurityValidators, JWTVerifier},
+      #   Protocol.CardSigning, Protocol.PushNotificationSender.HTTP
+      # with the oracle = the matching security courts (scopable via
+      # MUZAK_TEST_PATHS, see `project/0` above). Full runs are hours;
+      # bound them: `MIX_ENV=test mix muzak.sec --mutations 25`.
+      "muzak.sec": ["muzak"]
     ]
   end
 
@@ -272,8 +291,20 @@ defmodule AshA2A.MixProject do
   # sa2a_crypto remains independently testable as a nested Mix project, while
   # its runtime modules are vendored into the root Hex package. Hex packages
   # cannot depend on local path projects.
-  defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support", "test/conference_sim"]
   defp elixirc_paths(_), do: ["lib", "sa2a_crypto/lib"]
+
+  # MUZAK lane: muzak reads the project's `:test_paths` for its oracle file
+  # set. Unset => nil => Mix default ("test"), i.e. the full court; set =>
+  # comma-separated scoped oracle for bounded per-module runs (see
+  # `.muzak.exs` and the `muzak.sec` alias).
+  defp muzak_test_paths do
+    case System.get_env("MUZAK_TEST_PATHS") do
+      nil -> nil
+      "" -> nil
+      paths -> String.split(paths, ",", trim: true)
+    end
+  end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
@@ -325,6 +356,14 @@ defmodule AshA2A.MixProject do
       # test-only (Ash declares it optional).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
       {:ash_pplan, "~> 26.10", only: :test},
+      # MUZAK lane: mutation testing (mix muzak.sec). `only: :test`, not
+      # `:dev`: muzak's mix task declares `@preferred_cli_env :test` and its
+      # oracle is the ExUnit suite itself, so the dep must exist in :test --
+      # an `only: :dev` dep makes `mix muzak` fail with "task muzak could not
+      # be found" (verified empirically). `runtime: false` (never started).
+      # NOTE: muzak 1.1.1 (2022-12, unmaintained) needs the two Elixir-1.19
+      # compatibility shims compiled by `.muzak.exs` (see .muzak/*.ex).
+      {:muzak, "~> 1.1", only: :test, runtime: false},
       {:opentelemetry_api, "~> 1.4", only: :test},
       {:req_llm, "~> 1.18"},
       {:ash_r2rml, "~> 26.8"},

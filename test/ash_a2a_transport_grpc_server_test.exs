@@ -66,6 +66,111 @@ defmodule AshA2A.Transport.GRPCServerTest.MessageOnlyAgent do
   end
 end
 
+defmodule AshA2A.Transport.GRPCServerTest.FullHandler do
+  @moduledoc """
+  Real `AshA2A.Protocol.JSONRPC` handler implementing EVERY optional callback
+  over a real `:ets` table, so the wire tests can drive `ListTasks` and the
+  full `tasks/pushNotificationConfig` CRUD surface with real state
+  assertions. No mocks: the store is a real ETS table, the tasks are real
+  tasks created by the real `EchoAgent` through `handle_send/3`.
+  """
+
+  @behaviour AshA2A.Protocol.JSONRPC
+
+  alias AshA2A.Protocol.JSONRPC.Error
+  alias AshA2A.Test.Fixture.EchoAgent
+
+  @table :ash_a2a_grpc_server_full_handler
+
+  @doc "Idempotently creates the backing ETS table and clears it."
+  def reset do
+    if :ets.whereis(@table) == :undefined do
+      :ets.new(@table, [:set, :named_table, :public])
+    end
+
+    :ets.delete_all_objects(@table)
+    :ok
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_send(message, _params, %{agent: agent}) do
+    case AshA2A.Protocol.call(agent, message) do
+      {:ok, %AshA2A.Protocol.Task{} = task} = ok ->
+        :ets.insert(@table, {{:task, task.id}, task})
+        ok
+
+      other ->
+        other
+    end
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_get(task_id, _params, %{agent: agent}) do
+    case EchoAgent.get_task(agent, task_id) do
+      {:ok, task} -> {:ok, task}
+      {:error, :not_found} -> {:error, Error.task_not_found(task_id)}
+    end
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_cancel(task_id, _params, %{agent: agent}) do
+    case EchoAgent.cancel(agent, task_id) do
+      :ok ->
+        EchoAgent.get_task(agent, task_id)
+
+      {:error, :not_found} ->
+        {:error, Error.task_not_found(task_id)}
+
+      {:error, reason} ->
+        {:error, Error.task_not_cancelable(inspect(reason))}
+    end
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_list(_params, _ctx) do
+    tasks =
+      @table
+      |> :ets.tab2list()
+      |> Enum.filter(&match?({{:task, _}, _}, &1))
+      |> Enum.map(fn {{:task, _}, task} -> task end)
+      |> Enum.sort_by(& &1.id)
+
+    {:ok, %{tasks: tasks, total_size: length(tasks), page_size: length(tasks), next_page_token: nil}}
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_set_push_config(config, _params, _ctx) do
+    key = {:push, config.task_id, config.id || "default"}
+    :ets.insert(@table, {key, config})
+    {:ok, config}
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_get_push_config(task_id, config_id, _params, _ctx) do
+    case :ets.lookup(@table, {:push, task_id, config_id}) do
+      [{_, config}] -> {:ok, config}
+      [] -> {:error, Error.task_not_found(config_id || "default")}
+    end
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_list_push_configs(task_id, _params, _ctx) do
+    configs =
+      @table
+      |> :ets.tab2list()
+      |> Enum.filter(&match?({{:push, ^task_id, _}, _}, &1))
+      |> Enum.map(fn {{:push, _, _}, config} -> config end)
+
+    {:ok, configs}
+  end
+
+  @impl AshA2A.Protocol.JSONRPC
+  def handle_delete_push_config(task_id, config_id, _params, _ctx) do
+    :ets.delete(@table, {:push, task_id, config_id})
+    :ok
+  end
+end
+
 defmodule AshA2A.Transport.GRPCServerTest do
   @moduledoc """
   REAL gRPC-over-the-wire tests for `AshA2A.Transport.GRPC.Server`: a real
@@ -352,5 +457,111 @@ defmodule AshA2A.Transport.GRPCServerTest do
     # the request processes normally.
     assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{}}}} =
              Lf.A2a.V1.A2AService.Stub.send_message(channel, user_message_request("no version header"))
+  end
+
+  # -- full-surface wire tests (lane G1): ListTasks, push-config CRUD,
+  #    GetExtendedAgentCard ----------------------------------------------------
+
+  defp with_full_handler(ctx_tests) do
+    AshA2A.Transport.GRPCServerTest.FullHandler.reset()
+
+    Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
+      handler: AshA2A.Transport.GRPCServerTest.FullHandler,
+      ctx: %{agent: EchoAgent, opts: [], transport: transport_name()}
+    )
+
+    try do
+      ctx_tests.()
+    after
+      Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
+        handler: AshA2A.Transport.GRPCServerTestHandler,
+        ctx: %{agent: EchoAgent, opts: [], transport: transport_name()}
+      )
+    end
+  end
+
+  test "ListTasks over the wire returns the tasks real sends created", %{channel: channel} do
+    with_full_handler(fn ->
+      id_a = send_and_get_task_id(channel, "list me alpha")
+      id_b = send_and_get_task_id(channel, "list me bravo")
+
+      assert {:ok,
+              %Pb.ListTasksResponse{
+                tasks: tasks,
+                total_size: total,
+                page_size: size
+              }} =
+               Lf.A2a.V1.A2AService.Stub.list_tasks(channel, %Pb.ListTasksRequest{})
+
+      ids = Enum.map(tasks, & &1.id)
+      assert id_a in ids and id_b in ids
+      assert total >= 2 and size >= 2
+      assert Enum.all?(tasks, &(&1.status.state == :TASK_STATE_COMPLETED))
+    end)
+  end
+
+  test "push-notification-config CRUD round-trips over the wire with real state", %{
+    channel: channel
+  } do
+    with_full_handler(fn ->
+      task_id = send_and_get_task_id(channel, "push config host task")
+
+      create_req = %Pb.TaskPushNotificationConfig{
+        id: "cfg-1",
+        task_id: task_id,
+        url: "https://hooks.example.com/a2a",
+        token: "tok-1"
+      }
+
+      assert {:ok, %Pb.TaskPushNotificationConfig{} = created} =
+               Lf.A2a.V1.A2AService.Stub.create_task_push_notification_config(
+                 channel,
+                 create_req
+               )
+
+      assert created.id == "cfg-1"
+      assert created.url == "https://hooks.example.com/a2a"
+      assert created.token == "tok-1"
+
+      assert {:ok, %Pb.TaskPushNotificationConfig{} = got} =
+               Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(channel, %Pb.GetTaskPushNotificationConfigRequest{
+                 task_id: task_id,
+                 id: "cfg-1"
+               })
+
+      assert got.id == "cfg-1" and got.url == "https://hooks.example.com/a2a"
+
+      assert {:ok, %Pb.ListTaskPushNotificationConfigsResponse{configs: configs}} =
+               Lf.A2a.V1.A2AService.Stub.list_task_push_notification_configs(channel, %Pb.ListTaskPushNotificationConfigsRequest{
+                 task_id: task_id
+               })
+
+      assert [%{id: "cfg-1"}] = configs
+
+      assert {:ok, %Google.Protobuf.Empty{}} =
+               Lf.A2a.V1.A2AService.Stub.delete_task_push_notification_config(channel, %Pb.DeleteTaskPushNotificationConfigRequest{
+                 task_id: task_id,
+                 id: "cfg-1"
+               })
+
+      # Real state: the row is gone, so a get now refuses NOT_FOUND(5).
+      assert {:error, %GRPC.RPCError{status: 5} = err} =
+               Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(channel, %Pb.GetTaskPushNotificationConfigRequest{
+                 task_id: task_id,
+                 id: "cfg-1"
+               })
+
+      assert err.message == "Task not found"
+    end)
+  end
+
+  test "GetExtendedAgentCard refuses UNIMPLEMENTED(12) over the wire", %{channel: channel} do
+    assert {:error, %GRPC.RPCError{status: 12} = err} =
+             Lf.A2a.V1.A2AService.Stub.get_extended_agent_card(
+               channel,
+               %Pb.GetExtendedAgentCardRequest{}
+             )
+
+    assert err.message == "This operation is not supported"
   end
 end

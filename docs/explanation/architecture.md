@@ -366,3 +366,7 @@ tested -- corrected here rather than left stale:
   semantic identity and law-engine layers.
 - `docs/rfc/` — RFC-SA2A-001/002 (Proposed Standard), the normative
   source most moduledocs cite.
+- External sibling: `ash_surface` documentation —
+  `~/ash_surface/docs/diataxis/how-to/expose-a2a-agent-card.md`
+  (a consumer of this protocol surface: `AshSurface.A2ABridge` projects a
+  resource's compiled capability index onto the A2A agent-card wire).

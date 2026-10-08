@@ -336,8 +336,13 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Environment do
   defp decode(<<"SA2AJ1U", term::binary>>), do: decode_term(term)
   defp decode(bin), do: decode_term(bin)
 
+  # Trust boundary: bytes are read from this fixture store's own outbox
+  # directory (written by this module's encode path), never externally
+  # received. `[:safe]` keeps a corrupted/hostile file from minting atoms or
+  # deserializing funs; residual risk is bounded to shaped data.
+  # sobelow_skip ["Misc.BinToTerm"]
   defp decode_term(bin) do
-    {:ok, :erlang.binary_to_term(bin)}
+    {:ok, :erlang.binary_to_term(bin, [:safe])}
   rescue
     _ -> :error
   end

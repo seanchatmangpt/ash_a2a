@@ -307,6 +307,11 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile do
 
   defp encode(term), do: :erlang.term_to_binary(term, [:deterministic])
 
+  # Trust boundary: bodies are HMAC-SHA256 authenticated against this store's
+  # own key before decode (:crypto.hash_equals), and the decode is `[:safe]`,
+  # so tampered bytes fail the MAC before `binary_to_term` ever runs and a
+  # corrupted authenticated body cannot mint atoms or deserialize funs.
+  # sobelow_skip ["Misc.BinToTerm"]
   defp read_authenticated(path, mac_fun) do
     case File.read(path) do
       {:ok, <<sum::binary-size(32), body::binary>>} ->

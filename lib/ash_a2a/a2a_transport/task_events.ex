@@ -139,7 +139,12 @@ defmodule AshA2A.A2ATransport.TaskEvents do
 
   @impl true
   def handle_cast({:attempt, task_id, attempt}, state) do
-    attempts = Map.update(state.attempts, task_id, [attempt], &Enum.take([attempt | &1], 100))
+    # dual-safe Map.update (absent key stores default unmodified)
+    attempts =
+      case Map.fetch(state.attempts, task_id) do
+        :error -> Map.put(state.attempts, task_id, [attempt])
+        {:ok, prior} -> Map.put(state.attempts, task_id, Enum.take([attempt | prior], 100))
+      end
     {:noreply, %{state | attempts: attempts}}
   end
 

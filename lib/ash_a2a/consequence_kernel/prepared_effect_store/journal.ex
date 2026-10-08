@@ -269,6 +269,11 @@ defmodule AshA2A.ConsequenceKernel.PreparedEffectStore.Journal do
 
   defp replay(_h, _garbage, _st), do: {:error, :journal_corrupt}
 
+  # Trust boundary: journal/head bodies are `[:safe]`-decoded and then
+  # shape-validated ({seq, prev, ev} / {seq, tag}) below, so a corrupt or
+  # hostile file fails closed to `:journal_corrupt` instead of minting atoms
+  # or deserializing funs.
+  # sobelow_skip ["Misc.BinToTerm"]
   defp decode(body) do
     case :erlang.binary_to_term(body, [:safe]) do
       {seq, prev, ev} when is_integer(seq) and is_binary(prev) -> {:ok, {seq, prev, ev}}
@@ -305,6 +310,7 @@ defmodule AshA2A.ConsequenceKernel.PreparedEffectStore.Journal do
     end
   end
 
+  # sobelow_skip ["Misc.BinToTerm"]
   defp decode_head(body) do
     case :erlang.binary_to_term(body, [:safe]) do
       {seq, tag} when is_integer(seq) and is_binary(tag) -> {:ok, {seq, tag}}

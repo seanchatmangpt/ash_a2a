@@ -230,5 +230,9 @@ defmodule AshA2A.Chicago.Fixtures.ReceiptBindingAttestation do
 
   @doc "Reads a persisted receipt back from its bytes on disk (the consumer's read path)."
   @spec read_back!(Path.t()) :: term()
-  def read_back!(path), do: path |> File.read!() |> :erlang.binary_to_term()
+  # Trust boundary: bytes are read from the fixture store this module's own
+  # `store/2` wrote (local fixture directory), never externally received.
+  # `[:safe]` refuses atom-minting and fun deserialization on corrupt files.
+  # sobelow_skip ["Misc.BinToTerm"]
+  def read_back!(path), do: path |> File.read!() |> :erlang.binary_to_term([:safe])
 end

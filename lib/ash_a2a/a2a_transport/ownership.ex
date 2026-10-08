@@ -55,19 +55,57 @@ defmodule AshA2A.A2ATransport.Ownership do
 
   def fetch(_agent, _task_id, _principal), do: {:error, :not_found}
 
-  @doc "Removes verified auth, owner key and stream ref from a task's metadata."
+  @doc """
+  Removes verified auth, owner key and stream ref from a task's metadata --
+  and from every history message's metadata (EV10-F1: caller-supplied
+  `message.metadata` rides into the stored history and must not be echoed).
+  """
   @spec strip_task(AshA2A.Protocol.Task.t()) :: AshA2A.Protocol.Task.t()
-  def strip_task(%AshA2A.Protocol.Task{metadata: metadata} = task) when is_map(metadata),
-    do: %{task | metadata: Map.drop(metadata, @internal_keys)}
+  def strip_task(%AshA2A.Protocol.Task{} = task) do
+    task
+    |> drop_from()
+    |> drop_from_history()
+  end
 
   def strip_task(task), do: task
 
   @doc "Removes the same keys from an already-encoded (wire) task map."
   @spec strip_wire(map()) :: map()
-  def strip_wire(%{"metadata" => %{} = metadata} = wire),
-    do: %{wire | "metadata" => Map.drop(metadata, @internal_keys)}
+  def strip_wire(%{} = wire) do
+    wire
+    |> drop_wire_metadata()
+    |> drop_wire_history()
+  end
 
   def strip_wire(wire), do: wire
+
+  defp drop_from(%{metadata: metadata} = task) when is_map(metadata),
+    do: %{task | metadata: Map.drop(metadata, @internal_keys)}
+
+  defp drop_from(task), do: task
+
+  defp drop_from_history(%{history: history} = task) when is_list(history),
+    do: %{task | history: Enum.map(history, &strip_message/1)}
+
+  defp drop_from_history(task), do: task
+
+  defp drop_wire_metadata(%{"metadata" => %{} = metadata} = wire),
+    do: %{wire | "metadata" => Map.drop(metadata, @internal_keys)}
+
+  defp drop_wire_metadata(wire), do: wire
+
+  defp drop_wire_history(%{"history" => history} = wire) when is_list(history),
+    do: %{wire | "history" => Enum.map(history, &strip_message/1)}
+
+  defp drop_wire_history(wire), do: wire
+
+  defp strip_message(%{metadata: metadata} = message) when is_map(metadata),
+    do: %{message | metadata: Map.drop(metadata, @internal_keys)}
+
+  defp strip_message(%{"metadata" => %{} = metadata} = message),
+    do: %{message | "metadata" => Map.drop(metadata, @internal_keys)}
+
+  defp strip_message(message), do: message
 
   @doc """
   Drops the caller-forgeable internal keys from a JSON-RPC `params.metadata`

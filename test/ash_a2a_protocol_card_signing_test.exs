@@ -171,8 +171,8 @@ defmodule AshA2A.Protocol.CardSigningTest do
     end
 
     test "unsupported :alg raises on sign; forged HS512 entry is refused as malformed" do
-      assert_raise ArgumentError, ~r/HS256/, fn ->
-        CardSigning.sign(build_card(), @key_a, alg: :ES256)
+      assert_raise ArgumentError, ~r/HS256, RS256 and ES256/, fn ->
+        CardSigning.sign(build_card(), @key_a, alg: :HS512)
       end
 
       forged = %{
@@ -193,6 +193,167 @@ defmodule AshA2A.Protocol.CardSigningTest do
       assert {:error, {:malformed, %{index: 0, reason: :unsupported_alg}}} =
                CardSigning.verify(forged, @key_a)
     end
+  end
+
+  # -- RS256 / ES256 (asymmetric card signing, TCK CARD-SIGN profile) -------
+
+  describe "RS256 and ES256 sign/verify" do
+    test "RS256: sign with RSA private key, verify with public key is :ok" do
+      key = :public_key.generate_key({:rsa, 2048, 65537})
+      card = CardSigning.sign(build_card(), key, alg: :RS256, kid: "rsa-1")
+
+      assert {:ok, protected} = protected_header(card)
+      assert protected["alg"] == "RS256"
+      assert protected["kid"] == "rsa-1"
+
+      assert CardSigning.verify(card, %{"rsa-1" => key}) == :ok
+    end
+
+    test "ES256: sign with P-256 private key, verify with public key is :ok" do
+      key = :public_key.generate_key({:namedCurve, :secp256r1})
+      card = CardSigning.sign(build_card(), key, alg: :ES256, kid: "ec-1")
+
+      assert {:ok, protected} = protected_header(card)
+      assert protected["alg"] == "ES256"
+
+      assert CardSigning.verify(card, %{"ec-1" => key}) == :ok
+    end
+
+    test "ES256 signature is the raw 64-byte r||s JWS form, not DER" do
+      key = :public_key.generate_key({:namedCurve, :secp256r1})
+      card = CardSigning.sign(build_card(), key, alg: :ES256, kid: "ec-1")
+
+      {:ok, signature} =
+        card.signatures |> hd() |> Map.fetch!("signature") |> Base.url_decode64(padding: false)
+
+      assert byte_size(signature) == 64
+    end
+
+    test "RS256: wrong public key refuses as bad_signature" do
+      key = :public_key.generate_key({:rsa, 2048, 65537})
+      other = :public_key.generate_key({:rsa, 2048, 65537})
+      card = CardSigning.sign(build_card(), key, alg: :RS256, kid: "rsa-1")
+
+      assert {:error, {:bad_signature, %{index: 0}}} =
+               CardSigning.verify(card, %{"rsa-1" => other})
+    end
+
+    test "ES256: tampered card refuses as digest_mismatch" do
+      key = :public_key.generate_key({:namedCurve, :secp256r1})
+      signed = CardSigning.sign(build_card(), key, alg: :ES256, kid: "ec-1")
+
+      tampered = %{signed | description: signed.description <> " TAMPERED"}
+
+      assert {:error, {:digest_mismatch, %{index: 0}}} =
+               CardSigning.verify(tampered, %{"ec-1" => key})
+    end
+
+    test "PEM round trip: sign with generated key, verify with PEM public key" do
+      key = :public_key.generate_key({:rsa, 2048, 65537})
+      pem = :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPrivateKey, key)])
+
+      card = CardSigning.sign(build_card(), pem, alg: :RS256, kid: "pem-1")
+      assert CardSigning.verify(card, %{"pem-1" => pem}) == :ok
+    end
+  end
+
+  describe "JWKS publication and kid rotation" do
+    test "JWKS entry matches the signing key; verification via the served JWK is :ok" do
+      key = :public_key.generate_key({:rsa, 2048, 65537})
+      card = CardSigning.sign(build_card(), key, alg: :RS256, kid: "rsa-1")
+
+      jwks = CardSigning.jwks([{"rsa-1", key}])
+      [jwk] = jwks["keys"]
+
+      assert jwk["kty"] == "RSA"
+      assert jwk["kid"] == "rsa-1"
+      assert jwk["alg"] == "RS256"
+      assert jwk["use"] == "sig"
+      refute Map.has_key?(jwk, "d")
+
+      {:RSAPrivateKey, _v, n, e, _d, _p, _q, _dp, _dq, _qi, _other} = key
+      assert jwk["n"] == n |> :binary.encode_unsigned() |> Base.url_encode64(padding: false)
+      assert jwk["e"] == e |> :binary.encode_unsigned() |> Base.url_encode64(padding: false)
+
+      # Verifier resolves the kid through the published JWKS alone.
+      assert CardSigning.verify(card, jwks) == :ok
+    end
+
+    test "EC JWKS entry carries kty EC / crv P-256 / x / y and verifies" do
+      key = :public_key.generate_key({:namedCurve, :secp256r1})
+      card = CardSigning.sign(build_card(), key, alg: :ES256, kid: "ec-1")
+
+      jwks = CardSigning.jwks([{"ec-1", key}])
+      [jwk] = jwks["keys"]
+
+      assert %{"kty" => "EC", "crv" => "P-256", "x" => x, "y" => y} = jwk
+      assert byte_size(Base.url_decode64!(x, padding: false)) == 32
+      assert byte_size(Base.url_decode64!(y, padding: false)) == 32
+
+      assert CardSigning.verify(card, jwks) == :ok
+    end
+
+    test "key rotation: both generations verify while both kids are published" do
+      old_key = :public_key.generate_key({:namedCurve, :secp256r1})
+      new_key = :public_key.generate_key({:namedCurve, :secp256r1})
+
+      old_card = CardSigning.sign(build_card(), old_key, alg: :ES256, kid: "gen-1")
+      new_card = CardSigning.sign(build_card(), new_key, alg: :ES256, kid: "gen-2")
+
+      jwks = CardSigning.jwks([{"gen-1", old_key}, {"gen-2", new_key}])
+
+      assert CardSigning.verify(old_card, jwks) == :ok
+      assert CardSigning.verify(new_card, jwks) == :ok
+    end
+
+    test "wrong kid in the PROTECTED header refuses as unknown_kid" do
+      key = :public_key.generate_key({:rsa, 2048, 65537})
+      card = CardSigning.sign(build_card(), key, alg: :RS256, kid: "rsa-1")
+
+      jwks = CardSigning.jwks([{"other-key", key}])
+
+      assert {:error, {:bad_signature, %{index: 0, reason: :unknown_kid, kid: "rsa-1"}}} =
+               CardSigning.verify(card, jwks)
+    end
+
+    test "kid selection reads the PROTECTED header only; a rewritten unprotected header never selects a key" do
+      # AT5 advisory: `header.kid` is attacker-writable. Forge the unprotected
+      # header to point at the TRUSTED kid while the protected header still
+      # names the untrusted one; selection must refuse via the protected kid.
+      trusted = :public_key.generate_key({:rsa, 2048, 65537})
+      untrusted = :public_key.generate_key({:rsa, 2048, 65537})
+
+      card = CardSigning.sign(build_card(), untrusted, alg: :RS256, kid: "untrusted")
+
+      [entry | rest] = card.signatures
+      attacker_header = %{"alg" => "RS256", "typ" => "a2a-card", "kid" => "trusted"}
+      forged = [%{entry | "header" => attacker_header} | rest]
+
+      jwks = CardSigning.jwks([{"trusted", trusted}])
+
+      # Selection goes through the protected header ("untrusted"), which the
+      # published set does not carry: refused, never silently verified with
+      # the trusted key despite header.kid == "trusted".
+      assert {:error, {:bad_signature, %{reason: :unknown_kid, kid: "untrusted"}}} =
+               CardSigning.verify(%{card | signatures: forged}, jwks)
+    end
+
+    test "entry without a kid refuses as missing_kid when a rotation set is given" do
+      key = :public_key.generate_key({:rsa, 2048, 65537})
+      card = CardSigning.sign(build_card(), key, alg: :RS256)
+
+      assert {:error, {:malformed, %{index: 0, reason: :missing_kid}}} =
+               CardSigning.verify(card, CardSigning.jwks([{"k1", key}]))
+    end
+  end
+
+  defp protected_header(card) do
+    card.signatures
+    |> hd()
+    |> Map.fetch!("protected")
+    |> Base.url_decode64(padding: false)
+    |> elem(1)
+    |> Jason.decode()
   end
 
   defp build_card do

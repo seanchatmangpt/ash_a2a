@@ -372,13 +372,19 @@ defmodule AshA2A.Protocol.JSONRPC do
     Code.ensure_loaded?(handler) and function_exported?(handler, fun, arity)
   end
 
+  # SEC-08: a handler crash must not echo `Exception.message/1` (internal
+  # detail: SQL text, file paths, secret-bearing config) onto the wire. The
+  # caller gets -32603 with an opaque `ref`; the full detail is logged
+  # server-side under the same ref.
   defp safe_call(fun) do
     case fun.() do
       {:ok, _} = ok -> ok
       {:error, %Error{}} = err -> err
     end
   rescue
-    e -> {:error, Error.internal_error(Exception.message(e))}
+    e ->
+      %{ref: ref} = AshA2A.Transport.SafeError.internal(:internal_error, e, __STACKTRACE__)
+      {:error, Error.internal_error(%{"ref" => ref})}
   end
 
   defp normalize_method(%Request{method: method} = request) do

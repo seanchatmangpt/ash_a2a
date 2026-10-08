@@ -132,6 +132,13 @@ defmodule AshA2A.Receipt.EvidenceChain do
   atom or an external fun decode to `{:error, :bad_term}` (finding TQ-04).
   """
   @spec decode_receipt(binary()) :: {:ok, Receipt.t()} | {:error, term()}
+  # Trust boundary: `[:safe]` decode + journal-version and %Receipt{} shape
+  # validation; foreign or hostile bytes fail closed to
+  # `{:error, :foreign_format}` / `{:error, :bad_term}` without minting atoms
+  # or deserializing funs. Atoms are pre-interned from the application's own
+  # BEAM (`ensure_receipt_atoms_loaded/0`) so `[:safe]` never breaks local
+  # bytes.
+  # sobelow_skip ["Misc.BinToTerm"]
   def decode_receipt(bytes) when is_binary(bytes) do
     ensure_receipt_atoms_loaded()
 

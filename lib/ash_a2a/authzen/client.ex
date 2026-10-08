@@ -129,7 +129,10 @@ defmodule AshA2A.AuthZEN.Client do
     if Keyword.get(opts, :bypass_cache, false) do
       fetch(client, endpoint, encoded, ttl)
     else
-      case DecisionPool.cache_get(endpoint, encoded, System.system_time(:millisecond)) do
+      # Monotonic clock for TTL expiry: a wall-clock step (NTP correction, VM
+      # pause) can never resurrect expired entries, so a PDP outage degrades
+      # to the typed fetch refusal — never an indefinite cached serve.
+      case DecisionPool.cache_get(endpoint, encoded, System.monotonic_time(:millisecond)) do
         {:ok, decision} -> {:ok, decision}
         _miss_or_expired -> fetch(client, endpoint, encoded, ttl)
       end
@@ -149,7 +152,7 @@ defmodule AshA2A.AuthZEN.Client do
         endpoint,
         encoded,
         decision,
-        now_ms: System.system_time(:millisecond),
+        now_ms: System.monotonic_time(:millisecond),
         ttl_ms: ttl
       )
 

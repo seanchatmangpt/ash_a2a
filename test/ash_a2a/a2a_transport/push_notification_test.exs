@@ -186,12 +186,9 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
 
     assert rpc(on, "tasks/pushNotificationConfig/list", %{"id" => task_id})["result"] == []
 
-    assert %{
-             "error" => %{
-               "code" => -32_602,
-               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "INVALID_PARAMS"}]
-             }
-           } =
+    # Idempotent delete per TCK PUSH-DEL-002: re-deleting an already-deleted
+    # config answers success, not an error.
+    assert %{"result" => nil} =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-1"

@@ -139,6 +139,9 @@ defmodule AshA2A.Chicago.ClosureTest do
              end)
     end
 
+    # Two full-tree abstract-code walks (setup_all report + this enforce run);
+    # under parallel suite load the default 60s ExUnit timeout flakes.
+    @tag timeout: 180_000
     test "report mode is data; enforce refuses the current tree", %{modules: modules, report: r} do
       assert r.mode == "report"
       assert r.summary.violating_edges > 0

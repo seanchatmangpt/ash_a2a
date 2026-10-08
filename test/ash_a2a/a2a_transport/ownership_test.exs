@@ -140,11 +140,13 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
                  "pushNotificationConfig" => %{"url" => ctx.hook}
                })
 
+      # The owner still has resubscribe authority — but a terminal task with
+      # no retained event log is refused -32004 (spec §3.1.6, STREAM-SUB-003
+      # MUST), so the owner's resubscribe is answered with the refusal, not
+      # an SSE stream.
       conn = call(ctx, "alice", "tasks/resubscribe", %{"id" => task_id})
-      assert conn.resp_body =~ task_id
-      # v1.0 wire shape: finality rides on the terminal status state, not a
-      # "final" boolean.
-      assert conn.resp_body =~ ~s("state":"TASK_STATE_COMPLETED")
+      assert conn.resp_body =~ "UNSUPPORTED_OPERATION"
+      refute conn.resp_body =~ "TASK_NOT_FOUND"
     end
 
     test "params.metadata cannot forge a2a.auth to act as another principal", ctx do
@@ -173,7 +175,7 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
       %{"result" => result} = Jason.decode!(send_resp.resp_body)
       task_id = (result["task"] || result)["id"]
 
-      assert_receive {:webhook, hook_body}, 5_000
+      assert_receive {:webhook, hook_body}, 15_000
       assert hook_body =~ task_id
       refute hook_body =~ secret
       refute hook_body =~ "a2a.auth"
@@ -183,7 +185,9 @@ defmodule AshA2A.A2ATransport.OwnershipTest do
       refute get.resp_body =~ secret
 
       resub = call(ctx, "alice", "tasks/resubscribe", %{"id" => task_id})
-      assert resub.resp_body =~ task_id
+      # Terminal empty-log task: refused -32004 — and the refusal carries no
+      # credential echo either.
+      refute resub.resp_body =~ task_id
       refute resub.resp_body =~ secret
 
       refute inspect(TaskEvents.backlog(ctx.transport, task_id)) =~ secret

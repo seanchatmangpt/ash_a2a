@@ -210,17 +210,24 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     assert state(final(tail)) == "completed"
   end
 
-  test "resubscribing to a task with no event log answers snapshot + final", %{
+  test "resubscribing to a TERMINAL task with no event log is refused -32004", %{
     url: url,
     agent: agent
   } do
+    # Spec §3.1.6 STREAM-SUB-003 MUST: SubscribeToTask on a terminal task
+    # returns UnsupportedOperationError. With no retained log there is
+    # nothing to replay, so the refusal is the whole answer.
     {:ok, task, enum} = AshA2A.Protocol.stream(agent, AshA2A.Protocol.Message.new_user("direct"))
     Enum.to_list(enum)
 
-    results = url |> resubscribe(task.id) |> Map.fetch!(:body) |> frames()
-    assert [%{"task" => %{"id" => id}}, last] = results
-    assert id == task.id
-    assert state(last) == "completed"
+    resp = resubscribe(url, task.id)
+
+    assert %{
+             "error" => %{
+               "code" => -32_004,
+               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "UNSUPPORTED_OPERATION"}]
+             }
+           } = resp.body
   end
 
   test "an unknown task id is -32001 with a TASK_NOT_FOUND ErrorInfo", %{url: url} do

@@ -83,6 +83,10 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
     "test/ash_a2a_v1_architecture_test.exs",
     "test/ash_a2a_v1_artifact_streaming_test.exs",
     "test/ash_a2a_v1_auth_challenge_test.exs",
+    # DY3: agent-card signing courts (CARD-SIGN-001..004 — the four
+    # NOT_AUTOMATABLE TCK requirements, exercised against the real
+    # CardSigning machinery; see the file header).
+    "test/ash_a2a_v1_card_signing_test.exs",
     "test/ash_a2a_v1_binding_mismatch_test.exs",
     "test/ash_a2a_v1_cancellation_test.exs",
     "test/ash_a2a_v1_conformance_test.exs",
@@ -221,7 +225,10 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
     output
     |> String.split("\n")
     |> Enum.reverse()
-    |> Enum.find(&Regex.match?(~r/\d+ (tests?|properties), \d+ failures?/, &1))
+    |> Enum.find(fn line ->
+      Regex.match?(~r/\d+ (tests?|properties), \d+ failures?/, line) or
+        Regex.match?(~r/Result:\s+\d+(\/\d+)?\s+passed/, line)
+    end)
     |> case do
       nil -> output |> String.split("\n") |> Enum.reject(&(&1 == "")) |> List.last("")
       line -> String.trim(line)

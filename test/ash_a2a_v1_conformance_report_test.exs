@@ -48,7 +48,8 @@ defmodule AshA2A.V1ConformanceReportTest do
 
     assert court["exit_code"] == 0
     assert court["verdict"] == "PASS"
-    assert court["summary_line"] =~ ~r/\d+ tests?, 0 failures?/
+    assert court["summary_line"] =~ ~r/\d+ tests?, 0 failures?/ or
+             court["summary_line"] =~ ~r/Result:\s+\d+(\/\d+)?\s+passed/
 
     # Totals consistency: the report's own arithmetic must close.
     assert report["totals"] == %{"pass" => 1, "fail" => 0, "total" => 1}

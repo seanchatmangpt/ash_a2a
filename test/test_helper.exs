@@ -23,7 +23,16 @@ ExUnit.start(exclude: [:external_api, :benchmark])
 # A test that specifically needs isolated grant/revocation state -- e.g.
 # `test/ash_a2a_authority_capability_grant_test.exs`, which revokes -- starts
 # its own uniquely-named broker and is `async: false`.
-{:ok, _authority_broker} = AshA2A.Authority.Broker.InMemory.start_link([])
+# MUZAK lane (mutation testing): `mix muzak.sec` re-requires this helper
+# before every mutant's test run, after muzak has restarted all non-OTP
+# applications. The shared broker is NOT under the app supervisor, so it
+# survives those restarts -- start it only when actually absent, or every
+# mutant after the first dies here with `:already_started`.
+{:ok, _authority_broker} =
+  case Process.whereis(AshA2A.Authority.Broker.InMemory) do
+    nil -> AshA2A.Authority.Broker.InMemory.start_link([])
+    pid when is_pid(pid) -> {:ok, pid}
+  end
 
 # SA2A: the `:graphlaw` tests really execute the real praxis-graphlaw wasm
 # through a real `node` subprocess. On a machine without `node` or without the
@@ -122,11 +131,19 @@ ExUnit.configure(exclude: excluded_tags)
 # A2A-2601: point the receipt outbox at a fresh per-run directory so tests
 # that exercise the outbox never read (or opportunistically reconcile) a
 # previous run's journal entries from the default OS-tmp location.
+# v26.10.6: sweep stale outbox dirs first — stale journal entries from prior
+# boots get reconciled by the run's outbox glob and poison command-bus tests
+# with spurious :receipt_store_unavailable refusals (W127/W77 diagnosis).
+case Path.wildcard(Path.join(System.tmp_dir!(), "ash_a2a_receipt_outbox_test_*")) do
+  [] -> :ok
+  stale -> Enum.each(stale, &File.rm_rf/1)
+end
+
 Application.put_env(
   :ash_a2a,
   :receipt_outbox_dir,
   Path.join(
     System.tmp_dir!(),
-    "ash_a2a_receipt_outbox_test_#{System.unique_integer([:positive])}"
+    "ash_a2a_receipt_outbox_test_#{System.unique_integer([:positive])}_#{System.system_time(:millisecond)}"
   )
 )

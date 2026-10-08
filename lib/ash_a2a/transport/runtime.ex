@@ -503,6 +503,7 @@ defmodule AshA2A.Transport.Runtime do
           # result is still the bare Message.
           case reply do
             {:message, parts} ->
+  
               task =
                 task
                 |> apply_reply({:reply, parts})
@@ -516,7 +517,35 @@ defmodule AshA2A.Transport.Runtime do
             _ ->
               task = task |> apply_reply(reply) |> maybe_wrap_stream() |> drop_terminal_auth()
               state = State.put_task(state, task)
-              respond(mode, from, {:ok, task}, state)
+
+              # STREAM-SUB-002: a transition persisted here is wire-observable
+              # (SSE resubscribe subscribers and registered push webhooks must
+              # see it) — mirror the ported protocol agent's completion fold
+              # (`apply_default_result`) exactly; finish/5 previously
+              # persisted the task silently.
+              AshA2A.Protocol.PushNotification.deliver(state, task)
+
+              state =
+                case AshA2A.Protocol.Agent.State.subscribers_for(state, task.id) do
+                  [] ->
+                    state
+
+                  pids ->
+                    snapshot = AshA2A.Protocol.Task.strip_stream_metadata(task)
+
+                    for pid <- pids do
+                      send(pid, {:a2a_task_event, task.id, snapshot})
+                    end
+
+                    state
+                end
+
+              if AshA2A.Protocol.Task.terminal?(task) do
+                state = AshA2A.Protocol.Agent.State.drop_subscribers(state, task.id)
+                respond(mode, from, {:ok, task}, state)
+              else
+                respond(mode, from, {:ok, task}, state)
+              end
           end
         end
 

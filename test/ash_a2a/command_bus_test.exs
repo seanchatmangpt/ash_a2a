@@ -158,6 +158,9 @@ defmodule AshA2A.CommandBusTest do
     assert {:error, %{code: :receipt_store_unavailable}} = result
   end
 
+  # v26.10.6: cold-VM isolation runs need > the suite's 100ms default here —
+  # the fail-closed path waits out the crash-store shutdown before replying.
+  @tag timeout: 10_000
   test "receipt store crashing between claim and commit fails closed instead of crashing the caller" do
     # Same reasoning as the claim-path test above: an UNSUPERVISED store so
     # the real kill this test performs (inside
@@ -190,7 +193,7 @@ defmodule AshA2A.CommandBusTest do
         send(test_pid, {:result, result})
       end)
 
-    assert_receive {:result, result}
+    assert_receive {:result, result}, 5_000
     assert_receive {:DOWN, ^caller_ref, :process, ^caller_pid, :normal}
 
     # A2A-2601: the consequence HAS happened by the time the store dies

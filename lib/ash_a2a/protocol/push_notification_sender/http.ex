@@ -12,20 +12,24 @@ if Code.ensure_loaded?(Req) do
       spec recommends 10-30s.
     - `:attempts` — total delivery attempts including the first
       (default: `3`). Retries back off exponentially from 200ms.
-    - `:require_https` — reject `http://` webhook URLs (default: `false`).
+    - `:require_https` — reject `http://` webhook URLs (default: `true`).
     - `:block_private_ips` — reject loopback, link-local and RFC 1918 hosts
-      (default: `false`).
+      (default: `true`).
 
-    ## Why the hardening is off by default
+    ## Opting out for local development
 
-    The spec makes SSRF protection and HTTPS a SHOULD for the agent, not a
-    MUST, and both break ordinary local development — a webhook receiver on
-    `localhost` is how the A2A compliance suite itself tests delivery. Turn
-    them on for an agent that accepts webhook URLs from untrusted callers:
+    Both hardening options are ON by default: an agent that accepts webhook
+    URLs from untrusted callers must not become an SSRF or plaintext-credential
+    channel by accident. The spec makes SSRF protection and HTTPS a SHOULD for
+    the agent, not a MUST, and the defaults do break ordinary local
+    development — a webhook receiver on `localhost` is how the A2A compliance
+    suite itself tests delivery — so both are explicit opt-OUTs, intended to
+    be set loudly at the construction site:
 
+        # Development / compliance-suite receiver on localhost:
         MyAgent.start_link(
           push_sender: {AshA2A.Protocol.PushNotificationSender.HTTP,
-                        require_https: true, block_private_ips: true}
+                        require_https: false, block_private_ips: false}
         )
     """
 
@@ -39,11 +43,34 @@ if Code.ensure_loaded?(Req) do
 
     @impl AshA2A.Protocol.PushNotificationSender
     def deliver(config, payload, opts \\ []) do
-      with :ok <- validate_url(config.url, opts) do
+      with :ok <- validate_url(config.url, opts),
+           :ok <- validate_auth(config) do
         attempts = Keyword.get(opts, :attempts, @default_attempts)
         post_with_retry(config, payload, opts, attempts, 1)
       end
     end
+
+    # The configured credentials travel verbatim inside the `authorization`
+    # request header. A credential carrying CR/LF/NUL is a header-injection /
+    # request-smuggling vector (and would only crash the delivery process in
+    # Mint anyway), so it is refused typed before any connection is opened.
+    defp validate_auth(%{authentication: %{scheme: scheme, credentials: credentials}})
+         when is_binary(scheme) and is_binary(credentials) do
+      if safe_header_value?(scheme) and safe_header_value?(credentials),
+        do: :ok,
+        else: {:error, {:invalid_credentials, :control_characters}}
+    end
+
+    defp validate_auth(%{token: token}) when is_binary(token) do
+      if safe_header_value?(token),
+        do: :ok,
+        else: {:error, {:invalid_credentials, :control_characters}}
+    end
+
+    defp validate_auth(_config), do: :ok
+
+    defp safe_header_value?(value),
+      do: value != "" and not String.contains?(value, ["\r", "\n", "\0"])
 
     defp post_with_retry(config, payload, opts, attempts, attempt) do
       case post(config, payload, opts) do
@@ -99,10 +126,16 @@ if Code.ensure_loaded?(Req) do
       uri = URI.parse(url)
 
       cond do
-        Keyword.get(opts, :require_https, false) and uri.scheme != "https" ->
+        # Only HTTP(S) delivery is defined; a caller-supplied config URL with
+        # any other scheme (file://, ftp://, gopher://...) is refused before
+        # Req ever sees it — unconditionally, dev-friendly defaults or not.
+        uri.scheme not in ["http", "https"] ->
+          {:error, {:unsupported_scheme, uri.scheme}}
+
+        Keyword.get(opts, :require_https, true) and uri.scheme != "https" ->
           {:error, {:insecure_url, url}}
 
-        Keyword.get(opts, :block_private_ips, false) and private_host?(uri.host) ->
+        Keyword.get(opts, :block_private_ips, true) and private_host?(uri.host) ->
           {:error, {:private_host, uri.host}}
 
         true ->

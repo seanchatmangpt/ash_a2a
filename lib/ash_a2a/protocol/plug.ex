@@ -60,6 +60,13 @@ if Code.ensure_loaded?(Plug) do
       `A2A-Extensions` response header to the URIs that were activated.
       Declarations are merged into `capabilities.extensions` on the
       served agent card.
+    - `:transport` — optional `AshA2A.A2ATransport` instance name. When set
+      **and running**, `message/stream` and `tasks/resubscribe` are served
+      through the transport's per-task, sequence-numbered event log
+      (`AshA2A.A2ATransport.TaskEvents`): multi-subscriber fan-out,
+      `Last-Event-ID` replay, and a supervised pump so a client disconnect
+      never truncates the task. When unset or not running, the legacy
+      connection-consumed streaming path is used. Default `nil`.
     - `:versions` — list of supported A2A protocol versions as
       `Major.Minor` strings (default: `AshA2A.Protocol.Version.supported_default/0`,
       currently `["0.3", "1.0"]`). The client's `A2A-Version` header is
@@ -150,13 +157,16 @@ if Code.ensure_loaded?(Plug) do
         base_url: Keyword.get(opts, :base_url),
         agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
+        jwks_path: Keyword.get(opts, :jwks_path, [".well-known", "jwks.json"]),
+        jwks_keys: Keyword.get(opts, :jwks_keys),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
         last_modified: Keyword.get(opts, :last_modified, DateTime.utc_now()),
         metadata: Keyword.get(opts, :metadata, %{}),
         authorize_task: Keyword.get(opts, :authorize_task),
         extensions: AshA2A.Protocol.Extension.compile(Keyword.get(opts, :extensions, [])),
         versions: Keyword.get(opts, :versions, AshA2A.Protocol.Version.supported_default()),
-        resubscribe_timeout: Keyword.get(opts, :resubscribe_timeout, 60_000)
+        resubscribe_timeout: Keyword.get(opts, :resubscribe_timeout, 60_000),
+        transport: Keyword.get(opts, :transport, nil)
       }
     end
 
@@ -172,6 +182,12 @@ if Code.ensure_loaded?(Plug) do
       handle_json_rpc(conn, resolved)
     end
 
+    def call(%{method: "GET", path_info: path} = conn,
+             %{jwks_path: path, jwks_keys: jwks_keys} = opts)
+        when not is_nil(jwks_keys) do
+      serve_jwks(conn, opts)
+    end
+
     def call(%{path_info: path} = conn, %{agent_card_path: path}) do
       conn
       |> put_resp_header("allow", "GET")
@@ -180,6 +196,23 @@ if Code.ensure_loaded?(Plug) do
 
     def call(conn, _opts) do
       send_resp(conn, 404, "Not Found")
+    end
+
+    # -- JWKS publication ------------------------------------------------------
+
+    # Serves the public keys backing card signatures as a JWKS document
+    # (RFC 7517). Verifiers resolve the `kid` from a signature's PROTECTED
+    # header against this document; key rotation publishes the old and new
+    # generations side by side during the rotation window. Unconfigured
+    # (`:jwks_keys` not set) the path 404s — a JWKS endpoint that silently
+    # serves an empty key set would be a vacuous admission surface.
+    defp serve_jwks(conn, opts) do
+      json = AshA2A.Protocol.CardSigning.jwks(opts.jwks_keys) |> Jason.encode!()
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> put_resp_header("cache-control", "public, max-age=300")
+      |> send_resp(200, json)
     end
 
     # -- Option resolution -----------------------------------------------------
@@ -282,6 +315,50 @@ if Code.ensure_loaded?(Plug) do
       |> Map.get(:streaming, false)
     end
 
+    # Transport-backed streaming is used only when a transport instance is
+    # both configured and actually running — a stale option value (e.g. a
+    # transport that was stopped) falls back to the legacy path rather than
+    # erroring.
+    defp transport_streaming?(opts) do
+      opts.transport && AshA2A.A2ATransport.running?(opts.transport)
+    end
+
+    # After-response event-log publishing for non-streaming task replies
+    # (message/send, tasks/cancel): mirrors AshA2A.A2ATransport.Plug's
+    # publish_result so a LIVE subscriber of a task created/updated through
+    # the bare Protocol.Plug still observes the transition (STREAM-SUB-002).
+    # The inner plug under AshA2A.A2ATransport.Plug runs without a :transport
+    # option, so the two never double-publish.
+    defp publish_result(conn, opts) do
+      with 200 <- conn.status,
+           {:ok, %{"result" => %{"id" => task_id} = task}} <-
+             Jason.decode(IO.iodata_to_binary(conn.resp_body || "")),
+           %{"status" => %{"state" => state}} when is_binary(state) <- task do
+        final? = closed_wire_state?(state)
+
+        AshA2A.A2ATransport.TaskEvents.publish(
+          opts.transport,
+          task_id,
+          "task",
+          %{"task" => AshA2A.A2ATransport.Ownership.strip_wire(task)},
+          final?
+        )
+      else
+        _ -> :ok
+      end
+
+      conn
+    end
+
+    defp closed_wire_state?(state) when is_binary(state) do
+      state
+      |> String.downcase()
+      |> String.replace_prefix("task_state_", "")
+      |> then(& &1 in ~w(completed canceled cancelled failed rejected input-required input_required auth-required auth_required))
+    end
+
+    defp closed_wire_state?(_), do: false
+
     # A client may register a webhook on the initial send rather than through
     # the CRUD methods, which is how the spec's delivery flow reads and how the
     # compliance suite drives it. The task does not exist until the call
@@ -370,6 +447,11 @@ if Code.ensure_loaded?(Plug) do
 
           case AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, context) do
             {:reply, response} ->
+              conn =
+                if transport_streaming?(opts),
+                  do: register_before_send(conn, &publish_result(&1, opts)),
+                  else: conn
+
               send_json(conn, response)
 
             {:stream, "message/stream", params, id} ->
@@ -383,13 +465,19 @@ if Code.ensure_loaded?(Plug) do
                   |> maybe_put_fallback(:context_id, message.context_id)
                   |> Keyword.put(:extensions, AshA2A.Protocol.Extension.to_context_map(activations))
 
-                AshA2A.Protocol.Plug.SSE.stream_message(
-                  conn,
-                  opts.agent,
-                  message,
-                  id,
-                  call_opts
-                )
+                if transport_streaming?(opts) do
+                  AshA2A.A2ATransport.SSE.stream_message(
+                    conn,
+                    opts.transport,
+                    opts.agent,
+                    message,
+                    id,
+                    call_opts,
+                    []
+                  )
+                else
+                  AshA2A.Protocol.Plug.SSE.stream_message(conn, opts.agent, message, id, call_opts)
+                end
               else
                 send_json(conn, Response.error(id, Error.unsupported_operation()))
               end
@@ -401,13 +489,24 @@ if Code.ensure_loaded?(Plug) do
               with true <- streaming_declared?(opts),
                    {:ok, task} <-
                      authorized_task(opts.agent, params["id"], :resubscribe, params, opts) do
-                AshA2A.Protocol.Plug.SSE.subscribe_task(
-                  conn,
-                  opts.agent,
-                  task.id,
-                  id,
-                  opts.resubscribe_timeout
-                )
+                if transport_streaming?(opts) do
+                  AshA2A.A2ATransport.SSE.resubscribe(
+                    conn,
+                    opts.transport,
+                    opts.agent,
+                    %{"id" => task.id},
+                    id,
+                    []
+                  )
+                else
+                  AshA2A.Protocol.Plug.SSE.subscribe_task(
+                    conn,
+                    opts.agent,
+                    task.id,
+                    id,
+                    opts.resubscribe_timeout
+                  )
+                end
               else
                 false -> send_json(conn, Response.error(id, Error.unsupported_operation()))
                 {:error, error} -> send_json(conn, Response.error(id, error))
@@ -421,7 +520,7 @@ if Code.ensure_loaded?(Plug) do
           send_json(conn, Response.error(nil, Error.parse_error("Body too large")))
 
         {:error, reason} ->
-          send_json(conn, Response.error(nil, Error.internal_error(inspect(reason))))
+          send_json(conn, Response.error(nil, internal_error(reason)))
       end
     end
 
@@ -491,7 +590,7 @@ if Code.ensure_loaded?(Plug) do
             {:error, Error.invalid_agent_response("Message reply to a task-scoped request")}
 
           {:error, reason} ->
-            {:error, Error.internal_error(inspect(reason))}
+            {:error, internal_error(reason)}
         end
       end
     end
@@ -515,8 +614,10 @@ if Code.ensure_loaded?(Plug) do
           {:error, :not_found} ->
             {:error, Error.task_not_found()}
 
-          {:error, reason} ->
-            {:error, Error.task_not_cancelable(inspect(reason))}
+          {:error, _reason} ->
+            # The cancel failure reason is internal state; -32002 carries no
+            # detail (SEC-08 — same redaction discipline as internal_error/1).
+            {:error, Error.task_not_cancelable()}
         end
       else
         {:error, :not_found} -> {:error, Error.task_not_found()}
@@ -534,7 +635,7 @@ if Code.ensure_loaded?(Plug) do
           {:error, Error.invalid_params("\"pageToken\" is invalid")}
 
         {:error, reason} ->
-          {:error, Error.internal_error(inspect(reason))}
+          {:error, internal_error(reason)}
       end
     end
 
@@ -547,7 +648,7 @@ if Code.ensure_loaded?(Plug) do
 
         case GenServer.call(agent, {:set_push_config, config}) do
           {:ok, _config} = ok -> ok
-          {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+          {:error, reason} -> {:error, internal_error(reason)}
         end
       end
     end
@@ -589,6 +690,15 @@ if Code.ensure_loaded?(Plug) do
         {:ok, task} -> {:ok, task}
         {:error, :not_found} -> {:error, :not_found}
       end
+    end
+
+    # SEC-08: internal failure reasons never reach the wire verbatim — the
+    # caller gets -32603 with an opaque correlation `ref`; the full reason is
+    # logged server-side under the same ref (AshA2A.Transport.SafeError, the
+    # same convention AshA2A.Transport.Plug and AshA2A.ToA2AError use).
+    defp internal_error(reason) do
+      %{ref: ref} = AshA2A.Transport.SafeError.internal(:internal_error, reason)
+      Error.internal_error(%{"code" => "internal_error", "ref" => ref})
     end
 
     defp push_declared(plug_opts) do
@@ -668,8 +778,25 @@ if Code.ensure_loaded?(Plug) do
     defp merge_unless_nil(base, nil), do: base
     defp merge_unless_nil(base, override), do: Map.merge(base, override)
 
+    # Reserved metadata keys the CALLER may never set: `"a2a.auth"` is the
+    # verified identity the Auth plug stored on the conn (resolve_opts/2 puts
+    # it under plug_opts.metadata last), `"ash_a2a.owner"` is the transport's
+    # unforgeable owner key. Both are merged AFTER this function consumes
+    # params.metadata downstream, so a caller-supplied value must be dropped
+    # before the merge or it clobbers the verified identity (an attacker
+    # answering as a different principal, or silently downgrading auth to
+    # :anonymous). Mirrors AshA2A.Transport.Plug.call_opts/2, which drops the
+    # same keys for the same reason.
+    @reserved_metadata_keys ["a2a.auth", "ash_a2a.owner"]
+
     defp request_metadata(params, plug_opts) do
-      merge_unless_nil(plug_opts.metadata, params["metadata"])
+      caller_metadata =
+        case params["metadata"] do
+          %{} = m -> Map.drop(m, @reserved_metadata_keys)
+          _ -> nil
+        end
+
+      merge_unless_nil(plug_opts.metadata, caller_metadata)
     end
 
     defp maybe_put(opts, _key, nil), do: opts

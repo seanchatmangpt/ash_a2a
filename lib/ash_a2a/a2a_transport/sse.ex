@@ -83,16 +83,33 @@ defmodule AshA2A.A2ATransport.SSE do
          {:ok, task} <- get_task(agent, task_id, Keyword.get(sse_opts, :principal, :anonymous)) do
       backlog = TaskEvents.subscribe(transport, task_id)
       after_seq = last_event_id(conn)
-      conn = conn |> start_sse() |> write_frame(id, 0, encode_task(task))
 
-      # The snapshot above replaces logged "task" events.
+      # The resubscriber's snapshot replaces logged "task" events.
       backlog = Enum.reject(backlog, fn {_, kind, _, _} -> kind == "task" end)
 
-      if closed_state?(task) and not Enum.any?(backlog, fn {_, _, _, final?} -> final? end) do
-        TaskEvents.unsubscribe(transport, task_id)
-        write_frame(conn, id, 0, final_status(task))
-      else
-        replay_and_follow(conn, transport, task_id, id, backlog, after_seq, sse_opts)
+      # Decided BEFORE the SSE response starts: a TERMINAL task with no
+      # retained final event to replay is refused with -32004 (spec §3.1.6,
+      # STREAM-SUB-003 MUST). A retained log is replayed (STREAM-SUB-002's
+      # missed-events semantics). A task paused for input stays subscribed —
+      # it can still reach a terminal state later (STREAM-SUB-002).
+      cond do
+        AshA2A.Protocol.Task.terminal?(task) and
+            not Enum.any?(backlog, fn {_, _, _, final?} -> final? end) ->
+          TaskEvents.unsubscribe(transport, task_id)
+          send_json(conn, Response.error(id, Error.unsupported_operation()))
+
+        true ->
+          conn = conn |> start_sse() |> write_frame(id, 0, encode_task(task))
+
+          # Also ride the agent's own subscriber fan-out: a task completed on
+          # the protocol-agent path never reaches the transport TaskEvents
+          # log, so without this the stream would never see the terminal
+          # transition (TCK STREAM-SUB-002). The {:subscribe, task_id}
+          # registration delivers {:a2a_task_event, task_id, task} here at
+          # every transition (handled in follow/7).
+          _ = GenServer.call(agent, {:subscribe, task_id}, 5_000)
+
+          replay_and_follow(transport, task_id, id, backlog, after_seq, sse_opts, conn)
       end
     else
       {:error, %Error{} = error} -> send_json(conn, Response.error(id, error))
@@ -154,7 +171,86 @@ defmodule AshA2A.A2ATransport.SSE do
 
   # -- following ----------------------------------------------------------------
 
-  defp replay_and_follow(conn, transport, task_id, id, backlog, after_seq, opts) do
+  # Bridge clause: the same tail but with the agent-ride-along conn already
+  # started (TCK STREAM-SUB-002: protocol-path completions arrive via the
+  # agent subscriber fan-out, not the TaskEvents log).
+  defp replay_and_follow(transport, task_id, id, backlog, after_seq, opts, %Plug.Conn{} = conn) do
+    Enum.reduce_while(backlog, {conn, after_seq}, fn {seq, _kind, payload, final?},
+                                                     {conn, last} ->
+      cond do
+        seq <= last and final? ->
+          {:halt, {:final, conn}}
+
+        seq <= last ->
+          {:cont, {conn, last}}
+
+        true ->
+          case chunk_frame(conn, id, seq, payload) do
+            {:ok, conn} when final? -> {:halt, {:final, conn}}
+            {:ok, conn} -> {:cont, {conn, seq}}
+            {:error, conn} -> {:halt, {:closed, conn}}
+          end
+      end
+    end)
+    |> case do
+      {:final, conn} -> done(conn, transport, task_id)
+      {:closed, conn} -> done(conn, transport, task_id)
+      {conn, last} -> follow7(conn, transport, task_id, id, last, opts, 0)
+    end
+  end
+
+  # follow/7 mirrors follow/6 but also consumes the agent subscriber fan-out
+  # message {:a2a_task_event, task_id, task} (3-tuple).
+  defp follow7(conn, transport, task_id, id, last, opts, idle) do
+    heartbeat = Keyword.get(opts, :heartbeat_ms, 15_000)
+    max_idle = Keyword.get(opts, :max_idle_ms, 300_000)
+
+    receive do
+      # Transport TaskEvents fan-out (6-tuple) — the ordered, seq-numbered
+      # live stream that message/stream pumps publish to.
+      {:a2a_task_event, ^task_id, seq, _kind, payload, final?} when is_integer(seq) ->
+        case chunk_frame(conn, id, seq, payload) do
+          {:ok, conn} when final? -> done(conn, transport, task_id)
+          {:ok, conn} -> follow7(conn, transport, task_id, id, seq, opts, 0)
+          {:error, conn} -> done(conn, transport, task_id)
+        end
+
+      # Agent subscriber fan-out (3-tuple) — task transitions that bypass the
+      # TaskEvents log (protocol-path completions, TCK STREAM-SUB-002).
+      {:a2a_task_event, ^task_id, %AshA2A.Protocol.Task{} = task} ->
+        seq = last + 1
+        terminal? = AshA2A.Protocol.Task.terminal?(task)
+        event =
+          AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
+            context_id: task.context_id,
+            final: terminal?
+          )
+
+        {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
+
+        case chunk_frame(conn, id, seq, encoded) do
+          {:ok, conn} when terminal? -> done(conn, transport, task_id)
+          {:ok, conn} -> follow7(conn, transport, task_id, id, seq, opts, 0)
+          {:error, conn} -> done(conn, transport, task_id)
+        end
+    after
+      heartbeat ->
+        idle = idle + heartbeat
+
+        cond do
+          idle >= max_idle ->
+            done(conn, transport, task_id)
+
+          true ->
+            case chunk(conn, ": keepalive\n\n") do
+              {:ok, conn} -> follow7(conn, transport, task_id, id, last, opts, 0)
+              {:error, _} -> done(conn, transport, task_id)
+            end
+        end
+    end
+  end
+
+  defp replay_and_follow(%Plug.Conn{} = conn, transport, task_id, id, backlog, after_seq, opts) do
     Enum.reduce_while(backlog, {conn, after_seq}, fn {seq, _kind, payload, final?},
                                                      {conn, last} ->
       cond do
@@ -263,21 +359,19 @@ defmodule AshA2A.A2ATransport.SSE do
     wrapped
   end
 
-  # A stream closes for a resubscriber when the task is terminal or paused for input.
-  defp closed_state?(task), do: AshA2A.Protocol.Task.terminal?(task) or task.status.state == :input_required
-
   @doc false
-  def final_status(task), do: status_event(task, task.status.state, task.status.message)
+  # The task's OWN stored status is re-encoded, not a fresh one: two
+  # resubscribers to the same task must receive byte-identical final frames
+  # (STREAM-ORDER-003), and a synthesized `DateTime.utc_now()` would stamp a
+  # different timestamp per subscriber.
+  def final_status(task), do: status_event(task, task.status)
 
-  defp status_event(task, state, message) do
-    message =
-      case message do
-        nil -> nil
-        text when is_binary(text) -> AshA2A.Protocol.Message.new_agent(text)
-        %AshA2A.Protocol.Message{} = m -> m
-      end
+  defp status_event(task, state, message) when is_atom(state) do
+    status_event(task, AshA2A.Protocol.Task.Status.new(state, message))
+  end
 
-    AshA2A.Protocol.Event.StatusUpdate.new(task.id, AshA2A.Protocol.Task.Status.new(state, message),
+  defp status_event(task, %AshA2A.Protocol.Task.Status{} = status) do
+    AshA2A.Protocol.Event.StatusUpdate.new(task.id, status,
       context_id: task.context_id,
       final: true
     )

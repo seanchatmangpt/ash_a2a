@@ -67,7 +67,7 @@ defmodule AshA2A.V1.CheckGateSerialTest do
 
       # ...and the failing serial test must be visible in its output.
       assert out =~ "scratch_serial_test.exs"
-      assert out =~ "1 failure"
+      assert out =~ "1 failure" or out =~ "Failed: 1 test"
     end
 
     @tag :regression

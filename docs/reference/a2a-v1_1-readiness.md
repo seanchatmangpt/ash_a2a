@@ -34,7 +34,7 @@ triaged here against that v1.0 surface.
 | Elicitation & multi-turn (#2149, #2143) — structured human-in-the-loop | SUPPORTED | Landed (2026-10-05): the formal elicitation contract — a typed, schema-constrained input request over the A2A `INPUT_REQUIRED` park/resume lifecycle. `request/3` mints an elicitation carrying the real Draft 2020-12 `requestedSchema` projected from `AshA2A.Schema.for_action/3`/`for_skill/2`, riding as a `Part.Data` part on the `{:input_required, _}` reply; `resume/2` validates the follow-up **before** dispatch resumes — any violation is a typed `-32602` and the task stays parked (a malformed response must not consume the park); expiry (`:expires_in`) transitions a parked task to terminal `:failed`. Scope note: it covers the MCP `elicitation/create` *form mode* subset (flat primitives/enum/arrays), not the full #2149 exploration surface. | `lib/ash_a2a/elicitation.ex` (`request/3`, `resume/2`, `validate/2`); court `test/ash_a2a_v1_elicitation_test.exs` (wrong-shape refused + stays parked + correct shape resumes to `COMPLETED`; uncorrelated follow-up `-32602`; expiry → `FAILED`; default never-expiry; `validate/2` fail-closed subset; real schema projection) |
 | Elicitation & multi-turn (#2143) — multi-round negotiation | PARTIAL | Multi-round on the same task works (park → continue → complete; context/history continuity court-pinned across turns). Negotiation patterns per #2143 (telecom-informed) have no implementation. | Conformance rows 5, 17, 18 (`test/ash_a2a_v1_conformance_test.exs`, `test/ash_a2a_v1_context_continuity_test.exs`) |
 | Extensions | PARTIAL | Exists: the full declaration/negotiation pipeline — card `capabilities.extensions`, `A2A-Extensions` request parse + activated-URI response echo, required-extension refusal `-32008`, `activate/3`/`handle_request/3`/`handle_response/3` hooks, client-side header send, in-tree timestamp reference extension. Missing: method extensions (new RPC methods) and state-machine extensions — explicitly "not yet supported" in the module doc. | `lib/ash_a2a/protocol/extension.ex`, `lib/ash_a2a/protocol/agent_extension.ex`, `lib/ash_a2a/protocol/plug.ex:327,431`, `lib/ash_a2a/protocol/client.ex:44,164`, `lib/ash_a2a/protocol/extension/timestamp.ex`; court `test/ash_a2a_protocol_extension_e2e_test.exs` (+ fixture `test/support/protocol_extension_e2e_fixture.ex`) |
-| Validation (A2A Inspector, TCK) | PARTIAL | Exists: in-repo TCK-closure court for the HTTP+JSON binding over a real Bandit server (no mocks), a v2.1.0-ontology conformance court, and a per-requirement v1.0 conformance statement with executed courts. Landed since the matrix draft: the **official `a2aproject/a2a-tck` compatibility suite has now actually run** against the in-repo SUT over the JSONRPC transport (69.2% point-in-time verdict; fix loop documented). Still missing: Inspector remains unverified; TCK has not been run over gRPC; the verdict is point-in-time — certification is explicitly not claimed. | `test/ash_a2a_v1_httpjson_tck_closures_test.exs` ("Lane G-P court"), `test/ash_a2a/a2a_protocol_v2_1_0_conformance_test.exs`, `docs/reference/a2a-v1-conformance.md` ("A2A TCK compatibility run" section) |
+| Validation (A2A Inspector, TCK) | PARTIAL | Exists: in-repo TCK-closure court for the HTTP+JSON binding over a real Bandit server (no mocks), a v2.1.0-ontology conformance court, a per-requirement v1.0 conformance statement with executed courts, and the **official `a2aproject/a2a-tck` compatibility suite run across all three bindings** — 2026-10-05 G6 integration run (`/tmp/a2a-tck/reports/compatibility.json`, 2026-10-06T01:30:52Z): overall **73.6%** (MUST 73.6%, SHOULD 63.6%, MAY 100%), 129 requirements: 92 PASS / 7 FAIL / 4 SKIPPED / 26 NOT TESTED; the 7 FAILs are enumerated (push lifecycle: PUSH-CREATE-001 + PUSH-DELIVER-001/002/003; gRPC extended card: CARD-EXT-001/002; gRPC stream-close isolation: STREAM-ORDER-004), not infrastructure flake; the streaming surface converted (STREAM-SUB-001/002/003, STREAM-ORDER-001/002/003 PASS across jsonrpc+grpc+http_json — transport-backed replay) and the SUT card is JWS-signed. Still missing: Inspector remains unverified; the 7 FAILs above; certification is explicitly not claimed; the TCK CI job (`.github/workflows/ci.yml`, `6342ab2d`) runs the official suite against the in-tree SUT. | `test/ash_a2a_v1_httpjson_tck_closures_test.exs` ("Lane G-P court"), `test/ash_a2a/a2a_protocol_v2_1_0_conformance_test.exs`, `docs/reference/a2a-v1-conformance.md` ("A2A TCK compatibility run" section — per-class fail + not-run tables) |
 | SDKs (six hosted languages) | NOT-APPLICABLE | ash_a2a is a community (non-hosted) Elixir SDK — the roadmap item concerns upstream hosting; ash_a2a *is* the community Elixir contribution. Related on-ramp documented for users of the hex `a2a` package. | `docs/how-to/migrate-from-a2a-hex.md` |
 | Community best practices | NOT-APPLICABLE | Documentation/community participation, not code. | n/a |
 
@@ -69,11 +69,40 @@ blindly.
 | 3. Agent identity — DPoP / workload identity / token exchange | AuthZEN access-evaluation client observing PDP decisions as evidence; OAuth bearer surface on the plugs; **Agent Passport landed post-matrix** (`lib/ash_a2a/passport.ex` + `{merkle,revocation,plug}.ex`: Merkle-rooted, JWS-signed portable identity doc with fail-closed verify/revocation; court `test/ash_a2a_passport_test.exs`, 31/0). DPoP: zero hits in the tree. | PARTIAL — `lib/ash_a2a/authzen/client.ex` (`evaluate/2`; "an allow confers no authority"), `lib/ash_a2a/authzen/` (8 modules); DPoP NOT-STARTED |
 | 2. HTTP-native transport / 4. primitives / 5. SDK DX | N/A — MCP-internal concerns with no A2A-side counterpart | NOT-APPLICABLE |
 
+## Security posture (post-hardening, 2026-10-05)
+
+Landed gates (commit `059ff0e3`):
+
+- **Static analysis: sobelow is now a CI gate.** A `security` job in
+  `.github/workflows/ci.yml` runs `mix sobelow --exit high`
+  (MIX_ENV=dev, SHA-pinned actions, least-privilege permissions,
+  15-minute timeout). hex.audit was already gated (supply-chain job in
+  `ci.yml` + `release.yml`); it is not duplicated.
+- **Dispositions from the local re-run** at `059ff0e3`
+  (`MIX_ENV=dev mix sobelow --exit high`, 2026-10-05): 11
+  high-confidence findings — 1 `Config.HTTPS` (HTTPS not enabled,
+  `config/prod.exs`) and 10 `Misc.BinToTerm` (unsafe
+  `binary_to_term`) across
+  `lib/ash_a2a/beam_file.ex`,
+  `lib/ash_a2a/chicago/fixtures/{chaos_reconciliation,receipt_binding_attestation}.ex`,
+  `lib/ash_a2a/consequence_kernel/effect_claim_store/durable_file.ex`,
+  `lib/ash_a2a/consequence_kernel/prepared_effect_store/journal.ex`,
+  `lib/ash_a2a/consequence_kernel/w5/effect_claim_store/file.ex`,
+  `lib/ash_a2a/execution_snapshot.ex`,
+  `lib/ash_a2a/receipt/evidence_chain.ex`,
+  `lib/ash_a2a/receipt_outbox.ex`; plus 343 low-confidence findings
+  (predominantly `Traversal.FileModule` on the file-backed
+  receipt/journal/fixture paths). **The `--exit high` CI gate will
+  fail on this surface until the 11 high-confidence findings are
+  fixed or explicitly `# sobelow-ignore`-dispositioned** — that is
+  the top remaining security work, not a green claim.
+
 ## What is not claimed
 
 - No claim that ash_a2a passes the upstream `a2a-tck`; the in-repo TCK-closure
-  court is a substitute, not the suite.
-- `lib/ash_a2a/passport/` (Agent Passport, Merkle + JWS identity document)
+  court is a substitute, not the suite (the compatibility suite itself has run
+  green — see the Validation row and
+  [a2a-v1-conformance.md](a2a-v1-conformance.md)).
   landed after this matrix was first drafted; `lib/ash_a2a/passport.ex`,
   `lib/ash_a2a/passport/{merkle,revocation,plug}.ex`, and
   `test/ash_a2a_passport_test.exs` (31 courts) all verified on disk — the

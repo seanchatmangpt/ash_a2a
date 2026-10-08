@@ -333,11 +333,20 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
     end
   end
 
-  defp collect_update_field(1, :length_delimited, value, acc),
-    do: Map.update(acc, 1, [value], &[value | &1])
+  defp collect_update_field(1, :length_delimited, value, acc) do
+    # dual-safe Map.update (absent key stores default unmodified)
+    case Map.fetch(acc, 1) do
+      :error -> Map.put(acc, 1, [value])
+      {:ok, prior} -> Map.put(acc, 1, [value | prior])
+    end
+  end
 
-  defp collect_update_field(3, :length_delimited, value, acc),
-    do: Map.update(acc, 3, [value], &[value | &1])
+  defp collect_update_field(3, :length_delimited, value, acc) do
+    case Map.fetch(acc, 3) do
+      :error -> Map.put(acc, 3, [value])
+      {:ok, prior} -> Map.put(acc, 3, [value | prior])
+    end
+  end
 
   defp collect_update_field(_field, _wire, _value, acc), do: acc
 
@@ -375,8 +384,13 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
   defp collect_svid_field(2, :length_delimited, value, acc),
     do: Map.put(acc, :cert, value)
 
-  defp collect_svid_field(3, :length_delimited, value, acc),
-    do: Map.update(acc, :chain, [value], &[value | &1])
+  defp collect_svid_field(3, :length_delimited, value, acc) do
+    # dual-safe Map.update (absent key stores default unmodified)
+    case Map.fetch(acc, :chain) do
+      :error -> Map.put(acc, :chain, [value])
+      {:ok, prior} -> Map.put(acc, :chain, [value | prior])
+    end
+  end
 
   defp collect_svid_field(_field, _wire, _value, acc), do: acc
 

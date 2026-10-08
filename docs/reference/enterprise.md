@@ -360,7 +360,7 @@ court):
 ## boundaries
 
 Non-goals and formal boundary classes are defined once in PRD §7
-([docs/jira/v26.10.4/PRD.md](../jira/v26.10.4/PRD.md), "Formal Boundary
+([docs/archive/jira/v26.10.4/PRD.md](../archive/jira/v26.10.4/PRD.md), "Formal Boundary
 Classes, Engineering Posture & Non-Goals") and imported here by reference:
 the refinement gap (sampled refinement courts, not universal guarantees),
 open-world axioms (fail-closed admission, typed refusals, never silent

@@ -522,6 +522,12 @@ defmodule AshA2A.ReceiptOutbox do
     :ok
   end
 
+  # Trust boundary: outbox journal bytes are written by this module's own
+  # encode path (`term_to_binary(..., [:deterministic])`), `[:safe]`-decoded
+  # and validated against {@format_version, %Receipt{}} before use; app atoms
+  # are pre-interned (`ensure_app_modules_loaded/0`) so `[:safe]` never breaks
+  # local bytes, and hostile bytes fail closed to `:foreign_format`.
+  # sobelow_skip ["Misc.BinToTerm"]
   defp safe_binary_to_term(binary) do
     ensure_app_modules_loaded()
 

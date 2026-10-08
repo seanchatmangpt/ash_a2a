@@ -90,6 +90,24 @@ defmodule AshA2AV1OwnerScopeTest.Receiver do
   end
 end
 
+defmodule AshA2AV1OwnerScopeTest.AuthSSEPipeline do
+  @moduledoc false
+  # Real plug pipeline (bearer auth -> wrapper transport plug) mounted on a
+  # real Bandit listener, so a `tasks/resubscribe` on a still-subscribed
+  # (non-terminal) task can be read as a real streaming HTTP response and
+  # dropped by the client after the snapshot frames arrive.
+  import Plug.Conn
+
+  def init(opts), do: opts
+
+  def call(conn, %{auth: auth, plug: plug, user: user}) do
+    conn
+    |> Plug.Conn.put_req_header("authorization", "Bearer " <> user)
+    |> AshA2A.Protocol.Plug.Auth.call(auth)
+    |> AshA2A.A2ATransport.Plug.call(plug)
+  end
+end
+
 defmodule AshA2AV1OwnerScopeTest do
   @moduledoc """
   A2A v1.0 owner-scoping conformance court over the real wrapper transport.
@@ -215,6 +233,24 @@ defmodule AshA2AV1OwnerScopeTest do
   defp rpc(ctx, user, method, params),
     do: call(ctx, user, method, params).resp_body |> Jason.decode!()
 
+  # Collects `tasks/resubscribe` chunks from the spawned streamer until the
+  # snapshot frame arrives (or the client's receive_timeout fires).
+  defp resubscribe_snapshot(acc, streamer) do
+    receive do
+      {:resub_chunk, data} ->
+        acc = acc <> data
+
+        if acc =~ ~s("state":"TASK_STATE_INPUT_REQUIRED"),
+          do: acc,
+          else: resubscribe_snapshot(acc, streamer)
+
+      {:resub_closed, ^streamer} ->
+        acc
+    after
+      5_000 -> acc
+    end
+  end
+
   # Encoded v1.0 wire user message naming one of the fixture's real skills
   # (two skills on the resource, so an unnamed message is ambiguous),
   # optionally carrying structured arguments and a continuation `taskId`.
@@ -334,9 +370,61 @@ defmodule AshA2AV1OwnerScopeTest do
       assert %{"result" => %{"id" => ^live_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}} =
                rpc(ctx, "alice", "tasks/get", %{"id" => live_id})
 
-      resub = call(ctx, "alice", "tasks/resubscribe", %{"id" => live_id})
-      assert resub.resp_body =~ live_id
-      assert resub.resp_body =~ ~s("state":"TASK_STATE_INPUT_REQUIRED")
+      # resubscribe on a live (INPUT_REQUIRED) task stays subscribed (§3.1.6,
+      # G3 2d874565) instead of closing after the snapshot, so read the
+      # snapshot frames over a short-idle plug instance: the owner still gets
+      # served the live task snapshot, then the idle close ends the call.
+      idle_plug =
+        TransportPlug.init(
+          agent: ctx.agent,
+          base_url: "http://x/a2a",
+          transport: ctx.transport,
+          push_notifications: true,
+          heartbeat_ms: 25,
+          max_idle_ms: 300
+        )
+
+      # resubscribe on a live (INPUT_REQUIRED) task stays subscribed (§3.1.6,
+      # G3 2d874565): the snapshot frames are read as a real streaming client
+      # over the auth pipeline on a real Bandit listener, then the client
+      # drops the connection — the owner is served her live task's snapshot.
+      sse =
+        EphemeralHttp.start!({
+          AshA2AV1OwnerScopeTest.AuthSSEPipeline,
+          %{auth: ctx.auth, plug: ctx.plug, user: "alice"}
+        })
+
+      parent = self()
+
+      streamer =
+        spawn(fn ->
+          try do
+            Req.post!(sse.base_url,
+              json: %{
+                "jsonrpc" => "2.0",
+                "id" => System.unique_integer([:positive]),
+                "method" => "tasks/resubscribe",
+                "params" => %{"id" => live_id}
+              },
+              headers: [{"content-type", "application/json"}],
+              retry: false,
+              receive_timeout: 2_000,
+              into: fn {:data, data}, acc ->
+                send(parent, {:resub_chunk, data})
+                {:cont, acc}
+              end
+            )
+          rescue
+            _ -> :ok
+          end
+
+          send(parent, {:resub_closed, self()})
+        end)
+
+      resub_body = resubscribe_snapshot("", streamer)
+      Process.exit(streamer, :kill)
+      assert resub_body =~ live_id
+      assert resub_body =~ ~s("state":"TASK_STATE_INPUT_REQUIRED")
 
       # -- list: alice's own list succeeds and carries her task (list
       #    isolation itself is courted in describe (g) over the owner-scoped
@@ -468,11 +556,16 @@ defmodule AshA2AV1OwnerScopeTest do
       refute list.resp_body =~ secret
       assert_no_internal_keys(Jason.decode!(list.resp_body), "$tasks_list")
 
-      # tasks/resubscribe SSE frames (snapshot + backlog replay).
+      # tasks/resubscribe on the completed, non-streamed task: it has no
+      # replayable history, so §3.1.6 STREAM-SUB-003 (G3, 2d874565) refuses
+      # it -32004 UNSUPPORTED_OPERATION immediately. The refusal envelope is
+      # itself a publication surface: it must stay scrubbed too. (SSE-frame
+      # scrubbing is courted on the message/stream surface right below.)
       resub = call(ctx, "alice", "tasks/resubscribe", %{"id" => task_id})
       refute resub.resp_body =~ secret
-      assert resub.resp_body =~ task_id
-      assert_no_internal_keys_sse(resub.resp_body, "$resubscribe")
+      assert resub.resp_body =~ ~s("code":-32004)
+      assert resub.resp_body =~ "UNSUPPORTED_OPERATION"
+      assert_no_internal_keys(Jason.decode!(resub.resp_body), "$resubscribe")
 
       # message/stream SSE frames: a real streaming skill (a seeded read
       # driven through the real Ash.stream!/2), so the frames are the task

@@ -15,6 +15,12 @@ on:
 # supply-chain-deep.yml (lock-touching PRs + weekly), so a newly published
 # advisory cannot turn unrelated PRs red.
 #
+# Mutation court (`mix muzak.sec`, config in .muzak.exs, Elixir-1.19 shims in
+# .muzak/) is NOT a per-PR stage: a full run is hours (each mutant restarts
+# the whole suite), so it is nightly-tier — schedule it separately, e.g.
+#   cron: "0 7 * * *"  ->  MUZAK_TEST_PATHS=test/ash_a2a/protocol/plug MIX_ENV=test mix muzak.sec
+# (documented in docs/how-to/run-mutation-testing.md).
+#
 # A cancelled superseded PR head yields no receipt by design: only the latest
 # head of a PR is admitted; main/dispatch runs are never cancelled.
 concurrency:
@@ -81,6 +87,123 @@ jobs:
           cargo deny --manifest-path native/graphlaw_host/Cargo.toml
           --config .github/cargo-deny.toml --locked
           check advisories bans licenses sources
+
+  # Security gate (sobelow). hex.audit is already gated in `supply-chain`
+  # above (and release.yml), so this job owns the static-analysis half only:
+  # `mix sobelow --exit high` -- the same threshold `.check.exs` gates locally
+  # (line 100: {:sobelow, [["mix", "sobelow", "--exit", "high"]]}). Sobelow is
+  # a dev-only dep (mix.exs:507, only: :dev), so this runs in MIX_ENV=dev with
+  # the same dev cache shape as the `docs` job below. No Postgres needed:
+  # sobelow is static analysis over lib/.
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build
+          key: ash-a2a-v2-dev-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: |
+            ash-a2a-v2-dev-${{ runner.os }}-
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - name: Verify mix.lock unchanged
+        run: git diff --exit-code -- mix.lock
+      - name: Sobelow static analysis (fail on high-confidence findings)
+        run: mix sobelow --exit high
+
+  # TCK in CI (promotes the former REFUSED(ci:tck-not-in-tree)): the official
+  # a2aproject/a2a-tck suite runs against the in-tree SUT harness
+  # (tck_sut.exs) over a real Bandit listener on 127.0.0.1:9999. The TCK is
+  # cloned SHALLOW at a full-SHA pin (moving `main` is not an admission
+  # surface) and results are gated on the FAILED count in compatibility.json,
+  # not on the runner's own exit code. See docs/reference/a2a-v1-conformance.md.
+  tck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - name: Compile test deps for the SUT
+        run: mix compile
+        env:
+          MIX_ENV: test
+      - name: Start SUT (background)
+        run: |
+          mix run --no-start tck_sut.exs > /tmp/tck_sut.log 2>&1 &
+          echo "SUT_PID=$!" >> "$GITHUB_ENV"
+        env:
+          MIX_ENV: test
+      - name: Wait for SUT on :9999
+        run: |
+          n=0
+          until curl -fsS -o /dev/null http://127.0.0.1:9999/.well-known/agent.json; do
+            n=$((n+1))
+            if [ "$n" -ge 60 ]; then
+              echo "SUT did not come up"; cat /tmp/tck_sut.log; exit 1
+            fi
+            sleep 2
+          done
+          echo "SUT up after ${n} attempts"
+      - name: Clone TCK at pinned SHA
+        run: |
+          git clone --depth 1 \
+            https://github.com/a2aproject/a2a-tck.git /tmp/a2a-tck
+          cd /tmp/a2a-tck && git checkout 263b9cfaf16a554bdfb166a7ba5b67716e946349 # TCK pin (lane AT2 SHA)
+      - name: Install TCK requirements
+        run: pip install -r /tmp/a2a-tck/requirements.txt
+      - name: Run TCK suite
+        run: |
+          cd /tmp/a2a-tck
+          python run_tck.py --sut-host http://127.0.0.1:9999 \
+            --transport jsonrpc,http_json | tee /tmp/tck-run.log
+          echo "TCK_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+        shell: bash
+      - name: Assert zero TCK failures
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+          path = "/tmp/a2a-tck/compatibility.json"
+          if not os.path.exists(path):
+              sys.exit(f"FATAL: {path} missing (TCK_EXIT={os.environ.get('TCK_EXIT')})")
+          data = json.load(open(path))
+          failed = sum(
+              r.get("FAILED", 0) for r in data.values() if isinstance(r, dict)
+          )
+          print(f"TCK FAILED count: {failed}")
+          if failed != 0:
+              sys.exit(f"TCK reported {failed} FAILED checks")
+          if os.environ.get("TCK_EXIT") not in ("0", None):
+              sys.exit(f"run_tck.py exited {os.environ['TCK_EXIT']} despite 0 FAILED")
+          EOF
+      - name: Stop SUT
+        if: always()
+        run: kill "$SUT_PID" 2>/dev/null || true
 
   # The suite, split along the seams mix.exs already documents: the async fast
   # lane, the `:serial_solo` files (host-level shared resources: fixed ports,
@@ -205,6 +328,46 @@ jobs:
         run: |
           echo "lane=$LANE"
           test "$LANE" = success
+
+  # Conference-sim court suite (EV16 wiring): the AGNTCon event-model courts
+  # under test/conference_sim/. The court files are deliberately named
+  # `*_court.exs`, which ExUnit's default `*_test.exs` pattern does NOT
+  # collect, so this job passes the explicit path list (the minimal correct
+  # wiring -- no mix.exs :test_patterns change). fixture_test.exs IS collected
+  # by default, but the courts are gated on the shared ConferenceSim fixture
+  # being compiled (mix.exs elixirc_paths(:test) already includes
+  # test/conference_sim), so it is listed too to run the family in one
+  # process. No Postgres service: every court runs on real Ash/ETS resources
+  # and real GenServers (grep-verified: the only "Repo" mention in
+  # test/conference_sim/ is a comment), so no :requires_pg tag exists and
+  # none is excluded.
+  #
+  # Non-gating on purpose, not silently: the suite was measured red at wiring
+  # time (112 tests / 46 failures / 4 invalid across the EV lanes, which were
+  # still landing). TODO(ci-ev16): drop `continue-on-error` the moment a run
+  # witnesses a green suite on this branch -- same promotion rule as the
+  # `conformance` job's TODO(ci-g3) ledger.
+  conference-sim:
+    name: conference-sim (AGNTCon court suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true # TODO(ci-ev16): promote once witnessed green
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: ./.github/actions/build
+      - name: Conference-sim court suite
+        run: >-
+          mix test test/conference_sim/fixture_test.exs
+          test/conference_sim/*_court.exs
 
   # Lane CI-1 (G3, CI half of the `mix check` gap): the A2A v1.0 conformance
   # court report. One command runs every pinned v1.0 court as a REAL OS

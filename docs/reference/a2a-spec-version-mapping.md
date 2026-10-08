@@ -6,7 +6,7 @@ the in-repo `AshA2A.Protocol.Plug` (a2a-elixir 0.3.0 lineage, now
 speaking A2A protocol v1.0 wire shapes, `lib/ash_a2a/protocol/`), and
 the ash_a2a-owned `AshA2A.A2ATransport.Plug`.
 
-Version: v26.10.4
+Version: v26.10.8
 
 The method table is not hand-maintained prose:
 `test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs` drives every row
@@ -44,7 +44,7 @@ configured on an authenticated conn.
 | GetTask | `tasks/get` | result | result |
 | CancelTask | `tasks/cancel` | error -32002 | error -32002 |
 | ListTasks | `tasks/list` | result | error -32004 |
-| SubscribeToTask | `tasks/resubscribe` | error -32004 | sse |
+| SubscribeToTask | `tasks/resubscribe` | error -32004 | error -32004 |
 | GetExtendedAgentCard | `agent/getAuthenticatedExtendedCard` | error -32004 | result |
 | CreateTaskPushNotificationConfig | `tasks/pushNotificationConfig/set` | error -32003 | result |
 | GetTaskPushNotificationConfig | `tasks/pushNotificationConfig/get` | error -32003 | result |
@@ -53,6 +53,12 @@ configured on an authenticated conn.
 
 `tasks/cancel` is observed on a completed task, so `-32002`
 (TASK_NOT_CANCELABLE) is the correct outcome on both transports.
+
+† `tasks/resubscribe` under `AshA2A.A2ATransport.Plug`: the probe task is
+terminal with no retained event log, so spec §3.1.6 (STREAM-SUB-003 MUST)
+refuses it with `-32004` UnsupportedOperationError. A task with retained
+log history is served as SSE (snapshot, `Last-Event-ID` replay, live
+events to terminal) — the vocabulary cell records the probe outcome only.
 
 v1.0 notes on what the outcome vocabulary hides:
 

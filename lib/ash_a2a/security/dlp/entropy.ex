@@ -23,7 +23,12 @@ defmodule AshA2A.Security.DLP.Entropy do
     else
       freqs =
         for <<byte::8 <- binary>>, reduce: %{} do
-          acc -> Map.update(acc, byte, 1, &(&1 + 1))
+          acc ->
+            # dual-safe Map.update (absent key stores default unmodified)
+            case Map.fetch(acc, byte) do
+              :error -> Map.put(acc, byte, 1)
+              {:ok, count} -> Map.put(acc, byte, count + 1)
+            end
         end
 
       freqs
