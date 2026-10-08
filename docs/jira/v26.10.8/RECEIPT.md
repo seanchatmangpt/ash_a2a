@@ -11,7 +11,7 @@ instruction).
 |---|---|---|
 | w608 court test (`test/ash_a2a/w608_map_update_court_test.exs`) | **GREEN — 2 passed, 0 failures** (exit 0) | `MIX_ENV=test MIX_BUILD_ROOT=_build-lanea2aland mix test test/ash_a2a/w608_map_update_court_test.exs`; landed `b0af954c` |
 | `mix ash_a2a.v1_conformance_report` at post-bump HEAD `a9cc903b` | **26/26 PASS, 0 FAIL** (`totals: {total: 26, pass: 26, fail: 0}`, task exit 0) | same env as above, 2026-10-08T10:01:27Z |
-| Version-line consistency | **GREEN** — mix.exs `version: "26.10.8"` (mix.exs:29) and `docs/reference/a2a-spec-version-mapping.md:9` `Version: v26.10.8` | this bump commit, both files in one commit so the W618/W628b miss class cannot recur |
+| Version-line consistency | **GREEN** — mix.exs `version: "26.10.8"` (mix.exs:29) agrees with the spec-version mapping doc's admitted version line (docs/reference/a2a-spec-version-mapping.md:9) | this bump commit, both files in one commit so the W618/W628b miss class cannot recur |
 
 ## Changes this cycle
 

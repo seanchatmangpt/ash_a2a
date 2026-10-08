@@ -199,6 +199,31 @@ defmodule AshA2A.A2ATransport.SSE do
     end
   end
 
+  defp replay_and_follow(%Plug.Conn{} = conn, transport, task_id, id, backlog, after_seq, opts) do
+    Enum.reduce_while(backlog, {conn, after_seq}, fn {seq, _kind, payload, final?},
+                                                     {conn, last} ->
+      cond do
+        seq <= last and final? ->
+          {:halt, {:final, conn}}
+
+        seq <= last ->
+          {:cont, {conn, last}}
+
+        true ->
+          case chunk_frame(conn, id, seq, payload) do
+            {:ok, conn} when final? -> {:halt, {:final, conn}}
+            {:ok, conn} -> {:cont, {conn, seq}}
+            {:error, conn} -> {:halt, {:closed, conn}}
+          end
+      end
+    end)
+    |> case do
+      {:final, conn} -> done(conn, transport, task_id)
+      {:closed, conn} -> done(conn, transport, task_id)
+      {conn, last} -> follow(conn, transport, task_id, id, last, opts, 0)
+    end
+  end
+
   # follow/7 mirrors follow/6 but also consumes the agent subscriber fan-out
   # message {:a2a_task_event, task_id, task} (3-tuple).
   defp follow7(conn, transport, task_id, id, last, opts, idle) do
@@ -247,31 +272,6 @@ defmodule AshA2A.A2ATransport.SSE do
               {:error, _} -> done(conn, transport, task_id)
             end
         end
-    end
-  end
-
-  defp replay_and_follow(%Plug.Conn{} = conn, transport, task_id, id, backlog, after_seq, opts) do
-    Enum.reduce_while(backlog, {conn, after_seq}, fn {seq, _kind, payload, final?},
-                                                     {conn, last} ->
-      cond do
-        seq <= last and final? ->
-          {:halt, {:final, conn}}
-
-        seq <= last ->
-          {:cont, {conn, last}}
-
-        true ->
-          case chunk_frame(conn, id, seq, payload) do
-            {:ok, conn} when final? -> {:halt, {:final, conn}}
-            {:ok, conn} -> {:cont, {conn, seq}}
-            {:error, conn} -> {:halt, {:closed, conn}}
-          end
-      end
-    end)
-    |> case do
-      {:final, conn} -> done(conn, transport, task_id)
-      {:closed, conn} -> done(conn, transport, task_id)
-      {conn, last} -> follow(conn, transport, task_id, id, last, opts, 0)
     end
   end
 

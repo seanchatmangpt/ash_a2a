@@ -265,6 +265,10 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    def validate_oidc(_token, _config) do
+      {:error, %{code: :invalid_token, detail: "token must be a binary"}}
+    end
+
     defp resolve_oidc_config(config) do
       case {Keyword.get(config, :jwks), Keyword.get(config, :jwks_uri), Keyword.get(config, :discovery)} do
         {nil, nil, discovery} when is_binary(discovery) ->
@@ -275,10 +279,6 @@ if Code.ensure_loaded?(Plug) do
         _ ->
           {:ok, config}
       end
-    end
-
-    def validate_oidc(_token, _config) do
-      {:error, %{code: :invalid_token, detail: "token must be a binary"}}
     end
 
     # -- JWT core (HS256 + RS256) ---------------------------------------------------
