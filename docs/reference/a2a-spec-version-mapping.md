@@ -6,7 +6,7 @@ the in-repo `AshA2A.Protocol.Plug` (a2a-elixir 0.3.0 lineage, now
 speaking A2A protocol v1.0 wire shapes, `lib/ash_a2a/protocol/`), and
 the ash_a2a-owned `AshA2A.A2ATransport.Plug`.
 
-Version: v26.10.7
+Version: v26.10.8
 
 The method table is not hand-maintained prose:
 `test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs` drives every row
