@@ -1,0 +1,61 @@
+{
+  "capabilities": {
+    "extendedAgentCard": false,
+    "pushNotifications": false,
+    "streaming": true
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "description": "ash_a2a protocol surface agent (self card)",
+  "name": "ash_a2a",
+  "skills": [
+    {
+      "description": "Codec for converting between Elixir structs and the A2A v1.0 camelCase JSON wire format",
+      "id": "codec.encode_decode",
+      "name": "codec.encode_decode",
+      "tags": [
+        "protocol",
+        "a2a"
+      ]
+    },
+    {
+      "description": "End-to-end signing and verification of A2A v1.0 agent cards\n(`%AshA2A.Protocol.AgentCard{}` `signatures` field — a list of JWS objects\neach carrying `\"protected\"`, `\"signature\"` and `\"header\"` members, as\ndocumented on `AshA2A.Protocol.JSON.encode_agent_card/2`)",
+      "id": "card.sign_verify",
+      "name": "card.sign_verify",
+      "tags": [
+        "protocol",
+        "a2a"
+      ]
+    },
+    {
+      "description": "Owner-scoped A2A HTTP transport for `AshA2A.Agent` processes",
+      "id": "plug.serve_a2a",
+      "name": "plug.serve_a2a",
+      "tags": [
+        "transport",
+        "a2a"
+      ]
+    },
+    {
+      "description": "Public facade for the derived Ash-to-A2A capability projection",
+      "id": "capability_index.compile",
+      "name": "capability_index.compile",
+      "tags": [
+        "capability",
+        "a2a"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0",
+      "url": "http://localhost:4000"
+    }
+  ],
+  "version": "26.10.8"
+}

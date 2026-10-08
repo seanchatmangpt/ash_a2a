@@ -1,0 +1,151 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix wg: <https://seanchatmangpt.dev/ash_a2a/sjira/v26.10.8#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WORKGRAPH.ttl — Semantic Jira Work Graph for ash_a2a v26.10.8
+#
+# TCK Conformance & Vulnerability-Hardening Campaign
+# Grounded against docs/jira/v26.10.8/RECEIPT.md and real repository paths.
+#
+# AUTHORITY DISCLAIMER: this is a DOCUMENTATION graph only. It asserts no
+# authority and carries no DO path; authorityCeiling is CONSTRUCT-at-most and
+# every standing value cites the receipt that witnessed it. Coordinators own
+# push/tag/merge transitions, not this file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Graph vocabulary ─────────────────────────────────────────────────────────
+
+wg:GoalCheckpoint a rdfs:Class ;
+    rdfs:label "Goal checkpoint" ;
+    rdfs:comment "Campaign-level checkpoint root: successor of a prior release campaign; groups WorkOrders toward one release goal." .
+
+wg:successorOf a rdf:Property ;
+    rdfs:domain wg:GoalCheckpoint ;
+    rdfs:range wg:GoalCheckpoint ;
+    rdfs:label "successor of" .
+
+wg:campaignVersion a rdf:Property ;
+    rdfs:range xsd:string .
+
+wg:receiptPath a rdf:Property ;
+    rdfs:range xsd:string .
+
+wg:headSha a rdf:Property ;
+    rdfs:range xsd:string .
+
+wg:evidencePath a rdf:Property ;
+    rdfs:range xsd:string .
+
+# ── Campaign checkpoint (successor of the v26.10.4 campaign) ─────────────────
+
+wg:CAMP-v26.10.8 a wg:GoalCheckpoint ;
+    rdfs:label "v26.10.8 — TCK Conformance & Vulnerability-Hardening Campaign" ;
+    dcterms:description "Closes the v26.10.8 cycle: external TCK-driven conformance (26/26 MUST courts), W608 map-update court, and post-wave residue landing. Successor of the v26.10.4 Fortune-5 enterprise hardening campaign (docs/sjira/v26.10.4/ARD-PRD.ttl)." ;
+    wg:campaignVersion "26.10.8" ;
+    wg:receiptPath "docs/jira/v26.10.8/RECEIPT.md" ;
+    wg:headSha "a9cc903b" ;
+    wg:successorOf wg:CAMP-v26.10.4 .
+
+wg:CAMP-v26.10.4 a wg:GoalCheckpoint ;
+    rdfs:label "v26.10.4 — Fortune 5 Enterprise Hardening Campaign" ;
+    dcterms:description "Prior campaign checkpoint (see docs/sjira/v26.10.4/ARD-PRD.ttl for its work orders G1-G6)." .
+
+# ── Shared courts ────────────────────────────────────────────────────────────
+
+wg:court-tck-v1 a sj:Court ;
+    rdfs:label "A2A v1 Conformance Report Court" ;
+    dcterms:description "`mix ash_a2a.v1_conformance_report` over the 25-court set: real OS subprocess per court, machine-readable totals; a missing court degrades to FAIL, never a silent pass." .
+
+wg:court-w608 a sj:Court ;
+    rdfs:label "W608 Map-Update Court" ;
+    dcterms:description "test/ash_a2a/w608_map_update_court_test.exs — mutation court over OS-20 map-update behavior; 2 passed / 0 failures at b0af954c." .
+
+wg:court-self-card a sj:Court ;
+    rdfs:label "Self Agent-Card Generation Court" ;
+    dcterms:description "Agent card served from the capability surface via self-generation (commit 7d646598); falsified if the generated card drifts from the live capability surface." .
+
+# ── Work orders ──────────────────────────────────────────────────────────────
+
+wg:G1-TCK a sj:WorkOrder ;
+    rdfs:label "G1 — External TCK Conformance (26/26 MUST courts)" ;
+    dcterms:description "Official a2aproject/a2a-tck compatibility verdicts converted into executed MUST/SHOULD courts; transport fixes land in lib/ash_a2a/transport/plug.ex per failed MUST (A2A-Version -32009 gate, tasks/resubscribe -32001, card Cache-Control/ETag)." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "ALIVE" ;  # receipt: docs/jira/v26.10.8/RECEIPT.md — 26/26 PASS at a9cc903b, 2026-10-08T10:01:27Z
+    sj:evidenceCeiling "EXECUTED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    wg:evidencePath "docs/reference/a2a-v1-conformance.md", "lib/mix/tasks/ash_a2a.v1_conformance_report.ex", "lib/ash_a2a/transport/plug.ex" ;
+    sj:acceptance wg:G1-acceptance ;
+    sj:falsifier wg:G1-falsifier ;
+    sj:requiresCourt wg:court-tck-v1 .
+
+wg:G1-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G1 Acceptance: conformance report all-PASS at head" ;
+    dcterms:description "`mix ash_a2a.v1_conformance_report` at post-bump HEAD reports totals {total: 26, pass: 26, fail: 0} with task exit 0." .
+
+wg:G1-falsifier a sj:Falsifier ;
+    rdfs:label "G1 Falsifier" ;
+    dcterms:description "Any MUST-class court FAILs at HEAD, or a pass is recorded without the corresponding court file existing on disk." .
+
+wg:G2-W608 a sj:WorkOrder ;
+    rdfs:label "G2 — W608 Map-Update Court Landing" ;
+    dcterms:description "Land the untracked OS-20 map-update court (residue of the b588c55c vuln-hardening wave) under the post-636b7940 *_court_test.exs naming convention." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "ALIVE" ;  # receipt: landed b0af954c; GREEN 2 passed / 0 failures (exit 0), 2026-10-08
+    sj:evidenceCeiling "EXECUTED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    wg:evidencePath "test/ash_a2a/w608_map_update_court_test.exs" ;
+    sj:acceptance wg:G2-acceptance ;
+    sj:falsifier wg:G2-falsifier ;
+    sj:requiresCourt wg:court-w608 .
+
+wg:G2-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G2 Acceptance: W608 court green at head" ;
+    dcterms:description "MIX_ENV=test mix test test/ash_a2a/w608_map_update_court_test.exs passes (2 tests, 0 failures, exit 0)." .
+
+wg:G2-falsifier a sj:Falsifier ;
+    rdfs:label "G2 Falsifier" ;
+    dcterms:description "The court file is absent from the tree or its tests fail at a descendant head of b0af954c." .
+
+wg:G3-SelfCard a sj:WorkOrder ;
+    rdfs:label "G3 — Self Agent-Card Generation from Capability Surface" ;
+    dcterms:description "Agent card is generated from the capability surface rather than hand-maintained, eliminating card-vs-surface drift." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "ALIVE" ;  # receipt: observed landed as 7d646598 on feat/tck-vuln-hardening (ahead of main at receipt time)
+    sj:evidenceCeiling "EXECUTED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    wg:evidencePath "lib/ash_a2a/agent_card.ex", "test/ash_a2a_v1_proto_fidelity_test.exs" ;
+    sj:acceptance wg:G3-acceptance ;
+    sj:falsifier wg:G3-falsifier ;
+    sj:requiresCourt wg:court-self-card .
+
+wg:G3-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G3 Acceptance: generated card matches capability surface" ;
+    dcterms:description "The served agent card is a deterministic projection of the capability surface; proto-fidelity courts pass against it." .
+
+wg:G3-falsifier a sj:Falsifier ;
+    rdfs:label "G3 Falsifier" ;
+    dcterms:description "The generated card disagrees with the live capability surface while card-serving tests pass." .
+
+wg:G4-ReleaseBump a sj:WorkOrder ;
+    rdfs:label "G4 — Release Bump 26.10.7 → 26.10.8 with Version-Line Consistency" ;
+    dcterms:description "Version bump with the W628b companion (docs/reference/a2a-spec-version-mapping.md Version line) folded into the same commit so the version-line-miss class cannot recur; no CHANGELOG entry, matching 26.10.6/26.10.7 convention." ;
+    sj:repository "seanchatmangpt/ash_a2a" ;
+    sj:standing "ALIVE" ;  # receipt: a9cc903b — mix.exs:29 version 26.10.8 and mapping-doc line 9 consistent
+    sj:evidenceCeiling "EXECUTED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    wg:evidencePath "mix.exs", "docs/reference/a2a-spec-version-mapping.md" ;
+    sj:acceptance wg:G4-acceptance ;
+    sj:falsifier wg:G4-falsifier ;
+    sj:requiresCourt wg:court-tck-v1 .
+
+wg:G4-acceptance a sj:AcceptanceCriterion ;
+    rdfs:label "G4 Acceptance: version lines agree in one commit" ;
+    dcterms:description "mix.exs version and a2a-spec-version-mapping.md Version line both read 26.10.8 and were changed in the same commit (a9cc903b)." .
+
+wg:G4-falsifier a sj:Falsifier ;
+    rdfs:label "G4 Falsifier" ;
+    dcterms:description "mix.exs and the mapping doc disagree on the release version at any descendant head of a9cc903b." .

@@ -86,6 +86,10 @@ Exact factual contracts:
 - [`reference/enterprise.md`](reference/enterprise.md) — enterprise reference.
 - [`reference/security-advisories.md`](reference/security-advisories.md) — security
   advisories disposition.
+- [`reference/generated/`](reference/generated/README.md) — GENERATED doc-hdit
+  reference skeletons: a rigid, machine-rendered table of every module and public
+  item on the extracted code surface (regen command in its README; never
+  hand-edited).
 
 ## Explanation
 
