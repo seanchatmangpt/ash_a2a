@@ -182,6 +182,33 @@ defmodule AshA2A.ScheduledSweepQualificationTest do
 
     case Postgrex.start_link(connect_opts) do
       {:ok, pid} ->
+        # Postgrex connects lazily by default: start_link alone succeeds even
+        # with the database down, deferring failure to opaque pool timeouts.
+        # Force a synchronous round trip so an unreachable database fails at
+        # this gate, fast, with the run instructions below.
+        try do
+          Postgrex.query!(pid, "SELECT 1", [])
+        rescue
+          error ->
+            GenServer.stop(pid)
+
+            raise """
+            Real Postgres not reachable at #{connect_opts[:hostname]}:#{connect_opts[:port]}/#{connect_opts[:database]} \
+            for AshA2A.Test.Repo (test/ash_a2a/scheduled_sweep_qualification_test.exs).
+            Reason: #{Exception.message(error)}
+
+            This test needs a real, dedicated local Postgres instance -- Oban's own
+            job queue is always Postgres-backed. This release cycle expects one
+            already running at that host/port/db (see config/test.exs for the
+            exact connection opts this test reads). Start one and re-run, e.g.:
+
+              docker run --rm -p 55432:5432 -e POSTGRES_PASSWORD=postgres \\
+                -e POSTGRES_DB=ash_a2a_test postgres:16
+
+            then: mix test test/ash_a2a/scheduled_sweep_qualification_test.exs
+            """
+        end
+
         GenServer.stop(pid)
         repo_config
 

@@ -592,6 +592,33 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
 
     case Postgrex.start_link(connect_opts) do
       {:ok, pid} ->
+        # Postgrex connects lazily by default: start_link alone succeeds even
+        # with the database down, deferring failure to opaque pool timeouts.
+        # Force a synchronous round trip so an unreachable database fails at
+        # this gate, fast, with the run instructions below.
+        try do
+          Postgrex.query!(pid, "SELECT 1", [])
+        rescue
+          error ->
+            GenServer.stop(pid)
+
+            raise """
+            Real Postgres not reachable at #{connect_opts[:hostname]}:#{connect_opts[:port]}/#{connect_opts[:database]} \
+            for AshA2A.Test.Repo (test/ash_a2a/chicago/hardening/adapter_crash_safety_test.exs).
+            Reason: #{Exception.message(error)}
+
+            This test needs a real, dedicated local Postgres instance to create
+            and query Oban's real `oban_jobs` table against (ARD S26-29/S70
+            runtime-adapter crash-safety hardening -- Chicago-style discipline:
+            no mocked queue, no stubbed DB). Start one and re-run, e.g.:
+
+              docker run --rm -p 55432:5432 -e POSTGRES_PASSWORD=postgres \\
+                -e POSTGRES_DB=ash_a2a_test postgres:16
+
+            then: mix test test/ash_a2a/chicago/hardening/adapter_crash_safety_test.exs
+            """
+        end
+
         GenServer.stop(pid)
         :ok
 
