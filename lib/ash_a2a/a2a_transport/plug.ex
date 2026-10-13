@@ -228,15 +228,18 @@ defmodule AshA2A.A2ATransport.Plug do
           )
 
         {:error, :invalid_page_token} ->
+          commit_list_refusal(:refused_structure, :invalid_page_token, principal, {:list, principal}, -32_602)
           send_json(conn, Response.error(req.id, Error.invalid_params("\"pageToken\" is invalid")))
 
         {:error, :unsupported} ->
           # Bare `AshA2A.Protocol.Agent` — the typed (non-lethal) branch of
           # the same refusal the `catch :exit` backstop answers below; the
           # agent now survives the probe and keeps serving later requests.
+          commit_list_refusal(:unsupported_profile, :unsupported, principal, {:list, principal}, -32_004)
           send_json(conn, Response.error(req.id, Error.unsupported_operation()))
 
         {:error, reason} ->
+          commit_list_refusal(:blocked_unknown, :unclassified_error, principal, {:list, principal}, -32_603)
           send_json(conn, Response.error(req.id, Error.internal_error(AshA2A.Transport.SafeError.redact(reason))))
       end
     rescue
@@ -250,8 +253,27 @@ defmodule AshA2A.A2ATransport.Plug do
       # refusal instead of delegating into the vendored plug's own crash
       # (observed -32700 on this exact path).
       :exit, _exit ->
+        commit_list_refusal(:unsupported_profile, :unsupported, principal, {:list, principal}, -32_004)
         send_json(conn, Response.error(req.id, Error.unsupported_operation()))
     end
+  end
+
+  # Additive committed refusal receipt (L175, mirroring the protocol plug's
+  # L153 shape, see `AshA2A.Semantic.Refusal.commit/2`): every rejection in
+  # the owner-scoped `tasks/list` handler commits a 32-byte receipt over the
+  # refused list/principal identity, stage `:a2a_transport_list`. No change
+  # to the wire response — the receipt rides the `Refusal` struct published
+  # through telemetry, exactly like `AshA2A.Protocol.Plug`'s authorize court.
+  defp commit_list_refusal(class, code, detail, subject, wire_code) do
+    refusal =
+      AshA2A.Semantic.Refusal.new(class, code, :a2a_transport_list, detail)
+      |> AshA2A.Semantic.Refusal.commit(subject)
+
+    :telemetry.execute([:ash_a2a, :transport, :plug, :list_refused], %{}, %{
+      subject: subject,
+      refusal: refusal,
+      wire_code: wire_code
+    })
   end
 
   defp dispatch(conn, %Request{method: "tasks/get"} = req, raw, opts),

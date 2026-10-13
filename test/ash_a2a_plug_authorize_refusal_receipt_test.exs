@@ -94,12 +94,27 @@ defmodule AshA2APlugAuthorizeRefusalReceiptTest do
         %{test: self()}
       )
 
-    on_exit(fn -> :telemetry.detach({:l153_authorize_refused, uniq}) end)
+    :ok =
+      :telemetry.attach(
+        {:l175_transport_list_refused, uniq},
+        [:ash_a2a, :transport, :plug, :list_refused],
+        &__MODULE__.handle_event/4,
+        %{test: self()}
+      )
+
+    on_exit(fn ->
+      :telemetry.detach({:l153_authorize_refused, uniq})
+      :telemetry.detach({:l175_transport_list_refused, uniq})
+    end)
 
     %{agent: agent, plug: plug}
   end
 
   def handle_event(@event, _measurements, meta, %{test: test}), do: send(test, {:refused, meta})
+
+  def handle_event([:ash_a2a, :transport, :plug, :list_refused], _m, meta, %{test: test}),
+    do: send(test, {:transport_list_refused, meta})
+
   def handle_event(_other, _m, _meta, _), do: :ok
 
   # -- wire helpers ------------------------------------------------------------
@@ -223,5 +238,42 @@ defmodule AshA2APlugAuthorizeRefusalReceiptTest do
 
     assert_receive {:refused, %{task_id: ^task_id, refusal: refusal}}, 1_000
     assert is_binary(refusal.receipt) and byte_size(refusal.receipt) == 32
+  end
+
+  # -- L175: transport-level `tasks/list` rejections commit receipts ----------
+
+  describe "L175 transport tasks/list refusal receipts" do
+    test "invalid pageToken over the real transport plug commits a receipt over {:list, principal} (wire unchanged)", %{
+      plug: plug
+    } do
+      assert %{"error" => %{"code" => -32_602}} = rpc(plug, "tasks/list", %{"pageToken" => "garbage"})
+
+      assert_receive {:transport_list_refused, meta}, 1_000
+      assert %{subject: {:list, :anonymous}, wire_code: -32_602} = meta
+      assert %Refusal{class: :refused_structure, code: :invalid_page_token, stage: :a2a_transport_list} = meta.refusal
+      assert is_binary(meta.refusal.receipt) and byte_size(meta.refusal.receipt) == 32
+
+      assert meta.refusal.receipt ==
+               Refusal.receipt(:refused_structure, :invalid_page_token, :a2a_transport_list, {:list, :anonymous})
+    end
+
+    test "receipt is deterministic per subject and subject-bound (diverges across principals and tasks)", %{
+      plug: plug
+    } do
+      assert %{"error" => %{"code" => -32_602}} = rpc(plug, "tasks/list", %{"pageToken" => "garbage"})
+      assert %{"error" => %{"code" => -32_602}} = rpc(plug, "tasks/list", %{"pageToken" => "garbage"})
+
+      assert_receive {:transport_list_refused, m1}, 1_000
+      assert_receive {:transport_list_refused, m2}, 1_000
+      assert m1.refusal.receipt == m2.refusal.receipt
+
+      # Divergence: a different refused subject (another principal's list,
+      # or a task-scoped subject) produces a different receipt.
+      assert m1.refusal.receipt !=
+               Refusal.receipt(:refused_structure, :invalid_page_token, :a2a_transport_list, {:list, :alice})
+
+      assert m1.refusal.receipt !=
+               Refusal.receipt(:refused_authority, :denied, :protocol_plug_authorize, {:task, "t-1"})
+    end
   end
 end
