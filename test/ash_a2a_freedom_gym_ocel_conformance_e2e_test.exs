@@ -45,54 +45,123 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
   conformance check actually needs -- two real, complementary OCEL
   emissions, disclosed rather than papered over.
 
-  Requires `native/hddl_cli`'s release binary AND a real beam4pm
-  `BeamPM.OcelIngest.Router` reachable at `OCEL_INGEST_URL`
-  (default `http://127.0.0.1:4210`) -- tagged `:external_api` (excluded
-  by default, same convention as the LLM-backed FreedomGym tests) since
-  it depends on a real out-of-process server.
+  The OCEL ingest endpoint is now HERMETIC: this test boots beam4pm's real
+  `BeamPM.OcelIngest.Router` (real beam4pm source, compiled in-VM from the
+  canonical checkout at `BEAM4PM_PATH`, default the sibling `../beam4pm`)
+  on a real Bandit listener at an OS-assigned ephemeral loopback port, with
+  a real HTTP health check before any event is posted. No out-of-process
+  server is required and nothing is stubbed -- the same real router bytes
+  that the standalone deployment runs. Setting `OCEL_INGEST_URL` still
+  overrides this and targets an already-running external server instead.
+
+  Finally, the loop is CLOSED on ash_a2a's own trust plane: the ingest-
+  accepted reference events are sealed into a real Affidavit WASM receipt
+  (`AshA2A.Evidence.Affidavit.assemble_receipt/1`) and re-verified
+  (`verify_receipt/1` -> `accepted: true`), so the run leaves behind not
+  just capture files but a tamper-evident, replayable receipt over exactly
+  the events the real endpoint accepted.
   """
   use ExUnit.Case, async: false
 
   @moduletag :serial
   @moduletag :serial_solo
-  @moduletag :external_api
+  # Real HDDL solve + in-VM compile of beam4pm's real router/types + 24 real
+  # dispatches + WASM receipt sealing -- comfortably over the 60s default.
+  @moduletag timeout: 240_000
 
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Telemetry.OcelForwarder
   alias AshA2A.Test.Fixture.FreedomGym.{FacilitatorAgent, MeetingPlan}
 
-  @ingest_url System.get_env("OCEL_INGEST_URL", "http://127.0.0.1:4210")
+  @ingest_url System.get_env("OCEL_INGEST_URL")
+  @beam4pm_path System.get_env("BEAM4PM_PATH") ||
+                  Path.expand("../../beam4pm", __DIR__)
   @output_dir Path.expand("../../beam4pm/qualification/gym_bridge", __DIR__)
+  @beam4pm_required_modules [BeamPM.OcelIngest.Router, BeamPM.Types.OcelEvent]
 
-  # Real, cheap (300ms) TCP-connect reachability check against the real
-  # ingest URL, run once at compile time -- gives this test an honest,
-  # visible skip (matching the `ZAI_API_KEY not found` /
-  # `GROQ_API_KEY not set` convention the sibling LLM-backed FreedomGym
-  # tests already use) instead of a hard `Req.TransportError:
-  # :econnrefused` failure whenever beam4pm's real out-of-process server
-  # isn't up under `--include external_api`.
-  @ingest_reachable? (
-                       uri = URI.parse(@ingest_url)
-                       host = String.to_charlist(uri.host || "127.0.0.1")
-                       port = uri.port || 4210
+  # Compile beam4pm's REAL ingest router and its REAL generated OCEL types
+  # from the canonical beam4pm checkout into this VM, once. These are the
+  # actual dependency-free Plug/struct modules the standalone deployment
+  # runs -- not copies, not re-implementations. Returns the base URL of a
+  # live Bandit listener serving the real router on an ephemeral port.
+  defp boot_hermetic_ingest_server! do
+    missing =
+      Enum.reject(@beam4pm_required_modules, &Code.ensure_loaded?/1)
 
-                       case :gen_tcp.connect(host, port, [:binary, active: false], 300) do
-                         {:ok, socket} ->
-                           :gen_tcp.close(socket)
-                           true
+    if missing != [] do
+      router_path = Path.join(@beam4pm_path, "lib/beam4pm_ocel_ingest.ex")
+      types_path = Path.join(@beam4pm_path, "lib/beam4pm_types.ex")
 
-                         {:error, _reason} ->
-                           false
-                       end
-                     )
+      unless File.exists?(router_path) and File.exists?(types_path) do
+        skip_and_fail("beam4pm canonical checkout not found at #{@beam4pm_path} " <>
+                        "(set BEAM4PM_PATH)")
+      end
 
-  @moduletag skip:
-               not @ingest_reachable? &&
-                 "beam4pm's real OCEL ingest server is not reachable at #{@ingest_url} -- " <>
-                   "start it separately before running with --include external_api"
+      # Types first (the router's decode path calls the generated
+      # constructors), then the router. Real compile, real modules.
+      Code.compile_file(types_path)
+      Code.compile_file(router_path)
+
+      still_missing =
+        Enum.reject(@beam4pm_required_modules, &Code.ensure_loaded?/1)
+
+      if still_missing != [] do
+        skip_and_fail("beam4pm modules failed to compile from #{@beam4pm_path}: " <>
+                        Enum.map_join(still_missing, ", ", &inspect/1))
+      end
+    end
+
+    # Real Bandit HTTP listener, real OS-assigned ephemeral port (same
+    # helper the :serial_shard tests use -- cannot collide).
+    server = AshA2A.Test.EphemeralHttp.start!(BeamPM.OcelIngest.Router)
+
+    # Real HTTP health check: the router's admission graph defines NO GET
+    # route, so its real 404 ("route_not_admitted") is positive proof the
+    # real router is live and answering.
+    assert {:ok, %Req.Response{status: 404, body: %{"error" => "route_not_admitted"}}} =
+             Req.get(server.base_url <> "/ocel/events")
+
+    :persistent_term.put({__MODULE__, :ingest_url}, server.base_url)
+
+    server_pid = server.pid
+
+    # Best-effort teardown: the listener is also linked to the test
+    # process, so this is belt-and-braces, never a test verdict.
+    on_exit(fn ->
+      try do
+        if Process.alive?(server_pid), do: Supervisor.stop(server_pid, :normal, 5_000)
+      catch
+        _, _ -> :ok
+      end
+    end)
+
+    server.base_url
+  end
+
+  defp skip_and_fail(reason) do
+    # Loud, named refusal -- never a silent stub or an implicit crash.
+    flunk("HERMETIC-INGEST-UNAVAILABLE: " <> reason)
+  end
+
+  defp ingest_url do
+    @ingest_url || :persistent_term.get({__MODULE__, :ingest_url}, nil)
+  end
 
   setup do
+    # Hermetic server boot (unless an explicit external URL was provided).
+    if is_nil(@ingest_url) do
+      boot_hermetic_ingest_server!()
+    end
+
+    # Real Affidavit WASM engine pool (real AshAffidavit.Host WASM members),
+    # so step 5's assemble/verify runs against the real engine. Only when no
+    # pool is already running (the sibling evidence tests use the same
+    # convention in test/ash_a2a/evidence/affidavit_test.exs).
+    if AshA2A.Evidence.Affidavit.available?() and is_nil(Process.whereis(AshAffidavit.Pool)) do
+      start_supervised!({AshAffidavit.Pool, size: 1})
+    end
+
     # RFC-SA2A-001 S29: a transport-authenticated caller holds authority for
     # a `:change`/`:external_do` capability only when a real
     # `AshA2A.Authority.Broker` grant stands for that exact (principal,
@@ -127,7 +196,7 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
                FacilitatorAgent.call(
                  FacilitatorAgent,
                  data_message(
-                   %{plan_name: plan_name, prompt_text: "next real phase"},
+                   %{plan_name: plan_name, prompt_text: "next real phase #{i}"},
                    %{metadata: %{skill: "next_phase"}}
                  ),
                  metadata: %{"a2a.auth" => %{identity: "ocel-conformance-test-caller"}}
@@ -150,7 +219,7 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
   # real accepted (201-confirmed) event echoes.
   defp post_real_events!(events) do
     assert {:ok, %Req.Response{status: 201, body: body}} =
-             Req.post(@ingest_url <> "/ocel/events", json: %{"events" => events})
+             Req.post(ingest_url() <> "/ocel/events", json: %{"events" => events})
 
     assert body["ok"] == true
     assert length(body["accepted"]) == length(events)
@@ -211,6 +280,46 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
     assert File.exists?(reference_path)
     assert File.exists?(deviant_path)
 
+    # 5) Close the loop on ash_a2a's own trust plane: seal the exact
+    #    ingest-accepted reference events into a real Affidavit WASM
+    #    receipt and re-verify it. `accepted: true` from the engine over
+    #    the HTTP-accepted bytes is the tamper-evident closure; no mock,
+    #    no stub -- the real ash_affidavit engine (a real test dep).
+    lifecycle_events =
+      Enum.map(accepted_reference, fn e ->
+        payload =
+          JSON.encode!(%{
+            "phase" => e["attributes"]["phase"],
+            "meeting_id" => e["attributes"]["meeting_id"]
+          })
+
+        %{
+          "id" => e["event_id"],
+          "event_type" => e["event_type"],
+          "objects" => ["#{e["attributes"]["meeting_id"]}:Meeting"],
+          "payload" => payload
+        }
+      end)
+
+    assert {:ok, %{"chain_hash" => chain_hash, "content_address" => _} = assembled_receipt} =
+             AshA2A.Evidence.Affidavit.assemble_receipt(lifecycle_events)
+
+    assert is_binary(chain_hash) and byte_size(chain_hash) == 64
+
+    assert {:ok, true} =
+             AshA2A.Evidence.Affidavit.verify_receipt(assembled_receipt["receipt"])
+
+    # Tamper-evidence falsifier: one flipped byte inside the sealed receipt
+    # must make the engine's verify verdict `accepted: false` with a named
+    # failing stage -- a typed refusal, never a silent pass.
+    tampered =
+      Map.update!(assembled_receipt["receipt"], "chain_hash", fn <<_first::binary-size(1), rest::binary>> ->
+        "F" <> rest
+      end)
+
+    assert {:ok, verdict} = AshAffidavit.call(%{"op" => "verify", "receipt" => tampered})
+    assert verdict["accepted"] == false
+
     # Real ERC receipt: this run's own actual counts, not asserted
     # constants, so the receipt can't drift from what this execution
     # really produced.
@@ -219,11 +328,14 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
         id: "ERC-001",
         claim:
           "A real HDDL-planned facilitator, dispatched over real A2A, produces OCEL v2 " <>
-            "events that a real out-of-process beam4pm ingest endpoint accepts (HTTP 201) " <>
-            "for every phase transition.",
+            "events that beam4pm's real ingest endpoint (booted hermetically in-VM from " <>
+            "the canonical checkout) accepts (HTTP 201) for every phase transition, and " <>
+            "the accepted events seal into a tamper-evident Affidavit receipt that " <>
+            "re-verifies accepted: true.",
         falsifier:
           "Any dispatched phase transition fails to produce a 201-accepted OCEL event at " <>
-            "beam4pm's ingest endpoint under the same real HDDL plan.",
+            "beam4pm's ingest endpoint under the same real HDDL plan, or the assembled " <>
+            "Affidavit receipt fails re-verification.",
         state: :verified,
         evidence: %{
           "reference_meetings" => 3,
@@ -233,7 +345,9 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
           "deviant_events_accepted" => length(accepted_deviant),
           "reference_capture_file" => reference_path,
           "deviant_capture_file" => deviant_path,
-          "ingest_url" => @ingest_url
+          "ingest_url" => ingest_url(),
+          "affidavit_receipt_chain_hash" => chain_hash,
+          "affidavit_receipt_content_address" => assembled_receipt["content_address"],
         },
         notes:
           "Deviant capture deliberately omits the clean_house phase event -- consumed by " <>

@@ -146,6 +146,58 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Court 2b — cross-repo contract lock with the `affi` verifier
+  #
+  # The shipped `affi` verifier (affidavit repo, src/handlers.rs + the
+  # standalone no_std reference crate affidavit-core/src/verifier.rs) checks,
+  # in fail-fast order: format_version, chain_hash recomputation, contiguous
+  # seq from 0, unique event ids, non-empty event_type, non-zero commitment.
+  # This court locks the emitter's wire shape to that contract so the two
+  # repos cannot drift apart silently.
+  #
+  # Profile note: the main `affi` verifier and the engine's
+  # affidavit-wasm/src/receipt.rs both use format_version `core/v1`; the
+  # separate zero-dep reference crate `affidavit-core` uses profile
+  # `affidavit-core/v1` and is a DIFFERENT contract (not the `affi` CLI's).
+  # The emitter must keep matching the shipped verifier: `core/v1`.
+  # ---------------------------------------------------------------------------
+
+  test "court 2b: emitted receipt matches the affi verifier contract (format, field set, hash formats)" do
+    require_engine!()
+
+    assert {:ok, assembled} = Affidavit.assemble_receipt(lifecycle_events())
+    receipt = assembled["receipt"]
+
+    # Stage 2 — format/profile: the shipped affi verifier accepts exactly
+    # `core/v1` (src/handlers.rs check_format; affidavit-wasm FORMAT_VERSION).
+    assert receipt["format_version"] == "core/v1"
+
+    # Exact top-level field set of the affi receipt: chain_hash, events,
+    # format_version — no extra keys, no missing keys.
+    assert MapSet.new(Map.keys(receipt)) ==
+             MapSet.new(["chain_hash", "events", "format_version"])
+
+    assert is_binary(receipt["chain_hash"]) and receipt["chain_hash"] =~ ~r/^[0-9a-f]{64}$/
+
+    # Stages 4-6 — per-event shape the verifier consumes: contiguous seq,
+    # unique ids, non-empty event_type, well-formed commitment.
+    assert is_list(receipt["events"]) and receipt["events"] != []
+    ids = Enum.map(receipt["events"], & &1["id"])
+    assert length(Enum.uniq(ids)) == length(ids)
+
+    Enum.with_index(receipt["events"], fn ev, index ->
+      assert ev["seq"] == index
+      assert is_binary(ev["event_type"]) and ev["event_type"] != ""
+      assert is_binary(ev["payload_commitment"]) and ev["payload_commitment"] =~ ~r/^[0-9a-f]{64}$/
+      assert ev["objects"] == [] or is_list(ev["objects"])
+    end)
+
+    # The engine's own verify op accepts the emitted bytes (the same stages,
+    # executed by the same engine the affi verifier mirrors).
+    assert {:ok, true} = Affidavit.verify_receipt(receipt)
+  end
+
+  # ---------------------------------------------------------------------------
   # Court 3 — OCEL v2 ndjson schema over the sealed receipt
   # ---------------------------------------------------------------------------
 
