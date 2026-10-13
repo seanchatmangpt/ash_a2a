@@ -107,17 +107,39 @@ subject `059ff0e3` (2026-10-05), and a G6 integration re-run at tree
 changes, reproducible standalone with `--include serial` and green
 after the streaming lane landed.
 
-### Official TCK compatibility — 79.0% (point-in-time)
+### In-repo report refresh — subject `13622178` (2026-10-13)
+
+Re-ran `mix ash_a2a.v1_conformance_report` against current main at
+`13622178` after the pagination fixes: **26/26 PASS, 0 FAIL**
+(`totals: {total: 26, pass: 26, fail: 0}`), machine report at
+`/tmp/v1-conformance-refresh-2026-10-13.json` (generated
+2026-10-13T08:21:02Z, lane build root `MIX_BUILD_ROOT=_build-laneL18`,
+deleted after the run per lane-lease cleanup). No regression vs the
+26/26 witnessed at `a9cc903b` (2026-10-08). Two run-environment notes
+from the first (flawed) attempt: (1) run the report with a lane build
+root on this shared checkout — a default-build-root run raced another
+lane's in-flight edits and returned a spurious 5/21; (2) the Oban
+delivery court needs its dedicated Postgres on `:55432` (the court's
+own refusal text documents
+`docker run -d -p 55432:5432 ... postgres:16`; container
+`ash-a2a-tck-pg` left running for the fleet) — with it started, the
+court passes standalone (6 tests, 0 failures).
+
+### Official TCK compatibility — 79.0% (point-in-time, re-verified 2026-10-13)
 
 The official `a2aproject/a2a-tck` suite ran against the real `ash_a2a`
-SUT on all three wire bindings; the latest witnessed verdict (2026-10-06,
-branch `feat/tck-vuln-hardening`, HEAD `cadb6534`) is **79.0% overall,
-235 passed / 30 skipped / 0 FAIL, MUST 87/87, SHOULD 7/7, MAY 4/4** —
-zero failing requirements. The earlier 2026-10-05 run at G6 tree
-`2379635c` was **73.6%** (92 PASS / 7 FAIL / 4 SKIPPED / 26 NOT TESTED),
-with all 7 failing requirement classes enumerated in the conformance
-statement. Full matrices, per-requirement breakdowns, and the DY4
-auth/TLS extension run:
+SUT on all three wire bindings. Latest witnessed verdict (2026-10-13,
+branch `main`, HEAD `13622178`, TCK pin `263b9cfa`, SUT
+`http://127.0.0.1:19999` + gRPC `:20000` — local Docker proxy occupied
+`:10000`, worked around via `TCK_SUT_GRPC_PORT=20000`): **79.0%
+overall, 234 passed / 31 skipped / 0 FAIL, MUST 87, SHOULD 7, MAY 4,
+0 failing requirements** — identical overall compatibility and
+requirement pass counts to the 2026-10-06 verdict at `cadb6534`
+(235/30/0); the pagination fixes introduced no TCK regression. The
+2026-10-05 run at G6 tree `2379635c` was **73.6%** (92 PASS / 7 FAIL /
+4 SKIPPED / 26 NOT TESTED), with all 7 failing requirement classes
+enumerated in the conformance statement. Full matrices,
+per-requirement breakdowns, and the DY4 auth/TLS extension run:
 [a2a-v1-conformance.md — A2A TCK compatibility run](a2a-v1-conformance.md#a2a-tck-compatibility-run).
 
 ## What MUST-class failures convert to

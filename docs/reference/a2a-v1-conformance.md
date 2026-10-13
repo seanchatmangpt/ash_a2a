@@ -121,6 +121,34 @@ requirements remain: the earlier enumerated gaps (push-lifecycle,
 gRPC extended-card, gRPC stream-close isolation, gRPC unauthenticated
 admission) are all green at this tree.
 
+### Refresh verdict (2026-10-13, branch `main`, HEAD `13622178`)
+
+The full suite re-ran against the real SUT after the pagination fixes
+(page_size echo, historyLength on tasks/get-only, authorize_task_list
+filter, commit `13622178`) landed on main. TCK pinned at `263b9cfa`
+(the CI pin; note the pinned layout installs via `pip install -e .` —
+there is no `requirements.txt` at this SHA). Environment deltas vs the
+2026-10-06 run: SUT HTTP on `:19999` and gRPC on `:20000`
+(`TCK_SUT_GRPC_PORT=20000`) because a local Docker proxy was occupying
+`127.0.0.1:10000`; command
+`./run_tck.py --sut-host http://127.0.0.1:19999 --transport jsonrpc,http_json,grpc`.
+
+**234 passed / 31 skipped / 0 failed (test level); MUST 87 PASS /
+0 FAIL, SHOULD 7 PASS / 0 FAIL, MAY 4 PASS / 0 FAIL — overall 79.0%**
+(MUST 79.8%, SHOULD 63.6%, MAY 100%). Zero failing requirements (the
+suite's FAILED REQUIREMENTS section was empty; note the console
+table's "Failed" column counts not-evaluated requirements, i.e.
+total − passed − skipped). Per-transport: agent_card 10/10, jsonrpc
+91/98 (7 skip), http_json 83/88 (5 skip), grpc 68/71 (3 skip).
+
+Comparison against the 2026-10-06 verdict at `cadb6534`: identical
+overall compatibility (79.0%) and identical per-level requirement pass
+counts (MUST 87, SHOULD 7, MAY 4, 0 failing); the pagination changes
+introduced **no TCK regression**. Test-level counts shifted 235/30/0 →
+234/31/0: one additional environment-dependent test skip, no
+requirement flipped status. Raw reports: `/Users/sac/a2a-tck/reports/`
+(session-ephemeral).
+
 ## Earlier run (2026-10-05, G6 integration tree `2379635c`)
 
 The official `a2aproject/a2a-tck` compatibility suite ran against a
@@ -231,10 +259,11 @@ suite against the in-tree SUT; the earlier
 ## What is not claimed
 
 - **A2A TCK certification: not claimed.** The compatibility suite ran
-  against all three bindings — latest point-in-time verdict 2026-10-06
-  at `cadb6534` (**79.0%** overall, 235 passed / 30 skipped / 0 FAIL,
-  MUST 87/87, SHOULD 7/7, MAY 4/4, section above); the earlier
-  2026-10-05 run was **73.6%**
+  against all three bindings — latest point-in-time verdict 2026-10-13
+  at `13622178` on main (**79.0%** overall, 234 passed / 31 skipped /
+  0 FAIL, MUST 87, SHOULD 7, MAY 4, 0 failing, section above); the
+  2026-10-06 run at `cadb6534` was **79.0%** (235 passed / 30 skipped /
+  0 FAIL) and the earlier 2026-10-05 run was **73.6%**
   overall, 92 PASS / 7 FAIL / 4 SKIPPED / 26 NOT TESTED. Point-in-time
   verdicts, not a standing certification.
   `CONFORMANT` in the table still means "the pinned court in
