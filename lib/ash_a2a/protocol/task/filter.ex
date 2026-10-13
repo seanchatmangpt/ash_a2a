@@ -61,7 +61,7 @@ defmodule AshA2A.Protocol.Task.Filter do
          %{
            tasks: tasks,
            total_size: total_size,
-           page_size: length(tasks),
+           page_size: page_size,
            next_page_token: next_token
          }}
     end

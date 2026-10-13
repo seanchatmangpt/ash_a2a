@@ -18,13 +18,12 @@ defmodule AshA2A.Protocol.V1PaginationTest do
 
   Reality pinned where the ported code differs from or exceeds the spec:
 
-    * `tasks/list` also accepts `historyLength` (spec has no such field on
-      ListTasksRequest) and defaults it to 0 — so every listed task's
-      history is empty unless the client opts in.
+    * `tasks/list` ignores `historyLength` (spec has no such field on
+      ListTasksRequest) — history is always cleared on list regardless.
     * `historyLength: 0` on `tasks/get` returns `[]` rather than omitting
       the field (spec says SHOULD omit).
-    * response `pageSize` echoes the number of tasks actually returned, not
-      the requested cap.
+    * response `pageSize` echoes the *requested* cap (1..100, default 50),
+      not the number of tasks actually returned.
   """
 
   use ExUnit.Case, async: true
@@ -243,22 +242,38 @@ defmodule AshA2A.Protocol.V1PaginationTest do
       assert param_detail(error) =~ "historyLength"
     end
 
-    test "historyLength also truncates tasks/list results", %{plug_opts: plug_opts} do
-      task_id = complete_two_turn_task(plug_opts)
+    test "historyLength is ignored on tasks/list — history is always cleared", %{
+      plug_opts: plug_opts
+    } do
+      _task_id = complete_two_turn_task(plug_opts)
 
       listed = list_tasks(plug_opts, %{"historyLength" => 1})
 
       assert %{"tasks" => [task]} = listed
-      assert task["id"] == task_id
-      assert length(task["history"]) == 1
+      refute Map.has_key?(task, "history"),
+             "spec defines historyLength only on tasks/get; on list, history is cleared"
 
-      # Pinned reality: without an explicit historyLength, tasks/list clears
-      # history entirely (server default 0, omitted when empty on the wire) —
-      # the spec does not even define historyLength for ListTasksRequest.
       default = list_tasks(plug_opts, %{})
 
       assert %{"tasks" => [bare]} = default
       refute Map.has_key?(bare, "history")
+    end
+
+    test "pageSize on the response echoes the requested cap, not the returned count", %{
+      plug_opts: plug_opts
+    } do
+      create_mixed_tasks(plug_opts, completed: 2, parked: 0)
+
+      # requested cap 1 > returned count 1: equal here, but cap 100 with only
+      # 2 tasks proves the echo is the request, not the result length.
+      small = list_tasks(plug_opts, %{"pageSize" => 1})
+
+      assert %{"pageSize" => 1, "tasks" => [_]} = small
+
+      large = list_tasks(plug_opts, %{"pageSize" => 100})
+
+      assert %{"pageSize" => 100, "tasks" => tasks} = large
+      assert length(tasks) == 2, "only 2 tasks exist; pageSize must still echo the cap 100"
     end
   end
 

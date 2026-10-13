@@ -298,7 +298,9 @@ defmodule AshA2A.Protocol.Agent.State do
       status_timestamp_after: timestamp_after,
       page_size: params["pageSize"] || 50,
       page_token: params["pageToken"],
-      history_length: params["historyLength"] || 0,
+      # per A2A spec §6.5 (pagination): tasks/list returns truncated history;
+      # historyLength is only honored on tasks/get, never on list
+      history_length: 0,
       include_artifacts: params["includeArtifacts"] || false
     ]
   end
