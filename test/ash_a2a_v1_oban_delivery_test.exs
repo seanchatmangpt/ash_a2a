@@ -660,6 +660,32 @@ defmodule AshA2A.V1.ObanDeliveryTest do
 
     case Postgrex.start_link(connect_opts) do
       {:ok, pid} ->
+        # Postgrex connects lazily by default: start_link alone succeeds even
+        # with the database down, deferring failure to opaque pool timeouts.
+        # Force a synchronous round trip so an unreachable database fails at
+        # this gate, fast, with the run instructions below.
+        try do
+          Postgrex.query!(pid, "SELECT 1", [])
+        rescue
+          error ->
+            GenServer.stop(pid)
+
+            raise """
+            Real Postgres not reachable at #{connect_opts[:hostname]}:#{connect_opts[:port]}/#{connect_opts[:database]} \
+            for AshA2A.Test.Repo (test/ash_a2a_v1_oban_delivery_test.exs).
+            Reason: #{Exception.message(error)}
+
+            This court needs a real, dedicated local Postgres instance to run
+            Oban's real `oban_jobs` table against (real engine, no mocked queue).
+            Start one and re-run, e.g.:
+
+              docker run --rm -p 55432:5432 -e POSTGRES_PASSWORD=postgres \\
+                -e POSTGRES_DB=ash_a2a_test postgres:16
+
+            then: mix test test/ash_a2a_v1_oban_delivery_test.exs --include serial
+            """
+        end
+
         GenServer.stop(pid)
         :ok
 
