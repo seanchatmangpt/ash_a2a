@@ -136,7 +136,9 @@ defmodule AshA2A.SemanticRefusalTest do
       patterns = [
         ~r/code:\s+:([a-z_0-9]+)/,
         ~r/error\(:([a-z_0-9]+)/,
-        ~r/refusal\(:([a-z_0-9]+)/,
+        # \b keeps `commit_list_refusal(:refused_structure, ...)` (a helper
+        # whose first arg is a CLASS atom) from being read as `refusal(:code)`.
+        ~r/\brefusal\(:([a-z_0-9]+)/,
         ~r/\{:error,\s+:([a-z_0-9]+)\}/
       ]
 
