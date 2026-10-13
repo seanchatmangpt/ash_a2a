@@ -4,84 +4,196 @@
 
 defmodule AshA2A.PartisanIntegrationTest do
   @moduledoc """
-  Real-attempted, real-BLOCKED investigation spike (v26.9.16,
-  `feat/partisan-investigate-v26.9.16`): whether Partisan (Meiklejohn et
-  al., building on the USENIX ATC 2019-era distributed-Erlang full-mesh
-  clustering-ceiling work) can be integrated into this repo to replace or
-  augment `:global`/`net_kernel` clustering beyond its documented
-  ~dozens-to-~200-node ceiling.
+  Tracking court for the permanently-BLOCKED Partisan integration
+  tombstone (audit finding #6; origin: v26.9.16
+  `feat/partisan-investigate-v26.9.16`, full evidence in
+  `docs/archive/reports/partisan-integration-investigation.md`).
 
-  This is NOT a mock, NOT a stub, and NOT a passing test dressed up as a
-  real one -- per `~/.claude/rules/testing-chicago-style.md` this repo does
-  not fake collaborators. It is the opposite: an honest `@tag :skip` over a
-  real intended two-node join/message test, left unskippable-to-green
-  because the real blocker (Hex dependency resolution) was never cleared.
-
-  Real, verbatim blocking error (`mix deps.get`, this session, this
-  worktree, with `{:partisan, "~> 6.2", only: :dev}` added to `mix.exs`):
-
-      Resolving Hex dependencies...
-      Resolution completed in 0.281s
-      Because "oban >= 2.20.0" depends on "telemetry ~> 1.3" and "partisan >= 5.0.0-rc.8" depends on "telemetry ~> 1.1.0", "oban >= 2.20.0" is incompatible with "partisan >= 5.0.0-rc.8".
-      And because "your app" depends on "oban ~> 2.24", "partisan >= 5.0.0-rc.8" is forbidden.
-      So, because "your app" depends on "partisan ~> 6.2", version solving failed.
-      ** (Mix) Hex dependency resolution failed
-
-  Root cause: Partisan `6.2.0` (the current latest Hex release, confirmed
-  via the real Hex API) hard-pins `telemetry ~> 1.1.0` (non-optional); this
-  repo already requires `oban ~> 2.24`, which requires `telemetry ~> 1.3`
-  (already locked here at `1.4.2`). Those ranges do not overlap. A second,
-  independent conflict layer (Partisan's exact `opentelemetry_api 1.2.1` pin
-  vs. this repo's transitive `tesla` -> `opentelemetry_semantic_conventions
-  ~> 1.27` requirement) was also confirmed real via a diagnostic-only
-  `telemetry` override attempt. Full evidence, both verbatim resolver
-  failures, and the real Hex API requirement dumps live in
-  `docs/archive/reports/partisan-integration-investigation.md`.
-
-  Because dependency resolution never completes, Partisan was never added
-  to this repo's real `mix.exs`/`mix.lock` (leaving both would permanently
-  break `mix deps.get` for every future checkout of this branch), so
-  `Partisan`/`partisan_peer_service`/etc. are not compiled, loaded, or
-  callable here. The test below documents the exact real shape the
-  integration was chartered to prove (two real local BEAM nodes, joined over
+  The original integration test (two real local BEAM nodes joining over
   Partisan's own overlay via `partisan:join/1`, one real message delivered
-  via `partisan:cast_message/2`) and is `@tag :skip`ped for that named,
-  disclosed reason -- never silently passing, never mocking Partisan's API
-  to fake a green result.
+  via `partisan:cast_message/2`) could never run: every Partisan Hex
+  release up to 6.2.0 hard-pins the non-optional `telemetry ~> 1.1.0`,
+  which does not overlap this repo's already-required
+  `oban ~> 2.24` -> `telemetry ~> 1.3` (locked at 1.4.2). A second,
+  independent conflict layer (Partisan's exact `opentelemetry_api 1.2.1`
+  pin vs. this repo's transitive `opentelemetry_api ~> 1.4`) was also
+  confirmed. Partisan was therefore never added to `mix.exs`/`mix.lock`.
+
+  The dead tombstone (an unconditionally `@tag :skip`ped test whose body
+  was `flunk("unreachable")`) carried a re-check mechanism of zero bits --
+  it could never observe the day the blocker clears. This court replaces
+  it with a real observation, executed every run, read-only, no writes to
+  `mix.exs`/`mix.lock`:
+
+  1. Query the live Hex API for the Partisan package's releases and their
+     real published `telemetry` requirements.
+  2. If any existing release's telemetry requirement admits the telemetry
+     version this repo locks (`1.4.2`), the blocker is gone: the test
+     FAILS with a typed `PARTISAN_BLOCKER_CLEARED` message forcing revival
+     of the real two-node integration test (and de-tombstoning of
+     `docs/archive/reports/partisan-integration-investigation.md`).
+  3. If no release's telemetry requirement admits the locked telemetry
+     version, the known-conflict state is asserted explicitly with the
+     release evidence inlined, so the tombstone is re-witnessed rather
+     than passing vacuously.
+
+  This test does NOT attempt the upgrade and does NOT mock the Hex API.
+  Per `~/.claude/rules/testing-chicago-style.md` the collaborator (the
+  real Hex registry over real HTTPS) is used directly.
   """
 
   use ExUnit.Case, async: false
 
-  @moduletag :serial
-  @moduletag :serial_shard
+  # Deliberately NOT tagged :serial/:serial_shard: unlike the dead tombstone
+  # (which was also excluded from every default run, i.e. re-checked zero
+  # bits per run), this court must execute by default. It is a read-only
+  # Hex API observation, not a clustering test.
   @moduletag :partisan_investigation
 
-  @tag :skip
-  @tag skip:
-         "BLOCKED at mix deps.get -- see docs/archive/reports/partisan-integration-investigation.md " <>
-           "(Partisan 6.2.0's non-optional `telemetry ~> 1.1.0` pin conflicts with this repo's " <>
-           "already-required `oban ~> 2.24` -> `telemetry ~> 1.3`; a second conflict layer via " <>
-           "Partisan's exact `opentelemetry_api 1.2.1` pin was also confirmed real)"
-  test "two real local nodes join over Partisan's overlay and exchange one real message" do
-    # Intended real shape, per Partisan's own real documented API
-    # (partisan.hexdocs.pm, fetched this session -- not improvised):
-    #
-    #   {:ok, _} = Application.ensure_all_started(:partisan)
-    #
-    #   node_b_spec = %{
-    #     name: :node_b,
-    #     listen_addrs: [%{ip: {127, 0, 0, 1}, port: 10_201}],
-    #     channels: %{data: %{parallelism: 1}}
-    #   }
-    #
-    #   :ok = :partisan.join(node_b_spec)
-    #
-    #   :ok = :partisan.cast_message({:echo_server, :node_b}, {:ping, self()})
-    #   assert_receive {:pong, _from}, 5_000
-    #
-    # None of the above executes: `:partisan` is not a compiled dependency
-    # of this repo (see moduledoc). This test exists to name the target
-    # shape honestly, not to claim it runs.
-    flunk("unreachable -- Partisan dependency never resolved; see @tag :skip reason above")
+  @hex_api "https://hex.pm/api/packages/partisan"
+  # Telemetry version this repo actually locks (mix.lock: telemetry 1.4.2,
+  # required by oban ~> 2.24 as `~> 1.3`).
+  @locked_telemetry {1, 4, 2}
+
+  defp parse_version(v) do
+    v
+    |> to_string()
+    |> String.split("-")
+    |> hd()
+    |> String.split(".")
+    |> Enum.map(&String.to_integer/1)
+    |> pad3()
+  end
+
+  defp pad3([major]), do: [major, 0, 0]
+  defp pad3([major, minor]), do: [major, minor, 0]
+  defp pad3(v), do: v
+
+  defp ver_to_tuple([a, b, c]), do: {a, b, c}
+
+  # Minimal requirement evaluator for the shapes Partisan actually
+  # publishes for telemetry ("~> 1.1.0", "~> 1.1", ">= 1.3", "1.2.1", ...).
+  # Returns true when `req` admits `version`.
+  defp admits?(req, version) do
+    req = to_string(req) |> String.trim()
+
+    cond do
+      String.starts_with?(req, "~>") ->
+        range_str = String.split(req, "~>") |> Enum.at(1) |> String.trim()
+        components = String.split(range_str, ".")
+        [req_major, req_minor | _rest] = parse_version(range_str)
+        {v_major, v_minor, _} = version
+
+        if length(components) >= 3 do
+          # patch-pinned: "~> 1.1.0" admits only 1.1.x
+          v_major == req_major and v_minor == req_minor
+        else
+          # "~> 1.1" / "~> 1.3" admit any 1.x at or above the minor floor
+          # (up to, excluding, 2.0)
+          v_major == req_major and v_minor >= req_minor
+        end
+
+      String.starts_with?(req, ">=") ->
+        [req_major, req_minor, req_patch] = parse_version(String.split(req, ">=") |> Enum.at(1) |> String.trim())
+        version >= {req_major, req_minor, req_patch}
+
+      req =~ ~r/^\d/ ->
+        {req_major, req_minor, req_patch} = ver_to_tuple(parse_version(req))
+        version == {req_major, req_minor, req_patch}
+
+      true ->
+        # Unrecognized shape: conservatively treat as NOT admitting the
+        # locked version, so the court cannot silently go green.
+        false
+    end
+  end
+
+  defp hex_get(url, attempts_left \\ 3)
+
+  defp hex_get(_url, 0), do: flunk("PARTISAN_TRACKING_COURT_NETWORK: hex.pm unreachable after retries")
+
+  defp hex_get(url, attempts_left) do
+    {:ok, _} = Application.ensure_all_started(:inets)
+    {:ok, _} = Application.ensure_all_started(:ssl)
+
+    headers = [
+      {~c"user-agent", ~c"ash_a2a partisan-integration tracking court (hex.pm/ash_a2a)"}
+    ]
+
+    request = :httpc.request(:get, {String.to_charlist(url), headers}, [
+      ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
+      timeout: 15_000,
+      connect_timeout: 15_000
+    ], [])
+
+    case request do
+      {:ok, {{_, 200, _}, _, body}} ->
+        to_string(body)
+
+      {:ok, {{_, status, _}, _, _}} ->
+        flunk("PARTISAN_TRACKING_COURT_HTTP_#{status}: unexpected status from #{url}")
+
+      {:error, _reason} ->
+        Process.sleep(1_000)
+        hex_get(url, attempts_left - 1)
+    end
+  end
+
+  test "Partisan Hex releases are re-witnessed against this repo's telemetry pin (tracking court)" do
+    body = hex_get(@hex_api)
+    assert {:ok, package} = Jason.decode(body)
+
+    releases = package["releases"]
+    assert is_list(releases) and releases != [], "Hex API returned no releases for partisan"
+
+    # Fetch each release's real published requirements (latest first).
+    checked =
+      for release <- releases,
+          version = release["version"],
+          {:ok, rel} = Jason.decode(hex_get("#{@hex_api}/releases/#{version}")),
+          telemetry_req = get_in(rel, ["requirements", "telemetry", "requirement"]) do
+        {version, telemetry_req, admits?(telemetry_req, @locked_telemetry)}
+      end
+
+    assert checked != [],
+           "PARTISAN_TRACKING_COURT_EMPTY: no partisan release on Hex publishes a telemetry requirement; manual re-check required"
+
+    compatible = for {version, req, true} <- checked, do: {version, req}
+    latest = hd(checked)
+
+    # The assertion IS the court: while Hex shows no telemetry-compatible
+    # release, the known-conflict assertion holds (suite green, evidence
+    # receipt printed below). The moment any release admits the locked
+    # telemetry version, this assertion fails typed and forces revival.
+    assert compatible == [],
+           """
+           PARTISAN_BLOCKER_CLEARED: Partisan release(s) #{inspect(compatible)} now admit \
+           telemetry #{inspect(@locked_telemetry)}. The hex-resolution blocker documented in \
+           docs/archive/reports/partisan-integration-investigation.md is STALE. Revive the real \
+           two-node Partisan integration test now: add `{:partisan, "~> ...", only: :dev}` to \
+           mix.exs, run `mix deps.get`, and restore the partisan:join/cast_message test body. \
+           De-tombstone the investigation report in the same transition.\
+           """
+
+    IO.puts("""
+    [partisan tombstone re-witnessed #{Date.utc_today()}] BLOCKED state still accurate: \
+    #{length(checked)} Hex releases checked (latest #{elem(latest, 0)}), none admits \
+    telemetry #{inspect(@locked_telemetry)} (oban ~> 2.24 lock). Latest requirement: \
+    #{elem(latest, 1)}. Per-release: #{inspect(checked, limit: 20)}\
+    """)
+  end
+
+  test "requirement evaluator admits only telemetry ranges that genuinely cover the locked version" do
+    # Negative controls: the shapes that caused the original blocker.
+    refute admits?("~> 1.1.0", @locked_telemetry)
+    refute admits?("~>1.1.0", @locked_telemetry)
+    refute admits?("1.2.1", @locked_telemetry)
+    # Positive controls: shapes that would clear the blocker.
+    assert admits?("~> 1.3", @locked_telemetry)
+    assert admits?("~> 1.1", @locked_telemetry)
+    assert admits?(">= 1.3", @locked_telemetry)
+    assert admits?(">= 1.0", @locked_telemetry)
+    # Unrecognized shape must not silently admit.
+    refute admits?("banana", @locked_telemetry)
   end
 end
