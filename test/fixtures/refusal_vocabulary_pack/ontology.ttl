@@ -13,7 +13,11 @@
 # FAIL-CLOSED law (gates/):
 #   G1 every erlmcp code maps to EXACTLY ONE ash_a2a class;
 #   G2 every ash_a2a class is targeted by >= 1 erlmcp code;
-#   G3 jsonRpcCode values stay inside the A2A/JSON-RPC law set;
+#   G3 jsonRpcCode values stay inside the A2A/JSON-RPC law set (error.ex's
+#     standard + A2A-specific codes, PLUS -32000, the JSON-RPC 2.0
+#     spec-reserved server-implementation range -32000..-32099: ash_a2a
+#     transport/plug.ex wire_error/1 designates -32000 for server_busy /
+#     rate_limited);
 #   G4 totality (closure-style): bijection between rv:RefusalMapping
 #     individuals and the declared rv:DeclaredMacro universe (count of
 #     declared, never a hardcoded literal);
@@ -434,3 +438,30 @@ rv:vm-window-tau-capacity a rv:ValveMapping ;
     rv:valveClass rv:vc-window-tau-capacity ;
     rv:ashA2aClass rv:cls-refused-bounds ;
     dct:description "Window capacity guard tau > 8 (declared bound breached) -> refused_bounds." .
+
+# ---------------------------------------------------------------------------
+# Fourth crosswalk column: ash_a2a transport-native refusal atoms
+# (lib/ash_a2a/transport/runtime.ex dispatch_check/1 emits %{code: :server_busy}
+# and %{code: :rate_limited}; transport/plug.ex wire_error/1 projects both onto
+# the JSON-RPC wire code -32000). These are NOT erlmcp codes (no rv:erlmcpCode,
+# no rv:DeclaredMacro -- G4's macro bijection deliberately does not reach this
+# column); they are the runtime's own refusal vocabulary, crosswalked onto the
+# same S42 classes. rv:a2aAtom is the literal atom name emitted by runtime.ex.
+# ---------------------------------------------------------------------------
+
+rv:A2aWireMapping a rdfs:Class ;
+    dct:title "ash_a2a transport wire mapping" ;
+    dct:description "Maps exactly one transport-native refusal atom (server_busy, rate_limited) onto exactly one declared ash_a2a refusal class and the designated -32000 wire code." .
+
+rv:a2aAtom a rdf:Property ; rdfs:label "a2aAtom" ;
+    dct:description "The transport runtime's literal refusal atom (runtime.ex dispatch_check/1)." .
+
+rv:code-server-busy a rv:A2aWireMapping ;
+    rv:a2aAtom "server_busy" ; rv:jsonRpcCode -32000 ;
+    rv:ashA2aClass rv:cls-blocked-resource ;
+    dct:description "max_in_flight exceeded (default 256): capacity saturated, not a refusal of the subject -> blocked_resource (runtime.ex atom_class mapping). HTTP 503 per transport/http_json.ex status_for." .
+
+rv:code-rate-limited a rv:A2aWireMapping ;
+    rv:a2aAtom "rate_limited" ; rv:jsonRpcCode -32000 ;
+    rv:ashA2aClass rv:cls-refused-bounds ;
+    dct:description "Per-principal token bucket exhausted (rate_limit: {count, per_ms}): a declared admission-rate bound breached -> refused_bounds (runtime.ex atom_class mapping). ADJUDICATION (lane L162, 2026-10-13): refused_bounds chosen over blocked_resource because the token bucket is a DECLARED bound (count, per_ms), not a capacity outage; this is the same class as the valve's fuel_exhausted (admission budget exhausted before handoff). The wire code -32000 is the JSON-RPC 2.0 spec-reserved server-implementation range (-32000..-32099), admitted here AS that designated range code -- not a new per-case code -- so ash_a2a's existing wire_error/1 emission stays lawful. Relation to temprun admissionFuel: the token bucket is a lease-free rate bound; receipted admission-fuel accounting in the transport runtime (temprun) is DESIGN-NOT-YET-LANDED -- when it lands, this mapping's class placement must be re-adjudicated against the fuel-lease vocabulary (fuel_exhausted family), but the wire code -32000 is unaffected." .

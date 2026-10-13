@@ -1,0 +1,53 @@
+PREFIX rv:  <urn:refusal-vocabulary:>
+PREFIX dct: <http://purl.org/dc/terms/>
+SELECT ?code ?macro ?className ?classKind ?jsonrpc ?http ?severity ?desc ?valveClass ?valveName ?valveModule ?valveAtom ?classIri ?a2aAtom ?a2aClass ?sortKey
+WHERE {
+  {
+    ?m a rv:RefusalMapping ; rv:erlmcpCode ?code ; rv:macro ?macro ;
+       rv:ashA2aClass ?cls ; rv:httpStatus ?http ; rv:severity ?severity ;
+       dct:description ?desc .
+    ?cls rv:className ?className ; rv:classKind ?classKind .
+    OPTIONAL { ?m rv:jsonRpcCode ?jsonrpc }
+    BIND("" AS ?valveClass) BIND("" AS ?valveName) BIND("" AS ?valveModule)
+    BIND("" AS ?valveAtom) BIND("" AS ?classIri)
+    BIND(?code AS ?sortKey)
+  }
+  UNION
+  {
+    ?vm a rv:ValveMapping ; rv:valveClass ?vcls ; rv:ashA2aClass ?cls ;
+        dct:description ?desc .
+    ?vcls rv:valveName ?valveName ; rv:valveModule ?valveModule ;
+          rv:order ?order .
+    OPTIONAL { ?vcls rv:valveAtom ?valveAtom }
+    ?cls rv:className ?className ; rv:classKind ?classKind .
+    BIND(STRAFTER(STR(?vcls), "vc-") AS ?valveClass)
+    BIND(0 AS ?code) BIND("" AS ?macro) BIND(0 AS ?jsonrpc)
+    BIND(0 AS ?http) BIND("" AS ?severity) BIND("" AS ?classIri)
+    BIND(100000 + ?order AS ?sortKey)
+  }
+  UNION
+  {
+    ?cls a rv:RefusalClass ; rv:className ?className ; rv:classKind ?classKind ;
+         dct:description ?desc .
+    BIND(STR(?cls) AS ?classIri)
+    BIND(0 AS ?code) BIND("" AS ?macro) BIND(0 AS ?jsonrpc)
+    BIND(0 AS ?http) BIND("" AS ?severity)
+    BIND("" AS ?valveClass) BIND("" AS ?valveName) BIND("" AS ?valveModule)
+    BIND("" AS ?valveAtom)
+    BIND(200000 AS ?sortKey)
+  }
+  UNION
+  {
+    ?am a rv:A2aWireMapping ; rv:a2aAtom ?a2aAtom ; rv:ashA2aClass ?cls ;
+        rv:jsonRpcCode ?jsonrpc ;
+        dct:description ?desc .
+    ?cls rv:className ?className ; rv:classKind ?classKind .
+    BIND(STRAFTER(STR(?am), "code-") AS ?a2aClass)
+    BIND(0 AS ?code) BIND("" AS ?macro)
+    BIND(0 AS ?http) BIND("" AS ?severity)
+    BIND("" AS ?valveClass) BIND("" AS ?valveName) BIND("" AS ?valveModule)
+    BIND("" AS ?valveAtom) BIND("" AS ?classIri)
+    BIND(300000 AS ?sortKey)
+  }
+}
+ORDER BY ?sortKey ?className

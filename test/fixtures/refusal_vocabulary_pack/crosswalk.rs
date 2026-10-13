@@ -68,11 +68,28 @@ pub const ASH_A2A_CLASSES: [&str; 18] = [
     "unsupported_profile",
 ];
 
-/// A2A/JSON-RPC error law set (error.ex: standard codes plus -32001..-32009).
-pub const JSON_RPC_LAW_CODES: [i32; 14] = [
-    -32700, -32600, -32601, -32602, -32603, -32001, -32002, -32003, -32004,
-    -32005, -32006, -32007, -32008, -32009,
+/// A2A/JSON-RPC error law set (error.ex: standard codes plus -32001..-32009,
+/// plus -32000, the JSON-RPC 2.0 spec-reserved server-implementation range
+/// -32000..-32099, used by ash_a2a transport/plug.ex wire_error/1 for
+/// server_busy/rate_limited).
+pub const JSON_RPC_LAW_CODES: [i32; 15] = [
+    -32700, -32600, -32601, -32602, -32603, -32000, -32001, -32002, -32003,
+    -32004, -32005, -32006, -32007, -32008, -32009,
 ];
+
+/// One ash_a2a transport-native refusal atom mapped to one ash_a2a class
+/// (fourth column: rv:A2aWireMapping; runtime.ex dispatch_check/1 ->
+/// transport/plug.ex wire_error/1, wire code -32000).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct A2aWireEntry {
+    /// Transport runtime refusal atom (runtime.ex dispatch_check/1).
+    pub a2a_atom: &'static str,
+    /// ash_a2a class atom (AshA2A.Semantic.Refusal).
+    pub ash_a2a_class: &'static str,
+    /// Designated wire code (always -32000: the spec-reserved
+    /// server-implementation range code).
+    pub json_rpc_code: i32,
+}
 
 /// Total crosswalk table: one row per erlmcp code.
 pub const CROSSWALK: [CrosswalkEntry; 51] = [
@@ -435,6 +452,22 @@ pub const CROSSWALK: [CrosswalkEntry; 51] = [
     },
 ];
 
+/// ash_a2a transport wire crosswalk (fourth column): one row per
+/// transport-native refusal atom, each mapped to exactly one ash_a2a class
+/// with the designated -32000 wire code.
+pub const A2A_WIRE_CROSSWALK: [A2aWireEntry; 2] = [
+    A2aWireEntry {
+        a2a_atom: "server_busy",
+        ash_a2a_class: "blocked_resource",
+        json_rpc_code: -32000,
+    },
+    A2aWireEntry {
+        a2a_atom: "rate_limited",
+        ash_a2a_class: "refused_bounds",
+        json_rpc_code: -32000,
+    },
+];
+
 /// Valve crosswalk table (third column): one row per declared strata-valve
 /// refusal class, each mapped to exactly one ash_a2a class.
 pub const VALVE_CROSSWALK: [ValveEntry; 6] = [
@@ -491,6 +524,15 @@ pub fn valve_class_for(valve_name: &str) -> Option<&'static str> {
     VALVE_CROSSWALK
         .iter()
         .find(|e| e.valve_name == valve_name)
+        .map(|e| e.ash_a2a_class)
+}
+
+/// Look up the ash_a2a class for a transport-native refusal atom. Fail-closed:
+/// an unknown atom returns None — the caller must refuse, never guess.
+pub fn a2a_class_for(a2a_atom: &str) -> Option<&'static str> {
+    A2A_WIRE_CROSSWALK
+        .iter()
+        .find(|e| e.a2a_atom == a2a_atom)
         .map(|e| e.ash_a2a_class)
 }
 
@@ -581,5 +623,48 @@ mod tests {
         assert_eq!(valve_class_for("window_run_capacity"), Some("refused_bounds"));
         assert_eq!(valve_class_for("window_tau_capacity"), Some("refused_bounds"));
         assert_eq!(valve_class_for("nonexistent_valve"), None);
+    }
+
+    /// G3 negative witness: -31999 (outside every law range -- not a standard
+    /// code, not A2A-specific -32001..-32009, not the reserved server range
+    /// -32000..-32099) stays outside the law set; the law set grows only by
+    /// adjudicated admission.
+    #[test]
+    fn negative_witness_31999_refuses() {
+        assert!(!JSON_RPC_LAW_CODES.contains(&-31999));
+        // The admitted -32000 (spec-reserved server-implementation range)
+        // must be present exactly once.
+        assert!(JSON_RPC_LAW_CODES.contains(&-32000));
+        assert_eq!(
+            JSON_RPC_LAW_CODES.iter().filter(|&&c| c == -32000).count(),
+            1
+        );
+    }
+
+    /// G6 (a2a wire totality): every transport atom mapped exactly once,
+    /// every mapping targets a declared class, and every wire code is the
+    /// designated -32000.
+    #[test]
+    fn a2a_wire_mappings_are_total_and_lawful() {
+        let mut atoms: Vec<&str> = A2A_WIRE_CROSSWALK.iter().map(|e| e.a2a_atom).collect();
+        atoms.sort_unstable();
+        atoms.dedup();
+        assert_eq!(atoms.len(), A2A_WIRE_CROSSWALK.len(), "duplicate a2a atom");
+        for e in A2A_WIRE_CROSSWALK {
+            assert!(
+                ASH_A2A_CLASSES.contains(&e.ash_a2a_class),
+                "a2a mapping to undeclared class {}",
+                e.ash_a2a_class
+            );
+            assert_eq!(
+                e.json_rpc_code, -32000,
+                "a2a wire code must be the designated -32000"
+            );
+        }
+        // The runtime's actual atom set (runtime.ex dispatch_check/1) is
+        // fully covered.
+        assert_eq!(a2a_class_for("server_busy"), Some("blocked_resource"));
+        assert_eq!(a2a_class_for("rate_limited"), Some("refused_bounds"));
+        assert_eq!(a2a_class_for("unknown_atom"), None);
     }
 }

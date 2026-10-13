@@ -19,9 +19,19 @@ defmodule AshA2A.RefusalCrosswalkTest do
 
   use ExUnit.Case, async: true
 
-  @pack_commit "50a458f60"
-  @crosswalk_sha256 "994938e50b92830e9ca0c81eb6dfeaa00c64a6d4befc602fcf2fc2c47510b170"
-  @ontology_sha256 "4c22ae1914cc0987aa9ed73093bd902030492c381042f21dc04e720a599249b4"
+  @pack_commit "697870ec2"
+  @crosswalk_sha256 "00763e2346076d7795acd2840569ace01311147c55a884909bc86abb40cf67b0"
+  @ontology_sha256 "bd4993b6a947bf430627efd4604c843db573ab5142c86e379ddcba039e1d31e9"
+
+  # Additional pinned pack artifacts (L162 A2A wire column landing).
+  @extra_pins %{
+    "gates/030_jsonrpc_law.rq" => "c6ad2529dbbfbcb2b667188d141d7328dee15009cc1dd5cb9e3e755f78092751",
+    "gates/060_a2a_wire_totality.rq" => "0182aa796e0fc1646c5710f96a6b48c55ff3f0fdf61cd2e4257c2cff5872b699",
+    "queries/crosswalk.rq" => "63277a3e6634e990a234e1abf87200a29cd5f7de0678cf464d5ed34f80fcc815",
+    "templates/crosswalk.rs.tera" => "d8053907e4b7e68ff6627b4f35c17435883a537f6437eb13a86ca19201ea783c",
+    "ggen.toml" => "7faf313186da970872919414e4d9129fdee6b1d738026a047f930f6ecfda5c29",
+    "README.md" => "9f65382359aa2be027944cab61d7b30e5df78d56a1ea33139f5dc04184ee4ec1"
+  }
 
   @fixture_dir Path.join([__DIR__, "fixtures", "refusal_vocabulary_pack"])
 
@@ -123,12 +133,66 @@ defmodule AshA2A.RefusalCrosswalkTest do
     |> String.trim_leading("refusal_")
   end
 
+  # Parse generated/crosswalk.rs A2A_WIRE_CROSSWALK (fourth column):
+  # a2a_atom -> {ash_a2a_class, json_rpc_code}.
+  defp parse_a2a_wire_crosswalk(text) do
+    text
+    |> String.split("A2A_WIRE_CROSSWALK: [A2aWireEntry;")
+    |> Enum.drop(1)
+    |> Enum.flat_map(fn chunk ->
+      Regex.scan(
+        ~r/a2a_atom: "([a-z_]+)",\s*ash_a2a_class: "([a-z_]+)",\s*json_rpc_code: (-?\d+)/s,
+        chunk
+      )
+      |> Enum.map(fn [_, atom, class, code] ->
+        {atom, {class, String.to_integer(code)}}
+      end)
+    end)
+    |> Map.new()
+  end
+
+  # Parse generated/crosswalk.rs JSON_RPC_LAW_CODES into a code multiset.
+  defp parse_json_rpc_law_codes(text) do
+    text
+    |> String.split("JSON_RPC_LAW_CODES: [i32;")
+    |> Enum.drop(1)
+    |> List.first("")
+    |> then(fn chunk ->
+      case Regex.run(~r/\A[^=]*=\s*\[([^\]]*)\]/s, chunk) do
+        [_, body] ->
+          body
+          |> String.split(",")
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.map(&String.to_integer/1)
+
+        nil ->
+          []
+      end
+    end)
+  end
+
+  defp a2a_wire_crosswalk_map do
+    crosswalk_path = assert_provenance!("crosswalk.rs", @crosswalk_sha256)
+    parse_a2a_wire_crosswalk(File.read!(crosswalk_path))
+  end
+
+  defp json_rpc_law_codes do
+    crosswalk_path = assert_provenance!("crosswalk.rs", @crosswalk_sha256)
+    parse_json_rpc_law_codes(File.read!(crosswalk_path))
+  end
+
   defp native_mapping, do: AshA2A.Semantic.Refusal.mapping()
 
   describe "pack artifact provenance" do
     test "fixtures pin the pack artifacts at #{@pack_commit} byte-for-byte" do
       assert map_size(crosswalk_map()) == 51
       assert map_size(macro_map()) == 51
+
+      # The six additional pack artifacts pinned at the same commit.
+      for {rel_path, expected_sha} <- @extra_pins do
+        assert_provenance!(rel_path, expected_sha)
+      end
     end
   end
 
@@ -297,6 +361,60 @@ defmodule AshA2A.RefusalCrosswalkTest do
       assert valve_map["arena_failure"] == "refused_consequence"
       assert valve_map["window_run_capacity"] == "refused_bounds"
       assert valve_map["window_tau_capacity"] == "refused_bounds"
+    end
+  end
+
+  # Fourth column: ash_a2a transport-native refusal atoms -> ash_a2a classes
+  # via the designated -32000 wire code (L162 pack landing, ggen-marketplace
+  # 697870ec2). Read from the pinned crosswalk.rs, never hardcoded.
+  describe "a2a wire column (transport crosswalk)" do
+    @wire_atoms ~w(server_busy rate_limited)
+
+    test "A2A_WIRE_CROSSWALK has exactly 2 entries" do
+      wire = a2a_wire_crosswalk_map()
+      assert map_size(wire) == 2
+
+      for atom <- @wire_atoms do
+        assert Map.has_key?(wire, atom), "a2a atom #{atom} missing from A2A_WIRE_CROSSWALK"
+      end
+    end
+
+    test "wire entries map the transport-native atoms to the pinned classes" do
+      wire = a2a_wire_crosswalk_map()
+
+      # Presence witnesses measured from the pinned artifact, pinned here so a
+      # silent class or wire-code flip fails:
+      assert wire["rate_limited"] == {"refused_bounds", -32000}
+      assert wire["server_busy"] == {"blocked_resource", -32000}
+
+      # Every wire entry carries the designated -32000 code.
+      for {_atom, {_class, code}} <- wire do
+        assert code == -32000
+      end
+    end
+
+    test "wire classes exist in the native class vocabulary" do
+      native_classes = MapSet.new(AshA2A.Semantic.Refusal.classes(), &Atom.to_string/1)
+
+      bad =
+        a2a_wire_crosswalk_map()
+        |> Map.values()
+        |> Enum.map(fn {class, _code} -> class end)
+        |> Enum.uniq()
+        |> Enum.reject(&MapSet.member?(native_classes, &1))
+
+      assert bad == [], "wire crosswalk targets classes unknown to refusal.ex: #{inspect(bad)}"
+    end
+
+    test "JSON_RPC_LAW_CODES has exactly 15 entries, -32000 exactly once, -31999 absent" do
+      codes = json_rpc_law_codes()
+
+      assert length(codes) == 15
+      assert Enum.count(codes, &(&1 == -32000)) == 1
+      refute -31999 in codes
+
+      # duplicates nowhere else in the law set
+      assert Enum.uniq(codes) |> length() == 15
     end
   end
 end

@@ -1,0 +1,23 @@
+# MESSAGE: any returned row refuses manufacture. G3: every rv:jsonRpcCode
+# stays inside the A2A/JSON-RPC law set of
+# ash_a2a lib/ash_a2a/protocol/jsonrpc/error.ex (standard -32700/-32600/
+# -32601/-32602/-32603 and A2A-specific -32001..-32009) PLUS -32000, the
+# JSON-RPC 2.0 spec-reserved Server-error range -32000..-32099 ("Reserved for
+# implementation-defined server-errors"); ash_a2a
+# lib/ash_a2a/transport/plug.ex wire_error/1 uses -32000 as the designated
+# server-implementation code for server_busy/rate_limited (runtime.ex maps
+# server_busy -> blocked_resource, rate_limited -> refused_bounds).
+# Adjudicated 2026-10-13 (lane L162): -32000 admitted AS the designated
+# server-implementation range code, not as a new per-case code. -31999 and
+# everything outside -32000..-32099 remains outside the law set.
+PREFIX rv:  <urn:refusal-vocabulary:>
+SELECT ?m ?code ?problem WHERE {
+  { ?m a rv:RefusalMapping ; rv:jsonRpcCode ?code . }
+  UNION
+  { ?m a rv:A2aWireMapping ; rv:jsonRpcCode ?code . }
+  FILTER (?code NOT IN (-32700, -32600, -32601, -32602, -32603,
+                        -32001, -32002, -32003, -32004, -32005,
+                        -32006, -32007, -32008, -32009, -32000))
+  BIND("jsonrpc-code-outside-law-set" AS ?problem)
+}
+ORDER BY ?m

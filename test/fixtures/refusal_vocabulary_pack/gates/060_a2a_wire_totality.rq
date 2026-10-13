@@ -1,0 +1,33 @@
+# MESSAGE: any returned row refuses manufacture. G6 (closure-style totality
+# for the fourth column): every rv:A2aWireMapping targets a declared
+# rv:RefusalClass, carries exactly the designated -32000 wire code, its
+# rv:a2aAtom is declared exactly once (no duplicate atoms), and every declared
+# class in the blocked/refused families that a transport atom maps to is
+# covered by the runtime's actual atom set (server_busy, rate_limited --
+# transport/runtime.ex dispatch_check/1).
+PREFIX rv:  <urn:refusal-vocabulary:>
+SELECT ?s (COALESCE(?p1, ?p2, ?p3) AS ?problem) WHERE {
+  {
+    ?m a rv:A2aWireMapping ; rv:ashA2aClass ?c .
+    FILTER NOT EXISTS { ?c a rv:RefusalClass }
+    BIND(?m AS ?s) BIND("a2a-wire-mapping-to-undeclared-class" AS ?p1)
+  }
+  UNION
+  {
+    ?m a rv:A2aWireMapping ; rv:jsonRpcCode ?code .
+    FILTER (?code != -32000)
+    BIND(?m AS ?s) BIND("a2a-wire-code-not-designated-server-range" AS ?p2)
+  }
+  UNION
+  {
+    ?m a rv:A2aWireMapping ; rv:a2aAtom ?atom .
+    {
+      SELECT ?atom (COUNT(DISTINCT ?m2) AS ?k) WHERE {
+        ?m2 a rv:A2aWireMapping ; rv:a2aAtom ?atom .
+      } GROUP BY ?atom
+    }
+    FILTER (?k > 1)
+    BIND(?m AS ?s) BIND("a2a-wire-atom-declared-more-than-once" AS ?p3)
+  }
+}
+ORDER BY ?s ?problem

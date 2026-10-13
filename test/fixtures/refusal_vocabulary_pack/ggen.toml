@@ -1,0 +1,38 @@
+[project]
+name = "refusal-vocabulary-pack"
+version = "0.1.0"
+description = "Canonical FAIL-CLOSED erlmcp -> ash_a2a refusal crosswalk projected from RDF."
+authors = ["Chatman Ecosystem"]
+license = "MIT"
+
+[ontology]
+source = "ontology.ttl"
+base_iri = "urn:refusal-vocabulary:"
+
+[ontology.prefixes]
+rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+rdfs = "http://www.w3.org/2000/01/rdf-schema#"
+xsd = "http://www.w3.org/2001/XMLSchema#"
+dct = "http://purl.org/dc/terms/"
+rv = "urn:refusal-vocabulary:"
+
+[validation]
+gates = [
+  "gates/010_exactly_one_class.rq",
+  "gates/020_class_coverage.rq",
+  "gates/030_jsonrpc_law.rq",
+  "gates/040_totality.rq",
+  "gates/050_valve_totality.rq",
+  "gates/060_a2a_wire_totality.rq",
+]
+
+[generation]
+output_dir = "generated"
+
+[[generation.rules]]
+name = "crosswalk"
+query = { file = "queries/crosswalk.rq" }
+template = { file = "templates/crosswalk.rs.tera" }
+output_file = "crosswalk.rs"
+skip_empty = false
+mode = "Overwrite"
