@@ -44,7 +44,7 @@ defmodule AshA2A.Semantic.Iri do
 
   alias AshA2A.Semantic.TermRegistry
 
-  @type refusal :: %{code: atom(), detail: String.t()}
+  @type refusal :: %{optional(:receipt) => binary(), :code => atom(), :detail => String.t()}
   @type outcome ::
           :reused_public_iri
           | :reused_equivalent_public_iri
@@ -291,6 +291,28 @@ defmodule AshA2A.Semantic.Iri do
   @spec mint_private(PrivateTerm.t() | map()) :: {:ok, PrivateTerm.t()} | {:error, refusal()}
   def mint_private(term) do
     result = do_mint_private(term)
+
+    result =
+      case result do
+        {:error, %{code: code} = refusal} ->
+          # Additive committed receipt (strata-valve parity shape, see
+          # `AshA2A.Semantic.Refusal.commit/2`): refusals gain a 32-byte
+          # receipt over the refused subject; no behavior change otherwise.
+          {:error,
+           Map.put(
+             refusal,
+             :receipt,
+             AshA2A.Semantic.Refusal.receipt(
+               AshA2A.Semantic.Refusal.classify(code),
+               code,
+               :semantic_iri_mint_private,
+               term
+             )
+           )}
+
+        _ ->
+          result
+      end
 
     # RFC-SA2A-002 §12 attempt evidence, emitted where the mint is decided.
     :telemetry.execute([:ash_a2a, :semantic, :iri, :mint_private], %{}, %{

@@ -101,6 +101,12 @@ defmodule AshA2A.Semantic.Refusal do
     * `:detail` -- free term carrying the specific detail.
     * `:lawful?` -- always `true`. Present so that code reading a refusal
       cannot accidentally treat it as an exception without seeing the flag.
+    * `:receipt` -- optional opaque 32-byte committed receipt (`nil` until
+      `commit/2` attaches one). Provenance: the derivation shape is parity
+      with the strata-valve-pack refusal receipt (pack commit `8210f1b24`,
+      parity court `seam-29-l26` verdict IDENTICAL): SHA-256 over the class
+      label, a zero separator byte, and `:erlang.term_to_binary/1` of
+      `{code, stage, subject}`.
   """
 
   @refused_classes [
@@ -126,7 +132,7 @@ defmodule AshA2A.Semantic.Refusal do
   @classes @refused_classes ++ @blocked_classes ++ @unsupported_classes
 
   @enforce_keys [:class, :code, :stage]
-  defstruct [:class, :code, :stage, :detail, lawful?: true]
+  defstruct [:class, :code, :stage, :detail, :receipt, lawful?: true]
 
   @type class ::
           :refused_identity
@@ -153,6 +159,7 @@ defmodule AshA2A.Semantic.Refusal do
           code: atom(),
           stage: atom(),
           detail: term(),
+          receipt: binary() | nil,
           lawful?: true
         }
 
@@ -1191,6 +1198,43 @@ defmodule AshA2A.Semantic.Refusal do
   def terminal_standing(%__MODULE__{class: :blocked_unknown}), do: :unknown
   def terminal_standing(%__MODULE__{class: :unsupported_profile}), do: :unsupported
 
+  @doc """
+  Attaches an opaque committed receipt to a refusal, computed over the
+  subject that was refused.
+
+  Existing constructors (`new/4`, `from_error/2`) are unchanged and leave
+  `:receipt` as `nil` -- this is additive, no breaking change. The
+  derivation is the strata-valve parity shape (see the `:receipt` field
+  doc): SHA-256 over `class label <> 0x00 <> term_to_binary({code, stage,
+  subject})`.
+
+      iex> r = AshA2A.Semantic.Refusal.commit(
+      ...>   AshA2A.Semantic.Refusal.new(:refused_authority, :authority_required, :authorize),
+      ...>   {:task, "t-1"}
+      ...> )
+      iex> byte_size(r.receipt)
+      32
+  """
+  @spec commit(t(), term()) :: t()
+  def commit(%__MODULE__{} = refusal, subject) do
+    %{refusal | receipt: receipt(refusal.class, refusal.code, refusal.stage, subject)}
+  end
+
+  @doc """
+  The raw receipt derivation for a refused subject (32 bytes).
+
+  Kept public so cross-implementation parity courts can pin byte-equality
+  against the strata-valve derivation without building a struct.
+  """
+  @spec receipt(class(), atom(), atom(), term()) :: binary()
+  def receipt(class, code, stage, subject)
+      when is_atom(class) and is_atom(code) and is_atom(stage) do
+    :crypto.hash(
+      :sha256,
+      Atom.to_string(class) <> <<0>> <> :erlang.term_to_binary({code, stage, subject})
+    )
+  end
+
   @doc "JSON-shaped serialization of a refusal (string keys, string values)."
   @spec to_map(t()) :: map()
   def to_map(%__MODULE__{} = refusal) do
@@ -1199,9 +1243,13 @@ defmodule AshA2A.Semantic.Refusal do
       "code" => Atom.to_string(refusal.code),
       "stage" => Atom.to_string(refusal.stage),
       "detail" => detail_string(refusal.detail),
+      "receipt" => receipt_string(refusal.receipt),
       "lawful" => refusal.lawful?
     }
   end
+
+  defp receipt_string(nil), do: nil
+  defp receipt_string(receipt) when is_binary(receipt), do: Base.encode16(receipt)
 
   defp detail_string(nil), do: nil
   defp detail_string(detail) when is_binary(detail), do: detail

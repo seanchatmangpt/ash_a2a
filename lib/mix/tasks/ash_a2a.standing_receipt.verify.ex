@@ -12,6 +12,11 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
      with `--trusted-key` to verify the Ed25519 signature over the payload.
      If absent, stage 2 is `BLOCKED:graphlaw-attest-absent` -- never faked.
      (Stage 1 runs unconditionally, so a BLOCKED run still catches edits.)
+  3. **Revision chain** (L108): if a `<doc>.chain.jsonl` exists next to the
+     doc, the fold is recomputed and the head event's `event_id` must equal
+     the live doc's sha256. Refuses an edited doc even with a fresh valid
+     signature -- re-mint via `mix ash_a2a.standing_receipt.revision`.
+     No chain file = stage skipped (back-compat).
 
   ## Usage
 
@@ -62,7 +67,20 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
         exit({:shutdown, 1})
 
       :ok ->
-        case attest_stage(att_path, in_path, trusted, opts[:attest_bin]) do
+        case chain_stage(in_path) do
+          :ok ->
+            attest_run(att_path, in_path, trusted, opts[:attest_bin])
+
+          {:refused, msg} ->
+            Mix.shell().error("REFUSED: #{msg}")
+            exit({:shutdown, 1})
+        end
+
+    end
+  end
+
+  defp attest_run(att_path, in_path, trusted, attest_bin) do
+    case attest_stage(att_path, in_path, trusted, attest_bin) do
           :ok ->
             Mix.shell().info("VERIFIED")
             :ok
@@ -75,6 +93,21 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
             Mix.shell().error("BLOCKED: #{msg}")
             exit({:shutdown, 2})
         end
+  end
+
+  # --- stage 3: revision chain court (only if a chain file exists) ----------
+
+  defp chain_stage(in_path) do
+    case AshA2a.StandingReceipt.Chain.verify(in_path) do
+      :ok ->
+        Mix.shell().info("CHAIN:ok (fold recomputed, head matches live doc)")
+        :ok
+
+      {:refused, msg} ->
+        {:refused, "chain court: #{msg}"}
+
+      {:absent, _path} ->
+        :ok
     end
   end
 
