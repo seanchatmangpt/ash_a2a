@@ -81,9 +81,16 @@ defmodule AshA2A.MixProject do
       # cancel the earlier `--exclude serial`: ExUnit applies include/
       # exclude filters for a tag in the order given, so the later
       # `--include` wins for that tag, correctly yielding the full suite
-      # with zero custom logic.
+      # with zero custom logic. The trailing `--exclude graphlaw
+      # --exclude graphlaw_engine --exclude sibling_repos` re-applies the
+      # machine-conditional exclusions that test_helper.exs installs via
+      # `ExUnit.configure/1`: without them, `--include serial` would rescue
+      # machine-tagged tests (several are also `@moduletag :serial`) back
+      # into the run on a host where the real engine/sibling checkouts are
+      # absent -- the include/exclude filters apply in the order given, so
+      # the later `--exclude` wins for those tags.
       test: "test --exclude serial",
-      "test.all": "test --include serial",
+      "test.all": "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos",
       "test.serial": "test --only serial",
       # Local sharded tail (LOCAL ONLY; CI does not shard, it runs one
       # `mix test.all --cover`): first run `mix compile` once and create the

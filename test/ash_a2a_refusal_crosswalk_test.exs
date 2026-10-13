@@ -18,9 +18,17 @@ defmodule AshA2A.RefusalCrosswalkTest do
 
   @sibling_ontology "/Users/sac/ggen-marketplace/packs/refusal-vocabulary-pack/ontology.ttl"
 
-  # Pinned copy of the crosswalk's ash_a2a column (as of 2026-10-13).
-  # Derived from rv:RefusalMapping / rv:A2aWireMapping subjects in the
-  # sibling ontology: every rv:ashA2aClass -> rv:jsonRpcCode edge, folded
+  # Pinned copy of the crosswalk's ash_a2a column (re-pinned 2026-10-13,
+  # verified against sibling ontology at ggen-marketplace commit 4273adf24
+  # "feat(crosswalk): ash_graphlaw fifth column (40/40 mapped) + count
+  # canary"). The fifth column's rv:GraphlawMapping subjects carry
+  # rv:ashA2aClass but NO rv:jsonRpcCode edges, so every wire-code set below
+  # is UNCHANGED from the prior pin; the only parser change is recognizing
+  # rv:gm-* GraphlawMapping subjects so their class edges fold into their own
+  # entries instead of clobbering the last A2aWireMapping subject's class.
+  # Derived from rv:RefusalMapping / rv:A2aWireMapping / rv:GraphlawMapping
+  # subjects in the sibling ontology: every rv:ashA2aClass ->
+  # rv:jsonRpcCode edge, folded
   # to a set per refusal class. A class with an empty set carries no wire
   # code in the crosswalk (rv:jsonRpcCode is emitted only where the A2A
   # JSON-RPC law of lib/ash_a2a/protocol/jsonrpc/error.ex applies).
@@ -126,18 +134,22 @@ defmodule AshA2A.RefusalCrosswalkTest do
       end
     end
 
-    @tag :sibling
-    test "pin matches the live sibling ontology" do
-      if File.exists?(@sibling_ontology) do
-        live = parse_sibling!()
-        diffs = diff_tables(@pin, live)
+    # Real ExUnit skip, resolved at compile time: no sibling checkout on this
+    # host means a NAMED skip (visible via `mix test --include skip`), never a
+    # bare `:ok` green pass. Tagged `:sibling_repos` (the tag test_helper.exs
+    # actually excludes), not the previously-dead `:sibling`.
+    @tag :sibling_repos
+    @tag skip: if(File.exists?(@sibling_ontology),
+      do: nil,
+      else: "sibling checkout absent: #{@sibling_ontology} — crosswalk pin live-check skipped"
+    )
 
-        assert diffs == %{},
-               "crosswalk pin drifted from live sibling ontology: #{inspect(diffs)}"
-      else
-        IO.puts("BLOCKED: sibling checkout absent: #{@sibling_ontology} — crosswalk pin live-check skipped")
-        :ok
-      end
+    test "pin matches the live sibling ontology" do
+      live = parse_sibling!()
+      diffs = diff_tables(@pin, live)
+
+      assert diffs == %{},
+             "crosswalk pin drifted from live sibling ontology: #{inspect(diffs)}"
     end
 
     test "sabotage twin: mutating a pinned code is detected" do
@@ -169,9 +181,11 @@ defmodule AshA2A.RefusalCrosswalkTest do
 
   # Re-derives the class -> wire-code table from the live sibling ontology.
   # Turtle is parsed statement-wise (split on '.' terminators), tracking the
-  # current rv:code-N / rv:a2a-* mapping subject and folding each
+  # current rv:code-N / rv:a2a-* / rv:gm-* mapping subject and folding each
   # rv:ashA2aClass / rv:jsonRpcCode edge into a per-class code set. Classes
-  # absent from any mapping default to the empty set.
+  # absent from any mapping default to the empty set. rv:gm-* (GraphlawMapping,
+  # fifth crosswalk column, commit 4273adf24) subjects are recognized so their
+  # rv:ashA2aClass edges do not fold into a stale prior subject.
   defp parse_sibling! do
     txt = File.read!(@sibling_ontology)
 
@@ -180,9 +194,12 @@ defmodule AshA2A.RefusalCrosswalkTest do
       |> String.split(~r/\.\s*\n/)
       |> Enum.reduce({%{}, nil}, fn st, {acc, cur} ->
         cur =
-          case Regex.run(~r/^rv:(code-[\w-]+|a2a-[\w-]+)\s+a rv:(RefusalMapping|A2aWireMapping)/m, st) do
+          case Regex.run(
+                 ~r/^rv:(code-[\w-]+|a2a-[\w-]+|gm-[\w-]+)\s+a rv:(RefusalMapping|A2aWireMapping|GraphlawMapping)/m,
+                 st
+               ) do
             [_ | _] ->
-              [subject | _] = Regex.scan(~r/rv:(code-[\w-]+|a2a-[\w-]+)/, st)
+              [subject | _] = Regex.scan(~r/rv:(code-[\w-]+|a2a-[\w-]+|gm-[\w-]+)/, st)
               "rv:" <> Enum.at(subject, 1)
 
             _ ->

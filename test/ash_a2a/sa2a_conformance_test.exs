@@ -29,16 +29,18 @@ defmodule AshA2A.SA2AConformanceTest do
 
   @moduletag :sa2a_conformance
 
-  setup_all do
-    case {WasmexSession.available?([]), RuntimeB.available?([])} do
-      {:ok, :ok} ->
-        {:ok, receipt} = run_court()
-        {:ok, receipt: receipt}
+  # Real ExUnit skip, resolved at test-module compile time: when either real
+  # runtime is genuinely absent from this host, the whole module is skipped
+  # with a NAMED reason (visible via `mix test --include skip`) instead of
+  # green-passing through a context-key branch that asserts nothing.
+  case {WasmexSession.available?([]), RuntimeB.available?([])} do
+    {:ok, :ok} -> :ok
+    {a, b} -> @moduletag skip: "cross-runtime conformance unavailable: runtime A: #{inspect(a)}; runtime B: #{inspect(b)}"
+  end
 
-      {a, b} ->
-        # A named, visible skip -- never a silent substitution of a double.
-        {:ok, skip: "runtime A: #{inspect(a)}; runtime B: #{inspect(b)}"}
-    end
+  setup_all do
+    {:ok, receipt} = run_court()
+    {:ok, receipt: receipt}
   end
 
   # `run/1` returns {:ok, receipt} on a clean run and {:error, receipt} when a
@@ -66,10 +68,7 @@ defmodule AshA2A.SA2AConformanceTest do
       assert RuntimeB.host_id() == "Node/StandaloneJS"
     end
 
-    test "runtime B is a real out-of-BEAM process that reports its own engine", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+    test "runtime B is a real out-of-BEAM process that reports its own engine", %{} = _context do
         {:ok, %{session: session, wasm_digest: digest}} = RuntimeB.open([])
 
         try do
@@ -82,13 +81,9 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           RuntimeB.close(session)
         end
-      end
     end
 
     test "load byte-identical wasm and report the same module digest", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
         same_wasm = assertion(receipt, :same_wasm)
 
@@ -96,7 +91,6 @@ defmodule AshA2A.SA2AConformanceTest do
         assert same_wasm["value"]
         assert receipt["runtime_a"]["wasm_digest"] == receipt["runtime_b"]["wasm_digest"]
         assert receipt["wasm_digest_algorithm"] == "sha256"
-      end
     end
 
     test "supply byte-identical deterministic entropy to the wasm import" do
@@ -133,9 +127,6 @@ defmodule AshA2A.SA2AConformanceTest do
     end
 
     test "wasm, admission, output semantics and evidence identity all agree", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
 
         for name <- [:same_wasm, :same_admission, :same_output_semantics, :same_evidence_identity] do
@@ -143,13 +134,9 @@ defmodule AshA2A.SA2AConformanceTest do
           assert result["computed"], "#{name} was not computed: #{inspect(result["detail"])}"
           assert result["value"], "#{name} failed: #{inspect(result["divergences"])}"
         end
-      end
     end
 
     test "every vector's output graph hash is identical across the two hosts", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
         a = vectors_by_id(receipt, "runtime_a")
         b = vectors_by_id(receipt, "runtime_b")
@@ -160,14 +147,10 @@ defmodule AshA2A.SA2AConformanceTest do
           assert String.match?(va["output_graph_hash"], ~r/\A[0-9a-f]{64}\z/)
           assert va["evidence_hash"] == vb["evidence_hash"], "evidence diverged on #{id}"
         end
-      end
     end
 
     test "RFC S12: prefix relabelling and triple reordering preserve graph identity",
          %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
 
         for side <- ["runtime_a", "runtime_b"] do
@@ -180,13 +163,9 @@ defmodule AshA2A.SA2AConformanceTest do
           assert v001["input_graph_hash"] == v002["input_graph_hash"],
                  "#{side} gave the same graph two identities"
         end
-      end
     end
 
     test "refusals agree on the S41 state reached and the typed reason", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
         a = vectors_by_id(receipt, "runtime_a")
         b = vectors_by_id(receipt, "runtime_b")
@@ -204,13 +183,9 @@ defmodule AshA2A.SA2AConformanceTest do
           assert Map.fetch!(a, id)["state_reached"] == Map.fetch!(b, id)["state_reached"]
           assert Map.fetch!(a, id)["state_trace"] == Map.fetch!(b, id)["state_trace"]
         end
-      end
     end
 
     test "admitted vectors really walked the whole S41 prefix", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         admitted =
           context.receipt["runtime_a"]["vectors"]
           |> Enum.filter(&(&1["admission"] == "ADMITTED"))
@@ -223,16 +198,12 @@ defmodule AshA2A.SA2AConformanceTest do
           reached = Enum.map(vector["state_trace"], &List.first(String.split(&1, ["(", "="])))
           assert reached == expected, "#{vector["vector"]} took a different route to ADMITTED"
         end
-      end
     end
   end
 
   describe "graph_hash stability (open falsifier against praxis-graphlaw v26.7.5)" do
     @tag :falsifier
-    test "ground graphs are stable and blank-node graphs are not", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+    test "ground graphs are stable and blank-node graphs are not", %{} = _context do
         {:ok, vectors} = Vector.load_all([])
         by_id = Map.new(vectors, &{&1.id, &1})
         ground = Map.fetch!(by_id, "v001_minimal_admit").base
@@ -265,14 +236,10 @@ defmodule AshA2A.SA2AConformanceTest do
                "blank-node graph_hash appears to have become stable " <>
                  "(#{inspect(bnode_hashes)}); if praxis-graphlaw fixed this, " <>
                  "remove the OPEN_FALSIFIER status from v006 and invert this assertion"
-      end
     end
 
     @tag :falsifier
     test "the court reports that instability instead of passing over it", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         result = assertion(context.receipt, :same_input_identity)
 
         # Both runtimes agree digit-for-digit on the unstable sequence, so a
@@ -289,7 +256,6 @@ defmodule AshA2A.SA2AConformanceTest do
                |> Enum.sort() == ["BEAM/Wasmex", "Node/StandaloneJS"]
 
         assert context.receipt["result"] == "FAIL"
-      end
     end
   end
 
@@ -345,10 +311,7 @@ defmodule AshA2A.SA2AConformanceTest do
     end
 
     test "an assertion that cannot be computed fails the run, it is not skipped",
-         %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+         %{} = _context do
         # A real, genuinely degraded host: real wasm for every call except
         # graph_hash, which it really refuses. See its @moduledoc.
         #
@@ -383,7 +346,6 @@ defmodule AshA2A.SA2AConformanceTest do
         # The degraded host still really executed everything else, so the
         # failure is attributable rather than blanket.
         assert assertion(receipt, :same_wasm)["value"]
-      end
     end
   end
 
@@ -409,10 +371,7 @@ defmodule AshA2A.SA2AConformanceTest do
       dir
     end
 
-    test "control: two healthy runtimes really do PASS on this corpus", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+    test "control: two healthy runtimes really do PASS on this corpus", %{} = _context do
         dir = corpus_without_v006()
 
         try do
@@ -421,15 +380,11 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           File.rm_rf!(dir)
         end
-      end
     end
 
     @tag :falsifier
     test "two runtimes whose run_hooks both failed must not be reported as agreeing",
-         %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+         %{} = _context do
         dir = corpus_without_v006()
 
         try do
@@ -477,14 +432,10 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           File.rm_rf!(dir)
         end
-      end
     end
 
     @tag :falsifier
-    test "the ABSENT projection digest appears nowhere in the receipt", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+    test "the ABSENT projection digest appears nowhere in the receipt", %{} = _context do
         dir = corpus_without_v006()
 
         try do
@@ -538,15 +489,11 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           File.rm_rf!(dir)
         end
-      end
     end
 
     @tag :falsifier
     test "a failure in one runtime alone is enough; agreement is not required to fail",
-         %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+         %{} = _context do
         dir = corpus_without_v006()
 
         try do
@@ -571,10 +518,9 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           File.rm_rf!(dir)
         end
-      end
     end
 
-    test "the moduledoc claim and the real behaviour agree", %{} = context do
+    test "the moduledoc claim and the real behaviour agree", %{} = _context do
       # The claim, read out of the compiled module rather than out of the
       # source file, so weakening it is what breaks this test.
       {:docs_v1, _, :elixir, _, %{"en" => doc}, _, _} = Code.fetch_docs(Conformance)
@@ -582,9 +528,6 @@ defmodule AshA2A.SA2AConformanceTest do
       assert doc =~ "An assertion that could not be computed is a **failure**, never a skip"
       assert doc =~ ~s(`run/1` returns `{:error, receipt}` when any of the five is absent or)
 
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         dir = corpus_without_v006()
 
         try do
@@ -615,15 +558,11 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           File.rm_rf!(dir)
         end
-      end
     end
   end
 
   describe "the receipt" do
     test "carries exactly the specified top-level shape", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
 
         for key <- ~w(profile graphlaw_version wasm_digest root_manifest_digest
@@ -646,24 +585,16 @@ defmodule AshA2A.SA2AConformanceTest do
 
         assert Map.keys(receipt["assertions"]) |> Enum.sort() ==
                  Conformance.assertion_names() |> Enum.map(&Atom.to_string/1) |> Enum.sort()
-      end
     end
 
     test "is JSON-encodable, which is what makes it machine-readable", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         encoded = JSON.encode!(context.receipt)
         assert {:ok, decoded} = JSON.decode(encoded)
         assert decoded["profile"] == "SA2A-STRICT-v26.9.20"
-      end
     end
 
     test "both runtimes independently computed the same root manifest digest",
          %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         receipt = context.receipt
 
         # Each host ran blake3_hex over the identical corpus manifest string
@@ -672,13 +603,9 @@ defmodule AshA2A.SA2AConformanceTest do
                  receipt["runtime_b"]["root_manifest_digest"]
 
         assert receipt["root_manifest_digest"] == receipt["runtime_a"]["root_manifest_digest"]
-      end
     end
 
     test "declares the scope it does and does not establish", %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
         scope = context.receipt["scope"]
 
         assert scope["stops_at"] == "ADMITTED"
@@ -688,7 +615,6 @@ defmodule AshA2A.SA2AConformanceTest do
         assert "universal semantic equivalence" in scope["does_not_establish"]
         assert "production readiness" in scope["does_not_establish"]
         assert "cross-implementation equivalence" in scope["does_not_establish"]
-      end
     end
   end
 
@@ -747,10 +673,7 @@ defmodule AshA2A.SA2AConformanceTest do
     end
 
     test "a real projected hook result is parseable turtle with a real canonical hash",
-         %{} = context do
-      if skip = context[:skip] do
-        IO.puts("skipped: #{skip}")
-      else
+         %{} = _context do
         {:ok, %{session: session}} = WasmexSession.open([])
 
         try do
@@ -765,7 +688,6 @@ defmodule AshA2A.SA2AConformanceTest do
         after
           WasmexSession.close(session)
         end
-      end
     end
   end
 end

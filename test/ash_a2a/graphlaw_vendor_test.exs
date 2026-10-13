@@ -13,8 +13,9 @@ defmodule AshA2A.GraphLawVendorTest do
   There is no mock, stub, or interaction assertion anywhere in this file --
   every assertion is on returned state, file contents, or a digest.
 
-  Execution tests degrade to a *named, visible* `@tag :skip`-style guard when
-  no Node executable is available on the host, never to a fabricated result.
+  Execution tests are excluded as a real, NAMED ExUnit skip when no Node
+  executable is available on the host (visible via `mix test --include skip`),
+  never fabricated into a pass.
   """
 
   use ExUnit.Case, async: true
@@ -23,8 +24,6 @@ defmodule AshA2A.GraphLawVendorTest do
   alias AshA2A.GraphLaw.Manifest
   alias AshA2A.GraphLaw.Vendor
   alias AshA2A.GraphLaw.WasmHost
-
-  defp node_available?, do: match?({:ok, _}, WasmHost.node_executable())
 
   describe "committed law package" do
     test "the artifact, host, fixtures and manifest are all actually present" do
@@ -66,18 +65,17 @@ defmodule AshA2A.GraphLawVendorTest do
   end
 
   describe "real wasm execution" do
-    setup do
-      if node_available?() do
-        :ok
-      else
-        {:ok, skip: "no node executable on PATH; real wasm execution cannot be performed"}
-      end
+    # Real ExUnit skip, resolved at compile time: with no `node` executable on
+    # PATH the whole describe block is skipped with a NAMED reason (visible via
+    # `mix test --include skip`) instead of green-passing context branches.
+    case WasmHost.node_executable() do
+      {:ok, _} -> :ok
+      {:error, reason} ->
+        @describetag skip: "no node executable on PATH (" <>
+                           inspect(reason) <> "); real wasm execution cannot be performed"
     end
 
-    test "probe/1 runs the committed artifact and reports its real semantics", context do
-      if context[:skip] do
-        IO.puts("SKIPPED (named): #{context[:skip]}")
-      else
+    test "probe/1 runs the committed artifact and reports its real semantics", _context do
         assert {:ok, probe} = WasmHost.probe()
 
         assert probe.graphlaw_version =~ "praxis-graphlaw"
@@ -88,46 +86,33 @@ defmodule AshA2A.GraphLawVendorTest do
         refute probe.graph_hash_base == probe.graph_hash_mutated
         assert WasmHost.probe_acceptable?(probe)
         assert WasmHost.probe_failures(probe) == []
-      end
     end
 
-    test "the module declares exactly the two host imports this repo stubs", context do
-      if context[:skip] do
-        IO.puts("SKIPPED (named): #{context[:skip]}")
-      else
+    test "the module declares exactly the two host imports this repo stubs", _context do
         assert {:ok, probe} = WasmHost.probe()
         assert length(probe.imports) == 2
 
         names = Enum.map(probe.imports, &(String.split(&1, "::") |> List.last()))
         assert "__wbindgen_object_drop_ref" in names
         assert Enum.any?(names, &String.starts_with?(&1, "__wbg_getRandomValues_"))
-      end
     end
 
-    test "the module exports the wasm-bindgen ABI the host relies on", context do
-      if context[:skip] do
-        IO.puts("SKIPPED (named): #{context[:skip]}")
-      else
+    test "the module exports the wasm-bindgen ABI the host relies on", _context do
         assert {:ok, probe} = WasmHost.probe()
 
         for export <- ~w(memory graph_hash graphlaw_version blake3_hex run_hooks validate_all
                          __wbindgen_add_to_stack_pointer __wbindgen_export2 __wbindgen_export4) do
           assert export in probe.exports, "artifact no longer exports #{export}"
         end
-      end
     end
 
-    test "run_hooks returns the admission vocabulary, decoded as real JSON", context do
-      if context[:skip] do
-        IO.puts("SKIPPED (named): #{context[:skip]}")
-      else
+    test "run_hooks returns the admission vocabulary, decoded as real JSON", _context do
         base = File.read!(GraphLaw.fixture_path("base.ttl"))
         event = "@prefix ex: <http://example.org/> .\nex:c ex:p ex:d .\n"
 
         assert {:ok, decoded} = WasmHost.call_json("run_hooks", [base, event])
         assert is_map(decoded)
         assert Map.has_key?(decoded, "status")
-      end
     end
 
     test "a missing artifact path is a typed error, not a crash", _context do
@@ -137,13 +122,9 @@ defmodule AshA2A.GraphLawVendorTest do
                )
     end
 
-    test "an unknown export is a typed host error", context do
-      if context[:skip] do
-        IO.puts("SKIPPED (named): #{context[:skip]}")
-      else
+    test "an unknown export is a typed host error", _context do
         assert {:error, %{code: :host_failed, host_code: "unknown_export"}} =
                  WasmHost.run([%{fn: "no_such_export", args: []}])
-      end
     end
   end
 
