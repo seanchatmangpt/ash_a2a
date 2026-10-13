@@ -741,12 +741,10 @@ if Code.ensure_loaded?(Plug) do
           match?({:ok, ^task}, authorize_task(:list, task, params, plug_opts))
         end)
 
-      %{
-        result
-        | tasks: authorized,
-          total_size: length(authorized),
-          page_size: length(authorized)
-      }
+      # page_size echoes the REQUESTED cap (already set by Task.Filter.apply),
+      # not the post-authorization result length — same contract as Y10
+      # (commit 68e4724e): filtering shrinks the page, not the reported cap.
+      %{result | tasks: authorized, total_size: length(authorized)}
     end
 
     defp call_authorizer(fun, operation, task, context) when is_function(fun, 3) do
