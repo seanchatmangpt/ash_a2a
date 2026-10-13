@@ -125,6 +125,8 @@ measurements unless noted. They fire only on the opt-in semantic paths.
 | `[:ash_a2a, :a2a_transport, :push, :attempt]` | `AshA2A.A2ATransport.PushDelivery` (one signed webhook delivery attempt) |
 | `[:ash_a2a, :security_profile, :dev_bypass]` | `AshA2A.SecurityProfile.Template` (a `:dev_bypass` build stamped its receipts) |
 | `[:ash_a2a, :security_profile, :legacy_compat]` | `AshA2A.SecurityProfile.Boot` |
+| `[:ash_a2a, :transport, :plug, :list_refused]` | `AshA2A.A2ATransport.Plug` (task-list wire refusal; metadata: `subject`, `refusal` (committed `AshA2A.Semantic.Refusal`), `wire_code`; no measurements) |
+| `[:ash_a2a, :protocol, :plug, :authorize_refused]` | `AshA2A.Protocol.Plug` authorize court (metadata: `operation`, `task_id`, `refusal` (committed `AshA2A.Semantic.Refusal`), `wire_code`; no measurements) |
 
 ### GraphLaw engine
 

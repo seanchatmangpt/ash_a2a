@@ -35,7 +35,7 @@ defmodule AshA2a.StandingReceiptChainTest do
         e ->
           flunk("revision task raised: #{Exception.message(e)}")
       after
-        Mix.shell(:unix)
+        Mix.shell(Mix.Shell.IO)
       end
 
     {out, 0}
@@ -171,7 +171,7 @@ defmodule AshA2a.StandingReceiptChainTest do
       Mix.shell(Mix.Shell.Process)
 
       assert catch_exit(append_revision_bare(doc)) != nil
-      Mix.shell(:unix)
+      Mix.shell(Mix.Shell.IO)
     end
 
     test "back-compat: no chain file -> verify absent, fold not consulted", %{dir: dir} do

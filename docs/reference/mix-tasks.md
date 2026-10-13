@@ -42,6 +42,9 @@ These are the repo's own regression gates (run by or alongside
 | --- | --- |
 | `mix ash_a2a.vendor_graphlaw` | Rebuilds, executes, and vendors the GraphLaw wasm law package into `priv/graphlaw` (needs the praxis checkout and `wasm-pack`; dev tooling only). |
 | `mix ash_a2a.standing_ref` | Prints the newest SHA with a durable court receipt at a given standing (`--court sa2a --standing CONFORMANT`), so consumers pin that exact SHA as a git `ref:` instead of a version number. See `AshA2A.StandingRef`. |
+| `mix ash_a2a.standing_receipt.revision` | Append a receipt-revision event to the standing-receipt hash chain (`<doc>.chain.jsonl`) and prints the new chain head (`CHAIN_HEAD:<hex>`); `--in`/`--chain`; exits 1 (REFUSED) on an unreadable doc or broken chain. |
+| `mix ash_a2a.standing_receipt.verify` | Verify a standing-receipt attestation (payload digest + Ed25519 via graphlaw-attest) in stages: the payload SHA-256 must match, the signature is verified with `--trusted-key` (`BLOCKED:graphlaw-attest-absent` if the binary is absent — never faked), and when `<doc>.chain.jsonl` exists the revision chain fold is recomputed. `--in`/`--attestation`/`--trusted-key`. |
+| `mix ash_a2a.self_card` | Generate ash_a2a's own A2A agent card from its shipped protocol surface (`--output PATH`, `--url URL`; writes `priv/sa2a/self-agent-card.json`). |
 | `mix eds.ledger` | Print the real ERC ledger for this repo — the ERC (Executable Research Claim) receipts written from this project's own test-run evidence. |
 
 ## Benchmarks (non-task)
