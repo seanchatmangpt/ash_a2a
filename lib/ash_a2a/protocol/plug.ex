@@ -182,8 +182,10 @@ if Code.ensure_loaded?(Plug) do
       handle_json_rpc(conn, resolved)
     end
 
-    def call(%{method: "GET", path_info: path} = conn,
-             %{jwks_path: path, jwks_keys: jwks_keys} = opts)
+    def call(
+          %{method: "GET", path_info: path} = conn,
+          %{jwks_path: path, jwks_keys: jwks_keys} = opts
+        )
         when not is_nil(jwks_keys) do
       serve_jwks(conn, opts)
     end
@@ -354,7 +356,9 @@ if Code.ensure_loaded?(Plug) do
       state
       |> String.downcase()
       |> String.replace_prefix("task_state_", "")
-      |> then(& &1 in ~w(completed canceled cancelled failed rejected input-required input_required auth-required auth_required))
+      |> then(
+        &(&1 in ~w(completed canceled cancelled failed rejected input-required input_required auth-required auth_required))
+      )
     end
 
     defp closed_wire_state?(_), do: false
@@ -463,7 +467,10 @@ if Code.ensure_loaded?(Plug) do
                   |> build_call_opts(opts)
                   |> maybe_put_fallback(:task_id, message.task_id)
                   |> maybe_put_fallback(:context_id, message.context_id)
-                  |> Keyword.put(:extensions, AshA2A.Protocol.Extension.to_context_map(activations))
+                  |> Keyword.put(
+                    :extensions,
+                    AshA2A.Protocol.Extension.to_context_map(activations)
+                  )
 
                 if transport_streaming?(opts) do
                   AshA2A.A2ATransport.SSE.stream_message(
@@ -476,7 +483,13 @@ if Code.ensure_loaded?(Plug) do
                     []
                   )
                 else
-                  AshA2A.Protocol.Plug.SSE.stream_message(conn, opts.agent, message, id, call_opts)
+                  AshA2A.Protocol.Plug.SSE.stream_message(
+                    conn,
+                    opts.agent,
+                    message,
+                    id,
+                    call_opts
+                  )
                 end
               else
                 send_json(conn, Response.error(id, Error.unsupported_operation()))
@@ -577,7 +590,10 @@ if Code.ensure_loaded?(Plug) do
         case AshA2A.Protocol.call(agent, message, call_opts) do
           {:ok, result} ->
             register_inline_push_config(agent, result, params, plug_opts)
-            {:ok, result, _activations} = AshA2A.Protocol.Extension.run_response(activations, result, params)
+
+            {:ok, result, _activations} =
+              AshA2A.Protocol.Extension.run_response(activations, result, params)
+
             {:ok, result}
 
           {:error, :not_found} ->
@@ -724,13 +740,50 @@ if Code.ensure_loaded?(Plug) do
       context = authorization_context(params, plug_opts)
 
       case call_authorizer(plug_opts.authorize_task, operation, task, context) do
-        :ok -> {:ok, task}
-        true -> {:ok, task}
-        {:ok, true} -> {:ok, task}
-        {:ok, _identity} -> {:ok, task}
-        {:error, %Error{} = error} -> {:error, error}
-        _deny -> {:error, Error.task_not_found()}
+        :ok ->
+          {:ok, task}
+
+        true ->
+          {:ok, task}
+
+        {:ok, true} ->
+          {:ok, task}
+
+        {:ok, _identity} ->
+          {:ok, task}
+
+        {:error, %Error{} = error} ->
+          commit_refusal_receipt(operation, task, error)
+          {:error, error}
+
+        _deny ->
+          commit_refusal_receipt(operation, task, Error.task_not_found())
+          {:error, Error.task_not_found()}
       end
+    end
+
+    # Additive committed refusal receipt (L153, strata-valve parity shape, see
+    # `AshA2A.Semantic.Refusal.commit/2`): every authorize rejection commits a
+    # 32-byte receipt over the refused task/action identity. No behavior
+    # change to the wire response -- the receipt rides the `Refusal` struct
+    # (additive `:receipt` field) published through telemetry, mirroring how
+    # `AshA2A.Semantic.Iri.mint_private/1` surfaces its committed receipt.
+    defp commit_refusal_receipt(operation, task, wire_error) do
+      refusal =
+        AshA2A.Semantic.Refusal.new(
+          :refused_authority,
+          :denied,
+          :protocol_plug_authorize,
+          operation
+        )
+        |> AshA2A.Semantic.Refusal.commit({:task, task.id})
+
+      :telemetry.execute([:ash_a2a, :protocol, :plug, :authorize_refused], %{}, %{
+        operation: operation,
+        task_id: task.id,
+        refusal: refusal,
+        wire_code: wire_error.code
+      })
     end
 
     defp authorize_task_list(result, _params, %{authorize_task: nil}), do: result
