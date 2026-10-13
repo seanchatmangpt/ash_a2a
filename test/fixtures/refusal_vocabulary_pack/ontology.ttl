@@ -1,0 +1,436 @@
+@prefix rv:  <urn:refusal-vocabulary:> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical FAIL-CLOSED crosswalk: erlmcp integer refusal codes
+# (apps/erlmcp_core/include/erlmcp_refusal.hrl, v1.4.0, codes 1001-1089)
+# -> ash_a2a RFC-SA2A-001 S42 refusal classes
+# (lib/ash_a2a/semantic/refusal.ex, 18 classes) with the JSON-RPC error law
+# of lib/ash_a2a/protocol/jsonrpc/error.ex where a wire code applies.
+#
+# FAIL-CLOSED law (gates/):
+#   G1 every erlmcp code maps to EXACTLY ONE ash_a2a class;
+#   G2 every ash_a2a class is targeted by >= 1 erlmcp code;
+#   G3 jsonRpcCode values stay inside the A2A/JSON-RPC law set;
+#   G4 totality (closure-style): bijection between rv:RefusalMapping
+#     individuals and the declared rv:DeclaredMacro universe (count of
+#     declared, never a hardcoded literal);
+#   G5 valve totality: every declared strata-valve refusal class is mapped
+#     by exactly one rv:ValveMapping, and every rv:ValveMapping target
+#     resolves to a declared ash_a2a refusal class.
+
+<urn:refusal-vocabulary:pack> a rdfs:Class ;
+    dct:title "refusal-vocabulary-pack" ;
+    dct:description "Crosswalk ontology between the erlmcp refusal taxonomy and the ash_a2a S42 refusal classes." .
+
+# ---------------------------------------------------------------------------
+# The 18 ash_a2a refusal classes (AshA2A.Semantic.Refusal.refused_classes/0
+# ++ blocked_classes ++ unsupported_classes). rv:className is the Elixir atom.
+# ---------------------------------------------------------------------------
+
+rv:cls-refused-identity a rv:RefusalClass ;
+    rv:className "refused_identity" ; rv:classKind "refused" ;
+    dct:description "The subject cannot be identified, or two identities that must be distinct collide." .
+
+rv:cls-refused-namespace a rv:RefusalClass ;
+    rv:className "refused_namespace" ; rv:classKind "refused" ;
+    dct:description "A term, prefix, predicate, or object is outside the registered/closed namespace for this profile." .
+
+rv:cls-refused-structure a rv:RefusalClass ;
+    rv:className "refused_structure" ; rv:classKind "refused" ;
+    dct:description "The payload's shape is wrong: missing fields, wrong arity, unparsable wire form." .
+
+rv:cls-refused-shacl a rv:RefusalClass ;
+    rv:className "refused_shacl" ; rv:classKind "refused" ;
+    dct:description "A real validation report is non-conformant against a declared schema." .
+
+rv:cls-refused-rule a rv:RefusalClass ;
+    rv:className "refused_rule" ; rv:classKind "refused" ;
+    dct:description "A rule/admissibility-level check refused the content." .
+
+rv:cls-refused-falsifier a rv:RefusalClass ;
+    rv:className "refused_falsifier" ; rv:classKind "refused" ;
+    dct:description "A declared falsifier actually fired." .
+
+rv:cls-refused-provenance a rv:RefusalClass ;
+    rv:className "refused_provenance" ; rv:classKind "refused" ;
+    dct:description "An assertion is not grounded in its declared provenance." .
+
+rv:cls-refused-profile a rv:RefusalClass ;
+    rv:className "refused_profile" ; rv:classKind "refused" ;
+    dct:description "The declared profile is malformed." .
+
+rv:cls-refused-plan a rv:RefusalClass ;
+    rv:className "refused_plan" ; rv:classKind "refused" ;
+    dct:description "Planning refused: the operation cannot be lawfully scheduled." .
+
+rv:cls-refused-capability a rv:RefusalClass ;
+    rv:className "refused_capability" ; rv:classKind "refused" ;
+    dct:description "The named capability does not resolve." .
+
+rv:cls-refused-authority a rv:RefusalClass ;
+    rv:className "refused_authority" ; rv:classKind "refused" ;
+    dct:description "Authority is required and absent, mismatched, or invalid." .
+
+rv:cls-refused-consequence a rv:RefusalClass ;
+    rv:className "refused_consequence" ; rv:classKind "refused" ;
+    dct:description "The consequence is already claimed, in flight, or unclassifiable." .
+
+rv:cls-refused-receipt a rv:RefusalClass ;
+    rv:className "refused_receipt" ; rv:classKind "refused" ;
+    dct:description "A receipt/credential could not be anchored, committed, or replayed." .
+
+rv:cls-refused-bounds a rv:RefusalClass ;
+    rv:className "refused_bounds" ; rv:classKind "refused" ;
+    dct:description "A declared bound (capacity, rate, quota, size, timeout) was exceeded." .
+
+rv:cls-refused-meta-rigor a rv:RefusalClass ;
+    rv:className "refused_meta_rigor" ; rv:classKind "refused" ;
+    dct:description "The claim about rigor itself fails (a canonical/normal-form claim is false)." .
+
+rv:cls-blocked-unknown a rv:RefusalClass ;
+    rv:className "blocked_unknown" ; rv:classKind "blocked" ;
+    dct:description "No classification exists for this situation; not a refusal of the subject." .
+
+rv:cls-blocked-resource a rv:RefusalClass ;
+    rv:className "blocked_resource" ; rv:classKind "blocked" ;
+    dct:description "A real local resource is unavailable (capacity, transport, dependency, health)." .
+
+rv:cls-unsupported-profile a rv:RefusalClass ;
+    rv:className "unsupported_profile" ; rv:classKind "unsupported" ;
+    dct:description "The profile is well-formed and legible but not supported by this endpoint." .
+
+# ---------------------------------------------------------------------------
+# erlmcp refusal codes -> ash_a2a classes.
+# rv:erlmcpCode int; rv:macro the .hrl macro name; rv:ashA2aClass exactly one;
+# rv:httpStatus / rv:severity lifted from ?REFUSAL_METADATA; rv:jsonRpcCode
+# only where the A2A JSON-RPC law (error.ex) defines an applicable wire code.
+# ---------------------------------------------------------------------------
+
+# --- Queue and Backpressure (1001-1005) ---
+rv:code-1001 a rv:RefusalMapping ; rv:erlmcpCode 1001 ; rv:macro "REFUSAL_QUEUE_CAP_EXCEEDED" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Queue capacity exceeded (message count)." .
+rv:code-1002 a rv:RefusalMapping ; rv:erlmcpCode 1002 ; rv:macro "REFUSAL_QUEUE_BYTE_CAP_EXCEEDED" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Byte size limit exceeded." .
+rv:code-1003 a rv:RefusalMapping ; rv:erlmcpCode 1003 ; rv:macro "REFUSAL_QUEUE_TENANT_CAP_EXCEEDED" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "critical" ;
+    dct:description "Tenant aggregate limit exceeded." .
+rv:code-1004 a rv:RefusalMapping ; rv:erlmcpCode 1004 ; rv:macro "REFUSAL_BUFFER_OVERFLOW" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "critical" ;
+    dct:description "Internal buffer overflow." .
+rv:code-1005 a rv:RefusalMapping ; rv:erlmcpCode 1005 ; rv:macro "REFUSAL_BACKPRESSURE_ACTIVE" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Backpressure signal active." .
+
+# --- Authentication & Authorization (1011-1016) ---
+rv:code-1011 a rv:RefusalMapping ; rv:erlmcpCode 1011 ; rv:macro "REFUSAL_AUTH_FAILED" ;
+    rv:ashA2aClass rv:cls-refused-authority ; rv:httpStatus 401 ; rv:severity "error" ;
+    dct:description "Authentication failed." .
+rv:code-1012 a rv:RefusalMapping ; rv:erlmcpCode 1012 ; rv:macro "REFUSAL_AUTH_EXPIRED" ;
+    rv:ashA2aClass rv:cls-refused-receipt ; rv:httpStatus 401 ; rv:severity "error" ;
+    dct:description "Auth token expired; the presented credential cannot be re-anchored or replayed (FORCED placement -- see adjudication note)." .
+rv:code-1013 a rv:RefusalMapping ; rv:erlmcpCode 1013 ; rv:macro "REFUSAL_AUTH_INVALID_CREDENTIALS" ;
+    rv:ashA2aClass rv:cls-refused-authority ; rv:httpStatus 401 ; rv:severity "error" ;
+    dct:description "Invalid credentials." .
+rv:code-1014 a rv:RefusalMapping ; rv:erlmcpCode 1014 ; rv:macro "REFUSAL_AUTHZ_FORBIDDEN" ;
+    rv:ashA2aClass rv:cls-refused-authority ; rv:httpStatus 403 ; rv:severity "error" ;
+    dct:description "Authorization denied." .
+rv:code-1015 a rv:RefusalMapping ; rv:erlmcpCode 1015 ; rv:macro "REFUSAL_AUTH_MISSING" ;
+    rv:ashA2aClass rv:cls-refused-authority ; rv:httpStatus 401 ; rv:severity "error" ;
+    dct:description "Missing authentication." .
+rv:code-1016 a rv:RefusalMapping ; rv:erlmcpCode 1016 ; rv:macro "REFUSAL_SESSION_INVALID" ;
+    rv:ashA2aClass rv:cls-refused-identity ; rv:httpStatus 401 ; rv:severity "error" ;
+    dct:description "Session ID invalid/missing: the subject cannot be identified." .
+
+# --- Parameter & Validation (1021-1029) ---
+rv:code-1021 a rv:RefusalMapping ; rv:erlmcpCode 1021 ; rv:macro "REFUSAL_INVALID_PARAMS" ;
+    rv:ashA2aClass rv:cls-refused-structure ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32602 ;
+    dct:description "Invalid request parameters." .
+rv:code-1022 a rv:RefusalMapping ; rv:erlmcpCode 1022 ; rv:macro "REFUSAL_INVALID_JSON_SCHEMA" ;
+    rv:ashA2aClass rv:cls-refused-shacl ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32602 ;
+    dct:description "JSON schema validation failed (non-conformant validation report)." .
+rv:code-1023 a rv:RefusalMapping ; rv:erlmcpCode 1023 ; rv:macro "REFUSAL_INVALID_URI" ;
+    rv:ashA2aClass rv:cls-refused-provenance ; rv:httpStatus 400 ; rv:severity "error" ;
+    dct:description "URI format invalid; a malformed URI cannot ground a claim to a resolvable referent (FORCED placement)." .
+rv:code-1024 a rv:RefusalMapping ; rv:erlmcpCode 1024 ; rv:macro "REFUSAL_INVALID_CONTENT_TYPE" ;
+    rv:ashA2aClass rv:cls-unsupported-profile ; rv:httpStatus 415 ; rv:severity "error" ;
+    rv:jsonRpcCode -32005 ;
+    dct:description "Content-Type well-formed but not supported." .
+rv:code-1025 a rv:RefusalMapping ; rv:erlmcpCode 1025 ; rv:macro "REFUSAL_INVALID_HEADER" ;
+    rv:ashA2aClass rv:cls-refused-profile ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32600 ;
+    dct:description "Required header missing/invalid: declared profile malformed." .
+rv:code-1026 a rv:RefusalMapping ; rv:erlmcpCode 1026 ; rv:macro "REFUSAL_INVALID_SESSION_ID" ;
+    rv:ashA2aClass rv:cls-refused-structure ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32602 ;
+    dct:description "Session ID format invalid (wire shape wrong)." .
+rv:code-1027 a rv:RefusalMapping ; rv:erlmcpCode 1027 ; rv:macro "REFUSAL_INVALID_PROTOCOL_VERSION" ;
+    rv:ashA2aClass rv:cls-unsupported-profile ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32009 ;
+    dct:description "Protocol version not supported." .
+rv:code-1028 a rv:RefusalMapping ; rv:erlmcpCode 1028 ; rv:macro "REFUSAL_MISSING_REQUIRED_FIELD" ;
+    rv:ashA2aClass rv:cls-refused-structure ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32602 ;
+    dct:description "Required field missing." .
+rv:code-1029 a rv:RefusalMapping ; rv:erlmcpCode 1029 ; rv:macro "REFUSAL_FIELD_TYPE_MISMATCH" ;
+    rv:ashA2aClass rv:cls-refused-structure ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32602 ;
+    dct:description "Field type doesn't match schema." .
+
+# --- Path & URI Security (1036-1040) ---
+rv:code-1036 a rv:RefusalMapping ; rv:erlmcpCode 1036 ; rv:macro "REFUSAL_PATH_TRAVERSAL_DETECTED" ;
+    rv:ashA2aClass rv:cls-refused-rule ; rv:httpStatus 400 ; rv:severity "critical" ;
+    dct:description "Path traversal attack detected (content-admissibility rule fired)." .
+rv:code-1037 a rv:RefusalMapping ; rv:erlmcpCode 1037 ; rv:macro "REFUSAL_PATH_INVALID" ;
+    rv:ashA2aClass rv:cls-refused-structure ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32602 ;
+    dct:description "Path format invalid." .
+rv:code-1038 a rv:RefusalMapping ; rv:erlmcpCode 1038 ; rv:macro "REFUSAL_SYMLINK_TRAVERSAL_DETECTED" ;
+    rv:ashA2aClass rv:cls-refused-rule ; rv:httpStatus 400 ; rv:severity "critical" ;
+    dct:description "Symlink traversal attack detected." .
+rv:code-1039 a rv:RefusalMapping ; rv:erlmcpCode 1039 ; rv:macro "REFUSAL_URI_OUT_OF_BOUNDS" ;
+    rv:ashA2aClass rv:cls-refused-namespace ; rv:httpStatus 400 ; rv:severity "error" ;
+    dct:description "URI outside allowed roots: outside the closed namespace for this profile." .
+rv:code-1040 a rv:RefusalMapping ; rv:erlmcpCode 1040 ; rv:macro "REFUSAL_CANONICAL_PATH_VIOLATION" ;
+    rv:ashA2aClass rv:cls-refused-meta-rigor ; rv:httpStatus 400 ; rv:severity "error" ;
+    dct:description "Canonical path validation failed: the canonical-form (rigor) claim about the path is false (FORCED placement)." .
+
+# --- Resource & Entity (1046-1052) ---
+rv:code-1046 a rv:RefusalMapping ; rv:erlmcpCode 1046 ; rv:macro "REFUSAL_RESOURCE_NOT_FOUND" ;
+    rv:ashA2aClass rv:cls-refused-capability ; rv:httpStatus 404 ; rv:severity "warn" ;
+    rv:jsonRpcCode -32001 ;
+    dct:description "Resource does not exist." .
+rv:code-1047 a rv:RefusalMapping ; rv:erlmcpCode 1047 ; rv:macro "REFUSAL_RESOURCE_DUPLICATE" ;
+    rv:ashA2aClass rv:cls-refused-identity ; rv:httpStatus 409 ; rv:severity "warn" ;
+    dct:description "Resource already exists: two identities that must be distinct collide." .
+rv:code-1048 a rv:RefusalMapping ; rv:erlmcpCode 1048 ; rv:macro "REFUSAL_TOOL_NOT_FOUND" ;
+    rv:ashA2aClass rv:cls-refused-capability ; rv:httpStatus 404 ; rv:severity "warn" ;
+    rv:jsonRpcCode -32001 ;
+    dct:description "Tool does not exist." .
+rv:code-1049 a rv:RefusalMapping ; rv:erlmcpCode 1049 ; rv:macro "REFUSAL_TOOL_DUPLICATE" ;
+    rv:ashA2aClass rv:cls-refused-consequence ; rv:httpStatus 409 ; rv:severity "warn" ;
+    dct:description "Tool already registered (already_claimed -> refused_consequence per refusal.ex)." .
+rv:code-1050 a rv:RefusalMapping ; rv:erlmcpCode 1050 ; rv:macro "REFUSAL_PROMPT_NOT_FOUND" ;
+    rv:ashA2aClass rv:cls-refused-capability ; rv:httpStatus 404 ; rv:severity "warn" ;
+    rv:jsonRpcCode -32001 ;
+    dct:description "Prompt does not exist." .
+rv:code-1051 a rv:RefusalMapping ; rv:erlmcpCode 1051 ; rv:macro "REFUSAL_PROMPT_DUPLICATE" ;
+    rv:ashA2aClass rv:cls-refused-consequence ; rv:httpStatus 409 ; rv:severity "warn" ;
+    dct:description "Prompt already exists." .
+rv:code-1052 a rv:RefusalMapping ; rv:erlmcpCode 1052 ; rv:macro "REFUSAL_ENTITY_DUPLICATE" ;
+    rv:ashA2aClass rv:cls-refused-identity ; rv:httpStatus 409 ; rv:severity "warn" ;
+    dct:description "Generic entity duplicate (identity collision)." .
+
+# --- Rate Limiting & Throttling (1056-1060) ---
+rv:code-1056 a rv:RefusalMapping ; rv:erlmcpCode 1056 ; rv:macro "REFUSAL_RATE_LIMIT_EXCEEDED" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Rate limit exceeded." .
+rv:code-1057 a rv:RefusalMapping ; rv:erlmcpCode 1057 ; rv:macro "REFUSAL_RATE_LIMIT_PER_SECOND" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Per-second rate limit hit." .
+rv:code-1058 a rv:RefusalMapping ; rv:erlmcpCode 1058 ; rv:macro "REFUSAL_RATE_LIMIT_PER_MINUTE" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Per-minute rate limit hit." .
+rv:code-1059 a rv:RefusalMapping ; rv:erlmcpCode 1059 ; rv:macro "REFUSAL_QUOTA_EXCEEDED" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Quota limit exceeded." .
+rv:code-1060 a rv:RefusalMapping ; rv:erlmcpCode 1060 ; rv:macro "REFUSAL_CONCURRENT_LIMIT_EXCEEDED" ;
+    rv:ashA2aClass rv:cls-refused-consequence ; rv:httpStatus 429 ; rv:severity "error" ;
+    dct:description "Concurrent connection limit: effect_in_flight semantics (refusal.ex maps effect_in_flight to refused_consequence)." .
+
+# --- Protocol & Transport (1066-1070) ---
+rv:code-1066 a rv:RefusalMapping ; rv:erlmcpCode 1066 ; rv:macro "REFUSAL_PROTOCOL_ERROR" ;
+    rv:ashA2aClass rv:cls-refused-structure ; rv:httpStatus 400 ; rv:severity "error" ;
+    rv:jsonRpcCode -32600 ;
+    dct:description "Protocol-level error (wire form unparsable/non-compliant)." .
+rv:code-1067 a rv:RefusalMapping ; rv:erlmcpCode 1067 ; rv:macro "REFUSAL_TRANSPORT_ERROR" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "error" ;
+    dct:description "Transport I/O error." .
+rv:code-1068 a rv:RefusalMapping ; rv:erlmcpCode 1068 ; rv:macro "REFUSAL_MESSAGE_TOO_LARGE" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 413 ; rv:severity "error" ;
+    dct:description "Message size exceeds declared bound." .
+rv:code-1069 a rv:RefusalMapping ; rv:erlmcpCode 1069 ; rv:macro "REFUSAL_TIMEOUT" ;
+    rv:ashA2aClass rv:cls-refused-bounds ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Operation timeout: declared time bound exceeded. Adjudicated deviation from ash_a2a native @mapping (which places :timeout in blocked_resource): this crosswalk classifies a timeout as its declared temporal bound breached (refused_bounds); the semantic reading is deliberate and pinned by the ash_a2a crosswalk court's deviation ledger." .
+rv:code-1070 a rv:RefusalMapping ; rv:erlmcpCode 1070 ; rv:macro "REFUSAL_UNSUPPORTED_ENCODING" ;
+    rv:ashA2aClass rv:cls-unsupported-profile ; rv:httpStatus 415 ; rv:severity "error" ;
+    rv:jsonRpcCode -32005 ;
+    dct:description "Encoding not supported." .
+
+# --- Server State (1076-1080) ---
+rv:code-1076 a rv:RefusalMapping ; rv:erlmcpCode 1076 ; rv:macro "REFUSAL_SERVER_UNINITIALIZED" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "error" ;
+    dct:description "Server not initialized." .
+rv:code-1077 a rv:RefusalMapping ; rv:erlmcpCode 1077 ; rv:macro "REFUSAL_SERVER_SHUTTING_DOWN" ;
+    rv:ashA2aClass rv:cls-refused-plan ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Server shutting down: the operation cannot be lawfully scheduled (FORCED placement)." .
+rv:code-1078 a rv:RefusalMapping ; rv:erlmcpCode 1078 ; rv:macro "REFUSAL_SERVICE_UNAVAILABLE" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Service temporarily unavailable." .
+rv:code-1079 a rv:RefusalMapping ; rv:erlmcpCode 1079 ; rv:macro "REFUSAL_INTERNAL_ERROR" ;
+    rv:ashA2aClass rv:cls-blocked-unknown ; rv:httpStatus 503 ; rv:severity "critical" ;
+    dct:description "Internal server error: unexpected/unmodelled situation (blocked_unknown). Note: refusal.ex also allows blocked_resource for crashes; unknown chosen because the situation is by definition unclassified." .
+rv:code-1080 a rv:RefusalMapping ; rv:erlmcpCode 1080 ; rv:macro "REFUSAL_DEPENDENCY_UNAVAILABLE" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "External dependency unavailable." .
+
+# --- Circuit Breaker & Health (1086-1089) ---
+rv:code-1086 a rv:RefusalMapping ; rv:erlmcpCode 1086 ; rv:macro "REFUSAL_CIRCUIT_BREAKER_OPEN" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Circuit breaker open." .
+rv:code-1087 a rv:RefusalMapping ; rv:erlmcpCode 1087 ; rv:macro "REFUSAL_HEALTH_CHECK_FAILED" ;
+    rv:ashA2aClass rv:cls-refused-falsifier ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Health check failed: a declared falsifier (the health probe) actually fired." .
+rv:code-1088 a rv:RefusalMapping ; rv:erlmcpCode 1088 ; rv:macro "REFUSAL_DEGRADED_SERVICE" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "warn" ;
+    dct:description "Service degraded." .
+rv:code-1089 a rv:RefusalMapping ; rv:erlmcpCode 1089 ; rv:macro "REFUSAL_RESOURCE_EXHAUSTED" ;
+    rv:ashA2aClass rv:cls-blocked-resource ; rv:httpStatus 503 ; rv:severity "critical" ;
+    dct:description "Server out of resources." .
+
+# ---------------------------------------------------------------------------
+# Closure universe (generalized totality): the declared set of erlmcp refusal
+# macros (erlmcp_refusal.hrl v1.4.0). G4 is closure-style: a bijection between
+# rv:RefusalMapping individuals and rv:DeclaredMacro individuals -- count of
+# declared, never a hardcoded literal count.
+# ---------------------------------------------------------------------------
+
+rv:macro-refusal-authz-forbidden a rv:DeclaredMacro ; rv:macroName "REFUSAL_AUTHZ_FORBIDDEN" .
+rv:macro-refusal-auth-expired a rv:DeclaredMacro ; rv:macroName "REFUSAL_AUTH_EXPIRED" .
+rv:macro-refusal-auth-failed a rv:DeclaredMacro ; rv:macroName "REFUSAL_AUTH_FAILED" .
+rv:macro-refusal-auth-invalid-credentials a rv:DeclaredMacro ; rv:macroName "REFUSAL_AUTH_INVALID_CREDENTIALS" .
+rv:macro-refusal-auth-missing a rv:DeclaredMacro ; rv:macroName "REFUSAL_AUTH_MISSING" .
+rv:macro-refusal-backpressure-active a rv:DeclaredMacro ; rv:macroName "REFUSAL_BACKPRESSURE_ACTIVE" .
+rv:macro-refusal-buffer-overflow a rv:DeclaredMacro ; rv:macroName "REFUSAL_BUFFER_OVERFLOW" .
+rv:macro-refusal-canonical-path-violation a rv:DeclaredMacro ; rv:macroName "REFUSAL_CANONICAL_PATH_VIOLATION" .
+rv:macro-refusal-circuit-breaker-open a rv:DeclaredMacro ; rv:macroName "REFUSAL_CIRCUIT_BREAKER_OPEN" .
+rv:macro-refusal-concurrent-limit-exceeded a rv:DeclaredMacro ; rv:macroName "REFUSAL_CONCURRENT_LIMIT_EXCEEDED" .
+rv:macro-refusal-degraded-service a rv:DeclaredMacro ; rv:macroName "REFUSAL_DEGRADED_SERVICE" .
+rv:macro-refusal-dependency-unavailable a rv:DeclaredMacro ; rv:macroName "REFUSAL_DEPENDENCY_UNAVAILABLE" .
+rv:macro-refusal-entity-duplicate a rv:DeclaredMacro ; rv:macroName "REFUSAL_ENTITY_DUPLICATE" .
+rv:macro-refusal-field-type-mismatch a rv:DeclaredMacro ; rv:macroName "REFUSAL_FIELD_TYPE_MISMATCH" .
+rv:macro-refusal-health-check-failed a rv:DeclaredMacro ; rv:macroName "REFUSAL_HEALTH_CHECK_FAILED" .
+rv:macro-refusal-internal-error a rv:DeclaredMacro ; rv:macroName "REFUSAL_INTERNAL_ERROR" .
+rv:macro-refusal-invalid-content-type a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_CONTENT_TYPE" .
+rv:macro-refusal-invalid-header a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_HEADER" .
+rv:macro-refusal-invalid-json-schema a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_JSON_SCHEMA" .
+rv:macro-refusal-invalid-params a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_PARAMS" .
+rv:macro-refusal-invalid-protocol-version a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_PROTOCOL_VERSION" .
+rv:macro-refusal-invalid-session-id a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_SESSION_ID" .
+rv:macro-refusal-invalid-uri a rv:DeclaredMacro ; rv:macroName "REFUSAL_INVALID_URI" .
+rv:macro-refusal-message-too-large a rv:DeclaredMacro ; rv:macroName "REFUSAL_MESSAGE_TOO_LARGE" .
+rv:macro-refusal-missing-required-field a rv:DeclaredMacro ; rv:macroName "REFUSAL_MISSING_REQUIRED_FIELD" .
+rv:macro-refusal-path-invalid a rv:DeclaredMacro ; rv:macroName "REFUSAL_PATH_INVALID" .
+rv:macro-refusal-path-traversal-detected a rv:DeclaredMacro ; rv:macroName "REFUSAL_PATH_TRAVERSAL_DETECTED" .
+rv:macro-refusal-prompt-duplicate a rv:DeclaredMacro ; rv:macroName "REFUSAL_PROMPT_DUPLICATE" .
+rv:macro-refusal-prompt-not-found a rv:DeclaredMacro ; rv:macroName "REFUSAL_PROMPT_NOT_FOUND" .
+rv:macro-refusal-protocol-error a rv:DeclaredMacro ; rv:macroName "REFUSAL_PROTOCOL_ERROR" .
+rv:macro-refusal-queue-byte-cap-exceeded a rv:DeclaredMacro ; rv:macroName "REFUSAL_QUEUE_BYTE_CAP_EXCEEDED" .
+rv:macro-refusal-queue-cap-exceeded a rv:DeclaredMacro ; rv:macroName "REFUSAL_QUEUE_CAP_EXCEEDED" .
+rv:macro-refusal-queue-tenant-cap-exceeded a rv:DeclaredMacro ; rv:macroName "REFUSAL_QUEUE_TENANT_CAP_EXCEEDED" .
+rv:macro-refusal-quota-exceeded a rv:DeclaredMacro ; rv:macroName "REFUSAL_QUOTA_EXCEEDED" .
+rv:macro-refusal-rate-limit-exceeded a rv:DeclaredMacro ; rv:macroName "REFUSAL_RATE_LIMIT_EXCEEDED" .
+rv:macro-refusal-rate-limit-per-minute a rv:DeclaredMacro ; rv:macroName "REFUSAL_RATE_LIMIT_PER_MINUTE" .
+rv:macro-refusal-rate-limit-per-second a rv:DeclaredMacro ; rv:macroName "REFUSAL_RATE_LIMIT_PER_SECOND" .
+rv:macro-refusal-resource-duplicate a rv:DeclaredMacro ; rv:macroName "REFUSAL_RESOURCE_DUPLICATE" .
+rv:macro-refusal-resource-exhausted a rv:DeclaredMacro ; rv:macroName "REFUSAL_RESOURCE_EXHAUSTED" .
+rv:macro-refusal-resource-not-found a rv:DeclaredMacro ; rv:macroName "REFUSAL_RESOURCE_NOT_FOUND" .
+rv:macro-refusal-server-shutting-down a rv:DeclaredMacro ; rv:macroName "REFUSAL_SERVER_SHUTTING_DOWN" .
+rv:macro-refusal-server-uninitialized a rv:DeclaredMacro ; rv:macroName "REFUSAL_SERVER_UNINITIALIZED" .
+rv:macro-refusal-service-unavailable a rv:DeclaredMacro ; rv:macroName "REFUSAL_SERVICE_UNAVAILABLE" .
+rv:macro-refusal-session-invalid a rv:DeclaredMacro ; rv:macroName "REFUSAL_SESSION_INVALID" .
+rv:macro-refusal-symlink-traversal-detected a rv:DeclaredMacro ; rv:macroName "REFUSAL_SYMLINK_TRAVERSAL_DETECTED" .
+rv:macro-refusal-timeout a rv:DeclaredMacro ; rv:macroName "REFUSAL_TIMEOUT" .
+rv:macro-refusal-tool-duplicate a rv:DeclaredMacro ; rv:macroName "REFUSAL_TOOL_DUPLICATE" .
+rv:macro-refusal-tool-not-found a rv:DeclaredMacro ; rv:macroName "REFUSAL_TOOL_NOT_FOUND" .
+rv:macro-refusal-transport-error a rv:DeclaredMacro ; rv:macroName "REFUSAL_TRANSPORT_ERROR" .
+rv:macro-refusal-unsupported-encoding a rv:DeclaredMacro ; rv:macroName "REFUSAL_UNSUPPORTED_ENCODING" .
+rv:macro-refusal-uri-out-of-bounds a rv:DeclaredMacro ; rv:macroName "REFUSAL_URI_OUT_OF_BOUNDS" .
+
+# ---------------------------------------------------------------------------
+# strata-valve refusal classes (packs/strata-valve-pack/ontology.ttl, valve.ex
+# atoms + the knhk WindowCapacityRefusal family). This is the third crosswalk
+# column: rv:ValveMapping maps each valve refusal class onto the same ash_a2a
+# S42 classes the erlmcp codes use.
+# ---------------------------------------------------------------------------
+
+rv:ValveClass a rdfs:Class ;
+    dct:title "strata valve refusal class" ;
+    dct:description "A refusal atom produced by the strata valve (valve.ex) or the knhk WindowCapacityRefusal guard family." .
+
+rv:valveName a rdf:Property ; rdfs:label "valveName" ;
+    dct:description "The valve refusal atom as produced by valve.ex / knhk guards." .
+rv:valveModule a rdf:Property ; rdfs:label "valveModule" ;
+    dct:description "Source module whose guard produced the refusal atom (provenance only)." .
+rv:valveAtom a rdf:Property ; rdfs:label "valveAtom" ;
+    dct:description "The guard's literal error atom (e.g. \"run.len > 8\") where one exists." .
+rv:order a rdf:Property ; rdfs:label "order" ;
+    dct:description "Stable projection order for valve rows in the generated table." .
+
+rv:vc-malformed-frame a rv:ValveClass ;
+    rv:order 1 ; 
+    rv:valveName "malformed_frame" ; rv:valveModule "Strata.Valve.Refusals.MalformedFrame" ;
+    dct:description "Frame failed the strict 64-byte header pattern match (bad magic/version, non-zero reserved, permutation > 5, wrong length)." .
+rv:vc-fuel-exhausted a rv:ValveClass ;
+    rv:order 2 ; 
+    rv:valveName "fuel_exhausted" ; rv:valveModule "Strata.Valve.Refusals.FuelExhausted" ;
+    dct:description "Header fuel lease is zero: refused before arena handoff." .
+rv:vc-parent-discontinuity a rv:ValveClass ;
+    rv:order 3 ; 
+    rv:valveName "parent_discontinuity" ; rv:valveModule "Strata.Valve.Refusals.ParentDiscontinuity" ;
+    dct:description "Frame parent digest does not equal the valve's active parent_digest register." .
+rv:vc-arena-failure a rv:ValveClass ;
+    rv:order 4 ; 
+    rv:valveName "arena_failure" ; rv:valveModule "Strata.Valve.Refusals.ArenaFailure" ;
+    dct:description "Arena returned ok without a 256-bit commit_hash status map, or propagated a non-atom error." .
+rv:vc-window-run-capacity a rv:ValveClass ;
+    rv:order 5 ; 
+    rv:valveName "window_run_capacity" ; rv:valveModule "knhk_hooks.erl" ; rv:valveAtom "run.len > 8" ;
+    dct:description "Run-length window guard: hook install refused when Len > 8 (WindowCapacityRefusal family, Chatman constant k = 8)." .
+rv:vc-window-tau-capacity a rv:ValveClass ;
+    rv:order 6 ; 
+    rv:valveName "window_tau_capacity" ; rv:valveModule "knhk_epoch.erl" ; rv:valveAtom "tau > 8" ;
+    dct:description "Epoch tau window guard: schedule refused when Tau > 8 (WindowCapacityRefusal family, Chatman constant k = 8)." .
+
+# ---------------------------------------------------------------------------
+# Valve crosswalk: rv:ValveMapping (strata valve class -> ash_a2a S42 class),
+# per the L101-verified adjudication.
+# ---------------------------------------------------------------------------
+
+rv:ValveMapping a rdfs:Class ;
+    dct:title "valve crosswalk mapping" ;
+    dct:description "Maps exactly one strata-valve refusal class onto exactly one declared ash_a2a refusal class." .
+
+rv:valveClass a rdf:Property ; rdfs:label "valveClass" ;
+    dct:description "The mapped strata-valve refusal class (exactly one per ValveMapping)." .
+
+rv:vm-malformed-frame a rv:ValveMapping ;
+    rv:valveClass rv:vc-malformed-frame ;
+    rv:ashA2aClass rv:cls-refused-structure ;
+    dct:description "Wire shape wrong: unparsable/non-compliant frame header -> refused_structure (same class as erlmcp 1066/1021)." .
+rv:vm-fuel-exhausted a rv:ValveMapping ;
+    rv:valveClass rv:vc-fuel-exhausted ;
+    rv:ashA2aClass rv:cls-refused-bounds ;
+    dct:description "Declared fuel lease (a resource bound) exhausted -> refused_bounds (same class as erlmcp 1056/1068)." .
+rv:vm-parent-discontinuity a rv:ValveMapping ;
+    rv:valveClass rv:vc-parent-discontinuity ;
+    rv:ashA2aClass rv:cls-refused-receipt ;
+    dct:description "Parent digest cannot be re-anchored to the active register -> refused_receipt (receipt/replay anchoring failure, same family as erlmcp 1012)." .
+rv:vm-arena-failure a rv:ValveMapping ;
+    rv:valveClass rv:vc-arena-failure ;
+    rv:ashA2aClass rv:cls-refused-consequence ;
+    dct:description "Arena effect completed without its lawful 256-bit consequence receipt -> refused_consequence (same family as erlmcp 1049/1060)." .
+rv:vm-window-run-capacity a rv:ValveMapping ;
+    rv:valveClass rv:vc-window-run-capacity ;
+    rv:ashA2aClass rv:cls-refused-bounds ;
+    dct:description "Window capacity guard run.len > 8 (declared bound breached) -> refused_bounds." .
+rv:vm-window-tau-capacity a rv:ValveMapping ;
+    rv:valveClass rv:vc-window-tau-capacity ;
+    rv:ashA2aClass rv:cls-refused-bounds ;
+    dct:description "Window capacity guard tau > 8 (declared bound breached) -> refused_bounds." .
