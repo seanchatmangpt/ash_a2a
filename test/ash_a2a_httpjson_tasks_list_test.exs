@@ -142,7 +142,7 @@ defmodule AshA2A.HTTPJSONTasksListTest do
     resp = list(server, "alice-token")
 
     assert resp.status == 200
-    assert %{"tasks" => tasks, "totalSize" => 2, "pageSize" => 2} = resp.body
+    assert %{"tasks" => tasks, "totalSize" => 2, "pageSize" => 50} = resp.body
     assert MapSet.new(tasks, & &1["id"]) == MapSet.new(alice_tasks)
     refute bob_task in Enum.map(tasks, & &1["id"])
 
@@ -234,11 +234,14 @@ defmodule AshA2A.HTTPJSONTasksListTest do
              resp.body
   end
 
-  test "historyLength truncates listed task history and rejects junk", %{server: server} do
+  test "historyLength is ignored on tasks/list (history cleared) but junk is still refused", %{
+    server: server
+  } do
     send_as!(server, "alice-token", "a1")
 
     assert %{"tasks" => [task]} = list(server, "alice-token", "?historyLength=1").body
-    assert length(task["history"]) <= 1
+    refute Map.has_key?(task, "history"),
+           "historyLength is a tasks/get parameter; on list, history is always cleared"
 
     resp = list(server, "alice-token", "?historyLength=bogus")
     assert resp.status == 400
@@ -249,6 +252,6 @@ defmodule AshA2A.HTTPJSONTasksListTest do
     resp = list(server, "bob-token")
 
     assert resp.status == 200
-    assert %{"tasks" => [], "totalSize" => 0, "pageSize" => 0, "nextPageToken" => ""} = resp.body
+    assert %{"tasks" => [], "totalSize" => 0, "pageSize" => 50, "nextPageToken" => ""} = resp.body
   end
 end

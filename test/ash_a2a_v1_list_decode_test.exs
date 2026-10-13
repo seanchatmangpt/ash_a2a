@@ -142,12 +142,12 @@ defmodule AshA2AV1ListDecodeTest do
     id2 = create_task(ctx, "alice", "two")
 
     assert %{"result" => page} = rpc(ctx, "alice", "tasks/list", %{})
-    assert %{"tasks" => wire_tasks, "totalSize" => 2, "pageSize" => 2, "nextPageToken" => ""} = page
+    assert %{"tasks" => wire_tasks, "totalSize" => 2, "pageSize" => 50, "nextPageToken" => ""} = page
     assert length(wire_tasks) == 2
     assert MapSet.new(wire_tasks, & &1["id"]) == MapSet.new([id1, id2])
 
     assert {:ok, decoded} = JSON.decode_list_result(page)
-    assert %{tasks: tasks, total_size: 2, page_size: 2, next_page_token: ""} = decoded
+    assert %{tasks: tasks, total_size: 2, page_size: 50, next_page_token: ""} = decoded
     assert length(tasks) == 2
     assert Enum.all?(tasks, &match?(%AshA2A.Protocol.Task{}, &1))
     assert MapSet.new(tasks, & &1.id) == MapSet.new([id1, id2])
@@ -155,7 +155,7 @@ defmodule AshA2AV1ListDecodeTest do
     # Bob's list is owner-scoped: an empty page, and it decodes too.
     assert %{"result" => bob_page} = rpc(ctx, "bob", "tasks/list", %{})
     assert bob_page["totalSize"] == 0
-    assert {:ok, %{tasks: [], total_size: 0, page_size: 0, next_page_token: ""}} =
+    assert {:ok, %{tasks: [], total_size: 0, page_size: 50, next_page_token: ""}} =
              JSON.decode_list_result(bob_page)
   end
 
@@ -168,7 +168,7 @@ defmodule AshA2AV1ListDecodeTest do
     assert {:ok, runtime_page} =
              AshA2A.Transport.Plug.handle_list(%{}, %{agent: ctx.agent, principal: principal})
 
-    assert %{tasks: runtime_tasks, total_size: 1, page_size: 1, next_page_token: ""} =
+    assert %{tasks: runtime_tasks, total_size: 1, page_size: 50, next_page_token: ""} =
              runtime_page
 
     # Encode exactly as the server's JSON-RPC binding does
