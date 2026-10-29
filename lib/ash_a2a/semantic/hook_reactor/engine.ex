@@ -23,7 +23,7 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
   @spec open(keyword()) :: {:ok, runtime()} | {:error, map()}
   def open(opts \\ []) do
     case AshGraphLaw.capabilities(opts) do
-      {:ok, %{"surface_sha256" => digest}} ->
+      {:ok, %{"surface_blake3" => digest}} ->
         {:ok, %{module: AshGraphLaw, session: :pool, wasm_digest: digest}}
 
       {:ok, _} ->
@@ -92,47 +92,18 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
           {:error, %{code: :hook_engine_unexpected, detail: inspect(other)}}
       end
     else
-      # Canonical evaluation using AshGraphLaw.call N3/denial or law step
-      document = ntriples <> "\n" <> condition <> "\n"
-
-      request = %{
-        "op" => "validate_all",
-        "document" => document,
-        "schema" => "",
-        "dialect" => "N3_DENIAL",
-        "query" => "",
-        "policy" => ""
-      }
-
-      case AshGraphLaw.call(request) do
-        {:ok, %{"status" => "REFUSED"}} ->
-          {:ok, true}
-
-        {:ok, %{"status" => "ADMITTED"}} ->
-          {:ok, false}
-
-        {:ok, %{"dialects" => dialects}} when is_list(dialects) ->
-          case Enum.find(dialects, &(is_map(&1) and &1["dialect"] == "N3_DENIAL")) do
-            %{"status" => "REFUSED"} -> {:ok, true}
-            %{"status" => "ADMITTED"} -> {:ok, false}
-            other -> {:error, %{code: :hook_engine_unexpected, detail: inspect(other)}}
-          end
-
-        {:ok, response} ->
-          # Check if any refusal is present in response
-          if Map.get(response, "valid") == false or Map.get(response, "status") == "REFUSED" do
-            {:ok, true}
-          else
-            {:ok, false}
-          end
-
-        {:error, %AshGraphLaw.Refusal{code: code, message: msg}} ->
-          {:error, %{code: code, detail: msg}}
-
-        # (the old bare `other` catch-all was dead: the `{:ok, _}` and
-        # `{:error, %AshGraphLaw.Refusal{}}` clauses above cover the full
-        # success type of the engine call)
-      end
+      # ABI v26.10.28 retired the legacy `validate_all` / `N3_DENIAL` op pair.
+      # The N3-denial route must be re-derived through AshGraphLaw.n3/2 (parse
+      # the condition as N3 over the projected data, derive admitted/refused).
+      # Until that lands this arm fails closed with a typed error — it can
+      # never silently report a denial verdict.
+      {:error,
+       %{
+         code: :hook_n3_denial_unported,
+         detail:
+           "the legacy validate_all/N3_DENIAL op pair was removed in graphlaw " <>
+             "v26.10.28; re-route this condition through AshGraphLaw.n3/2"
+       }}
     end
   end
 end
