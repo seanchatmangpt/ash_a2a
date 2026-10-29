@@ -1,20 +1,32 @@
 # SA2A conformance -- graph-global falsifier (N3 denial rule).
 #
-# graphlaw parses `{ BODY } => false .` into a denial rule
-# (praxis-graphlaw src/parser/n3.pest:302-303 `DenyHead = { "false" }`,
-#  src/rule.rs:45 DENIAL_HEAD_MARKER). `TripleStore::check_denials/0`
-# (src/lib.rs:407) queries every denial body and reports one
-# `DENIED: {...} => false.` string per body that has ANY binding. The wasm's
-# validate_all surfaces this as the N3_DENIAL dialect: ADMITTED when the
-# violation list is empty, REFUSED otherwise.
+# TWO ENGINES. This file's `{ BODY } => false .` rule has a verdict on exactly
+# one of them:
 #
-# This is a GRAPH-GLOBAL constraint, not a per-node shape: no SHACL shape or
-# ShEx triple constraint expresses "no agent anywhere may be simultaneously
-# admitted and revoked", because the falsifier is about the co-occurrence of
-# two independent memberships rather than about one focus node's properties.
+# (a) Praxis seam -- praxis-graphlaw validate_all/check_denials, vendored at
+#     priv/graphlaw/praxis_graphlaw.wasm (v26.7.5, intentionally frozen). Its
+#     N3_DENIAL dialect reads ADMITTED iff the denial violation list is empty.
+#     This file is consumed verbatim on this seam.
+# (b) Deployed engine (graphlaw v26.10.28) -- the bare `{ BODY } => false .`
+#     fuse is INERT there (non-discriminating). Root cause: purrdf-n3's
+#     first-match-only `fired_fuse` (crates/n3/src/parser.rs:1066-1080 parses
+#     `=> false` as an inference fuse; crates/n3/src/reasoner.rs:2587-2616
+#     returns the FIRST provable fuse and stops), so the consequent carries no
+#     verdict. The live denial path on the deployed engine is the
+#     denial-sentinel construction in
+#     lib/ash_a2a/semantic/hook_reactor/engine.ex: the rule's consequent is
+#     rewritten to the condition-fired sentinel
+#     <urn:sa2a:hook:condition-fired/1>, and the sentinel appearing in the
+#     engine response's `derived` text is the denial verdict.
 #
-# base.ttl asserts no ex:Revoked, so this denial is NOT tripped by the base
-# graph. negative/falsifier_positive.ttl trips it.
+# Graph-global, not per-node: no SHACL shape or ShEx triple constraint
+# expresses "no agent anywhere may be simultaneously admitted and revoked" --
+# the falsifier is about the co-occurrence of two independent memberships,
+# not about one focus node's properties.
+#
+# base.ttl asserts no ex:Revoked, so the base graph does not trip this denial
+# on either engine; negative/falsifier_positive.ttl trips it on the praxis
+# seam.
 
 @prefix ex: <http://example.org/sa2a/> .
 
