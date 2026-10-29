@@ -199,6 +199,9 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
           end
         end)
         |> List.delete(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md"))
+        # graphlaw-v26.10.28-compat.md restates the ENGINE version (not the
+        # package version) — coordinator-sanctioned admitted site.
+        |> List.delete(Path.join(@root, "docs/reference/graphlaw-v26.10.28-compat.md"))
 
       restatements =
         for path <- guarded,

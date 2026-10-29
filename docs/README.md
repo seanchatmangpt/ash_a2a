@@ -64,6 +64,9 @@ Exact factual contracts:
   served HTTP wire surface: card, JSON-RPC, errors, streaming, auth.
 - [`reference/a2a-spec-version-mapping.md`](reference/a2a-spec-version-mapping.md) —
   A2A spec-version mapping.
+- [`reference/graphlaw-v26.10.28-compat.md`](reference/graphlaw-v26.10.28-compat.md) —
+  the graphlaw v26.10.28 (blake3-era) consumer compatibility note: retired ops,
+  blake3 keys, wasm vendoring.
 - [`reference/a2a-v1-conformance.md`](reference/a2a-v1-conformance.md) — per-spec
   CONFORMANT/PARTIAL/GAP claims, each citing the executed v1 conformance court.
 - [`reference/tck-suite.md`](reference/tck-suite.md) — running the in-repo v1

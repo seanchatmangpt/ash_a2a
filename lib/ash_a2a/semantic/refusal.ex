@@ -625,6 +625,12 @@ defmodule AshA2A.Semantic.Refusal do
     # the subject was never judged, so none of them may be read as a verdict
     # about it.
     graphlaw_wasm_not_found: :blocked_resource,
+    # `AshA2A.Semantic.HookReactor.Engine`: the legacy validate_all/N3_DENIAL op
+    # pair was retired in graphlaw v26.10.28; the arm fails closed until the
+    # condition is re-derived through AshGraphLaw.n3/2. A retired capability is
+    # a resource condition -- the subject was never judged, so this is
+    # BLOCKED_RESOURCE, never a semantic verdict about the subject.
+    hook_n3_denial_unported: :blocked_resource,
     graphlaw_host_script_not_found: :blocked_resource,
     node_executable_not_found: :blocked_resource,
     graphlaw_host_exit: :blocked_resource,

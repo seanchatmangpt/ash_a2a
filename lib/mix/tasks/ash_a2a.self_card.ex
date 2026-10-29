@@ -101,7 +101,7 @@ defmodule Mix.Tasks.AshA2a.SelfCard do
 
     AshA2A.CapabilityIndex.build_agent_card([], url: url)
     |> Map.put(:skills, Enum.map(@surfaces, &build_surface_skill/1))
-    |> then(fn card ->
+    |> then(fn %AgentCard{} = card ->
       %AgentCard{
         card
         | name: "ash_a2a",

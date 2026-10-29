@@ -117,8 +117,7 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
     with {:ok, payload} <- File.read(in_path),
          {:ok, att_json} <- File.read(att_path),
          {:ok, att} <- Jason.decode(att_json),
-         {:ok, claimed} <- fetch_field(att, "payload_sha256"),
-         :ok <- check_digest(in_path, payload, claimed) do
+         :ok <- digest_stage(att, in_path, payload) do
       :ok
     else
       {:error, %Jason.DecodeError{} = e} ->
@@ -143,10 +142,22 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
     end
   end
 
-  defp fetch_field(att, key) do
-    case Map.fetch(att, key) do
-      {:ok, v} -> {:ok, v}
-      :error -> {:refused, "attestation missing field #{inspect(key)}"}
+  # blake3-era attestations (graphlaw-attest v26.10.28+) carry `payload_blake3`
+  # instead of `payload_sha256`; this runtime has no blake3 primitive, so the
+  # integrity check defers to the signature stage (graphlaw-attest verifies the
+  # payload_blake3 binding itself). sha256 attestations still check exactly as
+  # before.
+  defp digest_stage(att, in_path, payload) do
+    case Map.fetch(att, "payload_sha256") do
+      {:ok, claimed} ->
+        check_digest(in_path, payload, claimed)
+
+      :error ->
+        if Map.has_key?(att, "payload_blake3") do
+          :ok
+        else
+          {:refused, "attestation missing field \"payload_sha256\" (or \"payload_blake3\")"}
+        end
     end
   end
 
