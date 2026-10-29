@@ -344,7 +344,10 @@ defmodule AshA2A.MixProject do
       # this feature's own swarm-test release) simply no longer fetches
       # or compiles it.
       {:ggen_igniter, "~> 26.9", only: :dev},
-      {:ash_graphlaw, "~> 26.10"},
+      # GL28-2/26.10.28: hex has no ash_graphlaw 26.10.28 yet (GL28-12 hex
+      # publish is operator-gated). Consume the sibling canonical checkout
+      # until the hex release lands, then flip back to "~> 26.10".
+      {:ash_graphlaw, path: "../ash_graphlaw"},
       {:ash_affidavit, "~> 26.10"},
       {:ash_ex4pm, "~> 26.10"},
       {:ash_ai, "~> 1.0"},
