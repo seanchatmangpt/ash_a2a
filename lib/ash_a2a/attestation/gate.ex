@@ -23,6 +23,7 @@ defmodule AshA2A.Attestation.Gate do
   it detects only emulators that declare themselves honestly via claims.
   """
 
+  alias AshA2A.Attestation.GateGrantAllowlist
   alias AshA2A.Attestation.Key
 
   @default_max_staleness_sec 90
@@ -166,6 +167,35 @@ defmodule AshA2A.Attestation.Gate do
   """
   @spec verify_gps_trajectory(list(map())) :: :ok | {:refused, :gps_impossible_jump | :spoofed_payload}
   def verify_gps_trajectory(observations) when is_list(observations) do
+    verify_gps_trajectory(observations, [])
+  end
+
+  @doc """
+  `verify_gps_trajectory/1` with an approved-grant allowlist (option
+  `:approved_grants`, shaped by `AshA2A.Attestation.GateGrantAllowlist`;
+  `:now` overridable for tests). An in-scope, unexpired grant overrides a
+  `:gps_impossible_jump` refusal to `:ok`; with no grants supplied the
+  outcome is identical to `/1`.
+  """
+  @spec verify_gps_trajectory(list(map()), Keyword.t()) ::
+          :ok | {:refused, :gps_impossible_jump | :spoofed_payload}
+  def verify_gps_trajectory(observations, opts) when is_list(observations) and is_list(opts) do
+    case verify_gps_trajectory_base(observations) do
+      {:refused, :gps_impossible_jump} = refused ->
+        now = Keyword.get(opts, :now, System.system_time(:second))
+        grants = Keyword.get(opts, :approved_grants, [])
+
+        case GateGrantAllowlist.override?(observations, grants, now) do
+          :ok -> :ok
+          _ -> refused
+        end
+
+      other ->
+        other
+    end
+  end
+
+  defp verify_gps_trajectory_base(observations) do
     with :ok <- all_finite_obs?(observations) do
       obs = Enum.sort_by(observations, & &1["timestamp"])
 
@@ -250,6 +280,15 @@ defmodule AshA2A.Attestation.Gate do
     compute_haversine_km(a, b)
   rescue
     _ -> :error
+  end
+
+  @doc false
+  @spec pair_distance_km(map(), map()) :: float() | :inf
+  def pair_distance_km(a, b) do
+    case haversine_km(a, b) do
+      :error -> :inf
+      km -> km
+    end
   end
 
   defp compute_haversine_km(%{"lat" => lat1, "lon" => lon1}, %{"lat" => lat2, "lon" => lon2}) do
