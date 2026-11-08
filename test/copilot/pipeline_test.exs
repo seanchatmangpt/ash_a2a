@@ -177,7 +177,20 @@ defmodule AshA2A.Copilot.PipelineTest do
   end
 
   setup do
-    if pid = Process.whereis(:vince_counter_z7), do: Agent.stop(pid)
+    # T5 unblock (disclosed, minimal): whereis-then-stop races an agent that
+    # died since the whereis — GenServer.stop then raises "no process".
+    case Process.whereis(:vince_counter_z7) do
+      nil ->
+        :ok
+
+      pid ->
+        try do
+          GenServer.stop(pid, :normal, 1_000)
+        catch
+          :exit, _ -> :ok
+        end
+    end
+
     {:ok, _} = CountingVince.start_link(:vince_counter_z7)
     :ok
   end

@@ -58,6 +58,24 @@ defmodule AshA2A.Copilot.Pipeline do
   which Vince's verdict does not change); the mesh-level shed decision is
   `route/2`'s job and happens before Vince by construction.
 
+  ## Known unauthenticated channels (lane F8 disclosure)
+
+    * **Strain-observation identity is the declared `coordinator_id`.**
+      Every Bridge observation (`challenge_received`, `error_reported`,
+      `ticket_assigned`) folds against the intent's declared
+      `coordinator_id` with no binding to an attested actor. An attacker
+      submitting intents with a rival's id inflates the rival's tensor
+      (`heuristic_frequency` rises on attacker-provoked challenges).
+      Mitigation requires binding observations to an attested actor
+      identity — not a small diff; disclosed, not fixed.
+    * **Negative-NTE intents admit** when the gpm math lands at/above
+      floor (e.g. `nte: -100, offer: -78` → gpm 0.22). Vince's only input
+      guard is `nte != 0`; tightening it is a law change in Vince, not a
+      pipeline seam. Disclosed, not fixed.
+    * **`coordinator_id: nil` raises** an untyped KeyError inside
+      `Tony.handle_inbound/2` (fail-loud, not fail-open) rather than a
+      typed refusal. Disclosed, not fixed.
+
   The pipeline is **pure**: twins are called via their module functions and
   all state (Vince challenge ledger, Tony mesh, Bridge mesh_state) is
   threaded in and out. The only environmental read is the wall clock when
@@ -93,7 +111,6 @@ defmodule AshA2A.Copilot.Pipeline do
   alias AshA2A.Attestation.Gate
   alias AshA2A.Authority.PEP
   alias AshA2A.Strain.Bridge
-  alias AshA2A.Strain.Tensor
   alias AshA2A.Twin.Tony
   alias AshA2A.Twin.Vince
 
@@ -143,8 +160,8 @@ defmodule AshA2A.Copilot.Pipeline do
   def check(intent, state, opts \\ [])
 
   def check(
-        %{trade: trade, nte: nte, offer: offer, coordinator_id: coordinator_id} = intent,
-        %{vince: vince, mesh: mesh} = state,
+        %{trade: trade, nte: nte, offer: offer, coordinator_id: _coordinator_id} = intent,
+        %{vince: vince, mesh: _mesh} = state,
         opts
       )
       when is_number(nte) and is_number(offer) and nte != 0 do
