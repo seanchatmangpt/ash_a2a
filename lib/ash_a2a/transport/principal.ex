@@ -46,7 +46,11 @@ defmodule AshA2A.Transport.Principal do
   @spec from_metadata(term()) :: key()
   def from_metadata(%{} = metadata) do
     case Map.get(metadata, "a2a.auth") do
+      # In-process calls pass atom-keyed maps; the wire JSON-RPC round trip
+      # (lane V8-Q6-f) stringifies every key, so the wire shape must resolve
+      # to the SAME principal or every wire caller lands :anonymous.
       %{identity: identity} -> key(identity)
+      %{"identity" => identity} -> key(identity)
       _other -> :anonymous
     end
   end

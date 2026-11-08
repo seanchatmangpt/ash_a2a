@@ -1126,7 +1126,11 @@ defmodule AshA2A.Agent do
   @spec verified_auth_identity(AshA2A.Protocol.Agent.context() | map()) :: term()
   defp verified_auth_identity(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "a2a.auth") do
+      # In-process calls pass atom-keyed maps; the wire JSON-RPC round trip
+      # (lane V8-Q6-f) stringifies keys, so the wire shape must resolve to
+      # the SAME verified identity or every wire caller lands :unauthenticated.
       %{identity: identity} -> identity
+      %{"identity" => identity} -> identity
       _other -> nil
     end
   end
