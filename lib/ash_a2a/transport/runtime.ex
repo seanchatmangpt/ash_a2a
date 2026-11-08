@@ -63,7 +63,7 @@ defmodule AshA2A.Transport.Runtime do
   require Logger
 
   alias AshA2A.Protocol.Agent.State
-  alias AshA2A.Transport.{Principal, SafeError}
+  alias AshA2A.Transport.{Principal, SafeError, WireCompat}
 
   @owner_key "ash_a2a.owner"
   @in_flight_key :ash_a2a_in_flight
@@ -152,6 +152,15 @@ defmodule AshA2A.Transport.Runtime do
         ) ::
           {:reply, term(), State.t()} | {:noreply, State.t()}
   def handle_message_call(module, agent_opts, message, opts, from, state) do
+    # Q6 wire boundary (lane V8-Q6-f): `A2A.Plug` (hex `a2a` 0.3.0) delivers
+    # decoded wire `%A2A.Message{}` structs. Convert wire -> protocol before
+    # `prepare_task/4` history folding and `__dispatch__/4`, and remember the
+    # direction so the reply is converted back (wire in -> wire out,
+    # protocol in -> protocol out) before `A2A.JSONRPC.encode_send_result/2`
+    # encodes it.
+    wire? = WireCompat.wire_message?(message)
+    message = WireCompat.to_protocol(message)
+
     config = config(agent_opts)
     metadata = call_metadata(opts)
     caller = Principal.from_metadata(metadata)
@@ -174,10 +183,10 @@ defmodule AshA2A.Transport.Runtime do
 
       case Keyword.get(config, :mode) do
         :inline ->
-          finish(task.id, from, handler.(), state, :inline)
+          finish(task.id, from, handler.(), state, :inline, wire?)
 
         _async ->
-          spawn_worker(handler, task, from)
+          spawn_worker(handler, task, from, wire?)
           {:noreply, state}
       end
     else
@@ -324,7 +333,7 @@ defmodule AshA2A.Transport.Runtime do
 
   defp in_flight, do: Process.get(@in_flight_key, %{})
 
-  defp spawn_worker(handler, task, from) when is_function(handler, 0) do
+  defp spawn_worker(handler, task, from, wire?) when is_function(handler, 0) do
     parent = self()
     callers = [parent | Process.get(:"$callers", [])]
     token = make_ref()
@@ -367,16 +376,16 @@ defmodule AshA2A.Transport.Runtime do
       end
     end)
 
-    Process.put(@in_flight_key, Map.put(in_flight(), token, {mref, from, task.id}))
+    Process.put(@in_flight_key, Map.put(in_flight(), token, {mref, from, task.id, wire?}))
   end
 
   @doc false
   @spec handle_info(term(), State.t()) :: {:noreply, State.t()} | :unhandled
   def handle_info({:ash_a2a_task_done, token, reply}, state) do
     case pop_in_flight(token) do
-      {mref, from, task_id} ->
+      {mref, from, task_id, wire?} ->
         Process.demonitor(mref, [:flush])
-        finish(task_id, from, reply, state, :async)
+        finish(task_id, from, reply, state, :async, wire?)
 
       nil ->
         {:noreply, state}
@@ -384,11 +393,11 @@ defmodule AshA2A.Transport.Runtime do
   end
 
   def handle_info({:DOWN, mref, :process, _pid, reason}, state) do
-    case Enum.find(in_flight(), fn {_token, {ref, _from, _id}} -> ref == mref end) do
-      {token, {_mref, from, task_id}} ->
+    case Enum.find(in_flight(), fn {_token, {ref, _from, _id, _wire?}} -> ref == mref end) do
+      {token, {_mref, from, task_id, wire?}} ->
         _ = pop_in_flight(token)
         error = SafeError.internal(:internal_error, {:worker_exit, reason})
-        finish(task_id, from, {:error, error}, state, :async)
+        finish(task_id, from, {:error, error}, state, :async, wire?)
 
       nil ->
         :unhandled
@@ -454,7 +463,7 @@ defmodule AshA2A.Transport.Runtime do
   # called from inside the agent process that owns the in-flight table).
   @spec in_flight?(String.t()) :: boolean()
   def in_flight?(task_id) do
-    Enum.any?(in_flight(), fn {_token, {_mref, _from, id}} -> id == task_id end)
+    Enum.any?(in_flight(), fn {_token, {_mref, _from, id, _wire?}} -> id == task_id end)
   end
 
   # Runs the handler with the same `[:a2a, :agent, :message]` span
@@ -483,14 +492,14 @@ defmodule AshA2A.Transport.Runtime do
     kind, reason -> {:error, SafeError.internal(:internal_error, {kind, reason}, __STACKTRACE__)}
   end
 
-  defp finish(task_id, from, reply, state, mode) do
+  defp finish(task_id, from, reply, state, mode, wire?) do
     case State.get_task(state, task_id) do
       {:ok, task} ->
         if AshA2A.Protocol.Task.terminal?(task) do
           # Defensive: `tasks/cancel` is refused while a worker runs (see
-          # `in_flight?/1` and `AshA2A.Agent`), so a task reaching here
+          # `in_flight?/1` and `AshA2a.Agent`), so a task reaching here
           # terminal was finalized by another path; never overwrite it.
-          respond(mode, from, {:ok, task}, state)
+          respond(mode, from, {:ok, task}, state, wire?)
         else
           # A2A v1.0 `SendMessageResponse` is a Task/Message oneof. A
           # `{:message, parts}` handler reply delivers the agent message as a
@@ -512,7 +521,7 @@ defmodule AshA2A.Transport.Runtime do
 
               state = State.put_task(state, task)
               message = %{AshA2A.Protocol.Message.new_agent(parts) | context_id: task.context_id}
-              respond(mode, from, {:ok, message}, state)
+              respond(mode, from, {:ok, message}, state, wire?)
 
             _ ->
               task = task |> apply_reply(reply) |> maybe_wrap_stream() |> drop_terminal_auth()
@@ -542,24 +551,32 @@ defmodule AshA2A.Transport.Runtime do
 
               if AshA2A.Protocol.Task.terminal?(task) do
                 state = AshA2A.Protocol.Agent.State.drop_subscribers(state, task.id)
-                respond(mode, from, {:ok, task}, state)
+                respond(mode, from, {:ok, task}, state, wire?)
               else
-                respond(mode, from, {:ok, task}, state)
+                respond(mode, from, {:ok, task}, state, wire?)
               end
           end
         end
 
       {:error, :not_found} ->
-        respond(mode, from, {:error, :not_found}, state)
+        respond(mode, from, {:error, :not_found}, state, wire?)
     end
   end
 
-  defp respond(:inline, _from, result, state), do: {:reply, result, state}
+  defp respond(:inline, _from, result, state, wire?) do
+    {:reply, wire_reply(result, wire?), state}
+  end
 
-  defp respond(:async, from, result, state) do
-    GenServer.reply(from, result)
+  defp respond(:async, from, result, state, wire?) do
+    GenServer.reply(from, wire_reply(result, wire?))
     {:noreply, state}
   end
+
+  # Q6 wire boundary (lane V8-Q6-f): wire-originated requests get wire
+  # structs back so `A2A.JSONRPC.encode_send_result/2` has a matching
+  # clause; protocol-originated requests keep protocol structs.
+  defp wire_reply(result, false), do: result
+  defp wire_reply(result, true), do: WireCompat.to_wire(result)
 
   # Mirrors `AshA2A.Protocol.Agent.Runtime.handle_reply/2`, except that an error reason
   # is redacted (SEC-08) before it becomes the wire-visible status message.
