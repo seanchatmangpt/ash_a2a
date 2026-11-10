@@ -187,7 +187,8 @@ end
 
 ## 5. Mesh-level routing (strain-first)
 
-Before `check/3`, route at the mesh level with `AshA2A.Strain.Bridge.route/2`
+Before `check/3`, route at the mesh level with `AshA2A.Copilot.Pipeline.route/2`
+(it delegates to `AshA2A.Strain.Bridge.route/2`; both forms are shown below)
 — the moduledoc's strain-first order decision: shed saturated coordinators
 before spending a Vince interrogation. Fold verdicts back as observations:
 
@@ -209,7 +210,7 @@ end
 ```console
 $ mix test test/copilot/pipeline_test.exs
 ...
-8 tests, 0 failures
+22 tests, 0 failures
 ```
 
 If the attestation cases fail with `:stale` on fresh tokens, check that you

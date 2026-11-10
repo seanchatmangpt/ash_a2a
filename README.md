@@ -271,6 +271,9 @@ reference for lookup, and explanation for understanding. It is published on
     request end to end, from wire to receipt.
   - [Canonical graph identity](docs/explanation/canonical-graph-identity.md)
     and [GraphLaw WASM integration](docs/explanation/graphlaw-wasm-integration.md).
+  - [Copilot membrane](docs/explanation/copilot-membrane.md) — the twin
+    pipeline (Vince intent interrogation, Tony/Strain saturation,
+    attestation ingress) and its stage order.
 - **Control plane & conformance** (shipped with the repo): [C2 certificate
   model](docs/reference/c2-certificate.md),
   [C2 wire interop](docs/reference/c2-wire-interop.md) (external
@@ -325,6 +328,54 @@ identities (`AshA2A.SPIFFE.*`) and OpenID AuthZEN PDP policy evidence
 (`AshA2A.AuthZEN.*`) bind external decisions in as evidence — never as
 authority. See [the authentication how-to](docs/how-to/authenticate-agent-requests.md)
 and [SECURITY.md](SECURITY.md).
+
+## Copilot membrane & sovereignty surfaces
+
+Landed namespaces proving the copilot membrane and authority-gated
+actuation, each with its court suite (`mix test <file>`):
+
+- `AshA2A.Twin.*` (`twin.ex`, `asset.ex`, `lease.ex`, `operator.ex`,
+  `partner.ex`, `server.ex`, `hazard.ex`) — gen_statem digital twins with
+  hazard injection; 13 tests in `test/twin/twin_test.exs`, 7 in
+  `test/twin/tony_test.exs` (Tony saturation twin).
+- `AshA2A.Twin.Vince` (`twin/vince.ex`) with `MechanicalPrior` — intent
+  interrogation without an LLM in the admission path; 18 tests in
+  `test/twin/vince_test.exs`.
+- `AshA2A.Strain.Tensor` / `AshA2A.Strain.Bridge` — saturation tensor and
+  pplan telemetry bridge; 12 tests in `test/strain/tensor_test.exs`, 15 in
+  `test/strain/bridge_test.exs`, plus 11 pplan-hazard-bridge tests in
+  `test/telemetry_bridge/pplan_hazard_bridge_test.exs`.
+- `AshA2A.Attestation.Key` / `AshA2A.Attestation.Gate` with
+  `AshA2A.Ingress.Channel` — attested ingress channel; 34 tests in
+  `test/attestation/attestation_gate_test.exs`, 22 in
+  `test/ingress/channel_test.exs`.
+- `AshA2A.Copilot.Pipeline` (`copilot/pipeline.ex`, with `MechanicalPrior`)
+  — the membrane pipeline composing Vince → Strain → attestation, with the
+  G4 authority hop as the last gate before admit and the G5 escalation feed
+  into the attention broker; 22 tests in
+  `test/copilot/pipeline_test.exs`, plus 7 adversarial courts in
+  `test/copilot/f8_adversarial_test.exs`.
+- `AshA2A.Authority.PEP` / `AshA2A.Authority.Source` (with
+  `AllowAll`/`DenyAll` sources) — policy enforcement point over authority
+  sources; 14 tests in `test/authority/pep_test.exs`.
+- `AshA2A.Authority.GraphPin` — pinned-graph authority; 6 tests in
+  `test/authority/graph_pin_test.exs`.
+- `AshA2A.Actuation.Engine` (with `Adapter`, `Ticket`, `c2/` clients) —
+  authority-gated actuation engine; 9 tests in
+  `test/actuation/engine_court_test.exs`.
+- `AshA2A.Negotiation.Strategy` behaviour with `AshA2A.Negotiation.Engine`
+  and `AshA2A.Negotiation.DefaultStrategy` (`negotiation/`) — thin-liquidity
+  detection, baseline-capped leverage counters, escrow → `Steps.Await`
+  mapping; 8 tests in `test/negotiation/negotiation_engine_court_test.exs`.
+- `AshA2A.Attention.Broker` (`attention/broker.ex`) — Article-14 attention:
+  autonomy levels, consent-by-silence window, override ledger, founder
+  escalation, GPM-floor signature invariant; 15 tests in
+  `test/attention/broker_court_test.exs`.
+- `mix ash_a2a.pplan_courts` (`lib/mix/tasks/ash_a2a.pplan_courts.ex`) —
+  runs the ash_pplan parity courts against a local checkout via the
+  `ASH_PPLAN_PATH` toggle (Hex pin by default; CI never sets the toggle).
+- `examples/copilot_demo.exs` — end-to-end membrane demo:
+  `mix run examples/copilot_demo.exs`.
 
 ## Status
 

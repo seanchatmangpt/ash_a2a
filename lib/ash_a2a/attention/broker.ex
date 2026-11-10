@@ -227,7 +227,7 @@ defmodule AshA2A.Attention.Broker do
 
   defp triage_escalation?(nil), do: false
   defp triage_escalation?({[], []}), do: false
-  defp triage_escalation?({_routine, [_ | _] = edges}), do: true
+  defp triage_escalation?({_routine, [_ | _] = _edges}), do: true
   defp triage_escalation?(_), do: false
 
   defp build_options(summaries, consequence, opts)

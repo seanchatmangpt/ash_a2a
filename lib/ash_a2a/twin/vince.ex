@@ -88,7 +88,7 @@ defmodule AshA2A.Twin.Vince do
   def evaluate_intent(%Vince{} = v, %{trade: trade, nte: nte, offer: offer})
       when is_number(nte) and is_number(offer) and nte != 0 do
     cond do
-      Map.has_key?(v.challenges, trade) ->
+      Map.has_key?(v.challenges, trade_key(trade)) ->
         {v, {:refuse, :escalate_multisig}}
 
       gpm_breach?(nte, offer, v.gpm_floor) ->
@@ -167,9 +167,21 @@ defmodule AshA2A.Twin.Vince do
   defp rem100(n) when is_float(n), do: :erlang.trunc(n) |> Integer.mod(100)
 
   defp challenge(%Vince{} = v, trade, code, evidence) do
-    {%{v | challenges: Map.put(v.challenges, trade, 1)},
+    {%{v | challenges: Map.put(v.challenges, trade_key(trade), 1)},
      {:challenge, %{code: code, demanded_evidence: evidence, retry_token: make_ref()}}}
   end
+
+  # Ledger-identity normalization (lane F8): string trades are trimmed and
+  # case-folded before ledger keying so "HVAC.Drain" / "hvac.drain" /
+  # " hvac.drain " / "HVAC.Drain " collapse to one ledger identity — a
+  # respelling after a challenge can no longer reset the escalate ledger.
+  # Atoms and other terms pass through unchanged (atom-keyed courts keep
+  # their exact keys).
+  defp trade_key(trade) when is_binary(trade) do
+    trade |> String.trim() |> String.downcase()
+  end
+
+  defp trade_key(trade), do: trade
 end
 
 defmodule AshA2A.Twin.MechanicalPrior do

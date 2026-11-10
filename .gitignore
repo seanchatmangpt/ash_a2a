@@ -4,6 +4,7 @@
 # Per-lane / per-merge build roots (MIX_BUILD_ROOT=_build-<lane>) used by
 # same-checkout agent fan-out: build output, never source.
 /_build-*/
+/_build_test/
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/

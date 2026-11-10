@@ -148,7 +148,10 @@ telemetry intake surface connecting the gate to event ingress. `ingest/3` is
 pure: per-coordinator state (last known GPS fix, refusal counters) is passed
 in and returned, never held in a process. On success it normalizes the event
 and records the coordinator's last-known fix; on refusal it bumps the
-per-reason counter (read via `Channel.stats/1`).
+per-reason counter (read via `Channel.stats/1`). Freshness in `ingest/3` is
+judged against the `:now` opt passed to the call (wall clock by default), not
+the event's own `timestamp` field — so an event carrying a back-dated
+timestamp cannot launder a stale token past the gate.
 
 ## Copilot.Pipeline — stage order
 
@@ -187,11 +190,12 @@ per-coordinator Tony gate still runs *after* Vince (it is keyed to
 mesh-level shed decision is `route/2`'s job and happens before Vince by
 construction.
 
-One precision note the moduledoc itself does not resolve: `route/2` is
-described as delegating to `Bridge.route/2`, but no `route/2` is defined on
-`AshA2A.Copilot.Pipeline` in this checkout — dispatch callers invoke
-`AshA2A.Strain.Bridge.route/2` directly before `check/3` to get the
-strain-first behavior the moduledoc describes.
+Precision note (updated 2026-11-07): `route/2` now exists on
+`AshA2A.Copilot.Pipeline` (`lib/ash_a2a/copilot/pipeline.ex:203`) — it
+delegates to `AshA2A.Strain.Bridge.route/2` exactly as the moduledoc
+describes, so dispatch callers may invoke `Pipeline.route/2` directly before
+`check/3` to get the strain-first behavior; calling `Bridge.route/2`
+directly remains equivalent.
 
 ## Authority.PEP seam — pending wiring
 

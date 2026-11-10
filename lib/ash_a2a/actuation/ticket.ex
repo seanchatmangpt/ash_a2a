@@ -18,8 +18,6 @@ defmodule AshA2A.Actuation.Ticket do
 
   defstruct [:id, :action_iri, :payload, :issued_by, :issued_at, :correlation]
 
-  @enforce_keys [:id, :action_iri, :payload, :issued_by, :issued_at, :correlation]
-
   @type correlation :: %{run_id: term(), step_ref: term()}
 
   @type t :: %__MODULE__{

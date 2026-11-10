@@ -8,7 +8,108 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
-_Nothing unreleased._
+## [26.10.9] - 2026-11-07
+
+### Added
+
+- `AshA2A.Twin` digital-twin family: gen_statem twins for `Asset`,
+  `Partner`, and `Operator` (`lib/ash_a2a/twin/`), with hazard statistics
+  (median / MAD / Z-score) in `AshA2A.Twin.Hazard` and the `Twin.Vince`
+  adversarial interrogator built on the `MechanicalPrior` behaviour.
+- `AshA2A.Strain.Tensor` and `AshA2A.Strain.Bridge` (AHDCLT strain bridge).
+- Attestation `Key`/`Gate` (`lib/ash_a2a/attestation/`) and
+  `Ingress.Channel`.
+- `Copilot.Pipeline` dispatch pre-check chain, with the lane-G4 authority
+  hop: the `:authority_source` opt (an `AshA2A.Authority.Source` module or
+  `{module, opts}`) enforces an `assert_standing` gate as the last check
+  before admit; refusal surfaces as `{:refuse, %{code: :authority}}`, and
+  absence of the opt is a documented skip, not a silent pass.
+- `Copilot.Pipeline` -> `Strain.Bridge` seam join (Z7): the pipeline threads
+  a live Bridge `mesh_state` alongside the Vince/Tony state and routes
+  strain-first (`route/2` delegates to `Bridge.route/2`) — saturated mesh
+  sheds before Vince is ever consulted; admit/challenge/refuse observations
+  fold into the Bridge rolling windows (lane F2's joint verification:
+  `test/copilot/pipeline_test.exs` exercises the full chain through real
+  Bridge mesh state).
+- `AshA2A.Negotiation` family (`lib/ash_a2a/negotiation/`): `Engine`,
+  `Strategy` behaviour, and `DefaultStrategy` (lane B4).
+- `AshA2A.Attention.Broker` (`lib/ash_a2a/attention/broker.ex`): proposal
+  ledger triage with routine vs escalation edges and the
+  `escalation_path/2` founder-paging check (lane B5).
+- `AshA2A.Actuation` family (`lib/ash_a2a/actuation/`): `Engine`,
+  `Adapter`, and `Ticket`, with the actuation court
+  (`test/actuation/engine_court_test.exs`) (lane Z11 via W3 closure).
+- Replan port surface: conformance, parity, binding, OCEL-evidence, and
+  hazard-bridge courts; `pplan_courts` mix/CLI runner; `ASH_PPLAN_PATH`
+  dependency toggle for source-local ash_pplan consumption.
+
+### Fixed
+
+- Port totality holes in `AshA2A.Replan.Port` (verified on disk: no `raise`
+  sites remain in `lib/ash_a2a/replan/port/*.ex`; opts-based module lookup,
+  provider availability, and the `:powl` legacy fetch all return typed
+  `{:error, _}` — `:ash_pplan_unavailable`, `:plan_not_found`,
+  `:unsupported_formalism`, `:missing_domain`, `:missing_initial`,
+  `:invalid_ash_pplan_result`).
+- Hazard-bridge `Process.info` defects and twin hazard typespec defects
+  (no `Process.info` call sites remain in `lib/ash_a2a/strain/` or
+  `lib/ash_a2a/twin/`).
+- `Twin.Tony` guard syntax.
+- Attestation hardening (lane F7, verified on disk — PARTIAL, one piece in
+  flight): canonical low-s ECDSA signature enforcement in
+  `AshA2A.Attestation.Key` (the malleated `(r, n - s)` twin is refused with
+  `:non_canonical_signature`); future-skew bound in
+  `Attestation.Gate.verify_freshness/2` (`issued_at <= now + 5` alongside
+  the max-staleness check); GPS coordinate validation in
+  `Attestation.Gate.verify_gps_trajectory/1` (haversine distance,
+  `{:refused, :gps_impossible_jump}` for > 500 km within 60s between
+  consecutive observations). In flight: per-key nonce-replay
+  tracking (a consumed-nonce ledger) — not present on disk yet; the gate
+  currently checks nonce *match* only (`claims_match_nonce?/2`).
+
+### Known Issues
+
+None — both prior entries resolved upstream (see "Resolved upstream" under
+Fixed).
+
+### Fixed (upstream attribution, synced 2026-11-07)
+
+- Terminal-signal refusal in the durable engine (disjunctive I7): landed
+  upstream in ash_pplan. Signals to a terminal run return
+  `{:error, {:run_terminal, status}}` instead of creating an orphan waiter;
+  cancelling/unwinding runs still accept signals. Evidence: ran
+  `MIX_BUILD_ROOT=_build-x5 mix test test/durable/engine_terminal_signal_test.exs`
+  in /Users/sac/ash_pplan — 2 tests, 0 failures, exit 0
+  (`test/durable/engine_terminal_signal_test.exs`).
+- `marketplace_sim` dashboard repairs: landed upstream in ash_pplan
+  (`test/support/marketplace_sim/web/dashboard_live.ex`) — every surface reads
+  real ash_pplan state (capability catalog, durable ETS store, pid-scoped
+  telemetry attach), and the telemetry-handler leak is fixed by a dedicated
+  watcher tied to a `:DOWN` monitor on the LiveView pid (cleanup no longer
+  relies on `terminate/2` running through crash/reconnect). Evidence: read the
+  repaired handlers on disk (lines 1-80, watcher at 61-80).
+
+### Removed
+
+- `AshA2A.SagaControl` (`fc0de4f5`): the module and its test are deleted;
+  nothing else in `lib/` referenced it.
+
+### Changed
+
+- graphlaw v26.10.28 compatibility (`5fcf1538`, `fc0de4f5`; consumer note:
+  `docs/reference/graphlaw-v26.10.28-compat.md`): `open/1` keys the
+  hook-reactor runtime off the engine-reported `surface_blake3` — a digest
+  mismatch is carried as `nil`, never a stale value. The engine's retired
+  `validate_all`/`N3_DENIAL` op pair is replaced: N3-denial conditions are
+  re-derived through `AshGraphLaw.n3/2` — the condition must be exactly one
+  `{ BODY } => false .` rule (anything else is the typed refusal
+  `:hook_condition_invalid`), the arm rewrites the (inert) `=> false`
+  consequent to a ground sentinel triple, and the denial matches iff the
+  sentinel appears in the engine's `derived` text.
+- Refusal mapping and receipt tooling truth-syncs for the v26.10.28 registry
+  values (`d8c6829f`): `AshA2A.Semantic.Refusal`, `mix ash_a2a.self_card`,
+  and `mix ash_a2a.standing_receipt.verify`.
+- Dependency locks (`9abc3054`): `mix.lock` — ash 3.35.0 et al.
 
 ## [26.10.5] - 2026-10-05
 

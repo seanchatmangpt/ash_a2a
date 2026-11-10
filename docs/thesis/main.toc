@@ -1,0 +1,27 @@
+\contentsline {chapter}{\numberline {1}Foundations of Machine Agency: The Chatman Equation}{5}{chapter.1}%
+\contentsline {section}{\numberline {1.1}The Epistemic Gap: Observation versus Grounded Reality}{5}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Lawful Manufacture and Cryptographic Receipts}{5}{section.1.2}%
+\contentsline {chapter}{\numberline {2}Algebraic and Geometric Foundations of Agent Protocols}{7}{chapter.2}%
+\contentsline {section}{\numberline {2.1}The Symmetric Monoidal Category $\mathbf {Agent}$}{7}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Sheaf Cohomology on Distributed Task Spaces}{7}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Principal Fiber Bundles and Authority Narrowing}{8}{section.2.3}%
+\contentsline {chapter}{\numberline {3}Infinitesimal Calculus of Autonomic Systems}{9}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Continuous-Time Autonomic Recursion}{9}{section.3.1}%
+\contentsline {section}{\numberline {3.2}Statistical Process Control and Semantic Drift}{9}{section.3.2}%
+\contentsline {chapter}{\numberline {4}The A2A v1 Tripartite Wire Transport Manifold}{11}{chapter.4}%
+\contentsline {section}{\numberline {4.1}The Tripartite Isomorphism}{11}{section.4.1}%
+\contentsline {section}{\numberline {4.2}Task State Machine Dynamics}{11}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Streaming Backpressure and Multiplexing Isolation}{12}{section.4.3}%
+\contentsline {chapter}{\numberline {5}The Protocol Testing Lifecycle and Google TCK Conformance}{13}{chapter.5}%
+\contentsline {section}{\numberline {5.1}The Technology Compatibility Kit (TCK) as Bisimulation}{13}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Empirical Conformance Matrix: 265 Scenarios}{13}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Anatomy of Critical Protocol Boundary Resolutions}{13}{section.5.3}%
+\contentsline {chapter}{\numberline {6}The \texttt {ash\_a2a} Reference Implementation Architecture}{15}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Spark DSL Metaprogramming}{15}{section.6.1}%
+\contentsline {section}{\numberline {6.2}BEAM Process Supervision and Isolation}{15}{section.6.2}%
+\contentsline {section}{\numberline {6.3}Multi-Shard Durable EKV Storage}{15}{section.6.3}%
+\contentsline {chapter}{\numberline {7}Zero-Trust Enterprise Governance and Post-Quantum Security}{17}{chapter.7}%
+\contentsline {section}{\numberline {7.1}Continuous Identity Attestation with SPIFFE mTLS}{17}{section.7.1}%
+\contentsline {section}{\numberline {7.2}Monotonic AuthZEN Authorization}{17}{section.7.2}%
+\contentsline {section}{\numberline {7.3}Post-Quantum Attestation: ML-DSA-65 WASM Affidavits}{17}{section.7.3}%
+\contentsline {chapter}{\numberline {8}Conclusion and Open Frontiers in AGI Coordination}{19}{chapter.8}%

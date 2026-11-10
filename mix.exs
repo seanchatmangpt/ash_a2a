@@ -26,7 +26,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.10.8",
+      version: "26.10.9",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -365,7 +365,16 @@ defmodule AshA2A.MixProject do
       # `MIX_ENV=test mix compile --warnings-as-errors` fails. Pure Elixir,
       # test-only (Ash declares it optional).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
-      {:ash_pplan, "~> 26.10", only: :test},
+      # ash_pplan dep: Hex pin by default. Set ASH_PPLAN_PATH to a local
+      # canonical checkout (e.g. /Users/sac/ash_pplan) to compile against
+      # path: instead — dev-only cross-repo-court mode; CI always uses the
+      # Hex pin. Eval-time System.get_env is the only supported toggle:
+      # deps do not read env at compile time.
+      if path = System.get_env("ASH_PPLAN_PATH") do
+        {:ash_pplan, path: path, only: :test}
+      else
+        {:ash_pplan, "~> 26.10", only: :test}
+      end,
       # MUZAK lane: mutation testing (mix muzak.sec). `only: :test`, not
       # `:dev`: muzak's mix task declares `@preferred_cli_env :test` and its
       # oracle is the ExUnit suite itself, so the dep must exist in :test --

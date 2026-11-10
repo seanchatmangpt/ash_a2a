@@ -26,7 +26,6 @@ defmodule AshA2A.Actuation.Engine do
   for the same ticket id is refused as `{:refused, :already_settled}`.
   """
 
-  alias AshA2A.Actuation.Adapter
   alias AshA2A.Actuation.Ticket
   alias AshA2A.Attestation.Gate
 

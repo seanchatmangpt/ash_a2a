@@ -258,6 +258,11 @@ defmodule AshA2A.A2ATransport.Plug do
     end
   end
 
+  defp dispatch(conn, %Request{method: "tasks/get"} = req, raw, opts),
+    do: if_owned(conn, req, req.params["id"], opts, &delegate(&1, raw, opts))
+
+  defp dispatch(conn, _req, raw, opts), do: delegate(conn, raw, opts)
+
   # Additive committed refusal receipt (L175, mirroring the protocol plug's
   # L153 shape, see `AshA2A.Semantic.Refusal.commit/2`): every rejection in
   # the owner-scoped `tasks/list` handler commits a 32-byte receipt over the
@@ -275,11 +280,6 @@ defmodule AshA2A.A2ATransport.Plug do
       wire_code: wire_code
     })
   end
-
-  defp dispatch(conn, %Request{method: "tasks/get"} = req, raw, opts),
-    do: if_owned(conn, req, req.params["id"], opts, &delegate(&1, raw, opts))
-
-  defp dispatch(conn, _req, raw, opts), do: delegate(conn, raw, opts)
 
   defp delegate_fallback(conn, _req, opts), do: AshA2A.Protocol.Plug.call(conn, opts.a2a)
 

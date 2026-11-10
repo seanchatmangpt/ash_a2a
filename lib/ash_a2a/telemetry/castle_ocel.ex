@@ -73,7 +73,6 @@ defmodule AshA2A.Telemetry.CastleOcel do
         }
 
   @admitted_classes [:admitted]
-  @observation_classes [:blocked_unknown, :blocked_resource, :unsupported_profile]
 
   @doc """
   The standing classes this module admits as inputs: `:admitted`, the 18

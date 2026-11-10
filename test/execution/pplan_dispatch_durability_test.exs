@@ -211,7 +211,8 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
           {{:ok, n}, s}
         else
           n = Map.get(s, effect, 0) + 1
-          {{:ok, n}, Map.put(s, key, n)}
+          s = s |> Map.put(key, n) |> Map.put(effect, n)
+          {{:ok, n}, s}
         end
       end)
     end
@@ -375,11 +376,6 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
   end
 
   setup do
-    unless Adapter.available?() do
-      IO.puts(:stderr, "[lane-i2] BLOCKED: :ash_pplan did not load in the test env")
-      {:skip, {:blocked, :ash_pplan_not_loadable}}
-    end
-
     install_adapter!()
 
     {:ok, fx} = Effects.start_link(:"pplan_dispatch_fx_#{System.unique_integer([:positive])}")
@@ -395,7 +391,15 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
     )
 
     ExUnit.Callbacks.on_exit(fn ->
-      KillStore.disarm()
+      # Teardown race: the test's own kill point may have just taken down the
+      # KillStore.Plan agent between whereis and the Agent update — the disarm
+      # must never fail the test from its own teardown.
+      try do
+        KillStore.disarm()
+      catch
+        :exit, _ -> :ok
+      end
+
       Cfg.stop()
       @clock.reset()
     end)
@@ -435,7 +439,6 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
     task_id = "i2-fresh-#{System.unique_integer([:positive])}"
 
     assert {:ok, first} = PPlanAdapter.run(task_id, data_message(%{step: 1}), await_cfg(store, fx))
-
     assert first.state == :input_required
 
     assert {:ok, :input_required,
