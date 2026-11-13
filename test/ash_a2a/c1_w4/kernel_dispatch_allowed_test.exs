@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.KernelDispatchAllowedTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "kernel_dispatch_allowed" do
     v = "priv/sa2a/c1/w4_vectors/kernel_dispatch_allowed.json" |> File.read!() |> Jason.decode!()

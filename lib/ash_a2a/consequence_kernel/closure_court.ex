@@ -36,7 +36,7 @@ defmodule AshA2A.ConsequenceKernel.ClosureCourt do
   @schema "ash_a2a.consequence_kernel.closure_court/v1"
   @sole_path AshA2A.ConsequenceKernel.Runtime.Pipeline
   @kernel_prefix "AshA2A.ConsequenceKernel"
-  @gateways ["AshA2A.ConsequenceKernel.W4.DispatchInversion.execute/2"]
+  @gateways ["AshA2A.ConsequenceKernel.Dispatch.Inversion.execute/2"]
 
   @doc "The DO entry point classification (effector list in `Chicago.Closure` format)."
   @spec entry_points() :: [Closure.effector()]

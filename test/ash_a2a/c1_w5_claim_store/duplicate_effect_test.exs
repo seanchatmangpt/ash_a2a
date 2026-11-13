@@ -28,17 +28,17 @@ defmodule AshA2A.C1W5ClaimStore.DuplicateEffectTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    {:ok, s} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.start_link()
-    assert :ok = AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.put(s, claim)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    {:ok, s} = AshA2A.ConsequenceKernel.EffectClaimStore.Memory.start_link()
+    assert :ok = AshA2A.ConsequenceKernel.EffectClaimStore.Memory.put(s, claim)
 
     {:ok, c2} =
-      AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(
+      AshA2A.ConsequenceKernel.Claims.Authenticator.issue(
         %{attrs | prepared_digest: "sha256:other"},
         key
       )
 
     assert {:error, :effect_already_claimed} =
-             AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.put(s, c2)
+             AshA2A.ConsequenceKernel.EffectClaimStore.Memory.put(s, c2)
   end
 end

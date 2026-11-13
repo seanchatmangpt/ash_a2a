@@ -17,6 +17,6 @@ defmodule AshA2A.C1W5ClaimStore.ReconciledRetryTest do
       ])
 
     assert File.read!(vector) =~ "\"case\": \"reconciled_retry\""
-    assert :ok = AshA2A.ConsequenceKernel.W5.RecoveryGate.retry(:reconciled_not_applied)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.RecoveryGate.retry(:reconciled_not_applied)
   end
 end

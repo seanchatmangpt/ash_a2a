@@ -21,6 +21,6 @@ defmodule AshA2A.C1W5ClaimStore.SubjectMismatchTest do
     c = %{prepared_digest: "sha256:other", subject_digest: "sha256:sub"}
 
     assert {:error, :effect_claim_exact_subject_mismatch} =
-             AshA2A.ConsequenceKernel.W5.ClaimSubject.bind(p, c)
+             AshA2A.ConsequenceKernel.Claims.Subject.bind(p, c)
   end
 end

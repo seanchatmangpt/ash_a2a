@@ -19,7 +19,7 @@ defmodule AshA2A.C1W5ClaimStore.ReceiptChainTest do
     assert File.read!(vector) =~ "\"case\": \"receipt_chain\""
 
     assert {:ok, "sha256:" <> d} =
-             AshA2A.ConsequenceKernel.W5.ReceiptChain.append("sha256:root", %{
+             AshA2A.ConsequenceKernel.Claims.ReceiptChain.append("sha256:root", %{
                "event" => "claimed"
              })
 

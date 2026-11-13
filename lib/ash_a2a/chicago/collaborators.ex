@@ -257,11 +257,11 @@ defmodule AshA2A.Chicago.Collaborators do
   end
 
   # The CommandBus reaches the actuator only through the kernel's dispatch inversion
-  # (`ConsequenceKernel.W4.DispatchInversion`), which is the one module that calls
+  # (`ConsequenceKernel.Dispatch.Inversion`), which is the one module that calls
   # `Dispatcher.dispatch/6`; both hops are read from compiled import tables.
   defp role(:consequence_boundary, _env) do
     module = AshA2A.CommandBus
-    inversion = AshA2A.ConsequenceKernel.W4.DispatchInversion
+    inversion = AshA2A.ConsequenceKernel.Dispatch.Inversion
 
     %{
       module: module,
@@ -288,7 +288,7 @@ defmodule AshA2A.Chicago.Collaborators do
 
   defp role(:actuator, _env) do
     module = AshA2A.Dispatcher
-    inversion = AshA2A.ConsequenceKernel.W4.DispatchInversion
+    inversion = AshA2A.ConsequenceKernel.Dispatch.Inversion
 
     %{
       module: module,

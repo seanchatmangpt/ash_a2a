@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+defmodule AshA2A.ConsequenceKernel.Claims.Standing do
+  alias AshA2A.ConsequenceKernel.Claims.Authenticator, as: ClaimAuthenticator
+  alias AshA2A.ConsequenceKernel.Claims.Receipt, as: ClaimReceipt
+  alias AshA2A.ConsequenceKernel.Claims.ReplayEvidence
+
+  def derive(c, rs, replay, outcome, key) do
+    with :ok <- ClaimAuthenticator.verify(c, key),
+         :ok <- ClaimReceipt.verify_chain(rs),
+         :ok <- ReplayEvidence.verify(c, replay),
+         :ok <- outcome_ok(outcome),
+         do: {:ok, :evidenced}
+  end
+
+  defp outcome_ok(s) when s in [:completed, :reconciled_completed], do: :ok
+
+  defp outcome_ok(s) when s in [:unknown_outcome, :reconciled_unknown],
+    do: {:error, :standing_unknown_outcome}
+
+  defp outcome_ok(_), do: {:error, :standing_not_established}
+end

@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.ExactSubjectTokenTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "exact_subject_token" do
     v = "priv/sa2a/c1/w4_vectors/exact_subject_token.json" |> File.read!() |> Jason.decode!()

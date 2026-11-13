@@ -5,15 +5,13 @@
 defmodule AshA2A.C1W4C.TopologyKernelTest do
   use ExUnit.Case, async: true
 
-  alias AshA2A.ConsequenceKernel.W4C.{
-    AdmittedTopology,
-    ChicagoAdapter,
-    ClosurePredicate,
-    ClosureReceipt,
-    GraphEdge,
-    GraphReport,
-    UnresolvedApply
-  }
+  alias AshA2A.ConsequenceKernel.Closure.AdmittedTopology
+  alias AshA2A.ConsequenceKernel.Closure.ChicagoAdapter
+  alias AshA2A.ConsequenceKernel.Closure.Predicate, as: ClosurePredicate
+  alias AshA2A.ConsequenceKernel.Closure.Receipt, as: ClosureReceipt
+  alias AshA2A.ConsequenceKernel.Closure.GraphEdge
+  alias AshA2A.ConsequenceKernel.Closure.GraphReport
+  alias AshA2A.ConsequenceKernel.Closure.UnresolvedApply
 
   test "topology_kernel" do
     assert AdmittedTopology.admitted?("Elixir.AshA2A.ConsequenceKernel.X", :effect)

@@ -114,7 +114,7 @@ Landed gates (commit `059ff0e3`):
   `lib/ash_a2a/chicago/fixtures/{chaos_reconciliation,receipt_binding_attestation}.ex`,
   `lib/ash_a2a/consequence_kernel/effect_claim_store/durable_file.ex`,
   `lib/ash_a2a/consequence_kernel/prepared_effect_store/journal.ex`,
-  `lib/ash_a2a/consequence_kernel/w5/effect_claim_store/file.ex`,
+  `lib/ash_a2a/consequence_kernel/effect_claim_store/file.ex`,
   `lib/ash_a2a/execution_snapshot.ex`,
   `lib/ash_a2a/receipt/evidence_chain.ex`,
   `lib/ash_a2a/receipt_outbox.ex`; plus 343 low-confidence findings

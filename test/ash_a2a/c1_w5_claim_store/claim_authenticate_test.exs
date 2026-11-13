@@ -28,7 +28,7 @@ defmodule AshA2A.C1W5ClaimStore.ClaimAuthenticateTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    assert :ok = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.verify(claim, key)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Authenticator.verify(claim, key)
   end
 end

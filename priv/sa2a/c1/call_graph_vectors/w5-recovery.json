@@ -3,7 +3,7 @@
   "id": "w5-recovery",
   "edge": {
     "caller": "Elixir.Consumer",
-    "callee": "Elixir.AshA2A.ConsequenceKernel.W5.RecoveryGate",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Claims.RecoveryGate",
     "operation": "recover"
   },
   "expected": {

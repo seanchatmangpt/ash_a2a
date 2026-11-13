@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4B.ExternalObservationTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4B.EntryPolicy
+  alias AshA2A.ConsequenceKernel.Guards.EntryPolicy
 
   test "external_observation",
     do:

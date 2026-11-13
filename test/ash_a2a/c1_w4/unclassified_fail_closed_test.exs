@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.UnclassifiedFailClosedTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "unclassified_fail_closed" do
     v = "priv/sa2a/c1/w4_vectors/unclassified_fail_closed.json" |> File.read!() |> Jason.decode!()

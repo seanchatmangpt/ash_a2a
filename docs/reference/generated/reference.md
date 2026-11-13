@@ -8723,26 +8723,26 @@
 | `new` | function | new/3 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.ArchitecturePolicy
+### AshA2A.ConsequenceKernel.Dispatch.ArchitecturePolicy
 
 | `forbidden_tokens` | function | forbidden_tokens/0 |  |  |  |  |
 
 | `violations` | function | violations/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.CompleteMediation
+### AshA2A.ConsequenceKernel.Dispatch.Mediation
 
 | `admit` | function | admit/1 |  |  |  |  |
 
 | `allowed_caller?` | function | allowed_caller?/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.ConsequenceGate
+### AshA2A.ConsequenceKernel.Dispatch.ConsequenceGate
 
 | `admit` | function | admit/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.DispatchInversion
+### AshA2A.ConsequenceKernel.Dispatch.Inversion
 
 | `execute` | function | execute/2 |  |  |  |  |
 
@@ -8751,22 +8751,22 @@
 | `execute` | function | execute/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.DispatcherFence
+### AshA2A.ConsequenceKernel.Dispatch.DispatcherFence
 
 | `admitted?` | function | admitted?/0 |  |  |  |  |
 
 | `enter` | function | enter/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.EffectRequest
+### AshA2A.ConsequenceKernel.Dispatch.EffectRequest
 
 
-### AshA2A.ConsequenceKernel.W4.EffectorToken
+### AshA2A.ConsequenceKernel.Dispatch.EffectorToken
 
 | `mint` | function | mint/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.Outcome
+### AshA2A.ConsequenceKernel.Dispatch.Outcome
 
 | `classify` | function | classify/1 |  |  |  |  |
 
@@ -8777,19 +8777,19 @@
 | `classify` | function | classify/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4.ResolvedEffect
+### AshA2A.ConsequenceKernel.Dispatch.ResolvedEffect
 
 
-### AshA2A.ConsequenceKernel.W4.Route
-
-| `classify` | function | classify/1 |  |  |  |  |
+### AshA2A.ConsequenceKernel.Dispatch.Route
 
 | `classify` | function | classify/1 |  |  |  |  |
 
 | `classify` | function | classify/1 |  |  |  |  |
 
+| `classify` | function | classify/1 |  |  |  |  |
 
-### AshA2A.ConsequenceKernel.W4.UnknownOutcome
+
+### AshA2A.ConsequenceKernel.Dispatch.UnknownOutcome
 
 | `disposition` | function | disposition/1 |  |  |  |  |
 
@@ -8800,7 +8800,7 @@
 | `retry?` | function | retry?/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.BypassClassification
+### AshA2A.ConsequenceKernel.Guards.BypassClassification
 
 | `classify` | function | classify/1 |  |  |  |  |
 
@@ -8809,19 +8809,19 @@
 | `classify` | function | classify/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.CallPathPolicy
+### AshA2A.ConsequenceKernel.Guards.CallPathPolicy
 
 | `admit` | function | admit/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.ClosureCourt
+### AshA2A.ConsequenceKernel.Guards.MediationClosureCourt
 
 | `closed?` | function | closed?/1 |  |  |  |  |
 
 | `judge` | function | judge/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.EntryPolicy
+### AshA2A.ConsequenceKernel.Guards.EntryPolicy
 
 | `admit` | function | admit/2 |  |  |  |  |
 
@@ -8836,21 +8836,21 @@
 | `admit` | function | admit/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.MediationReceipt
+### AshA2A.ConsequenceKernel.Guards.MediationReceipt
 
 | `admitted` | function | admitted/2 |  |  |  |  |
 
 | `refused` | function | refused/3 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.MigrationRegistry
+### AshA2A.ConsequenceKernel.Guards.MigrationRegistry
 
 | `entries` | function | entries/0 |  |  |  |  |
 
 | `target` | function | target/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.RawEffectGuard
+### AshA2A.ConsequenceKernel.Guards.RawEffect
 
 | `admit` | function | admit/1 |  |  |  |  |
 
@@ -8861,7 +8861,7 @@
 | `admit` | function | admit/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4B.UnknownOutcomePolicy
+### AshA2A.ConsequenceKernel.Guards.UnknownOutcomePolicy
 
 | `next` | function | next/2 |  |  |  |  |
 
@@ -8872,7 +8872,7 @@
 | `next` | function | next/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.AdmittedTopology
+### AshA2A.ConsequenceKernel.Closure.AdmittedTopology
 
 | `admitted?` | function | admitted?/2 |  |  |  |  |
 
@@ -8881,12 +8881,12 @@
 | `admitted?` | function | admitted?/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.CallerPolicy
+### AshA2A.ConsequenceKernel.Closure.CallerPolicy
 
 | `kernel?` | function | kernel?/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ChicagoAdapter
+### AshA2A.ConsequenceKernel.Closure.ChicagoAdapter
 
 | `evaluate` | function | evaluate/1 |  |  |  |  |
 
@@ -8895,60 +8895,60 @@
 | `evaluate` | function | evaluate/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.Closure
+### AshA2A.ConsequenceKernel.Closure.Evaluation
 
 | `closed?` | function | closed?/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ClosurePredicate
+### AshA2A.ConsequenceKernel.Closure.Predicate
 
 | `evaluate` | function | evaluate/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ClosureReceipt
+### AshA2A.ConsequenceKernel.Closure.Receipt
 
 | `issue` | function | issue/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ClosureStatus
+### AshA2A.ConsequenceKernel.Closure.Status
 
 | `from_edges` | function | from_edges/1 |  |  |  |  |
 
 | `from_edges` | function | from_edges/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.Counterexample
+### AshA2A.ConsequenceKernel.Closure.Counterexample
 
 | `minimal` | function | minimal/1 |  |  |  |  |
 
 | `minimal` | function | minimal/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.Dedupe
+### AshA2A.ConsequenceKernel.Effects.Dedupe
 
 | `edges` | function | edges/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.DispatcherPolicy
+### AshA2A.ConsequenceKernel.Closure.DispatcherPolicy
 
 | `classify` | function | classify/1 |  |  |  |  |
 
 | `classify` | function | classify/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.EdgeIdentity
+### AshA2A.ConsequenceKernel.Closure.EdgeIdentity
 
 | `key` | function | key/1 |  |  |  |  |
 
 | `key` | function | key/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.GraphEdge
+### AshA2A.ConsequenceKernel.Closure.GraphEdge
 
 | `consequential?` | function | consequential?/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.GraphReport
+### AshA2A.ConsequenceKernel.Closure.GraphReport
 
 | `normalize` | function | normalize/1 |  |  |  |  |
 
@@ -8957,53 +8957,53 @@
 | `normalize_edge` | function | normalize_edge/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.KernelFilter
+### AshA2A.ConsequenceKernel.Closure.KernelFilter
 
 | `outside` | function | outside/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.MigrationTarget
+### AshA2A.ConsequenceKernel.Closure.MigrationTarget
 
 | `for_kind` | function | for_kind/1 |  |  |  |  |
 
 | `for_kind` | function | for_kind/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.RawEffectEdges
+### AshA2A.ConsequenceKernel.Closure.RawEffectEdges
 
 | `from_report` | function | from_report/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ReceiptDigest
+### AshA2A.ConsequenceKernel.Closure.ReceiptDigest
 
 | `digest` | function | digest/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ReportSchema
+### AshA2A.ConsequenceKernel.Closure.ReportSchema
 
 | `valid?` | function | valid?/1 |  |  |  |  |
 
 | `valid?` | function | valid?/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.UnresolvedApply
+### AshA2A.ConsequenceKernel.Closure.UnresolvedApply
 
 | `edge` | function | edge/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W4C.ZeroEdgeGuard
+### AshA2A.ConsequenceKernel.Closure.ZeroEdgeGuard
 
 | `admit` | function | admit/1 |  |  |  |  |
 
 | `admit` | function | admit/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.Claim
+### AshA2A.ConsequenceKernel.Claims.Claim
 
 | `new` | function | new/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimAuthenticator
+### AshA2A.ConsequenceKernel.Claims.Authenticator
 
 | `issue` | function | issue/2 |  |  |  |  |
 
@@ -9020,7 +9020,7 @@
 | `verify` | function | verify/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimFence
+### AshA2A.ConsequenceKernel.Claims.Fence
 
 | `admit` | function | admit/1 |  |  |  |  |
 
@@ -9029,14 +9029,14 @@
 | `admit` | function | admit/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimIdentity
+### AshA2A.ConsequenceKernel.Claims.Identity
 
 | `bind` | function | bind/4 |  |  |  |  |
 
 | `bind` | function | bind/4 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimProtocol
+### AshA2A.ConsequenceKernel.Claims.Protocol
 
 | `append` | function | append/4 |  |  |  |  |
 
@@ -9065,7 +9065,7 @@
 | `target` | function | target/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimReceipt
+### AshA2A.ConsequenceKernel.Claims.Receipt
 
 | `build` | function | build/3 |  |  |  |  |
 
@@ -9074,7 +9074,7 @@
 | `verify_chain` | function | verify_chain/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimSubject
+### AshA2A.ConsequenceKernel.Claims.Subject
 
 | `bind` | function | bind/0 |  |  |  |  |
 
@@ -9083,12 +9083,12 @@
 | `bind` | function | bind/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ClaimTransition
+### AshA2A.ConsequenceKernel.Claims.Transition
 
 | `admit` | function | admit/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.CrashWindow
+### AshA2A.ConsequenceKernel.Claims.CrashWindow
 
 | `classify` | function | classify/1 |  |  |  |  |
 
@@ -9099,15 +9099,15 @@
 | `classify` | function | classify/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.EffectClaim
+### AshA2A.ConsequenceKernel.Claims.EffectClaim
 
 | `body` | function | body/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.EffectClaimStore
+### AshA2A.ConsequenceKernel.EffectClaimStore
 
 
-### AshA2A.ConsequenceKernel.W5.EffectClaimStore.File
+### AshA2A.ConsequenceKernel.EffectClaimStore.File
 
 | `append_receipt` | function | append_receipt/3 |  |  |  |  |
 
@@ -9144,7 +9144,7 @@
 | `transition` | function | transition/4 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory
+### AshA2A.ConsequenceKernel.EffectClaimStore.Memory
 
 | `append_receipt` | function | append_receipt/3 |  |  |  |  |
 
@@ -9161,14 +9161,14 @@
 | `transition` | function | transition/4 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.IndependentClaim
+### AshA2A.ConsequenceKernel.Claims.Independent
 
 | `admit` | function | admit/2 |  |  |  |  |
 
 | `admit` | function | admit/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ReceiptChain
+### AshA2A.ConsequenceKernel.Claims.ReceiptChain
 
 | `append` | function | append/2 |  |  |  |  |
 
@@ -9185,7 +9185,7 @@
 | `norm` | function | norm/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.Reconciliation
+### AshA2A.ConsequenceKernel.Claims.Reconciliation
 
 | `resolve` | function | resolve/2 |  |  |  |  |
 
@@ -9194,7 +9194,7 @@
 | `resolve` | function | resolve/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.RecoveryGate
+### AshA2A.ConsequenceKernel.Claims.RecoveryGate
 
 | `retry` | function | retry/1 |  |  |  |  |
 
@@ -9207,7 +9207,7 @@
 | `retry` | function | retry/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.ReplayEvidence
+### AshA2A.ConsequenceKernel.Claims.ReplayEvidence
 
 | `derive` | function | derive/1 |  |  |  |  |
 
@@ -9218,7 +9218,7 @@
 | `verify` | function | verify/2 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.Standing
+### AshA2A.ConsequenceKernel.Claims.Standing
 
 | `derive` | function | derive/5 |  |  |  |  |
 
@@ -9229,7 +9229,7 @@
 | `outcome_ok` | function | outcome_ok/1 |  |  |  |  |
 
 
-### AshA2A.ConsequenceKernel.W5.UnknownOutcome
+### AshA2A.ConsequenceKernel.Claims.UnknownOutcome
 
 | `next` | function | next/1 |  |  |  |  |
 

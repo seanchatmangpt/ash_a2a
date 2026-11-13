@@ -23,7 +23,7 @@ Face ID (Secure Enclave P-256) and an automated AuthorityService policy key, 2-o
 
 | Defect | v26.9.28 | v26.9.29 observation | Status |
 |---|---|---|---|
-| D1 kernel not on live path | ACTIVE | `CommandBus` calls `ConsequenceKernel.W4.DispatchInversion.execute/2` (command_bus.ex:1443); probe c1.command_bus_no_direct_dispatch PASS; c1.closure_report FAILED at probe time (ClosureCourt.report/0 was absent; module now in working tree, probe not re-run) | MITIGATED-UNPROVEN |
+| D1 kernel not on live path | ACTIVE | `CommandBus` calls `ConsequenceKernel.Dispatch.Inversion.execute/2` (command_bus.ex:1443); probe c1.command_bus_no_direct_dispatch PASS; c1.closure_report FAILED at probe time (ClosureCourt.report/0 was absent; module now in working tree, probe not re-run) | MITIGATED-UNPROVEN |
 | D2 term_to_binary identity | ACTIVE | probe c1.canonical_at_boundaries PASS for 9 boundary modules; `term_to_binary` remains in command.ex, actuation.ex, receipt_outbox.ex and others (grep) | PARTIAL |
 | D3 signatures never verified | ACTIVE | probes c2.certificate_verifier_signatures and c2.crypto_verifier_primitives PASS (real Ed25519; ML-DSA fails closed) | MITIGATED (EdDSA only) |
 | D4 authority in-process | ACTIVE | `authority_service/` and `actuator/` are separate mix projects with no dep on `:ash_a2a` (probes PASS); no separate process/host evidence, release_distribution UNVERIFIED | PARTIAL |

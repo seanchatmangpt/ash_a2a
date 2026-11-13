@@ -1,28 +1,26 @@
 defmodule AshA2A.UntestedLane18.ConsequenceKernelW4CTest do
   use ExUnit.Case, async: true
 
-  alias AshA2A.ConsequenceKernel.W4C.{
-    AdmittedTopology,
-    CallerPolicy,
-    ChicagoAdapter,
-    Closure,
-    ClosurePredicate,
-    ClosureReceipt,
-    ClosureStatus,
-    Counterexample,
-    Dedupe,
-    DispatcherPolicy,
-    EdgeIdentity,
-    GraphEdge,
-    GraphReport,
-    KernelFilter,
-    MigrationTarget,
-    RawEffectEdges,
-    ReceiptDigest,
-    ReportSchema,
-    UnresolvedApply,
-    ZeroEdgeGuard
-  }
+  alias AshA2A.ConsequenceKernel.Closure.AdmittedTopology
+  alias AshA2A.ConsequenceKernel.Closure.CallerPolicy
+  alias AshA2A.ConsequenceKernel.Closure.ChicagoAdapter
+  alias AshA2A.ConsequenceKernel.Closure.Evaluation, as: Closure
+  alias AshA2A.ConsequenceKernel.Closure.Predicate, as: ClosurePredicate
+  alias AshA2A.ConsequenceKernel.Closure.Receipt, as: ClosureReceipt
+  alias AshA2A.ConsequenceKernel.Closure.Status, as: ClosureStatus
+  alias AshA2A.ConsequenceKernel.Closure.Counterexample
+  alias AshA2A.ConsequenceKernel.Effects.Dedupe
+  alias AshA2A.ConsequenceKernel.Closure.DispatcherPolicy
+  alias AshA2A.ConsequenceKernel.Closure.EdgeIdentity
+  alias AshA2A.ConsequenceKernel.Closure.GraphEdge
+  alias AshA2A.ConsequenceKernel.Closure.GraphReport
+  alias AshA2A.ConsequenceKernel.Closure.KernelFilter
+  alias AshA2A.ConsequenceKernel.Closure.MigrationTarget
+  alias AshA2A.ConsequenceKernel.Closure.RawEffectEdges
+  alias AshA2A.ConsequenceKernel.Closure.ReceiptDigest
+  alias AshA2A.ConsequenceKernel.Closure.ReportSchema
+  alias AshA2A.ConsequenceKernel.Closure.UnresolvedApply
+  alias AshA2A.ConsequenceKernel.Closure.ZeroEdgeGuard
 
   @k "Elixir.AshA2A.ConsequenceKernel.Foo"
   @raw %GraphEdge{caller: "Elixir.Other.Mod", callee: :do_it, kind: :effect}

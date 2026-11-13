@@ -32,7 +32,7 @@ defmodule AshA2A.ConsequenceKernel.Runtime.Pipeline do
     EffectorToken
   }
 
-  alias AshA2A.ConsequenceKernel.W5.ClaimProtocol
+  alias AshA2A.ConsequenceKernel.Claims.Protocol, as: ClaimProtocol
 
   def execute(p, opts) do
     store = Keyword.fetch!(opts, :store)

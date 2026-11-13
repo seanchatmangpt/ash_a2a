@@ -28,12 +28,18 @@ defmodule AshA2A.C1W5ClaimStore.StandingCompleteTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    {:ok, r1} = AshA2A.ConsequenceKernel.W5.ClaimReceipt.build(claim, :claimed)
-    {:ok, r2} = AshA2A.ConsequenceKernel.W5.ClaimReceipt.build(claim, :doing, r1["chain_digest"])
-    replay = AshA2A.ConsequenceKernel.W5.ReplayEvidence.derive(claim)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    {:ok, r1} = AshA2A.ConsequenceKernel.Claims.Receipt.build(claim, :claimed)
+    {:ok, r2} = AshA2A.ConsequenceKernel.Claims.Receipt.build(claim, :doing, r1["chain_digest"])
+    replay = AshA2A.ConsequenceKernel.Claims.ReplayEvidence.derive(claim)
 
     assert {:ok, :evidenced} =
-             AshA2A.ConsequenceKernel.W5.Standing.derive(claim, [r1, r2], replay, :completed, key)
+             AshA2A.ConsequenceKernel.Claims.Standing.derive(
+               claim,
+               [r1, r2],
+               replay,
+               :completed,
+               key
+             )
   end
 end

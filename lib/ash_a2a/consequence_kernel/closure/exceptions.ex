@@ -231,7 +231,7 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
              "apply/3"},
             {"AshA2A.ConsequenceKernel.PreparedEffectStore.call/3", "apply/3"},
             {"AshA2A.ConsequenceKernel.Runtime.StoreHandle.call/3", "apply/3"},
-            {"AshA2A.ConsequenceKernel.W5.ClaimProtocol.claim/3", "?:put/2"},
+            {"AshA2A.ConsequenceKernel.Claims.Protocol.claim/3", "?:put/2"},
             {"AshA2A.Durability.DurableServer.invoke/2", "apply/3"},
             {"AshA2A.Protocol.Agent.Runtime.run_cancel/2", "apply/3"},
             {"AshA2A.Protocol.Plug.call_authorizer/4", "apply/3"},

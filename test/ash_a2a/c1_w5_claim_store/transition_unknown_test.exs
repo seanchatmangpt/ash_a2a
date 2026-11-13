@@ -17,6 +17,6 @@ defmodule AshA2A.C1W5ClaimStore.TransitionUnknownTest do
       ])
 
     assert File.read!(vector) =~ "\"case\": \"transition_unknown\""
-    assert :ok = AshA2A.ConsequenceKernel.W5.ClaimTransition.admit(:doing, :unknown_outcome)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Transition.admit(:doing, :unknown_outcome)
   end
 end

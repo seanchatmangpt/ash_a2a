@@ -28,8 +28,8 @@ defmodule AshA2A.C1W5ClaimStore.ReplayMatchTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    r = AshA2A.ConsequenceKernel.W5.ReplayEvidence.derive(claim)
-    assert :ok = AshA2A.ConsequenceKernel.W5.ReplayEvidence.verify(claim, r)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    r = AshA2A.ConsequenceKernel.Claims.ReplayEvidence.derive(claim)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.ReplayEvidence.verify(claim, r)
   end
 end

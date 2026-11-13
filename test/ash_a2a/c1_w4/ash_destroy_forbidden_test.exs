@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.AshDestroyForbiddenTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "ash_destroy_forbidden" do
     v = "priv/sa2a/c1/w4_vectors/ash_destroy_forbidden.json" |> File.read!() |> Jason.decode!()

@@ -12,7 +12,7 @@ defmodule AshA2A.ConsequenceKernelTest do
 
   alias AshA2A.ConsequenceKernel
   alias AshA2A.ConsequenceKernel.PreparedEffectStore.Memory
-  alias AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory, as: ClaimMemory
+  alias AshA2A.ConsequenceKernel.EffectClaimStore.Memory, as: ClaimMemory
 
   defmodule Auth do
     def revalidate("p", _), do: :ok
@@ -80,7 +80,7 @@ defmodule AshA2A.ConsequenceKernelTest do
 
     assert {:ok, receipts} = ClaimMemory.receipts(claims, claim_id)
     assert Enum.map(receipts, & &1["event"]) == ["claimed", "doing", "completed"]
-    assert :ok = AshA2A.ConsequenceKernel.W5.ClaimReceipt.verify_chain(receipts)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Receipt.verify_chain(receipts)
   end
 
   test "an authority refusal stops before the effector; the record stays :claimed", %{

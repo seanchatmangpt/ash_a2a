@@ -58,7 +58,7 @@ defmodule AshA2A.Executor do
   `:change`/`:external_do`/`:unknown` consequence skill without a durable
   `:pending` outbox anchor is refused `:brce_prepared_receipt_required`
   before any Ash call), and the W4 kernel fence
-  (`AshA2A.ConsequenceKernel.W4.DispatcherFence.admitted?/0`) — so no
+  (`AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.admitted?/0`) — so no
   consequence-bearing dispatch can enter Ash through this module without the
   same admission a `Dispatcher.dispatch/6` call needs.
 
@@ -80,7 +80,7 @@ defmodule AshA2A.Executor do
   """
 
   alias AshA2A.{BrceAnchor, CapabilityRelease, ContextResolver, Dispatcher, MetadataKey}
-  alias AshA2A.ConsequenceKernel.W4.DispatcherFence
+  alias AshA2A.ConsequenceKernel.Dispatch.DispatcherFence
   alias AshA2A.Protocol.JSONRPC.Request
   alias AshA2A.Protocol.{Message, Part}
 

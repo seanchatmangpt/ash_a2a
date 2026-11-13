@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+defmodule AshA2A.ConsequenceKernel.Guards.CallPathPolicy do
+  @moduledoc false
+  @allowed %{observe: [:agent_observation, :kernel], change: [:kernel], external_do: [:kernel]}
+  def admit(consequence, caller),
+    do:
+      if(caller in Map.get(@allowed, consequence, []), do: :ok, else: {:error, :raw_effect_path})
+end

@@ -28,11 +28,11 @@ defmodule AshA2A.C1W5ClaimStore.DuplicateClaimTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    {:ok, s} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.start_link()
-    assert :ok = AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.put(s, claim)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    {:ok, s} = AshA2A.ConsequenceKernel.EffectClaimStore.Memory.start_link()
+    assert :ok = AshA2A.ConsequenceKernel.EffectClaimStore.Memory.put(s, claim)
 
     assert {:error, :effect_claim_duplicate} =
-             AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.put(s, claim)
+             AshA2A.ConsequenceKernel.EffectClaimStore.Memory.put(s, claim)
   end
 end

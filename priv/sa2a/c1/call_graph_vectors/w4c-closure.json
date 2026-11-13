@@ -3,7 +3,7 @@
   "id": "w4c-closure",
   "edge": {
     "caller": "Elixir.Consumer",
-    "callee": "Elixir.AshA2A.ConsequenceKernel.W4C.Closure",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Closure.Evaluation",
     "operation": "closed?"
   },
   "expected": {

@@ -18,7 +18,7 @@ defmodule AshA2A.C1W5ClaimStore.ProtocolBeginDoTest do
 
     assert File.read!(vector) =~ "\"case\": \"protocol_begin_do\""
     key = String.duplicate("k", 32)
-    {:ok, s} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.start_link()
+    {:ok, s} = AshA2A.ConsequenceKernel.EffectClaimStore.Memory.start_link()
 
     p = %{
       prepared_digest: "sha256:prep",
@@ -26,14 +26,14 @@ defmodule AshA2A.C1W5ClaimStore.ProtocolBeginDoTest do
     }
 
     opts = [
-      claim_store: AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory,
+      claim_store: AshA2A.ConsequenceKernel.EffectClaimStore.Memory,
       claim_store_handle: s,
       claim_key: key
     ]
 
-    {:ok, ctx} = AshA2A.ConsequenceKernel.W5.ClaimProtocol.claim(p, "owner", opts)
-    assert :ok = AshA2A.ConsequenceKernel.W5.ClaimProtocol.begin_do(ctx)
-    assert {:ok, c} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory.fetch(s, ctx.claim_id)
+    {:ok, ctx} = AshA2A.ConsequenceKernel.Claims.Protocol.claim(p, "owner", opts)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Protocol.begin_do(ctx)
+    assert {:ok, c} = AshA2A.ConsequenceKernel.EffectClaimStore.Memory.fetch(s, ctx.claim_id)
     assert c.state == :doing
   end
 end

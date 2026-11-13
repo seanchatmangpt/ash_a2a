@@ -220,7 +220,7 @@ defmodule AshA2A.Chicago.BrceGate7Test do
       :ok = BrceAnchor.put(anchor)
       # consequence-bearing dispatch is admitted only inside the kernel's dispatcher fence
       assert {:reply, _} =
-               AshA2A.ConsequenceKernel.W4.DispatcherFence.enter(fn ->
+               AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.enter(fn ->
                  Dispatcher.dispatch(:record, message(label), Ledger)
                end)
 

@@ -17,6 +17,6 @@ defmodule AshA2A.C1W5ClaimStore.TransitionCompletedTest do
       ])
 
     assert File.read!(vector) =~ "\"case\": \"transition_completed\""
-    assert :ok = AshA2A.ConsequenceKernel.W5.ClaimTransition.admit(:doing, :completed)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Transition.admit(:doing, :completed)
   end
 end

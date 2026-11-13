@@ -28,9 +28,9 @@ defmodule AshA2A.C1W5ClaimStore.ClaimTamperTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
 
     assert {:error, :effect_claim_authentication_failed} =
-             AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.verify(%{claim | effect_id: "x"}, key)
+             AshA2A.ConsequenceKernel.Claims.Authenticator.verify(%{claim | effect_id: "x"}, key)
   end
 end

@@ -170,7 +170,7 @@ defmodule AshA2A.Dispatcher do
       when is_list(history) and is_list(opts) do
     # The consequence-kernel fence is enforced per skill in `do_dispatch/6`, after the sole-DO anchor gate:
     # a consequence-bearing skill is refused unless the call entered through
-    # `ConsequenceKernel.W4.DispatcherFence` (the kernel's `DispatchInversion`); an observation
+    # `ConsequenceKernel.Dispatch.DispatcherFence` (the kernel's `DispatchInversion`); an observation
     # skill needs no fence (W4B `EntryPolicy.admit(:observe, :observation)`).
     dispatch_admitted(skill_name, a2a_message, resource_or_domain, history, auth_identity, opts)
   end
@@ -185,7 +185,7 @@ defmodule AshA2A.Dispatcher do
         opts \\ []
       )
       when is_list(history) and is_list(opts) do
-    AshA2A.ConsequenceKernel.W4.DispatcherFence.enter(fn ->
+    AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.enter(fn ->
       dispatch(
         skill_name,
         message,
@@ -405,7 +405,7 @@ defmodule AshA2A.Dispatcher do
   defp kernel_fence(nil), do: :ok
 
   defp kernel_fence(_anchor) do
-    if AshA2A.ConsequenceKernel.W4.DispatcherFence.admitted?(),
+    if AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.admitted?(),
       do: :ok,
       else: {:error, :consequence_kernel_required}
   end

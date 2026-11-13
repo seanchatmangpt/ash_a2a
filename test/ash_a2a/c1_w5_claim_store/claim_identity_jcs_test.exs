@@ -19,7 +19,7 @@ defmodule AshA2A.C1W5ClaimStore.ClaimIdentityJcsTest do
     assert File.read!(vector) =~ "\"case\": \"claim_identity_jcs\""
 
     assert {:ok, "sha256:" <> d} =
-             AshA2A.ConsequenceKernel.W5.ClaimIdentity.bind(
+             AshA2A.ConsequenceKernel.Claims.Identity.bind(
                "req",
                "eff",
                "sha256:prep",

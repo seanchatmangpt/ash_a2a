@@ -19,6 +19,6 @@ defmodule AshA2A.C1W5ClaimStore.SubjectBindTest do
     assert File.read!(vector) =~ "\"case\": \"subject_bind\""
     p = %{prepared_digest: "sha256:prep", instance: %{subject_digest: "sha256:sub"}}
     c = %{prepared_digest: "sha256:prep", subject_digest: "sha256:sub"}
-    assert :ok = AshA2A.ConsequenceKernel.W5.ClaimSubject.bind(p, c)
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Subject.bind(p, c)
   end
 end

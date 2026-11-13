@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.ObserveBypassKernelTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "observe_bypass_kernel" do
     v = "priv/sa2a/c1/w4_vectors/observe_bypass_kernel.json" |> File.read!() |> Jason.decode!()

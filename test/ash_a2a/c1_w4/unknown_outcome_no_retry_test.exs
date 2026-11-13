@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.UnknownOutcomeNoRetryTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "unknown_outcome_no_retry" do
     v = "priv/sa2a/c1/w4_vectors/unknown_outcome_no_retry.json" |> File.read!() |> Jason.decode!()

@@ -28,7 +28,7 @@ defmodule AshA2A.C1W5ClaimStore.FileStorePersistsTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
 
     path =
       Path.join(
@@ -36,11 +36,11 @@ defmodule AshA2A.C1W5ClaimStore.FileStorePersistsTest do
         "sa2a_claim_" <> Integer.to_string(System.unique_integer([:positive])) <> ".bin"
       )
 
-    {:ok, s} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.File.start_link(path: path)
-    assert :ok = AshA2A.ConsequenceKernel.W5.EffectClaimStore.File.put(s, claim)
+    {:ok, s} = AshA2A.ConsequenceKernel.EffectClaimStore.File.start_link(path: path)
+    assert :ok = AshA2A.ConsequenceKernel.EffectClaimStore.File.put(s, claim)
     GenServer.stop(s)
-    {:ok, s2} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.File.start_link(path: path)
-    assert {:ok, c} = AshA2A.ConsequenceKernel.W5.EffectClaimStore.File.fetch(s2, claim.claim_id)
+    {:ok, s2} = AshA2A.ConsequenceKernel.EffectClaimStore.File.start_link(path: path)
+    assert {:ok, c} = AshA2A.ConsequenceKernel.EffectClaimStore.File.fetch(s2, claim.claim_id)
     assert c.effect_id == claim.effect_id
     GenServer.stop(s2)
     File.rm(path)

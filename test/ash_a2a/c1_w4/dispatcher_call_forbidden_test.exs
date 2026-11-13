@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.DispatcherCallForbiddenTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "dispatcher_call_forbidden" do
     v =

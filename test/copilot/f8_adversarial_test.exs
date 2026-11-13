@@ -300,7 +300,9 @@ defmodule AshA2A.Copilot.F8AdversarialTest do
     assert {_, {:ok, ticket}} =
              Pipeline.check(
                intent(%{trade: "floor-ok", nte: 100, offer: 78, sensor_frame: frame}),
-               state, now: @now)
+               state,
+               now: @now
+             )
 
     assert ticket.gpm == 0.22
 

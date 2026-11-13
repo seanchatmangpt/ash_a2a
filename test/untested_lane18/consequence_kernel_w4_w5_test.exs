@@ -1,24 +1,22 @@
 defmodule AshA2A.UntestedLane18.ConsequenceKernelW4W5Test do
   use ExUnit.Case, async: true
 
-  alias AshA2A.ConsequenceKernel.W4.{
-    ArchitecturePolicy,
-    ConsequenceGate,
-    EffectRequest,
-    EffectorToken,
-    ResolvedEffect
-  }
+  alias AshA2A.ConsequenceKernel.Dispatch.ArchitecturePolicy
+  alias AshA2A.ConsequenceKernel.Dispatch.ConsequenceGate
+  alias AshA2A.ConsequenceKernel.Dispatch.EffectRequest
+  alias AshA2A.ConsequenceKernel.Dispatch.EffectorToken
+  alias AshA2A.ConsequenceKernel.Dispatch.ResolvedEffect
 
-  alias AshA2A.ConsequenceKernel.W4B.{
-    BypassClassification,
-    CallPathPolicy,
-    MediationReceipt,
-    MigrationRegistry,
-    RawEffectGuard,
-    UnknownOutcomePolicy
-  }
+  alias AshA2A.ConsequenceKernel.Guards.BypassClassification
+  alias AshA2A.ConsequenceKernel.Guards.CallPathPolicy
+  alias AshA2A.ConsequenceKernel.Guards.MediationReceipt
+  alias AshA2A.ConsequenceKernel.Guards.MigrationRegistry
+  alias AshA2A.ConsequenceKernel.Guards.RawEffect, as: RawEffectGuard
+  alias AshA2A.ConsequenceKernel.Guards.UnknownOutcomePolicy
 
-  alias AshA2A.ConsequenceKernel.W5.{ClaimFence, CrashWindow, IndependentClaim}
+  alias AshA2A.ConsequenceKernel.Claims.Fence, as: ClaimFence
+  alias AshA2A.ConsequenceKernel.Claims.CrashWindow
+  alias AshA2A.ConsequenceKernel.Claims.Independent, as: IndependentClaim
 
   test "W4 EffectorToken mint requires binaries" do
     t = EffectorToken.mint("subj", "dig")

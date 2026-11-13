@@ -4,7 +4,7 @@ Standing: PARTIAL_ALIVE
 
 ## Subject / files
 - lib/ash_a2a/receipt_outbox.ex (deterministic encode; tmp-default warning)
-- lib/ash_a2a/receipt/evidence_chain.ex, consequence_kernel/w4c/receipt_digest.ex,
+- lib/ash_a2a/receipt/evidence_chain.ex, consequence_kernel/closure/receipt_digest.ex,
   replan/replay_key.ex, authority.ex (grant_token_id site), evidence/class.ex (digest):
   `term_to_binary(..., [:deterministic])`; decode unchanged (back-compat).
 - lib/ash_a2a/consequence_kernel/prepared_effect_store/journal.ex (warning when no dir outside dev/test)

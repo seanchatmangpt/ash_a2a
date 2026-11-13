@@ -53,7 +53,7 @@ defmodule AshA2A.RFC004FenceTest do
     # A consequence-bearing dispatch is admitted only inside the kernel's dispatcher fence
     # (the W4 DispatchInversion entry), and only with the durable anchor.
     assert {:reply, _} =
-             AshA2A.ConsequenceKernel.W4.DispatcherFence.enter(fn ->
+             AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.enter(fn ->
                Dispatcher.dispatch(:record, message(label), Ledger, [], nil,
                  resolved_skill: record
                )

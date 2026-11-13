@@ -1620,7 +1620,7 @@ defmodule AshA2A.CommandBus do
     :ok = AshA2A.BrceAnchor.put(anchor)
 
     try do
-      request = %AshA2A.ConsequenceKernel.W4.EffectRequest{
+      request = %AshA2A.ConsequenceKernel.Dispatch.EffectRequest{
         skill: skill,
         message: message,
         resource_or_domain: resource_or_domain,
@@ -1629,7 +1629,7 @@ defmodule AshA2A.CommandBus do
         auth_identity: Keyword.get(opts, :auth_identity)
       }
 
-      case AshA2A.ConsequenceKernel.W4.DispatchInversion.execute(request, opts) do
+      case AshA2A.ConsequenceKernel.Dispatch.Inversion.execute(request, opts) do
         {:error, _reason} = error -> error
         {outcome, reply} when outcome in [:completed, :failed, :unknown_outcome] -> reply
       end

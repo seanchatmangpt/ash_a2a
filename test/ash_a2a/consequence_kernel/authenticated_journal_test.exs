@@ -15,7 +15,7 @@ defmodule AshA2A.ConsequenceKernel.AuthenticatedJournalTest do
   alias AshA2A.ConsequenceKernel.KeyCustody.HmacSha256
   alias AshA2A.ConsequenceKernel.PreparedEffectStore.Memory
   alias AshA2A.ConsequenceKernel.UnknownOutcome
-  alias AshA2A.ConsequenceKernel.W5.EffectClaimStore.Memory, as: ClaimMemory
+  alias AshA2A.ConsequenceKernel.EffectClaimStore.Memory, as: ClaimMemory
 
   defmodule Auth do
     def revalidate("p", _), do: :ok

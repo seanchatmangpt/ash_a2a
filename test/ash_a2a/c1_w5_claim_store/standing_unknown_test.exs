@@ -28,12 +28,12 @@ defmodule AshA2A.C1W5ClaimStore.StandingUnknownTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    {:ok, r1} = AshA2A.ConsequenceKernel.W5.ClaimReceipt.build(claim, :claimed)
-    replay = AshA2A.ConsequenceKernel.W5.ReplayEvidence.derive(claim)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    {:ok, r1} = AshA2A.ConsequenceKernel.Claims.Receipt.build(claim, :claimed)
+    replay = AshA2A.ConsequenceKernel.Claims.ReplayEvidence.derive(claim)
 
     assert {:error, :standing_unknown_outcome} =
-             AshA2A.ConsequenceKernel.W5.Standing.derive(
+             AshA2A.ConsequenceKernel.Claims.Standing.derive(
                claim,
                [r1],
                replay,

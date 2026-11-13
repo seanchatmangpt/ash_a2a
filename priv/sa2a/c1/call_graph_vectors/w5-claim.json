@@ -3,7 +3,7 @@
   "id": "w5-claim",
   "edge": {
     "caller": "Elixir.Consumer",
-    "callee": "Elixir.AshA2A.ConsequenceKernel.W5.ClaimProtocol",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Claims.Protocol",
     "operation": "claim"
   },
   "expected": {

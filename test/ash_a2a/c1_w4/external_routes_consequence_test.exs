@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.ExternalRoutesConsequenceTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "external_routes_consequence" do
     v =

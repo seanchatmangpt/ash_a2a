@@ -3,7 +3,7 @@
   "id": "w4-gate",
   "edge": {
     "caller": "Elixir.Consumer",
-    "callee": "Elixir.AshA2A.ConsequenceKernel.W4.ConsequenceGate",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Dispatch.ConsequenceGate",
     "operation": "route"
   },
   "expected": {

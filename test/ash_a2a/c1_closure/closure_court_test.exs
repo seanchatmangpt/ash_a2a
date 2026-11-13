@@ -44,7 +44,7 @@ defmodule AshA2A.C1Closure.ClosureCourtTest do
     AshA2A.Agent,
     AshA2A.CommandBus,
     AshA2A.Dispatcher,
-    AshA2A.ConsequenceKernel.W4.DispatchInversion
+    AshA2A.ConsequenceKernel.Dispatch.Inversion
   ]
 
   describe "whole application" do
@@ -53,7 +53,7 @@ defmodule AshA2A.C1Closure.ClosureCourtTest do
       assert report.violating_edges == [], inspect(report.violating_edges, limit: 20)
       assert report.verdict == "closed"
       assert report.sole_path == "AshA2A.ConsequenceKernel.Runtime.Pipeline"
-      assert report.kernel_gateways == ["AshA2A.ConsequenceKernel.W4.DispatchInversion.execute/2"]
+      assert report.kernel_gateways == ["AshA2A.ConsequenceKernel.Dispatch.Inversion.execute/2"]
       assert length(report.typed_exceptions) >= length(Exceptions.edges())
     end
 
@@ -157,7 +157,7 @@ defmodule AshA2A.C1Closure.ClosureCourtTest do
     test "the pinned gateway alone is still the kernel's only Dispatcher caller" do
       report = ClosureCourt.report(modules: @core)
       assert report.violating_edges == []
-      assert report.kernel_gateways == ["AshA2A.ConsequenceKernel.W4.DispatchInversion.execute/2"]
+      assert report.kernel_gateways == ["AshA2A.ConsequenceKernel.Dispatch.Inversion.execute/2"]
     end
 
     test "a non-resource module under a fixture prefix cannot perform an Ash effect" do

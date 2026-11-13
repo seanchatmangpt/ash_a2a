@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+defmodule AshA2A.ConsequenceKernel.Claims.Subject do
+  def bind(
+        %{prepared_digest: p, instance: %{subject_digest: s}},
+        %{prepared_digest: p, subject_digest: s}
+      ),
+      do: :ok
+
+  def bind(%{prepared_digest: _}, %{prepared_digest: _}),
+    do: {:error, :effect_claim_exact_subject_mismatch}
+
+  def bind(_, _), do: {:error, :effect_claim_subject_invalid}
+end

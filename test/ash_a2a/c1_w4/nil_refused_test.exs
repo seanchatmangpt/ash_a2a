@@ -4,7 +4,7 @@
 
 defmodule AshA2A.C1W4.NilRefusedTest do
   use ExUnit.Case, async: true
-  alias AshA2A.ConsequenceKernel.W4.Route
+  alias AshA2A.ConsequenceKernel.Dispatch.Route
 
   test "nil_refused" do
     v = "priv/sa2a/c1/w4_vectors/nil_refused.json" |> File.read!() |> Jason.decode!()

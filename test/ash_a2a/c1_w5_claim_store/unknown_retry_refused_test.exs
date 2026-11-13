@@ -19,6 +19,6 @@ defmodule AshA2A.C1W5ClaimStore.UnknownRetryRefusedTest do
     assert File.read!(vector) =~ "\"case\": \"unknown_retry_refused\""
 
     assert {:error, :retry_forbidden_until_reconciliation} =
-             AshA2A.ConsequenceKernel.W5.RecoveryGate.retry(:unknown_outcome)
+             AshA2A.ConsequenceKernel.Claims.RecoveryGate.retry(:unknown_outcome)
   end
 end

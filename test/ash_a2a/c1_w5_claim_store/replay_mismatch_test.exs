@@ -28,10 +28,10 @@ defmodule AshA2A.C1W5ClaimStore.ReplayMismatchTest do
       issued_at_ms: 1
     }
 
-    {:ok, claim} = AshA2A.ConsequenceKernel.W5.ClaimAuthenticator.issue(attrs, key)
-    r = AshA2A.ConsequenceKernel.W5.ReplayEvidence.derive(claim)
+    {:ok, claim} = AshA2A.ConsequenceKernel.Claims.Authenticator.issue(attrs, key)
+    r = AshA2A.ConsequenceKernel.Claims.ReplayEvidence.derive(claim)
 
     assert {:error, :replay_evidence_mismatch} =
-             AshA2A.ConsequenceKernel.W5.ReplayEvidence.verify(claim, %{r | effect_id: "x"})
+             AshA2A.ConsequenceKernel.Claims.ReplayEvidence.verify(claim, %{r | effect_id: "x"})
   end
 end

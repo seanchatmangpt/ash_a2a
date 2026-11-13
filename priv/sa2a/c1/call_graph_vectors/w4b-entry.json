@@ -3,7 +3,7 @@
   "id": "w4b-entry",
   "edge": {
     "caller": "Elixir.Consumer",
-    "callee": "Elixir.AshA2A.ConsequenceKernel.W4B.EntryPolicy",
+    "callee": "Elixir.AshA2A.ConsequenceKernel.Guards.EntryPolicy",
     "operation": "classify"
   },
   "expected": {
