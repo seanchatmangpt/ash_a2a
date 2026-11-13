@@ -59,7 +59,7 @@ The court set is **35 files**: the 37 files matching
 `test/ash_a2a_v1_*_test.exs` minus the 2 explicit exclusions below. It is
 derived by glob at run time (`v1_courts/0` in
 `lib/mix/tasks/ash_a2a.v1_conformance_report.ex`); there is no
-hand-maintained list, and `test/w13_tck_assert_test.exs` re-checks this
+hand-maintained list, and `test/tck_assert_script_test.exs` re-checks this
 count against the disk. (Earlier revisions of this page said 34; the
 list had already grown to 35 when the count was last edited.)
 
@@ -78,7 +78,7 @@ its single `TCK_PIN_SHA` variable (currently `263b9cfa`) with
 installs via `pip install -e .` (pyproject; no `requirements.txt`), reads
 `reports/compatibility.json`, and asserts with `scripts/tck_assert.py`
 (fails on any failed MUST requirement; prints pass/fail/not_tested/skipped/
-manual counts; court `test/w13_tck_assert_test.exs`, fixture
+manual counts; court `test/tck_assert_script_test.exs`, fixture
 `test/fixtures/tck/compatibility_sample.json`). CI Python is 3.12, the
 version witnessed green at this pin; TCK `main` needs Python 3.15+.
 TODO: re-run at `70f6f73c` (#258, aligns to spec 1.0.1) before moving

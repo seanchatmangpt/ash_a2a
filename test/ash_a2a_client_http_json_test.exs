@@ -299,7 +299,7 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
   end
 
   # jsonrpc-mode list_tasks/get_extended_card are exercised against a real
-  # JSON-RPC server in test/w7_client_gaps_test.exs.
+  # JSON-RPC server in test/client_gap_closures_test.exs.
 
   # -- list_tasks: GET /tasks -------------------------------------------------------
 

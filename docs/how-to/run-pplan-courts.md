@@ -81,7 +81,7 @@ dispatching process at the checkpoint boundary, lapses the claim, resumes by
 task id, and asserts `%{prepare: 1, finish: 1}` (zero duplicate execution),
 one run, and a three-step tape.
 
-## Current census (receipt `receipts/pplan-courts-20261108.md`)
+## Current census (receipt `docs/archive/receipts/pplan-courts-20261108.md`)
 
 Standing `PASS`, overall `ok`, 4 courts discovered:
 

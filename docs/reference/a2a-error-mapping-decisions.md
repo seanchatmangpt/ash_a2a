@@ -30,4 +30,4 @@ fields; only the documented default now matches the header gate. `AshA2A.Protoco
 
 ## See Also
 
-- test/y4_error_version_table_test.exs
+- test/error_version_table_test.exs

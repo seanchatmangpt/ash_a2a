@@ -90,4 +90,4 @@ signatures: operator ____  witness ____
 
 - `docs/archive/rfc/RFC-SA2A-007-errata-v26.9.28.md` (E-E signed message, E-I WYSIWYS, E-K TTL)
 - `docs/archive/assurance/sa2a-assurance-case-v26.9.28.md`
-- `docs/archive/jira-releases/v26.9.28-kernel/_LANES_V3.md`
+- `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md`

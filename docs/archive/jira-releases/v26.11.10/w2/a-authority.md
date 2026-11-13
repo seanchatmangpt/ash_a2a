@@ -10,13 +10,13 @@ Standing: PARTIAL_ALIVE
   `%{id => {Mod, :fun}}`; unresolved id refuses.
 - lib/ash_a2a/verify.ex: removed hooks and `:disabled` inert warnings (now enforced); `:open` and
   lease_duration_ms warnings retained.
-- test/dsl_lane11_test.exs: hooks warning assertion flipped to refute.
+- test/dsl_mapping_card_test.exs: hooks warning assertion flipped to refute.
 - test/ash_a2a/authority/dispatch_hooks_test.exs (new): gate + pre/post hooks fire; deny; unresolved.
 
 ## Commands + exits
 
 `MIX_ENV=test MIX_BUILD_ROOT=_build-w2-a-authority mix test test/ash_a2a/authority
-test/dsl_lane11_test.exs test/ash_a2a_dispatcher_skill_name_shape_test.exs`: 48 tests, 0 failures
+test/dsl_mapping_card_test.exs test/ash_a2a_dispatcher_skill_name_shape_test.exs`: 48 tests, 0 failures
 (exit code not captured through pipe; failure count read from output).
 
 ## Disclosures

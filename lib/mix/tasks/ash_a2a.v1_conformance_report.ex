@@ -239,27 +239,27 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
   # the runtime existence check in `run_court/1` turns a missing entry into a
   # FAIL, so a renamed or deleted file is never a silent pass.
   @v1_1_courts [
-    "test/b3_v11_courts_test.exs",
-    "test/t1_downgrade_wire_test.exs",
-    "test/v1_1_codec_test.exs",
-    "test/v10_grpc_live_test.exs",
-    "test/v11_client_generation_test.exs",
-    "test/v11_client_live_test.exs",
-    "test/v12_plug_wiring_test.exs",
-    "test/v13_sse_generation_test.exs",
-    "test/v14_http_json_live_core_test.exs",
-    "test/v2_generation_test.exs",
-    "test/v3_generation_ash_test.exs",
-    "test/v4_push_version_test.exs",
-    "test/v4_stream_generation_test.exs",
-    "test/v5_live_session_test.exs",
-    "test/v6_generation_test.exs",
-    "test/v9_http_json_v11_test.exs",
-    "test/x1_artifact_only_generation_test.exs",
-    "test/x2_grpc_v11_gaps_test.exs",
-    "test/x3_email_hardening_test.exs",
-    "test/x4_state_and_longpoll_test.exs",
-    "test/x5_generation_durability_test.exs"
+    "test/generation_gating_courts_test.exs",
+    "test/protocol_downgrade_wire_test.exs",
+    "test/protocol_codec_v1_1_test.exs",
+    "test/grpc_live_session_test.exs",
+    "test/client_generation_support_test.exs",
+    "test/client_live_transport_test.exs",
+    "test/generation_plug_wiring_test.exs",
+    "test/sse_generation_frames_test.exs",
+    "test/http_json_live_session_test.exs",
+    "test/task_generation_lifecycle_test.exs",
+    "test/ash_agent_generation_test.exs",
+    "test/push_config_protocol_version_test.exs",
+    "test/stream_generation_frames_test.exs",
+    "test/live_session_streaming_test.exs",
+    "test/task_generation_guards_test.exs",
+    "test/http_json_generation_stream_test.exs",
+    "test/artifact_only_generation_guard_test.exs",
+    "test/grpc_generation_gaps_test.exs",
+    "test/email_replay_rate_limit_test.exs",
+    "test/agent_state_and_longpoll_test.exs",
+    "test/generation_store_durability_test.exs"
   ]
 
   @doc "A2A v1.1 court files outside the `ash_a2a_v1_*` glob (explicit list)."

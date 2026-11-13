@@ -37,6 +37,18 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ## [26.11.13] - 2026-11-13
 
+### Changed
+
+- `AshA2A.Twin.CEO` / `AshA2A.Twin.COO` replace the previous person-named twins.
+- `ConsequenceKernel` wave-ID modules (W4/W4B/W4C/W5) now live under
+  `Claims`, `Closure`, `Dispatch`, `Effects` and `Guards`.
+- Push-notification delivery runs under `AshA2A.Protocol.PushTaskSupervisor`.
+- Sibling path deps (`ash_graphlaw`, `ash_pplan`) are selected with
+  `ASH_A2A_LOCAL_DEPS=1`; Hex pins are the default.
+- Historical docs moved to `docs/archive`; lane-prefixed test files renamed to
+  behaviour names.
+- Hex package ships `priv/dfcm` and the native crate sources.
+
 ### Added
 
 - A2A v1.1 capabilities (unverified; no test run is cited here): `message/live`,

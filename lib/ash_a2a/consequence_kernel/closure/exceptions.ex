@@ -176,7 +176,7 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
         reason:
           "task store persistence into the store's own internal rows; not a skill DO, " <>
             "no consequence-bearing action runs on this path",
-        court: "test/w18_task_store_ash_test.exs"
+        court: "test/task_store_ash_contract_test.exs"
       }
     end
   end

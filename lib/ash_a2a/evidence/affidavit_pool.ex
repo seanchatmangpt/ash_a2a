@@ -5,7 +5,7 @@
 defmodule AshA2A.Evidence.AffidavitPool do
   @moduledoc """
   The enterprise affidavit pool child (ARD v26.10.4 §2, gate key `:affidavit`,
-  `docs/archive/jira-releases/v26.10.4/ARD.md` line 34): a supervised pool of REAL
+  `docs/archive/jira/v26.10.4/ARD.md` line 34): a supervised pool of REAL
   `AshAffidavit.Host` WASM engine instances (Wasmtime via `wasmex`) behind one
   name, routed shortest-mailbox-first.
 

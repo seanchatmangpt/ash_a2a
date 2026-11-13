@@ -5,7 +5,7 @@
 defmodule AshA2A.Enterprise.Supervisor do
   @moduledoc """
   The ARD v26.10.4 §2 enterprise supervision subtree
-  (`docs/archive/jira-releases/v26.10.4/ARD.md` §2): an optional, config-gated layer of
+  (`docs/archive/jira/v26.10.4/ARD.md` §2): an optional, config-gated layer of
   enterprise children under the application root (`AshA2A.Supervisor`,
   `AshA2A.Application`).
 

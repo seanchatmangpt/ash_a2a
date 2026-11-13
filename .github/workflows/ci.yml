@@ -140,7 +140,7 @@ jobs:
     timeout-minutes: 15
     env:
       # Single source of the TCK pin; docs/reference/tck-suite.md cites it
-      # (court: test/w13_tck_assert_test.exs).
+      # (court: test/tck_assert_script_test.exs).
       TCK_PIN_SHA: 263b9cfaf16a554bdfb166a7ba5b67716e946349
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

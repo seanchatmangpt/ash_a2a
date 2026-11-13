@@ -162,5 +162,5 @@ internals):
   is asserted live in `test/execution/pplan_dispatch_durability_test.exs`
   (kill at the checkpoint boundary, resume by task id): `prepare: 1,
   finish: 1`, one run, three tape steps. Receipt
-  `receipts/pplan-courts-20261108.md` records Standing PASS for the four
+  `docs/archive/receipts/pplan-courts-20261108.md` records Standing PASS for the four
   `:pplan_court` files.

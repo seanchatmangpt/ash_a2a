@@ -778,7 +778,7 @@ defmodule AshA2A.TransportCourtTest do
                rpc_json(url, "tasks/resubscribe", %{"id" => "tsk-unknown"}, "tok-alice")
 
       # Owned-task resubscribe now streams (snapshot, lastSeenGeneration); covered by
-      # test/b3_v11_courts_test.exs.
+      # test/generation_gating_courts_test.exs.
     end
 
     @tag :serial

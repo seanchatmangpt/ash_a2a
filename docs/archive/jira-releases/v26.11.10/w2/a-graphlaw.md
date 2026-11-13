@@ -16,7 +16,7 @@ Standing: PARTIAL_ALIVE
 ## Commands + exits
 
 - `MIX_ENV=test MIX_BUILD_ROOT=_build-w2-a-graphlaw mix test test/ash_a2a/graph_law*
-  test/ash_a2a/semantic/engine* test/semantic_lane12_engine_test.exs
+  test/ash_a2a/semantic/engine* test/semantic_engine_test.exs
   test/ash_a2a/chicago/wasm_default_resolution_test.exs`: exit 0, 43 tests, 0 failures, 54 excluded.
 
 ## Disclosures

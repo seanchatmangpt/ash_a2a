@@ -1,4 +1,4 @@
-# SPDX-WorkOrder: GGE-26922-12 (docs/archive/jira-releases/v26.10.4/PRD.md FR-01.1)
+# SPDX-WorkOrder: GGE-26922-12 (docs/archive/jira/v26.10.4/PRD.md FR-01.1)
 # SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
