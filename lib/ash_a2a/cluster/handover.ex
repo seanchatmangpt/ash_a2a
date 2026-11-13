@@ -266,10 +266,10 @@ defmodule AshA2A.Cluster.Handover do
 
         case store_mod.get(store_ref, claimed.id) do
           {:ok, %Task{status: %{state: :completed}}} -> :ok
-          _ -> {:error, :completion_not_stored}
+          _ -> {:error, {:handover, :completion_not_stored}}
         end
       else
-        _ -> {:error, :claim_lost}
+        _ -> {:error, {:handover, :claim_lost}}
       end
     end)
   end

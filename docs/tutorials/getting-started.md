@@ -19,7 +19,7 @@ inside the package — no separate protocol dependency):
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.11.14"}
+    {:ash_a2a, "~> 26.11.15"}
   ]
 end
 ```

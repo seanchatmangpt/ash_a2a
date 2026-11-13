@@ -44,7 +44,7 @@ defmodule AshA2A.Cluster.HandoverFencingTest do
       {:ok, :slow_result}
     end
 
-    assert {:error, %{task_id: "t-1", reason: :claim_lost}} =
+    assert {:error, %{task_id: "t-1", reason: {:handover, :claim_lost}}} =
              Handover.rehydrate_one(store, task, resume)
 
     {:ok, stored} = MapStore.get(agent, "t-1")

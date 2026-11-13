@@ -35,6 +35,23 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 - The server accepts `A2A-Version` 0.3, 1.0 and 1.1; the client-header default stays 1.0.
 - README reorganized: install and quickstart first, conformance and status material last.
 
+## [26.11.15] - 2026-11-13
+
+### Changed
+
+- `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`
+  and `req_llm` are optional dependencies; a consumer compiles `ash_a2a` without
+  them (verified against a path-dependent consumer project).
+- The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
+- ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
+
+### Fixed
+
+- A checkpoint the store silently dropped is no longer reported as landed
+  (`Checkpoint.land/4` reads back and raises).
+- Handover completion and claim release carry the claim token: a runner whose
+  claim was taken over gets `:claim_lost` and cannot overwrite the peer.
+
 ## [26.11.14] - 2026-11-13
 
 ### Security

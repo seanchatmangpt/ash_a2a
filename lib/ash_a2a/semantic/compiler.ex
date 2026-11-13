@@ -26,6 +26,8 @@ defmodule AshA2A.Semantic.Compiler do
   (`:semantic_max_batch`, default 100 -> `:semantic_batch_too_large`).
   """
 
+  @compile {:no_warn_undefined, ReqLLM}
+
   alias AshA2A.{LLMProfiles, Planning.SemanticSynthesis}
 
   alias AshA2A.Semantic.{

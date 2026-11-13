@@ -15,7 +15,7 @@ defmodule AshA2ALLMProfilesTest do
   silent mock substitution.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import AshA2A.Test.MessageHelpers
 

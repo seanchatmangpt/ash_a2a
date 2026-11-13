@@ -99,7 +99,7 @@ defmodule AshA2A.TckAssertScriptTest do
 
   test "release version: mix.exs, README, tutorials, spec mapping, CITATION, CHANGELOG agree" do
     mix = File.read!(Path.join(@root, "mix.exs"))
-    [_, version] = Regex.run(~r/version: "(\d+\.\d+\.\d+)"/, mix)
+    [_, version] = Regex.run(~r/@version "(\d+\.\d+\.\d+)"/, mix)
 
     assert File.read!(Path.join(@root, "README.md")) =~ ~s({:ash_a2a, "~> #{version}"})
 

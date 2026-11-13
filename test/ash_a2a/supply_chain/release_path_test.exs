@@ -48,7 +48,7 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
   end
 
   defp mix_version do
-    [_, v] = Regex.run(~r/^\s*version:\s*"([^"]+)"/m, File.read!(Path.join(@root, "mix.exs")))
+    [_, v] = Regex.run(~r/^\s*@version\s+"([^"]+)"/m, File.read!(Path.join(@root, "mix.exs")))
     v
   end
 

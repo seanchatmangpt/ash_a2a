@@ -17,10 +17,13 @@ A `Spark.Dsl.Extension` that exposes your `Ash.Resource`/`Ash.Domain` actions as
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.11.14"}
+    {:ash_a2a, "~> 26.11.15"}
   ]
 end
 ```
+
+The quickstart serves HTTP with `bandit`, which is not a dependency of `ash_a2a`; add
+`{:bandit, "~> 1.0"}` (or any Plug server) to your own deps.
 
 `mix ash_a2a.install` (an Igniter task) wires the extension into an existing
 project; see `Mix.Tasks.AshA2a.Install`. Requires Elixir `~> 1.19` and Ash `~> 3.0`.
@@ -385,8 +388,8 @@ Engineering records (point-in-time, not guides) are kept in the repository:
   built on top of the protocol (the `SA2A` name refers to that layer).
 - `research/` — research notes.
 
-Versioning is calendar-based (`26.11.x`); `~> 26.11.14` pins within the 26.11
-series at or above 26.11.14. Semantic Versioning is intended after 1.0. See the
+Versioning is calendar-based (`26.11.x`); `~> 26.11.15` pins within the 26.11
+series at or above 26.11.15. Semantic Versioning is intended after 1.0. See the
 [CHANGELOG](CHANGELOG.md) — `main` routinely runs ahead of the latest published
 Hex release.
 

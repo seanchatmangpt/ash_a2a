@@ -13,6 +13,8 @@ defmodule AshA2A.Planning.SemanticSynthesis do
   must still be constructed as a command and enter through `AshA2A.CommandBus`.
   """
 
+  @compile {:no_warn_undefined, ReqLLM}
+
   alias AshA2A.{Info, LLMProfiles, Planning}
 
   @default_role :surface_planner

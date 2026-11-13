@@ -5,6 +5,8 @@
 defmodule AshA2A.MixProject do
   use Mix.Project
 
+  @version "26.11.15"
+
   # Whole-suite line-coverage floor, enforced by `mix test.all --cover`.
   @coverage_threshold 75
 
@@ -25,7 +27,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.11.14",
+      version: @version,
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -160,8 +162,20 @@ defmodule AshA2A.MixProject do
         Project: ~r"README|CHANGELOG|usage-rules",
         Tutorials: ~r"(docs|documentation)/tutorials",
         "How-to guides": ~r"docs/how-to",
-        Reference: ~r"docs/reference",
+        Reference: ~r"docs/reference|documentation/dsls",
         Explanation: ~r"docs/explanation"
+      ],
+      source_ref: "v#{@version}",
+      source_url: "https://github.com/seanchatmangpt/ash_a2a",
+      groups_for_modules: [
+        "Getting started": [AshA2A, AshA2A.Agent, AshA2A.Info, AshA2A.Domain, AshA2A.Dsl],
+        Protocol: ~r/^AshA2A\.Protocol\./,
+        Transports: ~r/^AshA2A\.(Transport|A2ATransport)\./,
+        Storage: ~r/^AshA2A\.(TaskStore|ReceiptStore)/,
+        Security: ~r/^AshA2A\.(Security|Authority|AuthZEN|SecurityProfile)/,
+        Telemetry: ~r/^AshA2A\.Telemetry/,
+        "Conformance and assurance":
+          ~r/^AshA2A\.(Chicago|Gall|C2|C3|CS2|Twin|ConsequenceKernel|DfCM|Hilt)/
       ]
     ]
   end
@@ -280,22 +294,22 @@ defmodule AshA2A.MixProject do
       # the ExUnit suite. Compatibility shims live in `.muzak.exs`.
       {:muzak, "~> 1.1", only: :test, runtime: false},
       {:opentelemetry_api, "~> 1.4", only: :test},
-      {:req_llm, "~> 1.18"},
+      {:req_llm, "~> 1.18", optional: true},
       {:ash_r2rml, "~> 26.8"},
       # Required in the prod closure by :phoenix, :ash_json_api and
       # :open_api_spex, so it cannot be `only: :test`.
       {:plug, "~> 1.16"},
       # Runtime provider adapters: AshA2A.Execution.FLAME,
       # AshA2A.Durability.DurableServer, AshA2A.Topology.Presence.
-      {:flame, "~> 0.5"},
-      {:durable_server, "~> 0.1.5"},
+      {:flame, "~> 0.5", optional: true},
+      {:durable_server, "~> 0.1.5", optional: true},
       # Delivery and task-lifecycle adapters: AshA2A.Delivery.Oban,
       # AshA2A.TaskLifecycle (AshStateMachine).
-      {:oban, "~> 2.24"},
-      {:ash_oban, "~> 0.8 or ~> 0.9"},
-      {:ash_state_machine, "~> 0.2"},
+      {:oban, "~> 2.24", optional: true},
+      {:ash_oban, "~> 0.8 or ~> 0.9", optional: true},
+      {:ash_state_machine, "~> 0.2", optional: true},
       # Required unconditionally by :ash_oban.
-      {:postgrex, "~> 0.18"},
+      {:postgrex, "~> 0.18", optional: true},
       # Backs AshA2A.ReceiptStore.Ekv and the automatic EKV wiring in
       # AshA2A.Application.
       {:ekv, "~> 0.4"},

@@ -35,7 +35,7 @@ defmodule AshA2A.Replan.PortAshPPlanConformanceCourt do
     def supports?(formalism), do: formalism in [:fond, :powl]
 
     def propose(request, opts) do
-      :persistent_term.put({__MODULE__, :last_call}, {request, opts})
+      send(self(), {:fake_owner_call, request, opts})
       {:ok, %{subject: Map.get(request, :subject), source: :fake_owner}}
     end
   end
@@ -213,14 +213,13 @@ defmodule AshA2A.Replan.PortAshPPlanConformanceCourt do
 
   test "fake owner provider is called and the provider key is deleted from opts" do
     req = %{formalism: :fond, subject: :i6_subject}
-    :persistent_term.erase({FakeOwner, :last_call})
 
     assert {:accepted, %{source: :fake_owner, subject: :i6_subject}} =
              classify(fn ->
                Port.propose(req, ash_pplan_provider_module: FakeOwner)
              end)
 
-    {stored_req, stored_opts} = :persistent_term.get({FakeOwner, :last_call}, :none)
+    assert_received {:fake_owner_call, stored_req, stored_opts}
     assert stored_req == req
     refute Keyword.has_key?(stored_opts, :ash_pplan_provider_module)
   end

@@ -24,7 +24,7 @@ defmodule AshA2A.BoardPersona.DeliberationTest do
   same `@tag timeout:` discipline).
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias AshA2A.BoardPersona.{ActivistPressured, Deliberation, GrowthFocusedFounderLed}
   alias AshA2A.BoardPersona.RiskAverseFiduciary
