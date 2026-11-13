@@ -94,3 +94,27 @@ defmodule AshA2A.Cluster.DrainIsolationTest do
     send(bad, :stop)
   end
 end
+
+defmodule AshA2A.Cluster.CheckpointFencingTest.DroppingStore do
+  @moduledoc false
+  # A real store interface that answers `:ok` to a put but keeps the previous
+  # value, the way a stale-generation guard does.
+  def start, do: Agent.start_link(fn -> %{} end)
+  def get(_agent, _id), do: {:error, :not_found}
+  def put(_agent, _task), do: :ok
+end
+
+defmodule AshA2A.Cluster.CheckpointFencingTest do
+  use ExUnit.Case, async: true
+
+  alias AshA2A.Cluster.Checkpoint
+  alias AshA2A.Cluster.CheckpointFencingTest.DroppingStore
+
+  test "a store that silently drops the write is not reported as landed" do
+    {:ok, store} = DroppingStore.start()
+
+    assert_raise RuntimeError, ~r/was not stored/, fn ->
+      Checkpoint.land({DroppingStore, store}, "task-1", %{step: 1})
+    end
+  end
+end

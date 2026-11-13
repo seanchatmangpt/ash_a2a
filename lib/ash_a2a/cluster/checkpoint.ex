@@ -92,7 +92,26 @@ defmodule AshA2A.Cluster.Checkpoint do
     }
 
     :ok = store_mod.put(store_ref, checkpointed)
+    verify_landed!(store_mod, store_ref, checkpointed, envelope)
     checkpointed
+  end
+
+  # A store may drop a write silently (e.g. a stale-generation guard answers
+  # `:ok` without storing). Read the task back and require OUR envelope, so a
+  # discarded checkpoint is never reported as landed.
+  defp verify_landed!(store_mod, store_ref, task, envelope) do
+    stored_stamp =
+      case store_mod.get(store_ref, task.id) do
+        {:ok, %Task{metadata: %{@metadata_key => %{"checkpointed_at" => at}}}} -> at
+        _ -> nil
+      end
+
+    if stored_stamp != envelope["checkpointed_at"] do
+      raise "checkpoint for task #{inspect(task.id)} was not stored " <>
+              "(store dropped the write; stale generation?)"
+    end
+
+    :ok
   end
 
   @doc "`true` when `task` carries a drain checkpoint envelope."

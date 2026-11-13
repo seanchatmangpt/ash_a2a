@@ -159,7 +159,6 @@ defmodule AshA2A.Cluster.Handover do
           {:ok, %{task_id: String.t(), result: term()}} | {:error, map()}
   def rehydrate_one(store, %Task{} = task, resume_fun, opts \\ [])
       when is_function(resume_fun, 2) do
-    {store_mod, store_ref} = store
     ttl = Keyword.get(opts, :claim_ttl_ms, @default_claim_ttl_ms)
 
     case claim(store, task.id, ttl) do
@@ -179,22 +178,26 @@ defmodule AshA2A.Cluster.Handover do
             |> then(&%{&1 | status: AshA2A.Protocol.Task.Status.new(:completed)})
             |> put_result(result)
 
-          :ok = store_mod.put(store_ref, completed)
+          case complete_fenced(store, claimed, completed) do
+            :ok ->
+              :telemetry.execute(
+                [:ash_a2a, :cluster, :handover, :completed],
+                %{count: 1},
+                %{task_id: task.id, node: node()}
+              )
 
-          :telemetry.execute(
-            [:ash_a2a, :cluster, :handover, :completed],
-            %{count: 1},
-            %{task_id: task.id, node: node()}
-          )
+              {:ok, %{task_id: task.id, result: result}}
 
-          {:ok, %{task_id: task.id, result: result}}
+            {:error, reason} ->
+              {:error, %{task_id: task.id, reason: reason}}
+          end
         else
           {:error, reason} ->
-            release_claim(store, task.id)
+            release_claim(store, task.id, claim_ref(claimed))
             {:error, %{task_id: task.id, reason: reason}}
 
           :error ->
-            release_claim(store, task.id)
+            release_claim(store, task.id, claim_ref(claimed))
             {:error, %{task_id: task.id, reason: :missing_checkpoint_envelope}}
         end
 
@@ -213,7 +216,7 @@ defmodule AshA2A.Cluster.Handover do
           | metadata:
               Map.put(current.metadata, @claim_key, %{
                 "node" => node(),
-                "ref" => make_ref(),
+                "ref" => Base.encode16(:crypto.strong_rand_bytes(8)),
                 "expires_at_ms" => System.system_time(:millisecond) + ttl
               })
         }
@@ -238,14 +241,37 @@ defmodule AshA2A.Cluster.Handover do
     end
   end
 
-  defp release_claim({store_mod, store_ref}, task_id) do
+  defp claim_ref(%Task{metadata: metadata}),
+    do: get_in(metadata || %{}, [@claim_key, "ref"])
+
+  # Fencing token: the claim ref written at claim time must still be the one
+  # in the store, so a slow first runner whose claim expired (and was taken by
+  # a peer) can neither complete nor release the peer's live claim.
+  defp release_claim({store_mod, store_ref}, task_id, ref) do
     :global.trans({{:ash_a2a_rehydrate, task_id}, self()}, fn ->
-      with {:ok, current} <- store_mod.get(store_ref, task_id) do
+      with {:ok, current} <- store_mod.get(store_ref, task_id),
+           true <- claim_ref(current) == ref do
         store_mod.put(store_ref, %{current | metadata: Map.delete(current.metadata, @claim_key)})
       end
     end)
 
     :ok
+  end
+
+  defp complete_fenced({store_mod, store_ref}, claimed, completed) do
+    :global.trans({{:ash_a2a_rehydrate, claimed.id}, self()}, fn ->
+      with {:ok, current} <- store_mod.get(store_ref, claimed.id),
+           true <- claim_ref(current) == claim_ref(claimed) do
+        :ok = store_mod.put(store_ref, completed)
+
+        case store_mod.get(store_ref, claimed.id) do
+          {:ok, %Task{status: %{state: :completed}}} -> :ok
+          _ -> {:error, :completion_not_stored}
+        end
+      else
+        _ -> {:error, :claim_lost}
+      end
+    end)
   end
 
   @doc "`{:ok, result}` when `task` was rehydrated to completion, else `:error`."

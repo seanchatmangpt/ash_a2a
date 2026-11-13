@@ -223,7 +223,15 @@ defmodule AshA2A.Application do
         [{AshA2A.Enterprise.Supervisor, []}, {AshA2A.Transport.Live.Supervisor, []}] ++
         grpc_children()
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: AshA2A.Supervisor)
+    # `:rest_for_one`: the stores/broker/reconciler are listed first, so when one
+    # restarts every dependent child after it restarts too (no stale handles);
+    # a crash of a later child never touches the stores before it.
+    Supervisor.start_link(children,
+      strategy: :rest_for_one,
+      max_restarts: 10,
+      max_seconds: 30,
+      name: AshA2A.Supervisor
+    )
   end
 
   @doc false
