@@ -561,7 +561,9 @@ defmodule AshA2A.Verifiers.VerifySkills do
   defp classify_type(type), do: {:unknown, type}
 
   defp has_authorizer?(_resource, dsl_state, true) do
-    case Transformer.get_entities(dsl_state, [:authorizers]) do
+    # `:authorizers` is a persisted key (set by Ash, including from fragments), not a DSL
+    # section: `Transformer.get_entities(dsl_state, [:authorizers])` is always `[]`.
+    case Spark.Dsl.Verifier.get_persisted(dsl_state, :authorizers, []) do
       [_ | _] -> true
       _ -> false
     end
