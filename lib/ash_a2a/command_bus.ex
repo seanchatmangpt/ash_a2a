@@ -1504,9 +1504,8 @@ defmodule AshA2A.CommandBus do
         _ -> :ok
       end
 
-    emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome), %{
-      duration: duration
-    })
+    stop_meta = Map.put(meta, :outcome, outcome)
+    emit_boundary([:actuate, :stop], command, stop_meta, %{duration: duration})
 
     reply
   end
