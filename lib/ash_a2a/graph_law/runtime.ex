@@ -130,10 +130,7 @@ defmodule AshA2A.GraphLaw.Runtime do
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
-    Keyword.get(opts, :wasm_path) ||
-      Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
-      System.get_env("PRAXIS_GRAPHLAW_WASM") ||
-      AshA2A.GraphLaw.wasm_path()
+    AshA2A.GraphLaw.wasm_path_unchecked(opts)
   end
 
   @doc """

@@ -8,6 +8,14 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
   into an annotation on the A2A task surface, so a dispatcher sees the
   hazard directly on the task it was dispatched against.
 
+  ## Production wiring
+
+  LIBRARY-ONLY: this module has no production caller in `lib/`. Hosts wire it
+  by subscribing to `AshPPlan.Telemetry.Broadcaster` (test-only dependency of
+  this app), converting each `:hazard_tripped` envelope to the contract map
+  below, and calling `annotate/2` on the dispatched task. Only tests call it
+  in this repository.
+
   ## Event contract
 
   `annotate/2` consumes a **contract map** (not a pid, not a wire format):
@@ -49,6 +57,12 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
     `"hazard" => "hazard: z=<z>, threshold=<threshold>"` and returns
     `{:ok, task}`.
   - `z <= threshold`: returns `{:ok, task}` unchanged — no annotation.
+  - `:mad` absent: the dispersion is unverified, but `:mad` is optional in the
+    contract, so the trip law still applies (annotate on trip) and a typed
+    debug-level log records the unverified dispersion. A non-number `:mad`
+    is `{:refused, :invalid_event}`.
+  - non-number `:z` or `:threshold` (including `nil`): `{:refused,
+    :invalid_event}` — never a silent pass, never a raise.
   - `mad == 0` (or an explicit `:error => :insufficient_dispersion` field):
     a degenerate, zero-dispersion window. No annotation is produced; returns
     `{:refused, :insufficient_dispersion}` and logs a typed refusal —
@@ -77,12 +91,22 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
   Returns `{:ok, task}` (possibly with the hazard annotation merged into
   `task.metadata`) or `{:refused, :insufficient_dispersion}`.
   """
-  @spec annotate(Task.t(), map()) :: {:ok, Task.t()} | {:refused, :insufficient_dispersion}
+  @spec annotate(Task.t(), map()) ::
+          {:ok, Task.t()} | {:refused, :insufficient_dispersion | :invalid_event}
   def annotate(%Task{} = task, event) when is_map(event) do
     threshold = Map.get(event, :threshold, @default_threshold)
     mad = Map.get(event, :mad)
+    z = Map.get(event, :z)
 
     cond do
+      not is_number(z) or not is_number(threshold) or not (is_nil(mad) or is_number(mad)) ->
+        Logger.warning(
+          "hazard bridge refused annotation: :invalid_event " <>
+            "(z/threshold/mad must be numbers, run_id=#{inspect(Map.get(event, :run_id))})"
+        )
+
+        {:refused, :invalid_event}
+
       degenerate?(event, mad) ->
         Logger.warning(
           "hazard bridge refused annotation: #{inspect(@refusal_atom)} " <>
@@ -91,8 +115,12 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
 
         {:refused, @refusal_atom}
 
-      trip?(Map.get(event, :z), threshold) ->
-        {:ok, %{task | metadata: Map.put(task.metadata, @annotation_key, annotation(event, threshold))}}
+      trip?(z, threshold) ->
+        if is_nil(mad),
+          do: Logger.debug("hazard bridge: :mad absent, dispersion unverified (run_id=#{inspect(Map.get(event, :run_id))})")
+
+        metadata = task.metadata || %{}
+        {:ok, %{task | metadata: Map.put(metadata, @annotation_key, annotation(event, threshold))}}
 
       true ->
         {:ok, task}
@@ -104,7 +132,7 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
   """
   @spec annotation(map(), number()) :: String.t()
   def annotation(event, threshold) do
-    "hazard: z=#{format_number(event.z)}, threshold=#{format_number(threshold)}"
+    "hazard: z=#{format_number(Map.get(event, :z))}, threshold=#{format_number(threshold)}"
   end
 
   @doc """
@@ -120,4 +148,5 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
 
   defp format_number(n) when is_integer(n), do: Integer.to_string(n)
   defp format_number(n) when is_float(n), do: Float.to_string(n)
+  defp format_number(other), do: inspect(other)
 end

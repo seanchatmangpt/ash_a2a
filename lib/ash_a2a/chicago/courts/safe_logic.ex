@@ -926,6 +926,7 @@ defmodule AshA2A.Chicago.Courts.SafeLogic do
   end
 
   defp settle_connections(probe) do
+    # SLEEP-CLASS: SCHEDULING (settle window before sampling connection count)
     Process.sleep(150)
     NetworkProbe.connections(probe)
   end

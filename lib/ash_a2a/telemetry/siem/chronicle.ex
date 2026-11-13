@@ -27,9 +27,13 @@ defmodule AshA2A.Telemetry.SIEM.Chronicle do
   @default_log_type "ASH_A2A_OCEL"
   @path "/v2/logs"
 
+  @doc "The platform atom this adapter registers under."
+  @spec platform() :: AshA2A.Telemetry.SIEM.platform()
   @impl true
   def platform, do: :chronicle
 
+  @doc "Fail-closed validation of the Chronicle endpoint config (`{:ok, config}` or a typed error)."
+  @spec validate_config(keyword()) :: {:ok, keyword()} | {:error, term()}
   @impl true
   def validate_config(config) do
     with :ok <- SIEM.common_config(config),
@@ -39,6 +43,8 @@ defmodule AshA2A.Telemetry.SIEM.Chronicle do
     end
   end
 
+  @doc "Sends one batch of OCEL v2 events to Chronicle; `{:ok, status}` or a typed error."
+  @spec send_events([map()], keyword()) :: {:ok, pos_integer()} | {:error, term()}
   @impl true
   def send_events(events, config) do
     headers = [

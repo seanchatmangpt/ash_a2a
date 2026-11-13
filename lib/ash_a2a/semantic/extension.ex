@@ -97,9 +97,11 @@ defmodule AshA2A.Semantic.Extension do
   end
 
   @doc """
-  The `supportedInterfaces` entry that carries the advertisement on the wire.
+  A legacy `supportedInterfaces` entry naming the profile as a binding.
 
-  `url` is the peer's own A2A endpoint; the binding names the profile.
+  Retained for classification of old peers' cards only. The v1.1 card decoder
+  closes `protocolBinding` to JSONRPC|GRPC|HTTP+JSON, so `advertise/1` no
+  longer emits this entry.
   """
   @spec supported_interface(String.t()) :: AshA2A.Protocol.AgentCard.supported_interface()
   def supported_interface(url) when is_binary(url) do
@@ -107,29 +109,32 @@ defmodule AshA2A.Semantic.Extension do
   end
 
   @doc """
-  Adds the Semantic A2A advertisement to agent-card build options.
+  Adds the Semantic A2A advertisement to agent-card build options via
+  `capabilities.extensions` (the specification's own site).
 
-  Preserves whatever interfaces the caller already declared (the default
-  JSON-RPC binding included) and appends this profile's entry. Idempotent:
+  Existing `:capabilities` and extensions are preserved. Idempotent:
   advertising twice produces one entry.
   """
   @spec advertise(keyword()) :: keyword()
   def advertise(opts) when is_list(opts) do
-    url = Keyword.get(opts, :url, "http://localhost:4000")
-
-    existing =
-      Keyword.get(opts, :supported_interfaces) ||
-        [%{url: url, protocol_binding: "JSONRPC", protocol_version: "0.3.0"}]
-
-    interfaces =
-      if Enum.any?(existing, &(Map.get(&1, :protocol_binding) == @profile_id)) do
-        existing
-      else
-        existing ++ [supported_interface(url)]
+    caps =
+      case Keyword.get(opts, :capabilities) do
+        %{} = c -> c
+        _ -> %{}
       end
 
-    Keyword.put(opts, :supported_interfaces, interfaces)
+    exts = caps |> Map.get(:extensions, []) |> List.wrap()
+
+    exts =
+      if Enum.any?(exts, &(ext_uri(&1) == @profile_uri)),
+        do: exts,
+        else: exts ++ [capability_declaration()]
+
+    Keyword.put(opts, :capabilities, Map.put(caps, :extensions, exts))
   end
+
+  defp ext_uri(%{} = e), do: Map.get(e, :uri) || Map.get(e, "uri")
+  defp ext_uri(_), do: nil
 
   @doc """
   Whether a real `AshA2A.Protocol.AgentCard` advertises this profile at a compatible
@@ -153,23 +158,47 @@ defmodule AshA2A.Semantic.Extension do
   `protocolVersion`s.
   """
   @spec advertisement(term()) :: :compatible | :absent | {:incompatible, [term()]}
-  def advertisement(%AshA2A.Protocol.AgentCard{supported_interfaces: interfaces}) when is_list(interfaces) do
-    classify_advertisement(
+  def advertisement(%AshA2A.Protocol.AgentCard{} = card) do
+    interfaces = if is_list(card.supported_interfaces), do: card.supported_interfaces, else: []
+
+    versions =
       for %{} = i <- interfaces,
           Map.get(i, :protocol_binding) == @profile_id,
           do: Map.get(i, :protocol_version)
-    )
+
+    classify_advertisement(versions ++ capability_versions(card.capabilities))
   end
 
-  def advertisement(%{"supportedInterfaces" => interfaces}) when is_list(interfaces) do
-    classify_advertisement(
+  def advertisement(%{"supportedInterfaces" => interfaces} = card) when is_list(interfaces) do
+    versions =
       for %{} = i <- interfaces,
           Map.get(i, "protocolBinding") == @profile_id,
           do: Map.get(i, "protocolVersion")
-    )
+
+    classify_advertisement(versions ++ capability_versions(Map.get(card, "capabilities")))
+  end
+
+  def advertisement(%{"capabilities" => caps}) do
+    classify_advertisement(capability_versions(caps))
   end
 
   def advertisement(_card), do: :absent
+
+  # `capabilities.extensions` is the specification's own advertisement site and
+  # survives the v1.1 decoder (which closes the protocolBinding set).
+  # Versions at which `capabilities.extensions` names this profile (a declaration
+  # without a `profileVersion` param is the current version).
+  defp capability_versions(%{} = caps) do
+    exts = Map.get(caps, :extensions) || Map.get(caps, "extensions") || []
+
+    for %{} = e <- List.wrap(exts),
+        (Map.get(e, :uri) || Map.get(e, "uri")) == @profile_uri do
+      params = Map.get(e, :params) || Map.get(e, "params") || %{}
+      Map.get(params, "profileVersion") || Map.get(params, :profileVersion) || @profile_version
+    end
+  end
+
+  defp capability_versions(_), do: []
 
   defp classify_advertisement([]), do: :absent
 
@@ -265,7 +294,7 @@ defmodule AshA2A.Semantic.Extension do
   """
   @spec activate(AshA2A.Protocol.Message.t(), map()) :: AshA2A.Protocol.Message.t()
   def activate(%AshA2A.Protocol.Message{} = message, payload) when is_map(payload) do
-    %{message | extensions: Map.put(message.extensions, @extension_key, payload)}
+    %{message | extensions: Map.put(ext_map(message.extensions), @extension_key, payload)}
   end
 
   @doc """
@@ -277,14 +306,19 @@ defmodule AshA2A.Semantic.Extension do
   probably is semantic".
   """
   @spec activated?(AshA2A.Protocol.Message.t() | map()) :: boolean()
-  def activated?(%AshA2A.Protocol.Message{extensions: extensions}), do: is_map_key(extensions, @extension_key)
+  def activated?(%AshA2A.Protocol.Message{extensions: extensions}),
+    do: is_map_key(ext_map(extensions), @extension_key)
   def activated?(%{} = extensions), do: is_map_key(extensions, @extension_key)
   def activated?(_), do: false
+
+  # Message.extensions is a URI list on the v1.x wire; payloads ride a map form.
+  defp ext_map(%{} = m), do: m
+  defp ext_map(_), do: %{}
 
   @doc "Extracts this profile's raw payload from a message, if activated."
   @spec payload(AshA2A.Protocol.Message.t()) :: {:ok, map()} | {:error, refusal()}
   def payload(%AshA2A.Protocol.Message{extensions: extensions}) do
-    case Map.get(extensions, @extension_key) do
+    case Map.get(ext_map(extensions), @extension_key) do
       %{} = payload ->
         {:ok, payload}
 

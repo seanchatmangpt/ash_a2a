@@ -354,4 +354,4 @@ verified does not imply attested.
 ## See Also
 
 - `docs/rfc/RFC-SA2A-003-v26.9.28.md` — implementation-derived baseline
-- `docs/rfc/RFC-SA2A-004-delta-v26.9.28.md` — executable delta: MUST to module/test map
+- (removed 2026-11-10) `RFC-SA2A-004-delta-v26.9.28.md` was never created; no MUST-to-module/test map has been derived

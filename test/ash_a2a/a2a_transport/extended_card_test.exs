@@ -112,7 +112,7 @@ defmodule AshA2A.A2ATransport.ExtendedCardTest do
     # v1.0 wire shape: the serving URL and protocol version ride inside
     # `supportedInterfaces` (protocolVersion 1.0, the Version single source of
     # truth); the card carries no top-level `url` or `protocolVersion`.
-    assert [%{"protocolVersion" => "1.0", "url" => url} | _] = card["supportedInterfaces"]
+    assert [%{"protocolVersion" => "1.1", "url" => url} | _] = card["supportedInterfaces"]
     assert is_binary(url)
     refute Map.has_key?(card, "url")
     refute Map.has_key?(card, "protocolVersion")

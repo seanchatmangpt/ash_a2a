@@ -322,6 +322,7 @@ defmodule AshA2A.RuntimeIdentity.Execution do
             end
 
           bytes ->
+            # SLEEP-CLASS: POLL-STEP (RSS sampler interval, stopped by message)
             Process.sleep(interval)
             sample_rss(os_pid, interval, max(peak || 0, bytes), samples + 1)
         end

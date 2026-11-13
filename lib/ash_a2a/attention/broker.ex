@@ -72,26 +72,37 @@ defmodule AshA2A.Attention.Broker do
   @doc """
   Opens a proposal for attention: `propose/3` with
   `{coordinator_id, decision_card, opts}`. Opts: `:level` (default
-  `:consent_by_silence`), `:now` (default 0).
+  `:consent_by_silence`; any other value returns
+  `{:error, {:invalid_level, level}}`), `:now` (default 0). The returned
+  proposal has `at_least_one_signed: false` (a fresh proposal has no
+  signed decision; the ledger is the record of decisions). `propose/3` is
+  pure and writes no ledger; use `register/2` to make a proposal visible to
+  `escalation_path/2`.
 
   Cards built by `build_card/3` carry the GPM-floor invariant; raw cards
   are re-checked here via `enforce_gpm_floor_invariant/1` so neither
   constructor path can produce a GPM-floor card without a signature
   option.
   """
-  @spec propose(term(), decision_card(), keyword()) :: {:ok, proposal()}
+  @spec propose(term(), decision_card(), keyword()) ::
+          {:ok, proposal()} | {:error, {:invalid_level, term()}}
   def propose(coordinator_id, card, opts \\ []) when is_map(card) do
     level = Keyword.get(opts, :level, :consent_by_silence)
     now = Keyword.get(opts, :now, 0)
 
-    {:ok,
-     %{
-       id: make_ref(),
-       coordinator_id: coordinator_id,
-       card: enforce_gpm_floor_invariant(card),
-       level: level,
-       proposed_at: now
-     }}
+    if level in [:autonomous, :consent_by_silence, :supervised] do
+      {:ok,
+       %{
+         id: make_ref(),
+         coordinator_id: coordinator_id,
+         card: enforce_gpm_floor_invariant(card),
+         level: level,
+         at_least_one_signed: false,
+         proposed_at: now
+       }}
+    else
+      {:error, {:invalid_level, level}}
+    end
   end
 
   @doc """
@@ -99,10 +110,10 @@ defmodule AshA2A.Attention.Broker do
 
   Returns:
 
-    * `{:awaiting, :supervisor}` — level `:supervised`, before anything
-      else is considered (supervised NEVER auto-executes).
     * `{:refused, :already_decided}` — a human override exists in the
-      ledger; silence never displaces a recorded human decision.
+      ledger (checked first); silence never displaces a recorded human
+      decision, at any level.
+    * `{:awaiting, :supervisor}` — level `:supervised` (never auto-executes).
     * `{:executed, :silence_consent}` — window expired and level allows.
     * `{:awaiting, :window_open}` — window not yet expired.
   """
@@ -110,11 +121,11 @@ defmodule AshA2A.Attention.Broker do
           window_outcome()
   def consent_by_silence(proposal, window_ms, now, ledger \\ %{}) do
     cond do
+      decided?(ledger, proposal.id) ->
+        {:refused, :already_decided}
+
       proposal.level == :supervised ->
         {:awaiting, :supervisor}
-
-      Map.has_key?(ledger, proposal.id) ->
-        {:refused, :already_decided}
 
       now - proposal.proposed_at >= window_ms and proposal.level in silence_eligible_levels() ->
         {:executed, :silence_consent}
@@ -129,20 +140,59 @@ defmodule AshA2A.Attention.Broker do
   ledger: `override/4` with `{proposal, actor_signature, decision,
   ledger}`. `decision` is `:approve` | `:reject`. Once recorded, silence
   is short-circuited for that proposal (`consent_by_silence/4` refuses).
+  A second decision on the same proposal returns
+  `{:refused, :already_decided}`; a card with any `requires_signature`
+  option refuses a nil/empty signature with `{:refused, :signature_required}`.
+  Opts: `:now` (recorded_at; defaults to `System.monotonic_time/0`).
   """
   @spec override(proposal(), term(), override_decision(), ledger()) ::
-          {:ok, ledger(), map()}
-  def override(proposal, actor_signature, decision, ledger \\ %{})
+          {:ok, ledger(), map()} | {:refused, :already_decided | :signature_required}
+  def override(proposal, actor_signature, decision, ledger \\ %{}, opts \\ [])
       when decision in [:approve, :reject] do
-    entry = %{
-      proposal_id: proposal.id,
-      actor_signature: actor_signature,
-      decision: decision,
-      recorded_at: System.monotonic_time()
-    }
+    cond do
+      decided?(ledger, proposal.id) ->
+        {:refused, :already_decided}
 
-    {:ok, Map.update(ledger, proposal.id, [entry], &[entry | &1]), entry}
+      requires_signature?(proposal) and not signed?(actor_signature) ->
+        {:refused, :signature_required}
+
+      true ->
+        entry = %{
+          proposal_id: proposal.id,
+          actor_signature: actor_signature,
+          decision: decision,
+          recorded_at: Keyword.get_lazy(opts, :now, &System.monotonic_time/0)
+        }
+
+        prior =
+          case Map.fetch(ledger, proposal.id) do
+            {:ok, decisions} -> decisions
+            :error -> []
+          end
+
+        {:ok, Map.put(ledger, proposal.id, [entry | prior]), entry}
+    end
   end
+
+  @doc """
+  Registers an open (undecided) proposal in the ledger (`id => []`) so
+  `escalation_path/2` counts it as unresolved. `propose/3` is pure and does
+  not touch any ledger; callers that want escalation to see a proposal call
+  this. A registered, undecided proposal is NOT treated as decided by
+  `consent_by_silence/4`.
+  """
+  @spec register(ledger(), proposal()) :: ledger()
+  def register(ledger, proposal), do: Map.put_new(ledger, proposal.id, [])
+
+  defp decided?(ledger, id),
+    do: ledger |> Map.get(id, []) |> Enum.any?(&(&1.decision != nil))
+
+  defp requires_signature?(%{card: %{options: options}}) when is_list(options),
+    do: Enum.any?(options, &(Map.get(&1, :requires_signature) == true))
+
+  defp requires_signature?(_), do: false
+
+  defp signed?(sig), do: not is_nil(sig) and sig != ""
 
   @doc """
   Escalation path: when the ledger shows `N` or more proposals with no
@@ -159,7 +209,9 @@ defmodule AshA2A.Attention.Broker do
       |> Map.new()
 
     if map_size(unresolved) >= threshold do
-      Logger.warning("attention_broker: escalation — #{map_size(unresolved)} unresolved proposals; paging founder")
+      Logger.warning(
+        "attention_broker: escalation — #{map_size(unresolved)} unresolved proposals; paging founder"
+      )
 
       {:page, :founder}
     else
@@ -211,8 +263,7 @@ defmodule AshA2A.Attention.Broker do
   def enforce_gpm_floor_invariant(%{gpm_floor_breach: true} = card) do
     %{
       card
-      | options:
-          Enum.map(card.options, fn opt -> Map.put(opt, :requires_signature, true) end)
+      | options: Enum.map(card.options, fn opt -> Map.put(opt, :requires_signature, true) end)
     }
   end
 

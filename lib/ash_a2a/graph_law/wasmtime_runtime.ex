@@ -113,7 +113,6 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntime do
                     __DIR__
                   )
 
-  @default_wasm Path.expand("../../../priv/graphlaw/praxis_graphlaw.wasm", __DIR__)
 
   @default_timeout 60_000
 
@@ -330,8 +329,7 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntime do
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
-    Keyword.get(opts, :wasm_path) ||
-      Application.get_env(:ash_a2a, :graphlaw_wasm_path, @default_wasm)
+    AshA2A.GraphLaw.wasm_path_unchecked(opts)
   end
 
   @doc """

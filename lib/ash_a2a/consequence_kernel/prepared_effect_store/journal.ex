@@ -94,6 +94,18 @@ defmodule AshA2A.ConsequenceKernel.PreparedEffectStore.Journal do
         Application.get_env(:ash_a2a, :receipt_binding_key)
 
     provider = if is_binary(key), do: {KeyCustody.HmacSha256, [key: key]}, else: nil
+
+    if is_nil(Application.get_env(:ash_a2a, :prepared_journal_dir)) and is_nil(dir) and
+         not (Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) and
+                Mix.env() in [:dev, :test]) do
+      require Logger
+
+      Logger.warning(
+        "AshA2A prepared journal: no :prepared_journal_dir or :receipt_outbox_dir configured; " <>
+          "the journal will refuse to open"
+      )
+    end
+
     open(dir, provider)
   end
 
@@ -363,6 +375,7 @@ defmodule AshA2A.ConsequenceKernel.PreparedEffectStore.Journal do
             {:error, :journal_lock_timeout}
 
           true ->
+            # SLEEP-CLASS: POLL-STEP (bounded by @lock_wait_ms deadline)
             Process.sleep(2)
             acquire(lock, started)
         end

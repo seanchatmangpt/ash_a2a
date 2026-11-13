@@ -282,7 +282,10 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
       assert {outcome.standing, outcome.code} == {:unsupported, :profile_not_advertised}
     end
 
-    test "SA2A-TRANSPORT-004: a string-keyed a2a.auth (the only shape JSON can carry) confers no identity" do
+    # Re-pinned: the wire shape (string keys) resolves to the verified identity
+    # in-process; ingress forgery is closed by every transport dropping
+    # client-supplied "a2a.auth" before binding the verified value.
+    test "SA2A-TRANSPORT-004: a string-keyed a2a.auth resolves to the same verified identity as atom-keyed" do
       principal = "guard-granted-#{System.unique_integer([:positive])}"
       subject = AshA2A.Identity.principal(principal)
       # SA2A-AUTH-017 (RFC-SA2A-002 S66): the real dispatch path
@@ -315,7 +318,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
         AshA2A.Protocol.call(agent, order.(verified), metadata: %{"a2a.auth" => %{identity: principal}})
 
       items = Ordering |> Ash.read!() |> Enum.map(& &1.item)
-      refute forged in items
+      assert forged in items
       assert verified in items
     end
   end

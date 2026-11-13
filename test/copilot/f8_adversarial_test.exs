@@ -12,8 +12,9 @@ defmodule AshA2A.Copilot.F8AdversarialTest do
       disclosed in Pipeline moduledoc, not fixed)
     * A4 retry_token redemption — DEFENDED (token not redeemable; the Vince
       ledger is the authority)
-    * A5 admit-path sweep — two disclosed gaps (negative-NTE admit,
-      nil coordinator_id raises); see Pipeline moduledoc
+    * A5 admit-path sweep — negative-NTE admit FIXED upstream (Vince refuses nte <= 0 with
+      typed :invalid_intent; asserted below); nil coordinator_id FIXED to a typed
+      `:invalid_intent` refusal (asserted below)
   """
 
   use ExUnit.Case, async: false
@@ -40,8 +41,10 @@ defmodule AshA2A.Copilot.F8AdversarialTest do
     }
   end
 
-  defp signed_frame(nonce, key) do
-    %{device_token: Key.sign(fresh_claims(nonce), key), nonce: nonce, key: key}
+  defp signed_frame(nonce, key, actor \\ nil) do
+    claims = fresh_claims(nonce)
+    claims = if actor, do: Map.put(claims, "actor_id", actor), else: claims
+    %{device_token: Key.sign(claims, key), nonce: nonce, key: key}
   end
 
   defp rested_mesh(ids) do
@@ -94,7 +97,8 @@ defmodule AshA2A.Copilot.F8AdversarialTest do
     {state2, {:refuse, :escalate_multisig}} =
       Pipeline.check(intent(%{trade: :Trade_CH, nte: 1000, offer: 500}), state1)
 
-    assert state2.vince.challenges[:Trade_CH] == 1
+    # Vince now counts every challenge incl. escalations (lane 05 contract)
+    assert state2.vince.challenges[:Trade_CH] == 2
   end
 
   # -- A2: authority hop fail-open / stage-order -------------------------------
@@ -177,6 +181,64 @@ defmodule AshA2A.Copilot.F8AdversarialTest do
     assert {:assign, :bob} = Pipeline.route(%{friction: 0.5, candidates: [:bob]}, state1.bridge)
   end
 
+  test "A3 forged coordinator_id refused via ATTESTED actor; intent.actor_id forgery buys nothing" do
+    state = state_for([:alice, :bob])
+    key = Key.generate()
+    frame = signed_frame("nonce-a3", key, "mallory")
+    binding = %{"mallory" => :alice, "bob-actor" => :bob}
+
+    forged =
+      intent(%{trade: "spoof-2", nte: 1000, offer: 500, coordinator_id: :bob,
+               actor_id: "bob-actor", sensor_frame: frame})
+
+    # intent.actor_id claims to be bob's actor; attested actor is mallory -> refused
+    assert {state1, {:refuse, %{code: :coordinator_mismatch, reason: %{actor_id: "mallory"}}}} =
+             Pipeline.check(forged, state, coordinator_binding: binding, now: @now)
+
+    assert state1.bridge[:bob].tensor.heuristic_frequency == 0
+
+    # honest bound actor passes the binding stage and is credited
+    honest = %{forged | coordinator_id: :alice}
+    assert {state2, {:challenge, _}} = Pipeline.check(honest, state, coordinator_binding: binding, now: @now)
+    assert state2.bridge[:alice].tensor.heuristic_frequency == 1
+
+    # no attested actor under explicit binding is refused
+    nofr = signed_frame("nonce-a3b", key)
+    assert {_, {:refuse, %{code: :coordinator_mismatch}}} =
+             Pipeline.check(%{forged | sensor_frame: nofr}, state, coordinator_binding: binding, now: @now)
+  end
+
+  test "A3 default-on: attested actor differing from declared coordinator_id is refused without options" do
+    state = state_for([:alice, :bob])
+    key = Key.generate()
+    frame = signed_frame("nonce-a3d", key, :alice)
+
+    forged = intent(%{trade: "spoof-3", nte: 1000, offer: 500, coordinator_id: :bob, sensor_frame: frame})
+
+    assert {state1, {:refuse, %{code: :coordinator_mismatch}}} = Pipeline.check(forged, state, now: @now)
+    assert state1.bridge[:bob].tensor.heuristic_frequency == 0
+  end
+
+  test "unknown coordinator id is not auto-registered in the bridge" do
+    state = state_for([:alice])
+    {state1, _} = Pipeline.check(intent(%{trade: "ghost", nte: 1000, offer: 500, coordinator_id: :ghost}), state)
+    refute Map.has_key?(state1.bridge, :ghost)
+  end
+
+  test "absent binding emits an observable stage_skipped event" do
+    id = "w2-skip-#{System.unique_integer([:positive])}"
+    me = self()
+
+    :telemetry.attach(id, [:ash_a2a, :copilot, :stage_skipped], fn _, _, meta, _ ->
+      send(me, {:skipped, meta.stage})
+    end, nil)
+
+    Pipeline.check(intent(%{trade: "skip-1"}), state_for(), prior: nil)
+    :telemetry.detach(id)
+    assert_received {:skipped, :coordinator_binding}
+    assert_received {:skipped, :mechanical_prior}
+  end
+
   # -- A4: retry_token is not redeemable ---------------------------------------
 
   test "A4 resubmitting with the retry_token attached still escalates (ledger is authority)" do
@@ -209,5 +271,24 @@ defmodule AshA2A.Copilot.F8AdversarialTest do
 
     assert {_, {:challenge, %{code: :gpm_floor}}} =
              Pipeline.check(intent(%{trade: "floor-below", nte: 100, offer: 79}), state)
+  end
+
+  test "A5 negative-NTE intent is refused typed by Vince (gap closed upstream)" do
+    key = Key.generate()
+    frame = signed_frame("nonce-a5n", key)
+
+    assert {_, {:refuse, %{code: :invalid_intent, reason: :nte_not_positive}}} =
+             Pipeline.check(
+               intent(%{trade: "neg-nte", nte: -100, offer: -78, sensor_frame: frame}),
+               state_for(),
+               now: @now
+             )
+  end
+
+  test "A5 coordinator_id nil returns typed refusal, does not raise" do
+    state = state_for()
+
+    assert {^state, {:refuse, %{code: :invalid_intent, reason: :coordinator_id_nil}}} =
+             Pipeline.check(intent(%{coordinator_id: nil}), state)
   end
 end

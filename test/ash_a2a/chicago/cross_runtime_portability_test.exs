@@ -30,6 +30,22 @@ defmodule AshA2A.Chicago.CrossRuntimePortabilityTest do
 
   @moduletag :tmp_dir
 
+  # A caller-named foreign wasm path resolves to `:unpinned`, which the host
+  # admits only under runtime opt-in (EngineLoad.check_digest/2).
+  setup do
+    previous = Application.fetch_env(:ash_a2a, :graphlaw_allow_unpinned)
+    Application.put_env(:ash_a2a, :graphlaw_allow_unpinned, true)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, v} -> Application.put_env(:ash_a2a, :graphlaw_allow_unpinned, v)
+        :error -> Application.delete_env(:ash_a2a, :graphlaw_allow_unpinned)
+      end
+    end)
+
+    :ok
+  end
+
   @expected %{
     "SA2A-XRUNTIME-001" => :positive_control_passed,
     "SA2A-XRUNTIME-002" => :positive_control_passed,

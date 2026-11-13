@@ -485,9 +485,13 @@ defmodule AshA2A.CommandBus do
       :ok
     end
   rescue
-    _error -> {:error, :receipt_store_unavailable}
+    error ->
+      note_failure(:rescue_1, error)
+      {:error, :receipt_store_unavailable}
   catch
-    :exit, _reason -> {:error, :receipt_store_unavailable}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:error, :receipt_store_unavailable}
   end
 
   defp refuse_unconfirmed_execution(command, execution_id, anchor, reason) do
@@ -667,9 +671,13 @@ defmodule AshA2A.CommandBus do
       :proceed
     end
   rescue
-    _error -> {:error, :actuation_store_unavailable}
+    error ->
+      note_failure(:rescue_2, error)
+      {:error, :actuation_store_unavailable}
   catch
-    :exit, _reason -> {:error, :actuation_store_unavailable}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:error, :actuation_store_unavailable}
   end
 
   defp claim_actuation(_store, _actuation, _command, _consequence, _store_opts, _opts),
@@ -722,6 +730,7 @@ defmodule AshA2A.CommandBus do
             error
 
           [delay | rest] ->
+            # SLEEP-CLASS: SCHEDULING (configured commit-retry backoff schedule)
             Process.sleep(delay)
             commit_actuation_with_retries(store, actuation, receipt, store_opts, rest)
         end
@@ -735,9 +744,13 @@ defmodule AshA2A.CommandBus do
       other -> {:error, {:unexpected, other}}
     end
   rescue
-    _error -> {:error, :actuation_store_unavailable}
+    error ->
+      note_failure(:rescue_3, error)
+      {:error, :actuation_store_unavailable}
   catch
-    :exit, _reason -> {:error, :actuation_store_unavailable}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:error, :actuation_store_unavailable}
   end
 
   defp release_actuation(store, actuation, consequence, store_opts, opts)
@@ -746,9 +759,13 @@ defmodule AshA2A.CommandBus do
       do: store.release_actuation(actuation, store_opts),
       else: :ok
   rescue
-    _error -> :ok
+    error ->
+      note_failure(:rescue_4, error)
+      {:error, :actuation_release_failed}
   catch
-    :exit, _reason -> :ok
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:error, :actuation_release_failed}
   end
 
   defp release_actuation(_store, _actuation, _consequence, _store_opts, _opts), do: :ok
@@ -814,9 +831,13 @@ defmodule AshA2A.CommandBus do
   defp claim_receipt(store, command, store_opts) do
     store.claim(command, store_opts)
   rescue
-    _error -> {:error, :receipt_store_unavailable}
+    error ->
+      note_failure(:rescue_5, error)
+      {:error, :receipt_store_unavailable}
   catch
-    :exit, _reason -> {:error, :receipt_store_unavailable}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:error, :receipt_store_unavailable}
   end
 
   defp commit_receipt(store, receipt, store_opts) do
@@ -865,6 +886,7 @@ defmodule AshA2A.CommandBus do
     do: {:error, last_reason}
 
   defp retry_commit(store, receipt, store_opts, [delay | rest], _last_reason) do
+    # SLEEP-CLASS: SCHEDULING (configured commit-retry backoff schedule)
     Process.sleep(delay)
 
     case commit_once(store, receipt, store_opts) do
@@ -879,9 +901,13 @@ defmodule AshA2A.CommandBus do
       {:error, reason} -> {:error, reason}
     end
   rescue
-    _error -> {:error, :receipt_store_unavailable}
+    error ->
+      note_failure(:rescue_6, error)
+      {:error, :receipt_store_unavailable}
   catch
-    :exit, _reason -> {:error, :receipt_store_unavailable}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:error, :receipt_store_unavailable}
   end
 
   defp outbox_after_consequence(receipt, reason) do
@@ -935,9 +961,13 @@ defmodule AshA2A.CommandBus do
 
     :ok
   rescue
-    _error -> :ok
+    error ->
+      note_failure(:rescue_7, error)
+      :ok
   catch
-    :exit, _reason -> :ok
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      :ok
   end
 
   defp inspect_target(command, resource_or_domain) do
@@ -996,9 +1026,13 @@ defmodule AshA2A.CommandBus do
         end
     end
   rescue
-    _error -> kill_switch_unavailable()
+    error ->
+      note_failure(:rescue_8, error)
+      kill_switch_unavailable()
   catch
-    :exit, _reason -> kill_switch_unavailable()
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      kill_switch_unavailable()
   end
 
   # RFC-SA2A-004 S11: the class may be named per call or host-wide
@@ -1155,9 +1189,13 @@ defmodule AshA2A.CommandBus do
         {:gate_refused, revalidation_unavailable()}
     end
   rescue
-    _error -> {:gate_refused, revalidation_unavailable()}
+    error ->
+      note_failure(:rescue_9, error)
+      {:gate_refused, revalidation_unavailable()}
   catch
-    :exit, _reason -> {:gate_refused, revalidation_unavailable()}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:gate_refused, revalidation_unavailable()}
   end
 
   defp constraints_gate(authority, command) do
@@ -1198,9 +1236,13 @@ defmodule AshA2A.CommandBus do
       {:gate_refused, revalidation_unavailable()}
     end
   rescue
-    _error -> {:gate_refused, revalidation_unavailable()}
+    error ->
+      note_failure(:rescue_10, error)
+      {:gate_refused, revalidation_unavailable()}
   catch
-    :exit, _reason -> {:gate_refused, revalidation_unavailable()}
+    :exit, reason ->
+      note_failure(:exit, {:exit, reason})
+      {:gate_refused, revalidation_unavailable()}
   end
 
   defp revalidation_unavailable do
@@ -1447,7 +1489,9 @@ defmodule AshA2A.CommandBus do
     }
 
     emit_boundary([:actuate, :start], command, meta)
+    started = System.monotonic_time()
     reply = fun.()
+    duration = System.monotonic_time() - started
 
     outcome =
       case reply do
@@ -1455,7 +1499,7 @@ defmodule AshA2A.CommandBus do
         _ -> :ok
       end
 
-    emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome))
+    emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome), %{duration: duration})
     reply
   end
 
@@ -1507,10 +1551,33 @@ defmodule AshA2A.CommandBus do
 
   defp emit_commitment(_command, _receipt, _transition, _consequence), do: :ok
 
-  defp emit_boundary(suffix, %{command_id: command_id} = subject, extra) do
+  # Fail-closed rescue sites stay fail-closed; this makes the swallowed
+  # failure observable (telemetry + log) instead of silent.
+  defp note_failure(site, error) do
+    kind =
+      case error do
+        %{__exception__: true, __struct__: mod} -> mod
+        {:exit, _} -> :exit
+        other -> other
+      end
+
+    :telemetry.execute(
+      [:ash_a2a, :command_bus, :swallowed_failure],
+      %{count: 1},
+      %{site: site, kind: kind}
+    )
+
+    require Logger
+    Logger.warning("command_bus swallowed failure site=#{site} kind=#{inspect(kind)}")
+    :ok
+  end
+
+  defp emit_boundary(suffix, subject, extra, measurements \\ %{})
+
+  defp emit_boundary(suffix, %{command_id: command_id} = subject, extra, measurements) do
     :telemetry.execute(
       [:ash_a2a, :command_bus | suffix],
-      %{system_time: System.system_time()},
+      Map.merge(%{system_time: System.system_time()}, measurements),
       Map.merge(
         %{
           command_id: identity_value(command_id),

@@ -130,18 +130,67 @@ defmodule AshA2A.Research.ERC do
   directory doesn't exist yet -- no receipts emitted is a real, valid
   state, not a failure.
   """
-  @spec list_receipts() :: [map()]
-  def list_receipts do
-    case File.ls(@erc_dir) do
-      {:ok, files} ->
-        files
-        |> Enum.filter(&String.ends_with?(&1, ".json"))
-        |> Enum.map(&Path.join(@erc_dir, &1))
-        |> Enum.sort_by(&File.stat!(&1).mtime, :desc)
-        |> Enum.map(&(&1 |> File.read!() |> Jason.decode!()))
+  @spec list_receipts(keyword()) :: [map()]
+  def list_receipts(opts \\ []) do
+    {good, _corrupt} = scan(Keyword.get(opts, :dir, @erc_dir))
+    good
+  end
 
-      {:error, :enoent} ->
-        []
+  @doc """
+  Receipt files under the ERC directory that could not be read or decoded
+  (torn write, invalid JSON, non-object JSON), as `{path, reason}` pairs.
+  `list_receipts/1` skips these and logs a warning; this flags them.
+  """
+  @spec corrupt_receipts(keyword()) :: [{String.t(), term()}]
+  def corrupt_receipts(opts \\ []) do
+    {_good, corrupt} = scan(Keyword.get(opts, :dir, @erc_dir))
+    corrupt
+  end
+
+  defp scan(dir) do
+    case File.ls(dir) do
+      {:ok, files} ->
+        decoded =
+          files
+          |> Enum.filter(&String.ends_with?(&1, ".json"))
+          |> Enum.map(&Path.join(dir, &1))
+          |> Enum.map(&read_receipt/1)
+
+        good =
+          for {:ok, path, receipt} <- decoded do
+            {mtime(path), receipt}
+          end
+          |> Enum.sort_by(&elem(&1, 0), :desc)
+          |> Enum.map(&elem(&1, 1))
+
+        corrupt = for {:error, path, reason} <- decoded, do: {path, reason}
+
+        for {path, reason} <- corrupt do
+          require Logger
+          Logger.warning("ERC receipt skipped (corrupt) path=#{path} reason=#{inspect(reason)}")
+        end
+
+        {good, corrupt}
+
+      {:error, _reason} ->
+        {[], []}
+    end
+  end
+
+  defp read_receipt(path) do
+    with {:ok, bin} <- File.read(path),
+         {:ok, %{} = receipt} <- Jason.decode(bin) do
+      {:ok, path, receipt}
+    else
+      {:ok, other} -> {:error, path, {:not_an_object, other}}
+      {:error, reason} -> {:error, path, reason}
+    end
+  end
+
+  defp mtime(path) do
+    case File.stat(path) do
+      {:ok, %{mtime: m}} -> m
+      _ -> {{1970, 1, 1}, {0, 0, 0}}
     end
   end
 
@@ -149,13 +198,13 @@ defmodule AshA2A.Research.ERC do
   The ledger: one entry per distinct ERC `id`, the *latest* real receipt
   for that id (a claim can be re-verified/re-falsified across runs; the
   ledger reports current standing, not history -- use `list_receipts/0`
-  for the full history of a given id).
+  for the full history of a given id). Corrupt receipts are skipped.
   """
-  @spec ledger() :: [map()]
-  def ledger do
-    list_receipts()
+  @spec ledger(keyword()) :: [map()]
+  def ledger(opts \\ []) do
+    list_receipts(opts)
     |> Enum.uniq_by(& &1["id"])
-    |> Enum.sort_by(& &1["id"])
+    |> Enum.sort_by(&to_string(&1["id"]))
   end
 
   defp git_sha do

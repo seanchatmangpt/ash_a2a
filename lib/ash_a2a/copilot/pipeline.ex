@@ -5,20 +5,25 @@ defmodule AshA2A.Copilot.Pipeline do
   Wires three landed surfaces into one interception path:
 
     1. `AshA2A.Twin.Vince.evaluate_intent/2` — intent evaluation (GPM floor,
-       monkey-math exact-half, round-number suspicion, optional mechanical
-       prior via a loadable `AshA2A.Twin.MechanicalPrior` module).
-    2. On challenge: return the challenge-as-state ledger entry (the ledger
-       itself is state on the Vince struct, threaded through this pipeline —
-       the pipeline is pure; callers own persistence via the returned state).
-    3. On admit: `AshA2A.Twin.Tony.handle_inbound/2` strain-check of the
-       coordinator (`AshA2A.Strain.Tensor.hyperplane_check/2` saturation
-       gate) → shed to the senior queue or admit.
-    4. On admit + capacity: `AshA2A.Attestation.Gate` on the sensor frame
-       (enclave, freshness, sensor metadata).
-    5. On attested: `AshA2A.Authority.PEP.assert_standing/4` — the authority
-       hop (lane G4): verify the actor can act AT ALL before final admit.
-       This is the LAST gate before admit; Vince/Tony/attestation order is
-       unchanged.
+       monkey-math exact-half, round-number suspicion). On challenge: return
+       the challenge-as-state ledger entry (the ledger is state on the Vince
+       struct, threaded through this pipeline — the pipeline is pure;
+       callers own persistence via the returned state).
+    2. On Vince admit, in this order (first non-ok stage wins):
+       a. optional mechanical prior (loadable `TradeReticle.Plumbing` or the
+          `:prior` opt) — may challenge or refuse;
+       b. `AshA2A.Twin.Tony.handle_inbound/2` strain-check of the
+          coordinator (`AshA2A.Strain.Tensor.hyperplane_check/2` saturation
+          gate) → shed to the senior queue or admit;
+       c. `AshA2A.Attestation.Gate` on the sensor frame (enclave, freshness,
+          sensor metadata); a missing/non-map `:sensor_frame` is a typed
+          `:attestation` refusal;
+       d. `AshA2A.Authority.PEP.assert_standing/4` — the authority hop (lane
+          G4), LAST gate before admit.
+
+  Malformed intents (missing keys, non-number or zero `nte`, non-number
+  `offer`, nil `coordinator_id`) return a typed
+  `{:refuse, %{code: :invalid_intent, reason: _}}` and never raise.
 
   **LOUD NOTE — authority hop is opt-in, absence = documented skip.** The
   PEP's default source is `AshA2A.Authority.Source.DenyAll` (fail-closed:
@@ -66,15 +71,19 @@ defmodule AshA2A.Copilot.Pipeline do
       `coordinator_id` with no binding to an attested actor. An attacker
       submitting intents with a rival's id inflates the rival's tensor
       (`heuristic_frequency` rises on attacker-provoked challenges).
-      Mitigation requires binding observations to an attested actor
-      identity — not a small diff; disclosed, not fixed.
-    * **Negative-NTE intents admit** when the gpm math lands at/above
-      floor (e.g. `nte: -100, offer: -78` → gpm 0.22). Vince's only input
-      guard is `nte != 0`; tightening it is a law change in Vince, not a
-      pipeline seam. Disclosed, not fixed.
-    * **`coordinator_id: nil` raises** an untyped KeyError inside
-      `Tony.handle_inbound/2` (fail-loud, not fail-open) rather than a
-      typed refusal. Disclosed, not fixed.
+      FIXED: the attested actor (`"actor_id"` claim of the verified sensor frame,
+      never the caller's `intent.actor_id`) is bound to the strain key; a mismatched
+      `coordinator_id` is refused by default when the frame carries an actor claim
+      (optionally mapped via `:coordinator_binding`) and is refused `:coordinator_mismatch` with no observation
+      folded; Bridge no longer auto-registers unknown ids. Without the option
+      the binding stage is skipped observably (`[:ash_a2a, :copilot,
+      :stage_skipped]`, as are absent mechanical prior / authority source).
+
+  Negative-NTE intents are FIXED upstream: `Vince.evaluate_intent/2` refuses
+  `nte <= 0` / negative offers with a typed `:invalid_intent` refusal.
+
+  `coordinator_id: nil` is FIXED: it returns a typed `:invalid_intent`
+  refusal instead of raising inside `Tony.handle_inbound/2`.
 
   The pipeline is **pure**: twins are called via their module functions and
   all state (Vince challenge ledger, Tony mesh, Bridge mesh_state) is
@@ -102,7 +111,7 @@ defmodule AshA2A.Copilot.Pipeline do
       {:ok, admitted_ticket}
       | {:challenge, %{code: _, demanded_evidence: _, retry_token: _}}
       | {:refuse, :escalate_multisig | %{code: _, reason: _}}
-      | {:escalated, %{proposal_id: reference(), card: map()}}
+      | {:escalated, %{proposal_id: reference(), card: map(), proposal: map()}}
       | {:shed, {:senior_queue, relief_target}}
 
   Every branch returns a typed structured result; no strings-as-state.
@@ -118,8 +127,8 @@ defmodule AshA2A.Copilot.Pipeline do
           {:ok, map()}
           | {:challenge, Vince.challenge_map()}
           | {:refuse, :escalate_multisig | map()}
-          | {:escalated, %{proposal_id: reference(), card: map()}}
-          | {:shed, {:senior_queue, :tony_relief}}
+          | {:escalated, %{proposal_id: reference(), card: map(), proposal: map()}}
+          | {:shed, {:senior_queue, term()}}
 
   @type state :: %{vince: Vince.t(), mesh: Tony.mesh(), bridge: Bridge.mesh_state()}
 
@@ -143,7 +152,9 @@ defmodule AshA2A.Copilot.Pipeline do
       `AshA2A.Authority.PEP.assert_standing/4` runs as the LAST gate before
       admit: `:ok` admits onward, any `{:refused, :insufficient_authority,
       detail}` becomes `{:refuse, %{code: :authority, reason: detail}}`.
-    * `:attention_broker` — an `AshA2A.Attention.Broker` module (lane G5).
+    * `:attention_broker` — an `AshA2A.Attention.Broker` module or
+      `{module, broker_opts}` (lane G5; broker_opts may carry `:level` and
+      `:now` defaults, overridden by `:proposal_level` / `:now`).
       When set, escalate-class refuses (Vince repeat-challenge
       `:escalate_multisig`, GPM-floor-class refuses) open a broker proposal
       and return `{:escalated, %{proposal_id, card}}` instead. When absent,
@@ -153,18 +164,82 @@ defmodule AshA2A.Copilot.Pipeline do
     * `:proposal_level` — broker autonomy level for escalated proposals
       (default `:consent_by_silence`; use `:supervised` to forbid
       silence-consent execution).
-    * `:coordinator_id` — fallback proposal owner when the intent carries
-      no `:coordinator_id`.
+    * `:vince_mod` — Vince module or 2-arity fun (court instrumentation).
+
+  The former `:coordinator_id` option was removed: `check/3` requires
+  `intent.coordinator_id`, so the fallback was unreachable.
   """
   @spec check(map(), state(), keyword()) :: {state(), result()}
   def check(intent, state, opts \\ [])
 
-  def check(
-        %{trade: trade, nte: nte, offer: offer, coordinator_id: _coordinator_id} = intent,
+  def check(%{coordinator_id: cid} = intent, state, opts) when not is_nil(cid) do
+    case binding_check(intent, opts) do
+      :ok -> do_check(intent, state, opts)
+      {:refuse, _} = refuse -> {state, refuse}
+    end
+  end
+
+  def check(intent, state, opts), do: do_check(intent, state, opts)
+
+  # Strain-key binding (F8/A3): with `:coordinator_binding` (a map
+  # `actor_id => coordinator_id` or a 1-arity fun `actor_id -> coordinator_id | nil`)
+  # the intent's declared `coordinator_id` must equal the attested actor's bound
+  # coordinator, else a typed refusal (no observation folded). Absent binding is an
+  # observable skip: telemetry `[:ash_a2a, :copilot, :stage_skipped]`.
+  defp binding_check(intent, opts) do
+    attested = attested_actor(intent, opts)
+
+    case {Keyword.get(opts, :coordinator_binding), attested} do
+      {nil, nil} ->
+        skip(:coordinator_binding, intent)
+        :ok
+
+      {nil, actor} ->
+        # Default-on: the attested actor IS the strain key unless a binding says otherwise.
+        check_bound(intent, actor, actor)
+
+      {binding, actor} ->
+        check_bound(intent, actor, if(actor == nil, do: nil, else: lookup_binding(binding, actor)))
+    end
+  end
+
+  defp check_bound(intent, actor, bound) do
+    if bound != nil and bound == intent.coordinator_id do
+      :ok
+    else
+      {:refuse,
+       %{
+         code: :coordinator_mismatch,
+         reason: %{actor_id: actor, declared: intent.coordinator_id, bound: bound}
+       }}
+    end
+  end
+
+  # Attested actor = `"actor_id"` claim inside the verified (signed) sensor frame.
+  # The caller-supplied `intent.actor_id` is never consulted for binding.
+  defp attested_actor(intent, opts) do
+    case attestation_check(Map.get(intent, :sensor_frame), opts) do
+      {:ok, %{"actor_id" => actor}} when not is_nil(actor) -> actor
+      _ -> nil
+    end
+  end
+
+  defp lookup_binding(fun, actor) when is_function(fun, 1), do: fun.(actor)
+  defp lookup_binding(%{} = map, actor), do: Map.get(map, actor)
+
+  defp skip(stage, intent) do
+    :telemetry.execute([:ash_a2a, :copilot, :stage_skipped], %{count: 1}, %{
+      stage: stage,
+      coordinator_id: Map.get(intent, :coordinator_id)
+    })
+  end
+
+  defp do_check(
+        %{trade: trade, nte: nte, offer: offer, coordinator_id: coordinator_id} = intent,
         %{vince: vince, mesh: _mesh} = state,
         opts
       )
-      when is_number(nte) and is_number(offer) and nte != 0 do
+      when is_number(nte) and is_number(offer) and nte != 0 and not is_nil(coordinator_id) do
     vince_mod = Keyword.get(opts, :vince_mod, Vince)
 
     {vince1, vince_verdict} =
@@ -185,10 +260,29 @@ defmodule AshA2A.Copilot.Pipeline do
     end
   end
 
+  defp do_check(intent, state, _opts) do
+    {state, {:refuse, %{code: :invalid_intent, reason: invalid_reason(intent)}}}
+  end
+
+  defp invalid_reason(%{} = intent) do
+    missing = for k <- [:trade, :nte, :offer, :coordinator_id], not Map.has_key?(intent, k), do: k
+
+    cond do
+      missing != [] -> {:missing_keys, missing}
+      not is_number(intent.nte) -> :nte_not_a_number
+      intent.nte == 0 -> :nte_zero
+      not is_number(intent.offer) -> :offer_not_a_number
+      is_nil(intent.coordinator_id) -> :coordinator_id_nil
+      true -> :malformed
+    end
+  end
+
+  defp invalid_reason(_), do: :intent_not_a_map
+
   @doc "Build initial pipeline state: `%{vince: Vince.new(opts), mesh: mesh, bridge: Bridge.new_mesh_state()}`."
   @spec init(keyword(), Tony.mesh()) :: state()
   def init(vince_opts \\ [], mesh \\ %{}) do
-    %{vince: Vince.new(vince_opts), mesh: mesh, bridge: Bridge.new_mesh_state()}
+    %{vince: Vince.new(vince_opts), mesh: mesh, bridge: Bridge.new_mesh_state(Map.keys(mesh))}
   end
 
   @doc """
@@ -211,7 +305,7 @@ defmodule AshA2A.Copilot.Pipeline do
     with {:prior, :ok} <- {:prior, mechanical_prior(intent, opts)},
          {:strain, {:admit, id}} <- {:strain, Tony.handle_inbound(state.mesh, %{coordinator_id: intent.coordinator_id})},
          {:attestation, {:ok, claims}} <-
-           {:attestation, attestation_check(intent.sensor_frame, opts)},
+           {:attestation, attestation_check(Map.get(intent, :sensor_frame), opts)},
          {:authority, :ok} <- {:authority, authority_check(intent, opts)} do
       {%{state | bridge: record(state, id, :ticket_assigned)},
        {:ok,
@@ -222,7 +316,10 @@ defmodule AshA2A.Copilot.Pipeline do
           attestation_claims: claims
         }}}
     else
-      {:prior, {:challenge, _} = challenge} -> {state, challenge}
+      {:prior, {:challenge, _} = challenge} ->
+        {%{state | bridge: record(state, intent.coordinator_id, {:challenge_received, :vince})},
+         challenge}
+
       {:prior, {:refuse, _} = refuse} ->
         {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
          maybe_escalated(intent, refuse, opts)}
@@ -233,6 +330,17 @@ defmodule AshA2A.Copilot.Pipeline do
       {:authority, {:refused, :insufficient_authority, detail}} ->
         {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
          {:refuse, %{code: :authority, reason: detail}}}
+
+      {:authority, other} ->
+        {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
+         {:refuse, %{code: :authority, reason: {:unexpected, other}}}}
+
+      {:attestation, other} ->
+        {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
+         {:refuse, %{code: :attestation, reason: {:unexpected, other}}}}
+
+      {:strain, other} ->
+        {state, {:refuse, %{code: :strain, reason: {:unexpected, other}}}}
     end
   end
 
@@ -242,6 +350,7 @@ defmodule AshA2A.Copilot.Pipeline do
   defp authority_check(intent, opts) do
     case Keyword.get(opts, :authority_source) do
       nil ->
+        skip(:authority_source, intent)
         :ok
 
       source ->
@@ -265,8 +374,15 @@ defmodule AshA2A.Copilot.Pipeline do
 
   # Mechanical prior (lane X5 plumbing) — only when configured/loadable.
   defp mechanical_prior(intent, opts) do
-    case Keyword.get(opts, :prior, detect_prior()) do
+    prior =
+      case Keyword.fetch(opts, :prior) do
+        {:ok, p} -> p
+        :error -> detect_prior()
+      end
+
+    case prior do
       nil ->
+        skip(:mechanical_prior, intent)
         :ok
 
       prior when is_atom(prior) ->
@@ -314,7 +430,7 @@ defmodule AshA2A.Copilot.Pipeline do
   # `{:escalated, %{proposal_id, card}}` instead of the bare refuse.
   #
   # Unconfigured → typed refuse, unchanged, no broker call (documented skip).
-  # Pure: no clock sampling (broker `:now` comes from opts, default 0);
+  # No clock sampling (broker `:now` comes from opts, default 0);
   # `consent_by_silence/4` stays at the caller's cadence — this module only
   # creates proposals, it never resolves them.
 
@@ -336,42 +452,50 @@ defmodule AshA2A.Copilot.Pipeline do
       nil ->
         refuse
 
-      broker when is_atom(broker) ->
-        coordinator_id = Map.get(intent, :coordinator_id) || Keyword.get(opts, :coordinator_id)
+      spec ->
+        {broker, bopts} = broker_spec(spec)
         triage = Keyword.get(opts, :tony_triage)
 
         card = broker.build_card(challenge_payload, triage, gpm_floor_breach: gpm_breach?)
 
-        {:ok, proposal} =
-          broker.propose(coordinator_id, card,
-            level: Keyword.get(opts, :proposal_level, :consent_by_silence),
-            now: Keyword.get(opts, :now, 0)
-          )
+        level =
+          Keyword.get(opts, :proposal_level, Keyword.get(bopts, :level, :consent_by_silence))
 
-        {:escalated,
-         %{proposal_id: proposal.id, card: proposal.card, proposal: proposal}}
+        now = Keyword.get(opts, :now, Keyword.get(bopts, :now, 0))
+
+        case broker.propose(intent.coordinator_id, card, level: level, now: now) do
+          {:ok, proposal} ->
+            {:escalated,
+             %{proposal_id: proposal.id, card: proposal.card, proposal: proposal}}
+
+          {:error, reason} ->
+            {:refuse, %{code: :escalation_failed, reason: reason, original: refuse}}
+        end
     end
   end
+
+  defp broker_spec({mod, bopts}) when is_atom(mod) and is_list(bopts), do: {mod, bopts}
+  defp broker_spec(mod) when is_atom(mod), do: {mod, []}
 
   # -- attestation gate chain -------------------------------------------------
 
   # Fold a pipeline verdict into the live Bridge mesh_state (Z7 seam).
-  defp record(%{bridge: bridge}, coordinator_id, :ticket_assigned) do
-    Bridge.record_observation(bridge, coordinator_id, %{type: :ticket_assigned})
+  defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, :ticket_assigned) do
+    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{type: :ticket_assigned})
   end
 
-  defp record(%{bridge: bridge}, coordinator_id, {:challenge_received, :vince}) do
-    Bridge.record_observation(bridge, coordinator_id, %{
+  defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, {:challenge_received, :vince}) do
+    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{
       type: :challenge_received,
       source: :vince
     })
   end
 
-  defp record(%{bridge: bridge}, coordinator_id, :error_reported) do
-    Bridge.record_observation(bridge, coordinator_id, %{type: :error_reported, error: true})
+  defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, :error_reported) do
+    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{type: :error_reported, error: true})
   end
 
-  defp attestation_check(sensor_frame, opts) do
+  defp attestation_check(%{device_token: _, nonce: _, key: _} = sensor_frame, opts) do
     now = Keyword.get(opts, :now, System.system_time(:second))
     staleness = Map.get(sensor_frame, :max_staleness_sec, 90)
 
@@ -384,6 +508,17 @@ defmodule AshA2A.Copilot.Pipeline do
     else
       {:refused, _} = refused -> refused
       {:error, reason} -> {:refused, reason}
+      other -> {:refused, {:unexpected, other}}
     end
+  end
+
+  defp attestation_check(_missing, _opts), do: {:refused, :missing_sensor_frame}
+
+  # Only coordinators registered in the Tony mesh (the admitted set) may own a
+  # Bridge entry; an id absent from the mesh is never minted (F8/A3).
+  defp registered(bridge, mesh, id) do
+    if Map.has_key?(mesh, id) and not Map.has_key?(bridge, id),
+      do: Map.merge(Bridge.new_mesh_state([id]), bridge),
+      else: bridge
   end
 end

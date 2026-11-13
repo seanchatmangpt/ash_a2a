@@ -5,13 +5,11 @@ defmodule AshA2A.Transport.Grpc.Framing do
   @moduledoc """
   gRPC length-prefixed message codec for the A2A v1.0 gRPC binding.
 
-  **Scope: PARTIAL.** A complete gRPC transport needs an HTTP/2 server (TLS,
-  `content-type: application/grpc`, HTTP/2 DATA/trailer sequencing,
-  percent-encoded `grpc-message` values on the wire). That server transport
-  requires a gRPC server dependency and is UNSUPPORTED in this project:
-  there is no gRPC server dep in `mix.exs`. What IS provided — and fully
-  tested in-process — is the complete wire layer a host's gRPC server
-  consumes:
+  **Scope: ALIVE (wire layer).** The HTTP/2 server transport is
+  `AshA2A.Transport.GRPC.Server` (cowboy via the `:grpc_server` package),
+  which owns the socket, TLS and trailers. This module is the standalone,
+  in-process-tested length-prefixed wire layer a host's own gRPC server (or a
+  test client) can consume:
 
     * length-prefixed message framing: 1-byte compressed flag + 4-byte
       big-endian length + payload
@@ -56,7 +54,10 @@ defmodule AshA2A.Transport.Grpc.Framing do
   """
 
   @type decode_error ::
-          :compression_unsupported | :bad_compressed_flag | {:frame_too_large, pos_integer()}
+          :compression_unsupported
+          | :bad_compressed_flag
+          | :decompress_failed
+          | {:frame_too_large, pos_integer()}
 
   @doc "The 5-byte gRPC frame for `payload`: flag byte + big-endian length + payload."
   def encode_frame(payload, opts \\ []) do
@@ -77,11 +78,20 @@ defmodule AshA2A.Transport.Grpc.Framing do
     {:ok, Enum.reverse(acc), data}
   end
 
-  defp do_decode(<<flag::size(8), len::unsigned-big-integer-size(32), rest::binary>>, max, decompress, acc) do
+  defp do_decode(
+         <<flag::size(8), len::unsigned-big-integer-size(32), rest::binary>> = data,
+         max,
+         decompress,
+         acc
+       ) do
     cond do
       flag == 1 and is_function(decompress, 1) ->
-        with {:ok, chunk, remaining} <- take(len, rest, max) do
-          do_decode(remaining, max, decompress, [decompress.(chunk) | acc])
+        with {:ok, chunk, remaining} <- take(len, rest, max),
+             {:ok, plain} <- run_decompress(decompress, chunk, max) do
+          do_decode(remaining, max, decompress, [plain | acc])
+        else
+          {:partial, _} -> {:ok, Enum.reverse(acc), data}
+          other -> other
         end
 
       flag == 1 ->
@@ -91,8 +101,12 @@ defmodule AshA2A.Transport.Grpc.Framing do
         {:error, :bad_compressed_flag}
 
       true ->
-        with {:ok, chunk, remaining} <- take(len, rest, max) do
-          do_decode(remaining, max, decompress, [chunk | acc])
+        case take(len, rest, max) do
+          {:ok, chunk, remaining} -> do_decode(remaining, max, decompress, [chunk | acc])
+          # A partial payload is not an error: TCP/HTTP2 is a byte stream, the
+          # whole frame (header included) is returned as `rest`.
+          {:partial, _} -> {:ok, Enum.reverse(acc), data}
+          {:error, _} = error -> error
         end
     end
   end
@@ -102,7 +116,54 @@ defmodule AshA2A.Transport.Grpc.Framing do
   defp take(len, rest, _max) do
     case rest do
       <<chunk::binary-size(len), remaining::binary>> -> {:ok, chunk, remaining}
-      _ -> {:error, :incomplete}
+      _ -> {:partial, len}
+    end
+  end
+
+  # The decompressed size is bounded by `max` as well: a tiny compressed frame
+  # must not inflate to an unbounded buffer. Hosts should pass
+  # `gzip_decompressor/1`, which stops inflating at the bound; any other fun is
+  # additionally checked after the fact.
+  defp run_decompress(fun, chunk, max) do
+    case fun.(chunk) do
+      plain when is_binary(plain) and byte_size(plain) <= max -> {:ok, plain}
+      plain when is_binary(plain) -> {:error, {:frame_too_large, byte_size(plain)}}
+      {:error, _} = error -> error
+      _other -> {:error, :decompress_failed}
+    end
+  rescue
+    _ -> {:error, :decompress_failed}
+  end
+
+  @doc """
+  A `:decompress` fun for `grpc-encoding: gzip` that stops inflating once the
+  output exceeds `max` bytes (default #{@default_max}) and answers
+  `{:error, {:frame_too_large, n}}` instead of materializing the bomb.
+  """
+  @spec gzip_decompressor(pos_integer()) :: (binary() -> binary() | {:error, term()})
+  def gzip_decompressor(max \\ @default_max) do
+    fn chunk ->
+      z = :zlib.open()
+
+      try do
+        :ok = :zlib.inflateInit(z, 31)
+        inflate_bounded(z, :zlib.safeInflate(z, chunk), [], 0, max)
+      catch
+        _, _ -> {:error, :decompress_failed}
+      after
+        :zlib.close(z)
+      end
+    end
+  end
+
+  defp inflate_bounded(z, {kind, out}, acc, size, max) do
+    out = IO.iodata_to_binary(out)
+    size = size + byte_size(out)
+
+    cond do
+      size > max -> {:error, {:frame_too_large, size}}
+      kind == :finished -> IO.iodata_to_binary(Enum.reverse([out | acc]))
+      true -> inflate_bounded(z, :zlib.safeInflate(z, []), [out | acc], size, max)
     end
   end
 

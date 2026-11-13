@@ -28,7 +28,8 @@ defmodule AshA2A.KillSwitchDurabilityTest do
     Enum.reduce_while(1..200, nil, fn _, _ ->
       case Process.whereis(name) do
         pid when is_pid(pid) and pid != old_pid -> {:halt, pid}
-        _ -> Process.sleep(10) && {:cont, nil}
+        # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+        _ -> AshA2A.TestSupport.Eventually.pause(10) && {:cont, nil}
       end
     end)
   end

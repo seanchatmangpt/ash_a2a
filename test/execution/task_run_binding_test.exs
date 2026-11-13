@@ -202,8 +202,7 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
 
   setup context do
     unless Provider.available?() do
-      IO.puts(:stderr, "[lane-i7] BLOCKED: :ash_pplan did not load in the test env")
-      {:skip, {:blocked, :ash_pplan_not_loadable}}
+      flunk("BLOCKED: :ash_pplan did not load in the test env (fail loud, never a silent skip)")
     end
 
     install_adapter!()

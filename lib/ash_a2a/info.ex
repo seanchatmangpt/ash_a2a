@@ -103,6 +103,7 @@ defmodule AshA2A.Info do
           opts
           |> Keyword.drop([:capability_release_closure, :capability_release_mode])
           |> default_supported_interfaces(resource_or_domain)
+          |> Keyword.put_new(:domain, resource_or_domain)
 
         AshA2A.CapabilityIndex.build_agent_card(index, card_opts)
 
@@ -178,6 +179,9 @@ defmodule AshA2A.Info do
   @doc "The compiled knowledge hooks map (%{pre_dispatch: [...], post_dispatch: [...]})."
   @spec hooks(module()) :: %{pre_dispatch: [atom()], post_dispatch: [atom()]}
   def hooks(resource_or_domain) do
-    Extension.get_persisted(resource_or_domain, :ash_a2a_hooks, %{pre_dispatch: [], post_dispatch: []})
+    Extension.get_persisted(resource_or_domain, :ash_a2a_hooks, %{
+      pre_dispatch: [],
+      post_dispatch: []
+    })
   end
 end

@@ -120,7 +120,8 @@ defmodule AshA2AFreedomGymHddlPlanTest do
                data_message(%{plan_name: plan_name, prompt_text: "one too many"})
              )
 
-    assert task.status.state == :failed
+    # Terminal either way; v1.0 admission refusals land :rejected.
+    assert task.status.state in [:failed, :rejected]
 
     # A real reset genuinely rewinds the real in-memory plan position.
     assert {:ok, reset_task} =

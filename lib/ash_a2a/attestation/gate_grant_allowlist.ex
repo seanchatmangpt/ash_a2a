@@ -41,22 +41,56 @@ defmodule AshA2A.Attestation.GateGrantAllowlist do
   least one unexpired grant's area; `{:refused, :gps_impossible_jump}`
   otherwise (expired, out-of-area, or empty allowlist).
   """
-  @spec override?(list(map()), [grant()], pos_integer()) :: :ok | {:refused, :gps_impossible_jump}
-  def override?(observations, grants, now) when is_list(grants) do
-    live = Enum.filter(grants, &active?(&1, now))
+  @spec override?(list(map()), [grant()], integer()) :: :ok | {:refused, :gps_impossible_jump}
+  def override?(observations, grants, now), do: override?(observations, grants, now, [])
+
+  @doc """
+  `override?/3` with scope options: `:org_id` and `:identifier` restrict
+  grants to those whose own `:org_id` / `:identifier_or_cidr` equal the
+  supplied value (only when the grant carries that field).
+  """
+  @spec override?(list(map()), [grant()], integer(), Keyword.t()) ::
+          :ok | {:refused, :gps_impossible_jump}
+  def override?(observations, grants, now, opts) when is_list(grants) and is_list(opts) do
+    live = grants |> Enum.filter(&scoped?(&1, opts)) |> Enum.filter(&active?(&1, now))
+    observations = sort_obs(observations)
     jumping = jumping_pairs(observations)
 
-    if jumping != [] and Enum.all?(jumping, &covered?(&1, live)) do
+    if is_list(observations) and jumping != [] and Enum.all?(jumping, &covered?(&1, live)) do
       :ok
     else
       {:refused, :gps_impossible_jump}
     end
   end
 
-  @spec active?(grant(), pos_integer()) :: boolean()
+  defp sort_obs(obs) when is_list(obs) do
+    if Enum.all?(obs, &(is_map(&1) and is_integer(&1["timestamp"]))),
+      do: Enum.sort_by(obs, & &1["timestamp"]),
+      else: []
+  end
+
+  defp sort_obs(_), do: []
+
+  defp scoped?(grant, opts) when is_map(grant) do
+    field_ok?(grant, :org_id, Keyword.get(opts, :org_id)) and
+      field_ok?(grant, :identifier_or_cidr, Keyword.get(opts, :identifier))
+  end
+
+  defp scoped?(_, _), do: false
+
+  defp field_ok?(_grant, _key, nil), do: true
+
+  defp field_ok?(grant, key, want) do
+    case Map.fetch(grant, key) do
+      {:ok, have} -> have == want
+      :error -> true
+    end
+  end
+
+  @spec active?(grant(), integer()) :: boolean()
   defp active?(%{ttl_hours: ttl, approved_at: approved_at}, now)
-       when is_integer(ttl) and ttl >= 0 and is_integer(approved_at) do
-    now < approved_at + ttl * 3600
+       when is_integer(ttl) and ttl >= 0 and is_integer(approved_at) and is_integer(now) do
+    approved_at <= now and now < approved_at + ttl * 3600
   end
 
   defp active?(_, _), do: false
@@ -71,8 +105,9 @@ defmodule AshA2A.Attestation.GateGrantAllowlist do
   end
 
   defp covered?([a, b], live) do
-    Enum.any?(live, fn %{area: area} ->
-      in_area?(a, area) and in_area?(b, area)
+    Enum.any?(live, fn
+      %{area: area} -> in_area?(a, area) and in_area?(b, area)
+      _ -> false
     end)
   end
 

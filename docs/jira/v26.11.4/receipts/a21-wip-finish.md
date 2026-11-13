@@ -18,7 +18,8 @@ Dirty state found on entry (`git status --short`):
   campaign markers, e.g. v26.10.8 = `3ad578dd` docs scaffold.)
 - `?? docs/thesis/` (6 files: main.tex + aux/log/out/toc/pdf) — stray untracked
   LaTeX build tree, not referenced by any code or doc. Left in place.
-- `?? research/erc/ERC-001-179*.json` (6 files) — **not stray.** The
+- `research/erc/ERC-001-179*.json` (6 files) — stale as of 2026-11-11: now
+  committed (`git ls-files` = 6), no longer untracked. **Not stray.** The
   `research/erc/` directory is the ERC evidence ledger consumed by
   `lib/ash_a2a/research/erc.ex` (`mix eds.ledger` per archived Litho docs);
   43 sibling tracked JSONs already live there (ERC-001/003/004). The 6 new
@@ -34,7 +35,12 @@ Dirty state found on entry (`git status --short`):
   session-introduced fix = deps.get). Full compile re-run in progress at
   receipt-writing time (ggen_graph_nif NIF release build + ggen_igniter,
   concurrent package-cache lock contention with lanes on smalt/xaas/cgap).
-- GATE (mix compile exit 0): PENDING — see Standing.
+- GATE (mix compile exit 0): re-run 2026-11-11 by lane L16 under
+  `MIX_BUILD_ROOT=_build-lane16` on the live dirty tree (no SHA-pinned subject):
+  first attempt exit 1 (syntax error in `lib/ash_a2a/protocol/agent_card.ex:74`,
+  another lane's in-flight edit, since fixed); re-run `mix compile` exit 0
+  ("Generated ash_a2a app", 0 error lines). Standing kept PARTIAL_ALIVE: exit 0
+  is on a dirty tree, not the original receipt subject.
 
 ## Owned files (this lane)
 

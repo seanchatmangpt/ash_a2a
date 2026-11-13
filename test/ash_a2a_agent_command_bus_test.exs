@@ -358,7 +358,8 @@ defmodule AshA2AAgentCommandBusTest do
                authenticated_call_opts("user-1")
              )
 
-    assert task.status.state == :failed
+    # v1.0: refused at admission, before any handler effect -> :rejected.
+    assert task.status.state == :rejected
 
     # Proves the real action body genuinely never ran -- this isn't merely
     # a status-code assertion, it's a real absence-of-side-effect check.

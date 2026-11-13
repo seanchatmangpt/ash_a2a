@@ -1330,6 +1330,7 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
           with_claim_lease(lease_ms, fn ->
             crash = Env.run_crashing(env, cid, input, {:at_event, @claim, %{outcome: :execute}})
             still_in_flight = Env.run(env, cid, input)
+            # SLEEP-CLASS: SCHEDULING (real-time claim lease expiry interval)
             Process.sleep(lease_ms * 3)
             resubmission = Env.run(env, cid, input)
             replay = Env.run(env, cid, input)
@@ -1383,6 +1384,7 @@ defmodule AshA2A.Chicago.Courts.CrashReconciliation do
               Env.run_crashing(env, cid, input, {:at_event, @prepare, %{outcome: :prepared}})
 
             env = Env.restart_store(env)
+            # SLEEP-CLASS: SCHEDULING (real-time claim lease expiry interval)
             Process.sleep(lease_ms * 3)
 
             # A DIRECT store-level claim (not `CommandBus.run/4`, whose own

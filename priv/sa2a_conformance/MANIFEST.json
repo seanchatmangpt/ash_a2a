@@ -198,9 +198,9 @@
       "blake3": "169506fe43c06c9406ab600043870920dfaff24a387ad69ccf5baf92a7653738"
     },
     "rules/denials.n3": {
-      "bytes": 1051,
-      "sha256": "c9e3dab9ff87b9d08dd819c13a2b9ae43914f8964594d570e5725296ca0b997a",
-      "blake3": "bf2f7738601c468e39eb39c51fd8b12b97c2a74edc4d307fb7f8b142f04d55d8"
+      "bytes": 1712,
+      "sha256": "9d9bb519be1d775640aefd32ebcedbdb51f9010379afbb0da23d84d0032e5e4b",
+      "blake3": "8f1e05364ee4fd41fd8450ee76dae2ab00ce4b1d0a8bfa4b29cc6c802a671a62"
     },
     "schema.shex": {
       "bytes": 1612,

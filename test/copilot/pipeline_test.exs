@@ -156,9 +156,146 @@ defmodule AshA2A.Copilot.PipelineTest do
       Pipeline.check(intent(%{nte: 1000, offer: 500}), state)
   end
 
-  test "detect_prior returns nil when TradeReticle.Plumbing is not loadable" do
-    assert Pipeline.detect_prior() == nil or
-             Code.ensure_loaded(TradeReticle.Plumbing) == {:module, TradeReticle.Plumbing}
+  defmodule EnvPrior do
+    def prior_verdict(_claim, _telemetry), do: {:admit, :env}
+  end
+
+  test "detect_prior honours Application env :copilot_mechanical_prior" do
+    prev = Application.get_env(:ash_a2a, :copilot_mechanical_prior)
+
+    on_exit(fn ->
+      if prev == nil,
+        do: Application.delete_env(:ash_a2a, :copilot_mechanical_prior),
+        else: Application.put_env(:ash_a2a, :copilot_mechanical_prior, prev)
+    end)
+
+    Application.put_env(:ash_a2a, :copilot_mechanical_prior, EnvPrior)
+    assert Pipeline.detect_prior() == EnvPrior
+
+    Application.delete_env(:ash_a2a, :copilot_mechanical_prior)
+
+    expected =
+      case Code.ensure_loaded(TradeReticle.Plumbing) do
+        {:module, _} -> TradeReticle.Plumbing
+        _ -> nil
+      end
+
+    assert Pipeline.detect_prior() == expected
+  end
+
+  defmodule FixIntentHelpers do
+    def state do
+      Pipeline.init([gpm_floor: 0.22, tolerance: 0.0], Tony.register_coordinator(%{}, :alice, Tensor.new(%{})))
+    end
+
+    def intent(over) do
+      Map.merge(%{trade: "t-fix", nte: 1000, offer: 720, coordinator_id: :alice, sensor_frame: :unused}, over)
+    end
+  end
+
+  alias __MODULE__.FixIntentHelpers, as: FIH
+
+  test "invalid intents return typed refusals (nte zero, missing keys, non-map)" do
+    st = FIH.state()
+
+    assert {^st, {:refuse, %{code: :invalid_intent, reason: :nte_zero}}} =
+             Pipeline.check(FIH.intent(%{nte: 0}), st)
+
+    assert {^st, {:refuse, %{code: :invalid_intent, reason: {:missing_keys, [:offer]}}}} =
+             Pipeline.check(Map.delete(FIH.intent(%{}), :offer), st)
+
+    assert {^st, {:refuse, %{code: :invalid_intent, reason: :intent_not_a_map}}} =
+             Pipeline.check(:nope, st)
+  end
+
+  test "admit with missing or :unused sensor_frame refuses typed, no raise" do
+    st = FIH.state()
+
+    assert {_, {:refuse, %{code: :attestation, reason: {:refused, :missing_sensor_frame}}}} =
+             Pipeline.check(FIH.intent(%{}), st, now: @now, prior: nil)
+
+    assert {_, {:refuse, %{code: :attestation, reason: {:refused, :missing_sensor_frame}}}} =
+             Pipeline.check(Map.delete(FIH.intent(%{}), :sensor_frame), st, now: @now, prior: nil)
+  end
+
+  defmodule BadAuthority do
+    @behaviour AshA2A.Authority.Source
+    @impl true
+    def check(_a, _act, _ctx, _o), do: :deny
+  end
+
+  test "attention_broker accepts {module, opts}; broker opts supply default level" do
+    st = FIH.state()
+
+    {_, result} =
+      Pipeline.check(FIH.intent(%{trade: "esc-tuple", nte: 1000, offer: 500}), st, prior: nil)
+
+    assert {:challenge, _} = result
+
+    {st2, {:challenge, _}} =
+      Pipeline.check(FIH.intent(%{trade: "esc-tuple", nte: 1000, offer: 500}), st, prior: nil)
+
+    assert {_, {:escalated, %{proposal: proposal}}} =
+             Pipeline.check(FIH.intent(%{trade: "esc-tuple", nte: 1000, offer: 500}), st2,
+               prior: nil,
+               attention_broker: {AshA2A.Attention.Broker, [level: :supervised, now: 7]}
+             )
+
+    assert proposal.level == :supervised
+    assert proposal.proposed_at == 7
+  end
+
+  test "invalid proposal_level yields typed :escalation_failed, no MatchError" do
+    st = FIH.state()
+
+    {st2, {:challenge, _}} =
+      Pipeline.check(FIH.intent(%{trade: "esc-bad", nte: 1000, offer: 500}), st, prior: nil)
+
+    assert {_, {:refuse, %{code: :escalation_failed, reason: {:invalid_level, :bogus}}}} =
+             Pipeline.check(FIH.intent(%{trade: "esc-bad", nte: 1000, offer: 500}), st2,
+               prior: nil,
+               attention_broker: AshA2A.Attention.Broker,
+               proposal_level: :bogus
+             )
+  end
+
+  test ":prior opt nil does not evaluate detect_prior (lazy default)" do
+    prev = Application.get_env(:ash_a2a, :copilot_mechanical_prior)
+
+    on_exit(fn ->
+      if prev == nil,
+        do: Application.delete_env(:ash_a2a, :copilot_mechanical_prior),
+        else: Application.put_env(:ash_a2a, :copilot_mechanical_prior, prev)
+    end)
+
+    # an env prior that would raise if consulted (module has no prior_verdict/2)
+    Application.put_env(:ash_a2a, :copilot_mechanical_prior, String)
+
+    assert {_, {:refuse, %{code: :attestation}}} =
+             Pipeline.check(FIH.intent(%{}), FIH.state(), now: @now, prior: nil)
+  end
+
+  test "prior challenge is recorded on the bridge like a Vince challenge" do
+    defmodule ChallengingPrior do
+      def prior_verdict(_c, _t), do: {:challenge, [:photo], "need photo"}
+    end
+
+    {st, {:challenge, %{code: :mechanical_prior}}} =
+      Pipeline.check(FIH.intent(%{}), FIH.state(), prior: ChallengingPrior)
+
+    assert st.bridge[:alice].tensor.heuristic_frequency == 1
+  end
+
+  test "authority source returning garbage becomes typed refusal (catch-all)" do
+    key = Key.generate()
+    frame = signed_frame("nonce-fix", fresh_claims("nonce-fix"), key)
+
+    assert {_, {:refuse, %{code: :authority}}} =
+             Pipeline.check(FIH.intent(%{sensor_frame: frame, actor_id: "p"}), FIH.state(),
+               now: @now,
+               prior: nil,
+               authority_source: BadAuthority
+             )
   end
 
   # -- Z7 seam: Bridge observation feed + strain-first routing -----------------

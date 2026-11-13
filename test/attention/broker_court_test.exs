@@ -88,13 +88,47 @@ defmodule AshA2A.Attention.BrokerCourtTest do
                Broker.consent_by_silence(p, @window, 10_000_000, ledger)
     end
 
-    test "ledger accumulates multiple entries per proposal" do
+    test "second decision on one proposal is refused (no approve+reject)" do
       {:ok, p} = Broker.propose(:co_1, card(), now: 0)
       {:ok, ledger, _} = Broker.override(p, "sig-a", :approve)
-      {:ok, ledger, _} = Broker.override(p, "sig-b", :reject, ledger)
 
-      assert length(ledger[p.id]) == 2
-      assert hd(ledger[p.id]).actor_signature == "sig-b"
+      assert {:refused, :already_decided} = Broker.override(p, "sig-b", :reject, ledger)
+      assert {:refused, :already_decided} = Broker.override(p, "sig-b", :approve, ledger)
+      assert length(ledger[p.id]) == 1
+    end
+
+    test "decided ledger beats :supervised in consent_by_silence" do
+      {:ok, p} = Broker.propose(:co_1, card(), level: :supervised, now: 0)
+      {:ok, ledger, _} = Broker.override(p, "sig", :approve)
+      assert {:refused, :already_decided} = Broker.consent_by_silence(p, @window, 0, ledger)
+    end
+
+    test "registered undecided proposal is not 'decided' and is seen by escalation" do
+      {:ok, p} = Broker.propose(:co_1, card(), now: 0)
+      ledger = Broker.register(%{}, p)
+      assert {:executed, :silence_consent} = Broker.consent_by_silence(p, @window, @window, ledger)
+      assert {:page, :founder} = Broker.escalation_path(ledger, unresolved_threshold: 1)
+    end
+
+    test "GPM-floor card refuses unsigned override; signed override accepted" do
+      {:ok, p} = Broker.propose(:co_1, gpm_card(), now: 0)
+      assert {:refused, :signature_required} = Broker.override(p, nil, :approve)
+      assert {:refused, :signature_required} = Broker.override(p, "", :reject)
+      assert {:ok, _, _} = Broker.override(p, "sig", :approve)
+    end
+
+    test "override accepts injected :now" do
+      {:ok, p} = Broker.propose(:co_1, card(), now: 0)
+      {:ok, _ledger, entry} = Broker.override(p, "sig", :approve, %{}, now: 4242)
+      assert entry.recorded_at == 4242
+    end
+  end
+
+  describe "propose level guard" do
+    test "invalid level is a typed error; valid proposal carries at_least_one_signed" do
+      assert {:error, {:invalid_level, :bogus}} = Broker.propose(:co_1, card(), level: :bogus)
+      {:ok, p} = Broker.propose(:co_1, card())
+      assert p.at_least_one_signed == false
     end
   end
 

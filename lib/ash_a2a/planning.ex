@@ -13,6 +13,8 @@ defmodule AshA2A.Planning.Candidate do
     :plan,
     :capability_ids,
     :fingerprint,
+    :canonical_fingerprint,
+    fingerprint_version: "legacy_digest/v1",
     standing: :candidate,
     authority: :none,
     admitted_skills: []
@@ -25,6 +27,11 @@ defmodule AshA2A.Planning.Candidate do
       when is_atom(planner) and is_map(plan) and is_list(capability_ids) do
     capability_ids = Enum.map(capability_ids, &to_string/1)
 
+    # `fingerprint` is a legacy_digest (RFC-SA2A-007 E-F): plain
+    # :erlang.term_to_binary/1 is not canonical across OTP versions or large
+    # maps. Kept byte-stable so stored digests do not change silently.
+    # `canonical_fingerprint` is the JCS sha256 path (nil when the plan holds
+    # terms the canonical form refuses, e.g. floats, tuples, non-boolean atoms).
     fingerprint =
       {planner, Keyword.get(opts, :formalism), capability_ids, plan}
       |> :erlang.term_to_binary()
@@ -37,8 +44,26 @@ defmodule AshA2A.Planning.Candidate do
       formalism: Keyword.get(opts, :formalism, :unknown),
       plan: plan,
       capability_ids: capability_ids,
-      fingerprint: fingerprint
+      fingerprint: fingerprint,
+      canonical_fingerprint: canonical_fingerprint(planner, opts, capability_ids, plan),
+      fingerprint_version: "legacy_digest/v1"
     }
+  end
+
+  defp canonical_fingerprint(planner, opts, capability_ids, plan) do
+    body = %{
+      "kind" => "planning.candidate/v1",
+      "planner" => to_string(planner),
+      "formalism" =>
+        opts |> Keyword.get(:formalism) |> then(&if(is_nil(&1), do: nil, else: to_string(&1))),
+      "capability_ids" => capability_ids,
+      "plan" => plan
+    }
+
+    case AshA2A.Identity.Canonical.digest(body) do
+      {:ok, d} -> d
+      {:error, _} -> nil
+    end
   end
 end
 
@@ -116,32 +141,29 @@ defmodule AshA2A.Planning do
           {:ok, Candidate.t()} | {:error, term()}
   def plan_with_ferroplan(resource_or_domain, domain, problem, opts \\ [])
       when is_binary(domain) and is_binary(problem) do
-    planner = BeamPM.Ferroplan
+    request = %{
+      domain: domain,
+      problem: problem,
+      extra: Keyword.get(opts, :extra, %{})
+    }
 
-    if Code.ensure_loaded?(planner) and function_exported?(planner, :plan_production, 4) do
-      extra = Keyword.get(opts, :extra, %{})
-      planner_opts = Keyword.get(opts, :planner_opts, [])
+    port_opts = Keyword.get(opts, :planner_opts, [])
 
-      case AshA2A.CallbackRegistry.invoke(planner, :plan_production, [
-             domain,
-             problem,
-             extra,
-             planner_opts
-           ]) do
-        {:ok, envelope} when is_map(envelope) ->
-          from_envelope(resource_or_domain, envelope,
-            planner: :ferroplan,
-            formalism: Keyword.get(opts, :formalism, :pddl)
-          )
+    case AshA2A.Replan.Port.Ferroplan.propose(request, port_opts) do
+      {:ok, envelope} when is_map(envelope) ->
+        from_envelope(resource_or_domain, envelope,
+          planner: :ferroplan,
+          formalism: Keyword.get(opts, :formalism, :pddl)
+        )
 
-        {:error, _} = error ->
-          error
+      {:error, :ferroplan_unavailable} ->
+        {:error, refusal(:ferroplan_unavailable, :ferroplan)}
 
-        other ->
-          {:error, refusal(:unexpected_planner_result, other)}
-      end
-    else
-      {:error, refusal(:unsupported_planner, :ferroplan)}
+      {:error, _} = error ->
+        error
+
+      other ->
+        {:error, refusal(:unexpected_planner_result, other)}
     end
   end
 

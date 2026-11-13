@@ -1,5 +1,7 @@
 # _LANES_V2
 
+> Historical; paths not maintained.
+
 Executable lane map V2 for the C1 kernel (L01-L20), RFC-SA2A-006 X1-X4, and the fleet
 composition adapters (G, A1-A4). Subject: `ash_a2a@9cda21c`. Supersedes the wave and ownership
 tables of `_LANES.md` (kept as history, not edited). Written 2026-09-28 from 24 read-only lane

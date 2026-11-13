@@ -39,7 +39,11 @@ defmodule AshA2A.WoCheckinSimWorkerTest do
     {:ok, pid} = WorkerAgent.start_link(name: name)
 
     on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      try do
+        if Process.alive?(pid), do: GenServer.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
     end)
 
     server =

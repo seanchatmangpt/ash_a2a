@@ -16,6 +16,13 @@ defmodule AshA2A.Actuation.Adapter do
   external call safe to repeat.
   """
 
+  @doc """
+  Perform exactly one external effect for `ticket`.
+
+  `ctx` is `%{actor_context: map(), grant: term(), attestation_claims: map(),
+  ticket_id: String.t()}`. Return `{:ok, receipt_map}` or `{:error, reason}`;
+  anything else (or a raise) is refused by the engine as `{:adapter_error, _}`.
+  """
   @callback execute(AshA2A.Actuation.Ticket.t(), map()) ::
               {:ok, receipt :: map()} | {:error, reason :: term()}
 end

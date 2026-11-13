@@ -18,7 +18,10 @@ defmodule AshA2A.MixProject do
         "test.serial": :test,
         "test.live": :test,
         "test.serial.shard": :test,
-        "test.serial.solo": :test
+        "test.serial.solo": :test,
+        # `mix muzak.sec` (and `mix muzak` directly) runs in the :test env.
+        muzak: :test,
+        "muzak.sec": :test
       ]
     ]
   end
@@ -26,7 +29,7 @@ defmodule AshA2A.MixProject do
   def project do
     [
       app: :ash_a2a,
-      version: "26.10.9",
+      version: "26.11.13",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
       homepage_url: "https://hexdocs.pm/ash_a2a/",
       elixir: "~> 1.19",
@@ -53,9 +56,7 @@ defmodule AshA2A.MixProject do
       # all the same root cause). `:ex_unit` is added on the same
       # principle; dialyxir re-adds these to the existing PLT without a
       # full rebuild.
-      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
-      # `mix muzak.sec` (and `mix muzak` directly) runs in the :test env.
-      preferred_cli_env: [muzak: :test, "muzak.sec": :test]
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
   end
 
@@ -188,6 +189,7 @@ defmodule AshA2A.MixProject do
             "docs/how-to/test-your-ash_a2a-app.md",
             "docs/how-to/test-governed-actions.md",
             "docs/how-to/migrate-legacy-to-strict.md",
+            "docs/how-to/operate-by-email.md",
             # Reference
             "docs/reference/index.md",
             {"documentation/dsls/DSL-AshA2A.md",
@@ -204,6 +206,7 @@ defmodule AshA2A.MixProject do
             "docs/reference/a2a-spec-version-mapping.md",
             "docs/reference/c2-certificate.md",
             "docs/reference/a2a-v1-conformance.md",
+            "docs/reference/a2a-v1-1-conformance.md",
             "docs/reference/performance.md",
             "docs/reference/c2-wire-interop.md",
             "docs/reference/conformance-claim.md",
@@ -324,6 +327,10 @@ defmodule AshA2A.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      # W13 wave-2 dep review (resolved): no new deps required. The OTel bridge
+      # (lib/ash_a2a/protocol/telemetry/otel.ex) guards on Code.ensure_loaded?/
+      # apply/3, so it compiles without OpenTelemetry; :opentelemetry_api
+      # (locked in mix.lock) stays test-only below.
       # >= 3.33.11: EEF-CVE-2026-93477 (private action args settable via bulk update/destroy)
       {:ash, "~> 3.33 and >= 3.33.11"},
       {:igniter, "~> 0.6"},
@@ -344,16 +351,27 @@ defmodule AshA2A.MixProject do
       # this feature's own swarm-test release) simply no longer fetches
       # or compiles it.
       {:ggen_igniter, "~> 26.9", only: :dev},
-      # GL28-2/26.10.28: hex has no ash_graphlaw 26.10.28 yet (GL28-12 hex
-      # publish is operator-gated). Consume the sibling canonical checkout
-      # until the hex release lands, then flip back to "~> 26.10".
-      {:ash_graphlaw, path: "../ash_graphlaw"},
+      # ash_graphlaw: ASH_GRAPHLAW_PATH selects an explicit local checkout; else
+      # the sibling canonical checkout ../ash_graphlaw is used when present (it
+      # vendors the wasm engine; the Hex 26.10.1 package does not, so engine-
+      # backed tests fail with :wasm_not_vendored); else the Hex pin (mix.lock
+      # carries 26.10.1) for CI and consumers without the sibling checkout.
+      cond do
+        path = System.get_env("ASH_GRAPHLAW_PATH") ->
+          {:ash_graphlaw, path: path}
+
+        File.dir?(Path.expand("../ash_graphlaw", __DIR__)) ->
+          {:ash_graphlaw, path: "../ash_graphlaw"}
+
+        true ->
+          {:ash_graphlaw, "~> 26.10"}
+      end,
       {:ash_affidavit, "~> 26.10"},
       {:ash_ex4pm, "~> 26.10"},
       {:ash_ai, "~> 1.0"},
-      # AshA2A.Telemetry.OcelForwarder's real HTTP POST to beam4pm's real
-      # OCEL ingest endpoint -- already transitively present (via :igniter),
-      # promoted to direct since this module calls it explicitly.
+      # HTTP client: AshA2A.Telemetry.OcelForwarder POSTs to beam4pm's OCEL
+      # ingest endpoint. Locked transitively (via :igniter); declared direct
+      # because lib/ calls it explicitly.
       {:req, "~> 0.5"},
       # Real local Bandit server for
       # test/ash_a2a_telemetry_ocel_forwarder_test.exs's fixture standing
@@ -365,15 +383,15 @@ defmodule AshA2A.MixProject do
       # `MIX_ENV=test mix compile --warnings-as-errors` fails. Pure Elixir,
       # test-only (Ash declares it optional).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
-      # ash_pplan dep: Hex pin by default. Set ASH_PPLAN_PATH to a local
-      # canonical checkout (e.g. /Users/sac/ash_pplan) to compile against
-      # path: instead — dev-only cross-repo-court mode; CI always uses the
-      # Hex pin. Eval-time System.get_env is the only supported toggle:
+      # ash_pplan dep: Hex pin by default (mix.lock pins 26.11.10, which
+      # carries AshPPlan.Telemetry.*). Set ASH_PPLAN_PATH to a local
+      # canonical checkout to compile against path: instead -- dev-only
+      # cross-repo-court mode; CI always uses the Hex pin. Eval-time System.get_env is the only supported toggle:
       # deps do not read env at compile time.
       if path = System.get_env("ASH_PPLAN_PATH") do
         {:ash_pplan, path: path, only: :test}
       else
-        {:ash_pplan, "~> 26.10", only: :test}
+        {:ash_pplan, "~> 26.11", only: :test}
       end,
       # MUZAK lane: mutation testing (mix muzak.sec). `only: :test`, not
       # `:dev`: muzak's mix task declares `@preferred_cli_env :test` and its
@@ -441,6 +459,15 @@ defmodule AshA2A.MixProject do
       # narrower `:only` than a transitive dependency requires, the same
       # real constraint already documented above for `:plug`/`:postgrex`.
       {:stream_data, "~> 1.0"},
+      # Direct deps with real lib/ calls (versions already in mix.lock;
+      # bounds chosen so the locked versions still satisfy them).
+      {:jason, "~> 1.4"},
+      {:telemetry, "~> 1.0"},
+      {:spark, "~> 2.2"},
+      {:reactor, "~> 1.0"},
+      {:finch, "~> 0.18"},
+      {:yaml_elixir, "~> 2.9"},
+      {:sourceror, "~> 1.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
       # v26.9.16: real libcluster + Horde proof-of-concept (real node

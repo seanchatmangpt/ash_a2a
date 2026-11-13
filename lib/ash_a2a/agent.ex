@@ -51,13 +51,30 @@ defmodule AshA2A.Agent do
   fails only its own task. A global `max_in_flight` cap (default 256) and an
   optional per-principal `rate_limit: {count, per_ms}` refuse excess load
   with typed `:server_busy`/`:rate_limited` errors. `mode: :inline` restores
-  the old serialized behavior.
+  the old serialized behavior. `tasks/cancel` on a task whose worker is still
+  running interrupts it: the worker is killed, the pending send replies with
+  the `:canceled` task and a late worker result is dropped
+  (`execution: [cancel_in_flight: :refuse]` restores the `:not_cancelable`
+  refusal). Inline mode and `adapter: :pplan` can only be cancelled after the
+  run finished.
 
   Tasks are owned by the verified principal that created them: a different
   principal continuing a task gets `{:error, :not_found}`, and a continuation
   always runs under the *current* call's verified auth. Serve agents over
   HTTP with `AshA2A.Transport.Plug` (owner-scoped `tasks/*`, no credential
   echo, truthful AgentCard capabilities), not the raw `AshA2A.Protocol.Plug`.
+
+  ## Send options (parity with the bare protocol agent)
+
+  `AshA2A.Protocol.Agent.call/3` options honoured here: `:return_immediately`
+  (reply with the stored `:submitted`/`:working` task, run the handler in a
+  worker, fold the result in without overwriting a terminal state),
+  `:accepted_output_modes` (applied to the final task's artifacts),
+  `:validate_input_modes` (default `true`; `false` opts out; also settable in
+  `execution:`). A `task_id` whose `contextId` differs from the stored task's
+  answers `{:error, :context_mismatch}` (wire requests keep `:not_found`);
+  `referenceTaskIds` must be visible to the caller (else `{:error,
+  :not_found}`) and supply the context when the message has none.
 
   ## Authentication (fail closed)
 
@@ -144,19 +161,53 @@ defmodule AshA2A.Agent do
         {:reply, AshA2A.Transport.Runtime.get_task_for(state, principal, task_id), state}
       end
 
+      # v1.1 `tasks/get` options: `timeline_length:`, `current_generation:`
+      # (long-poll; parks the caller until the generation advances or the
+      # `:long_poll_timeout_ms` deadline).
+      def handle_call({:ash_a2a_get_task, principal, task_id, opts}, from, state)
+          when is_list(opts) do
+        AshA2A.Transport.Runtime.get_task_call(state, principal, task_id, opts, from)
+      end
+
       def handle_call({:ash_a2a_list_tasks, principal, params}, _from, state) do
         {:reply, AshA2A.Transport.Runtime.list_tasks_for(state, principal, params), state}
       end
 
-      # A cancel racing a running handler is refused, never reported as
-      # `:canceled` while the handler's effect may still commit.
+      # A cancel racing a running handler interrupts the worker (default,
+      # `AshA2A.Transport.Runtime.cancel_in_flight/3`); the opt-in
+      # `cancel_in_flight: :refuse` restores the `:not_cancelable` refusal.
       def handle_call({:cancel, task_id} = request, from, state) do
-        if AshA2A.Transport.Runtime.in_flight?(task_id),
-          do: {:reply, {:error, :not_cancelable}, state},
-          else: super(request, from, state)
+        cond do
+          not AshA2A.Transport.Runtime.in_flight?(task_id) ->
+            AshA2A.Transport.Runtime.wake_reply(super(request, from, state))
+
+          Keyword.get(
+            AshA2A.Transport.Runtime.config(@ash_a2a_execution),
+            :cancel_in_flight,
+            :interrupt
+          ) == :refuse ->
+            {:reply, {:error, :not_cancelable}, state}
+
+          true ->
+            case AshA2A.Transport.Runtime.cancel_in_flight(__MODULE__, state, task_id) do
+              :not_in_flight -> super(request, from, state)
+              reply -> reply
+            end
+        end
       end
 
-      def handle_call(request, from, state), do: super(request, from, state)
+      # Every other call (e.g. `:apply_artifact_updates`) may advance a task's
+      # generation: release any long-poll `tasks/get` it satisfies.
+      def handle_call(request, from, state),
+        do: AshA2A.Transport.Runtime.wake_reply(super(request, from, state))
+
+      # Casts (`:stream_done` folds the final artifact + status) advance the
+      # generation too.
+      defoverridable handle_cast: 2
+
+      @impl GenServer
+      def handle_cast(msg, state),
+        do: AshA2A.Transport.Runtime.wake_reply(super(msg, state))
 
       # Generated catch-all: every `handle_info` clause the ported
       # `AshA2A.Protocol.Agent` defines (task_done, DOWN/subscriber cleanup)
@@ -1161,9 +1212,10 @@ defmodule AshA2A.Agent do
   # (`~/xaas/deps/a2a/lib/a2a/agent.ex:305-343`) only after it has already
   # confirmed the task is *not* terminal (`:completed`/`:canceled`/`:failed`
   # short-circuit to `{:error, :not_cancelable}` before this ever runs,
-  # agent.ex:308-309) -- so the one real-world window this fires in is a task
+  # agent.ex:308-309) -- so the real-world windows this fires in are a task
   # parked in `:input_required` awaiting a follow-up message (ash_a2a task
-  # #13). Unlike `handle_message/2`, the `context()` passed here
+  # #13) and, via `AshA2A.Transport.Runtime.cancel_in_flight/3`, a task whose
+  # async worker is interrupted mid-handler. Unlike `handle_message/2`, the `context()` passed here
   # (`%{task_id, context_id, history, metadata}`) is not wrapped in an
   # `AshA2A.Protocol.Message` -- a synthetic, never-dispatched `AshA2A.Protocol.Message` is built
   # here purely to reuse `AshA2A.ContextResolver.from_a2a_message/4`'s

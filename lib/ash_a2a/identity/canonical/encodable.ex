@@ -4,25 +4,27 @@
 
 defmodule AshA2A.Identity.Canonical.Encodable do
   @moduledoc false
-  @max_depth 64
+  @max_depth 32
+  @max_bytes 1_048_576
+  @max_int 9_007_199_254_740_991
+
+  @doc "Size cap (bytes) applied to canonical output before hashing (RFC-007 E-F)."
+  def max_bytes, do: @max_bytes
   def validate(value), do: validate(value, 0)
   defp validate(_, d) when d > @max_depth, do: {:error, :canonical_depth_exceeded}
-  defp validate(v, _) when is_nil(v) or is_boolean(v) or is_integer(v) or is_binary(v), do: :ok
-  defp validate(v, _) when is_float(v), do: finite_float(v)
+
+  defp validate(v, _) when is_integer(v) and abs(v) > @max_int,
+    do: {:error, :canonical_integer_out_of_range}
+
+  defp validate(v, _) when is_nil(v) or is_boolean(v) or is_integer(v), do: :ok
+
+  defp validate(v, _) when is_binary(v),
+    do: if(String.valid?(v), do: :ok, else: {:error, :canonical_invalid_utf8})
+
+  defp validate(v, _) when is_float(v), do: {:error, :canonical_float_forbidden}
   defp validate(v, d) when is_list(v), do: reduce(v, d + 1)
   defp validate(v, d) when is_map(v), do: with(:ok <- keys(v), do: reduce(Map.values(v), d + 1))
   defp validate(_, _), do: {:error, :canonical_type_forbidden}
-
-  defp finite_float(v) do
-    case :erlang.float_to_binary(v, [:compact]) do
-      "nan" -> {:error, :canonical_non_finite_number}
-      "inf" -> {:error, :canonical_non_finite_number}
-      "-inf" -> {:error, :canonical_non_finite_number}
-      _ -> :ok
-    end
-  rescue
-    _ -> {:error, :canonical_non_finite_number}
-  end
 
   defp reduce(xs, d),
     do:

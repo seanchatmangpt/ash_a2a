@@ -62,6 +62,7 @@ defmodule AshA2A.SPIFFE.PDPBindingCourt.PDP do
   end
 
   defp answer(conn, "boom", _opts) do
+    # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
     Process.sleep(50)
     respond(conn, {500, %{"error" => "internal"}})
   end
@@ -71,6 +72,7 @@ defmodule AshA2A.SPIFFE.PDPBindingCourt.PDP do
   end
 
   defp answer(conn, "hang", opts) do
+    # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
     Process.sleep(Map.get(opts, :stall_ms, 5_000))
     respond(conn, {200, %{"decision" => true, "context" => %{}}})
   end

@@ -124,7 +124,7 @@ defmodule AshA2A.Receipt.EvidenceChain do
   @doc "Encodes a receipt in the `AshA2A.ReceiptOutbox` journal format."
   @spec encode_receipt(Receipt.t()) :: binary()
   def encode_receipt(%Receipt{} = receipt),
-    do: :erlang.term_to_binary({@journal_version, receipt})
+    do: :erlang.term_to_binary({@journal_version, receipt}, [:deterministic])
 
   @doc """
   Decodes journal-format bytes into a receipt. Never raises. Uses

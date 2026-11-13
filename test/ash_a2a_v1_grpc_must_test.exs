@@ -96,7 +96,7 @@ defmodule AshA2A.V1.GrpcMustCourt do
       -32602 maps to its §3.3.2 gRPC status and carries its §5.4
       google.rpc.ErrorInfo (reason, domain a2a-protocol.org) in the
       grpc-status-details-bin trailer — each witnessed over the real socket.
-    * A2A-Version metadata gate: unsupported version refused UNIMPLEMENTED(12)
+    * A2A-Version metadata gate: unsupported version refused FAILED_PRECONDITION(9)
       with VERSION_NOT_SUPPORTED ErrorInfo; supported "1.0"/"0.3" and the
       absent-header "0.3" default (§3.6.2) all accepted.
   """

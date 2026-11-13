@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshA2A.Execution.PPlan do
   @moduledoc """
   ash_pplan-backed execution adapter for async A2A task dispatch, mirroring
@@ -32,7 +36,9 @@ defmodule AshA2A.Execution.PPlan do
           pplan: [
             store: ...,         # required — host-owned durable store (pid or
                                 #   registered name, e.g. a started
-                                #   AshPPlan.Reactor.Durable.Store.Dets)
+                                #   AshPPlan.Reactor.Durable.Store.Dets).
+                                #   Absent => typed {:missing_opt, :store}
+                                #   from the provider (never a raise)
             model: ...,         # required — %AshPPlan.Workflow.Model{}
             bindings: ...,      # required — %{task => %AshPPlan.Realization{}}
             store_module: ...,  # optional — passthrough
@@ -42,9 +48,12 @@ defmodule AshA2A.Execution.PPlan do
           ]
         ]
 
-  Every opt value may be `{m, f, a}` (module-atom MFA), resolved on each call
-  so a runtime-built store/model/bindings can be referenced from compile-time
-  agent opts.
+  Every opt value may be `{:mfa, m, f, a}` (explicit tagged MFA, always
+  resolved) or, for back-compat, a bare `{m, f, a}` — resolved ONLY when `m`
+  is a loaded module exporting `f/length(a)`; any other 3-tuple is passed
+  through as a literal value. Resolution happens on each call so a
+  runtime-built store/model/bindings can be referenced from compile-time agent
+  opts. A raising MFA yields typed `{:error, {:invalid_opt, {key, {:mfa_failed, _}}}}`.
 
   ## Boundary (named honestly, nothing faked)
 
@@ -106,7 +115,7 @@ defmodule AshA2A.Execution.PPlan do
   def run(task_id, %AshA2A.Protocol.Message{} = message, execution_config) when is_binary(task_id) do
     if available?() do
       with {:ok, opts} <- pplan_opts(execution_config) do
-        result = dispatch_or_resume(task_id, message, opts)
+        result = safe_dispatch_or_resume(task_id, message, opts)
         placement = RuntimeReceipt.new(:pplan, :call, task_id, result, metadata: metadata(opts))
 
         case result do
@@ -121,6 +130,16 @@ defmodule AshA2A.Execution.PPlan do
       # typed, mirror `AshA2A.Execution.FLAME`'s fail-closed probe shape
       {:error, {:unsupported, :ash_pplan}}
     end
+  end
+
+  # A provider that raises/throws/exits still gets a placement receipt: the
+  # failure becomes a typed `{:error, {:provider_failed, ...}}` result.
+  defp safe_dispatch_or_resume(task_id, message, opts) do
+    dispatch_or_resume(task_id, message, opts)
+  rescue
+    exception -> {:error, {:provider_failed, {:exception, exception.__struct__}}}
+  catch
+    kind, reason -> {:error, {:provider_failed, {kind, reason}}}
   end
 
   # The binding-survival core: probe the run for this task id, then either
@@ -154,6 +173,14 @@ defmodule AshA2A.Execution.PPlan do
       # unchanged, never re-dispatch (idempotence across the binding).
       {:ok, _terminal_state, _detail} = sealed ->
         sealed
+
+      # typed provider-level failure on the status probe (missing :store,
+      # unmapped status, ...): propagate, never a CaseClauseError
+      {:error, _reason} = error ->
+        error
+
+      other ->
+        {:error, {:unexpected_status_result, other}}
     end
   end
 
@@ -162,9 +189,11 @@ defmodule AshA2A.Execution.PPlan do
   defp pplan_opts(execution_config) do
     case Keyword.get(execution_config, :pplan) do
       opts when is_list(opts) ->
-        # every opt value may be {m, f, a}, resolved here so a runtime-built
-        # store/model/bindings is reachable from compile-time agent opts
-        {:ok, Keyword.new(opts, fn {key, value} -> {key, resolve_value(value)} end)}
+        if Enum.all?(opts, &match?({key, _} when is_atom(key), &1)) do
+          resolve_opts(opts)
+        else
+          {:error, {:invalid_opt, {:pplan, :non_keyword_entries}}}
+        end
 
       nil ->
         {:error, {:missing_opt, :pplan}}
@@ -174,8 +203,40 @@ defmodule AshA2A.Execution.PPlan do
     end
   end
 
-  defp resolve_value({m, f, a}) when is_atom(m) and is_atom(f) and is_list(a), do: apply(m, f, a)
-  defp resolve_value(value), do: value
+  # every opt value may be an MFA, resolved here so a runtime-built
+  # store/model/bindings is reachable from compile-time agent opts
+  defp resolve_opts(opts) do
+    Enum.reduce_while(opts, {:ok, []}, fn {key, value}, {:ok, acc} ->
+      case resolve_value(value) do
+        {:ok, resolved} -> {:cont, {:ok, [{key, resolved} | acc]}}
+        {:error, reason} -> {:halt, {:error, {:invalid_opt, {key, reason}}}}
+      end
+    end)
+    |> case do
+      # last duplicate key wins (Keyword.new/2 semantics, relied on by callers
+      # that append overrides)
+      {:ok, acc} -> {:ok, acc |> Enum.reverse() |> Enum.reduce(%{}, fn {k, v}, m -> Map.put(m, k, v) end) |> Map.to_list()}
+      error -> error
+    end
+  end
+
+  defp resolve_value({:mfa, m, f, a}) when is_atom(m) and is_atom(f) and is_list(a), do: call_mfa(m, f, a)
+
+  defp resolve_value({m, f, a} = value) when is_atom(m) and is_atom(f) and is_list(a) do
+    if Code.ensure_loaded?(m) and function_exported?(m, f, length(a)),
+      do: call_mfa(m, f, a),
+      else: {:ok, value}
+  end
+
+  defp resolve_value(value), do: {:ok, value}
+
+  defp call_mfa(m, f, a) do
+    {:ok, apply(m, f, a)}
+  rescue
+    exception -> {:error, {:mfa_failed, exception.__struct__}}
+  catch
+    kind, reason -> {:error, {:mfa_failed, {kind, reason}}}
+  end
 
   defp required_opt(opts, key) do
     case Keyword.fetch(opts, key) do

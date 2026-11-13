@@ -44,6 +44,71 @@ defmodule AshA2A.A2ATransport.PushDelivery do
   alias AshA2A.A2ATransport
   alias AshA2A.A2ATransport.{TaskEvents, WebhookPolicy}
 
+  @v11_event_keys ~w(generation timeline startGeneration endGeneration)
+
+  @doc """
+  The webhook body for `config` given a logged event, shaped by the config's
+  `protocol_version` (default `"1.0"`).
+
+    * `>= 1.1`: the payload as logged (carries `generation`; `message-update`
+      events are delivered).
+    * `< 1.1`: `message-update` events are skipped (`:skip`) and the 1.1-only
+      additions (`generation`, `timeline`, artifact `startGeneration` /
+      `endGeneration`) are stripped from `task` / `statusUpdate` /
+      `artifactUpdate` payloads.
+  """
+  @spec payload_for(map(), String.t(), map()) :: {:ok, map()} | :skip
+  def payload_for(config, kind, payload) do
+    cond do
+      AshA2A.Protocol.Version.at_least?(Map.get(config, :protocol_version) || "1.0", "1.1") ->
+        {:ok, payload}
+
+      kind == "message-update" ->
+        :skip
+
+      true ->
+        {:ok, strip_v11(payload)}
+    end
+  end
+
+  defp strip_v11(%{} = payload) do
+    Map.new(payload, fn
+      {"task", %{} = task} ->
+        task = Map.drop(task, @v11_event_keys)
+        task =
+          case Map.fetch(task, "artifacts") do
+            {:ok, arts} -> Map.put(task, "artifacts", strip_artifacts(arts))
+            :error -> Map.put(task, "artifacts", nil)
+          end
+
+        {"task", if(task["artifacts"] == nil, do: Map.delete(task, "artifacts"), else: task)}
+
+      {"artifactUpdate", %{} = ev} ->
+        ev = Map.drop(ev, @v11_event_keys)
+
+        ev =
+          case ev["artifact"] do
+            %{} = a -> Map.put(ev, "artifact", Map.drop(a, @v11_event_keys))
+            _ -> ev
+          end
+
+        {"artifactUpdate", ev}
+
+      {"statusUpdate", %{} = ev} ->
+        {"statusUpdate", Map.drop(ev, @v11_event_keys)}
+
+      other ->
+        other
+    end)
+  end
+
+  defp strip_v11(other), do: other
+
+  defp strip_artifacts(list) when is_list(list),
+    do: Enum.map(list, fn a -> if is_map(a), do: Map.drop(a, @v11_event_keys), else: a end)
+
+  defp strip_artifacts(other), do: other
+
   @doc "Starts a supervised delivery of `payload` to `config`."
   @spec start(atom(), map(), map(), non_neg_integer(), keyword()) ::
           {:ok, pid()} | {:error, term()}
@@ -74,7 +139,7 @@ defmodule AshA2A.A2ATransport.PushDelivery do
 
   defp attempt(transport, config, body, delivery_id, opts, n) do
     max = Keyword.get(opts, :max_attempts, 5)
-    outcome = post(config, body, delivery_id, opts)
+    {outcome, retry_after_ms} = post(config, body, delivery_id, opts)
     record(transport, config, n, outcome)
 
     case outcome do
@@ -84,12 +149,54 @@ defmodule AshA2A.A2ATransport.PushDelivery do
       {:refused, _code, _detail} = refused ->
         {:error, refused}
 
+      # Permanent client errors (except 408/429) will not succeed on retry.
+      {:http_error, status} = permanent when status in 400..499 and status not in [408, 429] ->
+        {:error, permanent}
+
       other when n >= max ->
         {:error, other}
 
       _retryable ->
-        Process.sleep(backoff(n, opts))
+        # SLEEP-CLASS: SCHEDULING (delivery retry backoff, honoring Retry-After)
+        Process.sleep(retry_delay(n, retry_after_ms, opts))
         attempt(transport, config, body, delivery_id, opts, n + 1)
+    end
+  end
+
+  # Retry-After raises the delay floor, bounded by `:max_retry_after_ms`
+  # (default 60_000) so a hostile receiver cannot park a worker indefinitely.
+  defp retry_delay(n, nil, opts), do: backoff(n, opts)
+
+  defp retry_delay(n, ra, opts),
+    do: max(backoff(n, opts), min(ra, Keyword.get(opts, :max_retry_after_ms, 60_000)))
+
+  @doc false
+  # Parses a Retry-After header value (delta-seconds or HTTP-date) to ms.
+  def parse_retry_after(nil), do: nil
+
+  def parse_retry_after(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {secs, ""} when secs >= 0 ->
+        secs * 1000
+
+      _ ->
+        try do
+          date = value |> String.trim() |> to_charlist() |> :httpd_util.convert_request_date()
+
+          case date do
+            :bad_date ->
+              nil
+
+            dt ->
+              diff =
+                :calendar.datetime_to_gregorian_seconds(dt) -
+                  :calendar.datetime_to_gregorian_seconds(:calendar.universal_time())
+
+              max(diff, 0) * 1000
+          end
+        rescue
+          _ -> nil
+        end
     end
   end
 
@@ -101,11 +208,11 @@ defmodule AshA2A.A2ATransport.PushDelivery do
   end
 
   defp post(config, body, delivery_id, opts) do
-    policy = Keyword.take(opts, [:allow_http, :allow_cidrs, :resolver])
+    policy = Keyword.take(opts, [:allow_http, :allow_cidrs, :resolver, :allow_ports])
 
     case WebhookPolicy.admit(config.url, policy) do
       {:error, code, detail} ->
-        {:refused, code, detail}
+        {{:refused, code, detail}, nil}
 
       {:ok, %{uri: uri, addresses: [ip | _]}} ->
         request(uri, ip, config, body, delivery_id, opts)
@@ -119,10 +226,11 @@ defmodule AshA2A.A2ATransport.PushDelivery do
       [
         {"content-type", "application/json"},
         {"host", host_header(uri)},
-        {"x-a2a-delivery-id", delivery_id}
+        {"x-a2a-delivery-id", delivery_id},
+        {"x-a2a-event-id", event_id(delivery_id, config)}
       ]
       |> add_token(config)
-      |> add_bearer(config)
+      |> add_auth(config)
       |> add_signature(body, Keyword.get(opts, :signing_secret))
 
     result =
@@ -140,10 +248,28 @@ defmodule AshA2A.A2ATransport.PushDelivery do
       )
 
     case result do
-      {:ok, %Req.Response{status: status}} when status in 200..299 -> {:ok, status}
-      {:ok, %Req.Response{status: status}} -> {:http_error, status}
-      {:error, exception} -> {:transport_error, Exception.message(exception)}
+      {:ok, %Req.Response{status: status}} when status in 200..299 ->
+        {{:ok, status}, nil}
+
+      {:ok, %Req.Response{status: status} = resp} ->
+        ra =
+          resp
+          |> Req.Response.get_header("retry-after")
+          |> List.first()
+          |> parse_retry_after()
+
+        {{:http_error, status}, ra}
+
+      {:error, exception} ->
+        {{:transport_error, Exception.message(exception)}, nil}
     end
+  end
+
+  # Stable per-event id (task id + seq), identical across retries and configs,
+  # so receivers can dedupe replays. delivery_id is "task:config:seq".
+  defp event_id(delivery_id, config) do
+    seq = delivery_id |> String.split(":") |> List.last()
+    "#{config.task_id}:#{seq}"
   end
 
   defp ip_host({_, _, _, _} = ip), do: ip |> :inet.ntoa() |> to_string()
@@ -158,14 +284,62 @@ defmodule AshA2A.A2ATransport.PushDelivery do
 
   defp add_token(headers, _), do: headers
 
-  defp add_bearer(headers, %{authentication: %{"schemes" => schemes, "credentials" => creds}})
-       when is_list(schemes) and is_binary(creds) do
-    if Enum.any?(schemes, &(String.downcase(to_string(&1)) == "bearer")),
-      do: [{"authorization", "Bearer " <> creds} | headers],
-      else: headers
+  @doc """
+  Authentication scheme classification shared with `PushConfigRPC` (set-time
+  validation) so a scheme accepted at set is always sendable at delivery.
+
+  Returns `{:ok, canonical}` where canonical is `:bearer | :basic | :api_key |
+  {:generic, "Scheme"}`; `{:error, :mtls}` for mutual-TLS (not expressible as a
+  header); `{:error, :unsupported}` otherwise.
+  """
+  @iana_schemes ~w(Digest Negotiate HOBA Mutual SCRAM-SHA-1 SCRAM-SHA-256 vapid DPoP GNAP PrivateToken Concealed)
+  @spec classify_scheme(term()) :: {:ok, term()} | {:error, :mtls | :unsupported}
+  def classify_scheme(scheme) when is_binary(scheme) do
+    down = String.downcase(scheme)
+
+    cond do
+      down in ["bearer", "oauth2", "oauth", "oidc", "openidconnect"] -> {:ok, :bearer}
+      down == "basic" -> {:ok, :basic}
+      down in ["apikey", "api-key", "api_key"] -> {:ok, :api_key}
+      down in ["mtls", "mutualtls", "mutual-tls", "mutual_tls"] -> {:error, :mtls}
+      true ->
+        case Enum.find(@iana_schemes, &(String.downcase(&1) == down)) do
+          nil -> {:error, :unsupported}
+          canonical -> {:ok, {:generic, canonical}}
+        end
+    end
   end
 
-  defp add_bearer(headers, _), do: headers
+  def classify_scheme(_), do: {:error, :unsupported}
+
+  # Normalizes the singular `scheme` / plural `schemes` forms, then sends the
+  # first sendable scheme.
+  defp add_auth(headers, %{authentication: %{"credentials" => creds} = auth})
+       when is_binary(creds) do
+    schemes =
+      case auth do
+        %{"schemes" => l} when is_list(l) -> l
+        %{"scheme" => s} when is_binary(s) -> [s]
+        _ -> []
+      end
+
+    schemes
+    |> Enum.find_value(fn s ->
+      case classify_scheme(to_string(s)) do
+        {:ok, kind} -> kind
+        _ -> nil
+      end
+    end)
+    |> case do
+      :bearer -> [{"authorization", "Bearer " <> creds} | headers]
+      :basic -> [{"authorization", "Basic " <> creds} | headers]
+      :api_key -> [{"x-api-key", creds} | headers]
+      {:generic, name} -> [{"authorization", name <> " " <> creds} | headers]
+      nil -> headers
+    end
+  end
+
+  defp add_auth(headers, _), do: headers
 
   defp add_signature(headers, _body, nil), do: headers
 

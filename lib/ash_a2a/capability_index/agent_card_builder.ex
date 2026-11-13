@@ -46,7 +46,7 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
   Delegates to `AshA2A.Protocol.Version.protocol_version/0`.
 
       iex> AshA2A.CapabilityIndex.AgentCardBuilder.protocol_version()
-      "1.0"
+      "1.1"
   """
   @spec protocol_version() :: String.t()
   def protocol_version, do: AshA2A.Protocol.Version.protocol_version()
@@ -60,44 +60,165 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
   @spec protocol_binding() :: String.t()
   def protocol_binding, do: @protocol_binding
 
+  @doc """
+  Builds the card. Identity/transport/security fields resolve in this order:
+  explicit opt, then the `:domain` option's `AshA2A.Domain.Info` config
+  (`agent`/`security`/`transport` sections), then the legacy fallback default.
+  """
   @spec build_agent_card([skill()], keyword()) :: AshA2A.Protocol.AgentCard.t()
   def build_agent_card(skills, opts \\ []) when is_list(skills) do
-    url = Keyword.get(opts, :url, "http://localhost:4000")
+    domain = Keyword.get(opts, :domain)
+    agent = domain_agent(domain)
+    transport = domain_transport(domain)
+
+    url =
+      Keyword.get(opts, :url) || transport[:base_url] || agent[:url] || "http://localhost:4000"
+
     ordered_skills = Enum.sort_by(skills, &skill_id/1)
     skills_opts = Keyword.get(opts, :skills_opts, %{})
 
     %AshA2A.Protocol.AgentCard{
-      name: Keyword.get(opts, :name, "ash_a2a_agent"),
+      name: Keyword.get(opts, :name) || agent[:name] || "ash_a2a_agent",
       description:
-        Keyword.get(
-          opts,
-          :description,
-          "Ash-backed A2A agent exposing #{length(ordered_skills)} skill(s)."
-        ),
+        Keyword.get(opts, :description) || agent[:description] ||
+          "Ash-backed A2A agent exposing #{length(ordered_skills)} skill(s).",
       url: url,
-      version: Keyword.get(opts, :version, "0.1.0"),
+      version: Keyword.get(opts, :version) || agent[:version] || "0.1.0",
       skills: Enum.map(ordered_skills, &build_agent_card_skill(&1, skills_opts)),
-      provider: Keyword.get(opts, :provider),
-      capabilities: Keyword.get(opts, :capabilities, default_capabilities()),
-      security_schemes: Keyword.get(opts, :security_schemes, %{}),
-      security: Keyword.get(opts, :security, []),
+      provider: Keyword.get(opts, :provider) || domain_provider(agent),
+      documentation_url: Keyword.get(opts, :documentation_url) || agent[:documentation_url],
+      icon_url: Keyword.get(opts, :icon_url) || agent[:icon_url],
+      capabilities:
+        Keyword.get(opts, :capabilities) ||
+          default_capabilities(transport, domain_extensions(domain)),
+      default_input_modes:
+        Keyword.get(opts, :default_input_modes) ||
+          domain_agent_modes(agent, :default_input_modes) || ["text/plain"],
+      default_output_modes:
+        Keyword.get(opts, :default_output_modes) ||
+          domain_agent_modes(agent, :default_output_modes) || ["text/plain"],
+      security_schemes: Keyword.get(opts, :security_schemes) || domain_security_schemes(domain),
+      security: Keyword.get(opts, :security) || domain_security(domain),
       supported_interfaces:
         normalize_supported_interfaces(Keyword.get(opts, :supported_interfaces), url)
     }
+  end
+
+  defp domain_agent(nil), do: %{}
+  defp domain_agent(domain), do: AshA2A.Domain.Info.agent(domain)
+
+  defp domain_transport(nil), do: %{}
+  defp domain_transport(domain), do: AshA2A.Domain.Info.transport(domain)
+
+  defp domain_provider(%{provider: provider}) when is_binary(provider),
+    do: %{organization: provider}
+
+  defp domain_provider(_agent), do: nil
+
+  defp domain_security_schemes(nil), do: %{}
+
+  defp domain_security_schemes(domain) do
+    domain
+    |> AshA2A.Domain.Info.security_schemes()
+    |> Enum.flat_map(fn %{name: name} = declared ->
+      case protocol_scheme(declared) do
+        nil -> []
+        scheme -> [{to_string(name), scheme}]
+      end
+    end)
+    |> Map.new()
+  end
+
+  # Projects a declared `AshA2A.Domain.SecurityScheme` onto the protocol
+  # structs. Field reads use `Map.get/2` so a bare `%{name:, kind:}` map works.
+  defp protocol_scheme(%{kind: :bearer} = s),
+    do: %AshA2A.Protocol.SecurityScheme.HTTPAuth{
+      scheme: "bearer",
+      bearer_format: Map.get(s, :bearer_format)
+    }
+
+  defp protocol_scheme(%{kind: :http} = s),
+    do: %AshA2A.Protocol.SecurityScheme.HTTPAuth{
+      scheme: Map.get(s, :http_scheme) || "bearer",
+      bearer_format: Map.get(s, :bearer_format)
+    }
+
+  defp protocol_scheme(%{kind: :api_key} = s),
+    do: %AshA2A.Protocol.SecurityScheme.APIKey{
+      name: Map.get(s, :param_name) || "X-API-Key",
+      in: s |> Map.get(:location) |> Kernel.||(:header) |> to_string()
+    }
+
+  defp protocol_scheme(%{kind: :oauth2} = s),
+    do: %AshA2A.Protocol.SecurityScheme.OAuth2{flows: Map.get(s, :oauth_flows) || %{}}
+
+  defp protocol_scheme(%{kind: :openid_connect} = s),
+    do: %AshA2A.Protocol.SecurityScheme.OpenIDConnect{open_id_connect_url: Map.get(s, :openid_url)}
+
+  defp protocol_scheme(%{kind: :mtls}), do: %AshA2A.Protocol.SecurityScheme.MutualTLS{}
+
+  defp protocol_scheme(_none), do: nil
+
+  defp domain_security(nil), do: []
+
+  defp domain_security(domain) do
+    scopes = AshA2A.Domain.Info.security_requirement_scopes(domain)
+
+    Enum.map(AshA2A.Domain.Info.security_requirements(domain), fn req ->
+      key = to_string(req)
+      %{key => Map.get(scopes, key) || Map.get(scopes, req) || []}
+    end)
+  end
+
+  defp domain_agent_modes(agent, key) do
+    case Map.get(agent, key) do
+      [_ | _] = modes -> modes
+      _ -> nil
+    end
+  end
+
+  defp domain_extensions(nil), do: []
+
+  defp domain_extensions(domain) do
+    domain
+    |> AshA2A.Domain.Info.extensions()
+    |> Enum.map(fn ext ->
+      %AshA2A.Protocol.AgentExtension{
+        uri: ext.uri,
+        description: ext.description,
+        required: ext.required,
+        params: if(ext.params in [nil, %{}], do: nil, else: ext.params)
+      }
+    end)
   end
 
   # CONF-06: the struct advertises what the runtime really serves --
   # `message/stream` works for every skill through `AshA2A.Transport.Plug`,
   # while push notifications, state-transition history and the extended card
   # are not served, so they are advertised `false` rather than omitted.
-  @spec default_capabilities() :: map()
-  defp default_capabilities do
-    %{
-      streaming: true,
-      push_notifications: false,
+  @spec default_capabilities(map(), [AshA2A.Protocol.AgentExtension.t()]) :: map()
+  defp default_capabilities(transport, extensions) do
+    base = %{
+      streaming: Map.get(transport, :streaming, true),
+      push_notifications: Map.get(transport, :push_notifications, false),
       state_transition_history: false,
-      extended_agent_card: false
+      # Declared via `transport do extended_agent_card true end`; default false.
+      extended_agent_card: Map.get(transport, :extended_agent_card, false)
     }
+
+    # v1.1 `userArtifacts`: declared via `transport do user_artifacts true end`;
+    # the key is omitted unless declared true so existing cards keep their shape.
+    base =
+      if Map.get(transport, :user_artifacts, false) == true,
+        do: Map.put(base, :user_artifacts, true),
+        else: base
+
+    # Domain `extension` declarations merge in; the key is omitted when none
+    # are declared so existing cards keep their exact capability shape.
+    case extensions do
+      [] -> base
+      exts -> Map.put(base, :extensions, exts)
+    end
   end
 
   @spec default_supported_interface(String.t()) :: AshA2A.Protocol.AgentCard.supported_interface()
@@ -133,12 +254,22 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
       protocol_binding:
         Map.get(interface, :protocol_binding, Map.get(interface, "protocolBinding")) ||
           @protocol_binding,
-      # The protocol version is not caller-overridable: every emitted
-      # interface carries the single-source-of-truth version from
-      # `AshA2A.Protocol.Version` (spec v1.0, sections 4.4/8.2).
-      protocol_version: AshA2A.Protocol.Version.protocol_version()
+      # Every emitted interface carries a version: the single-source-of-truth
+      # `AshA2A.Protocol.Version` (spec v1.0, sections 4.4/8.2) unless the
+      # interface (e.g. a domain `mount ... protocol_version:`) declares one.
+      protocol_version:
+        case Map.get(interface, :protocol_version) do
+          version when is_binary(version) and version != "" -> version
+          _ -> AshA2A.Protocol.Version.protocol_version()
+        end
     }
+    |> put_tenant(Map.get(interface, :tenant, Map.get(interface, "tenant")))
   end
+
+  defp put_tenant(map, tenant) when is_binary(tenant) and tenant != "",
+    do: Map.put(map, :tenant, tenant)
+
+  defp put_tenant(map, _tenant), do: map
 
   @spec build_agent_card_skill(
           skill(),
@@ -157,6 +288,8 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
     security_requirements =
       mode_opt(mode_opts, :security_requirements) || Map.get(skill, :security_requirements)
 
+    examples = mode_opt(mode_opts, :examples) || Map.get(skill, :examples)
+
     base = %{
       id: skill_id(skill),
       name: to_string(skill.name || action),
@@ -165,6 +298,7 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
     }
 
     base
+    |> maybe_put_skill_mode(:examples, examples)
     |> maybe_put_skill_mode(:input_modes, input_modes)
     |> maybe_put_skill_mode(:output_modes, output_modes)
     |> maybe_put_skill_mode(:security_requirements, security_requirements)

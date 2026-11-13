@@ -238,15 +238,38 @@ defmodule AshA2A.Protocol.Extension do
   @doc false
   @spec compile([config_entry()]) :: [compiled()]
   def compile(entries) when is_list(entries) do
-    Enum.map(entries, &compile_entry/1)
+    entries
+    |> Enum.map(&compile_entry/1)
+    # A repeated URI is activated/advertised once (first declaration wins).
+    |> Enum.uniq_by(fn {_mod, _state, decl} -> decl.uri end)
   end
+
+  @doc """
+  Whether `uri` carries a version suffix (`/v1`, `/v2.1`, optionally followed
+  by a trailing slash). The A2A extensions topic says extension URIs SHOULD
+  be versioned this way.
+  """
+  @spec versioned_uri?(String.t()) :: boolean()
+  def versioned_uri?(uri) when is_binary(uri), do: Regex.match?(~r{/v\d+(\.\d+)*/?$}, uri)
+  def versioned_uri?(_), do: false
 
   defp compile_entry(module) when is_atom(module), do: compile_entry({module, []})
 
   defp compile_entry({module, opts}) when is_atom(module) and is_list(opts) do
     Code.ensure_loaded!(module)
     state = if function_exported?(module, :init, 1), do: module.init(opts), else: nil
-    {module, state, module.declaration(state)}
+    declaration = module.declaration(state)
+
+    unless versioned_uri?(declaration.uri) do
+      require Logger
+
+      Logger.warning(
+        "A2A extension #{inspect(module)} declares URI #{inspect(declaration.uri)} " <>
+          "without a /vN version suffix (A2A extensions topic: SHOULD be versioned)"
+      )
+    end
+
+    {module, state, declaration}
   end
 
   @doc """

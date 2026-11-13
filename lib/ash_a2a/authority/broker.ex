@@ -33,8 +33,8 @@ defmodule AshA2A.Authority.Broker do
   `AshA2A.CommandBus.admit/2`. (Earlier releases described this behaviour as
   deliberately unreachable; that is no longer true, and the unreachability
   was itself the RFC-SA2A-001 S29 escalation -- see
-  `AshA2A.Authority.Grant`.) `AshA2A.Planning.candidate_fence/1` and
-  `AshA2A.Semantic.Admission.fence/1` remain unwired.
+  `AshA2A.Authority.Grant`.) (No separate planning or semantic-admission fence consumes this
+  behaviour.)
 
   See `AshA2A.Authority.Broker.InMemory` for a single-node reference
   implementation suitable for development and tests -- explicitly NOT a

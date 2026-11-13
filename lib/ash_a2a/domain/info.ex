@@ -18,10 +18,22 @@ defmodule AshA2A.Domain.Info do
     url: nil,
     provider: nil,
     documentation_url: nil,
-    icon_url: nil
+    icon_url: nil,
+    default_input_modes: nil,
+    default_output_modes: nil,
+    sign_card: nil
   }
 
-  @default_transport %{base_url: nil, mount: "/a2a", streaming: true, push_notifications: false}
+  @default_transport %{
+    base_url: nil,
+    mount: "/a2a",
+    streaming: true,
+    push_notifications: false,
+    extended_agent_card: false,
+    user_artifacts: false,
+    push_allowed_hosts: [],
+    push_retry: []
+  }
 
   @doc "The full persisted `agent` section map."
   @spec agent(module()) :: %{
@@ -58,6 +70,18 @@ defmodule AshA2A.Domain.Info do
   @doc "The declared documentation URL, if any."
   @spec agent_documentation_url(module()) :: String.t() | nil
   def agent_documentation_url(domain), do: agent(domain).documentation_url
+
+  @doc "The declared `default_input_modes`, or `nil` when unset."
+  @spec agent_default_input_modes(module()) :: [String.t()] | nil
+  def agent_default_input_modes(domain), do: Map.get(agent(domain), :default_input_modes)
+
+  @doc "The declared `default_output_modes`, or `nil` when unset."
+  @spec agent_default_output_modes(module()) :: [String.t()] | nil
+  def agent_default_output_modes(domain), do: Map.get(agent(domain), :default_output_modes)
+
+  @doc "The declared `sign_card` key reference (declare-only), or `nil`."
+  @spec agent_sign_card(module()) :: String.t() | atom() | nil
+  def agent_sign_card(domain), do: Map.get(agent(domain), :sign_card)
 
   @doc "The declared icon URL, if any."
   @spec agent_icon_url(module()) :: String.t() | nil
@@ -128,6 +152,28 @@ defmodule AshA2A.Domain.Info do
   def security_requirements(domain),
     do: Extension.get_persisted(domain, :ash_a2a_domain_security_requirements, [])
 
+  @doc "Per-requirement scopes map (requirement name => scopes; default `%{}`)."
+  @spec security_requirement_scopes(module()) :: %{optional(String.t()) => [String.t()]}
+  def security_requirement_scopes(domain),
+    do: Extension.get_persisted(domain, :ash_a2a_domain_security_requirement_scopes, %{})
+
+  @doc "The declared agent extensions, as `AshA2A.Domain.Extension` structs (default `[]`)."
+  @spec extensions(module()) :: [AshA2A.Domain.Extension.t()]
+  def extensions(domain),
+    do: Extension.get_persisted(domain, :ash_a2a_domain_extensions, [])
+
+  @doc "Whether the card advertises `capabilities.extendedAgentCard` (default `false`)."
+  @spec extended_agent_card?(module()) :: boolean()
+  def extended_agent_card?(domain), do: Map.get(transport(domain), :extended_agent_card, false)
+
+  @doc "Declared push webhook host allowlist (default `[]`; wiring lives in the push modules)."
+  @spec push_allowed_hosts(module()) :: [String.t()]
+  def push_allowed_hosts(domain), do: Map.get(transport(domain), :push_allowed_hosts, [])
+
+  @doc "Declared push delivery retry policy keyword (default `[]`)."
+  @spec push_retry(module()) :: keyword()
+  def push_retry(domain), do: Map.get(transport(domain), :push_retry, [])
+
   @doc """
   The declared transports projected as A2A AgentCard `supportedInterfaces`
   entries: one entry per declared per-agent mount, with
@@ -141,7 +187,12 @@ defmodule AshA2A.Domain.Info do
   getter is safe to call unconditionally.
   """
   @spec supported_interfaces(module()) :: [
-          %{url: String.t(), protocol_binding: String.t()}
+          %{
+            required(:url) => String.t(),
+            required(:protocol_binding) => String.t(),
+            optional(:tenant) => String.t(),
+            optional(:protocol_version) => String.t()
+          }
         ]
   def supported_interfaces(domain) do
     domain
@@ -154,14 +205,21 @@ defmodule AshA2A.Domain.Info do
       mounts ->
         base = base_url(domain)
 
-        Enum.map(mounts, fn %AshA2A.Domain.Mount{path: path, binding: binding} ->
+        Enum.map(mounts, fn %AshA2A.Domain.Mount{path: path, binding: binding} = mount ->
+          # `tenant` / `protocol_version` are carried only when the mount
+          # declares them, so undeclared mounts keep their exact prior shape.
           %{
             url: join_url(base, path),
             protocol_binding: AshA2A.Domain.Mount.protocol_binding(binding)
           }
+          |> put_if(:tenant, mount.tenant)
+          |> put_if(:protocol_version, mount.protocol_version)
         end)
     end
   end
+
+  defp put_if(map, _key, nil), do: map
+  defp put_if(map, key, value), do: Map.put(map, key, value)
 
   defp join_url(nil, path), do: path
   defp join_url(base, path), do: Path.join(base, path)

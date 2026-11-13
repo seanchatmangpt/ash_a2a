@@ -6,6 +6,12 @@ import Config
 
 config :ash, default_string_length_count: :codepoints
 
+# Dependency-owned domains (e.g. Ex4pm.Domain) and this library's own
+# fixture/verifier domains are not registered under a host app's `ash_domains`;
+# the inclusion check is noise outside a host application (test.exs sets the
+# same). Resolves the Ash "domain not in config" warning on dev/prod compiles.
+config :ash, :validate_domain_config_inclusion?, false
+
 config :ash_a2a, semantic_engine: AshA2A.Semantic.Engine.AshGraphLaw
 
 config :ash_graphlaw, start_pool: true, pool: [size: 2, timeout_ms: 5_000]

@@ -27,11 +27,18 @@ Goal-oriented procedures:
   from legacy permissive behavior to the strict conformance profile.
 - [`how-to/observe-dispatch-with-ocel.md`](how-to/observe-dispatch-with-ocel.md) — get
   OCEL v2 process-mining evidence for every A2A dispatch.
+- [`how-to/operate-by-email.md`](how-to/operate-by-email.md) — operate governed actions
+  by email brief and reply.
 - [`how-to/release.md`](how-to/release.md) — cut an ash_a2a release.
 - [`how-to/run-conference-sim.md`](how-to/run-conference-sim.md) — run the
   conference-sim court suite end to end.
 - [`how-to/run-mutation-testing.md`](how-to/run-mutation-testing.md) — run mutation
   testing over the security surface.
+- [`how-to/run-pplan-courts.md`](how-to/run-pplan-courts.md) — run the ash_pplan parity
+  courts (`mix ash_a2a.pplan_courts`).
+- [`how-to/copilot-demo.md`](how-to/copilot-demo.md) — run the end-to-end copilot demo.
+- [`how-to/run-the-copilot-pipeline.md`](how-to/run-the-copilot-pipeline.md) — drive
+  `Copilot.Pipeline` with its options.
 - [`how-to/secure-an-a2a-deployment.md`](how-to/secure-an-a2a-deployment.md) — the
   deployed security surface: auth plug, owner scoping, credential hygiene,
   wire-input hardening, card signatures, admission limits.
@@ -69,6 +76,8 @@ Exact factual contracts:
   blake3 keys, wasm vendoring.
 - [`reference/a2a-v1-conformance.md`](reference/a2a-v1-conformance.md) — per-spec
   CONFORMANT/PARTIAL/GAP claims, each citing the executed v1 conformance court.
+- [`reference/a2a-v1-1-conformance.md`](reference/a2a-v1-1-conformance.md) — per-spec
+  v1.1 conformance claims.
 - [`reference/tck-suite.md`](reference/tck-suite.md) — running the in-repo v1
   conformance report (`mix ash_a2a.v1_conformance_report`) and the official
   `a2aproject/a2a-tck` suite: court inventory, witnessed verdicts, and what
@@ -107,6 +116,8 @@ Conceptual architecture and rationale:
   the Chicago conformance court.
 - [`explanation/closure-implementations.md`](explanation/closure-implementations.md) —
   closure implementations: one owner per law.
+- [`explanation/copilot-membrane.md`](explanation/copilot-membrane.md) — the copilot
+  membrane: pipeline stages, attestation refusal classes, authority hop.
 - [`explanation/ggen-marketplace-integration.md`](explanation/ggen-marketplace-integration.md) —
   semantic A2A generation and domain extension via ggen-marketplace.
 - [`explanation/graphlaw-wasm-integration.md`](explanation/graphlaw-wasm-integration.md) —
@@ -126,6 +137,10 @@ Conceptual architecture and rationale:
 - When local execution is unavailable, exact-head GitHub CI may qualify the changed
   subject, but only successful runs on the exact head are admitted.
 - Semantic projections and generated/read models have no ambient execution authority.
+- [`reference/ingress-attestation.md`](reference/ingress-attestation.md) — attestation
+  `Key`/`Gate`/`GateGrantAllowlist` and `Ingress.Channel`.
+- [`reference/module-coverage.md`](reference/module-coverage.md) — public module families
+  with no dedicated doc (standing `undocumented`).
 - [`reference/qme-1.md`](reference/qme-1.md) — QME-1 ecosystem reference: this
   repository's role (PreparedEffect, receipt and replay consequence protocol) and its
   binding to the canonical chatman-ecosystem specification.

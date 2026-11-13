@@ -74,7 +74,10 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
           |> Transformer.persist(:ash_a2a_semantic_requests_enabled, semantic_requests?)
           |> Transformer.persist(:ash_a2a_authority_gate, authority_gate)
           |> Transformer.persist(:ash_a2a_lease_duration_ms, lease_duration_ms)
-          |> Transformer.persist(:ash_a2a_hooks, %{pre_dispatch: pre_hooks, post_dispatch: post_hooks})
+          |> Transformer.persist(:ash_a2a_hooks, %{
+            pre_dispatch: pre_hooks,
+            post_dispatch: post_hooks
+          })
 
         {:ok, dsl}
 
@@ -89,7 +92,8 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
   def __sa2a_refusal_codes__, do: %{observe_on_mutating_action: :refused_consequence}
 
   defp resolve_and_check(override, dsl_state, module, resource_dsl?, own_domain) do
-    with {:ok, resolved} <- resolve_resource(override, module, resource_dsl?, own_domain),
+    with {:ok, resolved} <-
+           resolve_resource(override, module, resource_dsl?, own_domain, dsl_state),
          :ok <- check_consequence_floor(resolved, dsl_state, resource_dsl?) do
       {:ok, resolved}
     end
@@ -136,36 +140,71 @@ defmodule AshA2A.Transformers.BuildCapabilityIndex do
     end
   end
 
+  # `resolve_resource/4` has already proven the resource is a compiled Ash
+  # resource, so a real lookup failure here is a bug, never masked as `nil`.
   defp action_type(%{resource: resource, action: action}, _dsl_state, false) do
     case Ash.Resource.Info.action(resource, action) do
       %{type: type} -> type
       _ -> nil
     end
-  rescue
-    _ -> nil
   end
 
   defp default_named?(name, action) when is_atom(name), do: name == action
   defp default_named?({name, _accept}, action), do: name == action
   defp default_named?(_other, _action), do: false
 
-  defp resolve_resource(%{resource: nil} = override, module, true, own_domain) do
+  defp resolve_resource(%{resource: nil} = override, module, true, own_domain, _dsl_state) do
     {:ok, %{override | resource: module, domain: own_domain}}
   end
 
-  defp resolve_resource(%{resource: nil}, _module, false, _own_domain) do
+  defp resolve_resource(%{resource: nil}, _module, false, _own_domain, _dsl_state) do
     {:error,
      "domain-level skill overrides must declare a resource: `skill :name, Resource, :action`"}
   end
 
-  defp resolve_resource(%{resource: resource} = override, _module, true, _own_domain)
+  defp resolve_resource(%{resource: resource} = override, _module, true, _own_domain, _dsl_state)
        when not is_nil(resource) do
     {:error,
      "resource-level skill overrides cannot set `resource` (skill `#{override.name}` set it explicitly)"}
   end
 
-  defp resolve_resource(%{resource: resource} = override, _module, _resource_dsl?, _own_domain) do
-    {:ok, %{override | domain: Ash.Resource.Info.domain(resource)}}
+  defp resolve_resource(
+         %{resource: resource} = override,
+         _module,
+         _resource_dsl?,
+         _own_domain,
+         dsl_state
+       ) do
+    with :ok <- ensure_ash_resource(override, resource),
+         :ok <- ensure_resource_in_domain(override, resource, dsl_state) do
+      {:ok, %{override | domain: Ash.Resource.Info.domain(resource)}}
+    end
+  end
+
+  defp ensure_ash_resource(override, resource) do
+    with {:module, _} <- Code.ensure_compiled(resource),
+         true <- Ash.Resource.Info.resource?(resource) do
+      :ok
+    else
+      _ ->
+        {:error,
+         "skill `#{override.name}` names `#{inspect(resource)}`, which is not a compiled Ash resource"}
+    end
+  end
+
+  # A domain-level skill override may only target a resource that the domain
+  # itself declares; otherwise it would project a capability the domain does
+  # not own.
+  defp ensure_resource_in_domain(override, resource, dsl_state) do
+    module = Transformer.get_persisted(dsl_state, :module)
+
+    if resource in Ash.Domain.Info.resources(dsl_state) do
+      :ok
+    else
+      {:error,
+       "skill `#{override.name}` names resource `#{inspect(resource)}`, which is not a resource " <>
+         "of domain `#{inspect(module)}`"}
+    end
   end
 
   defp resource_dsl?(module) do

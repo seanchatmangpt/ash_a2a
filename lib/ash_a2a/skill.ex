@@ -91,7 +91,12 @@ defmodule AshA2A.Skill do
           on_cancel: module() | mfa() | nil,
           argument_mapping: %{optional(String.t()) => atom()},
           get?: boolean(),
-          lease_required?: boolean()
+          lease_required?: boolean(),
+          examples: [String.t()] | nil,
+          input_modes: [String.t()] | nil,
+          output_modes: [String.t()] | nil,
+          security_requirements: [%{optional(String.t()) => [String.t()]}] | nil,
+          streaming?: boolean()
         }
 
   defstruct [
@@ -105,6 +110,11 @@ defmodule AshA2A.Skill do
     :__identifier__,
     :consequence,
     :on_cancel,
+    :examples,
+    :input_modes,
+    :output_modes,
+    :security_requirements,
+    streaming?: false,
     expose?: true,
     arguments: [],
     hddl_operators: [],

@@ -14,7 +14,13 @@ defmodule AshA2A.Strain.Bridge do
   | `ticket_assigned` | `:active_leases` | increment by 1 |
   | `challenge_received` (Vince) | `:heuristic_frequency` | increment flagged-event count by 1 |
   | `error_reported` | `:error_rate` | append to rolling window (see below) |
-  | `clock_hour` | `:shift_hours_continuous` | advance shift clock by the elapsed hours |
+  | `clock_hour` | `:shift_hours_continuous` | advance shift clock by `:hours` (default 1) |
+
+  Event contract: `error_reported` carries `error:` `true | 1` (errored) or
+  `false | 0 | nil` / absent (counts as a non-error outcome); any other value
+  raises `ArgumentError`. `clock_hour` carries `hours:` a non-negative number
+  (default 1); negative or non-numeric raises `ArgumentError`. Unknown event
+  types raise `ArgumentError`.
 
   The error window is a rolling list of the last `@error_window 20` binary
   error outcomes; `error_rate` is the window ratio. `clock_hour` events
@@ -33,9 +39,9 @@ defmodule AshA2A.Strain.Bridge do
 
   ## Integration seam (I9 / Vince)
 
-  `challenge_received` events carry `source: :vince` in this lane; the
-  `lib/ash_a2a/copilot/` pipeline (I9) did not land mid-session, so the seam
-  is kept pure-compatible: any producer that emits
+  `challenge_received` events carry `source: :vince`; the
+  `lib/ash_a2a/copilot/pipeline.ex` pipeline has landed and threads a Bridge
+  `mesh_state`. The seam stays producer-agnostic: any producer that emits
   `%{type: :challenge_received, source: :vince, coordinator_id: id}` can feed
   `record_observation/3` without modifying Bridge. `source` is accepted but
   not required — Tony's moduledoc contract (Bridge consumes the flagged-event
@@ -79,16 +85,27 @@ defmodule AshA2A.Strain.Bridge do
 
   @doc """
   Fold an observation event into mesh_state (pure: mesh_state in, mesh_state
-  out). Unknown coordinator ids are auto-registered with a zero tensor.
-  Unknown event `:type` raises.
+  out). Observations for an unregistered coordinator id are NOT folded
+  (no auto-register: a forged id must not mint a mesh entry); the mesh_state
+  is returned unchanged. Register ids via `new_mesh_state/1`. Unknown event
+  `:type` raises.
   """
   @spec record_observation(mesh_state(), term(), event()) :: mesh_state()
   def record_observation(mesh_state, coordinator_id, %{type: type} = event)
       when is_map(mesh_state) do
-    state = Map.get(mesh_state, coordinator_id) || %{tensor: Tensor.new(%{}), error_window: []}
+    case Map.fetch(mesh_state, coordinator_id) do
+      {:ok, state} -> Map.put(mesh_state, coordinator_id, fold(state, type, event))
+      :error -> validate_type!(type) && mesh_state
+    end
+  end
 
-    updated =
-      case type do
+  @observation_types [:ticket_completed, :ticket_assigned, :challenge_received, :error_reported, :clock_hour]
+
+  defp validate_type!(type) when type in @observation_types, do: true
+  defp validate_type!(other), do: raise(ArgumentError, "unknown observation type: #{inspect(other)}")
+
+  defp fold(state, type, event) do
+    case type do
         :ticket_completed -> lease_step(state, -1)
         :ticket_assigned -> lease_step(state, +1)
         :challenge_received -> heuristic_step(state, +1)
@@ -96,8 +113,6 @@ defmodule AshA2A.Strain.Bridge do
         :clock_hour -> shift_step(state, event)
         other -> raise ArgumentError, "unknown observation type: #{inspect(other)}"
       end
-
-    Map.put(mesh_state, coordinator_id, updated)
   end
 
   @doc """
@@ -105,7 +120,9 @@ defmodule AshA2A.Strain.Bridge do
 
   Ticket fields: `:friction` (0.0-1.0, default 0.0) and `:candidates`
   (list of coordinator ids; defaults to all registered ids). Returns
-  `{:assign, coordinator_id}` or `{:shed, {:senior_queue, reason}}`.
+  `{:assign, coordinator_id}` or `{:shed, {:senior_queue, reason}}`; reason is
+  `:no_candidates` for an empty candidate list, `:all_saturated`, or
+  `{:all_saturated_or_fatigued, :high_friction}`.
   """
   @spec route(map(), mesh_state()) :: {:assign, term()} | {:shed, {:senior_queue, term()}}
   def route(ticket, mesh_state) when is_map(ticket) and is_map(mesh_state) do
@@ -128,10 +145,10 @@ defmodule AshA2A.Strain.Bridge do
     case eligible do
       [] ->
         reason =
-          if high_friction?(friction) do
-            {:all_saturated_or_fatigued, :high_friction}
-          else
-            :all_saturated
+          cond do
+            candidates == [] -> :no_candidates
+            high_friction?(friction) -> {:all_saturated_or_fatigued, :high_friction}
+            true -> :all_saturated
           end
 
         {:shed, {:senior_queue, reason}}
@@ -139,17 +156,26 @@ defmodule AshA2A.Strain.Bridge do
       ids ->
         id = Enum.min_by(ids, fn id -> total_strain(mesh_state[id].tensor) end)
         {:assign, id}
-      end
+    end
   end
 
-  @doc "Normalized shift strain (circadian decay) for a coordinator."
+  @doc "Normalized shift strain (circadian decay); an unregistered id reads 0.0."
   @spec circadian_decay(mesh_state(), term()) :: float()
-  def circadian_decay(mesh_state, id), do: Tensor.strain(mesh_state[id].tensor, :shift_hours_continuous)
+  def circadian_decay(mesh_state, id) do
+    case Map.fetch(mesh_state, id) do
+      {:ok, state} -> Tensor.strain(state.tensor, :shift_hours_continuous)
+      :error -> 0.0
+    end
+  end
 
-  @doc "Rolling error-rate ratio for a coordinator."
+  @doc "Rolling error-rate ratio for a coordinator; an unregistered id reads 0.0."
   @spec error_rate(mesh_state(), term()) :: float()
   def error_rate(mesh_state, id) do
-    window = mesh_state[id].error_window
+    window =
+      case Map.fetch(mesh_state, id) do
+        {:ok, state} -> state.error_window
+        :error -> []
+      end
 
     if window == [] do
       0.0
@@ -158,7 +184,10 @@ defmodule AshA2A.Strain.Bridge do
     end
   end
 
-  @doc "Rising error drift: error_rate now > error_rate over the first half of the window."
+  @doc """
+  Rising error drift: recent-half error rate > older-half rate. Needs at
+  least 4 outcomes; an unregistered id is `false`.
+  """
   @spec error_drift_rising?(mesh_state(), term()) :: boolean()
   def error_drift_rising?(mesh_state, id) when is_map(mesh_state) do
     case Map.fetch(mesh_state, id) do
@@ -198,6 +227,8 @@ defmodule AshA2A.Strain.Bridge do
     errored? =
       case event do
         %{error: e} when e in [true, 1] -> 1
+        %{error: e} when e in [false, 0, nil] -> 0
+        %{error: other} -> raise ArgumentError, "invalid error flag: #{inspect(other)}"
         _ -> 0
       end
 
@@ -215,6 +246,12 @@ defmodule AshA2A.Strain.Bridge do
 
   defp shift_step(state, event) do
     hours = Map.get(event, :hours, 1)
+
+    unless is_number(hours) and hours >= 0 do
+      raise ArgumentError,
+            "clock_hour :hours must be a non-negative number, got: #{inspect(hours)}"
+    end
+
     cur = state.tensor.shift_hours_continuous
     update_tensor(state, shift_hours_continuous: max(0, cur + hours))
   end
@@ -235,10 +272,10 @@ defmodule AshA2A.Strain.Bridge do
   end
 
   defp high_friction?(friction), do: is_number(friction) and friction > @friction_threshold
+
   defp total_strain(tensor) do
     Tensor.dimensions()
     |> Enum.map(&Tensor.strain(tensor, &1))
     |> Enum.sum()
   end
-
 end

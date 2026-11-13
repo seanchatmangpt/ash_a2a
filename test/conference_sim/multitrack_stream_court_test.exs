@@ -21,6 +21,7 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamAgent do
 
     {:stream,
      Stream.map(1..count, fn i ->
+       # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
        Process.sleep(delay_ms)
        Part.Text.new("#{track} part #{i}")
      end)}
@@ -215,7 +216,9 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamCourt do
   end
 
   defp assert_strictly_increasing_ids(frames) do
-    ids = Enum.map(frames, &elem(&1, 0))
+    # A resubscribe snapshot frame (and StreamError frames) carry no `id:`
+    # line by design; only seq-numbered frames take part in ordering.
+    ids = frames |> Enum.map(&elem(&1, 0)) |> Enum.reject(&is_nil/1)
 
     assert ids == Enum.uniq(ids), "duplicate SSE ids: #{inspect(ids)}"
     assert ids == Enum.sort(ids), "SSE ids not in generation order: #{inspect(ids)}"
@@ -444,7 +447,8 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamCourt do
       fun.() -> :ok
       :erlang.monotonic_time(:millisecond) > deadline -> flunk("condition not reached")
       true ->
-        Process.sleep(50)
+        # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(50)
         eventually(fun, deadline)
     end
   end

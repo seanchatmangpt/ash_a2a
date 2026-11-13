@@ -37,9 +37,15 @@ compiled index:
   `bind_command/2` places the work order's content-addressed identity into
   command metadata for `CommandBus` to verify before admission, and the
   carried `graph_digest` is pinned against the executing command's semantic
-  subject (`checkpoint_graph_digest/2`) — drift refuses `:stale_graph_identity`.
+  subject (the private `checkpoint_graph_digest/2` in
+  `lib/ash_a2a/hilt/work_order.ex`) — drift refuses `:stale_graph_identity`.
 
-Around that core, the v1.0 surfaces ship in the same package:
+Around that core, the v1.0/v1.1 surfaces ship in the same package:
+
+- **Email gateway** — `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}`;
+  `POST /v1/email:ingest` turns an approver's reply to a mailed brief into governed
+  dispatches (auth is identity only; unapproved items never dispatch). See
+  [Operate by email](docs/how-to/operate-by-email.md). Standing UNVERIFIED.
 
 - **HTTP+JSON binding** — `AshA2A.Transport.HTTPJSON` serves the A2A v1.0
   spec's native REST shape (§5.3): `POST /message:send`,
@@ -100,7 +106,7 @@ Around that core, the v1.0 surfaces ship in the same package:
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.10.3"}
+    {:ash_a2a, "~> 26.11.13"}
   ]
 end
 ```
@@ -158,7 +164,7 @@ message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
 ```
 
 `dispatch/6` takes further `history`, `auth_identity`, and `opts` arguments
-(`history`/`auth_identity` default to `nil`-able values, `opts` to `[]` —
+(`history` defaults to `[]`, `auth_identity` to `nil`, `opts` to `[]` —
 e.g. `:resolved_skill` carries the exact resolved skill through a
 `CommandBus` re-dispatch, fixing multi-resource namesake
 `:capability_mismatch` refusals). `auth_identity` is the trust boundary: with the
@@ -256,7 +262,7 @@ reference for lookup, and explanation for understanding. It is published on
     config key and environment variable the library reads.
   - [Telemetry events](docs/reference/telemetry.md) — the event catalog
     with payloads.
-  - [Mix tasks](docs/reference/mix-tasks.md) — the 15 shipped tasks.
+  - [Mix tasks](docs/reference/mix-tasks.md) — the 23 shipped tasks.
   - [A2A endpoint contract](docs/reference/a2a-endpoint-contract.md) —
     served HTTP surface: agent card, JSON-RPC methods, error codes,
     streaming, auth.
@@ -271,7 +277,7 @@ reference for lookup, and explanation for understanding. It is published on
     request end to end, from wire to receipt.
   - [Canonical graph identity](docs/explanation/canonical-graph-identity.md)
     and [GraphLaw WASM integration](docs/explanation/graphlaw-wasm-integration.md).
-  - [Copilot membrane](docs/explanation/copilot-membrane.md) — the twin
+  - [Copilot membrane](docs/explanation/copilot-membrane.md) (repo-only) — the twin
     pipeline (Vince intent interrogation, Tony/Strain saturation,
     attestation ingress) and its stage order.
 - **Control plane & conformance** (shipped with the repo): [C2 certificate
@@ -334,8 +340,9 @@ and [SECURITY.md](SECURITY.md).
 Landed namespaces proving the copilot membrane and authority-gated
 actuation, each with its court suite (`mix test <file>`):
 
-- `AshA2A.Twin.*` (`twin.ex`, `asset.ex`, `lease.ex`, `operator.ex`,
-  `partner.ex`, `server.ex`, `hazard.ex`) — gen_statem digital twins with
+- `AshA2A.Twin.*` (`lib/ash_a2a/twin.ex` and `lib/ash_a2a/twin/`:
+  `asset.ex`, `lease.ex`, `operator.ex`, `partner.ex`, `server.ex`,
+  `hazard.ex`, `tony.ex`) — gen_statem digital twins with
   hazard injection; 13 tests in `test/twin/twin_test.exs`, 7 in
   `test/twin/tony_test.exs` (Tony saturation twin).
 - `AshA2A.Twin.Vince` (`twin/vince.ex`) with `MechanicalPrior` — intent
@@ -352,15 +359,15 @@ actuation, each with its court suite (`mix test <file>`):
 - `AshA2A.Copilot.Pipeline` (`copilot/pipeline.ex`, with `MechanicalPrior`)
   — the membrane pipeline composing Vince → Strain → attestation, with the
   G4 authority hop as the last gate before admit and the G5 escalation feed
-  into the attention broker; 22 tests in
-  `test/copilot/pipeline_test.exs`, plus 7 adversarial courts in
+  into the attention broker; 29 tests in
+  `test/copilot/pipeline_test.exs`, plus 10 adversarial courts in
   `test/copilot/f8_adversarial_test.exs`.
 - `AshA2A.Authority.PEP` / `AshA2A.Authority.Source` (with
   `AllowAll`/`DenyAll` sources) — policy enforcement point over authority
   sources; 14 tests in `test/authority/pep_test.exs`.
 - `AshA2A.Authority.GraphPin` — pinned-graph authority; 6 tests in
   `test/authority/graph_pin_test.exs`.
-- `AshA2A.Actuation.Engine` (with `Adapter`, `Ticket`, `c2/` clients) —
+- `AshA2A.Actuation.Engine` (with `Adapter`, `Ticket`; C2 clients live in `lib/ash_a2a/c2/`) —
   authority-gated actuation engine; 9 tests in
   `test/actuation/engine_court_test.exs`.
 - `AshA2A.Negotiation.Strategy` behaviour with `AshA2A.Negotiation.Engine`
@@ -369,7 +376,7 @@ actuation, each with its court suite (`mix test <file>`):
   mapping; 8 tests in `test/negotiation/negotiation_engine_court_test.exs`.
 - `AshA2A.Attention.Broker` (`attention/broker.ex`) — Article-14 attention:
   autonomy levels, consent-by-silence window, override ledger, founder
-  escalation, GPM-floor signature invariant; 15 tests in
+  escalation, GPM-floor signature invariant; 20 tests in
   `test/attention/broker_court_test.exs`.
 - `mix ash_a2a.pplan_courts` (`lib/mix/tasks/ash_a2a.pplan_courts.ex`) —
   runs the ash_pplan parity courts against a local checkout via the
@@ -379,8 +386,21 @@ actuation, each with its court suite (`mix test <file>`):
 
 ## Status
 
-Versioning is calendar-based (`26.9.x`); `~> 26.9` pins within the 26.9
-series. Semantic Versioning is intended after 1.0. See the
+Protocol target: A2A **v1.1.0** (upstream tag `v1.1.0-rc`, not yet a GitHub
+release). Emitted cards advertise `protocolVersion` 1.1; the server accepts
+`A2A-Version` 0.3, 1.0 and 1.1 (`AshA2A.Protocol.Version.supported_default/0`); the
+client-header default (`Version.default/0`) is still 1.0. v1.1
+standing is UNVERIFIED until courts run; see
+[v1.1 conformance](docs/reference/a2a-v1-1-conformance.md) (repo-only). Selected via the
+`A2A-Version: 1.1` header. Test count: default tier 4695 tests, 0 failures per the
+coordinator log of 2026-11-13 (not re-run by the doc pass); the serial tier has
+env-blocked tests (Postgres :55432, Oban, wasm pins, hddl) and is UNVERIFIED.
+`config :ash_a2a, :long_poll_timeout_ms` bounds
+`currentGeneration` long polls; agent cards may advertise `user_artifacts`.
+
+Versioning is calendar-based (`26.11.x`; `mix.exs` is at `26.11.13`);
+`~> 26.11.13` pins within the 26.11 series at or above 26.11.13.
+Semantic Versioning is intended after 1.0. See the
 [CHANGELOG](CHANGELOG.md) — note that `main` routinely runs ahead of the
 latest published Hex release.
 

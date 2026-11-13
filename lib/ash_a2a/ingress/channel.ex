@@ -59,7 +59,9 @@ defmodule AshA2A.Ingress.Channel do
 
   @type state :: %{
           required(:last_known) => %{optional(binary()) => map()} | nil,
-          required(:consumed_nonces) => %{optional(binary()) => %{set: MapSet.t(), order: [binary()]}},
+          required(:consumed_nonces) => %{
+            optional(binary()) => %{set: MapSet.t(), order: [binary()]}
+          },
           required(:refusals) => %{optional(atom()) => non_neg_integer()}
         }
 
@@ -98,7 +100,8 @@ defmodule AshA2A.Ingress.Channel do
   updated per-reason refusal counter and (on success) the coordinator's
   last-known GPS fix.
   """
-  @spec ingest(state(), map(), Keyword.t()) :: {{:ok, validated_event()} | {:refused, refusal_reason()}, state()}
+  @spec ingest(state(), map(), Keyword.t()) ::
+          {{:ok, validated_event()} | {:refused, refusal_reason()}, state()}
   def ingest(state, event, opts)
 
   def ingest(%{refusals: _} = state, event, opts) when is_map(event) and is_list(opts) do
@@ -111,9 +114,10 @@ defmodule AshA2A.Ingress.Channel do
            :ok <- nonce_fresh?(state, event),
            {:ok, claims} <- attest(event, key),
            :ok <- claims_bind_event?(claims, event),
-           :ok <- Gate.verify_freshness(claims, gate_opts ++ [now: event.timestamp]),
+           :ok <- Gate.verify_freshness(claims, Keyword.put(gate_opts, :now, now)),
            :ok <- Gate.verify_sensor_metadata(sensor_claims(event), gate_opts),
-           :ok <- teleport_ok?(state, event) do
+           :ok <- event_time_ok?(event, gate_opts),
+           :ok <- teleport_ok?(state, event, grant_opts(opts, now)) do
         {:ok, normalize(event, claims, now)}
       else
         {:refused, reason} -> {:refused, fold(reason)}
@@ -123,7 +127,8 @@ defmodule AshA2A.Ingress.Channel do
     {result, record(state, result)}
   end
 
-  def ingest(_state, _event, _opts), do: raise(ArgumentError, "ingest/3 requires state map, event map, opts list")
+  def ingest(_state, _event, _opts),
+    do: raise(ArgumentError, "ingest/3 requires state map, event map, opts list")
 
   @doc "Refusal counters as a plain per-reason map (no persistence)."
   @spec stats(state()) :: %{optional(atom()) => non_neg_integer()}
@@ -178,16 +183,24 @@ defmodule AshA2A.Ingress.Channel do
   end
 
   defp bind_field?(nil, _event_value), do: :ok
+
   defp bind_field?(signed, event_value) when is_map(signed) and is_map(event_value),
-    do: if(Map.equal?(Map.take(signed, ["lat", "lon", "accuracy"]), Map.take(event_value, ["lat", "lon", "accuracy"])),
-          do: :ok,
-          else: {:refused, :spoofed_payload}
-        )
+    do:
+      if(
+        Map.equal?(
+          Map.take(signed, ["lat", "lon", "accuracy"]),
+          Map.take(event_value, ["lat", "lon", "accuracy"])
+        ),
+        do: :ok,
+        else: {:refused, :spoofed_payload}
+      )
 
   defp bind_field?(_, _), do: {:refused, :spoofed_payload}
 
   defp bind_scalar?(nil, _event_value), do: :ok
-  defp bind_scalar?(signed, event_value), do: if(signed == event_value, do: :ok, else: {:refused, :spoofed_payload})
+
+  defp bind_scalar?(signed, event_value),
+    do: if(signed == event_value, do: :ok, else: {:refused, :spoofed_payload})
 
   # The event's own sensor metadata is what the sensor gate validates; the
   # signed device claims ride along as attestation context on the output.
@@ -199,13 +212,42 @@ defmodule AshA2A.Ingress.Channel do
     }
   end
 
-  defp teleport_ok?(%{last_known: last_known}, %{coordinator: coord} = event) do
+  # The event timestamp is unsigned: bound it against the call clock so an
+  # attacker cannot pick a timestamp that skips the jump check (dt > 60s).
+  defp event_time_ok?(event, gate_opts) do
+    case Gate.verify_freshness(%{"issued_at" => event.timestamp}, gate_opts) do
+      :ok -> :ok
+      {:refused, _} = refused -> refused
+    end
+  end
+
+  defp grant_opts(opts, now) do
+    case Keyword.get(opts, :approved_grants) do
+      grants when is_list(grants) and grants != [] ->
+        [approved_grants: grants, now: now] ++ Keyword.take(opts, [:org_id, :identifier])
+
+      _ ->
+        []
+    end
+  end
+
+  defp teleport_ok?(%{last_known: last_known}, %{coordinator: coord} = event, grant_opts) do
     case Map.get(last_known, coord) do
       nil ->
         :ok
 
       prev ->
-        Gate.verify_gps_trajectory([prev, %{"lat" => event.gps["lat"], "lon" => event.gps["lon"], "timestamp" => event.timestamp}])
+        Gate.verify_gps_trajectory(
+          [
+            prev,
+            %{
+              "lat" => event.gps["lat"],
+              "lon" => event.gps["lon"],
+              "timestamp" => event.timestamp
+            }
+          ],
+          grant_opts
+        )
     end
   end
 
@@ -230,13 +272,25 @@ defmodule AshA2A.Ingress.Channel do
       "timestamp" => validated.timestamp
     }
 
+    prev = get_in(state, [:last_known, coord])
+
+    state =
+      if is_nil(prev) or fix["timestamp"] >= prev["timestamp"],
+        do: put_in(state, [:last_known, coord], fix),
+        else: state
+
     state
-    |> put_in([:last_known, coord], fix)
     |> consume_nonce(coord, validated.claims["nonce"])
   end
 
   defp record(%{refusals: refusals} = state, {:refused, reason}) do
-    %{state | refusals: Map.update(refusals, reason, 1, &(&1 + 1))}
+    count =
+      case Map.fetch(refusals, reason) do
+        {:ok, n} -> n + 1
+        :error -> 1
+      end
+
+    %{state | refusals: Map.put(refusals, reason, count)}
   end
 
   # Bounded FIFO ledger of consumed nonces per coordinator.
@@ -247,7 +301,11 @@ defmodule AshA2A.Ingress.Channel do
       case Map.get(consumed, coord) do
         %{set: set, order: order} ->
           {order, set} = evict_oldest(order, set)
-          %{set: MapSet.put(set, nonce), order: Enum.take(order ++ [nonce], -@max_consumed_nonces)}
+
+          %{
+            set: MapSet.put(set, nonce),
+            order: Enum.take(order ++ [nonce], -@max_consumed_nonces)
+          }
 
         nil ->
           %{set: MapSet.new([nonce]), order: [nonce]}
@@ -268,13 +326,24 @@ defmodule AshA2A.Ingress.Channel do
   defp fold(:malformed_token), do: :spoofed_payload
 
   defp fold(reason)
-       when reason in [:bad_signature, :stale, :clock_skew, :non_canonical_signature, :spoofed_payload, :emulator_detected, :gps_impossible_jump, :nonce_replayed],
+       when reason in [
+              :bad_signature,
+              :stale,
+              :clock_skew,
+              :non_canonical_signature,
+              :spoofed_payload,
+              :emulator_detected,
+              :gps_impossible_jump,
+              :nonce_replayed
+            ],
        do: reason
+
+  defp fold(_other), do: :spoofed_payload
 
   defp forward_gate_opts(opts, now) do
     opts
     |> Keyword.take([:max_staleness_sec])
     |> Enum.reject(&is_nil(elem(&1, 1)))
-    |> Enum.concat([now: now])
+    |> Enum.concat(now: now)
   end
 end

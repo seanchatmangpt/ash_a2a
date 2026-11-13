@@ -26,12 +26,16 @@ defmodule AshA2A.GraphLaw.SubprocessTest do
 
     assert System.monotonic_time(:millisecond) - started < 5_000
     # The OS process is really gone, not merely abandoned.
-    Process.sleep(100)
+    AshA2A.TestSupport.Eventually.eventually(
+      fn ->
+        {_, status} =
+          System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
 
-    assert {_, status} =
-             System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
+        status != 0
+      end,
+      message: "OS process #{os_pid} still alive"
+    )
 
-    assert status != 0
     assert Subprocess.in_flight() == 0
     refute_received {_port, {:exit_status, _}}
   end
@@ -105,7 +109,8 @@ defmodule AshA2A.GraphLaw.SubprocessTest do
     cond do
       fun.() -> :ok
       tries == 0 -> flunk("condition never held")
-      true -> Process.sleep(10) && wait_until(fun, tries - 1)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      true -> AshA2A.TestSupport.Eventually.pause(10) && wait_until(fun, tries - 1)
     end
   end
 end

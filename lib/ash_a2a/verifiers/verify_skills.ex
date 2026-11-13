@@ -27,10 +27,11 @@ defmodule AshA2A.Verifiers.VerifySkills do
        `refused_type_not_json_serializable`; unknown/custom module types
        produce a compile-time WARNING in the `{:warn, ...}` style of
        `AshA2A.Verify`'s dead-argument warning.
-    4. `lease_required? true` requires an authorizer on the subject that
-       can evaluate leases. Without one, the lease gate cannot be enforced
-       and dispatch under that skill would bypass the governance boundary
-       -- refused at compile time with code
+    4. `lease_required? true` requires an authorizer to be configured on the
+       subject. This verifier checks only that SOME authorizer is present; it
+       cannot prove the authorizer evaluates leases (that is enforced by the
+       architecture verifier / dispatcher). Without any authorizer the lease
+       gate cannot be enforced at all -- refused at compile time with code
        `refused_lease_required_no_authorizer` at
        `[:a2a, <skill_name>, :lease_required?]`.
   """
@@ -77,14 +78,73 @@ defmodule AshA2A.Verifiers.VerifySkills do
   def verify(dsl_state) do
     overrides = Verifier.get_persisted(dsl_state, :ash_a2a_skill_overrides, [])
 
-    if overrides == [] do
-      :ok
-    else
-      with :ok <- validate_actions(overrides, dsl_state) do
+    with :ok <- validate_actions(overrides, dsl_state) do
+      (Enum.flat_map(overrides, &check_skill(&1, dsl_state)) ++
+         default_projected_results(overrides, dsl_state))
+      |> summarize(dsl_state)
+    end
+  end
+
+  # -- Check 5: default-projected actions (no `skill` override) --
+  #
+  # Every public action is exposed whether or not a `skill` override exists,
+  # so its argument types are checked too. Without an override there is no
+  # per-skill opt-out to point at, and `AshA2A.Schema.for_skill/2` already
+  # reports a non-serializable argument as a typed `omitted` entry, so these
+  # surface as warnings (an explicit override stays a hard refusal).
+  defp default_projected_results(overrides, dsl_state) do
+    resource_subject? = Verifier.get_persisted(dsl_state, :ash_a2a_subject_kind) == :resource
+
+    dsl_state
+    |> projected_targets(resource_subject?)
+    |> Enum.flat_map(fn {resource, actions} ->
+      overridden =
         overrides
-        |> Enum.flat_map(&check_skill(&1, dsl_state))
-        |> summarize(dsl_state)
-      end
+        |> Enum.filter(&(resource_subject? or &1.resource == resource))
+        |> MapSet.new(& &1.action)
+
+      actions
+      |> Enum.reject(&MapSet.member?(overridden, &1.name))
+      |> Enum.flat_map(fn action ->
+        action
+        |> arguments_with_types(resource, dsl_state, resource_subject?)
+        |> Enum.flat_map(&default_type_result(resource, action, &1))
+      end)
+    end)
+  end
+
+  defp projected_targets(dsl_state, true),
+    do: [
+      {Verifier.get_persisted(dsl_state, :module), Ash.Resource.Info.public_actions(dsl_state)}
+    ]
+
+  defp projected_targets(dsl_state, false) do
+    dsl_state
+    |> Ash.Domain.Info.resources()
+    |> Enum.map(&{&1, Ash.Resource.Info.public_actions(&1)})
+  end
+
+  defp default_type_result(resource, action, %{name: name, type: type}) do
+    case classify_type(type) do
+      :serializable ->
+        []
+
+      {:unserializable, reason} ->
+        [
+          {:warn,
+           "default-projected action #{inspect(resource)}.#{action.name} exposes argument " <>
+             "#{inspect(name)} of type #{inspect(type)}, which is not JSON-Schema-serializable " <>
+             "(#{reason}); it will be reported as omitted in the skill schema. Use a " <>
+             "serializable type or make the action private."}
+        ]
+
+      {:unknown, _type} ->
+        [
+          {:warn,
+           "default-projected action #{inspect(resource)}.#{action.name} argument " <>
+             "#{inspect(name)} has custom/unknown type #{inspect(type)}; AshA2A cannot prove " <>
+             "it is JSON-Schema-serializable at compile time."}
+        ]
     end
   end
 
@@ -125,8 +185,137 @@ defmodule AshA2A.Verifiers.VerifySkills do
 
         type_results ++
           argument_mapping_result(skill, action, dsl_state) ++
-          lease_authorizer_result(skill, resource, dsl_state, resource_subject?)
+          lease_authorizer_result(skill, resource, dsl_state, resource_subject?) ++
+          on_cancel_result(skill, dsl_state) ++
+          modes_result(skill, dsl_state) ++
+          security_requirements_result(skill, dsl_state, resource_subject?) ++
+          AshA2A.Verifiers.VerifyHddlOperators.check(skill, dsl_state)
     end
+  end
+
+  # -- Check 7: per-skill input_modes / output_modes are MIME-shaped --
+  #
+  # `type/subtype` (optionally with `+suffix` / `;param=value`), or a wildcard
+  # range (`*/*`, `image/*`). Anything else is refused at compile time.
+  @mime_regex ~r/\A(\*|[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*)\/(\*|[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*)(\s*;\s*[^;\s=]+=[^;]+)*\z/
+
+  @doc false
+  @spec mime_shaped?(term()) :: boolean()
+  def mime_shaped?(mode) when is_binary(mode), do: Regex.match?(@mime_regex, mode)
+  def mime_shaped?(_other), do: false
+
+  defp modes_result(skill, dsl_state) do
+    for field <- [:input_modes, :output_modes],
+        modes = Map.get(skill, field),
+        is_list(modes),
+        Enum.any?(modes, &(not mime_shaped?(&1))) do
+      bad = Enum.find(modes, &(not mime_shaped?(&1)))
+
+      {:error,
+       Spark.Error.DslError.exception(
+         module: Verifier.get_persisted(dsl_state, :module),
+         path: [:a2a, skill.name, field],
+         message:
+           "refused_mode_not_mime: skill #{inspect(skill.name)} #{field} entry " <>
+             "#{inspect(bad)} is not a MIME type (expected `type/subtype`, e.g. " <>
+             "\"text/plain\" or \"application/json\")",
+         location: Spark.Dsl.Entity.anno(skill)
+       )}
+    end
+  end
+
+  # -- Check 8: security_requirements keys name a declared security_scheme --
+  #
+  # Only checkable where the schemes are visible: a domain subject carrying the
+  # `AshA2A.Domain` `security` section. A resource-level skill cannot see the
+  # domain's schemes at compile time (the domain compiles after the resource),
+  # so it is skipped here and the card builder projects it unchanged.
+  defp security_requirements_result(%{security_requirements: reqs} = skill, dsl_state, false)
+       when is_list(reqs) and reqs != [] do
+    declared =
+      dsl_state
+      |> Verifier.get_entities([:security])
+      |> Enum.filter(&match?(%AshA2A.Domain.SecurityScheme{}, &1))
+      |> MapSet.new(&to_string(&1.name))
+
+    reqs
+    |> Enum.flat_map(&Map.keys/1)
+    |> Enum.reject(&MapSet.member?(declared, to_string(&1)))
+    |> Enum.uniq()
+    |> Enum.map(fn undeclared ->
+      {:error,
+       Spark.Error.DslError.exception(
+         module: Verifier.get_persisted(dsl_state, :module),
+         path: [:a2a, skill.name, :security_requirements],
+         message:
+           "refused_security_requirement_undeclared: skill #{inspect(skill.name)} " <>
+             "security_requirements key #{inspect(undeclared)} names no declared " <>
+             "security_scheme (declared: #{inspect(declared |> MapSet.to_list() |> Enum.sort())})",
+         location: Spark.Dsl.Entity.anno(skill)
+       )}
+    end)
+  end
+
+  defp security_requirements_result(_skill, _dsl_state, _resource_subject?), do: []
+
+  # -- Check 6: on_cancel hook existence --
+  #
+  # A bare module must export `on_cancel/3` (`AshA2A.OnCancel`); an MFA
+  # `{m, f, extra}` must export `f/(3 + length(extra))`. A module that does
+  # not exist anywhere is refused; one that is merely not yet compiled (a
+  # compile-order deadlock answer) is a warning, never a hang or a false refusal.
+  defp on_cancel_result(%{on_cancel: nil}, _dsl_state), do: []
+
+  defp on_cancel_result(%{on_cancel: on_cancel} = skill, dsl_state) do
+    {module, function, arity} =
+      case on_cancel do
+        {m, f, extra} when is_list(extra) -> {m, f, 3 + length(extra)}
+        m when is_atom(m) -> {m, :on_cancel, 3}
+        _ -> {nil, nil, nil}
+      end
+
+    on_cancel_check(skill, dsl_state, module, function, arity)
+  end
+
+  defp on_cancel_check(skill, dsl_state, nil, _f, _a) do
+    [on_cancel_error(skill, dsl_state, "is not a module or {module, function, extra_args}")]
+  end
+
+  defp on_cancel_check(skill, dsl_state, module, function, arity) do
+    case Code.ensure_compiled(module) do
+      {:module, _} ->
+        if function_exported?(module, function, arity) do
+          []
+        else
+          [
+            on_cancel_error(
+              skill,
+              dsl_state,
+              "`#{inspect(module)}` does not export #{function}/#{arity}"
+            )
+          ]
+        end
+
+      {:error, :unavailable} ->
+        [
+          {:warn,
+           "skill #{inspect(skill.name)} on_cancel `#{inspect(module)}` is not yet compiled; " <>
+             "cannot verify #{function}/#{arity} exists."}
+        ]
+
+      {:error, _} ->
+        [on_cancel_error(skill, dsl_state, "module `#{inspect(module)}` does not exist")]
+    end
+  end
+
+  defp on_cancel_error(skill, dsl_state, detail) do
+    {:error,
+     Spark.Error.DslError.exception(
+       module: Verifier.get_persisted(dsl_state, :module),
+       path: [:a2a, skill.name, :on_cancel],
+       message: "refused_on_cancel_target: skill #{inspect(skill.name)} on_cancel #{detail}",
+       location: Spark.Dsl.Entity.anno(skill)
+     )}
   end
 
   defp skill_resource(_skill, dsl_state, true), do: Verifier.get_persisted(dsl_state, :module)
@@ -296,7 +485,8 @@ defmodule AshA2A.Verifiers.VerifySkills do
   end
 
   defp lease_authorizer_result(skill, resource, dsl_state, resource_subject?) do
-    if Map.get(skill, :lease_required?, false) and not has_authorizer?(resource, dsl_state, resource_subject?) do
+    if Map.get(skill, :lease_required?, false) and
+         not has_authorizer?(resource, dsl_state, resource_subject?) do
       [
         {:error,
          Spark.Error.DslError.exception(
@@ -305,7 +495,7 @@ defmodule AshA2A.Verifiers.VerifySkills do
            message:
              "refused_lease_required_no_authorizer: skill #{inspect(skill.name)} sets " <>
                "`lease_required? true`, but #{inspect(resource)} has no authorizer " <>
-               "configured that can evaluate leases. The governance boundary cannot be " <>
+               "configured. The governance boundary cannot be " <>
                "enforced for this skill: dispatch would bypass authority entirely. " <>
                "Configure an authorizer (e.g. Ash.Policy.Authorizer policies or an " <>
                "AshA2A.Authority broker) on the resource, or remove `lease_required?`.",
@@ -344,7 +534,9 @@ defmodule AshA2A.Verifiers.VerifySkills do
   defp classify_type(Ash.Type.Struct), do: :serializable
   defp classify_type(Ash.Type.Atom), do: :serializable
   defp classify_type(Ash.Type.NewBase), do: :serializable
-  defp classify_type(Ash.Type.Term), do: {:unserializable, "Ash.Type.Term values have no JSON representation"}
+
+  defp classify_type(Ash.Type.Term),
+    do: {:unserializable, "Ash.Type.Term values have no JSON representation"}
 
   # map/keyword with structured values: serializable.
   defp classify_type({container, _inner}) when container in [:map, :keyword, :keyword_list] do

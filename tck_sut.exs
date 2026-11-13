@@ -42,7 +42,11 @@ defmodule TckSut.Agent do
   use AshA2A.Agent,
     resource_or_domain: TckSut.Resource,
     name: "tck_sut_agent",
-    require_authenticated_caller: false
+    require_authenticated_caller: false,
+    # Pinned TCK CORE-SEND-003 sends an unsupported mediaType with no
+    # expected_error and requires a normal response: SUT opts out of input-mode
+    # admission (the library default stays on).
+    execution: [validate_input_modes: false]
 
   alias AshA2A.Protocol.Part
 
@@ -589,8 +593,9 @@ defmodule TckSut.GrpcHandler do
     do: AshA2A.Protocol.Plug.handle_delete_push_config(task_id, config_id, params, agent_ctx())
 
   # CARD-EXT over the gRPC binding: the gRPC dispatch consults this opt-in
-  # callback (lib/.../grpc/dispatch.ex) before falling back to the JSON-RPC
-  # dispatcher's UNIMPLEMENTED refusal. Serves the same extended card the
+  # callback (lib/.../grpc/dispatch.ex) for GetExtendedAgentCard (the earlier
+  # UNIMPLEMENTED answer was the pre-callback behavior; re-run status
+  # UNVERIFIED). Serves the same extended card the
   # HTTP router serves (public card + admin skill, private cache intent is
   # an HTTP header concept, so nothing to mirror on gRPC).
   def handle_extended_card(_ctx) do

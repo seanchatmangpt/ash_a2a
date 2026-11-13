@@ -88,8 +88,10 @@ if Code.ensure_loaded?(Plug) do
       security = validate_security!(opts, schemes)
       exempt_paths = Keyword.get(opts, :exempt_paths, @default_exempt_paths)
       realm = Keyword.get(opts, :realm, @default_realm)
+      mtls_header = Keyword.get(opts, :mtls_header)
 
       %{
+        mtls_header: mtls_header,
         schemes: schemes,
         verify: verify,
         security: security,
@@ -163,6 +165,22 @@ if Code.ensure_loaded?(Plug) do
       end)
     end
 
+    # -- Card / config consistency ---------------------------------------------
+
+    @doc """
+    Returns `{security_schemes, security}` for splicing into an agent-card
+    builder, derived from the same `:schemes` / `:security` options the plug
+    enforces, so the advertised card cannot drift from enforced config.
+
+    `security_schemes` is `%{name => scheme_struct}`; `security` is the list
+    of requirement alternatives (`[%{name => [scope]}]`).
+    """
+    @spec card_security(keyword() | map()) ::
+            {%{String.t() => struct()}, [%{String.t() => [String.t()]}]}
+    def card_security(opts) when is_list(opts), do: opts |> init() |> card_security()
+
+    def card_security(%{schemes: schemes, security: security}), do: {schemes, security}
+
     # -- Path exemption --------------------------------------------------------
 
     defp exempt?(conn, exempt_paths) do
@@ -176,20 +194,32 @@ if Code.ensure_loaded?(Plug) do
         {:ok, identity} ->
           put_identity(conn, identity)
 
+        {:insufficient_scope, scopes} ->
+          send_insufficient_scope(conn, opts, scopes)
+
         :unauthorized ->
           send_unauthorized(conn, opts)
       end
     end
 
+    defp insufficient_scope?(%{code: :insufficient_scope}), do: true
+    defp insufficient_scope?(:insufficient_scope), do: true
+    defp insufficient_scope?(_), do: false
+
     defp evaluate_alternatives(conn, opts) do
-      Enum.reduce_while(opts.security, :unauthorized, fn alt, _acc ->
+      Enum.reduce_while(opts.security, :unauthorized, fn alt, acc ->
         case evaluate_requirements(conn, alt, opts) do
           {:ok, identities} ->
             identity = build_identity(alt, identities)
             {:halt, {:ok, identity}}
 
           :unauthorized ->
-            {:cont, :unauthorized}
+            {:cont, acc}
+
+          {:insufficient_scope, _} = insufficient ->
+            # A scope shortfall is more specific than a plain 401; keep it
+            # unless a later alternative authenticates.
+            {:cont, if(acc == :unauthorized, do: insufficient, else: acc)}
         end
       end)
     end
@@ -205,10 +235,12 @@ if Code.ensure_loaded?(Plug) do
 
     defp evaluate_requirements(conn, requirements, opts) do
       results =
-        Enum.reduce_while(requirements, %{}, fn {name, _scopes}, acc ->
+        Enum.reduce_while(requirements, %{}, fn {name, scopes}, acc ->
           scheme = Map.fetch!(opts.schemes, name)
+          # Declared scopes travel with the conn so verifiers enforce them.
+          conn = assign(conn, :a2a_required_scopes, List.wrap(scopes))
 
-          case extract_credential(conn, scheme) do
+          case extract_credential(conn, scheme, opts) do
             {:ok, credential} ->
               # Fail-closed: a crashing verify/3 callback is a 401, never a
               # 500 (the exception detail must not reach the caller either —
@@ -217,8 +249,12 @@ if Code.ensure_loaded?(Plug) do
                 {:ok, identity} ->
                   {:cont, Map.put(acc, name, identity)}
 
-                {:error, _reason} ->
-                  {:halt, :unauthorized}
+                {:error, reason} ->
+                  if insufficient_scope?(reason) do
+                    {:halt, {:insufficient_scope, List.wrap(scopes)}}
+                  else
+                    {:halt, :unauthorized}
+                  end
               end
 
             :missing ->
@@ -231,6 +267,7 @@ if Code.ensure_loaded?(Plug) do
 
       case results do
         :unauthorized -> :unauthorized
+        {:insufficient_scope, _} = insufficient -> insufficient
         identities when is_map(identities) -> {:ok, identities}
       end
     end
@@ -255,27 +292,27 @@ if Code.ensure_loaded?(Plug) do
 
     # -- Credential extraction -------------------------------------------------
 
-    defp extract_credential(conn, %HTTPAuth{scheme: "bearer"}) do
-      extract_bearer(conn)
+    defp extract_credential(conn, %HTTPAuth{scheme: scheme} = auth, _opts)
+         when is_binary(scheme) do
+      case String.downcase(scheme) do
+        "bearer" -> extract_bearer(conn, auth)
+        "basic" -> extract_basic(conn)
+        # Digest and unknown schemes are not implemented: fail closed
+        # instead of misreading them as bearer tokens.
+        _ -> :unsupported
+      end
     end
 
-    defp extract_credential(conn, %HTTPAuth{scheme: "basic"}) do
-      extract_basic(conn)
-    end
+    defp extract_credential(_conn, %HTTPAuth{}, _opts), do: :unsupported
 
-    defp extract_credential(conn, %HTTPAuth{}) do
-      # Other HTTP auth schemes — try bearer-style extraction
-      extract_bearer(conn)
-    end
-
-    defp extract_credential(conn, %APIKey{in: "header", name: name}) do
+    defp extract_credential(conn, %APIKey{in: "header", name: name}, _opts) do
       case get_req_header(conn, String.downcase(name)) do
         [value | _] -> {:ok, value}
         [] -> :missing
       end
     end
 
-    defp extract_credential(conn, %APIKey{in: "query", name: name}) do
+    defp extract_credential(conn, %APIKey{in: "query", name: name}, _opts) do
       conn = fetch_query_params(conn)
 
       case conn.query_params[name] do
@@ -284,7 +321,7 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp extract_credential(conn, %APIKey{in: "cookie", name: name}) do
+    defp extract_credential(conn, %APIKey{in: "cookie", name: name}, _opts) do
       conn = fetch_cookies(conn)
 
       case conn.req_cookies[name] do
@@ -293,16 +330,67 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp extract_credential(conn, %OAuth2{}) do
+    defp extract_credential(conn, %OAuth2{}, _opts) do
       extract_bearer(conn)
     end
 
-    defp extract_credential(conn, %OpenIDConnect{}) do
+    defp extract_credential(conn, %OpenIDConnect{}, _opts) do
       extract_bearer(conn)
     end
 
-    defp extract_credential(_conn, %MutualTLS{}) do
-      :unsupported
+    # mTLS: the credential is `%{der: binary, fingerprint: hex_sha256,
+    # source: :peer | :header}`. The peer certificate comes from the TLS
+    # socket (`Plug.Conn.get_peer_data/1`); a forwarded-cert header is only
+    # honoured when `:mtls_header` is configured (trusted proxy only).
+    defp extract_credential(conn, %MutualTLS{}, opts) do
+      case peer_cert(conn) do
+        der when is_binary(der) ->
+          {:ok, cert_credential(der, :peer)}
+
+        _ ->
+          header_cert(conn, Map.get(opts, :mtls_header))
+      end
+    end
+
+    defp peer_cert(conn) do
+      case get_peer_data(conn) do
+        %{ssl_cert: der} when is_binary(der) -> der
+        _ -> nil
+      end
+    rescue
+      _ -> nil
+    end
+
+    defp header_cert(_conn, nil), do: :unsupported
+
+    defp header_cert(conn, header) do
+      case get_req_header(conn, String.downcase(header)) do
+        [value | _] -> decode_forwarded_cert(value)
+        [] -> :missing
+      end
+    end
+
+    defp decode_forwarded_cert(value) do
+      pem = URI.decode(value)
+
+      case :public_key.pem_decode(pem) do
+        [{:Certificate, der, _} | _] ->
+          {:ok, cert_credential(der, :header)}
+
+        _ ->
+          # Not a PEM: accept a bare hex SHA-256 fingerprint from the proxy.
+          fp = value |> String.replace(":", "") |> String.downcase()
+
+          if Regex.match?(~r/\A[0-9a-f]{64}\z/, fp) do
+            {:ok, %{der: nil, fingerprint: fp, source: :header}}
+          else
+            :missing
+          end
+      end
+    end
+
+    defp cert_credential(der, source) do
+      %{der: der, fingerprint: Base.encode16(:crypto.hash(:sha256, der), case: :lower), source: source}
     end
 
     # RFC 7235 section 2.1: "the authentication scheme is case-insensitive",
@@ -322,12 +410,20 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp extract_bearer(conn) do
+    defp extract_bearer(conn, auth \\ nil) do
       case authorization_scheme_credential(conn) do
-        {"bearer", token} -> {:ok, token}
+        {"bearer", token} -> if bearer_format_ok?(auth, token), do: {:ok, token}, else: :missing
         _ -> :missing
       end
     end
+
+    # bearer_format is a documentation hint in OpenAPI, but when declared as
+    # "JWT" we reject tokens that are not three dot-separated segments.
+    defp bearer_format_ok?(%HTTPAuth{bearer_format: fmt}, token) when is_binary(fmt) do
+      if String.upcase(fmt) == "JWT", do: length(String.split(token, ".")) == 3, else: true
+    end
+
+    defp bearer_format_ok?(_, _), do: true
 
     defp extract_basic(conn) do
       case authorization_scheme_credential(conn) do
@@ -372,8 +468,23 @@ if Code.ensure_loaded?(Plug) do
       |> halt()
     end
 
+    defp send_insufficient_scope(conn, opts, scopes) do
+      challenge =
+        "Bearer realm=#{inspect(opts.realm)}, error=\"insufficient_scope\"" <>
+          if(scopes == [], do: "", else: ", scope=#{inspect(Enum.join(scopes, " "))}")
+
+      conn
+      |> put_resp_header("www-authenticate", challenge)
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        403,
+        Jason.encode!(%{"error" => "insufficient_scope", "scope" => Enum.join(scopes, " ")})
+      )
+      |> halt()
+    end
+
     defp challenge_for(%HTTPAuth{scheme: scheme}, realm) do
-      "#{String.capitalize(scheme)} realm=#{inspect(realm)}"
+      "#{auth_scheme_token(scheme)} realm=#{inspect(realm)}"
     end
 
     defp challenge_for(scheme, realm) do
@@ -383,6 +494,12 @@ if Code.ensure_loaded?(Plug) do
         [challenge | _] -> challenge
         [] -> nil
       end
+    end
+
+    # RFC 7235 challenge tokens: conventional capitalisation ("Bearer",
+    # "Basic", "Digest").
+    defp auth_scheme_token(scheme) when is_binary(scheme) do
+      String.capitalize(String.downcase(scheme))
     end
 
     defp add_www_authenticate(conn, %OAuth2{}, realm) do

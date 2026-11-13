@@ -375,7 +375,7 @@ defmodule AshA2A.Transport.GRPCServerTest do
 
   # -- G-E pinned gRPC TCK-failure closures (lane G-Q) -----------------------
 
-  test "SubscribeToTask of a terminal task is UNIMPLEMENTED(12), not FAILED_PRECONDITION(9)", %{
+  test "SubscribeToTask of a terminal task is UNIMPLEMENTED(12) with UNSUPPORTED_OPERATION", %{
     channel: channel
   } do
     task_id = send_and_get_task_id(channel, "terminal resubscribe")
@@ -389,10 +389,8 @@ defmodule AshA2A.Transport.GRPCServerTest do
 
     assert error.status == 12
 
-    # The TCK's ERROR_BINDINGS bind the terminal-resubscribe refusal class
-    # (UnsupportedOperationError, -32004) to UNIMPLEMENTED with reason
-    # UNSUPPORTED_OPERATION; FAILED_PRECONDITION(9) is TaskNotCancelable's
-    # (-32002) status, not this one.
+    # Pinned TCK (STREAM-SUB-003) binds UnsupportedOperationError (-32004)
+    # to UNIMPLEMENTED with reason UNSUPPORTED_OPERATION.
     assert error.message == "This operation is not supported"
 
     assert [%Google.Protobuf.Any{type_url: "type.googleapis.com/google.rpc.ErrorInfo"} = any] =
@@ -555,13 +553,13 @@ defmodule AshA2A.Transport.GRPCServerTest do
     end)
   end
 
-  test "GetExtendedAgentCard refuses UNIMPLEMENTED(12) over the wire", %{channel: channel} do
-    assert {:error, %GRPC.RPCError{status: 12} = err} =
+  test "GetExtendedAgentCard with no provider is FAILED_PRECONDITION(9) over the wire (-32007)", %{channel: channel} do
+    assert {:error, %GRPC.RPCError{status: 9} = err} =
              Lf.A2a.V1.A2AService.Stub.get_extended_agent_card(
                channel,
                %Pb.GetExtendedAgentCardRequest{}
              )
 
-    assert err.message == "This operation is not supported"
+    assert err.message == "Authenticated Extended Card is not configured"
   end
 end

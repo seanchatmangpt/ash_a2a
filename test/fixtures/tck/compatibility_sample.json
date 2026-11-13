@@ -1,0 +1,11 @@
+{
+  "_note": "SYNTHETIC fixture for scripts/tck_assert.py; not a real a2a-tck report",
+  "requirements": [
+    {"id": "CARD-001", "level": "MUST", "status": "PASS"},
+    {"id": "STREAM-001", "level": "MUST", "status": "PASS"},
+    {"id": "PUSH-001", "level": "SHOULD", "status": "FAIL"},
+    {"id": "AUTH-004", "level": "MUST", "status": "NOT TESTED"},
+    {"id": "MAN-001", "level": "MAY", "status": "MANUAL"},
+    {"id": "OPT-001", "level": "MAY", "status": "SKIPPED"}
+  ]
+}

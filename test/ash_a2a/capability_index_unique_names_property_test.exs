@@ -38,6 +38,22 @@ defmodule AshA2A.CapabilityIndexUniqueNamesPropertyTest do
 
   defp skill(name), do: %{name: name, resource: Echo, action: :read}
 
+  # `:REFUSED_DUPLICATE_ACTION_OVERRIDE` (one override per {resource, action})
+  # is a separate lawful rule; this property reuses one real action across
+  # skills to isolate the rule under test, so that code is filtered out.
+  defp validate_isolated(skills) do
+    case CapabilityIndex.validate(skills) do
+      {:error, refusals} ->
+        case Enum.reject(refusals, &(&1.code == :REFUSED_DUPLICATE_ACTION_OVERRIDE)) do
+          [] -> :ok
+          rest -> {:error, rest}
+        end
+
+      other ->
+        other
+    end
+  end
+
   property "validate/1 fail-closes with :REFUSED_DUPLICATE_SKILL_NAME exactly when a real duplicate name exists" do
     check all(
             names <-
@@ -53,7 +69,7 @@ defmodule AshA2A.CapabilityIndexUniqueNamesPropertyTest do
         |> Enum.map(&elem(&1, 0))
         |> MapSet.new()
 
-      result = CapabilityIndex.validate(skills)
+      result = validate_isolated(skills)
 
       if MapSet.size(duplicated_names) > 0 do
         assert {:error, refusals} = result
@@ -90,7 +106,7 @@ defmodule AshA2A.CapabilityIndexUniqueNamesPropertyTest do
           ) do
       names = Enum.take(shuffled_pool, take_count)
       skills = Enum.map(names, &skill/1)
-      assert CapabilityIndex.validate(skills) == :ok
+      assert validate_isolated(skills) == :ok
     end
   end
 end

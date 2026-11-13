@@ -235,7 +235,7 @@ defmodule AshA2A.Enterprise.OcelBroadcasterCourtTest do
 
       assert exception["event_type"] == "ash_a2a.dispatch.facilitator.run_phase.exception"
       assert exception["attributes"]["kind"] == "exception"
-      assert exception["attributes"]["error_code"] == "exception"
+      assert exception["attributes"]["error_code"] == "exception:RuntimeError"
       assert exception["relationships"] == [%{"qualifier" => "acted_on", "object_id" => "task-2"}]
 
       # Clean delivery: nothing dropped, nothing failed.
@@ -254,10 +254,7 @@ defmodule AshA2A.Enterprise.OcelBroadcasterCourtTest do
 
       start_supervised!(
         {OcelBroadcaster,
-         name: name,
-         endpoints: [sink(endpoint)],
-         flush_interval_ms: 60_000,
-         max_buffer: 2}
+         name: name, endpoints: [sink(endpoint)], flush_interval_ms: 60_000, max_buffer: 2}
       )
 
       for i <- 1..5, do: emit_dispatch_stop("task-#{i}")
@@ -330,6 +327,219 @@ defmodule AshA2A.Enterprise.OcelBroadcasterCourtTest do
       assert OcelBroadcaster.buffer_count(name) == 0
       assert OcelBroadcaster.drop_count(name) == 0
       assert is_pid(Process.whereis(name))
+    end
+  end
+
+  describe "hardening" do
+    test "attach!/1 is idempotent and the handler set is not duplicated" do
+      name = unique_name()
+      start_supervised!({OcelBroadcaster, name: name, endpoints: [], flush_interval_ms: false})
+
+      assert :ok = OcelBroadcaster.attach!(name)
+      assert :ok = OcelBroadcaster.attach!(name)
+
+      ids =
+        for {_event, kind} <- OcelBroadcaster.subscribed_events(),
+            h <- :telemetry.list_handlers([]),
+            h.id == {name, kind},
+            do: h.id
+
+      assert length(ids) == 4
+    end
+
+    test "max_buffer below 1 (and non-integer) is clamped, never crashes" do
+      endpoint = start_receiver!()
+
+      for bad <- [0, -5, :nope] do
+        name = unique_name()
+
+        pid =
+          start_supervised!(
+            {OcelBroadcaster,
+             name: name, endpoints: [sink(endpoint)], flush_interval_ms: false, max_buffer: bad},
+            id: {:bc, name}
+          )
+
+        assert is_pid(pid)
+        emit_dispatch_stop("task-a")
+        emit_dispatch_stop("task-b")
+
+        wait_until(fn ->
+          OcelBroadcaster.drop_count(name) + OcelBroadcaster.buffer_count(name) >= 2
+        end)
+
+        assert OcelBroadcaster.buffer_count(name) >= 1
+        stop_supervised!({:bc, name})
+      end
+    end
+
+    test "flush_interval_ms: false never schedules a timer; flush/1 still works" do
+      endpoint = start_receiver!()
+      name = unique_name()
+
+      start_supervised!(
+        {OcelBroadcaster, name: name, endpoints: [sink(endpoint)], flush_interval_ms: false}
+      )
+
+      emit_dispatch_stop("task-1")
+      wait_until(fn -> OcelBroadcaster.buffer_count(name) == 1 end)
+
+      # No periodic timer: the event stays buffered until an explicit flush.
+      pid = Process.whereis(name)
+      assert :sys.get_state(name).flush_interval_ms == false
+      assert OcelBroadcaster.buffer_count(name) == 1
+      assert :ok = OcelBroadcaster.flush(name)
+      wait_until(fn -> length(requests()) == 1 end)
+      assert OcelBroadcaster.buffer_count(name) == 0
+      assert Process.whereis(name) == pid
+    end
+
+    test "receipt_outboxed and receipt_committed events convert via the real projection" do
+      endpoint = start_receiver!()
+      name = unique_name()
+
+      start_supervised!(
+        {OcelBroadcaster, name: name, endpoints: [sink(endpoint)], flush_interval_ms: false}
+      )
+
+      command =
+        AshA2A.Command.new("AshA2A.Test.Fixture.Echo.read",
+          command_id: "bc-outboxed-1",
+          agent_id: "agent-1",
+          principal_id: "principal-1"
+        )
+
+      receipt =
+        AshA2A.Receipt.from_reply(
+          command,
+          AshA2A.Identity.execution("exec-bc-outboxed-1"),
+          :observe,
+          {:reply, []}
+        )
+
+      :telemetry.execute([:ash_a2a, :receipt, :outboxed], %{}, %{receipt: receipt})
+      :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})
+
+      wait_until(fn -> OcelBroadcaster.buffer_count(name) == 2 end)
+      assert OcelBroadcaster.unconvertible_count(name) == 0
+      assert :ok = OcelBroadcaster.flush(name)
+      wait_until(fn -> length(requests()) == 1 end)
+
+      events = ndjson_lines(hd(requests()))
+      assert length(events) == 2
+
+      assert Enum.all?(events, fn e ->
+               e["event_type"] =~ "ash_a2a.receipt." and
+                 e["attributes"]["command_id"] == AshA2A.Identity.external(receipt.command_id)
+             end)
+    end
+
+    test "unconvertible events are counted with telemetry, never silently dropped" do
+      endpoint = start_receiver!()
+      name = unique_name()
+
+      start_supervised!(
+        {OcelBroadcaster, name: name, endpoints: [sink(endpoint)], flush_interval_ms: false}
+      )
+
+      :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: :not_a_receipt})
+      :telemetry.execute([:ash_a2a, :receipt, :outboxed], %{}, %{})
+
+      wait_until(fn -> OcelBroadcaster.unconvertible_count(name) == 2 end)
+      assert OcelBroadcaster.buffer_count(name) == 0
+    end
+
+    test "a malformed sink spec is ignored (typed warning), valid sinks still run" do
+      endpoint = start_receiver!()
+      name = unique_name()
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          start_supervised!(
+            {OcelBroadcaster,
+             name: name,
+             endpoints: [[], 42, [endpoint: "no-platform"], "", sink(endpoint)],
+             flush_interval_ms: false}
+          )
+        end)
+
+      assert log =~ "ignoring unrecognised SIEM sink spec"
+      assert OcelBroadcaster.configured?(name)
+
+      emit_dispatch_stop("task-1")
+      wait_until(fn -> OcelBroadcaster.buffer_count(name) == 1 end)
+      assert :ok = OcelBroadcaster.flush(name)
+      wait_until(fn -> length(requests()) == 1 end)
+    end
+
+    test "only-malformed specs leave the broadcaster idle (unconfigured)" do
+      name = unique_name()
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_supervised!(
+          {OcelBroadcaster, name: name, endpoints: [42, :atom], flush_interval_ms: false}
+        )
+      end)
+
+      refute OcelBroadcaster.configured?(name)
+    end
+
+    test "event_time is captured at emission, not at flush" do
+      endpoint = start_receiver!()
+      name = unique_name()
+
+      start_supervised!(
+        {OcelBroadcaster, name: name, endpoints: [sink(endpoint)], flush_interval_ms: false}
+      )
+
+      before_emit = DateTime.utc_now()
+      emit_dispatch_stop("task-1")
+      after_emit = DateTime.utc_now()
+      wait_until(fn -> OcelBroadcaster.buffer_count(name) == 1 end)
+      # Flush happens strictly after `after_emit`; the stamp must not.
+      :ok = OcelBroadcaster.flush(name)
+      wait_until(fn -> length(requests()) == 1 end)
+
+      [event] = ndjson_lines(hd(requests()))
+      {:ok, stamped, _} = DateTime.from_iso8601(event["event_time"])
+      assert DateTime.compare(stamped, before_emit) in [:gt, :eq]
+      assert DateTime.compare(stamped, after_emit) in [:lt, :eq]
+    end
+
+    test "partial multi-sink failure does not duplicate events to the healthy sink" do
+      endpoint = start_receiver!()
+      name = unique_name()
+
+      dead = [
+        platform: :chronicle,
+        endpoint: "http://127.0.0.1:1",
+        api_key: "k",
+        max_retries: 0,
+        backoff_base_ms: 1,
+        max_backoff_ms: 2
+      ]
+
+      start_supervised!(
+        {OcelBroadcaster, name: name, endpoints: [sink(endpoint), dead], flush_interval_ms: false}
+      )
+
+      emit_dispatch_stop("task-1")
+      emit_dispatch_stop("task-2")
+      wait_until(fn -> OcelBroadcaster.buffer_count(name) == 2 end)
+      assert :ok = OcelBroadcaster.flush(name)
+
+      # Healthy sink got both events once; the dead sink's retry buffer holds
+      # them (buffer_count counts owed deliveries: only the dead sink owes).
+      assert OcelBroadcaster.buffer_count(name) == 2
+
+      emit_dispatch_stop("task-3")
+      wait_until(fn -> OcelBroadcaster.buffer_count(name) == 3 end)
+      assert :ok = OcelBroadcaster.flush(name)
+
+      # Every event reached the healthy sink exactly once across both flushes.
+      event_ids = requests() |> Enum.flat_map(&ndjson_lines/1) |> Enum.map(& &1["event_id"])
+      assert length(event_ids) == 3
+      assert length(Enum.uniq(event_ids)) == 3
     end
   end
 end

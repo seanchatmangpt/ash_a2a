@@ -465,21 +465,33 @@ defmodule AshA2A.Semantic.Conformance do
   @doc """
   Real check: deterministic closure requires a closure operation to exist in
   the first place. Delegates to the same real engine check as
-  `check_admitted_n3_rules/0`; when an engine IS configured this still reports
-  `{:unverifiable, _}`, because determinism is a property of two real runs
-  over the same input, which this repo has no fixture corpus to drive yet.
+  `check_admitted_n3_rules/0`; when an engine IS configured it then runs the
+  engine twice over one fixed N3 input and requires identical results.
   """
   @spec check_deterministic_closure() :: requirement_status()
   def check_deterministic_closure do
     case engine_capability(:n3_closure, 2) do
-      :met ->
-        {:unverifiable,
-         "a semantic engine exposing n3_closure/2 is configured, but determinism is a property " <>
-           "of two real runs over an identical admitted graph, and this repo carries no " <>
-           "conformance corpus to drive those runs -- not established either way"}
+      :met -> run_determinism_probe(semantic_engine())
+      other -> other
+    end
+  end
 
-      other ->
-        other
+  @determinism_n3 "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\nex:b ex:p ex:c .\n" <>
+                    "{ ?x ex:p ?y . ?y ex:p ?z } => { ?x ex:reach ?z } .\n"
+
+  defp run_determinism_probe(module) do
+    run = fn -> module.n3_closure(@determinism_n3, nil) end
+
+    case {run.(), run.()} do
+      {{:ok, first}, {:ok, second}} when first == second ->
+        :met
+
+      {{:ok, _}, {:ok, _}} ->
+        {:unmet, "two real n3_closure runs over one identical input produced different results"}
+
+      {first, second} ->
+        {:unmet,
+         "determinism probe could not run: #{inspect(first, limit: 3)} / #{inspect(second, limit: 3)}"}
     end
   end
 
@@ -1677,12 +1689,30 @@ defmodule AshA2A.Semantic.Conformance do
 
       module when is_atom(module) ->
         if Code.ensure_loaded?(module) and function_exported?(module, function, arity) do
-          :met
+          probe_engine(module, function, arity)
         else
           {:unmet,
            "configured :semantic_engine #{inspect(module)} does not export " <>
              "#{function}/#{arity}"}
         end
+    end
+  end
+
+  # An engine that exports `probe/2` is asked to actually run the capability;
+  # `:met` then means "the engine answered", not merely "the function exists".
+  defp probe_engine(module, function, arity) do
+    if function_exported?(module, :probe, 2) do
+      case module.probe(function, arity) do
+        :ok ->
+          :met
+
+        {:error, reason} ->
+          {:unmet,
+           "configured :semantic_engine #{inspect(module)} exports #{function}/#{arity} but " <>
+             "a real probe run failed: #{inspect(reason)}"}
+      end
+    else
+      :met
     end
   end
 

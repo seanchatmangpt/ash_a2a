@@ -87,12 +87,28 @@ defmodule AshA2A.GraphLaw.EngineLoad do
   @spec pinned_sha256() :: String.t()
   def pinned_sha256, do: @pinned_sha256
 
+  # `:unpinned` is admitted only when runtime config says so
+  # (`config :ash_a2a, :graphlaw_allow_unpinned, true`), read per call so it
+  # holds in releases (no Mix) and independent of the compiling env.
+  defp unpinned_allowed?, do: Application.get_env(:ash_a2a, :graphlaw_allow_unpinned, false) == true
+
   @doc """
   `:ok` when `digest` equals `expected`; `:unpinned` (an explicit opt-out)
   admits any digest. Anything else is a typed identity refusal.
   """
   @spec check_digest(String.t(), String.t() | :unpinned) :: :ok | {:error, map()}
-  def check_digest(_digest, :unpinned), do: :ok
+  def check_digest(_digest, :unpinned) do
+    if unpinned_allowed?() do
+      :ok
+    else
+      {:error,
+       %{
+         code: :graphlaw_wasm_unpinned_refused,
+         detail: "expected_sha256: :unpinned is only admitted when :graphlaw_allow_unpinned is true"
+       }}
+    end
+  end
+
   def check_digest(digest, digest) when is_binary(digest), do: :ok
 
   def check_digest(digest, expected) when is_binary(digest) do

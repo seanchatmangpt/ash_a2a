@@ -169,6 +169,17 @@ defmodule AshA2A.Semantic.Refusal do
   # a time. Codes here are NEVER renamed -- this is a projection of the
   # existing vocabulary, not a replacement for it.
   @mapping %{
+    # --- email / inbound-channel codes ---
+    ambiguous: :refused_structure,
+    bad_token: :refused_identity,
+    missing_from: :refused_identity,
+    no_decisions: :refused_structure,
+    sender_not_allowlisted: :refused_authority,
+    unknown_action: :refused_capability,
+    unresolvable: :refused_structure,
+    no_kernel_entry: :refused_authority,
+    unsigned: :refused_identity,
+    unsupported_input: :refused_structure,
     # --- v26.9.30 SPIFFE identity / DfCM fleet-court / semantic-interchange / standing receipts ---
     https_required: :refused_profile,
     denied: :refused_authority,
@@ -511,6 +522,8 @@ defmodule AshA2A.Semantic.Refusal do
 
     # --- REFUSED_AUTHORITY ------------------------------------------------
     authority_required: :refused_authority,
+    # AshA2A.Email.KernelEntry: authenticated email sender without a live standing grant.
+    email_no_live_grant: :refused_authority,
     temperament_cannot_encode_authority: :refused_authority,
     phenotype_authority_smuggling: :refused_authority,
     population_authority_smuggling: :refused_authority,
@@ -856,6 +869,36 @@ defmodule AshA2A.Semantic.Refusal do
     serialize_expected_triples: :refused_structure,
     serialize_invalid_bnode_label: :refused_structure,
     serialize_invalid_datatype: :refused_structure,
+    engine_bad_input: :refused_structure,
+    canonical_integer_out_of_range: :refused_structure,
+    canonical_invalid_utf8: :refused_structure,
+    decompress_failed: :refused_structure,
+    invalid_clock: :refused_structure,
+    invalid_duration: :refused_structure,
+    invalid_n: :refused_structure,
+    invalid_observation: :refused_structure,
+    invalid_intent: :refused_structure,
+    invalid_order_id: :refused_structure,
+    invalid_scope: :refused_structure,
+    invalid_source: :refused_structure,
+    unknown_call: :refused_structure,
+    strain: :refused_structure,
+    canonical_size_exceeded: :refused_bounds,
+    insufficient_dispersion: :refused_bounds,
+    attestation: :refused_receipt,
+    non_canonical_signature: :refused_receipt,
+    authority: :refused_authority,
+    expired: :refused_authority,
+    not_holder: :refused_authority,
+    unpinned: :refused_authority,
+    gpm_floor: :refused_falsifier,
+    mechanical_prior: :refused_falsifier,
+    actuation_release_failed: :blocked_resource,
+    escalation_failed: :blocked_resource,
+    ledger_full: :blocked_resource,
+    queue_full: :blocked_resource,
+    not_checkpointed: :blocked_resource,
+    unavailable: :blocked_resource,
     serialize_invalid_iri: :refused_structure,
     serialize_invalid_language_tag: :refused_structure,
     serialize_literal_out_of_object_position: :refused_structure,
@@ -1015,8 +1058,29 @@ defmodule AshA2A.Semantic.Refusal do
     ash_affidavit_unavailable: :blocked_resource,
     closed: :blocked_resource,
     no_signal_waiter: :blocked_resource,
+    opentelemetry_not_loaded: :blocked_resource,
+    # REFUSED_AUTHORITY
+    authority_gate_disabled: :refused_authority,
+    forbidden: :refused_authority,
+    graphlaw_wasm_unpinned_refused: :refused_authority,
+    # REFUSED_IDENTITY
+    context_mismatch: :refused_identity,
+    coordinator_mismatch: :refused_identity,
+    generation_mismatch: :refused_identity,
+    unknown_session: :refused_identity,
+    # REFUSED_STRUCTURE
+    bad_gen: :refused_structure,
+    invalid_artifact_update: :refused_structure,
+    message_required: :refused_structure,
+    version_conflict: :refused_structure,
     # UNSUPPORTED_PROFILE
-    compression_unsupported: :unsupported_profile
+    compression_unsupported: :unsupported_profile,
+    mtls: :unsupported_profile,
+    no_supported_interface: :unsupported_profile,
+    push_notifications_not_supported: :unsupported_profile,
+    streaming_not_supported: :unsupported_profile,
+    unsupported_operation: :unsupported_profile,
+    user_artifacts_not_supported: :unsupported_profile
   }
 
   @doc "All 18 S42 classes, in RFC order."

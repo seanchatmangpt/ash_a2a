@@ -86,7 +86,8 @@ defmodule AshA2A.CastleOcelProjectionTest do
     end
 
     test "a refused class projects to refused_observation carrying refusal_class/code" do
-      {:ok, event} = CastleOcel.project_event(obs(:refused_authority, %{refusal_code: "authority_required"}))
+      {:ok, event} =
+        CastleOcel.project_event(obs(:refused_authority, %{refusal_code: "authority_required"}))
 
       assert event["event_type"] == "refused_observation"
       assert event["attributes"]["refusal_class"] == "refused_authority"
@@ -167,7 +168,9 @@ defmodule AshA2A.CastleOcelProjectionTest do
 
     test "malformed observations refuse with typed errors" do
       assert {:error, {:invalid_observation, :nope}} = CastleOcel.project_event(:nope)
-      assert {:error, {:missing_subject_id, :admitted}} = CastleOcel.project_event(%{standing: :admitted, time: @time})
+
+      assert {:error, {:missing_subject_id, :admitted}} =
+               CastleOcel.project_event(%{standing: :admitted, time: @time})
 
       assert {:error, {:subject_id_not_binary, :admitted, 42}} =
                CastleOcel.project_event(obs(:admitted, %{subject_id: 42}))
@@ -177,6 +180,76 @@ defmodule AshA2A.CastleOcelProjectionTest do
 
       assert {:error, {:time_not_binary, :admitted, 0}} =
                CastleOcel.project_event(obs(:admitted, %{time: 0}))
+    end
+  end
+
+  describe "envelope totality, declared attributes and E2O relationships" do
+    test "the documented class count matches Refusal.classes/0 (15 + 2 + 1 = 18; 19 known)" do
+      assert length(Refusal.refused_classes()) == 15
+      assert length(Refusal.blocked_classes()) == 2
+      assert length(Refusal.unsupported_classes()) == 1
+      assert length(Refusal.classes()) == 18
+      assert length(CastleOcel.known_standings()) == 19
+    end
+
+    test "projecting every Refusal class (blocked_*, unsupported_* included) yields a total envelope" do
+      standings = [:admitted | Refusal.classes()]
+      trace = Enum.map(standings, &obs(&1))
+
+      assert {:ok, envelope} = CastleOcel.project(trace)
+      assert length(envelope["events"]) == length(standings)
+
+      for class <- Refusal.blocked_classes() ++ Refusal.unsupported_classes() do
+        assert CastleOcel.standing_to_event(class) == "ggen_sync_observed"
+      end
+    end
+
+    test "eventTypes declare the attributes events carry; every event attribute is declared" do
+      {:ok, envelope} = CastleOcel.project(Enum.map([:admitted | Refusal.classes()], &obs(&1)))
+
+      declared =
+        Map.new(envelope["eventTypes"], fn %{"name" => n, "attributes" => attrs} ->
+          {n, Enum.map(attrs, & &1["name"])}
+        end)
+
+      for %{"event_type" => type, "attributes" => attrs} <- envelope["events"] do
+        for key <- Map.keys(attrs) do
+          assert key in Map.fetch!(declared, type), "#{key} undeclared on #{type}"
+        end
+      end
+
+      assert Enum.all?(envelope["eventTypes"], fn %{"attributes" => a} ->
+               Enum.all?(a, &(is_binary(&1["name"]) and &1["type"] == "string"))
+             end)
+    end
+
+    test "every relationship object_id exists in objects and project_event carries relationships" do
+      {:ok, envelope} =
+        CastleOcel.project([
+          obs(:admitted),
+          obs(:refused_identity, %{subject_id: "s-2"}),
+          obs(:blocked_unknown, %{subject_id: "s-3"}),
+          obs(:unsupported_profile, %{subject_id: "s-4"})
+        ])
+
+      object_ids = MapSet.new(envelope["objects"], & &1["object_id"])
+
+      for event <- envelope["events"] do
+        assert [_ | _] = event["relationships"]
+
+        for %{"object_id" => id, "qualifier" => q} <- event["relationships"] do
+          assert is_binary(q)
+          assert MapSet.member?(object_ids, id), "#{id} not in objects"
+        end
+
+        {_type, bound_id} = CastleOcel.object_binding(event)
+        assert bound_id in Enum.map(event["relationships"], & &1["object_id"])
+      end
+
+      assert {:ok, single} = CastleOcel.project_event(obs(:refused_rule))
+
+      assert [%{"qualifier" => "observed_by"}, %{"qualifier" => "observed_subject"}] =
+               single["relationships"]
     end
   end
 end

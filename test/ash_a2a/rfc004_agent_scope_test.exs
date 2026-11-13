@@ -217,7 +217,8 @@ defmodule AshA2A.Rfc004AgentScopeTest do
     message = data_message(%{}, %{metadata: %{skill: "peek"}})
 
     {:ok, refused} = Agent.call(Agent, message, auth("scope-a"))
-    assert refused.status.state == :failed
+    # v1.0: admission-phase refusal is :rejected, not :failed.
+    assert refused.status.state == :rejected
     assert error_text(refused) =~ "consequence_unclassified"
 
     {:ok, allowed} = OptInAgent.call(OptInAgent, message, auth("scope-a"))

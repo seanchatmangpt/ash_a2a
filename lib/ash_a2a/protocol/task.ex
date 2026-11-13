@@ -13,9 +13,13 @@ defmodule AshA2A.Protocol.Task do
           status: AshA2A.Protocol.Task.Status.t(),
           history: [AshA2A.Protocol.Message.t()],
           artifacts: [AshA2A.Protocol.Artifact.t()],
-          metadata: map()
+          metadata: map(),
+          generation: non_neg_integer(),
+          timeline: [AshA2A.Protocol.TimelineEntry.t()]
         }
 
+  # v1.1: `generation` starts at 1 on creation (ADR-002); `timeline` is the
+  # generation-ordered record. `history` stays populated (deprecated).
   @enforce_keys [:id, :status]
   defstruct [
     :id,
@@ -23,8 +27,22 @@ defmodule AshA2A.Protocol.Task do
     :status,
     history: [],
     artifacts: [],
-    metadata: %{}
+    metadata: %{},
+    generation: 1,
+    timeline: []
   ]
+
+  @doc """
+  Truncates the task timeline to the last `n` entries (`nil` = unchanged).
+  """
+  @spec truncate_timeline(t(), non_neg_integer() | nil) :: t()
+  def truncate_timeline(task, nil), do: task
+  def truncate_timeline(task, 0), do: %{task | timeline: []}
+
+  def truncate_timeline(task, n) when is_integer(n) and n > 0,
+    do: %{task | timeline: Enum.take(task.timeline, -n)}
+
+  def truncate_timeline(task, _), do: task
 
   # `:rejected` is terminal per v1.0 (refused at admission, never resumable);
   # `:input_required`/`:auth_required` are intentionally absent (resumable).

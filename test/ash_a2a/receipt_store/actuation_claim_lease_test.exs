@@ -67,7 +67,8 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
         if System.monotonic_time(:millisecond) >= stop do
           other
         else
-          Process.sleep(25)
+          # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+          AshA2A.TestSupport.Eventually.pause(25)
           poll(expected, fun, stop)
         end
     end
@@ -142,7 +143,8 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
       anchor = Receipt.pending(claimant, execution_id, :external_do)
       :ok = ReceiptOutbox.append(anchor)
 
-      Process.sleep(60)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(60)
 
       fresh = effect_command("fresh-claimant-anchored", key)
 
@@ -217,7 +219,8 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLeaseTest do
       anchor = Receipt.pending(claimant, execution_id, :external_do)
       :ok = ReceiptOutbox.append(anchor)
 
-      Process.sleep(60)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(60)
 
       fresh = effect_command("fresh-claimant-ekv-anchored", key)
       assert {:error, :actuation_in_flight} = Ekv.claim_actuation(actuation, fresh, store_opts)

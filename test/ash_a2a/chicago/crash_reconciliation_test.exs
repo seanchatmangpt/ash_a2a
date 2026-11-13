@@ -291,7 +291,8 @@ defmodule AshA2A.Chicago.CrashReconciliationTest do
       assert {:execute, first_execution_id} = Memory.claim(command, opts)
       assert {:error, :in_flight} = Memory.claim(command, opts)
 
-      Process.sleep(60)
+      # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(60)
 
       assert {:execute, second_execution_id} = Memory.claim(command, opts)
       assert second_execution_id != first_execution_id
@@ -325,7 +326,8 @@ defmodule AshA2A.Chicago.CrashReconciliationTest do
       anchor = Receipt.pending(command, execution_id, :external_do)
       :ok = ReceiptOutbox.append(anchor)
 
-      Process.sleep(60)
+      # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(60)
 
       # Well past the lease, but a pending anchor exists: this claim may
       # already have actuated, so it must stay in_flight -- the lease alone

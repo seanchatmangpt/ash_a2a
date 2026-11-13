@@ -55,15 +55,15 @@ defmodule AshA2A.Test.WoCheckinSim.WoVisit do
       # camelCase argument atoms: the A2A wire keys (workOrderId, visitId,
       # ...) pass through unchanged (empty argument_mapping default), so the
       # wire vocabulary IS the machine payload vocabulary.
-      argument(:"workOrderId", :string, allow_nil?: false)
-      argument(:"visitId", :string, allow_nil?: false)
-      argument(:"geofenceRefused", :boolean, allow_nil?: true, default: false)
-      argument(:"distanceMeters", :integer, allow_nil?: true)
-      argument(:"overrideJustification", :string, allow_nil?: true)
+      argument(:workOrderId, :string, allow_nil?: false)
+      argument(:visitId, :string, allow_nil?: false)
+      argument(:geofenceRefused, :boolean, allow_nil?: true, default: false)
+      argument(:distanceMeters, :integer, allow_nil?: true)
+      argument(:overrideJustification, :string, allow_nil?: true)
 
       run(fn input, _context ->
-        wo = input.arguments[:"workOrderId"]
-        visit_id = input.arguments[:"visitId"]
+        wo = input.arguments[:workOrderId]
+        visit_id = input.arguments[:visitId]
 
         initial =
           AshA2A.Test.WoCheckinSim.MachineLaw.state(wo, visit_id) ||
@@ -71,11 +71,11 @@ defmodule AshA2A.Test.WoCheckinSim.WoVisit do
 
         event =
           cond do
-            input.arguments[:"geofenceRefused"] == true ->
-              {:geofence_refused, input.arguments[:"distanceMeters"]}
+            input.arguments[:geofenceRefused] == true ->
+              {:geofence_refused, input.arguments[:distanceMeters]}
 
-            is_binary(input.arguments[:"overrideJustification"]) ->
-              {:geofence_override, input.arguments[:"overrideJustification"]}
+            is_binary(input.arguments[:overrideJustification]) ->
+              {:geofence_override, input.arguments[:overrideJustification]}
 
             true ->
               :log_check_in

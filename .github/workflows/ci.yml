@@ -58,6 +58,8 @@ jobs:
       - run: mix local.rebar --force
       - name: Refuse mix.lock drift
         run: mix deps.get --check-locked
+      - name: Refuse unused locked deps
+        run: mix deps.unlock --check-unused
       - name: Refuse retired / security-advisory Hex packages
         run: mix hex.audit
       - name: Install pinned Rust toolchain
@@ -122,6 +124,8 @@ jobs:
       - run: mix deps.get --check-locked
       - name: Verify mix.lock unchanged
         run: git diff --exit-code -- mix.lock
+      - name: Refuse unused locked deps
+        run: mix deps.unlock --check-unused
       - name: Sobelow static analysis (fail on high-confidence findings)
         run: mix sobelow --exit high
 
@@ -134,6 +138,10 @@ jobs:
   tck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Single source of the TCK pin; docs/reference/tck-suite.md cites it
+      # (court: test/w13_tck_assert_test.exs).
+      TCK_PIN_SHA: 263b9cfaf16a554bdfb166a7ba5b67716e946349
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -172,35 +180,29 @@ jobs:
           echo "SUT up after ${n} attempts"
       - name: Clone TCK at pinned SHA
         run: |
-          git clone --depth 1 \
-            https://github.com/a2aproject/a2a-tck.git /tmp/a2a-tck
-          cd /tmp/a2a-tck && git checkout 263b9cfaf16a554bdfb166a7ba5b67716e946349 # TCK pin (lane AT2 SHA)
-      - name: Install TCK requirements
-        run: pip install -r /tmp/a2a-tck/requirements.txt
+          git clone https://github.com/a2aproject/a2a-tck.git /tmp/a2a-tck
+          cd /tmp/a2a-tck && git checkout "$TCK_PIN_SHA"
+      # The pinned layout installs via pyproject (no pip requirements file).
+      # TODO(W13): re-run at 70f6f73c (#258, aligns to 1.0.1; needs Python
+      # 3.15+ at main) before moving TCK_PIN_SHA; Python 3.12 is the version
+      # witnessed green at the current pin (2026-10-13).
+      - name: Install TCK
+        run: cd /tmp/a2a-tck && pip install -e .
       - name: Run TCK suite
         run: |
           cd /tmp/a2a-tck
-          python run_tck.py --sut-host http://127.0.0.1:9999 \
-            --transport jsonrpc,http_json | tee /tmp/tck-run.log
+          ./run_tck.py --sut-host http://127.0.0.1:9999 \
+            --transport jsonrpc,http_json,grpc | tee /tmp/tck-run.log
           echo "TCK_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
         shell: bash
-      - name: Assert zero TCK failures
+      - name: Assert zero failed MUST requirements
         run: |
-          python3 - <<'EOF'
-          import json, os, sys
-          path = "/tmp/a2a-tck/compatibility.json"
-          if not os.path.exists(path):
-              sys.exit(f"FATAL: {path} missing (TCK_EXIT={os.environ.get('TCK_EXIT')})")
-          data = json.load(open(path))
-          failed = sum(
-              r.get("FAILED", 0) for r in data.values() if isinstance(r, dict)
-          )
-          print(f"TCK FAILED count: {failed}")
-          if failed != 0:
-              sys.exit(f"TCK reported {failed} FAILED checks")
-          if os.environ.get("TCK_EXIT") not in ("0", None):
-              sys.exit(f"run_tck.py exited {os.environ['TCK_EXIT']} despite 0 FAILED")
-          EOF
+          python3 scripts/tck_assert.py /tmp/a2a-tck/reports/compatibility.json
+          if [ "${TCK_EXIT:-0}" != "0" ]; then
+            echo "run_tck.py exited ${TCK_EXIT} (assert passed; see /tmp/tck-run.log)"
+            exit 1
+          fi
+        shell: bash
       - name: Stop SUT
         if: always()
         run: kill "$SUT_PID" 2>/dev/null || true
@@ -303,7 +305,7 @@ jobs:
     env:
       MIX_ENV: test
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -371,8 +373,8 @@ jobs:
 
   # Lane CI-1 (G3, CI half of the `mix check` gap): the A2A v1.0 conformance
   # court report. One command runs every pinned v1.0 court as a REAL OS
-  # subprocess (lib/mix/tasks/ash_a2a.v1_conformance_report.ex, 25-court
-  # @v1_courts list) and writes one machine-readable JSON verdict; the task
+  # subprocess (lib/mix/tasks/ash_a2a.v1_conformance_report.ex,
+  # the @v1_courts list) and writes one machine-readable JSON verdict; the task
   # always exits 0, so the gate is the JSON itself: totals.fail == 0.
   #
   # Non-gating on purpose, not silently: `.check.exs`' honest-staging ledger
@@ -460,3 +462,73 @@ jobs:
       - name: Verify mix.lock unchanged
         run: git diff --exit-code -- mix.lock
       - run: mix docs
+
+  # Credo gate (mirrors .check.exs `credo` stage: `mix credo --strict`).
+  # Known-red per the .check.exs honest-staging ledger (288 findings at first
+  # strict run). TODO(ci-g3-credo): drop `continue-on-error` when
+  # `mix credo --strict` exits 0 on main; tracker = .check.exs ledger.
+  credo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true # TODO(ci-g3-credo) above
+    env:
+      MIX_ENV: dev # credo is `only: :dev` (mix.exs)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - run: mix credo --strict
+
+  # Dialyzer gate (mirrors .check.exs `dialyzer` stage). PLT cache is keyed on
+  # OTP + Elixir (.tool-versions) and mix.lock. Cold PLT build takes tens of
+  # minutes. TODO(ci-g3-dialyzer): drop `continue-on-error` when
+  # `mix dialyzer` exits 0 on main; tracker = .check.exs ledger.
+  dialyzer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true # TODO(ci-g3-dialyzer) above
+    env:
+      MIX_ENV: dev # dialyxir is `only: [:dev]` (mix.exs)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build
+          key: ash-a2a-v2-dialyzer-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: |
+            ash-a2a-v2-dialyzer-${{ runner.os }}-
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get --check-locked
+      - run: mix dialyzer
+
+  # Sleep gate (no-sleep doctrine). Unconditional: a missing script fails the job.
+  sleep-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Ensure ripgrep
+        run: command -v rg >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y ripgrep)
+      - name: Run scripts/sleep_gate.sh
+        run: bash scripts/sleep_gate.sh

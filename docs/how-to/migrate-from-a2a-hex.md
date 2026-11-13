@@ -5,12 +5,12 @@ standalone `{:a2a, "~> 0.2"}` hex package (the a2a-elixir 0.3.0 lineage).
 This is the xaas / ggen_igniter consumer class:
 
 - xaas pins `ash_a2a` via git ref `3325032d9dea201e6deb82ef242c534aacb3b420`
-  plus `{:a2a, "~> 0.2"}` (`/Users/sac/xaas/mix.exs:103-111`).
-- ggen_igniter pins `{:ash_a2a, "~> 26.9"}` (`/Users/sac/ggen_igniter/mix.exs:271`)
+  plus `{:a2a, "~> 0.2"}` (`mix.exs` of the xaas checkout, deps block).
+- ggen_igniter pins `{:ash_a2a, "~> 26.9"}` (`mix.exs` of the ggen_igniter checkout)
   and its installer-assertion test expects the installer to add `{:a2a, "~> 0.2"}`
-  (`/Users/sac/ggen_igniter/test/ggen_igniter_semantic_a2a_manufacture_test.exs:66`).
+  (`test/ggen_igniter_semantic_a2a_manufacture_test.exs` in ggen_igniter).
 
-The target is ash_a2a v26.10.3 (`/Users/sac/ash_a2a/mix.exs:25`), which
+The target is ash_a2a v26.10.9 (`mix.exs`, `version:`), which
 vendors the whole protocol surface as `AshA2A.Protocol.*` under
 `lib/ash_a2a/protocol/` and no longer needs the `:a2a` package.
 

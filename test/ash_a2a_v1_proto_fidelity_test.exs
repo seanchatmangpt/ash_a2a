@@ -361,7 +361,13 @@ defmodule AshA2A.V1ProtoFidelityTest do
         "api_key" => %AshA2A.Protocol.SecurityScheme.APIKey{name: "X-Api-Key", in: "header"},
         "http" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "Bearer"},
         "oauth2" => %AshA2A.Protocol.SecurityScheme.OAuth2{
-          flows: %{"authorizationCode" => %{"tokenUrl" => "https://tok"}},
+          flows: %{
+            "authorizationCode" => %{
+              "authorizationUrl" => "https://auth",
+              "tokenUrl" => "https://tok",
+              "scopes" => %{"read" => "Read access"}
+            }
+          },
           oauth2_metadata_url: "https://meta.example"
         },
         "oidc" => %AshA2A.Protocol.SecurityScheme.OpenIDConnect{
@@ -383,6 +389,11 @@ defmodule AshA2A.V1ProtoFidelityTest do
   # ------------------------------------------------------------------
 
   defp idl, do: @proto_path |> File.read!() |> IDL.parse()
+
+  # v1.1 IDL (truth for emitted members): adds Task.generation/timeline,
+  # event generation, Artifact start/end_generation + role.
+  @proto_v11_path Path.join(__DIR__, "../priv/a2a_v1_1_spec_corpus/a2a.proto")
+  defp idl_v11, do: @proto_v11_path |> File.read!() |> IDL.parse()
 
   defp camel(snake) do
     [first | rest] = String.split(snake, "_")
@@ -549,7 +560,7 @@ defmodule AshA2A.V1ProtoFidelityTest do
     @describetag :z16
 
     test "every emitted wire member is a proto field; divergences equal the pinned ledger exactly" do
-      parsed = idl()
+      parsed = idl_v11()
       observed_all = MapSet.new()
       unexpected_all = []
 
@@ -598,16 +609,17 @@ defmodule AshA2A.V1ProtoFidelityTest do
     end
 
     test "positive spot checks: emitted key sets equal the proto renderings" do
-      parsed = idl()
+      parsed = idl_v11()
       surfaces = encoded_surfaces()
 
       task_surface =
         surfaces |> Enum.find(fn {m, _} -> m == "Task" end) |> elem(1)
 
-      # Task: exact set equality with the proto's camelCase renderings.
+      # Task: set equality with the v1.1 proto's camelCase renderings; the
+      # fixture task has an empty timeline, which the codec omits.
       assert MapSet.equal?(
                MapSet.new(Map.keys(task_surface)),
-               proto_camel_fields(parsed, "Task")
+               MapSet.delete(proto_camel_fields(parsed, "Task"), "timeline")
              )
 
       # Part surfaces: every flat oneof member and descriptor is a Part field.

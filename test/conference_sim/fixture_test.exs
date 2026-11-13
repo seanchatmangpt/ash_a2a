@@ -136,7 +136,8 @@ defmodule ConferenceSim.FixtureTest do
     deliveries =
       Enum.reduce_while(1..50, [], fn _, _ ->
         case ConferenceSim.push_deliveries(sim, session.task_id) do
-          [] -> Process.sleep(100) && {:cont, []}
+          # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+          [] -> AshA2A.TestSupport.Eventually.pause(100) && {:cont, []}
           deliveries -> {:halt, deliveries}
         end
       end)

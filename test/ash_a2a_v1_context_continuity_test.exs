@@ -313,16 +313,22 @@ defmodule AshA2AV1ContextContinuityTest do
 
       assert %{"error" => mismatch_error} = mismatch
 
-      # A genuinely unknown task id produces the IDENTICAL envelope (same
-      # code, message, and data) -- indistinguishable by construction.
+      # v1.1 JSON-RPC binding: the explicit mismatch is a typed -32602
+      # INVALID_PARAMS ("contextId does not match task", pinned by
+      # w25_http_json_wiring_test); the task is not revealed to foreign
+      # callers because owner/tenant scope is checked first.
+      assert mismatch_error["code"] == -32602
+      assert [%{"reason" => "INVALID_PARAMS"}] = mismatch_error["data"]
+
+      # A genuinely unknown task id stays -32001 TASK_NOT_FOUND.
       unknown =
         rpc(url, "message/send", %{
           "message" => user_message(nil, "tsk-v24-unknown")
         })
 
       assert %{"error" => unknown_error} = unknown
-      assert mismatch_error == unknown_error
       assert unknown_error["code"] == -32001
+      assert [%{"reason" => "TASK_NOT_FOUND"}] = unknown_error["data"]
 
       # tasks/get agrees: the task was never touched -- its stored contextId
       # is unchanged and it remains continuable under its real context.

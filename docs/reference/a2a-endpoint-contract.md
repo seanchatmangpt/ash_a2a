@@ -112,6 +112,59 @@ Free-form failure detail travels in `ErrorInfo.metadata.detail` when
 present; a payload already carrying an `ErrorInfo` is never double-wrapped
 (registry source: `lib/ash_a2a/protocol/jsonrpc/error.ex`).
 
+## Transport behavior (owner key, version gate, REST, extended card)
+
+Sources: `lib/ash_a2a/transport/principal.ex`, `transport/plug.ex`,
+`transport/http_json.ex`, `protocol/plug.ex`, `a2a_transport/plug.ex`,
+`a2a_transport/extended_card.ex`.
+
+**Owner key (`AshA2A.Transport.Principal`)**. The task owner key derives only
+from the verified identity (`metadata["a2a.auth"]` identity, atom-keyed or its
+string-keyed wire round trip; entry points drop client-supplied `"a2a.auth"`
+and rebind the verified one). No verified identity gives `:anonymous`.
+By identity shape:
+
+- bare binary identity: `"id:"` plus the first 16 lowercase hex chars of its
+  SHA-256 (the raw credential is never embedded);
+- map, default: first present of `:sub`, `:id` as `"<claim>:<value>"`, scoped
+  with `"|iss:<iss>"` when `:iss` is present; `|` and `%` in values are
+  percent-escaped (`%7C`, `%25`);
+- map with `config :ash_a2a, :principal_claims` set: every listed claim must be
+  present, joined with `"|"`; if any is missing the key falls back to a digest;
+- map with none of the claims, or any other term: `"h:"` plus the lowercase
+  hex SHA-256 of `:erlang.term_to_binary(identity, [:deterministic])` (not
+  refresh-stable, so ownership fails closed on refresh).
+
+**`-32009` version gate**. `A2A-Version` is parsed by
+`AshA2A.Protocol.Version.parse_header/1` and checked by `Version.validate/2`;
+a rejected version is echoed in the `a2a-version` response header. Paths:
+
+| Path | Where | Envelope |
+| --- | --- | --- |
+| JSON-RPC, `AshA2A.Protocol.Plug` | every `handle_json_rpc` call, checked against `:versions` | HTTP 200, JSON-RPC `-32009` (id `nil`) |
+| JSON-RPC, `AshA2A.Transport.Plug` | `handle_json_rpc`, same gate | HTTP 200, JSON-RPC `-32009` (id `nil`) |
+| JSON-RPC, `AshA2A.A2ATransport.Plug` | only methods it answers itself: `agent/getAuthenticatedExtendedCard`, `tasks/resubscribe`, `tasks/list`, `tasks/pushNotificationConfig/*` when push is enabled, `message/stream` when the transport is running; other methods are delegated and gated once by the base plug | HTTP 200, JSON-RPC `-32009` (request id) |
+| REST, `AshA2A.Transport.HTTPJSON` | every non-agent-card route, against `Version.supported_default()` | HTTP 400, AIP-193 envelope carrying `-32009` |
+
+**REST (HTTP+JSON) envelopes** (`AshA2A.Transport.HTTPJSON`): errors are
+`{"error": {"code": <http status>, "status": <gRPC name>, "message": ...,
+"details": <ErrorInfo array>}}`; `status` is `INVALID_ARGUMENT` for 400/413,
+`UNAUTHENTICATED` for 401, `NOT_FOUND` for 404, `UNIMPLEMENTED` for 405,
+`ABORTED` for 409. A body over `:max_body_bytes` (default 1_000_000) is HTTP
+**413** (`invalid_request`, "Body too large"); unparsable JSON is 400. On the
+JSON-RPC planes an oversized body is not 413: `AshA2A.Protocol.Plug` answers
+HTTP 200 with `-32700` ("Body too large"), `AshA2A.Transport.Plug` answers
+HTTP 200 with `-32600`, and `AshA2A.A2ATransport.Plug` (default cap
+8_000_000) answers `-32600`.
+
+**`-32007` extended agent card**. `agent/getAuthenticatedExtendedCard` returns
+`-32007` when no `:extended_card` provider is configured (JSON-RPC: HTTP 200;
+REST `POST /agent`: HTTP 400). With a provider but no verified identity the
+answer is HTTP 401 with `WWW-Authenticate: Bearer` (not `-32007`). A provider
+returning `{:error, reason}` or a non-map result also yields `-32007` with the
+reason as data; the public card is never substituted. Success sends
+`Cache-Control: private, no-store`.
+
 ## Request payload rules (AshA2A specifics)
 
 - **Skill selection**: set `message.metadata["skill"]` (atom-or-string via

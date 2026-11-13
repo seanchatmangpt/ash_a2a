@@ -13,7 +13,11 @@ defmodule AshA2A.Identity.Canonical do
   def encode(value) do
     with :ok <- Encodable.validate(value),
          {:ok, normalized} <- Normalizer.normalize(value) do
-      jcs(normalized)
+      with {:ok, bytes} <- AshA2A.Wire.Jcs.encode(normalized) do
+        if byte_size(bytes) > Encodable.max_bytes(),
+          do: {:error, :canonical_size_exceeded},
+          else: {:ok, bytes}
+      end
     end
   end
 
@@ -21,11 +25,5 @@ defmodule AshA2A.Identity.Canonical do
     with {:ok, bytes} <- encode(value) do
       {:ok, "sha256:" <> Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)}
     end
-  end
-
-  defp jcs(value) do
-    {:ok, Jcs.encode(value)}
-  rescue
-    _ -> {:error, :canonical_unencodable}
   end
 end

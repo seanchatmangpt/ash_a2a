@@ -81,7 +81,31 @@ defmodule AshA2A.Protocol.Agent.State do
           AshA2A.Protocol.Task.t()
   def transition(task, new_state, message \\ nil) do
     old_state = if task.status, do: task.status.state
-    task = %{task | status: AshA2A.Protocol.Task.Status.new(new_state, message)}
+
+    case AshA2A.TaskLifecycle.check_transition(old_state, new_state) do
+      :ok -> do_transition(task, old_state, new_state, message)
+      {:error, reason} -> refuse_transition(task, old_state, new_state, reason)
+    end
+  end
+
+  # A terminal task is never moved to a different state: the refusal leaves
+  # the task untouched and is observable on telemetry.
+  defp refuse_transition(task, old_state, new_state, reason) do
+    :telemetry.execute(
+      [:a2a, :task, :transition_refused],
+      %{system_time: System.system_time()},
+      %{task_id: task.id, from: old_state, to: new_state, reason: reason}
+    )
+
+    task
+  end
+
+  defp do_transition(task, old_state, new_state, message) do
+    task =
+      AshA2A.Protocol.Task.Generation.append_status(
+        task,
+        AshA2A.Protocol.Task.Status.new(new_state, message)
+      )
 
     :telemetry.execute(
       [:a2a, :task, :transition],
@@ -101,13 +125,53 @@ defmodule AshA2A.Protocol.Agent.State do
   Stores a task in the internal state map and optionally in the external store.
   """
   @spec put_task(t(), AshA2A.Protocol.Task.t()) :: t()
-  def put_task(%{task_store: {mod, ref}} = state, task) do
-    mod.put(ref, task)
-    %{state | tasks: Map.put(state.tasks, task.id, task)}
+  def put_task(state, task) do
+    case put_task_checked(state, task) do
+      {:ok, state} ->
+        state
+
+      {:error, _reason} ->
+        # Legacy unchecked path: memory is updated, the failure is on telemetry.
+        %{state | tasks: Map.put(state.tasks, task.id, task)}
+    end
   end
 
-  def put_task(state, task) do
-    %{state | tasks: Map.put(state.tasks, task.id, task)}
+  @doc """
+  Like `put_task/2`, but checks the store's return. A store `{:error, _}`
+  (or a raising store such as `AshA2A.TaskStore.Ekv`) yields
+  `{:error, {:store_write_failed, reason}}` and the in-memory map is NOT
+  updated, so an unpersisted task is never acknowledged.
+  """
+  @spec put_task_checked(t(), AshA2A.Protocol.Task.t()) :: {:ok, t()} | {:error, term()}
+  def put_task_checked(%{task_store: {mod, ref}} = state, task) do
+    case safe_store_put(mod, ref, task) do
+      :ok ->
+        {:ok, %{state | tasks: Map.put(state.tasks, task.id, task)}}
+
+      {:error, reason} ->
+        :telemetry.execute([:a2a, :task_store, :put_failed], %{count: 1}, %{
+          task_id: task.id,
+          reason: reason
+        })
+
+        {:error, {:store_write_failed, reason}}
+    end
+  end
+
+  def put_task_checked(state, task) do
+    {:ok, %{state | tasks: Map.put(state.tasks, task.id, task)}}
+  end
+
+  defp safe_store_put(mod, ref, task) do
+    case mod.put(ref, task) do
+      :ok -> :ok
+      {:error, _} = error -> error
+      other -> {:error, {:unexpected_return, other}}
+    end
+  rescue
+    error -> {:error, {:raised, Exception.message(error)}}
+  catch
+    kind, value -> {:error, {kind, value}}
   end
 
   @doc """
@@ -117,7 +181,11 @@ defmodule AshA2A.Protocol.Agent.State do
   def get_task(%{task_store: {mod, ref}} = state, task_id) do
     case Map.fetch(state.tasks, task_id) do
       {:ok, task} -> {:ok, task}
-      :error -> mod.get(ref, task_id)
+      :error ->
+        case mod.get(ref, task_id) do
+          {:ok, _} = ok -> ok
+          _ -> {:error, :not_found}
+        end
     end
   end
 
@@ -164,7 +232,9 @@ defmodule AshA2A.Protocol.Agent.State do
   @doc """
   Stores a push notification config.
 
-  Uses the external store when it implements the push callbacks, the in-memory
+  When the store does not implement the push callbacks, configs live in the
+  agent's in-memory map and are NOT durable (lost on agent restart); that
+  fallback is typed on telemetry `[:a2a, :push_config, :volatile]`. Uses the external store when it implements the push callbacks, the in-memory
   map otherwise — one or the other, never both. A store may be shared between
   agents, so caching configs alongside it would let one agent's stale copy
   shadow another's delete and keep a removed webhook alive.
@@ -229,6 +299,11 @@ defmodule AshA2A.Protocol.Agent.State do
   end
 
   defp put_push_config_in_memory(state, config) do
+    :telemetry.execute([:a2a, :push_config, :volatile], %{count: 1}, %{
+      task_id: config.task_id,
+      config_id: config.id
+    })
+
     key = {config.task_id, config.id}
     {%{state | push_configs: Map.put(state.push_configs, key, config)}, {:ok, config}}
   end
@@ -267,8 +342,17 @@ defmodule AshA2A.Protocol.Agent.State do
 
   defp decode_state(str) do
     case AshA2A.Protocol.JSON.decode_state(str) do
+      # TASK_STATE_UNSPECIFIED (proto zero value) means "no status filter".
+      {:ok, :unknown} -> nil
       {:ok, atom} -> atom
-      {:error, _} -> :unknown
+      {:error, _} -> nil
+    end
+  end
+
+  defp list_history_length(params) do
+    case AshA2A.Protocol.JSONRPC.Request.history_length(params) do
+      n when is_integer(n) and n >= 0 -> n
+      _ -> 0
     end
   end
 
@@ -298,9 +382,15 @@ defmodule AshA2A.Protocol.Agent.State do
       status_timestamp_after: timestamp_after,
       page_size: params["pageSize"] || 50,
       page_token: params["pageToken"],
-      # per A2A spec §6.5 (pagination): tasks/list returns truncated history;
-      # historyLength is only honored on tasks/get, never on list
-      history_length: 0,
+      # ListTasksRequest.history_length: unset keeps the default (0 = clear
+      # history); N keeps the last N entries per returned task.
+      history_length: list_history_length(params),
+      # v1.1 ListTasksRequest.timeline_length: unset keeps the whole timeline.
+      timeline_length:
+        case params["timelineLength"] do
+          n when is_integer(n) and n >= 0 -> n
+          _ -> nil
+        end,
       include_artifacts: params["includeArtifacts"] || false
     ]
   end

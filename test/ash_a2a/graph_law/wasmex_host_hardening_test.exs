@@ -24,6 +24,23 @@ defmodule AshA2A.GraphLaw.WasmexHostHardeningTest do
   @base_ttl "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\nex:b ex:p ex:c .\n"
   @base_digest "9b8180962a93910d17c51d029626f393d65ac2f724b9ffc657c90bc4f3b5939d"
 
+  # `:unpinned` (a caller-named foreign path, or the explicit opt-out) is
+  # admitted only under runtime opt-in; the default-refusal law is pinned in
+  # unpinned_refusal_test.exs. Digest-pinned cases below are unaffected.
+  setup do
+    previous = Application.fetch_env(:ash_a2a, :graphlaw_allow_unpinned)
+    Application.put_env(:ash_a2a, :graphlaw_allow_unpinned, true)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, v} -> Application.put_env(:ash_a2a, :graphlaw_allow_unpinned, v)
+        :error -> Application.delete_env(:ash_a2a, :graphlaw_allow_unpinned)
+      end
+    end)
+
+    :ok
+  end
+
   defp vendored, do: AshA2A.GraphLaw.wasm_path()
 
   # A valid wasm module with the same code and imports as the pinned artifact,
@@ -110,18 +127,18 @@ defmodule AshA2A.GraphLaw.WasmexHostHardeningTest do
 
       # The call path itself consults the pin (this module is async: false and
       # restores any value the developer had set).
-      previous_env = System.get_env("GRAPHLAW_WASM")
+      previous_env = System.get_env("PRAXIS_GRAPHLAW_WASM")
 
       if is_binary(System.find_executable("node")) and is_nil((previous || [])[:wasm_path]) do
         try do
-          System.put_env("GRAPHLAW_WASM", path)
+          System.put_env("PRAXIS_GRAPHLAW_WASM", path)
 
           assert {:error, %{code: :graphlaw_wasm_digest_mismatch}} =
                    peer.graph_hash(@base_ttl)
         after
           if previous_env,
-            do: System.put_env("GRAPHLAW_WASM", previous_env),
-            else: System.delete_env("GRAPHLAW_WASM")
+            do: System.put_env("PRAXIS_GRAPHLAW_WASM", previous_env),
+            else: System.delete_env("PRAXIS_GRAPHLAW_WASM")
         end
       end
 

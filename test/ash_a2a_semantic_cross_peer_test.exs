@@ -574,11 +574,12 @@ defmodule AshA2A.SemanticCrossPeerTest do
       # spec's own UnsupportedOperationError.
       assert riding_response["error"]["code"] == -32004
 
-      assert %{
-               "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
-               "domain" => "a2a-protocol.org",
-               "reason" => "UNSUPPORTED_OPERATION"
-             } in riding_response["error"]["data"]
+      assert Enum.any?(riding_response["error"]["data"], fn d ->
+               d["@type"] == "type.googleapis.com/google.rpc.ErrorInfo" and
+                 d["domain"] == "a2a-protocol.org" and
+                 d["reason"] == "UNSUPPORTED_OPERATION"
+             end)
+
       assert Ledger.entries(ledger, second.envelope_id) == []
 
       # And as a fresh task, the same non-conforming envelope is refused on

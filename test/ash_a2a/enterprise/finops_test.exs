@@ -311,7 +311,8 @@ defmodule AshA2A.Enterprise.FinOpsCourtTest do
       assert BudgetStore.total(store, "acct-win") == 100
       assert is_integer(started)
 
-      Process.sleep(80)
+      # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(80)
 
       assert BudgetStore.usage(store, "acct-win") == 0
       assert BudgetStore.total(store, "acct-win") == 100

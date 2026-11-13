@@ -552,10 +552,10 @@ section 10" are ambiguous.
 | `RFC-SA2A-005-cwe-court-matrix-v26.9.28.md` | `8af1261...` (plus dirty tree) | stale |
 | `RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` | none | MISSING pin |
 | `RFC-SA2A-006-existing-substrate-map-v26.9.28.md` | `492af9e` (plus untracked) | stale |
-| `docs/jira/v26.9.28-kernel/HANDOFF.md` | `9cda21c...` | stale |
-| `docs/jira/v26.9.28-kernel/_LANES.md` | `8af1261...` | stale |
-| `docs/jira/v26.9.28-kernel/_LANES_V2.md` | none (path shorthand at "HEAD") | MISSING pin |
-| `docs/jira/v26.9.28-kernel/_LANES_V3.md` | `62cd548` (tree dirty) | stale |
+| `docs/archive/jira/v26.9.28-kernel/HANDOFF.md` | `9cda21c...` | stale |
+| `docs/archive/jira/v26.9.28-kernel/_LANES.md` | `8af1261...` | stale |
+| `docs/archive/jira/v26.9.28-kernel/_LANES_V2.md` | none (path shorthand at "HEAD") | MISSING pin |
+| `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md` | `62cd548` (tree dirty) | stale |
 | `RFC-SA2A-003-v26.9.28.md` | `84bbe18...` | stale |
 
 - Every RFC, matrix, lane map and receipt MUST name the exact 40-hex subject SHA it was
@@ -717,7 +717,7 @@ C1, C2 and C3 are UNSATISFIED, and no court has a recorded run receipt.
 
 ## 5. Traceability table
 
-Lanes L01..L20 and X1..X4 are from `docs/jira/v26.9.28-kernel/_LANES_V3.md`. NEW means no
+Lanes L01..L20 and X1..X4 are from `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md`. NEW means no
 lane exists yet and one must be added (in a later `_LANES` revision, not here).
 
 - **E-A theorem premises, scope**: NEW (claim validator), L12, L20; Court(s): ERR7-A-1, ERR7-A-2
@@ -757,4 +757,4 @@ lane exists yet and one must be added (in a later `_LANES` revision, not here).
 - `docs/rfc/RFC-SA2A-005-cwe-court-matrix-v26.9.28.md` — court matrix (005b)
 - `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` — C0..C3 (006a)
 - `docs/assurance/sa2a-assurance-case-v26.9.28.md` — claims, evidence, assumptions, risks
-- `docs/jira/v26.9.28-kernel/_LANES_V3.md` — lane map and honest status
+- `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md` — lane map and honest status

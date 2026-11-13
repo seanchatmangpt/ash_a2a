@@ -50,16 +50,23 @@ defmodule AshA2A.Attestation.Key do
   @spec sign(map(), key()) :: token() | {:error, term()}
   def sign(payload, %{priv: priv} = _key) when is_map(payload) do
     with {:ok, json} <- Jason.encode(payload),
-         sig when is_binary(sig) <- :crypto.sign(:ecdsa, :sha256, json, [priv, @curve]),
+         sig when is_binary(sig) <- safe_sign(json, priv),
          sig <- to_low_s(sig) do
       [@prefix, b64(json), b64(sig)] |> Enum.join(".")
     else
       {:error, reason} -> {:error, reason}
+      :bad_key -> {:error, :bad_key}
       other -> {:error, {:sign_failed, other}}
     end
   end
 
   def sign(_payload, _key), do: {:error, :bad_key}
+
+  defp safe_sign(json, priv) do
+    :crypto.sign(:ecdsa, :sha256, json, [priv, @curve])
+  rescue
+    _ -> :bad_key
+  end
 
   @doc """
   Verifies a `v1.` token against a public key.
@@ -79,14 +86,14 @@ defmodule AshA2A.Attestation.Key do
         with {:ok, json} <- decode(b64_payload),
              {:ok, sig} <- decode(b64_sig),
              :ok <- canonical_low_s?(sig),
-             true <- :crypto.verify(:ecdsa, :sha256, json, sig, [pub, @curve]) do
-          Jason.decode(json)
+             true <- safe_verify(json, sig, pub),
+             {:ok, claims} when is_map(claims) <- Jason.decode(json) do
+          {:ok, claims}
         else
           false -> {:error, :bad_signature}
           {:error, :bad_signature} = err -> err
           {:error, :non_canonical_signature} = err -> err
-          {:error, _} -> {:error, :malformed_token}
-          other -> {:error, {:verify_failed, other}}
+          _ -> {:error, :malformed_token}
         end
 
       _ ->
@@ -160,6 +167,12 @@ defmodule AshA2A.Attestation.Key do
   end
 
   defp parse_der_sig(_), do: :error
+
+  defp safe_verify(json, sig, pub) do
+    :crypto.verify(:ecdsa, :sha256, json, sig, [pub, @curve])
+  rescue
+    _ -> false
+  end
 
   defp b64(data), do: Base.url_encode64(data, padding: false)
   defp decode(data), do: Base.url_decode64(data, padding: false)

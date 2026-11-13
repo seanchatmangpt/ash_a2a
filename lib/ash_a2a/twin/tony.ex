@@ -2,8 +2,10 @@ defmodule AshA2A.Twin.Tony do
   @moduledoc """
   Tony: ergonomic load balancer over a coordinator mesh.
 
-  Pure functions over tensor snapshots (no processes, no clock reads — the
-  caller supplies observation data). Integration seam disclosed: the
+  Pure functions over tensor snapshots (no processes). The only clock read is
+  `triage/2`'s default `now` (`DateTime.utc_now/0`) when the caller does not
+  inject `:now:` — inject it for deterministic results. Otherwise the caller
+  supplies all observation data. Integration seam disclosed: the
   `:heuristic_frequency` dimension is expected to be fed by Vince's heuristic
   detectors' flagged-event counts; Tony only consumes the number.
 
@@ -34,9 +36,11 @@ defmodule AshA2A.Twin.Tony do
   Strain-check the target coordinator for an inbound ticket.
 
   `{:admit, id}` when no hyperplane gate breaches; `{:shed, {:senior_queue, target}}`
-  when the saturation gate breaches. Unknown coordinator raises.
+  when the saturation gate breaches. An unknown (or missing) coordinator id
+  raises `KeyError` — fail-loud, never fail-open.
   """
-  @spec handle_inbound(mesh(), keyword() | map()) :: {:admit, term()} | {:shed, {:senior_queue, :tony_relief}}
+  @spec handle_inbound(mesh(), keyword() | map()) ::
+          {:admit, term()} | {:shed, {:senior_queue, :tony_relief}}
   def handle_inbound(mesh, ticket)
 
   def handle_inbound(mesh, ticket) when is_map(mesh) do
@@ -60,10 +64,12 @@ defmodule AshA2A.Twin.Tony do
   Divert high-friction tickets away from saturated coordinators to fresh ones.
 
   Pure over tensor snapshots: `tickets` each carry `:coordinator_id` and
-  `:friction` (0.0-1.0); `mesh` maps coordinator id → tensor snapshot. A
+  `:friction` (0.0-1.0); a ticket missing either key (or not a map) is
+  passed through untouched, never crashed on; `mesh` maps coordinator id → tensor snapshot. A
   coordinator whose tensor breaches the saturation gate is saturated; its
   tickets with `friction > @friction_threshold` are reassigned to the mesh's
-  freshest coordinator (lowest weighted strain). Returns the reassigned
+  freshest non-saturated coordinator (lowest unweighted sum of normalized
+  strains). Returns the reassigned
   `[ticket]` list (original order preserved; non-diverted tickets untouched).
   """
   @spec balance([map()], mesh(), keyword()) :: [map()]
@@ -89,9 +95,11 @@ defmodule AshA2A.Twin.Tony do
     end
   end
 
-  defp divert?(%{friction: f} = ticket, saturated) do
-    MapSet.member?(saturated, ticket.coordinator_id) and is_number(f) and f > @friction_threshold
+  defp divert?(%{friction: f, coordinator_id: id}, saturated) do
+    MapSet.member?(saturated, id) and is_number(f) and f > @friction_threshold
   end
+
+  defp divert?(_ticket, _saturated), do: false
 
   defp saturated_ids(mesh) do
     mesh
@@ -123,8 +131,10 @@ defmodule AshA2A.Twin.Tony do
 
   Pre-staging checklist — ALL must pass for a ticket to be routine:
   `warranty_status == :active`, `operating_hours <= 2000`,
-  `sla_window` an open range containing `now` (or `:open`), and
-  `contractor_coi_valid == true`. Any missing/invalid field → escalation edge.
+  `sla_window` an open range containing `now` (bounds inclusive; or `:open`),
+  and `contractor_coi_valid == true`. Any missing/invalid field → escalation
+  edge. Options: `:now` (default `DateTime.utc_now/0`, the one clock read in
+  this module) and `:max_operating_hours` (default 2000, inclusive).
   """
   @spec triage([map()], keyword()) :: {[map()], [map()]}
   def triage(tickets, opts \\ []) when is_list(tickets) do

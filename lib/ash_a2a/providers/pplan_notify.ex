@@ -42,6 +42,21 @@ defmodule AshA2A.Providers.PPlanNotify do
   already-terminal record will deliver once more — at-least-once across
   notifier restarts, never zero and never more than once per tick-success.
 
+  ## Restart semantics (watch-set loss)
+
+  The watch set, dedup set and delivery log are in-process state only. A
+  restart of the notifier (supervisor restart after a crash) LOSES the watch
+  set: tasks watched before the restart are no longer polled and their
+  completions are never delivered until the host re-`watch/2`es them. Hosts
+  that need durability must re-register watches from their own task registry
+  in the supervisor's start sequence. Nothing is persisted by this module.
+
+  ## Delivery log bound
+
+  The delivery log keeps the newest 100 entries (`:max_deliveries`
+  option, default 100); older entries are dropped. The dedup set is
+  unaffected by log trimming.
+
   ## Options (`start_link/1`)
 
     * `:store` (required) — durable store (pid or registered name).
@@ -59,6 +74,7 @@ defmodule AshA2A.Providers.PPlanNotify do
       signature `(transport, config, payload, seq, push_opts) ->
       :ok | {:error, term}`.
     * `:interval` — poll interval in ms (default 1000).
+    * `:max_deliveries` — delivery-log bound (default 100).
 
   ## API
 
@@ -89,6 +105,8 @@ defmodule AshA2A.Providers.PPlanNotify do
 
   use GenServer
 
+  require Logger
+
   # ash_pplan is an optional (test-only) dependency: atoms + apply/3, exactly
   # like AshA2A.Providers.PPlan, so this file loads without it.
   @engine AshPPlan.Reactor.Durable.Engine
@@ -96,6 +114,7 @@ defmodule AshA2A.Providers.PPlanNotify do
   @pplan AshA2A.Providers.PPlan
 
   @default_interval 1_000
+  @default_max_deliveries 100
 
   @doc "Whether the ash_pplan durability backend is loaded."
   @spec available?() :: boolean()
@@ -156,6 +175,7 @@ defmodule AshA2A.Providers.PPlanNotify do
       push_opts: Keyword.get(opts, :push_opts, []),
       deliver: opts[:deliver],
       interval: Keyword.get(opts, :interval, @default_interval),
+      max_deliveries: Keyword.get(opts, :max_deliveries, @default_max_deliveries),
       watched: MapSet.new(),
       notified: MapSet.new(),
       deliveries: []
@@ -210,28 +230,54 @@ defmodule AshA2A.Providers.PPlanNotify do
     end
   end
 
+  # Never lets a bad record/unmapped status/dead push store crash the tick
+  # (a GenServer crash would also drop the whole watch set): the failure is
+  # logged as a typed skip and retried on the next tick.
   defp maybe_deliver(state, task_id, record) do
     if apply(@status, :terminal?, [record.status]) do
-      {payload, seq} = wrapped_body(task_id, record)
-      configs = AshA2A.A2ATransport.PushConfigStore.list(state.push_store, task_id)
-      deliver_all(state, task_id, payload, seq, record.status, configs)
+      with {:ok, {payload, seq}} <- wrapped_body(task_id, record),
+           {:ok, configs} <- list_configs(state, task_id) do
+        deliver_all(state, task_id, payload, seq, record.status, configs)
+      else
+        {:error, reason} ->
+          Logger.warning(
+            "pplan notify skipped task #{inspect(task_id)}: #{inspect(reason, limit: 10)}"
+          )
+
+          state
+      end
     else
       state
     end
+  end
+
+  defp list_configs(state, task_id) do
+    case AshA2A.A2ATransport.PushConfigStore.list(state.push_store, task_id) do
+      configs when is_list(configs) -> {:ok, configs}
+      other -> {:error, {:bad_push_store_reply, other}}
+    end
+  rescue
+    e -> {:error, {:push_store_failed, e.__struct__}}
+  catch
+    :exit, reason -> {:error, {:push_store_exit, reason}}
   end
 
   # The SAME v1.0 StreamResponse wrapper the in-process path publishes
   # (lib/ash_a2a/a2a_transport/plug.ex publish_result/4): `{"task" => ...}`
   # with the terminal wire state and no "final" boolean anywhere.
   defp wrapped_body(task_id, record) do
-    state =
-      case apply(@pplan, :to_state, [record.status]) do
-        {:ok, state} -> state
-        {:error, reason} -> raise ArgumentError, "unmapped ash_pplan run status: #{inspect(reason)}"
-      end
+    case apply(@pplan, :to_state, [record.status]) do
+      {:ok, state} when state in [:completed, :failed, :canceled] ->
+        {:ok,
+         {%{"task" => %{"id" => task_id, "status" => %{"state" => wire_state(state)}}},
+          record.version}}
 
-    {%{"task" => %{"id" => task_id, "status" => %{"state" => wire_state(state)}}},
-     record.version}
+      {:ok, state} ->
+        {:error, {:non_terminal_state, state}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp wire_state(:completed), do: "TASK_STATE_COMPLETED"
@@ -250,7 +296,7 @@ defmodule AshA2A.Providers.PPlanNotify do
       if MapSet.member?(state.notified, key) do
         state
       else
-        outcome = deliver(state, config, payload, seq)
+        outcome = safe_deliver(state, config, payload, seq)
 
         %{
           state
@@ -266,9 +312,22 @@ defmodule AshA2A.Providers.PPlanNotify do
               }
               | state.deliveries
             ]
+            |> Enum.take(state.max_deliveries)
         }
       end
     end)
+  end
+
+  defp safe_deliver(state, config, payload, seq) do
+    case deliver(state, config, payload, seq) do
+      :ok -> :ok
+      {:error, _} = error -> error
+      other -> {:error, {:bad_deliver_return, other}}
+    end
+  rescue
+    e -> {:error, {:deliver_raised, e.__struct__}}
+  catch
+    kind, reason -> {:error, {:deliver_caught, kind, reason}}
   end
 
   defp deliver(%{deliver: fun} = state, config, payload, seq) when is_function(fun, 5),

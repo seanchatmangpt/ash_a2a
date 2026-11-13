@@ -15,7 +15,6 @@ defmodule AshA2A.CallbackRegistry do
   """
 
   @members [
-    {BeamPM.Ferroplan, :plan_production, 4},
     {AshR2RML, :mapping_result, 1}
   ]
 

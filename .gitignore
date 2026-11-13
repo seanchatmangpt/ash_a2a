@@ -46,3 +46,17 @@ node_modules/
 .DS_Store
 _build-lane*/
 target-lane*/
+
+# LaTeX build outputs (thesis/, docs/thesis/): intermediates are never source.
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+# Root-level logs and crash dumps.
+/*.log
+/erl_crash.dump

@@ -15,6 +15,7 @@ defmodule AshA2A.Telemetry.ObsHardeningTest do
   @moduletag :serial_shard
 
   import ExUnit.CaptureLog
+  require Logger
   import AshA2A.Test.MessageHelpers
 
   alias AshA2A.Telemetry.{OcelForwarder, Redact}
@@ -210,7 +211,8 @@ defmodule AshA2A.Telemetry.ObsHardeningTest do
           refute meta.endpoint =~ "s3cr3t"
           # OBS-12: the POST task inherited the emitter's Logger metadata.
           assert task_md[:ash_a2a_command_id] == "corr-1"
-          Process.sleep(50)
+          # barrier: Logger processes everything emitted so far before capture_log returns
+          Logger.flush()
         end)
 
       assert OcelForwarder.failed_count() == before + 1
@@ -225,7 +227,8 @@ defmodule AshA2A.Telemetry.ObsHardeningTest do
         capture_log(fn ->
           for _ <- 1..3, do: emit_dispatch_stop()
           for _ <- 1..3, do: assert_receive({^ref, _, _, _, _}, 2_000)
-          Process.sleep(50)
+          # barrier: Logger processes everything emitted so far before capture_log returns
+          Logger.flush()
         end)
 
       refute suppressed_log =~ "OcelForwarder"
@@ -238,7 +241,8 @@ defmodule AshA2A.Telemetry.ObsHardeningTest do
         capture_log(fn ->
           emit_dispatch_stop()
           assert_receive {^ref, _, _, _, _}, 2_000
-          Process.sleep(50)
+          # barrier: Logger processes everything emitted so far before capture_log returns
+          Logger.flush()
         end)
 
       assert next_log =~ "(3 similar warnings suppressed)"

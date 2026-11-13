@@ -80,6 +80,29 @@ fail-closed defaults are deliberate.
 | `:hddl_timeout_ms` | `30_000` | `AshA2A.Planning.HddlSolver` subprocess timeout. |
 | `:hddl_max_output_bytes` | `8_000_000` | `AshA2A.Planning.HddlSolver` output cap. |
 
+## Application config — enterprise, cluster & copilot
+
+| Key | Default | Consumed by / meaning |
+| --- | --- | --- |
+| `:affidavit_pool` | System.schedulers_online() | `AshA2A.Evidence.AffidavitPool.size/1` — pool size when a positive integer (per-call `:size` opt wins); any other value falls back to the default. |
+| `:cluster_drain_manager` | AshA2A.Cluster.DrainManager | `AshA2A.Cluster.HealthPlug` — server name/pid queried via `DrainManager.cordoned?/1`; an unavailable manager is treated as not cordoned. |
+| `:cluster_pubsub` | — (unset: no pubsub) | `AshA2A.Cluster.Handover` — `pubsub_name` (atom) or `{pubsub_name, topic}`; a bare name uses the module's default topic; anything else disables it. |
+| `:cmek_kms_client` | — (unset: refuses :refused_cmek_kms_unavailable, no plaintext fallback) | `AshA2A.Security.KeyManager` / `AshA2A.Enterprise.Supervisor` — KMS client module (opt `:kms_client` wins). A non-module value is refused. |
+| `:cmek_kek_id` | module default KEK id | `AshA2A.Security.KeyManager` — key-encryption-key id (opt `:kek_id` wins). |
+| `:kms` | — | Keyword list; its `:client` atom is projected into `:cmek_kms_client` at `KeyManager.init/1` and `Enterprise.Supervisor` start, only when `:cmek_kms_client` is `nil`/`false`. Explicit `:cmek_kms_client` wins. |
+| `:finops` | — (unset: FinOps gate is a passthrough) | `AshA2A.Dispatcher` finops gate and `AshA2A.FinOps.BudgetEnforcer`. Keyword list or map with `:budget_store` (required once set; `Keyword.fetch!`/`Map.fetch!`), `:default_cost_center`, `:default_budget_account_id`. Unresolvable attribution or an account with no ceiling is refused. |
+| `:node_region` | — | `AshA2A.Security.DataResidency` — this node's region string (blank is ignored). Resolution order: opt `:node_region`, then `:node_region_provider`, then this key; none resolves to `:error`. |
+| `:node_region_provider` | — | `AshA2A.Security.DataResidency` — module whose `region/0` returns `{:ok, region}`. |
+| `:siem_egress_policy` | [] (strict: HTTPS, public addresses); :test build: allow_http: true plus loopback CIDRs | `AshA2A.Telemetry.SIEM` SSRF admission options for SIEM endpoints (CWE-918); same shape as `:ocel_egress_policy`. Non-list values fall back to the default. |
+| `:spiffe_trust_domain` | nil | `AshA2A.Enterprise.Supervisor` passes it as `:trust_domain` to `AshA2A.SPIFFE.WorkloadWatcher` (when the SPIFFE socket child is on); `WorkloadWatcher.bundle/0` uses it when the watcher holds none. |
+| `:copilot_mechanical_prior` | — (then TradeReticle.Plumbing if loadable, else stage skipped) | `AshA2A.Copilot.Pipeline.detect_prior/0` — module for the mechanical-prior stage. |
+| `:orphan_sweep_interval_ms` | 10000 ms (false disables the sweep) | `AshA2A.Transport.Runtime` arms `AshA2A.Protocol.Task.OrphanSweep` at this interval; keep it well below `:orphan_lease_ms`. |
+| `:orphan_lease_ms` | 60000 ms | `AshA2A.Transport.Runtime` lease after which a non-terminal task with no live owner is failed by the sweep (telemetry `[:ash_a2a, :task, :orphan_failed]`). |
+| `:ocel_pending_dispatch_ttl_ms` | 5000 ms | `AshA2A.Telemetry.OcelForwarder` max age of a stashed CommandBus dispatch span. |
+| `:bidi_max_queue` | 1000 | `AshA2A.Bidi.Channel` max queued messages; per-channel `:max_queue` arg wins; non-positive or non-integer falls back to the module default. |
+| `:trace_max_records` | 50000 | `AshA2A.Trace.Recorder` record cap; non-positive or non-integer falls back to 50000. |
+| `:stream_idle_ms` | 60000 ms (gRPC transport ctx key, not an Application env key) | `AshA2A.Transport.GRPC.Server` stream idle timeout read from the request ctx; non-positive or non-integer falls back to 60000. |
+
 ## Application config — semantic engine / GraphLaw (opt-in surfaces)
 
 | Key | Default | Notes |
@@ -100,6 +123,17 @@ fail-closed defaults are deliberate.
 
 Per-module form is also supported where noted, e.g.
 `config :ash_a2a, AshA2A.Semantic.GraphLaw.Wasm, [...]`.
+
+## Application config — A2A v1.1 (additive)
+
+| Key | Meaning |
+|-----|---------|
+| `config :ash_a2a, :long_poll_timeout_ms` | Upper bound the server waits on `GetTaskRequest.currentGeneration` before returning the current task. Standing UNVERIFIED (owned by the v1.1 transport lane). |
+| `user_artifacts` (agent capability) | Advertised as `AgentCapabilities.userArtifacts`; gates `SendMessageRequest.artifactUpdates`. |
+
+`A2A-Version: 1.1` selects v1.1 behavior. Accepted versions default to
+`["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); emitted cards carry
+`protocolVersion` 1.1; the client-side header default (`Version.default/0`) is `"1.0"`.
 
 ## Environment variables
 

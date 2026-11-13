@@ -53,6 +53,15 @@ defmodule AshA2A.Protocol.CardCacheTest do
       "url" => "http://127.0.0.1:placeholder",
       "protocolVersion" => "1.0",
       "capabilities" => %{"streaming" => true},
+      "supportedInterfaces" => [
+        %{
+          "url" => "http://127.0.0.1:placeholder",
+          "protocolBinding" => "JSONRPC",
+          "protocolVersion" => "1.0"
+        }
+      ],
+      "defaultInputModes" => ["text/plain"],
+      "defaultOutputModes" => ["text/plain"],
       "skills" => @card_skills
     }
   end

@@ -160,9 +160,10 @@ defmodule AshA2A.Protocol.CardSigningTest do
                |> AshA2A.Protocol.JSON.decode_agent_card()
 
       assert decoded.signatures == signed.signatures
-      # In-memory protocol_version is nil post-decode; verification still
-      # passes because the digest never covered it.
-      assert decoded.protocol_version != signed.protocol_version
+      # Post-decode protocol_version is the struct default (the wire has no
+      # top-level member and decode never overrides the default with nil);
+      # verification passes because the digest never covered it.
+      assert decoded.protocol_version == AshA2A.Protocol.Version.protocol_version()
       assert CardSigning.verify(decoded, @key_a) == :ok
     end
 

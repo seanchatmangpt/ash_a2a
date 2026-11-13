@@ -80,7 +80,9 @@ defmodule AshA2A.V1PbFidelityTest do
 
   alias Lf.A2a.V1, as: Pb
 
-  @proto_path Path.join(__DIR__, "../priv/a2a_v1_spec_corpus/a2a.proto")
+  # The generated pb projection is regenerated from priv/proto/a2a.proto (v1.1
+  # IDL), so the vocabulary/REQUIRED corpus must be the v1.1 one.
+  @proto_path Path.join(__DIR__, "../priv/a2a_v1_1_spec_corpus/a2a.proto")
 
   # ------------------------------------------------------------------
   # Comparator — the pure mechanism under test
@@ -304,7 +306,20 @@ defmodule AshA2A.V1PbFidelityTest do
         pb_mod: Pb.StreamResponse,
         corpus: "StreamResponse",
         codec_keys: fn ->
-          [task_sample(), message_sample(), status_update_sample(), artifact_update_sample()]
+          [
+            task_sample(),
+            message_sample(),
+            status_update_sample(),
+            artifact_update_sample(),
+            message_update_sample(),
+            %AshA2A.Protocol.StreamError{
+              task_id: "t1",
+              code: "E",
+              message: "m",
+              reference_id: "r",
+              metadata: %{"k" => "v"}
+            }
+          ]
           |> Enum.flat_map(fn s ->
             {:ok, m} = JSON.encode_stream_response(s)
             Map.keys(m)
@@ -424,7 +439,17 @@ defmodule AshA2A.V1PbFidelityTest do
 
   test "mutation witness: renamed json_name and added pb-only key are flagged" do
     real = pb_names(Pb.Task)
-    codec = MapSet.new(["id", "contextId", "status", "artifacts", "history", "metadata"])
+    codec =
+      MapSet.new([
+        "id",
+        "contextId",
+        "status",
+        "artifacts",
+        "history",
+        "timeline",
+        "metadata",
+        "generation"
+      ])
 
     # Sanity: the real maps pass the comparator — the witness is not vacuous.
     assert Comparator.compare(codec, real) == %{
@@ -486,6 +511,30 @@ defmodule AshA2A.V1PbFidelityTest do
     # ...and the unknown key's payload is gone: this is the silent-loss edge
     # the three-way court above exists to pre-empt.
     assert decoded.context_id == ""
+  end
+
+  # ------------------------------------------------------------------
+  # Provenance court — priv/proto/a2a.proto header SHA vs the body bytes
+  # ------------------------------------------------------------------
+
+  test "priv/proto/a2a.proto: line-2 Upstream SHA-256 equals sha256 of the vendored body" do
+    lines =
+      :ash_a2a
+      |> :code.priv_dir()
+      |> Path.join("proto/a2a.proto")
+      |> File.read!()
+      |> String.split("\n")
+
+    [_vendored, sha_line | rest] = lines
+    assert "// Upstream SHA-256: " <> header_sha = sha_line
+
+    # The provenance header is the leading `//` block ending at the first
+    # blank line; everything after it is the verbatim upstream body.
+    body = rest |> Enum.drop_while(&(&1 != "")) |> Enum.drop(1) |> Enum.join("\n")
+    actual = :crypto.hash(:sha256, body) |> Base.encode16(case: :lower)
+
+    assert actual == String.trim(header_sha),
+           "a2a.proto header SHA #{header_sha} != sha256(body) #{actual}"
   end
 
   # ------------------------------------------------------------------
@@ -759,6 +808,7 @@ defmodule AshA2A.V1PbFidelityTest do
             name: "card-agent",
             description: "desc",
             version: "1.0.0",
+            capabilities: %Pb.AgentCapabilities{},
             supported_interfaces: [
               %Pb.AgentInterface{
                 url: "https://a.example",
@@ -796,8 +846,21 @@ defmodule AshA2A.V1PbFidelityTest do
       status: status_sample(),
       history: [message_sample()],
       artifacts: [artifact_sample()],
+      timeline: [
+        %AshA2A.Protocol.TimelineEntry{entry: {:message, message_sample()}, generation: 1},
+        %AshA2A.Protocol.TimelineEntry{entry: {:status, status_sample()}, generation: 2}
+      ],
+      generation: 3,
       metadata: %{"k" => "v"}
     }
+  end
+
+  defp message_update_sample do
+    Event.MessageUpdate.new("t1", message_sample(),
+      context_id: "c1",
+      generation: 4,
+      metadata: %{"ek" => "ev"}
+    )
   end
 
   defp status_sample do
@@ -853,12 +916,19 @@ defmodule AshA2A.V1PbFidelityTest do
       description: "d",
       parts: [part_sample("text")],
       extensions: ["https://ext.example"],
-      metadata: %{"ak" => "av"}
+      metadata: %{"ak" => "av"},
+      start_generation: 1,
+      end_generation: 2,
+      role: :agent
     }
   end
 
   defp status_update_sample do
-    Event.StatusUpdate.new("t1", status_sample(), context_id: "c1", metadata: %{"ek" => "ev"})
+    Event.StatusUpdate.new("t1", status_sample(),
+      context_id: "c1",
+      generation: 5,
+      metadata: %{"ek" => "ev"}
+    )
   end
 
   defp artifact_update_sample do
@@ -866,6 +936,7 @@ defmodule AshA2A.V1PbFidelityTest do
       context_id: "c1",
       append: true,
       last_chunk: true,
+      generation: 6,
       metadata: %{"ek" => "ev"}
     )
   end
@@ -876,7 +947,8 @@ defmodule AshA2A.V1PbFidelityTest do
       task_id: "t1",
       url: "https://hook.example",
       token: "tok",
-      authentication: %{scheme: "Bearer", credentials: "creds"}
+      authentication: %{scheme: "Bearer", credentials: "creds"},
+      protocol_version: "1.1"
     }
   end
 
@@ -904,6 +976,7 @@ defmodule AshA2A.V1PbFidelityTest do
         streaming: true,
         push_notifications: true,
         extended_agent_card: true,
+        user_artifacts: true,
         extensions: [
           %AgentExtension{
             uri: "https://ext.example",
@@ -929,12 +1002,17 @@ defmodule AshA2A.V1PbFidelityTest do
               "refreshUrl" => "https://ref.example",
               "scopes" => %{"read" => "r"},
               "pkceRequired" => true
-            },
-            "clientCredentials" => %{
-              "tokenUrl" => "https://tok.example"
             }
           },
           oauth2_metadata_url: "https://meta.example"
+        },
+        "oauth2_cc" => %AshA2A.Protocol.SecurityScheme.OAuth2{
+          flows: %{
+            "clientCredentials" => %{
+              "tokenUrl" => "https://tok.example",
+              "scopes" => %{}
+            }
+          }
         },
         "oidc" => %AshA2A.Protocol.SecurityScheme.OpenIDConnect{
           open_id_connect_url: "https://oidc.example"

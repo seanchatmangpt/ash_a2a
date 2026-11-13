@@ -4,6 +4,13 @@
 section 4 conformance statement from executed probes. The statement is an output of
 the verifier, never hand-written. Version marker: v26.9.29.
 
+Protocol baseline for the courts below: A2A v1.0.1 (wire-compatible with v1.0.0);
+the code now emits `protocolVersion` 1.1 and accepts 0.3/1.0/1.1 (v1.1 rows are
+UNVERIFIED; see `a2a-v1-1-conformance.md`); 0.3 is legacy/compat only. The TCK figures in the standing receipt below are
+bound to the old TCK pin `263b9cfa` and are stale; record form is
+`{pass, fail, not_tested, skipped, manual}` + pin SHA + date (see
+[TCK suite](tck-suite.md)).
+
 ## Quick reference
 
 - [Usage](#usage)
@@ -105,7 +112,7 @@ none is a certification.
 
 | Verdict surface | Verdict | Command (executed) | Falsifier |
 |---|---|---|---|
-| Official A2A TCK compatibility | **7 FAIL / 92 PASS** on the first all-three-binding run (G6 integration, 2026-10-06T01:30:52Z, branch tip `2379635c`): overall **73.6%** (MUST 73.6%, SHOULD 63.6%, MAY 100%); 129 requirements: 92 PASS / 7 FAIL / 4 SKIPPED / 26 NOT TESTED. Failing classes enumerated: push lifecycle (PUSH-CREATE-001, PUSH-DELIVER-001/002/003 — no TCK-webhook delivery observed; config-create refuses over gRPC/http_json), gRPC extended card (CARD-EXT-001/002 — `UNIMPLEMENTED`), gRPC stream-close isolation (STREAM-ORDER-004). Streaming converted (STREAM-SUB/ORDER-001..003 PASS on all three bindings); agent_card 10/10. | `./run_tck.py --sut-host http://127.0.0.1:9999 --transport jsonrpc,http_json,grpc` against the SUT on Bandit + gRPC:10000; reports `/tmp/a2a-tck/reports/compatibility.json` (`2026-10-06T01:30:52Z`) | any TCK test that executes and fails, or a fix landing without a corresponding re-run verdict flip |
+| Official A2A TCK compatibility | **7 FAIL / 92 PASS** on the first all-three-binding run (G6 integration, 2026-10-06T01:30:52Z, branch tip `2379635c`): tuple `{pass: 92, fail: 7, not_tested: 26, skipped: 4, manual: n/r}` (129 requirements; historical percentage 73.6%, stale), pin `263b9cfa`, 2026-10-06. Failing classes enumerated: push lifecycle (PUSH-CREATE-001, PUSH-DELIVER-001/002/003 — no TCK-webhook delivery observed; config-create refuses over gRPC/http_json), gRPC extended card (CARD-EXT-001/002 — `UNIMPLEMENTED` at that run; since addressed by the SUT extended-card callback, re-run UNVERIFIED), gRPC stream-close isolation (STREAM-ORDER-004). Streaming converted (STREAM-SUB/ORDER-001..003 PASS on all three bindings); agent_card 10/10. | `./run_tck.py --sut-host http://127.0.0.1:9999 --transport jsonrpc,http_json,grpc` against the SUT on Bandit + gRPC:10000; reports `/tmp/a2a-tck/reports/compatibility.json` (`2026-10-06T01:30:52Z`) | any TCK test that executes and fails, or a fix landing without a corresponding re-run verdict flip |
 | In-repo v1.0 conformance runner | **23 PASS / 3 FAIL** across 26 courts at the G6 integration re-run (machine report `/tmp/g6-report.json`, `2026-10-06T01:35:19Z`, branch tip `2379635c`); the 3 FAILs are the resubscribe/SSE-streaming semantics changes landing in the streaming lane — `test/ash_a2a_v1_owner_scope_test.exs` (2), `test/ash_a2a_v1_sse_replay_test.exs` (1), `test/ash_a2a_v1_multinode_continuity_test.exs` (1), reproducible standalone with `--include serial`. The prior wave verdict was 25 PASS / 0 FAIL across 25 courts (`/tmp/at8_conformance_report.json`, `2026-10-05T23:24:48Z`, subject `059ff0e3`). | `MIX_ENV=test MIX_BUILD_ROOT=_build-g6 mix ash_a2a.v1_conformance_report --out /tmp/g6-report.json` | `totals.fail > 0` in a fresh report, or a court failing standalone with `--include serial` |
 | Vulnerability scan (sobelow) | **NOT GREEN — 11 high-confidence findings** (1 `Config.HTTPS`, `config/prod.exs`; 10 `Misc.BinToTerm` in receipt/journal/fixture file-decode paths) + 343 low-confidence, at `059ff0e3`; `mix sobelow --exit high` exits 1. The gate landed in CI (`security` job, `059ff0e3`) and will fail until the 11 are fixed or `# sobelow-ignore`-dispositioned | `MIX_ENV=dev mix sobelow --exit high` (2026-10-05) | the scan exiting 0 on `--exit high`, or a finding class fixed without re-scan |
 

@@ -47,6 +47,7 @@ defmodule AshA2A.Chicago.Fixtures.AutonomyBounds.Step do
 
       change(fn changeset, _context ->
         case Ash.Changeset.get_argument(changeset, :delay_ms) do
+          # SLEEP-CLASS: SCHEDULING (fixture action models a slow action of delay_ms)
           ms when is_integer(ms) and ms > 0 -> Process.sleep(ms)
           _ -> :ok
         end

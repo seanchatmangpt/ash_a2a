@@ -28,7 +28,8 @@ string is a court file. The default tag is `pplan_court`; override with
 
 ## Path mode vs hex mode
 
-- **Hex mode** (default of the repo's deps): tests run against the released
+- **Hex mode** (default of the repo's deps; `mix.lock` currently resolves
+  `ash_pplan` 26.11.10): tests run against the released
   `ash_pplan` hex package. No path configuration needed.
 - **Path mode**: set the ash_pplan checkout explicitly so the courts hit
   your in-flight local changes:
@@ -62,7 +63,7 @@ string is a court file. The default tag is `pplan_court`; override with
 - `--with-oracle` with a missing daemon script is a loud skip, never a
   silent pass.
 
-## Serial pass and the Z18 kill-court loud skip
+## Serial pass and the kill-between-effect-and-checkpoint court
 
 All four landed courts (`test/replan/port_ashpplan_conformance_court_test.exs`,
 `test/execution/task_run_binding_test.exs`,
@@ -74,39 +75,24 @@ four. By default each file is run ONCE with `--only <tag> --include serial`
 tagged `@tag :serial` are not silently filtered to 0 tests). Pass
 `--no-run-serial` to opt out.
 
-The I2 dispatch-durability court contains one **loud-skip** test: the
-kill-between-effect-and-checkpoint case. Its skip reason names the precise
-residual boundary — kill between a step's effect execution and its `record`
-checkpoint. Upstream ash_pplan's atomic consume-once `take_signal` (one
-serialized store transition: find/adopt-or-insert checkpoint + consume signal
-+ release waiter) closed the Await replay window, but that boundary has no
-intent-before-effect guard, so resume re-executes the effect (observed
-2026-11-07 on the real Dets stack: `%{prepare: 2, finish: 1}`, all other law
-assertions passing). Pending upstream intent-before-effect (claim_undo before
-the effect); not fixable from the ash_a2a repo. A skip is honest census, not
-a pass: it appears in the ExUnit summary line and never silences.
+The dispatch-durability court's kill test (`@tag :serial`, "kill between
+effect and checkpoint") is a live assertion, not a skip: it kills the
+dispatching process at the checkpoint boundary, lapses the claim, resumes by
+task id, and asserts `%{prepare: 1, finish: 1}` (zero duplicate execution),
+one run, and a three-step tape.
 
-## Current census (as of 2026-11-08, path mode vs `~/ash_pplan`)
+## Current census (receipt `receipts/pplan-courts-20261108.md`)
 
-True numbers from the settled post-wave runner run
-(`receipts/pplan-courts-20261108.md`): 4 courts discovered, Standing
-`BLOCKED` (exit 1).
+Standing `PASS`, overall `ok`, 4 courts discovered:
 
-| Court | Result | Note |
-|---|---|---|
-| `test/replan/port_ashpplan_conformance_court_test.exs` | pass (12 tests) | stable |
-| `test/telemetry_bridge/pplan_hazard_bridge_test.exs` | pass (11 tests) | stable |
-| `test/execution/task_run_binding_test.exs` | fail rc=1 under the runner, but **passes standalone** (6 tests, 0 failures) | cross-court state bleed in the shared runner VM, not a real defect |
-| `test/execution/pplan_dispatch_durability_test.exs` | fail 4 tests, 4 failures | ash_pplan substrate regression — see below |
+| Court | Result |
+|---|---|
+| `test/execution/pplan_dispatch_durability_test.exs` | rc=0, 4 tests, 0 failures |
+| `test/execution/task_run_binding_test.exs` | rc=0, 6 tests, 0 failures |
+| `test/replan/port_ashpplan_conformance_court_test.exs` | rc=0, 12 tests, 0 failures |
+| `test/telemetry_bridge/pplan_hazard_bridge_test.exs` | rc=0, 11 tests, 0 failures |
 
-Durability-court failure class (new, distinct from the loud-skip boundary
-above): dispatch effects never execute at all — prepare/finish counts come
-back 0 (tests at lines 433, 467, 493). The known loud-skip boundary showed
-`prepare: 2, finish: 1` (resume re-executes an effect that ran); this class
-shows the effect never ran. Source is in-flight `lib/` edits in the ash_pplan
-checkout, not the ash_a2a courts; not fixable from the ash_a2a repo. When
-ash_pplan's dispatch path is repaired, re-run the runner for the true
-full-PASS receipt.
+Counts are as of the receipt timestamp; re-run the runner for current values.
 
 ## Receipt
 

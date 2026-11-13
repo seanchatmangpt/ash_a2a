@@ -409,4 +409,4 @@ untrusted, replaceable producer of candidate intelligence.
 - `docs/rfc/RFC-SA2A-004-v26.9.28.md` — normative consequence protocol
 - `docs/rfc/RFC-SA2A-005-security-profile-v26.9.28.md` — CWE court profile and current-code status
 - `docs/rfc/RFC-SA2A-006-existing-substrate-map-v26.9.28.md` — requirement to existing-tech map
-- `docs/jira/v26.9.28-kernel/_LANES.md` — kernel lane map
+- `docs/archive/jira/v26.9.28-kernel/_LANES.md` — kernel lane map

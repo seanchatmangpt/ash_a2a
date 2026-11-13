@@ -12,24 +12,31 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
       mix ash_a2a.v1_conformance_report
       mix ash_a2a.v1_conformance_report --out receipts/v1-conformance.json
       mix ash_a2a.v1_conformance_report --only v1_pagination
+      mix ash_a2a.v1_conformance_report --tck-report /tmp/a2a-tck/reports/compatibility.json
 
   ## Relation to the conformance statement and the official TCK
 
-  `docs/reference/a2a-v1-conformance.md` ("What is not claimed") states:
-  **"A2A TCK conformance: UNSUPPORTED. The official A2A protocol conformance
-  suite / TCK has not been run against this implementation. `CONFORMANT`
-  means 'the pinned court in this repo passes', not TCK-certified."**
+  `docs/reference/a2a-v1-conformance.md` ("What is not claimed") states that
+  A2A TCK certification is NOT claimed: the official `a2aproject/a2a-tck`
+  compatibility suite has been run point-in-time against this implementation
+  (see `docs/reference/tck-suite.md`), and `CONFORMANT` means "the pinned
+  court in this repo passes", not TCK-certified.
 
-  This task is the next-best operator instrument: it executes every pinned
-  v1.0 conformance court the statement cites (plus the companion v1 court
-  files), and reduces them to one JSON document. **This is NOT the A2A
-  project's official TCK** and a full-PASS report here does not make the
-  implementation TCK-certified; it witnesses the same executed courts the
-  statement cites.
+  This task is the in-repo operator instrument: it executes every v1.0
+  conformance court (plus the companion v1 court files) and reduces them to
+  one JSON document. **This task does NOT run the official TCK** and a
+  full-PASS report here does not make the implementation TCK-certified.
+  With `--tck-report PATH` it additionally ingests an already-produced TCK
+  `compatibility.json` and records its `{pass, fail, not_tested, skipped,
+  manual}` counts under the report's `tck` key (counts only; no percentage
+  headline, no pass/fail judgment on the TCK).
 
   ## What it does
 
-  1. Takes the maintained court list in this module (`@v1_courts`).
+  1. Derives the court list from a glob of `test/ash_a2a_v1_*_test.exs`
+     minus the explicit exclusions (`excluded_v1_files/0`); there is no
+     hand-maintained list or count, so a new court file is run, never
+     silently skipped.
   2. Verifies each entry against the real filesystem at runtime; an entry
      that no longer exists on disk becomes a court-status entry with
      `verdict: "FAIL"` and `exit_code: null` (a court you cannot execute is
@@ -44,6 +51,10 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
   ## Options
 
     * `--out PATH` -- write the JSON report to PATH (in addition to stdout).
+    * `--tck-report PATH` -- ingest a TCK `compatibility.json` (tolerant
+      reader: counts status-bearing records, or aggregate count objects)
+      into the report's `tck` key. An unreadable/unrecognized file is
+      recorded as `tck: %{source, error}`, never silently dropped.
     * `--only SUBSTRING` -- run only courts whose file name contains
       SUBSTRING. Used for iteration; also the documented empty-result path:
       a substring matching no court produces a valid report with
@@ -67,79 +78,48 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
 
   ## Maintaining the court list
 
-  `@v1_courts` below is the maintained list of v1.0 court files. When a
-  court file is added, renamed or removed under `test/ash_a2a_v1_*.exs`,
-  update the list; the runtime filesystem check (step 2) keeps an honest
-  report when the list and the disk disagree.
+  Nothing to maintain: `v1_courts/0` globs `test/ash_a2a_v1_*_test.exs`
+  (relative to the working directory, the repo root) and subtracts
+  `excluded_v1_files/0`. A new v1 court file is picked up automatically;
+  a file that should not be a court must be added to the exclusion list
+  below with a reason.
   """
 
   use Mix.Task
 
-  # Maintained list of the A2A v1.0 conformance court files, relative to the
-  # repo root. Keep in sync with docs/reference/a2a-v1-conformance.md and
-  # test/ash_a2a_v1_*.exs on disk. The runtime existence check reports any
-  # drift as a FAIL court-status entry instead of crashing.
-  @v1_courts [
-    "test/ash_a2a_v1_architecture_test.exs",
-    "test/ash_a2a_v1_artifact_streaming_test.exs",
-    "test/ash_a2a_v1_auth_challenge_test.exs",
-    # DY3: agent-card signing courts (CARD-SIGN-001..004 — the four
-    # NOT_AUTOMATABLE TCK requirements, exercised against the real
-    # CardSigning machinery; see the file header).
-    "test/ash_a2a_v1_card_signing_test.exs",
-    "test/ash_a2a_v1_binding_mismatch_test.exs",
-    "test/ash_a2a_v1_cancellation_test.exs",
-    "test/ash_a2a_v1_conformance_test.exs",
-    "test/ash_a2a_v1_context_continuity_test.exs",
-    "test/ash_a2a_v1_error_registry_test.exs",
-    "test/ash_a2a_v1_extended_httpjson_test.exs",
-    "test/ash_a2a_v1_io_modes_test.exs",
-    "test/ash_a2a_v1_list_decode_test.exs",
-    "test/ash_a2a_v1_multinode_continuity_test.exs",
-    "test/ash_a2a_v1_oban_delivery_test.exs",
-    "test/ash_a2a_v1_owner_scope_test.exs",
-    "test/ash_a2a_v1_pagination_test.exs",
-    # Z16: protojson wire fidelity against the vendored official v1.0 IDL
-    # (priv/a2a_v1_spec_corpus/a2a.proto) -- protocol conformance, in scope.
-    "test/ash_a2a_v1_proto_fidelity_test.exs",
-    "test/ash_a2a_v1_push_httpjson_test.exs",
-    "test/ash_a2a_v1_rejected_state_test.exs",
-    # Z24: agent-card securityRequirements v1.0 decode/encode name fidelity
-    # against the vendored official IDL -- protocol conformance, in scope.
-    "test/ash_a2a_v1_security_requirements_test.exs",
-    "test/ash_a2a_v1_spec_corpus_test.exs",
-    "test/ash_a2a_v1_sse_replay_test.exs",
-    "test/ash_a2a_v1_state_properties_test.exs",
-    "test/ash_a2a_v1_taskstore_durability_test.exs",
-    "test/ash_a2a_v1_telemetry_test.exs",
-    "test/ash_a2a_v1_wire_properties_test.exs"
-  ]
+  @v1_glob "test/ash_a2a_v1_*_test.exs"
 
-  # Deliberately NOT in @v1_courts:
+  # Deliberately NOT courts (see `@excluded_v1_files` below):
   #
   #   * test/ash_a2a_v1_conformance_report_test.exs -- the runner's own
   #     self-test (it invokes THIS task as a subprocess); not a v1.0 protocol
   #     conformance court, and listing it would make the report recurse.
+  #
+  #   * test/ash_a2a_v1_check_gate_serial_test.exs -- exercises the serial
+  #     check-gate tooling (mix alias / CI gate wiring), not A2A v1.0 protocol
+  #     behavior; it is a build-gate self-check, not a protocol conformance court.
   #
   #   * test/ash_a2a_zach_courts_test.exs -- adversarial extension courts over
   #     the DSL/executor surface (non-vacuity, ToA2AError totality, executor
   #     dispatch). They exercise v1.0 APIs but are extension courts, not v1.0
   #     protocol conformance; the report's scope is protocol conformance only.
 
-  @switches [out: :string, only: :string]
+  @switches [out: :string, only: :string, tck_report: :string]
 
   @impl Mix.Task
   def run(argv) do
     {opts, _rest, _invalid} = OptionParser.parse(argv, switches: @switches)
 
+    all_courts = v1_courts()
+
     selected =
       case Keyword.get(opts, :only) do
-        nil -> @v1_courts
-        substring -> Enum.filter(@v1_courts, &String.contains?(&1, substring))
+        nil -> all_courts
+        substring -> Enum.filter(all_courts, &String.contains?(&1, substring))
       end
 
     Mix.shell().info(
-      "A2A v1.0 conformance courts selected: #{length(selected)} of #{length(@v1_courts)} " <>
+      "A2A v1.0 conformance courts selected: #{length(selected)} of #{length(all_courts)} " <>
         "(this is NOT the official A2A TCK; see docs/reference/a2a-v1-conformance.md)"
     )
 
@@ -157,6 +137,12 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
       courts: courts,
       totals: totals
     }
+
+    report =
+      case Keyword.get(opts, :tck_report) do
+        nil -> report
+        path -> Map.put(report, :tck, ingest_tck_report(path))
+      end
 
     json = Jason.encode_to_iodata!(report, pretty: true)
 
@@ -235,6 +221,98 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
     end
   end
 
+  # Explicit exclusions from the census (see the comment above for
+  # reasons). Every test/ash_a2a_v1_*_test.exs file is a court unless it is
+  # listed here.
+  @excluded_v1_files [
+    "test/ash_a2a_v1_check_gate_serial_test.exs",
+    "test/ash_a2a_v1_conformance_report_test.exs"
+  ]
+
   @doc false
-  def v1_courts, do: @v1_courts
+  def excluded_v1_files, do: @excluded_v1_files
+
+  @doc "Court files derived from the glob (sorted), minus the explicit exclusions."
+  def v1_courts do
+    (Path.wildcard(@v1_glob) -- @excluded_v1_files) |> Enum.sort()
+  end
+
+  @tck_statuses %{
+    "PASS" => :pass,
+    "PASSED" => :pass,
+    "FAIL" => :fail,
+    "FAILED" => :fail,
+    "ERROR" => :fail,
+    "NOT_TESTED" => :not_tested,
+    "NOT_RUN" => :not_tested,
+    "UNTESTED" => :not_tested,
+    "SKIP" => :skipped,
+    "SKIPPED" => :skipped,
+    "MANUAL" => :manual
+  }
+  @tck_zero %{pass: 0, fail: 0, not_tested: 0, skipped: 0, manual: 0}
+
+  # Tolerant ingest of a TCK compatibility.json: count status-bearing
+  # records anywhere in the document; when there are none, fall back to
+  # outermost aggregate count objects. Unreadable / unrecognized input is
+  # reported as an error entry, never dropped.
+  defp ingest_tck_report(path) do
+    with {:ok, bin} <- File.read(path),
+         {:ok, doc} <- Jason.decode(bin) do
+      case tck_records(doc, []) do
+        [] ->
+          case tck_aggregates(doc, %{}) do
+            counts when map_size(counts) == 0 ->
+              %{source: path, error: "no requirement records or counts recognized"}
+
+            counts ->
+              Map.merge(%{source: path, kind: "aggregate"}, Map.merge(@tck_zero, counts))
+          end
+
+        recs ->
+          counts = Enum.frequencies(recs)
+          Map.merge(%{source: path, kind: "records"}, Map.merge(@tck_zero, counts))
+      end
+    else
+      {:error, reason} -> %{source: path, error: "unreadable: #{inspect(reason)}"}
+    end
+  end
+
+  defp tck_status(value) when is_binary(value) do
+    Map.get(@tck_statuses, value |> String.trim() |> String.upcase() |> String.replace(~r/[ -]/, "_"))
+  end
+
+  defp tck_status(_), do: nil
+
+  defp tck_records(%{} = node, acc) do
+    own =
+      Enum.find_value(["status", "result", "outcome", "verdict"], fn k ->
+        tck_status(Map.get(node, k))
+      end)
+
+    if own,
+      do: [own | acc],
+      else: Enum.reduce(Map.values(node), acc, &tck_records/2)
+  end
+
+  defp tck_records(list, acc) when is_list(list), do: Enum.reduce(list, acc, &tck_records/2)
+  defp tck_records(_, acc), do: acc
+
+  defp tck_aggregates(%{} = node, acc) do
+    counts =
+      for {k, v} <- node, is_integer(v), s = tck_status(k), reduce: %{} do
+        m ->
+          case Map.fetch(m, s) do
+            {:ok, cur} -> Map.put(m, s, cur + v)
+            :error -> Map.put(m, s, v)
+          end
+      end
+
+    if map_size(counts) > 0,
+      do: Map.merge(acc, counts, fn _k, a, b -> a + b end),
+      else: Enum.reduce(Map.values(node), acc, &tck_aggregates/2)
+  end
+
+  defp tck_aggregates(list, acc) when is_list(list), do: Enum.reduce(list, acc, &tck_aggregates/2)
+  defp tck_aggregates(_, acc), do: acc
 end

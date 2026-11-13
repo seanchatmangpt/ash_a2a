@@ -1,5 +1,7 @@
 # RFC-SA2A-005-security-profile-v26.9.28
 
+Standing: PARTIAL
+
 ## Status
 
 - **Title**: SA2A Consequence Kernel Security Profile
@@ -371,7 +373,35 @@ Further: G11 kill switch and HILT are opt-in; G12 (B9) Oban authority reconstruc
 broker; G13 (B11) chicago fixtures ship in `lib/` and use `authorize?: false`; G14 log
 content (`safe_error.ex:46`); G15 `command_id` squatting via `continuation_fingerprint`.
 
+### 12.1 Re-derivation at HEAD 68a8bd5e (2026-11-10, read-only inspection, no test run)
+
+Status vocabulary: OPEN, FIXED, WONTFIX. Evidence is file:line at the dirty working tree on
+top of HEAD 68a8bd5e. "Not re-derived" means no file:line was re-checked this pass; the
+original ranking text above is retained and its status is OPEN by default.
+
+| Gap | Status | Evidence at HEAD |
+|---|---|---|
+| G1 | OPEN | `authority.ex:55` `source: atom()` (open); `command_bus.ex:196` `run/4` public |
+| G2 | FIXED (durability), OPEN (process-local) | `brce_anchor.ex:139` refuses `:anchor_not_durable`; `brce_anchor.ex:72` `Process.put`, scope stated at `:33-38` |
+| G3 | OPEN (default unkeyed) | keyed format `receipt_outbox.ex:54,85`; unkeyed default warns once `receipt_outbox.ex:81,89` |
+| G4 | OPEN | not re-derived |
+| G5 | OPEN | `agent.ex:1240` `run_on_cancel_hook`; grant/anchor requirement not re-derived |
+| G6 | OPEN | `agent.ex:895-905` `strict_observe_generic_actions` defaults `false` |
+| G7 | OPEN | `capability_release.ex:368` mode defaults to `:legacy` |
+| G8 | OPEN | not re-derived |
+| G9 | FIXED (OCEL SSRF policy), OPEN (env/credential sharing) | `telemetry/ocel_forwarder.ex:470` strict SSRF policy; redirect option and env sharing not re-derived |
+| G10 | FIXED (hddl), OPEN (compiler, a2a_transport plug) | `planning/hddl_solver.ex:22,41` 30 s default timeout; `semantic/compiler.ex:159` `timeout: :infinity`; `a2a_transport/plug.ex:489` `read_body/1` no length (`transport/plug.ex:290` passes `length:`) |
+| G11 | OPEN | not re-derived; `kill_switch.ex` exists |
+| G12 | OPEN | not re-derived |
+| G13 | OPEN | `lib/ash_a2a/chicago/` still ships in `lib/`; 2 `authorize?: false` lines |
+| G14 | OPEN | cited `safe_error.ex` no longer at that path; not re-derived |
+| G15 | OPEN | not re-derived; `agent.ex:485-505` continuation path changed |
+
 ## 13. Security release receipt
+
+**Implementation status: NOT IMPLEMENTED** (checked 2026-11-10 at HEAD 68a8bd5e: no
+`sa2a.security_release_receipt` kind and no emitter exist under `lib/`, `scripts/` or
+`test/`; the schema below is specification only).
 
 A security release MUST emit one receipt per release, validated by the schema below. A
 missing field means the artifact is not a receipt.

@@ -49,7 +49,7 @@ defmodule AshA2A.GraphLaw.WasmDriver do
 
     1. `opts[:wasm_path]`
     2. `Application.get_env(:ash_a2a, :graphlaw_wasm_path)`
-    3. the `GRAPHLAW_WASM_PATH` environment variable
+    3. the `PRAXIS_GRAPHLAW_WASM` environment variable
     4. `AshA2A.GraphLaw.wasm_path/0` -- the vendored, git-tracked,
        MANIFEST-pinned copy at `priv/graphlaw/praxis_graphlaw.wasm`
 
@@ -81,10 +81,7 @@ defmodule AshA2A.GraphLaw.WasmDriver do
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
-    Keyword.get(opts, :wasm_path) ||
-      Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
-      System.get_env("GRAPHLAW_WASM_PATH") ||
-      AshA2A.GraphLaw.wasm_path()
+    AshA2A.GraphLaw.wasm_path_unchecked(opts)
   end
 
   @doc """
@@ -130,7 +127,7 @@ defmodule AshA2A.GraphLaw.WasmDriver do
 
   # PERF-01: when the application's warm `AshA2A.GraphLaw.WasmexHost` has
   # loaded the pinned engine and the caller did not ask for specific bytes
-  # (`:wasm_path`, `GRAPHLAW_WASM_PATH`) or for the node runtime
+  # (`:wasm_path`, `PRAXIS_GRAPHLAW_WASM`) or for the node runtime
   # (`transport: :node`), the batch runs in-BEAM in one host transaction
   # sequence -- same engine bytes, same per-call result shape, no spawn.
   defp in_beam?(opts) do
@@ -186,7 +183,7 @@ defmodule AshA2A.GraphLaw.WasmDriver do
            path: wasm,
            message:
              "praxis_graphlaw_wasm_bg.wasm not found at #{wasm}. " <>
-               "Set config :ash_a2a, :graphlaw_wasm_path or GRAPHLAW_WASM_PATH."
+               "Set config :ash_a2a, :graphlaw_wasm_path or PRAXIS_GRAPHLAW_WASM."
          }}
 
       not File.exists?(driver) ->

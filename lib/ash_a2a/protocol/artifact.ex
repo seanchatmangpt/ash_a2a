@@ -11,14 +11,21 @@ defmodule AshA2A.Protocol.Artifact do
           description: String.t() | nil,
           parts: [AshA2A.Protocol.Part.t()],
           extensions: [String.t()],
-          metadata: map()
+          metadata: map(),
+          start_generation: non_neg_integer() | nil,
+          end_generation: non_neg_integer() | nil,
+          role: :user | :agent | nil
         }
 
+  # v1.1: `role` nil means agent-originated; `:user` marks client-written.
   @enforce_keys [:parts]
   defstruct [
     :artifact_id,
     :name,
     :description,
+    :start_generation,
+    :end_generation,
+    :role,
     parts: [],
     extensions: [],
     metadata: %{}
@@ -34,6 +41,7 @@ defmodule AshA2A.Protocol.Artifact do
       parts: parts,
       name: Keyword.get(opts, :name),
       description: Keyword.get(opts, :description),
+      extensions: Keyword.get(opts, :extensions, []),
       metadata: Keyword.get(opts, :metadata, %{})
     }
   end

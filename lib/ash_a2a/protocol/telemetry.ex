@@ -67,6 +67,14 @@ defmodule AshA2A.Protocol.Telemetry do
 
   **Stop measurements:** `%{duration: integer()}`
 
+  ### `[:ash_a2a, :transport, :request]`
+
+  Per-binding request span; `binding` metadata is `:jsonrpc | :http_json |
+  :grpc`. Emitted via `request_span/3`. Failed requests additionally emit the
+  discrete `[:ash_a2a, :transport, :request, :error]` event
+  (`%{count: 1}`, same metadata). Feeds the `ash_a2a.transport.request.*`
+  metrics in `AshA2A.Telemetry.Metrics`.
+
   ## Discrete Events
 
   ### `[:a2a, :task, :transition]`
@@ -107,4 +115,26 @@ defmodule AshA2A.Protocol.Telemetry do
         result: :ok | {:error, term()}
       }
   """
+
+  @bindings [:jsonrpc, :http_json, :grpc]
+
+  @doc """
+  Runs `fun` inside a `[:ash_a2a, :transport, :request]` span tagged with
+  `binding`. `fun` returns `{result, ok?}`; when `ok?` is `false` the error
+  event is also emitted. Exceptions propagate (the span emits `:exception`).
+  """
+  @spec request_span(:jsonrpc | :http_json | :grpc, map(), (-> {term(), boolean()})) :: term()
+  def request_span(binding, meta \\ %{}, fun) when binding in @bindings and is_function(fun, 0) do
+    meta = Map.put(meta, :binding, binding)
+
+    :telemetry.span([:ash_a2a, :transport, :request], meta, fn ->
+      {result, ok?} = fun.()
+
+      unless ok? do
+        :telemetry.execute([:ash_a2a, :transport, :request, :error], %{count: 1}, meta)
+      end
+
+      {result, meta}
+    end)
+  end
 end

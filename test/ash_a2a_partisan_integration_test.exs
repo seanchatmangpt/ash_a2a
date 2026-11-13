@@ -134,7 +134,8 @@ defmodule AshA2A.PartisanIntegrationTest do
         flunk("PARTISAN_TRACKING_COURT_HTTP_#{status}: unexpected status from #{url}")
 
       {:error, _reason} ->
-        Process.sleep(1_000)
+        # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(1_000)
         hex_get(url, attempts_left - 1)
     end
   end

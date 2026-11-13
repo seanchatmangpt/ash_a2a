@@ -744,9 +744,11 @@
       "id": "stream-artifact-update-frame",
       "family": "event",
       "source": "specification.md L1372 - message:stream SSE data frame 2 (StreamResponse artifactUpdate / TaskArtifactUpdateEvent)",
-      "expect": "decode",
+      "expect": "codec_gap",
       "decode": "event",
       "deviations": [],
+      "finding": "The spec's own frame omits artifact.artifactId, which the proto marks REQUIRED (Artifact.artifact_id = 1, field_behavior REQUIRED); the codec rejects the member with {:missing_field, \"artifactId\"}.",
+      "expected_error": ["missing_field", "artifactId"],
       "wire": {
         "artifactUpdate": {
           "taskId": "task-uuid",

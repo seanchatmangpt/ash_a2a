@@ -391,6 +391,7 @@ defmodule AshA2A.Telemetry.SIEM do
     |> Kernel.*(2 ** (attempt - 1))
     |> min(cap)
     |> max(0)
+    # SLEEP-CLASS: SCHEDULING (exponential backoff interval between delivery attempts)
     |> then(&Process.sleep/1)
   end
 

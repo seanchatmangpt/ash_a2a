@@ -225,17 +225,8 @@ defmodule AshA2A.Semantic.Ontology do
       not Enum.any?(@forbidden_in_iri, &String.contains?(value, &1))
   end
 
-  defp escape_iri(value), do: to_string(value)
+  defp escape_iri(value), do: value |> to_string() |> AshA2A.Semantic.Serialize.escape_iri()
 
-  defp literal(value) do
-    escaped =
-      value
-      |> String.replace("\\", "\\\\")
-      |> String.replace("\"", "\\\"")
-      |> String.replace("\n", "\\n")
-      |> String.replace("\r", "\\r")
-      |> String.replace("\t", "\\t")
-
-    "\"" <> escaped <> "\""
-  end
+  defp literal(value),
+    do: "\"" <> AshA2A.Semantic.Serialize.escape_literal(value) <> "\""
 end

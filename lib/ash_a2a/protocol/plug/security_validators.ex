@@ -61,9 +61,10 @@ if Code.ensure_loaded?(Plug) do
     @spec verifier(%{String.t() => keyword()}) ::
             (String.t(), term(), Plug.Conn.t() -> {:ok, map()} | {:error, map()})
     def verifier(opts) when is_map(opts) do
-      fn scheme_name, credential, _conn ->
+      fn scheme_name, credential, conn ->
         case Map.fetch(opts, scheme_name) do
           {:ok, config} ->
+            config = with_declared_scopes(config, conn)
             kind = Keyword.get(config, :kind, :bearer)
             dispatch_validate(kind, credential, config)
 
@@ -73,12 +74,25 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    # Scopes declared in the card's security requirement (set by
+    # `Auth` as `conn.assigns[:a2a_required_scopes]`) apply when the config
+    # carries no explicit `:required_scopes`.
+    defp with_declared_scopes(config, %{assigns: %{a2a_required_scopes: [_ | _] = scopes}}) do
+      if Keyword.has_key?(config, :required_scopes) do
+        config
+      else
+        Keyword.put(config, :required_scopes, scopes)
+      end
+    end
+
+    defp with_declared_scopes(config, _conn), do: config
+
     @doc """
     Validates `credential` against `config` for the given scheme kind
-    (`:bearer`, `:key`, `:oauth2`, `:oidc`).
+    (`:bearer`, `:key`, `:oauth2`, `:oidc`, `:mtls`).
     """
     @spec validate(atom(), term(), keyword()) :: {:ok, map()} | {:error, map()}
-    def validate(kind, credential, config) when kind in [:bearer, :key, :oauth2, :oidc] do
+    def validate(kind, credential, config) when kind in [:bearer, :key, :oauth2, :oidc, :mtls] do
       dispatch_validate(kind, credential, config)
     rescue
       e -> {:error, %{code: :validator_crashed, detail: Exception.message(e)}}
@@ -88,6 +102,75 @@ if Code.ensure_loaded?(Plug) do
     defp dispatch_validate(:key, credential, config), do: validate_api_key(credential, config)
     defp dispatch_validate(:oauth2, credential, config), do: validate_oauth2(credential, config)
     defp dispatch_validate(:oidc, credential, config), do: validate_oidc(credential, config)
+    defp dispatch_validate(:mtls, credential, config), do: validate_mtls(credential, config)
+
+    # -- mTLS --------------------------------------------------------------------
+
+    @doc """
+    Validates a client-certificate credential
+    (`%{der: binary | nil, fingerprint: hex, source: atom}`).
+
+    ## Config
+
+    - `:fingerprints` - allowed lowercase-hex SHA-256 certificate fingerprints
+    - `:san_allowlist` - allowed SAN values (DNS names / emails / URIs); needs
+      a full DER certificate (not a bare forwarded fingerprint)
+
+    At least one allowlist is required; with neither configured the
+    credential is refused fail-closed (`:unconfigured_scheme`). When both
+    are configured, either match admits.
+    """
+    @spec validate_mtls(term(), keyword()) :: {:ok, map()} | {:error, map()}
+    def validate_mtls(%{fingerprint: fp} = cred, config) when is_binary(fp) do
+      fps = config |> Keyword.get(:fingerprints, []) |> Enum.map(&normalize_fp/1)
+      sans = Keyword.get(config, :san_allowlist, [])
+
+      cond do
+        fps == [] and sans == [] ->
+          {:error, %{code: :unconfigured_scheme, detail: "mtls allowlist empty"}}
+
+        fp in fps ->
+          {:ok, %{scheme_kind: :mtls, fingerprint: fp, source: cred[:source]}}
+
+        is_binary(cred[:der]) and sans != [] ->
+          present = cert_sans(cred.der)
+
+          case Enum.find(present, &(&1 in sans)) do
+            nil -> {:error, %{code: :invalid_client_cert, detail: "no allowed SAN"}}
+            san -> {:ok, %{scheme_kind: :mtls, fingerprint: fp, san: san, source: cred[:source]}}
+          end
+
+        true ->
+          {:error, %{code: :invalid_client_cert, detail: "fingerprint not allowed"}}
+      end
+    end
+
+    def validate_mtls(_cred, _config) do
+      {:error, %{code: :invalid_client_cert, detail: "no client certificate"}}
+    end
+
+    defp normalize_fp(fp), do: fp |> String.replace(":", "") |> String.downcase()
+
+    defp cert_sans(der) do
+      cert = :public_key.pkix_decode_cert(der, :otp)
+      # OTPCertificate -> OTPTBSCertificate (element 10 = extensions)
+      exts = cert |> elem(1) |> elem(10) |> List.wrap()
+
+      Enum.flat_map(exts, fn
+        {:Extension, {2, 5, 29, 17}, _crit, names} when is_list(names) ->
+          Enum.flat_map(names, fn
+            {:dNSName, n} -> [to_string(n)]
+            {:rfc822Name, n} -> [to_string(n)]
+            {:uniformResourceIdentifier, n} -> [to_string(n)]
+            _ -> []
+          end)
+
+        _ ->
+          []
+      end)
+    rescue
+      _ -> []
+    end
 
 
     # -- API key ---------------------------------------------------------------
@@ -274,6 +357,18 @@ if Code.ensure_loaded?(Plug) do
         {nil, nil, discovery} when is_binary(discovery) ->
           with {:ok, jwks_uri} <- fetch_jwks_uri(discovery) do
             {:ok, Keyword.put(config, :jwks_uri, jwks_uri)}
+          end
+
+        {nil, nil, nil} ->
+          # RFC 8414 discovery via the scheme's `:oauth2_metadata_url`.
+          case Keyword.get(config, :oauth2_metadata_url) do
+            url when is_binary(url) ->
+              with {:ok, jwks_uri} <- fetch_jwks_uri(url) do
+                {:ok, Keyword.put(config, :jwks_uri, jwks_uri)}
+              end
+
+            _ ->
+              {:ok, config}
           end
 
         _ ->
@@ -660,7 +755,8 @@ if Code.ensure_loaded?(Plug) do
         token_expired: :refused_identity,
         token_not_yet_valid: :refused_identity,
         token_inactive: :refused_identity,
-        insufficient_scope: :refused_bounds
+        insufficient_scope: :refused_bounds,
+        invalid_client_cert: :refused_identity
       }
     end
   end

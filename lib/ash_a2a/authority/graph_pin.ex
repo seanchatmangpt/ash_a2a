@@ -29,6 +29,10 @@ defmodule AshA2A.Authority.GraphPin do
   stores and compares digests; it never computes them and never grants
   authority.
 
+  STATUS: currently UNCONSUMED by `AshA2A.Authority.PEP`
+  (`PEP.pin_graph_digest/2` is a stateless `WorkOrder.identity_digest/1`
+  passthrough and ignores opts). GraphPin is a standalone seam.
+
   State is a pure map by default (`AshA2A.Authority.GraphPin.Store.Memory`)
   behind the `AshA2A.Authority.GraphPin.Store` behaviour; pass
   `store: MyStore` to `pin/4` / `assert_fresh/3` to plug a durable backend.
@@ -41,7 +45,7 @@ defmodule AshA2A.Authority.GraphPin do
     """
 
     @callback get(order_id :: String.t()) :: String.t() | nil
-    @callback put(order_id :: String.t(), digest :: String.t()) :: :ok
+    @callback put(order_id :: String.t(), digest :: String.t()) :: :ok | {:error, term()}
   end
 
   defmodule Store.Memory do
@@ -58,7 +62,10 @@ defmodule AshA2A.Authority.GraphPin do
 
     @doc "Starts the default store (idempotent)."
     def start_link(_opts \\ []) do
-      Agent.start_link(fn -> %__MODULE__{} end, name: unquote(name))
+      case Agent.start_link(fn -> %__MODULE__{} end, name: unquote(name)) do
+        {:error, {:already_started, pid}} -> {:ok, pid}
+        other -> other
+      end
     end
 
     @impl Store
@@ -79,8 +86,10 @@ defmodule AshA2A.Authority.GraphPin do
     defp ensure_started do
       case Process.whereis(unquote(name)) do
         nil ->
-          {:ok, _} = start_link()
-          :ok
+          case start_link() do
+            {:ok, _} -> :ok
+            {:error, {:already_started, _}} -> :ok
+          end
 
         _pid ->
           :ok
@@ -95,15 +104,20 @@ defmodule AshA2A.Authority.GraphPin do
   Pins `digest` as the admitted graph identity for `order_id`. Overwrites any
   prior pin (re-pin is the recovery path after a legitimate graph change).
   """
-  @spec pin(String.t(), String.t(), keyword()) :: :ok | {:error, :invalid_digest}
-  def pin(order_id, digest, opts \\ [])
-      when is_binary(order_id) and byte_size(order_id) > 0 and is_binary(digest) do
+  @spec pin(term(), term(), keyword()) ::
+          :ok | {:error, :invalid_digest | :invalid_order_id | {:store_error, term()}}
+  def pin(order_id, digest, opts \\ []) do
     store = Keyword.get(opts, :store, @default_store)
 
-    if digest =~ @digest_format do
-      store.put(order_id, digest)
-    else
-      {:error, :invalid_digest}
+    cond do
+      not (is_binary(order_id) and order_id != "") -> {:error, :invalid_order_id}
+      not (is_binary(digest) and digest =~ @digest_format) -> {:error, :invalid_digest}
+      true ->
+        case store.put(order_id, digest) do
+          :ok -> :ok
+          {:error, reason} -> {:error, {:store_error, reason}}
+          other -> {:error, {:store_error, {:invalid_return, other}}}
+        end
     end
   end
 
@@ -113,10 +127,16 @@ defmodule AshA2A.Authority.GraphPin do
   under the order, {:error, :unpinned} when no pin exists (fail-closed:
   actuation of a never-admitted order is not fresh by definition).
   """
-  @spec assert_fresh(String.t(), String.t() | nil, keyword()) ::
-          :ok | {:error, :stale_graph_identity | :unpinned | :invalid_digest}
+  @spec assert_fresh(term(), term(), keyword()) ::
+          :ok
+          | {:error, :stale_graph_identity | :unpinned | :invalid_digest | :invalid_order_id}
   def assert_fresh(order_id, current_digest, opts \\ [])
-      when is_binary(order_id) do
+
+  def assert_fresh(order_id, _current_digest, _opts)
+      when not is_binary(order_id) or order_id == "",
+      do: {:error, :invalid_order_id}
+
+  def assert_fresh(order_id, current_digest, opts) do
     store = Keyword.get(opts, :store, @default_store)
 
     case store.get(order_id) do

@@ -74,6 +74,19 @@ defmodule AshA2A.Application do
   :require_durable_receipts, true` it refuses to start instead
   (`{:error, {:non_durable_receipt_store, facts}}`).
 
+  ## OpenTelemetry and gRPC (W22)
+
+  `AshA2A.Protocol.Telemetry.OTel.attach/0` is called once at start; an absent
+  OTel API (`{:error, :opentelemetry_not_loaded}`) is ignored and never fails
+  boot.
+
+  `config :ash_a2a, :grpc, port: 50051, handler: MyApp.A2APlug` (keyword list
+  or map) appends `{AshA2A.Transport.GRPC.Supervisor, opts}` as the last
+  child. Keys: `:port` (required, `0` = ephemeral), `:handler` (required),
+  plus the optional `:ctx`, `:versions`, `:extensions`, `:auth`, `:cred`,
+  `:endpoint`, `:name` accepted by that supervisor. Without both required keys
+  no child is added and the tree is unchanged.
+
   ## Boot enforcement (RFC-SA2A-007)
 
   Before anything else in `start/2`, `AshA2A.SecurityProfile.Boot.run!/0`
@@ -117,6 +130,8 @@ defmodule AshA2A.Application do
     # forwarder live-by-default the moment a host configures an ingest URL,
     # instead of requiring every host to remember to call `attach!/0` itself.
     :ok = AshA2A.Telemetry.OcelForwarder.attach!()
+    _ = AshA2A.Telemetry.OcelForwarder.warn_if_unconfigured()
+    _ = attach_otel()
 
     # Seeds this runtime's standing-ledger key before any envelope can be
     # sealed, so two concurrent first-transitions cannot race on generating it.
@@ -202,9 +217,37 @@ defmodule AshA2A.Application do
           {AshA2A.GraphLaw.WasmexHost, []},
           {AshA2A.Protocol.AgentSupervisor, agents: agents}
         ] ++
-        [{AshA2A.Enterprise.Supervisor, []}]
+        [{AshA2A.Enterprise.Supervisor, []}, {AshA2A.Transport.Live.Supervisor, []}] ++
+        grpc_children()
 
     Supervisor.start_link(children, strategy: :one_for_one, name: AshA2A.Supervisor)
+  end
+
+  @doc false
+  # Config-driven gRPC listener child. Empty unless `config :ash_a2a, :grpc`
+  # is a keyword list or map carrying both `:port` and `:handler`.
+  @spec grpc_children() :: [{module(), keyword()}]
+  def grpc_children do
+    opts =
+      case Application.get_env(:ash_a2a, :grpc) do
+        kw when is_list(kw) -> if Keyword.keyword?(kw), do: kw, else: []
+        %{} = map -> Map.to_list(map)
+        _ -> []
+      end
+
+    if Keyword.has_key?(opts, :port) and Keyword.has_key?(opts, :handler),
+      do: [{AshA2A.Transport.GRPC.Supervisor, opts}],
+      else: []
+  end
+
+  @doc false
+  # Never crashes boot: OTel absent returns `{:error, :opentelemetry_not_loaded}`.
+  def attach_otel do
+    AshA2A.Protocol.Telemetry.OTel.attach()
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   @doc false

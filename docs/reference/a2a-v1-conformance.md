@@ -1,14 +1,26 @@
 # A2A v1.0 Conformance Statement
 
-What `ash_a2a` claims, and does not claim, about the A2A protocol v1.0.0
-wire contract. Every status below is backed by an executed Chicago-style
-court (real codecs, real agents, real HTTP conns, zero mocks) in this
-repository's test suite. Where reality diverges from the specification,
+What `ash_a2a` claims, and does not claim, about the A2A protocol v1.0.1
+(wire-compatible with v1.0.0) wire contract. Every status below is
+backed by an executed Chicago-style court (real codecs, real agents,
+real HTTP conns, zero mocks) in this repository's test suite. Where reality diverges from the specification,
 the divergence is pinned as a `PARTIAL` or `GAP` row, not papered over.
 
 ## Scope
 
-- Protocol level: **A2A v1.0.0**.
+- Protocol level: **A2A v1.0.1 (wire-compatible with v1.0.0)**. Upstream
+  v1.0.1 (2026-05-28) is a clarification release: HTTP+JSON SHOULD use
+  `application/a2a+json`, the error HTTP-status table follows
+  `google.rpc.Code`, TaskState examples corrected. The vendored
+  `priv/a2a_v1_spec_corpus/a2a.proto` is byte-identical to upstream HEAD
+  `d18aa92c` (2026-11-13 audit). Rows below were witnessed before the
+  v1.0.1 clarifications were audited; rows touched by them are
+  re-verified only when a court says so.
+- Code now emits `protocolVersion` 1.1 and accepts `A2A-Version` 0.3/1.0/1.1; this
+  statement's rows were witnessed at the v1.0 level and are not re-run for v1.1
+  (UNVERIFIED; v1.1 rows live in `a2a-v1-1-conformance.md`).
+- A2A 0.3 is legacy/compat only (accepted for interop, not a conformance
+  target).
 - Bindings covered: **JSON-RPC 2.0 over HTTP POST**, plus SSE streaming
   for `message/stream` (wrapped `StreamResponse` frames).
 - Surface: the in-repo wire codec `AshA2A.Protocol.*`
@@ -50,8 +62,8 @@ met. "Court" is the specific test in the cited file.
 | 18 | Conversations with different `contextId`s never see each other's history | CONFORMANT | same file, court (c) — interleaved turns, action-observed `prior_turns` counts (3 vs 5) prove isolation |
 | 19 | `Task.history` accumulates every prior user+agent message in order | CONFORMANT | same file, court (e) — role sequences `user agent` → `user agent user agent` → 6-message thread, content-asserted |
 | 20 | Cancel idempotency (§3.3.1): repeat cancellation has the same effect; a repeat MAY return `TaskNotFound` after purge | CONFORMANT | `test/ash_a2a_v1_cancellation_test.exs` court (e) — the second cancel of an already-canceled task is idempotent success: 200 with the canceled task, and `:ok` at the agent GenServer surface; only an already-terminal non-canceled task still refuses `-32002` |
-| 21 | In-flight cancel: the server attempts cancellation, success not guaranteed (§3.1.5) | PARTIAL | same file, court (b) — a real sleeping worker is observable via `tasks/list`; the repo refuses outright `-32002` while the handler is in flight (race-safety: reporting `:canceled` while the effect may still commit would be a false standing). The send then runs to real completion |
-| 22 | `tasks/list` request shape per `ListTasksRequest` | PARTIAL | `test/ash_a2a_v1_pagination_test.exs` court D — the repo also accepts `historyLength` on `tasks/list` (the spec defines it only on `tasks/get`) and defaults it to `0`, so listed tasks carry no history unless the client opts in; response `pageSize` echoes the count returned, not the requested cap |
+| 21 | In-flight cancel: the server attempts cancellation, success not guaranteed (§3.1.5) | PARTIAL (fix in flight, UNVERIFIED until coordinator runs courts) | Wave-2 lane W12 implements in-flight cancel; the text that follows describes the PRE-fix behavior and is stale once W12 lands. Pre-fix: same file, court (b) — a real sleeping worker is observable via `tasks/list`; the repo refuses outright `-32002` while the handler is in flight (race-safety: reporting `:canceled` while the effect may still commit would be a false standing). The send then runs to real completion |
+| 22 | `tasks/list` request shape per `ListTasksRequest` | PARTIAL (fix in flight, UNVERIFIED until coordinator runs courts) | Correction: `historyLength` IS a real `ListTasksRequest` field upstream, so the "spec defines it only on `tasks/get`" premise below is wrong; wave-2 lane W8 fixes the behavior and this row. Pre-fix text: `test/ash_a2a_v1_pagination_test.exs` court D — the repo also accepts `historyLength` on `tasks/list` (the spec defines it only on `tasks/get`) and defaults it to `0`, so listed tasks carry no history unless the client opts in; response `pageSize` echoes the requested cap (`authorize_task_list` in `lib/ash_a2a/protocol/plug.ex` keeps the cap set by `Task.Filter.apply`; filtering shrinks the page, not the reported cap) |
 | 23 | Final merged artifact id equals the emitted chunk-sequence id | CONFORMANT | `test/ash_a2a_v1_artifact_streaming_test.exs` court (c) — the fold reuses the pre-minted `:stream_artifact_id` end to end (`lib/ash_a2a/protocol/agent.ex` `stream_done`, `lib/ash_a2a/a2a_transport/plug.ex` `stream_parts`); the court asserts `final_id == hd(chunk_ids)` |
 | 24 | Agents MUST reject messages with mismatching `contextId` and `taskId` (§3.4.3/§4.1.4) | CONFORMANT | `test/ash_a2a_v1_context_continuity_test.exs` court (d) — a non-empty request `contextId` differing from the stored one is refused with the typed `-32001` not-found envelope, indistinguishable from an unknown task (§9.5 parity); `tasks/get` agrees the task was never touched |
 | 25 | Agents MAY generate a new `contextId` when the message omits one (§3.4.1) | CONFORMANT | same file, court (a) — the server mints `ctx-` + 128 CSPRNG bits (`AshA2A.Transport.Runtime.secure_context_id/0`), non-empty and stable across follow-ups |
@@ -98,19 +110,32 @@ is reported in the next section.
 Full-suite context: `mix test.all` includes the serial tail; CI runs
 `mix test.all --cover`. Machine verdict across all courts at once:
 `mix ash_a2a.v1_conformance_report --out receipts/v1-conformance.json`
-— at subject `059ff0e3` (2026-10-05T23:24:48Z) it reported **25 PASS /
-0 FAIL** (25 courts); the G6 integration re-run (2026-10-06T01:0xZ,
-branch `feat/tck-vuln-hardening`, final tree `2379635c`)
-selected 26 courts and reported 23 PASS / 3 FAIL — the 3 are the
-`tasks/resubscribe`/SSE-streaming semantics changes landing in the
-streaming lane (`test/ash_a2a_v1_owner_scope_test.exs` 2,
-`test/ash_a2a_v1_sse_replay_test.exs` 1,
-`test/ash_a2a_v1_multinode_continuity_test.exs` 1), reproducible
-standalone with `--include serial` (report
-report `2026-10-06T01:35:19Z`, /tmp/g6-report.json, final tree `2379635c`); the gate is
-`totals.fail == 0`.
+— `v1_courts/0` in `lib/mix/tasks/ash_a2a.v1_conformance_report.ex` yields
+36 court files at this tree. Historical witnessed runs: 25 PASS / 0 FAIL
+(25 courts) at subject `059ff0e3` (2026-10-05); 26 PASS / 0 FAIL at
+`a9cc903b` and `13622178` (see [TCK suite](tck-suite.md)). The count is
+derived from a glob of `test/ash_a2a_v1_*_test.exs` minus two explicit
+exclusions (37 files on disk, 2 excluded); a court count in prose is
+re-checked by `test/w13_tck_assert_test.exs`. Re-run the report to renew
+a verdict at the current head; the gate is `totals.fail == 0`.
 
 ## A2A TCK compatibility run
+
+**Staleness notice (2026-11-13).** Every TCK figure in this section
+(including the 79.0% and 73.6% percentages) is bound to the old pin
+`263b9cfa` (TCK_PIN_SHA in `.github/workflows/ci.yml`) and the dated
+subject named beside it; it is stale for the current tree and for
+upstream spec v1.0.1. The TCK has no GitHub release; its `main` is five
+commits past the pin, including `70f6f73c` (#258: aligns to 1.0.1,
+re-validates nine error mappings, keeps not-tested in the denominator,
+reports MANUAL separately) and needs Python 3.15+. Until a re-run at
+`70f6f73c` lands, the record form is
+`{pass, fail, not_tested, skipped, manual}` + pin SHA + date, not a
+percentage headline. Percentages below are historical.
+
+Latest recorded tuple (pin `263b9cfa`, 2026-10-13, subject `13622178`):
+`{pass: 234, fail: 0, not_tested: n/r, skipped: 31, manual: n/r}`
+(`n/r` = not recorded in that run's notes; UNVERIFIED).
 
 ### Final verdict (2026-10-06, branch `feat/tck-vuln-hardening`, HEAD `cadb6534`)
 
@@ -184,7 +209,7 @@ Failing requirement classes (7 FAIL, all enumerated — none silent):
 | Class | Requirements | Observed reality |
 | --- | --- | --- |
 | FAIL — push (`PUSH-CREATE-001`, `PUSH-DELIVER-001/002/003`) | 4 | push-config creation fails (`Internal error` over gRPC; `400 Push Notification is not supported` over http_json) and the TCK's webhook observer receives no delivery — the push-lifecycle lane's TCK-webhook delivery path had not fully landed at run time |
-| FAIL — extended card over gRPC (`CARD-EXT-001/002`) | 2 | authenticated `GetExtendedAgentCard` answers `UNIMPLEMENTED` over the gRPC binding (HTTP+JSON serves the endpoint; the gRPC handler had not implemented extended-card RPCs at run time) |
+| FAIL — extended card over gRPC (`CARD-EXT-001/002`) | 2 | authenticated `GetExtendedAgentCard` answers `UNIMPLEMENTED` over the gRPC binding at that run (since addressed by the SUT extended-card callback; re-run UNVERIFIED) (HTTP+JSON serves the endpoint; the gRPC handler had not implemented extended-card RPCs at run time) |
 | FAIL — gRPC stream-close isolation (`STREAM-ORDER-004`) | 1 | after one subscriber disconnects, a second subscriber on the same task received no further events over gRPC |
 
 What is not counted (not-run surface, not failures):
@@ -233,9 +258,9 @@ Verdict (reports `/tmp/dy4_reports/compatibility.json`, SUT
 | AUTH-SERVER-002, AUTH-SCOPE-001 | PASS | no-credential/garbage/unscoped-token requests refused 401+challenge; scoped JWT admitted |
 | AUTH-INTASK-001/002/003/006 | PASS | task parks TASK_STATE_AUTH_REQUIRED with explanatory status message, resumable to completed via same task id over the real TCK client |
 | VER-CLIENT-001/002 | PASS | A2A-Version: 1.0 present on every court-driven request (server-side observation diff) |
-| VER-SERVER-001 | PASS | both supported versions (0.3, 1.0) processed through the real client |
+| VER-SERVER-001 | PASS | both supported versions (1.0 target; 0.3 legacy/compat only) processed through the real client |
 | BIND-EQUIV-001/002/003 | PASS | same operation/result/typed-error mapping across live JSONRPC + HTTP+JSON + GRPC bindings |
-| BIND-EQUIV-004 | FAIL | genuine finding: the gRPC binding admits unauthenticated traffic — `AshA2A.Transport.GRPC.Server` exposes no auth-interceptor seam in this build, so gRPC is not behind the JWT gate the HTTP bindings enforce |
+| BIND-EQUIV-004 | FAIL (historical, 2026-10-05 build) | at that build the gRPC binding admitted unauthenticated traffic with no auth-interceptor seam; `AshA2A.Transport.GRPC.Server` now carries an optional `auth: {module, opts}` seam (`auth!/1`, `lib/ash_a2a/transport/grpc/server.ex`). This extension run has not been repeated |
 | AUTH-INTASK-004/005, AUTH-SCOPE-002/003 | NOT TESTED | honest blockers: out-of-band credential channel observation, stream maintenance across auth_required, and a real per-caller authorization model are not implemented by the echo SUT variant |
 
 This is an extension-court verdict on the DY4 SUT variant at this pin, not
@@ -258,7 +283,9 @@ suite against the in-tree SUT; the earlier
 
 ## What is not claimed
 
-- **A2A TCK certification: not claimed.** The compatibility suite ran
+- **A2A TCK certification: not claimed.** (All percentages here are
+  stale, bound to pin `263b9cfa`; see the staleness notice in the TCK
+  section.) The compatibility suite ran
   against all three bindings — latest point-in-time verdict 2026-10-13
   at `13622178` on main (**79.0%** overall, 234 passed / 31 skipped /
   0 FAIL, MUST 87, SHOULD 7, MAY 4, 0 failing, section above); the
@@ -272,10 +299,11 @@ suite against the in-tree SUT; the earlier
 - **A gRPC conformance claim: not made.** The gRPC binding exists —
   `AshA2A.Transport.GRPC.Server` serves the canonical
   `lf.a2a.v1.A2AService` (9 unary + 2 server-streaming RPCs over
-  HTTP/2) — and the TCK has now run over gRPC (53/62), but the gRPC
-  surface carries the pinned CARD-EXT/STREAM-ORDER-004/push gaps
-  above, and the `protocolBinding` advertised in `supportedInterfaces`
-  remains `JSONRPC` only.
+  HTTP/2). The 2026-10-13 TCK run reported grpc 68/71 (3 skip, 0
+  failing requirements); the in-repo gRPC court is
+  `test/ash_a2a_v1_grpc_must_test.exs`. The `protocolBinding` advertised
+  in `supportedInterfaces` remains `JSONRPC` only, and no gRPC
+  conformance table rows exist in this statement.
 - **Semantic-law suites are different things.** `priv/sa2a_conformance/`
   and `mix ash_a2a.sa2a_conformance` / `mix ash_a2a.chicago` qualify the
   SA2A pipeline, not the A2A wire protocol

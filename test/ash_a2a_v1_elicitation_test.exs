@@ -239,7 +239,8 @@ defmodule AshA2A.V1ElicitationTest do
 
     # Let the configured 30ms window lapse, then send a PERFECTLY VALID
     # response: expiry still fires — it is checked before the schema.
-    Process.sleep(60)
+    # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(60)
 
     {:ok, %Req.Response{body: %{"task" => expired}}} =
       post_message(
@@ -255,8 +256,9 @@ defmodule AshA2A.V1ElicitationTest do
     assert expired["status"]["state"] == "TASK_STATE_FAILED"
 
     # Terminal: a further follow-up is refused outright by the transport --
-    # the AIP-193 envelope with the gRPC INVALID_ARGUMENT status, whose
-    # details carry the runtime's typed -32602 ("task is terminal").
+    # the AIP-193 envelope with the gRPC FAILED_PRECONDITION status, whose
+    # details carry the runtime's typed -32004 UnsupportedOperation
+    # ("task is terminal").
     {:ok, %Req.Response{status: 400, body: body}} =
       post_message(
         server,
@@ -264,12 +266,12 @@ defmodule AshA2A.V1ElicitationTest do
       )
 
     assert body["error"]["code"] == 400
-    assert body["error"]["status"] == "INVALID_ARGUMENT"
+    assert body["error"]["status"] == "FAILED_PRECONDITION"
 
     # The runtime's typed refusal rides in the ErrorInfo details.
     assert Enum.any?(
              body["error"]["details"] || [],
-             &(&1["reason"] == "INVALID_PARAMS" and &1["metadata"]["detail"] =~ "terminal")
+             &(&1["reason"] == "UNSUPPORTED_OPERATION" and inspect(&1["metadata"]) =~ "terminal")
            )
 
     # tasks/get still reports the terminal state -- the lifecycle never went

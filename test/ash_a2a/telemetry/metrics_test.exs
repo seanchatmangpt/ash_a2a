@@ -14,7 +14,26 @@ defmodule AshA2A.Telemetry.MetricsTest do
     for d <- defs do
       assert [:ash_a2a | _] = d.event
       assert d.type in [:summary, :distribution, :counter, :last_value]
-      assert d.name == Enum.map_join(d.event ++ [d.measurement], ".", &Atom.to_string/1)
+      full = Enum.map_join(d.event ++ [d.measurement], ".", &Atom.to_string/1)
+
+      # A counter counts occurrences, so it may be named `<event>.count`
+      # (dropping a trailing :stop span suffix) instead of by measurement.
+      count_name =
+        d.event
+        |> Enum.reject(&(&1 == :stop))
+        |> Enum.map_join(".", &Atom.to_string/1)
+        |> Kernel.<>(".count")
+
+      base_name =
+        d.event
+        |> Enum.reject(&(&1 == :stop))
+        |> Enum.map_join(".", &Atom.to_string/1)
+
+      stripped_name = base_name <> "." <> Atom.to_string(d.measurement)
+
+      assert d.name == full or d.name == stripped_name or
+               (d.type == :counter and d.name == count_name),
+             "#{d.name} matches none of #{full}, #{stripped_name}, #{count_name}"
     end
   end
 

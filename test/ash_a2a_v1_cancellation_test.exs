@@ -55,8 +55,17 @@ defmodule AshA2A.V1Cancellation.Slow do
 
   actions do
     action :slow, :map do
-      run(fn _input, _context ->
+      argument(:probe, :string)
+
+      run(fn input, _context ->
         Process.sleep(1000)
+        # Post-sleep effect marker: an interrupted worker never reaches it.
+        # The probe name is per-test (async-safe); absent => no marker.
+        with name when is_binary(name) <- input.arguments[:probe],
+             pid when is_pid(pid) <- Process.whereis(String.to_existing_atom(name)) do
+          send(pid, :handler_finished)
+        end
+
         {:ok, %{done: true}}
       end)
     end
@@ -81,6 +90,15 @@ defmodule AshA2A.V1Cancellation.SlowAgent do
   use AshA2A.Agent,
     resource_or_domain: AshA2A.V1Cancellation.Slow,
     name: "v1_cancellation_slow_agent"
+end
+
+defmodule AshA2A.V1Cancellation.RefuseAgent do
+  @moduledoc false
+
+  use AshA2A.Agent,
+    resource_or_domain: AshA2A.V1Cancellation.Slow,
+    name: "v1_cancellation_refuse_agent",
+    execution: [cancel_in_flight: :refuse]
 end
 
 defmodule AshA2A.Protocol.V1CancellationConformanceTest do
@@ -126,10 +144,12 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
     terminal states stay `-32002 TaskNotCancelable`. Pinned as conformance
     (court e).
   * **In-flight cancel:** the spec says the server "will attempt to cancel
-    the task, but success is not guaranteed". Reality: the repo refuses
-    outright with `-32002` while a worker is in flight, on the documented
-    grounds that reporting `:canceled` while the handler's effect may still
-    commit would be a false standing. Pinned as reality (court b).
+    the task, but success is not guaranteed". Reality (default): the worker
+    is killed, the cancel and the pending send both answer CANCELED, and the
+    handler's post-sleep effect never commits (court b). The opt-in
+    `execution: [cancel_in_flight: :refuse]` keeps the old `-32002` refusal
+    (court b'). `:inline` mode and `adapter: :pplan` can only be cancelled
+    after the run finished (terminal answer, court a).
   * **Continuing a canceled task:** the spec is silent; the repo refuses
     with `:not_continuable` → `-32004 UNSUPPORTED_OPERATION` (court d).
   """
@@ -247,9 +267,86 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   # Court (b) — cancel a WORKING task with a genuinely in-flight handler
   # ---------------------------------------------------------------------------
 
-  describe "court (b): cancel a working task whose handler is in flight" do
-    test "tasks/cancel while the real worker sleeps is refused -32002 (race-safety refusal)", %{} do
+  # Polls tasks/list (served from the agent's free mailbox) until a WORKING
+  # task is visible, bounded by a monotonic deadline (no sleeping).
+  defp poll_working_task_id(plug_opts, deadline_ms \\ 5_000) do
+    deadline = System.monotonic_time(:millisecond) + deadline_ms
+    do_poll_working(plug_opts, deadline)
+  end
+
+  defp do_poll_working(plug_opts, deadline) do
+    tasks =
+      case plug_opts |> rpc("tasks/list", %{}) |> decode_response() do
+        %{"result" => %{"tasks" => tasks}} -> tasks
+        _other -> []
+      end
+
+    case Enum.find(tasks, &(&1["status"]["state"] == "TASK_STATE_WORKING")) do
+      %{"id" => id} ->
+        {:ok, id}
+
+      nil ->
+        if System.monotonic_time(:millisecond) < deadline,
+          do: do_poll_working(plug_opts, deadline),
+          else: :timeout
+    end
+  end
+
+  describe "court (b): cancel a working task whose handler is in flight (interrupt, default)" do
+    test "tasks/cancel interrupts the worker: cancel and the pending send both answer CANCELED, effect never commits", %{} do
+      probe = :"v1_cancel_probe_#{System.unique_integer([:positive])}"
+      Process.register(self(), probe)
       %{agent: agent, plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.SlowAgent)
+
+      send_task =
+        Task.async(fn ->
+          rpc(plug_opts, "message/send", %{
+            "message" => data_message(%{"probe" => Atom.to_string(probe)})
+          })
+        end)
+
+      assert {:ok, task_id} = poll_working_task_id(plug_opts)
+
+      # The cancel, during the handler's 1000ms sleep, returns the canceled task.
+      canceled = plug_opts |> rpc("tasks/cancel", %{"id" => task_id}) |> decode_response()
+
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               canceled
+
+      # The in-flight send replies canceled, not completed (and promptly: the
+      # reply is the cancel, not the handler finishing).
+      send_conn = Task.await(send_task, 800)
+
+      assert %{"result" => %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}}} =
+               decode_response(send_conn)
+
+      # The worker was killed: no in-flight entry remains in the agent.
+      agent_pid = Process.whereis(agent)
+      {:dictionary, dict} = Process.info(agent_pid, :dictionary)
+      assert Keyword.get(dict, :ash_a2a_in_flight, %{}) == %{}
+
+      # Second cancel is idempotent (wire and agent surface).
+      second = plug_opts |> rpc("tasks/cancel", %{"id" => task_id}) |> decode_response()
+
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               second
+
+      assert :ok = AshA2A.V1Cancellation.SlowAgent.cancel(agent, task_id)
+
+      # Negative control that the effect did not commit: the handler's
+      # post-sleep marker never arrives (observed over a window longer than
+      # the 1000ms handler), and tasks/get still reads CANCELED afterwards.
+      refute_receive :handler_finished, 1_300
+
+      fetched = plug_opts |> rpc("tasks/get", %{"id" => task_id}) |> decode_response()
+
+      assert %{"result" => %{"status" => %{"state" => "TASK_STATE_CANCELED"}}} = fetched
+    end
+  end
+
+  describe "court (b'): opt-in cancel_in_flight: :refuse" do
+    test "tasks/cancel while the real worker sleeps is refused -32002 (race-safety refusal)", %{} do
+      %{agent: agent, plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.RefuseAgent)
 
       # Fire the send from another process: the plug call blocks until the
       # real 1000ms handler finishes (off-mailbox async execution replies
@@ -263,29 +360,7 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
       # spawned, and `tasks/list` is served from the agent's free mailbox,
       # so the working task is observable on the wire while the handler is
       # genuinely mid-flight. Poll until it appears.
-      task_id =
-        Enum.reduce_while(1..200, nil, fn _i, acc ->
-          listed =
-            plug_opts
-            |> rpc("tasks/list", %{})
-            |> decode_response()
-
-          case listed do
-            %{"result" => %{"tasks" => tasks}} ->
-              case Enum.find(tasks, &(&1["status"]["state"] == "TASK_STATE_WORKING")) do
-                %{"id" => id} ->
-                  {:halt, {:ok, id}}
-
-                nil ->
-                  Process.sleep(10)
-                  {:cont, acc}
-              end
-
-            _other ->
-              Process.sleep(10)
-              {:cont, acc}
-          end
-        end)
+      task_id = poll_working_task_id(plug_opts)
 
       assert {:ok, task_id} = task_id,
              "expected a TASK_STATE_WORKING task in tasks/list while the send was in flight"
@@ -316,7 +391,7 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
 
       # Same refusal at the agent GenServer surface (the exact atom the
       # in-flight guard in lib/ash_a2a/agent.ex:149-153 returns).
-      assert {:error, :not_cancelable} = AshA2A.V1Cancellation.SlowAgent.cancel(agent, task_id)
+      assert {:error, :not_cancelable} = AshA2A.V1Cancellation.RefuseAgent.cancel(agent, task_id)
 
       # Positive control: the refusal was race-safety, not cancellation.
       # The un-canceled send runs to real completion.

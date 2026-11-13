@@ -7,10 +7,10 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   dispatcher. No protocol logic lives here: this module translates
   proto-RPC names and gRPC statuses around the dispatcher.
 
-  **Scope: PARTIAL.** The server socket transport (HTTP/2, TLS, trailers
-  over the wire) requires a gRPC server dependency and is UNSUPPORTED
-  here. What IS provided is the full dispatch layer a host's gRPC server
-  calls:
+  **Scope: ALIVE.** The server socket transport (HTTP/2, TLS, trailers over
+  the wire) is `AshA2A.Transport.GRPC.Server`, which calls this dispatch
+  layer for every RPC. The dispatch layer is also usable directly by a
+  host's own gRPC server:
 
       {:ok, proto_json_result} =
         Dispatch.call("a2a.A2AService/SendMessage", params, handler, ctx)
@@ -36,7 +36,7 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     * A2A JSON-RPC error codes are mapped to gRPC statuses per v1.0 §3.3.2:
       -32001 -> NOT_FOUND(5), -32600/-32602/-32700/-32005 ->
       INVALID_ARGUMENT(3), -32002/-32007/-32008 -> FAILED_PRECONDITION(9),
-      -32601/-32003/-32004/-32009 -> UNIMPLEMENTED(12), -32603/-32006 ->
+      -32003/-32004/-32009/-32601 -> UNIMPLEMENTED(12), -32603/-32006 ->
       INTERNAL(13), -32000 (server busy) -> UNAVAILABLE(14). `trailers/1`
       converts a result to the `grpc-status`/`grpc-message` trailer map.
 
@@ -98,8 +98,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
           # cache semantics are the serving host's), so the gRPC binding opts
           # in the same way the HTTP binding's router does: a handler that
           # exports `handle_extended_card/1` answers GetExtendedAgentCard
-          # directly. Without the callback the dispatcher's UNIMPLEMENTED
-          # refusal stands — spec-correct (§3.3.2) exactly when the served
+          # directly. Without the callback the dispatcher's FAILED_PRECONDITION
+          # (-32004) refusal stands — spec-correct (§3.3.2) exactly when the served
           # card does not declare the extendedAgentCard capability.
           short == "GetExtendedAgentCard" and exports?(handler, :handle_extended_card, 1) ->
             case safe_extended_card(handler, ctx) do
@@ -121,6 +121,42 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
               {:stream, m, p, id} -> {:stream, m, p, id}
             end
         end
+    end
+  end
+
+  @doc """
+  Typed A2A error for a raw send-path refusal reason the agent returns
+  (`:context_mismatch`, `{:content_type_not_supported, data}`,
+  `:not_continuable`), or `nil` for any other term. Mapped (via `to_map/1`'s
+  ErrorInfo stamping) to INVALID_ARGUMENT(3) / INVALID_ARGUMENT(3) reason
+  CONTENT_TYPE_NOT_SUPPORTED / FAILED_PRECONDITION(9) reason
+  UNSUPPORTED_OPERATION respectively.
+  """
+  @spec reason_to_error(term()) :: AshA2A.Protocol.JSONRPC.Error.t() | nil
+  def reason_to_error(reason) do
+    # The HTTP/JSON-RPC table is the single source (also covers v1.1
+    # :generation_mismatch -> -32010 -> ABORTED and the user_artifacts refusal);
+    # the local clauses are only a fallback when it answers nil.
+    AshA2A.Transport.Plug.reason_error(reason) || local_reason_to_error(reason)
+  end
+
+  defp local_reason_to_error(:context_mismatch),
+    do: AshA2A.Protocol.JSONRPC.Error.invalid_params("contextId does not match the task's context")
+
+  defp local_reason_to_error({:content_type_not_supported, _data} = reason),
+    do: AshA2A.Protocol.InputModeValidator.to_error(reason)
+
+  defp local_reason_to_error(:not_continuable),
+    do: AshA2A.Protocol.JSONRPC.Error.unsupported_operation("task is terminal")
+
+  defp local_reason_to_error(_other), do: nil
+
+  @doc "Like `reason_to_error/1` but as `{:error, status, message, details}` (or `nil`)."
+  @spec reason_error(term()) :: {:error, non_neg_integer(), String.t(), list()} | nil
+  def reason_error(reason) do
+    case reason_to_error(reason) do
+      nil -> nil
+      error -> error_tuple(AshA2A.Protocol.JSONRPC.Error.to_map(error))
     end
   end
 
@@ -151,10 +187,11 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   # A2A v1.0 §3.3.2 cross-binding error mapping: JSON-RPC error code ->
   # gRPC status code. Validation (parse/request/params) is INVALID_ARGUMENT,
   # method-level absence is UNIMPLEMENTED, resource absence is NOT_FOUND,
-  # state conflicts are FAILED_PRECONDITION, A2A server errors are
-  # UNAVAILABLE (-32000 server busy) or INTERNAL (-32006 invalid agent
-  # response), and unimplemented features (-32003/-32004/-32009) are
-  # UNIMPLEMENTED.
+  # state conflicts and unsupported features/operations/versions
+  # (-32002/-32003/-32004/-32007/-32008/-32009) are FAILED_PRECONDITION, A2A
+  # server errors are UNAVAILABLE (-32000 server busy) or INTERNAL (-32006
+  # invalid agent response). Matches a2a-tck tck/requirements/base.py
+  # ERROR_BINDINGS and AshA2A.Protocol.JSONRPC.Error.grpc_status/1.
   @grpc_from_jsonrpc %{
     -32_700 => @grpc_invalid_argument,
     -32_600 => @grpc_invalid_argument,
@@ -164,13 +201,17 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     -32_000 => @grpc_unavailable,
     -32_001 => @grpc_not_found,
     -32_002 => @grpc_failed_precondition,
+    # Pinned TCK (STREAM-SUB-003, GRPC-ERR-002, binding_grpc.py): PushNotification-
+    # NotSupported, UnsupportedOperation and VersionNotSupported are UNIMPLEMENTED.
     -32_003 => @grpc_unimplemented,
     -32_004 => @grpc_unimplemented,
     -32_005 => @grpc_invalid_argument,
     -32_006 => @grpc_internal,
     -32_007 => @grpc_failed_precondition,
     -32_008 => @grpc_failed_precondition,
-    -32_009 => @grpc_unimplemented
+    -32_009 => @grpc_unimplemented,
+    # v1.1 TaskGenerationMismatchError (ifGenerationMatch) -> ABORTED
+    -32_010 => 10
   }
 
   @grpc_status_names %{

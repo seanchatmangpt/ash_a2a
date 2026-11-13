@@ -69,11 +69,26 @@ if Code.ensure_loaded?(Plug) do
       connection-consumed streaming path is used. Default `nil`.
     - `:versions` — list of supported A2A protocol versions as
       `Major.Minor` strings (default: `AshA2A.Protocol.Version.supported_default/0`,
-      currently `["0.3", "1.0"]`). The client's `A2A-Version` header is
+      currently `["0.3", "1.0", "1.1"]`). The client's `A2A-Version` header is
       normalized to `Major.Minor` and validated against this list;
       unsupported versions return `VersionNotSupportedError` (-32009).
       Missing/empty headers are treated as `"0.3"` (spec §3.6.2). The
       negotiated version is echoed in the `A2A-Version` response header.
+      The version is also read from the `A2A-Version` query parameter when the
+      header is absent (spec §3.6.1). The negotiated version is recorded at
+      `conn.private[:a2a][:version]` (`AshA2A.Protocol.Version.get_negotiated/1`)
+      and in the JSON-RPC handler context as `:a2a_version`, so code can gate
+      behaviour with `AshA2A.Protocol.Version.at_least?(version, "1.1")`.
+      `"0.3"` and `"1.0"` are accepted-not-advertised: the card's
+      `supportedInterfaces` carry only protocolVersion `"1.1"`.
+    - `:sign_with` — `[key: key, alg: :ES256 | :RS256 | :HS256, kid: kid]`
+      forwarded to `AshA2A.Protocol.CardSigner.sign/2`. The served card gets a
+      detached JWS entry in `signatures`; the signed body is memoised so the
+      bytes and `ETag` are stable across requests.
+
+    The agent card route honors conditional requests: `If-None-Match` (weak
+    comparison, value lists, `*`) and `If-Modified-Since` answer `304 Not
+    Modified` carrying the same `ETag`/`Last-Modified`/`Cache-Control`.
 
     ## Per-Request Overrides
 
@@ -166,7 +181,9 @@ if Code.ensure_loaded?(Plug) do
         extensions: AshA2A.Protocol.Extension.compile(Keyword.get(opts, :extensions, [])),
         versions: Keyword.get(opts, :versions, AshA2A.Protocol.Version.supported_default()),
         resubscribe_timeout: Keyword.get(opts, :resubscribe_timeout, 60_000),
-        transport: Keyword.get(opts, :transport, nil)
+        transport: Keyword.get(opts, :transport, nil),
+        sign_with: Keyword.get(opts, :sign_with),
+        capability_overrides: Keyword.get(opts, :capability_overrides, %{})
       }
     end
 
@@ -246,7 +263,10 @@ if Code.ensure_loaded?(Plug) do
 
     defp serve_agent_card(conn, opts) do
       card = GenServer.call(opts.agent, :get_agent_card)
-      agent_card_opts = merge_extension_declarations(card, opts.agent_card_opts, opts.extensions)
+      agent_card_opts =
+        card
+        |> merge_extension_declarations(opts.agent_card_opts, opts.extensions)
+        |> apply_capability_overrides(card, Map.get(opts, :capability_overrides, %{}))
 
       json =
         AshA2A.Protocol.JSON.encode_agent_card(
@@ -256,16 +276,38 @@ if Code.ensure_loaded?(Plug) do
 
       # Hash the body actually sent: `base_url` can be overridden per request via
       # put_base_url/2, so the encoded card is not constant across requests.
-      body = Jason.encode!(json)
+      # With `:sign_with` the SIGNED body is served (memoised, so the bytes and
+      # the ETag are stable across requests).
+      body = AshA2A.Protocol.Plug.CardServe.signed_body(json, Map.get(opts, :sign_with))
 
-      conn
-      |> put_resp_content_type("application/json")
-      |> put_resp_header("etag", etag(body))
-      |> put_resp_header("last-modified", http_date(opts.last_modified))
-      # Plug defaults every response to "max-age=0, private, must-revalidate",
-      # which is wrong for a public, shareable agent card.
-      |> put_resp_header("cache-control", "public, max-age=300")
-      |> send_resp(200, body)
+      # Conditional GET (If-None-Match / If-Modified-Since -> 304 with the same
+      # cache headers); Last-Modified is the plug's init-time (boot/build) time,
+      # never the request time.
+      AshA2A.Protocol.Plug.CardServe.respond(
+        conn,
+        body,
+        etag(body),
+        http_date(opts.last_modified),
+        "public, max-age=300"
+      )
+    end
+
+    # Transport-level capability facts (push enabled, extended-card provider
+    # configured) layered OVER the card's own capabilities instead of replacing
+    # them: `encode_agent_card/2` treats a `:capabilities` option as the whole
+    # map, so a bare partial override would drop `streaming` etc.
+    defp apply_capability_overrides(agent_card_opts, _card, overrides)
+         when overrides == %{} or is_nil(overrides),
+         do: agent_card_opts
+
+    defp apply_capability_overrides(agent_card_opts, card, overrides) do
+      base =
+        case Keyword.fetch(agent_card_opts, :capabilities) do
+          {:ok, caps} -> caps
+          :error -> Map.get(card, :capabilities, %{})
+        end
+
+      Keyword.put(agent_card_opts, :capabilities, Map.merge(base, overrides))
     end
 
     defp etag(body) do
@@ -404,7 +446,8 @@ if Code.ensure_loaded?(Plug) do
     # -- JSON-RPC dispatch -----------------------------------------------------
 
     defp handle_json_rpc(conn, opts) do
-      version = AshA2A.Protocol.Version.parse_header(get_req_header(conn, "a2a-version"))
+      # Header, else the `A2A-Version` query parameter (spec §3.6.1), else "0.3".
+      version = AshA2A.Protocol.Version.from_conn(conn)
       requested = AshA2A.Protocol.Extension.parse_header(get_req_header(conn, "a2a-extensions"))
 
       with :ok <- AshA2A.Protocol.Version.validate(version, opts.versions),
@@ -414,15 +457,15 @@ if Code.ensure_loaded?(Plug) do
         conn =
           conn
           |> put_resp_header("a2a-version", version)
+          |> AshA2A.Protocol.Version.put_negotiated(version)
           |> put_extensions_response_header(activated_uris)
 
         dispatch_json_rpc(conn, opts, activations)
       else
         {:error, rejected} when is_binary(rejected) ->
-          send_json(
-            conn,
-            Response.error(nil, Error.version_not_supported(rejected))
-          )
+          conn
+          |> put_resp_header("a2a-version", rejected)
+          |> send_json(Response.error(nil, Error.version_not_supported(rejected)))
 
         {:error, missing} when is_list(missing) ->
           send_json(
@@ -446,7 +489,8 @@ if Code.ensure_loaded?(Plug) do
           context = %{
             agent: opts.agent,
             opts: opts,
-            extensions: activations
+            extensions: activations,
+            a2a_version: AshA2A.Protocol.Version.get_negotiated(conn)
           }
 
           case AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, context) do
@@ -507,7 +551,10 @@ if Code.ensure_loaded?(Plug) do
                     conn,
                     opts.transport,
                     opts.agent,
-                    %{"id" => task.id},
+                    Map.merge(
+                      %{"id" => task.id},
+                      Map.take(params, ["lastSeenGeneration"])
+                    ),
                     id,
                     []
                   )
@@ -517,7 +564,8 @@ if Code.ensure_loaded?(Plug) do
                     opts.agent,
                     task.id,
                     id,
-                    opts.resubscribe_timeout
+                    opts.resubscribe_timeout,
+                    params: params
                   )
                 end
               else
@@ -568,7 +616,7 @@ if Code.ensure_loaded?(Plug) do
     defp send_json(conn, response) do
       conn
       |> put_resp_content_type("application/json")
-      |> send_resp(200, Jason.encode!(response))
+      |> send_resp(200, Jason.encode!(AshA2A.Protocol.DowngradeWire.body(conn, response)))
     end
 
     # -- JSONRPC behaviour callbacks -------------------------------------------
@@ -594,13 +642,22 @@ if Code.ensure_loaded?(Plug) do
             {:ok, result, _activations} =
               AshA2A.Protocol.Extension.run_response(activations, result, params)
 
-            {:ok, result}
+            case AshA2A.Protocol.InputModeValidator.apply_output_modes(
+                   result,
+                   Map.get(ctx, :accepted_output_modes)
+                 ) do
+              {:ok, result} -> {:ok, result}
+              {:error, reason} -> {:error, internal_error_or_typed(reason)}
+            end
 
           {:error, :not_found} ->
             {:error, Error.task_not_found()}
 
-          {:error, :not_continuable} ->
-            {:error, Error.unsupported_operation()}
+          {:error, reason}
+          when reason in [:generation_mismatch, :context_mismatch, :not_continuable] or
+                 (is_tuple(reason) and tuple_size(reason) == 2 and
+                    elem(reason, 0) in [:unsupported_operation, :content_type_not_supported]) ->
+            {:error, internal_error_or_typed(reason)}
 
           {:error, :message_on_task} ->
             {:error, Error.invalid_agent_response("Message reply to a task-scoped request")}
@@ -712,6 +769,11 @@ if Code.ensure_loaded?(Plug) do
     # caller gets -32603 with an opaque correlation `ref`; the full reason is
     # logged server-side under the same ref (AshA2A.Transport.SafeError, the
     # same convention AshA2A.Transport.Plug and AshA2A.ToA2AError use).
+    # Shared typed table (AshA2A.Transport.Plug.reason_error/1).
+    defp internal_error_or_typed(reason) do
+      AshA2A.Transport.Plug.reason_error(reason) || internal_error(reason)
+    end
+
     defp internal_error(reason) do
       %{ref: ref} = AshA2A.Transport.SafeError.internal(:internal_error, reason)
       Error.internal_error(%{"code" => "internal_error", "ref" => ref})
@@ -797,7 +859,18 @@ if Code.ensure_loaded?(Plug) do
       # page_size echoes the REQUESTED cap (already set by Task.Filter.apply),
       # not the post-authorization result length — same contract as Y10
       # (commit 68e4724e): filtering shrinks the page, not the reported cap.
-      %{result | tasks: authorized, total_size: length(authorized)}
+      #
+      # total_size is the PRE-pagination count (Task.Filter.apply: length of
+      # the full filtered set), not the page length. Authorization only saw
+      # this page, so the tasks it denied are subtracted from the total; the
+      # total never drops below the number of tasks actually returned.
+      denied = length(tasks) - length(authorized)
+      total = Map.get(result, :total_size)
+
+      total_size =
+        if is_integer(total), do: max(total - denied, length(authorized)), else: length(authorized)
+
+      %{result | tasks: authorized, total_size: total_size}
     end
 
     defp call_authorizer(fun, operation, task, context) when is_function(fun, 3) do
@@ -820,7 +893,23 @@ if Code.ensure_loaded?(Plug) do
       # 3-layer metadata merge: init → conn.private → JSON-RPC params
       metadata = request_metadata(params, plug_opts)
 
+      configuration = if is_map(params["configuration"]), do: params["configuration"], else: %{}
+      alias AshA2A.Protocol.JSONRPC.Request, as: Req
+
+      return_immediately =
+        case Req.return_immediately(configuration) do
+          true -> true
+          _ -> nil
+        end
+
       []
+      |> maybe_put(:if_generation_match, Req.if_generation_match(configuration))
+      |> maybe_put(:return_immediately, return_immediately)
+      |> maybe_put(:accepted_output_modes, Req.accepted_output_modes(configuration))
+      |> maybe_put(
+        :timeline_length,
+        Req.timeline_length(configuration) || Req.timeline_length(params)
+      )
       |> maybe_put(:task_id, params["id"])
       |> maybe_put(:context_id, params["contextId"])
       |> maybe_put(:metadata, if(metadata == %{}, do: nil, else: metadata))

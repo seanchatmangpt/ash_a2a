@@ -40,3 +40,21 @@ defmodule AshA2A.Replan.PortContractTest do
              )
   end
 end
+
+defmodule AshA2A.Replan.Port.Beam4pmHttpTest do
+  use ExUnit.Case, async: true
+
+  alias AshA2A.Replan.Port.Beam4pm
+
+  test "no beam4pm configured and no module supplied: typed unavailable, nothing compiled in" do
+    assert {:error, :beam4pm_unavailable} = Beam4pm.propose(%{subject: "s"}, [])
+  end
+
+  test "beam4pm_url selects the HTTP A2A path (unreachable server -> typed error, not a crash)" do
+    assert {:error, _} =
+             Beam4pm.propose(%{subject: "s", decision: :hddl_replan},
+               beam4pm_url: "http://127.0.0.1:1/a2a",
+               retry: false
+             )
+  end
+end

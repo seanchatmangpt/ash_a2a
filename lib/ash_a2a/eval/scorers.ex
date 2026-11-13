@@ -50,12 +50,12 @@ defmodule AshA2A.Eval.Scorers do
   defp run_one(%{"type" => "exact"} = scorer, view, _case) do
     case resolve(view, path_of(scorer)) do
       {:ok, value} ->
-        expected = Map.fetch!(scorer, "value")
-
-        if value == expected do
-          {:pass, :ok}
-        else
-          {:fail, {:mismatch, expected: expected, actual: value}}
+        with {:ok, expected} <- fetch_key(scorer, "value") do
+          if value == expected do
+            {:pass, :ok}
+          else
+            {:fail, {:mismatch, expected: expected, actual: value}}
+          end
         end
 
       {:error, reason} ->
@@ -66,12 +66,19 @@ defmodule AshA2A.Eval.Scorers do
   defp run_one(%{"type" => "contains"} = scorer, view, _case) do
     case resolve(view, path_of(scorer)) do
       {:ok, value} when is_binary(value) ->
-        needle = Map.fetch!(scorer, "value")
+        case fetch_key(scorer, "value") do
+          {:ok, needle} when is_binary(needle) ->
+            if value =~ needle do
+              {:pass, :ok}
+            else
+              {:fail, {:missing_substring, value: needle, actual: value}}
+            end
 
-        if value =~ needle do
-          {:pass, :ok}
-        else
-          {:fail, {:missing_substring, value: needle, actual: value}}
+          {:ok, other} ->
+            {:fail, {:malformed_scorer, {:value_not_a_string, other}}}
+
+          {:fail, _} = fail ->
+            fail
         end
 
       {:ok, value} ->
@@ -85,14 +92,14 @@ defmodule AshA2A.Eval.Scorers do
   defp run_one(%{"type" => "schema_match"} = scorer, view, _case) do
     case resolve(view, path_of(scorer)) do
       {:ok, value} ->
-        expected = Map.fetch!(scorer, "expect")
+        with {:ok, expected} <- fetch_key(scorer, "expect") do
+          case deep_subset_match(expected, value) do
+            :ok ->
+              {:pass, :ok}
 
-        case deep_subset_match(expected, value) do
-          :ok ->
-            {:pass, :ok}
-
-          {:mismatch, path} ->
-            {:fail, {:schema_mismatch, at: path, expected: expected, actual: value}}
+            {:mismatch, path} ->
+              {:fail, {:schema_mismatch, at: path, expected: expected, actual: value}}
+          end
         end
 
       {:error, reason} ->
@@ -101,9 +108,35 @@ defmodule AshA2A.Eval.Scorers do
   end
 
   defp run_one(%{"type" => "custom"} = scorer, view, suite_case) do
-    mod = module_from_string(Map.fetch!(scorer, "module"))
-    fun = String.to_atom(Map.fetch!(scorer, "function"))
+    with {:ok, mod_name} <- fetch_key(scorer, "module"),
+         {:ok, fun_name} <- fetch_key(scorer, "function"),
+         {:ok, fun} <- function_from_string(fun_name) do
+      run_custom(scorer, module_from_string(mod_name), fun, view, suite_case)
+    end
+  end
 
+  defp run_one(scorer, _view, _case) do
+    {:fail, {:unknown_scorer_type, inspect(Map.get(scorer, "type"))}}
+  end
+
+  defp fetch_key(scorer, key) do
+    case Map.fetch(scorer, key) do
+      {:ok, value} -> {:ok, value}
+      :error -> {:fail, {:malformed_scorer, {:missing_key, key}}}
+    end
+  end
+
+  # Suite input never mints atoms: only already-existing atoms resolve.
+  defp function_from_string(name) when is_binary(name) do
+    {:ok, String.to_existing_atom(name)}
+  rescue
+    ArgumentError -> {:fail, {:custom_scorer_error, "function #{inspect(name)} not found"}}
+  end
+
+  defp function_from_string(other),
+    do: {:fail, {:malformed_scorer, {:function_not_a_string, other}}}
+
+  defp run_custom(scorer, mod, fun, view, suite_case) do
     cond do
       is_nil(mod) ->
         {:fail,
@@ -121,10 +154,6 @@ defmodule AshA2A.Eval.Scorers do
   catch
     kind, reason ->
       {:fail, {:custom_scorer_error, "raised: #{Exception.format(kind, reason)}"}}
-  end
-
-  defp run_one(scorer, _view, _case) do
-    {:fail, {:unknown_scorer_type, inspect(Map.get(scorer, "type"))}}
   end
 
   defp apply_custom(mod, fun, view, suite_case) do
@@ -221,11 +250,13 @@ defmodule AshA2A.Eval.Scorers do
   defp module_from_string(_), do: nil
 
   defp safe_to_module(name) do
-    Code.ensure_loaded(String.to_atom(name))
-    |> case do
+    # Never mint atoms from suite input.
+    case Code.ensure_loaded(String.to_existing_atom(name)) do
       {:module, mod} -> mod
       {:error, _} -> nil
     end
+  rescue
+    ArgumentError -> nil
   end
 
   @doc false

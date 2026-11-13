@@ -341,6 +341,7 @@ defmodule AshA2A.Chicago.Courts.MutationCourt do
           spawn_monitor(fn ->
             Mutation.with_mutant(m, fn applied ->
               send(parent, {:chicago_mutant_live, self(), applied.guardian})
+              # SLEEP-CLASS: SCHEDULING (owner parks holding mutant live until killed)
               Process.sleep(:infinity)
             end)
           end)

@@ -72,16 +72,13 @@ defmodule AshA2A.Semantic.RootManifest.EngineProbe do
   Resolves the real `praxis-graphlaw` wasm artifact path.
 
   Order: `opts[:wasm_path]`, `Application.get_env(:ash_a2a,
-  :graphlaw_wasm_path)`, `System.get_env("GRAPHLAW_WASM")`, then the vendored,
+  :graphlaw_wasm_path)`, `System.get_env("PRAXIS_GRAPHLAW_WASM")`, then the vendored,
   git-tracked, MANIFEST-pinned artifact `AshA2A.GraphLaw.wasm_path/0`
   (`priv/graphlaw/praxis_graphlaw.wasm`).
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
-    Keyword.get(opts, :wasm_path) ||
-      Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
-      System.get_env("GRAPHLAW_WASM") ||
-      AshA2A.GraphLaw.wasm_path()
+    AshA2A.GraphLaw.wasm_path_unchecked(opts)
   end
 
   @doc """

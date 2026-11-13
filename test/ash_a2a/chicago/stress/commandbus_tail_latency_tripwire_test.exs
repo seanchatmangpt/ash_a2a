@@ -149,7 +149,8 @@ defmodule AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest do
                   _ -> 0
                 end
 
-              Process.sleep(200)
+              # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+              AshA2A.TestSupport.Eventually.pause(200)
               {:cont, max(max_mql, mql)}
             end
           end)
@@ -306,6 +307,7 @@ defmodule AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest do
       # region -- a genuine ~forcex late-half latency manufacture.
       duration_us =
         if is_number(ctx.force_x) and start_offset_ms >= (deadline_ms - run_started_ms) / 2 do
+          # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
           Process.sleep(trunc(elapsed_us * (ctx.force_x - 1) / 1_000))
           System.monotonic_time(:microsecond) - started_us
         else

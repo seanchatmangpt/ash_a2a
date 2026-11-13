@@ -47,6 +47,23 @@ defmodule AshA2A.Transport.Plug do
 
   `:max_body_bytes` (default 1_000_000) bounds the JSON-RPC body read.
 
+  `:versions` (default `AshA2A.Protocol.Version.supported_default/0`) is the
+  accepted `A2A-Version` list (currently `["0.3", "1.0", "1.1"]`). The
+  negotiated version is recorded at `conn.private[:a2a][:version]` and in the
+  JSON-RPC handler ctx as `:a2a_version`.
+
+  `:extensions` takes negotiated extension modules (`Mod | {Mod, opts}`,
+  compiled at `init/1` via `AshA2A.Protocol.Extension.compile/1`) and/or
+  advertise-only declaration maps. Required extensions missing from the
+  `A2A-Extensions` request header answer `-32008` before dispatch; activated
+  URIs are echoed in the `A2A-Extensions` response header and reach the agent
+  as `context.extensions`.
+
+  `:sign_with` (`[key:, alg:, kid:]`) signs the served card via
+  `AshA2A.Protocol.CardSigner.sign/2` (memoised, stable `ETag`). The card
+  route answers `304` to a matching `If-None-Match` / `If-Modified-Since`;
+  `Last-Modified` is the plug's init-time (`:last_modified`) time.
+
   Passing `serve_schemas: true` (with the `:schema_index` capability-index
   source) also mounts the machine-readable schema endpoints
   (`AshA2A.Transport.SchemaEndpoints`): `GET /.well-known/agent-card.schema.json`
@@ -81,8 +98,19 @@ defmodule AshA2A.Transport.Plug do
   @impl Plug
   @spec init(keyword()) :: map()
   def init(opts) do
+    # `:extensions` carries two kinds of entry: negotiated extension modules
+    # (`Mod | {Mod, opts}`, compiled via `Extension.compile/1` exactly like
+    # `AshA2A.Protocol.Plug.init/1`) and plain declaration maps / structs that
+    # are only advertised on the card.
+    {ext_modules, ext_declarations} =
+      opts |> Keyword.get(:extensions, []) |> List.wrap() |> Enum.split_with(&extension_entry?/1)
+
     %{
       agent: Keyword.fetch!(opts, :agent),
+      versions: Keyword.get(opts, :versions, AshA2A.Protocol.Version.supported_default()),
+      compiled_extensions: AshA2A.Protocol.Extension.compile(ext_modules),
+      last_modified: Keyword.get(opts, :last_modified, DateTime.utc_now()),
+      sign_with: Keyword.get(opts, :sign_with),
       base_url: Keyword.get(opts, :base_url),
       agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
       json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
@@ -90,11 +118,17 @@ defmodule AshA2A.Transport.Plug do
       metadata: Keyword.get(opts, :metadata, %{}),
       max_body_bytes: Keyword.get(opts, :max_body_bytes, 1_000_000),
       push_notifications: Keyword.get(opts, :push_notifications, false),
-      extensions: Keyword.get(opts, :extensions, []),
+      extensions: ext_declarations,
       force_ssl: Keyword.get(opts, :force_ssl, nil)
     }
     |> Map.merge(AshA2A.Transport.SchemaEndpoints.init(opts))
   end
+
+  # A module atom or `{module, keyword}` is a negotiated extension; a struct or
+  # map is an advertise-only declaration.
+  defp extension_entry?(entry) when is_atom(entry), do: true
+  defp extension_entry?({mod, opts}) when is_atom(mod) and is_list(opts), do: true
+  defp extension_entry?(_), do: false
 
   @impl Plug
   @spec call(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -155,7 +189,7 @@ defmodule AshA2A.Transport.Plug do
   """
   @spec agent_card_json(map(), map(), String.t()) :: map()
   def agent_card_json(card, opts, base_url) do
-    card_opts = [url: base_url, capabilities: capabilities(opts)] ++ opts.agent_card_opts
+    card_opts = [url: base_url, capabilities: capabilities(opts, card)] ++ opts.agent_card_opts
     json = AshA2A.Protocol.JSON.encode_agent_card(card, card_opts)
 
     case extensions(opts, json) do
@@ -164,26 +198,33 @@ defmodule AshA2A.Transport.Plug do
     end
   end
 
-  defp capabilities(opts) do
-    %{
+  defp capabilities(opts, card) do
+    base = %{
       streaming: true,
       push_notifications: opts.push_notifications == true,
       state_transition_history: false,
-      extended_agent_card: false
+      extended_agent_card: Map.get(opts, :extended_card) == true
     }
+
+    # v1.1: the card's own `user_artifacts` declaration is carried through.
+    if AshA2A.Protocol.ClientArtifacts.user_artifacts?(card),
+      do: Map.put(base, :user_artifacts, true),
+      else: base
   end
 
   defp extensions(opts, json) do
-    profile = AshA2A.Semantic.Extension.profile_id()
-
     advertised? =
-      json
-      |> Map.get("supportedInterfaces", [])
-      |> Enum.any?(&(Map.get(&1, "protocolBinding") == profile))
+      AshA2A.Semantic.Extension.advertisement(%{
+        "capabilities" => Keyword.get(opts.agent_card_opts, :capabilities, %{})
+      }) == :compatible or
+        AshA2A.Semantic.Extension.advertisement(json) == :compatible
 
     auto = if advertised?, do: [AshA2A.Semantic.Extension.capability_declaration()], else: []
 
-    (auto ++ List.wrap(opts.extensions))
+    negotiated =
+      opts |> Map.get(:compiled_extensions, []) |> AshA2A.Protocol.Extension.declarations()
+
+    (auto ++ List.wrap(opts.extensions) ++ negotiated)
     |> Enum.uniq_by(&(Map.get(&1, :uri) || Map.get(&1, "uri")))
     |> Enum.map(&stringify/1)
   end
@@ -223,40 +264,73 @@ defmodule AshA2A.Transport.Plug do
 
     card = GenServer.call(opts.agent, :get_agent_card)
 
-    body = Jason.encode!(agent_card_json(card, opts, base_url))
+    # `:sign_with` serves the memoised signed body (stable bytes => stable ETag).
+    body =
+      AshA2A.Protocol.Plug.CardServe.signed_body(
+        agent_card_json(card, opts, base_url),
+        Map.get(opts, :sign_with)
+      )
 
-    conn
-    |> put_resp_content_type("application/json")
-    |> put_resp_header("cache-control", "max-age=60")
-    |> put_resp_header("etag", <<?"::utf8, etag_of(body)::binary, ?"::utf8>>)
-    |> put_resp_header("last-modified", last_modified())
-    |> send_resp(200, body)
+    AshA2A.Protocol.Plug.CardServe.respond(
+      conn,
+      body,
+      <<?"::utf8, etag_of(body)::binary, ?"::utf8>>,
+      last_modified(opts),
+      "max-age=60"
+    )
   end
 
   # Agent-card caching headers (spec §8.6.1): Cache-Control and ETag are
   # SHOULD-level, Last-Modified is MAY-level. The card is a deterministic
   # projection of the compiled capability index, so the ETag is the body
-  # digest and Last-Modified is the serve time (the card body is immutable
-  # for a given boot; a card that changed would change the ETag).
+  # digest and Last-Modified is the plug's init-time (boot/build) time -- never
+  # the request time, so a revalidating client (`If-None-Match` /
+  # `If-Modified-Since`, answered `304` by `CardServe.respond/5`) can hit.
   defp etag_of(body) do
     :crypto.hash(:md5, body) |> Base.encode16(case: :lower)
   end
 
-  defp last_modified do
-    Calendar.strftime(DateTime.utc_now(), "%a, %d %b %Y %H:%M:%S GMT")
+  defp last_modified(opts) do
+    opts
+    |> Map.get(:last_modified, DateTime.utc_now())
+    |> AshA2A.Protocol.Plug.CardServe.http_date()
   end
 
   # -- JSON-RPC --------------------------------------------------------------
 
   defp handle_json_rpc(conn, opts) do
-    version = AshA2A.Protocol.Version.parse_header(get_req_header(conn, "a2a-version"))
+    # Header, else the `A2A-Version` query parameter (spec §3.6.1), else "0.3".
+    version = AshA2A.Protocol.Version.from_conn(conn)
 
-    with :ok <- AshA2A.Protocol.Version.validate(version, AshA2A.Protocol.Version.supported_default()) do
-      conn = put_resp_header(conn, "a2a-version", version)
+    compiled = Map.get(opts, :compiled_extensions, [])
+    requested = AshA2A.Protocol.Extension.parse_header(get_req_header(conn, "a2a-extensions"))
+
+    with :ok <-
+           AshA2A.Protocol.Version.validate(
+             version,
+             Map.get(opts, :versions, AshA2A.Protocol.Version.supported_default())
+           ),
+         :ok <- AshA2A.Protocol.Extension.validate_required(compiled, requested),
+         {:ok, activations, activated_uris} <-
+           AshA2A.Protocol.Extension.activate(compiled, requested, %{conn: conn}) do
+      conn =
+        conn
+        |> put_resp_header("a2a-version", version)
+        |> AshA2A.Protocol.Version.put_negotiated(version)
+        |> put_extensions_header(activated_uris)
 
       case read_json_body(conn, opts.max_body_bytes) do
         {:ok, decoded, conn} ->
-          ctx = %{agent: opts.agent, opts: opts, conn: conn, principal: caller(conn)}
+          decoded = alias_method(decoded)
+
+          ctx = %{
+            agent: opts.agent,
+            opts: opts,
+            conn: conn,
+            principal: caller(conn),
+            extensions: activations,
+            a2a_version: version
+          }
 
           case AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, ctx) do
             {:reply, response} ->
@@ -283,8 +357,38 @@ defmodule AshA2A.Transport.Plug do
         conn
         |> put_resp_header("a2a-version", rejected)
         |> send_json(Response.error(nil, Error.version_not_supported(rejected)))
+
+      # Required extension absent from the A2A-Extensions request header
+      # (spec §4.5): ExtensionSupportRequiredError (-32008), before dispatch.
+      {:error, missing} when is_list(missing) ->
+        send_json(
+          conn,
+          Response.error(
+            nil,
+            Error.extension_support_required(
+              "Client missing required extensions: " <> Enum.join(missing, ", ")
+            )
+          )
+        )
+
+      {:error, %Error{} = err} ->
+        send_json(conn, Response.error(nil, err))
     end
   end
+
+  # Routing-only slash aliases (`tasks/subscribe` -> `tasks/resubscribe`) that
+  # AshA2A.Protocol.JSONRPC's own PascalCase table does not carry; resolved
+  # here so both HTTP plugs accept the same spellings.
+  defp alias_method(%{"method" => method} = decoded) when is_binary(method) do
+    %{decoded | "method" => Map.get(AshA2A.A2ATransport.Plug.extra_method_aliases(), method, method)}
+  end
+
+  defp alias_method(decoded), do: decoded
+
+  defp put_extensions_header(conn, []), do: conn
+
+  defp put_extensions_header(conn, uris),
+    do: put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
 
   defp read_json_body(%{body_params: %Plug.Conn.Unfetched{}} = conn, max) do
     case read_body(conn, length: max) do
@@ -307,7 +411,7 @@ defmodule AshA2A.Transport.Plug do
   defp send_json(conn, response) do
     conn
     |> put_resp_content_type("application/json")
-    |> send_resp(200, Jason.encode!(response))
+    |> send_resp(200, Jason.encode!(AshA2A.Protocol.DowngradeWire.body(conn, response)))
   end
 
   defp auth(conn), do: conn.private |> Map.get(:a2a, %{}) |> Map.get(:auth)
@@ -321,8 +425,14 @@ defmodule AshA2A.Transport.Plug do
 
   # Metadata layers, later wins: init -> put_metadata -> params.metadata ->
   # verified auth. The verified auth is last so no caller field can forge it.
-  defp call_opts(params, message, %{opts: opts, conn: conn}) do
-    conn_metadata = AshA2A.Protocol.Plug.get_metadata(conn) || %{}
+  #
+  # `ctx` is the plug's own `%{opts:, conn:, ...}` OR a gRPC per-call ctx (no
+  # conn; the verified auth rides as `ctx.auth`, set by
+  # `AshA2A.Transport.GRPC.Server` after the auth interceptor ran).
+  defp call_opts(params, message, ctx) do
+    opts = Map.get(ctx, :opts) |> then(&if(is_map(&1), do: &1, else: %{}))
+    conn = Map.get(ctx, :conn)
+    conn_metadata = if conn, do: AshA2A.Protocol.Plug.get_metadata(conn) || %{}, else: %{}
 
     params_metadata =
       case params["metadata"] do
@@ -330,13 +440,30 @@ defmodule AshA2A.Transport.Plug do
         _ -> %{}
       end
 
-    metadata = opts.metadata |> Map.merge(conn_metadata) |> Map.merge(params_metadata)
-    metadata = if auth = auth(conn), do: Map.put(metadata, "a2a.auth", auth), else: metadata
+    metadata =
+      opts |> Map.get(:metadata, %{}) |> Map.merge(conn_metadata) |> Map.merge(params_metadata)
+
+    verified = if conn, do: auth(conn), else: Map.get(ctx, :auth)
+    metadata = if verified, do: Map.put(metadata, "a2a.auth", verified), else: metadata
+
+    # Activated extensions reach the agent as `context.extensions` (same
+    # `%{uri => activation}` map AshA2A.Protocol.Plug passes); absent when none
+    # activated so callers without extensions see unchanged call options.
+    extensions =
+      case Map.get(ctx, :extensions, []) do
+        [] -> nil
+        activations -> AshA2A.Protocol.Extension.to_context_map(activations)
+      end
 
     []
     |> put_opt(:task_id, params["id"] || message.task_id)
     |> put_opt(:context_id, params["contextId"] || message.context_id)
     |> put_opt(:metadata, if(metadata == %{}, do: nil, else: metadata))
+    |> put_opt(:extensions, extensions)
+    |> put_opt(:if_generation_match, Map.get(ctx, :if_generation_match))
+    |> put_opt(:return_immediately, Map.get(ctx, :return_immediately))
+    |> put_opt(:accepted_output_modes, Map.get(ctx, :accepted_output_modes))
+    |> put_opt(:principal, Map.get(ctx, :principal))
   end
 
   defp put_opt(opts, _key, nil), do: opts
@@ -346,10 +473,34 @@ defmodule AshA2A.Transport.Plug do
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_send(message, params, ctx) do
-    case call_agent(ctx.agent, message, call_opts(params, message, ctx)) do
-      {:ok, %AshA2A.Protocol.Task{} = task} -> {:ok, Runtime.wire_task(task)}
-      {:ok, %AshA2A.Protocol.Message{} = msg} -> {:ok, msg}
-      {:error, reason} -> {:error, wire_error(reason)}
+    alias AshA2A.Protocol.Extension
+
+    activations = Map.get(ctx, :extensions, [])
+
+    # handle_request/handle_response hooks of the activated extensions run
+    # around the agent call (declaration order), as in AshA2A.Protocol.Plug.
+    with {:ok, message, params, activations} <- Extension.run_request(activations, message, params) do
+      ctx = Map.put(ctx, :extensions, activations)
+
+      case call_agent(ctx.agent, message, call_opts(params, message, ctx)) do
+        {:ok, %AshA2A.Protocol.Task{} = task} ->
+          {:ok, task, _} = Extension.run_response(activations, task, params)
+
+          case AshA2A.Protocol.InputModeValidator.apply_output_modes(
+                 task,
+                 Map.get(ctx, :accepted_output_modes)
+               ) do
+            {:ok, task} -> {:ok, Runtime.wire_task(task)}
+            {:error, reason} -> {:error, wire_error(reason)}
+          end
+
+        {:ok, %AshA2A.Protocol.Message{} = msg} ->
+          {:ok, msg, _} = Extension.run_response(activations, msg, params)
+          {:ok, msg}
+
+        {:error, reason} ->
+          {:error, wire_error(reason)}
+      end
     end
   end
 
@@ -400,10 +551,34 @@ defmodule AshA2A.Transport.Plug do
     :exit, reason -> {:error, SafeError.internal(:internal_error, {:agent_exit, reason})}
   end
 
+  @doc """
+  Typed `Error` for a raw send-path refusal reason, or `nil` for any other term.
+  Single table shared with `AshA2A.Transport.GRPC.Dispatch.reason_to_error/1`.
+  """
+  @spec reason_error(term()) :: Error.t() | nil
+  def reason_error(:generation_mismatch),
+    do: AshA2A.Protocol.ClientArtifacts.to_error(:generation_mismatch)
+
+  def reason_error({:unsupported_operation, :user_artifacts} = reason),
+    do: AshA2A.Protocol.ClientArtifacts.to_error(reason)
+
+  def reason_error(:context_mismatch), do: Error.invalid_params("contextId does not match task")
+
+  def reason_error({:content_type_not_supported, _} = reason),
+    do: AshA2A.Protocol.InputModeValidator.to_error(reason)
+
+  def reason_error(:not_continuable), do: Error.unsupported_operation("task is terminal")
+  def reason_error(_other), do: nil
+
   @doc false
   @spec wire_error(term()) :: Error.t()
   def wire_error(:not_found), do: Error.task_not_found()
-  def wire_error(:not_continuable), do: Error.invalid_params("task is terminal")
+
+  def wire_error(reason) when reason in [:generation_mismatch, :context_mismatch, :not_continuable],
+    do: reason_error(reason)
+
+  def wire_error({tag, _} = reason) when tag in [:unsupported_operation, :content_type_not_supported],
+    do: reason_error(reason) || Error.internal_error()
 
   # -32000 is the JSON-RPC *server-error* code (not one of the Error module's
   # A2A-specific -32001..-32009 constructors), the free-form `data` map is
@@ -433,12 +608,22 @@ defmodule AshA2A.Transport.Plug do
   # `message/stream` is). A subscription for a task the caller does not own
   # (unknown or foreign) must still answer the spec-mandated TaskNotFoundError
   # (-32001) rather than UnsupportedOperationError (-32004); a subscription to
-  # an owned task answers UnsupportedOperationError, since this plug has no
-  # resubscribe stream to attach (spec §3.16, TCK STREAM-SUB-004).
+  # an owned task attaches to the agent's subscriber fan-out via
+  # `Protocol.Plug.SSE.subscribe_task/6`, which honours `lastSeenGeneration`
+  # (no Task snapshot when the client is already current, v1.1) (spec §3.16,
+  # TCK STREAM-SUB-004).
   defp resubscribe(conn, ctx, params, id) do
     case owned_task(ctx, params["id"]) do
-      {:ok, _task} ->
-        send_json(conn, Response.error(id, Error.unsupported_operation()))
+      {:ok, task} ->
+        AshA2A.Protocol.Plug.SSE.subscribe_task(
+          conn,
+          ctx.agent,
+          task.id,
+          id,
+          Map.get(ctx.opts, :resubscribe_timeout, 300_000),
+          params: params,
+          version: ctx.a2a_version
+        )
 
       {:error, :not_found} ->
         send_json(conn, Response.error(id, Error.task_not_found()))
@@ -452,6 +637,7 @@ defmodule AshA2A.Transport.Plug do
       {:ok, %AshA2A.Protocol.Task{metadata: %{stream: enum}} = task} ->
         conn = start_sse(conn)
         conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
+        conn = send_message_updates(conn, jsonrpc_id, task, ctx)
         stream_parts(conn, jsonrpc_id, task, enum)
 
       {:ok, %AshA2A.Protocol.Message{} = msg} ->
@@ -461,20 +647,27 @@ defmodule AshA2A.Transport.Plug do
       {:ok, %AshA2A.Protocol.Task{} = task} ->
         conn = start_sse(conn)
         conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
+        conn = send_message_updates(conn, jsonrpc_id, task, ctx)
 
         conn =
           Enum.reduce(task.artifacts, conn, fn artifact, conn ->
             send_event(
               conn,
               jsonrpc_id,
-              AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact, context_id: task.context_id)
+              AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
+                context_id: task.context_id,
+                generation:
+                  artifact.end_generation || artifact.start_generation ||
+                    AshA2A.Protocol.Task.Generation.generation_of(task)
+              )
             )
           end)
 
         final =
           AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
             context_id: task.context_id,
-            final: true
+            final: true,
+            generation: AshA2A.Protocol.Task.Generation.generation_of(task)
           )
 
         send_event(conn, jsonrpc_id, final)
@@ -505,29 +698,84 @@ defmodule AshA2A.Transport.Plug do
     # chunk i is emitted when chunk i+1 arrives and the drain emits the pending
     # final chunk. The pending flag records whether chunk i's frame already has
     # a predecessor on the wire (=> the next frame needs `append: true`).
-    {conn, pending} =
-      Enum.reduce(enum, {conn, nil}, fn part, {conn, pending} ->
+    # Frame generations are strictly increasing, starting above the snapshot.
+    base = AshA2A.Protocol.Task.Generation.generation_of(task)
+
+    {conn, pending, n} =
+      Enum.reduce(enum, {conn, nil, 0}, fn part, {conn, pending, n} ->
         case pending do
           nil ->
-            {conn, {:chunk, part, false}}
+            {conn, {:chunk, part, false}, n}
 
           {:chunk, prev_part, append?} ->
-            conn = send_chunk_frame(conn, jsonrpc_id, task, artifact_id, prev_part, append_opts(append?))
-            {conn, {:chunk, part, true}}
+            conn =
+              send_chunk_frame(
+                conn,
+                jsonrpc_id,
+                task,
+                artifact_id,
+                prev_part,
+                append_opts(append?) ++ [generation: base + n + 1]
+              )
+
+            {conn, {:chunk, part, true}, n + 1}
         end
       end)
 
-    conn =
+    {conn, n} =
       case pending do
-        nil -> conn
-        {:chunk, part, append?} -> send_chunk_frame(conn, jsonrpc_id, task, artifact_id, part, append_opts(append?) ++ [last_chunk: true])
+        nil ->
+          {conn, n}
+
+        {:chunk, part, append?} ->
+          {send_chunk_frame(
+             conn,
+             jsonrpc_id,
+             task,
+             artifact_id,
+             part,
+             append_opts(append?) ++ [last_chunk: true, generation: base + n + 1]
+           ), n + 1}
       end
 
-    final_status(conn, jsonrpc_id, task, :completed, nil)
+    final_status(conn, jsonrpc_id, task, :completed, nil, base + n + 1)
   rescue
     error ->
       %{ref: ref} = SafeError.internal(:internal_error, error, __STACKTRACE__)
-      final_status(conn, jsonrpc_id, task, :failed, "Error: internal_error ref=#{ref}")
+
+      final_status(
+        conn,
+        jsonrpc_id,
+        task,
+        :failed,
+        "Error: internal_error ref=#{ref}",
+        AshA2A.Protocol.Task.Generation.generation_of(task) + 1
+      )
+  end
+
+  # v1.1 messageUpdate frames for the task timeline's client messages; a
+  # legacy (1.0/0.3) client never receives them and gets no error.
+  defp send_message_updates(conn, jsonrpc_id, task, ctx) do
+    if AshA2A.Protocol.Version.at_least?(Map.get(ctx, :a2a_version), "1.1") do
+      task.timeline
+      |> List.wrap()
+      |> Enum.reduce(conn, fn
+        %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn ->
+          send_event(
+            conn,
+            jsonrpc_id,
+            AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
+              context_id: task.context_id,
+              generation: gen
+            )
+          )
+
+        _other, conn ->
+          conn
+      end)
+    else
+      conn
+    end
   end
 
   defp append_opts(true), do: [append: true]
@@ -545,10 +793,17 @@ defmodule AshA2A.Transport.Plug do
     send_event(conn, jsonrpc_id, event)
   end
 
-  defp final_status(conn, jsonrpc_id, task, state, text) do
+  defp final_status(conn, jsonrpc_id, task, state, text, generation) do
     message = if text, do: AshA2A.Protocol.Message.new_agent(text)
     status = AshA2A.Protocol.Task.Status.new(state, message)
-    event = AshA2A.Protocol.Event.StatusUpdate.new(task.id, status, context_id: task.context_id, final: true)
+
+    event =
+      AshA2A.Protocol.Event.StatusUpdate.new(task.id, status,
+        context_id: task.context_id,
+        final: true,
+        generation: generation
+      )
+
     send_event(conn, jsonrpc_id, event)
   end
 
@@ -563,11 +818,17 @@ defmodule AshA2A.Transport.Plug do
   # "artifactUpdate" => ...}`, discriminated by the wrapper key (codec-owned).
   defp send_event(conn, jsonrpc_id, struct) do
     {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(struct)
-    data = "data: " <> Jason.encode!(Response.success(jsonrpc_id, encoded)) <> "\n\n"
+    envelope = Response.success(jsonrpc_id, encoded)
 
-    case chunk(conn, data) do
-      {:ok, conn} -> conn
-      {:error, _closed} -> conn
+    case AshA2A.Protocol.DowngradeWire.frame(conn, envelope) do
+      :drop ->
+        conn
+
+      {:ok, envelope} ->
+        case chunk(conn, "data: " <> Jason.encode!(envelope) <> "\n\n") do
+          {:ok, conn} -> conn
+          {:error, _closed} -> conn
+        end
     end
   end
 end

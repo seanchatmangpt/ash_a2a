@@ -120,9 +120,18 @@ defmodule AshA2A.SemanticConformanceDynamicCallSitesTest do
       # from :unmet to :unverifiable by its own documented rule (a surface
       # exists; this check does not establish that it is admitted). Hence
       # unmet 18 and unverifiable 2, with :met unchanged.
-      assert length(Map.get(grouped, :met, [])) == 14
-      assert length(Map.get(grouped, :unmet, [])) == 18
-      assert length(Map.get(grouped, :unverifiable, [])) == 2
+      #
+      # Absolute :met/:unmet counts are not pinned here: they move every time
+      # a requirement's surface lands (met was 14, 20 at v26.11.13). The law
+      # under test is the unverifiable set and the honest level, plus that
+      # every requirement is counted exactly once.
+      met = Map.get(grouped, :met, [])
+      unmet = Map.get(grouped, :unmet, [])
+      unverifiable = Map.get(grouped, :unverifiable, [])
+
+      assert length(met) + length(unmet) + length(unverifiable) == 34
+      assert length(unverifiable) == 2
+      refute :no_llm_on_production_do_path in Enum.map(met, & &1.id)
 
       unverifiable = Map.get(grouped, :unverifiable, [])
       assert Enum.any?(unverifiable, &(&1.detail =~ "not decidable by AST inspection"))

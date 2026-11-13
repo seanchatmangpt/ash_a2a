@@ -38,8 +38,8 @@ defmodule AshA2A.Twin.Operator do
   @spec recharge(atom()) :: :ok
   def recharge(name), do: Server.send_event(name, :recharge)
 
-  @doc "Peek at the first n queued items."
-  @spec peek(atom(), pos_integer()) :: [term()]
+  @doc "Peek at the first n queued items; `{:error, :invalid_n}` unless n is a non-negative integer."
+  @spec peek(atom(), term()) :: [term()] | {:error, :invalid_n}
   def peek(name, n \\ 5), do: Server.call(name, {:peek, n})
 
   @doc "Status snapshot: queue depth, budget."

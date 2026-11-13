@@ -8,6 +8,122 @@ once it reaches 1.0.
 
 ## [Unreleased]
 
+### v1.1 docs honesty pass and email gateway
+
+- Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}`;
+  `POST /v1/email:ingest` (`lib/ash_a2a/email/plug.ex`). Tests present:
+  `test/email_{inbound,brief,reply_intent,plug,kernel_entry}_test.exs`. Guide:
+  `docs/how-to/operate-by-email.md`. Standing UNVERIFIED (no run cited here).
+- `Message.extensions` is now a list of extension URIs (`[String.t()] | map()` in the
+  type; default `[]`). UNVERIFIED.
+- The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`
+  (`lib/ash_a2a/protocol/json.ex`). UNVERIFIED.
+- Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`; the owned-transport
+  ownership module carries no `tenant` reference. UNVERIFIED, partial.
+- `user_artifacts` is served on the agent card (`AgentCard` type field). UNVERIFIED.
+- Version surface: `Version.protocol_version/0` is `"1.1"`; accepted versions
+  `["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); the client-header default
+  `Version.default/0` is still `"1.0"`. Docs corrected to match.
+- Test counts: coordinator log `/tmp/coord-full-10.log` reports the default tier at
+  4695 tests, 0 failures (not re-run by this lane). The serial tier has env-blocked
+  tests (Postgres :55432, Oban, wasm pins, hddl); its count is UNVERIFIED.
+
+## [26.11.13] - 2026-11-13
+
+### Wave-2 lanes
+
+v1.1 capabilities landed in code (all standing UNVERIFIED; no court run
+confirmed by this entry):
+
+- `message/live` (`SendLiveMessage`), `StreamRequest`, `StreamError` frames
+  (`TaskEvents.send_stream_error/3`, `SSE.write_stream_error/3`). UNVERIFIED.
+- Task `generation` + `timeline`, `TaskMessageUpdateEvent`, generation on
+  status/artifact events, `timelineLength`, `ifGenerationMatch` (-32010),
+  `currentGeneration` long poll. UNVERIFIED.
+- `tasks/resubscribe` with `lastSeenGeneration` on both HTTP plugs:
+  `A2ATransport.SSE.resubscribe/6` replays from the event log; the
+  `AshA2A.Transport.Plug` path now attaches through
+  `Protocol.Plug.SSE.subscribe_task/6` for owned tasks (previously answered
+  -32004), with no Task snapshot when the client is current. The log-gap
+  fallback on this path is a snapshot. UNVERIFIED (no court added here).
+- `userArtifacts` / `artifactUpdates`, `TaskPushNotificationConfig.protocolVersion`.
+  UNVERIFIED.
+- `Verify` warning text and conformance docs refreshed: the dispatcher now
+  reads `authority gate :disabled` and `hooks`; stale gRPC `UNIMPLEMENTED`
+  extended-card mentions marked as historical (re-run UNVERIFIED).
+- `docs/reference/a2a-v1-1-conformance.md`: every row remains UNVERIFIED; TCK
+  has no v1.1 coverage.
+
+### v1.1 compat (wave 2)
+
+- Target: A2A v1.1.0 (upstream tag `v1.1.0-rc`, not yet a GitHub release;
+  vendored `priv/a2a_v1_1_spec_corpus/a2a.proto`, SHA-256 `8d9c363f...ab127`).
+  A2A v1.0.1 remains supported; v0.3 is decode-only legacy.
+- Delta: `SendLiveMessage` (`message/live`), `StreamRequest`, `StreamError`,
+  `TimelineEntry`, `TaskMessageUpdateEvent`, `Task.generation`/`timeline`,
+  `Artifact.startGeneration`/`endGeneration`/`role`, `generation` on update
+  events, `timelineLength`, `ifGenerationMatch` (mismatch -32010),
+  `currentGeneration` long poll, `lastSeenGeneration`, `userArtifacts` /
+  `artifactUpdates`, `TaskPushNotificationConfig.protocolVersion`.
+- New config: `config :ash_a2a, :long_poll_timeout_ms`; agent card capability
+  `user_artifacts`; `A2A-Version: 1.1` negotiation.
+- New: `docs/reference/a2a-v1-1-conformance.md`, corpus court
+  `test/ash_a2a_v1_1_proto_corpus_test.exs` (fails loudly on pending items).
+  Standing UNVERIFIED until courts run. TCK has no 1.1 coverage yet.
+
+### Changed (lane W13)
+
+- Version bump 26.10.9 -> 26.11.0 (`mix.exs`, README, spec mapping).
+- Conformance docs now state A2A v1.0.1 (wire-compatible with v1.0.0);
+  TCK results recorded as `{pass, fail, not_tested, skipped, manual}` bound
+  to a pin SHA and date, not a single percentage headline.
+- CI `tck` job: `pip install -e .`, reads `reports/compatibility.json`,
+  adds the gRPC transport, single `TCK_PIN_SHA`; assertion moved to
+  `scripts/tck_assert.py` (court: `test/w13_tck_assert_test.exs`).
+- `mix ash_a2a.v1_conformance_report`: court list derived from a glob of
+  `test/ash_a2a_v1_*_test.exs`; optional `--tck-report PATH`.
+
+### Added
+
+- `Attestation.Gate.verify_gps_trajectory/2` and
+  `AshA2A.Attestation.GateGrantAllowlist` (T-015): an approved, unexpired,
+  in-area grant overrides a `:gps_impossible_jump` refusal to `:ok`; no grants
+  means behavior identical to `/1`.
+
+### Added (commits dated 2026-11-08 onward)
+
+- `AshA2A.Transport.WireCompat` (`lib/ash_a2a/transport/wire_compat.ex`):
+  wire (`A2A.*` hex structs) <-> protocol (`AshA2A.Protocol.*`) struct
+  conversion at the agent boundary, wired through `Transport.Runtime`
+  (Q6); court: `test/ash_a2a_transport_wire_compat_test.exs`.
+- `Ingress.Channel` (ingress wire, lane A10) with per-coordinator
+  nonce-replay defense; `test/ingress/channel_test.exs`.
+- `Copilot.Pipeline` wire-verify (lane F2): `test/copilot/pipeline_test.exs`
+  and `test/copilot/f8_adversarial_test.exs`.
+- `AshA2A.TelemetryBridge.PplanHazard` and its court
+  `test/telemetry_bridge/pplan_hazard_bridge_test.exs`.
+- Tests: real-supervisor durability continuity
+  (`durable_server_continuity_real_test.exs`, completes V8-ELX-DURABLE) and
+  V8 sim-worker tests (`test/ash_a2a_wo_checkin_sim_worker_test.exs`,
+  `test/support/wo_checkin_sim_fixture.ex`).
+- `mix ash_a2a.pplan_courts` parity-court runner documented in
+  `docs/how-to/run-pplan-courts.md`; `ASH_PPLAN_PATH` toggle in `mix.exs`.
+
+### Fixed (commits dated 2026-11-08 onward)
+
+- Wire-shaped `a2a.auth` identity maps: over the hex `A2A.Plug` path the
+  JSON-RPC round trip stringifies metadata keys, so
+  `%{"identity" => principal}` now resolves in
+  `Transport.Principal.from_metadata/1` and
+  `Agent.verified_auth_identity/1` as the same identity as the atom-key
+  in-process shape (no widening; atom-key clause unchanged).
+
+### Changed (commits dated 2026-11-08 onward)
+
+- Dependency update (41 `mix.lock` entries): `ash_pplan` 26.11.10,
+  `ash` 3.37.4, `bandit` 1.14.1, `grpc` 1.0.6, `req_llm` 1.30.0, plus
+  transitive entries.
+
 ## [26.10.9] - 2026-11-07
 
 ### Added
@@ -63,9 +179,11 @@ once it reaches 1.0.
   the max-staleness check); GPS coordinate validation in
   `Attestation.Gate.verify_gps_trajectory/1` (haversine distance,
   `{:refused, :gps_impossible_jump}` for > 500 km within 60s between
-  consecutive observations). In flight: per-key nonce-replay
-  tracking (a consumed-nonce ledger) — not present on disk yet; the gate
-  currently checks nonce *match* only (`claims_match_nonce?/2`).
+  consecutive observations). Per-coordinator nonce-replay tracking landed
+  in `Ingress.Channel` (bounded FIFO consumed-nonce set; re-submission
+  refused `{:refused, :nonce_replayed}` before crypto work;
+  `lib/ash_a2a/ingress/channel.ex` "Replay defense"); the gate itself
+  checks nonce *match* only.
 
 ### Known Issues
 

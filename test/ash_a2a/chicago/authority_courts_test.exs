@@ -281,7 +281,11 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
   end
 
   describe "transport identity guard" do
-    test "a string-keyed a2a.auth (the only shape a JSON caller can forge) is unauthenticated" do
+    # Re-pinned: the wire round trip stringifies keys, so the string-keyed shape
+    # resolves to the same verified identity as the atom-keyed one. Forgery is
+    # closed at transport ingress (every transport drops client-supplied
+    # "a2a.auth" before binding the verified value), not by key type.
+    test "a string-keyed a2a.auth resolves to an authenticated identity (ungranted -> no_standing_grant)" do
       name = AuthorityHarness.start_agent(AshA2A.Chicago.Fixtures.Authority.ProbeAgent)
       on_exit(fn -> AuthorityHarness.stop_agent(name) end)
 
@@ -310,7 +314,12 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
       assert task.status.state == :failed
 
       assert_receive {:decision,
-                      %{outcome: :refused, reason: :unauthenticated, authenticated: false}}
+                      %{
+                        outcome: :refused,
+                        reason: :no_standing_grant,
+                        authenticated: true,
+                        principal_id: "someone-with-grants"
+                      }}
     end
   end
 

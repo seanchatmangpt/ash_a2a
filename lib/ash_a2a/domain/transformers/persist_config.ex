@@ -24,7 +24,10 @@ defmodule AshA2A.Domain.Transformers.PersistConfig do
       url: Transformer.get_option(dsl_state, [:agent], :url),
       provider: Transformer.get_option(dsl_state, [:agent], :provider),
       documentation_url: Transformer.get_option(dsl_state, [:agent], :documentation_url),
-      icon_url: Transformer.get_option(dsl_state, [:agent], :icon_url)
+      icon_url: Transformer.get_option(dsl_state, [:agent], :icon_url),
+      default_input_modes: Transformer.get_option(dsl_state, [:agent], :default_input_modes),
+      default_output_modes: Transformer.get_option(dsl_state, [:agent], :default_output_modes),
+      sign_card: Transformer.get_option(dsl_state, [:agent], :sign_card)
     }
 
     transport = %{
@@ -35,8 +38,22 @@ defmodule AshA2A.Domain.Transformers.PersistConfig do
       mount: Transformer.get_option(dsl_state, [:transport], :default_mount, "/a2a"),
       streaming: Transformer.get_option(dsl_state, [:transport], :streaming, true),
       push_notifications:
-        Transformer.get_option(dsl_state, [:transport], :push_notifications, false)
+        Transformer.get_option(dsl_state, [:transport], :push_notifications, false),
+      extended_agent_card:
+        Transformer.get_option(dsl_state, [:transport], :extended_agent_card, false),
+      user_artifacts: Transformer.get_option(dsl_state, [:transport], :user_artifacts, false),
+      push_allowed_hosts:
+        Transformer.get_option(dsl_state, [:transport], :push_allowed_hosts, []) || [],
+      push_retry: Transformer.get_option(dsl_state, [:transport], :push_retry, []) || []
     }
+
+    extensions =
+      dsl_state
+      |> Transformer.get_entities([:transport])
+      |> Enum.filter(&match?(%AshA2A.Domain.Extension{}, &1))
+
+    requirement_scopes =
+      Transformer.get_option(dsl_state, [:security], :requirement_scopes, %{}) || %{}
 
     schemes =
       dsl_state
@@ -51,6 +68,8 @@ defmodule AshA2A.Domain.Transformers.PersistConfig do
       |> Transformer.persist(:ash_a2a_domain_transport, transport)
       |> Transformer.persist(:ash_a2a_domain_security_schemes, schemes)
       |> Transformer.persist(:ash_a2a_domain_security_requirements, requirements)
+      |> Transformer.persist(:ash_a2a_domain_security_requirement_scopes, requirement_scopes)
+      |> Transformer.persist(:ash_a2a_domain_extensions, extensions)
       |> Transformer.persist(
         :ash_a2a_domain_card_identity,
         Domain.card_identity(agent, transport)

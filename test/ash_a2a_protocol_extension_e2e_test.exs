@@ -41,7 +41,11 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
     {:ok, pid} = GreeterAgent.start_link(name: agent_name)
 
     on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      try do
+        if Process.alive?(pid), do: GenServer.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
     end)
 
     plug_opts =
@@ -191,6 +195,166 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
 
     assert %{"result" => %{"task" => %{"id" => id}}} = body
     assert is_binary(id)
+  end
+
+  # -- Required-extension negotiation on EVERY method path (W9) ----------------
+  #
+  # The three HTTP JSON-RPC plugs all gate on the A2A-Extensions header before
+  # touching the agent: the vendored-style AshA2A.Protocol.Plug, the owner-scoped
+  # AshA2A.A2ATransport.Plug wrapper, and AshA2A.Transport.Plug (which compiles
+  # its extensions at init, like Protocol.Plug, since W9).
+
+  @passport AshA2A.Test.ProtocolExtensionE2EFixture.Passport
+
+  @all_methods [
+    "message/send",
+    "message/stream",
+    "tasks/get",
+    "tasks/cancel",
+    "tasks/list",
+    "tasks/resubscribe",
+    "tasks/pushNotificationConfig/set",
+    "tasks/pushNotificationConfig/get",
+    "tasks/pushNotificationConfig/list",
+    "tasks/pushNotificationConfig/delete",
+    "agent/getAuthenticatedExtendedCard",
+    # v0.3 PascalCase spellings route through the same gate.
+    "SendMessage",
+    "GetTask",
+    "ListTasks",
+    "SubscribeToTask",
+    "GetExtendedAgentCard",
+    "CreateTaskPushNotificationConfig"
+  ]
+
+  defp required_plugs(agent) do
+    base = [agent: agent, base_url: "http://localhost:4000/a2a", extensions: [@passport]]
+
+    [
+      {"Protocol.Plug", AshA2A.Protocol.Plug, AshA2A.Protocol.Plug.init(base)},
+      {"A2ATransport.Plug", AshA2A.A2ATransport.Plug,
+       AshA2A.A2ATransport.Plug.init(base ++ [push_notifications: true])},
+      {"Transport.Plug", AshA2A.Transport.Plug, AshA2A.Transport.Plug.init(base)}
+    ]
+  end
+
+  defp params_for(method) do
+    cond do
+      method in ["message/send", "message/stream", "SendMessage"] ->
+        %{"message" => message()}
+
+      method in ["tasks/list", "ListTasks", "agent/getAuthenticatedExtendedCard", "GetExtendedAgentCard"] ->
+        %{}
+
+      method in ["tasks/pushNotificationConfig/set", "CreateTaskPushNotificationConfig"] ->
+        %{
+          "taskId" => "t-w9",
+          "pushNotificationConfig" => %{"id" => "cfg", "url" => "https://93.184.215.14/hook"}
+        }
+
+      String.starts_with?(method, "tasks/pushNotificationConfig/") ->
+        %{"id" => "t-w9", "pushNotificationConfigId" => "cfg"}
+
+      true ->
+        %{"id" => "t-w9"}
+    end
+  end
+
+  defp call_plug(mod, opts, method, params, req_headers) do
+    body =
+      Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => method, "params" => params})
+
+    :post
+    |> Plug.Test.conn("/", body)
+    |> Plug.Conn.put_req_header("content-type", "application/json")
+    |> Plug.Conn.merge_req_headers(req_headers)
+    |> mod.call(opts)
+  end
+
+  test "a required extension missing from the header is -32008 on every method of every plug",
+       %{agent: agent} do
+    for {label, mod, opts} <- required_plugs(agent), method <- @all_methods do
+      conn = call_plug(mod, opts, method, params_for(method), [])
+      body = Jason.decode!(conn.resp_body)
+
+      assert get_in(body, ["error", "code"]) == -32008,
+             "#{label} #{method}: expected -32008, got #{inspect(body)}"
+
+      assert Jason.encode!(body) =~ @passport.uri()
+      assert Plug.Conn.get_resp_header(conn, "a2a-extensions") == []
+    end
+  end
+
+  test "a required extension present in the header is never refused with -32008 on any method",
+       %{agent: agent} do
+    for {label, mod, opts} <- required_plugs(agent), method <- @all_methods do
+      conn = call_plug(mod, opts, method, params_for(method), [{"a2a-extensions", @passport.uri()}])
+
+      body =
+        case Plug.Conn.get_resp_header(conn, "content-type") do
+          ["text/event-stream" <> _] -> %{}
+          _ -> Jason.decode!(conn.resp_body)
+        end
+
+      refute get_in(body, ["error", "code"]) == -32008,
+             "#{label} #{method}: negotiation refused a request that declared the extension"
+    end
+  end
+
+  test "Transport.Plug activates, echoes and delivers the extension on message/send", %{agent: agent} do
+    opts =
+      AshA2A.Transport.Plug.init(
+        agent: agent,
+        base_url: "http://localhost:4000/a2a",
+        extensions: [Timestamp]
+      )
+
+    conn =
+      call_plug(AshA2A.Transport.Plug, opts, "message/send", %{"message" => message()}, [
+        {"a2a-extensions", @ts_uri}
+      ])
+
+    assert Plug.Conn.get_resp_header(conn, "a2a-extensions") == [@ts_uri]
+    ts_uri = @ts_uri
+    assert %{"result" => %{"task" => %{"metadata" => %{^ts_uri => stamp}}}} = Jason.decode!(conn.resp_body)
+    assert is_integer(stamp["received_at"])
+    assert is_integer(stamp["completed_at"])
+
+    # Advertise side: the compiled extension is declared on the served card.
+    card =
+      :get
+      |> Plug.Test.conn("/.well-known/agent-card.json")
+      |> AshA2A.Transport.Plug.call(opts)
+      |> Map.fetch!(:resp_body)
+      |> Jason.decode!()
+
+    assert [%{"uri" => ^ts_uri}] = card["capabilities"]["extensions"]
+  end
+
+  test "repeated extension URIs compile, advertise and activate once", %{agent: agent} do
+    plug_opts =
+      AshA2A.Protocol.Plug.init(
+        agent: agent,
+        base_url: "http://localhost:4000/a2a",
+        extensions: [Timestamp, {Timestamp, []}, Timestamp]
+      )
+
+    assert [{Timestamp, _, _}] = plug_opts.extensions
+
+    card =
+      :get
+      |> Plug.Test.conn("/.well-known/agent-card.json")
+      |> AshA2A.Protocol.Plug.call(plug_opts)
+      |> Map.fetch!(:resp_body)
+      |> Jason.decode!()
+
+    assert [%{"uri" => @ts_uri}] = card["capabilities"]["extensions"]
+
+    # A header repeating the URI activates it exactly once.
+    {conn, _body} =
+      send_task(plug_opts, [{"a2a-extensions", "#{@ts_uri}, #{@ts_uri}"}])
+
+    assert Plug.Conn.get_resp_header(conn, "a2a-extensions") == [@ts_uri]
   end
 end
 

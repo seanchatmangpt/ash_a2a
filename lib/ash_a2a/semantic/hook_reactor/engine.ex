@@ -11,7 +11,7 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
   matching, and materialization flow directly through `AshGraphLaw`.
   """
 
-  @type runtime :: %{module: module(), session: term(), wasm_digest: String.t() | nil}
+  @type runtime :: %{module: module(), session: term(), wasm_digest: String.t()}
   @type delta :: %{
           graph: RDF.Graph.t(),
           ntriples: String.t(),
@@ -22,24 +22,44 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
   @doc "Opens an AshGraphLaw engine session / pool reference."
   @spec open(keyword()) :: {:ok, runtime()} | {:error, map()}
   def open(opts \\ []) do
-    case AshGraphLaw.capabilities(opts) do
-      {:ok, %{"surface_blake3" => digest}} ->
-        {:ok, %{module: AshGraphLaw, session: :pool, wasm_digest: digest}}
-
-      {:ok, _} ->
-        {:ok, %{module: AshGraphLaw, session: :pool, wasm_digest: nil}}
+    with {:ok, path} <- AshA2A.GraphLaw.resolve_wasm_path(opts),
+         {:ok, bytes} <- read_wasm(path),
+         {:ok, _caps} <- capabilities(opts) do
+      {:ok,
+       %{
+         module: AshGraphLaw,
+         session: :pool,
+         wasm_digest: :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower)
+       }}
+    else
+      {:error, %{code: _} = typed} ->
+        {:error, typed}
 
       {:error, %AshGraphLaw.Refusal{message: msg}} ->
         {:error, %{code: :hook_engine_unavailable, detail: msg}}
-
-      # (the old bare `{:error, reason}` catch-all was dead: every `{:error, _}`
-      # `AshGraphLaw.capabilities/1` can return is a `%AshGraphLaw.Refusal{}`)
     end
   rescue
     error -> {:error, %{code: :hook_engine_unavailable, detail: Exception.message(error)}}
   end
 
-  @doc "Closes an engine session."
+  defp read_wasm(path) do
+    case File.read(path) do
+      {:ok, bytes} ->
+        {:ok, bytes}
+
+      {:error, reason} ->
+        {:error, %{code: :graphlaw_wasm_missing, path: path, detail: inspect(reason)}}
+    end
+  end
+
+  defp capabilities(opts), do: AshGraphLaw.capabilities(opts)
+
+  @doc """
+  Closes an engine session. The runtime is a reference to the shared
+  `AshGraphLaw` pool, which this module does not own, so there is nothing to
+  release here: the pool lives under its own supervisor. This is a documented
+  no-op for any runtime shape, not a resource teardown.
+  """
   @spec close(runtime()) :: :ok
   def close(_runtime), do: :ok
 
@@ -71,8 +91,6 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
   # The sentinel IRI carried by the rewritten denial rule; the engine's
   # `derived` text contains it iff the denial body has at least one binding.
   @condition_fired "urn:sa2a:hook:condition-fired/1"
-  @comment_line ~r/^\s*#.*$/m
-  @denial_rule ~r/\{([^{}]*)\}\s*=>\s*false\s*\./s
 
   @doc """
   Evaluates a condition over `ntriples` using `AshGraphLaw.hooks/3` (kh:
@@ -84,7 +102,7 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
       when is_binary(ntriples) and is_binary(condition) do
     # When condition is in kh: format, evaluate via AshGraphLaw.hooks/3
     # When condition is an N3 denial body, evaluate via AshGraphLaw.n3/2
-    if String.contains?(condition, "kh:") or String.contains?(condition, "SELECT") do
+    if AshA2A.Semantic.HookReactor.Hook.hook_pack_condition?(condition) do
       pack = %{"dialect" => "turtle", "text" => condition}
       data = %{"dialect" => "ntriples", "text" => ntriples}
 
@@ -112,7 +130,7 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
       # or several denial rules is refused, never silently judged.
       case denial_document(ntriples, condition) do
         {:ok, text} ->
-          case AshGraphLaw.n3([text: text]) do
+          case AshGraphLaw.n3(text: text) do
             {:ok, %AshGraphLaw.Result.N3{derived: derived}} ->
               {:ok, String.contains?(derived, "<" <> @condition_fired <> ">")}
 
@@ -136,9 +154,9 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
   # `AshA2A.Semantic.HookReactor.Hook.condition_shape/2` enforces at admission.
   @spec denial_document(String.t(), String.t()) :: {:ok, String.t()} | {:error, map()}
   defp denial_document(ntriples, condition) do
-    stripped = String.replace(condition, @comment_line, "")
+    stripped = AshA2A.Semantic.HookReactor.Hook.strip_comments(condition)
 
-    case Regex.scan(@denial_rule, stripped) do
+    case AshA2A.Semantic.HookReactor.Hook.scan_denials(stripped) do
       [[rule, body]] ->
         rewritten =
           "{ #{String.trim(body)} } => { <#{@condition_fired}> a <#{@condition_fired}> } ."
@@ -156,8 +174,7 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
         {:error,
          %{
            code: :hook_condition_invalid,
-           detail:
-             "N3 denial condition must be exactly one denial rule; found #{length(rules)}"
+           detail: "N3 denial condition must be exactly one denial rule; found #{length(rules)}"
          }}
     end
   end

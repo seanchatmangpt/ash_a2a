@@ -144,8 +144,11 @@ defmodule AshA2A.Providers.PPlan do
           |> maybe_put(:plan_iri, opts[:plan_iri])
           |> maybe_put(:intent, opts[:intent])
 
-        {:ok, _record} = apply(@engine, :start, [store, attrs, store_opts(opts)])
-        attempt_state(task_id, store, opts)
+        case apply(@engine, :start, [store, attrs, store_opts(opts)]) do
+          {:ok, _record} -> attempt_state(task_id, store, opts)
+          {:error, reason} -> {:error, {:start_failed, reason}}
+          other -> {:error, {:start_failed, {:unexpected, other}}}
+        end
       end
     else
       {:error, {:unsupported, :ash_pplan}}
@@ -183,7 +186,7 @@ defmodule AshA2A.Providers.PPlan do
       with {:ok, store} <- fetch_store(opts),
            {:ok, record} <- fetch_record(store, task_id, opts) do
         if apply(@status, :terminal?, [record.status]) do
-          {:ok, to_state!(record.status), record.result}
+          mapped(record.status, record.result)
         else
           with {:ok, name} <- signal_name(store, task_id, opts),
                {:ok, _signal} <-
@@ -210,14 +213,13 @@ defmodule AshA2A.Providers.PPlan do
            {:ok, record} <- fetch_record(store, task_id, opts) do
         waiters = parked_waiters(store, task_id, opts)
 
-        {:ok, to_state!(record.status),
-         %{
-           run_status: record.status,
-           result: record.result,
-           error: record.error,
-           version: record.version,
-           waiters: waiters
-         }}
+        mapped(record.status, %{
+          run_status: record.status,
+          result: record.result,
+          error: record.error,
+          version: record.version,
+          waiters: waiters
+        })
       end
     else
       {:error, {:unsupported, :ash_pplan}}
@@ -267,9 +269,14 @@ defmodule AshA2A.Providers.PPlan do
 
   defp ended_state(store, task_id, opts) do
     case fetch_record(store, task_id, opts) do
-      {:ok, record} -> {:ok, to_state!(record.status), record.result}
+      {:ok, record} -> mapped(record.status, record.result)
       {:error, _} = error -> error
     end
+  end
+
+  # Typed `{:error, {:unmapped_status, s}}` instead of a raise.
+  defp mapped(status, detail) do
+    with {:ok, state} <- to_state(status), do: {:ok, state, detail}
   end
 
   defp fetch_record(store, task_id, opts) do
@@ -277,13 +284,6 @@ defmodule AshA2A.Providers.PPlan do
       # typed, so a with-chain on it falls through as {:error, :no_such_run}, never a bare :error
       nil -> {:error, :no_such_run}
       record -> {:ok, record}
-    end
-  end
-
-  defp to_state!(status) do
-    case to_state(status) do
-      {:ok, state} -> state
-      {:error, reason} -> raise ArgumentError, "unmapped ash_pplan run status: #{inspect(reason)}"
     end
   end
 

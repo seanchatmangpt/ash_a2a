@@ -19,6 +19,11 @@ import Config
 # The profile itself is a build-time constant read through
 # Application.compile_env/3; restating it here is allowed but a value that
 # differs from the compiled one fails release boot (compile-env validation).
+# OCEL egress: forwarding is enabled only when this variable is set (all envs).
+if ocel_url = System.get_env("ASH_A2A_OCEL_INGEST_URL") do
+  if ocel_url != "", do: config(:ash_a2a, :ocel_ingest_url, ocel_url)
+end
+
 if config_env() in [:prod, :conformance] do
   config :ash_a2a, :security_profile, :strict
 

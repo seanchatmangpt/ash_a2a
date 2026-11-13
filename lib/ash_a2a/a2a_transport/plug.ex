@@ -45,8 +45,21 @@ defmodule AshA2A.A2ATransport.Plug do
       refused with -32003 instead of silently ignoring the config.
     * `:extended_card` -- provider for the authenticated extended card, see
       `AshA2A.A2ATransport.ExtendedCard`. Default `nil`.
+    * `:max_body_bytes` -- request body cap for the JSON-RPC POST (default
+      8_000_000); an over-cap body is a typed -32600 error, never a crash.
     * `:heartbeat_ms` (15_000) / `:max_idle_ms` (300_000) -- SSE keepalive
       and idle close for resubscribers.
+    * `:strict_pascal_case` -- default `false`. When `true`, only the v1.0
+      PascalCase method names are accepted; the legacy slash spellings
+      (`message/send`, `tasks/subscribe`, ...) answer `-32601`.
+
+  An unknown method name (PascalCase or slash) always answers `-32601`
+  (after the version/extension negotiation gate). `tasks/subscribe` is
+  accepted as a slash alias of `tasks/resubscribe`. Push methods with push
+  disabled answer `-32003`. The card route honors `If-None-Match` /
+  `If-Modified-Since` (`304`), `:sign_with` signs the served card, and the
+  advertised `capabilities.extendedAgentCard` tracks the `:extended_card`
+  provider.
 
   When push notifications or an extended-card provider are enabled, the
   served public agent card advertises `capabilities.pushNotifications` /
@@ -77,8 +90,23 @@ defmodule AshA2A.A2ATransport.Plug do
     "DeleteTaskPushNotificationConfig" => "tasks/pushNotificationConfig/delete"
   }
 
+  # Routing-only aliases this plug accepts in addition to the v0.3 PascalCase
+  # table above (kept separate: `method_aliases/0` mirrors JSONRPC's table 1:1
+  # and a parity court pins that). `tasks/subscribe` is the slash spelling of
+  # SubscribeToTask used by some v1.0 clients; it routes to `tasks/resubscribe`.
+  @extra_aliases %{"tasks/subscribe" => "tasks/resubscribe"}
+
+  # Canonical (slash) methods this plug can serve; anything else is -32601.
+  @canonical_methods @method_aliases |> Map.values() |> Enum.sort()
+
   @doc false
   def method_aliases, do: @method_aliases
+
+  @doc false
+  def extra_method_aliases, do: @extra_aliases
+
+  @doc false
+  def canonical_methods, do: @canonical_methods
 
   @impl Plug
   def init(opts) do
@@ -88,15 +116,19 @@ defmodule AshA2A.A2ATransport.Plug do
         :push_notifications,
         :extended_card,
         :heartbeat_ms,
-        :max_idle_ms
+        :max_idle_ms,
+        :max_body_bytes,
+        :strict_pascal_case
       ])
 
     %{
       a2a: AshA2A.Protocol.Plug.init(a2a),
+      strict_pascal_case: Keyword.get(own, :strict_pascal_case, false) == true,
       transport: Keyword.get(own, :transport, A2ATransport.default_name()),
       push_notifications: Keyword.get(own, :push_notifications, false),
       extended_card: validate_provider!(Keyword.get(own, :extended_card)),
-      sse: Keyword.take(own, [:heartbeat_ms, :max_idle_ms])
+      sse: Keyword.take(own, [:heartbeat_ms, :max_idle_ms]),
+      max_body_bytes: Keyword.get(own, :max_body_bytes, 8_000_000)
     }
   end
 
@@ -126,7 +158,7 @@ defmodule AshA2A.A2ATransport.Plug do
     do: AshA2A.Protocol.Plug.call(conn, advertise(opts))
 
   defp do_call(%{method: "POST", path_info: path} = conn, %{a2a: %{json_rpc_path: path}} = opts) do
-    case read_json(conn) do
+    case read_json(conn, opts) do
       {:ok, decoded, conn} -> route(conn, decoded, opts)
       {:error, error, conn} -> send_json(conn, Response.error(nil, error))
     end
@@ -140,36 +172,159 @@ defmodule AshA2A.A2ATransport.Plug do
     decoded = sanitize(decoded)
 
     with {:ok, req} <- Request.parse(decoded),
-         req = %{req | method: Map.get(@method_aliases, req.method, req.method)},
+         {:ok, method} <- resolve_method(req, opts),
+         req = %{req | method: method},
+         # Delegated methods are re-parsed by the vendored dispatcher: hand it
+         # the canonical name so aliases it does not know (`tasks/subscribe`)
+         # still route.
+         decoded = Map.put(decoded, "method", method),
          :ok <- Request.validate_params(req) do
-      dispatch(conn, req, decoded, opts)
+      if gate_locally?(req, opts) do
+        gated(conn, req, opts, &dispatch(&1, req, decoded, opts))
+      else
+        prechecked(conn, req, opts, &dispatch(&1, req, decoded, opts))
+      end
     else
+      # Unknown method (PascalCase or slash), or a legacy slash name under
+      # `strict_pascal_case: true`: a typed -32601, never a delegate.
+      {:unknown_method, req} ->
+        gated(conn, req, opts, &send_json(&1, Response.error(req.id, Error.method_not_found(req.method))))
+
       # Malformed envelopes: AshA2A.Protocol.Plug produces the canonical error.
       _ -> delegate(conn, decoded, opts)
     end
   end
 
+  # PascalCase v0.3 name -> canonical slash name. `strict_pascal_case` refuses
+  # the slash spellings (and `tasks/subscribe`) outright.
+  defp resolve_method(%Request{method: method} = req, opts) do
+    cond do
+      opts.strict_pascal_case and not Map.has_key?(@method_aliases, method) ->
+        {:unknown_method, req}
+
+      true ->
+        canonical = Map.get(@method_aliases, method) || Map.get(@extra_aliases, method, method)
+        if canonical in @canonical_methods, do: {:ok, canonical}, else: {:unknown_method, req}
+    end
+  end
+
+  # Methods this plug answers itself (never reaching the vendored plug's own
+  # `handle_json_rpc/2` gate) get the same A2A-Version (-32009) and
+  # A2A-Extensions negotiation (spec §3.6.2/§4.5). Delegated methods are
+  # gated by the vendored plug and are not gated twice (extension
+  # `activate/3` is side-effecting).
+  defp gate_locally?(%Request{method: method}, opts) do
+    method in ["agent/getAuthenticatedExtendedCard", "tasks/resubscribe", "tasks/list"] or
+      # Push methods are answered here in BOTH states (served when enabled,
+      # -32003 when disabled), so the negotiation gate always runs first.
+      String.starts_with?(method, "tasks/pushNotificationConfig/") or
+      (method == "message/stream" and transport?(opts))
+  end
+
+  defp gated(conn, req, opts, fun) do
+    alias AshA2A.Protocol.{Extension, Version}
+    version = Version.from_conn(conn)
+    requested = Extension.parse_header(get_req_header(conn, "a2a-extensions"))
+
+    with :ok <- Version.validate(version, opts.a2a.versions),
+         :ok <- Extension.validate_required(opts.a2a.extensions, requested),
+         {:ok, _activations, uris} <-
+           Extension.activate(opts.a2a.extensions, requested, %{conn: conn}) do
+      conn = conn |> put_resp_header("a2a-version", version) |> Version.put_negotiated(version)
+      conn = if uris == [], do: conn, else: put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
+      fun.(conn)
+    else
+      {:error, _} = error -> negotiation_error(conn, req, error)
+    end
+  end
+
+  # Delegated methods are gated (and their extensions activated) by the
+  # vendored plug, but the owner-scope lookups this plug runs BEFORE delegating
+  # (`tasks/get`, `tasks/cancel`, task-continuing `message/*`) would otherwise
+  # answer -32001 for a request that should have been refused by negotiation
+  # first. This pre-check validates version + required extensions only -- it
+  # never activates (activation stays single, inside the delegate).
+  defp prechecked(conn, req, opts, fun) do
+    alias AshA2A.Protocol.{Extension, Version}
+    version = Version.from_conn(conn)
+    requested = Extension.parse_header(get_req_header(conn, "a2a-extensions"))
+
+    with :ok <- Version.validate(version, opts.a2a.versions),
+         :ok <- Extension.validate_required(opts.a2a.extensions, requested) do
+      fun.(conn)
+    else
+      {:error, _} = error -> negotiation_error(conn, req, error)
+    end
+  end
+
+  defp negotiation_error(conn, req, {:error, rejected}) when is_binary(rejected),
+    do:
+      conn
+      |> put_resp_header("a2a-version", rejected)
+      |> send_json(Response.error(req.id, Error.version_not_supported(rejected)))
+
+  defp negotiation_error(conn, req, {:error, missing}) when is_list(missing) do
+    send_json(
+      conn,
+      Response.error(
+        req.id,
+        Error.extension_support_required(
+          "Client missing required extensions: " <> Enum.join(missing, ", ")
+        )
+      )
+    )
+  end
+
+  defp negotiation_error(conn, req, {:error, %Error{} = err}),
+    do: send_json(conn, Response.error(req.id, err))
+
   defp dispatch(conn, %Request{method: "agent/getAuthenticatedExtendedCard"} = req, _raw, opts),
     do: ExtendedCard.handle(conn, req.id, opts)
 
-  defp dispatch(conn, %Request{method: "tasks/pushNotificationConfig/" <> _} = req, raw, opts) do
+  defp dispatch(conn, %Request{method: "tasks/pushNotificationConfig/" <> _} = req, _raw, opts) do
     if push_enabled?(opts) do
-      send_json(conn, PushConfigRPC.handle(req.method, req.params, req.id, ctx(conn, opts)))
+      case push_task_id(req.params) do
+        nil ->
+          send_json(conn, PushConfigRPC.handle(req.method, req.params, req.id, ctx(conn, opts)))
+
+        task_id ->
+          if_owned(
+            conn,
+            req,
+            task_id,
+            opts,
+            &send_json(&1, PushConfigRPC.handle(req.method, req.params, req.id, ctx(&1, opts))),
+            push_operation(req.method)
+          )
+      end
     else
-      delegate(conn, raw, opts)
+      # Push disabled (`push_notifications: false`, or the transport instance
+      # is not running): fail closed with PushNotificationNotSupported (-32003)
+      # regardless of what the vendored plug's card capabilities declare.
+      send_json(conn, Response.error(req.id, Error.push_notification_not_supported()))
     end
   end
 
-  defp dispatch(conn, %Request{method: "message/" <> _} = req, raw, opts) do
+  defp dispatch(conn, %Request{method: method} = req, raw, opts)
+       when method in ["message/send", "message/stream"] do
     case continued_task(req.params) do
       nil -> dispatch_message(conn, req, raw, opts)
-      task_id -> if_owned(conn, req, task_id, opts, &dispatch_message(&1, req, raw, opts))
+      task_id ->
+        op = if req.method == "message/stream", do: :message_stream
+        if_owned(conn, req, task_id, opts, &dispatch_message(&1, req, raw, opts), op)
     end
   end
+
+  defp dispatch(conn, %Request{method: "message/" <> _} = req, _raw, _opts),
+    do: send_json(conn, Response.error(req.id, Error.method_not_found(req.method)))
 
   defp dispatch(conn, %Request{method: "tasks/resubscribe"} = req, raw, opts) do
     if transport?(opts) do
-      sse_opts = Keyword.put(opts.sse, :principal, Ownership.caller(conn))
+      sse_opts =
+        opts.sse
+        |> Keyword.put(:principal, Ownership.caller(conn))
+        |> Keyword.put(:authorize, authorizer(conn, req, opts))
+
       SSE.resubscribe(conn, opts.transport, opts.a2a.agent, req.params, req.id, sse_opts)
     else
       delegate(conn, raw, opts)
@@ -347,7 +502,10 @@ defmodule AshA2A.A2ATransport.Plug do
         )
 
       {:error, reason} ->
-        send_json(conn, Response.error(req.id, Error.invalid_params(inspect(reason))))
+        send_json(
+          conn,
+          Response.error(req.id, Error.invalid_params(AshA2A.Transport.SafeError.redact(reason) |> inspect()))
+        )
     end
   end
 
@@ -396,12 +554,56 @@ defmodule AshA2A.A2ATransport.Plug do
 
   # Owner scope for methods naming an existing task: a task the verified
   # caller does not own is answered exactly like a missing one (-32001).
-  defp if_owned(conn, req, task_id, opts, fun) do
-    case Ownership.fetch(opts.a2a.agent, task_id, Ownership.caller(conn)) do
-      {:ok, _task} -> fun.(conn)
-      {:error, :not_found} -> send_json(conn, Response.error(req.id, Error.task_not_found()))
+  defp if_owned(conn, req, task_id, opts, fun, operation \\ nil) do
+    case Ownership.fetch_strict(opts.a2a.agent, task_id, Ownership.caller(conn)) do
+      {:ok, task} ->
+        # `operation: nil` = the request is delegated to the vendored plug,
+        # which authorizes (and commits its refusal receipt) itself.
+        case if(operation, do: Ownership.authorize(authorizer(conn, req, opts), operation, task), else: :ok) do
+          :ok -> fun.(conn)
+          {:error, error} -> send_json(conn, Response.error(req.id, error))
+        end
+
+      {:error, :not_found} ->
+        send_json(conn, Response.error(req.id, Error.task_not_found()))
+
+      {:error, :unavailable} ->
+        send_json(conn, Response.error(req.id, Error.internal_error("agent unavailable")))
     end
   end
+
+  # The vendored plug's `:authorize_task` seam (fun/2, fun/3 or {m, f}),
+  # applied to every task-naming path this plug answers itself. A denial is
+  # indistinguishable from a missing task (-32001) unless the authorizer
+  # returns its own typed `%Error{}`.
+  defp authorizer(conn, req, opts) do
+    case opts.a2a.authorize_task do
+      nil ->
+        nil
+
+      auth ->
+        params = if is_map(req.params), do: req.params, else: %{}
+        {auth, %{metadata: resolved_metadata(conn, opts), params: params}}
+    end
+  end
+
+  # On the v1 flat `set`, `id` is the CONFIG id; `taskId` is the task.
+  defp push_task_id(%{"taskId" => task_id}) when is_binary(task_id) and task_id != "",
+    do: task_id
+
+  defp push_task_id(%{} = params) do
+    case params["id"] || params["taskId"] do
+      id when is_binary(id) -> id
+      _ -> nil
+    end
+  end
+
+  defp push_task_id(_), do: nil
+
+  defp push_operation("tasks/pushNotificationConfig/set"), do: :push_set
+  defp push_operation("tasks/pushNotificationConfig/get"), do: :push_get
+  defp push_operation("tasks/pushNotificationConfig/list"), do: :push_list
+  defp push_operation("tasks/pushNotificationConfig/delete"), do: :push_delete
 
   defp continued_task(%{"id" => id}) when is_binary(id), do: id
   defp continued_task(%{"message" => %{"taskId" => id}}) when is_binary(id), do: id
@@ -417,7 +619,8 @@ defmodule AshA2A.A2ATransport.Plug do
   defp strip_response(%{status: 200, resp_body: body} = conn) when not is_nil(body) do
     with {:ok, %{"result" => result} = decoded} <- Jason.decode(IO.iodata_to_binary(body)),
          stripped when stripped != result <- strip_result(result) do
-      %{conn | resp_body: Jason.encode!(%{decoded | "result" => stripped})}
+      body = AshA2A.Protocol.DowngradeWire.body(conn, %{decoded | "result" => stripped})
+      %{conn | resp_body: Jason.encode!(body)}
     else
       _ -> conn
     end
@@ -447,18 +650,16 @@ defmodule AshA2A.A2ATransport.Plug do
     }
 
   defp advertise(opts) do
+    # Capability facts derived from this plug's own configuration, layered over
+    # the card's capabilities by AshA2A.Protocol.Plug (`:capability_overrides`):
+    #   * pushNotifications is advertised only when push is actually served;
+    #   * extendedAgentCard tracks the `:extended_card` provider BOTH ways, so a
+    #     card never claims an extended card the plug would answer -32007 for.
     caps =
-      %{}
+      %{extended_agent_card: opts.extended_card != nil}
       |> then(&if(push_enabled?(opts), do: Map.put(&1, :push_notifications, true), else: &1))
-      |> then(&if(opts.extended_card, do: Map.put(&1, :extended_agent_card, true), else: &1))
 
-    if caps == %{} do
-      opts.a2a
-    else
-      card_opts = opts.a2a.agent_card_opts
-      merged = Map.merge(Keyword.get(card_opts, :capabilities, %{}), caps)
-      %{opts.a2a | agent_card_opts: Keyword.put(card_opts, :capabilities, merged)}
-    end
+    %{opts.a2a | capability_overrides: Map.merge(opts.a2a.capability_overrides, caps)}
   end
 
   # Same 3-layer metadata merge and auth propagation as AshA2A.Protocol.Plug.
@@ -485,8 +686,8 @@ defmodule AshA2A.A2ATransport.Plug do
   defp put_fallback(opts, key, value),
     do: if(Keyword.has_key?(opts, key), do: opts, else: put_some(opts, key, value))
 
-  defp read_json(%{body_params: %Plug.Conn.Unfetched{}} = conn) do
-    case read_body(conn) do
+  defp read_json(%{body_params: %Plug.Conn.Unfetched{}} = conn, opts) do
+    case read_body(conn, length: opts.max_body_bytes) do
       {:ok, body, conn} ->
         case Jason.decode(body) do
           {:ok, decoded} -> {:ok, decoded, conn}
@@ -494,18 +695,18 @@ defmodule AshA2A.A2ATransport.Plug do
         end
 
       {:more, _partial, conn} ->
-        {:error, Error.parse_error("Body too large"), conn}
+        {:error, Error.invalid_request("Body too large"), conn}
 
-      {:error, reason} ->
-        {:error, Error.internal_error(inspect(reason)), conn}
+      {:error, _reason} ->
+        {:error, Error.internal_error(), conn}
     end
   end
 
-  defp read_json(%{body_params: params} = conn), do: {:ok, params, conn}
+  defp read_json(%{body_params: params} = conn, _opts), do: {:ok, params, conn}
 
   defp send_json(conn, body) do
     conn
     |> put_resp_content_type("application/json")
-    |> send_resp(200, Jason.encode!(body))
+    |> send_resp(200, Jason.encode!(AshA2A.Protocol.DowngradeWire.body(conn, body)))
   end
 end

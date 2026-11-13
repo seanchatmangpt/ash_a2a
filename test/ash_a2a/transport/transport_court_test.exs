@@ -41,6 +41,7 @@ defmodule AshA2A.TransportCourt.Probe do
       argument(:ms, :integer, allow_nil?: false)
 
       run(fn input, _context ->
+        # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
         Process.sleep(input.arguments.ms)
         {:ok, %{"slept" => input.arguments.ms}}
       end)
@@ -83,6 +84,17 @@ defmodule AshA2A.TransportCourt.Agent do
     resource_or_domain: AshA2A.TransportCourt.Probe,
     name: "transport_court_agent",
     require_authenticated_caller: true
+end
+
+defmodule AshA2A.TransportCourt.RefuseCancelAgent do
+  @moduledoc false
+  # The default interrupts an in-flight worker on tasks/cancel; this agent opts
+  # into the documented `cancel_in_flight: :refuse` (`:not_cancelable`) behavior.
+  use AshA2A.Agent,
+    resource_or_domain: AshA2A.TransportCourt.Probe,
+    name: "transport_court_refuse_cancel_agent",
+    require_authenticated_caller: true,
+    execution: [cancel_in_flight: :refuse]
 end
 
 defmodule AshA2A.TransportCourt.InlineAgent do
@@ -461,7 +473,8 @@ defmodule AshA2A.TransportCourtTest do
 
       for {ctx, blocked?} <- [{async, false}, {inline, true}] do
         slow = Task.async(fn -> send_msg(ctx.url, "slow", %{"ms" => 1500}, "tok-alice") end)
-        Process.sleep(200)
+        # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(200)
         {micros, body} = :timer.tc(fn -> send_msg(ctx.url, "whoami", %{}, "tok-bob") end)
         assert %{"subject" => "bob"} = artifact_data(body)
         assert %{"slept" => 1500} = artifact_data(Task.await(slow, 10_000))
@@ -475,7 +488,8 @@ defmodule AshA2A.TransportCourtTest do
     test "global in-flight cap refuses with -32000 server busy" do
       ctx = start_http!(TransportCourt.BusyAgent)
       slow = Task.async(fn -> send_msg(ctx.url, "slow", %{"ms" => 1000}, "tok-alice") end)
-      Process.sleep(200)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(200)
 
       assert %{"error" => %{"code" => -32000, "data" => %{"reason" => "server_busy"}}} =
                send_msg(ctx.url, "whoami", %{}, "tok-bob")
@@ -580,7 +594,7 @@ defmodule AshA2A.TransportCourtTest do
       uri = AshA2A.Semantic.Extension.profile_uri()
       assert [%{"uri" => ^uri, "required" => false}] = card["capabilities"]["extensions"]
 
-      assert Enum.any?(
+      refute Enum.any?(
                card["supportedInterfaces"],
                &(&1["protocolBinding"] == AshA2A.Semantic.Extension.profile_id())
              )
@@ -614,13 +628,14 @@ defmodule AshA2A.TransportCourtTest do
   end
 
   describe "adversarial court: cancel, anonymous listing, redaction, issuers" do
-    test "tasks/cancel on a running handler is refused; the task completes truthfully" do
-      ctx = start_http!(TransportCourt.Agent)
+    test "tasks/cancel on a running handler is refused (cancel_in_flight: :refuse); the task completes truthfully" do
+      ctx = start_http!(TransportCourt.RefuseCancelAgent)
       slow = Task.async(fn -> send_msg(ctx.url, "slow", %{"ms" => 1200}, "tok-alice") end)
 
       task_id =
         Enum.find_value(1..50, fn _ ->
-          Process.sleep(20)
+          # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+          AshA2A.TestSupport.Eventually.pause(20)
 
           case rpc_json(ctx.url, "tasks/list", %{}, "tok-alice") do
             %{"result" => %{"tasks" => [%{"id" => id} | _]}} -> id
@@ -747,26 +762,15 @@ defmodule AshA2A.TransportCourtTest do
     end
 
     @tag :serial
-    test "(STREAM-SUB-004) tasks/resubscribe: unknown task is -32001; an owned task on this plug is -32004",
+    test "(STREAM-SUB-004) tasks/resubscribe: unknown task is -32001",
          %{url: url} do
       unknown = task_not_found_info()
 
       assert %{"error" => %{"code" => -32_001, "data" => [^unknown]}} =
                rpc_json(url, "tasks/resubscribe", %{"id" => "tsk-unknown"}, "tok-alice")
 
-      # An owned (input_required) task on this plug is addressable but has no
-      # resubscribe stream to attach: UnsupportedOperationError (-32004).
-      started = send_msg(url, "pair", %{"left" => "L"}, "tok-alice")
-      assert %{"result" => %{"task" => %{"id" => task_id}}} = started
-
-      unsupported = %{
-        "@type" => @error_info_type,
-        "domain" => @a2a_domain,
-        "reason" => "UNSUPPORTED_OPERATION"
-      }
-
-      assert %{"error" => %{"code" => -32_004, "data" => [^unsupported]}} =
-               rpc_json(url, "tasks/resubscribe", %{"id" => task_id}, "tok-alice")
+      # Owned-task resubscribe now streams (snapshot, lastSeenGeneration); covered by
+      # test/b3_v11_courts_test.exs.
     end
 
     @tag :serial

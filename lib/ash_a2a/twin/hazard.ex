@@ -10,6 +10,11 @@ defmodule AshA2A.Twin.Hazard do
   absolute deviations from the median; average-of-two-middle for even length;
   `MAD == 0` -> `{:error, :insufficient_dispersion}`), reimplemented here so
   the twin namespace has no cross-pack dependency.
+
+  Zero dispersion (`MAD == 0`) leaves z undefined, so `zscore/2` and
+  `observe/2` return `{:error, :insufficient_dispersion}`; callers decide the
+  policy. `zero_dispersion_spike/2` is the fail-closed helper: a slow
+  observation against an established flat window is a spike, not silence.
   """
 
   alias AshA2A.Twin.Hazard
@@ -32,14 +37,20 @@ defmodule AshA2A.Twin.Hazard do
 
   @doc "New hazard monitor with a ring buffer of the given capacity."
   @spec new(pos_integer()) :: Hazard.t()
-  def new(capacity \\ @default_capacity) when is_integer(capacity) and capacity > 0 do
+  def new(capacity \\ @default_capacity)
+
+  def new(capacity) when is_integer(capacity) and capacity > 0 do
     %Hazard{buffer: [], capacity: capacity}
   end
+
+  def new(other),
+    do: raise(ArgumentError, "hazard capacity must be a positive integer, got: #{inspect(other)}")
 
   @doc """
   Push a latency observation onto the ring buffer.
 
   Older observations fall off once capacity is reached (oldest evicted first).
+  Raises `FunctionClauseError` for a non-number observation.
   """
   @spec push(Hazard.t(), number()) :: Hazard.t()
   def push(%Hazard{buffer: buffer, capacity: cap} = h, x) when is_number(x) do
@@ -56,12 +67,14 @@ defmodule AshA2A.Twin.Hazard do
   computed on the window as it stood BEFORE this observation), then push the
   observation so the window advances.
 
-  Returns `{:ok, %{z, median, mad, trip?, window, monitor}}` or
-  `{:error, :insufficient_dispersion}` when MAD = 0 (the observation is
-  still pushed, so a zero-dispersion window heals).
+  Returns `{:ok, %{z, median, mad, trip?, window, monitor}}`,
+  `{:error, :insufficient_dispersion}` when MAD = 0, or
+  `{:error, :invalid_observation}` for a non-number. The error paths return
+  no monitor and do NOT push: the caller owns the push (`push/2`) so a
+  zero-dispersion window can heal on its own terms.
   """
-  @spec observe(Hazard.t(), number()) ::
-          {:ok, map()} | {:error, :insufficient_dispersion}
+  @spec observe(Hazard.t(), term()) ::
+          {:ok, map()} | {:error, :insufficient_dispersion | :invalid_observation}
   def observe(%Hazard{} = h, x) when is_number(x) do
     case zscore(x, h.buffer) do
       {:ok, z} ->
@@ -78,10 +91,35 @@ defmodule AshA2A.Twin.Hazard do
          }}
 
       {:error, _} = err ->
-        push(h, x)
         err
     end
   end
+
+  def observe(%Hazard{}, _x), do: {:error, :invalid_observation}
+
+  @doc """
+  Fail-closed zero-dispersion policy: `{:spike, stats}` when `window` has at
+  least 3 samples, MAD is 0 and `x` exceeds the (flat) median; else `:none`.
+  Only slow observations spike — latency hazards are one-sided.
+  """
+  @spec zero_dispersion_spike([number()], term()) :: {:spike, map()} | :none
+  def zero_dispersion_spike(window, x) when is_list(window) and is_number(x) do
+    if length(window) >= 3 and mad(window) == 0 and x > median(window) do
+      {:spike,
+       %{
+         z: :infinity,
+         median: median(window),
+         mad: 0.0,
+         trip?: true,
+         window: window,
+         dispersion: :zero
+       }}
+    else
+      :none
+    end
+  end
+
+  def zero_dispersion_spike(_window, _x), do: :none
 
   @doc """
   Hazard Z-score over a window: `Z = (x - median(window)) / MAD(window)`.
@@ -89,13 +127,16 @@ defmodule AshA2A.Twin.Hazard do
   Returns `{:error, :insufficient_dispersion}` when MAD = 0 (zero-dispersion
   or empty window).
   """
-  @spec zscore(number(), [number()]) :: {:ok, float()} | {:error, :insufficient_dispersion}
+  @spec zscore(term(), term()) ::
+          {:ok, float()} | {:error, :insufficient_dispersion | :invalid_observation}
   def zscore(x, window) when is_number(x) and is_list(window) do
     case mad(window) do
       d when d == 0.0 or d == 0 -> {:error, :insufficient_dispersion}
       d -> {:ok, (x - median(window)) / d}
     end
   end
+
+  def zscore(_x, _window), do: {:error, :invalid_observation}
 
   @doc """
   Trip decision: true when z exceeds threshold (strictly greater).
@@ -108,7 +149,10 @@ defmodule AshA2A.Twin.Hazard do
     z > threshold
   end
 
-  @doc "Median of a numeric list (average of two middle values for even length)."
+  @doc """
+  Median of a numeric list (average of two middle values for even length).
+  Raises `ArgumentError` on an empty list.
+  """
   @spec median([number()]) :: float()
   def median([]), do: raise(ArgumentError, "median of empty window")
 

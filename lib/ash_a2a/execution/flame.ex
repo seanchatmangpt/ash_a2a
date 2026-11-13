@@ -26,35 +26,47 @@ defmodule AshA2A.Execution.FLAME do
       bus_opts = Keyword.get(opts, :command_bus_opts, [])
 
       result =
-        try do
+        guarded(fn ->
           apply(FLAME, :call, [
             pool,
             fn -> AshA2A.CommandBus.run(command, message, resource_or_domain, bus_opts) end,
             flame_opts
           ])
-        rescue
-          exception -> {:error, {:exception, exception.__struct__, Exception.message(exception)}}
-        catch
-          kind, reason -> {:error, {kind, reason}}
-        end
+        end)
 
       placement =
         RuntimeReceipt.new(:flame, :call, command.command_id, result,
           metadata: %{pool: inspect(pool)}
         )
 
-      case result do
-        {:ok, %AshA2A.Receipt{} = receipt} ->
-          {:ok, %{receipt: receipt, placement: placement}}
-
-        {:error, reason} ->
-          {:error, %{reason: reason, placement: placement}}
-
-        other ->
-          {:error, %{reason: {:unexpected_flame_result, other}, placement: placement}}
-      end
+      classify(result, placement)
     else
       {:error, {:unsupported, :flame}}
     end
   end
+
+  @doc false
+  # Runs `fun`, converting raise/throw/exit into typed error tuples (exits
+  # included: `FLAME.call/3` exits on pool/node failure).
+  @spec guarded((-> term())) :: term()
+  def guarded(fun) when is_function(fun, 0) do
+    fun.()
+  rescue
+    exception -> {:error, {:exception, exception.__struct__, Exception.message(exception)}}
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  @doc false
+  # Maps a guarded result + placement receipt onto the public return shape.
+  @spec classify(term(), RuntimeReceipt.t()) ::
+          {:ok, %{receipt: AshA2A.Receipt.t(), placement: RuntimeReceipt.t()}}
+          | {:error, %{reason: term(), placement: RuntimeReceipt.t()}}
+  def classify({:ok, %AshA2A.Receipt{} = receipt}, placement),
+    do: {:ok, %{receipt: receipt, placement: placement}}
+
+  def classify({:error, reason}, placement), do: {:error, %{reason: reason, placement: placement}}
+
+  def classify(other, placement),
+    do: {:error, %{reason: {:unexpected_flame_result, other}, placement: placement}}
 end

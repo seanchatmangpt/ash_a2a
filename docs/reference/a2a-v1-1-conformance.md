@@ -1,0 +1,80 @@
+# A2A v1.1 Conformance Statement
+
+Standing: PARTIAL
+
+Target: A2A v1.1.0 (upstream tag `v1.1.0-rc`, fetched 2026-11-13; not yet a GitHub
+release). Corpus: `priv/a2a_v1_1_spec_corpus/a2a.proto`, SHA-256
+`8d9c363f8654205780654306af307355a7a34dcf96a8e221caf251268deab127`. A2A v1.0.1
+remains supported ([v1.0 statement](a2a-v1-conformance.md)); v0.3 is decode-only
+legacy.
+
+The corpus court `test/ash_a2a_v1_1_proto_corpus_test.exs` checks the hash,
+checks each delta item exists in the proto, and fails loudly on any item whose
+codec status is still pending. Row standings below are set from the passing
+courts named in each row (see Evidence). Court names are `file::test`, with
+`test/` as the file root. The table has 17 rows and no row numbers; no row is
+CONFORMANT without a named passing test.
+
+## Delta statement
+
+Abbreviations: `codec` = `v1_1_codec_test.exs`, `corpus` =
+`ash_a2a_v1_1_proto_corpus_test.exs`, `v2` = `v2_generation_test.exs`.
+
+| Item | Spec section | ash_a2a module | Court (file::test) | Standing |
+|------|--------------|----------------|--------------------|----------|
+| `SendLiveMessage` rpc (`message/live`) | spec 1.1 live streaming | `AshA2A.Protocol.JSONRPC`, `AshA2A.A2ATransport.Plug` | gRPC: `v10_grpc_live_test.exs::SendLiveMessage subscribe-first: first frame is a Task snapshot`; HTTP+JSON: `v14_http_json_live_core_test.exs::uplink by session id answers the ack task only...`, `v9_http_json_v11_test.exs::live downlink opens with the task snapshot...`; session: `v5_live_session_test.exs::send_message opens with a snapshot, input_required, then a second message on the same stream`. No named court drives the JSON-RPC `message/live` method itself | PARTIAL |
+| `StreamRequest` | live streaming | `AshA2A.Protocol.JSON` | `codec::StreamRequest sendMessage / subscribe / unknown payload`; `v5::unknown payload kind and malformed requests are StreamErrors` | CONFORMANT |
+| `StreamError` | live streaming | `AshA2A.Protocol.JSON.encode/1` | `codec::StreamError round trips through the StreamResponse wrapper`; `v5::request naming a different task is a StreamError and the stream stays open`; `v10_grpc_live_test.exs::SendLiveMessage: wrong-task request yields StreamError and keeps the stream open` | CONFORMANT |
+| `TimelineEntry` | ADR-002 | `AshA2A.Protocol.TimelineEntry`, `AshA2A.Protocol.JSON` | `codec::round trips generation and timeline entries`; `codec::timeline fails open on unknown entry kind`; `v2::artifacts leave generation gaps in the timeline and carry start/end generation` | CONFORMANT |
+| `TaskMessageUpdateEvent` | ADR-002 | `AshA2A.Protocol.Event.MessageUpdate` | `codec::MessageUpdate round trips through the StreamResponse wrapper`; `v9_http_json_v11_test.exs::message:stream emits messageUpdate frames only for A2A-Version >= 1.1, all stamped`; `v13_sse_generation_test.exs::1.0 stream: no messageUpdate frame and no error` | CONFORMANT |
+| `Task.generation`, `Task.timeline` | ADR-002 | `AshA2A.Protocol.JSON` | `codec::round trips generation and timeline entries`; `v2::submitted -> working -> input_required -> working -> completed`; `v10_grpc_live_test.exs::Task.generation survives the proto bridge` | CONFORMANT |
+| `Artifact.startGeneration`, `endGeneration`, `role` | ADR-002 | `AshA2A.Protocol.JSON` | `codec::start/end generation and role round trip`; `codec::defaults omit the new members` | CONFORMANT |
+| `TaskStatusUpdateEvent.generation` | ADR-002 | `AshA2A.Protocol.JSON` | `codec::status and artifact updates carry generation`; `v13_sse_generation_test.exs::1.1 stream: statusUpdate and artifactUpdate carry strictly increasing generations` | CONFORMANT |
+| `TaskArtifactUpdateEvent.generation` | ADR-002 | `AshA2A.Protocol.JSON` | `codec::status and artifact updates carry generation`; `v13_sse_generation_test.exs::1.1 stream: statusUpdate and artifactUpdate carry strictly increasing generations` | CONFORMANT |
+| `SendMessageConfiguration.timelineLength`, `ifGenerationMatch` | ADR-002 | `AshA2A.Protocol.JSON`, agent state | `codec::configuration carries timelineLength, historyLength, ifGenerationMatch`; `v12_plug_wiring_test.exs::ifGenerationMatch mismatch answers -32010 with ErrorInfo through the plug`; `v12::build_call_opts forwards ifGenerationMatch so the agent's atomic check runs`; `v9::ifGenerationMatch: stale generation is 409 TASK_GENERATION_MISMATCH, matching generation succeeds` | CONFORMANT |
+| `GetTaskRequest.timelineLength`, `currentGeneration` | ADR-002 | `AshA2A.Protocol.Agent.State` | `codec::GetTask / ListTasks / Subscribe v1.1 members`; `v9_http_json_v11_test.exs::currentGeneration at the task's generation parks until the task advances`; `v11_client_live_test.exs::get_task long-poll returns once the generation advances` | CONFORMANT |
+| `ListTasksRequest.timelineLength` | ADR-002 | `AshA2A.Protocol.Agent.State` | `codec::GetTask / ListTasks / Subscribe v1.1 members`; `v9::timelineLength truncates GET /tasks/{id} and GET /tasks`; `v2::list truncation of timeline and history is independent` | CONFORMANT |
+| `SubscribeToTaskRequest.lastSeenGeneration` | ADR-002 | `AshA2A.A2ATransport.Plug` | `v5::subscribe with lastSeenGeneration skips the snapshot; unreplayable generation resyncs`; `b3_v11_courts_test.exs::resubscribe with lastSeenGeneration == current sends no snapshot, only newer events`; `v13::invalid lastSeenGeneration answers -32602 before any stream opens`; `v10::SubscribeToTask lastSeenGeneration falls back to a snapshot when replay is unavailable` | CONFORMANT |
+| `AgentCapabilities.userArtifacts` | client artifact writes | `AshA2A.Protocol.AgentCard`, `AshA2A.Protocol.JSON` | `codec::userArtifacts capability round trips`; `b3::card advertises capabilities.userArtifacts when declared and not when undeclared` | CONFORMANT |
+| `SendMessageRequest.artifactUpdates` | client artifact writes | `AshA2A.Protocol.JSON` | `codec::message optional with artifactUpdates`; `v5::client artifactUpdates are applied and observable as artifact updates`; `v12::artifactUpdates on an agent without user_artifacts answers -32004`; `v10::artifactUpdates are accepted when user_artifacts is declared` | CONFORMANT |
+| `TaskPushNotificationConfig.protocolVersion` | push notifications | `AshA2A.Protocol.JSON` | `codec::push config protocolVersion round trips and is optional`; `v4_push_version_test.exs::set/get/list encode protocolVersion; explicit wins, default is the request version`; `v4_push_version_test.exs::1.0 config gets no generation / message-update; 1.1 config gets both, in generation order` | CONFORMANT |
+| `TaskGenerationMismatchError` -32010 | error registry | `AshA2A.Protocol.JSONRPC.Error` | `corpus::TaskGenerationMismatchError -32010 is registered in the corpus docs or spec text`; `v12::ifGenerationMatch mismatch answers -32010 with ErrorInfo through the plug`; `b3::ifGenerationMatch mismatch is -32010 TASK_GENERATION_MISMATCH; match proceeds`; `v11_client_live_test.exs::JSON-RPC -32010 maps to {:task_generation_mismatch, details}` | CONFORMANT |
+
+## Evidence
+
+Date: 2026-11-13. Evidence logs are coordinator-run; this lane ran no suites.
+
+- `/tmp/coord-full-10.log` (default tier): `125 doctests, 51 properties, 4695
+  tests, 0 failures, 4 skipped (1063 excluded)`, rc=0 per coordinator. The default
+  tier excludes only `:external_api`, `:benchmark`, and environment-gated tags
+  (`test/test_helper.exs`), so `:serial_shard` courts (`v9`, `v11_client_live`,
+  `v14`, `b3_v11_courts`) are included. The log prints dots, not test names:
+  each named court is covered by the aggregate 0-failure result plus its
+  presence in `test/`, not by a per-test line.
+- `/tmp/coord-serial.log` (`:serial` tier only): `11 doctests, 1038 tests, 40
+  failures, 60 invalid, 8 skipped`. No failing or invalid entry names a v1.1
+  court listed above. The failures read are in
+  `AshA2A.Chicago.Hardening.AdversarialInputTest`
+  (`{:invalid_field, "supportedInterfaces.protocolBinding"}`), and in
+  Postgres-, sibling-dependency-, and wasm-gated modules. They are outside this
+  statement and are not attributed to v1.1.
+- Court files not named in the table (`w1`, `w2`, `w3`, `w5`, `w6`) cover the v1.0
+  surface and were not used as v1.1 evidence.
+- Gap: row 1 stays PARTIAL because no named court drives the JSON-RPC
+  `message/live` method.
+- SHA-less caveat: the working tree is uncommitted, so these results bind to no
+  commit. This statement is not an exact-head receipt.
+- Table-level Standing is PARTIAL: 16 of 17 rows CONFORMANT by named courts
+  without per-test log lines, row 1 PARTIAL, no TCK verdict.
+
+## External TCK
+
+`a2aproject/a2a-tck` `main` is aligned to A2A 1.0.1. v1.1 requirements are not
+yet in the TCK, so no TCK verdict exists for any row above. TCK certification
+remains UNSUPPORTED (not claimed).
+
+## See Also
+
+- [A2A v1.1 readiness](a2a-v1_1-readiness.md)
+- [Spec-version mapping](a2a-spec-version-mapping.md)
+- [TCK suite](tck-suite.md)

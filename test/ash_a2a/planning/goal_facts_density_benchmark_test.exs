@@ -476,7 +476,8 @@ defmodule AshA2A.Planning.GoalFactsDensityBenchmarkTest do
         count
 
       true ->
-        Process.sleep(20)
+        # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(20)
         wait_until_near_baseline(baseline_count, deadline)
     end
   end

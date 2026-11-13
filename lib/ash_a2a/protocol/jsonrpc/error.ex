@@ -58,6 +58,7 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     -32_007 => "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
     -32_008 => "EXTENSION_SUPPORT_REQUIRED",
     -32_009 => "VERSION_NOT_SUPPORTED",
+    -32_010 => "TASK_GENERATION_MISMATCH",
     # -32602 is a standard JSON-RPC code with no spec-defined reason; the
     # ErrorInfo (domain a2a-protocol.org, reason INVALID_PARAMS) is added by
     # lane V3 so validation/changeset failures carry a typed reason too.
@@ -98,16 +99,33 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     %__MODULE__{code: -32_603, message: "Internal error", data: data}
   end
 
-  @doc "Builds a task not found error (-32001)."
-  @spec task_not_found(term()) :: t()
-  def task_not_found(data \\ nil) do
-    %__MODULE__{code: -32_001, message: "Task not found", data: data}
+  @doc """
+  Builds a task not found error (-32001).
+
+  Option `:task_id` adds `taskId` to the ErrorInfo metadata.
+
+  NOTE: -32001 is deliberately shared with policy denial
+  (`POLICY_FORBIDDEN`, see `AshA2A.ToA2AError`) so a denied caller cannot
+  distinguish "forbidden" from "absent" by code (no existence leak). Do not
+  split it.
+  """
+  @spec task_not_found(term(), keyword()) :: t()
+  def task_not_found(data \\ nil, opts \\ []) do
+    %__MODULE__{
+      code: -32_001,
+      message: "Task not found",
+      data: enrich(-32_001, data, task_meta(opts), [])
+    }
   end
 
-  @doc "Builds a task not cancelable error (-32002)."
-  @spec task_not_cancelable(term()) :: t()
-  def task_not_cancelable(data \\ nil) do
-    %__MODULE__{code: -32_002, message: "Task cannot be canceled", data: data}
+  @doc "Builds a task not cancelable error (-32002). Option `:task_id` adds `taskId` metadata."
+  @spec task_not_cancelable(term(), keyword()) :: t()
+  def task_not_cancelable(data \\ nil, opts \\ []) do
+    %__MODULE__{
+      code: -32_002,
+      message: "Task cannot be canceled",
+      data: enrich(-32_002, data, task_meta(opts), [])
+    }
   end
 
   @doc "Builds a push notification not supported error (-32003)."
@@ -170,14 +188,239 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     }
   end
 
-  @doc "Builds a version not supported error (-32009)."
-  @spec version_not_supported(term()) :: t()
-  def version_not_supported(data \\ nil) do
+  @doc """
+  Builds a version not supported error (-32009).
+
+  Option `:supported_versions` (list of strings) adds `supportedVersions`
+  (comma-joined) to the ErrorInfo metadata.
+  """
+  @spec version_not_supported(term(), keyword()) :: t()
+  def version_not_supported(data \\ nil, opts \\ []) do
+    meta =
+      case Keyword.get(opts, :supported_versions) do
+        versions when is_list(versions) and versions != [] ->
+          %{"supportedVersions" => Enum.map_join(versions, ",", &to_string/1)}
+
+        _ ->
+          %{}
+      end
+
     %__MODULE__{
       code: -32_009,
       message: "Version not supported",
-      data: data
+      data: enrich(-32_009, data, meta, [])
     }
+  end
+
+  @doc """
+  Builds a task generation mismatch error (-32010, HTTP 409, gRPC ABORTED).
+
+  Option `:task_id` adds `taskId`; `:expected` / `:actual` add
+  `expectedGeneration` / `actualGeneration` (stringified) to the ErrorInfo
+  metadata.
+  """
+  @spec task_generation_mismatch(term(), keyword()) :: t()
+  def task_generation_mismatch(data \\ nil, opts \\ []) do
+    meta =
+      Enum.reduce(
+        [{:expected, "expectedGeneration"}, {:actual, "actualGeneration"}],
+        task_meta(opts),
+        fn {key, name}, acc ->
+          case Keyword.get(opts, key) do
+            nil -> acc
+            value -> Map.put(acc, name, to_string(value))
+          end
+        end
+      )
+
+    %__MODULE__{
+      code: -32_010,
+      message: "Task generation mismatch",
+      data: enrich(-32_010, data, meta, [])
+    }
+  end
+
+  @doc """
+  Builds an unauthenticated error. Additive: code stays -32600 (current
+  caller compatibility); the ErrorInfo reason is `UNAUTHENTICATED`
+  (google.rpc status `UNAUTHENTICATED`, see `status_name_for_reason/1`).
+  """
+  @spec unauthenticated(term()) :: t()
+  def unauthenticated(data) do
+    %__MODULE__{
+      code: -32_600,
+      message: "Unauthenticated",
+      data: [build_error_info("UNAUTHENTICATED", detail_meta(data))]
+    }
+  end
+
+  @doc """
+  Builds a permission denied error. Additive: code stays -32600; ErrorInfo
+  reason `PERMISSION_DENIED` (google.rpc status `PERMISSION_DENIED`).
+  """
+  @spec permission_denied(term()) :: t()
+  def permission_denied(data) do
+    %__MODULE__{
+      code: -32_600,
+      message: "Permission denied",
+      data: [build_error_info("PERMISSION_DENIED", detail_meta(data))]
+    }
+  end
+
+  @doc """
+  Builds a server-busy error (-32000, transport HTTP 503). `kind` is
+  `:unavailable` (reason `UNAVAILABLE`) or `:resource_exhausted` (reason
+  `RESOURCE_EXHAUSTED`).
+  """
+  @spec server_busy(term(), :unavailable | :resource_exhausted) :: t()
+  def server_busy(data, kind) when kind in [:unavailable, :resource_exhausted] do
+    reason = if kind == :unavailable, do: "UNAVAILABLE", else: "RESOURCE_EXHAUSTED"
+
+    %__MODULE__{
+      code: -32_000,
+      message: "Server busy",
+      data: [build_error_info(reason, detail_meta(data))]
+    }
+  end
+
+  @doc """
+  Builds an invalid params error (-32602) carrying, besides the ErrorInfo, a
+  `google.rpc.BadRequest` detail with one field violation per
+  `{field, description}` pair. Additive; `invalid_params/1` is unchanged.
+  """
+  @spec invalid_params_with_violations(term(), [{String.t() | atom(), String.t()}]) :: t()
+  def invalid_params_with_violations(data, violations) when is_list(violations) do
+    %__MODULE__{
+      code: -32_602,
+      message: "Invalid parameters",
+      data: enrich(-32_602, data, %{}, [bad_request(violations)])
+    }
+  end
+
+  @doc "Builds a `google.rpc.BadRequest` detail map from `{field, description}` pairs."
+  @spec bad_request([{String.t() | atom(), String.t()}]) :: map()
+  def bad_request(violations) do
+    %{
+      "@type" => "type.googleapis.com/google.rpc.BadRequest",
+      "fieldViolations" =>
+        Enum.map(violations, fn {field, description} ->
+          %{"field" => to_string(field), "description" => to_string(description)}
+        end)
+    }
+  end
+
+  @doc """
+  Builds one `google.rpc.ErrorInfo` map (domain `a2a-protocol.org`) with
+  optional string-valued metadata.
+  """
+  @spec build_error_info(String.t(), map()) :: map()
+  def build_error_info(reason, metadata \\ %{}) when is_binary(reason) do
+    base = %{"@type" => @error_info_type, "domain" => @a2a_domain, "reason" => reason}
+    if metadata == %{}, do: base, else: Map.put(base, "metadata", metadata)
+  end
+
+  # --- Spec tables (A2A v1.0 §5.4). ADDITIVE: NOT used for dispatch. -------
+  # The transports still use their own pinned maps (HTTPJSON.status_for/1,
+  # gRPC dispatch); these are the spec's table, the switch to flip once the
+  # official-TCK-vs-spec-text question is decided.
+
+  @grpc_status %{
+    -32_001 => 5,
+    -32_002 => 9,
+    -32_003 => 12,
+    -32_004 => 12,
+    -32_005 => 3,
+    -32_006 => 13,
+    -32_007 => 9,
+    -32_008 => 9,
+    -32_009 => 12,
+    # ABORTED
+    -32_010 => 10
+  }
+
+  @status_names %{
+    -32_001 => "NOT_FOUND",
+    -32_002 => "FAILED_PRECONDITION",
+    -32_003 => "FAILED_PRECONDITION",
+    # HTTP `error.status` strings stay FAILED_PRECONDITION (the HTTP-binding
+    # body); only the gRPC numeric table (`grpc_status/1`) is UNIMPLEMENTED
+    # for -32003/-32004/-32009 per the pinned TCK.
+    -32_004 => "FAILED_PRECONDITION",
+    -32_005 => "INVALID_ARGUMENT",
+    -32_006 => "INTERNAL",
+    -32_007 => "FAILED_PRECONDITION",
+    -32_008 => "FAILED_PRECONDITION",
+    -32_009 => "FAILED_PRECONDITION",
+    -32_010 => "ABORTED",
+    -32_700 => "INVALID_ARGUMENT",
+    -32_600 => "INVALID_ARGUMENT",
+    -32_601 => "UNIMPLEMENTED",
+    -32_602 => "INVALID_ARGUMENT",
+    -32_603 => "INTERNAL",
+    -32_000 => "UNAVAILABLE"
+  }
+
+  @spec_http %{
+    -32_001 => 404,
+    -32_002 => 409,
+    -32_003 => 400,
+    -32_004 => 400,
+    -32_005 => 400,
+    -32_006 => 500,
+    -32_007 => 400,
+    -32_008 => 400,
+    -32_009 => 400,
+    -32_010 => 409
+  }
+
+  @doc """
+  Spec-table canonical gRPC status (numeric: NOT_FOUND 5, FAILED_PRECONDITION
+  9, INVALID_ARGUMENT 3, INTERNAL 13) for an A2A code -32001..-32009, or
+  `nil`. Not yet used for dispatch.
+  """
+  @spec grpc_status(integer()) :: non_neg_integer() | nil
+  def grpc_status(code), do: Map.get(@grpc_status, code)
+
+  @doc "Spec-table HTTP status for -32001..-32009 (§5.4), or `nil`. Not yet used for dispatch."
+  @spec spec_http_status(integer()) :: non_neg_integer() | nil
+  def spec_http_status(code), do: Map.get(@spec_http, code)
+
+  @doc """
+  google.rpc status string (e.g. `"NOT_FOUND"`) for the HTTP `error.status`
+  field, by JSON-RPC code, or `nil`.
+  """
+  @spec status_name_for_code(integer()) :: String.t() | nil
+  def status_name_for_code(code), do: Map.get(@status_names, code)
+
+  @doc "google.rpc status string for an ErrorInfo reason that has no own code."
+  @spec status_name_for_reason(String.t()) :: String.t() | nil
+  def status_name_for_reason("UNAUTHENTICATED"), do: "UNAUTHENTICATED"
+  def status_name_for_reason("PERMISSION_DENIED"), do: "PERMISSION_DENIED"
+  def status_name_for_reason("UNAVAILABLE"), do: "UNAVAILABLE"
+  def status_name_for_reason("RESOURCE_EXHAUSTED"), do: "RESOURCE_EXHAUSTED"
+  def status_name_for_reason(_), do: nil
+
+  defp task_meta(opts) do
+    case Keyword.get(opts, :task_id) do
+      id when is_binary(id) and id != "" -> %{"taskId" => id}
+      _ -> %{}
+    end
+  end
+
+  defp detail_meta(nil), do: %{}
+  defp detail_meta(detail), do: %{"detail" => stringify(detail)}
+
+  # No extras: data untouched (existing behavior). Extras: pre-wrap so
+  # `to_map/1` passes it through (idempotent).
+  defp enrich(_code, data, meta, details) when meta == %{} and details == [], do: data
+
+  defp enrich(code, data, meta, details) do
+    if already_wrapped?(data) do
+      data
+    else
+      reason = Map.fetch!(@error_info_reasons, code)
+      [build_error_info(reason, Map.merge(detail_meta(data), meta)) | details]
+    end
   end
 
   @doc """

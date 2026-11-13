@@ -51,7 +51,8 @@ defmodule AshA2A.Protocol.AgentCard do
           required(:tags) => [String.t()],
           optional(:input_modes) => [String.t()],
           optional(:output_modes) => [String.t()],
-          optional(:security_requirements) => [security_requirement()]
+          optional(:security_requirements) => [security_requirement()],
+          optional(:examples) => [String.t()]
         }
 
   @type capabilities :: %{
@@ -59,6 +60,7 @@ defmodule AshA2A.Protocol.AgentCard do
           optional(:push_notifications) => boolean(),
           optional(:state_transition_history) => boolean(),
           optional(:extended_agent_card) => boolean(),
+          optional(:user_artifacts) => boolean(),
           optional(:extensions) => [AshA2A.Protocol.AgentExtension.t()]
         }
 
@@ -68,9 +70,10 @@ defmodule AshA2A.Protocol.AgentCard do
         }
 
   @type supported_interface :: %{
-          url: String.t(),
-          protocol_binding: String.t(),
-          protocol_version: String.t()
+          required(:url) => String.t(),
+          required(:protocol_binding) => String.t(),
+          required(:protocol_version) => String.t(),
+          optional(:tenant) => String.t()
         }
 
   # `protocol_binding` carries the v1.0 transport identification values

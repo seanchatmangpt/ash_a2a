@@ -445,7 +445,7 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
       )
 
     assert resp.status == 404
-    assert resp.body == "Not Found"
+    assert %{"error" => %{"code" => 404}} = Jason.decode!(resp.body)
   end
 
   # =============================================================================

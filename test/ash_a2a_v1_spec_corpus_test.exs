@@ -138,7 +138,13 @@ defmodule AshA2A.V1SpecCorpusTest do
         # F2: no decode path into %JSONRPC.Error{} (Error is encode-only).
         # Pinned probes of the real paths:
         assert {:error, %JSONRPC.Error{code: -32_600}} = JSONRPC.Request.parse(wire)
-        assert {:error, _} = JSON.decode(wire, :event)
+        # v1.1: the :event decoder admits the error envelope as a StreamError
+        # (still no decode into %JSONRPC.Error{}).
+        assert {:ok, %AshA2A.Protocol.StreamError{code: code, message: message}} =
+                 JSON.decode(wire, :event)
+
+        assert code == wire["error"]["code"]
+        assert message == wire["error"]["message"]
 
       "agent_card" ->
         # F5: codec requires AgentCard.version (proto REQUIRED); the spec's

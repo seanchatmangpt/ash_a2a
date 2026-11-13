@@ -161,7 +161,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
     assert %{
              "error" => %{
                "code" => 400,
-               "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]
+               "details" => [%{"@type" => @error_info, "reason" => "UNSUPPORTED_OPERATION"}]
              }
            } = resp.body
   end
@@ -213,7 +213,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
     assert %{
              "error" => %{
                "code" => 409,
-               "status" => "ABORTED",
+               "status" => "FAILED_PRECONDITION",
                "details" => [%{"@type" => @error_info, "reason" => "TASK_NOT_CANCELABLE"}]
              }
            } = resp.body
@@ -249,7 +249,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
            } = resp.body
   end
 
-  test "an over-cap body is refused 400 before parse", %{server: _server} do
+  test "an over-cap body is refused 413 before parse", %{server: _server} do
     # A second real server, same binding, tiny body cap.
     small =
       EphemeralHttp.start!(
@@ -263,8 +263,8 @@ defmodule AshA2A.Transport.HTTPJSONTest do
 
     resp = post_json!(small, "/message:send", %{"message" => message_map("this is much longer than sixteen bytes")})
 
-    assert resp.status == 400
-    assert %{"error" => %{"code" => 400, "details" => "Body too large"}} = resp.body
+    assert resp.status == 413
+    assert %{"error" => %{"code" => 413, "details" => "Body too large"}} = resp.body
   end
 
   test "recognized-but-unsupported REST ops answer 400 UNSUPPORTED_OPERATION", %{server: server} do

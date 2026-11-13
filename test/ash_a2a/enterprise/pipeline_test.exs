@@ -1117,7 +1117,8 @@ defmodule AshA2A.Enterprise.PipelineCourt do
         flunk("no OCEL event landed at the SIEM sink within the deadline")
       end
 
-      Process.sleep(25)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(25)
       poll(table, deadline)
     end
   end

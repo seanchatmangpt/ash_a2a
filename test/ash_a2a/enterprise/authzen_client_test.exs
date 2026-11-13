@@ -143,7 +143,8 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
 
       {:ok, socket} ->
         :gen_tcp.close(socket)
-        Process.sleep(50)
+        # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(50)
         wait_down(port, attempts - 1)
     end
   end
@@ -319,7 +320,8 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
     assert {:ok, %Types.Decision{decision: true}} = decision
     assert request_count(table) == 1
 
-    Process.sleep(60)
+    # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(60)
 
     assert {:ok, %Types.Decision{decision: true}} =
              eval(client, table, "erin", "read", "doc-5") |> elem(0)

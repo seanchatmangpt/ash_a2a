@@ -17,7 +17,10 @@ defmodule AshA2A.CapabilityIndex.Validator do
 
   @spec validate([skill()]) :: :ok | {:error, [refusal()]}
   def validate(skills) when is_list(skills) do
-    refusals = validate_unique_names(skills) ++ validate_actions(skills)
+    refusals =
+      validate_unique_names(skills) ++
+        validate_unique_actions(skills) ++ validate_actions(skills)
+
     if refusals == [], do: :ok, else: {:error, refusals}
   end
 
@@ -30,6 +33,23 @@ defmodule AshA2A.CapabilityIndex.Validator do
         code: :REFUSED_DUPLICATE_SKILL_NAME,
         detail:
           "skill name #{inspect(name)} is declared #{count} times; skill override names must be unique"
+      }
+    end)
+  end
+
+  # Two overrides for the same `{resource, action}` would silently collapse to
+  # last-writer-wins in the compiler; refuse at compile time instead.
+  defp validate_unique_actions(skills) do
+    skills
+    |> Enum.group_by(&{Map.get(&1, :resource), &1.action})
+    |> Enum.filter(fn {_key, group} -> length(group) > 1 end)
+    |> Enum.map(fn {{resource, action}, group} ->
+      %{
+        code: :REFUSED_DUPLICATE_ACTION_OVERRIDE,
+        detail:
+          "action #{inspect(action)} on #{inspect(resource)} is overridden #{length(group)} times " <>
+            "(skills #{Enum.map_join(group, ", ", &inspect(&1.name))}); at most one override per " <>
+            "{resource, action} is allowed"
       }
     end)
   end

@@ -25,12 +25,14 @@ defmodule AshA2A.Domain.Mount do
   domain's default mount path.
   """
 
-  defstruct [:agent, :path, :binding, :__spark_metadata__]
+  defstruct [:agent, :path, :binding, :tenant, :protocol_version, :__spark_metadata__]
 
   @type t :: %__MODULE__{
           agent: module() | nil,
           path: String.t(),
           binding: :jsonrpc | :rest | :grpc,
+          tenant: String.t() | nil,
+          protocol_version: String.t() | nil,
           __spark_metadata__: map() | nil
         }
 

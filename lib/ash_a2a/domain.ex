@@ -117,6 +117,28 @@ defmodule AshA2A.Domain do
       type: :string,
       required: false,
       doc: "Optional icon URL for the AgentCard."
+    ],
+    default_input_modes: [
+      type: {:list, :string},
+      required: false,
+      doc:
+        "AgentCard `defaultInputModes` (MIME types). When unset the card builder " <>
+          "keeps its own default."
+    ],
+    default_output_modes: [
+      type: {:list, :string},
+      required: false,
+      doc:
+        "AgentCard `defaultOutputModes` (MIME types). When unset the card builder " <>
+          "keeps its own default."
+    ],
+    sign_card: [
+      type: {:or, [:string, :atom]},
+      required: false,
+      doc:
+        "Declared-only key reference (e.g. a configured key id) naming the key the " <>
+          "AgentCard should be signed with. Persisted and readable via " <>
+          "`AshA2A.Domain.Info.agent/1`; the serving plug performs the signing."
     ]
   ]
 
@@ -126,12 +148,15 @@ defmodule AshA2A.Domain do
     schema: @agent_schema
   }
 
-  @scheme_kinds [:bearer, :api_key, :none]
+  @scheme_kinds [:bearer, :api_key, :none, :http, :oauth2, :openid_connect, :mtls]
 
   @security_scheme %Spark.Dsl.Entity{
     name: :security_scheme,
     describe: "Declares one A2A security scheme.",
-    examples: ["security_scheme :token, :bearer"],
+    examples: [
+      "security_scheme :token, :bearer",
+      "security_scheme :key, :api_key, location: :header, param_name: \"X-Key\""
+    ],
     target: SecurityScheme,
     args: [:name, :kind],
     identifier: :name,
@@ -145,8 +170,47 @@ defmodule AshA2A.Domain do
         type: {:one_of, @scheme_kinds},
         required: true,
         doc:
-          "Scheme kind, one of `:bearer`, `:api_key` or `:none`. Verified again " <>
-            "at the verifier layer (atoms in the allowed set)."
+          "Scheme kind, one of `:bearer`, `:api_key`, `:none`, `:http`, `:oauth2`, " <>
+            "`:openid_connect` or `:mtls`. Verified again at the verifier layer " <>
+            "(atoms in the allowed set)."
+      ],
+      location: [
+        type: {:one_of, [:header, :query, :cookie]},
+        required: false,
+        doc: "`:api_key` only: where the key is sent (default `:header`)."
+      ],
+      param_name: [
+        type: :string,
+        required: false,
+        doc: "`:api_key` only: header/query/cookie parameter name (default `\"X-API-Key\"`)."
+      ],
+      http_scheme: [
+        type: :string,
+        required: false,
+        doc: "`:http` only: the HTTP auth scheme name, e.g. `\"basic\"`."
+      ],
+      bearer_format: [
+        type: :string,
+        required: false,
+        doc: "`:bearer`/`:http` only: hint such as `\"JWT\"`."
+      ],
+      oauth_flows: [
+        type: {:map, :string, :any},
+        required: false,
+        doc:
+          "`:oauth2` only: map of flow name (`\"authorizationCode\"`, `\"clientCredentials\"`, " <>
+            "`\"deviceCode\"`, ...) to a flow map. Passed through to the protocol layer " <>
+            "(`AshA2A.Protocol.SecurityScheme`) unchanged."
+      ],
+      scopes: [
+        type: {:list, :string},
+        default: [],
+        doc: "`:oauth2`/`:openid_connect`: scope names this scheme can grant (documentation)."
+      ],
+      openid_url: [
+        type: :string,
+        required: false,
+        doc: "`:openid_connect` only: OpenID Connect discovery URL."
       ]
     ]
   }
@@ -162,6 +226,14 @@ defmodule AshA2A.Domain do
         doc:
           "Module-level security requirements: names of `security_scheme` " <>
             "declarations that must be satisfied to talk to this agent."
+      ],
+      requirement_scopes: [
+        type: {:map, :string, {:list, :string}},
+        default: %{},
+        doc:
+          "Per-requirement scopes: map from a requirement name (must also appear in " <>
+            "`requirements`) to the scopes it requires, e.g. `%{\"oauth\" => [\"read\"]}`. " <>
+            "A requirement with no entry carries an empty scope list."
       ]
     ]
   }
@@ -200,6 +272,41 @@ defmodule AshA2A.Domain do
           "Transport binding of the mount: `:jsonrpc` (default), `:rest` or `:grpc`. " <>
             "`:grpc` mounts are served by `AshA2A.Transport.GRPC.Server.Endpoint` on its " <>
             "own port; `AshA2A.Domain.Router` answers them with a typed 501 refusal."
+      ],
+      tenant: [
+        type: :string,
+        required: false,
+        doc: "Optional tenant id carried on this mount's supportedInterfaces entry."
+      ],
+      protocol_version: [
+        type: :string,
+        required: false,
+        doc:
+          "Optional A2A protocol version advertised for this mount's interface; " <>
+            "defaults to `AshA2A.Protocol.Version.protocol_version/0`."
+      ]
+    ]
+  }
+
+  @extension %Spark.Dsl.Entity{
+    name: :extension,
+    describe: "Declares one A2A agent extension advertised in `capabilities.extensions`.",
+    examples: ["extension \"https://example.com/ext/v1\", required: true"],
+    target: AshA2A.Domain.Extension,
+    args: [:uri],
+    identifier: :uri,
+    schema: [
+      uri: [type: :string, required: true, doc: "Extension URI (unique per domain)."],
+      description: [type: :string, required: false, doc: "Human-readable description."],
+      required: [
+        type: :boolean,
+        default: false,
+        doc: "Whether clients must support this extension."
+      ],
+      params: [
+        type: {:map, :string, :any},
+        default: %{},
+        doc: "Extension-specific parameters."
       ]
     ]
   }
@@ -207,8 +314,38 @@ defmodule AshA2A.Domain do
   @transport %Spark.Dsl.Section{
     name: :transport,
     describe: "Transport placement for this domain's A2A surface.",
-    entities: [@mount],
+    entities: [@mount, @extension],
     schema: [
+      extended_agent_card: [
+        type: :boolean,
+        default: false,
+        doc:
+          "Sets AgentCard `capabilities.extendedAgentCard`. Declare `true` only when " <>
+            "an authenticated extended card is actually served."
+      ],
+      user_artifacts: [
+        type: :boolean,
+        default: false,
+        doc:
+          "Sets AgentCard `capabilities.userArtifacts` (A2A v1.1). When `true`, " <>
+            "clients may write artifacts via `SendMessageRequest.artifactUpdates`."
+      ],
+      push_allowed_hosts: [
+        type: {:list, :string},
+        default: [],
+        doc:
+          "Declared push-notification webhook host allowlist. Persisted for the push " <>
+            "delivery modules to read; `[]` declares no allowlist."
+      ],
+      push_retry: [
+        type: :keyword_list,
+        default: [],
+        keys: [
+          max_attempts: [type: :pos_integer, doc: "Maximum delivery attempts."],
+          backoff_ms: [type: :pos_integer, doc: "Base backoff between attempts, ms."]
+        ],
+        doc: "Declared push delivery retry policy; persisted for the push modules to read."
+      ],
       base_url: [
         type: :string,
         required: false,
@@ -250,7 +387,8 @@ defmodule AshA2A.Domain do
     ],
     verifiers: [
       AshA2A.Domain.Verifiers.VerifyConfig,
-      AshA2A.Domain.Verifiers.VerifyMounts
+      AshA2A.Domain.Verifiers.VerifyMounts,
+      AshA2A.Domain.Verifiers.VerifyExtensions
     ]
 
   @doc "The set of allowed security scheme kinds."

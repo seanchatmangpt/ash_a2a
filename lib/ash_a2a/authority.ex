@@ -131,7 +131,7 @@ defmodule AshA2A.Authority do
   @spec grant_token_id(Identity.t(), String.t()) :: String.t()
   def grant_token_id(%Identity{} = subject, capability_id) when is_binary(capability_id) do
     {subject.value, capability_id}
-    |> :erlang.term_to_binary()
+    |> :erlang.term_to_binary([:deterministic])
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode16(case: :lower)
   end

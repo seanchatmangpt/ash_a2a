@@ -239,19 +239,132 @@ disambiguates regardless of how many public actions the resource has. Note that
 `"skill"` here is a routing directive read from message metadata deliberately — it is
 not `actor`/`tenant`, and `ContextResolver` never touches it.
 
+## 5. Use the shipped validators: `SecurityValidators.verifier/1`
+
+You do not have to hand-write token validation.
+`AshA2A.Protocol.Plug.SecurityValidators` (with `AshA2A.Protocol.Plug.JWTVerifier`)
+ships HS256/RS256 JWT verification, JWKS fetch and caching, OIDC discovery,
+OAuth2 introspection, API-key and mTLS checks. `verifier/1` builds the `verify/3`
+callback from a map of per-scheme configs keyed by scheme NAME:
+
+```elixir
+verify =
+  AshA2A.Protocol.Plug.SecurityValidators.verifier(%{
+    "bearer_auth" => [secret: "s3cret", issuer: "https://auth.example.com"],
+    "api_key" => [kind: :key, keys: ["k-123"]],
+    "oidc" => [kind: :oidc, discovery: "https://idp.example.com/.well-known/openid-configuration"]
+  })
+```
+
+`:kind` is `:bearer` (default), `:key`, `:oauth2`, `:oidc` or `:mtls`. A scheme
+name with no config entry is refused fail-closed (`:unconfigured_scheme`).
+For OAuth2 configs without a JWKS source, `:oauth2_metadata_url` (RFC 8414) is
+used to discover `jwks_uri`.
+
+### Scope enforcement
+
+Scopes declared in a security requirement are enforced, not just advertised.
+With `security: [%{"oauth" => ["notes.read"]}]`, `Auth` assigns the
+requirement's scopes to `conn.assigns[:a2a_required_scopes]` before calling
+`verify/3`. `SecurityValidators.verifier/1` uses them as `:required_scopes`
+whenever the scheme's config has no explicit `:required_scopes` (explicit
+config wins). A token lacking a declared scope is answered with `403` and
+`WWW-Authenticate: Bearer realm="a2a", error="insufficient_scope", scope="..."`.
+A custom `verify/3` signals the same outcome by returning
+`{:error, %{code: :insufficient_scope}}` and may read the scopes from
+`conn.assigns[:a2a_required_scopes]`.
+
+### Keeping the card and the plug consistent
+
+`AshA2A.Protocol.Plug.Auth.card_security/1` takes the same options as the plug
+and returns `{security_schemes, security}`, ready to splice into your card
+builder, so what the card advertises is exactly what the plug enforces.
+`AshA2A.Authority.SecurityPreflight.check_card_security/1` verifies every name
+in the card's `security` and each skill's `security_requirements` exists in
+`security_schemes`.
+
+## 6. Extended agent card behind authentication
+
+The public card at `/.well-known/agent-card.json` is exempt from `Auth`. Data
+you only want authenticated callers to see belongs in the extended card,
+served by the extended-card provider (`:extended_card`) behind the same
+`Auth` plug: `Auth` runs first, so the provider is only reached with a
+verified identity in `conn.private[:a2a][:auth]`.
+
+## 7. In-task `auth_required` and resume
+
+When a skill needs a credential mid-task (for example a delegated OAuth
+grant), the task moves to the `auth_required` state instead of failing. The
+client obtains the credential out of band and sends a follow-up message on the
+same task id; the transport-level `Auth` check still applies to that message,
+so resume is authenticated like any other call.
+
+## 8. Declaring OAuth flows
+
+OAuth2 schemes declare their flows with typed structs from
+`AshA2A.Protocol.SecurityScheme` (owned by the security-scheme module): the
+authorization-code flow (`pkce_required: true` for PKCE), client credentials,
+and device code (`device_authorization_url`, `token_url`, `scopes`). Declared
+scope names are the ones your `security` requirements reference and the ones
+step "Scope enforcement" checks.
+
+## 9. Mutual TLS
+
+For a `%MutualTLS{}` scheme, `Auth` reads the client certificate from the TLS
+socket (`Plug.Conn.get_peer_data(conn).ssl_cert`, DER). Terminate TLS in the
+Elixir server with `verify: :verify_peer` and `fail_if_no_peer_cert: true`.
+Behind a trusted proxy that forwards the certificate, opt in explicitly:
+
+```elixir
+plug AshA2A.Protocol.Plug.Auth,
+  schemes: %{"mtls" => %AshA2A.Protocol.SecurityScheme.MutualTLS{}},
+  mtls_header: "x-client-cert",
+  verify: AshA2A.Protocol.Plug.SecurityValidators.verifier(%{
+    "mtls" => [kind: :mtls, fingerprints: ["ab12..."], san_allowlist: ["agent.example.com"]]
+  })
+```
+
+`:mtls_header` is off by default; the header is accepted as a URL-encoded PEM
+or a bare hex SHA-256 fingerprint and must only be enabled when the proxy
+strips client-supplied copies. The `:mtls` validator admits a certificate whose
+SHA-256 fingerprint is in `:fingerprints` or whose SAN (DNS, email, URI) is in
+`:san_allowlist`; with neither configured it refuses fail-closed. With no
+certificate and no `:mtls_header`, the scheme yields `:unsupported` (401).
+
 ## What the plug does NOT do for you
 
-- **mTLS is declared-but-unsupported**: declaring a
-  `%AshA2A.Protocol.SecurityScheme.MutualTLS{}` scheme makes credential extraction
-  return `:unsupported` (→ 401). There is no client-certificate identity
-  path in the protocol layer today.
-- **Token validation is entirely yours**: the OAuth2/OIDC schemes extract
-  a bearer string; no JWKS fetch, introspection, audience, or signature
-  check ships with the library. Your `verify/3` callback is the whole
-  verification story.
+- **Digest and unknown HTTP schemes are unsupported**: an `HTTPAuth` scheme
+  other than `bearer`/`basic` extracts `:unsupported` and the request gets a
+  401; it is never misread as a bearer token.
+- **mTLS without configuration is unusable**: with no peer certificate and no
+  `:mtls_header`, a `MutualTLS` scheme extracts `:unsupported` (401). See
+  "Mutual TLS" below.
 - **The shipped brokers are reference implementations**: neither
   `InMemory` nor `Ekv` is Sybil-resistant or an identity system; production
   wants a broker backed by your real one.
+
+## Identity canonicalizer rejections (RFC-SA2A-007 E-F)
+
+`AshA2A.Identity.Canonical` (`lib/ash_a2a/identity/canonical.ex`) validates a
+term in `AshA2A.Identity.Canonical.Encodable` before JCS (RFC 8785) hashing;
+the first failure returns `{:error, code}` and nothing is hashed. Checks run
+in this order per value (source: `identity/canonical/encodable.ex`):
+
+| Code | Rejected input |
+| --- | --- |
+| `:canonical_depth_exceeded` | nesting deeper than 32 |
+| `:canonical_integer_out_of_range` | integer with absolute value above 2^53 - 1 |
+| `:canonical_invalid_utf8` | binary that is not valid UTF-8 |
+| `:canonical_float_forbidden` | any float |
+| `:canonical_key_type_forbidden` | map key that is neither binary nor atom |
+| `:canonical_key_collision` | keys equal after `to_string/1` (atom and string key collide) |
+| `:canonical_type_forbidden` | any other term (tuple, pid, ref, function) |
+| `:canonical_size_exceeded` | canonical bytes above 1_048_576 (checked after encoding) |
+
+Integers above 2^53 - 1 are rejected here, not converted to decimal strings as
+the errata text restates `(unverified: errata policy differs from code)`.
+NFC normalization is not performed in the normalizer. Map keys are
+stringified by `AshA2A.Identity.Canonical.Normalizer`.
 
 ## See also
 

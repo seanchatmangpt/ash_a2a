@@ -68,7 +68,7 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
             # default) so a future handler change gets the safe default.
             conn
             |> put_resp_header("cache-control", "private, no-store")
-            |> send_json(200, Response.success(id, strip_internal_keys(card)))
+            |> send_json(200, Response.success(id, card |> strip_internal_keys() |> resign(opts)))
 
           {:error, reason} ->
             send_json(
@@ -101,6 +101,33 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
     card = GenServer.call(opts.a2a.agent, :get_agent_card)
     AshA2A.Protocol.JSON.encode_agent_card(card, [url: base_url] ++ opts.a2a.agent_card_opts)
   end
+
+  # The provider may have changed the card (added skills), so signatures
+  # inherited from the public card are stale: always drop them, then re-sign
+  # when a signing key is configured (`agent_card_opts[:sign_with]`, a keyword
+  # with :key/:alg/:kid or a `{key, opts}` tuple).
+  @doc false
+  def resign(card, opts) do
+    card = AshA2A.Protocol.CardSigner.strip_signatures(card)
+    agent_card_opts = opts.a2a.agent_card_opts || []
+
+    case signing_opts(Keyword.get(agent_card_opts, :sign_with)) do
+      nil ->
+        card
+
+      sign_opts ->
+        try do
+          AshA2A.Protocol.CardSigner.sign(card, sign_opts)
+        rescue
+          ArgumentError -> card
+        end
+    end
+  end
+
+  defp signing_opts(nil), do: nil
+  defp signing_opts({key, o}) when is_list(o), do: Keyword.put(o, :key, key)
+  defp signing_opts(o) when is_list(o), do: if(Keyword.has_key?(o, :key), do: o)
+  defp signing_opts(_), do: nil
 
   defp call_provider(provider, identity, public) do
     invoke(provider, identity, public)

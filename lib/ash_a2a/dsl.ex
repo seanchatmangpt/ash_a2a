@@ -95,6 +95,43 @@ defmodule AshA2A.Dsl do
           "valid authority lease. The authorizer consequence itself is enforced " <>
           "outside this entity (see the architecture verifier), so declaring it " <>
           "here changes no runtime behavior by itself."
+    ],
+    examples: [
+      type: {:list, :string},
+      required: false,
+      doc: "Optional AgentSkill `examples`: example prompts/inputs for this skill."
+    ],
+    input_modes: [
+      type: {:list, :string},
+      required: false,
+      doc:
+        "Optional AgentSkill `inputModes` (MIME types, e.g. `\"text/plain\"`). " <>
+          "Overrides the agent-level `default_input_modes` for this skill. " <>
+          "Verified MIME-shaped at compile time."
+    ],
+    output_modes: [
+      type: {:list, :string},
+      required: false,
+      doc:
+        "Optional AgentSkill `outputModes` (MIME types). Overrides the agent-level " <>
+          "`default_output_modes` for this skill. Verified MIME-shaped at compile time."
+    ],
+    security_requirements: [
+      type: {:list, {:map, :string, {:list, :string}}},
+      required: false,
+      doc:
+        "Optional AgentSkill `securityRequirements`: a list of maps from a declared " <>
+          "`security_scheme` name to its required scopes, e.g. " <>
+          "`[%{\"token\" => []}]`. Every key must name a `security_scheme` declared on " <>
+          "the domain (verified at compile time when the domain is resolvable)."
+    ],
+    streaming?: [
+      type: :boolean,
+      default: false,
+      doc:
+        "Declarative flag: this skill is expected to stream. Carried on the compiled " <>
+          "capability for consumers; dispatch streams a `:read` skill only when the caller " <>
+          "opts in per call (`\"stream\" => true`), so this flag changes no dispatch behavior."
     ]
   ]
 
@@ -195,12 +232,20 @@ defmodule AshA2A.Dsl do
       gate: [
         type: {:one_of, [:two_port, :open, :disabled]},
         default: :two_port,
-        doc: "Default admission gate applied to consequence-bearing actions."
+        doc:
+          "Default admission gate applied to consequence-bearing actions. Enforced " <>
+            "value: `:disabled` (the dispatcher refuses every consequence-bearing " <>
+            "skill with `:authority_gate_disabled`). `:two_port` and `:open` leave " <>
+            "the sole-DO anchor and kernel fence as the gate, so they differ only " <>
+            "as declarations. `AshA2A.Verify` warns when it is set without effect."
       ],
       lease_duration_ms: [
         type: :pos_integer,
         default: 60_000,
-        doc: "Default lease lifetime in milliseconds."
+        doc:
+          "Declared-only: default lease lifetime in milliseconds. No dispatch code " <>
+            "reads it; leases are minted by the configured authority broker. Kept " <>
+            "for source compatibility and flagged inert by `AshA2A.Verify`."
       ]
     ]
   }
@@ -212,12 +257,17 @@ defmodule AshA2A.Dsl do
       pre_dispatch: [
         type: {:list, :atom},
         default: [],
-        doc: "Hook identifiers evaluated before action dispatch."
+        doc:
+          "Hook identifiers evaluated before action dispatch. Resolved at dispatch " <>
+            "through `config :ash_a2a, :dispatch_hooks, %{id => {Module, :fun}}`; an " <>
+            "unresolvable id fails the dispatch closed."
       ],
       post_dispatch: [
         type: {:list, :atom},
         default: [],
-        doc: "Hook identifiers evaluated after action execution."
+        doc:
+          "Hook identifiers evaluated after action execution (resolved like " <>
+            "`pre_dispatch`; a failure is logged, not returned)."
       ]
     ]
   }

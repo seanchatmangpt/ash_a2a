@@ -10,18 +10,22 @@ defmodule Mix.Tasks.AshA2a.SelfCard do
   itself ships, using the same projection path as any other agent's card
   (`AshA2A.CapabilityIndex.build_agent_card/2`).
 
-  The skills are the four protocol surfaces ash_a2a serves as an agent:
+  The skills are the protocol and semantic surfaces ash_a2a serves as an agent:
 
     * `codec.encode_decode`      -- `AshA2A.Protocol.JSON` (wire codec)
     * `card.sign_verify`         -- `AshA2A.Protocol.CardSigning` (card signing)
     * `plug.serve_a2a`           -- `AshA2A.Transport.Plug` (A2A server on Plug)
     * `capability_index.compile` -- `AshA2A.CapabilityIndex` (capability
       index compiler)
+    * `semantic.admission` -- `AshA2A.Semantic.Admission` (semantic admission)
+    * `semantic.graphlaw` -- `AshA2A.Semantic.GraphLaw` (graph-law facade)
+    * `semantic.graphlaw_engine` -- `AshA2A.Semantic.Engine.AshGraphLaw`
+      (RDF/SHACL/ShEx/SPARQL/Datalog/N3 engine adapter)
 
   Each skill's description is derived from the compiled module docs
   (`Code.fetch_docs/1`) of the corresponding module — never invented. The
-  card is served-shape v1.0: the builder normalizes `supported_interfaces`
-  to `AshA2A.Protocol.Version.protocol_version/0` (`"1.0"`).
+  card is served-shape: the builder normalizes `supported_interfaces`
+  to `AshA2A.Protocol.Version.protocol_version/0` (currently `"1.1"`).
 
   ## Usage
 
@@ -57,7 +61,10 @@ defmodule Mix.Tasks.AshA2a.SelfCard do
     {AshA2A.Protocol.JSON, "codec.encode_decode", "protocol"},
     {AshA2A.Protocol.CardSigning, "card.sign_verify", "protocol"},
     {AshA2A.Transport.Plug, "plug.serve_a2a", "transport"},
-    {AshA2A.CapabilityIndex, "capability_index.compile", "capability"}
+    {AshA2A.CapabilityIndex, "capability_index.compile", "capability"},
+    {AshA2A.Semantic.Admission, "semantic.admission", "semantic"},
+    {AshA2A.Semantic.GraphLaw, "semantic.graphlaw", "semantic"},
+    {AshA2A.Semantic.Engine.AshGraphLaw, "semantic.graphlaw_engine", "semantic"}
   ]
 
   @impl Mix.Task
@@ -133,13 +140,27 @@ defmodule Mix.Tasks.AshA2a.SelfCard do
       {:docs_v1, _anno, _lang, _format, %{"en" => moduledoc}, _meta, _docs} ->
         moduledoc
         |> String.trim()
+        |> String.split(~r/\n\s*\n/, parts: 2)
+        |> hd()
+        |> clean_markdown()
         |> String.split(~r/\.\s/, parts: 2)
         |> hd()
+        |> String.trim()
         |> String.trim_trailing(".")
 
       _ ->
         "Ships as part of the ash_a2a protocol surface."
     end
+  end
+
+  # Collapses whitespace and strips inline markdown (backticks, emphasis) so
+  # card descriptions are plain text with no stray backtick fragments.
+  defp clean_markdown(text) do
+    text
+    |> String.replace("`", "")
+    |> String.replace(~r/\*\*|__/, "")
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
   end
 
   defp self_version do

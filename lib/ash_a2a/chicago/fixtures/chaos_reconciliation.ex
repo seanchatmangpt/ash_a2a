@@ -96,6 +96,7 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Effect do
     end
   end
 
+  # SLEEP-CLASS: SCHEDULING (fixture models actuator stall of ms duration)
   defp stall(ms) when is_integer(ms) and ms > 0, do: Process.sleep(ms)
   defp stall(_), do: :ok
 end
@@ -449,6 +450,7 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Environment do
   defp await_crash_point({:actuator_timeout, ms}, {pid, monitor}, ref, _command_id) do
     receive do
       {:latched, ^ref} ->
+        # SLEEP-CLASS: SCHEDULING (fixture models actuator timeout interval before kill)
         Process.sleep(ms)
         Process.exit(pid, :kill)
         true
@@ -659,6 +661,7 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Environment do
         false
 
       true ->
+        # SLEEP-CLASS: POLL-STEP (deadline-bounded wait_until poll)
         Process.sleep(2)
         do_wait_until(fun, deadline)
     end

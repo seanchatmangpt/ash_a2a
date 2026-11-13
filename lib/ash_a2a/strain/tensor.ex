@@ -16,6 +16,22 @@ defmodule AshA2A.Strain.Tensor do
   | `:attestation_age_sec` | seconds since last attestation | `min(1, age / 3600)` | `@attestation_max_age 3600` |
   | `:financial_risk_exposure` | dollars at risk | `min(1, exposure / 50_000)` | `@exposure_cap 50_000` |
 
+  ## Weights and gate
+
+  `hyperplane_check/2` `:saturation_gate` breaches when
+  `sum(weight(dim) * strain(dim)) > 0.7` (strictly greater). Weights sum to 1.0:
+  shift 0.30, leases 0.25, error_rate 0.20, heuristic 0.10, attestation 0.05,
+  financial 0.10.
+
+  ## Errors
+
+  Values must be non-negative numbers; `new/1` and `update/3` raise
+  `ArgumentError` on an unknown dimension or an invalid value, and `strain/2`
+  raises `ArgumentError` on an unknown dimension. `hyperplane_check/2` raises
+  `ArgumentError` on an unknown gate. A partial tensor map is accepted by
+  `strain/2` and `hyperplane_check/2`: a missing dimension reads as its
+  zero-observation default.
+
   The tensor is a plain map; `update/3` is pure (observation in, tensor out).
   """
 
@@ -46,8 +62,9 @@ defmodule AshA2A.Strain.Tensor do
   def dimensions, do: @dimensions
 
   @doc """
-  Build a tensor from an observation map. Unknown keys raise; missing keys
-  default to zero-observation values.
+  Build a tensor from an observation map. Unknown keys and invalid values
+  (non-number or negative) raise `ArgumentError`; missing keys default to
+  zero-observation values.
   """
   @spec new(map()) :: t()
   def new(observation) when is_map(observation) do
@@ -73,29 +90,34 @@ defmodule AshA2A.Strain.Tensor do
   is documented in the moduledoc table and asserted numerically in tests.
   """
   @spec strain(t(), dimension()) :: float()
-  def strain(tensor, :shift_hours_continuous) do
+  def strain(tensor, dim) when is_map(tensor) and dim in @dimensions, do: do_strain(tensor, dim)
+
+  def strain(_tensor, dim),
+    do: raise(ArgumentError, "unknown strain dimension: #{inspect(dim)}")
+
+  defp do_strain(tensor, :shift_hours_continuous) do
     h = fetch_non_neg(tensor, :shift_hours_continuous)
     # circadian decay: monotonic within shift, saturates toward 1.0
     1 - :math.exp(-h / @circadian_tau)
   end
 
-  def strain(tensor, :active_leases) do
+  defp do_strain(tensor, :active_leases) do
     min(1, fetch_non_neg(tensor, :active_leases) / @lease_saturation) * 1.0
   end
 
-  def strain(tensor, :error_rate) do
+  defp do_strain(tensor, :error_rate) do
     min(@error_rate_cap, fetch_non_neg(tensor, :error_rate)) * 1.0
   end
 
-  def strain(tensor, :heuristic_frequency) do
+  defp do_strain(tensor, :heuristic_frequency) do
     min(1, fetch_non_neg(tensor, :heuristic_frequency) / @heuristic_cap) * 1.0
   end
 
-  def strain(tensor, :attestation_age_sec) do
+  defp do_strain(tensor, :attestation_age_sec) do
     min(1, fetch_non_neg(tensor, :attestation_age_sec) / @attestation_max_age) * 1.0
   end
 
-  def strain(tensor, :financial_risk_exposure) do
+  defp do_strain(tensor, :financial_risk_exposure) do
     min(1, fetch_non_neg(tensor, :financial_risk_exposure) / @exposure_cap) * 1.0
   end
 
@@ -103,7 +125,9 @@ defmodule AshA2A.Strain.Tensor do
   Named boundary gates over the weighted sum of normalized strains.
 
   Returns `{:breach, {:saturation_gate, weighted_sum, threshold}}` when the
-  weighted sum exceeds the threshold; `:ok` when no gate fires.
+  weighted sum exceeds the threshold; `:ok` when no gate fires. A gate list is
+  evaluated in order and halts on the first breach (later gates are not
+  consulted); an empty list is `:ok`. Unknown gates raise `ArgumentError`.
   """
   @spec hyperplane_check(t(), atom() | [atom()]) :: :ok | {:breach, term()}
   def hyperplane_check(tensor, gates \\ :saturation_gate)
@@ -120,6 +144,9 @@ defmodule AshA2A.Strain.Tensor do
       :ok
     end
   end
+
+  def hyperplane_check(_tensor, gate) when is_atom(gate),
+    do: raise(ArgumentError, "unknown strain gate: #{inspect(gate)}")
 
   def hyperplane_check(tensor, gates) when is_list(gates) do
     Enum.reduce_while(gates, :ok, fn gate, :ok ->
@@ -149,14 +176,21 @@ defmodule AshA2A.Strain.Tensor do
   end
 
   defp put_known(acc, k, v) do
-    case k in @dimensions do
-      true -> Map.put(acc, k, v)
-      false -> raise ArgumentError, "unknown strain dimension: #{inspect(k)}"
+    cond do
+      k not in @dimensions ->
+        raise ArgumentError, "unknown strain dimension: #{inspect(k)}"
+
+      is_number(v) and v >= 0 ->
+        Map.put(acc, k, v)
+
+      true ->
+        raise ArgumentError,
+              "dimension #{inspect(k)} requires non-negative number, got: #{inspect(v)}"
     end
   end
 
   defp fetch_non_neg(tensor, key) do
-    v = Map.fetch!(tensor, key)
+    v = Map.get(tensor, key, Map.fetch!(defaults(), key))
 
     if is_number(v) and v >= 0 do
       v

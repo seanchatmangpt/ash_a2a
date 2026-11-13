@@ -189,6 +189,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile do
             {:error, :claim_store_lock_timeout}
 
           true ->
+            # SLEEP-CLASS: POLL-STEP (bounded by @lock_wait_ms deadline)
             Process.sleep(2)
             acquire(lock, started)
         end

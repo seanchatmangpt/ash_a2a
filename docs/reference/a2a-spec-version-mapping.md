@@ -1,12 +1,13 @@
 # A2A Spec-Version Mapping
 
-Maps every A2A JSON-RPC method (canonical slash name and v0.3-lineage
-PascalCase alias) to the wire behavior observed through two transports:
+Maps every A2A JSON-RPC method (v1 PascalCase canonical name and the
+slash-style wire name it dispatches to, `@method_aliases` in
+`lib/ash_a2a/protocol/jsonrpc.ex`) to the wire behavior observed through two transports:
 the in-repo `AshA2A.Protocol.Plug` (a2a-elixir 0.3.0 lineage, now
 speaking A2A protocol v1.0 wire shapes, `lib/ash_a2a/protocol/`), and
 the ash_a2a-owned `AshA2A.A2ATransport.Plug`.
 
-Version: v26.10.9
+Version: v26.11.13
 
 The method table is not hand-maintained prose:
 `test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs` drives every row
@@ -18,7 +19,7 @@ surface but not here, or when the `Version:` line differs from `mix.exs`.
 
 | Constant | Value |
 |----------|-------|
-| Agent card `protocolVersion` / interface `protocolVersion` | `1.0` (A2A protocol v1.0) |
+| Agent card interface `protocolVersion` (`supportedInterfaces[]`; not a top-level card field in v1.0) | `1.0` (A2A protocol v1.0) |
 | `AshA2A.Semantic.Extension.profile_id/0` | `SA2A-PROFILE-v26.9.20` |
 | `AshA2A.Semantic.Extension.profile_uri/0` | `urn:sa2a:profile:v26.9.20` |
 | `AshA2A.Semantic.Extension.profile_version/0` | `v26.9.20` |
@@ -37,15 +38,15 @@ observed on an existing task; the `AshA2A.A2ATransport.Plug` column is
 observed with `push_notifications: true` and an `:extended_card` provider
 configured on an authenticated conn.
 
-| A2A v0.3 name | Wire method | `AshA2A.Protocol.Plug` | `AshA2A.A2ATransport.Plug` |
+| A2A v1 method (PascalCase, canonical) | Slash-style wire name | `AshA2A.Protocol.Plug` | `AshA2A.A2ATransport.Plug` |
 |---------------|-------------|------------|----------------------------|
 | SendMessage | `message/send` | result | result |
 | SendStreamingMessage | `message/stream` | error -32004 | sse |
 | GetTask | `tasks/get` | result | result |
 | CancelTask | `tasks/cancel` | error -32002 | error -32002 |
-| ListTasks | `tasks/list` | result | error -32004 |
+| ListTasks | `tasks/list` | result | result |
 | SubscribeToTask | `tasks/resubscribe` | error -32004 | error -32004 |
-| GetExtendedAgentCard | `agent/getAuthenticatedExtendedCard` | error -32004 | result |
+| GetExtendedAgentCard | `agent/getAuthenticatedExtendedCard` | error -32007 | result |
 | CreateTaskPushNotificationConfig | `tasks/pushNotificationConfig/set` | error -32003 | result |
 | GetTaskPushNotificationConfig | `tasks/pushNotificationConfig/get` | error -32003 | result |
 | ListTaskPushNotificationConfigs | `tasks/pushNotificationConfig/list` | error -32003 | result |
@@ -74,6 +75,30 @@ v1.0 notes on what the outcome vocabulary hides:
   of the registry in
   `lib/ash_a2a/protocol/jsonrpc/error.ex`.
 
+## A2A v1.1 additions (target v1.1.0, upstream tag `v1.1.0-rc`)
+
+Not part of the drift-court table above (the court binds only the 4-column
+rows driven through both plugs). These rows are the v1.1 delta; standing is
+UNVERIFIED until the coordinator runs the courts listed in
+[A2A v1.1 conformance statement](a2a-v1-1-conformance.md).
+
+| v1.1 surface | Wire name / field | Status |
+|--------------|-------------------|--------|
+| SendLiveMessage (bidirectional stream of `StreamRequest`) | `message/live` | UNVERIFIED (lane V-wave) |
+| `StreamError` frame | `StreamResponse.error` | UNVERIFIED |
+| `TaskMessageUpdateEvent` | `StreamResponse.messageUpdate` | UNVERIFIED |
+| Task timeline | `Task.timeline[]` (`TimelineEntry`), `timelineLength` on GetTask / ListTasks / SendMessageConfiguration | UNVERIFIED |
+| Task generation | `Task.generation`, `generation` on status/artifact/message update events | UNVERIFIED |
+| Artifact generation and role | `startGeneration`, `endGeneration`, `role` | UNVERIFIED |
+| Optimistic concurrency | `SendMessageConfiguration.ifGenerationMatch`; mismatch `error -32010` (TaskGenerationMismatchError) | UNVERIFIED |
+| Long poll | `GetTaskRequest.currentGeneration` (bounded by `config :ash_a2a, :long_poll_timeout_ms`) | UNVERIFIED |
+| Resume | `SubscribeToTaskRequest.lastSeenGeneration` | UNVERIFIED |
+| User artifacts | `AgentCapabilities.userArtifacts`, `SendMessageRequest.artifactUpdates` | UNVERIFIED |
+| Push config version | `TaskPushNotificationConfig.protocolVersion` | UNVERIFIED |
+
+Version negotiation: `A2A-Version: 1.1` selects v1.1 behavior; `1.0`/`1.0.1`
+remain served; 0.3 is decode-only legacy.
+
 ## Defaults and fail-closed behavior of `AshA2A.A2ATransport.Plug`
 
 | Condition | Outcome |
@@ -88,10 +113,10 @@ v1.0 notes on what the outcome vocabulary hides:
 | any task returned or published (response, SSE frame, webhook body) | `a2a.auth`, owner key and stream ref stripped from `metadata` |
 
 `tasks/list` on `AshA2A.A2ATransport.Plug` is now owner-scoped (verified principal,
-`-32001`-indistinguishable) for full `AshA2A.Agent` agents; over a bare
-`AshA2A.Protocol.Agent` (no owner-scoped store-backed listing) it answers the typed
-`-32004` UNSUPPORTED_OPERATION. Use `AshA2A.Transport.Plug` for owner-scoped listing
-backed by the durable store.
+`-32001`-indistinguishable) for full `AshA2A.Agent` agents and for a bare
+`AshA2A.Protocol.Agent`, which answers the same owner-scoped message through
+`AshA2A.Transport.Runtime.list_tasks_for/3` (store read-through; anonymous callers
+never list).
 
 ## Durability
 
@@ -108,7 +133,8 @@ itself). Durable cross-node task continuity: PARTIAL.
 ## External TCK
 
 The upstream A2A TCK (`a2aproject/a2a-tck`) compatibility suite ran once
-against the JSONRPC binding (2026-10-05, lane Z19; 69.2% overall) — see
+against all three bindings; latest recorded verdict 2026-10-13 at
+`13622178`: 79.0% overall, 234 passed / 31 skipped / 0 failed — see
 [A2A v1.0 conformance statement](a2a-v1-conformance.md). TCK certification
 remains UNSUPPORTED (not claimed). The mapping table above is local,
 two-transport differential evidence only.

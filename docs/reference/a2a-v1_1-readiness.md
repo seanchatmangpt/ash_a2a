@@ -20,6 +20,33 @@ reality: the wire protocol ash_a2a speaks is A2A **v1.0**
 `lib/ash_a2a/protocol/version.ex`); "v1.1" items are upstream-in-flight and
 triaged here against that v1.0 surface.
 
+## v1.1 compatibility target (wave 2)
+
+Target is A2A **v1.1.0** (upstream tag `v1.1.0-rc`, not yet a GitHub release;
+corpus `priv/a2a_v1_1_spec_corpus/a2a.proto`, SHA-256
+`8d9c363f8654205780654306af307355a7a34dcf96a8e221caf251268deab127`,
+pinned by `test/ash_a2a_v1_1_proto_corpus_test.exs`).
+v1.0.1 remains supported; 0.3 is decode-only legacy. The per-item statement
+lives in [A2A v1.1 conformance](a2a-v1-1-conformance.md). Rows below that say
+NOT-STARTED predate wave 2 and are superseded by that statement once courts run.
+
+## Upstream baseline (audit 2026-11-13)
+
+- Latest upstream release: **v1.0.1** (2026-05-28): HTTP+JSON SHOULD use
+  `application/a2a+json`; error HTTP-status table follows `google.rpc.Code`;
+  TaskState examples corrected. `main` is 95 docs/CI commits past it.
+- Release candidate: tag `v1.1.0-rc` (`78e1d6a1`, 2026-10-29, no GitHub
+  release) on `dev-1.1` adds `Task.generation`, `SendLiveMessage`, client
+  artifact writes, timeline/history (ADR-002) and an interrupted TaskState
+  semantic (#1810, #2129, #2270, #2153, #2322).
+- Open upstream PRs: #2399 (TaskView), #2426, #2411, #2310, #2410.
+- Vendored `priv/a2a_v1_spec_corpus/a2a.proto` is byte-identical to upstream
+  HEAD `d18aa92c`. The wire protocol here stays v1.0 (v1.0.1 is
+  wire-compatible); every rc item below is NOT-STARTED unless a row says
+  otherwise.
+- a2a-tck: no GitHub release; CI pin `263b9cfa`; `70f6f73c` (#258) aligns to
+  1.0.1. Re-run there is a TODO (see [TCK suite](tck-suite.md)).
+
 ## Near-term initiatives
 
 | Roadmap item (upstream ref) | Status | What exists / what is missing | Proof (module / court) |
@@ -53,7 +80,7 @@ Honest mapping, per item:
 | A2A CLI | No — CLI has its own repo, no TCK suite announced | None (NOT-APPLICABLE row above) |
 | Elicitation / multi-turn | No — #2149 is a PR under exploration | Row 5 / context-continuity courts cover the input_required flow; the structured elicitation contract is court-pinned (`test/ash_a2a_v1_elicitation_test.exs`) |
 | Extensions | No — extensions are validated per-extension-spec, not by core TCK | `test/ash_a2a_protocol_extension_e2e_test.exs` |
-| Base protocol v1.0 (implicit) | Yes — the TCK's core suites exist for v1.0 (community SDKs badge it) | `test/ash_a2a_v1_httpjson_tck_closures_test.exs` + `docs/reference/a2a-v1-conformance.md` (v1.0.0 per-requirement courts) |
+| Base protocol v1.0 (implicit) | Yes — the TCK's core suites exist for v1.0 (community SDKs badge it) | `test/ash_a2a_v1_httpjson_tck_closures_test.exs` + `docs/reference/a2a-v1-conformance.md` (v1.0.1 per-requirement courts) |
 
 ## mcp-spec roadmap cross-reference
 

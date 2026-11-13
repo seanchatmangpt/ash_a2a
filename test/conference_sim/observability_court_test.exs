@@ -257,7 +257,8 @@ defmodule ConferenceSim.ObservabilityCourt do
     else
       if System.monotonic_time(:millisecond) >= deadline, do: flunk("condition not met in time")
 
-      Process.sleep(10)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(10)
       do_wait(deadline, fun)
     end
   end

@@ -19,11 +19,9 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
   alias AshA2A.Protocol.Task
   alias AshA2A.TelemetryBridge.PPlanHazard
 
-  # Compile-time live-producer detection: the Hex pin (ash_pplan 26.10.3)
-  # predates the AshPPlan.Telemetry surface (HazardTripped + Broadcaster); the
-  # canonical checkout has it. Once ash_a2a resolves a dep carrying the
-  # telemetry surface (e.g. ASH_PPLAN_PATH=/Users/sac/ash_pplan after a
-  # successful path-dep build), these run live; otherwise they skip LOUD.
+  # Compile-time live-producer detection: ash_pplan 26.11.10 (Hex) ships the
+  # AshPPlan.Telemetry surface (Event.HazardTripped + Broadcaster). If the
+  # resolved ash_pplan lacks it, the live tests skip LOUD (never silently).
   pplan_ebin =
     Mix.Project.build_path()
     |> Path.join("lib/ash_pplan/ebin/Elixir.AshPPlan.Telemetry.Event.beam")
@@ -33,11 +31,15 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
 
   @live_producer File.regular?(pplan_ebin) or (is_binary(pplan_scratch_beam) and File.regular?(pplan_scratch_beam))
 
+  @live_skip_reason if(@live_producer,
+                      do: false,
+                      else: "LOUD SKIP: AshPPlan.Telemetry.Event not in resolved ash_pplan (need >= 26.11.10)"
+                    )
+
   if not @live_producer do
     IO.warn(
       "I3 LOUD SKIP: AshPPlan.Telemetry.Event not in the resolved ash_pplan " <>
-        "(Hex pin 26.10.3 predates the telemetry surface). Live tests skipped. " <>
-        "Run with ASH_PPLAN_PATH=/Users/sac/ash_pplan to execute them."
+        "(need ash_pplan >= 26.11.10 under MIX_ENV=test). Live tests skipped."
     )
   end
 
@@ -46,13 +48,15 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
     "~/ggen-marketplace/packs/latency-hazard-radar/ontology.ttl"
   ]
 
-  defp pack_ontology_path do
-    Enum.find(@pack_ontology_candidates, fn p ->
-      match?({:ok, _}, File.read(p))
-    end)
+  @pack_ontology_path Enum.find(@pack_ontology_candidates, fn p ->
+                        match?({:ok, _}, File.read(Path.expand(p)))
+                      end)
+
+  if is_nil(@pack_ontology_path) do
+    IO.warn("LOUD SKIP: latency-hazard-radar ontology.ttl not found on disk; vocabulary test skipped.")
   end
 
-  defp contract_event(overrides \\ []) do
+  defp contract_event(overrides) do
     Map.merge(
       %{
         topic: "twin.partner.hazard",
@@ -96,13 +100,11 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
   # --- (4) shared vocabulary vs the pack ontology ---------------------------
 
   describe "shared vocabulary with latency-hazard-radar ontology" do
+    # A missing pack on disk is a LOUD skip (IO.warn above + skip reason),
+    # never a silent pass and never an assertion failure of the pack's absence.
+    @tag skip: if(is_nil(@pack_ontology_path), do: "LOUD SKIP: pack ontology.ttl not on disk", else: false)
     test "bridge defaults mirror the pack's pinned threshold and refusal atom" do
-      path = pack_ontology_path()
-
-      # A missing pack on disk is a LOUD skip, never a silent pass.
-      assert path, "LOUD SKIP: latency-hazard-radar ontology.ttl not found on disk"
-
-      source = File.read!(path)
+      source = File.read!(Path.expand(@pack_ontology_path))
 
       assert source =~ "urn:latency-hazard-radar:", "pack namespace declaration missing"
 
@@ -162,6 +164,35 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
     end
   end
 
+  describe "malformed events are typed refusals" do
+    test "non-number z, non-number threshold, nil z, non-number mad" do
+      task = fresh_task()
+
+      for bad <- [[z: "3"], [z: nil], [threshold: nil], [threshold: "2.5"], [mad: "7"]] do
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:refused, :invalid_event} = PPlanHazard.annotate(task, contract_event(bad))
+        end)
+      end
+
+      assert {:refused, :invalid_event} =
+               ExUnit.CaptureLog.with_log(fn -> PPlanHazard.annotate(task, %{}) end) |> elem(0)
+    end
+
+    test "missing :mad still annotates on trip (mad is optional)" do
+      task = fresh_task()
+      event = Map.delete(contract_event(z: 4.0), :mad)
+      assert {:ok, annotated} = PPlanHazard.annotate(task, event)
+      assert annotated.metadata["hazard"] == "hazard: z=4.0, threshold=2.5"
+    end
+
+    test "annotation tolerates nil task metadata and non-number format input" do
+      task = %{fresh_task() | metadata: nil}
+      assert {:ok, annotated} = PPlanHazard.annotate(task, contract_event(z: 4.0))
+      assert annotated.metadata["hazard"] =~ "hazard: z=4.0"
+      assert PPlanHazard.annotation(%{z: :weird}, 2.5) == "hazard: z=:weird, threshold=2.5"
+    end
+  end
+
   describe "MAD = 0 insufficient-dispersion refusal" do
     test "mad: 0 is a typed refusal, no annotation, typed log line" do
       task = fresh_task()
@@ -188,7 +219,7 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
   # --- (1) live twin consumption --------------------------------------------
 
   describe "live AshPPlan.Telemetry.Broadcaster consumption" do
-    @tag skip: not @live_producer
+    @tag skip: @live_skip_reason
     test "real hazard envelope annotates with the live z and threshold" do
       {:ok, _pid} = start_broadcaster(:i3_broadcaster_a)
       topic = :i3_hazard_topic
@@ -223,7 +254,7 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
       assert annotated.metadata["hazard"] == "hazard: z=3.1, threshold=2.5"
     end
 
-    @tag skip: not @live_producer
+    @tag skip: @live_skip_reason
     test "envelope seq is monotonic per topic and stamped with emitted_at" do
       {:ok, _pid} = start_broadcaster(:i3_broadcaster_b)
       topic = :i3_seq_topic
@@ -239,7 +270,7 @@ broadcaster_broadcast(:i3_broadcaster_b, topic, data)
       assert %DateTime{} = e1.emitted_at
     end
 
-    @tag skip: not @live_producer
+    @tag skip: @live_skip_reason
     test "real zero-dispersion payload refuses with no annotation" do
       {:ok, _pid} = start_broadcaster(:i3_broadcaster_c)
       topic = :i3_flat_topic

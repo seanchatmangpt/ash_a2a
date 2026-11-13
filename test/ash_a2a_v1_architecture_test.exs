@@ -53,6 +53,8 @@ defmodule AshA2A.V1ArchitectureTest do
   @pinned_io_modules %{
     "lib/ash_a2a/protocol/client.ex" =>
       {:http_client, ["Req.post", "Req.get", "Req.delete"]},
+    "lib/ash_a2a/protocol/client/live.ex" =>
+      {:http_client, ["Req.post"]},
     "lib/ash_a2a/protocol/card_cache.ex" =>
       {:http_client, ["Req.get"]},
     "lib/ash_a2a/protocol/push_notification_sender/http.ex" =>
@@ -240,8 +242,8 @@ defmodule AshA2A.V1ArchitectureTest do
   # ---------------------------------------------------------------------------
 
   describe "court (b): single-source protocol version constants" do
-    test "AshA2A.Protocol.Version.protocol_version() == \"1.0\"" do
-      assert AshA2A.Protocol.Version.protocol_version() == "1.0"
+    test "AshA2A.Protocol.Version.protocol_version() == \"1.1\"" do
+      assert AshA2A.Protocol.Version.protocol_version() == "1.1"
     end
 
     test "no \"0.3.0\" literals in protocol/** or capability_index/**" do

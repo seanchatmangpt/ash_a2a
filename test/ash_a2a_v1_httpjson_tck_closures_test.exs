@@ -179,7 +179,7 @@ defmodule AshA2A.Transport.HTTPJSON.TCKClosuresTest do
     assert %{
              "error" => %{
                "code" => 400,
-               "status" => "INVALID_ARGUMENT",
+               "status" => "FAILED_PRECONDITION",
                "message" => "Version not supported",
                "details" => [
                  %{

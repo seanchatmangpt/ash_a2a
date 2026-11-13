@@ -121,7 +121,8 @@ defmodule AshA2A.Chicago.Hardening.CrashBoundariesTest do
         crash2 = Env.run_crashing(env, cid2, input2, {:at_event, @claim, %{outcome: :execute}})
         assert crash2.crash_point_reached?, "crash point never reached: #{inspect(crash2)}"
 
-        Process.sleep(lease_ms * 3)
+        # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(lease_ms * 3)
 
         resubmission = Env.run(env, cid2, input2)
 

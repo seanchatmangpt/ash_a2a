@@ -738,7 +738,7 @@ defmodule AshA2AV1OwnerScopeTest do
 
   describe "(h) the SSE error path is redacted (lane X2)" do
     @tag :serial
-    test "message/stream on a non-streaming skill answers a redacted -32603 frame, not the task inspect",
+    test "message/stream on a non-streaming skill answers a redacted typed -32004 frame, not the task inspect",
          ctx do
       secret = "raw-credential-of-alice"
 
@@ -761,7 +761,7 @@ defmodule AshA2AV1OwnerScopeTest do
       # Anti-vacuity: this body IS the error frame. The code pin proves the
       # error path was really taken -- marker refutations on a success frame
       # would pass vacuously (the silent pass X2 proved).
-      assert %{"error" => %{"code" => -32_603}} = decoded
+      assert %{"error" => %{"code" => -32_004}} = decoded
 
       # The task struct inspect never reaches the wire.
       refute body =~ "%AshA2A.Protocol.Task{"

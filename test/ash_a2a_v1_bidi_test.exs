@@ -246,21 +246,23 @@ defmodule AshA2A.V1BidiTest do
     a = open_stream(url)
     {task_id, acc} = await_task_id(a)
 
-    # Input 1 lands mid-stream; artifact 1 comes back only after it.
+    # The SSE pump buffers one part ahead (a part is published when its
+    # successor arrives, so the drain can mark the true final chunk
+    # `last_chunk: true`). Artifact N therefore surfaces when input N+1 has
+    # been pulled and echoed; the last one surfaces on explicit close.
     r1 = post_input(url, task_id, "one")
     assert r1.status == 200
     assert %{"result" => %{"accepted" => true}} = r1.body
-    acc = await_artifacts(a, acc, ["echo: one"])
 
-    # Input 2 only after artifact 1: proves the running skill pulls client
-    # input while it is streaming, not up front.
+    # Input 2 lands while the skill is still streaming (it pulls client input
+    # mid-stream, not up front); that releases artifact 1.
     r2 = post_input(url, task_id, "two")
     assert %{"result" => %{"accepted" => true}} = r2.body
-    acc = await_artifacts(a, acc, ["echo: one", "echo: two"])
+    acc = await_artifacts(a, acc, ["echo: one"])
 
     r3 = post_input(url, task_id, "three")
     assert %{"result" => %{"accepted" => true}} = r3.body
-    acc = await_artifacts(a, acc, ["echo: one", "echo: two", "echo: three"])
+    acc = await_artifacts(a, acc, ["echo: one", "echo: two"])
 
     # Explicit close finalizes: the skill's input stream ends, the enum ends
     # normally, and the task completes on the real wire.

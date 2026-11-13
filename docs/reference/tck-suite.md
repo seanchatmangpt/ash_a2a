@@ -7,6 +7,10 @@ repository: the pinned in-repo v1 conformance courts (executed by
 statement lives in [A2A v1.0 conformance statement](a2a-v1-conformance.md);
 this page is the operator instrument over it.
 
+> v1.1 note: a2a-tck `main` is aligned to A2A 1.0.1; v1.1 requirements are not
+> yet in the TCK. v1.1 evidence is local courts only; see
+> [A2A v1.1 conformance](a2a-v1-1-conformance.md).
+
 ## The two surfaces
 
 | Surface | What it judges | Where |
@@ -29,7 +33,8 @@ mix ash_a2a.v1_conformance_report --only v1_pagination
 
 Mechanics (`lib/mix/tasks/ash_a2a.v1_conformance_report.ex`):
 
-1. Takes the maintained court list `@v1_courts` in that module.
+1. Derives the court list by glob of `test/ash_a2a_v1_*_test.exs` minus
+   the explicit exclusions.
 2. Verifies each entry against the real filesystem at runtime; a court
    file that no longer exists becomes an entry with `verdict: "FAIL"`
    and `exit_code: null` (a court you cannot execute is not a court
@@ -48,45 +53,40 @@ Runtime expectation: minutes to tens of minutes (the serial tail drives
 real Bandit loopback listeners and shared transports). Use `--only` to
 iterate on a subset.
 
-## Court inventory (26 courts)
+## Court inventory (36 courts)
 
-The maintained list `@v1_courts` contains **26 court files**, all under
-`test/`:
-
-| # | Court file |
-| --- | --- |
-| 1 | `test/ash_a2a_v1_architecture_test.exs` |
-| 2 | `test/ash_a2a_v1_artifact_streaming_test.exs` |
-| 3 | `test/ash_a2a_v1_auth_challenge_test.exs` |
-| 4 | `test/ash_a2a_v1_card_signing_test.exs` (DY3: CARD-SIGN-001..004 against the real CardSigning machinery) |
-| 5 | `test/ash_a2a_v1_binding_mismatch_test.exs` |
-| 6 | `test/ash_a2a_v1_cancellation_test.exs` |
-| 7 | `test/ash_a2a_v1_conformance_test.exs` |
-| 8 | `test/ash_a2a_v1_context_continuity_test.exs` |
-| 9 | `test/ash_a2a_v1_error_registry_test.exs` |
-| 10 | `test/ash_a2a_v1_extended_httpjson_test.exs` |
-| 11 | `test/ash_a2a_v1_io_modes_test.exs` |
-| 12 | `test/ash_a2a_v1_list_decode_test.exs` |
-| 13 | `test/ash_a2a_v1_multinode_continuity_test.exs` |
-| 14 | `test/ash_a2a_v1_oban_delivery_test.exs` |
-| 15 | `test/ash_a2a_v1_owner_scope_test.exs` |
-| 16 | `test/ash_a2a_v1_pagination_test.exs` |
-| 17 | `test/ash_a2a_v1_proto_fidelity_test.exs` (Z16: codec vs the vendored official v1.0 IDL `priv/a2a_v1_spec_corpus/a2a.proto`) |
-| 18 | `test/ash_a2a_v1_push_httpjson_test.exs` |
-| 19 | `test/ash_a2a_v1_rejected_state_test.exs` |
-| 20 | `test/ash_a2a_v1_security_requirements_test.exs` (Z24) |
-| 21 | `test/ash_a2a_v1_spec_corpus_test.exs` |
-| 22 | `test/ash_a2a_v1_sse_replay_test.exs` |
-| 23 | `test/ash_a2a_v1_state_properties_test.exs` |
-| 24 | `test/ash_a2a_v1_taskstore_durability_test.exs` |
-| 25 | `test/ash_a2a_v1_telemetry_test.exs` |
-| 26 | `test/ash_a2a_v1_wire_properties_test.exs` |
+The court set is **35 files**: the 37 files matching
+`test/ash_a2a_v1_*_test.exs` minus the 2 explicit exclusions below. It is
+derived by glob at run time (`v1_courts/0` in
+`lib/mix/tasks/ash_a2a.v1_conformance_report.ex`); there is no
+hand-maintained list, and `test/w13_tck_assert_test.exs` re-checks this
+count against the disk. (Earlier revisions of this page said 34; the
+list had already grown to 35 when the count was last edited.)
 
 Deliberately NOT in the list (see the module's comment block):
 `test/ash_a2a_v1_conformance_report_test.exs` (the runner's own
-self-test; listing it would recurse) and
-`test/ash_a2a_zach_courts_test.exs` (adversarial extension courts over
-the DSL/executor surface — not v1.0 protocol conformance).
+self-test; listing it would recurse),
+`test/ash_a2a_v1_check_gate_serial_test.exs` (build-gate self-check,
+not protocol behavior), and `test/ash_a2a_zach_courts_test.exs`
+(adversarial extension courts over the DSL/executor surface, not v1.0
+protocol conformance). There is no `test/tck/` directory; TCK
+configuration lives in `tck_sut.exs`, `tck_sut_auth.exs`,
+`priv/tck/test_dy4_auth_lanes.py`, and the `tck` job in
+`.github/workflows/ci.yml`, which runs the official suite at the pin in
+its single `TCK_PIN_SHA` variable (currently `263b9cfa`) with
+`--transport jsonrpc,http_json,grpc` (the SUT serves gRPC on `:10000`),
+installs via `pip install -e .` (pyproject; no `requirements.txt`), reads
+`reports/compatibility.json`, and asserts with `scripts/tck_assert.py`
+(fails on any failed MUST requirement; prints pass/fail/not_tested/skipped/
+manual counts; court `test/w13_tck_assert_test.exs`, fixture
+`test/fixtures/tck/compatibility_sample.json`). CI Python is 3.12, the
+version witnessed green at this pin; TCK `main` needs Python 3.15+.
+TODO: re-run at `70f6f73c` (#258, aligns to spec 1.0.1) before moving
+`TCK_PIN_SHA`; the pin is deliberately not bumped here.
+
+Optional: `mix ash_a2a.v1_conformance_report --tck-report
+reports/compatibility.json` folds a produced TCK report's counts into the
+JSON verdict.
 
 ## Witnessed verdicts
 
@@ -125,7 +125,13 @@ own refusal text documents
 `ash-a2a-tck-pg` left running for the fleet) — with it started, the
 court passes standalone (6 tests, 0 failures).
 
-### Official TCK compatibility — 79.0% (point-in-time, re-verified 2026-10-13)
+### Official TCK compatibility — historical 79.0% (STALE: old pin `263b9cfa`)
+
+Stale: bound to pin `263b9cfa` and spec 1.0.0-era TCK semantics; not
+re-run against v1.0.1 / `70f6f73c`. Record form going forward:
+`{pass, fail, not_tested, skipped, manual}` + pin SHA + date. Last
+recorded: `{pass: 234, fail: 0, skipped: 31}`, pin `263b9cfa`,
+2026-10-13 (`not_tested`/`manual` not recorded; UNVERIFIED).
 
 The official `a2aproject/a2a-tck` suite ran against the real `ash_a2a`
 SUT on all three wire bindings. Latest witnessed verdict (2026-10-13,
@@ -159,8 +165,9 @@ converted: the 2026-10-06 run reports 0 FAIL.
 
 ## Raw reports
 
-Raw TCK reports (JUnit, HTML, `compatibility.json`) live in
-`/tmp/a2a-tck/reports` — session-ephemeral, not committed; re-run the
+Raw TCK reports (JUnit, HTML, `compatibility.json`) are written to
+`reports/` inside the TCK checkout (`/tmp/a2a-tck/reports`) —
+session-ephemeral, not committed; re-run the
 suite to regenerate. TCK in CI: the `tck` job in
 `.github/workflows/ci.yml` runs the official suite against the in-tree
 SUT.

@@ -264,8 +264,11 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
       id_line = frame |> String.split("\n") |> Enum.find(&String.starts_with?(&1, "id: "))
       data_line = frame |> String.split("\n") |> Enum.find(&String.starts_with?(&1, "data: "))
 
+      # The resubscribe Task snapshot is written without an SSE `id:` line
+      # (it is not a logged event); replayed/live events carry their seq.
       case {id_line, data_line} do
         {"id: " <> seq, "data: " <> json} -> [{seq, Jason.decode!(json)["result"]}]
+        {nil, "data: " <> json} -> [{nil, Jason.decode!(json)["result"]}]
         _ -> []
       end
     end)
@@ -280,6 +283,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
     Enum.any?(frames, fn {_seq, result} ->
       case unwrap(result) do
         {:status, %{"status" => %{"state" => s}}} -> s in @terminal_states
+        # A live Task-snapshot event carrying a terminal state also closes the stream.
+        {:snapshot, %{"status" => %{"state" => s}}} -> s in @terminal_states
         _ -> false
       end
     end)
@@ -374,7 +379,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
     assert state(task) == "input_required"
 
     # Outlive the 150 ms venue window, then submit anyway.
-    Process.sleep(300)
+    # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(300)
 
     late = send_message(url, "Late Larry", task_id)
     assert state(late) == "failed"

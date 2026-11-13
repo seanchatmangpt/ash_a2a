@@ -199,8 +199,8 @@ defmodule C2Harness.Faults do
   # Park the actuator exactly at the armed fault point (the instrumented Store writes
   # <ctl>/at_fault and blocks), then deliver a REAL `kill -9` from outside.
   defp crash_once(env, l, point) do
+    # arm_crash is a synchronous file write (Fleet handle_call); the fault point is armed on return.
     Env.arm_crash(env, point)
-    Process.sleep(120)
     task = Task.async(fn -> Env.submit(env, l.effect, l.cert) end)
     wait_at_fault(env, point)
     :ok = Env.kill_actuator(env)
@@ -212,11 +212,20 @@ defmodule C2Harness.Faults do
     :ok
   end
 
-  defp wait_at_fault(env, point, tries \\ 1000) do
+  defp wait_at_fault(env, point, deadline \\ nil) do
+    deadline = deadline || System.monotonic_time(:millisecond) + 5_000
+
     cond do
-      Env.at_fault(env) == Atom.to_string(point) -> :ok
-      tries == 0 -> raise "actuator never reached fault point #{point}"
-      true -> Process.sleep(5) && wait_at_fault(env, point, tries - 1)
+      Env.at_fault(env) == Atom.to_string(point) ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        raise "actuator never reached fault point #{point}"
+
+      true ->
+        # SLEEP-CLASS: POLL-STEP (bounded deadline poll on the at_fault observable)
+        Process.sleep(5)
+        wait_at_fault(env, point, deadline)
     end
   end
 

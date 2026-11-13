@@ -27,19 +27,21 @@ defmodule AshA2A.Telemetry.CastleOcel do
 
   ## Standing -> event mapping (total over the S42 class domain)
 
-  The S42 taxonomy classes (`AshA2A.Semantic.Refusal.classes/0`) plus the
-  admitted outcome:
+  The S42 taxonomy classes (`AshA2A.Semantic.Refusal.classes/0`: 15
+  `:refused_*` + 2 `:blocked_*` + 1 `:unsupported_*` = 18) plus the admitted
+  outcome (19 known standings):
 
   | standing class           | CastleOcel event       | bound object type   |
   |--------------------------|------------------------|---------------------|
   | `:admitted`              | `evidence_admitted`    | `gym_act_episode`   |
   | 15 `:refused_*` classes  | `refused_observation`  | `system`            |
-  | `:blocked_unknown`       | `ggen_sync_observed`   | `container`         |
-  | `:blocked_resource`      | `ggen_sync_observed`   | `container`         |
-  | `:unsupported_profile`   | `ggen_sync_observed`   | `container` |
+  | 2 `:blocked_*` classes   | `ggen_sync_observed`   | `container`         |
+  | `:unsupported_*` classes | `ggen_sync_observed`   | `container`         |
   | anything else            | typed error            | --                  |
 
-  The three non-admission classes are a **documented non-mapping** to
+  The three non-admission classes (derived from `Refusal.blocked_classes/0` and
+  `Refusal.unsupported_classes/0`, so a class added there stays total) are a
+  **documented non-mapping** to
   `evidence_admitted`/`refused_observation`: `BLOCKED != REFUSED != ADMITTED`
   (S42), so they project as plain observations (`ggen_sync_observed`) with
   the class carried in `standing`, never as admissions and never as
@@ -75,8 +77,8 @@ defmodule AshA2A.Telemetry.CastleOcel do
   @admitted_classes [:admitted]
 
   @doc """
-  The standing classes this module admits as inputs: `:admitted`, the 18
-  `AshA2A.Semantic.Refusal` classes. Everything else refuses.
+  The standing classes this module admits as inputs: `:admitted` plus the 18
+  `AshA2A.Semantic.Refusal` classes (19 total). Everything else refuses.
   """
   @spec known_standings() :: [atom()]
   def known_standings, do: @admitted_classes ++ AshA2A.Semantic.Refusal.classes()
@@ -86,23 +88,27 @@ defmodule AshA2A.Telemetry.CastleOcel do
   totality court.
 
   `:admitted` -> `"evidence_admitted"`; every `AshA2A.Semantic.Refusal`
-  refused class -> `"refused_observation"`; the two `BLOCKED_*` classes and
-  `:unsupported_profile` -> `"ggen_sync_observed"` (documented non-mapping,
-  see the moduledoc).
+  refused class -> `"refused_observation"`; every `BLOCKED_*` and
+  `UNSUPPORTED_*` class -> `"ggen_sync_observed"` (documented non-mapping,
+  see the moduledoc). Total over `AshA2A.Semantic.Refusal.classes/0`.
   """
   @spec standing_to_event(atom()) :: String.t() | nil
   def standing_to_event(:admitted), do: "evidence_admitted"
-  # Documented non-mapping: BLOCKED_* / UNSUPPORTED_* are observations, not
-  # refusals of the subject and not admissions.
-  def standing_to_event(:blocked_unknown), do: "ggen_sync_observed"
-  def standing_to_event(:blocked_resource), do: "ggen_sync_observed"
-  def standing_to_event(:unsupported_profile), do: "ggen_sync_observed"
 
   def standing_to_event(standing) when is_atom(standing) do
-    if standing in AshA2A.Semantic.Refusal.refused_classes() do
-      "refused_observation"
-    else
-      nil
+    alias AshA2A.Semantic.Refusal
+
+    cond do
+      standing in Refusal.refused_classes() ->
+        "refused_observation"
+
+      # Documented non-mapping: BLOCKED_* / UNSUPPORTED_* are observations, not
+      # refusals of the subject and not admissions.
+      standing in Refusal.blocked_classes() or standing in Refusal.unsupported_classes() ->
+        "ggen_sync_observed"
+
+      true ->
+        nil
     end
   end
 
@@ -164,7 +170,8 @@ defmodule AshA2A.Telemetry.CastleOcel do
          "event_id" => "ash-a2a-#{pad(index)}-#{event_name}",
          "event_type" => event_name,
          "event_time" => time,
-         "attributes" => attrs
+         "attributes" => attrs,
+         "relationships" => relationships(event_name, standing, subject_id)
        }}
     end
   end
@@ -214,21 +221,56 @@ defmodule AshA2A.Telemetry.CastleOcel do
 
   ## Envelope (objectTypes / eventTypes / objects / events, sorted keys)
 
+  @event_attribute_types %{
+    "authority" => "string",
+    "provenance" => "string",
+    "standing" => "string",
+    "subject_id" => "string",
+    "tool" => "string",
+    "refusal_class" => "string",
+    "refusal_code" => "string"
+  }
+
+  # Attributes each event type actually carries (declared in the envelope).
+  @event_attributes %{
+    "evidence_admitted" => ["authority", "provenance", "standing", "subject_id", "tool"],
+    "refused_observation" => [
+      "authority",
+      "provenance",
+      "refusal_class",
+      "refusal_code",
+      "standing",
+      "subject_id",
+      "tool"
+    ],
+    "ggen_sync_observed" => [
+      "authority",
+      "provenance",
+      "refusal_class",
+      "refusal_code",
+      "standing",
+      "subject_id",
+      "tool"
+    ]
+  }
+
+  # Objects carry no attributes of their own: the object id encodes the
+  # binding. The declared object attribute list is therefore empty.
   defp envelope(events) do
     objects =
       events
-      |> Enum.map(fn event ->
-        {object_type, object_id} = object_binding(event)
-
-        Map.new([{"object_id", object_id}, {"object_type", object_type}])
+      |> Enum.flat_map(fn event ->
+        Enum.map(event_objects(event), fn {object_type, object_id} ->
+          Map.new([{"object_id", object_id}, {"object_type", object_type}])
+        end)
       end)
       |> Enum.uniq()
       |> Enum.sort_by(&{Map.fetch!(&1, "object_type"), Map.fetch!(&1, "object_id")})
 
     %{
       "objectTypes" =>
-        events
-        |> Enum.map(&object_binding(&1) |> elem(0))
+        objects
+        |> Enum.map(&Map.fetch!(&1, "object_type"))
         |> Enum.uniq()
         |> Enum.sort()
         |> Enum.map(&Map.new([{"name", &1}, {"attributes", []}])),
@@ -237,24 +279,68 @@ defmodule AshA2A.Telemetry.CastleOcel do
         |> Enum.map(&Map.fetch!(&1, "event_type"))
         |> Enum.uniq()
         |> Enum.sort()
-        |> Enum.map(&Map.new([{"name", &1}, {"attributes", []}])),
+        |> Enum.map(fn name ->
+          Map.new([{"name", name}, {"attributes", declared_attributes(name)}])
+        end),
       "objects" => objects,
       "events" => events
     }
   end
 
-  # Per-event-type object binding, restricted to the event names this module
-  # emits (the CastleOcel closed binding: evidence_admitted -> gym_act_episode,
-  # refused_observation -> system, ggen_sync_observed -> container).
-  defp object_binding(%{"event_type" => "evidence_admitted"} = event) do
-    {"gym_act_episode", "subject:" <> event["attributes"]["subject_id"]}
+  defp declared_attributes(event_name) do
+    @event_attributes
+    |> Map.fetch!(event_name)
+    |> Enum.map(&%{"name" => &1, "type" => Map.fetch!(@event_attribute_types, &1)})
   end
 
-  defp object_binding(%{"event_type" => "refused_observation"}) do
+  @doc """
+  The closed `{object_type, object_id}` binding for one observation
+  (evidence_admitted -> gym_act_episode `subject:<id>`, refused_observation ->
+  system `ash-a2a-admission`, ggen_sync_observed -> container
+  `ash-a2a-admission:<standing>`), public so a court can pin the ids that
+  appear in `"objects"` and `"relationships"`.
+  """
+  @spec object_binding(map()) :: {String.t(), String.t()}
+  def object_binding(%{"event_type" => "evidence_admitted"} = event) do
+    {"gym_act_episode", subject_object_id(event["attributes"]["subject_id"])}
+  end
+
+  def object_binding(%{"event_type" => "refused_observation"}) do
     {"system", "ash-a2a-admission"}
   end
 
-  defp object_binding(%{"event_type" => "ggen_sync_observed"} = event) do
+  def object_binding(%{"event_type" => "ggen_sync_observed"} = event) do
     {"container", "ash-a2a-admission:" <> event["attributes"]["standing"]}
+  end
+
+  defp subject_object_id(subject_id), do: "subject:" <> subject_id
+
+  # Every object an event relates to: its closed binding, plus the observed
+  # subject (a `gym_act_episode`) for non-admission events.
+  defp event_objects(%{"event_type" => "evidence_admitted"} = event), do: [object_binding(event)]
+
+  defp event_objects(event) do
+    [
+      object_binding(event),
+      {"gym_act_episode", subject_object_id(event["attributes"]["subject_id"])}
+    ]
+  end
+
+  # E2O relationships, derived from the same ids as "objects".
+  defp relationships("evidence_admitted", _standing, subject_id) do
+    [%{"qualifier" => "observed_subject", "object_id" => subject_object_id(subject_id)}]
+  end
+
+  defp relationships(event_name, standing, subject_id) do
+    {_, bound_id} =
+      object_binding(%{
+        "event_type" => event_name,
+        "attributes" => %{"standing" => Atom.to_string(standing), "subject_id" => subject_id}
+      })
+
+    [
+      %{"qualifier" => "observed_by", "object_id" => bound_id},
+      %{"qualifier" => "observed_subject", "object_id" => subject_object_id(subject_id)}
+    ]
   end
 end

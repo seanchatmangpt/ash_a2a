@@ -125,10 +125,72 @@ defmodule AshA2A.Authority.SecurityPreflight do
     if violations == [], do: :ok, else: {:error, violations}
   end
 
+  @doc """
+  Card-vs-config consistency: every scheme name referenced by the card's
+  top-level `security` and by each skill's `security_requirements` must exist
+  in the card's `security_schemes`. Accepts a map with atom or string keys
+  (`:security_schemes`, `:security`, `:skills`).
+
+  Returns `:ok` or `{:error, [violation()]}` with one
+  `:card_security_unknown_scheme` violation per dangling reference.
+  """
+  @spec check_card_security(map()) :: :ok | {:error, [violation()]}
+  def check_card_security(card) when is_map(card) do
+    declared =
+      card
+      |> card_field(:security_schemes, "securitySchemes")
+      |> case do
+        m when is_map(m) -> m |> Map.keys() |> Enum.map(&to_string/1) |> MapSet.new()
+        _ -> MapSet.new()
+      end
+
+    top = card |> card_field(:security, "security") |> List.wrap()
+
+    skills =
+      card
+      |> card_field(:skills, "skills")
+      |> List.wrap()
+      |> Enum.flat_map(fn skill ->
+        skill |> card_field(:security_requirements, "securityRequirements") |> List.wrap()
+      end)
+
+    violations =
+      (top ++ skills)
+      |> Enum.flat_map(&requirement_names/1)
+      |> Enum.uniq()
+      |> Enum.reject(&MapSet.member?(declared, &1))
+      |> Enum.map(fn name ->
+        %{
+          code: :card_security_unknown_scheme,
+          detail: "security requirement references #{inspect(name)} which is not in security_schemes"
+        }
+      end)
+
+    if violations == [], do: :ok, else: {:error, violations}
+  end
+
+  defp card_field(map, atom_key, string_key) when is_map(map) do
+    Map.get(map, atom_key, Map.get(map, string_key))
+  end
+
+  defp card_field(_other, _atom_key, _string_key), do: nil
+
+  defp requirement_names(%{} = req) do
+    inner = card_field(req, :schemes, "schemes")
+
+    case inner do
+      m when is_map(m) -> Enum.map(Map.keys(m), &to_string/1)
+      _ -> req |> Map.keys() |> Enum.map(&to_string/1)
+    end
+  end
+
+  defp requirement_names(_), do: []
+
   @doc false
   # S42 refusal totality.
   def __sa2a_refusal_codes__ do
     %{
+      card_security_unknown_scheme: :refused_authority,
       legacy_authority_policy_refused: :refused_authority,
       legacy_authority_policy_unacknowledged: :refused_authority,
       authority_broker_missing: :refused_authority,

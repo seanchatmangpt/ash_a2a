@@ -114,7 +114,7 @@ defmodule AshA2A.SemanticExtensionTest do
       assert carried.params == declaration.params
     end
 
-    test "supportedInterfaces DOES survive a real encode/decode round trip" do
+    test "capabilities.extensions advertisement survives a real encode/decode round trip" do
       card = %AshA2A.Protocol.AgentCard{
         name: "probe",
         description: "probe",
@@ -126,32 +126,28 @@ defmodule AshA2A.SemanticExtensionTest do
       opts = Extension.advertise(url: @base_url)
       encoded = AshA2A.Protocol.JSON.encode_agent_card(card, opts)
 
-      assert %{"protocolBinding" => "SA2A-PROFILE-v26.9.20", "protocolVersion" => "v26.9.20"} =
-               Enum.find(
-                 encoded["supportedInterfaces"],
-                 &(&1["protocolBinding"] == Extension.profile_id())
-               )
+      uri = Extension.profile_uri()
+      assert [%{"uri" => ^uri}] = encoded["capabilities"]["extensions"]
 
-      # Round trip through the real JSON codec, exactly as a remote peer
-      # fetching the card over HTTP would.
-      {:ok, decoded} =
-        encoded |> Jason.encode!() |> Jason.decode!() |> AshA2A.Protocol.JSON.decode_agent_card()
+      # No custom binding rides supportedInterfaces: the v1.1 decoder closes
+      # the protocolBinding set.
+      refute Enum.any?(
+               encoded["supportedInterfaces"],
+               &(&1["protocolBinding"] == Extension.profile_id())
+             )
 
-      assert Extension.advertised?(decoded)
+      wire = encoded |> Jason.encode!() |> Jason.decode!()
+      assert Extension.advertised?(wire)
+      assert {:ok, _card} = AshA2A.Protocol.JSON.decode_agent_card(wire)
     end
 
-    test "advertise/1 preserves the default JSONRPC interface and is idempotent" do
+    test "advertise/1 declares via capabilities.extensions, keeps JSONRPC, is idempotent" do
       once = Extension.advertise(url: @base_url)
       twice = Extension.advertise(once)
 
-      assert Keyword.fetch!(once, :supported_interfaces) ==
-               Keyword.fetch!(twice, :supported_interfaces)
-
-      bindings =
-        once |> Keyword.fetch!(:supported_interfaces) |> Enum.map(& &1.protocol_binding)
-
-      assert "JSONRPC" in bindings
-      assert Extension.profile_id() in bindings
+      assert Keyword.fetch!(once, :capabilities) == Keyword.fetch!(twice, :capabilities)
+      refute Keyword.has_key?(once, :supported_interfaces)
+      assert [%{uri: _}] = Keyword.fetch!(once, :capabilities).extensions
     end
   end
 
@@ -175,8 +171,7 @@ defmodule AshA2A.SemanticExtensionTest do
 
       assert Extension.advertised?(served)
 
-      {:ok, card} = AshA2A.Protocol.JSON.decode_agent_card(served)
-      assert Extension.advertised?(card)
+      assert {:ok, _card} = AshA2A.Protocol.JSON.decode_agent_card(served)
     end
 
     test "an agent that does NOT advertise serves a card with no SA2A binding", %{agent: agent} do
@@ -202,7 +197,10 @@ defmodule AshA2A.SemanticExtensionTest do
             version: "1",
             skills: []
           },
-          Extension.advertise(url: @base_url)
+          # The v1.1 decoder closes the protocolBinding set, so the decodable
+          # advertisement rides capabilities.extensions (the spec's own site).
+          url: @base_url,
+          capabilities: %{extensions: [Extension.capability_declaration()]}
         )
 
       plain =

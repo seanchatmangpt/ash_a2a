@@ -17,7 +17,11 @@ defmodule AshA2A.A2ATransport.PushConfigStore do
 
       %{id: String.t(), task_id: String.t(), url: String.t(),
         token: String.t() | nil, authentication: map() | nil,
-        inserted_at: DateTime.t()}
+        protocol_version: String.t() | nil, inserted_at: DateTime.t()}
+
+  `protocol_version` selects the webhook payload shape (see
+  `AshA2A.A2ATransport.PushDelivery.payload_for/3`); records without it are
+  treated as `"1.0"`.
 
   A per-task ceiling (`:max_per_task`, default 16) bounds how many configs a
   single caller can attach to one task; exceeding it is the typed refusal
@@ -76,6 +80,10 @@ defmodule AshA2A.A2ATransport.PushConfigStore do
   @spec delete(GenServer.server(), String.t(), String.t()) :: :ok | :error
   def delete(store, task_id, config_id), do: GenServer.call(store, {:delete, task_id, config_id})
 
+  @doc "Deletes every config of `task_id` (called when a terminal task's log is swept)."
+  @spec delete_task(GenServer.server(), String.t()) :: :ok
+  def delete_task(store, task_id), do: GenServer.call(store, {:delete_task, task_id})
+
   # The table is a named table carrying the store's registered (atom) name.
   defp table(store) when is_atom(store), do: store
 
@@ -120,6 +128,11 @@ defmodule AshA2A.A2ATransport.PushConfigStore do
     else
       {:reply, :error, state}
     end
+  end
+
+  def handle_call({:delete_task, task_id}, _from, state) do
+    :ets.match_delete(state.table, {{task_id, :_}, :_})
+    {:reply, :ok, state}
   end
 
   @doc false

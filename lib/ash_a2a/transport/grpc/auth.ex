@@ -45,6 +45,16 @@ if Code.ensure_loaded?(Plug) do
     """
 
     @grpc_unauthenticated 16
+    @grpc_permission_denied 7
+
+    @doc """
+    PERMISSION_DENIED(7) refusal for an authenticated-but-forbidden caller.
+    Interceptors return `{:error, :forbidden}` (or a 403 from the Auth
+    pipeline) to produce it; UNAUTHENTICATED(16) stays for failed credentials.
+    """
+    @spec forbidden(String.t()) :: GRPC.RPCError.t()
+    def forbidden(message \\ ~s({"error":"Forbidden"})),
+      do: GRPC.RPCError.exception(status: @grpc_permission_denied, message: message)
 
     @doc """
     Runs the `AshA2A.Protocol.Plug.Auth` pipeline over a synthetic conn built
@@ -54,6 +64,22 @@ if Code.ensure_loaded?(Plug) do
     @spec authenticate(GRPC.Server.Stream.t(), map()) ::
             :ok | {:error, GRPC.RPCError.t()}
     def authenticate(mat, opts) do
+      case authenticate_identity(mat, opts) do
+        {:ok, _auth} -> :ok
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc """
+    Like `authenticate/2` but also returns the verified auth map
+    (`%{identity: ...}`, the value `AshA2A.Protocol.Plug.Auth` stores in
+    `conn.private[:a2a][:auth]`) so the server can scope the call to the
+    verified principal (task ownership over gRPC). `{:ok, nil}` when the Auth
+    pipeline admitted the call without an identity.
+    """
+    @spec authenticate_identity(GRPC.Server.Stream.t(), map()) ::
+            {:ok, map() | nil} | {:error, GRPC.RPCError.t()}
+    def authenticate_identity(mat, opts) do
       conn = conn_from_metadata(GRPC.Stream.get_headers(mat) || %{})
 
       conn = AshA2A.Protocol.Plug.Auth.call(conn, opts)
@@ -61,7 +87,7 @@ if Code.ensure_loaded?(Plug) do
       if conn.halted do
         {:error, refusal(conn)}
       else
-        :ok
+        {:ok, AshA2A.Protocol.Plug.Auth.get_identity(conn)}
       end
     end
 
@@ -93,10 +119,14 @@ if Code.ensure_loaded?(Plug) do
       body =
         case received_refusal() do
           {401, _headers, body} -> body
+          {403, _headers, body} -> {:forbidden, body}
           _ -> Jason.encode!(%{"error" => "Unauthorized"})
         end
 
-      GRPC.RPCError.exception(status: @grpc_unauthenticated, message: body)
+      case body do
+        {:forbidden, forbidden_body} -> forbidden(forbidden_body)
+        body -> GRPC.RPCError.exception(status: @grpc_unauthenticated, message: body)
+      end
     end
 
     defp received_refusal do

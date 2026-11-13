@@ -24,7 +24,16 @@ defmodule AshA2A.Twin.Vince do
       {:refuse, msg}
 
   Challenges are STATE: a repeat challenge on the same trade escalates to
-  `{:refuse, :escalate_multisig}`. The mechanical-prior interrogation hook
+  `{:refuse, :escalate_multisig}`; the ledger counts every challenge and
+  escalation per trade (counter bounded) and the ledger itself is bounded by
+  `:max_ledger` (default 10_000) — when full, a NEW challenge-worthy trade is
+  refused with `%{code: :ledger_full}` rather than evicting (eviction would
+  reset escalation).
+
+  Malformed intents (non-map, missing keys, non-number or non-positive
+  `nte`, non-number or negative `offer`) get a typed
+  `{:refuse, %{code: :invalid_intent, reason: reason}}` and leave the ledger
+  untouched. The mechanical-prior interrogation hook
   (`check_claim/3`) consults a pluggable `AshA2A.Twin.MechanicalPrior`
   behaviour — the default `RefuseAll` stub is documented as the injection
   point for trade reticle packs.
@@ -36,14 +45,18 @@ defmodule AshA2A.Twin.Vince do
   defstruct prior: AshA2A.Twin.MechanicalPrior.RefuseAll,
             challenges: %{},
             gpm_floor: 0.22,
-            tolerance: 0.0
+            tolerance: 0.0,
+            max_ledger: 10_000
+
+  @max_count 1_000
 
   @type trade_ref :: term()
   @type t :: %Vince{
           prior: module(),
           challenges: %{trade_ref() => pos_integer()},
           gpm_floor: float(),
-          tolerance: number()
+          tolerance: number(),
+          max_ledger: pos_integer()
         }
 
   @type intent :: %{
@@ -53,9 +66,11 @@ defmodule AshA2A.Twin.Vince do
         }
 
   @type challenge_map :: %{
-          code: :monkey_math | :round_number_suspicious | :gpm_floor | :mechanical_prior,
-          demanded_evidence: [String.t()],
-          retry_token: reference()
+          required(:code) =>
+            :monkey_math | :round_number_suspicious | :gpm_floor | :mechanical_prior,
+          optional(:msg) => String.t(),
+          required(:demanded_evidence) => [String.t()],
+          required(:retry_token) => reference()
         }
 
   @type verdict ::
@@ -70,7 +85,8 @@ defmodule AshA2A.Twin.Vince do
       prior: Keyword.get(opts, :prior, AshA2A.Twin.MechanicalPrior.RefuseAll),
       challenges: %{},
       gpm_floor: Keyword.get(opts, :gpm_floor, 0.22),
-      tolerance: Keyword.get(opts, :tolerance, 0.0)
+      tolerance: Keyword.get(opts, :tolerance, 0.0),
+      max_ledger: Keyword.get(opts, :max_ledger, 10_000)
     }
   end
 
@@ -86,10 +102,10 @@ defmodule AshA2A.Twin.Vince do
   """
   @spec evaluate_intent(Vince.t(), intent()) :: {Vince.t(), verdict()}
   def evaluate_intent(%Vince{} = v, %{trade: trade, nte: nte, offer: offer})
-      when is_number(nte) and is_number(offer) and nte != 0 do
+      when is_number(nte) and is_number(offer) and nte > 0 and offer >= 0 do
     cond do
       Map.has_key?(v.challenges, trade_key(trade)) ->
-        {v, {:refuse, :escalate_multisig}}
+        escalate(v, trade)
 
       gpm_breach?(nte, offer, v.gpm_floor) ->
         challenge(v, trade, :gpm_floor, ["itemized_cost_breakdown", "subcontractor_quote_doc"])
@@ -106,6 +122,8 @@ defmodule AshA2A.Twin.Vince do
     end
   end
 
+  def evaluate_intent(%Vince{} = v, intent), do: {v, invalid_intent(intent)}
+
   @doc """
   Mechanical-prior interrogation hook: `check_claim(vince, claim, telemetry)`.
 
@@ -114,20 +132,42 @@ defmodule AshA2A.Twin.Vince do
   `c:prior_verdict/2`. On a prior challenge/refusal, counter-punch messages
   are demanded mechanically (e.g. blown motor + high ambient temperature ->
   winding-resistance readings).
+
+  A prior that is not a loaded module exporting `prior_verdict/2`, or that
+  returns an unexpected shape, yields a typed
+  `{:refuse, %{code: :mechanical_prior, reason: {:invalid_prior, _} |
+  {:invalid_prior_verdict, term}}}`.
   """
-  @spec check_claim(Vince.t(), term(), term()) ::
-          {:admit, map()} | {:challenge, challenge_map()} | {:refuse, map()}
+  @spec check_claim(Vince.t(), term(), term()) :: {Vince.t(), verdict()}
   def check_claim(%Vince{prior: prior} = v, claim, telemetry) do
-    case prior.prior_verdict(claim, telemetry) do
+    if is_atom(prior) and Code.ensure_loaded?(prior) and
+         function_exported?(prior, :prior_verdict, 2) do
+      v |> check_prior(prior.prior_verdict(claim, telemetry))
+    else
+      {v, {:refuse, %{code: :mechanical_prior, reason: {:invalid_prior, prior}}}}
+    end
+  end
+
+  defp check_prior(v, verdict) do
+    case verdict do
       {:admit, ticket} ->
         {v, {:admit, ticket}}
 
       {:challenge, evidence, msg} ->
-        {v, {:challenge, %{code: :mechanical_prior, demanded_evidence: evidence,
-                           retry_token: make_ref(), msg: msg}}}
+        {v,
+         {:challenge,
+          %{
+            code: :mechanical_prior,
+            demanded_evidence: evidence,
+            retry_token: make_ref(),
+            msg: msg
+          }}}
 
       {:refuse, reason} ->
         {v, {:refuse, %{code: :mechanical_prior, reason: reason}}}
+
+      other ->
+        {v, {:refuse, %{code: :mechanical_prior, reason: {:invalid_prior_verdict, other}}}}
     end
   end
 
@@ -167,8 +207,45 @@ defmodule AshA2A.Twin.Vince do
   defp rem100(n) when is_float(n), do: :erlang.trunc(n) |> Integer.mod(100)
 
   defp challenge(%Vince{} = v, trade, code, evidence) do
-    {%{v | challenges: Map.put(v.challenges, trade_key(trade), 1)},
-     {:challenge, %{code: code, demanded_evidence: evidence, retry_token: make_ref()}}}
+    if map_size(v.challenges) >= v.max_ledger do
+      {v, {:refuse, %{code: :ledger_full, reason: :challenge_ledger_at_capacity}}}
+    else
+      key = trade_key(trade)
+
+      count =
+        case Map.fetch(v.challenges, key) do
+          {:ok, n} -> bump(n)
+          :error -> 1
+        end
+
+      {%{v | challenges: Map.put(v.challenges, key, count)},
+       {:challenge, %{code: code, demanded_evidence: evidence, retry_token: make_ref()}}}
+    end
+  end
+
+  defp escalate(%Vince{} = v, trade) do
+    {%{v | challenges: Map.update!(v.challenges, trade_key(trade), &bump/1)},
+     {:refuse, :escalate_multisig}}
+  end
+
+  defp bump(n), do: min(n + 1, @max_count)
+
+  defp invalid_intent(intent) do
+    reason =
+      case intent do
+        %{trade: _, nte: nte, offer: offer} ->
+          cond do
+            not is_number(nte) -> :nte_not_a_number
+            nte <= 0 -> :nte_not_positive
+            not is_number(offer) -> :offer_not_a_number
+            true -> :offer_negative
+          end
+
+        _ ->
+          :malformed_intent
+      end
+
+    {:refuse, %{code: :invalid_intent, reason: reason}}
   end
 
   # Ledger-identity normalization (lane F8): string trades are trimmed and

@@ -52,7 +52,9 @@ defmodule AshA2A.Semantic.HookReactor.Hook do
   @type refusal :: %{required(:code) => atom(), optional(:detail) => term()}
 
   @id_format ~r/^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,127}$/
-  @denial ~r/\A\s*\{[^{}]*\}\s*=>\s*false\s*\.\s*\z/s
+  @denial_rule ~r/\{([^{}]*)\}\s*=>\s*false\s*\./s
+  @kh_token ~r/(?:^|[\s;,.\[(])kh:[A-Za-z_]/
+  @select_token ~r/\bSELECT\b/
   @prefix_line ~r/^\s*@prefix\s+[A-Za-z0-9_\-]*:\s*<[^>\s]*>\s*\.\s*$/m
   @comment_line ~r/^\s*#.*$/m
 
@@ -123,15 +125,49 @@ defmodule AshA2A.Semantic.HookReactor.Hook do
   defp guard_shape(nil), do: :ok
   defp guard_shape(guard), do: condition_shape(:guard, guard)
 
+  @doc """
+  Strips `#` comment lines from a condition. Shared by the admission shape
+  check and the reactor engine so both see the same text.
+  """
+  @spec strip_comments(String.t()) :: String.t()
+  def strip_comments(text) when is_binary(text), do: String.replace(text, @comment_line, "")
+
+  @doc """
+  The single denial-rule scanner: returns `[[rule_text, body], ...]` for every
+  `{ BODY } => false .` rule in `text` (comments must already be stripped).
+  """
+  @spec scan_denials(String.t()) :: [[String.t()]]
+  def scan_denials(text) when is_binary(text), do: Regex.scan(@denial_rule, text)
+
+  @doc """
+  True when the (comment-stripped) condition is a GraphLaw hook-pack condition
+  rather than an N3 denial: it carries no denial rule and uses a `kh:`-prefixed
+  term token (or a SPARQL `SELECT`). Decided on parsed tokens, not on a bare
+  substring, so a denial rule mentioning `kh:` in an IRI or literal stays N3.
+  """
+  @spec hook_pack_condition?(String.t()) :: boolean()
+  def hook_pack_condition?(text) when is_binary(text) do
+    stripped = strip_comments(text)
+
+    scan_denials(stripped) == [] and
+      (Regex.match?(@kh_token, stripped) or Regex.match?(@select_token, stripped))
+  end
+
   @doc false
   @spec condition_shape(atom(), term()) :: :ok | {:error, refusal()}
   def condition_shape(role, text) when is_binary(text) do
     body =
       text
-      |> String.replace(@comment_line, "")
+      |> strip_comments()
       |> String.replace(@prefix_line, "")
 
-    if Regex.match?(@denial, body),
+    ok? =
+      case scan_denials(body) do
+        [[rule, _]] -> String.trim(String.replace(body, rule, "")) == ""
+        _ -> false
+      end
+
+    if ok?,
       do: :ok,
       else:
         {:error,

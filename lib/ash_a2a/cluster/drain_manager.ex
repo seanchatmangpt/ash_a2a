@@ -387,19 +387,35 @@ defmodule AshA2A.Cluster.DrainManager do
       # drain must not claim evacuation. The task is released untracked
       # (its fate is the tree's ordinary shutdown); a configured tree
       # always lands.
-      :skip
-    else
-      Checkpoint.land(state.task_store, task_id, entry.frame,
-        source_node: node(),
-        reason: :drain_deadline,
-        drain_manager: state.name
+      require Logger
+
+      Logger.warning(
+        "ash_a2a drain #{inspect(state.name)}: no :task_store configured, " <>
+          "task #{inspect(task_id)} in-flight frame is NOT checkpointed (lost on shutdown)"
       )
 
-      Handover.emit(task_id,
-        source_node: node(),
-        reason: :drain,
-        checkpointed_at: DateTime.utc_now()
-      )
+      :telemetry.execute([:ash_a2a, :cluster, :drain, :task_skipped], %{count: 1}, %{
+        drain_manager: state.name,
+        task_id: task_id,
+        reason: :no_task_store
+      })
+
+      :skip
+    else
+      landed =
+        Checkpoint.land(state.task_store, task_id, entry.frame,
+          source_node: node(),
+          reason: :drain_deadline,
+          drain_manager: state.name
+        )
+
+      if Checkpoint.checkpointed?(landed) do
+        Handover.emit(task_id,
+          source_node: node(),
+          reason: :drain,
+          checkpointed_at: DateTime.utc_now()
+        )
+      end
 
       # The frame is durably landed, so the worker may be stopped -- this
       # is the live-eviction semantics (the adopting peer re-runs from the

@@ -324,8 +324,9 @@ defmodule AshA2A.V1IOModesTest do
           skills_opts: @greeter_skills_opts
         )
 
-      assert card.default_input_modes == ["text/plain"]
-      assert card.default_output_modes == ["text/plain"]
+      # The builder now honors card-level mode opts (opts > domain > default).
+      assert card.default_input_modes == ["application/json"]
+      assert card.default_output_modes == ["text/x-python"]
 
       # ...while the per-skill override in the same call took effect.
       assert Enum.find(card.skills, &(&1.id == @greeter_capability_id)).input_modes ==

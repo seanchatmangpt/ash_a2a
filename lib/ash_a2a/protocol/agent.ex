@@ -328,17 +328,124 @@ defmodule AshA2A.Protocol.Agent do
         context_id = Keyword.get(opts, :context_id)
         metadata = Keyword.get(opts, :metadata, %{})
         extensions = Keyword.get(opts, :extensions, %{})
+        immediate? = Keyword.get(opts, :return_immediately, false) == true
 
-        if task_id do
-          case AshA2A.Protocol.Agent.State.get_task(state, task_id) do
-            {:ok, task} ->
-              spawn_task_worker({:continue, message, task, extensions}, from, task.id, state)
+        with :ok <- validate_message_input(message, opts) do
+          if task_id do
+            case AshA2A.Protocol.Agent.State.get_task(state, task_id) do
+              {:ok, task} ->
+                declared = message.context_id || context_id
 
-            {:error, :not_found} ->
-              {:reply, {:error, :not_found}, state}
+                cond do
+                  # A follow-up must stay inside the stored task's context.
+                  declared != nil and task.context_id != nil and declared != task.context_id ->
+                    {:reply, {:error, :context_mismatch}, state}
+
+                  # A2A v1.1 ifGenerationMatch: optimistic concurrency on an
+                  # existing task (ignored for new tasks).
+                  AshA2A.Protocol.ClientArtifacts.check_generation(
+                    task,
+                    Keyword.get(opts, :if_generation_match)
+                  ) != :ok ->
+                    {:reply, {:error, :generation_mismatch}, state}
+
+                  immediate? and AshA2A.Protocol.Task.terminal?(task) ->
+                    {:reply, {:error, :not_continuable}, state}
+
+                  immediate? ->
+                    admit_continue_immediately(message, task, extensions, from, state)
+
+                  true ->
+                    spawn_task_worker({:continue, message, task, extensions}, from, task.id, state)
+                end
+
+              {:error, :not_found} ->
+                {:reply, {:error, :not_found}, state}
+            end
+          else
+            case resolve_references(message, context_id, opts, state) do
+              {:ok, context_id} ->
+                if immediate? do
+                  admit_new_immediately(message, context_id, metadata, extensions, from, state)
+                else
+                  spawn_task_worker(
+                    {:new, message, context_id, metadata, extensions},
+                    from,
+                    nil,
+                    state
+                  )
+                end
+
+              {:error, _} = error ->
+                {:reply, error, state}
+            end
           end
         else
-          spawn_task_worker({:new, message, context_id, metadata, extensions}, from, nil, state)
+          {:error, _} = error -> {:reply, error, state}
+        end
+      end
+
+      # Input-mode admission against the agent card (opt out with
+      # `validate_input_modes: false`).
+      defp validate_message_input(message, opts) do
+        card =
+          if function_exported?(__MODULE__, :agent_card, 0), do: __MODULE__.agent_card(), else: nil
+
+        AshA2A.Protocol.InputModeValidator.validate_input(message, card, opts)
+      end
+
+      # referenceTaskIds: each must exist (and be owned by `opts[:principal]`
+      # when one is supplied); a context-less message inherits the first
+      # referenced task's context.
+      defp resolve_references(message, context_id, opts, state) do
+        context_id = context_id || message.context_id
+        principal = Keyword.get(opts, :principal)
+
+        result =
+          Enum.reduce_while(List.wrap(message.reference_task_ids), {:ok, []}, fn ref_id, {:ok, acc} ->
+            with {:ok, ref} <- AshA2A.Protocol.Agent.State.get_task(state, ref_id),
+                 true <- is_nil(principal) or AshA2A.Transport.Runtime.owned_by?(ref, principal) do
+              {:cont, {:ok, [ref | acc]}}
+            else
+              _ -> {:halt, {:error, :not_found}}
+            end
+          end)
+
+        case result do
+          {:ok, refs} ->
+            inherited =
+              refs |> Enum.reverse() |> Enum.find_value(& &1.context_id)
+
+            {:ok, context_id || inherited}
+
+          {:error, _} = error ->
+            error
+        end
+      end
+
+      # returnImmediately: admit + persist the task, answer with it now, and
+      # run the handler detached; its outcome folds into the stored task.
+      defp admit_new_immediately(message, context_id, metadata, extensions, from, state) do
+        task = AshA2A.Protocol.Task.new(context_id: context_id, metadata: metadata)
+        task = AshA2A.Protocol.Task.Generation.append_message(task, message)
+        admit_immediately(message, task, extensions, from, state)
+      end
+
+      defp admit_continue_immediately(message, task, extensions, from, state) do
+        task = AshA2A.Protocol.Task.Generation.append_message(task, message)
+        task = AshA2A.Protocol.Agent.State.transition(task, :working)
+        admit_immediately(message, task, extensions, from, state)
+      end
+
+      defp admit_immediately(message, task, extensions, from, state) do
+        case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+          {:ok, state} ->
+            state = AshA2A.Protocol.Agent.State.track_context(state, task)
+            reply_to(from,{:ok, task})
+            spawn_task_worker({:admitted, message, task, extensions}, :detached, task.id, state)
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
         end
       end
 
@@ -390,10 +497,16 @@ defmodule AshA2A.Protocol.Agent do
         case result do
           :ok ->
             task = AshA2A.Protocol.Agent.State.transition(task, :canceled)
-            state = AshA2A.Protocol.Agent.State.put_task(state, task)
-            AshA2A.Protocol.PushNotification.deliver(state, task)
-            state = notify_subscribers(state, task)
-            {:reply, :ok, state}
+
+            case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+              {:ok, state} ->
+                AshA2A.Protocol.PushNotification.deliver(state, task)
+                state = notify_subscribers(state, task)
+                {:reply, :ok, state}
+
+              {:error, reason} ->
+                {:reply, {:error, reason}, state}
+            end
 
           {:error, reason} ->
             {:reply, {:error, reason}, state}
@@ -402,6 +515,32 @@ defmodule AshA2A.Protocol.Agent do
 
       def handle_call({:get_task, task_id}, _from, state) do
         {:reply, AshA2A.Protocol.Agent.State.get_task(state, task_id), state}
+      end
+
+      # A2A v1.1 client-written artifacts, applied to the stored task after
+      # its message was appended. `decoded` is
+      # `ClientArtifacts.decode_updates/1` output; the card must declare
+      # `user_artifacts`.
+      def handle_call({:apply_artifact_updates, task_id, decoded}, _from, state) do
+        card =
+          if function_exported?(__MODULE__, :agent_card, 0), do: __MODULE__.agent_card(), else: nil
+
+        with :ok <- AshA2A.Protocol.ClientArtifacts.check_user_artifacts(card, decoded),
+             {:ok, task} <- AshA2A.Protocol.Agent.State.get_task(state, task_id) do
+          task = AshA2A.Protocol.ClientArtifacts.apply_updates(task, decoded)
+
+          case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+            {:ok, state} ->
+              AshA2A.Protocol.PushNotification.deliver(state, task)
+              state = notify_subscribers(state, task)
+              {:reply, {:ok, task}, state}
+
+            {:error, reason} ->
+              {:reply, {:error, reason}, state}
+          end
+        else
+          {:error, _} = error -> {:reply, error, state}
+        end
       end
 
       def handle_call({:list_tasks, params}, _from, state) do
@@ -449,17 +588,19 @@ defmodule AshA2A.Protocol.Agent do
         end
       end
 
-      # SEC-01 wrapper probe (A2ATransport.Plug `tasks/list`): the
-      # owner-scoped `{:ash_a2a_list_tasks, principal, params}` message has
-      # no specific clause on the vendored surface. Without a fallback the
-      # FunctionClauseError kills this process on every probe; restart churn
-      # then leaves the agent permanently dead mid-suite ("no process" on
-      # every later request). Answer typed instead of dying — the transport
-      # maps `{:error, :unsupported}` to -32004 UNSUPPORTED_OPERATION, the
-      # same wire answer its `catch :exit` backstop produces, with zero
-      # collateral on this process.
-      def handle_call({:ash_a2a_list_tasks, _principal, _params}, _from, state) do
-        {:reply, {:error, :unsupported}, state}
+      # Owner-scoped `tasks/list` (A2ATransport.Plug): answered through the
+      # same owner gate as the full `AshA2A.Agent` surface, so a bare protocol
+      # agent never enumerates another principal's tasks (anonymous callers
+      # never list) and never answers a typed `:unsupported` for a capability
+      # the task store provides.
+      # Owner-scoped single-task read used by the HTTP+JSON binding
+      # (`owned_task/3`): same owner gate as the full `AshA2A.Agent` surface.
+      def handle_call({:ash_a2a_get_task, principal, task_id}, _from, state) do
+        {:reply, AshA2A.Transport.Runtime.get_task_for(state, principal, task_id), state}
+      end
+
+      def handle_call({:ash_a2a_list_tasks, principal, params}, _from, state) do
+        {:reply, AshA2A.Transport.Runtime.list_tasks_for(state, principal, params), state}
       end
 
       # A worker's DOWN is the failure half of the isolation contract: reply
@@ -528,6 +669,16 @@ defmodule AshA2A.Protocol.Agent do
          )}
       end
 
+      defp run_default_task({:admitted, message, task, extensions}) do
+        AshA2A.Protocol.Agent.Runtime.run_admitted(
+          __MODULE__,
+          message,
+          task,
+          %AshA2A.Protocol.Agent.State{module: __MODULE__},
+          extensions
+        )
+      end
+
       defp run_default_task({:continue, message, task, extensions}) do
         AshA2A.Protocol.Agent.Runtime.continue_task(
           __MODULE__,
@@ -542,27 +693,64 @@ defmodule AshA2A.Protocol.Agent do
       # always performed, but applied against the CURRENT state (the worker
       # computed `task` against a snapshot, and updates that landed while the
       # handler ran must not be clobbered by it).
+      defp reply_to(:detached, _reply), do: :ok
+      defp reply_to(from, reply), do: GenServer.reply(from, reply)
+
+      # A returnImmediately task was already answered at admission; its
+      # handler outcome only folds into the stored task. A task that went
+      # terminal meanwhile (cancel won the race) is never overwritten.
+      defp apply_default_result(task_id, :detached, result, state) do
+        stored = AshA2A.Protocol.Agent.State.get_task(state, task_id)
+
+        case {stored, result} do
+          {{:ok, %{status: %{state: s}}}, _} when s in [:completed, :failed, :canceled, :rejected] ->
+            state
+
+          {{:ok, task}, {:ok, {%AshA2A.Protocol.Message{} = agent_message, _snapshot}}} ->
+            task = %{task | history: task.history ++ [agent_message]}
+            task = AshA2A.Protocol.Agent.State.transition(task, :completed, agent_message)
+            state = AshA2A.Protocol.Agent.State.put_task(state, task)
+            AshA2A.Protocol.PushNotification.deliver(state, task)
+            notify_subscribers(state, task)
+
+          {{:ok, _task}, {:ok, {%AshA2A.Protocol.Task{} = task, _snapshot}}} ->
+            task = maybe_wrap_stream(task, :detached)
+            state = AshA2A.Protocol.Agent.State.put_task(state, task)
+            AshA2A.Protocol.PushNotification.deliver(state, task)
+            notify_subscribers(state, task)
+
+          {{:ok, _task}, {:error, reason}} ->
+            fail_worker_task(task_id, :detached, reason, state)
+
+          _ ->
+            state
+        end
+      end
+
       defp apply_default_result(_task_id, from, result, state) do
         case result do
           {:ok, {%AshA2A.Protocol.Message{} = agent_message, _snapshot}} ->
-            GenServer.reply(from, {:ok, agent_message})
+            reply_to(from,{:ok, agent_message})
             state
 
           {:ok, {%AshA2A.Protocol.Task{} = task, _snapshot}} ->
             task = maybe_wrap_stream(task, from)
 
-            state =
-              state
-              |> AshA2A.Protocol.Agent.State.put_task(task)
-              |> AshA2A.Protocol.Agent.State.track_context(task)
+            case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+              {:ok, state} ->
+                state = AshA2A.Protocol.Agent.State.track_context(state, task)
+                AshA2A.Protocol.PushNotification.deliver(state, task)
+                state = notify_subscribers(state, task)
+                reply_to(from,{:ok, task})
+                state
 
-            AshA2A.Protocol.PushNotification.deliver(state, task)
-            state = notify_subscribers(state, task)
-            GenServer.reply(from, {:ok, task})
-            state
+              {:error, reason} ->
+                reply_to(from,{:error, reason})
+                state
+            end
 
           {:error, reason} ->
-            GenServer.reply(from, {:error, reason})
+            reply_to(from,{:error, reason})
             state
         end
       end
@@ -582,7 +770,7 @@ defmodule AshA2A.Protocol.Agent do
             if AshA2A.Protocol.Task.terminal?(task) do
               # Defensive, mirrors `AshA2A.Transport.Runtime.finish/5`: a task
               # finalized by another path is never overwritten.
-              GenServer.reply(from, {:ok, task})
+              reply_to(from,{:ok, task})
               state
             else
               error_msg =
@@ -594,12 +782,12 @@ defmodule AshA2A.Protocol.Agent do
               state = AshA2A.Protocol.Agent.State.put_task(state, task)
               AshA2A.Protocol.PushNotification.deliver(state, task)
               state = notify_subscribers(state, task)
-              GenServer.reply(from, {:ok, task})
+              reply_to(from,{:ok, task})
               state
             end
 
           _no_task ->
-            GenServer.reply(from, {:error, error})
+            reply_to(from,{:error, error})
             state
         end
       end
@@ -618,6 +806,18 @@ defmodule AshA2A.Protocol.Agent do
 
       def handle_cast({:stream_done, task_id, artifact_id, parts, outcome}, state) do
         case AshA2A.Protocol.Agent.State.get_task(state, task_id) do
+          {:ok, %{status: %{state: terminal}}}
+          when terminal in [:completed, :failed, :canceled, :rejected] ->
+            # Late event after a terminal state (e.g. cancel won the race):
+            # never overwrite or resurrect, only record it.
+            :telemetry.execute([:a2a, :task, :late_event_dropped], %{count: 1}, %{
+              task_id: task_id,
+              terminal_state: terminal,
+              event: :stream_done
+            })
+
+            {:noreply, state}
+
           {:ok, task} ->
             artifact =
               case artifact_id do
@@ -625,7 +825,7 @@ defmodule AshA2A.Protocol.Agent do
                 id -> struct(AshA2A.Protocol.Artifact, artifact_id: id, parts: parts)
               end
             agent_msg = AshA2A.Protocol.Message.new_agent(parts)
-            task = %{task | artifacts: task.artifacts ++ [artifact]}
+            {task, _stored} = AshA2A.Protocol.Task.Generation.record_artifact(task, artifact, true)
             task = %{task | history: task.history ++ [agent_msg]}
             task = %{task | metadata: Map.delete(task.metadata, :stream)}
 
@@ -661,6 +861,20 @@ defmodule AshA2A.Protocol.Agent do
         else
           state
         end
+      end
+
+      # No caller will ever consume a detached (returnImmediately) task's
+      # stream, so a monitored-free drainer does, which fires :stream_done.
+      defp maybe_wrap_stream(%{metadata: %{stream: _enum}} = task, :detached) do
+        task = maybe_wrap_stream(task, {self(), nil})
+        callers = [self() | Process.get(:"$callers", [])]
+
+        spawn(fn ->
+          Process.put(:"$callers", callers)
+          Stream.run(task.metadata.stream)
+        end)
+
+        task
       end
 
       defp maybe_wrap_stream(%{metadata: %{stream: enum}} = task, {pid, _ref}) do

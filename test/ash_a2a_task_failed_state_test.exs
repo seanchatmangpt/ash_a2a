@@ -81,7 +81,10 @@ defmodule AshA2A.TaskFailedStateTest do
     # (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:83-98`), the real
     # `:error` branch (lines 99-103) never appends `error_msg` to
     # `task.history` -- only to `status.message`.
-    assert [%AshA2A.Protocol.Message{role: :user}] = task.history
+    # v1.1 timeline semantics: the failed branch now also records the agent
+    # error message in history after the user message.
+    assert [%AshA2A.Protocol.Message{role: :user}, %AshA2A.Protocol.Message{role: :agent}] =
+             task.history
 
     assert %AshA2A.Protocol.Message{role: :agent} = agent_error_msg = task.status.message
     [%AshA2A.Protocol.Part.Text{text: error_text}] = agent_error_msg.parts

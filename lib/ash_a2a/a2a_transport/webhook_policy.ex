@@ -21,10 +21,21 @@ defmodule AshA2A.A2ATransport.WebhookPolicy do
       target (NAT64, Teredo, 6to4) are refused, unless the address falls in an explicit `allow_cidrs` entry;
     * an unresolvable host is refused.
 
+  **Port decision (documented, not an omission):** the destination port is
+  deliberately NOT restricted. SSRF defense here is address-based -- every
+  resolved address must be public -- so a non-443 port on a public host
+  reaches nothing a public client could not already reach, while legitimate
+  receivers do run HTTPS on custom ports. Operators who want a port allowlist
+  enforce it in the `:resolver`-adjacent network policy (egress firewall),
+  where it also covers redirects the application cannot see.
+
   The admitted result carries the resolved addresses so the delivery worker
   (`AshA2A.A2ATransport.PushDelivery`) can connect to exactly the address that
   was admitted (pinning), closing the DNS-rebinding window between admission
   and connect. Delivery re-admits on every attempt.
+
+  Optional `:allow_ports` (list of integers, default unrestricted) refuses any
+  destination port outside the list with `:refused_webhook_port`.
 
   Options: `:allow_http` (default `false`), `:allow_cidrs` (list of
   `"a.b.c.d/n"` or IPv6 CIDR strings, default `[]`), `:resolver` (a
@@ -84,6 +95,7 @@ defmodule AshA2A.A2ATransport.WebhookPolicy do
 
     with {:ok, uri} <- parse(url),
          :ok <- check_scheme(uri, allow_http),
+         :ok <- check_port(uri, Keyword.get(opts, :allow_ports)),
          {:ok, allow} <- parse_cidrs(Keyword.get(opts, :allow_cidrs, [])),
          {:ok, addresses} <- resolve(uri.host, Keyword.get(opts, :resolver, &:inet.getaddrs/2)),
          :ok <- check_addresses(addresses, allow) do
@@ -128,6 +140,18 @@ defmodule AshA2A.A2ATransport.WebhookPolicy do
 
   defp check_scheme(%URI{scheme: scheme}, _),
     do: {:error, :refused_webhook_scheme, "webhook scheme #{inspect(scheme)} is not admitted"}
+
+  # Optional `:allow_ports` (list of integers). Absent/nil = unrestricted (the
+  # documented default); a list refuses any destination port outside it.
+  defp check_port(_uri, nil), do: :ok
+
+  defp check_port(%URI{port: port}, ports) when is_list(ports) do
+    if port in ports,
+      do: :ok,
+      else: {:error, :refused_webhook_port, "webhook port #{inspect(port)} is not admitted"}
+  end
+
+  defp check_port(_uri, _other), do: :ok
 
   defp resolve(host, resolver) do
     host = host |> String.trim_leading("[") |> String.trim_trailing("]")
@@ -226,6 +250,7 @@ defmodule AshA2A.A2ATransport.WebhookPolicy do
     %{
       refused_webhook_malformed: :refused_structure,
       refused_webhook_scheme: :refused_bounds,
+      refused_webhook_port: :refused_bounds,
       refused_webhook_unresolvable: :refused_bounds,
       refused_webhook_private_address: :refused_authority
     }

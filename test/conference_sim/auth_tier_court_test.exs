@@ -208,7 +208,9 @@ defmodule AshA2A.Test.ConferenceSim.Venue do
         schemes: %{
           "badge" => %AshA2A.Protocol.SecurityScheme.APIKey{in: "header", name: "x-badge"},
           "session_token" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"},
-          "vip" => %AshA2A.Protocol.SecurityScheme.OAuth2{flows: %{}},
+          "vip" => %AshA2A.Protocol.SecurityScheme.OAuth2{
+            flows: %{"clientCredentials" => %{"tokenUrl" => "https://t", "scopes" => %{}}}
+          },
           "sso" => %AshA2A.Protocol.SecurityScheme.OpenIDConnect{
             open_id_connect_url: base <> "/.well-known/openid-configuration"
           }
@@ -461,10 +463,11 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
     assert body(resp) == %{"error" => "Unauthorized"}
   end
 
-  test "VIP token without the venue:all scope is refused 401 (insufficient scope)", c do
+  test "VIP token without the venue:all scope is refused 403 (insufficient scope)", c do
     resp = post(c.venue.base_url, "/venue/backstage", headers: [authorization("Bearer " <> c.noscope_vip)])
 
-    assert resp.status == 401
+    # RFC 6750 section 3.1: insufficient_scope is 403 with a Bearer challenge.
+    assert resp.status == 403
     assert get_resp_header(resp, "www-authenticate") != []
   end
 

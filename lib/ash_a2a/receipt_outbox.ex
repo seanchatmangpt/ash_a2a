@@ -122,8 +122,33 @@ defmodule AshA2A.ReceiptOutbox do
   @doc "The journal directory."
   @spec dir() :: String.t()
   def dir do
-    Application.get_env(:ash_a2a, :receipt_outbox_dir) ||
-      Path.join(System.tmp_dir!(), "ash_a2a_receipt_outbox")
+    case Application.get_env(:ash_a2a, :receipt_outbox_dir) do
+      d when is_binary(d) and d != "" ->
+        d
+
+      _ ->
+        warn_tmp_default_once()
+        Path.join(System.tmp_dir!(), "ash_a2a_receipt_outbox")
+    end
+  end
+
+  defp warn_tmp_default_once do
+    key = {__MODULE__, :tmp_default_warned}
+
+    if :persistent_term.get(key, false) == false and not dev_or_test?() do
+      :persistent_term.put(key, true)
+
+      require Logger
+
+      Logger.warning(
+        "AshA2A.ReceiptOutbox: :receipt_outbox_dir unset; defaulting to the tmp dir, " <>
+          "receipts are not durable across tmp cleanup"
+      )
+    end
+  end
+
+  defp dev_or_test? do
+    Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) and Mix.env() in [:dev, :test]
   end
 
   @doc "Appends or replaces one receipt journal entry."
@@ -131,7 +156,7 @@ defmodule AshA2A.ReceiptOutbox do
   def append(%Receipt{} = receipt) do
     entry_path = entry_path(receipt)
     tmp_path = entry_path <> ".tmp.#{System.unique_integer([:positive])}"
-    payload = seal(:erlang.term_to_binary({@format_version, receipt}))
+    payload = seal(:erlang.term_to_binary({@format_version, receipt}, [:deterministic]))
 
     with :ok <- File.mkdir_p(dir()),
          :ok <- File.write(tmp_path, payload, [:binary, :sync]),
@@ -157,11 +182,25 @@ defmodule AshA2A.ReceiptOutbox do
         _ = :file.close(fd)
         :ok
 
-      {:error, _reason} ->
-        :ok
+      {:error, reason} ->
+        warn_sync_dir(dir, reason)
     end
   rescue
-    _error -> :ok
+    error -> warn_sync_dir(dir, error)
+  end
+
+  # Best-effort durability stays non-fatal, but a failed directory fsync is
+  # surfaced (telemetry + log), never swallowed.
+  defp warn_sync_dir(dir, reason) do
+    :telemetry.execute(
+      [:ash_a2a, :receipt_outbox, :sync_dir_failed],
+      %{count: 1},
+      %{dir: dir, reason: reason}
+    )
+
+    require Logger
+    Logger.warning("receipt_outbox sync_dir failed dir=#{dir} reason=#{inspect(reason)}")
+    :ok
   end
 
   @doc "Whether this receipt identity already has a journal entry."
@@ -538,6 +577,14 @@ defmodule AshA2A.ReceiptOutbox do
       _ -> :foreign_format
     end
   rescue
-    _ -> {:error, :bad_term}
+    error ->
+      # Reason stays :bad_term (public contract); the cause is kept observable.
+      :telemetry.execute(
+        [:ash_a2a, :receipt_outbox, :decode_failed],
+        %{count: 1},
+        %{cause: error}
+      )
+
+      {:error, :bad_term}
   end
 end

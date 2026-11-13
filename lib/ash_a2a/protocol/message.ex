@@ -15,7 +15,7 @@ defmodule AshA2A.Protocol.Message do
           context_id: String.t() | nil,
           reference_task_ids: [String.t()],
           metadata: map(),
-          extensions: map()
+          extensions: [String.t()] | map()
         }
 
   @enforce_keys [:role, :parts]
@@ -27,7 +27,7 @@ defmodule AshA2A.Protocol.Message do
     parts: [],
     reference_task_ids: [],
     metadata: %{},
-    extensions: %{}
+    extensions: []
   ]
 
   @doc """

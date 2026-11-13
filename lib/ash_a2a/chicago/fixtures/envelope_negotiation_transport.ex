@@ -344,9 +344,21 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     def card_opts({:version, version}, url) do
       [
         supported_interfaces: [
-          %{url: url, protocol_binding: "JSONRPC", protocol_version: "0.3.0"},
-          %{url: url, protocol_binding: Extension.profile_id(), protocol_version: version}
-        ]
+          %{url: url, protocol_binding: "JSONRPC", protocol_version: "0.3.0"}
+        ],
+        capabilities: %{
+          extensions: [
+            %AshA2A.Protocol.AgentExtension{
+              uri: Extension.profile_uri(),
+              required: false,
+              params: %{
+                "profileId" => Extension.profile_id(),
+                "profileVersion" => version,
+                "messageExtensionKey" => Extension.extension_key()
+              }
+            }
+          ]
+        }
       ]
     end
   end

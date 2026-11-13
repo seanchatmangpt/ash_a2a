@@ -241,7 +241,8 @@ defmodule AshA2A.ReceiptStore.StoreHardeningTest do
     assert :ok = Memory.commit(receipt, opts)
     assert Memory.size(opts) == 2
 
-    Process.sleep(80)
+    # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(80)
 
     assert 1 = Memory.sweep(opts)
     assert Memory.size(opts) == 1
@@ -293,7 +294,8 @@ defmodule AshA2A.ReceiptStore.StoreHardeningTest do
 
     # The primary commit landed; the actuation commit was lost (R1 shape).
     assert :ok = Memory.commit(receipt, opts)
-    Process.sleep(40)
+    # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(40)
 
     # The expired primary is the only evidence the effect completed: the
     # sweep must keep it, or the effect would be refused forever.

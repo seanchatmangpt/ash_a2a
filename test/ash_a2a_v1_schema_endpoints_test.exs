@@ -289,7 +289,7 @@ defmodule AshA2A.V1SchemaEndpointsTest do
 
     # Concretely: the real card's members the schema pins are on the wire.
     assert is_binary(served_card["name"])
-    assert [%{"protocolBinding" => "JSONRPC", "protocolVersion" => "1.0"} | _] =
+    assert [%{"protocolBinding" => "JSONRPC", "protocolVersion" => "1.1"} | _] =
              served_card["supportedInterfaces"]
 
     assert [%{"id" => _id, "name" => _name, "description" => _desc, "tags" => _tags} | _] =

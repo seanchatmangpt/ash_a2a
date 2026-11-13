@@ -45,11 +45,16 @@ defmodule AshA2A.Telemetry.OcelForwarder do
 
   require Logger
 
+  alias AshA2A.Telemetry.DispatchEvent
+
+  @pending_key :ash_a2a_ocel_pending_dispatch
+  @unconvertible_counter_key {__MODULE__, :unconvertible_counter}
   @dispatch_handler_id {__MODULE__, :dispatch_stop}
   @receipt_handler_id {__MODULE__, :receipt_committed}
   @outboxed_handler_id {__MODULE__, :receipt_outboxed}
   @exception_handler_id {__MODULE__, :dispatch_exception}
   @shed_counter_key {__MODULE__, :shed_counter}
+  @ignored_counter_key {__MODULE__, :ignored_counter}
   # One `:counters` array for delivery accounting: 1 = delivered, 2 = failed,
   # 3 = warnings suppressed by the log rate limit since the last warning.
   @delivery_counter_key {__MODULE__, :delivery_counters}
@@ -114,21 +119,27 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   end
 
   @doc false
+  @spec handle_event(:telemetry.event_name(), :telemetry.event_measurements(), map(), term()) ::
+          :ok
   def handle_event([:ash_a2a, :dispatch, :exception], measurements, metadata, _config) do
     case ingest_url() do
       nil -> :ok
-      url -> async_post_event(url, build_exception_event(measurements, metadata))
+      url -> async_post_event(url, DispatchEvent.exception(measurements, metadata))
     end
   end
 
   def handle_event([:ash_a2a, :dispatch, :stop], measurements, metadata, _config) do
     if Process.get(:ash_a2a_ocel_command_bus_dispatch) do
-      Process.put(:ash_a2a_ocel_pending_dispatch, {measurements, metadata})
+      Process.put(@pending_key, {measurements, metadata, System.monotonic_time(:millisecond)})
       :ok
     else
+      # A direct (non-CommandBus) dispatch never consumes a stash: clear any
+      # leftover from an earlier span that never reached a receipt commit.
+      Process.delete(@pending_key)
+
       case ingest_url() do
         nil -> :ok
-        url -> async_post_event(url, build_dispatch_event(measurements, metadata))
+        url -> async_post_event(url, DispatchEvent.stop(measurements, metadata))
       end
     end
   end
@@ -141,7 +152,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       ) do
     case ingest_url() do
       nil -> :ok
-      url -> async_post_event(url, receipt_event(receipt))
+      url -> post_receipt(url, receipt)
     end
   end
 
@@ -153,11 +164,96 @@ defmodule AshA2A.Telemetry.OcelForwarder do
       ) do
     case ingest_url() do
       nil -> :ok
-      url -> async_post_event(url, receipt_event(receipt))
+      url -> post_receipt(url, receipt)
     end
   end
 
-  def handle_event(_event, _measurements, _metadata, _config), do: :ok
+  # A subscribed receipt event whose metadata carries no `%AshA2A.Receipt{}`
+  # is counted, never silently dropped.
+  def handle_event([:ash_a2a, :receipt, _], _measurements, _metadata, _config) do
+    count_unconvertible()
+  end
+
+  def handle_event(_event, _measurements, _metadata, _config), do: count_ignored()
+
+  @doc """
+  Total events delivered to the forwarder that matched no clause (catch-all).
+  Each emits `[:ash_a2a, :ocel, :ignored]`.
+  """
+  @spec ignored_count() :: non_neg_integer()
+  def ignored_count do
+    case :persistent_term.get(@ignored_counter_key, nil) do
+      nil -> 0
+      ref -> :counters.get(ref, 1)
+    end
+  end
+
+  defp count_ignored do
+    ref =
+      case :persistent_term.get(@ignored_counter_key, nil) do
+        nil ->
+          ref = :counters.new(1, [])
+          :persistent_term.put(@ignored_counter_key, ref)
+          ref
+
+        ref ->
+          ref
+      end
+
+    :counters.add(ref, 1, 1)
+    :telemetry.execute([:ash_a2a, :ocel, :ignored], %{count: 1}, %{})
+    :ok
+  end
+
+  @doc """
+  Boot-time check: logs one warning when no `:ocel_ingest_url` is configured
+  (forwarding disabled). Returns `:ok` when configured, `:disabled` otherwise.
+  """
+  @spec warn_if_unconfigured() :: :ok | :disabled
+  def warn_if_unconfigured do
+    case ingest_url() do
+      url when is_binary(url) and url != "" ->
+        :ok
+
+      _ ->
+        Logger.warning(
+          "AshA2A.Telemetry.OcelForwarder: no :ocel_ingest_url configured " <>
+            "(set ASH_A2A_OCEL_INGEST_URL); OCEL events are NOT being forwarded"
+        )
+
+        :disabled
+    end
+  end
+
+  @doc """
+  Total subscribed events that could not be converted to an OCEL event
+  (a receipt event with malformed metadata). Each emits
+  `[:ash_a2a, :ocel, :unconvertible]`.
+  """
+  @spec unconvertible_count() :: non_neg_integer()
+  def unconvertible_count do
+    case :persistent_term.get(@unconvertible_counter_key, nil) do
+      nil -> 0
+      ref -> :counters.get(ref, 1)
+    end
+  end
+
+  defp count_unconvertible do
+    ref =
+      case :persistent_term.get(@unconvertible_counter_key, nil) do
+        nil ->
+          ref = :counters.new(1, [])
+          :persistent_term.put(@unconvertible_counter_key, ref)
+          ref
+
+        ref ->
+          ref
+      end
+
+    :counters.add(ref, 1, 1)
+    :telemetry.execute([:ash_a2a, :ocel, :unconvertible], %{count: 1}, %{})
+    :ok
+  end
 
   defp attach(handler_id, event) do
     case :telemetry.attach(handler_id, event, &__MODULE__.handle_event/4, nil) do
@@ -210,7 +306,8 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   def log_interval_ms, do: Application.get_env(:ash_a2a, :ocel_log_interval_ms, 60_000)
 
   @doc "Forwarder task supervisor name: `config :ash_a2a, :ocel_task_supervisor` (default `AshA2A.Telemetry.TaskSupervisor`)."
-  def task_supervisor, do: Application.get_env(:ash_a2a, :ocel_task_supervisor, AshA2A.Telemetry.TaskSupervisor)
+  def task_supervisor,
+    do: Application.get_env(:ash_a2a, :ocel_task_supervisor, AshA2A.Telemetry.TaskSupervisor)
 
   defp shed_event(url, reason) do
     :counters.add(shed_counter(), 1, 1)
@@ -311,13 +408,16 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   defp failed(endpoint, duration, status, reason, message_fun) do
     :counters.add(delivery_counters(), @failed_ix, 1)
 
+    # Log (or count as suppressed) BEFORE announcing :failed, so an observer
+    # of the event sees the warning accounting already complete.
+    rate_limited_warning(message_fun)
+
     :telemetry.execute([:ash_a2a, :ocel, :failed], %{duration: duration}, %{
       endpoint: endpoint,
       status: status,
       reason: reason
     })
 
-    rate_limited_warning(message_fun)
     :ok
   end
 
@@ -362,94 +462,74 @@ defmodule AshA2A.Telemetry.OcelForwarder do
     :ok
   end
 
+  defp post_receipt(url, receipt) do
+    case safe_receipt_event(receipt) do
+      {:ok, event} -> async_post_event(url, event)
+      :error -> count_unconvertible()
+    end
+  end
+
+  defp safe_receipt_event(receipt) do
+    case receipt_event(receipt) do
+      %{} = event -> {:ok, event}
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
   defp receipt_event(receipt) do
     event = AshA2A.SemanticProjection.ocel_event(receipt)
 
-    case Process.delete(:ash_a2a_ocel_pending_dispatch) do
+    case take_pending_dispatch(receipt) do
       {measurements, metadata} ->
         event
-        |> Map.update!("attributes", &Map.merge(&1, dispatch_attributes(measurements, metadata)))
-        |> Map.put("relationships", relationships(metadata))
+        |> Map.update!(
+          "attributes",
+          &Map.merge(&1, DispatchEvent.stop_attributes(measurements, metadata))
+        )
+        |> Map.put("relationships", DispatchEvent.relationships(metadata))
 
       nil ->
         event
     end
   end
 
-  defp build_dispatch_event(measurements, metadata) do
-    %{
-      "event_id" => Ash.UUIDv7.generate(),
-      "event_type" => event_type(metadata),
-      "event_time" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "attributes" => dispatch_attributes(measurements, metadata),
-      "relationships" => relationships(metadata)
-    }
-  end
+  # The stashed dispatch span is consumed only when it is FRESH (younger than
+  # `pending_dispatch_ttl_ms/0`) and, when both sides name a command, belongs
+  # to this receipt's command. A stale or foreign stash (a dispatch that never
+  # reached a receipt commit) is discarded, never merged into an unrelated
+  # receipt.
+  defp take_pending_dispatch(receipt) do
+    case Process.delete(@pending_key) do
+      {measurements, metadata, stashed_at} ->
+        fresh? = System.monotonic_time(:millisecond) - stashed_at <= pending_dispatch_ttl_ms()
 
-  defp relationships(%{object_id: object_id}) when is_binary(object_id) and object_id != "" do
-    [%{"qualifier" => "acted_on", "object_id" => object_id}]
-  end
+        if fresh? and same_command?(metadata, receipt),
+          do: {measurements, metadata},
+          else: nil
 
-  defp relationships(_metadata), do: []
-
-  defp event_type(%{resource_or_domain: resource, skill_name: skill}) do
-    short_name =
-      if Ash.Resource.Info.resource?(resource) do
-        Ash.Resource.Info.short_name(resource)
-      else
-        inspect(resource)
-      end
-
-    "ash_a2a.dispatch.#{short_name}.#{skill}"
-  end
-
-  defp dispatch_attributes(measurements, metadata) do
-    base = %{
-      "skill_name" => to_string(Map.get(metadata, :skill_name)),
-      "resource_or_domain" => inspect(Map.get(metadata, :resource_or_domain)),
-      "reply_type" => metadata |> Map.get(:reply_type) |> to_string_or_nil(),
-      "duration_native" => measurements |> Map.get(:duration) |> to_string_or_nil()
-    }
-
-    case Map.get(metadata, :stage) do
-      nil ->
-        base
-
-      stage ->
-        base
-        |> Map.put("stage", to_string(stage))
-        |> Map.put("error", ocel_error(Map.get(metadata, :error)))
+      _ ->
+        nil
     end
   end
 
-  # OBS-01: the OCEL body leaves the VM; it carries only the error KIND, even
-  # when a host opted into raw in-VM telemetry errors.
-  defp ocel_error(%{kind: :exception, exception: module}) when is_atom(module),
-    do: "exception:" <> inspect(module)
-
-  defp ocel_error(error), do: error |> AshA2A.Telemetry.Redact.error_summary() |> error_code()
-
-  defp error_code(%{kind: :exception, exception: module}), do: "exception:" <> inspect(module)
-  defp error_code(%{kind: kind}), do: to_string(kind)
-
-  defp build_exception_event(measurements, metadata) do
-    %{
-      "event_id" => Ash.UUIDv7.generate(),
-      "event_type" => event_type(metadata) <> ".exception",
-      "event_time" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "attributes" => %{
-        "skill_name" => to_string(Map.get(metadata, :skill_name)),
-        "resource_or_domain" => inspect(Map.get(metadata, :resource_or_domain)),
-        "kind" => metadata |> Map.get(:kind) |> to_string_or_nil(),
-        "error_code" => metadata |> Map.get(:reason) |> ocel_error(),
-        "duration_native" => measurements |> Map.get(:duration) |> to_string_or_nil()
-      },
-      "relationships" => relationships(metadata)
-    }
+  defp same_command?(%{command_id: dispatch_cmd}, %AshA2A.Receipt{command_id: receipt_cmd})
+       when not is_nil(dispatch_cmd) and not is_nil(receipt_cmd) do
+    command_value(receipt_cmd) == command_value(dispatch_cmd)
   end
 
-  defp to_string_or_nil(nil), do: nil
-  defp to_string_or_nil(value), do: to_string(value)
+  defp same_command?(_metadata, _receipt), do: true
+
+  # Dispatch metadata carries the bare command id string; receipts carry an
+  # `%AshA2A.Identity{}`.
+  defp command_value(%AshA2A.Identity{value: value}), do: value
+  defp command_value(value), do: value
+
+  @doc "Max age of a stashed CommandBus dispatch span: `config :ash_a2a, :ocel_pending_dispatch_ttl_ms` (default `5_000`)."
+  @spec pending_dispatch_ttl_ms() :: non_neg_integer()
+  def pending_dispatch_ttl_ms,
+    do: Application.get_env(:ash_a2a, :ocel_pending_dispatch_ttl_ms, 5_000)
 
   # SSRF policy for the ingest URL (CWE-918). Strict by default (https, public
   # addresses only). Override with `config :ash_a2a, :ocel_egress_policy,

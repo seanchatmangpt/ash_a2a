@@ -28,9 +28,13 @@ defmodule AshA2A.Telemetry.SIEM.SplunkHEC do
 
   @default_sourcetype "ash_a2a:ocel:v2"
 
+  @doc "The platform atom this adapter registers under."
+  @spec platform() :: AshA2A.Telemetry.SIEM.platform()
   @impl true
   def platform, do: :splunk_hec
 
+  @doc "Fail-closed validation of the Splunk HEC endpoint config (`{:ok, config}` or a typed error)."
+  @spec validate_config(keyword()) :: {:ok, keyword()} | {:error, term()}
   @impl true
   def validate_config(config) do
     with :ok <- SIEM.common_config(config),
@@ -41,6 +45,8 @@ defmodule AshA2A.Telemetry.SIEM.SplunkHEC do
     end
   end
 
+  @doc "Sends one batch of OCEL v2 events to Splunk HEC; `{:ok, status}` or a typed error."
+  @spec send_events([map()], keyword()) :: {:ok, pos_integer()} | {:error, term()}
   @impl true
   def send_events(events, config) do
     now_ms = System.system_time(:millisecond)

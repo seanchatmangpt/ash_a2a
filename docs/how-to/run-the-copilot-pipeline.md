@@ -62,7 +62,8 @@ intent = %{
 ```
 
 Build the pipeline state: `Pipeline.init/2` returns
-`%{vince: Vince.new(opts), mesh: mesh}`, and the mesh registers coordinator
+`%{vince: Vince.new(opts), mesh: mesh, bridge: Bridge.new_mesh_state()}`, and
+the mesh registers coordinator
 tensor snapshots (`AshA2A.Twin.Tony.register_coordinator/3` over
 `AshA2A.Strain.Tensor.new/1`):
 
@@ -77,9 +78,12 @@ mesh =
 state = %{AshA2A.Copilot.Pipeline.init(gpm_floor: 0.22, tolerance: 0.0) | mesh: mesh}
 ```
 
-For an optional Bridge mesh_state (strain observation feed), build one with
-`AshA2A.Strain.Bridge.new_mesh_state/1` and fold verdicts back with
-`record_observation/3` — the pipeline does not populate `:bridge` itself.
+`init/2` returns a `:bridge` (`AshA2A.Strain.Bridge` mesh_state, initially
+empty), and `check/3` populates it: admit records `ticket_assigned`, a Vince
+challenge records `challenge_received`, refuse/escalate records
+`error_reported`. To route against registered coordinators, seed a bridge
+with `AshA2A.Strain.Bridge.new_mesh_state([:coord_a])` and put it in
+`:bridge`.
 
 ## 3. Run the pipeline
 
@@ -88,6 +92,56 @@ Invoke `Pipeline.check/3` (inject `:now` for determinism):
 ```elixir
 {new_state, result} =
   AshA2A.Copilot.Pipeline.check(intent, state, now: now)
+```
+
+### Options for `check/3`
+
+| option | effect |
+|---|---|
+| `:now` | unix seconds for attestation freshness (default wall clock) |
+| `:prior` | mechanical-prior module; default `Pipeline.detect_prior/0` |
+| `:authority_source` | `Source` module or `{module, opts}`; enables the authority hop, last gate before admit, actor from `intent[:actor_id]`; absent = skipped |
+| `:attention_broker` | `Broker` module or `{module, opts}`; escalate-class refuses return `{:escalated, %{proposal_id:, card:, proposal:}}` |
+| `:tony_triage` | triage payload folded into the escalation card |
+| `:proposal_level` | broker level (default `:consent_by_silence`; `:supervised` forbids silence-consent) |
+| `:vince_mod` | Vince module or 2-arity fun (court instrumentation) |
+
+`:coordinator_id` is not an option (removed); it is read from
+`intent.coordinator_id`. Malformed intents (missing keys, `nte` zero or
+non-number, non-number `offer`, nil `coordinator_id`) return
+`{:refuse, %{code: :invalid_intent, reason: _}}` and never raise.
+
+Human override on an escalated proposal (`AshA2A.Attention.Broker`):
+
+```elixir
+{:escalated, %{proposal: proposal}} = result
+ledger = AshA2A.Attention.Broker.register(%{}, proposal)
+
+AshA2A.Attention.Broker.override(proposal, nil, :approve, ledger)
+#=> {:refused, :signature_required}   (GPM-floor cards require a signature)
+
+{:ok, ledger, _entry} =
+  AshA2A.Attention.Broker.override(proposal, "sig", :approve, ledger)
+
+AshA2A.Attention.Broker.override(proposal, "sig", :reject, ledger)
+#=> {:refused, :already_decided}
+```
+
+Example with the authority hop and broker:
+
+```elixir
+opts = [
+  now: now,
+  authority_source: AshA2A.Authority.Source.AllowAll,
+  attention_broker: AshA2A.Attention.Broker,
+  proposal_level: :supervised
+]
+
+{state, result} =
+  AshA2A.Copilot.Pipeline.check(Map.put(intent, :actor_id, "actor-1"), state, opts)
+
+# authority refusal: {:refuse, %{code: :authority, reason: detail}}
+# escalation:        {:escalated, %{proposal_id: _, card: _, proposal: _}}
 ```
 
 ## 4. Observe the verdicts
@@ -209,10 +263,17 @@ end
 
 ```console
 $ mix test test/copilot/pipeline_test.exs
-...
-22 tests, 0 failures
 ```
+
+The test count is whatever the run reports; `grep -c '^\s*test "'
+test/copilot/pipeline_test.exs` counts `test` declarations (29 when this
+page was updated).
 
 If the attestation cases fail with `:stale` on fresh tokens, check that you
 injected `:now` consistently in both the claim timestamps and the check
 opts.
+
+## See Also
+
+- [Copilot membrane](../explanation/copilot-membrane.md)
+- [Ingress attestation reference](../reference/ingress-attestation.md)

@@ -392,6 +392,7 @@ defmodule AshA2A.Chicago.Fixtures.FiboFinance do
     emit(:crash, tx.id, %{"point" => "after_do_before_receipt"})
     Process.exit(self(), :kill)
     # never reached: the receipt below must not be written by a killed process
+    # SLEEP-CLASS: SCHEDULING (unreachable park after kill; process never resumes)
     Process.sleep(:infinity)
   end
 

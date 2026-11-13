@@ -17,10 +17,12 @@ defmodule AshA2A.Telemetry.Metrics do
   Durations are `:native` time units as emitted by `:telemetry.span/3`;
   reporters convert via `unit: {:native, :millisecond}` (already set here).
 
-  `ash_a2a.command_bus.actuate.stop.duration` is present only once
-  `AshA2A.CommandBus` emits a `:duration` measurement on its
-  `[:ash_a2a, :command_bus, :actuate, :stop]` event; until then that metric
-  simply records nothing (reporters skip events lacking the measurement).
+  Every definition's event, measurement and tags are asserted against a real
+  emitter by `test/ash_a2a/telemetry/metrics_test.exs`. A `:counter`
+  counts event occurrences, so its `:measurement` is nominal (nothing is read
+  from it); the events that carry no measurements (`receipt.committed`,
+  `receipt.outboxed`, `decision_envelope.verdict`) are counters named
+  `...count`.
   """
 
   @telemetry_metrics Telemetry.Metrics
@@ -43,7 +45,7 @@ defmodule AshA2A.Telemetry.Metrics do
         name: "ash_a2a.dispatch.stop.duration",
         event: [:ash_a2a, :dispatch, :stop],
         measurement: :duration,
-        tags: [:skill_name, :reply_type, :stage],
+        tags: [:skill_name, :reply_type],
         unit: {:native, :millisecond}
       },
       %{
@@ -100,6 +102,102 @@ defmodule AshA2A.Telemetry.Metrics do
         event: [:ash_a2a, :receipt_outbox, :reconciler, :tick],
         measurement: :remaining,
         tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.ocel_broadcaster.dropped.count",
+        event: [:ash_a2a, :ocel_broadcaster, :dropped],
+        measurement: :count,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.ocel_broadcaster.flush_failed.count",
+        event: [:ash_a2a, :ocel_broadcaster, :flush_failed],
+        measurement: :count,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.ocel_broadcaster.unconvertible.count",
+        event: [:ash_a2a, :ocel_broadcaster, :unconvertible],
+        measurement: :count,
+        tags: [:kind],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.ocel.unconvertible.count",
+        event: [:ash_a2a, :ocel, :unconvertible],
+        measurement: :count,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.receipt_outbox.reconciler.corrupt.count",
+        event: [:ash_a2a, :receipt_outbox, :reconciler, :corrupt],
+        measurement: :count,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :summary,
+        name: "ash_a2a.receipt_outbox.reconciler.stuck.attempts",
+        event: [:ash_a2a, :receipt_outbox, :reconciler, :stuck],
+        measurement: :attempts,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.receipt.committed.count",
+        event: [:ash_a2a, :receipt, :committed],
+        measurement: :count,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.receipt.outboxed.count",
+        event: [:ash_a2a, :receipt, :outboxed],
+        measurement: :count,
+        tags: [],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.authority.decision_envelope.verdict.count",
+        event: [:ash_a2a, :authority, :decision_envelope, :verdict],
+        measurement: :count,
+        tags: [:outcome, :code],
+        unit: :unit
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.transport.request.count",
+        event: [:ash_a2a, :transport, :request, :stop],
+        measurement: :duration,
+        tags: [:binding],
+        unit: {:native, :millisecond}
+      },
+      %{
+        type: :summary,
+        name: "ash_a2a.transport.request.duration",
+        event: [:ash_a2a, :transport, :request, :stop],
+        measurement: :duration,
+        tags: [:binding],
+        unit: {:native, :millisecond}
+      },
+      %{
+        type: :counter,
+        name: "ash_a2a.transport.request.error.count",
+        event: [:ash_a2a, :transport, :request, :error],
+        measurement: :count,
+        tags: [:binding],
         unit: :unit
       },
       %{

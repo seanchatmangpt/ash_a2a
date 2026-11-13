@@ -47,7 +47,7 @@ Verdicts:
   [D], not [V].
 
 "Atomic requirement" (Axx) is one testable clause inside a family; counts in section 6 use
-these. Lane ids (Lnn) refer to `docs/jira/v26.9.28-kernel/_LANES.md`, which this map does
+these. Lane ids (Lnn) refer to `docs/archive/jira/v26.9.28-kernel/_LANES.md`, which this map does
 not edit.
 
 ## 2. Substrate catalog
@@ -355,7 +355,7 @@ falsifier. "Kernel" means the trusted BEAM code of RFC-005 section 3.
 - **Found:** no cryptographic k-of-n signature verifier located; keyword hits (multisig,
   threshold, quorum, FROST, Shamir) were not inspected beyond one sample (castle
   `board.rs` `threshold` is a materiality threshold, unrelated). erlmcp consensus material
-  (`docs/BYZANTINE_FAULT_TOLERANCE_ANALYSIS.md`, T31) is design docs and disabled code.
+  (`docs/BYZANTINE_FAULT_TOLERANCE_ANALYSIS.md`, T31; file does not exist at HEAD 68a8bd5e) is design docs and disabled code.
   This is NOT a verified negative and is not counted as one in section 6. T16 has
   single-signer suites.
 - **Verdict INVENT** (A26 verifier requiring at least k valid signatures from distinct
@@ -958,5 +958,5 @@ T09 as the F2 differential oracle. No verdict flipped from INVENT to REUSE.
 
 - `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md`: the requirement source
 - `docs/rfc/RFC-SA2A-005-security-profile-v26.9.28.md`: current-code status and CWE table
-- `docs/jira/v26.9.28-kernel/_LANES.md`: kernel lane map this order attaches to
+- `docs/archive/jira/v26.9.28-kernel/_LANES.md`: kernel lane map this order attaches to
 - `docs/rfc/RFC-SA2A-004-v26.9.28.md`: normative consequence protocol

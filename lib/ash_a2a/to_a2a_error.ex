@@ -40,6 +40,37 @@ defmodule AshA2A.ToA2AError.Wire do
   end
 
   @doc """
+  Field violations `[{field, description}]` extracted from the nested
+  errors of an `Ash.Error.Invalid` (only errors carrying a `:field`).
+  """
+  @spec field_violations(term()) :: [{String.t(), String.t()}]
+  def field_violations(%{errors: errors}) when is_list(errors) do
+    for %{field: field} = e <- errors, not is_nil(field) do
+      {to_string(field), Exception.message(e)}
+    end
+  end
+
+  def field_violations(_), do: []
+
+  @doc """
+  `data` for a -32602 envelope. Default: the free-form message (wrapped into
+  ErrorInfo by `Error.to_map/1`, unchanged legacy shape). With
+  `config :ash_a2a, :bad_request_details, true` and at least one field
+  error, returns a pre-wrapped `[ErrorInfo, google.rpc.BadRequest]` list.
+  """
+  @spec invalid_data(Exception.t()) :: term()
+  def invalid_data(error) do
+    message = Exception.message(error)
+
+    with true <- Application.get_env(:ash_a2a, :bad_request_details, false) == true,
+         [_ | _] = violations <- field_violations(error) do
+      [error_info("INVALID_PARAMS", message), Error.bad_request(violations)]
+    else
+      _ -> message
+    end
+  end
+
+  @doc """
   Builds one `google.rpc.ErrorInfo` object (as a plain map) with an explicit
   reason string and optional caller-actionable `detail` in its metadata.
   """
@@ -181,7 +212,12 @@ defimpl AshA2A.ToA2AError, for: Ash.Error.Invalid do
   # `Exception.message/1` is caller-actionable (SafeError's `actionable/1`
   # keeps `:invalid` messages for the same reason).
   def to_a2a_error(error, id) do
-    AshA2A.ToA2AError.Wire.envelope(id, -32_602, "Invalid parameters", Exception.message(error))
+    AshA2A.ToA2AError.Wire.envelope(
+      id,
+      -32_602,
+      "Invalid parameters",
+      AshA2A.ToA2AError.Wire.invalid_data(error)
+    )
   end
 end
 
@@ -208,6 +244,32 @@ end
 defimpl AshA2A.ToA2AError, for: Ash.Error.Changes.Required do
   def to_a2a_error(error, id) do
     AshA2A.ToA2AError.Wire.envelope(id, -32_602, "Invalid parameters", Exception.message(error))
+  end
+end
+
+defmodule AshA2A.TaskGenerationMismatchError do
+  @moduledoc """
+  Raised/returned when `SendMessageConfiguration.ifGenerationMatch` differs
+  from the task's current generation (A2A v1.1.0). Maps to `-32010`,
+  ErrorInfo reason `TASK_GENERATION_MISMATCH`.
+  """
+  defexception [:task_id, :expected, :actual, message: "Task generation mismatch"]
+end
+
+defimpl AshA2A.ToA2AError, for: AshA2A.TaskGenerationMismatchError do
+  def to_a2a_error(error, id) do
+    wire =
+      AshA2A.Protocol.JSONRPC.Error.task_generation_mismatch(nil,
+        task_id: error.task_id,
+        expected: error.expected,
+        actual: error.actual
+      )
+
+    %{
+      "jsonrpc" => "2.0",
+      "id" => id,
+      "error" => AshA2A.Protocol.JSONRPC.Error.to_map(wire)
+    }
   end
 end
 

@@ -20,8 +20,16 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
   and `[:ash_a2a, :receipt, :outboxed]`. Dispatch spans become
   `"ash_a2a.dispatch.<resource>.<skill>"` event types (with the
   `.exception` suffix on the exception event, a redacted error-code kind —
-  never a stacktrace); receipt events are projected by the real
-  `AshA2A.SemanticProjection.ocel_event/1`.
+  never a stacktrace) built by the SAME `AshA2A.Telemetry.DispatchEvent`
+  functions the forwarder uses (identical `stage`/`error`/`error_code`
+  attributes); receipt events are projected by the real
+  `AshA2A.SemanticProjection.ocel_event/1`. `event_time` is captured at
+  emission, in the emitting process, never at flush.
+
+  Events that cannot be converted (malformed receipt metadata, a raising
+  projection) are counted (`unconvertible_count/1`) and emit
+  `[:ash_a2a, :ocel_broadcaster, :unconvertible]`; they are never silently
+  discarded.
 
   ## Supervisor integration
 
@@ -62,14 +70,18 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
   buffered, no timer runs, no HTTP leaves. Flush delivery failures are typed
   (`{:error, {:siem_delivery_failed, platform, reason}}` and friends from
   `deliver/3`), counted, emitted as
-  `[:ash_a2a, :ocel_broadcaster, :flush_failed]`, and the events are
-  re-buffered (same drop-oldest bound) for the next flush — the broadcaster
-  never crashes and never blocks the dispatch path it observes.
+  `[:ash_a2a, :ocel_broadcaster, :flush_failed]`, and the events are kept in
+  that SINK's own retry buffer (same drop-oldest bound) for its next flush.
+  Healthy sinks are never re-sent events they already accepted — a partial
+  multi-sink failure cannot duplicate events. The broadcaster never crashes
+  and never blocks the dispatch path it observes.
   """
 
   use GenServer
 
   require Logger
+
+  alias AshA2A.Telemetry.DispatchEvent
 
   @typedoc "Accepted broadcaster options (module doc)."
   @type opts :: [{atom(), term()}]
@@ -120,14 +132,22 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
   @doc "Detaches the broadcaster's telemetry handlers."
   @spec detach(atom()) :: :ok | {:error, :not_found}
   def detach(name \\ __MODULE__) do
-    results = Enum.map(@subscribed_events, fn {_event, kind} -> :telemetry.detach({name, kind}) end)
+    results =
+      Enum.map(@subscribed_events, fn {_event, kind} -> :telemetry.detach({name, kind}) end)
 
     if :ok in results, do: :ok, else: {:error, :not_found}
   end
 
-  @doc "Number of OCEL events currently buffered."
+  @doc """
+  Number of OCEL events currently buffered: the intake queue plus every
+  per-sink retry buffer (event-deliveries still owed).
+  """
   @spec buffer_count(atom()) :: non_neg_integer()
   def buffer_count(name \\ __MODULE__), do: GenServer.call(name, :buffer_count)
+
+  @doc "Total OCEL events that could not be converted (malformed metadata / raising projection)."
+  @spec unconvertible_count(atom()) :: non_neg_integer()
+  def unconvertible_count(name \\ __MODULE__), do: GenServer.call(name, :unconvertible_count)
 
   @doc "Total OCEL events dropped by the drop-oldest overflow policy."
   @spec drop_count(atom()) :: non_neg_integer()
@@ -149,10 +169,18 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
   # -- telemetry handler (runs in the EMITTING process) -------------------------
 
   @doc false
+  @spec handle_event(
+          :telemetry.event_name(),
+          :telemetry.event_measurements(),
+          map(),
+          {atom(), kind()}
+        ) ::
+          :ok
   def handle_event(_event, measurements, metadata, {name, kind}) do
     # Cheap and non-raising: conversion happens inside the broadcaster, never
     # in the emitter. `GenServer.cast/2` never backpressures the caller.
-    GenServer.cast(name, {:event, kind, measurements, metadata})
+    # `event_time` is captured HERE (emission), not in the GenServer flush.
+    GenServer.cast(name, {:event, kind, measurements, metadata, DispatchEvent.now()})
   end
 
   # -- GenServer -----------------------------------------------------------------
@@ -165,11 +193,14 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
       name: name,
       sinks: resolve_sinks(opts),
       siem_opts: Keyword.get(opts, :siem_opts, []),
-      max_buffer: max(1, Keyword.get(opts, :max_buffer, @default_max_buffer)),
+      max_buffer: normalise_max_buffer(Keyword.get(opts, :max_buffer, @default_max_buffer)),
       flush_interval_ms: Keyword.get(opts, :flush_interval_ms, @default_flush_interval_ms),
       queue: :queue.new(),
       size: 0,
-      drops: 0
+      drops: 0,
+      unconvertible: 0,
+      # per-sink retry buffers, keyed by sink index: oldest-first event lists
+      retry: %{}
     }
 
     :ok = attach!(name)
@@ -185,7 +216,8 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
   def terminate(_reason, %{name: name}), do: detach(name)
 
   @impl GenServer
-  def handle_call(:buffer_count, _from, state), do: {:reply, state.size, state}
+  def handle_call(:buffer_count, _from, state), do: {:reply, pending_total(state), state}
+  def handle_call(:unconvertible_count, _from, state), do: {:reply, state.unconvertible, state}
   def handle_call(:drop_count, _from, state), do: {:reply, state.drops, state}
   def handle_call(:configured?, _from, state), do: {:reply, state.sinks != [], state}
 
@@ -199,13 +231,13 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
   @impl GenServer
   # Config-gated idle: with no sink, events are discarded before conversion —
   # nothing is buffered, no drop telemetry, zero side effects.
-  def handle_cast({:event, _kind, _measurements, _metadata}, %{sinks: []} = state) do
+  def handle_cast({:event, _kind, _measurements, _metadata, _time}, %{sinks: []} = state) do
     {:noreply, state}
   end
 
-  def handle_cast({:event, kind, measurements, metadata}, state) do
-    case to_ocel_event(kind, measurements, metadata) do
-      nil -> {:noreply, state}
+  def handle_cast({:event, kind, measurements, metadata, time}, state) do
+    case safe_to_ocel_event(kind, measurements, metadata, time) do
+      nil -> {:noreply, count_unconvertible(state, kind)}
       event -> {:noreply, buffer(event, state)}
     end
   end
@@ -248,29 +280,56 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
     })
   end
 
+  defp count_unconvertible(%{name: name} = state, kind) do
+    :telemetry.execute([:ash_a2a, :ocel_broadcaster, :unconvertible], %{count: 1}, %{
+      broadcaster: name,
+      kind: kind
+    })
+
+    %{state | unconvertible: state.unconvertible + 1}
+  end
+
+  defp pending_total(state) do
+    state.size + (state.retry |> Map.values() |> Enum.map(&length/1) |> Enum.sum())
+  end
+
+  defp normalise_max_buffer(n) when is_integer(n), do: max(1, n)
+  defp normalise_max_buffer(_other), do: @default_max_buffer
+
   # -- delivery ----------------------------------------------------------------------
 
   defp deliver(_events, %{sinks: []} = state), do: state
-  defp deliver([], state), do: state
 
   defp deliver(events, %{sinks: sinks} = state) do
-    Enum.reduce(sinks, state, fn {platform, sink_config}, state ->
-      config = Keyword.merge(sink_config, state.siem_opts)
+    sinks
+    |> Enum.with_index()
+    |> Enum.reduce(state, fn {{platform, sink_config}, idx}, state ->
+      # Each sink owns its retry buffer: it re-sends only what IT failed.
+      batch = Map.get(state.retry, idx, []) ++ events
 
-      case AshA2A.Telemetry.SIEM.deliver(platform, events, config) do
-        {:ok, _report} ->
-          state
-
-        {:error, _typed} = failure ->
-          Logger.warning(
-            "AshA2A.Telemetry.OcelBroadcaster: SIEM flush to #{inspect(platform)} failed " <>
-              "(#{inspect(failure)}); #{length(events)} event(s) re-buffered drop-oldest bounded"
-          )
-
-          emit_flush_failed(failure, state)
-          rebuffer(events, state)
+      if batch == [] do
+        state
+      else
+        config = Keyword.merge(sink_config, state.siem_opts)
+        deliver_to_sink(platform, config, idx, batch, state)
       end
     end)
+  end
+
+  defp deliver_to_sink(platform, config, idx, batch, state) do
+    case AshA2A.Telemetry.SIEM.deliver(platform, batch, config) do
+      {:ok, _report} ->
+        %{state | retry: Map.delete(state.retry, idx)}
+
+      {:error, _typed} = failure ->
+        Logger.warning(
+          "AshA2A.Telemetry.OcelBroadcaster: SIEM flush to #{inspect(platform)} failed " <>
+            "(#{inspect(failure)}); #{length(batch)} event(s) kept in that sink's retry buffer, drop-oldest bounded"
+        )
+
+        emit_flush_failed(failure, state)
+        retain(batch, idx, state)
+    end
   end
 
   defp emit_flush_failed(failure, %{name: name}) do
@@ -280,10 +339,19 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
     })
   end
 
-  # Re-queue the unflushed events at the FRONT (in order) so the next flush
-  # drains them first; bounded by the same drop-oldest policy.
-  defp rebuffer(events, state) do
-    Enum.reduce(events, state, &buffer/2)
+  # Keep the failed batch (oldest-first) in the sink's retry buffer, bounded
+  # by the same drop-oldest policy as the intake queue.
+  defp retain(batch, idx, %{max_buffer: max} = state) do
+    overflow = max(0, length(batch) - max)
+
+    state =
+      Enum.reduce(List.duplicate(:drop, overflow), state, fn :drop, st ->
+        st = %{st | drops: st.drops + 1}
+        emit_dropped(st)
+        st
+      end)
+
+    %{state | retry: Map.put(state.retry, idx, Enum.drop(batch, overflow))}
   end
 
   defp schedule(%{flush_interval_ms: interval} = state) when is_integer(interval) do
@@ -293,82 +361,35 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
 
   defp schedule(state), do: state
 
-  # -- OCEL v2 conversion (shapes pinned read-only by the forwarder/projection courts)
+  # -- OCEL v2 conversion (shared builder: AshA2A.Telemetry.DispatchEvent) --------------
 
-  defp to_ocel_event(_kind, _measurements, %AshA2A.Receipt{} = receipt) do
-    AshA2A.SemanticProjection.ocel_event(receipt)
+  # Never raises into the GenServer: a raising projection is an unconvertible
+  # event (counted), not a crash.
+  defp safe_to_ocel_event(kind, measurements, metadata, time) do
+    to_ocel_event(kind, measurements, metadata, time)
+  rescue
+    _ -> nil
   end
 
-  defp to_ocel_event(:dispatch_stop, measurements, metadata) when is_map(measurements) do
-    dispatch_event(metadata, measurements, :stop)
+  defp to_ocel_event(kind, _measurements, %{receipt: %AshA2A.Receipt{} = receipt}, _time)
+       when kind in [:receipt_committed, :receipt_outboxed] do
+    case AshA2A.SemanticProjection.ocel_event(receipt) do
+      %{} = event -> event
+      _ -> nil
+    end
   end
 
-  defp to_ocel_event(:dispatch_exception, measurements, metadata) when is_map(measurements) do
-    dispatch_event(metadata, measurements, :exception)
+  defp to_ocel_event(:dispatch_stop, measurements, metadata, time)
+       when is_map(measurements) and is_map(metadata) do
+    DispatchEvent.stop(measurements, metadata, time)
   end
 
-  defp to_ocel_event(_kind, _measurements, _metadata), do: nil
-
-  defp dispatch_event(metadata, measurements, kind) do
-    %{
-      "event_id" => Ash.UUIDv7.generate(),
-      "event_type" => dispatch_event_type(metadata, kind),
-      "event_time" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "attributes" => dispatch_attributes(measurements, metadata, kind),
-      "relationships" => relationships(metadata)
-    }
+  defp to_ocel_event(:dispatch_exception, measurements, metadata, time)
+       when is_map(measurements) and is_map(metadata) do
+    DispatchEvent.exception(measurements, metadata, time)
   end
 
-  defp dispatch_event_type(metadata, :exception) do
-    dispatch_event_type(metadata, :stop) <> ".exception"
-  end
-
-  defp dispatch_event_type(metadata, :stop) do
-    resource = Map.get(metadata, :resource_or_domain)
-    skill = Map.get(metadata, :skill_name)
-
-    short_name =
-      if is_atom(resource) and Ash.Resource.Info.resource?(resource) do
-        Ash.Resource.Info.short_name(resource)
-      else
-        inspect(resource)
-      end
-
-    "ash_a2a.dispatch.#{short_name}.#{skill}"
-  end
-
-  defp dispatch_attributes(measurements, metadata, :stop) do
-    %{
-      "skill_name" => to_string(Map.get(metadata, :skill_name)),
-      "resource_or_domain" => inspect(Map.get(metadata, :resource_or_domain)),
-      "reply_type" => to_string_or_nil(Map.get(metadata, :reply_type)),
-      "duration_native" => to_string_or_nil(Map.get(measurements, :duration))
-    }
-  end
-
-  defp dispatch_attributes(measurements, metadata, :exception) do
-    Map.merge(dispatch_attributes(measurements, metadata, :stop), %{
-      "kind" => to_string_or_nil(Map.get(metadata, :kind)),
-      "error_code" =>
-        # `Redact.error_summary/1` always returns a map with a `:kind` key
-        # (its final `error_summary(other)` clause is total), so the former
-        # catch-all `_ -> nil` clause was unreachable (dialyzer
-        # pattern_match_cov) and is removed; the remaining clause is total
-        # over the actual return type.
-        case AshA2A.Telemetry.Redact.error_summary(Map.get(metadata, :reason)) do
-          %{kind: kind} -> to_string(kind)
-        end
-    })
-  end
-
-  defp relationships(%{object_id: object_id}) when is_binary(object_id) and object_id != "" do
-    [%{"qualifier" => "acted_on", "object_id" => object_id}]
-  end
-
-  defp relationships(_metadata), do: []
-
-  defp to_string_or_nil(nil), do: nil
-  defp to_string_or_nil(value), do: to_string(value)
+  defp to_ocel_event(_kind, _measurements, _metadata, _time), do: nil
 
   # -- sink resolution -----------------------------------------------------------------
 

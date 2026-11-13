@@ -458,14 +458,11 @@ defmodule AshA2A.V1TaskStoreDurabilityTest do
       # not a GenServer, does carry it.
       assert AshA2A.Protocol.TaskStore in (EkvStore.module_info(:attributes)[:behaviour] || [])
 
-      # Spec-vs-reality: Ekv implements the optional list_all/2 but NOT the
-      # push-config callbacks — an explicitly optional, documented absence
-      # (State falls back to its in-memory push_config map for those).
       assert function_exported?(EkvStore, :list_all, 2)
-      refute function_exported?(EkvStore, :set_push_config, 2)
-      refute function_exported?(EkvStore, :get_push_config, 3)
-      refute function_exported?(EkvStore, :list_push_configs, 2)
-      refute function_exported?(EkvStore, :delete_push_config, 3)
+      assert function_exported?(EkvStore, :set_push_config, 2)
+      assert function_exported?(EkvStore, :get_push_config, 3)
+      assert function_exported?(EkvStore, :list_push_configs, 2)
+      assert function_exported?(EkvStore, :delete_push_config, 3)
     end
   end
 end

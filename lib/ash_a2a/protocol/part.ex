@@ -19,10 +19,12 @@ defmodule AshA2A.Protocol.Part.Text do
 
   @type t :: %__MODULE__{
           text: String.t(),
-          metadata: map()
+          metadata: map(),
+          filename: String.t() | nil,
+          media_type: String.t() | nil
         }
 
-  defstruct text: "", metadata: %{}
+  defstruct text: "", metadata: %{}, filename: nil, media_type: nil
 
   @doc """
   Creates a new text part.
@@ -61,17 +63,20 @@ defmodule AshA2A.Protocol.Part.Data do
   """
 
   @type t :: %__MODULE__{
-          data: map(),
-          metadata: map()
+          data: term(),
+          metadata: map(),
+          filename: String.t() | nil,
+          media_type: String.t() | nil
         }
 
-  defstruct data: %{}, metadata: %{}
+  defstruct data: %{}, metadata: %{}, filename: nil, media_type: nil
 
   @doc """
-  Creates a new data part.
+  Creates a new data part. `data` may be any JSON value (object, array,
+  string, number, boolean or null), per `google.protobuf.Value`.
   """
-  @spec new(map(), map()) :: t()
-  def new(data, metadata \\ %{}) when is_map(data) do
+  @spec new(term(), map()) :: t()
+  def new(data, metadata \\ %{}) do
     %__MODULE__{data: data, metadata: metadata}
   end
 end

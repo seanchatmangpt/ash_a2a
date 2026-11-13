@@ -56,9 +56,12 @@ defmodule AshA2A.Twin.VinceTest do
     # (100_000 - 78_010)/100_000 = 0.2199
     assert_in_delta Vince.gpm(100_000, 78_010), 0.2199, 1.0e-12
 
-    assert Vince.gpm_breach?(100_000, 100_000, 0.22) # 0.0 margin
-    assert Vince.gpm_breach?(100_000, 120_000, 0.22) # negative margin
-    refute Vince.gpm_breach?(250_000, 180_000, 0.22) # 0.28, pack example
+    # 0.0 margin
+    assert Vince.gpm_breach?(100_000, 100_000, 0.22)
+    # negative margin
+    assert Vince.gpm_breach?(100_000, 120_000, 0.22)
+    # 0.28, pack example
+    refute Vince.gpm_breach?(250_000, 180_000, 0.22)
   end
 
   # -- evaluate_intent: verdict shape and detector precedence --------------
@@ -66,7 +69,10 @@ defmodule AshA2A.Twin.VinceTest do
   describe "evaluate_intent/2" do
     test "clean intent admits with a GPM ticket" do
       v = Vince.new()
-      {v2, {:admit, ticket}} = Vince.evaluate_intent(v, %{trade: :t1, nte: 250_000, offer: 180_000})
+
+      {v2, {:admit, ticket}} =
+        Vince.evaluate_intent(v, %{trade: :t1, nte: 250_000, offer: 180_000})
+
       assert ticket.gpm == 0.28
       assert ticket.trade == :t1
       # admit does not touch the challenge ledger
@@ -85,7 +91,9 @@ defmodule AshA2A.Twin.VinceTest do
     test "exact-half offer challenges with monkey_math code" do
       v = Vince.new()
       # 200_000/2 = 100_000, GPM 0.5 -> above floor, so monkey_math fires
-      {_v2, {:challenge, c}} = Vince.evaluate_intent(v, %{trade: :t3, nte: 200_000, offer: 100_000})
+      {_v2, {:challenge, c}} =
+        Vince.evaluate_intent(v, %{trade: :t3, nte: 200_000, offer: 100_000})
+
       assert c.code == :monkey_math
       assert "labor_hours_breakdown" in c.demanded_evidence
     end
@@ -115,7 +123,10 @@ defmodule AshA2A.Twin.VinceTest do
       # exclusive; precedence is still enforced by cond order for custom
       # floors > 0.5.
       vhi = Vince.new(gpm_floor: 0.6)
-      {_v, {:challenge, c}} = Vince.evaluate_intent(vhi, %{trade: :t5, nte: 150_000, offer: 75_000})
+
+      {_v, {:challenge, c}} =
+        Vince.evaluate_intent(vhi, %{trade: :t5, nte: 150_000, offer: 75_000})
+
       assert c.code == :gpm_floor
     end
 
@@ -127,7 +138,9 @@ defmodule AshA2A.Twin.VinceTest do
         Vince.evaluate_intent(v1, %{trade: :t6, nte: 100_000, offer: 85_000})
 
       # a DIFFERENT trade still gets a fresh (non-escalated) evaluation
-      {_v3, {:challenge, c}} = Vince.evaluate_intent(v2, %{trade: :t7, nte: 100_000, offer: 85_000})
+      {_v3, {:challenge, c}} =
+        Vince.evaluate_intent(v2, %{trade: :t7, nte: 100_000, offer: 85_000})
+
       assert c.code == :gpm_floor
     end
 
@@ -167,6 +180,7 @@ defmodule AshA2A.Twin.VinceTest do
   describe "check_claim/3" do
     test "default RefuseAll prior refuses every claim" do
       v = Vince.new()
+
       {^v, {:refuse, %{code: :mechanical_prior, reason: :refuse_all_default_prior}}} =
         Vince.check_claim(v, {:claim, :anything}, %{})
     end
@@ -192,6 +206,7 @@ defmodule AshA2A.Twin.VinceTest do
 
     test "unknown claim class is refused with typed reason" do
       v = Vince.new(prior: InterrogatePrior)
+
       {_v2, {:refuse, %{code: :mechanical_prior, reason: :unknown_claim_class}}} =
         Vince.check_claim(v, :hail_damage, %{})
     end
@@ -206,5 +221,95 @@ defmodule AshA2A.Twin.VinceTest do
     # tolerance now absorbs a 3-unit half-split miss
     {_v2, {:challenge, c}} = Vince.evaluate_intent(v, %{trade: :t9, nte: 100_003, offer: 50_000})
     assert c.code == :monkey_math
+  end
+
+  describe "respelling and ledger" do
+    test "respelled trade string cannot reset the escalation ledger" do
+      v = Vince.new()
+
+      {v1, {:challenge, _}} =
+        Vince.evaluate_intent(v, %{trade: "HVAC.Drain", nte: 100_000, offer: 85_000})
+
+      for respelled <- ["hvac.drain", " hvac.drain ", "HVAC.Drain ", "Hvac.DRAIN"] do
+        assert {_, {:refuse, :escalate_multisig}} =
+                 Vince.evaluate_intent(v1, %{trade: respelled, nte: 100_000, offer: 78_000})
+      end
+
+      assert map_size(v1.challenges) == 1
+    end
+
+    test "ledger counts challenge then escalations, bounded" do
+      v = Vince.new()
+      intent = %{trade: :t_count, nte: 100_000, offer: 85_000}
+      {v1, {:challenge, _}} = Vince.evaluate_intent(v, intent)
+      assert v1.challenges == %{t_count: 1}
+      {v2, {:refuse, :escalate_multisig}} = Vince.evaluate_intent(v1, intent)
+      assert v2.challenges == %{t_count: 2}
+
+      v_big = %{v2 | challenges: %{t_count: 1_000}}
+      {v3, {:refuse, :escalate_multisig}} = Vince.evaluate_intent(v_big, intent)
+      assert v3.challenges == %{t_count: 1_000}
+    end
+
+    test "ledger is bounded: full ledger refuses new challenge-worthy trades, admits clean ones" do
+      v = Vince.new(max_ledger: 1)
+      {v1, {:challenge, _}} = Vince.evaluate_intent(v, %{trade: :a, nte: 100_000, offer: 85_000})
+
+      assert {^v1, {:refuse, %{code: :ledger_full}}} =
+               Vince.evaluate_intent(v1, %{trade: :b, nte: 100_000, offer: 85_000})
+
+      assert {^v1, {:admit, _}} =
+               Vince.evaluate_intent(v1, %{trade: :c, nte: 100_000, offer: 70_001})
+
+      # existing trade still escalates at capacity
+      assert {_, {:refuse, :escalate_multisig}} =
+               Vince.evaluate_intent(v1, %{trade: :a, nte: 100_000, offer: 70_001})
+    end
+  end
+
+  describe "malformed intents" do
+    test "nte == 0, non-number, negative and malformed shapes refuse typed, ledger untouched" do
+      v = Vince.new()
+
+      cases = [
+        {%{trade: :x, nte: 0, offer: 10}, :nte_not_positive},
+        {%{trade: :x, nte: -5, offer: 10}, :nte_not_positive},
+        {%{trade: :x, nte: "100", offer: 10}, :nte_not_a_number},
+        {%{trade: :x, nte: nil, offer: 10}, :nte_not_a_number},
+        {%{trade: :x, nte: 100, offer: "10"}, :offer_not_a_number},
+        {%{trade: :x, nte: 100, offer: -1}, :offer_negative},
+        {%{trade: :x}, :malformed_intent},
+        {:nope, :malformed_intent}
+      ]
+
+      for {intent, reason} <- cases do
+        assert {^v, {:refuse, %{code: :invalid_intent, reason: ^reason}}} =
+                 Vince.evaluate_intent(v, intent)
+      end
+    end
+  end
+
+  describe "prior shape" do
+    defmodule BadShapePrior do
+      @behaviour AshA2A.Twin.MechanicalPrior
+      @impl true
+      def prior_verdict(_c, _t), do: :maybe
+    end
+
+    test "unexpected prior verdict shape is a typed refusal" do
+      v = Vince.new(prior: BadShapePrior)
+
+      assert {^v, {:refuse, %{code: :mechanical_prior, reason: {:invalid_prior_verdict, :maybe}}}} =
+               Vince.check_claim(v, :c, %{})
+    end
+
+    test "prior that is not a loaded prior module is a typed refusal" do
+      for bad <- [NoSuchPriorModule, nil, "str", String] do
+        v = Vince.new(prior: bad)
+
+        assert {^v, {:refuse, %{code: :mechanical_prior, reason: {:invalid_prior, ^bad}}}} =
+                 Vince.check_claim(v, :c, %{})
+      end
+    end
   end
 end

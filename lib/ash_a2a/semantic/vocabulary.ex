@@ -26,6 +26,13 @@ defmodule AshA2A.Semantic.Vocabulary do
     "sa2a-evi" => "https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/"
   }
 
+  # Single canonical `sa:` falsifier/admission namespace. Deliberately NOT in `@prefixes`
+  # (that map is serialized into envelopes and pinned by tests); consumers use this constant.
+  @sa_namespace "http://seanchatmangpt.github.io/sa2a#"
+
+  @doc "The one canonical `sa:` namespace IRI."
+  def sa_namespace, do: @sa_namespace
+
   def prefixes, do: @prefixes
 
   def expand(value) when is_binary(value) do

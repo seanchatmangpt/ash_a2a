@@ -98,7 +98,8 @@ defmodule AshA2A.Enterprise.SupervisorCourtTest do
     else
       if tries <= 1, do: flunk("wait_until timed out")
 
-      Process.sleep(50)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(50)
       wait_until(fun, tries - 1)
     end
   end

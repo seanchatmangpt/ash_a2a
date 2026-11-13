@@ -46,8 +46,19 @@ defmodule Lf.A2a.V1.SendMessageConfiguration do
     type: Lf.A2a.V1.TaskPushNotificationConfig,
     json_name: "taskPushNotificationConfig"
 
-  field :history_length, 3, proto3_optional: true, type: :int32, json_name: "historyLength"
+  field :history_length, 3,
+    proto3_optional: true,
+    type: :int32,
+    json_name: "historyLength",
+    deprecated: true
+
+  field :timeline_length, 6, proto3_optional: true, type: :int32, json_name: "timelineLength"
   field :return_immediately, 4, type: :bool, json_name: "returnImmediately"
+
+  field :if_generation_match, 5,
+    proto3_optional: true,
+    type: :int64,
+    json_name: "ifGenerationMatch"
 end
 
 defmodule Lf.A2a.V1.Task do
@@ -59,8 +70,10 @@ defmodule Lf.A2a.V1.Task do
   field :context_id, 2, type: :string, json_name: "contextId"
   field :status, 3, type: Lf.A2a.V1.TaskStatus, deprecated: false
   field :artifacts, 4, repeated: true, type: Lf.A2a.V1.Artifact
-  field :history, 5, repeated: true, type: Lf.A2a.V1.Message
+  field :history, 5, repeated: true, type: Lf.A2a.V1.Message, deprecated: true
+  field :timeline, 8, repeated: true, type: Lf.A2a.V1.TimelineEntry
   field :metadata, 6, type: Google.Protobuf.Struct
+  field :generation, 7, type: :int64
 end
 
 defmodule Lf.A2a.V1.TaskStatus do
@@ -124,6 +137,39 @@ defmodule Lf.A2a.V1.Artifact do
   field :parts, 4, repeated: true, type: Lf.A2a.V1.Part, deprecated: false
   field :metadata, 5, type: Google.Protobuf.Struct
   field :extensions, 6, repeated: true, type: :string
+  field :start_generation, 7, type: :int64, json_name: "startGeneration"
+  field :end_generation, 8, type: :int64, json_name: "endGeneration"
+  field :role, 9, type: Lf.A2a.V1.Role, enum: true
+end
+
+defmodule Lf.A2a.V1.TimelineEntry do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "lf.a2a.v1.TimelineEntry",
+    protoc_gen_elixir_version: "0.17.0",
+    syntax: :proto3
+
+  oneof :entry, 0
+
+  field :message, 1, type: Lf.A2a.V1.Message, oneof: 0
+  field :status, 2, type: Lf.A2a.V1.TaskStatus, oneof: 0
+  field :generation, 3, type: :int64
+end
+
+defmodule Lf.A2a.V1.TaskMessageUpdateEvent do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "lf.a2a.v1.TaskMessageUpdateEvent",
+    protoc_gen_elixir_version: "0.17.0",
+    syntax: :proto3
+
+  field :task_id, 1, type: :string, json_name: "taskId", deprecated: false
+  field :context_id, 2, type: :string, json_name: "contextId", deprecated: false
+  field :message, 3, type: Lf.A2a.V1.Message, deprecated: false
+  field :metadata, 4, type: Google.Protobuf.Struct
+  field :generation, 5, type: :int64
 end
 
 defmodule Lf.A2a.V1.TaskStatusUpdateEvent do
@@ -138,6 +184,7 @@ defmodule Lf.A2a.V1.TaskStatusUpdateEvent do
   field :context_id, 2, type: :string, json_name: "contextId", deprecated: false
   field :status, 3, type: Lf.A2a.V1.TaskStatus, deprecated: false
   field :metadata, 4, type: Google.Protobuf.Struct
+  field :generation, 5, type: :int64
 end
 
 defmodule Lf.A2a.V1.TaskArtifactUpdateEvent do
@@ -154,6 +201,7 @@ defmodule Lf.A2a.V1.TaskArtifactUpdateEvent do
   field :append, 4, type: :bool
   field :last_chunk, 5, type: :bool, json_name: "lastChunk"
   field :metadata, 6, type: Google.Protobuf.Struct
+  field :generation, 7, type: :int64
 end
 
 defmodule Lf.A2a.V1.AuthenticationInfo do
@@ -273,6 +321,8 @@ defmodule Lf.A2a.V1.AgentCapabilities do
     proto3_optional: true,
     type: :bool,
     json_name: "extendedAgentCard"
+
+  field :user_artifacts, 5, proto3_optional: true, type: :bool, json_name: "userArtifacts"
 end
 
 defmodule Lf.A2a.V1.AgentExtension do
@@ -338,6 +388,7 @@ defmodule Lf.A2a.V1.TaskPushNotificationConfig do
   field :url, 4, type: :string, deprecated: false
   field :token, 5, type: :string
   field :authentication, 6, type: Lf.A2a.V1.AuthenticationInfo
+  field :protocol_version, 7, type: :string, json_name: "protocolVersion"
 end
 
 defmodule Lf.A2a.V1.StringList do
@@ -660,9 +711,29 @@ defmodule Lf.A2a.V1.SendMessageRequest do
     syntax: :proto3
 
   field :tenant, 1, type: :string
-  field :message, 2, type: Lf.A2a.V1.Message, deprecated: false
+  field :message, 2, type: Lf.A2a.V1.Message
   field :configuration, 3, type: Lf.A2a.V1.SendMessageConfiguration
   field :metadata, 4, type: Google.Protobuf.Struct
+
+  field :artifact_updates, 5,
+    repeated: true,
+    type: Lf.A2a.V1.TaskArtifactUpdateEvent,
+    json_name: "artifactUpdates"
+end
+
+defmodule Lf.A2a.V1.StreamRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "lf.a2a.v1.StreamRequest",
+    protoc_gen_elixir_version: "0.17.0",
+    syntax: :proto3
+
+  oneof :payload, 0
+
+  field :tenant, 1, type: :string
+  field :send_message, 2, type: Lf.A2a.V1.SendMessageRequest, json_name: "sendMessage", oneof: 0
+  field :subscribe, 3, type: Lf.A2a.V1.SubscribeToTaskRequest, oneof: 0
 end
 
 defmodule Lf.A2a.V1.GetTaskRequest do
@@ -675,7 +746,19 @@ defmodule Lf.A2a.V1.GetTaskRequest do
 
   field :tenant, 1, type: :string
   field :id, 2, type: :string, deprecated: false
-  field :history_length, 3, proto3_optional: true, type: :int32, json_name: "historyLength"
+
+  field :history_length, 3,
+    proto3_optional: true,
+    type: :int32,
+    json_name: "historyLength",
+    deprecated: true
+
+  field :timeline_length, 5, proto3_optional: true, type: :int32, json_name: "timelineLength"
+
+  field :current_generation, 4,
+    proto3_optional: true,
+    type: :int64,
+    json_name: "currentGeneration"
 end
 
 defmodule Lf.A2a.V1.ListTasksRequest do
@@ -691,7 +774,14 @@ defmodule Lf.A2a.V1.ListTasksRequest do
   field :status, 3, type: Lf.A2a.V1.TaskState, enum: true
   field :page_size, 4, proto3_optional: true, type: :int32, json_name: "pageSize"
   field :page_token, 5, type: :string, json_name: "pageToken"
-  field :history_length, 6, proto3_optional: true, type: :int32, json_name: "historyLength"
+
+  field :history_length, 6,
+    proto3_optional: true,
+    type: :int32,
+    json_name: "historyLength",
+    deprecated: true
+
+  field :timeline_length, 9, proto3_optional: true, type: :int32, json_name: "timelineLength"
 
   field :status_timestamp_after, 7,
     type: Google.Protobuf.Timestamp,
@@ -763,6 +853,11 @@ defmodule Lf.A2a.V1.SubscribeToTaskRequest do
 
   field :tenant, 1, type: :string
   field :id, 2, type: :string, deprecated: false
+
+  field :last_seen_generation, 3,
+    proto3_optional: true,
+    type: :int64,
+    json_name: "lastSeenGeneration"
 end
 
 defmodule Lf.A2a.V1.ListTaskPushNotificationConfigsRequest do
@@ -826,6 +921,28 @@ defmodule Lf.A2a.V1.StreamResponse do
     type: Lf.A2a.V1.TaskArtifactUpdateEvent,
     json_name: "artifactUpdate",
     oneof: 0
+
+  field :message_update, 5,
+    type: Lf.A2a.V1.TaskMessageUpdateEvent,
+    json_name: "messageUpdate",
+    oneof: 0
+
+  field :error, 6, type: Lf.A2a.V1.StreamError, oneof: 0
+end
+
+defmodule Lf.A2a.V1.StreamError do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "lf.a2a.v1.StreamError",
+    protoc_gen_elixir_version: "0.17.0",
+    syntax: :proto3
+
+  field :task_id, 1, type: :string, json_name: "taskId"
+  field :code, 2, type: :string, deprecated: false
+  field :message, 3, type: :string
+  field :reference_id, 4, type: :string, json_name: "referenceId"
+  field :metadata, 5, type: Google.Protobuf.Struct
 end
 
 defmodule Lf.A2a.V1.ListTaskPushNotificationConfigsResponse do
@@ -848,6 +965,8 @@ defmodule Lf.A2a.V1.A2AService.Service do
   rpc :SendMessage, Lf.A2a.V1.SendMessageRequest, Lf.A2a.V1.SendMessageResponse
 
   rpc :SendStreamingMessage, Lf.A2a.V1.SendMessageRequest, stream(Lf.A2a.V1.StreamResponse)
+
+  rpc :SendLiveMessage, stream(Lf.A2a.V1.StreamRequest), stream(Lf.A2a.V1.StreamResponse)
 
   rpc :GetTask, Lf.A2a.V1.GetTaskRequest, Lf.A2a.V1.Task
 

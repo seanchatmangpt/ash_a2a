@@ -6,9 +6,11 @@ defmodule AshA2A.Protocol.PushNotificationConfig do
   task may carry several configs, each identified by `:id` within the scope of
   its `:task_id`.
 
-  Registering a config is a declaration of intent only — this library stores
-  and serves configs but does not yet deliver webhooks. See the "Push
-  Notifications" section of `SPEC.md`.
+  Registering a config stores it and arms delivery: on every task state change
+  the library POSTs the `StreamResponse`-wrapped update to each registered
+  webhook (see `AshA2A.Protocol.PushNotification` and
+  `AshA2A.Protocol.PushNotificationSender`). Delivery is attempted by the
+  server; a config on its own is not a no-op declaration.
 
   ## Fields
 
@@ -39,9 +41,10 @@ defmodule AshA2A.Protocol.PushNotificationConfig do
           task_id: String.t() | nil,
           url: String.t(),
           token: String.t() | nil,
-          authentication: authentication() | nil
+          authentication: authentication() | nil,
+          protocol_version: String.t() | nil
         }
 
   @enforce_keys [:url]
-  defstruct [:id, :task_id, :url, :token, :authentication]
+  defstruct [:id, :task_id, :url, :token, :authentication, :protocol_version]
 end

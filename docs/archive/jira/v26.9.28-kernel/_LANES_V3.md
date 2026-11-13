@@ -1,5 +1,7 @@
 # _LANES_V3
 
+> Historical; paths not maintained.
+
 Lane map V3 for milestone v26.9.28-kernel. It records what REMAINS after the factory and
 replan branches merged (HEAD 62cd548, tree dirty). Source: 24 lane-status reports and 3 audits
 (wiring, authority separation, identity/canonical/effect). All statuses are from read-only

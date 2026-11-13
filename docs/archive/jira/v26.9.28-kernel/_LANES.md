@@ -1,5 +1,7 @@
 # _LANES
 
+> Historical; paths not maintained.
+
 Lane map for the ConsequenceKernel closure (mechanisms M01-M24, 24 verified plans,
 skeptic corrections applied). Base: HEAD `8af12616314c12c58dfa6cd03c83c0c8ad657eb6`,
 tree dirty with RFC-004 lanes A-F. Version marker: v26.9.28-kernel. Last Updated: 2026-09-28.

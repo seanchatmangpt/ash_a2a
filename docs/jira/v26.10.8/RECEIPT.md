@@ -1,8 +1,10 @@
 # Manufacturing Receipt — ash_a2a v26.10.8
 
+Standing: UNVERIFIED
+
 **Subject**: `/Users/sac/ash_a2a` branch `feat/tck-vuln-hardening` @ `a9cc903b`
 (v26.10.8 bump commit; 67 ahead of `main` at receipt time). Minimal campaign
-dir mirroring `docs/jira/v26.10.4/` (RECEIPT.md only, by coordinator
+dir mirroring `docs/archive/jira/v26.10.4/` (RECEIPT.md only, by coordinator
 instruction).
 
 ## Gate verdicts (executed this receipt-cycle, 2026-10-08)

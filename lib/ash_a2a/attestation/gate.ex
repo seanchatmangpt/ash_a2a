@@ -47,10 +47,10 @@ defmodule AshA2A.Attestation.Gate do
     "com.bignox.app",
     "com.vphone.mumu",
     "com.ldmnq",
-    "com.android.fly SiliconFlowEmulator"
+    "com.android.fly"
   ]
 
-  @type refused :: {:refused, :bad_signature | :emulator_detected | :stale | :spoofed_payload | :gps_impossible_jump | :malformed_token}
+  @type refused :: {:refused, :bad_signature | :emulator_detected | :stale | :spoofed_payload | :gps_impossible_jump | :malformed_token | :clock_skew | :nonce_mismatch | :non_canonical_signature}
 
   @doc """
   Verifies `{device_token, nonce}`: signature over nonce + device claims,
@@ -64,6 +64,7 @@ defmodule AshA2A.Attestation.Gate do
       case key_or_opts do
         %{} = k when is_map_key(k, :pub) -> k
         opts when is_list(opts) -> Keyword.get(opts, :key)
+        _ -> nil
       end
 
     with {:ok, claims} <- Key.verify(device_token, key),
@@ -74,6 +75,7 @@ defmodule AshA2A.Attestation.Gate do
       {:error, reason} -> {:refused, reason}
       false -> {:refused, :nonce_mismatch}
       {:ok, _} -> {:refused, :nonce_mismatch}
+      _ -> {:refused, :malformed_token}
     end
   end
 
@@ -185,7 +187,7 @@ defmodule AshA2A.Attestation.Gate do
         now = Keyword.get(opts, :now, System.system_time(:second))
         grants = Keyword.get(opts, :approved_grants, [])
 
-        case GateGrantAllowlist.override?(observations, grants, now) do
+        case GateGrantAllowlist.override?(observations, grants, now, Keyword.take(opts, [:org_id, :identifier])) do
           :ok -> :ok
           _ -> refused
         end
@@ -253,6 +255,15 @@ defmodule AshA2A.Attestation.Gate do
   defp detect_emulator(claims) do
     fingerprint = claims["os_fingerprint"] || ""
     packages = claims["installed_packages"] || []
+
+    if is_binary(fingerprint) and is_list(packages) do
+      detect_emulator(claims, fingerprint, packages)
+    else
+      {:refused, :spoofed_payload}
+    end
+  end
+
+  defp detect_emulator(claims, fingerprint, packages) do
 
     virtual? = claims["is_virtual"] == true
     fingerprint_hit? = fingerprint =~ ~r/(emulator|generic|sdk_gphone|vbox|qemu)/i

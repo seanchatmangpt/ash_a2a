@@ -8,6 +8,10 @@ defmodule AshA2A.Twin.Partner do
   **unacknowledged** outstanding dispatch crosses the hazard threshold,
   `{:hazard_tripped, name, z, stats}` goes to the listener. `ack/1`
   acknowledges. Shift flips emit `{:shift_changed, name, shift}`.
+
+  A zero-dispersion latency window (all samples equal) cannot yield a z-score;
+  a slower observation against such a window (>= 3 samples) trips with
+  `z == :infinity` (fail closed), see `AshA2A.Twin.Hazard.zero_dispersion_spike/2`.
   """
 
   alias AshA2A.Twin.Server
@@ -31,6 +35,7 @@ defmodule AshA2A.Twin.Partner do
   @spec shift_on(atom()) :: :ok
   def shift_on(name), do: Server.send_event(name, :shift_on)
 
+  @doc "Set shift state off; emits `{:shift_changed, name, :off_shift}` on a flip and ignores dispatches until the next `shift_on/1`."
   @spec shift_off(atom()) :: :ok
   def shift_off(name), do: Server.send_event(name, :shift_off)
 
@@ -46,7 +51,10 @@ defmodule AshA2A.Twin.Partner do
   @spec ack(atom()) :: :ok
   def ack(name), do: Server.send_event(name, :ack)
 
-  @doc "Status snapshot: shift, acked?, threshold, hazard window size."
+  @doc """
+  Status snapshot: `%{name, kind: :partner, shift, acked?, threshold,
+  window_size}` (`window_size` = observations currently in the hazard window).
+  """
   @spec status(atom()) :: map()
   defdelegate status(name), to: Server
 

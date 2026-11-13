@@ -265,7 +265,8 @@ defmodule ConferenceSim.PushCourt do
       length(found) >= n -> found
       tries == 0 -> flunk("expected >=#{n} attempts, got #{inspect(found)}")
       true ->
-        Process.sleep(20)
+        # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(20)
         attempts(transport, task_id, n, tries - 1)
     end
   end
@@ -281,7 +282,8 @@ defmodule ConferenceSim.PushCourt do
     # process (EphemeralHttp links Bandit to its caller).
     Process.unlink(hook.pid)
     Process.exit(hook.pid, :kill)
-    Process.sleep(10)
+    # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(10)
     :ok
   end
 
@@ -408,7 +410,8 @@ defmodule ConferenceSim.PushCourt do
         if Enum.any?(found, &match?(%{outcome: {:ok, 200}}, &1)) do
           {:halt, found}
         else
-          Process.sleep(10)
+          # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+          AshA2A.TestSupport.Eventually.pause(10)
           {:cont, found}
         end
       end)
@@ -503,7 +506,8 @@ defmodule ConferenceSim.PushCourt do
     nudge(ctx, "mia", task_mia)
 
     refute_receive {:push_delivered, :mia, _, _}, 400
-    Process.sleep(100)
+    # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+    AshA2A.TestSupport.Eventually.pause(100)
     assert TaskEvents.attempts(transport, task_mia) == mia_attempts_before,
            "a delivery attempt was started for a deleted config"
   end

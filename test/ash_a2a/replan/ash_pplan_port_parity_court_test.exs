@@ -191,7 +191,9 @@ defmodule AshA2A.Replan.AshPPlanPortParityCourtTest do
                Port.propose(request, [{"key", :value}])
     end
 
-    @tag :skip
+    @tag skip:
+           "SEAM-DEFECT I1-OBS-1 still holds (re-run this lane): lib/ash_a2a/replan/port/ash_pplan.ex:24 " <>
+             "calls Keyword.get/3 on non-list opts before any guard; port file is not lane-13-owned"
     test "SKIP-LOUD [SEAM-DEFECT I1-OBS-1]: non-list opts crash the port guard, not a typed refusal" do
       # REGISTERED SEAM DEFECT (upstream, not lane I1's file):
       # AshA2A.Replan.Port.AshPPlan.propose/2 calls Keyword.get/3 on opts
@@ -297,7 +299,9 @@ defmodule AshA2A.Replan.AshPPlanPortParityCourtTest do
     # change; they are asserted as explicit loud skips, never silent passes.
     @describetag :skip_p16_pending
 
-    @tag :skip
+    @tag skip:
+           "P16-PENDING: ash_pplan dep has no auth-class code in AshPPlan.SA2A.Refusal.codes/0 " <>
+             "(re-checked this lane)"
     test "SKIP-LOUD [P16-PENDING]: post-P16 auth-class refusal would map to :auth_required (resumable), not :rejected" do
       # Named skip with the typed reason, never a silent vacuous pass.
       # P16 authorization seam is not landed in the ash_pplan dep 26.10.3:

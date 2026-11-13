@@ -18,8 +18,8 @@ defmodule AshA2A.Protocol.V1PaginationTest do
 
   Reality pinned where the ported code differs from or exceeds the spec:
 
-    * `tasks/list` ignores `historyLength` (spec has no such field on
-      ListTasksRequest) — history is always cleared on list regardless.
+    * `tasks/list` honors `historyLength` (ListTasksRequest.history_length):
+      N keeps the last N entries per task; unset/0 clears history.
     * `historyLength: 0` on `tasks/get` returns `[]` rather than omitting
       the field (spec says SHOULD omit).
     * response `pageSize` echoes the *requested* cap (1..100, default 50),
@@ -242,21 +242,34 @@ defmodule AshA2A.Protocol.V1PaginationTest do
       assert param_detail(error) =~ "historyLength"
     end
 
-    test "historyLength is ignored on tasks/list — history is always cleared", %{
+    test "historyLength on tasks/list keeps the last N entries; unset clears history", %{
       plug_opts: plug_opts
     } do
-      _task_id = complete_two_turn_task(plug_opts)
+      task_id = complete_two_turn_task(plug_opts)
+
+      full = get_task(plug_opts, task_id, %{})
+      assert %{"result" => %{"history" => history}} = full
 
       listed = list_tasks(plug_opts, %{"historyLength" => 1})
 
-      assert %{"tasks" => [task]} = listed
-      refute Map.has_key?(task, "history"),
-             "spec defines historyLength only on tasks/get; on list, history is cleared"
+      assert %{"tasks" => [%{"history" => [last]}]} = listed
+      assert last == List.last(history)
+
+      zero = list_tasks(plug_opts, %{"historyLength" => 0})
+      assert %{"tasks" => [zeroed]} = zero
+      refute Map.has_key?(zeroed, "history")
 
       default = list_tasks(plug_opts, %{})
 
       assert %{"tasks" => [bare]} = default
       refute Map.has_key?(bare, "history")
+    end
+
+    test "negative historyLength on tasks/list is refused with -32602", %{plug_opts: plug_opts} do
+      error = rpc_error(plug_opts, "tasks/list", %{"historyLength" => -1})
+
+      assert error["code"] == -32_602
+      assert param_detail(error) =~ "historyLength"
     end
 
     test "pageSize on the response echoes the requested cap, not the returned count", %{

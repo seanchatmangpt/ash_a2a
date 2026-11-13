@@ -314,7 +314,7 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         assert %{
                  "url" => url,
                  "protocolBinding" => "JSONRPC",
-                 "protocolVersion" => "1.0"
+                 "protocolVersion" => "1.1"
                } = interface
 
         assert is_binary(url) and url != ""

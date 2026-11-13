@@ -9,11 +9,11 @@ defmodule AshA2A.Protocol.Version do
 
   # Single source of truth for the A2A protocol version carried by every
   # emitted Agent Card interface (spec v1.0, sections 4.4/8.2).
-  @protocol_version "1.0"
+  @protocol_version "1.1"
   @well_known_path "/.well-known/agent-card.json"
 
   @default "1.0"
-  @supported_default ["0.3", "1.0"]
+  @supported_default ["0.3", "1.0", "1.1"]
 
   @doc """
   The A2A protocol version (spec v1.0, sections 4.4/8.2): the single source of
@@ -34,6 +34,81 @@ defmodule AshA2A.Protocol.Version do
   @doc "Default list of versions a server accepts."
   @spec supported_default() :: [String.t()]
   def supported_default, do: @supported_default
+
+  @doc """
+  Whether `version` (a `Major.Minor[.Patch]` string; patch ignored) is at or
+  above `minimum` (`Major.Minor`). Unparseable input is `false`.
+
+      iex> AshA2A.Protocol.Version.at_least?("1.1", "1.1")
+      true
+      iex> AshA2A.Protocol.Version.at_least?("1.0.9", "1.1")
+      false
+      iex> AshA2A.Protocol.Version.at_least?("2.0", "1.1")
+      true
+  """
+  @spec at_least?(String.t() | nil, String.t()) :: boolean()
+  def at_least?(version, minimum) when is_binary(minimum) do
+    with {:ok, v} <- major_minor(version), {:ok, m} <- major_minor(minimum) do
+      v >= m
+    else
+      _ -> false
+    end
+  end
+
+  defp major_minor(version) when is_binary(version) do
+    case Regex.run(~r/^\s*(\d+)\.(\d+)/, version) do
+      [_, major, minor] -> {:ok, {String.to_integer(major), String.to_integer(minor)}}
+      _ -> :error
+    end
+  end
+
+  defp major_minor(_), do: :error
+
+  @doc """
+  The version actually negotiated for a request: the normalized `Major.Minor`
+  of the `A2A-Version` header value(s) (a list, string or `nil`; empty/missing
+  is `"0.3"`, spec §3.6.2), or of a `%Plug.Conn{}`'s header / `A2A-Version`
+  query parameter (spec §3.6.1, header wins).
+  """
+  @spec negotiated_version(term()) :: String.t()
+  def negotiated_version(%{req_headers: _, query_string: _} = conn), do: from_conn(conn)
+  def negotiated_version(header), do: parse_header(header)
+
+  @doc """
+  Reads the requested version from a conn: the `a2a-version` header, else the
+  `A2A-Version` query parameter (spec §3.6.1 permits either), else `"0.3"`.
+  """
+  @spec from_conn(map()) :: String.t()
+  def from_conn(%{req_headers: headers, query_string: query}) do
+    case for({"a2a-version", v} <- headers, do: v) do
+      [] -> parse_header(query_param(query))
+      values -> parse_header(values)
+    end
+  end
+
+  defp query_param(query) when is_binary(query) and query != "" do
+    case Enum.find(String.split(query, "&"), &String.starts_with?(&1, "A2A-Version=")) do
+      "A2A-Version=" <> value -> URI.decode(value)
+      _ -> nil
+    end
+  end
+
+  defp query_param(_), do: nil
+
+  @doc """
+  Records the negotiated `version` on `conn.private[:a2a][:version]` (the
+  per-request slot `AshA2A.Protocol.Plug` already uses) so downstream code can
+  gate behaviour with `at_least?/2`.
+  """
+  @spec put_negotiated(Plug.Conn.t(), String.t()) :: Plug.Conn.t()
+  def put_negotiated(conn, version) do
+    a2a = Map.get(conn.private, :a2a, %{})
+    %{conn | private: Map.put(conn.private, :a2a, Map.put(a2a, :version, version))}
+  end
+
+  @doc "The version recorded by `put_negotiated/2`, or `nil`."
+  @spec get_negotiated(Plug.Conn.t()) :: String.t() | nil
+  def get_negotiated(conn), do: conn.private |> Map.get(:a2a, %{}) |> Map.get(:version)
 
   @doc """
   Normalizes a version string to its `Major.Minor` form.

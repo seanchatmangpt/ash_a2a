@@ -23,8 +23,9 @@ defmodule AshA2A.FinOps.BudgetStore do
   so a breach is indistinguishable from an exact fit at 100% quota
   without a racy pre-read. Exact verdicts need check-and-reserve to be
   atomic, and atomic check-and-reserve needs a serializer. The table
-  stays `:public` so chargeback readers (`usage/2`, `total/2`, telemetry
-  subscribers) never serialize behind the writer.
+  is `:protected` -- only the owner process writes, while chargeback readers
+  (`usage/2`, `total/2`, telemetry subscribers) read directly and never
+  serialize behind the writer.
 
   Billing windows are fixed buckets: usage is keyed
   `{:usage, account_id, bucket}` with `bucket = div(now_ms, window_ms)`,
@@ -187,7 +188,7 @@ defmodule AshA2A.FinOps.BudgetStore do
 
   @impl true
   def init(opts) do
-    table = :ets.new(:finops_budget_store, [:public, :set, read_concurrency: true, write_concurrency: true])
+    table = :ets.new(:finops_budget_store, [:protected, :set, read_concurrency: true, write_concurrency: true])
 
     Enum.each(Keyword.get(opts, :budgets, []), fn {account_id, conf} ->
       do_set_budget(table, account_id, conf[:ceiling], Keyword.get(conf, :window_ms, @default_window_ms))

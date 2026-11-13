@@ -252,7 +252,8 @@ defmodule AshA2A.Enterprise.SPIFFEWorkloadWatcherTest do
     if System.monotonic_time(:millisecond) > deadline do
       flunk("wait_until: condition not met within deadline")
     else
-      Process.sleep(20)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(20)
       do_wait_until(fun, deadline)
     end
   end
@@ -261,7 +262,8 @@ defmodule AshA2A.Enterprise.SPIFFEWorkloadWatcherTest do
     now = System.system_time(:second)
 
     if now < epoch_secs + margin do
-      Process.sleep((epoch_secs + margin - now) * 1000)
+      # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause((epoch_secs + margin - now) * 1000)
     end
   end
 

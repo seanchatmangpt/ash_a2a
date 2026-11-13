@@ -91,7 +91,11 @@ defmodule AshA2A.V1SecurityRequirementsTest do
           ],
           "securityRequirements" => [
             %{"schemes" => %{"google" => %{"list" => ["openid", "profile", "email"]}}}
-          ]
+          ],
+          "supportedInterfaces" => [],
+          "capabilities" => %{},
+          "defaultInputModes" => ["text/plain"],
+          "defaultOutputModes" => ["text/plain"]
         })
 
       assert card.security == [%{"google" => ["openid", "profile", "email"]}]
@@ -106,7 +110,11 @@ defmodule AshA2A.V1SecurityRequirementsTest do
           "skills" => [
             %{"id" => "s1", "name" => "Skill", "description" => "Does things", "tags" => []}
           ],
-          "securityRequirements" => [%{"google" => ["openid"]}]
+          "securityRequirements" => [%{"google" => ["openid"]}],
+          "supportedInterfaces" => [],
+          "capabilities" => %{},
+          "defaultInputModes" => ["text/plain"],
+          "defaultOutputModes" => ["text/plain"]
         })
 
       assert card.security == [%{"google" => ["openid"]}]
@@ -121,7 +129,11 @@ defmodule AshA2A.V1SecurityRequirementsTest do
           "skills" => [
             %{"id" => "s1", "name" => "Skill", "description" => "Does things", "tags" => []}
           ],
-          "security" => [%{"api_key" => ["scope1"]}]
+          "security" => [%{"api_key" => ["scope1"]}],
+          "supportedInterfaces" => [],
+          "capabilities" => %{},
+          "defaultInputModes" => ["text/plain"],
+          "defaultOutputModes" => ["text/plain"]
         })
 
       assert card.security == [%{"api_key" => ["scope1"]}]
@@ -137,7 +149,11 @@ defmodule AshA2A.V1SecurityRequirementsTest do
             %{"id" => "s1", "name" => "Skill", "description" => "Does things", "tags" => []}
           ],
           "securityRequirements" => [%{"google" => ["openid"]}],
-          "security" => [%{"legacy" => ["scope"]}]
+          "security" => [%{"legacy" => ["scope"]}],
+          "supportedInterfaces" => [],
+          "capabilities" => %{},
+          "defaultInputModes" => ["text/plain"],
+          "defaultOutputModes" => ["text/plain"]
         })
 
       assert card.security == [%{"google" => ["openid"]}]
@@ -151,7 +167,11 @@ defmodule AshA2A.V1SecurityRequirementsTest do
           "version" => "1.0.0",
           "skills" => [
             %{"id" => "s1", "name" => "Skill", "description" => "Does things", "tags" => []}
-          ]
+          ],
+          "supportedInterfaces" => [],
+          "capabilities" => %{},
+          "defaultInputModes" => ["text/plain"],
+          "defaultOutputModes" => ["text/plain"]
         })
 
       assert card.security == []
@@ -384,7 +404,11 @@ defmodule AshA2A.V1SecurityRequirementsTest do
             %{"id" => "s2", "name" => "FlatScoped", "description" => "d", "tags" => [],
               "securityRequirements" => [%{"api_key" => ["scope1"]}]},
             %{"id" => "s3", "name" => "Unscoped", "description" => "d", "tags" => []}
-          ]
+          ],
+          "supportedInterfaces" => [],
+          "capabilities" => %{},
+          "defaultInputModes" => ["text/plain"],
+          "defaultOutputModes" => ["text/plain"]
         })
 
       [s1, s2, s3] = card.skills

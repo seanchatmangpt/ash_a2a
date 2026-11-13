@@ -37,19 +37,14 @@ defmodule AshA2A.Authority.PEP do
   - `AshA2A.CommandBus` exists (contrary to some architecture claims that it
     does not) and is the pre-DO revalidation site.
 
-  ## Wire-point map (documentation only — NO wiring landed in this lane)
+  ## Wire-point map
 
-  Where `assert_standing/3` should be called before admit:
-
-  1. `AshA2A.Copilot.Pipeline.check/3` (lib/ash_a2a/copilot/pipeline.ex) —
-     at the top of `check/3`, before any state read/mutation. Today `check/3`
-     has NO authority hop. On refusal, return
-     `{:refused, :insufficient_authority, detail}` instead of a pipeline
-     decision.
-  2. Any new external front-door before `AshA2A.Agent.build_command/4` —
-     `build_command` already goes through `Grant.authorize/3` internally, but
-     an unprincipaled caller should be refused BEFORE identity synthesis.
-     The PEP is an outer membrane, not a replacement for Grant.
+  1. `AshA2A.Copilot.Pipeline` — WIRED (pipeline.ex, `authority_check/2` in
+     `admit_path/3`): a refusal surfaces as
+     `{:refuse, %{code: :authority, reason: detail}}`.
+  2. Any new external front-door before `AshA2A.Agent.build_command/4` should
+     call the PEP before identity synthesis. The PEP is an outer membrane,
+     not a replacement for Grant.
   3. Do NOT double-gate inside `AshA2A.CommandBus` — it already revalidates
      against `admitted_by` immediately before DO.
 
@@ -79,29 +74,77 @@ defmodule AshA2A.Authority.PEP do
 
   - `:source` — module or `{module, opts}` (default `#{inspect(@default_source)}`).
   """
-  @spec assert_standing(term(), term(), term(), keyword()) ::
+  @spec assert_standing(term(), term(), term(), term()) ::
           :ok | {:refused, :insufficient_authority, map()}
-  def assert_standing(actor_id, scope, context, opts \\ []) when is_list(opts) do
-    case normalize_scope(scope) do
-      {:ok, action} ->
-        {mod, mod_opts} = resolve_source(opts)
+  def assert_standing(actor_id, scope, context, opts \\ [])
 
-        case mod.check(actor_id, action, context, mod_opts) do
-          :ok -> :ok
-          {:ok, _extra} -> :ok
-          :deny ->
-            {:refused, :insufficient_authority,
-             %{reason: :source_deny, actor_id: actor_id, action: action}}
-
-          other ->
-            {:refused, :insufficient_authority,
-             %{reason: :invalid_source_return, actor_id: actor_id, action: action, got: other}}
-        end
-
-      {:error, reason} ->
-        {:refused, :insufficient_authority, %{reason: reason}}
+  def assert_standing(actor_id, scope, context, opts)
+      when is_binary(actor_id) and actor_id != "" and is_list(opts) do
+    with {:ok, action} <- normalize_scope(scope),
+         {:ok, {mod, mod_opts}} <- resolve_source(opts) do
+      run_check(mod, actor_id, action, context, mod_opts)
+    else
+      {:error, reason} -> {:refused, :insufficient_authority, %{reason: reason}}
     end
   end
+
+  def assert_standing(actor_id, _scope, _context, opts) when not is_list(opts) do
+    {:refused, :insufficient_authority,
+     %{reason: :invalid_opts, actor_id: redact(actor_id), got: redact(opts)}}
+  end
+
+  def assert_standing(actor_id, _scope, _context, _opts) do
+    {:refused, :insufficient_authority,
+     %{reason: :invalid_actor_id, got: redact(actor_id)}}
+  end
+
+  defp run_check(mod, actor_id, action, context, mod_opts) do
+    base = %{actor_id: truncate(actor_id), action: action}
+
+    try do
+      mod.check(actor_id, action, context, mod_opts)
+    rescue
+      e -> {:__raised, e}
+    catch
+      :throw, v -> {:__thrown, v}
+      :exit, v -> {:__exited, v}
+    else
+      :ok -> :ok
+      {:ok, _extra} -> :ok
+      :deny -> {:refused, :insufficient_authority, Map.put(base, :reason, :source_deny)}
+      {:deny, reason} ->
+        {:refused, :insufficient_authority,
+         base |> Map.put(:reason, :source_deny) |> Map.put(:deny_reason, redact(reason))}
+      other -> invalid_return(base, other)
+    end
+    |> case do
+      {:__raised, e} ->
+        {:refused, :insufficient_authority,
+         Map.merge(base, %{reason: :source_raised, got: redact(e)})}
+
+      {:__thrown, v} ->
+        {:refused, :insufficient_authority,
+         Map.merge(base, %{reason: :source_threw, got: redact(v)})}
+
+      {:__exited, v} ->
+        {:refused, :insufficient_authority,
+         Map.merge(base, %{reason: :source_exited, got: redact(v)})}
+
+      other ->
+        other
+    end
+  end
+
+  defp invalid_return(base, other) do
+    {:refused, :insufficient_authority,
+     Map.merge(base, %{reason: :invalid_source_return, got: redact(other)})}
+  end
+
+  defp truncate(bin) when byte_size(bin) <= 64, do: bin
+  defp truncate(bin), do: binary_part(bin, 0, 64) <> "..."
+
+  # Bounded, inspected form: never leaks a large/raw term into refusal detail.
+  defp redact(term), do: inspect(term, limit: 5, printable_limit: 64, pretty: false)
 
   @doc """
   Pin a `AshA2A.Hilt.WorkOrder` identity digest as an anchor on the standing
@@ -121,10 +164,26 @@ defmodule AshA2A.Authority.PEP do
   Delegate standing to a downstream module that must itself be a Source.
   Refuses if the delegate returns anything but :ok / {:ok, _} / :deny.
   """
-  @spec delegate(term(), term(), term(), {module(), keyword()} | module()) ::
+  @spec delegate(term(), term(), term(), term()) ::
           :ok | {:refused, :insufficient_authority, map()}
   def delegate(actor_id, scope, context, source) do
-    assert_standing(actor_id, scope, context, source: source)
+    with {:ok, {mod, _}} <- resolve_source(source: source),
+         true <- source_behaviour?(mod) do
+      assert_standing(actor_id, scope, context, source: source)
+    else
+      false ->
+        {:refused, :insufficient_authority, %{reason: :delegate_not_a_source}}
+
+      {:error, reason} ->
+        {:refused, :insufficient_authority, %{reason: reason}}
+    end
+  end
+
+  defp source_behaviour?(mod) do
+    Code.ensure_loaded?(mod) and function_exported?(mod, :check, 4) and
+      AshA2A.Authority.Source in (mod.module_info(:attributes)
+                                  |> Keyword.get_values(:behaviour)
+                                  |> List.flatten())
   end
 
   # -- internals ---------------------------------------------------------
@@ -151,9 +210,9 @@ defmodule AshA2A.Authority.PEP do
   defp normalize_scope(_other), do: {:error, :invalid_scope}
 
   defp resolve_source(opts) do
-    case Keyword.get(opts, :source, @default_source) do
-      {mod, mod_opts} when is_atom(mod) and is_list(mod_opts) -> {mod, mod_opts}
-      mod when is_atom(mod) -> {mod, []}
+    case AshA2A.Authority.Source.resolve(Keyword.get(opts, :source, @default_source)) do
+      {:ok, _} = ok -> ok
+      {:error, _} = err -> err
     end
   end
 end

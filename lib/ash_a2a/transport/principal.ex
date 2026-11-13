@@ -41,7 +41,17 @@ defmodule AshA2A.Transport.Principal do
       "sub:u1"
 
       iex> AshA2A.Transport.Principal.from_metadata(%{"a2a.auth" => %{"identity" => %{"sub" => "u1"}}})
+      "sub:u1"
+
+      iex> AshA2A.Transport.Principal.from_metadata(%{"a2a.auth" => "not-a-map"})
       :anonymous
+
+  The string-keyed `"identity"` shape is the wire round trip of the verified
+  atom-keyed one (lane V8-Q6-f). It is accepted here because every transport
+  entry point (`AshA2A.Transport.Plug`, `AshA2A.Transport.HTTPJson`,
+  `AshA2A.A2ATransport.Plug`) drops any client-supplied `"a2a.auth"` and
+  rebinds the verified one before this module sees the metadata; callers that
+  read metadata straight from an untrusted body must not use this function.
   """
   @spec from_metadata(term()) :: key()
   def from_metadata(%{} = metadata) do
@@ -57,14 +67,63 @@ defmodule AshA2A.Transport.Principal do
 
   def from_metadata(_metadata), do: :anonymous
 
+  @tenant_keys ["ash_a2a.tenant", "a2a.tenant"]
+
+  @doc """
+  Tenant carried in a call/task `metadata` map (`"ash_a2a.tenant"`, then
+  `"a2a.tenant"`), or `nil` when absent/empty. Transports (HTTP+JSON path
+  tenant, gRPC request `tenant`, JSON-RPC `params.tenant`) bind it AFTER
+  dropping any client-supplied value in the same position as `"a2a.auth"`.
+
+      iex> AshA2A.Transport.Principal.tenant(%{"ash_a2a.tenant" => "acme"})
+      "acme"
+
+      iex> AshA2A.Transport.Principal.tenant(%{"ash_a2a.tenant" => ""})
+      nil
+
+      iex> AshA2A.Transport.Principal.tenant(%{})
+      nil
+  """
+  @spec tenant(term()) :: String.t() | nil
+  def tenant(%{} = metadata) do
+    Enum.find_value(@tenant_keys, fn k ->
+      case Map.get(metadata, k) do
+        t when is_binary(t) and t != "" -> t
+        _ -> nil
+      end
+    end)
+  end
+
+  def tenant({_key, tenant}) when is_binary(tenant) and tenant != "", do: tenant
+  def tenant(_other), do: nil
+
+  @doc """
+  Tenant-aware principal: `key` unchanged when `tenant` is `nil` (default
+  behaviour), `{key, tenant}` otherwise. Accepted by the owner-scoped reads in
+  `AshA2A.Transport.Runtime`.
+
+      iex> AshA2A.Transport.Principal.scope("sub:u1", nil)
+      "sub:u1"
+
+      iex> AshA2A.Transport.Principal.scope("sub:u1", "acme")
+      {"sub:u1", "acme"}
+  """
+  @spec scope(key(), String.t() | nil) :: key() | {key(), String.t()}
+  def scope(key, nil), do: key
+  def scope(key, tenant) when is_binary(tenant), do: {key, tenant}
+
   @doc """
   Owner key for a verified identity value (the `:identity` field itself).
 
       iex> AshA2A.Transport.Principal.key(nil)
       :anonymous
 
-      iex> AshA2A.Transport.Principal.key("alice")
-      "id:alice"
+      iex> "id:" <> digest = AshA2A.Transport.Principal.key("alice")
+      iex> byte_size(digest)
+      16
+
+      iex> AshA2A.Transport.Principal.key(%{sub: "u|iss:evil"})
+      "sub:u%7Ciss:evil"
 
       iex> AshA2A.Transport.Principal.key(%{"id" => "u2", "exp" => 1})
       "id:u2"
@@ -74,7 +133,12 @@ defmodule AshA2A.Transport.Principal do
   """
   @spec key(term()) :: key()
   def key(nil), do: :anonymous
-  def key(identity) when is_binary(identity), do: "id:" <> identity
+  def key({key, _tenant}) when is_binary(key) or key == :anonymous, do: key
+  # A bare binary identity is typically the raw bearer credential: never embed
+  # it, key by a SHA-256 prefix instead.
+  def key(identity) when is_binary(identity) do
+    "id:" <> (:crypto.hash(:sha256, identity) |> Base.encode16(case: :lower) |> binary_part(0, 16))
+  end
 
   def key(identity) when is_map(identity) do
     case Application.get_env(:ash_a2a, :principal_claims) do
@@ -89,7 +153,7 @@ defmodule AshA2A.Transport.Principal do
     values = Enum.map(claims, &claim(identity, &1))
 
     if Enum.all?(values, &(&1 != nil)) do
-      Enum.map_join(Enum.zip(claims, values), "|", fn {c, v} -> "#{c}:#{v}" end)
+      Enum.map_join(Enum.zip(claims, values), "|", fn {c, v} -> "#{c}:#{escape(v)}" end)
     else
       digest(identity)
     end
@@ -99,7 +163,7 @@ defmodule AshA2A.Transport.Principal do
     Enum.find_value(claims, digest(identity), fn c ->
       case claim(identity, c) do
         nil -> nil
-        value -> "#{c}:#{value}"
+        value -> "#{c}:#{escape(value)}"
       end
     end)
   end
@@ -111,7 +175,7 @@ defmodule AshA2A.Transport.Principal do
   defp scope_issuer(key, identity) do
     case claim(identity, :iss) do
       nil -> key
-      iss -> key <> "|iss:" <> iss
+      iss -> key <> "|iss:" <> escape(iss)
     end
   end
 
@@ -122,6 +186,12 @@ defmodule AshA2A.Transport.Principal do
       value when is_atom(value) and value not in [nil, true, false] -> Atom.to_string(value)
       _other -> nil
     end
+  end
+
+  # `|` delimits claims and `%` is the escape char, so a claim value can never
+  # forge a second claim ("u|iss:evil" cannot collide with sub=u, iss=evil).
+  defp escape(value) do
+    value |> String.replace("%", "%25") |> String.replace("|", "%7C")
   end
 
   defp digest(identity) do

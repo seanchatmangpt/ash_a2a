@@ -660,7 +660,8 @@ defmodule AshA2A.Chicago.Hardening.AdapterCrashSafetyTest do
         flunk("grant with expires_at #{inspect(expires_at)} never expired on the real clock")
 
       true ->
-        Process.sleep(25)
+        # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
+        AshA2A.TestSupport.Eventually.pause(25)
         do_await_real_expiry!(authority, expires_at, deadline)
     end
   end

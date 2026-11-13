@@ -46,6 +46,35 @@ defmodule AshA2A.GraphLaw do
   @spec wasm_path() :: String.t()
   def wasm_path, do: Path.join(dir(), @artifact)
 
+  @env_var "PRAXIS_GRAPHLAW_WASM"
+
+  @doc """
+  The one wasm path resolver. Order: `opts[:wasm_path]`, then
+  `config :ash_a2a, :graphlaw_wasm_path`, then the single env var
+  `PRAXIS_GRAPHLAW_WASM`, then the vendored artifact. Blank values are
+  skipped; the file's existence is checked:
+  `{:error, %{code: :graphlaw_wasm_missing, path: path}}` if absent.
+  """
+  @spec resolve_wasm_path(keyword()) :: {:ok, String.t()} | {:error, map()}
+  def resolve_wasm_path(opts \\ []) do
+    path = wasm_path_unchecked(opts)
+
+    if File.regular?(path),
+      do: {:ok, path},
+      else: {:error, %{code: :graphlaw_wasm_missing, path: path}}
+  end
+
+  @doc "Same resolution as `resolve_wasm_path/1`, without the existence check."
+  @spec wasm_path_unchecked(keyword()) :: String.t()
+  def wasm_path_unchecked(opts \\ []) do
+    [
+      Keyword.get(opts, :wasm_path),
+      Application.get_env(:ash_a2a, :graphlaw_wasm_path),
+      System.get_env(@env_var)
+    ]
+    |> Enum.find(&(is_binary(&1) and &1 != "")) || wasm_path()
+  end
+
   @doc "Absolute path of the vendored `MANIFEST.json`."
   @spec manifest_path() :: String.t()
   def manifest_path, do: Path.join(dir(), @manifest)

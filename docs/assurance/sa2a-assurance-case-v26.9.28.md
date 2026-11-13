@@ -1,5 +1,9 @@
 # sa2a-assurance-case-v26.9.28
 
+Standing: PARTIAL
+
+> **SUPERSEDED** by `docs/assurance/sa2a-assurance-case-v26.9.29.md`.
+
 Claims-Arguments-Evidence (CAE) assurance case for SA2A conformance profiles C0 to C3,
 written against RFC-SA2A-006 section 31 as restated by RFC-SA2A-007 (errata). It states
 what would have to be true and shows the evidence status of each node. It makes no
@@ -12,7 +16,7 @@ evidence node is marked verified. Evidence nodes use exactly two states:
 - **PLANNED**: the court, test or artifact does not exist yet.
 - **EXISTS-UNVERIFIED-BY-RUN**: a file exists and was read; it has not been run on an exact
   subject with a recorded mutation-revert (RFC-007 E-H).
-**Current standing (from `docs/jira/v26.9.28-kernel/_LANES_V3.md`):** C0 PARTIAL; C1, C2, C3
+**Current standing (from `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md`):** C0 PARTIAL; C1, C2, C3
 UNSATISFIED.
 **Target:** C3, independence tier I2, signers MacBook Touch ID (Secure Enclave P-256), iPhone
 Face ID (Secure Enclave P-256) and an automated AuthorityService policy key, 2-of-3.
@@ -260,7 +264,7 @@ compromise of the control plane and one signer does not permit DO.
   - E-C3-1 X3-C1..C8 (registry, k-of-n over distinct authority domains, revocation bound to
     epoch). PLANNED.
   - E-C3-2 ERR7-C-1..4. PLANNED.
-  - E-C3-3 `lib/ash_a2a/c2/signer_set.ex` (`AshA2A.C3.SignerSet` counts unique labels, no
+  - E-C3-3 `lib/ash_a2a/c3/signer_set.ex` (`AshA2A.C3.SignerSet` counts unique labels, no
     independence, no callers). EXISTS-UNVERIFIED-BY-RUN; known defect, rename or delete.
 - **S-C3-2** Argue approvers see what they sign (RFC-007 E-I).
   - E-C3-4 ERR7-I-1..3 (native approver recomputes digest from canonical bytes). PLANNED.
@@ -410,5 +414,5 @@ Other register counts: defeaters D1..D15 (15, of which 6 ACTIVE), assumptions A1
 - `docs/rfc/RFC-SA2A-007-errata-v26.9.28.md` — errata this case is written against
 - `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` — profile definitions C0..C3
 - `docs/rfc/RFC-SA2A-005-cwe-court-matrix-v26.9.28.md` — CWE and release courts
-- `docs/jira/v26.9.28-kernel/_LANES_V3.md` — current lane status and honest wiring truth
-- `docs/jira/v26.9.28-kernel/HANDOFF.md` — branch and merge state
+- `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md` — current lane status and honest wiring truth
+- `docs/archive/jira/v26.9.28-kernel/HANDOFF.md` — branch and merge state

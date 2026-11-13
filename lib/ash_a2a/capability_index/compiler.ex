@@ -68,7 +68,15 @@ defmodule AshA2A.CapabilityIndex.Compiler do
       consequence: override_value(override, :consequence, default_consequence(action.type)),
       arguments: derive_arguments(resource, action),
       hddl_operators: override_value(override, :hddl_operators, []),
-      on_cancel: override_value(override, :on_cancel, nil)
+      on_cancel: override_value(override, :on_cancel, nil),
+      argument_mapping: override_field(override, :argument_mapping, %{}),
+      get?: override_field(override, :get?, false),
+      lease_required?: override_field(override, :lease_required?, false),
+      examples: override_value(override, :examples, nil),
+      input_modes: override_value(override, :input_modes, nil),
+      output_modes: override_value(override, :output_modes, nil),
+      security_requirements: override_value(override, :security_requirements, nil),
+      streaming?: override_field(override, :streaming?, false)
     }
   end
 
@@ -163,14 +171,38 @@ defmodule AshA2A.CapabilityIndex.Compiler do
   # and stays there (fail-closed for `CommandBus`/`AshA2A.Agent` admission)
   # until a resource author explicitly declares `consequence:` on its
   # `a2a do skill ... end` entry.
-  defp default_consequence(:read), do: :observe
-  defp default_consequence(:create), do: :change
-  defp default_consequence(:update), do: :change
-  defp default_consequence(:destroy), do: :change
-  defp default_consequence(_generic_action), do: :unknown
+  @doc false
+  def default_consequence(:read), do: :observe
+  def default_consequence(:create), do: :change
+  def default_consequence(:update), do: :change
+  def default_consequence(:destroy), do: :change
+  def default_consequence(_generic_action), do: :unknown
 
+  # Nil-defaulted struct fields (name/description/tags/consequence/on_cancel):
+  # a nil value means "unset", so the derived default applies.
   defp override_value(nil, _field, default), do: default
-  defp override_value(override, field, default), do: Map.get(override, field) || default
+
+  defp override_value(override, field, default) do
+    case Map.fetch(override, field) do
+      {:ok, value} when not is_nil(value) -> value
+      _ -> default
+    end
+  end
+
+  # Fields where `false`/`%{}` is a meaningful explicit value: presence in the
+  # override map wins (never `||`, which would let `false` fall through).
+  defp override_field(nil, _field, default), do: default
+
+  defp override_field(override, field, default) do
+    if Map.has_key?(override, field) do
+      case Map.fetch!(override, field) do
+        nil -> default
+        value -> value
+      end
+    else
+      default
+    end
+  end
 
   defp resource_overrides(resource) do
     case Extension.get_persisted(resource, :ash_a2a_skill_overrides, nil) do

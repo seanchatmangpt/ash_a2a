@@ -513,4 +513,34 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
     assert resumed["status"]["state"] == "TASK_STATE_COMPLETED"
     assert resumed["id"] == parked_id
   end
+
+  # Upstream §7.6.4: the AUTH_REQUIRED state is a signal, not a grant.
+  # Resuming a parked task without valid credentials is refused at the auth
+  # layer and the task stays parked (nothing ran, nothing completed).
+  test "full flow: resuming an auth-required task without valid credentials is refused and grants nothing", %{agent: agent} do
+    conn = wire_bearer_conn(wire_send_body("expired"), agent)
+    assert %{"result" => %{"task" => %{"id" => parked_id}}} = Jason.decode!(conn.resp_body)
+
+    # No credentials.
+    anon = wire_unauth_conn(wire_send_body("sneaky resume", parked_id), agent)
+    assert anon.halted
+    assert anon.status == 401
+    assert get_resp_header(anon, "www-authenticate") == [~s(Bearer realm="a2a")]
+
+    # Wrong credentials.
+    bad =
+      conn(:post, "/", wire_send_body("sneaky resume", parked_id))
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("authorization", "Bearer not-the-token")
+      |> run_wire(agent)
+
+    assert bad.halted
+    assert bad.status == 401
+
+    # Negative control: the task did not advance past AUTH_REQUIRED.
+    get_conn = wire_bearer_conn(wire_tasks_get_body(parked_id), agent)
+
+    assert %{"result" => %{"status" => %{"state" => "TASK_STATE_AUTH_REQUIRED"}}} =
+             Jason.decode!(get_conn.resp_body)
+  end
 end

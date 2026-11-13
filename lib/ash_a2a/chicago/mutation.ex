@@ -664,6 +664,7 @@ defmodule AshA2A.Chicago.Mutation do
     if :code.soft_purge(module) do
       true
     else
+      # SLEEP-CLASS: POLL-STEP (bounded soft_purge retry; retries counter caps)
       Process.sleep(25)
       soft_purge(module, retries - 1)
     end

@@ -34,4 +34,17 @@ defmodule AshA2A.Protocol.Task.Status do
       timestamp: DateTime.utc_now()
     }
   end
+
+  @interrupted_states [:input_required, :auth_required]
+
+  @doc """
+  Whether a state (or a status / task carrying one) is *interrupted*: parked
+  and resumable by a follow-up message (`:input_required`, `:auth_required`).
+  Sibling of `AshA2A.Protocol.Task.terminal?/1`; the two sets are disjoint.
+  """
+  @spec interrupted?(state() | t() | AshA2A.Protocol.Task.t()) :: boolean()
+  def interrupted?(%__MODULE__{state: state}), do: interrupted?(state)
+  def interrupted?(%AshA2A.Protocol.Task{status: status}), do: interrupted?(status)
+  def interrupted?(state) when is_atom(state), do: state in @interrupted_states
+  def interrupted?(_), do: false
 end

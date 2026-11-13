@@ -84,7 +84,20 @@ defmodule AshA2A.CapabilityIndexPropertyTest do
 
       validation_skills = Enum.map(skills, &Map.delete(&1, :__fixture_real?))
 
-      result = CapabilityIndex.validate(validation_skills)
+      # One override per {resource, action} is a separate lawful rule
+      # (:REFUSED_DUPLICATE_ACTION_OVERRIDE); this property reuses real
+      # actions across skills, so that code is filtered out.
+      result =
+        case CapabilityIndex.validate(validation_skills) do
+          {:error, refusals} ->
+            case Enum.reject(refusals, &(&1.code == :REFUSED_DUPLICATE_ACTION_OVERRIDE)) do
+              [] -> :ok
+              rest -> {:error, rest}
+            end
+
+          other ->
+            other
+        end
 
       case {expected_fabricated_names, result} do
         {fabricated, :ok} ->

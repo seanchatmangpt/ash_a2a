@@ -125,7 +125,6 @@ defmodule AshA2A.TwinTest do
     refute_receive({:hazard_tripped, _, _, _}, 200)
   end
 
-
   # -- Asset SLA timer (real gen_statem timer, no sleep coordination) --------
 
   test "asset arms SLA on activity and fires expiry when not disarmed" do
@@ -135,9 +134,24 @@ defmodule AshA2A.TwinTest do
     assert %{armed?: false, ops_count: 0} = Asset.status(an)
 
     Asset.record_activity(an, :run_1)
-    wait_until(fn -> %{armed?: armed} = Asset.status(an); armed end, 1_000)
+
+    wait_until(
+      fn ->
+        %{armed?: armed} = Asset.status(an)
+        armed
+      end,
+      1_000
+    )
+
     assert_receive({:sla_expired, ^an, %{ref: :run_1}}, 2_000)
-    wait_until(fn -> %{armed?: armed} = Asset.status(an); not armed end, 1_000)
+
+    wait_until(
+      fn ->
+        %{armed?: armed} = Asset.status(an)
+        not armed
+      end,
+      1_000
+    )
 
     # disarm suppresses the countdown
     Asset.record_activity(an, :run_2)
@@ -161,8 +175,14 @@ defmodule AshA2A.TwinTest do
     Operator.attend(on)
     Operator.attend(on)
     assert_receive({:budget_exhausted, ^on, %{depth: 0}}, 1_000)
-    wait_until(fn -> %{depth: depth, budget: budget} = Operator.status(on)
-                 depth == 0 and budget == 0 end, 1_000)
+
+    wait_until(
+      fn ->
+        %{depth: depth, budget: budget} = Operator.status(on)
+        depth == 0 and budget == 0
+      end,
+      1_000
+    )
 
     # fail-closed: attending at zero budget does nothing
     Operator.enqueue(on, :w3)
@@ -172,8 +192,14 @@ defmodule AshA2A.TwinTest do
 
     Operator.recharge(on)
     Operator.attend(on)
-    wait_until(fn -> %{depth: depth, budget: budget} = Operator.status(on)
-                 depth == 0 and budget == 4 end, 1_000)
+
+    wait_until(
+      fn ->
+        %{depth: depth, budget: budget} = Operator.status(on)
+        depth == 0 and budget == 4
+      end,
+      1_000
+    )
   end
 
   # -- Lifecycle: no orphan actors after supervisor shutdown -----------------

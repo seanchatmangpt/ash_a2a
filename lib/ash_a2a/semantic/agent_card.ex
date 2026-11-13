@@ -215,8 +215,8 @@ defmodule AshA2A.Semantic.AgentCard do
   defp declaration_turtle(%__MODULE__{} = declaration) do
     lines =
       [
-        {"sa2a:inputShape", "<#{declaration.input_shape}>"},
-        {"sa2a:outputShape", "<#{declaration.output_shape}>"},
+        {"sa2a:inputShape", iri_term(declaration.input_shape)},
+        {"sa2a:outputShape", iri_term(declaration.output_shape)},
         {"sa2a:consequenceClass", quoted(declaration.consequence_class)},
         {"sa2a:authorityRequirement", quoted(declaration.authority_requirement)},
         {"sa2a:receiptClass", quoted(declaration.receipt_class)},
@@ -231,19 +231,14 @@ defmodule AshA2A.Semantic.AgentCard do
 
     predicates = Enum.map_join(lines, " ;\n", fn {p, o} -> "  #{p} #{o}" end)
 
-    "<#{declaration.capability_iri}> rdf:type sa2a:CapabilityDeclaration ;\n#{predicates} .\n"
+    "#{iri_term(declaration.capability_iri)} rdf:type sa2a:CapabilityDeclaration ;\n#{predicates} .\n"
   end
 
-  defp quoted(value) do
-    escaped =
-      value
-      |> to_string()
-      |> String.replace("\\", "\\\\")
-      |> String.replace("\"", "\\\"")
-      |> String.replace("\n", "\\n")
+  defp quoted(value),
+    do: "\"" <> AshA2A.Semantic.Serialize.escape_literal(to_string(value)) <> "\""
 
-    "\"#{escaped}\""
-  end
+  defp iri_term(value),
+    do: "<" <> AshA2A.Semantic.Serialize.escape_iri(to_string(value)) <> ">"
 
   defp capability_iri(id), do: @iri_base <> slug(id)
   defp shape_iri(id, kind), do: @shape_base <> slug(id) <> ":" <> kind

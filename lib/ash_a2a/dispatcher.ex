@@ -44,6 +44,29 @@ defmodule AshA2A.Dispatcher do
               | {:stream, Enumerable.t()}
               | {:error, term()}
 
+  ## Generic-action return contract
+
+  A generic `:action` skill returns its result through `Ash.run_action/2`; the
+  following successful return values are interpreted by dispatch (any other
+  value is wrapped as before into one `Part.Data`):
+
+    * `{:input_required, parts}` -- `parts` is a non-empty list of
+      `AshA2A.Protocol.Part` structs; dispatch replies
+      `{:input_required, parts}` (task state `input-required`).
+    * `{:auth_required, parts}` -- same shape; dispatch replies
+      `{:error, {:auth_required, parts}}`, the tuple
+      `AshA2A.Protocol.Agent.Runtime` already maps to the `auth-required` task
+      state (it is carried inside `{:error, _}` because the runtime owns the
+      state mapping).
+    * `%AshA2A.Artifacts{artifacts: [...]}` -- multiple artifacts; dispatch
+      replies `{:reply, parts}` with the artifacts' parts flattened in order
+      (`AshA2A.Artifacts.parts/1`). Per-artifact separation on the wire needs a
+      runtime reply shape that does not exist yet.
+
+  Enumerable results of a generic action are NOT streamed: only the `:read`
+  per-call `"stream" => true` opt-in streams. The skill-level `streaming?`
+  option is declarative metadata only.
+
   ## Streaming `:read` skills (PRD §3.7)
 
   `run_read/4` returns `{:stream, Enumerable.t()}` instead of fully
@@ -94,6 +117,7 @@ defmodule AshA2A.Dispatcher do
   @type reply ::
           {:reply, [Part.t()]}
           | {:input_required, [Part.t()]}
+          | {:error, {:auth_required, [Part.t()]}}
           | {:stream, Enumerable.t()}
           | {:error, term()}
 
@@ -210,6 +234,7 @@ defmodule AshA2A.Dispatcher do
     %{}
     |> put_correlation(:command_id, correlation_value(Keyword.get(opts, :command_id)))
     |> put_correlation(:task_id, correlation_value(Keyword.get(opts, :task_id)))
+    |> put_correlation(:context_id, correlation_value(Keyword.get(opts, :context_id)))
     |> put_correlation(:traceparent, traceparent(a2a_message))
   end
 
@@ -233,7 +258,13 @@ defmodule AshA2A.Dispatcher do
   # caller's previous values afterwards, so log lines emitted inside the Ash
   # action can be joined with the dispatch telemetry events without leaking
   # correlation keys into the caller process's later, unrelated log lines.
-  @logger_keys [:ash_a2a_command_id, :ash_a2a_task_id, :ash_a2a_traceparent, :ash_a2a_skill]
+  @logger_keys [
+    :ash_a2a_command_id,
+    :ash_a2a_task_id,
+    :ash_a2a_context_id,
+    :ash_a2a_traceparent,
+    :ash_a2a_skill
+  ]
 
   # `skill_name` is caller input of any shape (dispatch/6 must fail closed,
   # not raise, on a tuple or map); only a name-shaped value becomes metadata.
@@ -247,6 +278,7 @@ defmodule AshA2A.Dispatcher do
     Logger.metadata(
       ash_a2a_command_id: Map.get(meta, :command_id),
       ash_a2a_task_id: Map.get(meta, :task_id),
+      ash_a2a_context_id: Map.get(meta, :context_id),
       ash_a2a_traceparent: Map.get(meta, :traceparent),
       ash_a2a_skill: logger_skill(Map.get(meta, :skill_name))
     )
@@ -305,12 +337,58 @@ defmodule AshA2A.Dispatcher do
          # an absent `config :ash_a2a, :finops` is a no-op passthrough, so
          # every consumer without FinOps wiring keeps its exact prior
          # behavior.
-         :ok <- tag_stage(finops_gate(a2a_message, opts), :finops_gate) do
+         :ok <- tag_stage(finops_gate(a2a_message, opts), :finops_gate),
+         :ok <- tag_stage(declared_authority_gate(resource_or_domain, admitted_anchor), :authority_gate),
+         :ok <- tag_stage(run_hooks(resource_or_domain, :pre_dispatch, skill, a2a_message), :pre_dispatch_hook) do
       :ok = AshA2A.BrceAnchor.actuating(skill, admitted_anchor)
       {reply, object_id} = run_skill(skill, action, input, exec_context)
+      run_post_hooks(resource_or_domain, skill, a2a_message, reply)
       {tag_stage(reply, :execution), object_id}
     else
       {:error, _reason} = error -> {error, nil}
+    end
+  end
+
+  # DSL `authority gate`: `:disabled` refuses every consequence-bearing (anchored) skill,
+  # fail closed; `:two_port` / `:open` leave the sole-DO anchor + kernel fence as the gate.
+  defp declared_authority_gate(resource_or_domain, anchor) do
+    case {AshA2A.Info.authority_gate(resource_or_domain), anchor} do
+      {:disabled, anchor} when not is_nil(anchor) -> {:error, :authority_gate_disabled}
+      _ -> :ok
+    end
+  end
+
+  # DSL `hooks`: identifiers resolve through `config :ash_a2a, :dispatch_hooks,
+  # %{hook_id => {Module, :fun}}`; the function receives `%{phase, skill_id, message, reply}`
+  # and returns `:ok | {:error, reason}`. An unresolvable id fails closed (pre) / is logged (post).
+  defp run_hooks(resource_or_domain, phase, skill, message, reply \\ nil) do
+    ids = Map.get(AshA2A.Info.hooks(resource_or_domain), phase, [])
+    table = Application.get_env(:ash_a2a, :dispatch_hooks, %{})
+    event = %{phase: phase, skill_id: skill.id, message: message, reply: reply}
+
+    Enum.reduce_while(ids, :ok, fn id, :ok ->
+      case Map.get(table, id) do
+        {mod, fun} when is_atom(mod) and is_atom(fun) ->
+          case apply(mod, fun, [event]) do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, {id, reason}}}
+            other -> {:halt, {:error, {id, {:bad_hook_return, other}}}}
+          end
+
+        _ ->
+          {:halt, {:error, {id, :hook_unresolved}}}
+      end
+    end)
+  end
+
+  defp run_post_hooks(resource_or_domain, skill, message, reply) do
+    case run_hooks(resource_or_domain, :post_dispatch, skill, message, reply) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        require Logger
+        Logger.warning("ash_a2a post_dispatch hook failed: #{inspect(reason)}")
     end
   end
 
@@ -377,6 +455,10 @@ defmodule AshA2A.Dispatcher do
   # fall through to the catch-all below and pass through unchanged as the
   # final dispatch result.
   defp tag_stage({:ok, _} = ok, _stage), do: ok
+  # `{:error, {:auth_required, parts}}` is a first-class protocol reply (see the
+  # generic-action return contract), not a stage failure: it passes through
+  # untagged so `AshA2A.Protocol.Agent.Runtime` can map it to `auth-required`.
+  defp tag_stage({:error, {:auth_required, _}} = reply, _stage), do: reply
   defp tag_stage({:error, reason}, stage), do: {:error, {stage, reason}}
   defp tag_stage(reply, _stage), do: reply
 
@@ -392,7 +474,7 @@ defmodule AshA2A.Dispatcher do
   # redacted. `config :ash_a2a, :telemetry_raw_errors, true` restores raw
   # terms for in-VM handlers.
   defp stop_meta({:error, {stage, reason}})
-       when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :finops_gate, :execution] do
+       when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :finops_gate, :authority_gate, :pre_dispatch_hook, :execution] do
     %{stage: stage, error: AshA2A.Telemetry.Redact.telemetry_error(reason)}
   end
 
@@ -614,7 +696,7 @@ defmodule AshA2A.Dispatcher do
   # Neither source is guaranteed present -- most skills (e.g. `:run_phase`,
   # a pure stateless echo) have no real object identity at all, and this
   # returns `nil` for them rather than inventing one.
-  defp object_id({:ok, %resource{} = record}, _input) do
+  defp object_id({:ok, %resource{} = record}, _input) when resource != AshA2A.Artifacts do
     case Ash.Resource.Info.primary_key(resource) do
       [field] ->
         case Map.get(record, field) do
@@ -867,9 +949,22 @@ defmodule AshA2A.Dispatcher do
      end)}
   end
 
-  defp to_reply({:ok, result}) do
-    {:reply, [Part.Data.new(wrap_for_part_data(encode_result(result)))]}
+  # Generic-action return contract (see the moduledoc): only a non-empty list
+  # of real part structs counts, anything else falls through to the plain
+  # `Part.Data` wrapping below.
+  defp to_reply({:ok, {:input_required, [_ | _] = parts}} = result) do
+    if parts?(parts), do: {:input_required, parts}, else: to_reply_plain(result)
   end
+
+  defp to_reply({:ok, {:auth_required, [_ | _] = parts}} = result) do
+    if parts?(parts), do: {:error, {:auth_required, parts}}, else: to_reply_plain(result)
+  end
+
+  defp to_reply({:ok, %AshA2A.Artifacts{} = artifacts}) do
+    {:reply, AshA2A.Artifacts.parts(artifacts)}
+  end
+
+  defp to_reply({:ok, _result} = result), do: to_reply_plain(result)
 
   defp to_reply(:ok) do
     {:reply, [Part.Data.new(%{})]}
@@ -1037,6 +1132,20 @@ defmodule AshA2A.Dispatcher do
   # non-struct value (e.g. a plain integer/boolean) -- neither is a map, so
   # both must be wrapped before reaching `Part.Data.new/2`. A result that is
   # already a map (the common single-record case) passes through unchanged.
+  defp to_reply_plain({:ok, result}) do
+    {:reply, [Part.Data.new(wrap_for_part_data(encode_result(result)))]}
+  end
+
+  defp parts?(parts) do
+    Enum.all?(parts, fn
+      %{__struct__: module} ->
+        module |> Module.split() |> Enum.take(3) == ["AshA2A", "Protocol", "Part"]
+
+      _ ->
+        false
+    end)
+  end
+
   defp wrap_for_part_data(%{} = map), do: map
   defp wrap_for_part_data(list) when is_list(list), do: %{results: list}
   defp wrap_for_part_data(other), do: %{result: other}

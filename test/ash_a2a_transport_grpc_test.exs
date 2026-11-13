@@ -216,8 +216,8 @@ defmodule AshA2A.TransportGrpcTest do
                }, handler, ctx)
     end
 
-    test "GetExtendedAgentCard maps -32004 to UNIMPLEMENTED(12)", %{ctx: ctx, handler: handler} do
-      assert {:error, 12, "This operation is not supported"} =
+    test "GetExtendedAgentCard maps -32007 to FAILED_PRECONDITION(9)", %{ctx: ctx, handler: handler} do
+      assert {:error, 9, "Authenticated Extended Card is not configured"} =
                Dispatch.call("GetExtendedAgentCard", %{}, handler, ctx)
     end
 

@@ -6,8 +6,10 @@ defmodule AshA2A.Twin do
   Supervisor for twin actors: `AshA2A.Twin.Asset`, `AshA2A.Twin.Partner`,
   `AshA2A.Twin.Operator` — each a `gen_statem` under a `DynamicSupervisor`,
   local in-memory state only (no store dependency). Twins communicate by
-  exchanging typed events and time-bounded `AshA2A.Twin.Lease`s; the
-  `AshA2A.Twin.Hazard` monitor carries the robust median/MAD statistics.
+  exchanging typed events to a listener pid. `AshA2A.Twin.Lease` is an
+  independent pure monotonic-lease module available to callers; the twin
+  actors themselves do not hold leases. The `AshA2A.Twin.Hazard` monitor
+  carries the robust median/MAD statistics.
 
   Design handoff (from ash_pplan lane T1):
   `/Users/sac/ash_pplan/notes/twin-handoff-ash-a2a.md`.
@@ -41,7 +43,7 @@ defmodule AshA2A.Twin do
     )
   end
 
-  @doc "Pids of all live twin actors (0/[] when the twin supervisor is down)."
+  @doc "Pids of all live twin actors ([] when the twin supervisor is down)."
   @spec twins() :: [pid()]
   def twins do
     try do

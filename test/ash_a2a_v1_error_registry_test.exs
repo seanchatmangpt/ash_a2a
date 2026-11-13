@@ -134,7 +134,9 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
      "Authenticated Extended Card is not configured", "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
     {-32_008, :extension_support_required, "Extension support is required",
      "EXTENSION_SUPPORT_REQUIRED"},
-    {-32_009, :version_not_supported, "Version not supported", "VERSION_NOT_SUPPORTED"}
+    {-32_009, :version_not_supported, "Version not supported", "VERSION_NOT_SUPPORTED"},
+    {-32_010, :task_generation_mismatch, "Task generation mismatch",
+     "TASK_GENERATION_MISMATCH"}
   ]
 
   @standard_codes [-32_700, -32_600, -32_601, -32_603]
@@ -305,7 +307,8 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
       # -32000 is not one of `Error`'s constructors (the transport mints it
       # for server_busy/rate_limited), but it has its own explicit clause;
       # include it so the -32000 clause doesn't masquerade as the catch-all.
-      registry = MapSet.new(Enum.map(@registry, &elem(&1, 0)) ++ [-32_000])
+      # -32010 (v1.1 TaskGenerationMismatch, HTTP 409) likewise has its own clause.
+      registry = MapSet.new(Enum.map(@registry, &elem(&1, 0)) ++ [-32_000, -32_010])
 
       table =
         Enum.map(hd(clause_groups), fn {:clause, _anno, head, guards, body} ->
@@ -382,11 +385,12 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
         # produces -32003/-32007 on its own paths.)
         -32_603 => 500,
         -32_003 => 400,
-        -32_005 => 500,
+        -32_005 => 400,
         -32_006 => 500,
         -32_007 => 400,
         -32_008 => 400,
-        -32_009 => 500
+        -32_009 => 400,
+        -32_010 => 409
       }
 
       # TOTALITY: every registry code resolves through the compiled table.
@@ -431,9 +435,9 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
           "message" => message_map("much longer than sixteen bytes")
         })
 
-      assert conn.status == 400
+      assert conn.status == 413
 
-      assert %{"error" => %{"code" => 400, "details" => "Body too large"}} =
+      assert %{"error" => %{"code" => 413, "details" => "Body too large"}} =
                Jason.decode!(conn.resp_body)
 
       # -32602 invalid params -> 400
@@ -464,8 +468,7 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
                }
              } = Jason.decode!(conn.resp_body)
 
-      # -32002 cancel a terminal task -> 409 (spec §3.1.5/§5.4 state conflict;
-      # TCK CORE-CANCEL-002 pins 409 on the REST binding)
+      # -32002 cancel a terminal task -> 409 (pinned TCK CORE-CANCEL-002)
       %{"task" => %{"id" => task_id}} = send_message(opts, "go")
       conn = post_json(opts, "/tasks/#{task_id}:cancel", %{})
       assert conn.status == 409
@@ -473,6 +476,7 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
       assert %{
                "error" => %{
                  "code" => 409,
+                 "status" => "FAILED_PRECONDITION",
                  "details" => [%{"@type" => @error_info_type, "reason" => "TASK_NOT_CANCELABLE"}]
                }
              } = Jason.decode!(conn.resp_body)

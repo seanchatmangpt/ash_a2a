@@ -9,7 +9,15 @@ defmodule AshA2a.StandingReceiptVerifyTest do
   # identity — the happy-path court re-mints under a fresh key instead).
   @attestation Path.join(@repo, "docs/sjira/v26.10.8/STANDING-RECEIPT.attestation.json")
 
+  @attest_bin "/Users/sac/graphlaw/target/debug/graphlaw-attest"
+
+  # Loud skip (never a faked pass) when the sibling graphlaw build is absent.
+  @happy_skip (if File.exists?(@attest_bin),
+                 do: false,
+                 else: "SKIP: graphlaw-attest not built at #{@attest_bin}")
+
   @tag :tmp_dir
+  @tag skip: @happy_skip
   test "verifies a receipt attested by the CURRENT graphlaw-attest (exit 0, VERIFIED)", context do
     %{tmp_dir: tmp} = context
     out = tmp <> "/receipt.md"
@@ -23,7 +31,7 @@ defmodule AshA2a.StandingReceiptVerifyTest do
     # refuses it ("missing payload_blake3"). So this happy-path court re-mints a
     # LIVE attestation over the same receipt doc with the current CLI under a
     # fresh key, then verifies through the real mix task.
-    attest_bin = "/Users/sac/graphlaw/target/debug/graphlaw-attest"
+    attest_bin = @attest_bin
     seed = Base.encode16(:crypto.strong_rand_bytes(32))
 
     {_, 0} =

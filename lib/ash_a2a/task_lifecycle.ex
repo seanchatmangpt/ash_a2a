@@ -43,6 +43,28 @@ defmodule AshA2A.TaskLifecycle do
   @spec states() :: [atom()]
   def states, do: @states
 
+  @terminal [:completed, :failed, :canceled, :rejected]
+
+  @doc """
+  Whether `state` is interrupted (parked, resumable): `:input_required` or
+  `:auth_required`. Single source: `AshA2A.Protocol.Task.Status.interrupted?/1`.
+  """
+  @spec interrupted?(atom()) :: boolean()
+  def interrupted?(state), do: AshA2A.Protocol.Task.Status.interrupted?(state)
+
+  @doc """
+  Pure legality check at the transition point: unknown states and any move
+  out of a terminal state (other than to itself) are refused. Fine-grained
+  per-resource legality is `admit/3` (requires `ash_state_machine`).
+  """
+  @spec check_transition(atom() | nil, atom()) :: :ok | {:error, term()}
+  def check_transition(_from, to) when to not in @states, do: {:error, {:unknown_a2a_state, to}}
+
+  def check_transition(from, to) when from in @terminal and from != to,
+    do: {:error, {:terminal_state, from}}
+
+  def check_transition(_from, _to), do: :ok
+
   @spec available?() :: boolean()
   def available?, do: Code.ensure_loaded?(AshStateMachine)
 

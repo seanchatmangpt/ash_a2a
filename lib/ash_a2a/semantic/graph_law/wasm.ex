@@ -120,7 +120,7 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
   @doc "Resolved absolute path of the wasm module this runtime would load."
   @spec wasm_path() :: String.t()
   def wasm_path do
-    config(:wasm_path) || System.get_env("GRAPHLAW_WASM") || AshA2A.GraphLaw.wasm_path()
+    config(:wasm_path) || env_wasm_path() || AshA2A.GraphLaw.wasm_path_unchecked()
   end
 
   @doc """
@@ -266,6 +266,16 @@ defmodule AshA2A.Semantic.GraphLaw.Wasm do
     :ash_a2a
     |> Application.get_env(__MODULE__, [])
     |> Keyword.get(key)
+  end
+
+  defp env_wasm_path do
+    case System.get_env("GRAPHLAW_WASM") do
+      value when is_binary(value) ->
+        if String.trim(value) == "", do: nil, else: value
+
+      _ ->
+        nil
+    end
   end
 
   defp timeout, do: config(:timeout) || @default_timeout

@@ -530,11 +530,18 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
 
     {victim, ref} =
       spawn_monitor(fn ->
+        # structural sync: the victim does not start until it has been armed,
+        # so arming can never race past the checkpoint boundary
+        receive do
+          :go -> :ok
+        end
+
         PPlanAdapter.run(task_id, data_message(%{kickoff: true}), kill_cfg)
         send(parent, {:survived, task_id})
       end)
 
     KillStore.arm(victim)
+    send(victim, :go)
 
     assert_receive {:DOWN, ^ref, :process, ^victim, :killed}, 15_000
     assert KillStore.fired?(), "kill plan never fired at the checkpoint boundary"

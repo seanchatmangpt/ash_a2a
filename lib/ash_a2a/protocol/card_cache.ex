@@ -121,7 +121,11 @@ defmodule AshA2A.Protocol.CardCache do
       ...>     "description" => "d",
       ...>     "url" => "https://example.com",
       ...>     "version" => "1.0.0",
-      ...>     "skills" => []
+      ...>     "skills" => [],
+      ...>     "supportedInterfaces" => [],
+      ...>     "capabilities" => %{},
+      ...>     "defaultInputModes" => ["text/plain"],
+      ...>     "defaultOutputModes" => ["text/plain"]
       ...>   })
       iex> card.name
       "a"
@@ -284,6 +288,12 @@ defmodule AshA2A.Protocol.CardCache do
       cache_control: response_header(response, "cache-control"),
       fetched_at: now
     })
+  end
+
+  # Req decodes JSON bodies (incl. `application/a2a+json`) into maps; cache the
+  # re-encoded bytes so the entry is still written.
+  defp store_response(cache_dir, url, %Req.Response{body: %{} = body} = response, now) do
+    store_response(cache_dir, url, %{response | body: Jason.encode!(body)}, now)
   end
 
   defp write(cache_dir, entry) do

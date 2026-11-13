@@ -99,7 +99,7 @@ defmodule AshA2AA2AMethodsTest do
     assert %{"error" => %{"code" => -32004}} = body
   end
 
-  test "agent/getAuthenticatedExtendedCard is the typed unsupported-operation refusal", %{
+  test "agent/getAuthenticatedExtendedCard is the typed not-configured refusal (-32007)", %{
     plug_opts: o
   } do
     body =
@@ -108,7 +108,7 @@ defmodule AshA2AA2AMethodsTest do
       |> Map.fetch!(:resp_body)
       |> Jason.decode!()
 
-    assert %{"error" => %{"code" => -32004}} = body
+    assert %{"error" => %{"code" => -32007}} = body
   end
 
   # TQ-05: the vendored `AshA2A.Protocol.Plug` answers `message/stream` for a

@@ -65,6 +65,7 @@ defmodule AshA2A.TaskStore.Ekv do
   end
 
   @prefix "a2a_task/"
+  @push_prefix "a2a_push/"
   @not_persisted ["a2a.auth", :stream]
 
   @doc """
@@ -99,7 +100,7 @@ defmodule AshA2A.TaskStore.Ekv do
   def get(name, task_id) when is_binary(task_id) do
     case EKV.get(name, key(task_id)) do
       %AshA2A.Protocol.Task{} = task -> {:ok, task}
-      nil -> {:error, :not_found}
+      _other -> {:error, :not_found}
     end
   end
 
@@ -130,6 +131,45 @@ defmodule AshA2A.TaskStore.Ekv do
     |> all_tasks()
     |> AshA2A.Protocol.Task.Filter.apply(opts)
   end
+
+  # --- Push notification config callbacks (durable, own key prefix) ---
+
+  @impl AshA2A.Protocol.TaskStore
+  def set_push_config(name, %AshA2A.Protocol.PushNotificationConfig{} = config) do
+    case EKV.put(name, push_key(config.task_id, config.id), config) do
+      :ok -> {:ok, config}
+      other -> raise WriteError, operation: :set_push_config, task_id: config.task_id, reason: other
+    end
+  end
+
+  @impl AshA2A.Protocol.TaskStore
+  def get_push_config(name, task_id, config_id) do
+    case EKV.get(name, push_key(task_id, config_id)) do
+      %AshA2A.Protocol.PushNotificationConfig{} = config -> {:ok, config}
+      _other -> {:error, :not_found}
+    end
+  end
+
+  @impl AshA2A.Protocol.TaskStore
+  def list_push_configs(name, task_id) do
+    configs =
+      name
+      |> EKV.scan(@push_prefix <> task_id <> "/")
+      |> Stream.map(fn {_key, value, _vsn} -> value end)
+      |> Enum.filter(&match?(%AshA2A.Protocol.PushNotificationConfig{task_id: ^task_id}, &1))
+
+    {:ok, configs}
+  end
+
+  @impl AshA2A.Protocol.TaskStore
+  def delete_push_config(name, task_id, config_id) do
+    case EKV.delete(name, push_key(task_id, config_id)) do
+      :ok -> :ok
+      other -> raise WriteError, operation: :delete_push_config, task_id: task_id, reason: other
+    end
+  end
+
+  defp push_key(task_id, config_id), do: @push_prefix <> task_id <> "/" <> config_id
 
   defp all_tasks(name) do
     name

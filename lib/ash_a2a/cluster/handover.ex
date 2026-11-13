@@ -70,14 +70,37 @@ defmodule AshA2A.Cluster.Handover do
 
   @doc """
   Every durably checkpointed (suspended, adoptable) task in `store`.
+
+  Pages through the store's `list_all/2` with page tokens -- no silent
+  truncation. A store without `list_all/2` yields
+  `{:error, {:unsupported, :list_all}}`.
   """
-  @spec list_checkpointed(store()) :: {:ok, [Task.t()]}
-  def list_checkpointed(store) do
-    {store_mod, store_ref} = store
+  @spec list_checkpointed(store()) :: {:ok, [Task.t()]} | {:error, term()}
+  def list_checkpointed({store_mod, store_ref}) do
+    if Code.ensure_loaded?(store_mod) and function_exported?(store_mod, :list_all, 2) do
+      collect_pages(store_mod, store_ref, nil, [])
+    else
+      {:error, {:unsupported, :list_all}}
+    end
+  end
 
-    {:ok, %{tasks: tasks}} = store_mod.list_all(store_ref, page_size: 100_000)
+  defp collect_pages(store_mod, store_ref, token, acc) do
+    opts = [page_size: 500] ++ if(token, do: [page_token: token], else: [])
 
-    {:ok, Enum.filter(tasks, &Checkpoint.checkpointed?/1)}
+    case store_mod.list_all(store_ref, opts) do
+      {:ok, %{tasks: tasks, next_page_token: next}} ->
+        acc = acc ++ Enum.filter(tasks, &Checkpoint.checkpointed?/1)
+
+        if next in [nil, ""],
+          do: {:ok, acc},
+          else: collect_pages(store_mod, store_ref, next, acc)
+
+      {:error, _} = error ->
+        error
+
+      other ->
+        {:error, {:unexpected_list_all, other}}
+    end
   end
 
   @doc """
@@ -86,64 +109,137 @@ defmodule AshA2A.Cluster.Handover do
   `resume_fun` receives the suspended task and its stored execution frame
   and returns `{:ok, result}` when the remaining work concluded. The adopted
   task is written back `:completed` with its result in metadata under
-  `"a2a.cluster.result"` and the checkpoint envelope cleared; a duplicate
-  write is idempotent (the envelope is gone, so it is no longer
-  checkpointed). Returns the list of resumed task results.
+  `"a2a.cluster.result"` and the checkpoint envelope cleared. Each task is
+  claimed (see `rehydrate_one/4`) before `resume_fun` runs, so two peers
+  cannot both resume it.
 
-  A `resume_fun` `{:error, reason}` leaves the checkpoint envelope intact
-  (the task stays suspended and adoptable by another peer) and is collected
-  instead of raised.
+  A `resume_fun` `{:error, reason}` (or raise/throw/exit) releases the claim
+  and leaves the checkpoint envelope intact (the task stays suspended and
+  adoptable) and is collected instead of raised.
   """
   @spec rehydrate(store(), resume_fun()) :: {:ok, [map()]} | {:error, [map()]}
-  def rehydrate(store, resume_fun) when is_function(resume_fun, 2) do
-    {:ok, checkpointed} = list_checkpointed(store)
+  def rehydrate(store, resume_fun, opts \\ []) when is_function(resume_fun, 2) do
+    case list_checkpointed(store) do
+      {:error, reason} ->
+        {:error, [%{task_id: nil, reason: reason}]}
 
-    {resumed, failed} =
-      Enum.reduce(checkpointed, {[], []}, fn task, {resumed, failed} ->
-        case rehydrate_one(store, task, resume_fun) do
-          {:ok, entry} -> {[entry | resumed], failed}
-          {:error, entry} -> {resumed, [entry | failed]}
+      {:ok, checkpointed} ->
+        {resumed, failed} =
+          Enum.reduce(checkpointed, {[], []}, fn task, {resumed, failed} ->
+            case rehydrate_one(store, task, resume_fun, opts) do
+              {:ok, entry} -> {[entry | resumed], failed}
+              {:error, %{reason: :already_claimed}} -> {resumed, failed}
+              {:error, entry} -> {resumed, [entry | failed]}
+            end
+          end)
+
+        case failed do
+          [] -> {:ok, Enum.reverse(resumed)}
+          _ -> {:error, Enum.reverse(failed)}
         end
-      end)
-
-    case failed do
-      [] -> {:ok, Enum.reverse(resumed)}
-      _ -> {:error, Enum.reverse(failed)}
     end
   end
 
+  @claim_key "a2a.cluster.claim"
+  @default_claim_ttl_ms 60_000
+
   @doc """
-  Resumes a single checkpointed task through `resume_fun`.
+  Resumes a single checkpointed task through `resume_fun`, effect-once.
+
+  Before resuming, the task is claimed compare-and-set style: under a
+  cluster-wide `:global.trans/3` lock keyed by task id, the task is re-read
+  from the store and must still carry its checkpoint envelope and no live
+  claim; the claim (node, unique ref, expiry) is then written. A loser sees
+  `{:error, %{reason: :already_claimed}}` (or `:not_checkpointed` once the
+  winner completed) and never calls `resume_fun`. A claim expires after
+  `:claim_ttl_ms` (default 60_000) so a peer that died mid-resume does not
+  strand the task.
   """
-  @spec rehydrate_one(store(), Task.t(), resume_fun()) ::
+  @spec rehydrate_one(store(), Task.t(), resume_fun(), keyword()) ::
           {:ok, %{task_id: String.t(), result: term()}} | {:error, map()}
-  def rehydrate_one(store, %Task{} = task, resume_fun) when is_function(resume_fun, 2) do
+  def rehydrate_one(store, %Task{} = task, resume_fun, opts \\ [])
+      when is_function(resume_fun, 2) do
     {store_mod, store_ref} = store
+    ttl = Keyword.get(opts, :claim_ttl_ms, @default_claim_ttl_ms)
 
-    with {:ok, envelope} <- Checkpoint.envelope(task),
-         {:ok, result} <- safe_resume(resume_fun, task, envelope["frame"]) do
-      completed =
-        task
-        |> Checkpoint.cleared()
-        |> then(&%{&1 | status: AshA2A.Protocol.Task.Status.new(:completed)})
-        |> put_result(result)
+    case claim(store, task.id, ttl) do
+      {:ok, claimed} ->
+        with {:ok, envelope} <- Checkpoint.envelope(claimed),
+             {:ok, result} <- safe_resume(resume_fun, claimed, envelope["frame"]) do
+          completed =
+            claimed
+            |> Checkpoint.cleared()
+            |> then(&%{&1 | metadata: Map.delete(&1.metadata, @claim_key)})
+            |> then(&%{&1 | status: AshA2A.Protocol.Task.Status.new(:completed)})
+            |> put_result(result)
 
-      :ok = store_mod.put(store_ref, completed)
+          :ok = store_mod.put(store_ref, completed)
 
-      :telemetry.execute(
-        [:ash_a2a, :cluster, :handover, :completed],
-        %{count: 1},
-        %{task_id: task.id, node: node()}
-      )
+          :telemetry.execute(
+            [:ash_a2a, :cluster, :handover, :completed],
+            %{count: 1},
+            %{task_id: task.id, node: node()}
+          )
 
-      {:ok, %{task_id: task.id, result: result}}
-    else
+          {:ok, %{task_id: task.id, result: result}}
+        else
+          {:error, reason} ->
+            release_claim(store, task.id)
+            {:error, %{task_id: task.id, reason: reason}}
+
+          :error ->
+            release_claim(store, task.id)
+            {:error, %{task_id: task.id, reason: :missing_checkpoint_envelope}}
+        end
+
       {:error, reason} ->
         {:error, %{task_id: task.id, reason: reason}}
-
-      :error ->
-        {:error, %{task_id: task.id, reason: :missing_checkpoint_envelope}}
     end
+  end
+
+  defp claim({store_mod, store_ref}, task_id, ttl) do
+    :global.trans({{:ash_a2a_rehydrate, task_id}, self()}, fn ->
+      with {:ok, current} <- store_mod.get(store_ref, task_id),
+           true <- Checkpoint.checkpointed?(current) and not Task.terminal?(current),
+           :ok <- claim_free(current) do
+        claimed = %{
+          current
+          | metadata:
+              Map.put(current.metadata, @claim_key, %{
+                "node" => node(),
+                "ref" => make_ref(),
+                "expires_at_ms" => System.system_time(:millisecond) + ttl
+              })
+        }
+
+        :ok = store_mod.put(store_ref, claimed)
+        {:ok, claimed}
+      else
+        false -> {:error, :not_checkpointed}
+        {:error, :not_found} -> {:error, :not_checkpointed}
+        {:error, _} = error -> error
+      end
+    end)
+  end
+
+  defp claim_free(%Task{metadata: metadata}) do
+    case Map.get(metadata, @claim_key) do
+      %{"expires_at_ms" => exp} when is_integer(exp) ->
+        if exp > System.system_time(:millisecond), do: {:error, :already_claimed}, else: :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp release_claim({store_mod, store_ref}, task_id) do
+    :global.trans({{:ash_a2a_rehydrate, task_id}, self()}, fn ->
+      with {:ok, current} <- store_mod.get(store_ref, task_id) do
+        store_mod.put(store_ref, %{current | metadata: Map.delete(current.metadata, @claim_key)})
+      end
+    end)
+
+    :ok
   end
 
   @doc "`{:ok, result}` when `task` was rehydrated to completion, else `:error`."
@@ -160,6 +256,8 @@ defmodule AshA2A.Cluster.Handover do
     resume_fun.(task, frame)
   rescue
     error -> {:error, Exception.message(error)}
+  catch
+    kind, value -> {:error, {kind, value}}
   end
 
   defp pubsub do

@@ -108,9 +108,14 @@ defmodule AshA2A.PlugAgentCardTest do
     refute Map.has_key?(served_card, "url")
     refute Map.has_key?(served_card, "protocolVersion")
 
+    # v1.1 is the advertised protocol version (1.0 and 0.3 clients are still
+    # accepted by the A2A-Version gate, but never advertised).
+    advertised = AshA2A.Protocol.Version.protocol_version()
+    assert advertised == "1.1"
+
     assert %{
              "supportedInterfaces" => [
-               %{"url" => _index_url, "protocolVersion" => "1.0"} | _
+               %{"url" => _index_url, "protocolVersion" => ^advertised} | _
              ]
            } = served_card
   end

@@ -203,7 +203,7 @@ defmodule AshA2A.Evidence.Class do
   def digest(term) do
     "sha256:" <>
       (term
-       |> :erlang.term_to_binary()
+       |> :erlang.term_to_binary([:deterministic])
        |> then(&:crypto.hash(:sha256, &1))
        |> Base.encode16(case: :lower))
   end

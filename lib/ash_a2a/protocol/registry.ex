@@ -34,12 +34,15 @@ defmodule AshA2A.Protocol.Registry do
 
   - `:name` — process/table name (required)
   - `:agents` — list of agent modules to pre-populate (default: `[]`)
+  - `:disclose` — `(card, principal -> card | nil)` selective-disclosure
+    callback applied by `list_for/3` and `get_for/3` (default: none)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     agents = Keyword.get(opts, :agents, [])
-    GenServer.start_link(__MODULE__, {name, agents}, name: name)
+    disclose = Keyword.get(opts, :disclose)
+    GenServer.start_link(__MODULE__, {name, agents, disclose}, name: name)
   end
 
   @doc """
@@ -80,12 +83,125 @@ defmodule AshA2A.Protocol.Registry do
   """
   @spec find_by_skill(GenServer.server(), String.t()) :: [module()]
   def find_by_skill(registry, tag) do
-    :ets.tab2list(registry)
-    |> Enum.filter(fn {_mod, card} ->
-      Enum.any?(card.skills, fn skill -> tag in skill.tags end)
-    end)
+    registry
+    |> find(%{tag: tag})
     |> Enum.map(fn {mod, _card} -> mod end)
   end
+
+  @doc """
+  Returns `{module, card}` entries matching every given criterion (AND).
+
+  Criteria (all optional; unknown keys are ignored):
+
+    * `:skill_id` -- a skill with this `id`
+    * `:tag` -- a skill carrying this tag
+    * `:provider` -- provider organization (or the provider map's `:organization`)
+    * `:capabilities` -- map such as `%{streaming: true}`; every pair must equal
+      the card's capability value
+    * `:input_mode` / `:output_mode` -- listed in the card's default modes
+      (or in any skill's modes)
+
+  Cards lacking a field never match a criterion on it; they never crash.
+  Reads ETS directly.
+  """
+  @spec find(GenServer.server(), map() | keyword()) :: [{module(), AshA2A.Protocol.Agent.card()}]
+  def find(registry, criteria \\ %{}) do
+    criteria = Map.new(criteria)
+
+    registry
+    |> all()
+    |> Enum.filter(fn {_mod, card} -> matches?(card, criteria) end)
+  end
+
+  @doc """
+  Like `find/2` but each matching card is passed through the registry's
+  `:disclose` callback (`(card, principal -> card | nil)`) for `principal`.
+  A callback returning `nil` hides the agent from that caller. Without a
+  callback the card is returned unchanged.
+  """
+  @spec list_for(GenServer.server(), term(), map() | keyword()) ::
+          [{module(), AshA2A.Protocol.Agent.card()}]
+  def list_for(registry, principal, criteria \\ %{}) do
+    registry
+    |> find(criteria)
+    |> Enum.flat_map(fn {mod, card} ->
+      case disclose(registry, card, principal) do
+        nil -> []
+        shown -> [{mod, shown}]
+      end
+    end)
+  end
+
+  @doc "Single-agent lookup with per-principal disclosure; hidden == not found."
+  @spec get_for(GenServer.server(), module(), term()) ::
+          {:ok, AshA2A.Protocol.Agent.card()} | {:error, :not_found}
+  def get_for(registry, module, principal) do
+    with {:ok, card} <- get(registry, module),
+         shown when not is_nil(shown) <- disclose(registry, card, principal) do
+      {:ok, shown}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp disclose(registry, card, principal) do
+    case :persistent_term.get({__MODULE__, :disclose, registry}, nil) do
+      fun when is_function(fun, 2) -> fun.(card, principal)
+      _ -> card
+    end
+  end
+
+  defp matches?(card, criteria) do
+    Enum.all?(criteria, fn {key, want} -> match_one?(card, key, want) end)
+  end
+
+  defp match_one?(card, :skill_id, id), do: Enum.any?(skills(card), &(fetch(&1, :id) == id))
+
+  defp match_one?(card, :tag, tag),
+    do: Enum.any?(skills(card), fn s -> tag in List.wrap(fetch(s, :tags)) end)
+
+  defp match_one?(card, :provider, want) do
+    case fetch(card, :provider) do
+      %{} = p -> want in [fetch(p, :organization), fetch(p, :name)]
+      p when is_binary(p) -> p == want
+      _ -> false
+    end
+  end
+
+  defp match_one?(card, :capabilities, want) do
+    caps = fetch(card, :capabilities)
+
+    is_map(caps) and Enum.all?(want, fn {k, v} -> fetch(caps, k) == v end)
+  end
+
+  defp match_one?(card, :input_mode, mode),
+    do: mode_match?(card, :default_input_modes, :input_modes, mode)
+
+  defp match_one?(card, :output_mode, mode),
+    do: mode_match?(card, :default_output_modes, :output_modes, mode)
+
+  defp match_one?(_card, _unknown, _want), do: true
+
+  defp mode_match?(card, card_key, skill_key, mode) do
+    mode in List.wrap(fetch(card, card_key)) or
+      Enum.any?(skills(card), fn s -> mode in List.wrap(fetch(s, skill_key)) end)
+  end
+
+  defp skills(card) do
+    case fetch(card, :skills) do
+      list when is_list(list) -> Enum.filter(list, &is_map/1)
+      _ -> []
+    end
+  end
+
+  defp fetch(%{} = map, key) when is_atom(key) do
+    case Map.fetch(map, key) do
+      {:ok, v} -> v
+      :error -> Map.get(map, Atom.to_string(key))
+    end
+  end
+
+  defp fetch(_other, _key), do: nil
 
   @doc """
   Returns all registered `{module, card}` entries.
@@ -100,7 +216,9 @@ defmodule AshA2A.Protocol.Registry do
   # --- GenServer callbacks ---
 
   @impl GenServer
-  def init({name, agents}) do
+  def init({name, agents, disclose}) do
+    :persistent_term.put({__MODULE__, :disclose, name}, disclose)
+
     table = :ets.new(name, [:named_table, :public, :set, read_concurrency: true])
 
     for mod <- agents do

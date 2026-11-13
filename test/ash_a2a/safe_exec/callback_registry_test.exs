@@ -8,7 +8,7 @@ defmodule AshA2A.CallbackRegistryTest do
   alias AshA2A.CallbackRegistry
 
   test "a permitted callback is invoked and returns its real result" do
-    assert CallbackRegistry.permitted?(BeamPM.Ferroplan, :plan_production, 4)
+    assert CallbackRegistry.permitted?(AshR2RML, :mapping_result, 1)
     assert CallbackRegistry.permitted?(AshR2RML, :mapping_result, 1)
   end
 
@@ -19,7 +19,7 @@ defmodule AshA2A.CallbackRegistryTest do
     assert {:error, %{code: :callback_not_permitted}} =
              CallbackRegistry.invoke(File, :rm_rf, ["/nonexistent-safe-exec"])
 
-    refute CallbackRegistry.permitted?(BeamPM.Ferroplan, :plan_production, 3)
+    refute CallbackRegistry.permitted?(BeamPM.Ferroplan, :plan_production, 4)
   end
 
   test "non-atom or malformed callbacks are refused, not raised" do

@@ -38,11 +38,13 @@ defmodule AshA2A.Transport.Runtime do
       finishes. A worker that crashes or is killed fails only its own task
       with a typed `internal_error` + ref (SEC-02); the agent and every other
       task survive. `mode: :inline` restores the serialized in-process
-      behavior. `tasks/cancel` on a task whose handler is still running is
-      refused `:not_cancelable` (the same answer the serialized runtime gave,
-      where a cancel could only arrive after the run finished): the handler
-      may already have crossed a consequence boundary, so reporting the task
-      `:canceled` while its effect commits would be a false standing.
+      behavior. `tasks/cancel` on a task whose handler is still running
+      interrupts it (`cancel_in_flight/3`): the worker is killed before its
+      result is applied, the pending send replies with the `:canceled` task,
+      and the late worker result is a no-op. Opt back into the refusal with
+      `execution: [cancel_in_flight: :refuse]` (`:not_cancelable`). In
+      `:inline` mode and under `adapter: :pplan` a cancel can only arrive
+      after the run finished, so the terminal-state answer applies.
     * **Admission limits (SEC-03).** A global in-flight cap
       (`max_in_flight`, default 256) refuses with `%{code: :server_busy}`, and
       an optional per-principal token bucket (`rate_limit: {count, per_ms}`,
@@ -66,9 +68,15 @@ defmodule AshA2A.Transport.Runtime do
   alias AshA2A.Transport.{Principal, SafeError, WireCompat}
 
   @owner_key "ash_a2a.owner"
+  @tenant_key "ash_a2a.tenant"
   @in_flight_key :ash_a2a_in_flight
+  @workers_key :ash_a2a_in_flight_workers
   @buckets_key :ash_a2a_rate_buckets
   @max_buckets 10_000
+  @sweep_key :ash_a2a_orphan_sweep
+  @sweep_msg :ash_a2a_orphan_sweep
+  @default_sweep_interval_ms 10_000
+  @default_lease_ms 60_000
 
   @defaults [mode: :async, max_in_flight: 256, rate_limit: nil]
 
@@ -125,8 +133,18 @@ defmodule AshA2A.Transport.Runtime do
   def owner(_task), do: :anonymous
 
   @doc "Whether `principal` may see/act on `task`."
-  @spec owned_by?(AshA2A.Protocol.Task.t(), Principal.key()) :: boolean()
-  def owned_by?(task, principal), do: owner(task) == principal
+  @spec owned_by?(AshA2A.Protocol.Task.t(), Principal.key() | {Principal.key(), String.t()}) ::
+          boolean()
+  def owned_by?(task, {key, tenant}), do: owner(task) == key and task_tenant(task) == tenant
+  # An untenanted call never sees a tenanted task (tenant isolation).
+  def owned_by?(task, principal), do: owner(task) == principal and task_tenant(task) == nil
+
+  @doc "Tenant recorded on `task` at creation (`nil` when untenanted)."
+  @spec task_tenant(AshA2A.Protocol.Task.t()) :: String.t() | nil
+  def task_tenant(%AshA2A.Protocol.Task{metadata: metadata}) when is_map(metadata),
+    do: Map.get(metadata, @tenant_key)
+
+  def task_tenant(_task), do: nil
 
   @doc """
   Removes transport-internal metadata (verified auth, owner key, stream ref)
@@ -134,7 +152,7 @@ defmodule AshA2A.Transport.Runtime do
   """
   @spec wire_task(AshA2A.Protocol.Task.t()) :: AshA2A.Protocol.Task.t()
   def wire_task(%AshA2A.Protocol.Task{metadata: metadata} = task) when is_map(metadata) do
-    %{task | metadata: Map.drop(metadata, ["a2a.auth", @owner_key, :stream])}
+    %{task | metadata: Map.drop(metadata, ["a2a.auth", @owner_key, @tenant_key, :stream])}
   end
 
   def wire_task(task), do: task
@@ -164,12 +182,32 @@ defmodule AshA2A.Transport.Runtime do
     config = config(agent_opts)
     metadata = call_metadata(opts)
     caller = Principal.from_metadata(metadata)
+    state = ensure_sweep(config, state)
+
+    immediate? = Keyword.get(opts, :return_immediately, false) == true
+    continuing? = Keyword.get(opts, :task_id) != nil
 
     with :ok <- check_rate(caller, config),
          :ok <- check_capacity(config),
-         {:ok, task, message} <- prepare_task(message, opts, metadata, caller, state) do
-      task = State.transition(task, :working)
+         :ok <- validate_input_modes(module, message, opts, config),
+         {:ok, updates} <- admit_artifact_updates(module, opts),
+         {:ok, task, message} <- prepare_task(message, opts, metadata, caller, wire?, state) do
+      # A2A v1.1 client-written artifacts: applied in request order AFTER the
+      # client message was appended (prepare_task), role :user, client
+      # generation ignored (ClientArtifacts.apply_updates/2).
+      task = AshA2A.Protocol.ClientArtifacts.apply_updates(task, updates)
+
+      # returnImmediately: a NEW task is stored `:submitted`, a continuation
+      # `:working`; the non-immediate path always runs the task `:working`.
+      task =
+        if immediate? and not continuing?,
+          do: task,
+          else: State.transition(task, :working)
+
+      remember_output_modes(task, opts)
       state = state |> State.put_task(task) |> State.track_context(task)
+      publish_message_update(task, message, config)
+      state = wake_waiters(state)
 
       # `adapter:` selects WHAT runs (the agent's own handler, or a durable
       # ash_pplan run via `AshA2A.Execution.PPlan`); `mode:` selects WHERE the
@@ -181,9 +219,18 @@ defmodule AshA2A.Transport.Runtime do
           _local -> fn -> run_handler(module, message, context(task)) end
         end
 
-      case Keyword.get(config, :mode) do
+      mode = if immediate?, do: :async, else: Keyword.get(config, :mode)
+
+      case mode do
+        _ when immediate? ->
+          # Reply with the stored task now; the worker's result folds into the
+          # stored task later (`finish/6`, which never overwrites a terminal
+          # state). `:detached` has no caller to answer.
+          spawn_worker(handler, task, :detached, wire?)
+          {:reply, wire_reply({:ok, task}, wire?), state}
+
         :inline ->
-          finish(task.id, from, handler.(), state, :inline, wire?)
+          task.id |> finish(from, handler.(), state, :inline, wire?) |> wake_reply()
 
         _async ->
           spawn_worker(handler, task, from, wire?)
@@ -194,6 +241,103 @@ defmodule AshA2A.Transport.Runtime do
     end
   end
 
+  # v1.1 `artifactUpdates` admission: gated on the agent card's
+  # `user_artifacts` capability BEFORE any task is created or mutated.
+  # `opts[:artifact_updates]` is either `ClientArtifacts.decode_updates/1`
+  # output (`[{artifact, append?, last_chunk}]`) or the raw wire list.
+  defp admit_artifact_updates(module, opts) do
+    with {:ok, decoded} <- decode_artifact_updates(Keyword.get(opts, :artifact_updates)) do
+      card =
+        if function_exported?(module, :agent_card, 0), do: module.agent_card(), else: nil
+
+      case AshA2A.Protocol.ClientArtifacts.check_user_artifacts(card, decoded) do
+        :ok -> {:ok, decoded}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  defp decode_artifact_updates(nil), do: {:ok, []}
+  defp decode_artifact_updates([]), do: {:ok, []}
+
+  defp decode_artifact_updates([first | _] = updates) when is_tuple(first),
+    do: {:ok, updates}
+
+  defp decode_artifact_updates([first | _] = updates) when is_map(first),
+    do: AshA2A.Protocol.ClientArtifacts.decode_updates(updates)
+
+  defp decode_artifact_updates(_other), do: {:error, :invalid_artifact_update}
+
+  # v1.1 message_update: the appended client message is published to the
+  # per-task event log (`AshA2A.A2ATransport.TaskEvents`) as a stamped
+  # `Event.MessageUpdate` (wire kind `"message-update"`). Delivery gating to
+  # >= 1.1 consumers is the event log/SSE layer's job (lane V4). No-op when
+  # the agent is not wired to an events transport
+  # (`execution: [events_transport: name]` or `config :ash_a2a,
+  # :events_transport`), which is the in-process default.
+  @doc false
+  @spec publish_message_update(AshA2A.Protocol.Task.t(), AshA2A.Protocol.Message.t(), keyword()) ::
+          :ok
+  def publish_message_update(task, message, config) do
+    transport =
+      Keyword.get(config, :events_transport) || Application.get_env(:ash_a2a, :events_transport)
+
+    if is_atom(transport) and transport != nil do
+      event = message_update_event(task, message)
+
+      payload =
+        case AshA2A.Protocol.JSON.encode(event) do
+          {:ok, map} when is_map(map) -> %{"messageUpdate" => map}
+          map when is_map(map) -> %{"messageUpdate" => map}
+          _ -> %{"messageUpdate" => %{"taskId" => task.id}}
+        end
+
+      _ = AshA2A.A2ATransport.TaskEvents.publish(transport, task.id, "message-update", payload)
+    end
+
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
+  end
+
+  @doc "The `Event.MessageUpdate` for a client message, stamped with the task's generation."
+  @spec message_update_event(AshA2A.Protocol.Task.t(), AshA2A.Protocol.Message.t()) ::
+          AshA2A.Protocol.Event.MessageUpdate.t()
+  def message_update_event(task, message) do
+    AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
+      context_id: task.context_id,
+      generation: AshA2A.Protocol.Task.Generation.generation_of(task)
+    )
+  end
+
+  @doc "The `Event.StatusUpdate` for the task's current status, stamped with its generation."
+  @spec status_event(AshA2A.Protocol.Task.t()) :: AshA2A.Protocol.Event.StatusUpdate.t()
+  def status_event(task) do
+    AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
+      context_id: task.context_id,
+      final: AshA2A.Protocol.Task.terminal?(task),
+      generation: AshA2A.Protocol.Task.Generation.generation_of(task)
+    )
+  end
+
+  @doc """
+  The `Event.ArtifactUpdate` for a stored artifact; generation is
+  `artifact.end_generation || artifact.start_generation` (falling back to the
+  task generation).
+  """
+  @spec artifact_event(AshA2A.Protocol.Task.t(), AshA2A.Protocol.Artifact.t()) ::
+          AshA2A.Protocol.Event.ArtifactUpdate.t()
+  def artifact_event(task, artifact) do
+    AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
+      context_id: task.context_id,
+      generation:
+        artifact.end_generation || artifact.start_generation ||
+          AshA2A.Protocol.Task.Generation.generation_of(task)
+    )
+  end
+
   defp call_metadata(opts) do
     case Keyword.get(opts, :metadata) do
       %{} = metadata -> metadata
@@ -201,29 +345,95 @@ defmodule AshA2A.Transport.Runtime do
     end
   end
 
-  defp prepare_task(message, opts, metadata, caller, state) do
-    case Keyword.get(opts, :task_id) do
-      nil ->
-        metadata = put_owner(metadata, caller)
+  # Input-mode admission against the agent card (opt out with
+  # `validate_input_modes: false` per call or in the agent's `execution:` opts).
+  defp validate_input_modes(module, message, opts, config) do
+    card =
+      if function_exported?(module, :agent_card, 0), do: module.agent_card(), else: nil
 
-        task =
-          AshA2A.Protocol.Task.new(
-            id: secure_task_id(),
-            context_id: explicit_context_id(Keyword.get(opts, :context_id)) || secure_context_id(),
-            metadata: metadata
+    vopts =
+      case Keyword.fetch(opts, :validate_input_modes) do
+        {:ok, v} -> [validate_input_modes: v, skill_id: Keyword.get(opts, :skill_id)]
+        :error -> [validate_input_modes: Keyword.get(config, :validate_input_modes, true)]
+      end
+
+    AshA2A.Protocol.InputModeValidator.validate_input(message, card, vopts)
+  end
+
+  @modes_key :ash_a2a_accepted_output_modes
+
+  defp remember_output_modes(task, opts) do
+    case Keyword.get(opts, :accepted_output_modes) do
+      [_ | _] = modes ->
+        Process.put(@modes_key, Map.put(Process.get(@modes_key, %{}), task.id, modes))
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp apply_output_modes(task) do
+    {modes, rest} = Map.pop(Process.get(@modes_key, %{}), task.id)
+    Process.put(@modes_key, rest)
+
+    case AshA2A.Protocol.InputModeValidator.apply_output_modes(task, modes) do
+      {:ok, %AshA2A.Protocol.Task{} = filtered} -> filtered
+      _ -> task
+    end
+  end
+
+  # referenceTaskIds: every id must exist and be visible to the caller (same
+  # owner + tenant rule as a continuation); unknown and foreign are the same
+  # `{:error, :not_found}`. Returns the first referenced task's context id.
+  defp resolve_references(message, metadata, caller, state) do
+    principal = {caller, Principal.tenant(metadata)}
+
+    message.reference_task_ids
+    |> List.wrap()
+    |> Enum.reduce_while({:ok, nil}, fn ref_id, {:ok, inherited} ->
+      with {:ok, ref} <- State.get_task(state, ref_id),
+           true <- owned_by?(ref, principal) do
+        {:cont, {:ok, inherited || ref.context_id}}
+      else
+        _ -> {:halt, {:error, :not_found}}
+      end
+    end)
+  end
+
+  defp prepare_task(message, opts, metadata, caller, wire?, state) do
+    explicit =
+      explicit_context_id(Keyword.get(opts, :context_id)) ||
+        explicit_context_id(message.context_id)
+
+    with {:ok, inherited} <- resolve_references(message, metadata, caller, state) do
+      case Keyword.get(opts, :task_id) do
+        nil ->
+          metadata = metadata |> put_owner(caller) |> put_tenant()
+
+          task =
+            AshA2A.Protocol.Task.new(
+              id: secure_task_id(),
+              context_id: explicit || inherited || secure_context_id(),
+              metadata: metadata
+            )
+
+          # v1.1: the initial client message is a generation-bumping timeline
+          # entry (mirrors the bare agent's `admit_new_immediately/6`);
+          # `ifGenerationMatch` is ignored for new tasks.
+          {:ok, AshA2A.Protocol.Task.Generation.append_message(task, message), message}
+
+        task_id ->
+          continue(
+            task_id,
+            message,
+            metadata,
+            caller,
+            explicit,
+            wire?,
+            state,
+            Keyword.get(opts, :if_generation_match)
           )
-
-        {:ok, %{task | history: [message]}, message}
-
-      task_id ->
-        continue(
-          task_id,
-          message,
-          metadata,
-          caller,
-          explicit_context_id(Keyword.get(opts, :context_id)),
-          state
-        )
+      end
     end
   end
 
@@ -236,28 +446,43 @@ defmodule AshA2A.Transport.Runtime do
   defp explicit_context_id(id) when is_binary(id) and id != "", do: id
   defp explicit_context_id(_), do: nil
 
-  defp continue(task_id, message, metadata, caller, explicit_ctx, state) do
+  defp continue(task_id, message, metadata, caller, explicit_ctx, wire?, state, if_generation) do
     with {:ok, task} <- State.get_task(state, task_id),
-         :ok <- ensure(owned_by?(task, caller), :not_found),
+         :ok <- ensure(owner(task) == caller, :not_found),
+         # Tenant isolation: a task created under tenant T is invisible to a
+         # call under another tenant (or none); untenanted stays untenanted.
+         :ok <- ensure(task_tenant(task) == Principal.tenant(metadata), :not_found),
          # A mismatching explicit contextId must be indistinguishable from an
          # unknown task id (owner-scope convention): same `{:error,
          # :not_found}` the `State.get_task/2` arm above returns, never a
          # shape that reveals the task exists (V24 gap 1; A2A v1.0
          # S3.4.3/S4.1.4 MUST).
-         :ok <- ensure(matching_context?(task, explicit_ctx), :not_found),
+         # (owner + tenant already passed above, so `:context_mismatch` reveals
+         # nothing to a foreign caller. Wire-originated requests keep the
+         # pinned V24 `:not_found` envelope.)
+         :ok <- ensure(matching_context?(task, explicit_ctx), mismatch_reason(wire?)),
          :ok <- ensure(not AshA2A.Protocol.Task.terminal?(task), :not_continuable),
-         :ok <- ensure(task.status.state != :working, %{code: :task_in_progress}) do
+         :ok <- ensure(task.status.state != :working, %{code: :task_in_progress}),
+         # v1.1 ifGenerationMatch (existing tasks only), checked after the
+         # ownership/context gates so a foreign caller learns nothing.
+         :ok <- AshA2A.Protocol.ClientArtifacts.check_generation(task, if_generation) do
       task_metadata =
         task.metadata
         |> Map.delete(:stream)
         |> rebind_auth(metadata)
 
-      {:ok, %{task | history: task.history ++ [message], metadata: task_metadata}, message}
+      task =
+        AshA2A.Protocol.Task.Generation.append_message(%{task | metadata: task_metadata}, message)
+
+      {:ok, task, message}
     end
   end
 
   defp ensure(true, _reason), do: :ok
   defp ensure(false, reason), do: {:error, reason}
+
+  defp mismatch_reason(true), do: :not_found
+  defp mismatch_reason(false), do: :context_mismatch
 
   defp matching_context?(_task, nil), do: true
   defp matching_context?(task, explicit_ctx), do: task.context_id == explicit_ctx
@@ -268,6 +493,15 @@ defmodule AshA2A.Transport.Runtime do
     case Map.fetch(call_metadata, "a2a.auth") do
       {:ok, auth} -> Map.put(task_metadata, "a2a.auth", auth)
       :error -> Map.delete(task_metadata, "a2a.auth")
+    end
+  end
+
+  # Normalizes the call's tenant (either accepted metadata key) onto the one
+  # stored key; absent tenant leaves metadata untouched (default behaviour).
+  defp put_tenant(metadata) do
+    case Principal.tenant(metadata) do
+      nil -> Map.delete(metadata, @tenant_key)
+      tenant -> Map.put(metadata, @tenant_key, tenant)
     end
   end
 
@@ -377,7 +611,177 @@ defmodule AshA2A.Transport.Runtime do
     end)
 
     Process.put(@in_flight_key, Map.put(in_flight(), token, {mref, from, task.id, wire?}))
+    Process.put(@workers_key, Map.put(Process.get(@workers_key, %{}), token, pid))
   end
+
+  @doc """
+  Cancels a task whose handler worker is still running (conformance row 21).
+
+  Returns `:not_in_flight` when no worker runs `task_id` (caller falls through
+  to the ported cancel path), otherwise a `GenServer` reply tuple. The cancel
+  hook runs first (`[:a2a, :agent, :cancel]` span); on `:ok` the task is
+  persisted `:canceled`, the worker is demonitored and killed, the pending
+  `message/send` caller is answered with the canceled task (never
+  `:completed`), and push notifications + subscribers see the transition. The
+  popped in-flight token turns a late `:ash_a2a_task_done` / `:DOWN` into a
+  no-op in `handle_info/2`.
+  """
+  @spec cancel_in_flight(module(), State.t(), String.t()) ::
+          :not_in_flight | {:reply, term(), State.t()}
+  def cancel_in_flight(module, state, task_id) do
+    with {token, {mref, from, _id, wire?}} <- find_in_flight(task_id),
+         {:ok, task} <- State.get_task(state, task_id),
+         false <- AshA2A.Protocol.Task.terminal?(task) do
+      context = %{
+        task_id: task.id,
+        context_id: task.context_id,
+        history: task.history,
+        metadata: task.metadata,
+        extensions: %{}
+      }
+
+      span_meta = %{agent: module, task_id: task.id, context_id: task.context_id}
+
+      result =
+        :telemetry.span([:a2a, :agent, :cancel], span_meta, fn ->
+          {AshA2A.Protocol.Agent.Runtime.run_cancel(module, context), span_meta}
+        end)
+
+      case result do
+        :ok ->
+          canceled = State.transition(task, :canceled)
+
+          case State.put_task_checked(state, canceled) do
+            {:ok, state} ->
+              kill_worker(token)
+              _ = pop_in_flight(token)
+              Process.demonitor(mref, [:flush])
+
+              # The pending send answers with the canceled task.
+              {:noreply, state} = respond(:async, from, {:ok, canceled}, state, wire?)
+
+              AshA2A.Protocol.PushNotification.deliver(state, canceled)
+
+              snapshot = AshA2A.Protocol.Task.strip_stream_metadata(canceled)
+
+              for pid <- State.subscribers_for(state, canceled.id) do
+                send(pid, {:a2a_task_event, canceled.id, snapshot})
+              end
+
+              {:reply, :ok, state |> State.drop_subscribers(canceled.id) |> wake_waiters()}
+
+            {:error, reason} ->
+              {:reply, {:error, reason}, state}
+          end
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    else
+      _ -> :not_in_flight
+    end
+  end
+
+  defp find_in_flight(task_id) do
+    Enum.find(in_flight(), fn {_token, {_mref, _from, id, _wire?}} -> id == task_id end)
+  end
+
+  defp kill_worker(token) do
+    workers = Process.get(@workers_key, %{})
+
+    case Map.pop(workers, token) do
+      {pid, rest} when is_pid(pid) ->
+        Process.put(@workers_key, rest)
+        Process.exit(pid, :kill)
+
+      {nil, _} ->
+        :ok
+    end
+  end
+
+  # -- orphan sweep + heartbeat ------------------------------------------------
+  #
+  # `:orphan_sweep_interval_ms` (default 10s, `false` disables) and
+  # `:orphan_lease_ms` (default 60s; keep interval well below it). Armed
+  # lazily on the first message call (the agent has no init hook this module
+  # owns) via `Process.send_after` -- no sleeping. Needs an external
+  # `task_store`; without one there is nothing durable to sweep.
+
+  @doc false
+  @spec ensure_sweep(keyword(), State.t()) :: State.t()
+  def ensure_sweep(config, %{task_store: {_mod, _ref}} = state) do
+    interval = Keyword.get(config, :orphan_sweep_interval_ms, @default_sweep_interval_ms)
+
+    cond do
+      Process.get(@sweep_key) != nil ->
+        state
+
+      is_integer(interval) and interval > 0 ->
+        cfg = %{
+          interval: interval,
+          lease_ms: Keyword.get(config, :orphan_lease_ms, @default_lease_ms),
+          timer: Process.send_after(self(), @sweep_msg, interval)
+        }
+
+        Process.put(@sweep_key, cfg)
+        # start-time sweep: recovers tasks orphaned by a previous node
+        sweep_orphans(state, cfg)
+
+      true ->
+        state
+    end
+  end
+
+  def ensure_sweep(_config, state), do: state
+
+  @doc false
+  # Fails orphaned `:working` tasks in the store and mirrors the failure into
+  # the in-memory task map (which `State.get_task/2` consults first).
+  @spec sweep_orphans(State.t(), map()) :: State.t()
+  def sweep_orphans(%{task_store: {mod, ref} = store} = state, %{lease_ms: lease_ms}) do
+    case AshA2A.Protocol.Task.OrphanSweep.sweep(store,
+           lease_ms: lease_ms,
+           live?: &worker_alive?/1
+         ) do
+      {:ok, ids} ->
+        Enum.reduce(ids, state, fn id, acc ->
+          case mod.get(ref, id) do
+            {:ok, task} -> %{acc | tasks: Map.put(acc.tasks, id, task)}
+            _ -> acc
+          end
+        end)
+
+      {:error, _reason} ->
+        state
+    end
+  end
+
+  def sweep_orphans(state, _cfg), do: state
+
+  @doc false
+  # Refreshes the status timestamp of every task with a live in-flight worker
+  # (checked write path), keeping it inside the lease.
+  @spec heartbeat(State.t()) :: State.t()
+  def heartbeat(state) do
+    Enum.reduce(in_flight(), state, fn {_token, {_mref, _from, task_id, _wire?}}, acc ->
+      case Map.fetch(acc.tasks, task_id) do
+        {:ok, %{status: %{state: :working} = status} = task} ->
+          beat = %{task | status: %{status | timestamp: DateTime.utc_now()}}
+
+          case State.put_task_checked(acc, beat) do
+            {:ok, acc} -> acc
+            {:error, _} -> acc
+          end
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  @doc false
+  @spec worker_alive?(String.t()) :: boolean()
+  def worker_alive?(task_id), do: in_flight?(task_id)
 
   @doc false
   @spec handle_info(term(), State.t()) :: {:noreply, State.t()} | :unhandled
@@ -385,9 +789,33 @@ defmodule AshA2A.Transport.Runtime do
     case pop_in_flight(token) do
       {mref, from, task_id, wire?} ->
         Process.demonitor(mref, [:flush])
-        finish(task_id, from, reply, state, :async, wire?)
+        task_id |> finish(from, reply, state, :async, wire?) |> wake_reply()
 
       nil ->
+        {:noreply, state}
+    end
+  end
+
+  # Long-poll deadline for a parked `tasks/get`: answer with the current task.
+  def handle_info({:ash_a2a_long_poll_timeout, token}, state) do
+    case pop_waiter(token) do
+      nil ->
+        {:noreply, state}
+
+      waiter ->
+        reply_waiter(waiter, state)
+        {:noreply, state}
+    end
+  end
+
+  def handle_info(@sweep_msg, state) do
+    case Process.get(@sweep_key) do
+      %{interval: interval} = cfg ->
+        state = state |> heartbeat() |> sweep_orphans(cfg)
+        Process.put(@sweep_key, %{cfg | timer: Process.send_after(self(), @sweep_msg, interval)})
+        {:noreply, wake_waiters(state)}
+
+      _ ->
         {:noreply, state}
     end
   end
@@ -397,10 +825,19 @@ defmodule AshA2A.Transport.Runtime do
       {token, {_mref, from, task_id, wire?}} ->
         _ = pop_in_flight(token)
         error = SafeError.internal(:internal_error, {:worker_exit, reason})
-        finish(task_id, from, {:error, error}, state, :async, wire?)
+        task_id |> finish(from, {:error, error}, state, :async, wire?) |> wake_reply()
 
       nil ->
-        :unhandled
+        # A parked long-poll caller that died: drop its waiter (its timer is
+        # cancelled); anything else is not ours.
+        case Enum.find(waiters(), fn {_token, w} -> w.mref == mref end) do
+          {token, _w} ->
+            _ = pop_waiter(token)
+            {:noreply, state}
+
+          nil ->
+            :unhandled
+        end
     end
   end
 
@@ -422,6 +859,11 @@ defmodule AshA2A.Transport.Runtime do
   defp pop_in_flight(token) do
     {entry, rest} = Map.pop(in_flight(), token)
     Process.put(@in_flight_key, rest)
+
+    if entry != nil and Process.get(@workers_key) do
+      Process.put(@workers_key, Map.delete(Process.get(@workers_key), token))
+    end
+
     entry
   end
 
@@ -430,26 +872,48 @@ defmodule AshA2A.Transport.Runtime do
   # fail-closes with `{:error, {:unsupported, :ash_pplan}}` when the optional
   # dependency is absent, so this path never raises for a missing dep.
   defp pplan_reply(message, task, config) do
-    case AshA2A.Execution.PPlan.run(task.id, message, config) do
-      {:ok, %{state: :completed, detail: detail}} ->
-        {:reply, [to_part(detail)]}
-
-      {:ok, %{state: :input_required, detail: waiters}} ->
-        {:input_required, [to_part(%{pplan_waiters: waiters})]}
-
-      {:ok, %{state: :working, detail: detail}} ->
-        {:working, [to_part(detail)]}
-
-      {:ok, %{state: :canceled, detail: detail}} ->
-        {:canceled, [to_part(%{pplan_run: detail})]}
-
-      {:ok, %{state: :failed, detail: detail}} ->
-        {:error, {:pplan_run_failed, detail}}
-
-      {:error, %{reason: reason}} ->
-        {:error, {:pplan, reason}}
-    end
+    result = AshA2A.Execution.PPlan.run(task.id, message, config)
+    map_pplan_result(result)
+  rescue
+    exception ->
+      {:error, SafeError.internal(:internal_error, {:pplan_exception, exception.__struct__})}
+  catch
+    kind, reason ->
+      {:error, SafeError.internal(:internal_error, {:pplan_caught, kind, reason})}
   end
+
+  # Every `AshA2A.Execution.PPlan.run/3` result shape maps to a typed,
+  # fail-closed reply — no CaseClauseError, no raw terms leaked.
+  defp map_pplan_result({:ok, %{state: :completed, detail: detail}}),
+    do: {:reply, [to_part(detail)]}
+
+  defp map_pplan_result({:ok, %{state: :input_required, detail: waiters}}),
+    do: {:input_required, [to_part(%{pplan_waiters: waiters})]}
+
+  defp map_pplan_result({:ok, %{state: :working, detail: detail}}),
+    do: {:working, [to_part(detail)]}
+
+  defp map_pplan_result({:ok, %{state: :canceled, detail: detail}}),
+    do: {:canceled, [to_part(%{pplan_run: detail})]}
+
+  defp map_pplan_result({:ok, %{state: :failed, detail: detail}}),
+    do: {:error, {:pplan_run_failed, detail}}
+
+  # `:submitted` is a pre-attempt state; a finished dispatch never lawfully
+  # ends there, so it is a typed refusal rather than a silent pass.
+  defp map_pplan_result({:ok, %{state: :submitted}}),
+    do: {:error, {:pplan, {:unexpected_state, :submitted}}}
+
+  defp map_pplan_result({:ok, other}), do: {:error, {:pplan, {:unexpected_result, other}}}
+
+  defp map_pplan_result({:error, {:unsupported, :ash_pplan}}),
+    do: {:error, {:pplan, {:unsupported, :ash_pplan}}}
+
+  defp map_pplan_result({:error, {:missing_opt, _} = reason}), do: {:error, {:pplan, reason}}
+  defp map_pplan_result({:error, {:invalid_opt, _} = reason}), do: {:error, {:pplan, reason}}
+  defp map_pplan_result({:error, %{reason: reason}}), do: {:error, {:pplan, reason}}
+  defp map_pplan_result({:error, reason}), do: {:error, {:pplan, reason}}
+  defp map_pplan_result(other), do: {:error, {:pplan, {:unexpected_result, other}}}
 
   defp to_part(detail) when is_map(detail), do: AshA2A.Protocol.Part.Data.new(detail)
   defp to_part(detail), do: AshA2A.Protocol.Part.Data.new(%{result: detail})
@@ -512,7 +976,6 @@ defmodule AshA2A.Transport.Runtime do
           # result is still the bare Message.
           case reply do
             {:message, parts} ->
-  
               task =
                 task
                 |> apply_reply({:reply, parts})
@@ -524,7 +987,13 @@ defmodule AshA2A.Transport.Runtime do
               respond(mode, from, {:ok, message}, state, wire?)
 
             _ ->
-              task = task |> apply_reply(reply) |> maybe_wrap_stream() |> drop_terminal_auth()
+              task =
+                task
+                |> apply_reply(reply)
+                |> maybe_wrap_stream()
+                |> drop_terminal_auth()
+                |> apply_output_modes()
+
               state = State.put_task(state, task)
 
               # STREAM-SUB-002: a transition persisted here is wire-observable
@@ -563,6 +1032,9 @@ defmodule AshA2A.Transport.Runtime do
     end
   end
 
+  # returnImmediately: the caller was already answered with the stored task.
+  defp respond(_mode, :detached, _result, state, _wire?), do: {:noreply, state}
+
   defp respond(:inline, _from, result, state, wire?) do
     {:reply, wire_reply(result, wire?), state}
   end
@@ -583,7 +1055,10 @@ defmodule AshA2A.Transport.Runtime do
   defp apply_reply(task, {:reply, parts}) do
     artifact = AshA2A.Protocol.Artifact.new(parts)
     agent_msg = AshA2A.Protocol.Message.new_agent(parts)
-    task = %{task | artifacts: task.artifacts ++ [artifact], history: task.history ++ [agent_msg]}
+    # v1.1: the artifact add is a generation-bumping mutation (completed, so
+    # `end_generation` is set), followed by the status append in `transition`.
+    {task, _stored} = AshA2A.Protocol.Task.Generation.record_artifact(task, artifact, true)
+    task = %{task | history: task.history ++ [agent_msg]}
     State.transition(task, :completed)
   end
 
@@ -604,15 +1079,21 @@ defmodule AshA2A.Transport.Runtime do
   defp apply_reply(task, {:error, reason}) do
     cond do
       admission_refusal?(reason) ->
-        error_msg = AshA2A.Protocol.Message.new_agent("Rejected: #{inspect(SafeError.redact(reason))}")
+        error_msg =
+          AshA2A.Protocol.Message.new_agent("Rejected: #{inspect(SafeError.redact(reason))}")
+
         State.transition(task, :rejected, error_msg)
 
       auth_failure?(reason) ->
-        error_msg = AshA2A.Protocol.Message.new_agent("Auth required: #{inspect(SafeError.redact(reason))}")
+        error_msg =
+          AshA2A.Protocol.Message.new_agent("Auth required: #{inspect(SafeError.redact(reason))}")
+
         State.transition(task, :auth_required, error_msg)
 
       true ->
-        error_msg = AshA2A.Protocol.Message.new_agent("Error: #{inspect(SafeError.redact(reason))}")
+        error_msg =
+          AshA2A.Protocol.Message.new_agent("Error: #{inspect(SafeError.redact(reason))}")
+
         State.transition(task, :failed, error_msg)
     end
   end
@@ -681,6 +1162,124 @@ defmodule AshA2A.Transport.Runtime do
   end
 
   # -- owner-scoped reads ----------------------------------------------------
+
+  @waiters_key :ash_a2a_long_poll_waiters
+
+  defp waiters, do: Process.get(@waiters_key, %{})
+
+  @doc """
+  `tasks/get` with v1.1 options (`timeline_length:`, `current_generation:`,
+  `long_poll_timeout_ms:`), as the `{:ash_a2a_get_task, principal, task_id,
+  opts}` call.
+
+  `current_generation` unset, or below the task's generation, answers now. At
+  or above it the caller is parked in a monitor-based waiting list and
+  answered by `wake_waiters/1` when the generation advances, or at the
+  `config :ash_a2a, :long_poll_timeout_ms` deadline (`Process.send_after`, no
+  sleeping) with the current task. A terminal task never advances, so it
+  answers immediately.
+  """
+  @spec get_task_call(State.t(), Principal.key(), String.t(), keyword(), GenServer.from()) ::
+          {:reply, term(), State.t()} | {:noreply, State.t()}
+  def get_task_call(state, principal, task_id, opts, {pid, _tag} = from) do
+    case get_task_for(state, principal, task_id) do
+      {:ok, task} ->
+        current = Keyword.get(opts, :current_generation)
+        timeline_length = Keyword.get(opts, :timeline_length)
+
+        if is_integer(current) and not AshA2A.Protocol.Task.terminal?(task) and
+             AshA2A.Protocol.Task.Generation.generation_of(task) <= current do
+          token = make_ref()
+
+          timeout =
+            Keyword.get(opts, :long_poll_timeout_ms) ||
+              AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms()
+
+          waiter = %{
+            from: from,
+            principal: principal,
+            task_id: task_id,
+            current: current,
+            timeline_length: timeline_length,
+            mref: Process.monitor(pid),
+            # SLEEP-CLASS: SCHEDULING (long-poll deadline; the process has
+            # nothing to do until a generation advance or this timer)
+            timer: Process.send_after(self(), {:ash_a2a_long_poll_timeout, token}, timeout)
+          }
+
+          Process.put(@waiters_key, Map.put(waiters(), token, waiter))
+          {:noreply, state}
+        else
+          {:reply, {:ok, truncate(task, timeline_length)}, state}
+        end
+
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  defp truncate(task, timeline_length),
+    do: AshA2A.Protocol.Task.Generation.truncate_timeline(task, timeline_length)
+
+  defp pop_waiter(token) do
+    {waiter, rest} = Map.pop(waiters(), token)
+    Process.put(@waiters_key, rest)
+
+    if waiter do
+      Process.cancel_timer(waiter.timer)
+      Process.demonitor(waiter.mref, [:flush])
+    end
+
+    waiter
+  end
+
+  defp reply_waiter(waiter, state) do
+    reply =
+      case get_task_for(state, waiter.principal, waiter.task_id) do
+        {:ok, task} -> {:ok, truncate(task, waiter.timeline_length)}
+        {:error, _} = error -> error
+      end
+
+    GenServer.reply(waiter.from, reply)
+  end
+
+  @doc false
+  # Releases every parked long-poll whose task generation now exceeds the
+  # generation it supplied (or whose task went terminal / vanished). Called
+  # after every state change this runtime or the generated agent applies.
+  @spec wake_waiters(State.t()) :: State.t()
+  def wake_waiters(state) do
+    for {token, waiter} <- waiters() do
+      ready? =
+        case get_task_for(state, waiter.principal, waiter.task_id) do
+          {:ok, task} ->
+            AshA2A.Protocol.Task.Generation.generation_of(task) > waiter.current or
+              AshA2A.Protocol.Task.terminal?(task)
+
+          {:error, _} ->
+            true
+        end
+
+      if ready? do
+        _ = pop_waiter(token)
+        reply_waiter(waiter, state)
+      end
+    end
+
+    state
+  end
+
+  @doc false
+  @spec wake_reply(term()) :: term()
+  def wake_reply({:reply, reply, state}), do: {:reply, reply, wake_waiters(state)}
+  def wake_reply({:noreply, state}), do: {:noreply, wake_waiters(state)}
+  def wake_reply({:noreply, state, extra}), do: {:noreply, wake_waiters(state), extra}
+  def wake_reply({:reply, reply, state, extra}), do: {:reply, reply, wake_waiters(state), extra}
+  def wake_reply(other), do: other
+
+  @doc false
+  @spec waiter_count() :: non_neg_integer()
+  def waiter_count, do: map_size(waiters())
 
   @doc false
   @spec get_task_for(State.t(), Principal.key(), String.t()) ::

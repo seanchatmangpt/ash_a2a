@@ -259,9 +259,7 @@ defmodule AshA2A.GraphLaw.WasmexHost do
   """
   @spec wasm_path(keyword()) :: String.t()
   def wasm_path(opts \\ []) do
-    Keyword.get(opts, :wasm_path) ||
-      Application.get_env(:ash_a2a, :graphlaw_wasm_path) ||
-      AshA2A.GraphLaw.wasm_path()
+    AshA2A.GraphLaw.wasm_path_unchecked(opts)
   end
 
   @manifest_file "WASMEX_HOST_MANIFEST.json"

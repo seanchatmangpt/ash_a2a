@@ -28,6 +28,7 @@ defmodule AshA2A.Test.Fixture.BusSlowActuator do
         # `die: true` kills the process running DO with an untrappable
         # signal before the effect -- a DO that vanishes without replying.
         if input.arguments.die, do: Process.exit(self(), :kill)
+        # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
         Process.sleep(input.arguments.sleep_ms)
         {:ok, AshA2A.Test.Fixture.KeyedActuationCounter.bump(input.arguments.effect_key)}
       end)
@@ -212,7 +213,8 @@ defmodule AshA2A.CommandBusHardeningTest do
       assert ReceiptOutbox.anchored?(receipt)
 
       # The killed DO never completed its effect, even after its sleep.
-      Process.sleep(1_100)
+      # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
+      AshA2A.TestSupport.Eventually.pause(1_100)
       assert KeyedActuationCounter.count(key) == 0
 
       # A retry of the same command replays the unknown outcome; no second DO.

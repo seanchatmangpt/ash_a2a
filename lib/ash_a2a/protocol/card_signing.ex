@@ -209,7 +209,18 @@ defmodule AshA2A.Protocol.CardSigning do
   """
   @spec verify(AgentCard.t() | map(), key_or_keys(), keyword()) ::
           :ok | {:error, {:bad_signature | :digest_mismatch | :malformed, term()}}
-  def verify(card, key_or_keys, opts \\ []) when is_map(card) do
+  def verify(card, key_or_keys, opts \\ [])
+
+  # A string-keyed wire document (e.g. `Jason.decode!/1` of a served card) is
+  # restored through the shipped codec first, exactly as a client does.
+  def verify(%{} = card, key_or_keys, opts) when not is_struct(card) and is_map_key(card, "name") do
+    case AshA2A.Protocol.JSON.decode_agent_card(card) do
+      {:ok, decoded} -> verify(decoded, key_or_keys, opts)
+      {:error, reason} -> {:error, {:malformed, reason}}
+    end
+  end
+
+  def verify(card, key_or_keys, opts) when is_map(card) do
     case Map.get(card, :signatures, []) do
       [] ->
         {:error, {:malformed, :no_signatures}}
@@ -228,6 +239,16 @@ defmodule AshA2A.Protocol.CardSigning do
         end)
     end
   end
+
+  @doc """
+  Returns a one-arity verifier fun `(card -> :ok | {:error, term})` bound to a
+  JWK map (`%{"kty" => ...}`) or a JWKS document (`%{"keys" => [...]}`), e.g.
+  one fetched from a `jku` URL. Usable by clients that verify post-decode.
+  """
+  @spec verifier_for_jwk(map()) :: (map() -> :ok | {:error, term()})
+  def verifier_for_jwk(%{"kty" => _} = jwk), do: fn card -> verify(card, jwk) end
+  def verifier_for_jwk(%{"keys" => keys} = jwks) when is_list(keys),
+    do: fn card -> verify(card, jwks) end
 
   # ------------------------------------------------------------------
   # Per-entry verification

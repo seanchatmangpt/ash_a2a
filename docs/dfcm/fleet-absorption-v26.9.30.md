@@ -1,5 +1,7 @@
 # DfCM fleet absorption — v26.9.30
 
+Standing: UNVERIFIED
+
 Target base: `seanchatmangpt/ash_a2a@3325032d9dea201e6deb82ef242c534aacb3b420`
 
 This batch converts the last-seven-day ecosystem scan into an **exact-subject DfCM intake**, rather than copying implementations into `ash_a2a`.

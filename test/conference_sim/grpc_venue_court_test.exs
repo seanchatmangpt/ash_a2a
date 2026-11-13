@@ -472,18 +472,20 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
     # The gRPC write went through the SAME PushConfigRPC/PushConfigStore the
     # REST binding uses: REST reads it back with exactly the envelope REST's
     # own set would answer.
+    # v1.0 REST wire is the flat TaskPushNotificationConfig (stamped with the
+    # negotiated protocolVersion), not the legacy nested envelope.
     expected1 = %{
       "taskId" => task_id,
-      "pushNotificationConfig" => %{
-        "id" => "cfg-grpc-1",
-        "url" => @hook_url,
-        "token" => "tok-grpc"
-      }
+      "id" => "cfg-grpc-1",
+      "url" => @hook_url,
+      "token" => "tok-grpc",
+      "protocolVersion" => "1.0"
     }
 
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-grpc-1", rest) == expected1
 
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == [expected1]
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) ==
+             %{"configs" => [expected1], "nextPageToken" => ""}
 
     # (b) Dispatch-layer parity with credentials: the gRPC binding's own
     # dispatch layer answers the SAME proto-JSON map the REST binding
@@ -554,8 +556,9 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
              }
            }
 
-    remaining = rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest)
-    ids = Enum.map(remaining, & &1["pushNotificationConfig"]["id"])
+    # REST list shape is {configs, nextPageToken} (lane 17, A2A v1.0 §5.3).
+    %{"configs" => remaining} = rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest)
+    ids = Enum.map(remaining, &(&1["id"] || get_in(&1, ["pushNotificationConfig", "id"])))
     assert Enum.sort(ids) == ["cfg-grpc-2", "cfg-rest-1"]
   end
 

@@ -216,7 +216,7 @@ defmodule AshA2A.V1BindingMismatchTest do
                    "@type" => @error_info,
                    "domain" => "a2a-protocol.org",
                    "reason" => "INVALID_PARAMS",
-                   "metadata" => %{"detail" => "\"message\" is required"}
+                   "metadata" => %{"detail" => "\"message\" must be a JSON object"}
                  }
                ]
              }
@@ -250,7 +250,10 @@ defmodule AshA2A.V1BindingMismatchTest do
     resp = post_json!(rest, "/nope", rpc_envelope("message/send", %{}))
 
     assert resp.status == 404
-    assert body!(resp) == "Not Found"
+    # Premise moved: the HTTPJSON catch-all now answers the JSON error
+    # envelope instead of a bare "Not Found" string; still a 404.
+    assert %{"error" => %{"code" => 404, "message" => "Not Found", "status" => "NOT_FOUND"}} =
+             body!(resp)
 
     # Method-shape consistency: a JSON-RPC envelope is just an unknown-body
     # POST to an unrouted path; the 404 does not depend on the body dialect.
@@ -289,7 +292,7 @@ defmodule AshA2A.V1BindingMismatchTest do
 
     assert %{
              "jsonrpc" => "2.0",
-             "id" => nil,
+             "id" => _,
              "error" => %{
                "code" => -32_009,
                "message" => "Version not supported",
@@ -367,14 +370,17 @@ defmodule AshA2A.V1BindingMismatchTest do
     # the HTTP status first — a non-2xx surfaces as the typed
     # {:http_error, status, body}, never a Jason decode error, still
     # immediate and bounded by the 2s receive_timeout (never a hang).
-    assert {:error, {:http_error, 404, "Not Found"}} =
+    # Premise moved: the 404 body is now a JSON error envelope, which the
+    # :jsonrpc decode path surfaces as a typed %JSONRPC.Error{} (still typed,
+    # immediate, never a hang).
+    assert {:error, %AshA2A.Protocol.JSONRPC.Error{code: 404, message: "Not Found"}} =
              Client.send_message(client, "wrong mode", timeout: 2_000)
 
-    assert {:error, {:http_error, 404, "Not Found"}} =
+    assert {:error, %AshA2A.Protocol.JSONRPC.Error{code: 404, message: "Not Found"}} =
              Client.get_task(client, "tsk-x", timeout: 2_000)
 
     # Streaming refuses with its own typed shape, still no hang.
-    assert {:error, {:unexpected_status, 404}} =
+    assert {:error, {:http_error, 404, _body}} =
              Client.stream_message(client, "wrong mode", timeout: 2_000)
 
     # The failure is the client's dialect, not a dead server.

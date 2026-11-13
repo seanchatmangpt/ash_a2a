@@ -60,7 +60,13 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
       # copy/pasted from agent_card.ex, so this actually catches a field
       # being added/removed/renamed.
       actual_fields =
-        struct!(AshA2A.Protocol.AgentCard, name: "x", description: "y", url: "z", version: "1", skills: [])
+        struct!(AshA2A.Protocol.AgentCard,
+          name: "x",
+          description: "y",
+          url: "z",
+          version: "1",
+          skills: []
+        )
         |> Map.from_struct()
         |> Map.keys()
         |> Enum.sort()
@@ -79,25 +85,31 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
     end
 
     test "protocol_version defaults to AshA2A.Protocol.Version.protocol_version/0" do
-      card = struct!(AshA2A.Protocol.AgentCard, name: "x", description: "y", url: "z", version: "1", skills: [])
+      card =
+        struct!(AshA2A.Protocol.AgentCard,
+          name: "x",
+          description: "y",
+          url: "z",
+          version: "1",
+          skills: []
+        )
 
       assert card.protocol_version == AshA2A.Protocol.Version.protocol_version()
-      assert card.protocol_version == "1.0"
+      assert card.protocol_version == "1.1"
     end
 
     test "capabilities.extended_agent_card is a capabilities member, not a top-level field" do
       # extendedAgentCard lives under `capabilities` on the wire (spec §4.4);
       # the struct reflects that -- there is no top-level :extended_agent_card.
-      refute :extended_agent_card in
-               Map.from_struct(
-                 struct!(AshA2A.Protocol.AgentCard,
-                   name: "x",
-                   description: "y",
-                   url: "z",
-                   version: "1",
-                   skills: []
-                 )
+      refute :extended_agent_card in Map.from_struct(
+               struct!(AshA2A.Protocol.AgentCard,
+                 name: "x",
+                 description: "y",
+                 url: "z",
+                 version: "1",
+                 skills: []
                )
+             )
 
       card =
         struct!(AshA2A.Protocol.AgentCard,
@@ -155,7 +167,11 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
         supported_interfaces: [
           %{url: "https://rt.example.com", protocol_binding: "JSONRPC", protocol_version: "1.0"},
           %{url: "https://grpc.example.com", protocol_binding: "GRPC", protocol_version: "1.0"},
-          %{url: "https://http.example.com", protocol_binding: "HTTP+JSON", protocol_version: "1.0"}
+          %{
+            url: "https://http.example.com",
+            protocol_binding: "HTTP+JSON",
+            protocol_version: "1.0"
+          }
         ],
         security_schemes: %{
           "apiKey" => %AshA2A.Protocol.SecurityScheme.APIKey{name: "api_key", in: "header"}
@@ -199,10 +215,11 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
 
       # --- spec-correct wire absences (pinned loud) ---
       # v1.0 drops the top-level `url`/`protocolVersion` members (both are
-      # per-interface), so encode never emits a top-level "protocolVersion"
-      # and decode's explicit Map.get backfills nil. Not a codec gap -- the
-      # same v1.0-correct absence the Z33b wire-properties court pins.
-      assert decoded.protocol_version == nil
+      # per-interface), so encode never emits a top-level "protocolVersion".
+      # Decode no longer backfills nil: an absent member keeps the struct
+      # default (json.ex decode_agent_card: "must never override it with
+      # nil"), so the decoded card carries the protocol version "1.0".
+      assert decoded.protocol_version == AshA2A.Protocol.Version.protocol_version()
 
       # preferred_transport is neither encoded nor decoded -- struct-only by
       # spec (the v1.0 proto has no such member; pinned by Z33b).
@@ -237,7 +254,11 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
           supported_interfaces: [
             %{url: "https://x.example.com", protocol_binding: "JSONRPC", protocol_version: "1.0"},
             %{url: "https://grpc.example.com", protocol_binding: "GRPC", protocol_version: "1.0"},
-            %{url: "https://http.example.com", protocol_binding: "HTTP+JSON", protocol_version: "1.0"}
+            %{
+              url: "https://http.example.com",
+              protocol_binding: "HTTP+JSON",
+              protocol_version: "1.0"
+            }
           ]
         )
 
@@ -253,7 +274,12 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
                Enum.find(wire["supportedInterfaces"], &(&1["url"] == "https://http.example.com"))
 
       {:ok, decoded} = JSON.decode_agent_card(wire)
-      assert Enum.map(decoded.supported_interfaces, & &1.protocol_binding) == ["JSONRPC", "GRPC", "HTTP+JSON"]
+
+      assert Enum.map(decoded.supported_interfaces, & &1.protocol_binding) == [
+               "JSONRPC",
+               "GRPC",
+               "HTTP+JSON"
+             ]
     end
   end
 
@@ -284,7 +310,7 @@ defmodule AshA2A.CapabilityIndexAgentCardShapeTest do
                %{
                  url: "https://agent.example.com",
                  protocol_binding: "JSONRPC",
-                 protocol_version: "1.0"
+                 protocol_version: "1.1"
                }
              ]
     end

@@ -26,6 +26,7 @@ defmodule AshA2A.Bidi.Channel do
   use GenServer, restart: :temporary
 
   @default_pull_timeout 30_000
+  @default_max_queue 1_000
 
   @typedoc "A pull result: an input, end-of-input, or the pull deadline passed."
   @type pulled :: {:ok, AshA2A.Protocol.Message.t()} | :eof | :timeout
@@ -33,6 +34,7 @@ defmodule AshA2A.Bidi.Channel do
   defstruct task_id: nil,
             queue: :queue.new(),
             size: 0,
+            max_queue: 1_000,
             waiter: nil,
             waiter_mref: nil,
             consumer: nil,
@@ -43,6 +45,7 @@ defmodule AshA2A.Bidi.Channel do
           task_id: String.t() | nil,
           queue: :queue.queue(term()),
           size: non_neg_integer(),
+          max_queue: pos_integer(),
           waiter: {pid(), reference()} | nil,
           waiter_mref: reference() | nil,
           consumer: pid() | nil,
@@ -61,9 +64,11 @@ defmodule AshA2A.Bidi.Channel do
   @doc """
   Delivers `message` to the channel. `{:ok, :accepted}` when buffered (or
   handed straight to a waiting pull); `{:error, :closed}` once the channel is
-  closed or its consumer is gone.
+  closed or its consumer is gone; `{:error, :queue_full}` when the buffer
+  holds `max_queue` undelivered inputs (typed overflow refusal, never a drop).
   """
-  @spec deliver(GenServer.server(), term()) :: {:ok, :accepted} | {:error, :closed}
+  @spec deliver(GenServer.server(), term()) ::
+          {:ok, :accepted} | {:error, :closed | :queue_full}
   def deliver(pid, message) do
     GenServer.call(pid, {:deliver, message})
   end
@@ -119,12 +124,13 @@ defmodule AshA2A.Bidi.Channel do
   # -- server --------------------------------------------------------------------
 
   @impl GenServer
-  def init(%{task_id: task_id, registry: registry}) do
+  def init(%{task_id: task_id, registry: registry} = args) do
     {:ok, _} = Registry.register(registry, task_id, self())
 
     {:ok,
      %__MODULE__{
        task_id: task_id,
+       max_queue: max_queue(args),
        queue: :queue.new(),
        waiter: nil,
        consumer: nil,
@@ -134,10 +140,15 @@ defmodule AshA2A.Bidi.Channel do
 
   @impl GenServer
   def handle_call({:deliver, message}, _from, state) do
-    if state.closed? do
-      {:reply, {:error, :closed}, state}
-    else
-      {:reply, {:ok, :accepted}, push(message, state)}
+    cond do
+      state.closed? ->
+        {:reply, {:error, :closed}, state}
+
+      is_nil(state.waiter) and state.size >= state.max_queue ->
+        {:reply, {:error, :queue_full}, state}
+
+      true ->
+        {:reply, {:ok, :accepted}, push(message, state)}
     end
   end
 
@@ -208,6 +219,13 @@ defmodule AshA2A.Bidi.Channel do
 
       true ->
         {:noreply, state}
+    end
+  end
+
+  defp max_queue(args) do
+    case Map.get(args, :max_queue, Application.get_env(:ash_a2a, :bidi_max_queue)) do
+      n when is_integer(n) and n > 0 -> n
+      _ -> @default_max_queue
     end
   end
 

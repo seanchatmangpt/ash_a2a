@@ -37,6 +37,10 @@ end, nil)
 | Event | Measurements | Metadata | Emitted by |
 | --- | --- | --- | --- |
 | `[:ash_a2a, :command_bus, :preflight / :target / :admission / :kill_switch / :claim / :prepare / :actuate:start / :actuate:stop / :commit]` | `system_time` | `command_id`, `capability_id`, `principal_id` + stage outcome/code | `AshA2A.CommandBus` |
+| `[:ash_a2a, :command_bus, :work_order]` | `system_time` | `command_id`, `capability_id`, `principal_id`, `outcome: :verified` + `work_order_digest`, or `outcome: :refused` + `code` (emitted only when opts carry `:work_order`) | `AshA2A.CommandBus` (HILT work-order admission) |
+| `[:ash_a2a, :command_bus, :pre_do_gate]` | `system_time` | common CommandBus metadata + `outcome: :refused`, `code` (emitted on the pre-DO refusal path) | `AshA2A.CommandBus` |
+| `[:ash_a2a, :command_bus, :lease_gate]` | `system_time` | common metadata + `outcome: :admitted`, `mask: 0` or `outcome: :refused`, `code`, `mask` (failed conjuncts); silent when no lease is presented | `AshA2A.CommandBus` (two-port lease gate) |
+| `[:ash_a2a, :command_bus, :actuation_commit]` | `system_time` | common metadata + `outcome: :failed`, `reason` (inspected), `receipt_id`; emitted only when `commit_actuation/3` fails after retries | `AshA2A.CommandBus` |
 | `[:ash_a2a, :command_bus, :postcondition]` | — | outcome, reason, `postcondition_id`, verifier, `independent` | `AshA2A.Postcondition` |
 | `[:ash_a2a, :receipt, :outboxed]` | — | receipt (journaled `:pending` pre-dispatch) | `AshA2A.CommandBus` |
 | `[:ash_a2a, :receipt, :committed]` | — | receipt (final, post-dispatch) | `AshA2A.CommandBus` |
@@ -109,6 +113,21 @@ measurements unless noted. They fire only on the opt-in semantic paths.
 | `[:ash_a2a, :episode \| suffix]` | `AshA2A.Semantic.Episode` — suffixed sub-events over one semantic episode |
 | `[:ash_a2a, :logic, :closure, event]` | `AshA2A.Semantic.LogicClosure` — per-closure-stage events (`:start`, `:entailment`, `:engine`, `:decision`, `:stop`) |
 
+### Enterprise, evidence, authzen, SIEM, reactor
+
+| Event | Measurements | Metadata | Emitted by |
+| --- | --- | --- | --- |
+| `[:ash_a2a, :enterprise, :pipeline, :completed]` | `duration_ns` | `stages` (traced stages plus `:dispatch, :dlp_outbound, :cmek, :affidavit, :ocel`), `dlp_findings` (unique finding types), `cmek`, `affidavit` | `AshA2A.Enterprise.Pipeline` |
+| `[:ash_a2a, :enterprise, :pipeline, :refused]` | `duration_ns` | `stage`, `code` | `AshA2A.Enterprise.Pipeline` |
+| `[:ash_a2a, :security, :dlp]` | `duration_ns`, `findings` (count) | `types` (per-type counts); emitted when the filter runs over a term | `AshA2A.Security.DLPFilter` |
+| `[:ash_a2a, :evidence, :promote]` | `system_time` | `from`, `to`, `prior_chain_digest`, `offered_evidence_digest`, `outcome` (`:promoted`/`:refused`), `code`, `chain_digest` | `AshA2A.Evidence.Class.promote/3` |
+| `[:ash_a2a, :evidence, :assert]` | `system_time` | `from`, `to`, `prior_chain_digest`, `offered_evidence_digest` (`nil`), `outcome` (`:admitted`/`:refused`), `code`, `chain_digest` | `AshA2A.Evidence.Class.assert_at_least/2` |
+| `[:ash_a2a, :authzen, :monotonic, :refused]` | `system_time` | `code`, `digest`, `depth`, `parent_effective`, `requested`, `excess` | `AshA2A.AuthZEN.Monotonic` (delegation widening refusal) |
+| `[:ash_a2a, :siem, :delivered]` | `events`, `duration` (native) | `platform`, `endpoint` (redacted) | `AshA2A.Telemetry.SIEM` |
+| `[:ash_a2a, :siem, :failed]` | `events` (0), `duration` (native) | `platform`, `endpoint` (redacted), `reason` | `AshA2A.Telemetry.SIEM` |
+| `[:ash_a2a, :reactor, :compensate]` | `count: 1` | `command_id`, `reason`, `options`; emitted when the command map is present | `AshA2A.Reactor.ExecuteCommand.compensate/4` |
+| `[:ash_a2a, :gall, :closure, <stage>]` | `count: 1` | `outcome`, `candidate_digest`, `command_id`, `receipt_id`, `authority: :none` | Event map built by `AshA2A.Gall.Closure.TelemetryEnvelope.event/4`; that module only constructs the map and does not call `:telemetry.execute/3` (no executing caller found in `lib/`) |
+
 ### Cluster lifecycle & FinOps
 
 | Event | Measurements | Metadata | Emitted by |
@@ -149,6 +168,29 @@ A large `[:ash_a2a, :chicago, ...]` family (mutation, observer, court
 manifest, collaborator scans, OCEL validation) is emitted by the
 conformance-court **test harness**, not the dispatch path — see
 `lib/ash_a2a/chicago/`. Do not build production dashboards on these.
+
+### Failure-visibility, orphan and drain events
+
+| Event | Measurements | Metadata | Emitted by |
+| --- | --- | --- | --- |
+| `[:ash_a2a, :command_bus, :swallowed_failure]` | `count` | `site`, `kind` | `AshA2A.CommandBus` (a best-effort step failed; also logged) |
+| `[:ash_a2a, :receipt_outbox, :sync_dir_failed]` | `count` | `dir`, `reason` | `AshA2A.ReceiptOutbox` (directory fsync failed) |
+| `[:ash_a2a, :receipt_outbox, :decode_failed]` | `count` | `cause` | `AshA2A.ReceiptOutbox` (journal entry undecodable; return stays `:bad_term`) |
+| `[:a2a, :task, :late_event_dropped]` | `count` | `task_id`, `terminal_state`, `event` | `AshA2A.Protocol.Agent` (event after a terminal state; task untouched) |
+| `[:a2a, :task, :transition_refused]` | `system_time` | `task_id`, `from`, `to`, `reason` | `AshA2A.Protocol.Agent.State` (illegal transition; task untouched) |
+| `[:a2a, :push_config, :volatile]` | `count` | `task_id`, `config_id` | `AshA2A.Protocol.Agent.State` (push config stored in memory only) |
+| `[:ash_a2a, :task, :orphan_failed]` | `count` | `task_id` | `AshA2A.Protocol.Task.OrphanSweep` |
+| `[:ash_a2a, :task, :orphan_sweep_unsupported]` | `count` | sweep metadata | `AshA2A.Protocol.Task.OrphanSweep` (store cannot sweep) |
+| `[:ash_a2a, :copilot, :stage_skipped]` | `count` | stage, reason | `AshA2A.Copilot.Pipeline` (observable stage skip) |
+| `[:ash_a2a, :ocel, :ignored]` | `count` | — | `AshA2A.Telemetry.OcelForwarder` (event ignored) |
+| `[:ash_a2a, :transport, :request, :start]` | `system_time` | transport metadata | `AshA2A.Protocol.Telemetry` (request span start) |
+| `[:ash_a2a, :transport, :request, :stop]` | `duration` | transport metadata | `AshA2A.Protocol.Telemetry` (request span stop) |
+| `[:ash_a2a, :transport, :request, :exception]` | `duration` | transport metadata, `kind`, `reason` | `AshA2A.Protocol.Telemetry` (request span exception) |
+| `[:ash_a2a, :transport, :request, :error]` | `count` | transport metadata | `AshA2A.Protocol.Telemetry` (discrete error event) |
+| `[:ash_a2a, :cluster, :drain, :task_skipped]` | `count` | `drain_manager`, `task_id`, `reason` (`:no_task_store`) | `AshA2A.Cluster.DrainManager` |
+| `[:ash_a2a, :cluster, :checkpoint, :terminal_skipped]` | `count` | `task_id`, `state` | `AshA2A.Cluster.Checkpoint` (terminal task not checkpointed) |
+| `[:ash_a2a, :ocel_broadcaster, :unconvertible]` | `count` | `broadcaster`, `kind` | `AshA2A.Telemetry.OcelBroadcaster` |
+| `[:ash_a2a, :ocel, :unconvertible]` | `count` | none | `AshA2A.Telemetry.OcelForwarder` |
 
 ## OCEL forwarding
 

@@ -93,7 +93,7 @@ where raw observation $\mathcal{O}$ is filtered through an adversarial admission
 
 We develop the algebraic and category-theoretic foundations of agent messaging through symmetric monoidal categories $\CatAgent$, sheaf cohomology over distributed task graphs, and principal fiber bundles where authority narrowing satisfies $C_{\mathrm{child}} \subseteq C_{\mathrm{parent}}$. We further formulate the infinitesimal calculus and dynamical systems model of autonomous recursion, establishing Lyapunov stability criteria that guarantee self-stabilizing execution $\frac{dW}{dt} \le 0$ without human intervention.
 
-Finally, we analyze the tripartite wire transport manifold (isomorphic mapping across JSON-RPC 2.0, HTTP+JSON/REST, and gRPC/HTTP-2), and detail the execution of the Technology Compatibility Kit (TCK), proving 100\% conformance across 265 rigorous verification scenarios. We present the concrete implementation architecture of \texttt{ash\_a2a}, incorporating Spark DSL metaprogramming, BEAM process supervision, multi-shard EKV consensus, SPIFFE mTLS zero-trust identity, AuthZEN authorization, CMEK envelope encryption, and post-quantum ML-DSA-65 WASM Affidavit attestation.
+Finally, we analyze the tripartite wire transport manifold (isomorphic mapping across JSON-RPC 2.0, HTTP+JSON/REST, and gRPC/HTTP-2), and detail the execution of the Technology Compatibility Kit (TCK), reporting the repository verdict of the Technology Compatibility Kit run (235 passed, 30 skipped, 0 failed; MUST 87/87, SHOULD 7/7, MAY 4/4; overall 79.0\% compatibility). We present the concrete implementation architecture of \texttt{ash\_a2a}, incorporating Spark DSL metaprogramming, BEAM process supervision, EKV-backed receipt storage, SPIFFE SVID validation, AuthZEN authorization, CMEK envelope encryption, and an ES256-baseline attestation scheme with optional ML-DSA suites.
 \end{abstract}
 
 \tableofcontents
@@ -213,7 +213,7 @@ Let $C_{\mathrm{parent}}$ and $C_{\mathrm{child}}$ denote capability sets grante
 \begin{equation}
 C_{\mathrm{child}} \subseteq C_{\mathrm{parent}}
 \end{equation}
-Any attempt to evaluate an action requiring $c \in C_{\mathrm{child}} \setminus C_{\mathrm{parent}}$ induces an infinite potential barrier, rendering the trajectory non-geodesic and prompting an immediate typed refusal $\mathrm{REFUSED}(\mathrm{AUTHORITY\_MISMATCH})$.
+Any attempt to evaluate an action requiring $c \in C_{\mathrm{child}} \setminus C_{\mathrm{parent}}$ induces an infinite potential barrier, rendering the trajectory non-geodesic and prompting an immediate typed refusal $\mathrm{REFUSED}(\mathrm{insufficient\_authority})$.
 \end{theorem}
 
 % ---------------------------------------------------------------------------
@@ -262,6 +262,8 @@ A protocol court triggers automated isolation and process kill when $\|S_m\|$ br
 \label{ch:transport}
 
 \section{The Tripartite Isomorphism}
+The isomorphism claimed below holds up to unsupported optional operations: for example, the HTTP+JSON binding refuses \texttt{:subscribe} rather than encoding it, so $\phi_{\mathrm{REST}}$ is invertible only on the operation subset every binding supports.
+
 The Agent-to-Agent (A2A) v1.0 protocol defines three standardized transport bindings. Rather than viewing them as disjoint protocols, we prove they form an isomorphic manifold over the abstract A2A protocol schema $\mathcal{S}_{\mathrm{A2A}}$.
 
 \begin{definition}[Tripartite Transport Projections]
@@ -284,7 +286,7 @@ where $\psi_1 = \phi_{\mathrm{REST}} \circ \phi_{\mathrm{RPC}}^{-1}$ and $\psi_2
 \section{Task State Machine Dynamics}
 The lifecycle of an A2A task is governed by a finite state automaton $M = (Q, \Sigma, \delta, q_0, F)$:
 \begin{itemize}
-    \item States $Q = \{\texttt{submitted}, \texttt{working}, \texttt{input\_required}, \texttt{completed}, \texttt{canceled}, \texttt{failed}, \texttt{rejected}\}$.
+    \item States $Q = \{\texttt{submitted}, \texttt{working}, \texttt{input\_required}, \texttt{auth\_required}, \texttt{completed}, \texttt{canceled}, \texttt{failed}, \texttt{rejected}\}$.
     \item Terminal States $F = \{\texttt{completed}, \texttt{canceled}, \texttt{failed}, \texttt{rejected}\}$.
     \item Interactive States $I = \{\texttt{input\_required}, \texttt{auth\_required}\}$.
 \end{itemize}
@@ -299,6 +301,7 @@ The lifecycle of an A2A task is governed by a finite state automaton $M = (Q, \S
 \texttt{submitted} & Ephemeral & Task accepted at admission gate; no execution worker dispatched yet. \\
 \texttt{working} & Active & Execution worker alive; emitting artifact and status updates. \\
 \texttt{input\_required} & Quiescent & Execution suspended waiting for user/client message. Non-terminal. \\
+\texttt{auth\_required} & Quiescent & Refused for missing credentials; parked and resumable once credentials arrive. Non-terminal. \\
 \texttt{completed} & Terminal & Successful termination. Irreversible. \\
 \texttt{canceled} & Terminal & Client explicitly aborted execution via CancelTask. \\
 \texttt{failed} & Terminal & Execution worker raised unrecoverable error during processing. \\
@@ -312,8 +315,8 @@ The lifecycle of an A2A task is governed by a finite state automaton $M = (Q, \S
 \section{Streaming Backpressure and Multiplexing Isolation}
 In gRPC and Server-Sent Events (SSE), concurrent subscribers must receive independent event pumps.
 
-\begin{theorem}[Stream Isolation Invariant]
-Let $S_1, S_2$ be two independent streams subscribed to task $T$. If subscriber $S_1$ cancels its HTTP/2 stream (sending \texttt{RST\_STREAM}), the pump for $S_2$ must remain active, preserving event sequence monotonicity:
+\begin{theorem}[Stream Isolation Invariant, up to unsupported optional operations]
+For transports that serve subscription (gRPC and SSE; the HTTP+JSON binding refuses \texttt{:subscribe}), let $S_1, S_2$ be two independent streams subscribed to task $T$. If subscriber $S_1$ cancels its HTTP/2 stream (sending \texttt{RST\_STREAM}), the pump for $S_2$ must remain active, preserving event sequence monotonicity:
 \[
 \mathrm{seq}(e_{k+1}) > \mathrm{seq}(e_k) \quad \forall e \in S_2.
 \]
@@ -337,11 +340,11 @@ A binary relation $R \subseteq Q_{\mathrm{spec}} \times Q_{\mathrm{sut}}$ is a s
 \end{definition}
 
 \section{Empirical Conformance Matrix: 265 Scenarios}
-The Google TCK test corpus encompasses 265 exhaustive compatibility tests. In our formal validation of \texttt{ash\_a2a} v26.10.5, we achieved \textbf{100\% compliance}:
+The Google TCK test corpus encompasses 265 exhaustive compatibility tests. In our formal validation of \texttt{ash\_a2a} v26.10.9, the repository verdict (\texttt{docs/reference/a2a-v1-conformance.md}) is \textbf{235 passed, 30 skipped, 0 failed}; requirement-level results are MUST 87/87, SHOULD 7/7, MAY 4/4, with overall compatibility of 79.0\%. This is a zero-failure verdict, not 100\% coverage:
 \begin{itemize}
     \item \textbf{Total Scenarios Evaluated}: 265
-    \item \textbf{Passed}: 205
-    \item \textbf{Skipped}: 60 (explicitly unsupported optional features declared in Agent Card, e.g., push notifications)
+    \item \textbf{Passed}: 235
+    \item \textbf{Skipped}: 30 (optional or environment-dependent tests)
     \item \textbf{Failed}: \textbf{0}
 \end{itemize}
 
@@ -352,21 +355,23 @@ The Google TCK test corpus encompasses 265 exhaustive compatibility tests. In ou
 \textbf{Transport Binding} & \textbf{Total} & \textbf{Passed} & \textbf{Skipped} & \textbf{Failed} \\
 \midrule
 Agent Card Discovery & 10 & 10 & 0 & \textbf{0} \\
-JSON-RPC 2.0 & 97 & 82 & 15 & \textbf{0} \\
-HTTP+JSON (REST) & 92 & 78 & 14 & \textbf{0} \\
-gRPC over HTTP/2 & 66 & 53 & 13 & \textbf{0} \\
+JSON-RPC 2.0 & 98 & 91 & 7 & \textbf{0} \\
+HTTP+JSON (REST) & 88 & 83 & 5 & \textbf{0} \\
+gRPC over HTTP/2 & 71 & 68 & 3 & \textbf{0} \\
 \midrule
-\textbf{Total Composite} & \textbf{265} & \textbf{205} & \textbf{60} & \textbf{0} \\
+\textbf{Total (2026-10-13 refresh, per transport)} & \textbf{267} & \textbf{252} & \textbf{15} & \textbf{0} \\
 \bottomrule
 \end{tabular}
 \caption{Google A2A TCK Conformance Verification Results on \texttt{ash\_a2a}.}
 \label{tab:tck_results}
+% NOTE: per-transport rows are from the 2026-10-13 refresh (234 passed / 31 skipped at test level);
+% per-transport sums count a test once per transport it runs on and do not equal the 235/30 headline.
 \end{table}
 
 \section{Anatomy of Critical Protocol Boundary Resolutions}
 During the convergence to zero TCK failures, several subtle protocol corner-cases were resolved:
 \begin{enumerate}
-    \item \textbf{STREAM-ORDER-004 (gRPC Multi-Stream Ordering)}: In \texttt{server.ex}, the lazy enumerator \texttt{stream\_enum/3} initially filtered out events of kind \texttt{"task"}. However, \texttt{SubscribeToTask} requires emitting the current Task snapshot as the very first stream response. Removing this artificial filter allowed parallel stream clients to immediately receive the baseline state without timing out.
+    \item \textbf{STREAM-ORDER-004 (gRPC Multi-Stream Ordering)}: In \texttt{server.ex}, the lazy enumerator \texttt{stream\_enum/4} initially filtered out events of kind \texttt{"task"}. However, \texttt{SubscribeToTask} requires emitting the current Task snapshot as the very first stream response. Removing this artificial filter allowed parallel stream clients to immediately receive the baseline state without timing out.
     \item \textbf{Protobuf Default String Serialization}: The Protobuf JSON mapping spec requires strings to map to \texttt{""} rather than being omitted when bound to non-optional proto fields. In \texttt{AshA2A.Protocol.JSON}, events \texttt{StatusUpdate} and \texttt{ArtifactUpdate} now always encode \texttt{"contextId" => event.context\_id || ""}.
     \item \textbf{Content-Type 415 Strictness}: HTTP-based endpoints strictly enforce \texttt{Content-Type: application/json} or \texttt{application/a2a+json}, responding with HTTP 415 Unsupported Media Type on deviations.
 \end{enumerate}
@@ -378,16 +383,22 @@ During the convergence to zero TCK failures, several subtle protocol corner-case
 \section{Spark DSL Metaprogramming}
 The core agent definitions in \texttt{ash\_a2a} leverage Spark DSL extensions, enabling compile-time validation of agent capabilities, actions, and protocol bindings:
 \begin{lstlisting}
-defmodule MyAgent do
-  use AshA2A.Agent,
-    name: "autonomous-planner",
-    description: "Executes verified multi-step plans"
+defmodule MyApp.Echo do
+  use Ash.Resource,
+    domain: MyApp.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshA2A]
 
   a2a do
-    version "1.0.0"
-    transport :all
-    capabilities [:streaming, :elicitation]
+    skill(:echo, :read)
   end
+end
+
+defmodule MyApp.EchoAgent do
+  use AshA2A.Agent,
+    resource_or_domain: MyApp.Echo,
+    name: "echo_agent",
+    require_authenticated_caller: false
 end
 \end{lstlisting}
 
@@ -396,22 +407,21 @@ To guarantee that a failure in one agent invocation cannot corrupt sibling tasks
 \begin{enumerate}
     \item \textbf{Transport Supervisor}: Manages Bandit HTTP server listeners, GRPC server adapters, and socket acceptors.
     \item \textbf{Task Supervisor}: Dynamically spawns ephemeral workers for each message dispatch. Crashing workers emit \texttt{\{:DOWN, ref, :process, pid, reason\}} intercepted by the parent agent GenServer, mapping crashes to typed \texttt{TASK\_STATE\_FAILED} transitions without taking down the node.
-    \item \textbf{Registry Event Bus}: Non-blocking in-memory pub/sub routing task events between worker processes and SSE/gRPC streaming connection pumps.
+    \item \textbf{Registry Event Bus}: An Elixir \texttt{Registry} keyed by task id (\texttt{a2a\_transport/task\_events.ex}) routing task events to subscribers; subscribers register before the backlog is read. Push notifications are delivered by \texttt{a2a\_transport/push\_delivery.ex}.
 \end{enumerate}
 
-\section{Multi-Shard Durable EKV Storage}
-State durability is provided by \texttt{EKV}, an embedded key-value store utilizing 8 parallel shards and write-ahead logging (WAL). Under high concurrency and high file-descriptor pressures (POSIX \texttt{ulimit}), \texttt{ash\_a2a} implements batch descriptor recycling and WAL checkpointer pooling to eliminate \texttt{"unable to open database file"} failures.
+\section{EKV-Backed Receipt Storage}
+Receipt durability is provided through \texttt{AshA2A.ReceiptStore.Ekv}, a receipt store implemented over the \texttt{EKV} dependency and wired by \texttt{AshA2A.Application.receipt\_store\_children/0}. This text makes no claim about shard counts, write-ahead-log behavior, or descriptor recycling inside \texttt{EKV}; those are properties of the dependency and are not established by this repository.
 
 % ---------------------------------------------------------------------------
 \chapter{Zero-Trust Enterprise Governance and Post-Quantum Security}
 \label{ch:enterprise}
 
-\section{Continuous Identity Attestation with SPIFFE mTLS}
-Every agent instance binds to a SPIFFE Workload API Unix Domain Socket, continuously streaming X.509 SVID credentials:
+\section{SPIFFE Identity Validation}
+\texttt{AshA2A.SPIFFE.WorkloadWatcher} maintains a connection to a SPIRE agent Workload API socket and caches X.509 SVIDs in a trust bundle, refusing queries once the bundle expires (fail-closed). \texttt{AshA2A.SPIFFE.SvidValidator} is a Plug that authenticates the caller from the TLS peer certificate and stamps the verified identity for the AuthZEN gate; \texttt{AshA2A.SPIFFE.Identity.parse/1} validates \texttt{spiffe://trust-domain/path} URIs. A SPIFFE identity claim is evidence only and never substitutes for a C2 certificate.
 \[
 \mathrm{SVID}_{\mathrm{agent}} = \langle \mathrm{spiffe://domain/agent/id}, K_{\mathrm{pub}}, \mathrm{CertChain} \rangle
 \]
-Mutual TLS (mTLS) handshake validation occurs at the Bandit connection plug level, rejecting callers whose trust bundles fail cryptographic verification.
 
 \section{Monotonic AuthZEN Authorization}
 Fine-grained authorization decisions are delegated to OpenFGA / AuthZEN Policy Decision Points (PDP). To prevent privilege escalation in delegated workflows, every downstream delegation must prove monotonic narrowing:
@@ -419,14 +429,14 @@ Fine-grained authorization decisions are delegated to OpenFGA / AuthZEN Policy D
 \forall c \in C_{\mathrm{delegated}}: \quad c \in C_{\mathrm{initiator}} \implies \text{Monotonicity Holds}
 \]
 
-\section{Post-Quantum Attestation: ML-DSA-65 WASM Affidavits}
-To guarantee forward-secure tamper-evidence against quantum computing adversaries, execution receipts are signed via ML-DSA-65 (FIPS 204 post-quantum digital signature algorithm) executed inside a deterministic WebAssembly runtime (\texttt{ash\_affidavit}). The resulting hash chain forms an append-only cryptographic ledger.
+\section{Attestation Suites: ES256 Baseline, Optional ML-DSA}
+Execution receipts are signed under a profile-selected suite. ES256 (or EdDSA) is the baseline required at C2 and above (RFC-SA2A-007 E-E); post-quantum ML-DSA suites (\texttt{ML-DSA-44/65/87}, mapped in \texttt{AshA2A.C2.CryptoVerifier}) are OPTIONAL at every profile and require an OTP build providing them. No WebAssembly signing runtime is claimed here. Receipts form a hash chain over canonical (RFC 8785) digests.
 
 % ---------------------------------------------------------------------------
 \chapter{Conclusion and Open Frontiers in AGI Coordination}
 \label{ch:conclusion}
 
-This dissertation has unified the theoretical and practical foundations of machine agency. By grounding agent interaction in the Chatman Equation $\mathcal{A} = \mu(\mathcal{O}^*)$, structuring messaging through symmetric monoidal categories $\CatAgent$ and authority fiber bundles, establishing continuous-time Lyapunov stability for autonomous code generation, and validating 100\% compliance against the Google A2A v1 Technology Compatibility Kit, we provide the architectural blueprint for safe, self-stabilizing, and interoperable agent ecosystems.
+This dissertation has unified the theoretical and practical foundations of machine agency. By grounding agent interaction in the Chatman Equation $\mathcal{A} = \mu(\mathcal{O}^*)$, structuring messaging through symmetric monoidal categories $\CatAgent$ and authority fiber bundles, establishing continuous-time Lyapunov stability for autonomous code generation, and reporting a zero-failure verdict (235 passed, 30 skipped, MUST 87/87) against the Google A2A v1 Technology Compatibility Kit, we provide the architectural blueprint for safe, self-stabilizing, and interoperable agent ecosystems.
 
 Future work will expand this framework toward autonomous self-hosting fixed points where the operating loop executes the very ontology that specifies its completion:
 \[

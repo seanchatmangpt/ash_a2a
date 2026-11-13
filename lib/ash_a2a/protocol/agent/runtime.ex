@@ -30,7 +30,8 @@ defmodule AshA2A.Protocol.Agent.Runtime do
         ) :: {Task.t() | Message.t(), State.t()}
   def process_message(module, message, context_id, state, metadata \\ %{}, extensions \\ %{}) do
     task = Task.new(context_id: context_id, metadata: metadata)
-    task = %{task | history: [message]}
+    task = %{task | history: []}
+    task = AshA2A.Protocol.Task.Generation.append_message(task, message)
     run_task(module, message, task, state, extensions)
   end
 
@@ -48,7 +49,7 @@ defmodule AshA2A.Protocol.Agent.Runtime do
     if Task.terminal?(task) do
       {:error, :not_continuable}
     else
-      task = %{task | history: task.history ++ [message]}
+      task = Task.Generation.append_message(task, message)
       task = %{task | metadata: Map.delete(task.metadata, :stream)}
 
       case run_task(module, message, task, state, extensions) do
@@ -56,6 +57,18 @@ defmodule AshA2A.Protocol.Agent.Runtime do
         {%Message{}, _state} -> {:error, :message_on_task}
       end
     end
+  end
+
+  @doc """
+  Runs `handle_message/2` for a task the caller already admitted and
+  persisted (the `return_immediately` path): the task already carries the
+  inbound message in its history, so nothing is appended here.
+  """
+  @spec run_admitted(module(), Message.t(), Task.t(), State.t(), map()) ::
+          {:ok, {Task.t() | Message.t(), State.t()}}
+  def run_admitted(module, message, task, state, extensions \\ %{}) do
+    task = %{task | metadata: Map.delete(task.metadata, :stream)}
+    {:ok, run_task(module, message, task, state, extensions)}
   end
 
   @doc """
@@ -120,7 +133,7 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   defp handle_reply({:reply, parts}, task) do
     artifact = Artifact.new(parts)
     agent_msg = Message.new_agent(parts)
-    task = %{task | artifacts: task.artifacts ++ [artifact]}
+    {task, _artifact} = Task.Generation.record_artifact(task, artifact, true)
     task = %{task | history: task.history ++ [agent_msg]}
     State.transition(task, :completed)
   end

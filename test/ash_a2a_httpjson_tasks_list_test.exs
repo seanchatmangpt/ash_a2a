@@ -234,14 +234,16 @@ defmodule AshA2A.HTTPJSONTasksListTest do
              resp.body
   end
 
-  test "historyLength is ignored on tasks/list (history cleared) but junk is still refused", %{
+  test "historyLength on tasks/list keeps the last N entries; unset clears; junk is refused", %{
     server: server
   } do
     send_as!(server, "alice-token", "a1")
 
     assert %{"tasks" => [task]} = list(server, "alice-token", "?historyLength=1").body
-    refute Map.has_key?(task, "history"),
-           "historyLength is a tasks/get parameter; on list, history is always cleared"
+    assert [_only_one] = task["history"]
+
+    assert %{"tasks" => [bare]} = list(server, "alice-token").body
+    refute Map.has_key?(bare, "history"), "unset historyLength keeps the default (cleared)"
 
     resp = list(server, "alice-token", "?historyLength=bogus")
     assert resp.status == 400

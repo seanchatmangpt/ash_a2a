@@ -178,6 +178,7 @@ defmodule AshA2A.Chicago.MutationHarnessTest do
         spawn_monitor(fn ->
           Mutation.with_mutant(mutation, fn applied ->
             send(test, {:live, applied.guardian})
+            # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (fixture models a slow collaborator)
             Process.sleep(:infinity)
           end)
         end)

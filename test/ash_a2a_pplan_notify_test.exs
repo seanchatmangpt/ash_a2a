@@ -258,12 +258,25 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
   defp wait_delivery(notify, pred, tries) do
     case Enum.find(AshA2A.Providers.PPlanNotify.deliveries(notify), pred) do
       nil ->
+        # SLEEP-CLASS: POLL-STEP (bounded poll on delivery observable)
         Process.sleep(20)
         wait_delivery(notify, pred, tries - 1)
 
       entry ->
         entry
     end
+  end
+
+  # Structural barrier for negative waits: a manual :tick followed by a call from the same
+  # sender is processed in order, so on return two full poll ticks ran after the triggering
+  # action. Silence observed afterwards is a state fact, not a guess about time.
+  defp tick_barrier(notify) do
+    for _ <- 1..2 do
+      send(notify, :tick)
+      _ = AshA2A.Providers.PPlanNotify.deliveries(notify)
+    end
+
+    :ok
   end
 
   defp delivery_count(notify), do: length(AshA2A.Providers.PPlanNotify.deliveries(notify))
@@ -278,6 +291,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
   defp wait_version_past(dets_name, task_id, seq, tries) do
     case record_version(dets_name, task_id, seq) do
       :quiet ->
+        # SLEEP-CLASS: POLL-STEP (bounded poll on delivery observable)
         Process.sleep(20)
         wait_version_past(dets_name, task_id, seq, tries - 1)
 
@@ -368,7 +382,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
 
     wait_version_past(dets_name, task_id, delivered_seq, 25)
 
-    Process.sleep(120)
+    tick_barrier(notify)
     refute_received {:webhook, "POST", _h, _b}
     assert delivery_count(notify) == 1
   end
@@ -401,7 +415,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
     # the receiver), and unwatch stops them.
     count_before = delivery_count(notify)
     assert :ok = AshA2A.Providers.PPlanNotify.unwatch(notify, task_id)
-    Process.sleep(120)
+    tick_barrier(notify)
     assert delivery_count(notify) == count_before
   end
 
@@ -440,7 +454,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
 
     {:ok, _store2} = @dets.start_link(path: path, name: dets_name)
 
-    Process.sleep(150)
+    tick_barrier(notify)
     refute_received {:webhook, "POST", _h, _b}
     assert delivery_count(notify) == 1
   end

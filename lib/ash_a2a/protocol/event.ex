@@ -31,7 +31,8 @@ defmodule AshA2A.Protocol.Event.StatusUpdate do
           context_id: String.t() | nil,
           status: AshA2A.Protocol.Task.Status.t(),
           final: boolean(),
-          metadata: map()
+          metadata: map(),
+          generation: non_neg_integer() | nil
         }
 
   @enforce_keys [:task_id, :status, :final]
@@ -39,6 +40,7 @@ defmodule AshA2A.Protocol.Event.StatusUpdate do
     :task_id,
     :context_id,
     :status,
+    :generation,
     final: false,
     metadata: %{}
   ]
@@ -53,7 +55,8 @@ defmodule AshA2A.Protocol.Event.StatusUpdate do
       context_id: Keyword.get(opts, :context_id),
       status: status,
       final: Keyword.get(opts, :final, false),
-      metadata: Keyword.get(opts, :metadata, %{})
+      metadata: Keyword.get(opts, :metadata, %{}),
+      generation: Keyword.get(opts, :generation)
     }
   end
 end
@@ -69,7 +72,8 @@ defmodule AshA2A.Protocol.Event.ArtifactUpdate do
           artifact: AshA2A.Protocol.Artifact.t(),
           append: boolean() | nil,
           last_chunk: boolean() | nil,
-          metadata: map()
+          metadata: map(),
+          generation: non_neg_integer() | nil
         }
 
   @enforce_keys [:task_id, :artifact]
@@ -77,6 +81,7 @@ defmodule AshA2A.Protocol.Event.ArtifactUpdate do
     :task_id,
     :context_id,
     :artifact,
+    :generation,
     :append,
     :last_chunk,
     metadata: %{}
@@ -93,7 +98,38 @@ defmodule AshA2A.Protocol.Event.ArtifactUpdate do
       artifact: artifact,
       append: Keyword.get(opts, :append),
       last_chunk: Keyword.get(opts, :last_chunk),
-      metadata: Keyword.get(opts, :metadata, %{})
+      metadata: Keyword.get(opts, :metadata, %{}),
+      generation: Keyword.get(opts, :generation)
+    }
+  end
+end
+
+defmodule AshA2A.Protocol.Event.MessageUpdate do
+  @moduledoc """
+  A streaming event announcing a message appended to the task (e.g. client
+  input). A2A v1.1 `TaskMessageUpdateEvent` (`StreamResponse.message_update`,
+  field 5); emitted only to >= 1.1 consumers (gating is not the codec's job).
+  """
+
+  @type t :: %__MODULE__{
+          task_id: String.t(),
+          context_id: String.t() | nil,
+          message: AshA2A.Protocol.Message.t(),
+          metadata: map(),
+          generation: non_neg_integer() | nil
+        }
+
+  @enforce_keys [:task_id, :message]
+  defstruct [:task_id, :context_id, :message, :generation, metadata: %{}]
+
+  @spec new(String.t(), AshA2A.Protocol.Message.t(), keyword()) :: t()
+  def new(task_id, message, opts \\ []) do
+    %__MODULE__{
+      task_id: task_id,
+      context_id: Keyword.get(opts, :context_id),
+      message: message,
+      metadata: Keyword.get(opts, :metadata, %{}),
+      generation: Keyword.get(opts, :generation)
     }
   end
 end

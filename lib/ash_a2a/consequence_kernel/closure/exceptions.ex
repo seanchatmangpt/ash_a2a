@@ -31,6 +31,7 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
       generated inside a real Spark resource/domain, never by a bare fixture-named module).
     * `:callback_dispatch`   -- configured callback/behaviour dynamic site outside the DO-adjacent
       modules with a DO-shaped name (`apply/N`, `execute`, `put`, ...).
+    * `:store_persistence`   -- `AshA2A.TaskStore.Ash` writes to its own internal task/push rows.
     * `:fenced_second_ingress` -- a verified second ingress (e.g. `AshA2A.Executor`) that crosses
       the sole-DO fence itself with the identical gate sequence (`BrceAnchor.take/0` ->
       `CapabilityRelease.guard/2` -> `BrceAnchor.admit/2` -> W4 `DispatcherFence`) before any Ash
@@ -150,7 +151,34 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
             "CapabilityRelease.guard -> BrceAnchor.admit -> W4 DispatcherFence) before any Ash call",
         court: "test/ash_a2a_zach_courts_test.exs"
       }
+      | task_store_edges()
     ]
+  end
+
+  # AshA2A.TaskStore.Ash persists protocol task/push-config rows into its own internal
+  # TaskRow/PushRow resources. Those are store bookkeeping writes, not consequence actuation of
+  # a user skill; the store is reachable only through the AshA2A.Protocol.TaskStore behaviour.
+  defp task_store_edges do
+    store = "AshA2A.TaskStore.Ash"
+
+    for {id, caller, callee} <- [
+          {"task-store-ash-put-create", "do_put/3", "Ash.create/2"},
+          {"task-store-ash-put-update", "do_put/3", "Ash.update/2"},
+          {"task-store-ash-push-create", "set_push_config/2", "Ash.create/2"},
+          {"task-store-ash-push-update", "set_push_config/2", "Ash.update/2"},
+          {"task-store-ash-destroy", "destroy!/3", "Ash.destroy/2"}
+        ] do
+      %{
+        id: id,
+        class: :store_persistence,
+        caller: "#{store}.#{caller}",
+        callee: callee,
+        reason:
+          "task store persistence into the store's own internal rows; not a skill DO, " <>
+            "no consequence-bearing action runs on this path",
+        court: "test/w18_task_store_ash_test.exs"
+      }
+    end
   end
 
   @doc "Dynamic-site exceptions (caller MFA string, site string as printed by `Chicago.Closure`)."
@@ -185,12 +213,18 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
     callback_sites =
       for {caller, site} <- [
             {"AshA2A.CallbackRegistry.invoke/3", "apply/3"},
+            {"AshA2A.A2ATransport.Ownership.authorize/3", "apply/3"},
+            {"AshA2A.Authority.GraphPin.pin/3", "?:put/2"},
+            {"AshA2A.Cluster.Checkpoint.do_land/5", "?:put/2"},
+            {"AshA2A.Cluster.Handover.claim/3", "?:put/2"},
+            {"AshA2A.Cluster.Handover.rehydrate_one/4", "?:put/2"},
+            {"AshA2A.Cluster.Handover.release_claim/2", "?:put/2"},
+            {"AshA2A.Execution.PPlan.call_mfa/3", "apply/3"},
+            {"AshA2A.Protocol.Agent.State.safe_store_put/3", "?:put/2"},
+            {"AshA2A.Protocol.Task.OrphanSweep.fail_orphans/6", "?:put/2"},
             {"AshA2A.Chicago.Bench.B11Wire.start_listener/1", "apply/3"},
-            {"AshA2A.Cluster.Checkpoint.land/4", "?:put/2"},
-            {"AshA2A.Cluster.Handover.rehydrate_one/3", "?:put/2"},
             {"AshA2A.Eval.Scorers.apply_custom/4", "apply/3"},
             {"AshA2A.Enterprise.Pipeline.budget_check/3", "apply/3"},
-            {"AshA2A.Execution.PPlan.resolve_value/1", "apply/3"},
             {"AshA2A.Chicago.Courts.Shacl.run/1", "apply/3"},
             {"AshA2A.Chicago.Courts.Shex.run/1", "apply/3"},
             {"AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport.Http.start_listener/1",
@@ -200,12 +234,10 @@ defmodule AshA2A.ConsequenceKernel.Closure.Exceptions do
             {"AshA2A.ConsequenceKernel.W5.ClaimProtocol.claim/3", "?:put/2"},
             {"AshA2A.Durability.DurableServer.invoke/2", "apply/3"},
             {"AshA2A.Protocol.Agent.Runtime.run_cancel/2", "apply/3"},
-            {"AshA2A.Protocol.Agent.State.put_task/2", "?:put/2"},
             {"AshA2A.Protocol.Plug.call_authorizer/4", "apply/3"},
             {"AshA2A.ReceiptOutbox.safe/3", "apply/3"},
             {"AshA2A.Replan.Port.AshPPlan.legacy_propose/2", "apply/3"},
-            {"AshA2A.Replan.Port.Beam4pm.propose/2", "apply/3"},
-            {"AshA2A.Replan.Port.Ferroplan.propose/2", "apply/3"},
+            {"AshA2A.Replan.Port.Beam4pm.propose_local/2", "apply/3"},
             {"AshA2A.Semantic.Conformance.run_requirement/1", "apply/3"},
             {"AshA2A.Telemetry.Metrics.metrics/0", "apply/3"},
             {"AshA2A.Topology.Group.invoke/2", "apply/3"},

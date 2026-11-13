@@ -13,8 +13,13 @@ defmodule AshA2A.Twin.Server do
     `{:shift_changed, name, shift}` on shift flips
   - Operator: `{:budget_exhausted, name, meta}` when the attention budget hits 0
 
-  Clock injection (`clock: {:mono, fun}`) is honored for timer arithmetic so
-  tests never sleep for synchronization.
+  Clock injection (`clock: {:mono, fun}`) stamps the asset operating-window
+  token only. SLA countdowns are real `gen_statem` event timeouts of
+  `sla_ms` milliseconds and do NOT read the injected clock; tests synchronize
+  on messages and status polls rather than sleeping.
+
+  Calls the twin does not understand reply `{:error, :unknown_call}`; a
+  `{:peek, n}` to a non-operator replies `{:error, {:wrong_kind, kind}}`.
   """
 
   @behaviour :gen_statem
@@ -31,25 +36,16 @@ defmodule AshA2A.Twin.Server do
 
   KNOWN RUNTIME DIVERGENCE (OTP 28.3.1 erlmcp build): `:gen_statem.start_link/3`
   silently drops ALL `name:` registration forms (local atom, `:global`,
-  `:via`) — the process starts alive and unregistered. GenServer registration
-  is unaffected. Workaround: start unnamed and register manually after the
-  start ack. Caveat: a restarted twin (post-crash) re-enters without its
-  name; `AshA2A.Twin.Registry` holds {name -> pid} as the recoverable index
-  but auto-restart re-registration is not implemented in this lane.
+  `:via`) — the process starts alive and unregistered. Workaround: the twin
+  process registers itself in `init/1` (local name, then
+  `AshA2A.Twin.Registry` {name -> pid} when that registry is running). Because
+  registration happens inside the twin, a restarted twin re-registers its own
+  name, and a duplicate name makes `init/1` stop the new process:
+  `{:error, {name, :already_registered}}` with no orphan left running.
   """
   @spec start_link(kind(), atom(), keyword()) :: {:ok, pid()} | {:error, term()}
   def start_link(kind, name, opts) when kind in [:asset, :partner, :operator] do
-    with {:ok, pid} <- :gen_statem.start_link(__MODULE__, {name, kind, opts}, []) do
-      case Process.whereis(name) do
-        nil ->
-          true = :erlang.register(name, pid)
-          Registry.register(AshA2A.Twin.Registry, name, pid)
-          {:ok, pid}
-
-        _existing ->
-          {:error, {name, :already_registered}}
-      end
-    end
+    :gen_statem.start_link(__MODULE__, {name, kind, opts}, [])
   end
 
   @doc "Synchronous status snapshot."
@@ -72,15 +68,48 @@ defmodule AshA2A.Twin.Server do
 
   @impl true
   def init({name, kind, opts}) do
-    data = %{
+    case register_self(name) do
+      :ok -> {:ok, :ready, build_data(name, kind, opts)}
+      {:error, reason} -> {:stop, reason}
+    end
+  end
+
+  defp register_self(name) when is_atom(name) and not is_nil(name) do
+    Process.register(self(), name)
+
+    case registry_register(name) do
+      :ok ->
+        :ok
+
+      :error ->
+        Process.unregister(name)
+        {:error, {name, :already_registered}}
+    end
+  rescue
+    ArgumentError -> {:error, {name, :already_registered}}
+  end
+
+  defp register_self(name), do: {:error, {name, :invalid_name}}
+
+  defp registry_register(name) do
+    if Process.whereis(AshA2A.Twin.Registry) do
+      case Registry.register(AshA2A.Twin.Registry, name, self()) do
+        {:ok, _} -> :ok
+        {:error, _} -> :error
+      end
+    else
+      :ok
+    end
+  end
+
+  defp build_data(name, kind, opts) do
+    %{
       name: name,
       kind: kind,
       listener: Keyword.get(opts, :listener, self()),
       clock: Keyword.get(opts, :clock, {:mono, fn -> :erlang.monotonic_time(:native) end}),
       kind_state: init_kind(kind, opts)
     }
-
-    {:ok, :ready, data}
   end
 
   defp init_kind(:asset, opts) do
@@ -171,12 +200,25 @@ defmodule AshA2A.Twin.Server do
 
     case Hazard.observe(ks.hazard, latency) do
       {:ok, stats} ->
-        conclude_response(%{data | kind_state: %{ks | hazard: stats.monitor}}, stats)
+        conclude_response(
+          %{data | kind_state: %{ks | hazard: stats.monitor}},
+          stats.z,
+          Hazard.trip?(stats.z, ks.threshold),
+          Map.delete(stats, :monitor)
+        )
 
       {:error, :insufficient_dispersion} ->
-        # zero-dispersion window: push the observation so the window heals;
-        # no trip is possible on an empty/zero-dispersion window.
-        {:keep_state, %{data | kind_state: %{ks | hazard: Hazard.push(ks.hazard, latency)}}}
+        # Zero-dispersion window (MAD == 0): z is undefined. Fail closed on a
+        # spike: a slow observation against an established flat window
+        # (>= 3 samples) trips with z = :infinity. Either way the observation
+        # is pushed so the window heals.
+        monitor = Hazard.push(ks.hazard, latency)
+        data2 = %{data | kind_state: %{ks | hazard: monitor}}
+
+        case Hazard.zero_dispersion_spike(ks.hazard.buffer, latency) do
+          {:spike, stats} -> conclude_response(data2, :infinity, true, stats)
+          :none -> {:keep_state, data2}
+        end
     end
   end
 
@@ -221,11 +263,22 @@ defmodule AshA2A.Twin.Server do
 
   def handle_event({:call, from}, {:peek, n}, _s, %{kind: :operator} = data) do
     ks = data.kind_state
-    items = ks.queue |> :queue.to_list() |> Enum.take(n)
-    {:keep_state, data, [{:reply, from, items}]}
+
+    reply =
+      if is_integer(n) and n >= 0,
+        do: ks.queue |> :queue.to_list() |> Enum.take(n),
+        else: {:error, :invalid_n}
+
+    {:keep_state, data, [{:reply, from, reply}]}
   end
 
   # -- fallback --------------------------------------------------------------
+
+  def handle_event({:call, from}, {:peek, _n}, _s, data),
+    do: {:keep_state_and_data, [{:reply, from, {:error, {:wrong_kind, data.kind}}}]}
+
+  def handle_event({:call, from}, _msg, _s, _data),
+    do: {:keep_state_and_data, [{:reply, from, {:error, :unknown_call}}]}
 
   def handle_event(_type, _content, _state, _data), do: :keep_state_and_data
 
@@ -241,21 +294,19 @@ defmodule AshA2A.Twin.Server do
     {:keep_state, %{data | kind_state: %{ks | shift: shift}}}
   end
 
-  defp conclude_response(data, stats) do
+  defp conclude_response(data, z, trip_decision, stats) do
     ks = data.kind_state
 
+    # trip only for an unacknowledged outstanding dispatch while on shift.
     trips? =
-      # hours-before-SLA semantics: threshold configurable in sigma or absolute
-      # seconds; trip only for an unacknowledged outstanding dispatch on shift.
-      Hazard.trip?(stats.z, ks.threshold) and not ks.acked? and
-        not is_nil(ks.pending_dispatch) and ks.shift == :on_shift
+      trip_decision and not ks.acked? and not is_nil(ks.pending_dispatch) and
+        ks.shift == :on_shift
 
     ks2 =
       if trips? do
         send(
           data.listener,
-          {:hazard_tripped, data.name, stats.z,
-           stats |> Map.put(:dispatch, ks.pending_dispatch) |> Map.delete(:monitor)}
+          {:hazard_tripped, data.name, z, Map.put(stats, :dispatch, ks.pending_dispatch)}
         )
 
         %{ks | pending_dispatch: nil}

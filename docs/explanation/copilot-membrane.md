@@ -22,9 +22,11 @@ side (`ash_a2a`), and its verdicts are consumed downstream as inputs to
               ├─► AshA2A.Twin.Vince.evaluate_intent/2      (intent interrogation)
               │     ├─ gpm_floor / monkey_math / round_number_suspicious
               │     └─ mechanical prior via MechanicalPrior behaviour
+              ├─► mechanical prior (optional)              (MechanicalPrior behaviour)
               ├─► AshA2A.Twin.Tony.handle_inbound/2        (per-coordinator strain gate)
               │     └─ AshA2A.Strain.Tensor.hyperplane_check/2
               ├─► AshA2A.Attestation.Gate                  (sensor-frame attestation)
+              ├─► AshA2A.Authority.PEP.assert_standing/4   (authority hop, opt-in)
               └─► Bridge observation feed                  (AshA2A.Strain.Bridge)
 ```
 
@@ -111,13 +113,24 @@ observation events into the tensor. Event → dimension mapping:
 to the rolling 20-sample error window, `clock_hour` advances the raw shift
 clock (the circadian decay lives in `Tensor.strain/2`, not the event).
 
+Event fields read by `Bridge.record_observation/3`: `:error_reported`
+counts as an error sample only when the event carries `error: true` (or
+`error: 1`); without `:error` the sample is 0. `:clock_hour` advances the
+clock by the event's `:hours` field (default 1).
+
+`Bridge.route/2` (`route(ticket, mesh_state)`) takes ticket fields
+`:friction` (default 0.0) and `:candidates` (default all registered ids)
+and returns `{:assign, coordinator_id}` (minimum total strain among
+eligible candidates) or `{:shed, {:senior_queue, reason}}`, with reason
+`:all_saturated` or `{:all_saturated_or_fatigued, :high_friction}`.
+
 Fatigue-diversion invariant (Bridge): a coordinator with shift strain > 0.85
 AND rising error drift (`error_drift_rising?/2`: recent half of the window
 rate > older half) receives no high-friction ticket — diverted to the
 freshest coordinator or shed with reason; every ticket ends assigned or
 shed-with-reason, none dropped.
 
-## Attestation + Ingress — the five attack classes
+## Attestation + Ingress — the eight refusal classes
 
 `AshA2A.Attestation.Key` (`lib/ash_a2a/attestation/key.ex`) implements
 compact ES256 (ECDSA P-256 + SHA-256) signing on the Erlang stdlib `:crypto`
@@ -130,18 +143,34 @@ server-side Play Integrity / App Attest / DeviceCheck integration) — it
 trusts the signing-key holder and detects only emulators that declare
 themselves honestly via claims.
 
-The closed refusal vocabulary is exactly five classes
-(`AshA2A.Ingress.Channel` folds the wider gate vocabulary
+The closed refusal vocabulary emitted by `AshA2A.Ingress.Channel` is
+exactly eight classes. `Channel` folds the gate's wider vocabulary
 (`:nonce_mismatch`, `:malformed_token`) into `:spoofed_payload` to keep it
-closed):
+closed:
 
 | class | refused when | detector |
 |---|---|---|
-| `:bad_signature` | ECDSA verify fails on the `v1.` token | `Key.verify/2` |
-| `:stale` | `issued_at` older than `max_staleness_sec` (default 90s), or future timestamp beyond 5s skew | `Gate.verify_freshness/2` |
-| `:spoofed_payload` | missing/invalid camera metadata, GPS out of sane bounds, timestamp skew, nonce mismatch, malformed token | `Gate.verify_sensor_metadata/2` |
-| `:emulator_detected` | `is_virtual`, emulator fingerprint regex, or known emulator package list hit | `Gate.verify_enclave/2` |
-| `:gps_impossible_jump` | > 500 km between consecutive fixes within 60 s (haversine) | `Gate.verify_gps_trajectory/1` |
+| `:bad_signature` | ECDSA verify fails, or the DER signature is structurally broken | `Key.verify/2` |
+| `:non_canonical_signature` | well-formed DER signature with `s > n/2` (malleated twin) | `Key.verify/2` |
+| `:stale` | `issued_at` older than `max_staleness_sec` (default 90s) | `Gate.verify_freshness/2` |
+| `:clock_skew` | `issued_at` (or GPS timestamp) more than 5s in the future | `Gate.verify_freshness/2`, `verify_sensor_metadata/2` |
+| `:spoofed_payload` | missing/invalid camera metadata, GPS out of bounds, nonce mismatch, malformed token, event/claims binding mismatch | `Gate.verify_sensor_metadata/2`, `Channel` |
+| `:emulator_detected` | `is_virtual`, emulator fingerprint regex, or emulator package list hit | `Gate.verify_enclave/2` |
+| `:gps_impossible_jump` | > 500 km between consecutive fixes within 60 s (haversine) | `Gate.verify_gps_trajectory/1,2` |
+| `:nonce_replayed` | nonce already consumed by an accepted event for that coordinator | `Channel.ingest/3` |
+
+Low-s canonicalization: `Key.sign/2` normalizes every signature to its
+low-s twin and `Key.verify/2` refuses `s > n/2` with
+`:non_canonical_signature` before crypto verification, so a malleated
+signature cannot pass as a fresh token.
+
+`Gate.verify_gps_trajectory/2` adds a grant-scoped override for
+`:gps_impossible_jump` only: with `approved_grants:` (maps shaped by
+`AshA2A.Attestation.GateGrantAllowlist`, pinned to xaas
+`ApprovalGeofenceExceptionGrant` fields; `:now` overridable), an in-scope,
+unexpired, approved grant flips that refusal to `:ok`. Expired, out-of-area,
+unapproved, or absent grants still refuse, and `:spoofed_payload` is never
+overridden — with no grants the result is identical to `/1`.
 
 `AshA2A.Ingress.Channel` (`lib/ash_a2a/ingress/channel.ex`) is the check-in /
 telemetry intake surface connecting the gate to event ingress. `ingest/3` is
@@ -153,22 +182,44 @@ judged against the `:now` opt passed to the call (wall clock by default), not
 the event's own `timestamp` field — so an event carrying a back-dated
 timestamp cannot launder a stale token past the gate.
 
+Replay ledger: per coordinator, `Channel` keeps a FIFO set of nonces
+consumed by accepted events, bounded at 1024 (`@max_consumed_nonces`,
+oldest evicted first). A repeated nonce is refused `:nonce_replayed`
+before any crypto work.
+
+Signed-claims binding: the token signature covers the claims, not the
+unsigned event copy. When the signed claims carry `gps`, `camera_make` or
+`camera_model`, the event's copies must match (GPS compared on `lat`,
+`lon`, `accuracy` only; GPS timestamp is not bound), else `:spoofed_payload`.
+Reference: [Ingress attestation](../reference/ingress-attestation.md).
+
 ## Copilot.Pipeline — stage order
 
 `AshA2A.Copilot.Pipeline.check/3` runs the interception path:
 
 1. **Vince** — `Vince.evaluate_intent/2` (GPM floor, monkey math, round
-   numbers, then the mechanical prior folded in). On challenge: return the
-   challenge-as-state ledger entry. On refuse: return refuse.
-2. **Mechanical prior** — consulted on the admit path
+   numbers). On challenge: return the challenge-as-state ledger entry. On
+   refuse: return refuse (optionally escalated, see below).
+2. **Mechanical prior** — consulted on the Vince-admit path
    (`mechanical_prior/2`, private): `Pipeline.detect_prior/0` resolves the
-   application env `:ash_a2a, :copilot_mechanical_prior`, else lane X5's
+   application env `:ash_a2a, :copilot_mechanical_prior`, else
    `TradeReticle.Plumbing` if loadable, else the stage is skipped (`nil`).
 3. **Tony strain gate** — `Tony.handle_inbound/2` (keyed to
    `intent.coordinator_id`; the mesh-level shed is `route/2`'s job).
-4. **Attestation** — `Gate.verify_enclave/2` → `verify_freshness/2` →
+4. **Attestation** — `Gate.verify_enclave/2` -> `verify_freshness/2` ->
    `verify_sensor_metadata/2` on `intent.sensor_frame`; a refusal surfaces
    as `{:refuse, %{code: :attestation, reason: refused}}`.
+5. **Authority** — `Authority.PEP.assert_standing/4`, last gate before
+   admit; active only when the `:authority_source` opt is given.
+
+Within the admit path the order is prior -> tony -> attestation ->
+authority (`admit_path/3` in `lib/ash_a2a/copilot/pipeline.ex`); the first
+non-ok stage wins. Missing `:sensor_frame` is a typed attestation refusal
+(`:missing_sensor_frame`); malformed intents return
+`{:refuse, %{code: :invalid_intent, reason: _}}` (reasons include
+`{:missing_keys, keys}`, `:nte_zero`, `:nte_not_a_number`,
+`:offer_not_a_number`, `:coordinator_id_nil`, `:intent_not_a_map`). The
+`:coordinator_id` option no longer exists; it is read from the intent.
 
 Result shape (typed, no strings-as-state):
 
@@ -176,8 +227,12 @@ Result shape (typed, no strings-as-state):
 {:ok, admitted_ticket}
 | {:challenge, %{code: _, demanded_evidence: _, retry_token: _}}
 | {:refuse, :escalate_multisig | %{code: _, reason: _}}
+| {:escalated, %{proposal_id: _, card: _, proposal: _}}
 | {:shed, {:senior_queue, relief_target}}
 ```
+
+`{:escalated, ...}` appears only when `:attention_broker` is configured and
+a Vince repeat-challenge or GPM-floor-class refuse opens a broker proposal.
 
 **Strain-vs-Vince order decision** (from the `Copilot.Pipeline` moduledoc):
 the moduledoc's rationale is that a saturated coordinator cannot take the
@@ -190,28 +245,78 @@ per-coordinator Tony gate still runs *after* Vince (it is keyed to
 mesh-level shed decision is `route/2`'s job and happens before Vince by
 construction.
 
-Precision note (updated 2026-11-07): `route/2` now exists on
-`AshA2A.Copilot.Pipeline` (`lib/ash_a2a/copilot/pipeline.ex:203`) — it
-delegates to `AshA2A.Strain.Bridge.route/2` exactly as the moduledoc
+`route/2` exists on `AshA2A.Copilot.Pipeline` (`Pipeline.route/2` in
+`lib/ash_a2a/copilot/pipeline.ex`) — it delegates to `AshA2A.Strain.Bridge.route/2` exactly as the moduledoc
 describes, so dispatch callers may invoke `Pipeline.route/2` directly before
 `check/3` to get the strain-first behavior; calling `Bridge.route/2`
 directly remains equivalent.
 
-## Authority.PEP seam — pending wiring
+## Authority.PEP hop — wired, opt-in
 
 `AshA2A.Authority.PEP` (`lib/ash_a2a/authority/pep.ex`) is a Policy
-Enforcement Point seam: `PEP.assert_standing/4` admits or refuses
+Enforcement Point: `PEP.assert_standing/4` admits or refuses
 `{actor_id, scope, context}` against a configured
 `AshA2A.Authority.Source` behaviour. The default source is
-`AshA2A.Authority.Source.DenyAll` — out of the box the PEP refuses
-everything; an allow-source must be configured explicitly
-(`Source.AllowAll` exists for tests only).
+`AshA2A.Authority.Source.DenyAll` (refuses everything); `Source.AllowAll`
+is for tests.
 
-Its moduledoc carries a wire-point map (documentation only — **no wiring
-landed**): `Pipeline.check/3` currently has NO authority hop, and the
-prescribed wire point is the top of `check/3`, before any state read or
-mutation, returning `{:refused, :insufficient_authority, detail}` on
-refusal. Also prescribed: an outer-PEP refusal before
-`AshA2A.Agent.build_command/4` for unprincipaled callers, and no
-double-gating inside `AshA2A.CommandBus` (it already revalidates against
-`admitted_by` immediately before DO).
+`Pipeline.check/3` calls it as the last gate before admit (`authority_check/2`
+in `lib/ash_a2a/copilot/pipeline.ex`), with scope
+`%{action: "a2a:copilot.check", coordinator_id:, trade:}`:
+
+- Active only when the `:authority_source` opt is supplied; absent = skipped
+  (wiring DenyAll unconditionally would refuse every existing caller).
+- Actor is `intent[:actor_id]`; configured but missing actor refuses with
+  detail `%{reason: :missing_actor_id, ...}`.
+- Refusal surfaces as `{:refuse, %{code: :authority, reason: detail}}`.
+
+No double-gating inside `AshA2A.CommandBus` (it revalidates against
+`admitted_by` immediately before DO). `lib/ash_a2a/agent.ex` and
+`lib/ash_a2a/command_bus.ex` contain no `Authority.PEP` call; the only
+PEP caller in the copilot path is `Pipeline.check/3`. `build_command/4`
+is referenced in `agent.ex` comments only; no such function is defined
+under `lib/`.
+
+## Attention.Broker — escalation and human override
+
+`AshA2A.Attention.Broker` (`lib/ash_a2a/attention/broker.ex`) is a pure
+decision core over an in-memory ledger (`%{proposal_id => [entry]}`);
+time is injected, never sampled. `Pipeline.check/3` accepts the broker
+as `:attention_broker` in either form: a module, or `{module, opts}`
+(opts may carry `:level` and `:now`, overridden by `:proposal_level` and
+`:now`). Escalate-class refuses return `{:escalated, ...}`.
+
+- `propose/3` — `{coordinator_id, card, opts}`; `:level` default
+  `:consent_by_silence`, else `{:error, {:invalid_level, level}}`.
+  Pure; writes no ledger.
+- `register/2` — `register(ledger, proposal)` puts `id => []` so
+  `escalation_path/2` counts the proposal as unresolved. A registered,
+  undecided proposal is not "decided".
+- `override/5` — `override(proposal, actor_signature, decision, ledger \\ %{},
+  opts \\ [])`, `decision` is `:approve | :reject`; returns
+  `{:ok, ledger, entry}` or a refusal:
+  - `{:refused, :already_decided}` — a decision is already on the
+    ledger for that proposal.
+  - `{:refused, :signature_required}` — the card has any option with
+    `requires_signature: true` (GPM-floor cards always do) and the
+    signature is nil or `""`.
+- `consent_by_silence/4` — also returns `{:refused, :already_decided}`
+  when a human override exists, checked before level and window.
+
+## Lane F8 adversarial gaps
+
+`test/copilot/f8_adversarial_test.exs` pins five attacks:
+
+| attack | status |
+|---|---|
+| A1 trade respell resets the challenge ledger | closed: Vince normalizes string trades (trim, case-fold); atoms keep exact keys |
+| A2 authority hop fail-open | closed: absent source is a documented skip; configured source with no `actor_id` refuses; bad attestation refuses before the hop |
+| A3 strain spoof via forged `coordinator_id` | OPEN: observations credit the declared id (test documents it) |
+| A4 `retry_token` redemption | closed: token not redeemable; Vince ledger decides |
+| A5 negative NTE / nil `coordinator_id` | closed: typed `:invalid_intent` refusals |
+
+## See Also
+
+- [Run the Copilot pipeline](../how-to/run-the-copilot-pipeline.md)
+- [Ingress attestation reference](../reference/ingress-attestation.md)
+- [pplan seams](pplan-seams.md)

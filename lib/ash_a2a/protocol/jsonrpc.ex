@@ -53,6 +53,7 @@ defmodule AshA2A.Protocol.JSONRPC do
   every callback, which transports use to pass per-request data.
   """
 
+  alias AshA2A.Protocol.ClientArtifacts
   alias AshA2A.Protocol.JSONRPC.{Error, Request, Response}
 
   # v0.3.0 PascalCase method names → internal slash-style names
@@ -149,12 +150,27 @@ defmodule AshA2A.Protocol.JSONRPC do
   # -- dispatch --------------------------------------------------------------
 
   defp dispatch(%Request{method: "message/send"} = req, handler, ctx) do
-    history_length = Request.history_length(req.params["configuration"] || %{})
+    configuration = if is_map(req.params["configuration"]), do: req.params["configuration"], else: %{}
+    history_length = Request.history_length(configuration)
 
-    with {:ok, message} <- decode_message(req.params),
-         {:ok, result} <-
-           safe_call(fn -> handler.handle_send(message, req.params, ctx) end),
-         {:ok, encoded} <- encode_send_result(result, history_length) do
+    timeline_length =
+      Request.timeline_length(configuration) || Request.timeline_length(req.params)
+
+    # Handlers read the parsed SendMessageConfiguration from the context so
+    # they need not re-parse the wire spelling (returnImmediately/blocking).
+    ctx =
+      ctx
+      |> Map.put(:return_immediately, Request.return_immediately(configuration))
+      |> Map.put(:accepted_output_modes, Request.accepted_output_modes(configuration))
+      |> Map.put(:if_generation_match, Request.if_generation_match(configuration))
+
+    with {:ok, decoded} <- decode_updates(req.params),
+         :ok <- lift(ClientArtifacts.check_user_artifacts(card_of(ctx), decoded)),
+         {:ok, message} <- decode_optional_message(req.params),
+         :ok <- check_if_generation_match(ctx, message, configuration),
+         {:ok, result} <- send_or_update(handler, message, decoded, req.params, ctx),
+         {:ok, result} <- apply_artifact_updates(ctx, result, message, decoded),
+         {:ok, encoded} <- encode_send_result(result, history_length, timeline_length) do
       {:reply, Response.success(req.id, encoded)}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
@@ -175,12 +191,16 @@ defmodule AshA2A.Protocol.JSONRPC do
   defp dispatch(%Request{method: "tasks/get"} = req, handler, ctx) do
     task_id = req.params["id"]
     history_length = Request.history_length(req.params)
+    timeline_length = Request.timeline_length(req.params)
 
     with {:ok, task} <-
            safe_call(fn -> handler.handle_get(task_id, req.params, ctx) end),
+         {:ok, task} <-
+           long_poll(task, handler, req.params, ctx),
          task =
            task
            |> AshA2A.Protocol.Task.truncate_history(history_length)
+           |> AshA2A.Protocol.Task.Generation.truncate_timeline(timeline_length)
            |> AshA2A.Protocol.Task.strip_stream_metadata(),
          {:ok, encoded} <- AshA2A.Protocol.JSON.encode(task) do
       {:reply, Response.success(req.id, encoded)}
@@ -204,7 +224,10 @@ defmodule AshA2A.Protocol.JSONRPC do
   defp dispatch(%Request{method: "tasks/list"} = req, handler, ctx) do
     if exports?(handler, :handle_list, 2) do
       case safe_call(fn -> handler.handle_list(req.params, ctx) end) do
-        {:ok, result} -> {:reply, Response.success(req.id, encode_list_result(result))}
+        {:ok, result} ->
+          timeline_length = Request.timeline_length(req.params)
+          {:reply, Response.success(req.id, encode_list_result(result, timeline_length))}
+
         {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
       end
     else
@@ -256,8 +279,20 @@ defmodule AshA2A.Protocol.JSONRPC do
 
       case safe_call(fn -> handler.handle_list_push_configs(task_id, req.params, ctx) end) do
         {:ok, configs} ->
-          encoded = Enum.map(configs, &AshA2A.Protocol.JSON.encode!/1)
-          {:reply, Response.success(req.id, %{"configs" => encoded})}
+          case paginate_push_configs(configs, req.params) do
+            {:ok, page, next_token} ->
+              encoded = Enum.map(page, &AshA2A.Protocol.JSON.encode!/1)
+
+              result =
+                if next_token,
+                  do: %{"configs" => encoded, "nextPageToken" => next_token},
+                  else: %{"configs" => encoded}
+
+              {:reply, Response.success(req.id, result)}
+
+            {:error, %Error{} = error} ->
+              {:reply, Response.error(req.id, error)}
+          end
 
         {:error, %Error{} = error} ->
           {:reply, Response.error(req.id, error)}
@@ -296,7 +331,10 @@ defmodule AshA2A.Protocol.JSONRPC do
          _handler,
          _ctx
        ) do
-    {:reply, Response.error(req.id, Error.unsupported_operation())}
+    # Not configured here: the extended card is served by transports that
+    # carry a provider. A bare dispatcher answers the spec's dedicated
+    # ExtendedAgentCardNotConfigured error (-32007), not the generic -32004.
+    {:reply, Response.error(req.id, Error.authenticated_extended_card_not_configured())}
   end
 
   defp dispatch(%Request{} = req, _handler, _ctx) do
@@ -304,6 +342,45 @@ defmodule AshA2A.Protocol.JSONRPC do
   end
 
   # -- helpers ---------------------------------------------------------------
+
+  # `ListTaskPushNotificationConfigs` paging: `pageSize` / `pageToken` in,
+  # `nextPageToken` out. The token is an opaque base64 offset; a malformed
+  # token is -32602, never a silent restart from the first page.
+  defp paginate_push_configs(configs, params) do
+    size = params["pageSize"]
+    token = params["pageToken"]
+
+    with {:ok, offset} <- decode_page_token(token) do
+      rest = Enum.drop(configs, offset)
+
+      case size do
+        size when is_integer(size) and size > 0 ->
+          {page, remaining} = Enum.split(rest, size)
+
+          next =
+            if remaining == [],
+              do: nil,
+              else: Base.url_encode64(Integer.to_string(offset + size), padding: false)
+
+          {:ok, page, next}
+
+        _ ->
+          {:ok, rest, nil}
+      end
+    end
+  end
+
+  defp decode_page_token(nil), do: {:ok, 0}
+  defp decode_page_token(""), do: {:ok, 0}
+
+  defp decode_page_token(token) when is_binary(token) do
+    with {:ok, bin} <- Base.url_decode64(token, padding: false),
+         {offset, ""} when offset >= 0 <- Integer.parse(bin) do
+      {:ok, offset}
+    else
+      _ -> {:error, Error.invalid_params("\"pageToken\" is not a valid page token")}
+    end
+  end
 
   # The spec and REST binding use `taskId`; the TCK and proto clients send
   # `task_id`. Both are accepted, as they already are for `historyLength`.
@@ -326,6 +403,172 @@ defmodule AshA2A.Protocol.JSONRPC do
     end
   end
 
+  # -- v1.1.0 helpers --------------------------------------------------------
+
+  # Tagged errors (`:generation_mismatch`, `{:unsupported_operation, _}`) ->
+  # `Error` structs; `Error` structs and `:ok` pass through.
+  defp lift(:ok), do: :ok
+  defp lift({:error, %Error{}} = error), do: error
+
+  defp lift({:error, reason}) do
+    case ClientArtifacts.to_error(reason) do
+      %Error{} = error -> {:error, error}
+      nil -> {:error, Error.internal_error()}
+    end
+  end
+
+  defp decode_updates(params) do
+    case Request.artifact_updates(params) do
+      [] ->
+        {:ok, []}
+
+      updates ->
+        case ClientArtifacts.decode_updates(updates) do
+          {:ok, _} = ok -> ok
+          {:error, reason} -> {:error, Error.invalid_params(inspect(reason))}
+        end
+    end
+  end
+
+  defp decode_optional_message(%{"message" => nil}), do: {:ok, nil}
+  defp decode_optional_message(%{"message" => m} = params) when is_map(m), do: decode_message(params)
+  defp decode_optional_message(_params), do: {:ok, nil}
+
+  defp card_of(%{agent_card: card}) when not is_nil(card), do: card
+
+  defp card_of(%{agent: agent}) when not is_nil(agent) do
+    GenServer.call(agent, :get_agent_card)
+  catch
+    :exit, _ -> nil
+  end
+
+  defp card_of(_), do: nil
+
+  defp fetch_task(%{agent: agent}, task_id) when not is_nil(agent) and is_binary(task_id) do
+    GenServer.call(agent, {:get_task, task_id})
+  catch
+    :exit, _ -> {:error, :not_found}
+  end
+
+  defp fetch_task(_ctx, _task_id), do: {:error, :not_found}
+
+  # ifGenerationMatch applies only to a message targeting an EXISTING task.
+  defp check_if_generation_match(ctx, message, configuration) do
+    expected = Request.if_generation_match(configuration)
+
+    with true <- not is_nil(expected) and not is_nil(message) and is_binary(message.task_id),
+         {:ok, task} <- fetch_task(ctx, message.task_id) do
+      case ClientArtifacts.check_generation(task, expected) do
+        :ok ->
+          :ok
+
+        {:error, :generation_mismatch} ->
+          {:error,
+           Error.task_generation_mismatch(nil,
+             task_id: task.id,
+             expected: expected,
+             actual: AshA2A.Protocol.Task.Generation.generation_of(task)
+           )}
+      end
+    else
+      _ -> :ok
+    end
+  end
+
+  # Artifact-only send: no message, updates target an existing task. The
+  # handler's `handle_get/3` is the authorization gate for that task.
+  defp send_or_update(handler, nil, decoded, params, ctx) do
+    ids =
+      params
+      |> Request.artifact_updates()
+      |> Enum.map(&(&1["taskId"] || &1["task_id"]))
+      |> Enum.uniq()
+
+    case {ids, decoded} do
+      {[task_id], [_ | _]} ->
+        with {:ok, _task} <- safe_call(fn -> handler.handle_get(task_id, params, ctx) end) do
+          {:ok, {:artifact_only, task_id}}
+        end
+
+      _ ->
+        {:error, Error.invalid_params("artifactUpdates without a message must name one taskId")}
+    end
+  end
+
+  defp send_or_update(handler, message, _decoded, params, ctx) do
+    safe_call(fn -> handler.handle_send(message, params, ctx) end)
+  end
+
+  defp apply_artifact_updates(_ctx, result, _message, []) when not is_tuple(result), do: {:ok, result}
+
+  defp apply_artifact_updates(ctx, {:artifact_only, task_id}, _message, decoded) do
+    apply_to_agent(ctx, task_id, decoded)
+  end
+
+  # A direct Message reply creates no task: updates are not persisted.
+  defp apply_artifact_updates(_ctx, %AshA2A.Protocol.Message{} = result, _message, _decoded),
+    do: {:ok, result}
+
+  defp apply_artifact_updates(ctx, %AshA2A.Protocol.Task{id: id}, _message, decoded),
+    do: apply_to_agent(ctx, id, decoded)
+
+  defp apply_to_agent(%{agent: agent}, task_id, decoded) when not is_nil(agent) do
+    case GenServer.call(agent, {:apply_artifact_updates, task_id, decoded}) do
+      {:ok, _task} = ok -> ok
+      {:error, :not_found} -> {:error, Error.task_not_found()}
+      {:error, _} = error -> lift(error)
+    end
+  end
+
+  defp apply_to_agent(_ctx, _task_id, _decoded),
+    do: {:error, Error.unsupported_operation("artifactUpdates need an agent in context")}
+
+  # GetTask `currentGeneration` long-poll: answer now when the task is already
+  # past the value (or terminal); otherwise hold on the agent's task-update
+  # notifications (`{:a2a_task_event, id, snapshot}`) until the generation
+  # advances or the monotonic deadline passes, then answer the current state.
+  defp long_poll(task, handler, params, ctx) do
+    value = Request.current_generation(params)
+    gen = AshA2A.Protocol.Task.Generation.generation_of(task)
+
+    if is_nil(value) or gen > value or AshA2A.Protocol.Task.terminal?(task) or
+         is_nil(Map.get(ctx, :agent)) do
+      {:ok, task}
+    else
+      timeout = Map.get(ctx, :long_poll_timeout_ms) || ClientArtifacts.long_poll_timeout_ms()
+      deadline = System.monotonic_time(:millisecond) + timeout
+      await_generation(ctx.agent, task.id, value, deadline)
+      safe_call(fn -> handler.handle_get(task.id, params, ctx) end)
+    end
+  end
+
+  defp await_generation(agent, task_id, value, deadline) do
+    case GenServer.call(agent, {:subscribe, task_id}) do
+      {:ok, snapshot} ->
+        if AshA2A.Protocol.Task.Generation.generation_of(snapshot) > value,
+          do: :advanced,
+          else: receive_generation(task_id, value, deadline)
+
+      _terminal_or_missing ->
+        :done
+    end
+  catch
+    :exit, _ -> :done
+  end
+
+  defp receive_generation(task_id, value, deadline) do
+    remaining = max(0, deadline - System.monotonic_time(:millisecond))
+
+    receive do
+      {:a2a_task_event, ^task_id, snapshot} ->
+        if AshA2A.Protocol.Task.Generation.generation_of(snapshot) > value,
+          do: :advanced,
+          else: receive_generation(task_id, value, deadline)
+    after
+      remaining -> :timeout
+    end
+  end
+
   defp decode_message(params) do
     case AshA2A.Protocol.JSON.decode(params["message"], :message) do
       {:ok, _message} = ok -> ok
@@ -335,26 +578,30 @@ defmodule AshA2A.Protocol.JSONRPC do
 
   # `SendMessageResponse` is a Task/Message oneof. `historyLength` and the
   # `:stream` metadata key are task-only — a Message has neither field.
-  defp encode_send_result(%AshA2A.Protocol.Task{} = task, history_length) do
+  defp encode_send_result(%AshA2A.Protocol.Task{} = task, history_length, timeline_length) do
     with {:ok, encoded} <-
            task
            |> AshA2A.Protocol.Task.truncate_history(history_length)
+           |> AshA2A.Protocol.Task.Generation.truncate_timeline(timeline_length)
            |> AshA2A.Protocol.Task.strip_stream_metadata()
            |> AshA2A.Protocol.JSON.encode() do
       {:ok, %{"task" => encoded}}
     end
   end
 
-  defp encode_send_result(%AshA2A.Protocol.Message{} = message, _history_length) do
+  defp encode_send_result(%AshA2A.Protocol.Message{} = message, _history_length, _timeline_length) do
     with {:ok, encoded} <- AshA2A.Protocol.JSON.encode(message) do
       {:ok, %{"message" => encoded}}
     end
   end
 
-  defp encode_list_result(%{tasks: tasks} = result) do
+  defp encode_list_result(%{tasks: tasks} = result, timeline_length) do
     encoded_tasks =
       Enum.map(tasks, fn task ->
-        task |> AshA2A.Protocol.Task.strip_stream_metadata() |> AshA2A.Protocol.JSON.encode!()
+        task
+        |> AshA2A.Protocol.Task.Generation.truncate_timeline(timeline_length)
+        |> AshA2A.Protocol.Task.strip_stream_metadata()
+        |> AshA2A.Protocol.JSON.encode!()
       end)
 
     %{

@@ -40,8 +40,10 @@ was considered and rejected on the real call graphs:
   `lib/ash_a2a/providers/pplan_notify.ex` (read-only `fetch` polling,
   lane P2's file). The port touches no Engine function. The contract's
   extraction condition ("both independently wrap Engine.start/attempt")
-  does not hold — there is nothing shared to extract, so no
-  `AshA2A.Execution.PPlan` (adapter) and `AshA2A.Providers.PPlanNotify` (completion bridge) internal modules were created.
+  does not hold — there is nothing shared to extract, so no shared internal
+  module was created. `AshA2A.Execution.PPlan` (adapter) and
+  `AshA2A.Providers.PPlanNotify` (completion bridge) remain the only two
+  consumers of the provider.
 
 ## Consumers preserved
 
@@ -74,6 +76,37 @@ never PASS). Court families on disk:
 Path mode (`ASH_PPLAN_PATH`, below) is required for these courts; Hex-pin
 mode exercises only the published API surface.
 
+## Execution adapter opts and error shapes
+
+`AshA2A.Execution.PPlan` reads `execution: [adapter: :pplan, pplan: [...]]`.
+Every `pplan` opt value may be `{:mfa, m, f, a}` (always resolved) or a bare
+`{m, f, a}` (resolved only when `m` is loaded and exports `f/length(a)`;
+otherwise passed through as a literal), evaluated on each call
+(`execution/pplan.ex:223-239`). Error shapes:
+
+* `{:error, {:invalid_opt, {key, {:mfa_failed, _}}}}` — an MFA raised or
+  threw while resolving opt `key` (`AshA2A.Execution.PPlan`).
+* `{:error, {:provider_failed, _}}` — the provider call raised/threw/exited;
+  the adapter still returns a placement receipt (`AshA2A.Execution.PPlan`,
+  `safe_dispatch_or_resume/3`).
+* `{:error, {:start_failed, reason}}` — `AshPPlan.Reactor.Durable.Engine.start`
+  returned an error (or `{:start_failed, {:unexpected, other}}`), raised by
+  `AshA2A.Providers.PPlan.dispatch/4` (`providers/pplan.ex:149-150`).
+* `{:error, {:missing_opt, key}}` / `{:error, {:unsupported, :ash_pplan}}` —
+  required opt absent / ash_pplan not loaded.
+
+## Orphan sweep
+
+`AshA2A.Transport.Runtime` arms a periodic sweep (via `Process.send_after`,
+on the first message call, only when an external `task_store` exists) that
+calls `AshA2A.Protocol.Task.OrphanSweep.sweep/2`, failing `:working` tasks
+whose status timestamp is older than the lease, that are not
+drain-checkpointed, and have no live worker. Config
+(`transport/runtime.ex:74-75,397-414`): `:orphan_sweep_interval_ms`
+(default `10_000`; `false` disables) and `:orphan_lease_ms` (default
+`60_000`; keep the interval well below it). A sweep also runs once when
+armed.
+
 ## Falsifiers
 
 * Delegation falsifier (open): if a real caller ever needs the port's
@@ -86,13 +119,13 @@ mode exercises only the published API surface.
 
 ## Dependency wiring (dev-only path override)
 
-The `ash_pplan` dep in `mix.exs` is a Hex pin (`~> 26.10`) by default.
+The `ash_pplan` dep in `mix.exs` is a Hex pin (`~> 26.11`) by default.
 Setting `ASH_PPLAN_PATH` to a local canonical checkout (e.g.
 `/Users/sac/ash_pplan`) switches the dep to `path:` at mix.exs eval time
 (`System.get_env/1` — deps do not read env at compile time, so eval-time
 selection is the only supported toggle).
 
-* Default (no env): Hex pin. `mix.lock` pins 26.10.3; **ash_a2a CI always
+* Default (no env): Hex pin. `mix.lock` resolves 26.11.10; **ash_a2a CI always
   uses the Hex pin** — CI never sets `ASH_PPLAN_PATH`.
 * Path mode: `ASH_PPLAN_PATH=.../ash_pplan MIX_ENV=test mix deps.get
   deps.compile ash_pplan && MIX_ENV=test mix compile`. Path deps are not
@@ -105,8 +138,7 @@ selection is the only supported toggle).
   surface.
 * Local parity is a **dev-only mode**: results from a path-mode run are
   not a Hex-release verdict — upstream W-lanes may be mid-flight in the
-  local tree (as of 2026-11-07 the path dep compiles exit 0 but emits
-  warnings from `lib/ash_pplan/playground/telemetry_broadcaster.ex`).
+  local tree.
 
 ## Durability repairs upstream (what the consumer sees)
 
@@ -126,10 +158,9 @@ internals):
   Consumers see late signals after cancel/complete as a typed refusal, not a
   silent state change.
 * **Intent boundary = the checkpoint record** — a step's intent is durable
-  exactly when its checkpoint is. The residual gap is the effect-to-record
-  window: a kill between a step's effect execution and its `record` checkpoint
-  leaves the effect re-executed on resume. That is the one boundary the
-  dispatch-durability court still skips loudly (the Z18 kill-court skip names
-  the boundary in its skip reason); it is pending an upstream
-  intent-before-effect guard (claim_undo before the effect) and is not
-  fixable from the ash_a2a side of the seam.
+  exactly when its checkpoint is. The kill-between-effect-and-checkpoint case
+  is asserted live in `test/execution/pplan_dispatch_durability_test.exs`
+  (kill at the checkpoint boundary, resume by task id): `prepare: 1,
+  finish: 1`, one run, three tape steps. Receipt
+  `receipts/pplan-courts-20261108.md` records Standing PASS for the four
+  `:pplan_court` files.

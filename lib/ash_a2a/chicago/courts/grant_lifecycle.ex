@@ -353,6 +353,7 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
     dispatched_before_expiry = DateTime.compare(DateTime.utc_now(), expires_at) == :lt
 
     wait_ms = DateTime.diff(expires_at, DateTime.utc_now(), :millisecond) + 100
+    # SLEEP-CLASS: SCHEDULING (real-time grant expiry interval; nothing to observe)
     if wait_ms > 0, do: Process.sleep(wait_ms)
 
     attack = fs[fid(3)]

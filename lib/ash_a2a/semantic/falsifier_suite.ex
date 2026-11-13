@@ -48,8 +48,9 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   `unwrap_or_default` discards the error (reproducer
   `priv/graphlaw/defects/GL-DEFECT-001.json`, court `SA2A-ENGINE`).
 
-  Additionally `ash_a2a` has no `wasmex` dependency, so no Elixir process in
-  this build can reach that wasm at all.
+  `wasmex` is a dependency of this repo (`AshA2A.GraphLaw.WasmexHost`), but
+  this suite deliberately does not call the wasm; it evaluates the falsifiers
+  in Elixir over ground graphs.
 
   ### Exactly what would be needed to evaluate these in real SPARQL
 
@@ -63,8 +64,8 @@ defmodule AshA2A.Semantic.FalsifierSuite do
        `hooks/condition.rs`'s `HookCondition::Sparql` arm already does; or
     2. A `praxis-graphlaw-wasm` build whose `run_hooks/2` actually extracts
        in-graph `kh:kind "sparql"` hooks (not true of praxis HEAD `31f149d`,
-       measured: `priv/graphlaw/defects/praxis-head-refresh.json`), plus a
-       `wasmex` dependency here to call it.
+       measured: `priv/graphlaw/defects/praxis-head-refresh.json`), wired
+       through the existing `wasmex` host.
 
   Neither is done in this change: (1) is a Praxis-side export and (2) would
   overwrite a shared build artifact other concurrent work has already
@@ -103,7 +104,7 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   alias AshA2A.Semantic.Falsifier
   alias AshA2A.Semantic.Vocabulary
 
-  @sa "http://seanchatmangpt.github.io/sa2a#"
+  @sa Vocabulary.sa_namespace()
   @prov "http://www.w3.org/ns/prov#"
   @xsd_integer "http://www.w3.org/2001/XMLSchema#integer"
   @rdf_type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -1086,24 +1087,17 @@ defmodule AshA2A.Semantic.FalsifierSuite do
   def to_ntriples(graph) when is_list(graph) do
     graph
     |> Enum.uniq()
-    |> Enum.map(fn {s, p, o} -> "<#{s}> <#{p}> #{term(o)} ." end)
+    |> Enum.map(fn {s, p, o} -> "#{iri(s)} #{iri(p)} #{term(o)} ." end)
     |> Enum.sort()
     |> Enum.join("\n")
     |> Kernel.<>("\n")
   end
 
-  defp term({:lit, value}), do: "\"#{escape(value)}\""
+  defp term({:lit, value}), do: "\"#{AshA2A.Semantic.Serialize.escape_literal(value)}\""
   defp term({:int, value}), do: "\"#{value}\"^^<#{@xsd_integer}>"
-  defp term(iri) when is_binary(iri), do: "<#{iri}>"
+  defp term(iri) when is_binary(iri), do: iri(iri)
 
-  defp escape(value) do
-    value
-    |> String.replace("\\", "\\\\")
-    |> String.replace("\"", "\\\"")
-    |> String.replace("\n", "\\n")
-    |> String.replace("\r", "\\r")
-    |> String.replace("\t", "\\t")
-  end
+  defp iri(value), do: "<" <> AshA2A.Semantic.Serialize.escape_iri(value) <> ">"
 
   # ==========================================================================
   # Graph helpers

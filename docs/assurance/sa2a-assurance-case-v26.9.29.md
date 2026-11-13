@@ -1,5 +1,7 @@
 # sa2a-assurance-case-v26.9.29
 
+Standing: PARTIAL
+
 Claims-Arguments-Evidence (CAE) assurance case for SA2A conformance profiles C0 to C3,
 written against RFC-SA2A-006 section 31 as restated by RFC-SA2A-007 (errata). It states
 what would have to be true and shows the evidence status of each node. It makes no
@@ -275,7 +277,7 @@ compromise of the control plane and one signer does not permit DO.
   - E-C3-1 X3-C1..C8 (registry, k-of-n over distinct authority domains, revocation bound to
     epoch). PLANNED.
   - E-C3-2 ERR7-C-1..4. PLANNED.
-  - E-C3-3 `lib/ash_a2a/c2/signer_set.ex` (`AshA2A.C3.SignerSet` counts unique labels, no
+  - E-C3-3 `lib/ash_a2a/c3/signer_set.ex` (`AshA2A.C3.SignerSet` counts unique labels, no
     independence, no callers). EXISTS-UNVERIFIED-BY-RUN; known defect, rename or delete.
 - **S-C3-2** Argue approvers see what they sign (RFC-007 E-I).
   - E-C3-4 ERR7-I-1..3 (native approver recomputes digest from canonical bytes). PLANNED.
@@ -416,7 +418,7 @@ E-C3-1..11), tallied by hand at authoring. They are approximate to one node.
 | Total | 48 | 34 | 14 | 10 |
 
 VERIFIED nodes: 0 (goal-level). Probe-level passes at this subject: 13 verifier probes (listed in
-`docs/jira/v26.9.29/HANDOFF.md`); counts in the table above are the v26.9.28 tally and were not
+`docs/archive/jira/v26.9.29/HANDOFF.md`); counts in the table above are the v26.9.28 tally and were not
 re-tallied.
 
 Other register counts: defeaters D1..D15 (15; D1-D6 no longer marked ACTIVE, see update table), assumptions A1..A15
@@ -424,9 +426,9 @@ Other register counts: defeaters D1..D15 (15; D1-D6 no longer marked ACTIVE, see
 
 ## See Also
 
-- `docs/jira/v26.9.29/HANDOFF.md` — verifier output and release state
+- `docs/archive/jira/v26.9.29/HANDOFF.md` — verifier output and release state
 - `docs/rfc/RFC-SA2A-007-errata-v26.9.28.md` — errata this case is written against
 - `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` — profile definitions C0..C3
 - `docs/rfc/RFC-SA2A-005-cwe-court-matrix-v26.9.28.md` — CWE and release courts
-- `docs/jira/v26.9.28-kernel/_LANES_V3.md` — current lane status and honest wiring truth
-- `docs/jira/v26.9.28-kernel/HANDOFF.md` — branch and merge state
+- `docs/archive/jira/v26.9.28-kernel/_LANES_V3.md` — current lane status and honest wiring truth
+- `docs/archive/jira/v26.9.28-kernel/HANDOFF.md` — branch and merge state

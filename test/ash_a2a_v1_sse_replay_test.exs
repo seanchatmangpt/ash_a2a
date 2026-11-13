@@ -218,7 +218,8 @@ defmodule AshA2A.V1SSEReplayTest do
   # ordering invariant (spec S3.5.2) is that a connection never sees a seq go
   # backwards or repeat.
   defp assert_strictly_increasing_ids(frames) do
-    ids = Enum.map(frames, &elem(&1, 0))
+    # The resubscribe Task snapshot frame carries no SSE id line (nil): ignore it.
+    ids = frames |> Enum.map(&elem(&1, 0)) |> Enum.reject(&is_nil/1)
 
     assert ids == Enum.uniq(ids), "duplicate SSE ids: #{inspect(ids)}"
     assert ids == Enum.sort(ids), "SSE ids not in generation order: #{inspect(ids)}"
@@ -271,8 +272,8 @@ defmodule AshA2A.V1SSEReplayTest do
     assert artifact_texts(all_results) == for(i <- 1..5, do: "part #{i}")
 
     # Full-log resubscribe: everything after the seq-1 task event replays.
-    replayed_ids = tl(Enum.map(all_frames, &elem(&1, 0)))
-    assert replayed_ids == [2, 3, 4, 5, 6, 7]
+    assert [{nil, _} | replayed] = all_frames
+    assert Enum.map(replayed, &elem(&1, 0)) == [2, 3, 4, 5, 6, 7]
 
     # Skip through part 3 (seq 4): only seq > 4 replays.
     {:frames, tail_frames, _} =
@@ -305,7 +306,7 @@ defmodule AshA2A.V1SSEReplayTest do
     assert hd(Req.Response.get_header(resp, "content-type")) =~ "text/event-stream"
 
     {:frames, frames, _} = parse_sse(resp.body)
-    assert [{0, %{"task" => %{"id" => ^task_id}}}] = frames
+    assert [{nil, %{"task" => %{"id" => ^task_id}}}] = frames
 
     # Garbage Last-Event-ID is not an error: it parses as 0, i.e. full replay.
     {:frames, garbage_frames, _} =
@@ -336,7 +337,7 @@ defmodule AshA2A.V1SSEReplayTest do
     Process.exit(b, :kill)
 
     {:frames, frames2, _keepalives} = parse_sse(body)
-    assert [{0, %{"task" => %{"id" => ^task_id2}}} | _] = frames2
+    assert [{nil, %{"task" => %{"id" => ^task_id2}}} | _] = frames2
     assert [_ | tail2] = frames2
     # Nothing from the backlog replays ahead of the live sequence, and the
     # stream terminates on the terminal statusUpdate, not on an error.
@@ -415,7 +416,7 @@ defmodule AshA2A.V1SSEReplayTest do
     # Identical {id, result} sequences from the shared ordered event log.
     assert b_frames == c_frames
     [{snapshot_id, %{"task" => %{"id" => ^task_id}}} | _] = b_frames
-    assert snapshot_id == 0
+    assert snapshot_id == nil
 
     for frames <- [a_results, b_frames] do
       results = Enum.map(frames, &elem(&1, 1))

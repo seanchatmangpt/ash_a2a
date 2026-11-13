@@ -427,6 +427,7 @@ defmodule AshA2A.Chicago.Fixtures.LogicSparql do
       if connections(probe) >= expected do
         true
       else
+        # SLEEP-CLASS: POLL-STEP (bounded poll on connection count)
         Process.sleep(25)
         wait_for(probe, expected, tries - 1)
       end

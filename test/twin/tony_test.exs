@@ -35,7 +35,8 @@ defmodule AshA2A.Twin.TonyTest do
       coordinator_id: coordinator,
       warranty_status: :active,
       operating_hours: 500,
-      sla_window: {DateTime.add(DateTime.utc_now(), -3600), DateTime.add(DateTime.utc_now(), 3600)},
+      sla_window:
+        {DateTime.add(DateTime.utc_now(), -3600), DateTime.add(DateTime.utc_now(), 3600)},
       contractor_coi_valid: true
     }
   end
@@ -154,6 +155,102 @@ defmodule AshA2A.Twin.TonyTest do
       mesh = Tony.register_coordinator(%{}, :a, @fresh_tensor)
       tickets = [%{id: "T1", coordinator_id: :a, friction: 0.99}]
 
+      assert Tony.balance(tickets, mesh) == tickets
+    end
+  end
+
+  describe "triage/2 windows and boundaries" do
+    @now ~U[2026-06-01 12:00:00Z]
+
+    defp t(overrides) do
+      Map.merge(
+        %{
+          warranty_status: :active,
+          operating_hours: 500,
+          sla_window: {~U[2026-06-01 00:00:00Z], ~U[2026-06-02 00:00:00Z]},
+          contractor_coi_valid: true
+        },
+        Map.new(overrides)
+      )
+    end
+
+    defp routine?(ticket, opts \\ []) do
+      {r, _e} = Tony.triage([ticket], Keyword.merge([now: @now], opts))
+      r != []
+    end
+
+    test "sla window bounds are inclusive; one second outside escalates" do
+      assert routine?(t(sla_window: {@now, ~U[2026-06-02 00:00:00Z]}))
+      assert routine?(t(sla_window: {~U[2026-06-01 00:00:00Z], @now}))
+      refute routine?(t(sla_window: {DateTime.add(@now, 1), ~U[2026-06-02 00:00:00Z]}))
+      refute routine?(t(sla_window: {~U[2026-06-01 00:00:00Z], DateTime.add(@now, -1)}))
+    end
+
+    test "operating hours 2000 inclusive, 2001 escalates, custom max honoured, negative escalates" do
+      assert routine?(t(operating_hours: 2000))
+      refute routine?(t(operating_hours: 2001))
+      assert routine?(t(operating_hours: 2001), max_operating_hours: 3000)
+      refute routine?(t(operating_hours: -1))
+      refute routine?(t(operating_hours: "500"))
+    end
+
+    test "missing or invalid fields escalate; non-map tickets escalate" do
+      refute routine?(Map.delete(t([]), :warranty_status))
+      refute routine?(t(warranty_status: :expired))
+      refute routine?(t(contractor_coi_valid: false))
+      refute routine?(Map.delete(t([]), :sla_window))
+      refute routine?(t(sla_window: {1, 2}))
+      {[], [:not_a_ticket]} = Tony.triage([:not_a_ticket], now: @now)
+    end
+
+    test "injected now makes triage deterministic across the same ticket" do
+      ticket = t(sla_window: {~U[2026-06-01 00:00:00Z], ~U[2026-06-01 06:00:00Z]})
+      refute routine?(ticket)
+      assert routine?(ticket, now: ~U[2026-06-01 03:00:00Z])
+    end
+
+    test "order is preserved in both partitions" do
+      a = Map.put(t([]), :id, 1)
+      b = Map.put(t(warranty_status: :expired), :id, 2)
+      c = Map.put(t([]), :id, 3)
+      d = Map.put(t(operating_hours: 9999), :id, 4)
+      {r, e} = Tony.triage([a, b, c, d], now: @now)
+      assert Enum.map(r, & &1.id) == [1, 3]
+      assert Enum.map(e, & &1.id) == [2, 4]
+    end
+  end
+
+  describe "balance/3 tolerance" do
+    test "tickets without :friction or :coordinator_id pass through untouched" do
+      mesh =
+        %{}
+        |> Tony.register_coordinator(:sat, saturated_tensor())
+        |> Tony.register_coordinator(:fresh, @fresh_tensor)
+
+      tickets = [
+        %{id: 1, coordinator_id: :sat},
+        %{id: 2, friction: 0.95},
+        %{id: 3},
+        %{id: 4, coordinator_id: :sat, friction: 0.95},
+        %{id: 5, coordinator_id: :sat, friction: nil},
+        %{id: 6, coordinator_id: :sat, friction: 0.7},
+        :junk
+      ]
+
+      assert [
+               %{id: 1, coordinator_id: :sat},
+               %{id: 2, friction: 0.95},
+               %{id: 3},
+               %{id: 4, coordinator_id: :fresh},
+               %{id: 5, coordinator_id: :sat},
+               %{id: 6, coordinator_id: :sat},
+               :junk
+             ] = Tony.balance(tickets, mesh)
+    end
+
+    test "all coordinators saturated: tickets unchanged (no fresh target)" do
+      mesh = Tony.register_coordinator(%{}, :sat, saturated_tensor())
+      tickets = [%{id: 1, coordinator_id: :sat, friction: 0.99}]
       assert Tony.balance(tickets, mesh) == tickets
     end
   end

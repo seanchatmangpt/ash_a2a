@@ -40,6 +40,7 @@ if Code.ensure_loaded?(Req) do
     @default_timeout 15_000
     @default_attempts 3
     @base_backoff_ms 200
+    @max_backoff_ms 5_000
 
     @impl AshA2A.Protocol.PushNotificationSender
     def deliver(config, payload, opts \\ []) do
@@ -82,7 +83,8 @@ if Code.ensure_loaded?(Req) do
             "A2A push delivery attempt #{attempt}/#{attempts} failed: #{inspect(reason)}"
           )
 
-          Process.sleep(@base_backoff_ms * 2 ** (attempt - 1))
+          # SLEEP-CLASS: SCHEDULING (capped exponential delivery backoff)
+          Process.sleep(min(@base_backoff_ms * 2 ** (attempt - 1), @max_backoff_ms))
           post_with_retry(config, payload, opts, attempts, attempt + 1)
 
         {:error, reason} ->

@@ -174,7 +174,7 @@ defmodule AshA2A.V1WirePropertiesTest do
             context_id <- one_of([constant(nil), nonempty_string()]),
             reference_task_ids <- list_of(nonempty_string(), max_length: 3),
             metadata <- wire_map_gen(),
-            extensions <- wire_map_gen() do
+            extensions <- list_of(nonempty_string(), max_length: 2) do
       %Message{
         message_id: message_id,
         role: role,
@@ -215,10 +215,10 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp artifact_gen do
-    gen all artifact_id <- one_of([constant(nil), nonempty_string()]),
+    gen all artifact_id <- nonempty_string(),
             name <- one_of([constant(nil), nonempty_string()]),
             description <- one_of([constant(nil), nonempty_string()]),
-            parts <- list_of(part_gen(), max_length: 3),
+            parts <- list_of(part_gen(), min_length: 1, max_length: 3),
             extensions <- list_of(nonempty_string(), max_length: 2),
             metadata <- wire_map_gen() do
       %Artifact{
@@ -319,6 +319,29 @@ defmodule AshA2A.V1WirePropertiesTest do
     end
   end
 
+  # Exactly one valid OAuthFlows member (OAuthFlows.validate/1 contract).
+  defp oauth_flows_gen do
+    scopes = map_of(safe_key_gen(), nonempty_string(), max_length: 2)
+
+    one_of([
+      gen all a <- url_gen(), t <- url_gen(), s <- scopes do
+        %{"authorizationCode" => %{"authorizationUrl" => a, "tokenUrl" => t, "scopes" => s}}
+      end,
+      gen all t <- url_gen(), s <- scopes do
+        %{"clientCredentials" => %{"tokenUrl" => t, "scopes" => s}}
+      end,
+      gen all d <- url_gen(), t <- url_gen(), s <- scopes do
+        %{
+          "deviceCode" => %{
+            "deviceAuthorizationUrl" => d,
+            "tokenUrl" => t,
+            "scopes" => s
+          }
+        }
+      end
+    ])
+  end
+
   defp schemes_gen, do: map_of(safe_key_gen(), scheme_gen(), max_length: 2)
 
   defp scheme_gen do
@@ -330,7 +353,7 @@ defmodule AshA2A.V1WirePropertiesTest do
       gen all scheme <- nonempty_string() do
         %SecurityScheme.HTTPAuth{scheme: scheme}
       end,
-      gen all flows <- data_gen(),
+      gen all flows <- oauth_flows_gen(),
               metadata_url <- one_of([constant(nil), url_gen()]) do
         %SecurityScheme.OAuth2{flows: flows, oauth2_metadata_url: metadata_url}
       end,
@@ -488,7 +511,7 @@ defmodule AshA2A.V1WirePropertiesTest do
 
     %{
       card
-      | protocol_version: nil,
+      | protocol_version: AshA2A.Protocol.Version.protocol_version(),
         preferred_transport: nil,
         url: expected_url
     }

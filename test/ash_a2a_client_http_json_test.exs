@@ -227,12 +227,12 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert {:ok, _task_or_message} = Client.send_message(client, msg)
   end
 
-  test "send_message/3 continuing a terminal task maps the 400 to :invalid_params", %{
+  test "send_message/3 continuing a terminal task maps the 400 to :unsupported_operation", %{
     client: client
   } do
     {:ok, %Task{} = task} = Client.send_message(client, "first")
 
-    assert {:error, :invalid_params} =
+    assert {:error, :unsupported_operation} =
              Client.send_message(client, "second", task_id: task.id)
   end
 
@@ -269,7 +269,7 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert {:error, :task_not_found} = Client.cancel_task(client, "tsk-nope")
   end
 
-  test "cancel_task/3 on a terminal task maps the 400 to :task_not_cancelable", %{
+  test "cancel_task/3 on a terminal task maps the 409 to :task_not_cancelable", %{
     client: client
   } do
     {:ok, %Task{} = task} = Client.send_message(client, "cancel me")
@@ -279,26 +279,25 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
 
   # -- operations with no §5.3 REST route ------------------------------------------
 
-  test "stream/resubscribe refuse with {:transport_unsupported, op}", %{
+  test "http_json stream_message/3 streams bare StreamResponse frames from POST /message:stream", %{
     client: client
   } do
-    assert {:error, {:transport_unsupported, :stream_message}} =
-             Client.stream_message(client, "go")
+    assert {:ok, stream} = Client.stream_message(client, "go")
+    events = Enum.to_list(stream)
 
-    assert {:error, {:transport_unsupported, :resubscribe}} =
-             Client.resubscribe(client, "tsk-x")
+    assert events != []
+    assert Enum.any?(events, &match?(%Task{}, &1)) or
+             Enum.any?(events, &match?(%AshA2A.Protocol.Event.StatusUpdate{}, &1))
   end
 
-  test "jsonrpc-mode clients refuse list_tasks/get_extended_card with {:transport_unsupported, op}", %{
-    server: server
+  test "http_json resubscribe/3 on an unknown task maps the error body to :task_not_found", %{
+    client: client
   } do
-    json_client = Client.new(server.base_url)
-
-    assert {:error, {:transport_unsupported, :list_tasks}} = Client.list_tasks(json_client)
-
-    assert {:error, {:transport_unsupported, :get_extended_card}} =
-             Client.get_extended_card(json_client)
+    assert {:error, :task_not_found} = Client.resubscribe(client, "tsk-x")
   end
+
+  # jsonrpc-mode list_tasks/get_extended_card are exercised against a real
+  # JSON-RPC server in test/w7_client_gaps_test.exs.
 
   # -- list_tasks: GET /tasks -------------------------------------------------------
 
@@ -379,7 +378,11 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     # ...but they really were stored in the real store.
     {:ok, in_store} = PushConfigStore.get(AshA2A.A2ATransport.push_store_name(transport), task.id, stored.id)
 
-    assert in_store.authentication == %{"scheme" => "Bearer", "credentials" => "s3cret-gl-1"}
+    # The client emits the v1 proto's singular `scheme` (proto fidelity court).
+    assert in_store.authentication == %{
+             "scheme" => "Bearer",
+             "credentials" => "s3cret-gl-1"
+           }
   end
 
   test "set_push_config/3 negative: an unknown task maps the 404 ErrorInfo to :task_not_found" do
@@ -499,13 +502,13 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     refute "admin" in Enum.map(public.skills, & &1.id)
   end
 
-  test "get_extended_card/2 negative: no credentials maps the 401 to {:http_error, 401, body}", %{
+  test "get_extended_card/2 negative: no credentials maps the 401 to {:unauthorized, challenge}", %{
     client: _client
   } do
     ext_client = start_authed_client!(&__MODULE__.admin_card_provider/2)
 
-    assert {:error, {:http_error, 401, body}} = Client.get_extended_card(ext_client)
-    assert %{"error" => "Unauthorized"} = body
+    assert {:error, {:unauthorized, challenge}} = Client.get_extended_card(ext_client)
+    assert is_list(challenge)
   end
 
   test "get_extended_card/2 negative: no provider maps the 400 ErrorInfo to :extended_card_not_configured", %{

@@ -25,6 +25,7 @@ defmodule AshA2A.A2ATransport.Ownership do
       stripped of `"a2a.auth"`, the owner key and the raw stream reference.
   """
 
+  alias AshA2A.Protocol.JSONRPC.Error
   alias AshA2A.Transport.{Principal, Runtime}
 
   @internal_keys ["a2a.auth", "ash_a2a.owner", :stream]
@@ -44,16 +45,60 @@ defmodule AshA2A.A2ATransport.Ownership do
   """
   @spec fetch(GenServer.server(), term(), Principal.key()) ::
           {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found}
-  def fetch(agent, task_id, principal) when is_binary(task_id) do
+  def fetch(agent, task_id, principal) do
+    case fetch_strict(agent, task_id, principal) do
+      {:ok, task} -> {:ok, task}
+      {:error, _} -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Like `fetch/3` but distinguishes an unreachable agent (`GenServer.call`
+  exit: timeout, noproc, a bare agent without the clause) as
+  `{:error, :unavailable}` instead of crashing the connection process.
+  """
+  @spec fetch_strict(GenServer.server(), term(), Principal.key()) ::
+          {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found | :unavailable}
+  def fetch_strict(agent, task_id, principal) when is_binary(task_id) do
     with {:ok, task} <- GenServer.call(agent, {:get_task, task_id}),
          true <- Runtime.owned_by?(task, principal) do
       {:ok, task}
     else
       _ -> {:error, :not_found}
     end
+  catch
+    :exit, _ -> {:error, :unavailable}
   end
 
-  def fetch(_agent, _task_id, _principal), do: {:error, :not_found}
+  def fetch_strict(_agent, _task_id, _principal), do: {:error, :not_found}
+
+  @doc """
+  Applies the vendored plug's `:authorize_task` seam (`{auth, context}` as built
+  by the transport plug). A denial is -32001 unless the authorizer returns its
+  own typed `%Error{}`.
+  """
+  @spec authorize(nil | {term(), map()}, atom(), term()) :: :ok | {:error, Error.t()}
+  def authorize(nil, _operation, _task), do: :ok
+
+  def authorize({auth, context}, operation, task) do
+    result =
+      try do
+        case auth do
+          fun when is_function(fun, 3) -> fun.(operation, task, context)
+          fun when is_function(fun, 2) -> fun.(operation, task)
+          {m, f} -> apply(m, f, [operation, task, context])
+        end
+      rescue
+        _ -> :denied
+      end
+
+    case result do
+      ok when ok in [:ok, true] -> :ok
+      {:ok, _} -> :ok
+      {:error, %Error{} = error} -> {:error, error}
+      _deny -> {:error, Error.task_not_found()}
+    end
+  end
 
   @doc """
   Removes verified auth, owner key and stream ref from a task's metadata --
@@ -65,6 +110,7 @@ defmodule AshA2A.A2ATransport.Ownership do
     task
     |> drop_from()
     |> drop_from_history()
+    |> drop_from_timeline()
   end
 
   def strip_task(task), do: task
@@ -75,9 +121,30 @@ defmodule AshA2A.A2ATransport.Ownership do
     wire
     |> drop_wire_metadata()
     |> drop_wire_history()
+    |> drop_wire_timeline()
   end
 
   def strip_wire(wire), do: wire
+
+  # The v1.1 timeline mirrors history messages; its entries echo the same
+  # caller-supplied message metadata and must be scrubbed identically.
+  defp drop_from_timeline(%{timeline: timeline} = task) when is_list(timeline),
+    do: %{task | timeline: Enum.map(timeline, &strip_entry/1)}
+
+  defp drop_from_timeline(task), do: task
+
+  defp drop_wire_timeline(%{"timeline" => timeline} = wire) when is_list(timeline),
+    do: %{wire | "timeline" => Enum.map(timeline, &strip_entry/1)}
+
+  defp drop_wire_timeline(wire), do: wire
+
+  defp strip_entry(%{message: %{} = message} = entry),
+    do: %{entry | message: strip_message(message)}
+
+  defp strip_entry(%{"message" => %{} = message} = entry),
+    do: %{entry | "message" => strip_message(message)}
+
+  defp strip_entry(entry), do: entry
 
   defp drop_from(%{metadata: metadata} = task) when is_map(metadata),
     do: %{task | metadata: Map.drop(metadata, @internal_keys)}

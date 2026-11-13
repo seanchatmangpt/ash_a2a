@@ -53,6 +53,22 @@ defmodule AshA2A.Cluster.Checkpoint do
     {store_mod, store_ref} = store
     task = fetch_or_synthesize(store_mod, store_ref, task_id, opts)
 
+    if Task.terminal?(task) do
+      # A task that already finished must never be resurrected to :working
+      # by a late drain: nothing is written and the terminal task is returned
+      # without an envelope (see `checkpointed?/1`).
+      :telemetry.execute([:ash_a2a, :cluster, :checkpoint, :terminal_skipped], %{count: 1}, %{
+        task_id: task_id,
+        state: task.status.state
+      })
+
+      task
+    else
+      do_land(store_mod, store_ref, task, frame, opts)
+    end
+  end
+
+  defp do_land(store_mod, store_ref, task, frame, opts) do
     sequence = Keyword.get(opts, :sequence, 1)
 
     envelope = %{

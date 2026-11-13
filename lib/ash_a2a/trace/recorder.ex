@@ -383,14 +383,51 @@ defmodule AshA2A.Trace.Recorder do
   defp insert(task_id, record) do
     try do
       if :ets.info(table()) != :undefined do
-        seq = :ets.update_counter(table(), {task_id, 0}, 1, {task_id, 0, nil})
+        seq =
+          :ets.update_counter(table(), {task_id, 0}, 1, {{task_id, 0}, 0, System.monotonic_time()})
+
         :ets.insert(table(), {{task_id, seq}, record})
+        evict_if_over_cap(task_id)
       end
     rescue
       _ -> :ok
     end
 
     :ok
+  end
+
+  # Bounded retention: when the table exceeds the record cap, the oldest
+  # other tasks (by first-record time) are evicted wholesale down to 90% of
+  # the cap, so tasks that never finalize cannot grow the table without bound.
+  defp evict_if_over_cap(current_task_id) do
+    cap = max_records()
+
+    if :ets.info(table(), :size) > cap do
+      target = div(cap * 9, 10)
+
+      victims =
+        table()
+        |> :ets.select([{{{:"$1", 0}, :_, :"$2"}, [], [{{:"$2", :"$1"}}]}])
+        |> Enum.sort()
+        |> Enum.map(&elem(&1, 1))
+        |> Enum.reject(&(&1 == current_task_id))
+
+      Enum.reduce_while(victims, :ok, fn victim, :ok ->
+        :ets.match_delete(table(), {{victim, :_}, :_})
+        :ets.delete(table(), {victim, 0})
+
+        if :ets.info(table(), :size) > target, do: {:cont, :ok}, else: {:halt, :ok}
+      end)
+    end
+
+    :ok
+  end
+
+  defp max_records do
+    case Application.get_env(:ash_a2a, :trace_max_records) do
+      n when is_integer(n) and n > 0 -> n
+      _ -> 50_000
+    end
   end
 
   # -- attribute mapping --------------------------------------------------------------

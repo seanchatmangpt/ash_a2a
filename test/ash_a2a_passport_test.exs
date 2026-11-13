@@ -413,7 +413,16 @@ defmodule AshA2A.PassportTest do
                })
 
       # A structurally valid subject surfaces the bad merkle member.
-      subject = %{"name" => "n", "description" => "d", "version" => "1", "skills" => []}
+      subject = %{
+        "name" => "n",
+        "description" => "d",
+        "version" => "1",
+        "skills" => [],
+        "supportedInterfaces" => [],
+        "capabilities" => %{},
+        "defaultInputModes" => ["text/plain"],
+        "defaultOutputModes" => ["text/plain"]
+      }
 
       assert {:error, {:malformed, {:bad_member, "merkle"}}} =
                Passport.from_json(%{

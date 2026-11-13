@@ -179,9 +179,13 @@ defmodule AshA2A.Strain.BridgeTest do
     test "50-ticket sweep: every ticket ends assigned or shed-with-reason, none dropped", %{
       mesh: mesh
     } do
-      tickets =
-        Enum.map(1..50, fn i ->
-          %{id: i, friction: :rand.uniform(), candidates: [:tired, :fresh]}
+      # seeded: deterministic across runs (no global :rand state)
+      seed = :rand.seed_s(:exsss, {101, 102, 103})
+
+      {tickets, _} =
+        Enum.map_reduce(1..50, seed, fn i, st ->
+          {f, st2} = :rand.uniform_s(st)
+          {%{id: i, friction: f, candidates: [:tired, :fresh]}, st2}
         end)
 
       outcomes = Enum.map(tickets, &Bridge.route(&1, mesh))
@@ -230,5 +234,126 @@ defmodule AshA2A.Strain.BridgeTest do
              {:assign, _} -> true
              {:shed, {:senior_queue, _}} -> true
            end)
+  end
+
+  describe "event contract and validation" do
+    test "error flag: true/1 count, false/0/nil/missing do not; other values raise" do
+      ms = Bridge.new_mesh_state([:c])
+
+      rate = fn events ->
+        events
+        |> Enum.reduce(
+          ms,
+          &Bridge.record_observation(&2, :c, Map.put(&1, :type, :error_reported))
+        )
+        |> Bridge.error_rate(:c)
+      end
+
+      assert rate.([%{error: true}, %{error: 1}]) == 1.0
+      assert rate.([%{error: false}, %{error: 0}, %{error: nil}, %{}]) == 0.0
+      assert rate.([%{error: true}, %{}]) == 0.5
+
+      assert_raise ArgumentError, ~r/invalid error flag/, fn -> rate.([%{error: "yes"}]) end
+    end
+
+    test "clock_hour :hours validation" do
+      ms = Bridge.new_mesh_state([:c])
+
+      for bad <- [-1, "2", nil, :x] do
+        assert_raise ArgumentError, ~r/non-negative number/, fn ->
+          Bridge.record_observation(ms, :c, %{type: :clock_hour, hours: bad})
+        end
+      end
+
+      ms2 = Bridge.record_observation(ms, :c, %{type: :clock_hour})
+      assert ms2[:c].tensor.shift_hours_continuous == 1
+      ms3 = Bridge.record_observation(ms2, :c, %{type: :clock_hour, hours: 0})
+      assert ms3[:c].tensor.shift_hours_continuous == 1
+    end
+
+    test "unregistered ids read consistently as zero/false" do
+      ms = Bridge.new_mesh_state([:known])
+      assert Bridge.circadian_decay(ms, :ghost) == 0.0
+      assert Bridge.error_rate(ms, :ghost) == 0.0
+      refute Bridge.error_drift_rising?(ms, :ghost)
+    end
+
+    test "empty candidates shed with :no_candidates, distinct from saturation" do
+      ms = Bridge.new_mesh_state([:a])
+      assert {:shed, {:senior_queue, :no_candidates}} = Bridge.route(%{candidates: []}, ms)
+
+      assert {:shed, {:senior_queue, :no_candidates}} =
+               Bridge.route(%{friction: 0.9, candidates: []}, ms)
+
+      # only-unknown candidates keep the generic reason
+      assert {:shed, {:senior_queue, :all_saturated}} = Bridge.route(%{candidates: [:ghost]}, ms)
+      # empty mesh, default candidates
+      assert {:shed, {:senior_queue, :no_candidates}} = Bridge.route(%{}, Bridge.new_mesh_state())
+    end
+  end
+
+  describe "error_drift_rising?/2 direct" do
+    defp with_errors(flags) do
+      Enum.reduce(flags, Bridge.new_mesh_state([:c]), fn f, acc ->
+        Bridge.record_observation(acc, :c, %{type: :error_reported, error: f})
+      end)
+    end
+
+    test "needs at least 4 outcomes" do
+      refute Bridge.error_drift_rising?(with_errors([false, false, true]), :c)
+      assert Bridge.error_drift_rising?(with_errors([false, false, true, true]), :c)
+    end
+
+    test "rising when recent half has more errors than older half" do
+      assert Bridge.error_drift_rising?(with_errors([false, false, false, true, true, true]), :c)
+    end
+
+    test "falling or flat is not rising" do
+      refute Bridge.error_drift_rising?(with_errors([true, true, true, false, false, false]), :c)
+      refute Bridge.error_drift_rising?(with_errors([true, false, true, false]), :c)
+      refute Bridge.error_drift_rising?(with_errors([false, false, false, false]), :c)
+    end
+  end
+
+  describe "fatigue gate: negatives and breach" do
+    defp tired_mesh(error_flags) do
+      ms = Bridge.new_mesh_state([:tired, :fresh])
+
+      ms =
+        Enum.reduce(1..14, ms, fn _, acc ->
+          Bridge.record_observation(acc, :tired, %{type: :clock_hour, hours: 0.65})
+        end)
+
+      Enum.reduce(error_flags, ms, fn f, acc ->
+        Bridge.record_observation(acc, :tired, %{type: :error_reported, error: f})
+      end)
+    end
+
+    test "fatigued + high friction diverts; fatigued + low friction does NOT" do
+      ms = tired_mesh(List.duplicate(false, 4) ++ List.duplicate(true, 8))
+      assert Bridge.circadian_decay(ms, :tired) > 0.85
+      assert Bridge.error_drift_rising?(ms, :tired)
+
+      # low friction: tired coordinator is eligible; min-strain still picks the
+      # zero-load :fresh, so offer :tired alone to prove eligibility
+      assert {:assign, :tired} = Bridge.route(%{friction: 0.7, candidates: [:tired]}, ms)
+      assert {:assign, :tired} = Bridge.route(%{friction: 0.1, candidates: [:tired]}, ms)
+      assert {:assign, :tired} = Bridge.route(%{candidates: [:tired]}, ms)
+
+      # high friction: diverted
+      assert {:assign, :fresh} = Bridge.route(%{friction: 0.71, candidates: [:tired, :fresh]}, ms)
+    end
+
+    test "saturation breach sheds even for low friction" do
+      ms =
+        Enum.reduce(1..30, tired_mesh(List.duplicate(true, 6)), fn _, acc ->
+          Bridge.record_observation(acc, :tired, %{type: :ticket_assigned})
+        end)
+
+      assert {:breach, _} = Tensor.hyperplane_check(ms[:tired].tensor)
+
+      assert {:shed, {:senior_queue, :all_saturated}} =
+               Bridge.route(%{friction: 0.0, candidates: [:tired]}, ms)
+    end
   end
 end
