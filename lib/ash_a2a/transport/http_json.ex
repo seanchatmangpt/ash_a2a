@@ -378,7 +378,7 @@ defmodule AshA2A.Transport.HTTPJSON do
     else
       {:error, rejected} when is_binary(rejected) ->
         conn
-        |> put_resp_header("a2a-version", rejected)
+        |> put_resp_header("a2a-version", AshA2A.Protocol.Version.safe_echo(rejected))
         |> send_error(400, Error.version_not_supported(rejected))
 
       {:error, missing} when is_list(missing) ->

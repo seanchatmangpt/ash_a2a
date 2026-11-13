@@ -271,7 +271,7 @@ defmodule AshA2A.A2ATransport.Plug do
   defp negotiation_error(conn, req, {:error, rejected}) when is_binary(rejected),
     do:
       conn
-      |> put_resp_header("a2a-version", rejected)
+      |> put_resp_header("a2a-version", AshA2A.Protocol.Version.safe_echo(rejected))
       |> send_json(Response.error(req.id, Error.version_not_supported(rejected)))
 
   defp negotiation_error(conn, req, {:error, missing}) when is_list(missing) do

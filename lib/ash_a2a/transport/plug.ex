@@ -356,7 +356,7 @@ defmodule AshA2A.Transport.Plug do
       # rejected version is still echoed in the response header (§3.6.2).
       {:error, rejected} when is_binary(rejected) ->
         conn
-        |> put_resp_header("a2a-version", rejected)
+        |> put_resp_header("a2a-version", AshA2A.Protocol.Version.safe_echo(rejected))
         |> send_json(Response.error(nil, Error.version_not_supported(rejected)))
 
       # Required extension absent from the A2A-Extensions request header

@@ -96,6 +96,16 @@ defmodule AshA2A.Protocol.Version do
   defp query_param(_), do: nil
 
   @doc """
+  A rejected version made safe to echo in a response header: values that are
+  not short printable tokens (CR/LF, control characters, oversize) become
+  `"invalid"`, so a hostile `A2A-Version` can never break response framing.
+  """
+  @spec safe_echo(String.t()) :: String.t()
+  def safe_echo(value) when is_binary(value) do
+    if Regex.match?(~r/\A[A-Za-z0-9._-]{1,32}\z/, value), do: value, else: "invalid"
+  end
+
+  @doc """
   Records the negotiated `version` on `conn.private[:a2a][:version]` (the
   per-request slot `AshA2A.Protocol.Plug` already uses) so downstream code can
   gate behaviour with `at_least?/2`.
@@ -138,8 +148,8 @@ defmodule AshA2A.Protocol.Version do
         "0.3"
 
       trimmed ->
-        case Regex.run(~r/^(\d+)\.(\d+)/, trimmed) do
-          [_, major, minor] -> major <> "." <> minor
+        case Regex.run(~r/^(\d{1,4})\.(\d{1,4})(?:\.\d{1,4})?$/, trimmed) do
+          [_, major, minor | _] -> major <> "." <> minor
           _ -> trimmed
         end
     end

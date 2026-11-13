@@ -82,6 +82,15 @@ if Code.ensure_loaded?(Plug) do
     def authenticate_identity(mat, opts) do
       conn = conn_from_metadata(GRPC.Stream.get_headers(mat) || %{})
 
+      # gRPC metadata is entirely client-controlled and the synthetic conn has
+      # no TLS peer data, so a forwarded-certificate header is honoured only
+      # when the endpoint explicitly vouches for its proxy
+      # (`trust_forwarded_cert: true`); otherwise it is dropped.
+      opts =
+        if is_map(opts) and Map.get(opts, :trust_forwarded_cert) != true,
+          do: Map.put(opts, :mtls_header, nil),
+          else: opts
+
       conn = AshA2A.Protocol.Plug.Auth.call(conn, opts)
 
       if conn.halted do

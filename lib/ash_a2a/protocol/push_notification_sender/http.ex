@@ -44,8 +44,8 @@ if Code.ensure_loaded?(Req) do
 
     @impl AshA2A.Protocol.PushNotificationSender
     def deliver(config, payload, opts \\ []) do
-      with :ok <- validate_url(config.url, opts),
-           :ok <- validate_auth(config) do
+      with :ok <- validate_auth(config),
+           :ok <- validate_url(config.url, opts) do
         attempts = Keyword.get(opts, :attempts, @default_attempts)
         post_with_retry(config, payload, opts, attempts, 1)
       end
@@ -97,7 +97,8 @@ if Code.ensure_loaded?(Req) do
         headers: headers(config),
         receive_timeout: Keyword.get(opts, :timeout, @default_timeout),
         json: payload,
-        retry: false
+        retry: false,
+        redirect: false
       ]
 
       case Req.post(config.url, req_opts) do
@@ -140,8 +141,22 @@ if Code.ensure_loaded?(Req) do
         Keyword.get(opts, :block_private_ips, true) and private_host?(uri.host) ->
           {:error, {:private_host, uri.host}}
 
+        Keyword.get(opts, :block_private_ips, true) ->
+          # Resolve the host and refuse any non-public address (DNS names that
+          # point inside, IPv4-mapped v6, CGNAT, ULA, link-local, metadata).
+          admit_resolved(url, opts)
+
         true ->
           :ok
+      end
+    end
+
+    defp admit_resolved(url, opts) do
+      allow_http = not Keyword.get(opts, :require_https, true)
+
+      case AshA2A.A2ATransport.WebhookPolicy.admit(url, allow_http: allow_http) do
+        {:ok, _admitted} -> :ok
+        {:error, code, _detail} -> {:error, {:private_host, code}}
       end
     end
 
