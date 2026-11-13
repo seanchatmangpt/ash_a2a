@@ -155,7 +155,12 @@ defmodule AshA2A.KillSwitch do
   @spec trip(class(), reason(), keyword()) :: :ok
   def trip(class, reason, opts \\ []) do
     tripped_at = Keyword.get(opts, :tripped_at, DateTime.utc_now())
-    GenServer.call(server(opts), {:trip, normalize(class), reason, tripped_at})
+    # The emergency stop must not fail on a slow disk: generous call timeout.
+    GenServer.call(
+      server(opts),
+      {:trip, normalize(class), reason, tripped_at},
+      Keyword.get(opts, :timeout, 30_000)
+    )
   end
 
   @doc """

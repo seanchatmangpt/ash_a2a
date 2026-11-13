@@ -597,8 +597,13 @@ defmodule AshA2A.Transport.Runtime do
     # the caller. `:normal` is ignored: the worker only ever exits
     # normally right after delivering its own result, in which case this
     # watcher simply terminates alongside the already-completed cleanup.
+    #
+    # The watcher also monitors the agent itself: if the agent dies the
+    # worker is killed, so no handler keeps running (and acting) with no one
+    # left to receive its result.
     spawn(fn ->
       wref = Process.monitor(pid)
+      pref = Process.monitor(parent)
 
       receive do
         {:DOWN, ^wref, _, _, :normal} ->
@@ -607,6 +612,9 @@ defmodule AshA2A.Transport.Runtime do
         {:DOWN, ^wref, _, _, reason} ->
           error = SafeError.internal(:internal_error, {:worker_exit, reason})
           send(parent, {:ash_a2a_task_done, token, {:error, error}})
+
+        {:DOWN, ^pref, _, _, _} ->
+          Process.exit(pid, :kill)
       end
     end)
 

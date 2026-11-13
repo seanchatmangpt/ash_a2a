@@ -204,7 +204,8 @@ on the v1.1 live/generation path:
 | `[:ash_a2a, :transport, :request, :stop]` | `duration` | transport metadata | `AshA2A.Protocol.Telemetry` (request span stop) |
 | `[:ash_a2a, :transport, :request, :exception]` | `duration` | transport metadata, `kind`, `reason` | `AshA2A.Protocol.Telemetry` (request span exception) |
 | `[:ash_a2a, :transport, :request, :error]` | `count` | transport metadata | `AshA2A.Protocol.Telemetry` (discrete error event) |
-| `[:ash_a2a, :cluster, :drain, :task_skipped]` | `count` | `drain_manager`, `task_id`, `reason` (`:no_task_store`) | `AshA2A.Cluster.DrainManager` |
+| `[:ash_a2a, :cluster, :drain, :task_skipped]` | `count` | `drain_manager`, `task_id`, `reason` (`:no_task_store`, `:checkpoint_failed`, `:not_checkpointed`) | `AshA2A.Cluster.DrainManager` |
+| `[:ash_a2a, :task_events, :journal_error]` | `count` | `task_id`, `seq` | `AshA2A.A2ATransport.TaskEvents` |
 | `[:ash_a2a, :cluster, :checkpoint, :terminal_skipped]` | `count` | `task_id`, `state` | `AshA2A.Cluster.Checkpoint` (terminal task not checkpointed) |
 | `[:ash_a2a, :ocel_broadcaster, :unconvertible]` | `count` | `broadcaster`, `kind` | `AshA2A.Telemetry.OcelBroadcaster` |
 | `[:ash_a2a, :ocel, :unconvertible]` | `count` | none | `AshA2A.Telemetry.OcelForwarder` |

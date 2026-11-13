@@ -315,7 +315,25 @@ defmodule AshA2A.A2ATransport.TaskEvents do
     {payload, gens} = assign_generation(state.gens, task_id, kind, payload, opts)
     true = :ets.insert(state.table, {{task_id, seq}, kind, payload, final?})
     {log_mod, log_handle} = state.log
-    :ok = log_mod.append(log_handle, task_id, seq, kind, payload, final?)
+
+    # A failed journal write degrades durability but must not crash the events
+    # server: that would drop every subscriber's sequence state for all tasks.
+    case log_mod.append(log_handle, task_id, seq, kind, payload, final?) do
+      :ok ->
+        :ok
+
+      other ->
+        require Logger
+
+        Logger.error(
+          "ash_a2a task events: journal append failed for #{inspect(task_id)} seq #{seq}: #{inspect(other)}"
+        )
+
+        :telemetry.execute([:ash_a2a, :task_events, :journal_error], %{count: 1}, %{
+          task_id: task_id,
+          seq: seq
+        })
+    end
 
     state =
       %{state | seqs: Map.put(state.seqs, task_id, seq), gens: gens} |> trim(task_id, seq)

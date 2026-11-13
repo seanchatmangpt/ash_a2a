@@ -402,30 +402,58 @@ defmodule AshA2A.Cluster.DrainManager do
 
       :skip
     else
-      landed =
-        Checkpoint.land(state.task_store, task_id, entry.frame,
-          source_node: node(),
-          reason: :drain_deadline,
-          drain_manager: state.name
-        )
+      try do
+        landed =
+          Checkpoint.land(state.task_store, task_id, entry.frame,
+            source_node: node(),
+            reason: :drain_deadline,
+            drain_manager: state.name
+          )
 
-      if Checkpoint.checkpointed?(landed) do
-        Handover.emit(task_id,
-          source_node: node(),
-          reason: :drain,
-          checkpointed_at: DateTime.utc_now()
-        )
+        if Checkpoint.checkpointed?(landed) do
+          Handover.emit(task_id,
+            source_node: node(),
+            reason: :drain,
+            checkpointed_at: DateTime.utc_now()
+          )
+
+          # The frame is durably landed, so the worker may be stopped -- this
+          # is the live-eviction semantics (the adopting peer re-runs from the
+          # checkpoint, never from this process's memory).
+          if entry.pid != self() and Process.alive?(entry.pid) do
+            Process.exit(entry.pid, :kill)
+          end
+
+          :ok
+        else
+          # Nothing landed (e.g. the task already reached a terminal state):
+          # the worker is not evicted and the drain does not claim it.
+          skip_task(state, task_id, :not_checkpointed)
+        end
+      rescue
+        error ->
+          # One failing store write must not abort the drain of every other
+          # task: record it, leave the worker alive, and continue.
+          require Logger
+
+          Logger.error(
+            "ash_a2a drain #{inspect(state.name)}: checkpoint of task " <>
+              "#{inspect(task_id)} failed: #{Exception.message(error)}"
+          )
+
+          skip_task(state, task_id, :checkpoint_failed)
       end
-
-      # The frame is durably landed, so the worker may be stopped -- this
-      # is the live-eviction semantics (the adopting peer re-runs from the
-      # checkpoint, never from this process's memory).
-      if entry.pid != self() and Process.alive?(entry.pid) do
-        Process.exit(entry.pid, :kill)
-      end
-
-      :ok
     end
+  end
+
+  defp skip_task(%__MODULE__{} = state, task_id, reason) do
+    :telemetry.execute([:ash_a2a, :cluster, :drain, :task_skipped], %{count: 1}, %{
+      drain_manager: state.name,
+      task_id: task_id,
+      reason: reason
+    })
+
+    :skip
   end
 
   defp release_task(%__MODULE__{} = state, task_id, reason) do
