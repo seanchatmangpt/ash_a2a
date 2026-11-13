@@ -51,7 +51,10 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
             issuer: String.t() | nil,
             audience: String.t() | nil,
             required_claims: [String.t()],
-            clock_skew: non_neg_integer()
+            clock_skew: non_neg_integer(),
+            jwks: map() | nil,
+            oidc_issuer: String.t() | nil,
+            jwks_ttl: non_neg_integer()
           }
 
     @type claim_map :: %{String.t() => any()}
@@ -82,7 +85,10 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
         issuer: Keyword.get(opts, :issuer),
         audience: Keyword.get(opts, :audience),
         required_claims: Keyword.get(opts, :required_claims, ["sub"]),
-        clock_skew: Keyword.get(opts, :clock_skew, 60)
+        clock_skew: Keyword.get(opts, :clock_skew, 60),
+        jwks: Keyword.get(opts, :jwks),
+        oidc_issuer: Keyword.get(opts, :oidc_issuer),
+        jwks_ttl: Keyword.get(opts, :jwks_ttl, 300)
       }
     end
 
@@ -108,6 +114,36 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
         end
     """
     @spec verify(verifier(), String.t()) :: {:ok, claim_map()} | {:error, String.t()}
+    def verify(%{algorithm: "RS256"} = config, token) when is_binary(token) do
+      alias AshA2A.Protocol.Plug.{OIDCDiscovery, SecurityValidators}
+
+      jwks_result =
+        case {Map.get(config, :jwks), Map.get(config, :oidc_issuer)} do
+          {%{} = jwks, _} -> {:ok, jwks}
+          {_, issuer} when is_binary(issuer) -> OIDCDiscovery.jwks(issuer, ttl: Map.get(config, :jwks_ttl, 300))
+          _ -> {:error, %{detail: "no JWKS or OIDC issuer configured for RS256"}}
+        end
+
+      with {:ok, jwks} <- jwks_result do
+        cfg =
+          [
+            jwks: jwks,
+            algorithms: "RS256",
+            required_claims: config.required_claims,
+            clock_skew: config.clock_skew
+          ]
+          |> maybe_put(:issuer, config.issuer || Map.get(config, :oidc_issuer))
+          |> maybe_put(:audience, config.audience)
+
+        case SecurityValidators.verify_jwt(token, cfg) do
+          {:ok, claims} -> {:ok, claims}
+          {:error, %{detail: detail}} -> {:error, "RS256 verification failed: #{inspect(detail)}"}
+        end
+      else
+        {:error, %{detail: detail}} -> {:error, "JWKS unavailable: #{inspect(detail)}"}
+      end
+    end
+
     def verify(config, token) when is_binary(token) do
       with {:ok, header} <- peek_header(token),
            :ok <- verify_algorithm(header, config),
@@ -117,6 +153,9 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
         {:ok, claims}
       end
     end
+
+    defp maybe_put(kw, _key, nil), do: kw
+    defp maybe_put(kw, key, value), do: Keyword.put(kw, key, value)
 
     # -- Signature (delegated to Joken) -----------------------------------------
 

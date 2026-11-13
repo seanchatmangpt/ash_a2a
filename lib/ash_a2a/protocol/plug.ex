@@ -565,7 +565,8 @@ if Code.ensure_loaded?(Plug) do
                     task.id,
                     id,
                     opts.resubscribe_timeout,
-                    params: params
+                    params: params,
+                    transport: opts.transport
                   )
                 end
               else

@@ -48,8 +48,17 @@ defmodule AshA2A.Protocol.TaskStore.ETS do
 
   @impl AshA2A.Protocol.TaskStore
   def put(table, %AshA2A.Protocol.Task{} = task) do
-    :ets.insert(table, {task.id, task})
-    :ok
+    # Stale write: a lower generation never overwrites a higher stored one
+    # (no-op, `:ok`).
+    case :ets.lookup(table, task.id) do
+      [{_, %AshA2A.Protocol.Task{generation: stored}}]
+      when is_integer(stored) and is_integer(task.generation) and task.generation < stored ->
+        :ok
+
+      _ ->
+        :ets.insert(table, {task.id, task})
+        :ok
+    end
   end
 
   @impl AshA2A.Protocol.TaskStore

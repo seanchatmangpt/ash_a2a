@@ -391,6 +391,17 @@ defmodule AshA2A.Semantic.Refusal do
     refused_unbound_checkpoint: :refused_identity,
     refused_graph_identity_mismatch: :refused_identity,
 
+    # AshA2A.Email.Webhook / Plug.ApiKeyVerifier: provider/credential authentication refusals.
+    bad_cert_url: :refused_identity,
+    bad_signature_encoding: :refused_identity,
+    bad_signature_version: :refused_identity,
+    signature_unverified: :refused_identity,
+    topic_mismatch: :refused_identity,
+    unknown_provider: :refused_identity,
+    not_configured: :refused_identity,
+    missing_api_key: :refused_identity,
+    gen_smtp_not_available: :refused_capability,
+
     # --- REFUSED_NAMESPACE ------------------------------------------------
     unknown_condition_axis: :refused_namespace,
     undeclared_predicate: :refused_namespace,
@@ -524,6 +535,8 @@ defmodule AshA2A.Semantic.Refusal do
     authority_required: :refused_authority,
     # AshA2A.Email.KernelEntry: authenticated email sender without a live standing grant.
     email_no_live_grant: :refused_authority,
+    # AshA2A.Email.TokenLedger: reply token already spent (replay of consumed authority).
+    already_consumed: :refused_authority,
     temperament_cannot_encode_authority: :refused_authority,
     phenotype_authority_smuggling: :refused_authority,
     population_authority_smuggling: :refused_authority,

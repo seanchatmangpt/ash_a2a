@@ -106,9 +106,18 @@ defmodule AshA2A.TaskStore.Ekv do
 
   @impl AshA2A.Protocol.TaskStore
   def put(name, %AshA2A.Protocol.Task{id: task_id} = task) when is_binary(task_id) do
-    case EKV.put(name, key(task_id), at_rest(task)) do
-      :ok -> :ok
-      other -> raise WriteError, operation: :put, task_id: task_id, reason: other
+    # Stale write: a lower generation never overwrites a higher stored one
+    # (no-op, `:ok`).
+    case EKV.get(name, key(task_id)) do
+      %AshA2A.Protocol.Task{generation: stored}
+      when is_integer(stored) and is_integer(task.generation) and task.generation < stored ->
+        :ok
+
+      _ ->
+        case EKV.put(name, key(task_id), at_rest(task)) do
+          :ok -> :ok
+          other -> raise WriteError, operation: :put, task_id: task_id, reason: other
+        end
     end
   end
 

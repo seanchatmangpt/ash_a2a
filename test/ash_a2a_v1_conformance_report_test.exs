@@ -80,14 +80,19 @@ defmodule AshA2A.V1ConformanceReportTest do
     courts = Mix.Tasks.AshA2a.V1ConformanceReport.v1_courts()
     excluded = Mix.Tasks.AshA2a.V1ConformanceReport.excluded_v1_files()
 
-    on_disk = Path.wildcard("test/ash_a2a_v1_*_test.exs")
+    v11 = Mix.Tasks.AshA2a.V1ConformanceReport.v1_1_courts()
+    on_disk = Path.wildcard("test/ash_a2a_v1_*_test.exs") ++ v11
 
-    unaccounted = on_disk -- (courts ++ excluded)
+    unaccounted = on_disk -- (courts ++ v11 ++ excluded)
     assert unaccounted == [], "v1 test files neither in @v1_courts nor excluded: #{inspect(unaccounted)}"
 
-    missing = (courts ++ excluded) -- on_disk
+    missing = (courts ++ v11 ++ excluded) -- on_disk
     assert missing == [], "registered files absent from disk: #{inspect(missing)}"
 
+    # 36 glob courts + 21 explicit v1.1 courts (census count, not a run result).
+    assert length(v11) == 21
+    assert length(courts) == 36
+    assert length(Mix.Tasks.AshA2a.V1ConformanceReport.all_courts()) == 57
     assert courts == Enum.sort(courts)
     assert courts -- excluded == courts
   end

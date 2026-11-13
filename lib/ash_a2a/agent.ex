@@ -121,6 +121,7 @@ defmodule AshA2A.Agent do
     resource_or_domain = Macro.expand(resource_or_domain_ast, __CALLER__)
     {agent_opts, _bindings} = Code.eval_quoted(agent_opts_ast, [], __CALLER__)
     {execution_opts, agent_opts} = Keyword.pop(agent_opts, :execution, [])
+    AshA2A.Domain.Verifiers.VerifyExecution.validate!(execution_opts, __CALLER__.module)
     {dispatch_opts, agent_opts} = Keyword.split(agent_opts, @dispatch_opt_keys)
     card_opts = __card_opts__(resource_or_domain, agent_opts)
 

@@ -92,6 +92,17 @@ if Code.ensure_loaded?(Req) do
     `:task_not_found`; anything unparseable comes back as
     `{:error, {:http_error, status, body}}`.
 
+    ## gRPC transport (`:transport` option)
+
+    `transport: :grpc` speaks the `lf.a2a.v1.A2AService` binding through
+    `AshA2A.Protocol.Client.GRPC` (every operation of the other bindings, plus
+    live sessions via that module's `open_live/3`). `url` is `host:port`
+    (`http://`/`https://` prefixes are accepted). Pass `channel:` to reuse an
+    open `GRPC.Channel`, or `Client.GRPC.connect/1` to hold one; with neither,
+    each call connects and disconnects. `:headers` become gRPC metadata.
+    `from_card/2` selects a `"GRPC"` interface only when
+    `preferred_bindings: [:grpc, ...]` names `:grpc`.
+
     ## Transport selection, tenant, auth, interceptors
 
     - `from_card/2` picks the transport, base URL, tenant and `A2A-Version`
@@ -135,9 +146,10 @@ if Code.ensure_loaded?(Req) do
 
     require Logger
 
+    alias AshA2A.Protocol.Client.GRPC, as: GrpcClient
     alias AshA2A.Protocol.JSONRPC.Error
 
-    @type transport_mode :: :jsonrpc | :http_json
+    @type transport_mode :: :jsonrpc | :http_json | :grpc
 
     @type target :: t() | AshA2A.Protocol.AgentCard.t() | String.t()
 
@@ -157,7 +169,9 @@ if Code.ensure_loaded?(Req) do
             card: AshA2A.Protocol.AgentCard.t() | nil,
             tenant: String.t() | nil,
             interface: map() | nil,
-            version: String.t() | nil
+            version: String.t() | nil,
+            channel: term() | nil,
+            grpc_opts: keyword()
           }
 
     defstruct [
@@ -167,13 +181,17 @@ if Code.ensure_loaded?(Req) do
       :tenant,
       :interface,
       :version,
+      :channel,
+      grpc_opts: [],
       transport: :jsonrpc,
       verify_card_signature: nil,
       extensions: []
     ]
 
     @default_client_version "1.1"
-    @card_bindings %{"JSONRPC" => :jsonrpc, "HTTP+JSON" => :http_json}
+    # "GRPC" is opt-in: it is only selectable when `:preferred_bindings`
+    # names `:grpc` (card order alone never picks it).
+    @card_bindings %{"JSONRPC" => :jsonrpc, "HTTP+JSON" => :http_json, "GRPC" => :grpc}
     @legacy_card_path "/.well-known/agent.json"
 
     @doc """
@@ -248,6 +266,7 @@ if Code.ensure_loaded?(Req) do
       supported =
         for iface <- ifaces,
             binding = Map.get(@card_bindings, to_string(iface(iface, :protocol_binding))),
+            binding_enabled?(binding, preferred),
             is_binary(iface(iface, :url)),
             do: {binding, iface}
 
@@ -266,8 +285,12 @@ if Code.ensure_loaded?(Req) do
       end
     end
 
+    defp binding_allowed?(:grpc, nil), do: false
     defp binding_allowed?(_binding, nil), do: true
     defp binding_allowed?(binding, preferred) when is_list(preferred), do: binding in preferred
+
+    defp binding_enabled?(:grpc, preferred), do: is_list(preferred) and :grpc in preferred
+    defp binding_enabled?(_binding, _preferred), do: true
 
     defp check_required_extensions(card, opts) do
       declared =
@@ -330,14 +353,16 @@ if Code.ensure_loaded?(Req) do
       {card, opts} = Keyword.pop(opts, :card)
       {interface, opts} = Keyword.pop(opts, :interface)
       {tenant, opts} = Keyword.pop(opts, :tenant)
+      {channel, opts} = Keyword.pop(opts, :channel)
+      {grpc_opts, opts} = Keyword.pop(opts, :grpc_opts, [])
       {auth, opts} = Keyword.pop(opts, :auth)
       {interceptors, opts} = Keyword.pop(opts, :interceptors, [])
       compiled = AshA2A.Protocol.Extension.compile(ext_entries)
       ext_uris = AshA2A.Protocol.Extension.declared_uris(compiled)
 
-      unless transport in [:jsonrpc, :http_json] do
+      unless transport in [:jsonrpc, :http_json, :grpc] do
         raise ArgumentError,
-              "invalid :transport #{inspect(transport)}; expected :jsonrpc or :http_json"
+              "invalid :transport #{inspect(transport)}; expected :jsonrpc, :http_json or :grpc"
       end
 
       {req_opts, _rest} =
@@ -385,7 +410,9 @@ if Code.ensure_loaded?(Req) do
         card: card,
         tenant: tenant,
         interface: interface,
-        version: version
+        version: version,
+        channel: channel,
+        grpc_opts: grpc_opts
       }
     end
 
@@ -601,6 +628,9 @@ if Code.ensure_loaded?(Req) do
           :http_json ->
             http_json_send_message(client, message, opts)
 
+          :grpc ->
+            GrpcClient.send_message(client, message, opts)
+
           :jsonrpc ->
             {params, req_opts} = build_send_params(message, opts)
             body = jsonrpc_request("SendMessage", params)
@@ -680,6 +710,7 @@ if Code.ensure_loaded?(Req) do
           result =
             case client.transport do
               :http_json -> http_json_stream_message(client, message, opts)
+              :grpc -> GrpcClient.stream_message(client, message, opts)
               :jsonrpc -> jsonrpc_stream_message(client, message, opts)
             end
 
@@ -716,6 +747,11 @@ if Code.ensure_loaded?(Req) do
 
     @doc false
     def __decode_http_error__(status, body), do: decode_http_error(status, body)
+
+    # Shared with AshA2A.Protocol.Client.GRPC (same request shaping + error vocabulary).
+    @doc false
+    def __build_send_params__(message, opts), do: build_send_params(message, opts)
+
 
     @doc """
     Sends a message, streaming when the agent supports it.
@@ -870,6 +906,7 @@ if Code.ensure_loaded?(Req) do
       result =
         case client.transport do
           :http_json -> http_json_resubscribe(client, task_id, opts)
+          :grpc -> GrpcClient.resubscribe(client, task_id, opts)
           :jsonrpc -> jsonrpc_resubscribe(client, task_id, opts)
         end
 
@@ -961,6 +998,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_get_task(client, task_id, opts)
+        :grpc -> GrpcClient.get_task(client, task_id, opts)
         :jsonrpc ->
           req_opts = take_req_opts(opts)
 
@@ -1044,6 +1082,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_cancel_task(client, task_id, opts)
+        :grpc -> GrpcClient.cancel_task(client, task_id, opts)
         :jsonrpc ->
           req_opts = take_req_opts(opts)
           params = %{"id" => task_id}
@@ -1098,6 +1137,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_list_tasks(client, opts)
+        :grpc -> GrpcClient.list_tasks(client, opts)
         :jsonrpc -> jsonrpc_list_tasks(client, opts)
       end
     end
@@ -1205,6 +1245,7 @@ if Code.ensure_loaded?(Req) do
       else
         case client.transport do
           :http_json -> http_json_set_push_config(client, config, opts)
+          :grpc -> GrpcClient.set_push_config(client, config, opts)
           :jsonrpc -> jsonrpc_set_push_config(client, config, opts)
         end
       end
@@ -1238,6 +1279,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_get_push_config(client, task_id, config_id, opts)
+        :grpc -> GrpcClient.get_push_config(client, task_id, config_id, opts)
         :jsonrpc -> jsonrpc_get_push_config(client, task_id, config_id, opts)
       end
     end
@@ -1270,6 +1312,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_list_push_configs(client, task_id, opts)
+        :grpc -> GrpcClient.list_push_configs(client, task_id, opts)
         :jsonrpc -> jsonrpc_list_push_configs(client, task_id, opts)
       end
     end
@@ -1303,6 +1346,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_delete_push_config(client, task_id, config_id, opts)
+        :grpc -> GrpcClient.delete_push_config(client, task_id, config_id, opts)
         :jsonrpc -> jsonrpc_delete_push_config(client, task_id, config_id, opts)
       end
     end
@@ -1352,6 +1396,7 @@ if Code.ensure_loaded?(Req) do
 
       case client.transport do
         :http_json -> http_json_get_extended_card(client, opts)
+        :grpc -> GrpcClient.get_extended_card(client, opts)
         :jsonrpc -> jsonrpc_get_extended_card(client, opts)
       end
     end
@@ -1691,6 +1736,9 @@ if Code.ensure_loaded?(Req) do
       "EXTENSION_SUPPORT_REQUIRED" => :extension_support_required,
       "VERSION_NOT_SUPPORTED" => :version_not_supported
     }
+
+    @doc false
+    def __error_info_reasons__, do: @error_info_reasons
 
     defp decode_http_error(_status, %{"__a2a_auth_error" => marker}), do: auth_error(marker)
 

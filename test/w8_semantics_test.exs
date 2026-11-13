@@ -43,7 +43,7 @@ defmodule AshA2A.W8.SemanticsTest do
     name = :"w8_agent_#{System.unique_integer([:positive])}"
     {:ok, pid} = SemanticsAgent.start_link(name: name)
     Process.register(self(), :w8_test_pid)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
     %{agent: name}
   end
 

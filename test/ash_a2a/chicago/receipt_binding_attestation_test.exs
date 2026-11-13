@@ -176,7 +176,7 @@ defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
       {:ok, pid} = AshA2A.ReceiptStore.Memory.start_link(name: name)
 
       on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
+        AshA2A.TestSupport.SafeStop.stop(pid)
         restore(:receipt_binding_key, previous_key)
         restore(:receipt_outbox_dir, previous_outbox)
       end)
@@ -225,7 +225,7 @@ defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
       %{receipt: other} = Fx.execute("unit-outbox-tamper", :honest_write, store_opts)
       target = Module.concat(__MODULE__, "Drain#{System.unique_integer([:positive])}")
       {:ok, pid} = AshA2A.ReceiptStore.Memory.start_link(name: target)
-      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
       tampered = %{other | plan_digest: Fx.sha("forged-plan")}
       assert :ok = ReceiptOutbox.append(intact)
@@ -351,7 +351,7 @@ defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
     } do
       name = Module.concat(__MODULE__, "AttestStore#{System.unique_integer([:positive])}")
       {:ok, pid} = AshA2A.ReceiptStore.Memory.start_link(name: name)
-      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
       %{receipt: receipt} = Fx.execute("unit-attest", :honest_write, name: name)
       assert {:ok, honest} = SemanticAttestation.from_receipts([receipt])

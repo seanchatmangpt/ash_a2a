@@ -113,7 +113,8 @@ defmodule AshA2A.A2ATransport do
        transport: name,
        retention_ms: Keyword.get(opts, :retention_ms, 300_000),
        max_events: Keyword.get(opts, :max_events, 10_000),
-       push: Keyword.get(opts, :push, [])}
+       push: Keyword.get(opts, :push, []),
+       event_log: Keyword.get(opts, :event_log)}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)

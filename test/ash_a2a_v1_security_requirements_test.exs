@@ -250,7 +250,7 @@ defmodule AshA2A.V1SecurityRequirementsTest do
       {:ok, pid} = GreeterAgent.start_link(name: agent_name)
 
       on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
+        AshA2A.TestSupport.SafeStop.stop(pid)
       end)
 
       %{agent: agent_name}
@@ -452,7 +452,7 @@ defmodule AshA2A.V1SecurityRequirementsTest do
       {:ok, pid} = SecuredSkillAgent.start_link(name: agent_name)
 
       on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
+        AshA2A.TestSupport.SafeStop.stop(pid)
       end)
 
       base_url = "http://localhost:4000/a2a"

@@ -84,7 +84,7 @@ defmodule AshA2A.V1IOModesTest do
     {:ok, pid} = GreeterAgent.start_link(name: agent_name)
 
     on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      AshA2A.TestSupport.SafeStop.stop(pid)
     end)
 
     %{agent: agent_name}
@@ -388,7 +388,7 @@ defmodule AshA2A.V1IOModesTest do
       {:ok, pid} = AshA2A.V1IOModesTest.ModedAgent.start_link(name: agent_name)
 
       on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
+        AshA2A.TestSupport.SafeStop.stop(pid)
       end)
 
       plug_opts = AshA2A.Protocol.Plug.init(agent: agent_name, base_url: @base_url)

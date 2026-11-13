@@ -146,7 +146,7 @@ defmodule AshA2A.Chicago.PostconditionTest do
     setup do
       name = Module.concat(__MODULE__, "Store#{System.unique_integer([:positive])}")
       {:ok, pid} = AshA2A.ReceiptStore.Memory.start_link(name: name)
-      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
       handler = "postcondition-test-#{System.unique_integer([:positive])}"
       test_pid = self()

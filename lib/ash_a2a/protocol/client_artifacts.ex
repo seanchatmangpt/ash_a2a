@@ -102,6 +102,16 @@ defmodule AshA2A.Protocol.ClientArtifacts do
     end
   end
 
+  @doc """
+  Caps a per-call long-poll wait at the configured maximum:
+  `min(requested, long_poll_timeout_ms())`. A nil or invalid request yields the configured value.
+  """
+  @spec long_poll_timeout_ms(term()) :: non_neg_integer()
+  def long_poll_timeout_ms(requested) when is_integer(requested) and requested >= 0,
+    do: min(requested, long_poll_timeout_ms())
+
+  def long_poll_timeout_ms(_), do: long_poll_timeout_ms()
+
   defp fetch(nil, _key), do: nil
   defp fetch(%{} = map, key), do: Map.get(map, key)
   defp fetch(_, _), do: nil

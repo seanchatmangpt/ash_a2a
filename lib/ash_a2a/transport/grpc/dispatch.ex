@@ -190,7 +190,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   # state conflicts and unsupported features/operations/versions
   # (-32002/-32003/-32004/-32007/-32008/-32009) are FAILED_PRECONDITION, A2A
   # server errors are UNAVAILABLE (-32000 server busy) or INTERNAL (-32006
-  # invalid agent response). Matches a2a-tck tck/requirements/base.py
+  # invalid agent response). -32005 -> INVALID_ARGUMENT and -32006 -> INTERNAL are
+  # the same gRPC rows as the HTTP 415 / 502 decision (docs/reference/a2a-error-mapping-decisions.md). Matches a2a-tck tck/requirements/base.py
   # ERROR_BINDINGS and AshA2A.Protocol.JSONRPC.Error.grpc_status/1.
   @grpc_from_jsonrpc %{
     -32_700 => @grpc_invalid_argument,

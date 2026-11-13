@@ -299,7 +299,7 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
 
       agent = :"guard_ordering_#{System.unique_integer([:positive])}"
       {:ok, pid} = OrderingAgent.start_link(name: agent)
-      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
       order = fn item ->
         %{

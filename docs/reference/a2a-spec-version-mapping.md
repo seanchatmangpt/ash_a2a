@@ -19,7 +19,7 @@ surface but not here, or when the `Version:` line differs from `mix.exs`.
 
 | Constant | Value |
 |----------|-------|
-| Agent card interface `protocolVersion` (`supportedInterfaces[]`; not a top-level card field in v1.0) | `1.0` (A2A protocol v1.0) |
+| Agent card interface `protocolVersion` (`supportedInterfaces[]`; not a top-level card field in v1.0) | `1.1` (`AshA2A.Protocol.Version.protocol_version/0`, `lib/ash_a2a/protocol/version.ex`) |
 | `AshA2A.Semantic.Extension.profile_id/0` | `SA2A-PROFILE-v26.9.20` |
 | `AshA2A.Semantic.Extension.profile_uri/0` | `urn:sa2a:profile:v26.9.20` |
 | `AshA2A.Semantic.Extension.profile_version/0` | `v26.9.20` |
@@ -78,23 +78,24 @@ v1.0 notes on what the outcome vocabulary hides:
 ## A2A v1.1 additions (target v1.1.0, upstream tag `v1.1.0-rc`)
 
 Not part of the drift-court table above (the court binds only the 4-column
-rows driven through both plugs). These rows are the v1.1 delta; standing is
-UNVERIFIED until the coordinator runs the courts listed in
-[A2A v1.1 conformance statement](a2a-v1-1-conformance.md).
+rows driven through both plugs). These rows are the v1.1 delta. Overall v1.1
+Standing is PARTIAL; per-row courts and standings are in the
+[A2A v1.1 conformance statement](a2a-v1-1-conformance.md), which is the
+authority for this table. No v1.1 TCK verdict exists.
 
-| v1.1 surface | Wire name / field | Status |
-|--------------|-------------------|--------|
-| SendLiveMessage (bidirectional stream of `StreamRequest`) | `message/live` | UNVERIFIED (lane V-wave) |
-| `StreamError` frame | `StreamResponse.error` | UNVERIFIED |
-| `TaskMessageUpdateEvent` | `StreamResponse.messageUpdate` | UNVERIFIED |
-| Task timeline | `Task.timeline[]` (`TimelineEntry`), `timelineLength` on GetTask / ListTasks / SendMessageConfiguration | UNVERIFIED |
-| Task generation | `Task.generation`, `generation` on status/artifact/message update events | UNVERIFIED |
-| Artifact generation and role | `startGeneration`, `endGeneration`, `role` | UNVERIFIED |
-| Optimistic concurrency | `SendMessageConfiguration.ifGenerationMatch`; mismatch `error -32010` (TaskGenerationMismatchError) | UNVERIFIED |
-| Long poll | `GetTaskRequest.currentGeneration` (bounded by `config :ash_a2a, :long_poll_timeout_ms`) | UNVERIFIED |
-| Resume | `SubscribeToTaskRequest.lastSeenGeneration` | UNVERIFIED |
-| User artifacts | `AgentCapabilities.userArtifacts`, `SendMessageRequest.artifactUpdates` | UNVERIFIED |
-| Push config version | `TaskPushNotificationConfig.protocolVersion` | UNVERIFIED |
+| v1.1 surface | Wire name / field | Binding |
+|--------------|-------------------|---------|
+| SendLiveMessage (stream of `StreamRequest`) | gRPC `SendLiveMessage`; HTTP `POST /message:live`; no JSON-RPC method | gRPC, HTTP+JSON |
+| `StreamError` frame | `StreamResponse.error` | live bindings |
+| `TaskMessageUpdateEvent` | `StreamResponse.messageUpdate` | all streams, `A2A-Version` >= 1.1 |
+| Task timeline | `Task.timeline[]` (`TimelineEntry`), `timelineLength` on GetTask / ListTasks / SendMessageConfiguration | all |
+| Task generation | `Task.generation`, `generation` on status/artifact/message update events | all |
+| Artifact generation and role | `startGeneration`, `endGeneration`, `role` | all |
+| Optimistic concurrency | `SendMessageConfiguration.ifGenerationMatch`; mismatch JSON-RPC `-32010`, HTTP 409 `ABORTED` | all |
+| Long poll | `GetTaskRequest.currentGeneration` (bounded by `config :ash_a2a, :long_poll_timeout_ms`) | all |
+| Resume | `SubscribeToTaskRequest.lastSeenGeneration` | all |
+| User artifacts | `AgentCapabilities.userArtifacts`, `SendMessageRequest.artifactUpdates` | all |
+| Push config version | `TaskPushNotificationConfig.protocolVersion` | all |
 
 Version negotiation: `A2A-Version: 1.1` selects v1.1 behavior; `1.0`/`1.0.1`
 remain served; 0.3 is decode-only legacy.
@@ -142,5 +143,7 @@ two-transport differential evidence only.
 ## See Also
 
 - `docs/reference/a2a-endpoint-contract.md`
+- [A2A v1.1 conformance statement](a2a-v1-1-conformance.md)
+- [v1.1 live and generations how-to](../how-to/v1-1-live-and-generations.md)
 - `docs/rfc/RFC-SA2A-001-v26.9.16.md`
 - `lib/ash_a2a/a2a_transport/plug.ex`

@@ -195,12 +195,14 @@ defmodule AshA2A.Domain do
         doc: "`:bearer`/`:http` only: hint such as `\"JWT\"`."
       ],
       oauth_flows: [
-        type: {:map, :string, :any},
+        type: {:custom, __MODULE__, :validate_oauth_flows, []},
         required: false,
         doc:
-          "`:oauth2` only: map of flow name (`\"authorizationCode\"`, `\"clientCredentials\"`, " <>
-            "`\"deviceCode\"`, ...) to a flow map. Passed through to the protocol layer " <>
-            "(`AshA2A.Protocol.SecurityScheme`) unchanged."
+          "`:oauth2` only: string-keyed map with exactly one flow: `\"authorizationCode\"` " <>
+            "(optional `\"pkceRequired\"`), `\"clientCredentials\"`, `\"deviceCode\"` " <>
+            "(requires `\"deviceAuthorizationUrl\"`, `\"tokenUrl\"`, `\"scopes\"`), or the " <>
+            "deprecated `\"implicit\"`/`\"password\"`. Validated at compile time by " <>
+            "`AshA2A.Protocol.SecurityScheme.OAuthFlows.validate/1`; emitted unchanged."
       ],
       scopes: [
         type: {:list, :string},
@@ -388,8 +390,21 @@ defmodule AshA2A.Domain do
     verifiers: [
       AshA2A.Domain.Verifiers.VerifyConfig,
       AshA2A.Domain.Verifiers.VerifyMounts,
+      AshA2A.Domain.Verifiers.VerifyExecution,
       AshA2A.Domain.Verifiers.VerifyExtensions
     ]
+
+  @doc """
+  Spark `{:custom, ...}` validator for the `oauth_flows` option: delegates to
+  `AshA2A.Protocol.SecurityScheme.OAuthFlows.validate/1`.
+  """
+  @spec validate_oauth_flows(term()) :: {:ok, map()} | {:error, String.t()}
+  def validate_oauth_flows(flows) do
+    case AshA2A.Protocol.SecurityScheme.OAuthFlows.validate(flows) do
+      {:ok, flows} -> {:ok, flows}
+      {:error, reason} -> {:error, "invalid oauth_flows: #{inspect(reason)}"}
+    end
+  end
 
   @doc "The set of allowed security scheme kinds."
   @spec scheme_kinds() :: [atom()]

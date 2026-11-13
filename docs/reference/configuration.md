@@ -126,10 +126,16 @@ Per-module form is also supported where noted, e.g.
 
 ## Application config — A2A v1.1 (additive)
 
-| Key | Meaning |
-|-----|---------|
-| `config :ash_a2a, :long_poll_timeout_ms` | Upper bound the server waits on `GetTaskRequest.currentGeneration` before returning the current task. Standing UNVERIFIED (owned by the v1.1 transport lane). |
-| `user_artifacts` (agent capability) | Advertised as `AgentCapabilities.userArtifacts`; gates `SendMessageRequest.artifactUpdates`. |
+v1.1 Standing is PARTIAL; see [A2A v1.1 conformance](a2a-v1-1-conformance.md).
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `config :ash_a2a, :long_poll_timeout_ms` | `30_000` | Upper bound the server waits on `GetTaskRequest.currentGeneration` before returning the current task (`AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms/0`). A per-request value is capped at this. |
+| `config :ash_a2a, :events_transport` | unset | Name of the events transport (atom) to which `message_update` events are published. Per-agent `execution: [events_transport: name]` wins. Unset: no-op (`AshA2A.Transport.Runtime`). |
+| `execution: [cancel_in_flight: :refuse]` | cancel interrupts the running worker | Agent `execution:` option. `:refuse` restores the `:not_cancelable` refusal for `tasks/cancel` on a running task. |
+| `execution: [validate_input_modes: false]` | `true` | Agent `execution:` option, or per-call opt. `false` skips `acceptedInputModes` validation. |
+| `transport do user_artifacts true end` | `false` | Domain DSL option. Advertised as `capabilities.userArtifacts`; gates `SendMessageRequest.artifactUpdates` (`-32004` when undeclared). |
+| `mount ... tenant: "t"` | `nil` | Domain mount option; carried as `tenant` on the card interface. REST routes also accept a leading `/{tenant}` segment. |
 
 `A2A-Version: 1.1` selects v1.1 behavior. Accepted versions default to
 `["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); emitted cards carry

@@ -157,9 +157,16 @@ defmodule AshA2A.TaskStore.Ash do
       existing = fetch(ref, task_id)
       current = if existing, do: existing.version, else: 0
 
-      if expected != :any and expected != current do
-        {:error, :version_conflict}
-      else
+      cond do
+        expected != :any and expected != current ->
+          {:error, :version_conflict}
+
+        # Stale write: a lower generation never overwrites a higher stored one
+        # (no-op, `:ok`, version not bumped).
+        stale_generation?(existing, task) ->
+          :ok
+
+        true ->
         attrs = columns(task, current + 1)
 
         case existing do
@@ -183,6 +190,12 @@ defmodule AshA2A.TaskStore.Ash do
       end
     end)
   end
+
+  defp stale_generation?(%TaskRow{payload: %Task{generation: stored}}, %Task{generation: new})
+       when is_integer(stored) and is_integer(new),
+       do: new < stored
+
+  defp stale_generation?(_, _), do: false
 
   defp columns(%Task{} = task, version) do
     stored = at_rest(task)

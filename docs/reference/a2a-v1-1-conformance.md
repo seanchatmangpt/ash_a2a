@@ -22,7 +22,7 @@ Abbreviations: `codec` = `v1_1_codec_test.exs`, `corpus` =
 
 | Item | Spec section | ash_a2a module | Court (file::test) | Standing |
 |------|--------------|----------------|--------------------|----------|
-| `SendLiveMessage` rpc (`message/live`) | spec 1.1 live streaming | `AshA2A.Protocol.JSONRPC`, `AshA2A.A2ATransport.Plug` | gRPC: `v10_grpc_live_test.exs::SendLiveMessage subscribe-first: first frame is a Task snapshot`; HTTP+JSON: `v14_http_json_live_core_test.exs::uplink by session id answers the ack task only...`, `v9_http_json_v11_test.exs::live downlink opens with the task snapshot...`; session: `v5_live_session_test.exs::send_message opens with a snapshot, input_required, then a second message on the same stream`. No named court drives the JSON-RPC `message/live` method itself | PARTIAL |
+| `SendLiveMessage` rpc (gRPC + `POST /message:live`) | spec 1.1 live streaming | `AshA2A.Transport.Live`, `AshA2A.Transport.HTTPJSON`, `AshA2A.Transport.GRPC.Server` | gRPC: `v10_grpc_live_test.exs::SendLiveMessage subscribe-first: first frame is a Task snapshot`; HTTP+JSON: `v14_http_json_live_core_test.exs::uplink by session id answers the ack task only...`, `v9_http_json_v11_test.exs::live downlink opens with the task snapshot...`; session: `v5_live_session_test.exs::send_message opens with a snapshot, input_required, then a second message on the same stream`. The proto defines SendLiveMessage only for gRPC and the HTTP binding (`post: "/message:live"`); the JSON-RPC binding has no live method, so none is implemented | CONFORMANT |
 | `StreamRequest` | live streaming | `AshA2A.Protocol.JSON` | `codec::StreamRequest sendMessage / subscribe / unknown payload`; `v5::unknown payload kind and malformed requests are StreamErrors` | CONFORMANT |
 | `StreamError` | live streaming | `AshA2A.Protocol.JSON.encode/1` | `codec::StreamError round trips through the StreamResponse wrapper`; `v5::request naming a different task is a StreamError and the stream stays open`; `v10_grpc_live_test.exs::SendLiveMessage: wrong-task request yields StreamError and keeps the stream open` | CONFORMANT |
 | `TimelineEntry` | ADR-002 | `AshA2A.Protocol.TimelineEntry`, `AshA2A.Protocol.JSON` | `codec::round trips generation and timeline entries`; `codec::timeline fails open on unknown entry kind`; `v2::artifacts leave generation gaps in the timeline and carry start/end generation` | CONFORMANT |
@@ -60,12 +60,23 @@ Date: 2026-11-13. Evidence logs are coordinator-run; this lane ran no suites.
   statement and are not attributed to v1.1.
 - Court files not named in the table (`w1`, `w2`, `w3`, `w5`, `w6`) cover the v1.0
   surface and were not used as v1.1 evidence.
-- Gap: row 1 stays PARTIAL because no named court drives the JSON-RPC
-  `message/live` method.
-- SHA-less caveat: the working tree is uncommitted, so these results bind to no
-  commit. This statement is not an exact-head receipt.
-- Table-level Standing is PARTIAL: 16 of 17 rows CONFORMANT by named courts
-  without per-test log lines, row 1 PARTIAL, no TCK verdict.
+- Scope: the JSON-RPC binding defines no live method in the v1.1 proto; row 1 covers
+  the two bindings that do (gRPC, HTTP+JSON).
+- Evidence binds to commit `d8f593dc` (default tier 4705 tests, 0 failures, twice;
+  serial tier 0 failures). See `docs/jira/v26.11.13/RECEIPT.md`.
+- Table-level Standing is PARTIAL (not CONFORMANT): all 17 rows are CONFORMANT by named
+  courts without per-test log lines, and there is no v1.1 TCK verdict.
+
+## Upstream comparison (2026-11-13)
+
+Live upstream (WebFetch, summarized, not byte-compared): tags `v1.1.0-rc`
+(2026-10-29), `v1.0.1` (2026-05-28); no v1.1.0 release exists. `main` proto is the
+v1.0 surface (no `SendLiveMessage`, `StreamRequest`, `StreamError`,
+`TimelineEntry`, `TaskMessageUpdateEvent`, `Task.timeline`, `Artifact.role`,
+`user_artifacts`, `protocol_version`, `artifact_updates`). The `v1.1.0-rc` summary
+lists the same v1.1 additions as the vendored corpus with matching field numbers
+where stated; byte equality is UNVERIFIED. See
+[known divergences](v1-1-known-divergences.md).
 
 ## External TCK
 
@@ -76,5 +87,6 @@ remains UNSUPPORTED (not claimed).
 ## See Also
 
 - [A2A v1.1 readiness](a2a-v1_1-readiness.md)
+- [Known divergences](v1-1-known-divergences.md)
 - [Spec-version mapping](a2a-spec-version-mapping.md)
 - [TCK suite](tck-suite.md)

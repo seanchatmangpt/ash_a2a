@@ -48,7 +48,8 @@ defmodule AshA2A.A2ATransport.PushDelivery do
 
   @doc """
   The webhook body for `config` given a logged event, shaped by the config's
-  `protocol_version` (default `"1.0"`).
+  `protocol_version` (default `"0.3"`: an absent version is `"0.3"` everywhere,
+  matching the `A2A-Version` header gate, `AshA2A.Protocol.Version.parse_header/1`).
 
     * `>= 1.1`: the payload as logged (carries `generation`; `message-update`
       events are delivered).
@@ -60,7 +61,7 @@ defmodule AshA2A.A2ATransport.PushDelivery do
   @spec payload_for(map(), String.t(), map()) :: {:ok, map()} | :skip
   def payload_for(config, kind, payload) do
     cond do
-      AshA2A.Protocol.Version.at_least?(Map.get(config, :protocol_version) || "1.0", "1.1") ->
+      AshA2A.Protocol.Version.at_least?(Map.get(config, :protocol_version) || "0.3", "1.1") ->
         {:ok, payload}
 
       kind == "message-update" ->

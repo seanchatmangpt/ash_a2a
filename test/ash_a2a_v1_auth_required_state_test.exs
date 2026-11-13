@@ -194,7 +194,7 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
   defp start_transport_agent do
     name = :"v1_auth_required_transport_#{System.unique_integer([:positive])}"
     {:ok, pid} = AshA2A.V1AuthRequired.TransportAgent.start_link(name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
     name
   end
 
@@ -394,7 +394,7 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
   def start_wire_agent(_context) do
     name = :"v1_auth_required_wire_#{System.unique_integer([:positive])}"
     {:ok, pid} = AshA2A.V1AuthRequired.WireAgent.start_link(name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
     {:ok, agent: name}
   end
 

@@ -19,6 +19,7 @@ defmodule AshA2A.Cluster.Checkpoint do
         "version" => 1,
         "frame" => term(),
         "sequence" => pos_integer(),
+        "generation" => pos_integer(),
         "checkpointed_at" => %DateTime{},
         "source_node" => node(),
         "reason" => :drain_deadline,
@@ -75,6 +76,7 @@ defmodule AshA2A.Cluster.Checkpoint do
       "version" => @version,
       "frame" => frame,
       "sequence" => sequence,
+      "generation" => task.generation,
       "checkpointed_at" => DateTime.utc_now(),
       "source_node" => Keyword.get(opts, :source_node, node()),
       "reason" => Keyword.get(opts, :reason, :drain_deadline),
@@ -116,6 +118,18 @@ defmodule AshA2A.Cluster.Checkpoint do
     do: %{task | metadata: Map.delete(metadata, @metadata_key)}
 
   def cleared(task), do: task
+
+  @doc """
+  The task generation recorded in the envelope (`nil` for envelopes written
+  before generations were carried).
+  """
+  @spec generation(Task.t()) :: pos_integer() | nil
+  def generation(%Task{} = task) do
+    case envelope(task) do
+      {:ok, %{"generation" => g}} when is_integer(g) -> g
+      _ -> nil
+    end
+  end
 
   defp fetch_or_synthesize(store_mod, store_ref, task_id, opts) do
     case store_mod.get(store_ref, task_id) do

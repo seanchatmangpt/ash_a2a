@@ -390,11 +390,11 @@ Protocol target: A2A **v1.1.0** (upstream tag `v1.1.0-rc`, not yet a GitHub
 release). Emitted cards advertise `protocolVersion` 1.1; the server accepts
 `A2A-Version` 0.3, 1.0 and 1.1 (`AshA2A.Protocol.Version.supported_default/0`); the
 client-header default (`Version.default/0`) is still 1.0. v1.1
-standing is UNVERIFIED until courts run; see
+Standing: PARTIAL (no v1.1 TCK verdict); see
 [v1.1 conformance](docs/reference/a2a-v1-1-conformance.md) (repo-only). Selected via the
-`A2A-Version: 1.1` header. Test count: default tier 4695 tests, 0 failures per the
-coordinator log of 2026-11-13 (not re-run by the doc pass); the serial tier has
-env-blocked tests (Postgres :55432, Oban, wasm pins, hddl) and is UNVERIFIED.
+`A2A-Version: 1.1` header. Test count: default tier 4705 tests, 0 failures at
+`d8f593dc` per that statement (not re-run by the doc pass); the serial tier has
+env-blocked tests (Postgres :55432, Oban, wasm pins, hddl).
 `config :ash_a2a, :long_poll_timeout_ms` bounds
 `currentGeneration` long polls; agent cards may advertise `user_artifacts`.
 

@@ -365,8 +365,10 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     -32_002 => 409,
     -32_003 => 400,
     -32_004 => 400,
-    -32_005 => 400,
-    -32_006 => 500,
+    # Pinned TCK ERROR_BINDINGS (requirements/base.py): ContentTypeNotSupported
+    # -> 415, InvalidAgentResponse -> 502 (see docs/reference/a2a-error-mapping-decisions.md).
+    -32_005 => 415,
+    -32_006 => 502,
     -32_007 => 400,
     -32_008 => 400,
     -32_009 => 400,

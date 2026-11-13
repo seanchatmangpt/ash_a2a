@@ -40,7 +40,7 @@ defmodule AshA2A.WoCheckinSimWorkerTest do
 
     on_exit(fn ->
       try do
-        if Process.alive?(pid), do: GenServer.stop(pid)
+        AshA2A.TestSupport.SafeStop.stop(pid)
       catch
         :exit, _ -> :ok
       end

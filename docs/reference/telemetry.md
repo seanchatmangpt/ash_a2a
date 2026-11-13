@@ -169,6 +169,22 @@ manifest, collaborator scans, OCEL validation) is emitted by the
 conformance-court **test harness**, not the dispatch path — see
 `lib/ash_a2a/chicago/`. Do not build production dashboards on these.
 
+### v1.1 live and generation surface
+
+There are no dedicated `live` or `generation` event families. A grep of
+`:telemetry.execute`/`:telemetry.span` in `lib/` finds no emit call in
+`AshA2A.Transport.Live`, `AshA2A.Transport.Live.Session`, or
+`AshA2A.Protocol.Task.Generation`. The events below are the ones that exist
+on the v1.1 live/generation path:
+
+| Event | Measurements | Metadata | Emitted by |
+| --- | --- | --- | --- |
+| `[:a2a, :task, :transition]` | `system_time` | `task_id`, `context_id`, `from`, `to` | `AshA2A.Protocol.Agent.State` (each transition advances the task generation) |
+| `[:a2a, :task, :transition_refused]` | `system_time` | `task_id`, `from`, `to`, `reason` | `AshA2A.Protocol.Agent.State` |
+| `[:a2a, :bidi, :input]` | `count: 1` | `task_id` | `AshA2A.Bidi` (an uplink message accepted into a running task; emitted only on `{:ok, :accepted}`) |
+| `[:ash_a2a, :transport, :request, :start / :stop / :exception]`, `[:ash_a2a, :transport, :request, :error]` | span `duration`; `count: 1` on error | request metadata | `AshA2A.Protocol.Telemetry` (also wraps gRPC RPCs, `AshA2A.Transport.GRPC.Server`) |
+| `[:a2a, :push_notification, :delivery]` | `duration` | `task_id`, `context_id`, `config_id`, `url`, `result` | `AshA2A.Protocol.PushNotification` |
+
 ### Failure-visibility, orphan and drain events
 
 | Event | Measurements | Metadata | Emitted by |
@@ -177,6 +193,7 @@ conformance-court **test harness**, not the dispatch path — see
 | `[:ash_a2a, :receipt_outbox, :sync_dir_failed]` | `count` | `dir`, `reason` | `AshA2A.ReceiptOutbox` (directory fsync failed) |
 | `[:ash_a2a, :receipt_outbox, :decode_failed]` | `count` | `cause` | `AshA2A.ReceiptOutbox` (journal entry undecodable; return stays `:bad_term`) |
 | `[:a2a, :task, :late_event_dropped]` | `count` | `task_id`, `terminal_state`, `event` | `AshA2A.Protocol.Agent` (event after a terminal state; task untouched) |
+| `[:a2a, :task, :transition]` | `system_time` | `task_id`, `context_id`, `from`, `to` | `AshA2A.Protocol.Agent.State` (a task state change; the status entry is appended through `AshA2A.Protocol.Task.Generation.append_status/2`, so each transition is a v1.1 generation step) |
 | `[:a2a, :task, :transition_refused]` | `system_time` | `task_id`, `from`, `to`, `reason` | `AshA2A.Protocol.Agent.State` (illegal transition; task untouched) |
 | `[:a2a, :push_config, :volatile]` | `count` | `task_id`, `config_id` | `AshA2A.Protocol.Agent.State` (push config stored in memory only) |
 | `[:ash_a2a, :task, :orphan_failed]` | `count` | `task_id` | `AshA2A.Protocol.Task.OrphanSweep` |

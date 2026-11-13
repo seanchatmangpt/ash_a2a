@@ -210,7 +210,7 @@ defmodule AshA2A.V1SchemaEndpointsTest do
     {:ok, pid} = AshA2A.V1SchemaEndpointsTest.Agent.start_link(name: agent_name)
 
     on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      AshA2A.TestSupport.SafeStop.stop(pid)
     end)
 
     %{agent: agent_name}

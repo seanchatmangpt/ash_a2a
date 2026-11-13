@@ -37,7 +37,7 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   use GenServer
 
   alias AshA2A.A2ATransport
-  alias AshA2A.A2ATransport.{PushConfigStore, PushDelivery, PushQueue}
+  alias AshA2A.A2ATransport.{EventLog, PushConfigStore, PushDelivery, PushQueue}
 
   @type kind :: String.t()
   @type event :: {non_neg_integer(), kind(), map(), boolean()}
@@ -254,20 +254,59 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   def init(opts) do
     name = Keyword.fetch!(opts, :name)
     :ets.new(name, [:ordered_set, :protected, :named_table, read_concurrency: true])
+    {log_mod, log_opts} = EventLog.normalize(Keyword.get(opts, :event_log))
+    {:ok, log_handle} = log_mod.open(log_opts)
 
-    {:ok,
-     %{
-       table: name,
-       transport: Keyword.fetch!(opts, :transport),
-       retention_ms: Keyword.fetch!(opts, :retention_ms),
-       max_events: Keyword.fetch!(opts, :max_events),
-       push: Keyword.fetch!(opts, :push),
-       seqs: %{},
-       gens: %{},
-       counts: %{},
-       attempts: %{},
-       pq: PushQueue.new()
-     }}
+    state = %{
+      table: name,
+      transport: Keyword.fetch!(opts, :transport),
+      retention_ms: Keyword.fetch!(opts, :retention_ms),
+      max_events: Keyword.fetch!(opts, :max_events),
+      push: Keyword.fetch!(opts, :push),
+      log: {log_mod, log_handle},
+      seqs: %{},
+      gens: %{},
+      counts: %{},
+      attempts: %{},
+      pq: PushQueue.new()
+    }
+
+    {:ok, restore(state)}
+  end
+
+  @impl true
+  def terminate(_reason, %{log: {mod, handle}}), do: mod.close(handle)
+
+  # Replays the backend journal into the ETS log and rebuilds seq/generation/count
+  # bookkeeping; finalized or interrupted tasks get their retention sweep re-armed.
+  defp restore(%{log: {mod, handle}} = state) do
+    rows = mod.load_all(handle)
+
+    state =
+      Enum.reduce(rows, state, fn {task_id, seq, kind, payload, final?}, st ->
+        true = :ets.insert(st.table, {{task_id, seq}, kind, payload, final?})
+        gen = generation_of(payload)
+
+        %{
+          st
+          | seqs: Map.update(st.seqs, task_id, seq, &max(&1, seq)),
+            gens: if(gen, do: Map.update(st.gens, task_id, gen, &max(&1, gen)), else: st.gens),
+            counts: Map.put(st.counts, task_id, Map.get(st.counts, task_id, 0) + 1)
+        }
+      end)
+
+    for {task_id, seq} <- state.seqs do
+      case :ets.lookup(state.table, {task_id, seq}) do
+        [{_, kind, payload, final?}] ->
+          if final? or (kind == "status-update" and closing_payload?(payload)),
+            do: Process.send_after(self(), {:sweep, task_id, seq}, state.retention_ms)
+
+        _ ->
+          :ok
+      end
+    end
+
+    state
   end
 
   @impl true
@@ -275,6 +314,8 @@ defmodule AshA2A.A2ATransport.TaskEvents do
     seq = Map.get(state.seqs, task_id, 0) + 1
     {payload, gens} = assign_generation(state.gens, task_id, kind, payload, opts)
     true = :ets.insert(state.table, {{task_id, seq}, kind, payload, final?})
+    {log_mod, log_handle} = state.log
+    :ok = log_mod.append(log_handle, task_id, seq, kind, payload, final?)
 
     state =
       %{state | seqs: Map.put(state.seqs, task_id, seq), gens: gens} |> trim(task_id, seq)
@@ -330,6 +371,8 @@ defmodule AshA2A.A2ATransport.TaskEvents do
       end
 
       :ets.match_delete(state.table, {{task_id, :_}, :_, :_, :_})
+      {log_mod, log_handle} = state.log
+      :ok = log_mod.delete_task(log_handle, task_id)
 
       {:noreply,
        %{
@@ -381,6 +424,8 @@ defmodule AshA2A.A2ATransport.TaskEvents do
 
     if count > state.max_events do
       :ets.delete(state.table, {task_id, seq - state.max_events})
+      {log_mod, log_handle} = state.log
+      :ok = log_mod.delete(log_handle, task_id, seq - state.max_events)
       state
     else
       %{state | counts: Map.put(state.counts, task_id, count)}

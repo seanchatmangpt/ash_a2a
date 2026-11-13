@@ -166,9 +166,15 @@ defmodule AshA2A.Cluster.Handover do
       {:ok, claimed} ->
         with {:ok, envelope} <- Checkpoint.envelope(claimed),
              {:ok, result} <- safe_resume(resume_fun, claimed, envelope["frame"]) do
+          # Restore the checkpointed generation (never below what the store holds)
+          # and bump it once for the completion mutation, so the stale-write
+          # guard in the stores admits it.
+          gen = max(claimed.generation || 1, envelope["generation"] || 1) + 1
+
           completed =
             claimed
             |> Checkpoint.cleared()
+            |> then(&%{&1 | generation: gen})
             |> then(&%{&1 | metadata: Map.delete(&1.metadata, @claim_key)})
             |> then(&%{&1 | status: AshA2A.Protocol.Task.Status.new(:completed)})
             |> put_result(result)

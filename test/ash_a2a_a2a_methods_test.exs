@@ -19,7 +19,7 @@ defmodule AshA2AA2AMethodsTest do
   setup do
     name = :"a2a_methods_agent_#{System.unique_integer([:positive])}"
     {:ok, pid} = GreeterAgent.start_link(name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
     %{agent: name, plug_opts: AshA2A.Protocol.Plug.init(agent: name, base_url: "http://localhost:4000/a2a")}
   end
 

@@ -521,12 +521,20 @@ defmodule AshA2A.Protocol.Agent do
       # its message was appended. `decoded` is
       # `ClientArtifacts.decode_updates/1` output; the card must declare
       # `user_artifacts`.
-      def handle_call({:apply_artifact_updates, task_id, decoded}, _from, state) do
+      def handle_call({:apply_artifact_updates, task_id, decoded}, from, state) do
+        handle_call({:apply_artifact_updates, task_id, decoded, nil}, from, state)
+      end
+
+      # `if_generation_match` is rechecked here, inside the serialized
+      # GenServer, so a check-then-apply race across HTTP processes cannot
+      # admit two writers against one generation.
+      def handle_call({:apply_artifact_updates, task_id, decoded, if_generation_match}, _from, state) do
         card =
           if function_exported?(__MODULE__, :agent_card, 0), do: __MODULE__.agent_card(), else: nil
 
         with :ok <- AshA2A.Protocol.ClientArtifacts.check_user_artifacts(card, decoded),
-             {:ok, task} <- AshA2A.Protocol.Agent.State.get_task(state, task_id) do
+             {:ok, task} <- AshA2A.Protocol.Agent.State.get_task(state, task_id),
+             :ok <- AshA2A.Protocol.ClientArtifacts.check_generation(task, if_generation_match) do
           task = AshA2A.Protocol.ClientArtifacts.apply_updates(task, decoded)
 
           case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do

@@ -327,7 +327,7 @@ defmodule AshA2A.ReceiptStore.StoreHardeningTest do
   test "a legacy bare-map start still yields a working store (backwards compatible init)" do
     name = :"store_hardening_legacy_#{System.unique_integer([:positive])}"
     {:ok, pid} = GenServer.start(Memory, %{}, name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
     command = effect_command(unique("legacy"), unique("k"))
     assert {:execute, _} = Memory.claim(command, name: name)

@@ -100,11 +100,11 @@ defmodule AshA2A.W25HTTPJSONTest do
     assert inspect(bad.body) =~ "contextId does not match task"
   end
 
-  test "unsupported input media type answers -32005 over 400", %{server: server} do
+  test "unsupported input media type answers -32005 over 415", %{server: server} do
     message = wire([%Part.Data{data: %{}, media_type: "application/x-w25-unsupported"}])
     resp = send_message(server, message)
 
-    assert resp.status == 400
+    assert resp.status == 415
     assert inspect(resp.body) =~ "CONTENT_TYPE_NOT_SUPPORTED"
   end
 

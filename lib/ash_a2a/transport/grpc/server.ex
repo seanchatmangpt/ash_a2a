@@ -262,8 +262,15 @@ defmodule AshA2A.Transport.GRPC.Server do
 
   defp send_live_event(mat, event, _version), do: do_send_live_event(mat, event)
 
+  # Same explicit-version downgrade as stream_loop/1 and dispatch_unary/6: an
+  # explicit <1.1 client never sees v1.1 fields on the live path.
   defp do_send_live_event(mat, event) do
-    GRPC.Server.send_reply(mat, to_pb!(Pb.StreamResponse, AshA2A.Transport.Live.encode(event)))
+    frame = to_pb!(Pb.StreamResponse, AshA2A.Transport.Live.encode(event))
+
+    case Downgrade.strip(frame, wire_version(mat)) do
+      :drop -> :ok
+      stripped -> GRPC.Server.send_reply(mat, stripped)
+    end
   end
 
   defp last_seen_generation(params) do

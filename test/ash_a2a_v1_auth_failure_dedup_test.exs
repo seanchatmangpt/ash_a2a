@@ -200,7 +200,7 @@ defmodule AshA2A.V1AuthFailureDedupBehaviorTest do
   setup do
     name = :"errc1_dedup_transport_#{System.unique_integer([:positive])}"
     {:ok, pid} = AshA2A.Errc1AuthFailureDedup.TransportAgent.start_link(name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
     {:ok, agent: name}
   end

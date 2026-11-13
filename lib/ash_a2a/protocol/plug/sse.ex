@@ -86,10 +86,19 @@ if Code.ensure_loaded?(Plug) do
             version = Keyword.get(opts, :version) || AshA2A.Protocol.Version.get_negotiated(conn)
             v11? = AshA2A.Protocol.Version.at_least?(version, "1.1")
 
-            # This path keeps no event log, so a lastSeenGeneration is only
-            # honoured (no Task snapshot) when the client is already current;
-            # a gap cannot be replayed and falls back to a snapshot.
-            resume? = is_integer(last_seen) and last_seen == gen and v11?
+            # Without an event log a lastSeenGeneration is only honoured (no
+            # Task snapshot) when the client is already current; a gap cannot
+            # be replayed and falls back to a snapshot (documented
+            # fallback). With a running transport event log, newer events
+            # (generation > lastSeenGeneration) are replayed instead, and
+            # only an unretained range falls back to the snapshot.
+            plan = replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, v11?)
+
+            {resume?, replay} =
+              case plan do
+                {:ok, events} -> {true, events}
+                :unavailable -> {is_integer(last_seen) and last_seen == gen and v11?, []}
+              end
 
             conn = start_sse(conn)
 
@@ -98,6 +107,16 @@ if Code.ensure_loaded?(Plug) do
                 do: conn,
                 else: send_task_snapshot(conn, jsonrpc_id, task)
 
+            conn =
+              Enum.reduce(replay, conn, fn {_seq, _kind, payload, _final?}, conn ->
+                write_wrapped(conn, jsonrpc_id, payload)
+              end)
+
+            replayed_final? =
+              Enum.any?(replay, fn {_, kind, payload, final?} ->
+                final? or (kind == "status-update" and AshA2A.A2ATransport.TaskEvents.terminal_payload?(payload))
+              end)
+
             st = %{
               floor: if(resume?, do: last_seen),
               seen: gen,
@@ -105,7 +124,7 @@ if Code.ensure_loaded?(Plug) do
               id: jsonrpc_id
             }
 
-            if resume? and AshA2A.Protocol.Task.terminal?(task),
+            if resume? and (AshA2A.Protocol.Task.terminal?(task) or replayed_final?),
               do: conn,
               else: relay_task_events(conn, jsonrpc_id, idle_timeout, st)
 
@@ -113,12 +132,54 @@ if Code.ensure_loaded?(Plug) do
             send_jsonrpc_error(conn, jsonrpc_id, Error.task_not_found())
 
           {:error, :terminal} ->
-            send_jsonrpc_error(conn, jsonrpc_id, Error.unsupported_operation())
+            terminal_resume(conn, agent, task_id, jsonrpc_id, last_seen, opts)
         end
       else
         {:error, %Error{} = error} -> send_jsonrpc_error(conn, jsonrpc_id, error)
       end
     end
+
+    # A terminal task cannot be subscribed to (-32004), except a v1.1
+    # lastSeenGeneration resume that a retained transport log can serve: the
+    # missed events (possibly none) are replayed without a Task snapshot and
+    # the stream closes.
+    defp terminal_resume(conn, agent, task_id, jsonrpc_id, last_seen, opts) do
+      version = Keyword.get(opts, :version) || AshA2A.Protocol.Version.get_negotiated(conn)
+      v11? = AshA2A.Protocol.Version.at_least?(version, "1.1")
+
+      with true <- is_integer(last_seen) and v11?,
+           {:ok, task} <- GenServer.call(agent, {:get_task, task_id}),
+           gen = AshA2A.Protocol.Task.Generation.generation_of(task),
+           {:ok, events} <-
+             replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, true) do
+        conn = start_sse(conn)
+
+        Enum.reduce(events, conn, fn {_seq, _kind, payload, _final?}, conn ->
+          write_wrapped(conn, jsonrpc_id, payload)
+        end)
+      else
+        _ -> send_jsonrpc_error(conn, jsonrpc_id, Error.unsupported_operation())
+      end
+    end
+
+    # `{:ok, events}` (possibly empty) when a running transport log can serve
+    # the resume; `:unavailable` otherwise (no transport, no lastSeenGeneration,
+    # pre-1.1 client, or the log no longer retains the range).
+    defp replay_plan(transport, task_id, last_seen, gen, true)
+         when is_atom(transport) and not is_nil(transport) and is_integer(last_seen) do
+      if AshA2A.A2ATransport.running?(transport) do
+        log = AshA2A.A2ATransport.TaskEvents.backlog(transport, task_id)
+
+        case AshA2A.A2ATransport.TaskEvents.replay_from_generation(log, last_seen, gen) do
+          {:ok, replay, _cursor} -> {:ok, AshA2A.A2ATransport.TaskEvents.visible(replay, "1.1")}
+          :unavailable -> :unavailable
+        end
+      else
+        :unavailable
+      end
+    end
+
+    defp replay_plan(_transport, _task_id, _last_seen, _gen, _v11?), do: :unavailable
 
     @doc """
     Writes a `StreamError` `StreamResponse` frame on an open SSE connection.

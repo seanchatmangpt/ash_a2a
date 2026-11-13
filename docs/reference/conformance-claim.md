@@ -5,8 +5,11 @@ section 4 conformance statement from executed probes. The statement is an output
 the verifier, never hand-written. Version marker: v26.9.29.
 
 Protocol baseline for the courts below: A2A v1.0.1 (wire-compatible with v1.0.0);
-the code now emits `protocolVersion` 1.1 and accepts 0.3/1.0/1.1 (v1.1 rows are
-UNVERIFIED; see `a2a-v1-1-conformance.md`); 0.3 is legacy/compat only. The TCK figures in the standing receipt below are
+the code now emits `protocolVersion` 1.1 and accepts 0.3/1.0/1.1. v1.1 Standing:
+PARTIAL (17 rows CONFORMANT by named courts, no v1.1 TCK verdict; evidence at
+`d8f593dc`, default tier 4705 tests, 0 failures; see
+[a2a-v1-1-conformance.md](a2a-v1-1-conformance.md)); 0.3 is legacy/compat only.
+The TCK figures in the standing receipt below are
 bound to the old TCK pin `263b9cfa` and are stale; record form is
 `{pass, fail, not_tested, skipped, manual}` + pin SHA + date (see
 [TCK suite](tck-suite.md)).
@@ -127,3 +130,4 @@ earlier `REFUSED(ci:tck-not-in-tree)` framing is retired.
 - `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` (C0..C3 profiles)
 - `docs/assurance/sa2a-assurance-case-v26.9.28.md`
 - `docs/reference/mix-tasks.md`
+- [A2A v1.1 conformance](a2a-v1-1-conformance.md)

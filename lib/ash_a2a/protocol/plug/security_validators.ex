@@ -488,6 +488,16 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    # RFC 7518 RS256 is RSASSA-PKCS1-v1_5 over SHA-256 of the signing input
+    # (`:public_key.verify/4` hashes the message itself). The pre-1.1 verifier
+    # signed/verified a pre-hashed digest (double hash), which rejects every
+    # standards-conformant token; that legacy form is still accepted so
+    # previously issued tokens keep verifying.
+    defp rsa_verify?(signing_input, sig, key) do
+      :public_key.verify(signing_input, :sha256, sig, key) or
+        :public_key.verify(:crypto.hash(:sha256, signing_input), :sha256, sig, key)
+    end
+
     defp verify_rs256(header, signing_input, sig, config) do
       with {:ok, jwk} <- resolve_jwk(header, config) do
         case jwk["kty"] do
@@ -499,7 +509,7 @@ if Code.ensure_loaded?(Plug) do
               is_nil(n) or is_nil(e) ->
                 {:error, %{code: :invalid_jwk, detail: "RSA JWK missing n/e"}}
 
-              :public_key.verify(:crypto.hash(:sha256, signing_input), :sha256, sig, {:"RSAPublicKey", n, e}) ->
+              rsa_verify?(signing_input, sig, {:"RSAPublicKey", n, e}) ->
                 :ok
 
               true ->

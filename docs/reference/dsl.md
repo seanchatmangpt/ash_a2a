@@ -171,7 +171,9 @@ Agent-card configuration is declared on the domain. Additions:
   uri; merged into `capabilities.extensions`), `extended_agent_card` (sets
   `capabilities.extendedAgentCard`), `push_allowed_hosts` and `push_retry`
   (declared and persisted; read through `AshA2A.Domain.Info.push_allowed_hosts/1`
-  and `push_retry/1` by the push modules).
+  and `push_retry/1` by the push modules), `user_artifacts` (boolean, default
+  `false`; A2A v1.1: sets `capabilities.userArtifacts` and permits
+  `SendMessageRequest.artifactUpdates`).
 - `mount`: `tenant` and `protocol_version` ride on the mount's
   supportedInterfaces entry.
 

@@ -24,9 +24,23 @@ once it reaches 1.0.
 - Version surface: `Version.protocol_version/0` is `"1.1"`; accepted versions
   `["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); the client-header default
   `Version.default/0` is still `"1.0"`. Docs corrected to match.
-- Test counts: coordinator log `/tmp/coord-full-10.log` reports the default tier at
-  4695 tests, 0 failures (not re-run by this lane). The serial tier has env-blocked
-  tests (Postgres :55432, Oban, wasm pins, hddl); its count is UNVERIFIED.
+- Test counts: per `docs/reference/a2a-v1-1-conformance.md`, evidence at `d8f593dc`
+  is default tier 4705 tests, 0 failures; serial tier 0 failures. Not re-run by this
+  doc pass.
+
+### A2A v1.1 support
+
+- Target A2A v1.1.0 (upstream tag `v1.1.0-rc`). Standing: PARTIAL. 17 delta rows are
+  CONFORMANT by named courts; no v1.1 TCK verdict exists. Row-level courts and
+  evidence: [a2a-v1-1-conformance.md](docs/reference/a2a-v1-1-conformance.md).
+- Cards advertise `protocolVersion` 1.1; `A2A-Version` accepts 0.3, 1.0, 1.1.
+- Task `generation`/`timeline`, `ifGenerationMatch` (`-32010`, HTTP 409 `ABORTED`),
+  `POST /message:live`, `currentGeneration` long poll, `lastSeenGeneration` resume,
+  `userArtifacts`/`artifactUpdates`. Guide:
+  [v1-1-live-and-generations](docs/how-to/v1-1-live-and-generations.md).
+- Config documented: `:long_poll_timeout_ms`, `:events_transport`, `user_artifacts`,
+  `cancel_in_flight`, `validate_input_modes`, mount `tenant`
+  ([configuration](docs/reference/configuration.md)).
 
 ## [26.11.13] - 2026-11-13
 

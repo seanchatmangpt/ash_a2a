@@ -21,12 +21,16 @@ Goal-oriented procedures:
   authenticate inbound A2A requests and thread identity into your Ash actions.
 - [`how-to/enable-semantic-requests.md`](how-to/enable-semantic-requests.md) — enable
   the semantic-compilation A2A surface in an existing app.
+- [`how-to/v1-1-live-and-generations.md`](how-to/v1-1-live-and-generations.md) — use live
+  messaging, generations, timeline and resubscribe at A2A v1.1
 - [`how-to/migrate-from-a2a-hex.md`](how-to/migrate-from-a2a-hex.md) — drop
   `{:a2a, "~> 0.2"}` and move to `AshA2A.Protocol.*`.
 - [`how-to/migrate-legacy-to-strict.md`](how-to/migrate-legacy-to-strict.md) — move
   from legacy permissive behavior to the strict conformance profile.
 - [`how-to/observe-dispatch-with-ocel.md`](how-to/observe-dispatch-with-ocel.md) — get
   OCEL v2 process-mining evidence for every A2A dispatch.
+- [`how-to/mount-email-gateway.md`](how-to/mount-email-gateway.md) — authenticate email
+  provider webhooks and send briefs through a spool or SMTP sender.
 - [`how-to/operate-by-email.md`](how-to/operate-by-email.md) — operate governed actions
   by email brief and reply.
 - [`how-to/release.md`](how-to/release.md) — cut an ash_a2a release.
@@ -58,6 +62,8 @@ Exact factual contracts:
 - [`reference/index.md`](reference/index.md) — module reference index: the
   ALIVE / ALIVE (opt-in trigger) / REAL_INTEGRATED / PARTIAL standing legend and the
   full reference page catalog.
+- [`reference/a2a-error-mapping-decisions.md`](reference/a2a-error-mapping-decisions.md) — HTTP,
+  gRPC and JSON-RPC error mapping decisions against the pinned TCK
 - [`reference/dsl.md`](reference/dsl.md) — the `a2a` section, `skill`,
   `hddl_operator`, `semantic_requests`, and compile-time verification.
 - [`reference/configuration.md`](reference/configuration.md) — every application config
@@ -78,6 +84,8 @@ Exact factual contracts:
   CONFORMANT/PARTIAL/GAP claims, each citing the executed v1 conformance court.
 - [`reference/a2a-v1-1-conformance.md`](reference/a2a-v1-1-conformance.md) — per-spec
   v1.1 conformance claims.
+- [`reference/v1-1-known-divergences.md`](reference/v1-1-known-divergences.md) — KD register
+  for the v1.1 target: rc-proto snapshot, no v1.1 TCK, untriaged and env-gated courts.
 - [`reference/tck-suite.md`](reference/tck-suite.md) — running the in-repo v1
   conformance report (`mix ash_a2a.v1_conformance_report`) and the official
   `a2aproject/a2a-tck` suite: court inventory, witnessed verdicts, and what

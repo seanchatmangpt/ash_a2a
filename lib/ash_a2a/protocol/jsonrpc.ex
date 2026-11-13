@@ -167,7 +167,7 @@ defmodule AshA2A.Protocol.JSONRPC do
     with {:ok, decoded} <- decode_updates(req.params),
          :ok <- lift(ClientArtifacts.check_user_artifacts(card_of(ctx), decoded)),
          {:ok, message} <- decode_optional_message(req.params),
-         :ok <- check_if_generation_match(ctx, message, configuration),
+         :ok <- check_if_generation_match(ctx, message, configuration, req.params),
          {:ok, result} <- send_or_update(handler, message, decoded, req.params, ctx),
          {:ok, result} <- apply_artifact_updates(ctx, result, message, decoded),
          {:ok, encoded} <- encode_send_result(result, history_length, timeline_length) do
@@ -453,11 +453,19 @@ defmodule AshA2A.Protocol.JSONRPC do
   defp fetch_task(_ctx, _task_id), do: {:error, :not_found}
 
   # ifGenerationMatch applies only to a message targeting an EXISTING task.
-  defp check_if_generation_match(ctx, message, configuration) do
+  defp check_if_generation_match(ctx, message, configuration, params) do
     expected = Request.if_generation_match(configuration)
 
-    with true <- not is_nil(expected) and not is_nil(message) and is_binary(message.task_id),
-         {:ok, task} <- fetch_task(ctx, message.task_id) do
+    # Message-less (artifact-only) send: the target is the single taskId the
+    # artifactUpdates name.
+    target_id =
+      cond do
+        not is_nil(message) -> message.task_id
+        true -> artifact_only_task_id(params)
+      end
+
+    with true <- not is_nil(expected) and is_binary(target_id),
+         {:ok, task} <- fetch_task(ctx, target_id) do
       case ClientArtifacts.check_generation(task, expected) do
         :ok ->
           :ok
@@ -472,6 +480,17 @@ defmodule AshA2A.Protocol.JSONRPC do
       end
     else
       _ -> :ok
+    end
+  end
+
+  defp artifact_only_task_id(params) do
+    params
+    |> Request.artifact_updates()
+    |> Enum.map(&(&1["taskId"] || &1["task_id"]))
+    |> Enum.uniq()
+    |> case do
+      [task_id] when is_binary(task_id) -> task_id
+      _ -> nil
     end
   end
 
@@ -502,7 +521,7 @@ defmodule AshA2A.Protocol.JSONRPC do
   defp apply_artifact_updates(_ctx, result, _message, []) when not is_tuple(result), do: {:ok, result}
 
   defp apply_artifact_updates(ctx, {:artifact_only, task_id}, _message, decoded) do
-    apply_to_agent(ctx, task_id, decoded)
+    apply_to_agent(ctx, task_id, decoded, true)
   end
 
   # A direct Message reply creates no task: updates are not persisted.
@@ -510,17 +529,22 @@ defmodule AshA2A.Protocol.JSONRPC do
     do: {:ok, result}
 
   defp apply_artifact_updates(ctx, %AshA2A.Protocol.Task{id: id}, _message, decoded),
-    do: apply_to_agent(ctx, id, decoded)
+    do: apply_to_agent(ctx, id, decoded, false)
 
-  defp apply_to_agent(%{agent: agent}, task_id, decoded) when not is_nil(agent) do
-    case GenServer.call(agent, {:apply_artifact_updates, task_id, decoded}) do
+  # The artifact-only path rechecks ifGenerationMatch inside the serialized
+  # agent (4-tuple call); a message+artifact send already passed the
+  # pre-check against the pre-message generation, so it applies unguarded.
+  defp apply_to_agent(%{agent: agent} = ctx, task_id, decoded, guard?) when not is_nil(agent) do
+    expected = if guard?, do: Map.get(ctx, :if_generation_match)
+
+    case GenServer.call(agent, {:apply_artifact_updates, task_id, decoded, expected}) do
       {:ok, _task} = ok -> ok
       {:error, :not_found} -> {:error, Error.task_not_found()}
       {:error, _} = error -> lift(error)
     end
   end
 
-  defp apply_to_agent(_ctx, _task_id, _decoded),
+  defp apply_to_agent(_ctx, _task_id, _decoded, _guard?),
     do: {:error, Error.unsupported_operation("artifactUpdates need an agent in context")}
 
   # GetTask `currentGeneration` long-poll: answer now when the task is already
@@ -535,7 +559,7 @@ defmodule AshA2A.Protocol.JSONRPC do
          is_nil(Map.get(ctx, :agent)) do
       {:ok, task}
     else
-      timeout = Map.get(ctx, :long_poll_timeout_ms) || ClientArtifacts.long_poll_timeout_ms()
+      timeout = ClientArtifacts.long_poll_timeout_ms(Map.get(ctx, :long_poll_timeout_ms))
       deadline = System.monotonic_time(:millisecond) + timeout
       await_generation(ctx.agent, task.id, value, deadline)
       safe_call(fn -> handler.handle_get(task.id, params, ctx) end)

@@ -38,9 +38,14 @@ if Code.ensure_loaded?(Plug) do
     (409 + reconfirm email, no dispatch) -> dispatch approved -> reply email ->
     200 `%{"results" => [...]}`.
 
-    Staleness: an approved action is stale when both `action.graph_digest` and
-    `current_digests[n]` are present and differ (same both-present-and-different rule as
-    `AshA2A.Hilt.WorkOrder`'s private graph-digest checkpoint).
+    Staleness (fail-closed): an approved action is stale when `action.graph_digest` or
+    `current_digests[n]` is missing, or they differ. Stale => 409, no dispatch.
+
+    Replay and rate limit (opt-in via `:token_ledger`, an `AshA2A.Email.TokenLedger`
+    server): approved `(brief_id, n, token)` triples are single-use (409 `already_consumed`);
+    an identical inbound `message_id` replays the cached response without re-dispatch.
+    `:rate_limit` (`{max, window_ms}`) bounds requests per sender (429 `rate_limited`).
+    Without `:token_ledger` neither protection is active.
 
     Per-action standing: `dispatched | held | refused`. Unmentioned actions are omitted.
     """
@@ -71,12 +76,17 @@ if Code.ensure_loaded?(Plug) do
       with {:ok, body, conn} <- read_json(conn),
            {:ok, inbound} <- stage(400, Inbound.parse(body)),
            {:ok, principal} <- stage(401, Inbound.verify_sender(inbound, policy(opts))),
+           :ok <- rate_limit(inbound, opts),
            {:ok, brief, digests} <- find_brief(inbound, opts),
            {:ok, entries, approved} <- intent(inbound, brief),
            :ok <- verify_tokens(brief, approved, body),
-           :ok <- check_fresh(approved, digests) do
+           :ok <- check_fresh(approved, digests),
+           :ok <- consume(inbound, approved, body, opts) do
         run(conn, inbound, principal, entries, approved, opts)
       else
+        {:replay, cached} ->
+          send_json(conn, 200, Map.merge(cached || %{"results" => []}, %{"replayed" => true}))
+
         :stale ->
           {:ok, inbound} = Inbound.parse(conn.body_params)
           send_reply(opts, inbound, "Reconfirm required", reconfirm_text())
@@ -142,12 +152,13 @@ if Code.ensure_loaded?(Plug) do
       end)
     end
 
+    # Fail-closed: a missing digest on either side cannot prove freshness, so it is stale.
     defp check_fresh(approved, digests) do
       stale? =
         Enum.any?(approved, fn a ->
           case {Map.get(a, :graph_digest), Map.get(digests, a.n)} do
-            {nil, _} -> false
-            {_, nil} -> false
+            {nil, _} -> true
+            {_, nil} -> true
             {same, same} -> false
             _ -> true
           end
@@ -155,6 +166,45 @@ if Code.ensure_loaded?(Plug) do
 
       if stale?, do: :stale, else: :ok
     end
+
+    defp rate_limit(inbound, opts) do
+      with ledger when not is_nil(ledger) <- Keyword.get(opts, :token_ledger),
+           {max, window} <- Keyword.get(opts, :rate_limit) do
+        sender = String.downcase(to_string(inbound.from))
+
+        case AshA2A.Email.TokenLedger.rate_check(ledger, sender, max, window) do
+          :ok -> :ok
+          {:error, reason} -> {:halt, 429, reason}
+        end
+      else
+        _ -> :ok
+      end
+    end
+
+    defp consume(inbound, approved, body, opts) do
+      case Keyword.get(opts, :token_ledger) do
+        nil ->
+          :ok
+
+        ledger ->
+          tokens = body["reply_tokens"] || body[:reply_tokens] || %{}
+
+          pairs =
+            Enum.map(approved, fn %{n: n} ->
+              {n, tokens |> then(&Map.get(&1, Integer.to_string(n), Map.get(&1, n))) |> to_string() |> String.trim()}
+            end)
+
+          case AshA2A.Email.TokenLedger.reserve(ledger, brief_id(inbound), pairs, inbound.message_id) do
+            :ok -> :ok
+            {:replay, cached} -> {:replay, cached}
+            {:error, :already_consumed} -> {:halt, 409, :already_consumed}
+            {:error, reason} -> {:halt, 503, reason}
+          end
+      end
+    end
+
+    defp brief_id(%Inbound{in_reply_to: id}),
+      do: id |> String.trim() |> String.trim_leading("<") |> String.trim_trailing(">")
 
     defp run(conn, inbound, principal, entries, approved, opts) do
       approved_ns = MapSet.new(approved, & &1.n)
@@ -174,7 +224,12 @@ if Code.ensure_loaded?(Plug) do
         end
 
       send_reply(opts, inbound, "Re: #{inbound.subject}", summary(results))
-      send_json(conn, 200, %{"results" => Enum.map(results, &serialize/1)})
+      body = %{"results" => Enum.map(results, &serialize/1)}
+
+      if ledger = Keyword.get(opts, :token_ledger),
+        do: AshA2A.Email.TokenLedger.record_result(ledger, brief_id(inbound), inbound.message_id, body)
+
+      send_json(conn, 200, body)
     end
 
     defp dispatch_one(n, action, principal, opts) do

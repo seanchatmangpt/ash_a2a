@@ -31,7 +31,7 @@ defmodule AshA2A.SemanticExtensionTest do
     {:ok, pid} = PeerB.start_link(name: agent_name)
 
     on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      AshA2A.TestSupport.SafeStop.stop(pid)
       PeerB.deconfigure(agent_name)
     end)
 

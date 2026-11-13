@@ -288,10 +288,16 @@ defmodule AshA2A.Hilt.WorkOrder do
   # identity into DO. Precedent: Planning.Preflight.work_order_bound/2 -- both
   # present and disagreeing -> refuse; either absent -> skip. Evidence, never
   # authority: this names the graph, it never grants it.
-  defp checkpoint_graph_digest(nil, _subject_digest), do: :ok
-  defp checkpoint_graph_digest(_order_digest, nil), do: :ok
-  defp checkpoint_graph_digest(order_digest, order_digest), do: :ok
-  defp checkpoint_graph_digest(_order_digest, _subject_digest),
+  @doc """
+  Pure graph-digest checkpoint: `:ok` when either side is `nil` or both are
+  equal, `{:error, :stale_graph_identity}` when both are present and differ.
+  """
+  @spec checkpoint_graph_digest(String.t() | nil, String.t() | nil) ::
+          :ok | {:error, :stale_graph_identity}
+  def checkpoint_graph_digest(nil, _subject_digest), do: :ok
+  def checkpoint_graph_digest(_order_digest, nil), do: :ok
+  def checkpoint_graph_digest(order_digest, order_digest), do: :ok
+  def checkpoint_graph_digest(_order_digest, _subject_digest),
     do: {:error, :stale_graph_identity}
 
   defp valid_graph_hex!(hex) do

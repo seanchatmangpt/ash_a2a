@@ -148,7 +148,7 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
   defp start_agent(agent_module) do
     name = :"v1_error_registry_#{System.unique_integer([:positive])}"
     {:ok, pid} = agent_module.start_link(name: name)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
     plug_opts =
       AshA2A.Transport.HTTPJSON.init(agent: name, base_url: "http://127.0.0.1/fixture")
@@ -385,8 +385,8 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
         # produces -32003/-32007 on its own paths.)
         -32_603 => 500,
         -32_003 => 400,
-        -32_005 => 400,
-        -32_006 => 500,
+        -32_005 => 415,
+        -32_006 => 502,
         -32_007 => 400,
         -32_008 => 400,
         -32_009 => 400,

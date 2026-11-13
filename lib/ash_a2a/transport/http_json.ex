@@ -684,7 +684,8 @@ defmodule AshA2A.Transport.HTTPJSON do
       transport: opts.transport,
       push_opts: AshA2A.A2ATransport.TaskEvents.push_opts(opts.transport),
       principal: caller(conn),
-      wire: :v1
+      wire: :v1,
+      a2a_version: AshA2A.Protocol.DowngradeWire.version(conn)
     }
   end
 
@@ -931,7 +932,8 @@ defmodule AshA2A.Transport.HTTPJSON do
     with true <- is_binary(task_id) or {:error, Error.invalid_params("artifact-only requests must name a taskId")},
          {:ok, task} <- owned_task(agent, scoped_caller(conn), task_id),
          :ok <- AshA2A.Protocol.ClientArtifacts.check_generation(task, cfg.if_generation_match),
-         {:ok, task} <- GenServer.call(agent, {:apply_artifact_updates, task_id, updates}) do
+         {:ok, task} <-
+           GenServer.call(agent, {:apply_artifact_updates, task_id, updates, cfg.if_generation_match}) do
       {:ok, task}
     else
       {:error, _} = error -> error
@@ -1952,7 +1954,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   # compile-time literal (traceability of the mapping).
   @spec status_for(Error.t()) :: non_neg_integer()
   defp status_for(%Error{code: -32_001}), do: 404
-  defp status_for(%Error{code: -32_006}), do: 500
+  # Pinned TCK ERROR_BINDINGS: InvalidAgentResponse -> 502, ContentTypeNotSupported -> 415.
+  defp status_for(%Error{code: -32_006}), do: 502
+  defp status_for(%Error{code: -32_005}), do: 415
   defp status_for(%Error{code: code})
        when code in [
               -32_600,
@@ -1961,7 +1965,6 @@ defmodule AshA2A.Transport.HTTPJSON do
               -32_700,
               -32_003,
               -32_004,
-              -32_005,
               -32_007,
               -32_008,
               -32_009

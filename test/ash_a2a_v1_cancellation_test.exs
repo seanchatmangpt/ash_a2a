@@ -173,7 +173,7 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
     # alive? check and the stop; a :noproc exit from on_exit fails the test.
     on_exit(fn ->
       try do
-        if Process.alive?(pid), do: GenServer.stop(pid)
+        AshA2A.TestSupport.SafeStop.stop(pid)
       catch
         :exit, _ -> :ok
       end

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
-  @shortdoc "Runs every A2A v1.0 conformance court and emits a machine-readable JSON verdict report"
+  @shortdoc "Runs every A2A v1.0 conformance court plus the v1.1 court list and emits a machine-readable JSON verdict report"
 
   @moduledoc """
   One command that runs every A2A v1.0 conformance court in this repo and
@@ -44,7 +44,10 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
   3. Runs each existing court as a REAL OS subprocess
      (`mix test <file> --include serial`), capturing the exit code and the
      ExUnit summary line.
-  4. Writes the JSON report: `%{generated_at, elixir_version, courts,
+  4. Adds the explicit A2A v1.1 court list (`v1_1_courts/0`: `x1`..`x5`,
+     `v1_1_codec`, `v2`..`v14` generation/live files, `b3_v11_courts`,
+     `t1_downgrade_wire`), subject to the same runtime existence check.
+  5. Writes the JSON report: `%{generated_at, elixir_version, courts,
      totals}`, where `courts` is a list of `%{file, exit_code, summary_line,
      verdict: "PASS" | "FAIL"}` and `totals` is `%{pass, fail, total}`.
 
@@ -110,7 +113,7 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
   def run(argv) do
     {opts, _rest, _invalid} = OptionParser.parse(argv, switches: @switches)
 
-    all_courts = v1_courts()
+    all_courts = all_courts()
 
     selected =
       case Keyword.get(opts, :only) do
@@ -232,10 +235,46 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
   @doc false
   def excluded_v1_files, do: @excluded_v1_files
 
-  @doc "Court files derived from the glob (sorted), minus the explicit exclusions."
+  # A2A v1.1 court files outside the `ash_a2a_v1_*` glob. Listed explicitly;
+  # the runtime existence check in `run_court/1` turns a missing entry into a
+  # FAIL, so a renamed or deleted file is never a silent pass.
+  @v1_1_courts [
+    "test/b3_v11_courts_test.exs",
+    "test/t1_downgrade_wire_test.exs",
+    "test/v1_1_codec_test.exs",
+    "test/v10_grpc_live_test.exs",
+    "test/v11_client_generation_test.exs",
+    "test/v11_client_live_test.exs",
+    "test/v12_plug_wiring_test.exs",
+    "test/v13_sse_generation_test.exs",
+    "test/v14_http_json_live_core_test.exs",
+    "test/v2_generation_test.exs",
+    "test/v3_generation_ash_test.exs",
+    "test/v4_push_version_test.exs",
+    "test/v4_stream_generation_test.exs",
+    "test/v5_live_session_test.exs",
+    "test/v6_generation_test.exs",
+    "test/v9_http_json_v11_test.exs",
+    "test/x1_artifact_only_generation_test.exs",
+    "test/x2_grpc_v11_gaps_test.exs",
+    "test/x3_email_hardening_test.exs",
+    "test/x4_state_and_longpoll_test.exs",
+    "test/x5_generation_durability_test.exs"
+  ]
+
+  @doc "A2A v1.1 court files outside the `ash_a2a_v1_*` glob (explicit list)."
+  def v1_1_courts, do: @v1_1_courts
+
+  @doc """
+  Court files: the v1 glob minus the explicit exclusions (sorted). The report
+  runs `all_courts/0` (this list plus the explicit v1.1 list).
+  """
   def v1_courts do
     (Path.wildcard(@v1_glob) -- @excluded_v1_files) |> Enum.sort()
   end
+
+  @doc "Every court the report runs: `v1_courts/0` plus `v1_1_courts/0` (sorted, unique)."
+  def all_courts, do: (v1_courts() ++ @v1_1_courts) |> Enum.uniq() |> Enum.sort()
 
   @tck_statuses %{
     "PASS" => :pass,

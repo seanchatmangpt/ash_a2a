@@ -1192,8 +1192,7 @@ defmodule AshA2A.Transport.Runtime do
           token = make_ref()
 
           timeout =
-            Keyword.get(opts, :long_poll_timeout_ms) ||
-              AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms()
+            AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms(Keyword.get(opts, :long_poll_timeout_ms))
 
           waiter = %{
             from: from,

@@ -272,7 +272,7 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
     setup do
       name = :"v1_conf_card_agent_#{System.unique_integer([:positive])}"
       {:ok, pid} = GreeterAgent.start_link(name: name)
-      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
       %{
         agent: name,
@@ -342,7 +342,7 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
     setup do
       name = :"v1_conf_mt_agent_#{System.unique_integer([:positive])}"
       {:ok, pid} = MultiTurnConversationAgent.start_link(name: name)
-      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
 
       %{
         agent: name,

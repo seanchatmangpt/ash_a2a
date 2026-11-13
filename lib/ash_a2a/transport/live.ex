@@ -154,7 +154,8 @@ defmodule AshA2A.Transport.Live do
   @spec uplink_call(GenServer.server(), map(), map(), keyword()) ::
           {:ack, term()} | {:error, term()}
   def uplink_call(agent, ctx, request, opts \\ []) do
-    ctx = normalize(ctx)
+    ctx = ctx |> normalize() |> scrub_uplink_ctx()
+    request = scrub_uplink_request(request)
 
     with {:ok, card} <- card(agent, ctx),
          true <- capability?(card, :streaming) || {:error, :unsupported_operation} do
@@ -214,6 +215,45 @@ defmodule AshA2A.Transport.Live do
       key -> key
     end
   end
+
+  @reserved_uplink_keys ["a2a.auth", "ash_a2a.owner"]
+
+  @doc """
+  Merges caller-supplied uplink metadata (`ctx[:uplink]`, a map with optional
+  `:metadata` / `"metadata"` / `:params` keys) into `ctx.metadata` after dropping the
+  reserved keys `"a2a.auth"` and `"ash_a2a.owner"`. The authenticated metadata already
+  in `ctx.metadata` (bound at session open / by the transport) is never overridden.
+  """
+  @spec scrub_uplink_ctx(map()) :: map()
+  def scrub_uplink_ctx(ctx) do
+    {uplink, ctx} = Map.pop(ctx, :uplink)
+
+    caller =
+      case uplink do
+        %{} = u ->
+          [Map.get(u, :metadata), Map.get(u, "metadata"), Map.get(u, :params), Map.get(u, "params")]
+          |> Enum.filter(&is_map/1)
+          |> Enum.reduce(%{}, &Map.merge(&2, &1))
+
+        _ ->
+          %{}
+      end
+
+    caller = Map.drop(caller, @reserved_uplink_keys)
+    trusted = Map.get(ctx, :metadata, %{})
+    Map.put(ctx, :metadata, Map.merge(caller, trusted))
+  end
+
+  defp scrub_uplink_request(%{} = request) do
+    Enum.reduce(["metadata", :metadata], request, fn key, acc ->
+      case Map.get(acc, key) do
+        %{} = m -> Map.put(acc, key, Map.drop(m, @reserved_uplink_keys))
+        _ -> acc
+      end
+    end)
+  end
+
+  defp scrub_uplink_request(request), do: request
 
   # -- internals ----------------------------------------------------------------
 

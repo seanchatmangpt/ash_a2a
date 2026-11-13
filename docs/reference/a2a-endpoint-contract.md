@@ -63,7 +63,8 @@ projected card is an `AshA2A.Protocol.AgentCard`:
   `["text/plain"]` — note the dispatch contract below actually
   exchanges structured `Part.Data` (JSON) content.
 - `supported_interfaces` defaults to
-  `%{url: url, protocol_binding: "JSONRPC", protocol_version: "1.0"}`;
+  `%{url: url, protocol_binding: "JSONRPC", protocol_version: "1.1"}`
+  (`AshA2A.Protocol.Version.protocol_version/0`);
   the top-level `url` and `protocolVersion` fields are gone from the wire
   card — both live per-interface in `supportedInterfaces` only.
 - `capabilities.extendedAgentCard` — set when the owned transport is
@@ -254,6 +255,42 @@ Authentication is separate from authority: consequential
   `X-A2A-Timestamp`/`X-A2A-Signature` HMAC-SHA256 signing. Otherwise, poll
   `tasks/get` or use `message/stream` while connected.
 
+## A2A v1.1 additions
+
+Selected with `A2A-Version: 1.1` (accepted: `0.3`, `1.0`, `1.1`). Standing is
+PARTIAL; row-level courts are in
+[A2A v1.1 conformance](a2a-v1-1-conformance.md). Sources:
+`lib/ash_a2a/transport/http_json.ex`, `lib/ash_a2a/protocol/`.
+
+- **Generation and timeline**: `Task.generation` is a monotonic integer;
+  `Task.timeline[]` holds `TimelineEntry` items. `timelineLength` truncates the
+  timeline on `GetTask`, `ListTasks` (`GET /tasks/{id}`, `GET /tasks`) and
+  `SendMessageConfiguration`. Status and artifact update events carry
+  `generation`; artifacts carry `startGeneration`, `endGeneration`, `role`.
+- **Optimistic concurrency**: `SendMessageConfiguration.ifGenerationMatch`. A stale
+  value answers JSON-RPC `-32010` (`TASK_GENERATION_MISMATCH`, `TaskGenerationMismatchError`,
+  `ErrorInfo` data), HTTP 409 with gRPC status `ABORTED`. A matching value proceeds.
+- **`POST /message:live`** (`SendLiveMessage`; also gRPC; also under `/{tenant}`):
+  SSE downlink opening with a Task snapshot frame; an uplink call by session id
+  answers the ack Task only. Requires `capabilities.streaming`, else 400
+  `-32004`. A request naming a different task is a `StreamError` frame and the
+  stream stays open. JSON-RPC has no live method.
+- **Long poll**: `currentGeneration` on `GetTask` (`GET /tasks/{id}?currentGeneration=N`)
+  parks until the task generation exceeds `N`, the task is terminal, or
+  `config :ash_a2a, :long_poll_timeout_ms` (default 30_000) elapses; then the
+  current task is returned.
+- **Resume**: `lastSeenGeneration` on `SubscribeToTask` (`:subscribe?lastSeenGeneration=N`).
+  When replayable, no snapshot frame is sent, only newer events; an unreplayable
+  generation falls back to a snapshot. A non-integer value is `-32602` before any
+  stream opens.
+- **`messageUpdate` frames**: `TaskMessageUpdateEvent` appears on streams only for
+  `A2A-Version` >= 1.1; 1.0 streams carry none. Push configs carry an optional
+  `protocolVersion` that gates generation/messageUpdate payloads.
+- **`artifactUpdates`**: `SendMessageRequest.artifactUpdates` lets the client write
+  artifacts. It requires `capabilities.userArtifacts` on the card; otherwise
+  `-32004` (HTTP 400) before any work starts.
+- **Error `-32010`**: `TASK_GENERATION_MISMATCH` joins the registry above.
+
 ## "Conformance" disambiguation
 
 `priv/sa2a_conformance/` and the Chicago courts (`mix ash_a2a.sa2a_conformance`,
@@ -263,3 +300,9 @@ wire self-conformance is covered by the 25-court runner
 `mix ash_a2a.v1_conformance_report` (see
 [A2A v1.0 conformance statement](a2a-v1-conformance.md)); it is not the
 official A2A TCK.
+
+## See Also
+
+- [A2A v1.1 conformance](a2a-v1-1-conformance.md)
+- [Spec-version mapping](a2a-spec-version-mapping.md)
+- [v1.1 live and generations how-to](../how-to/v1-1-live-and-generations.md)

@@ -25,7 +25,7 @@ defmodule AshA2A.Test.ChicagoSelfTest do
     try do
       fun.(name: name)
     after
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      AshA2A.TestSupport.SafeStop.stop(pid)
     end
   end
 

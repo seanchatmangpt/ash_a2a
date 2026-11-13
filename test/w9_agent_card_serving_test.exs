@@ -36,7 +36,7 @@ defmodule AshA2A.W9AgentCardServingTest do
   setup do
     agent = :"w9_card_agent_#{System.unique_integer([:positive])}"
     {:ok, pid} = GreeterAgent.start_link(name: agent)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> AshA2A.TestSupport.SafeStop.stop(pid) end)
     %{agent: agent}
   end
 
