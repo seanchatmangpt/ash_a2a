@@ -6,7 +6,7 @@ Index of public module families under `lib/ash_a2a` that lack a dedicated
 reference doc. Entries list file and directory names only; no behavior is
 described here. Standing `undocumented` means no per-module doc exists
 outside `docs/reference/generated/reference.md` (generated) and the
-excluded `docs/jira`, `docs/sjira`, `docs/archive` trees.
+excluded `docs/archive`, `docs/sjira` trees.
 
 Method: `ls lib/ash_a2a/<family>`; `grep -rlE` for the module namespace and
 path over `docs/**/*.md` excluding the three trees above. Checked 2026-11-10.
@@ -126,7 +126,7 @@ Existing coverage: none outside generated reference.
 
 ## DfCM (`lib/ash_a2a/dfcm/`)
 
-Existing coverage: partial: `docs/dfcm/fleet-absorption-v26.9.30.md` (Standing: UNVERIFIED).
+Existing coverage: partial: `docs/archive/dfcm/fleet-absorption-v26.9.30.md` (Standing: UNVERIFIED).
 
 | entry | standing |
 |---|---|

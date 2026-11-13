@@ -45,7 +45,8 @@ defmodule AshA2A.Y5.RESTLive.PlainAgent do
   use AshA2A.Protocol.Agent, name: "y5-rest-plain", description: "no streaming"
 
   @impl AshA2A.Protocol.Agent
-  def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+  def handle_message(_message, _ctx),
+    do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
 end
 
 defmodule AshA2A.Y5.RESTLive.StreamingAgent do
@@ -56,7 +57,8 @@ defmodule AshA2A.Y5.RESTLive.StreamingAgent do
     capabilities: %{streaming: true}
 
   @impl AshA2A.Protocol.Agent
-  def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+  def handle_message(_message, _ctx),
+    do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
 end
 
 defmodule AshA2A.Y5.RESTLive.FlakyCardAgent do
@@ -67,7 +69,8 @@ defmodule AshA2A.Y5.RESTLive.FlakyCardAgent do
   # a non-card, which the Live core reports as `{:error, :unavailable}`.
   use GenServer
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, :ok, name: Keyword.fetch!(opts, :name))
+  def start_link(opts),
+    do: GenServer.start_link(__MODULE__, :ok, name: Keyword.fetch!(opts, :name))
 
   @impl true
   def init(:ok), do: {:ok, 0}
@@ -117,7 +120,9 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
   @deadline_ms 5_000
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [Agent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [Agent])
+
     {:ok, server: start_server(Agent)}
   end
 
@@ -211,9 +216,10 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
 
   # -- per-request tenant --------------------------------------------------------
 
-  test "/{tenant}/message:live binds the path tenant: the live task is visible to that tenant only", %{
-    server: server
-  } do
+  test "/{tenant}/message:live binds the path tenant: the live task is visible to that tenant only",
+       %{
+         server: server
+       } do
     {ref, id, sid, buffer} = open_downlink(live_url(server, "/acme"))
 
     ack =
@@ -227,7 +233,9 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
     assert ack.status == 200
     assert %{"id" => ^id} = ack.body
 
-    {frames, _} = collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+    {frames, _} =
+      collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+
     assert Enum.any?(frames, &Map.has_key?(&1, "statusUpdate"))
 
     own = Req.get!(url: server.base_url <> "/acme/tasks/#{id}", headers: @v11, retry: false)
@@ -240,7 +248,9 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
 
   # -- uplink via live_session_id ---------------------------------------------------
 
-  test "uplink via the live_session_id query parameter answers the ack task only", %{server: server} do
+  test "uplink via the live_session_id query parameter answers the ack task only", %{
+    server: server
+  } do
     {ref, id, sid, buffer} = open_downlink(live_url(server))
 
     ack =
@@ -255,7 +265,9 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
     assert %{"id" => ^id} = ack.body
     refute Map.has_key?(ack.body, "statusUpdate")
 
-    {frames, _} = collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+    {frames, _} =
+      collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+
     assert Enum.any?(frames, &Map.has_key?(&1, "statusUpdate"))
   end
 
@@ -283,7 +295,11 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
     request = send_body(Map.put(parked(), "taskId", "y5-no-such-task"))
 
     assert {:error, :not_found} =
-             AshA2A.Transport.Live.uplink_call(StreamingAgent, %{metadata: %{}, principal: :anonymous}, request)
+             AshA2A.Transport.Live.uplink_call(
+               StreamingAgent,
+               %{metadata: %{}, principal: :anonymous},
+               request
+             )
   end
 
   # -- streaming disabled -------------------------------------------------------------
@@ -292,7 +308,8 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
     start_supervised!({PlainAgent, []})
     server = start_server(PlainAgent)
 
-    resp = Req.post!(url: live_url(server), json: send_body(parked()), headers: @v11, retry: false)
+    resp =
+      Req.post!(url: live_url(server), json: send_body(parked()), headers: @v11, retry: false)
 
     assert resp.status == 400
     assert %{"error" => %{"details" => [%{"reason" => "UNSUPPORTED_OPERATION"} | _]}} = resp.body
@@ -322,7 +339,8 @@ defmodule AshA2A.Y5.RESTLivePathsTest do
     start_supervised!({FlakyCardAgent, name: name}, id: name)
     server = start_server(name)
 
-    resp = Req.post!(url: live_url(server), json: send_body(parked()), headers: @v11, retry: false)
+    resp =
+      Req.post!(url: live_url(server), json: send_body(parked()), headers: @v11, retry: false)
 
     assert resp.status == 503
     assert %{"error" => %{}} = resp.body

@@ -10,7 +10,10 @@ defmodule AshA2A.W17TraceW3CTest do
     assert {:ok, %{trace_id: "0af7651916cd43dd8448eb211c80319c", flags: "01"}} =
              W3C.parse_traceparent(@tp)
 
-    assert {:ok, _} = W3C.parse_traceparent("cc-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01-what-the-future-will-be-like")
+    assert {:ok, _} =
+             W3C.parse_traceparent(
+               "cc-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01-what-the-future-will-be-like"
+             )
 
     for bad <- [
           "ff-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
@@ -40,7 +43,11 @@ defmodule AshA2A.W17TraceW3CTest do
   end
 
   test "extract from conn and headers; invalid yields empty" do
-    conn = Plug.Test.conn(:post, "/") |> Plug.Conn.put_req_header("traceparent", @tp) |> Plug.Conn.put_req_header("tracestate", "a=1")
+    conn =
+      Plug.Test.conn(:post, "/")
+      |> Plug.Conn.put_req_header("traceparent", @tp)
+      |> Plug.Conn.put_req_header("tracestate", "a=1")
+
     assert W3C.extract(conn) == %{traceparent: @tp, tracestate: "a=1"}
     assert W3C.extract([{"Traceparent", @tp}]) == %{traceparent: @tp}
     assert W3C.extract([{"traceparent", "junk"}, {"tracestate", "a=1"}]) == %{}

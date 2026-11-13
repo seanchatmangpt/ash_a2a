@@ -62,15 +62,15 @@ intent = %{
 ```
 
 Build the pipeline state: `Pipeline.init/2` returns
-`%{vince: Vince.new(opts), mesh: mesh, bridge: Bridge.new_mesh_state()}`, and
+`%{ceo: CEO.new(opts), mesh: mesh, bridge: Bridge.new_mesh_state()}`, and
 the mesh registers coordinator
-tensor snapshots (`AshA2A.Twin.Tony.register_coordinator/3` over
+tensor snapshots (`AshA2A.Twin.COO.register_coordinator/3` over
 `AshA2A.Strain.Tensor.new/1`):
 
 ```elixir
 mesh =
   %{}
-  |> AshA2A.Twin.Tony.register_coordinator(
+  |> AshA2A.Twin.COO.register_coordinator(
     :coord_a,
     AshA2A.Strain.Tensor.new(%{})
   )
@@ -79,7 +79,7 @@ state = %{AshA2A.Copilot.Pipeline.init(gpm_floor: 0.22, tolerance: 0.0) | mesh: 
 ```
 
 `init/2` returns a `:bridge` (`AshA2A.Strain.Bridge` mesh_state, initially
-empty), and `check/3` populates it: admit records `ticket_assigned`, a Vince
+empty), and `check/3` populates it: admit records `ticket_assigned`, a CEO
 challenge records `challenge_received`, refuse/escalate records
 `error_reported`. To route against registered coordinators, seed a bridge
 with `AshA2A.Strain.Bridge.new_mesh_state([:coord_a])` and put it in
@@ -102,9 +102,9 @@ Invoke `Pipeline.check/3` (inject `:now` for determinism):
 | `:prior` | mechanical-prior module; default `Pipeline.detect_prior/0` |
 | `:authority_source` | `Source` module or `{module, opts}`; enables the authority hop, last gate before admit, actor from `intent[:actor_id]`; absent = skipped |
 | `:attention_broker` | `Broker` module or `{module, opts}`; escalate-class refuses return `{:escalated, %{proposal_id:, card:, proposal:}}` |
-| `:tony_triage` | triage payload folded into the escalation card |
+| `:coo_triage` | triage payload folded into the escalation card |
 | `:proposal_level` | broker level (default `:consent_by_silence`; `:supervised` forbids silence-consent) |
-| `:vince_mod` | Vince module or 2-arity fun (court instrumentation) |
+| `:ceo_mod` | CEO module or 2-arity fun (court instrumentation) |
 
 `:coordinator_id` is not an option (removed); it is read from
 `intent.coordinator_id`. Malformed intents (missing keys, `nte` zero or
@@ -160,7 +160,7 @@ ticket.trade              #=> :trade_admit
 ticket.coordinator_id     #=> :coord_a
 ticket.gpm                #=> 0.28 (= (1000 - 720) / 1000)
 ticket.attestation_claims["nonce"] #=> "nonce-admit"
-new_state.vince.challenges       #=> %{} (admit leaves the ledger untouched)
+new_state.ceo.challenges       #=> %{} (admit leaves the ledger untouched)
 ```
 
 ### Challenge (GPM 0.19 fires gpm_floor; repeat escalates)
@@ -172,7 +172,7 @@ low_margin = %{intent | trade: :trade_ch, nte: 1000, offer: 810}
 ch.code                      #=> :gpm_floor
 ch.retry_token               #=> reference()
 ch.demanded_evidence         #=> ["itemized_cost_breakdown", "subcontractor_quote_doc"]
-state1.vince.challenges[:trade_ch] #=> 1
+state1.ceo.challenges[:trade_ch] #=> 1
 
 # same trade re-submitted (even with a repaired offer) escalates:
 repaired = %{intent | trade: :trade_ch, nte: 1000, offer: 700}
@@ -197,15 +197,15 @@ tensor =
     heuristic_frequency: 10
   })
 
-mesh = %{} |> Tony.register_coordinator(:coord_s, tensor)
+mesh = %{} |> COO.register_coordinator(:coord_s, tensor)
 state = %{Pipeline.init(gpm_floor: 0.22) | mesh: mesh}
 
-{_, {:shed, {:senior_queue, :tony_relief}}} =
+{_, {:shed, {:senior_queue, :coo_relief}}} =
   Pipeline.check(%{intent | coordinator_id: :coord_s, sensor_frame: frame}, state, now: @now)
 ```
 
 The shed path leaves the challenge ledger untouched
-(`new_state.vince.challenges == %{}`).
+(`new_state.ceo.challenges == %{}`).
 
 ### Attestation refusals
 
@@ -244,7 +244,7 @@ end
 Before `check/3`, route at the mesh level with `AshA2A.Copilot.Pipeline.route/2`
 (it delegates to `AshA2A.Strain.Bridge.route/2`; both forms are shown below)
 — the moduledoc's strain-first order decision: shed saturated coordinators
-before spending a Vince interrogation. Fold verdicts back as observations:
+before spending a CEO interrogation. Fold verdicts back as observations:
 
 ```elixir
 bridge = AshA2A.Strain.Bridge.new_mesh_state([:coord_a])
@@ -255,7 +255,7 @@ case AshA2A.Strain.Bridge.route(%{friction: 0.0}, bridge) do
     bridge = AshA2A.Strain.Bridge.record_observation(bridge, id, %{type: :ticket_assigned})
 
   {:shed, {:senior_queue, reason}} ->
-    # no candidate coordinator can take the ticket; skip Vince entirely
+    # no candidate coordinator can take the ticket; skip CEO entirely
 end
 ```
 

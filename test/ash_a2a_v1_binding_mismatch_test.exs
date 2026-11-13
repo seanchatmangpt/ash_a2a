@@ -162,9 +162,10 @@ defmodule AshA2A.V1BindingMismatchTest do
   # (a) JSON-RPC server receives a REST-style request
   # ===========================================================================
 
-  test "(a1) REST MessageSendParams body at the JSON-RPC endpoint answers -32600, never a crash", %{
-    rpc: rpc
-  } do
+  test "(a1) REST MessageSendParams body at the JSON-RPC endpoint answers -32600, never a crash",
+       %{
+         rpc: rpc
+       } do
     resp = post_json!(rpc, "/", rest_body("wrong dialect"))
 
     assert resp.status == 200
@@ -200,9 +201,10 @@ defmodule AshA2A.V1BindingMismatchTest do
   # (b) HTTPJSON server receives a JSON-RPC envelope
   # ===========================================================================
 
-  test "(b1) JSON-RPC envelope body at POST /message:send answers 400 INVALID_PARAMS ErrorInfo", %{
-    rest: rest
-  } do
+  test "(b1) JSON-RPC envelope body at POST /message:send answers 400 INVALID_PARAMS ErrorInfo",
+       %{
+         rest: rest
+       } do
     resp = post_json!(rest, "/message:send", rpc_envelope("message/send", rest_body("envelope")))
 
     assert resp.status == 400
@@ -280,9 +282,10 @@ defmodule AshA2A.V1BindingMismatchTest do
     assert Enum.join(resp.headers["a2a-version"], "") == "0.3"
   end
 
-  test "(d2) a mismatched A2A-Version on the JSON-RPC server answers -32009 VERSION_NOT_SUPPORTED", %{
-    rpc: rpc
-  } do
+  test "(d2) a mismatched A2A-Version on the JSON-RPC server answers -32009 VERSION_NOT_SUPPORTED",
+       %{
+         rpc: rpc
+       } do
     resp =
       post_json!(rpc, "/", rpc_envelope("message/send", rest_body("bad version")), [
         {"a2a-version", "9.9"}
@@ -310,9 +313,10 @@ defmodule AshA2A.V1BindingMismatchTest do
     assert_server_alive({:rpc, rpc}, "still alive after bad version")
   end
 
-  test "(d3) a mismatched A2A-Version on the HTTPJSON server answers -32009, mirroring the JSONRPC plug's gate", %{
-    rest: rest
-  } do
+  test "(d3) a mismatched A2A-Version on the HTTPJSON server answers -32009, mirroring the JSONRPC plug's gate",
+       %{
+         rest: rest
+       } do
     resp =
       post_json!(rest, "/message:send", rest_body("mismatched version"), [
         {"a2a-version", "9.9"}
@@ -387,9 +391,10 @@ defmodule AshA2A.V1BindingMismatchTest do
     assert_server_alive({:rest, rest}, "rest server fine after client mismatch")
   end
 
-  test "(e2) an :http_json-mode client pointed at the JSON-RPC server fails typed, never hangs", %{
-    rpc: rpc
-  } do
+  test "(e2) an :http_json-mode client pointed at the JSON-RPC server fails typed, never hangs",
+       %{
+         rpc: rpc
+       } do
     client = Client.new(rpc.base_url, transport: :http_json)
 
     assert {:error, {:http_error, 404, "Not Found"}} =

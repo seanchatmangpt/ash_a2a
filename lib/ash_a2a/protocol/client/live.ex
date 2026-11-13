@@ -142,10 +142,21 @@ if Code.ensure_loaded?(Req) do
           id -> {[{@session_header, id}], [live_session_id: id]}
         end
 
-      case Req.post(req, url: "/message:live", json: request, headers: headers, params: params, retry: false) do
-        {:ok, %Req.Response{status: 200, body: body}} -> decode_ack(body)
-        {:ok, %Req.Response{status: status, body: body}} -> Client.__decode_http_error__(status, body)
-        {:error, _} = error -> error
+      case Req.post(req,
+             url: "/message:live",
+             json: request,
+             headers: headers,
+             params: params,
+             retry: false
+           ) do
+        {:ok, %Req.Response{status: 200, body: body}} ->
+          decode_ack(body)
+
+        {:ok, %Req.Response{status: status, body: body}} ->
+          Client.__decode_http_error__(status, body)
+
+        {:error, _} = error ->
+          error
       end
     end
 
@@ -165,8 +176,9 @@ if Code.ensure_loaded?(Req) do
 
     # -- helpers ----------------------------------------------------------------
 
-    defp build_request(%{} = map, _opts) when is_map_key(map, "sendMessage") or is_map_key(map, "subscribe"),
-      do: map
+    defp build_request(%{} = map, _opts)
+         when is_map_key(map, "sendMessage") or is_map_key(map, "subscribe"),
+         do: map
 
     defp build_request(%AshA2A.Protocol.Message{} = message, opts) do
       {:ok, encoded} = JSON.encode(message)
@@ -218,7 +230,10 @@ if Code.ensure_loaded?(Req) do
     end
 
     defp decode_ack(%{"task" => task}) when is_map(task), do: JSON.decode(task, :task)
-    defp decode_ack(%{"message" => message}) when is_map(message), do: JSON.decode(message, :message)
+
+    defp decode_ack(%{"message" => message}) when is_map(message),
+      do: JSON.decode(message, :message)
+
     defp decode_ack(%{"error" => %{} = inner}) do
       case JSON.decode(inner, :stream_error) do
         {:ok, error} -> {:error, error}

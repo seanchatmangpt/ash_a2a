@@ -63,7 +63,9 @@ defmodule AshA2A.TraceTest do
 
   defp post(ctx, token, params) do
     body =
-      Jason.encode!(Map.merge(%{"jsonrpc" => "2.0", "id" => 1, "method" => "message/send"}, %{params: params}))
+      Jason.encode!(
+        Map.merge(%{"jsonrpc" => "2.0", "id" => 1, "method" => "message/send"}, %{params: params})
+      )
 
     conn =
       Plug.Test.conn(:post, "/", body)
@@ -75,7 +77,9 @@ defmodule AshA2A.TraceTest do
 
     conn
     |> AshA2A.Trace.Plug.call(ctx.trace_plug)
-    |> then(fn conn -> if conn.halted, do: conn, else: TransportPlug.call(conn, ctx.transport_plug) end)
+    |> then(fn conn ->
+      if conn.halted, do: conn, else: TransportPlug.call(conn, ctx.transport_plug)
+    end)
   end
 
   defp get_trace(ctx, token, task_id, query \\ "") do
@@ -92,8 +96,10 @@ defmodule AshA2A.TraceTest do
 
   defp send_create(ctx, label) do
     msg =
-      %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"body" => label})])
-        | metadata: %{"skill" => "create_note"}}
+      %{
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"body" => label})])
+        | metadata: %{"skill" => "create_note"}
+      }
 
     {:ok, msg_json} = AshA2A.Protocol.JSON.encode(msg)
 
@@ -181,7 +187,8 @@ defmodule AshA2A.TraceTest do
     assert [%{"attributes" => %{"a2a.event.seq" => 1, "a2a.event.final" => true}}] = wire_events
   end
 
-  test "replay determinism: two sagas export identical structure; repeated export is stable", ctx do
+  test "replay determinism: two sagas export identical structure; repeated export is stable",
+       ctx do
     task1 = send_create(ctx, "trace-replay-a")
     task2 = send_create(ctx, "trace-replay-b")
 
@@ -206,7 +213,10 @@ defmodule AshA2A.TraceTest do
     {:ok, doc} = AshA2A.Trace.export(ctx.transport, task["id"], agent: ctx.agent, format: :otlp)
 
     assert [%{"resource" => resource, "scopeSpans" => [scope]}] = doc["resourceSpans"]
-    assert %{"key" => "service.name", "value" => %{"stringValue" => "ash_a2a"}} in resource["attributes"]
+
+    assert %{"key" => "service.name", "value" => %{"stringValue" => "ash_a2a"}} in resource[
+             "attributes"
+           ]
 
     assert scope["scope"]["name"] == "ash_a2a.trace"
     spans = scope["spans"]

@@ -318,7 +318,9 @@ defmodule AshA2A.Transport.GRPC.Server do
       Telemetry.request_span(:grpc, %{rpc: rpc}, fn ->
         try do
           result = fun.()
-          {{:returned, result}, not (match?({:error, _}, result) or match?({:err_run, _}, result))}
+
+          {{:returned, result},
+           not (match?({:error, _}, result) or match?({:err_run, _}, result))}
         rescue
           e -> {{:raised, e, __STACKTRACE__}, false}
         end
@@ -418,7 +420,13 @@ defmodule AshA2A.Transport.GRPC.Server do
   # {:content_type_not_supported, _}) into typed A2A errors.
   defp dispatch_call("SendMessage", params, call_ctx) do
     real = handler!()
-    Dispatch.call_detailed("SendMessage", params, __MODULE__.SendHandler, Map.put(call_ctx, :grpc_handler, real))
+
+    Dispatch.call_detailed(
+      "SendMessage",
+      params,
+      __MODULE__.SendHandler,
+      Map.put(call_ctx, :grpc_handler, real)
+    )
   end
 
   defp dispatch_call(method, params, call_ctx),
@@ -449,8 +457,11 @@ defmodule AshA2A.Transport.GRPC.Server do
     params
     |> scrub_metadata_at("metadata")
     |> then(fn
-      %{"message" => %{} = message} = p -> Map.put(p, "message", scrub_metadata_at(message, "metadata"))
-      p -> p
+      %{"message" => %{} = message} = p ->
+        Map.put(p, "message", scrub_metadata_at(message, "metadata"))
+
+      p ->
+        p
     end)
   end
 
@@ -723,8 +734,11 @@ defmodule AshA2A.Transport.GRPC.Server do
          )}
       end
     else
-      {:error, code, msg, details} -> {:error, rpc_error(code, msg, details)}
-      {:error, _decode} -> {:error, GRPC.RPCError.exception(status: 13, message: "Internal error")}
+      {:error, code, msg, details} ->
+        {:error, rpc_error(code, msg, details)}
+
+      {:error, _decode} ->
+        {:error, GRPC.RPCError.exception(status: 13, message: "Internal error")}
     end
   end
 
@@ -1029,7 +1043,9 @@ defmodule AshA2A.Transport.GRPC.Server do
   defp to_params(req) do
     {:ok, req |> Protobuf.JSON.encode!() |> Jason.decode!() |> normalize_params(req)}
   rescue
-    e -> {:error, GRPC.RPCError.exception(status: 3, message: "bad request: #{Exception.message(e)}")}
+    e ->
+      {:error,
+       GRPC.RPCError.exception(status: 3, message: "bad request: #{Exception.message(e)}")}
   end
 
   # ListTasksRequest.status UNSPECIFIED(0) means "no filter" (proto3 default),
@@ -1074,7 +1090,8 @@ defmodule AshA2A.Transport.GRPC.Server.SendHandler do
   def handle_get(task_id, params, ctx), do: ctx.grpc_handler.handle_get(task_id, params, ctx)
 
   @impl true
-  def handle_cancel(task_id, params, ctx), do: ctx.grpc_handler.handle_cancel(task_id, params, ctx)
+  def handle_cancel(task_id, params, ctx),
+    do: ctx.grpc_handler.handle_cancel(task_id, params, ctx)
 end
 
 defmodule AshA2A.Transport.GRPC.Server.Endpoint do

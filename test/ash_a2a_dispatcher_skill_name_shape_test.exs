@@ -35,7 +35,9 @@ defmodule AshA2ADispatcherSkillNameShapeTest do
         {"a float", 1.5}
       ] do
     test "dispatch/5 fails closed (no raise) for a skill_name that is #{label}" do
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => "widget"})])
+      message =
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => "widget"})])
+
       bad_skill_name = unquote(Macro.escape(bad_skill_name))
 
       assert {:error, {:skill_lookup, {:unknown_skill, ^bad_skill_name}}} =

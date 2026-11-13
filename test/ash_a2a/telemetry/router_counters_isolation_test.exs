@@ -164,7 +164,9 @@ defmodule AshA2A.Telemetry.RouterCountersIsolationTest do
   end
 
   defp route_phrase_tier! do
-    RequestRouter.route(HddlDeterministicFixture, AshA2A.Protocol.Message.new_user("create a labeled item"),
+    RequestRouter.route(
+      HddlDeterministicFixture,
+      AshA2A.Protocol.Message.new_user("create a labeled item"),
       phrase_templates: [phrase_template()]
     )
   end

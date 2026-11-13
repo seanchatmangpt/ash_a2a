@@ -5,12 +5,14 @@ defmodule AshA2A.GraphLaw.UnpinnedRefusalTest do
 
   setup do
     prev = Application.fetch_env(:ash_a2a, :graphlaw_allow_unpinned)
+
     on_exit(fn ->
       case prev do
         {:ok, v} -> Application.put_env(:ash_a2a, :graphlaw_allow_unpinned, v)
         :error -> Application.delete_env(:ash_a2a, :graphlaw_allow_unpinned)
       end
     end)
+
     :ok
   end
 

@@ -77,7 +77,11 @@ defmodule AshA2A.Protocol.Agent.State do
   @doc """
   Transitions a task to a new state, updating the status.
   """
-  @spec transition(AshA2A.Protocol.Task.t(), AshA2A.Protocol.Task.Status.state(), AshA2A.Protocol.Message.t() | nil) ::
+  @spec transition(
+          AshA2A.Protocol.Task.t(),
+          AshA2A.Protocol.Task.Status.state(),
+          AshA2A.Protocol.Message.t() | nil
+        ) ::
           AshA2A.Protocol.Task.t()
   def transition(task, new_state, message \\ nil) do
     old_state = if task.status, do: task.status.state
@@ -180,7 +184,9 @@ defmodule AshA2A.Protocol.Agent.State do
   @spec get_task(t(), String.t()) :: {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found}
   def get_task(%{task_store: {mod, ref}} = state, task_id) do
     case Map.fetch(state.tasks, task_id) do
-      {:ok, task} -> {:ok, task}
+      {:ok, task} ->
+        {:ok, task}
+
       :error ->
         case mod.get(ref, task_id) do
           {:ok, _} = ok -> ok
@@ -209,6 +215,7 @@ defmodule AshA2A.Protocol.Agent.State do
         :error -> Map.put(state.contexts, ctx_id, [task_id])
         {:ok, prior} -> Map.put(state.contexts, ctx_id, [task_id | prior])
       end
+
     %{state | contexts: contexts}
   end
 

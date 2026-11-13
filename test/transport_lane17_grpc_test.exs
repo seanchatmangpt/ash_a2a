@@ -107,7 +107,12 @@ defmodule AshA2A.TransportLane17.GRPCServerTest do
 
     Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
       handler: Handler,
-      ctx: %{agent: agent, opts: %{authorize_task: nil}, transport: transport, stream_idle_ms: 2_000}
+      ctx: %{
+        agent: agent,
+        opts: %{authorize_task: nil},
+        transport: transport,
+        stream_idle_ms: 2_000
+      }
     )
 
     auth_opts =
@@ -174,8 +179,14 @@ defmodule AshA2A.TransportLane17.GRPCServerTest do
 
     error =
       case result do
-        {:error, %GRPC.RPCError{} = e} -> e
-        {:ok, stream} -> Enum.find_value(stream, fn {:error, e} -> e; _ -> nil end)
+        {:error, %GRPC.RPCError{} = e} ->
+          e
+
+        {:ok, stream} ->
+          Enum.find_value(stream, fn
+            {:error, e} -> e
+            _ -> nil
+          end)
       end
 
     assert %GRPC.RPCError{status: 5} = error
@@ -196,7 +207,9 @@ defmodule AshA2A.TransportLane17.GRPCServerTest do
              Lf.A2a.V1.A2AService.Stub.get_task(channel, get, creds("bob"))
   end
 
-  test "a malformed (non-list) endpoint env fails closed instead of admitting", %{channel: channel} do
+  test "a malformed (non-list) endpoint env fails closed instead of admitting", %{
+    channel: channel
+  } do
     Application.put_env(:ash_a2a, @endpoint, %{auth: :oops})
 
     assert {:error, %GRPC.RPCError{status: status}} =

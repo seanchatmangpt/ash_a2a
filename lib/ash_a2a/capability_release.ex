@@ -118,6 +118,7 @@ defmodule AshA2A.CapabilityRelease do
     validate_text!(:id, id)
     validate_text!(:version, version)
     validate_digest!(:digest, digest)
+
     %Capability{
       id: id,
       version: version,
@@ -389,7 +390,8 @@ defmodule AshA2A.CapabilityRelease do
         standing_binding: %StandingBinding{} = binding
       },
       :ok ->
-        with true <- binding.capability_id == id || {:error, {:standing_capability_id_mismatch, id}},
+        with true <-
+               binding.capability_id == id || {:error, {:standing_capability_id_mismatch, id}},
              true <-
                binding.capability_digest == digest ||
                  {:error, {:standing_capability_digest_mismatch, id}},

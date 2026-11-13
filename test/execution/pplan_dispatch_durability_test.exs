@@ -438,11 +438,12 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
        %{store: store, fx: fx} do
     task_id = "i2-fresh-#{System.unique_integer([:positive])}"
 
-    assert {:ok, first} = PPlanAdapter.run(task_id, data_message(%{step: 1}), await_cfg(store, fx))
+    assert {:ok, first} =
+             PPlanAdapter.run(task_id, data_message(%{step: 1}), await_cfg(store, fx))
+
     assert first.state == :input_required
 
-    assert {:ok, :input_required,
-            %{run_status: :waiting, waiters: ["go"], error: nil}} =
+    assert {:ok, :input_required, %{run_status: :waiting, waiters: ["go"], error: nil}} =
              Provider.status(task_id, store: store, store_module: @dets)
 
     assert %{prepare: 1, finish: 0} ==
@@ -453,7 +454,9 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
 
     # a re-call with the SAME task id adopts the run and delivers the payload
     # as the parked Await signal — the SAME run resumes, never re-attempted
-    assert {:ok, second} = PPlanAdapter.run(task_id, data_message(%{step: 2}), await_cfg(store, fx))
+    assert {:ok, second} =
+             PPlanAdapter.run(task_id, data_message(%{step: 2}), await_cfg(store, fx))
+
     assert second.state == :completed
 
     # prepare ran exactly once across both calls; finish once, in the same run
@@ -471,13 +474,17 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
        %{store: store, fx: fx} do
     task_id = "i2-resume-#{System.unique_integer([:positive])}"
 
-    assert {:ok, first} = PPlanAdapter.run(task_id, data_message(%{step: 1}), await_cfg(store, fx))
+    assert {:ok, first} =
+             PPlanAdapter.run(task_id, data_message(%{step: 1}), await_cfg(store, fx))
+
     assert first.state == :input_required
 
     assert {:ok, :input_required, %{run_status: :waiting, waiters: ["go"]}} =
              Provider.status(task_id, store: store, store_module: @dets)
 
-    assert {:ok, second} = PPlanAdapter.run(task_id, data_message(%{answer: 42}), await_cfg(store, fx))
+    assert {:ok, second} =
+             PPlanAdapter.run(task_id, data_message(%{answer: 42}), await_cfg(store, fx))
+
     assert second.state == :completed
     assert second.detail != nil
 
@@ -512,7 +519,10 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
     assert second.state == :working
     refute second.state == :input_required
 
-    assert %{prepare: 1, finish: 0} == %{prepare: Effects.count(fx, :prepare), finish: Effects.count(fx, :finish)}
+    assert %{prepare: 1, finish: 0} == %{
+             prepare: Effects.count(fx, :prepare),
+             finish: Effects.count(fx, :finish)
+           }
 
     version_after = hd(@dets.list_runs(store)).version
     assert version_before == version_after
@@ -548,6 +558,7 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
 
     # the effect executed but its checkpoint was never persisted; run non-terminal
     assert Effects.count(fx, :prepare) == 1
+
     assert {:ok, :submitted, %{run_status: :pending}} =
              Provider.status(task_id, store: store, store_module: @dets)
 
@@ -557,10 +568,14 @@ defmodule AshA2A.Execution.PPlanDispatchDurabilityTest do
     KillStore.disarm()
     @clock.advance(@lease_lapse_ms)
 
-    assert {:ok, resumed} = PPlanAdapter.run(task_id, data_message(%{answer: 1}), await_cfg(store, fx))
+    assert {:ok, resumed} =
+             PPlanAdapter.run(task_id, data_message(%{answer: 1}), await_cfg(store, fx))
+
     assert resumed.state == :input_required
 
-    assert {:ok, done} = PPlanAdapter.run(task_id, data_message(%{answer: 2}), await_cfg(store, fx))
+    assert {:ok, done} =
+             PPlanAdapter.run(task_id, data_message(%{answer: 2}), await_cfg(store, fx))
+
     assert done.state == :completed
 
     # THE LAW: zero duplicate skill execution across the crash+resume

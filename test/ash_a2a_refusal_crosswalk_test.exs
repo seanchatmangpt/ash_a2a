@@ -139,10 +139,12 @@ defmodule AshA2A.RefusalCrosswalkTest do
     # bare `:ok` green pass. Tagged `:sibling_repos` (the tag test_helper.exs
     # actually excludes), not the previously-dead `:sibling`.
     @tag :sibling_repos
-    @tag skip: if(File.exists?(@sibling_ontology),
-      do: nil,
-      else: "sibling checkout absent: #{@sibling_ontology} — crosswalk pin live-check skipped"
-    )
+    @tag skip:
+           if(File.exists?(@sibling_ontology),
+             do: nil,
+             else:
+               "sibling checkout absent: #{@sibling_ontology} — crosswalk pin live-check skipped"
+           )
 
     test "pin matches the live sibling ontology" do
       live = parse_sibling!()
@@ -172,7 +174,8 @@ defmodule AshA2A.RefusalCrosswalkTest do
                elem(diffs["refused_shacl"], 0) == MapSet.new([-32_601]),
              "sabotaged pin was NOT detected as expected: #{inspect(diffs)}"
     end
-  test "live sibling derivation is stable across two parses" do
+
+    test "live sibling derivation is stable across two parses" do
       a = parse_sibling!()
       b = parse_sibling!()
       assert a == b, "sibling ontology parse is nondeterministic"

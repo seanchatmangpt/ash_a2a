@@ -69,50 +69,53 @@ defmodule AshA2A.GraphLawVendorTest do
     # PATH the whole describe block is skipped with a NAMED reason (visible via
     # `mix test --include skip`) instead of green-passing context branches.
     case WasmHost.node_executable() do
-      {:ok, _} -> :ok
+      {:ok, _} ->
+        :ok
+
       {:error, reason} ->
-        @describetag skip: "no node executable on PATH (" <>
-                           inspect(reason) <> "); real wasm execution cannot be performed"
+        @describetag skip:
+                       "no node executable on PATH (" <>
+                         inspect(reason) <> "); real wasm execution cannot be performed"
     end
 
     test "probe/1 runs the committed artifact and reports its real semantics", _context do
-        assert {:ok, probe} = WasmHost.probe()
+      assert {:ok, probe} = WasmHost.probe()
 
-        assert probe.graphlaw_version =~ "praxis-graphlaw"
-        assert probe.canonical_order_invariant
-        assert probe.distinct_graph_distinct_hash
-        assert probe.blake3_abc_matches_published_vector
-        assert probe.graph_hash_base == probe.graph_hash_reordered
-        refute probe.graph_hash_base == probe.graph_hash_mutated
-        assert WasmHost.probe_acceptable?(probe)
-        assert WasmHost.probe_failures(probe) == []
+      assert probe.graphlaw_version =~ "praxis-graphlaw"
+      assert probe.canonical_order_invariant
+      assert probe.distinct_graph_distinct_hash
+      assert probe.blake3_abc_matches_published_vector
+      assert probe.graph_hash_base == probe.graph_hash_reordered
+      refute probe.graph_hash_base == probe.graph_hash_mutated
+      assert WasmHost.probe_acceptable?(probe)
+      assert WasmHost.probe_failures(probe) == []
     end
 
     test "the module declares exactly the two host imports this repo stubs", _context do
-        assert {:ok, probe} = WasmHost.probe()
-        assert length(probe.imports) == 2
+      assert {:ok, probe} = WasmHost.probe()
+      assert length(probe.imports) == 2
 
-        names = Enum.map(probe.imports, &(String.split(&1, "::") |> List.last()))
-        assert "__wbindgen_object_drop_ref" in names
-        assert Enum.any?(names, &String.starts_with?(&1, "__wbg_getRandomValues_"))
+      names = Enum.map(probe.imports, &(String.split(&1, "::") |> List.last()))
+      assert "__wbindgen_object_drop_ref" in names
+      assert Enum.any?(names, &String.starts_with?(&1, "__wbg_getRandomValues_"))
     end
 
     test "the module exports the wasm-bindgen ABI the host relies on", _context do
-        assert {:ok, probe} = WasmHost.probe()
+      assert {:ok, probe} = WasmHost.probe()
 
-        for export <- ~w(memory graph_hash graphlaw_version blake3_hex run_hooks validate_all
+      for export <- ~w(memory graph_hash graphlaw_version blake3_hex run_hooks validate_all
                          __wbindgen_add_to_stack_pointer __wbindgen_export2 __wbindgen_export4) do
-          assert export in probe.exports, "artifact no longer exports #{export}"
-        end
+        assert export in probe.exports, "artifact no longer exports #{export}"
+      end
     end
 
     test "run_hooks returns the admission vocabulary, decoded as real JSON", _context do
-        base = File.read!(GraphLaw.fixture_path("base.ttl"))
-        event = "@prefix ex: <http://example.org/> .\nex:c ex:p ex:d .\n"
+      base = File.read!(GraphLaw.fixture_path("base.ttl"))
+      event = "@prefix ex: <http://example.org/> .\nex:c ex:p ex:d .\n"
 
-        assert {:ok, decoded} = WasmHost.call_json("run_hooks", [base, event])
-        assert is_map(decoded)
-        assert Map.has_key?(decoded, "status")
+      assert {:ok, decoded} = WasmHost.call_json("run_hooks", [base, event])
+      assert is_map(decoded)
+      assert Map.has_key?(decoded, "status")
     end
 
     test "a missing artifact path is a typed error, not a crash", _context do
@@ -123,8 +126,8 @@ defmodule AshA2A.GraphLawVendorTest do
     end
 
     test "an unknown export is a typed host error", _context do
-        assert {:error, %{code: :host_failed, host_code: "unknown_export"}} =
-                 WasmHost.run([%{fn: "no_such_export", args: []}])
+      assert {:error, %{code: :host_failed, host_code: "unknown_export"}} =
+               WasmHost.run([%{fn: "no_such_export", args: []}])
     end
   end
 

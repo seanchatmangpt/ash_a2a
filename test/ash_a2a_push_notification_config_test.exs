@@ -77,7 +77,9 @@ defmodule AshA2A.PushNotificationConfigTest do
           ] do
         request = %{"jsonrpc" => "2.0", "id" => method, "method" => method, "params" => params}
 
-        assert {:reply, %{"error" => error}} = AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
+        assert {:reply, %{"error" => error}} =
+                 AshA2A.Protocol.JSONRPC.handle(request, JSONRPCHandler, %{})
+
         assert error["code"] == -32_003
         assert error["message"] == "Push Notification is not supported"
       end
@@ -150,7 +152,9 @@ defmodule AshA2A.PushNotificationConfigTest do
         }
       }
 
-      assert {:reply, %{"result" => _}} = AshA2A.Protocol.JSONRPC.handle(send_request, JSONRPCHandler, %{})
+      assert {:reply, %{"result" => _}} =
+               AshA2A.Protocol.JSONRPC.handle(send_request, JSONRPCHandler, %{})
+
       assert Agent.get(counter, & &1) == 1
 
       Agent.stop(counter)

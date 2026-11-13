@@ -206,7 +206,8 @@ defmodule AshA2A.Trace.Recorder do
     end)
   end
 
-  def handle_event([:a2a, :agent, :message, suffix], _m, meta, _c) when suffix in [:stop, :exception] do
+  def handle_event([:a2a, :agent, :message, suffix], _m, meta, _c)
+      when suffix in [:stop, :exception] do
     safe(fn ->
       case pop() do
         %{key: "task", task_id: task_id, reopened: false} = _top ->
@@ -234,7 +235,8 @@ defmodule AshA2A.Trace.Recorder do
     end)
   end
 
-  def handle_event([:ash_a2a, :dispatch, suffix], _m, meta, _c) when suffix in [:stop, :exception] do
+  def handle_event([:ash_a2a, :dispatch, suffix], _m, meta, _c)
+      when suffix in [:stop, :exception] do
     safe(fn ->
       case pop() do
         %{key: "dispatch:" <> _n = key, task_id: task_id} ->
@@ -358,7 +360,10 @@ defmodule AshA2A.Trace.Recorder do
   # -- record writes ----------------------------------------------------------------
 
   defp write_open(task_id, key, name, parent_key, attrs) do
-    insert(task_id, {:open, key, name, parent_key, System.monotonic_time(), System.system_time(), attrs})
+    insert(
+      task_id,
+      {:open, key, name, parent_key, System.monotonic_time(), System.system_time(), attrs}
+    )
   end
 
   defp write_close(task_id, key, status, extra_attrs)
@@ -366,7 +371,10 @@ defmodule AshA2A.Trace.Recorder do
   defp write_close(nil, _key, _status, _extra_attrs), do: :ok
 
   defp write_close(task_id, key, status, extra_attrs) when is_binary(task_id) do
-    insert(task_id, {:close, key, System.monotonic_time(), System.system_time(), extra_attrs, status})
+    insert(
+      task_id,
+      {:close, key, System.monotonic_time(), System.system_time(), extra_attrs, status}
+    )
   end
 
   defp write_event(task_id, key, name, attrs) do
@@ -384,7 +392,12 @@ defmodule AshA2A.Trace.Recorder do
     try do
       if :ets.info(table()) != :undefined do
         seq =
-          :ets.update_counter(table(), {task_id, 0}, 1, {{task_id, 0}, 0, System.monotonic_time()})
+          :ets.update_counter(
+            table(),
+            {task_id, 0},
+            1,
+            {{task_id, 0}, 0, System.monotonic_time()}
+          )
 
         :ets.insert(table(), {{task_id, seq}, record})
         evict_if_over_cap(task_id)

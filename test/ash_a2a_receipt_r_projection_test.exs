@@ -148,7 +148,8 @@ defmodule AshA2A.ReceiptRProjectionTest do
                %{"cmd" => "AshA2A.Test.Fixture.Item.create", "cwd" => @repo, "exit" => 0}
              ]
 
-      assert r["replay"]["durable_location"] == "ash_a2a:receipt:" <> Identity.external(receipt.receipt_id)
+      assert r["replay"]["durable_location"] ==
+               "ash_a2a:receipt:" <> Identity.external(receipt.receipt_id)
 
       # Identity: caller-supplied anchors echoed, receipt-carried digests projected.
       assert r["identity"]["subject"] == "WO-RPROJ-1"
@@ -156,6 +157,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert r["identity"]["subject_sha"] == @subject_sha
       assert r["identity"]["base_sha"] == @base_sha
       assert r["identity"]["graph_hash"] == receipt.semantic_subject.graph_digest
+
       assert r["identity"]["subject_digest"] == %{
                "algorithm" => "sha256",
                "value" => String.slice(receipt.input_digest, -64, 64)
@@ -165,6 +167,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert r["authority"]["ceiling"] == "CONSTRUCT"
       assert r["authority"]["grant"] == "runtime:auth-rproj-alive-1"
       assert r["origin_authority"] == r["authority"]
+
       assert r["provider"] == %{
                "name" => "ash_a2a",
                "authority_ceiling" => "CONSTRUCT",
@@ -194,7 +197,11 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert ext["plan_digest"] == digest("plan-rproj")
 
       without_self =
-        Map.put(Map.delete(r, "provider_ext.ash_a2a"), "provider_ext.ash_a2a", Map.delete(ext, "self_digest"))
+        Map.put(
+          Map.delete(r, "provider_ext.ash_a2a"),
+          "provider_ext.ash_a2a",
+          Map.delete(ext, "self_digest")
+        )
 
       assert {:ok, recomputed} = Canonical.digest(without_self)
       assert recomputed == ext["self_digest"]
@@ -208,7 +215,8 @@ defmodule AshA2A.ReceiptRProjectionTest do
       store_opts = start_memory_store!()
 
       assert {:ok, receipt} =
-               CommandBus.run(change_command("rproj-dishonest-1"),
+               CommandBus.run(
+                 change_command("rproj-dishonest-1"),
                  data_message(%{"label" => "widget-rproj-dishonest-1"}),
                  Item,
                  store_opts: store_opts,
@@ -257,6 +265,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert r["authority"]["ceiling"] == "OBSERVE"
       assert r["provider"]["authority_ceiling"] == "OBSERVE"
       assert r["consequence"]["remote_effects"] == []
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Echo.read", "cwd" => @repo, "exit" => 0}
              ]
@@ -266,7 +275,8 @@ defmodule AshA2A.ReceiptRProjectionTest do
       refute Map.has_key?(r["identity"], "graph_hash")
 
       assert {:ok, item_receipt} =
-               CommandBus.run(change_command("rproj-ceil-construct"),
+               CommandBus.run(
+                 change_command("rproj-ceil-construct"),
                  data_message(%{"label" => "widget-rproj-ceil-construct"}),
                  Item,
                  store: Ekv,
@@ -306,6 +316,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert r["provider"]["authority_ceiling"] == "DO"
       assert r["consequence"]["remote_effects"] == [command.capability_id]
       assert r["standing"]["value"] == "ALIVE"
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Item.create", "cwd" => @repo, "exit" => 0}
              ]
@@ -347,6 +358,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
 
       assert r["standing"]["value"] == "REFUSED(authority_required)"
       assert r["standing"]["broken_term"] == "R_missing_authority"
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Item.create", "cwd" => @repo, "exit" => 1}
              ]
@@ -404,6 +416,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
 
       assert r["standing"]["value"] == "BUILD_BROKEN"
       assert r["standing"]["broken_term"] == "R_missing_consequence"
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Crashy.detonate", "cwd" => @repo, "exit" => 1}
              ]
@@ -426,6 +439,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
 
       assert r["standing"]["value"] == "PARTIAL_ALIVE"
       refute Map.has_key?(r["standing"], "broken_term")
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Echo.read", "cwd" => @repo, "exit" => 1}
              ]
@@ -445,12 +459,18 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert r["standing"]["value"] == "UNKNOWN"
       refute Map.has_key?(r["standing"], "broken_term")
 
-      pending = Receipt.pending(change_command("rproj-pending-1"), Identity.execution("rproj-pending-1-exec"), :change)
+      pending =
+        Receipt.pending(
+          change_command("rproj-pending-1"),
+          Identity.execution("rproj-pending-1-exec"),
+          :change
+        )
 
       assert pending.terminal_status == nil
 
       assert {:ok, r} = RProjection.project(pending, anchors(work_order_id: "WO-PENDING-1"))
       assert r["standing"]["value"] == "UNKNOWN"
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Item.create", "cwd" => @repo, "exit" => 1}
              ]
@@ -472,6 +492,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       assert {:ok, r} = RProjection.project(reconciled, anchors(work_order_id: "WO-RECONCILED-1"))
 
       assert r["standing"]["value"] == "ALIVE"
+
       assert r["replay"]["commands"] == [
                %{"cmd" => "AshA2A.Test.Fixture.Echo.read", "cwd" => @repo, "exit" => 0}
              ]
@@ -490,6 +511,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       receipt = refused_receipt("rproj-anchor-missing")
 
       assert {:error, %{code: :r_projection_anchor_missing}} = RProjection.project(receipt, [])
+
       assert {:error, %{code: :r_projection_anchor_missing, detail: %{field: :base_sha}}} =
                RProjection.project(receipt, repo: @repo, subject_sha: @subject_sha)
 
@@ -510,13 +532,17 @@ defmodule AshA2A.ReceiptRProjectionTest do
                )
 
       assert {:error, %{code: :r_projection_anchor_malformed, detail: %{field: :subject_sha}}} =
-               RProjection.project(receipt, anchors(subject_sha: "sha256:" <> String.duplicate("a", 40)))
+               RProjection.project(
+                 receipt,
+                 anchors(subject_sha: "sha256:" <> String.duplicate("a", 40))
+               )
 
       assert {:error, %{code: :r_projection_anchor_malformed, detail: %{field: :base_sha}}} =
                RProjection.project(receipt, anchors(base_sha: String.duplicate("c", 39)))
 
       # An empty string is an absent anchor, not a present-but-malformed one.
-      assert {:error, %{code: :r_projection_anchor_missing, detail: %{field: :repo, observed: ""}}} =
+      assert {:error,
+              %{code: :r_projection_anchor_missing, detail: %{field: :repo, observed: ""}}} =
                RProjection.project(receipt, anchors(repo: ""))
     end
   end
@@ -537,7 +563,11 @@ defmodule AshA2A.ReceiptRProjectionTest do
 
       tampered = %{executed | input_digest: digest("tampered")}
 
-      assert {:error, %{code: :r_projection_binding_unverified, detail: %{refused: :receipt_binding_field_mismatch}}} =
+      assert {:error,
+              %{
+                code: :r_projection_binding_unverified,
+                detail: %{refused: :receipt_binding_field_mismatch}
+              }} =
                RProjection.project(tampered, anchors(work_order_id: "WO-TAMPER-1"))
     end
   end
@@ -549,7 +579,8 @@ defmodule AshA2A.ReceiptRProjectionTest do
       command = change_command("rproj-wo-meta", metadata: %{work_order_digest: "wo-meta-1"})
 
       assert {:ok, receipt} =
-               CommandBus.run(command,
+               CommandBus.run(
+                 command,
                  data_message(%{"label" => "widget-rproj-wo-meta"}),
                  Item,
                  store: Ekv,
@@ -591,7 +622,8 @@ defmodule AshA2A.ReceiptRProjectionTest do
       store_opts = start_ekv_store!()
 
       assert {:ok, receipt} =
-               CommandBus.run(change_command("rproj-determinism-1"),
+               CommandBus.run(
+                 change_command("rproj-determinism-1"),
                  data_message(%{"label" => "widget-rproj-determinism-1"}),
                  Item,
                  store: Ekv,
@@ -654,7 +686,11 @@ defmodule AshA2A.ReceiptRProjectionTest do
         crashy,
         Receipt.compensate(observed, %{reversal_receipt_id: "runtime:rev-t"}),
         Receipt.mark_unknown_outcome(observed, :post_do_crash_window),
-        Receipt.pending(change_command("rproj-totality-pending"), Identity.execution("rproj-totality-pending-exec"), :change)
+        Receipt.pending(
+          change_command("rproj-totality-pending"),
+          Identity.execution("rproj-totality-pending-exec"),
+          :change
+        )
       ]
 
       projections =
@@ -666,7 +702,7 @@ defmodule AshA2A.ReceiptRProjectionTest do
       for r <- projections do
         # Totality: the exit gate is exactly the ALIVE gate.
         assert [%{"exit" => exit}] = r["replay"]["commands"]
-        assert (exit == 0) == (r["standing"]["value"] == "ALIVE")
+        assert exit == 0 == (r["standing"]["value"] == "ALIVE")
 
         # ...and never a commit a receipt did not make.
         assert r["consequence"]["commits"] == []

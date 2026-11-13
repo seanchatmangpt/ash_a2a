@@ -75,7 +75,11 @@ defmodule AshA2A.ContextResolverTest do
     end
 
     test "a caller cannot place a top-level key into the Ash context (SEC-11)" do
-      message = %{AshA2A.Protocol.Message.new_user("hi") | metadata: %{"context" => %{"authorize?" => false}}}
+      message = %{
+        AshA2A.Protocol.Message.new_user("hi")
+        | metadata: %{"context" => %{"authorize?" => false}}
+      }
+
       ctx = ContextResolver.from_a2a_message(message, AshA2A.Test.Fixture.Domain)
 
       assert Map.keys(ctx.context) == [:a2a_client_context]

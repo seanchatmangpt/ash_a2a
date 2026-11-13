@@ -431,6 +431,18 @@ if Code.ensure_loaded?(Igniter) do
       )
     end
 
+    # Skill and action names are new declarations, so the atom must be minted;
+    # only a well-formed, bounded Elixir identifier is admitted.
+    defp identifier_atom!(name, spec) do
+      if Regex.match?(~r/\A[a-z_][a-zA-Z0-9_]{0,63}[?!]?\z/, name) do
+        String.to_atom(name)
+      else
+        Mix.raise(
+          "Invalid --skill name #{inspect(name)} in #{inspect(spec)}: expected an identifier."
+        )
+      end
+    end
+
     # Parses repeatable `--skill name:action[:consequence]` values into
     # `{name, action, consequence | nil}` tuples, refusing anything else with
     # a named, typed error (an unparseable skill spec must not become a
@@ -439,19 +451,17 @@ if Code.ensure_loaded?(Igniter) do
       Enum.map(specs, fn spec ->
         case String.split(spec, ":") do
           [name, action] ->
-            {String.to_atom(name), String.to_atom(action), nil}
+            {identifier_atom!(name, spec), identifier_atom!(action, spec), nil}
 
           [name, action, consequence] ->
-            consequence = String.to_atom(consequence)
+            consequence =
+              Enum.find(@consequences, &(Atom.to_string(&1) == consequence)) ||
+                Mix.raise("""
+                Invalid --skill consequence #{inspect(consequence)} in #{inspect(spec)}.
+                Must be one of: #{inspect(@consequences)}.
+                """)
 
-            unless consequence in @consequences do
-              Mix.raise("""
-              Invalid --skill consequence #{inspect(consequence)} in #{inspect(spec)}.
-              Must be one of: #{inspect(@consequences)}.
-              """)
-            end
-
-            {String.to_atom(name), String.to_atom(action), consequence}
+            {identifier_atom!(name, spec), identifier_atom!(action, spec), consequence}
 
           _ ->
             Mix.raise("""

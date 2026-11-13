@@ -938,9 +938,14 @@ defmodule AshA2A.Protocol.JSON do
     tenant = Map.get(map, "tenant")
 
     case map do
-      %{"sendMessage" => %{} = inner} -> wrap_stream_request(tenant, :send_message, decode_send_message_request(inner))
-      %{"subscribe" => %{} = inner} -> wrap_stream_request(tenant, :subscribe, decode_subscribe_request(inner))
-      _ -> {:error, {:unknown_payload, map |> Map.keys() |> List.delete("tenant") |> Enum.sort()}}
+      %{"sendMessage" => %{} = inner} ->
+        wrap_stream_request(tenant, :send_message, decode_send_message_request(inner))
+
+      %{"subscribe" => %{} = inner} ->
+        wrap_stream_request(tenant, :subscribe, decode_subscribe_request(inner))
+
+      _ ->
+        {:error, {:unknown_payload, map |> Map.keys() |> List.delete("tenant") |> Enum.sort()}}
     end
   end
 

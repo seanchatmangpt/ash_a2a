@@ -111,7 +111,10 @@ defmodule AshA2AFreedomGymPhaseAdmissionTest do
                )
 
       assert task.status.state == :completed
-      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
+
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] =
+               task.artifacts
+
       assert result.phase == :open
     end
   end

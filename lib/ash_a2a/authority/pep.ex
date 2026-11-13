@@ -94,8 +94,7 @@ defmodule AshA2A.Authority.PEP do
   end
 
   def assert_standing(actor_id, _scope, _context, _opts) do
-    {:refused, :insufficient_authority,
-     %{reason: :invalid_actor_id, got: redact(actor_id)}}
+    {:refused, :insufficient_authority, %{reason: :invalid_actor_id, got: redact(actor_id)}}
   end
 
   defp run_check(mod, actor_id, action, context, mod_opts) do
@@ -109,13 +108,21 @@ defmodule AshA2A.Authority.PEP do
       :throw, v -> {:__thrown, v}
       :exit, v -> {:__exited, v}
     else
-      :ok -> :ok
-      {:ok, _extra} -> :ok
-      :deny -> {:refused, :insufficient_authority, Map.put(base, :reason, :source_deny)}
+      :ok ->
+        :ok
+
+      {:ok, _extra} ->
+        :ok
+
+      :deny ->
+        {:refused, :insufficient_authority, Map.put(base, :reason, :source_deny)}
+
       {:deny, reason} ->
         {:refused, :insufficient_authority,
          base |> Map.put(:reason, :source_deny) |> Map.put(:deny_reason, redact(reason))}
-      other -> invalid_return(base, other)
+
+      other ->
+        invalid_return(base, other)
     end
     |> case do
       {:__raised, e} ->

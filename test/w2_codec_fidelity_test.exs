@@ -17,7 +17,11 @@ defmodule AshA2A.W2CodecFidelityTest do
         "description" => "d",
         "version" => "1.0.0",
         "supportedInterfaces" => [
-          %{"url" => "https://a.example", "protocolBinding" => "JSONRPC", "protocolVersion" => "1.0"}
+          %{
+            "url" => "https://a.example",
+            "protocolBinding" => "JSONRPC",
+            "protocolVersion" => "1.0"
+          }
         ],
         "capabilities" => %{},
         "defaultInputModes" => ["text/plain"],
@@ -50,7 +54,9 @@ defmodule AshA2A.W2CodecFidelityTest do
       assert %OAuth2{flows: ^flows} = card.security_schemes["o"]
 
       assert {:ok, again} =
-               card |> JSON.encode_agent_card(url: "https://a.example") |> JSON.decode_agent_card()
+               card
+               |> JSON.encode_agent_card(url: "https://a.example")
+               |> JSON.decode_agent_card()
 
       assert again.security_schemes["o"].flows == flows
     end
@@ -66,8 +72,11 @@ defmodule AshA2A.W2CodecFidelityTest do
       }
 
       assert {:ok, card} = JSON.decode_agent_card(oauth_card(flows))
+
       assert {:ok, again} =
-               card |> JSON.encode_agent_card(url: "https://a.example") |> JSON.decode_agent_card()
+               card
+               |> JSON.encode_agent_card(url: "https://a.example")
+               |> JSON.decode_agent_card()
 
       assert again.security_schemes["o"].flows == flows
 
@@ -82,6 +91,7 @@ defmodule AshA2A.W2CodecFidelityTest do
         })
 
       scheme = %OAuth2{flows: typed}
+
       card = %AshA2A.Protocol.AgentCard{
         name: "n",
         description: "d",
@@ -124,19 +134,24 @@ defmodule AshA2A.W2CodecFidelityTest do
     test "deviceCode missing deviceAuthorizationUrl is rejected" do
       flows = %{"deviceCode" => %{"tokenUrl" => "https://t", "scopes" => %{}}}
 
-      assert {:error, {:missing_field, "oauth2SecurityScheme.flows.deviceCode.deviceAuthorizationUrl"}} =
+      assert {:error,
+              {:missing_field, "oauth2SecurityScheme.flows.deviceCode.deviceAuthorizationUrl"}} =
                JSON.decode_agent_card(oauth_card(flows))
     end
 
     test "deviceCode missing tokenUrl or scopes is rejected" do
       assert {:error, {:missing_field, _}} =
                JSON.decode_agent_card(
-                 oauth_card(%{"deviceCode" => %{"deviceAuthorizationUrl" => "d", "scopes" => %{}}})
+                 oauth_card(%{
+                   "deviceCode" => %{"deviceAuthorizationUrl" => "d", "scopes" => %{}}
+                 })
                )
 
       assert {:error, {:missing_field, _}} =
                JSON.decode_agent_card(
-                 oauth_card(%{"deviceCode" => %{"deviceAuthorizationUrl" => "d", "tokenUrl" => "t"}})
+                 oauth_card(%{
+                   "deviceCode" => %{"deviceAuthorizationUrl" => "d", "tokenUrl" => "t"}
+                 })
                )
     end
 
@@ -168,7 +183,11 @@ defmodule AshA2A.W2CodecFidelityTest do
 
   describe "AgentCardSignature" do
     test "valid signature decodes; header optional" do
-      sigs = [%{"protected" => "p", "signature" => "s"}, %{"protected" => "p", "signature" => "s", "header" => %{"k" => "v"}}]
+      sigs = [
+        %{"protected" => "p", "signature" => "s"},
+        %{"protected" => "p", "signature" => "s", "header" => %{"k" => "v"}}
+      ]
+
       assert {:ok, card} = JSON.decode_agent_card(card_map(%{"signatures" => sigs}))
       assert card.signatures == sigs
     end
@@ -213,7 +232,8 @@ defmodule AshA2A.W2CodecFidelityTest do
     test "requires artifactId and non-empty parts" do
       part = %{"text" => "hi"}
 
-      assert {:error, {:missing_field, "artifactId"}} = JSON.decode(%{"parts" => [part]}, :artifact)
+      assert {:error, {:missing_field, "artifactId"}} =
+               JSON.decode(%{"parts" => [part]}, :artifact)
 
       assert {:error, {:invalid_field, "artifactId"}} =
                JSON.decode(%{"artifactId" => "", "parts" => [part]}, :artifact)

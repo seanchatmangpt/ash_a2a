@@ -91,7 +91,7 @@ defprotocol AshA2A.ToA2AError do
   protocol dispatch on the error's own struct/class — never by matching on
   stringified messages at the call site.
 
-  Code assignment (A2A v1.0.0, lane V3):
+  Code assignment (A2A v1.0.0):
 
     * `Ash.Error.Query.NotFound` — a well-shaped primary key named a record
       that does not (or no longer) exists → `-32001` `TaskNotFoundError`,
@@ -162,7 +162,7 @@ defimpl AshA2A.ToA2AError, for: Ash.Error.Query.NotFound do
   # "invalid params" would tell a well-behaved A2A client to resubmit
   # identical input forever against a record that will never exist.
   #
-  # A2A v1.0.0 (lane V3 remap): NotFound is -32001 `TaskNotFoundError` with
+  # A2A v1.0.0 mapping: NotFound is -32001 `TaskNotFoundError` with
   # reason TASK_NOT_FOUND — owner-scope refusal and record-absence are the
   # same task-scoped "not found" signal at this code. -32001 is shared with
   # the policy-denial impls above (reason POLICY_FORBIDDEN); the ErrorInfo

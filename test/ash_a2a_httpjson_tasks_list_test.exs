@@ -106,7 +106,10 @@ defmodule AshA2A.HTTPJSONTasksListTest do
     binding_opts =
       AshA2A.Transport.HTTPJSON.init(agent: agent, base_url: "http://127.0.0.1/fixture")
 
-    %{server: EphemeralHttp.start!({AshA2A.HTTPJSONTasksListTest.Stack, {auth_opts, binding_opts}})}
+    %{
+      server:
+        EphemeralHttp.start!({AshA2A.HTTPJSONTasksListTest.Stack, {auth_opts, binding_opts}})
+    }
   end
 
   # -- helpers ----------------------------------------------------------------
@@ -117,7 +120,8 @@ defmodule AshA2A.HTTPJSONTasksListTest do
 
   defp send_as!(server, token, text) do
     resp =
-      Req.post!(url: server.base_url <> "/message:send",
+      Req.post!(
+        url: server.base_url <> "/message:send",
         headers: [{"authorization", "Bearer " <> token}],
         json: %{"message" => message_map(text)}
       )
@@ -128,7 +132,8 @@ defmodule AshA2A.HTTPJSONTasksListTest do
   end
 
   defp list(server, token, query \\ "") do
-    Req.get!(url: server.base_url <> "/tasks" <> query,
+    Req.get!(
+      url: server.base_url <> "/tasks" <> query,
       headers: [{"authorization", "Bearer " <> token}]
     )
   end
@@ -166,6 +171,7 @@ defmodule AshA2A.HTTPJSONTasksListTest do
     created = for i <- 1..5, do: send_as!(server, "alice-token", "task #{i}")
 
     page1 = list(server, "alice-token", "?pageSize=2")
+
     assert %{"tasks" => p1, "totalSize" => 5, "pageSize" => 2, "nextPageToken" => token1} =
              page1.body
 
@@ -193,7 +199,13 @@ defmodule AshA2A.HTTPJSONTasksListTest do
     resp = list(server, "alice-token", "?pageSize=2&pageToken=tsk-unknown")
 
     assert resp.status == 400
-    assert %{"error" => %{"code" => 400, "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]}} =
+
+    assert %{
+             "error" => %{
+               "code" => 400,
+               "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]
+             }
+           } =
              resp.body
   end
 
@@ -221,7 +233,13 @@ defmodule AshA2A.HTTPJSONTasksListTest do
       resp = list(server, "alice-token", query)
 
       assert resp.status == 400, query
-      assert %{"error" => %{"code" => 400, "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]}} =
+
+      assert %{
+               "error" => %{
+                 "code" => 400,
+                 "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]
+               }
+             } =
                resp.body
     end
   end
@@ -230,7 +248,13 @@ defmodule AshA2A.HTTPJSONTasksListTest do
     resp = list(server, "alice-token", "?status=TASK_STATE_BOGUS")
 
     assert resp.status == 400
-    assert %{"error" => %{"code" => 400, "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]}} =
+
+    assert %{
+             "error" => %{
+               "code" => 400,
+               "details" => [%{"@type" => @error_info, "reason" => "INVALID_PARAMS"}]
+             }
+           } =
              resp.body
   end
 

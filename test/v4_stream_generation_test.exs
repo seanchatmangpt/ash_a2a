@@ -57,7 +57,9 @@ defmodule AshA2A.V4StreamGenerationTest do
     %{transport: transport, agent: agent, tid: "v4-task-#{uniq}"}
   end
 
-  defp su(tid), do: %{"statusUpdate" => %{"taskId" => tid, "status" => %{"state" => "TASK_STATE_WORKING"}}}
+  defp su(tid),
+    do: %{"statusUpdate" => %{"taskId" => tid, "status" => %{"state" => "TASK_STATE_WORKING"}}}
+
   defp au(tid), do: %{"artifactUpdate" => %{"taskId" => tid}}
   defp mu(tid), do: %{"messageUpdate" => %{"taskId" => tid, "message" => %{}}}
 
@@ -116,7 +118,12 @@ defmodule AshA2A.V4StreamGenerationTest do
     modern_events = Task.await(modern, 5_000)
 
     assert Enum.map(legacy_events, &elem(&1, 0)) == ["status-update", "status-update"]
-    assert Enum.map(modern_events, &elem(&1, 0)) == ["status-update", "message-update", "status-update"]
+
+    assert Enum.map(modern_events, &elem(&1, 0)) == [
+             "status-update",
+             "message-update",
+             "status-update"
+           ]
 
     gens = Enum.map(modern_events, fn {_, p} -> TaskEvents.generation_of(p) end)
     assert gens == Enum.sort(Enum.uniq(gens))
@@ -189,7 +196,10 @@ defmodule AshA2A.V4StreamGenerationTest do
     [cut | _] = gens
     newer = Enum.filter(gens, &(&1 > cut))
 
-    resumed = url |> post("tasks/resubscribe", %{"id" => task_id, "lastSeenGeneration" => cut}) |> frames()
+    resumed =
+      url
+      |> post("tasks/resubscribe", %{"id" => task_id, "lastSeenGeneration" => cut})
+      |> frames()
 
     refute Enum.any?(resumed, &Map.has_key?(&1, "task"))
     assert for(r <- resumed, g = gen(r), do: g) == newer
@@ -199,7 +209,9 @@ defmodule AshA2A.V4StreamGenerationTest do
     {url, task_id, _} = opened(ctx)
 
     resumed =
-      url |> post("tasks/resubscribe", %{"id" => task_id, "lastSeenGeneration" => 10_000}) |> frames()
+      url
+      |> post("tasks/resubscribe", %{"id" => task_id, "lastSeenGeneration" => 10_000})
+      |> frames()
 
     assert [%{"task" => %{"id" => ^task_id}} | _] = resumed
   end
@@ -235,7 +247,10 @@ defmodule AshA2A.V4StreamGenerationTest do
     t = ctx.transport
 
     interrupted = %{
-      "statusUpdate" => %{"taskId" => ctx.tid, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}
+      "statusUpdate" => %{
+        "taskId" => ctx.tid,
+        "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+      }
     }
 
     refute TaskEvents.terminal_payload?(interrupted)

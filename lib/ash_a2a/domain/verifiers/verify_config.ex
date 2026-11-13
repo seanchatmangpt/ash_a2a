@@ -145,7 +145,8 @@ defmodule AshA2A.Domain.Verifiers.VerifyConfig do
       (Spark.Dsl.Verifier.get_option(dsl_state, [:security], :requirements, []) || [])
       |> MapSet.new(&to_string/1)
 
-    scopes = Spark.Dsl.Verifier.get_option(dsl_state, [:security], :requirement_scopes, %{}) || %{}
+    scopes =
+      Spark.Dsl.Verifier.get_option(dsl_state, [:security], :requirement_scopes, %{}) || %{}
 
     case Enum.find(Map.keys(scopes), &(not MapSet.member?(requirements, to_string(&1)))) do
       nil ->

@@ -19,7 +19,7 @@ if Code.ensure_loaded?(Plug) do
       * `:trust_domain` — the local trust domain (required). The SVID's SPIFFE
         ID must live in this trust domain.
       * `:bundle_source` — module exporting `bundle/0` (required; default
-        `AshA2A.SPIFFE.WorkloadWatcher`, the V4-1 workload watcher's cached
+        `AshA2A.SPIFFE.WorkloadWatcher`, the workload watcher's cached
         trust bundle). The callback returns `{:ok, bundle}` or
         `{:error, term}`, where `bundle` is a map with:
 
@@ -87,15 +87,19 @@ if Code.ensure_loaded?(Plug) do
     def init(opts) do
       trust_domain =
         case Keyword.fetch(opts, :trust_domain) do
-          {:ok, td} -> td
-          :error -> raise ArgumentError, "AshA2A.SPIFFE.SvidValidator requires :trust_domain option"
+          {:ok, td} ->
+            td
+
+          :error ->
+            raise ArgumentError, "AshA2A.SPIFFE.SvidValidator requires :trust_domain option"
         end
 
       bundle_source = Keyword.get(opts, :bundle_source, @default_bundle_source)
       assign = Keyword.get(opts, :assign, @default_assign)
 
       unless is_binary(trust_domain) and trust_domain != "" do
-        raise ArgumentError, "AshA2A.SPIFFE.SvidValidator :trust_domain must be a non-empty binary"
+        raise ArgumentError,
+              "AshA2A.SPIFFE.SvidValidator :trust_domain must be a non-empty binary"
       end
 
       unless is_atom(bundle_source) do

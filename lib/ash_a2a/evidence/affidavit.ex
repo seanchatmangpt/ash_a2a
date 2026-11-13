@@ -19,12 +19,19 @@ defmodule AshA2A.Evidence.Affidavit do
   def assemble_receipt(events) when is_list(events) do
     if available?() do
       case AshAffidavit.call(%{"op" => "assemble", "events" => events}) do
-        {:ok, res} -> {:ok, res}
-        {:refused, ref} -> {:error, {:refused_affidavit, ref}}
-        {:trap, trap} -> {:error, {:affidavit_trap, trap}}
-        {:unsupported, unsup} -> {:error, {:unsupported_affidavit, unsup}}
-        # (the old bare `other` catch-all was dead: `AshAffidavit.call/1`'s
-        # success type is exactly the four tagged tuples above)
+        {:ok, res} ->
+          {:ok, res}
+
+        {:refused, ref} ->
+          {:error, {:refused_affidavit, ref}}
+
+        {:trap, trap} ->
+          {:error, {:affidavit_trap, trap}}
+
+        {:unsupported, unsup} ->
+          {:error, {:unsupported_affidavit, unsup}}
+          # (the old bare `other` catch-all was dead: `AshAffidavit.call/1`'s
+          # success type is exactly the four tagged tuples above)
       end
     else
       {:error, :ash_affidavit_unavailable}
@@ -36,11 +43,18 @@ defmodule AshA2A.Evidence.Affidavit do
   def verify_receipt(receipt) do
     if available?() do
       case AshAffidavit.call(%{"op" => "verify", "receipt" => receipt}) do
-        {:ok, %{"accepted" => accepted}} -> {:ok, accepted}
-        {:refused, ref} -> {:error, {:refused_affidavit, ref}}
-        {:trap, trap} -> {:error, {:affidavit_trap, trap}}
-        {:unsupported, unsup} -> {:error, {:unsupported_affidavit, unsup}}
-        # (same dead `other` catch-all as `assemble_receipt/1` above)
+        {:ok, %{"accepted" => accepted}} ->
+          {:ok, accepted}
+
+        {:refused, ref} ->
+          {:error, {:refused_affidavit, ref}}
+
+        {:trap, trap} ->
+          {:error, {:affidavit_trap, trap}}
+
+        {:unsupported, unsup} ->
+          {:error, {:unsupported_affidavit, unsup}}
+          # (same dead `other` catch-all as `assemble_receipt/1` above)
       end
     else
       {:error, :ash_affidavit_unavailable}

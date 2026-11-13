@@ -66,7 +66,10 @@ defmodule AshA2A.X1.ArtifactOnlyGenerationTest do
   end
 
   defp artifact_only(opts, id, expected) do
-    artifact = %{"artifactId" => "a-#{System.unique_integer([:positive])}", "parts" => [%{"text" => "x"}]}
+    artifact = %{
+      "artifactId" => "a-#{System.unique_integer([:positive])}",
+      "parts" => [%{"text" => "x"}]
+    }
 
     post(opts, "/message:send", %{
       "artifactUpdates" => [%{"taskId" => id, "artifact" => artifact}],
@@ -74,7 +77,9 @@ defmodule AshA2A.X1.ArtifactOnlyGenerationTest do
     })
   end
 
-  test "stale ifGenerationMatch on an artifact-only send is 409 TASK_GENERATION_MISMATCH", %{opts: opts} do
+  test "stale ifGenerationMatch on an artifact-only send is 409 TASK_GENERATION_MISMATCH", %{
+    opts: opts
+  } do
     {id, generation} = new_task(opts)
 
     assert {409, %{"error" => %{"details" => details}}} = artifact_only(opts, id, generation + 5)
@@ -89,17 +94,25 @@ defmodule AshA2A.X1.ArtifactOnlyGenerationTest do
     # Bypasses the HTTP pre-check entirely: the GenServer is the authority.
     opts = HTTPJSON.init(agent: Agent, base_url: "http://127.0.0.1/x1", versions: ["1.0", "1.1"])
     {id, generation} = new_task(opts)
-    {:ok, decoded} = AshA2A.Protocol.ClientArtifacts.decode_updates([
-      %{"taskId" => id, "artifact" => %{"artifactId" => "direct", "parts" => [%{"text" => "x"}]}}
-    ])
+
+    {:ok, decoded} =
+      AshA2A.Protocol.ClientArtifacts.decode_updates([
+        %{
+          "taskId" => id,
+          "artifact" => %{"artifactId" => "direct", "parts" => [%{"text" => "x"}]}
+        }
+      ])
 
     assert {:error, :generation_mismatch} =
              GenServer.call(Agent, {:apply_artifact_updates, id, decoded, generation + 5})
 
-    assert {:ok, _task} = GenServer.call(Agent, {:apply_artifact_updates, id, decoded, generation})
+    assert {:ok, _task} =
+             GenServer.call(Agent, {:apply_artifact_updates, id, decoded, generation})
   end
 
-  test "matching ifGenerationMatch on an artifact-only send proceeds and advances generation", %{opts: opts} do
+  test "matching ifGenerationMatch on an artifact-only send proceeds and advances generation", %{
+    opts: opts
+  } do
     {id, generation} = new_task(opts)
 
     assert {200, body} = artifact_only(opts, id, generation)

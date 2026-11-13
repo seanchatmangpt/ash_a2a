@@ -489,7 +489,11 @@ defmodule AshA2A.Protocol.V1AuthChallengeConformanceTest do
     # distinct credential carriers (Authorization header + API-key header),
     # because a second Authorization header is not representable in a single
     # request -- see the two-HTTP-leg gap court below.
-    schemes = %{"and_bearer" => @bearer, "and_api_key" => %APIKey{in: "header", name: "X-V28-Key"}}
+    schemes = %{
+      "and_bearer" => @bearer,
+      "and_api_key" => %APIKey{in: "header", name: "X-V28-Key"}
+    }
+
     security = [%{"and_bearer" => [], "and_api_key" => []}]
 
     verify = fn

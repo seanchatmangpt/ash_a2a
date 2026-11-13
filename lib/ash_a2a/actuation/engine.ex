@@ -84,7 +84,8 @@ defmodule AshA2A.Actuation.Engine do
   `pep_opts` (e.g. `source: MySource`) go to the PEP; the PEP default source
   refuses everything.
   """
-  @spec pep_authorizer(keyword()) :: (Ticket.t(), map() -> {:ok, map()} | {:refused, :unauthorized})
+  @spec pep_authorizer(keyword()) :: (Ticket.t(), map() ->
+                                        {:ok, map()} | {:refused, :unauthorized})
   def pep_authorizer(pep_opts \\ []) do
     fn %Ticket{} = ticket, ctx ->
       case PEP.assert_standing(ticket.issued_by, ticket.action_iri, ctx, pep_opts) do
@@ -117,7 +118,8 @@ defmodule AshA2A.Actuation.Engine do
   """
   @spec submit(Ticket.t(), map(), Keyword.t()) ::
           {:ok, map(), ledger()} | refusal()
-  def submit(%Ticket{} = ticket, actor_context, opts) when is_map(actor_context) and is_list(opts) do
+  def submit(%Ticket{} = ticket, actor_context, opts)
+      when is_map(actor_context) and is_list(opts) do
     with {:ok, adapter} <- fetch_adapter(opts),
          {:ok, attestation_opts} <- fetch_attestation_opts(opts),
          {:ok, authorizer} <- fetch_authorizer(opts),

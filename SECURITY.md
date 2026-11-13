@@ -8,8 +8,8 @@ supported.
 
 | Version | Supported | Notes |
 |---|---|---|
-| latest `26.9.x` on Hex | yes | fixes are backported only to the newest release |
-| older `26.9.x` | no | upgrade to the newest release |
+| latest `26.11.x` on Hex | yes | fixes are backported only to the newest release |
+| older `26.11.x`, and all `26.9.x`/`26.10.x` | no | upgrade to the newest release |
 | `main` (unreleased) | best effort | may be ahead of Hex; see [CHANGELOG](CHANGELOG.md) |
 
 The [CHANGELOG](CHANGELOG.md) names the first Hex version that carries each

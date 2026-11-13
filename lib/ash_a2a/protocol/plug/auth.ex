@@ -390,7 +390,11 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp cert_credential(der, source) do
-      %{der: der, fingerprint: Base.encode16(:crypto.hash(:sha256, der), case: :lower), source: source}
+      %{
+        der: der,
+        fingerprint: Base.encode16(:crypto.hash(:sha256, der), case: :lower),
+        source: source
+      }
     end
 
     # RFC 7235 section 2.1: "the authentication scheme is case-insensitive",

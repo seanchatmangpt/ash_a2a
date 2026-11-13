@@ -193,7 +193,8 @@ defmodule AshA2A.Transport.Live do
   @spec capability?(map() | nil, :streaming | :user_artifacts) :: boolean()
   def capability?(nil, _), do: false
 
-  def capability?(card, :user_artifacts), do: AshA2A.Protocol.ClientArtifacts.user_artifacts?(card)
+  def capability?(card, :user_artifacts),
+    do: AshA2A.Protocol.ClientArtifacts.user_artifacts?(card)
 
   def capability?(card, :streaming) do
     case fetch(card, :capabilities) do
@@ -231,7 +232,12 @@ defmodule AshA2A.Transport.Live do
     caller =
       case uplink do
         %{} = u ->
-          [Map.get(u, :metadata), Map.get(u, "metadata"), Map.get(u, :params), Map.get(u, "params")]
+          [
+            Map.get(u, :metadata),
+            Map.get(u, "metadata"),
+            Map.get(u, :params),
+            Map.get(u, "params")
+          ]
           |> Enum.filter(&is_map/1)
           |> Enum.reduce(%{}, &Map.merge(&2, &1))
 
@@ -289,7 +295,8 @@ defmodule AshA2A.Transport.Live do
         end
 
       true ->
-        with {:ok, %StreamRequest{kind: :send_message, payload: %{task_id: id}}} when is_binary(id) <-
+        with {:ok, %StreamRequest{kind: :send_message, payload: %{task_id: id}}}
+             when is_binary(id) <-
                StreamRequest.decode(request),
              [_ | _] = entries <- Registry.lookup(@registry, {:task, agent, id}),
              {pid, _} <- Enum.find(entries, fn {_pid, owner} -> owner == principal end) do

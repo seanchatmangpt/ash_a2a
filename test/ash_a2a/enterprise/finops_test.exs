@@ -27,7 +27,10 @@ defmodule AshA2A.Enterprise.FinOpsCourtTest do
   # witness -- a breach must leave it untouched.
   defmodule Ledger do
     def start(name), do: Agent.start_link(fn -> [] end, name: name)
-    def run(ledger, tag, tokens), do: Agent.update(ledger, &[{tag.budget_account_id, tokens} | &1])
+
+    def run(ledger, tag, tokens),
+      do: Agent.update(ledger, &[{tag.budget_account_id, tokens} | &1])
+
     def entries(ledger), do: Agent.get(ledger, &Enum.reverse/1)
   end
 
@@ -114,7 +117,9 @@ defmodule AshA2A.Enterprise.FinOpsCourtTest do
       store = start_store(budgets: [])
       ledger = start_ledger()
 
-      assert {:error, %{code: :invalid_request} = refusal} = dispatch(store, ledger, %{"tokens" => 1})
+      assert {:error, %{code: :invalid_request} = refusal} =
+               dispatch(store, ledger, %{"tokens" => 1})
+
       assert %{missing: :cost_center, reason: reason} = refusal.detail
       assert is_binary(reason)
 
@@ -150,13 +155,21 @@ defmodule AshA2A.Enterprise.FinOpsCourtTest do
 
       # Exactly 100% of quota is admissible.
       assert {:ok, tag} =
-               dispatch(store, ledger, %{cost_center: "cc-b", budget_account_id: "acct-b", tokens: 500})
+               dispatch(store, ledger, %{
+                 cost_center: "cc-b",
+                 budget_account_id: "acct-b",
+                 tokens: 500
+               })
 
       assert tag.consumed == 500
 
       # One more token over the hard ceiling: refused, dispatch never runs.
       assert {:error, %{code: :budget_exceeded} = refusal} =
-               dispatch(store, ledger, %{cost_center: "cc-b", budget_account_id: "acct-b", tokens: 1})
+               dispatch(store, ledger, %{
+                 cost_center: "cc-b",
+                 budget_account_id: "acct-b",
+                 tokens: 1
+               })
 
       assert refusal.detail.ceiling == 500
       assert refusal.detail.requested == 1
@@ -179,7 +192,10 @@ defmodule AshA2A.Enterprise.FinOpsCourtTest do
       ledger = start_ledger()
 
       assert {:error, %{code: :missing_evidence} = refusal} =
-               BudgetEnforcer.authorize(store, %{cost_center: "cc-x", budget_account_id: "unknown-acct"})
+               BudgetEnforcer.authorize(store, %{
+                 cost_center: "cc-x",
+                 budget_account_id: "unknown-acct"
+               })
 
       lifted = Refusal.from_error(refusal, :finops)
       assert lifted.class == :refused_provenance

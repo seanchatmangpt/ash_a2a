@@ -67,12 +67,23 @@ defmodule AshA2A.V4PushVersionTest do
     do: EphemeralHttp.start!({Receiver, %{test: self(), tag: tag}}).base_url <> "/hook"
 
   defp cfg(id, url, tid, version),
-    do: %{id: id, task_id: tid, url: url, token: nil, authentication: nil, protocol_version: version}
+    do: %{
+      id: id,
+      task_id: tid,
+      url: url,
+      token: nil,
+      authentication: nil,
+      protocol_version: version
+    }
 
   defp rpc(opts, method, params, headers \\ []) do
     body = Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => method, "params" => params})
 
-    conn = :post |> Plug.Test.conn("/", body) |> Plug.Conn.put_req_header("content-type", "application/json")
+    conn =
+      :post
+      |> Plug.Test.conn("/", body)
+      |> Plug.Conn.put_req_header("content-type", "application/json")
+
     conn = Enum.reduce(headers, conn, fn {k, v}, c -> Plug.Conn.put_req_header(c, k, v) end)
     conn |> TransportPlug.call(opts) |> Map.fetch!(:resp_body) |> Jason.decode!()
   end
@@ -82,15 +93,24 @@ defmodule AshA2A.V4PushVersionTest do
 
   test "payload_for/3 shapes by protocol_version" do
     payload = %{"statusUpdate" => %{"taskId" => "t", "generation" => 5}}
-    assert {:ok, %{"statusUpdate" => inner}} = PushDelivery.payload_for(%{protocol_version: "1.0"}, "status-update", payload)
+
+    assert {:ok, %{"statusUpdate" => inner}} =
+             PushDelivery.payload_for(%{protocol_version: "1.0"}, "status-update", payload)
+
     refute Map.has_key?(inner, "generation")
-    assert {:ok, ^payload} = PushDelivery.payload_for(%{protocol_version: "1.1"}, "status-update", payload)
+
+    assert {:ok, ^payload} =
+             PushDelivery.payload_for(%{protocol_version: "1.1"}, "status-update", payload)
+
     assert :skip = PushDelivery.payload_for(%{protocol_version: "1.0"}, "message-update", %{})
     assert :skip = PushDelivery.payload_for(%{}, "message-update", %{})
-    assert {:ok, %{}} = PushDelivery.payload_for(%{protocol_version: "1.1"}, "message-update", %{})
+
+    assert {:ok, %{}} =
+             PushDelivery.payload_for(%{protocol_version: "1.1"}, "message-update", %{})
   end
 
-  test "1.0 config gets no generation / message-update; 1.1 config gets both, in generation order", ctx do
+  test "1.0 config gets no generation / message-update; 1.1 config gets both, in generation order",
+       ctx do
     {:ok, _} = PushConfigStore.put(ctx.store, cfg("c10", receiver(:v10), ctx.tid, "1.0"))
     {:ok, _} = PushConfigStore.put(ctx.store, cfg("c11", receiver(:v11), ctx.tid, "1.1"))
 
@@ -119,7 +139,8 @@ defmodule AshA2A.V4PushVersionTest do
     refute_received {:hook, :v10, %{"messageUpdate" => _}}
   end
 
-  test "set/get/list encode protocolVersion; explicit wins, default is the request version", ctx do
+  test "set/get/list encode protocolVersion; explicit wins, default is the request version",
+       ctx do
     {:ok, msg} = AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Message.new_user("hello"))
     %{"result" => %{"task" => %{"id" => tid}}} = rpc(ctx.on, "message/send", %{"message" => msg})
     url = receiver(:rpc)

@@ -12,7 +12,7 @@ defmodule AshA2A.Strain.Bridge do
   |---|---|---|
   | `ticket_completed` | `:active_leases` | decrement by 1 (floor 0) |
   | `ticket_assigned` | `:active_leases` | increment by 1 |
-  | `challenge_received` (Vince) | `:heuristic_frequency` | increment flagged-event count by 1 |
+  | `challenge_received` (CEO) | `:heuristic_frequency` | increment flagged-event count by 1 |
   | `error_reported` | `:error_rate` | append to rolling window (see below) |
   | `clock_hour` | `:shift_hours_continuous` | advance shift clock by `:hours` (default 1) |
 
@@ -37,14 +37,14 @@ defmodule AshA2A.Strain.Bridge do
   over finite lists/maps (no loops, no clock reads), so termination is by
   construction.
 
-  ## Integration seam (I9 / Vince)
+  ## Integration seam (I9 / CEO)
 
-  `challenge_received` events carry `source: :vince`; the
+  `challenge_received` events carry `source: :ceo`; the
   `lib/ash_a2a/copilot/pipeline.ex` pipeline has landed and threads a Bridge
   `mesh_state`. The seam stays producer-agnostic: any producer that emits
-  `%{type: :challenge_received, source: :vince, coordinator_id: id}` can feed
+  `%{type: :challenge_received, source: :ceo, coordinator_id: id}` can feed
   `record_observation/3` without modifying Bridge. `source` is accepted but
-  not required — Tony's moduledoc contract (Bridge consumes the flagged-event
+  not required — COO's moduledoc contract (Bridge consumes the flagged-event
   count, not the detector) is preserved.
   """
 
@@ -99,20 +99,28 @@ defmodule AshA2A.Strain.Bridge do
     end
   end
 
-  @observation_types [:ticket_completed, :ticket_assigned, :challenge_received, :error_reported, :clock_hour]
+  @observation_types [
+    :ticket_completed,
+    :ticket_assigned,
+    :challenge_received,
+    :error_reported,
+    :clock_hour
+  ]
 
   defp validate_type!(type) when type in @observation_types, do: true
-  defp validate_type!(other), do: raise(ArgumentError, "unknown observation type: #{inspect(other)}")
+
+  defp validate_type!(other),
+    do: raise(ArgumentError, "unknown observation type: #{inspect(other)}")
 
   defp fold(state, type, event) do
     case type do
-        :ticket_completed -> lease_step(state, -1)
-        :ticket_assigned -> lease_step(state, +1)
-        :challenge_received -> heuristic_step(state, +1)
-        :error_reported -> error_step(state, event)
-        :clock_hour -> shift_step(state, event)
-        other -> raise ArgumentError, "unknown observation type: #{inspect(other)}"
-      end
+      :ticket_completed -> lease_step(state, -1)
+      :ticket_assigned -> lease_step(state, +1)
+      :challenge_received -> heuristic_step(state, +1)
+      :error_reported -> error_step(state, event)
+      :clock_hour -> shift_step(state, event)
+      other -> raise ArgumentError, "unknown observation type: #{inspect(other)}"
+    end
   end
 
   @doc """

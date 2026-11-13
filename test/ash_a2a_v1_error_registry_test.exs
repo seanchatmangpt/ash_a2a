@@ -125,8 +125,7 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
     {-32_002, :task_not_cancelable, "Task cannot be canceled", "TASK_NOT_CANCELABLE"},
     {-32_003, :push_notification_not_supported, "Push Notification is not supported",
      "PUSH_NOTIFICATION_NOT_SUPPORTED"},
-    {-32_004, :unsupported_operation, "This operation is not supported",
-     "UNSUPPORTED_OPERATION"},
+    {-32_004, :unsupported_operation, "This operation is not supported", "UNSUPPORTED_OPERATION"},
     {-32_005, :content_type_not_supported, "Incompatible content types",
      "CONTENT_TYPE_NOT_SUPPORTED"},
     {-32_006, :invalid_agent_response, "Invalid agent response", "INVALID_AGENT_RESPONSE"},
@@ -135,8 +134,7 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
     {-32_008, :extension_support_required, "Extension support is required",
      "EXTENSION_SUPPORT_REQUIRED"},
     {-32_009, :version_not_supported, "Version not supported", "VERSION_NOT_SUPPORTED"},
-    {-32_010, :task_generation_mismatch, "Task generation mismatch",
-     "TASK_GENERATION_MISMATCH"}
+    {-32_010, :task_generation_mismatch, "Task generation mismatch", "TASK_GENERATION_MISMATCH"}
   ]
 
   @standard_codes [-32_700, -32_600, -32_601, -32_603]
@@ -352,7 +350,9 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
 
         [] ->
           # Catch-all: the one clause whose matched set is empty.
-          [{_empty, catch_all}] = Enum.filter(table, fn {matched, _} -> matched == MapSet.new() end)
+          [{_empty, catch_all}] =
+            Enum.filter(table, fn {matched, _} -> matched == MapSet.new() end)
+
           catch_all
 
         _conflicting ->
@@ -491,7 +491,9 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
       assert %{
                "error" => %{
                  "code" => 400,
-                 "details" => [%{"@type" => @error_info_type, "reason" => "UNSUPPORTED_OPERATION"}]
+                 "details" => [
+                   %{"@type" => @error_info_type, "reason" => "UNSUPPORTED_OPERATION"}
+                 ]
                }
              } = Jason.decode!(conn.resp_body)
     end

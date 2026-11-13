@@ -65,7 +65,7 @@ defmodule AshA2A.Y7DslVerifiersV11Test do
             end
 
             transport do
-              user_artifacts true
+              user_artifacts(true)
             end
           end
         end
@@ -85,7 +85,7 @@ defmodule AshA2A.Y7DslVerifiersV11Test do
             end
 
             transport do
-              user_artifacts "yes"
+              user_artifacts("yes")
             end
           end
         end

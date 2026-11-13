@@ -29,13 +29,16 @@ defmodule AshA2A.Telemetry.OcelBootWarningTest do
   describe "runtime.exs hook" do
     defp read_runtime(env_value) do
       prev = System.get_env("ASH_A2A_OCEL_INGEST_URL")
-      if env_value, do: System.put_env("ASH_A2A_OCEL_INGEST_URL", env_value),
+
+      if env_value,
+        do: System.put_env("ASH_A2A_OCEL_INGEST_URL", env_value),
         else: System.delete_env("ASH_A2A_OCEL_INGEST_URL")
 
       try do
         Config.Reader.read!("config/runtime.exs", env: :test)
       after
-        if prev, do: System.put_env("ASH_A2A_OCEL_INGEST_URL", prev),
+        if prev,
+          do: System.put_env("ASH_A2A_OCEL_INGEST_URL", prev),
           else: System.delete_env("ASH_A2A_OCEL_INGEST_URL")
       end
     end
@@ -53,6 +56,8 @@ defmodule AshA2A.Telemetry.OcelBootWarningTest do
 
   test "boot sequence calls warn_if_unconfigured/0 after attach!/0 (structural pin)" do
     src = File.read!("lib/ash_a2a/application.ex")
-    assert src =~ ~r/OcelForwarder\.attach!\(\)\s*\n\s*_ = AshA2A\.Telemetry\.OcelForwarder\.warn_if_unconfigured\(\)/
+
+    assert src =~
+             ~r/OcelForwarder\.attach!\(\)\s*\n\s*_ = AshA2A\.Telemetry\.OcelForwarder\.warn_if_unconfigured\(\)/
   end
 end

@@ -103,9 +103,14 @@ defmodule AshA2A.Protocol.ClientCardVerifyTest do
 
             tampered = %{
               signed_card
-              | description: AshA2A.Protocol.ClientCardVerifyTest.flip_byte(signed_card.description),
+              | description:
+                  AshA2A.Protocol.ClientCardVerifyTest.flip_byte(signed_card.description),
                 skills: [
-                  %{skill | description: AshA2A.Protocol.ClientCardVerifyTest.flip_byte(skill.description)}
+                  %{
+                    skill
+                    | description:
+                        AshA2A.Protocol.ClientCardVerifyTest.flip_byte(skill.description)
+                  }
                   | rest
                 ]
             }
@@ -196,9 +201,10 @@ defmodule AshA2A.Protocol.ClientCardVerifyTest do
                Client.discover(url, verify_card_signature: @wrong_key)
     end
 
-    test "tampered body (description byte flipped post-signing) is {:error, {:card_signature, {:digest_mismatch, _}}}", %{
-      url: url
-    } do
+    test "tampered body (description byte flipped post-signing) is {:error, {:card_signature, {:digest_mismatch, _}}}",
+         %{
+           url: url
+         } do
       set_mode(:tampered)
 
       assert {:error, {:card_signature, {:digest_mismatch, %{index: 0}}}} =
@@ -216,9 +222,10 @@ defmodule AshA2A.Protocol.ClientCardVerifyTest do
       assert {:ok, _card} = Client.discover(url)
     end
 
-    test "unsigned card with verification requested is fail-closed {:error, {:card_signature, {:malformed, :no_signatures}}}", %{
-      url: url
-    } do
+    test "unsigned card with verification requested is fail-closed {:error, {:card_signature, {:malformed, :no_signatures}}}",
+         %{
+           url: url
+         } do
       set_mode(:unsigned)
 
       assert {:error, {:card_signature, {:malformed, :no_signatures}}} =

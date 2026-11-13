@@ -190,7 +190,8 @@ defmodule AshA2A.Health do
   defp store_running?(_custom), do: true
 
   @doc "Outbox ready-count above which readiness degrades: `config :ash_a2a, :outbox_ready_max` (default `1_000`)."
-  def outbox_ready_max, do: Application.get_env(:ash_a2a, :outbox_ready_max, @default_outbox_ready_max)
+  def outbox_ready_max,
+    do: Application.get_env(:ash_a2a, :outbox_ready_max, @default_outbox_ready_max)
 
   defp receipt_outbox_check do
     max = outbox_ready_max()

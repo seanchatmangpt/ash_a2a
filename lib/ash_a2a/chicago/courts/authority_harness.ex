@@ -175,7 +175,10 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   @spec agent_call(module(), atom(), term(), map(), map()) ::
           {:ok, AshA2A.Protocol.Task.t()} | {:error, term()} | {:exit, term()}
   def agent_call(agent_module, name, identity, data, message_metadata) do
-    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)]) | metadata: message_metadata}
+    message = %{
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)])
+      | metadata: message_metadata
+    }
 
     call_metadata =
       if identity == nil,
@@ -213,7 +216,11 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
   """
   @spec http_send(atom(), String.t(), map(), keyword()) :: map()
   def http_send(agent_name, skill, data, opts) do
-    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)]) | metadata: %{"skill" => skill}}
+    message = %{
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)])
+      | metadata: %{"skill" => skill}
+    }
+
     {:ok, message_json} = AshA2A.Protocol.JSON.encode(message)
 
     params =
@@ -278,7 +285,10 @@ defmodule AshA2A.Chicago.Courts.AuthorityHarness do
         {:error, "unsupported scheme"}
     end
 
-    AshA2A.Protocol.Plug.Auth.call(conn, AshA2A.Protocol.Plug.Auth.init(schemes: @bearer_schemes, verify: verify))
+    AshA2A.Protocol.Plug.Auth.call(
+      conn,
+      AshA2A.Protocol.Plug.Auth.init(schemes: @bearer_schemes, verify: verify)
+    )
   end
 
   # --- predicates ---------------------------------------------------------------

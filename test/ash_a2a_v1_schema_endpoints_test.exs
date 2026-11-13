@@ -218,13 +218,23 @@ defmodule AshA2A.V1SchemaEndpointsTest do
 
   defp rpc_opts(agent, extra \\ []) do
     Rpc.init(
-      [agent: agent, base_url: "http://localhost:4000/a2a", serve_schemas: true, schema_index: @domain] ++
+      [
+        agent: agent,
+        base_url: "http://localhost:4000/a2a",
+        serve_schemas: true,
+        schema_index: @domain
+      ] ++
         extra
     )
   end
 
   defp rest_opts(agent) do
-    Rest.init(agent: agent, base_url: "http://localhost:4000", serve_schemas: true, schema_index: @domain)
+    Rest.init(
+      agent: agent,
+      base_url: "http://localhost:4000",
+      serve_schemas: true,
+      schema_index: @domain
+    )
   end
 
   defp get_rpc(_agent, path, opts), do: Plug.Test.conn(:get, path) |> Rpc.call(opts)
@@ -258,7 +268,8 @@ defmodule AshA2A.V1SchemaEndpointsTest do
              "supportedInterfaces"
            ]
 
-    assert schema["properties"]["supportedInterfaces"]["items"]["$ref"] == "#/$defs/AgentInterface"
+    assert schema["properties"]["supportedInterfaces"]["items"]["$ref"] ==
+             "#/$defs/AgentInterface"
 
     assert schema["$defs"]["AgentInterface"]["required"] == [
              "url",
@@ -289,6 +300,7 @@ defmodule AshA2A.V1SchemaEndpointsTest do
 
     # Concretely: the real card's members the schema pins are on the wire.
     assert is_binary(served_card["name"])
+
     assert [%{"protocolBinding" => "JSONRPC", "protocolVersion" => "1.1"} | _] =
              served_card["supportedInterfaces"]
 
@@ -324,9 +336,10 @@ defmodule AshA2A.V1SchemaEndpointsTest do
     assert Enum.any?(errors, &String.contains?(&1, "preferredTransport"))
   end
 
-  test "served card protocolBinding values are pinned by the court, not the open schema (lane X7)", %{
-    agent: agent
-  } do
+  test "served card protocolBinding values are pinned by the court, not the open schema (lane X7)",
+       %{
+         agent: agent
+       } do
     opts = rpc_opts(agent)
 
     schema =
@@ -433,7 +446,9 @@ defmodule AshA2A.V1SchemaEndpointsTest do
     assert card_schema.status == 200 and skills_schema.status == 200
     assert card_schema.resp_body == Jason.encode!(Jason.decode!(card_schema.resp_body))
     assert skills_schema.resp_body == Jason.encode!(Jason.decode!(skills_schema.resp_body))
-    assert Jason.decode!(card_schema.resp_body) == AshA2A.Transport.SchemaEndpoints.agent_card_schema()
+
+    assert Jason.decode!(card_schema.resp_body) ==
+             AshA2A.Transport.SchemaEndpoints.agent_card_schema()
   end
 
   # -- mounting --------------------------------------------------------------------

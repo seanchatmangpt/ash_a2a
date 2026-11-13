@@ -35,6 +35,7 @@ defmodule AshA2A.TransportPlugForceSslTest do
 
     assert conn.status == 400
     assert conn.halted
+
     assert Plug.Conn.get_resp_header(conn, "strict-transport-security") == [
              "max-age=63072000; includeSubDomains"
            ]
@@ -45,6 +46,7 @@ defmodule AshA2A.TransportPlugForceSslTest do
     conn = request("/no/such/path", opts, [{"x-forwarded-proto", "https"}])
 
     assert conn.status == 404
+
     assert Plug.Conn.get_resp_header(conn, "strict-transport-security") == [
              "max-age=63072000; includeSubDomains"
            ]

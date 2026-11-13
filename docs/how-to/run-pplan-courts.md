@@ -38,7 +38,7 @@ string is a court file. The default tag is `pplan_court`; override with
   $ mix ash_a2a.pplan_courts --ash-pplan-path ~/ash_pplan
   ```
 
-  The task exports `ASH_PPLAN_PATH` into each court's environment; parity
+  The task exports `ASH_PPLAN_PATH` and `ASH_A2A_LOCAL_DEPS=1` into each court's environment; parity
   courts that shell out to the oracle read it from there. Default is
   `~/ash_pplan` when that directory exists.
 

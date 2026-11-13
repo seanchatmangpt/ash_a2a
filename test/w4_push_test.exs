@@ -10,7 +10,12 @@ defmodule AshA2A.W4PushTest.Receiver do
   def call(conn, %{test: test, counts: counts} = opts) do
     {:ok, body, conn} = read_body(conn)
     n = body |> Jason.decode!() |> Map.get("n")
-    calls = Agent.get_and_update(counts, fn m -> c = Map.get(m, n, 0) + 1; {c, Map.put(m, n, c)} end)
+
+    calls =
+      Agent.get_and_update(counts, fn m ->
+        c = Map.get(m, n, 0) + 1
+        {c, Map.put(m, n, c)}
+      end)
 
     status =
       cond do
@@ -19,7 +24,9 @@ defmodule AshA2A.W4PushTest.Receiver do
         true -> 200
       end
 
-    headers = if status == 429 or Map.get(opts, :retry_after), do: [{"retry-after", "0"}], else: []
+    headers =
+      if status == 429 or Map.get(opts, :retry_after), do: [{"retry-after", "0"}], else: []
+
     conn = Enum.reduce(headers, conn, fn {k, v}, c -> put_resp_header(c, k, v) end)
     send(test, {:webhook, n, calls, status, conn.req_headers})
     send_resp(conn, status, "")
@@ -78,7 +85,9 @@ defmodule AshA2A.W4PushTest do
   end
 
   defp receiver(counts, extra \\ %{}),
-    do: EphemeralHttp.start!({Receiver, Map.merge(%{test: self(), counts: counts}, extra)}).base_url <> "/hook"
+    do:
+      EphemeralHttp.start!({Receiver, Map.merge(%{test: self(), counts: counts}, extra)}).base_url <>
+        "/hook"
 
   defp cfg(url, task_id, extra \\ %{}),
     do: Map.merge(%{id: "c1", task_id: task_id, url: url, token: nil, authentication: nil}, extra)
@@ -147,7 +156,15 @@ defmodule AshA2A.W4PushTest do
     pq = PushQueue.down(pq, ref_a, start)
     assert_received {:started, :b}
     assert PushQueue.active_keys(pq) == 2
-    {_pq, :dropped} = PushQueue.enqueue(Map.put(pq, :keys, %{k: {:queue.from_list([1, 2]), make_ref()}}), :k, :z, start, 2)
+
+    {_pq, :dropped} =
+      PushQueue.enqueue(
+        Map.put(pq, :keys, %{k: {:queue.from_list([1, 2]), make_ref()}}),
+        :k,
+        :z,
+        start,
+        2
+      )
   end
 
   # -- G2: auth schemes --------------------------------------------------------
@@ -179,6 +196,7 @@ defmodule AshA2A.W4PushTest do
 
   test "set refuses mTLS and unknown schemes with typed codes, accepts Basic", %{on: on} do
     task_id = new_task(on)
+
     set = fn auth ->
       rpc(on, "tasks/pushNotificationConfig/set", %{
         "taskId" => task_id,
@@ -189,14 +207,23 @@ defmodule AshA2A.W4PushTest do
     # v1.1 errors carry google.rpc.ErrorInfo; the typed refusal code rides in
     # `metadata.detail`.
     typed = fn resp, code ->
-      assert %{"error" => %{"code" => -32602, "data" => [%{"reason" => "INVALID_PARAMS", "metadata" => %{"detail" => d}}]}} =
+      assert %{
+               "error" => %{
+                 "code" => -32602,
+                 "data" => [%{"reason" => "INVALID_PARAMS", "metadata" => %{"detail" => d}}]
+               }
+             } =
                resp
 
       assert d =~ code
     end
 
     typed.(set.(%{"schemes" => ["mutualTLS"]}), "refused_push_auth_mtls")
-    typed.(set.(%{"schemes" => ["Carrier-Pigeon"], "credentials" => "x"}), "refused_push_auth_scheme")
+
+    typed.(
+      set.(%{"schemes" => ["Carrier-Pigeon"], "credentials" => "x"}),
+      "refused_push_auth_scheme"
+    )
 
     assert %{"error" => %{"code" => -32602}} =
              set.(%{"schemes" => ["Basic"], "credentials" => "a\r\nX-Evil: 1"})
@@ -209,7 +236,15 @@ defmodule AshA2A.W4PushTest do
   test "set accepts the v1 flat shape and answers flat; nested stays nested", %{on: on} do
     task_id = new_task(on)
 
-    assert %{"result" => %{"id" => "flat-1", "taskId" => ^task_id, "url" => "http://127.0.0.1:9/h", "token" => "t"} = r} =
+    assert %{
+             "result" =>
+               %{
+                 "id" => "flat-1",
+                 "taskId" => ^task_id,
+                 "url" => "http://127.0.0.1:9/h",
+                 "token" => "t"
+               } = r
+           } =
              rpc(on, "tasks/pushNotificationConfig/set", %{
                "taskId" => task_id,
                "id" => "flat-1",
@@ -228,7 +263,8 @@ defmodule AshA2A.W4PushTest do
 
   # -- G3: pagination ----------------------------------------------------------
 
-  test "list pages with pageSize/pageToken; legacy list stays a bare list; bad token is -32602", %{on: on} do
+  test "list pages with pageSize/pageToken; legacy list stays a bare list; bad token is -32602",
+       %{on: on} do
     task_id = new_task(on)
 
     for i <- 1..3 do
@@ -256,7 +292,10 @@ defmodule AshA2A.W4PushTest do
     assert is_list(bare) and length(bare) == 3
 
     assert %{"error" => %{"code" => -32602}} =
-             rpc(on, "tasks/pushNotificationConfig/list", %{"id" => task_id, "pageToken" => "!!notatoken"})
+             rpc(on, "tasks/pushNotificationConfig/list", %{
+               "id" => task_id,
+               "pageToken" => "!!notatoken"
+             })
   end
 
   # -- G5/G7 -------------------------------------------------------------------
@@ -281,6 +320,7 @@ defmodule AshA2A.W4PushTest do
 
   test "4xx (not 408/429) is not retried; 429 is retried", ctx do
     url = receiver(ctx.counts, %{status: 400})
+
     assert {:error, {:http_error, 400}} =
              PushDelivery.deliver(ctx.transport, cfg(url, "r4"), %{"n" => 1}, 1, @push)
 
@@ -289,8 +329,15 @@ defmodule AshA2A.W4PushTest do
 
     {:ok, c2} = Agent.start_link(fn -> %{} end)
     url2 = receiver(c2, %{status: 429})
+
     assert {:error, {:http_error, 429}} =
-             PushDelivery.deliver(ctx.transport, cfg(url2, "r5"), %{"n" => 1}, 1, Keyword.put(@push, :max_attempts, 3))
+             PushDelivery.deliver(
+               ctx.transport,
+               cfg(url2, "r5"),
+               %{"n" => 1},
+               1,
+               Keyword.put(@push, :max_attempts, 3)
+             )
 
     for call <- 1..3, do: assert_received({:webhook, 1, ^call, 429, _})
   end
@@ -313,7 +360,9 @@ defmodule AshA2A.W4PushTest do
   test ":allow_ports restricts destination ports; default is unrestricted" do
     base = [allow_http: true, allow_cidrs: ["127.0.0.1/32"]]
     assert {:ok, _} = WebhookPolicy.admit("http://127.0.0.1:8123/h", base)
-    assert {:ok, _} = WebhookPolicy.admit("http://127.0.0.1:8123/h", base ++ [allow_ports: [8123]])
+
+    assert {:ok, _} =
+             WebhookPolicy.admit("http://127.0.0.1:8123/h", base ++ [allow_ports: [8123]])
 
     assert {:error, :refused_webhook_port, _} =
              WebhookPolicy.admit("http://127.0.0.1:8123/h", base ++ [allow_ports: [443]])

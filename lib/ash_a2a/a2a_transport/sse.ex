@@ -59,7 +59,8 @@ defmodule AshA2A.A2ATransport.SSE do
          _ = maybe_publish_message_update(transport, task, message),
          _seq = TaskEvents.publish(transport, task.id, "task", snapshot, false, task_gen(task)),
          {:ok, _pid} <- start_pump(transport, agent, task, enum) |> pump_started() do
-      backlog = TaskEvents.subscribe(transport, task.id, version: negotiated_version(conn, sse_opts))
+      backlog =
+        TaskEvents.subscribe(transport, task.id, version: negotiated_version(conn, sse_opts))
 
       conn
       |> start_sse()
@@ -102,7 +103,12 @@ defmodule AshA2A.A2ATransport.SSE do
         generation: Map.get(task, :generation)
       })
 
-    TaskEvents.publish(transport, task.id, "message-update", encode_event(event), false,
+    TaskEvents.publish(
+      transport,
+      task.id,
+      "message-update",
+      encode_event(event),
+      false,
       task_gen(task)
     )
   end
@@ -258,8 +264,12 @@ defmodule AshA2A.A2ATransport.SSE do
 
       s when is_binary(s) ->
         case Integer.parse(s) do
-          {n, ""} when n >= 0 -> {:ok, n}
-          _ -> {:error, Error.invalid_params("\"lastSeenGeneration\" must be a non-negative integer")}
+          {n, ""} when n >= 0 ->
+            {:ok, n}
+
+          _ ->
+            {:error,
+             Error.invalid_params("\"lastSeenGeneration\" must be a non-negative integer")}
         end
 
       _ ->
@@ -406,15 +416,21 @@ defmodule AshA2A.A2ATransport.SSE do
       end
     end)
     |> case do
-      {:final, conn} -> done(conn, transport, task_id)
-      {:closed, conn} -> done(conn, transport, task_id)
+      {:final, conn} ->
+        done(conn, transport, task_id)
+
+      {:closed, conn} ->
+        done(conn, transport, task_id)
+
       {conn, last} ->
         # A Last-Event-ID beyond the log (overshoot) only bounds the backlog replay;
         # live events (seq > anything logged so far) must still be delivered.
         logged_max =
           transport
           |> TaskEvents.backlog(task_id)
-          |> Enum.reduce(0, fn {seq, _, _, _}, acc -> if is_integer(seq), do: max(seq, acc), else: acc end)
+          |> Enum.reduce(0, fn {seq, _, _, _}, acc ->
+            if is_integer(seq), do: max(seq, acc), else: acc
+          end)
 
         follow(conn, transport, task_id, id, min(last, logged_max), opts, 0)
     end

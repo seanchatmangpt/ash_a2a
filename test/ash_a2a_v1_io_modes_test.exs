@@ -27,6 +27,7 @@ defmodule AshA2A.V1IOModesTest.ModedAgent do
     {:reply, [AshA2A.Protocol.Part.Text.new("hello")]}
   end
 end
+
 defmodule AshA2A.V1IOModesTest do
   @moduledoc """
   W7 court: A2A v1.0 §4.4/5.1 input/output mode conformance for the real
@@ -212,7 +213,8 @@ defmodule AshA2A.V1IOModesTest do
       assert wire_skill_by_id(moded_wire, @greeter_capability_id) == %{
                "id" => @greeter_capability_id,
                "name" => "greet",
-               "description" => wire_skill_by_id(moded_wire, @greeter_capability_id)["description"],
+               "description" =>
+                 wire_skill_by_id(moded_wire, @greeter_capability_id)["description"],
                "tags" => wire_skill_by_id(moded_wire, @greeter_capability_id)["tags"],
                "inputModes" => ["application/json"],
                "outputModes" => ["text/x-python"]
@@ -224,7 +226,8 @@ defmodule AshA2A.V1IOModesTest do
       assert Enum.find(decoded.skills, &(&1.id == @greeter_capability_id)) == %{
                id: @greeter_capability_id,
                name: "greet",
-               description: Enum.find(decoded.skills, &(&1.id == @greeter_capability_id)).description,
+               description:
+                 Enum.find(decoded.skills, &(&1.id == @greeter_capability_id)).description,
                tags: Enum.find(decoded.skills, &(&1.id == @greeter_capability_id)).tags,
                input_modes: ["application/json"],
                output_modes: ["text/x-python"]
@@ -337,7 +340,11 @@ defmodule AshA2A.V1IOModesTest do
     test "(d3) struct-field override also reaches the wire without opts" do
       # The other real override surface: a card struct carrying its own mode
       # values flows through the same `card_field/4` resolution with no opts.
-      card = %{real_card() | default_input_modes: ["text/x-python"], default_output_modes: ["application/json"]}
+      card = %{
+        real_card()
+        | default_input_modes: ["text/x-python"],
+          default_output_modes: ["application/json"]
+      }
 
       wire = JSON.encode_agent_card(card, url: @base_url)
 

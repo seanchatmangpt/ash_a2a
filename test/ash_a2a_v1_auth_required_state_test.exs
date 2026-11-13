@@ -357,6 +357,7 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
 
     assert {:ok, parked} =
              AshA2A.V1AuthRequired.TransportAgent.call(agent, Message.new_user("expired"))
+
     assert parked.status.state == :auth_required
 
     assert {:ok, resumed} =
@@ -461,7 +462,8 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
     })
   end
 
-  test "full flow: unauthenticated message/send gets the RFC 7235 challenge and no task is reachable", %{agent: agent} do
+  test "full flow: unauthenticated message/send gets the RFC 7235 challenge and no task is reachable",
+       %{agent: agent} do
     conn = wire_unauth_conn(wire_send_body("expired"), agent)
 
     assert conn.halted
@@ -470,7 +472,8 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
     assert Jason.decode!(conn.resp_body) == %{"error" => "Unauthorized"}
   end
 
-  test "full flow: authenticated auth-failing request parks a wire-visible redacted TASK_STATE_AUTH_REQUIRED task", %{agent: agent} do
+  test "full flow: authenticated auth-failing request parks a wire-visible redacted TASK_STATE_AUTH_REQUIRED task",
+       %{agent: agent} do
     conn = wire_bearer_conn(wire_send_body("expired"), agent)
 
     assert conn.status == 200
@@ -492,7 +495,8 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
     refute AshA2A.Protocol.Task.terminal?(decoded)
   end
 
-  test "full flow: the parked task is re-fetchable in state AUTH_REQUIRED and resumes to completed on the same task id", %{agent: agent} do
+  test "full flow: the parked task is re-fetchable in state AUTH_REQUIRED and resumes to completed on the same task id",
+       %{agent: agent} do
     conn = wire_bearer_conn(wire_send_body("expired"), agent)
     body = Jason.decode!(conn.resp_body)
     assert %{"result" => %{"task" => %{"id" => parked_id}}} = body
@@ -517,7 +521,8 @@ defmodule AshA2A.Protocol.V1AuthRequiredStateTest do
   # Upstream §7.6.4: the AUTH_REQUIRED state is a signal, not a grant.
   # Resuming a parked task without valid credentials is refused at the auth
   # layer and the task stays parked (nothing ran, nothing completed).
-  test "full flow: resuming an auth-required task without valid credentials is refused and grants nothing", %{agent: agent} do
+  test "full flow: resuming an auth-required task without valid credentials is refused and grants nothing",
+       %{agent: agent} do
     conn = wire_bearer_conn(wire_send_body("expired"), agent)
     assert %{"result" => %{"task" => %{"id" => parked_id}}} = Jason.decode!(conn.resp_body)
 

@@ -72,7 +72,10 @@ defmodule AshA2A.TaskStoreEkvTest do
     assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
 
     {:ok, restarted} = EchoAgent.start_link(name: agent_name, task_store: store)
-    assert {:ok, %AshA2A.Protocol.Task{id: ^task_id} = recovered} = EchoAgent.get_task(agent_name, task_id)
+
+    assert {:ok, %AshA2A.Protocol.Task{id: ^task_id} = recovered} =
+             EchoAgent.get_task(agent_name, task_id)
+
     assert recovered.status.state == created.status.state
     GenServer.stop(restarted)
 

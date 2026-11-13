@@ -107,19 +107,24 @@ defmodule AshA2A.Protocol.Client.Generation do
   """
   @spec annotate(Enumerable.t(), keyword()) :: Enumerable.t()
   def annotate(stream, opts \\ []) do
-    Stream.transform(stream, fn -> new(opts) end, fn event, state ->
-      was_unsupported = state.unsupported
-      {result, state} = observe(state, event)
+    Stream.transform(
+      stream,
+      fn -> new(opts) end,
+      fn event, state ->
+        was_unsupported = state.unsupported
+        {result, state} = observe(state, event)
 
-      annotations =
-        case result do
-          {:gap, expected, got} -> [{:gap, expected, got}]
-          :unsupported when not was_unsupported -> [{:generation, :unsupported}]
-          _ -> []
-        end
+        annotations =
+          case result do
+            {:gap, expected, got} -> [{:gap, expected, got}]
+            :unsupported when not was_unsupported -> [{:generation, :unsupported}]
+            _ -> []
+          end
 
-      {annotations ++ [{:event, event}], state}
-    end, fn _state -> :ok end)
+        {annotations ++ [{:event, event}], state}
+      end,
+      fn _state -> :ok end
+    )
   end
 
   @doc """
@@ -169,7 +174,9 @@ defmodule AshA2A.Protocol.Client.Generation do
       end
 
     (entries ++ arts)
-    |> Enum.sort_by(fn {{gen, rank}, _} -> {gen == :infinity, if(gen == :infinity, do: 0, else: gen), rank} end)
+    |> Enum.sort_by(fn {{gen, rank}, _} ->
+      {gen == :infinity, if(gen == :infinity, do: 0, else: gen), rank}
+    end)
     |> Enum.map(&elem(&1, 1))
   end
 end

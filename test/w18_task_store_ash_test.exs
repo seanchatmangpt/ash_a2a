@@ -54,7 +54,8 @@ defmodule AshA2A.W18TaskStoreAshTest do
 
     task = %{
       task
-      | metadata: Map.merge(task.metadata, %{"a2a.auth" => %{"token" => "SECRET"}, :stream => [1]})
+      | metadata:
+          Map.merge(task.metadata, %{"a2a.auth" => %{"token" => "SECRET"}, :stream => [1]})
     }
 
     :ok = Store.put(ref, task)

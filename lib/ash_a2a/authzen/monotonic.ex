@@ -117,7 +117,7 @@ defmodule AshA2A.AuthZEN.Monotonic do
   def narrow(parent, requested) do
     requested_set = set(requested)
     parent_set = set(parent)
-    requested_set -- requested_set -- parent_set
+    requested_set -- (requested_set -- parent_set)
   end
 
   @doc "Symmetric intersection of two capability sets."

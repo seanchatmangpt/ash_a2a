@@ -11,6 +11,7 @@ defmodule AshA2A.Evidence.AffidavitTest do
     if Affidavit.available?() and is_nil(Process.whereis(AshAffidavit.Pool)) do
       start_supervised!({AshAffidavit.Pool, size: 2})
     end
+
     :ok
   end
 

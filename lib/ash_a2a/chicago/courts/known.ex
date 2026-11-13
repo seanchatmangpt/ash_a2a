@@ -485,7 +485,11 @@ defmodule AshA2A.Chicago.Courts.Known do
 
     candidate_reply? =
       case reply do
-        {:reply, [%AshA2A.Protocol.Part.Data{data: %{"standing" => "candidate", "authority" => "none"}} | _]} ->
+        {:reply,
+         [
+           %AshA2A.Protocol.Part.Data{data: %{"standing" => "candidate", "authority" => "none"}}
+           | _
+         ]} ->
           true
 
         _ ->

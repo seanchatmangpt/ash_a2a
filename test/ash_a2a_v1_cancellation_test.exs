@@ -178,7 +178,11 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         :exit, _ -> :ok
       end
     end)
-    %{agent: name, plug_opts: AshA2A.Protocol.Plug.init(agent: name, base_url: "http://localhost:4104/a2a")}
+
+    %{
+      agent: name,
+      plug_opts: AshA2A.Protocol.Plug.init(agent: name, base_url: "http://localhost:4104/a2a")
+    }
   end
 
   defp rpc(plug_opts, method, params) do
@@ -212,6 +216,7 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
     assert %{"error" => error} = response
     assert error["code"] == code
     assert is_binary(error["message"]) and error["message"] != ""
+
     assert [%{"@type" => @error_info_type, "domain" => @a2a_domain, "reason" => ^reason} | _] =
              error["data"]
 
@@ -233,7 +238,11 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("message/send", %{"message" => data_message(%{"text" => "finish me"})})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{"id" => task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}
+               }
+             } =
                done
 
       # Positive control: tasks/get shows the task genuinely terminal.
@@ -242,7 +251,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("tasks/get", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}} = fetched
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
+               fetched
 
       # The cancel attempt itself.
       canceled =
@@ -293,7 +303,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   end
 
   describe "court (b): cancel a working task whose handler is in flight (interrupt, default)" do
-    test "tasks/cancel interrupts the worker: cancel and the pending send both answer CANCELED, effect never commits", %{} do
+    test "tasks/cancel interrupts the worker: cancel and the pending send both answer CANCELED, effect never commits",
+         %{} do
       probe = :"v1_cancel_probe_#{System.unique_integer([:positive])}"
       Process.register(self(), probe)
       %{agent: agent, plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.SlowAgent)
@@ -317,7 +328,11 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
       # reply is the cancel, not the handler finishing).
       send_conn = Task.await(send_task, 800)
 
-      assert %{"result" => %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}
+               }
+             } =
                decode_response(send_conn)
 
       # The worker was killed: no in-flight entry remains in the agent.
@@ -345,7 +360,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   end
 
   describe "court (b'): opt-in cancel_in_flight: :refuse" do
-    test "tasks/cancel while the real worker sleeps is refused -32002 (race-safety refusal)", %{} do
+    test "tasks/cancel while the real worker sleeps is refused -32002 (race-safety refusal)",
+         %{} do
       %{agent: agent, plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.RefuseAgent)
 
       # Fire the send from another process: the plug call blocks until the
@@ -396,7 +412,12 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
       # Positive control: the refusal was race-safety, not cancellation.
       # The un-canceled send runs to real completion.
       send_conn = Task.await(send_task, 10_000)
-      assert %{"result" => %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+
+      assert %{
+               "result" => %{
+                 "task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}
+               }
+             } =
                decode_response(send_conn)
 
       fetched =
@@ -413,7 +434,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   # ---------------------------------------------------------------------------
 
   describe "court (c): cancel an unknown task" do
-    test "tasks/cancel with a task id that was never issued is refused -32001 TASK_NOT_FOUND", %{} do
+    test "tasks/cancel with a task id that was never issued is refused -32001 TASK_NOT_FOUND",
+         %{} do
       %{plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.CompletableAgent)
 
       missing_id = "tsk-" <> Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
@@ -444,7 +466,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   # ---------------------------------------------------------------------------
 
   describe "court (d): cancel an input_required task" do
-    test "tasks/cancel on a non-terminal INPUT_REQUIRED task succeeds; a follow-up message is refused", %{} do
+    test "tasks/cancel on a non-terminal INPUT_REQUIRED task succeeds; a follow-up message is refused",
+         %{} do
       %{agent: _agent, plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.CompletableAgent)
 
       # Park the task: the fixture's :converse requires :text; omit it.
@@ -453,7 +476,14 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("message/send", %{"message" => data_message(%{})})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => task_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{
+                   "id" => task_id,
+                   "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+                 }
+               }
+             } =
                turn1
 
       # No handler is running and the state is non-terminal: the cancel
@@ -463,7 +493,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("tasks/cancel", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} = canceled
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               canceled
 
       # Positive control: tasks/get shows the real terminal state, and the
       # real AshA2A.Agent.__cancel__/2 path ran (the action-visible history
@@ -473,7 +504,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("tasks/get", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} = fetched
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               fetched
 
       # tasks/list also reports the canceled state.
       listed =
@@ -482,7 +514,11 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> decode_response()
 
       assert %{"result" => %{"tasks" => tasks}} = listed
-      assert Enum.any?(tasks, &(&1["id"] == task_id and &1["status"]["state"] == "TASK_STATE_CANCELED"))
+
+      assert Enum.any?(
+               tasks,
+               &(&1["id"] == task_id and &1["status"]["state"] == "TASK_STATE_CANCELED")
+             )
 
       # Pinned reality: a follow-up message naming the canceled task_id is
       # refused — the runtime's terminal-continuation guard
@@ -514,7 +550,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
   # ---------------------------------------------------------------------------
 
   describe "court (e): double cancel" do
-    test "the second cancel of an already-canceled task is idempotent success (200 with the canceled task)", %{} do
+    test "the second cancel of an already-canceled task is idempotent success (200 with the canceled task)",
+         %{} do
       %{agent: agent, plug_opts: plug_opts} = start_agent(AshA2A.V1Cancellation.CompletableAgent)
 
       # Park, then cancel: the first cancel succeeds.
@@ -523,7 +560,14 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("message/send", %{"message" => data_message(%{})})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => task_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{
+                   "id" => task_id,
+                   "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+                 }
+               }
+             } =
                turn1
 
       first =
@@ -531,7 +575,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("tasks/cancel", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} = first
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               first
 
       # The second cancel is idempotent (spec §3.3.1): 200 with the canceled
       # task — same effect as the first cancel, not a refusal.
@@ -540,7 +585,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("tasks/cancel", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} = second
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               second
 
       # Same idempotent success at the agent GenServer surface.
       assert :ok = AshA2A.V1Cancellation.CompletableAgent.cancel(agent, task_id)
@@ -552,7 +598,11 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("message/send", %{"message" => data_message(%{"text" => "done"})})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => done_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{"id" => done_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}
+               }
+             } =
                turn2
 
       assert_wire_error(
@@ -568,7 +618,8 @@ defmodule AshA2A.Protocol.V1CancellationConformanceTest do
         |> rpc("tasks/get", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} = still
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_CANCELED"}}} =
+               still
     end
   end
 end

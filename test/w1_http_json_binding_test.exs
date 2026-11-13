@@ -112,7 +112,9 @@ defmodule AshA2A.W1HTTPJSONTest do
   @ext_uri AshA2A.W1HTTPJSON.RequiredExtension.uri()
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+
     :ok
   end
 
@@ -198,7 +200,12 @@ defmodule AshA2A.W1HTTPJSONTest do
   test "leading tenant segment is stripped and recorded" do
     server = start()
 
-    resp = Req.post!(url: server.base_url <> "/acme/message:send", json: %{"message" => message_map("hi")})
+    resp =
+      Req.post!(
+        url: server.base_url <> "/acme/message:send",
+        json: %{"message" => message_map("hi")}
+      )
+
     assert resp.status == 200
     assert %{"task" => %{"id" => id}} = resp.body
     assert resp.headers["x-seen-tenant"] == ["acme"]
@@ -211,7 +218,10 @@ defmodule AshA2A.W1HTTPJSONTest do
     assert list.status == 200
 
     card =
-      Req.get!(url: server.base_url <> "/acme/extendedAgentCard", headers: [authorization: "Bearer t"])
+      Req.get!(
+        url: server.base_url <> "/acme/extendedAgentCard",
+        headers: [authorization: "Bearer t"]
+      )
 
     assert card.status == 200
     assert card.body["name"] == "w1-extended"
@@ -278,8 +288,12 @@ defmodule AshA2A.W1HTTPJSONTest do
 
   test ":versions option restricts supported versions" do
     server = start(versions: ["1.0"])
-    assert Req.get!(url: server.base_url <> "/tasks", headers: [{"a2a-version", "0.3"}]).status == 400
-    assert Req.get!(url: server.base_url <> "/tasks", headers: [{"a2a-version", "1.0"}]).status == 200
+
+    assert Req.get!(url: server.base_url <> "/tasks", headers: [{"a2a-version", "0.3"}]).status ==
+             400
+
+    assert Req.get!(url: server.base_url <> "/tasks", headers: [{"a2a-version", "1.0"}]).status ==
+             200
   end
 
   test "required extension missing answers 400 -32008; present is activated and echoed" do
@@ -294,7 +308,9 @@ defmodule AshA2A.W1HTTPJSONTest do
 
     assert message =~ @ext_uri or inspect(missing.body) =~ @ext_uri
 
-    via_header = Req.get!(url: server.base_url <> "/tasks", headers: [{"a2a-extensions", @ext_uri}])
+    via_header =
+      Req.get!(url: server.base_url <> "/tasks", headers: [{"a2a-extensions", @ext_uri}])
+
     assert via_header.status == 200
     assert via_header.headers["a2a-extensions"] == [@ext_uri]
 

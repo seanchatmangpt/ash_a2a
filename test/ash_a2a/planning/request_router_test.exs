@@ -136,7 +136,11 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
     test "a string-keyed \"goal_facts\" data key is detected identically to the atom key (MetadataKey convention)" do
       envelope = goal_facts_envelope()
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
+
+      message =
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})
+        ])
 
       assert {:facts, ^envelope} = RequestRouter.detect_tier(message)
     end
@@ -255,7 +259,10 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
   describe "detect_tier/1 -- no input" do
     test "a message with neither goal_facts nor text is refused as :error" do
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})])
+      message =
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})
+        ])
 
       assert :error = RequestRouter.detect_tier(message)
     end
@@ -333,7 +340,10 @@ defmodule AshA2A.Planning.RequestRouterTest do
 
   describe "route/3 -- no input" do
     test "a message with neither goal_facts nor text fails closed with a typed error" do
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})])
+      message =
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})
+        ])
 
       assert {:error, %{code: :request_router_missing_input}} =
                RequestRouter.route(HddlDeterministicFixture, message)

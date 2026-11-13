@@ -212,7 +212,8 @@ defmodule AshA2A.V1TelemetryConformanceTest do
   end
 
   defp assert_span_pair(events, base) do
-    assert [{_, start_m, start_meta}] = for({e, m, meta} <- spans_of(events, base), e == base ++ [:start], do: {e, m, meta})
+    assert [{_, start_m, start_meta}] =
+             for({e, m, meta} <- spans_of(events, base), e == base ++ [:start], do: {e, m, meta})
 
     assert [{_, stop_m, stop_meta}] =
              for({e, m, meta} <- spans_of(events, base), e == base ++ [:stop], do: {e, m, meta})
@@ -299,7 +300,10 @@ defmodule AshA2A.V1TelemetryConformanceTest do
       # (a) skill identity: the routing event and the dispatch span both name
       # the skill.
       assert [{_, _, route_meta}] =
-               for({[:ash_a2a, :agent, :dispatch], _, meta} <- events, do: {[:ash_a2a, :agent, :dispatch], [], meta})
+               for(
+                 {[:ash_a2a, :agent, :dispatch], _, meta} <- events,
+                 do: {[:ash_a2a, :agent, :dispatch], [], meta}
+               )
 
       assert route_meta.resource_or_domain == AshA2A.Test.Fixture.AuthProbe
       assert route_meta.skill_name in [:whoami, "whoami"]
@@ -319,13 +323,19 @@ defmodule AshA2A.V1TelemetryConformanceTest do
 
       # The sole-DO fence reports on the observe path too: :not_required.
       assert [{_, _, gate}] =
-               for({[:ash_a2a, :dispatch, :brce_gate], _, meta} <- events, do: {[:ash_a2a, :dispatch, :brce_gate], [], meta})
+               for(
+                 {[:ash_a2a, :dispatch, :brce_gate], _, meta} <- events,
+                 do: {[:ash_a2a, :dispatch, :brce_gate], [], meta}
+               )
 
       assert gate.outcome == :not_required
       assert gate.skill_name in [:whoami, "whoami"]
 
       assert [{_, _, actuate}] =
-               for({[:ash_a2a, :dispatch, :actuate], _, meta} <- events, do: {[:ash_a2a, :dispatch, :actuate], [], meta})
+               for(
+                 {[:ash_a2a, :dispatch, :actuate], _, meta} <- events,
+                 do: {[:ash_a2a, :dispatch, :actuate], [], meta}
+               )
 
       assert actuate.anchored == false
 
@@ -373,7 +383,10 @@ defmodule AshA2A.V1TelemetryConformanceTest do
       # handler verbatim. Returned (non-raising) errors take the redacted
       # OBS-01 stop-metadata path pinned by the sibling test below.
       assert [{_, _, exc_meta}] =
-               for({[:ash_a2a, :dispatch, :exception], _, meta} <- events, do: {[:ash_a2a, :dispatch, :exception], [], meta})
+               for(
+                 {[:ash_a2a, :dispatch, :exception], _, meta} <- events,
+                 do: {[:ash_a2a, :dispatch, :exception], [], meta}
+               )
 
       assert exc_meta.kind == :error
       assert inspect(exc_meta.reason) =~ @marker
@@ -399,7 +412,10 @@ defmodule AshA2A.V1TelemetryConformanceTest do
       events = drain()
 
       assert [{_, _, d_stop}] =
-               for({[:ash_a2a, :dispatch, :stop], _, meta} <- events, do: {[:ash_a2a, :dispatch, :stop], [], meta})
+               for(
+                 {[:ash_a2a, :dispatch, :stop], _, meta} <- events,
+                 do: {[:ash_a2a, :dispatch, :stop], [], meta}
+               )
 
       # OBS-01: a RETURNED dispatch error is summarized data-free in the stop
       # metadata -- a kind atom, never the raw reason.
@@ -429,7 +445,10 @@ defmodule AshA2A.V1TelemetryConformanceTest do
       # The ported span wraps the handler unrescued, so the raise really does
       # emit the exception event -- pinned as reality.
       assert [{_, exc_m, exc_meta}] =
-               for({[:a2a, :agent, :message, :exception] = e, m, meta} <- events, do: {e, m, meta})
+               for(
+                 {[:a2a, :agent, :message, :exception] = e, m, meta} <- events,
+                 do: {e, m, meta}
+               )
 
       assert is_integer(exc_m.duration) and exc_m.duration > 0
 
@@ -485,7 +504,10 @@ defmodule AshA2A.V1TelemetryConformanceTest do
 
       # The repo-level cancel observation.
       assert [{_, _, cancel_meta}] =
-               for({[:ash_a2a, :agent, :cancel], _, meta} <- events, do: {[:ash_a2a, :agent, :cancel], [], meta})
+               for(
+                 {[:ash_a2a, :agent, :cancel], _, meta} <- events,
+                 do: {[:ash_a2a, :agent, :cancel], [], meta}
+               )
 
       assert cancel_meta.resource_or_domain == AshA2A.Test.Fixture.StreamItem
       assert cancel_meta.task_id == task.id
@@ -540,8 +562,10 @@ defmodule AshA2A.V1TelemetryConformanceTest do
         AshA2A.Protocol.Plug.init(agent: AuthProbeAgent, base_url: "http://localhost:4000/a2a")
 
       message =
-        %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
-          | metadata: %{"skill" => "whoami"}}
+        %{
+          AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+          | metadata: %{"skill" => "whoami"}
+        }
 
       {:ok, message_json} = AshA2A.Protocol.JSON.encode(message)
 

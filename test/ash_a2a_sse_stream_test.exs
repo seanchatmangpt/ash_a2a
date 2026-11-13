@@ -105,7 +105,10 @@ defmodule AshA2ASSEStreamTest do
     wire_chunks =
       Enum.map(real_parts, fn part ->
         artifact = AshA2A.Protocol.Artifact.new([part])
-        event = AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact, context_id: task.context_id)
+
+        event =
+          AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact, context_id: task.context_id)
+
         {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
         payload = AshA2A.Protocol.JSONRPC.Response.success("test-id", encoded)
         "data: #{Jason.encode!(payload)}\n\n"
@@ -139,7 +142,11 @@ defmodule AshA2ASSEStreamTest do
       |> Enum.map(fn %{"result" => result} ->
         # v1.0 StreamResponse frame: the result is {"artifactUpdate": ...} —
         # the wrapper key is the discriminator, with no "kind" key anywhere.
-        assert %{"artifactUpdate" => %{"artifact" => %{"parts" => [%{"data" => %{"label" => label}} = part]}}} =
+        assert %{
+                 "artifactUpdate" => %{
+                   "artifact" => %{"parts" => [%{"data" => %{"label" => label}} = part]}
+                 }
+               } =
                  result
 
         refute Map.has_key?(part, "kind")
@@ -176,7 +183,10 @@ defmodule AshA2ASSEStreamTest do
       |> Enum.filter(fn %AshA2A.Protocol.Part.Data{data: %{label: label}} -> label == "solo" end)
 
     artifact = AshA2A.Protocol.Artifact.new([part])
-    event = AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact, context_id: task.context_id)
+
+    event =
+      AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact, context_id: task.context_id)
+
     {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
     payload = AshA2A.Protocol.JSONRPC.Response.success(1, encoded)
     wire = "data: #{Jason.encode!(payload)}\n\n"
@@ -191,7 +201,15 @@ defmodule AshA2ASSEStreamTest do
         {acc_events ++ new_events, new_state}
       end)
 
-    assert [%{"result" => %{"artifactUpdate" => %{"artifact" => %{"parts" => [%{"data" => %{"label" => "solo"}}]}}}}] =
+    assert [
+             %{
+               "result" => %{
+                 "artifactUpdate" => %{
+                   "artifact" => %{"parts" => [%{"data" => %{"label" => "solo"}}]}
+                 }
+               }
+             }
+           ] =
              events
   end
 end

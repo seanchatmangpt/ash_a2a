@@ -330,7 +330,11 @@ defmodule AshA2A.Chicago.Courts.FederatedDelegation do
   defp delegate_message(label, peer_b_name, bypass?) do
     message =
       AshA2A.Protocol.Message.new_user([
-        AshA2A.Protocol.Part.Data.new(%{"label" => label, "peer_b_name" => peer_b_name, "bypass" => bypass?})
+        AshA2A.Protocol.Part.Data.new(%{
+          "label" => label,
+          "peer_b_name" => peer_b_name,
+          "bypass" => bypass?
+        })
       ])
 
     %{message | metadata: %{"skill" => "delegate_write"}}

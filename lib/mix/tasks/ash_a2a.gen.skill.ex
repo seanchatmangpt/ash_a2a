@@ -41,9 +41,20 @@ if Code.ensure_loaded?(Igniter) do
       positional = igniter.args.positional
 
       resource = Igniter.Project.Module.parse(positional[:resource])
-      skill_name = String.to_atom(positional[:skill_name])
-      action_name = String.to_atom(positional[:action_name])
-      consequence = String.to_atom(Keyword.get(options, :consequence, "observe"))
+      skill_name = identifier_atom!(positional[:skill_name], "skill_name")
+      action_name = identifier_atom!(positional[:action_name], "action_name")
+      consequence_str = Keyword.get(options, :consequence, "observe")
+
+      consequence =
+        Enum.find(
+          [:observe, :change, :external_do, :unknown],
+          &(Atom.to_string(&1) == consequence_str)
+        ) ||
+          Mix.raise(
+            "Invalid --consequence #{inspect(consequence_str)}. " <>
+              "Must be one of: observe, change, external_do, unknown."
+          )
+
       description = Keyword.get(options, :description, "A2A skill for #{action_name}")
 
       case Igniter.Project.Module.find_module(igniter, resource) do
@@ -52,6 +63,15 @@ if Code.ensure_loaded?(Igniter) do
 
         {:error, igniter} ->
           Igniter.add_issue(igniter, "Could not find resource module #{inspect(resource)}")
+      end
+    end
+
+    # New declarations mint atoms; only a bounded Elixir identifier is admitted.
+    defp identifier_atom!(name, label) do
+      if is_binary(name) and Regex.match?(~r/\A[a-z_][a-zA-Z0-9_]{0,63}[?!]?\z/, name) do
+        String.to_atom(name)
+      else
+        Mix.raise("Invalid #{label} #{inspect(name)}: expected an identifier.")
       end
     end
 

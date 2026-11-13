@@ -72,7 +72,8 @@ defmodule AshA2AAgentMultiTurnTest do
     assert turn2.id == task_id
     assert turn2.status.state == :completed
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = turn2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] =
+             turn2.artifacts
 
     # The fixture's real Ash action itself counted
     # `length(input.context[:a2a_history])` on this second, real dispatch --

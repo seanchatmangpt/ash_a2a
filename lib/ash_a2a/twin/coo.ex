@@ -1,13 +1,13 @@
-defmodule AshA2A.Twin.Tony do
+defmodule AshA2A.Twin.COO do
   @moduledoc """
-  Tony: ergonomic load balancer over a coordinator mesh.
+  COO: ergonomic load balancer over a coordinator mesh.
 
   Pure functions over tensor snapshots (no processes). The only clock read is
   `triage/2`'s default `now` (`DateTime.utc_now/0`) when the caller does not
   inject `:now:` — inject it for deterministic results. Otherwise the caller
   supplies all observation data. Integration seam disclosed: the
-  `:heuristic_frequency` dimension is expected to be fed by Vince's heuristic
-  detectors' flagged-event counts; Tony only consumes the number.
+  `:heuristic_frequency` dimension is expected to be fed by CEO's heuristic
+  detectors' flagged-event counts; COO only consumes the number.
 
   ## API
 
@@ -24,7 +24,7 @@ defmodule AshA2A.Twin.Tony do
 
   @type mesh :: %{optional(term()) => Tensor.t()}
 
-  @shed_target {:senior_queue, :tony_relief}
+  @shed_target {:senior_queue, :coo_relief}
 
   @doc "Register a coordinator's tensor snapshot in the mesh."
   @spec register_coordinator(mesh(), term(), Tensor.t()) :: mesh()
@@ -40,7 +40,7 @@ defmodule AshA2A.Twin.Tony do
   raises `KeyError` — fail-loud, never fail-open.
   """
   @spec handle_inbound(mesh(), keyword() | map()) ::
-          {:admit, term()} | {:shed, {:senior_queue, :tony_relief}}
+          {:admit, term()} | {:shed, {:senior_queue, :coo_relief}}
   def handle_inbound(mesh, ticket)
 
   def handle_inbound(mesh, ticket) when is_map(mesh) do

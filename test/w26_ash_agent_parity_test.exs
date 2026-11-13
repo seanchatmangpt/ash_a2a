@@ -125,9 +125,14 @@ defmodule AshA2A.W26.AshAgentParityTest do
     {:ok, task} = GenServer.call(agent, {:get_task, task_id})
 
     cond do
-      task.status.state == state -> task
-      System.monotonic_time(:millisecond) > deadline -> flunk("task stuck in #{task.status.state}")
-      true -> do_await(agent, task_id, state, deadline)
+      task.status.state == state ->
+        task
+
+      System.monotonic_time(:millisecond) > deadline ->
+        flunk("task stuck in #{task.status.state}")
+
+      true ->
+        do_await(agent, task_id, state, deadline)
     end
   end
 
@@ -230,7 +235,9 @@ defmodule AshA2A.W26.AshAgentParityTest do
       agent = start(AshA2A.W26.ConverseAgent)
 
       {:ok, %Task{} = first} =
-        AshA2A.W26.ConverseAgent.call(agent, data_message(%{text: "one"}), context_id: "ctx-w26-ref")
+        AshA2A.W26.ConverseAgent.call(agent, data_message(%{text: "one"}),
+          context_id: "ctx-w26-ref"
+        )
 
       assert {:error, :not_found} =
                AshA2A.W26.ConverseAgent.call(

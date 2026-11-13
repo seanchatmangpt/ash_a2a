@@ -135,8 +135,11 @@ defmodule AshA2A.HardeningLane09Test do
       fname = "lane09_nonexistent_fn_#{System.unique_integer([:positive])}"
       mname = "Lane09.NoSuch#{System.unique_integer([:positive])}"
 
-      [r1] = Scorers.run([%{"type" => "custom", "module" => "Enum", "function" => fname}], @view, %{})
-      [r2] = Scorers.run([%{"type" => "custom", "module" => mname, "function" => "run"}], @view, %{})
+      [r1] =
+        Scorers.run([%{"type" => "custom", "module" => "Enum", "function" => fname}], @view, %{})
+
+      [r2] =
+        Scorers.run([%{"type" => "custom", "module" => mname, "function" => "run"}], @view, %{})
 
       assert r1.verdict == "FAIL"
       assert {:custom_scorer_error, _} = r1.detail

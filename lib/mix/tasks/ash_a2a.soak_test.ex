@@ -18,6 +18,10 @@ defmodule Mix.Tasks.AshA2a.SoakTest do
 
   use Mix.Task
 
+  # ash_pplan is an optional (test-only) dep; every call is behind
+  # `Code.ensure_loaded?/1`.
+  @compile {:no_warn_undefined, [AshPPlan.Capability, AshPPlan.Workflow.CapabilityCatalog]}
+
   @shortdoc "Runs high-scale capability cross-product soak test (ash_a2a × ash_pplan)"
 
   @impl Mix.Task
@@ -103,9 +107,9 @@ defmodule Mix.Tasks.AshA2a.SoakTest do
           auth_ok? =
             if verify_auth? do
               ceiling == :construct and
-                (if Code.ensure_loaded?(AshPPlan.Capability),
-                  do: match?({:ok, _}, apply(AshPPlan.Capability, :parse, [p.id])),
-                  else: true)
+                if Code.ensure_loaded?(AshPPlan.Capability),
+                  do: match?({:ok, _}, AshPPlan.Capability.parse(p.id)),
+                  else: true
             else
               true
             end
@@ -132,7 +136,9 @@ defmodule Mix.Tasks.AshA2a.SoakTest do
       rate = Float.round(chunk_count / max(batch_elapsed_ms / 1000, 0.001), 1)
       current_mem_mb = Float.round(:erlang.memory(:total) / (1024 * 1024), 2)
 
-      IO.puts("Batch #{batch_num}/#{batches} (#{chunk_count} evals) completed in #{batch_elapsed_ms}ms (#{rate} evals/sec) | Memory: #{current_mem_mb} MB")
+      IO.puts(
+        "Batch #{batch_num}/#{batches} (#{chunk_count} evals) completed in #{batch_elapsed_ms}ms (#{rate} evals/sec) | Memory: #{current_mem_mb} MB"
+      )
     end)
 
     total_elapsed_s = Float.round((System.monotonic_time(:millisecond) - start_time) / 1000, 2)
@@ -198,10 +204,10 @@ defmodule Mix.Tasks.AshA2a.SoakTest do
   def discover_pplan_capabilities do
     cond do
       Code.ensure_loaded?(AshPPlan.Workflow.CapabilityCatalog) ->
-        apply(AshPPlan.Workflow.CapabilityCatalog, :all, [])
+        AshPPlan.Workflow.CapabilityCatalog.all()
 
       Code.ensure_loaded?(AshPPlan.Capability) ->
-        for fam <- apply(AshPPlan.Capability, :families, []) do
+        for fam <- AshPPlan.Capability.families() do
           %{id: "#{Macro.camelize(to_string(fam))}.Execute", family: to_string(fam)}
         end
 

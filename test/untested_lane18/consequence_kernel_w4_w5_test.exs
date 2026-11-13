@@ -59,7 +59,10 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelW4W5Test do
       assert :ok = RawEffectGuard.admit(%{consequence: :change, fence: true})
       assert :ok = RawEffectGuard.admit(%{consequence: :external_do, fence: true})
       assert :ok = RawEffectGuard.admit(%{consequence: :observe, observation_only: true})
-      assert {:error, :raw_effect_path} = RawEffectGuard.admit(%{consequence: :change, fence: false})
+
+      assert {:error, :raw_effect_path} =
+               RawEffectGuard.admit(%{consequence: :change, fence: false})
+
       assert {:error, :raw_effect_path} = RawEffectGuard.admit(%{consequence: :change})
       assert {:error, :raw_effect_path} = RawEffectGuard.admit(%{consequence: :observe})
       assert {:error, :consequence_unclassified} = RawEffectGuard.admit(%{consequence: :unknown})
@@ -88,7 +91,9 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelW4W5Test do
     end
 
     test "UnknownOutcomePolicy never permits blind retry" do
-      assert {:error, :reconciliation_required} = UnknownOutcomePolicy.next(:unknown_outcome, :retry)
+      assert {:error, :reconciliation_required} =
+               UnknownOutcomePolicy.next(:unknown_outcome, :retry)
+
       assert {:ok, :reconcile} = UnknownOutcomePolicy.next(:unknown_outcome, :reconcile)
       assert {:ok, :compensate} = UnknownOutcomePolicy.next(:unknown_outcome, :compensate)
       assert {:ok, :terminal} = UnknownOutcomePolicy.next(:completed, :retry)
@@ -115,9 +120,18 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelW4W5Test do
     end
 
     test "ClaimFence" do
-      ok = %{request_claim: "r", effect_claim: "e", prepared_digest: "p", claimed_prepared_digest: "p"}
+      ok = %{
+        request_claim: "r",
+        effect_claim: "e",
+        prepared_digest: "p",
+        claimed_prepared_digest: "p"
+      }
+
       assert :ok = ClaimFence.admit(ok)
-      assert {:error, :prepared_digest_mismatch} = ClaimFence.admit(%{ok | claimed_prepared_digest: "q"})
+
+      assert {:error, :prepared_digest_mismatch} =
+               ClaimFence.admit(%{ok | claimed_prepared_digest: "q"})
+
       assert {:error, :prepared_digest_mismatch} = ClaimFence.admit(%{ok | effect_claim: "r"})
       assert {:error, :claim_fence_refused} = ClaimFence.admit(%{})
     end

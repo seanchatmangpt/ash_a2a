@@ -189,8 +189,7 @@ defmodule AshA2AV1OwnerScopeTest do
           transport: transport,
           push_notifications: true
         ),
-      scoped_plug:
-        AshA2A.Transport.Plug.init(agent: agent, base_url: "http://x/a2a")
+      scoped_plug: AshA2A.Transport.Plug.init(agent: agent, base_url: "http://x/a2a")
     }
   end
 
@@ -210,16 +209,22 @@ defmodule AshA2AV1OwnerScopeTest do
 
   defp plug_call(ctx, user, method, params) do
     body =
-      Jason.encode!(%{"jsonrpc" => "2.0", "id" => System.unique_integer([:positive]),
-        "method" => method, "params" => params})
+      Jason.encode!(%{
+        "jsonrpc" => "2.0",
+        "id" => System.unique_integer([:positive]),
+        "method" => method,
+        "params" => params
+      })
 
     conn =
       Plug.Test.conn(:post, "/", body)
       |> Plug.Conn.put_req_header("content-type", "application/json")
-      |> then(&if(is_binary(user),
-        do: Plug.Conn.put_req_header(&1, "authorization", "Bearer " <> user),
-        else: &1
-      ))
+      |> then(
+        &if(is_binary(user),
+          do: Plug.Conn.put_req_header(&1, "authorization", "Bearer " <> user),
+          else: &1
+        )
+      )
       |> maybe_auth(ctx, user)
 
     TransportPlug.call(conn, ctx.plug)
@@ -303,9 +308,12 @@ defmodule AshA2AV1OwnerScopeTest do
   end
 
   defp assert_no_internal_keys(term, path) when is_list(term),
-    do: term |> Enum.with_index() |> Enum.each(fn {v, i} ->
-      assert_no_internal_keys(v, "#{path}[#{i}]")
-    end)
+    do:
+      term
+      |> Enum.with_index()
+      |> Enum.each(fn {v, i} ->
+        assert_no_internal_keys(v, "#{path}[#{i}]")
+      end)
 
   defp assert_no_internal_keys(_scalar, _path), do: :ok
 
@@ -344,9 +352,11 @@ defmodule AshA2AV1OwnerScopeTest do
 
       # Indistinguishability: a foreign task and a genuinely unknown task
       # produce byte-identical error maps.
-      for {method, params} <- [{"tasks/get", %{"id" => task_id}},
-                               {"tasks/cancel", %{"id" => task_id}},
-                               {"tasks/pushNotificationConfig/get", %{"id" => task_id}}] do
+      for {method, params} <- [
+            {"tasks/get", %{"id" => task_id}},
+            {"tasks/cancel", %{"id" => task_id}},
+            {"tasks/pushNotificationConfig/get", %{"id" => task_id}}
+          ] do
         foreign = rpc(ctx, "bob", method, params)
         unknown = rpc(ctx, "bob", method, Map.put(params, "id", "tsk-no-such-task-000"))
 
@@ -367,7 +377,12 @@ defmodule AshA2AV1OwnerScopeTest do
       live = create_task(ctx, "alice")
       %{"id" => live_id} = live
 
-      assert %{"result" => %{"id" => ^live_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}} =
+      assert %{
+               "result" => %{
+                 "id" => ^live_id,
+                 "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+               }
+             } =
                rpc(ctx, "alice", "tasks/get", %{"id" => live_id})
 
       # resubscribe on a live (INPUT_REQUIRED) task stays subscribed (§3.1.6,
@@ -448,7 +463,11 @@ defmodule AshA2AV1OwnerScopeTest do
       # (url round-trips too; pinned loosely to keep the court on ownership,
       # not on the webhook policy's URL normalization)
 
-      assert %{"result" => [%{"taskId" => ^live_id, "pushNotificationConfig" => %{"id" => ^cfg_id}}]} =
+      assert %{
+               "result" => [
+                 %{"taskId" => ^live_id, "pushNotificationConfig" => %{"id" => ^cfg_id}}
+               ]
+             } =
                rpc(ctx, "alice", "tasks/pushNotificationConfig/list", %{"id" => live_id})
 
       assert %{"result" => nil} =
@@ -807,10 +826,12 @@ defmodule AshA2AV1OwnerScopeTest do
     conn =
       Plug.Test.conn(:post, "/", body)
       |> Plug.Conn.put_req_header("content-type", "application/json")
-      |> then(&if(is_binary(user),
-        do: Plug.Conn.put_req_header(&1, "authorization", "Bearer " <> user),
-        else: &1
-      ))
+      |> then(
+        &if(is_binary(user),
+          do: Plug.Conn.put_req_header(&1, "authorization", "Bearer " <> user),
+          else: &1
+        )
+      )
       |> then(&if(is_binary(user), do: AshA2A.Protocol.Plug.Auth.call(&1, ctx.auth), else: &1))
 
     AshA2A.Transport.Plug.call(conn, ctx.scoped_plug).resp_body |> Jason.decode!()

@@ -103,7 +103,11 @@ defmodule AshA2APlugTenantActorTest do
   # must be named explicitly or dispatch real-fails-closed with
   # `{:ambiguous_skill, _}`. Real skill selection here, not a workaround.
   defp jsonrpc_request_body(data, skill) do
-    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)]) | metadata: %{"skill" => skill}}
+    message = %{
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(data)])
+      | metadata: %{"skill" => skill}
+    }
+
     {:ok, message_json} = AshA2A.Protocol.JSON.encode(message)
 
     Jason.encode!(%{

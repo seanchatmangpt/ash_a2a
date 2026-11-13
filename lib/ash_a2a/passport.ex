@@ -316,16 +316,24 @@ defmodule AshA2A.Passport do
 
   defp check_structure(%Document{} = p) do
     cond do
-      not is_binary(p.id) or p.id == "" -> {:error, {:malformed, {:bad_member, "id"}}}
-      not is_binary(p.issuer) or p.issuer == "" -> {:error, {:malformed, {:bad_member, "issuer"}}}
-      not is_binary(p.issued_at) -> {:error, {:malformed, {:bad_member, "issuedAt"}}}
-      not (is_list(p.attestations) and p.attestations != [] and Enum.all?(p.attestations, &is_map/1)) ->
+      not is_binary(p.id) or p.id == "" ->
+        {:error, {:malformed, {:bad_member, "id"}}}
+
+      not is_binary(p.issuer) or p.issuer == "" ->
+        {:error, {:malformed, {:bad_member, "issuer"}}}
+
+      not is_binary(p.issued_at) ->
+        {:error, {:malformed, {:bad_member, "issuedAt"}}}
+
+      not (is_list(p.attestations) and p.attestations != [] and
+               Enum.all?(p.attestations, &is_map/1)) ->
         {:error, {:malformed, {:bad_member, "attestations"}}}
 
       not (is_list(p.evidence) and Enum.all?(p.evidence, &is_map/1)) ->
         {:error, {:malformed, {:bad_member, "evidence"}}}
 
-      true -> :ok
+      true ->
+        :ok
     end
   end
 
@@ -347,8 +355,7 @@ defmodule AshA2A.Passport do
         nil
       else
         {:error,
-         {:capability_mutated,
-          mutation_detail(p, position, signed_leaves, current_bin || <<>>) }}
+         {:capability_mutated, mutation_detail(p, position, signed_leaves, current_bin || <<>>)}}
       end
     end)
   end
@@ -359,7 +366,8 @@ defmodule AshA2A.Passport do
     kind = if position < att_count, do: :attestation, else: :evidence
     index = if kind == :attestation, do: position, else: position - att_count
 
-    {:ok, proof} = Merkle.proof(Enum.map(signed_leaves, &Base.decode16!(&1, case: :mixed)), position)
+    {:ok, proof} =
+      Merkle.proof(Enum.map(signed_leaves, &Base.decode16!(&1, case: :mixed)), position)
 
     entry =
       (kind == :attestation && Enum.at(p.attestations, index)) ||
@@ -457,7 +465,8 @@ defmodule AshA2A.Passport do
       :ok ->
         case Revocation.entry_for(list, id) do
           {:ok, %{__struct__: AshA2A.Passport.Revocation.Entry} = entry} ->
-            {:error, {:revoked, %{passport_id: id, reason: entry.reason, revoked_at: entry.revoked_at}}}
+            {:error,
+             {:revoked, %{passport_id: id, reason: entry.reason, revoked_at: entry.revoked_at}}}
 
           :not_listed ->
             :ok
@@ -536,7 +545,8 @@ defmodule AshA2A.Passport do
           {:error, {:malformed, %{index: index, reason: :unsupported_alg}}}
 
         true ->
-          expected = :crypto.mac(:hmac, :sha256, key, <<protected_b64::binary, ?., jcs_bytes::binary>>)
+          expected =
+            :crypto.mac(:hmac, :sha256, key, <<protected_b64::binary, ?., jcs_bytes::binary>>)
 
           cond do
             protected[@digest_member] != digest ->
@@ -590,7 +600,7 @@ defmodule AshA2A.Passport do
     else
       raise ArgumentError,
             "AshA2A.Passport.issue/3 requires #{kind} to be " <>
-              (if kind == :attestations, do: "a non-empty list", else: "a list") <>
+              if(kind == :attestations, do: "a non-empty list", else: "a list") <>
               " of maps, got: #{inspect(entries)}"
     end
   end

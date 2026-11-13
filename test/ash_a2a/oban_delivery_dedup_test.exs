@@ -119,7 +119,11 @@ defmodule AshA2A.ObanDeliveryDedupTest do
     # A real claim held by a first executor that has not committed yet.
     assert {:execute, _execution_id} = store.claim(command, [])
 
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => "i-#{suffix}"})])
+    message =
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"label" => "i-#{suffix}"})
+      ])
+
     result = CommandBus.run(command, message, AshA2A.Test.Fixture.Item)
 
     assert {:error, %{code: :in_flight}} = result

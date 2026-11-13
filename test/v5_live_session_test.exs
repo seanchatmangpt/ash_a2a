@@ -160,13 +160,18 @@ defmodule AshA2A.V5.LiveSessionTest do
 
     bad = %{
       "sendMessage" => %{
-        "message" => %{"messageId" => "bad-1", "role" => "not-a-role", "parts" => [%{"text" => "x"}]}
+        "message" => %{
+          "messageId" => "bad-1",
+          "role" => "not-a-role",
+          "parts" => [%{"text" => "x"}]
+        }
       }
     }
 
     assert :ok = Live.uplink(session, bad)
 
-    assert_receive {:a2a_live, ^sid, %StreamError{code: "INVALID_ARGUMENT", reference_id: "bad-1"}},
+    assert_receive {:a2a_live, ^sid,
+                    %StreamError{code: "INVALID_ARGUMENT", reference_id: "bad-1"}},
                    2_000
 
     assert Process.alive?(session)
@@ -202,7 +207,10 @@ defmodule AshA2A.V5.LiveSessionTest do
   test "subscribe to an unknown task is not_found" do
     agent = start_agent(LiveAgent)
     {session, _sid} = open!(agent)
-    assert {:error, :not_found} = Live.uplink(session, %{"subscribe" => %{"taskId" => "tsk-nope"}})
+
+    assert {:error, :not_found} =
+             Live.uplink(session, %{"subscribe" => %{"taskId" => "tsk-nope"}})
+
     # first request failed: stream is still unbound and usable
     assert :ok = Live.uplink(session, send_req("ask"))
   end
@@ -272,7 +280,9 @@ defmodule AshA2A.V5.LiveSessionTest do
 
   test "uplink_call without any downlink creates the task and returns only an ack" do
     agent = start_agent(LiveAgent)
-    assert {:ack, %T{status: %{state: :input_required}}} = Live.uplink_call(agent, %{}, send_req("ask"))
+
+    assert {:ack, %T{status: %{state: :input_required}}} =
+             Live.uplink_call(agent, %{}, send_req("ask"))
 
     assert {:error, %StreamError{code: "FAILED_PRECONDITION"}} =
              Live.uplink_call(agent, %{}, %{"subscribe" => %{"taskId" => "tsk-x"}})

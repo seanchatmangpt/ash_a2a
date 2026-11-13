@@ -91,5 +91,6 @@ defmodule AshA2A.RFC004FenceTest do
     Receipt.pending(command, Identity.execution(Ash.UUIDv7.generate()), :change)
   end
 
-  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  defp message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 end

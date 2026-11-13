@@ -70,7 +70,8 @@ defmodule AshA2A.Docs.CatalogsCourtTest do
     regex = ~r/\[:(a2a|ash_a2a)(?:,\s*:[a-zA-Z0-9_]+)+\]/
 
     for line <- String.split(text, "\n"),
-        line =~ ~r/telemetry\.(execute|span)|@.*_event|@event|@start|@stop|@gate_event|@actuate_event/,
+        line =~
+          ~r/telemetry\.(execute|span)|@.*_event|@event|@start|@stop|@gate_event|@actuate_event/,
         token <- Regex.scan(regex, line) |> Enum.map(&hd/1),
         String.starts_with?(token, "[:ash_a2a"),
         event <- expand_literal(line, token),
@@ -190,7 +191,8 @@ defmodule AshA2A.Docs.CatalogsCourtTest do
   def task_findings(shipped, doc_text) do
     documented_rows = Regex.scan(~r/^\| `mix ([a-z0-9_.]+)` \|(.*)\|$/m, doc_text)
 
-    documented = Map.new(documented_rows, fn [_, name, purpose] -> {name, String.trim(purpose)} end)
+    documented =
+      Map.new(documented_rows, fn [_, name, purpose] -> {name, String.trim(purpose)} end)
 
     undocumented = Map.keys(shipped) -- Map.keys(documented)
     unknown = Map.keys(documented) -- Map.keys(shipped)

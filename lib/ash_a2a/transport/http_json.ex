@@ -217,8 +217,7 @@ defmodule AshA2A.Transport.HTTPJSON do
           required(:versions) => [String.t()],
           required(:extensions) => list(),
           required(:serve_schemas) => boolean(),
-          required(:schema_index) =>
-            module() | (-> [AshA2A.Skill.t()]) | [AshA2A.Skill.t()] | nil
+          required(:schema_index) => module() | (-> [AshA2A.Skill.t()]) | [AshA2A.Skill.t()] | nil
         }
 
   @doc "Typed transport refusal codes, classified for S42 totality."
@@ -330,8 +329,13 @@ defmodule AshA2A.Transport.HTTPJSON do
   defp known_route?(["message:live"], _), do: true
   defp known_route?(["tasks"], _), do: true
   defp known_route?(["tasks", id], _) when is_binary(id), do: true
-  defp known_route?(["tasks", _, c], _) when c in ["pushNotificationConfigs", "pushNotificationConfig"], do: true
-  defp known_route?(["tasks", _, c, _], _) when c in ["pushNotificationConfigs", "pushNotificationConfig"], do: true
+
+  defp known_route?(["tasks", _, c], _)
+       when c in ["pushNotificationConfigs", "pushNotificationConfig"], do: true
+
+  defp known_route?(["tasks", _, c, _], _)
+       when c in ["pushNotificationConfigs", "pushNotificationConfig"], do: true
+
   defp known_route?(["agent"], _), do: true
   defp known_route?(["extendedAgentCard"], _), do: true
   defp known_route?(path, %{agent_card_path: path}), do: true
@@ -364,7 +368,12 @@ defmodule AshA2A.Transport.HTTPJSON do
       conn = put_resp_header(conn, "a2a-version", version)
       conn = put_negotiated_version(conn, version)
       conn = echo_trace(conn)
-      conn = if uris == [], do: conn, else: put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
+
+      conn =
+        if uris == [],
+          do: conn,
+          else: put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
+
       dispatch(conn, opts)
     else
       {:error, rejected} when is_binary(rejected) ->
@@ -376,7 +385,9 @@ defmodule AshA2A.Transport.HTTPJSON do
         send_error(
           conn,
           400,
-          Error.extension_support_required("Client missing required extensions: " <> Enum.join(missing, ", "))
+          Error.extension_support_required(
+            "Client missing required extensions: " <> Enum.join(missing, ", ")
+          )
         )
 
       {:error, %Error{} = err} ->
@@ -399,7 +410,8 @@ defmodule AshA2A.Transport.HTTPJSON do
   # W17: a valid inbound traceparent/tracestate is echoed on the response
   # (SSE included: headers go out with `send_chunked/2`).
   defp echo_trace(conn) do
-    [] |> AshA2A.Trace.W3C.inject(AshA2A.Trace.W3C.extract(conn))
+    []
+    |> AshA2A.Trace.W3C.inject(AshA2A.Trace.W3C.extract(conn))
     |> Enum.reduce(conn, fn {k, v}, conn -> put_resp_header(conn, k, v) end)
   end
 
@@ -407,7 +419,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   # stamped on the message metadata, where the dispatcher reads `traceparent`.
   defp with_trace(%{metadata: md} = message, conn) do
     md = if is_map(md), do: md, else: %{}
-    ctx = AshA2A.Trace.W3C.resolve(AshA2A.Trace.W3C.extract(conn), AshA2A.Trace.W3C.from_metadata(md))
+
+    ctx =
+      AshA2A.Trace.W3C.resolve(AshA2A.Trace.W3C.extract(conn), AshA2A.Trace.W3C.from_metadata(md))
 
     md =
       Enum.reduce(ctx, md, fn {k, v}, acc -> Map.put(acc, Atom.to_string(k), v) end)
@@ -511,7 +525,8 @@ defmodule AshA2A.Transport.HTTPJSON do
   end
 
   defp dispatch(%{path_info: ["tasks", id, "pushNotificationConfigs", config_id]} = conn, opts)
-       when is_binary(id) and byte_size(id) > 0 and is_binary(config_id) and byte_size(config_id) > 0 do
+       when is_binary(id) and byte_size(id) > 0 and is_binary(config_id) and
+              byte_size(config_id) > 0 do
     push_item(conn, opts, id, config_id)
   end
 
@@ -521,7 +536,8 @@ defmodule AshA2A.Transport.HTTPJSON do
   end
 
   defp dispatch(%{path_info: ["tasks", id, "pushNotificationConfig", config_id]} = conn, opts)
-       when is_binary(id) and byte_size(id) > 0 and is_binary(config_id) and byte_size(config_id) > 0 do
+       when is_binary(id) and byte_size(id) > 0 and is_binary(config_id) and
+              byte_size(config_id) > 0 do
     push_item(conn, opts, id, config_id)
   end
 
@@ -605,7 +621,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   # v1.1: `protocolVersion` on the TaskPushNotificationConfig passes through
   # to the store (a top-level request value fills a config that omits it).
   defp push_protocol_version(%{} = config, %{"protocolVersion" => pv}) when is_binary(pv) do
-    if Map.has_key?(config, "protocolVersion"), do: config, else: Map.put(config, "protocolVersion", pv)
+    if Map.has_key?(config, "protocolVersion"),
+      do: config,
+      else: Map.put(config, "protocolVersion", pv)
   end
 
   defp push_protocol_version(config, _params), do: config
@@ -672,8 +690,11 @@ defmodule AshA2A.Transport.HTTPJSON do
 
   # set echoes the nested legacy shape when the body was nested: flatten to the
   # v1 TaskPushNotificationConfig the other verbs answer.
-  defp push_result("tasks/pushNotificationConfig/set", %{"pushNotificationConfig" => %{} = inner} = result),
-    do: Map.put(inner, "taskId", result["taskId"])
+  defp push_result(
+         "tasks/pushNotificationConfig/set",
+         %{"pushNotificationConfig" => %{} = inner} = result
+       ),
+       do: Map.put(inner, "taskId", result["taskId"])
 
   defp push_result(_method, result), do: result
 
@@ -905,10 +926,17 @@ defmodule AshA2A.Transport.HTTPJSON do
         {:ok, []}
 
       raw when is_list(raw) ->
-        with :ok <- AshA2A.Protocol.ClientArtifacts.check_user_artifacts(agent_card(opts.agent), raw) do
+        with :ok <-
+               AshA2A.Protocol.ClientArtifacts.check_user_artifacts(agent_card(opts.agent), raw) do
           case AshA2A.Protocol.ClientArtifacts.decode_updates(raw) do
-            {:ok, decoded} -> {:ok, decoded}
-            {:error, reason} -> {:error, Error.invalid_params("invalid artifactUpdates: " <> inspect(SafeError.redact(reason)))}
+            {:ok, decoded} ->
+              {:ok, decoded}
+
+            {:error, reason} ->
+              {:error,
+               Error.invalid_params(
+                 "invalid artifactUpdates: " <> inspect(SafeError.redact(reason))
+               )}
           end
         end
 
@@ -929,11 +957,16 @@ defmodule AshA2A.Transport.HTTPJSON do
   defp run_send(agent, nil, updates, _call_opts, params, cfg, conn) do
     task_id = artifact_only_task_id(params)
 
-    with true <- is_binary(task_id) or {:error, Error.invalid_params("artifact-only requests must name a taskId")},
+    with true <-
+           is_binary(task_id) or
+             {:error, Error.invalid_params("artifact-only requests must name a taskId")},
          {:ok, task} <- owned_task(agent, scoped_caller(conn), task_id),
          :ok <- AshA2A.Protocol.ClientArtifacts.check_generation(task, cfg.if_generation_match),
          {:ok, task} <-
-           GenServer.call(agent, {:apply_artifact_updates, task_id, updates, cfg.if_generation_match}) do
+           GenServer.call(
+             agent,
+             {:apply_artifact_updates, task_id, updates, cfg.if_generation_match}
+           ) do
       {:ok, task}
     else
       {:error, _} = error -> error
@@ -1002,7 +1035,11 @@ defmodule AshA2A.Transport.HTTPJSON do
 
       config ->
         if push_enabled?(opts) do
-          with :ok <- PushConfigRPC.preflight(config, AshA2A.A2ATransport.TaskEvents.push_opts(opts.transport)),
+          with :ok <-
+                 PushConfigRPC.preflight(
+                   config,
+                   AshA2A.A2ATransport.TaskEvents.push_opts(opts.transport)
+                 ),
                do: {:ok, config}
         else
           {:error, Error.push_notification_not_supported()}
@@ -1024,7 +1061,14 @@ defmodule AshA2A.Transport.HTTPJSON do
     if AshA2A.A2ATransport.running?(transport) do
       wire = encode_task(task, nil)
       final? = closed_state?(task.status.state)
-      AshA2A.A2ATransport.TaskEvents.publish(transport, task.id, "task", %{"task" => wire}, final?)
+
+      AshA2A.A2ATransport.TaskEvents.publish(
+        transport,
+        task.id,
+        "task",
+        %{"task" => wire},
+        final?
+      )
     end
 
     :ok
@@ -1033,7 +1077,16 @@ defmodule AshA2A.Transport.HTTPJSON do
   # Same closed-state set as AshA2A.A2ATransport.Plug (a paused task is a
   # closed stream segment, not a terminal task).
   defp closed_state?(state),
-    do: state in [:completed, :canceled, :cancelled, :failed, :rejected, :input_required, :auth_required]
+    do:
+      state in [
+        :completed,
+        :canceled,
+        :cancelled,
+        :failed,
+        :rejected,
+        :input_required,
+        :auth_required
+      ]
 
   # -- POST /message:stream -----------------------------------------------------
   #
@@ -1120,8 +1173,17 @@ defmodule AshA2A.Transport.HTTPJSON do
 
     conn =
       case pending do
-        nil -> conn
-        {:chunk, part, append?} -> send_chunk_frame(conn, task, artifact_id, part, append_opts(append?) ++ [last_chunk: true])
+        nil ->
+          conn
+
+        {:chunk, part, append?} ->
+          send_chunk_frame(
+            conn,
+            task,
+            artifact_id,
+            part,
+            append_opts(append?) ++ [last_chunk: true]
+          )
       end
 
     # The agent's stream wrapper records the real post-stream state; this
@@ -1161,7 +1223,10 @@ defmodule AshA2A.Transport.HTTPJSON do
       AshA2A.Protocol.Event.ArtifactUpdate.new(
         task.id,
         artifact,
-        [context_id: task.context_id, generation: AshA2A.Protocol.Task.Generation.generation_of(task)] ++ opts
+        [
+          context_id: task.context_id,
+          generation: AshA2A.Protocol.Task.Generation.generation_of(task)
+        ] ++ opts
       )
 
     send_frame(conn, event)
@@ -1184,7 +1249,10 @@ defmodule AshA2A.Transport.HTTPJSON do
         %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn ->
           send_frame(
             conn,
-            AshA2A.Protocol.Event.MessageUpdate.new(task.id, message, context_id: task.context_id, generation: gen)
+            AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
+              context_id: task.context_id,
+              generation: gen
+            )
           )
 
         _other, conn ->
@@ -1245,7 +1313,9 @@ defmodule AshA2A.Transport.HTTPJSON do
     case params["message"] do
       %{} = message_map ->
         case AshA2A.Protocol.JSON.decode(message_map, :message) do
-          {:ok, _message} = ok -> ok
+          {:ok, _message} = ok ->
+            ok
+
           {:error, reason} ->
             {:error, Error.invalid_params(reason |> SafeError.redact() |> inspect())}
         end
@@ -1345,7 +1415,9 @@ defmodule AshA2A.Transport.HTTPJSON do
     if advanced?(task, current_gen) do
       {:ok, task}
     else
-      deadline = System.monotonic_time(:millisecond) + AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms()
+      deadline =
+        System.monotonic_time(:millisecond) +
+          AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms()
 
       case subscribe_agent(agent, task.id) do
         {:ok, _snapshot} ->
@@ -1360,7 +1432,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   end
 
   defp advanced?(task, current_gen),
-    do: AshA2A.Protocol.Task.Generation.generation_of(task) > current_gen or AshA2A.Protocol.Task.terminal?(task)
+    do:
+      AshA2A.Protocol.Task.Generation.generation_of(task) > current_gen or
+        AshA2A.Protocol.Task.terminal?(task)
 
   defp wait_generation(agent, principal, task, current_gen, deadline) do
     if advanced?(task, current_gen) do
@@ -1417,11 +1491,19 @@ defmodule AshA2A.Transport.HTTPJSON do
     conn = Plug.Conn.fetch_query_params(conn)
     params = list_params(conn.query_params)
 
-    with :ok <- Request.validate_params(%Request{jsonrpc: "2.0", method: "tasks/list", params: params}),
+    with :ok <-
+           Request.validate_params(%Request{jsonrpc: "2.0", method: "tasks/list", params: params}),
          {:ok, %{tasks: tasks} = result} <- list_tasks(opts.agent, scoped_caller(conn), params) do
       send_json(conn, 200, %{
         "tasks" =>
-          Enum.map(tasks, &encode_task(&1, nil, if(is_integer(params["timelineLength"]), do: params["timelineLength"]))),
+          Enum.map(
+            tasks,
+            &encode_task(
+              &1,
+              nil,
+              if(is_integer(params["timelineLength"]), do: params["timelineLength"])
+            )
+          ),
         "totalSize" => result.total_size,
         "pageSize" => result.page_size,
         "nextPageToken" => result.next_page_token
@@ -1514,7 +1596,10 @@ defmodule AshA2A.Transport.HTTPJSON do
 
     backlog =
       if transport?,
-        do: transport |> AshA2A.A2ATransport.TaskEvents.subscribe(task.id) |> Enum.reject(fn {_, k, _, _} -> k == "task" end),
+        do:
+          transport
+          |> AshA2A.A2ATransport.TaskEvents.subscribe(task.id)
+          |> Enum.reject(fn {_, k, _, _} -> k == "task" end),
         else: []
 
     st = %{floor: last_seen, seen: last_seen || gen, v11?: v11?(conn)}
@@ -1527,7 +1612,8 @@ defmodule AshA2A.Transport.HTTPJSON do
     conn = if last_seen == nil, do: send_frame(conn, Runtime.wire_task(task)), else: conn
 
     {conn, last, final?} =
-      Enum.reduce_while(backlog, {conn, 0, false}, fn {seq, _kind, payload, final?}, {conn, _last, _} ->
+      Enum.reduce_while(backlog, {conn, 0, false}, fn {seq, _kind, payload, final?},
+                                                      {conn, _last, _} ->
         conn = if frame_allowed?(payload, st), do: send_raw_frame(conn, payload), else: conn
         if final?, do: {:halt, {conn, seq, true}}, else: {:cont, {conn, seq, false}}
       end)
@@ -1593,7 +1679,8 @@ defmodule AshA2A.Transport.HTTPJSON do
   # frames (v1.1 consumers only).
   defp follow_subscription(conn, task_id, last, idle, st) do
     receive do
-      {:a2a_task_event, ^task_id, seq, _kind, _payload, _final?} when is_integer(seq) and seq <= last ->
+      {:a2a_task_event, ^task_id, seq, _kind, _payload, _final?}
+      when is_integer(seq) and seq <= last ->
         follow_subscription(conn, task_id, last, idle, st)
 
       {:a2a_task_event, ^task_id, seq, _kind, payload, final?} when is_integer(seq) ->
@@ -1617,7 +1704,13 @@ defmodule AshA2A.Transport.HTTPJSON do
             )
 
           conn = send_frame(conn, event)
-          st = %{st | seen: max(st.seen, gen), floor: if(is_integer(st.floor), do: max(st.floor, gen))}
+
+          st = %{
+            st
+            | seen: max(st.seen, gen),
+              floor: if(is_integer(st.floor), do: max(st.floor, gen))
+          }
+
           if terminal?, do: conn, else: follow_subscription(conn, task_id, last, 0, st)
         end
     after
@@ -1637,10 +1730,14 @@ defmodule AshA2A.Transport.HTTPJSON do
     task.timeline
     |> List.wrap()
     |> Enum.reduce(conn, fn
-      %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn when gen > seen ->
+      %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn
+      when gen > seen ->
         send_frame(
           conn,
-          AshA2A.Protocol.Event.MessageUpdate.new(task.id, message, context_id: task.context_id, generation: gen)
+          AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
+            context_id: task.context_id,
+            generation: gen
+          )
         )
 
       _other, conn ->
@@ -1718,7 +1815,9 @@ defmodule AshA2A.Transport.HTTPJSON do
     end
   end
 
-  defp body_task_id(%{"sendMessage" => %{"message" => %{"taskId" => id}}}) when is_binary(id) and id != "", do: id
+  defp body_task_id(%{"sendMessage" => %{"message" => %{"taskId" => id}}})
+       when is_binary(id) and id != "", do: id
+
   defp body_task_id(_), do: nil
 
   # Call context for the Live core: metadata layered like `call_opts/5`
@@ -1755,7 +1854,11 @@ defmodule AshA2A.Transport.HTTPJSON do
         end
 
       {:error, :unsupported_operation} ->
-        send_error(conn, 400, Error.unsupported_operation("message:live requires capabilities.streaming"))
+        send_error(
+          conn,
+          400,
+          Error.unsupported_operation("message:live requires capabilities.streaming")
+        )
 
       {:error, _unavailable} ->
         send_error(conn, 503, %Error{code: -32_000, message: "agent unavailable"})
@@ -1776,7 +1879,10 @@ defmodule AshA2A.Transport.HTTPJSON do
             send_frame(conn, task_not_found_stream_error(Map.get(payload, :task_id)))
 
           {:error, _other} ->
-            send_frame(conn, %AshA2A.Protocol.StreamError{code: "INTERNAL", message: "live session closed"})
+            send_frame(conn, %AshA2A.Protocol.StreamError{
+              code: "INTERNAL",
+              message: "live session closed"
+            })
         end
     end
   end
@@ -1813,7 +1919,11 @@ defmodule AshA2A.Transport.HTTPJSON do
     case AshA2A.Transport.Live.uplink_call(opts.agent, live_ctx(conn, opts), request, call_opts) do
       {:ack, %AshA2A.Protocol.Task{id: id} = task} ->
         if live_task_mismatch?(request, id) do
-          send_error(conn, 400, Error.invalid_params("message taskId does not match the live session's task"))
+          send_error(
+            conn,
+            400,
+            Error.invalid_params("message taskId does not match the live session's task")
+          )
         else
           send_json(conn, 200, AshA2A.Protocol.JSON.encode!(task))
         end
@@ -1832,7 +1942,11 @@ defmodule AshA2A.Transport.HTTPJSON do
         send_error(conn, 400, Error.invalid_params("unknown or expired live session"))
 
       {:error, :unsupported_operation} ->
-        send_error(conn, 400, Error.unsupported_operation("message:live requires capabilities.streaming"))
+        send_error(
+          conn,
+          400,
+          Error.unsupported_operation("message:live requires capabilities.streaming")
+        )
 
       {:error, :unavailable} ->
         send_error(conn, 503, %Error{code: -32_000, message: "agent unavailable"})
@@ -1851,8 +1965,11 @@ defmodule AshA2A.Transport.HTTPJSON do
   # bound to (a StreamError went to the downlink); the uplink answers 400.
   defp live_task_mismatch?(request, ack_task_id) do
     case AshA2A.Protocol.StreamRequest.decode(request) do
-      {:ok, %{kind: :send_message, payload: %{task_id: id}}} when is_binary(id) -> id != ack_task_id
-      _ -> false
+      {:ok, %{kind: :send_message, payload: %{task_id: id}}} when is_binary(id) ->
+        id != ack_task_id
+
+      _ ->
+        false
     end
   end
 
@@ -1878,14 +1995,22 @@ defmodule AshA2A.Transport.HTTPJSON do
   end
 
   defp decode_stream_error({:invalid, detail, reference_id}) do
-    %AshA2A.Protocol.StreamError{code: "INVALID_ARGUMENT", message: detail, reference_id: reference_id}
+    %AshA2A.Protocol.StreamError{
+      code: "INVALID_ARGUMENT",
+      message: detail,
+      reference_id: reference_id
+    }
   end
 
   defp decode_stream_error(_other),
     do: %AshA2A.Protocol.StreamError{code: "INVALID_ARGUMENT", message: "invalid StreamRequest"}
 
   defp task_not_found_stream_error(task_id),
-    do: %AshA2A.Protocol.StreamError{code: "TASK_NOT_FOUND", task_id: task_id, message: "Task not found"}
+    do: %AshA2A.Protocol.StreamError{
+      code: "TASK_NOT_FOUND",
+      task_id: task_id,
+      message: "Task not found"
+    }
 
   # -- POST /tasks/{id}:cancel -------------------------------------------------
 
@@ -1902,9 +2027,14 @@ defmodule AshA2A.Transport.HTTPJSON do
         error = Error.task_not_cancelable()
         send_error(conn, status_for(error), error)
 
-      {:error, :not_found} -> send_error(conn, 404, Error.task_not_found())
-      {:error, %Error{} = error} -> send_error(conn, status_for(error), error)
-      {:error, reason} -> send_error(conn, status_for(error_for(reason)), error_for(reason))
+      {:error, :not_found} ->
+        send_error(conn, 404, Error.task_not_found())
+
+      {:error, %Error{} = error} ->
+        send_error(conn, status_for(error), error)
+
+      {:error, reason} ->
+        send_error(conn, status_for(error_for(reason)), error_for(reason))
     end
   end
 
@@ -1957,6 +2087,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   # Pinned TCK ERROR_BINDINGS: InvalidAgentResponse -> 502, ContentTypeNotSupported -> 415.
   defp status_for(%Error{code: -32_006}), do: 502
   defp status_for(%Error{code: -32_005}), do: 415
+
   defp status_for(%Error{code: code})
        when code in [
               -32_600,
@@ -1970,6 +2101,7 @@ defmodule AshA2A.Transport.HTTPJSON do
               -32_009
             ],
        do: 400
+
   # v1.1 TaskGenerationMismatch (-32010): optimistic-concurrency conflict, ABORTED.
   defp status_for(%Error{code: -32_010}), do: 409
   # TaskNotCancelable (-32002): state conflict -> 409 (pinned TCK CORE-CANCEL-002).

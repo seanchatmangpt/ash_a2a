@@ -134,7 +134,10 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
     broker_name = Module.concat(__MODULE__, "Broker#{unique}")
     {:ok, broker_pid} = Broker.InMemory.start_link(name: broker_name)
     broker = {Broker.InMemory, [name: broker_name]}
-    {:ok, _issued} = Grant.grant(Identity.principal(@principal), Environment.capability(), broker: broker)
+
+    {:ok, _issued} =
+      Grant.grant(Identity.principal(@principal), Environment.capability(), broker: broker)
+
     Process.unlink(broker_pid)
 
     :ok =
@@ -197,7 +200,12 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
 
   defp record_command(env, chain, spec, broker, bus_opts) do
     reply =
-      CommandBus.run(command(spec, authority: granted_authority(broker)), message(spec), Effect, bus_opts(env, bus_opts))
+      CommandBus.run(
+        command(spec, authority: granted_authority(broker)),
+        message(spec),
+        Effect,
+        bus_opts(env, bus_opts)
+      )
 
     prepared =
       receive do
@@ -278,7 +286,8 @@ defmodule AshA2A.Chicago.Fixtures.Replay do
           command_id: spec.command_id,
           agent_id: @agent,
           principal_id: principal,
-          authority: Authority.new(principal, capability, token_id: "chicago-replay-" <> spec.command_id),
+          authority:
+            Authority.new(principal, capability, token_id: "chicago-replay-" <> spec.command_id),
           input: %{"operation_id" => spec.operation_id},
           metadata: %{idempotency_key: spec.token}
         ],

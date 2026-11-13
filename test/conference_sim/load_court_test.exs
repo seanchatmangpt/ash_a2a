@@ -66,6 +66,7 @@ defmodule ConferenceSim.LoadCourt do
     end)
 
     {:ok, sup} = Task.Supervisor.start_link(name: ConferenceSimLoadTaskSup)
+
     on_exit(fn ->
       # TOCTOU-safe: the supervisor may die between the alive? check and the
       # stop (Supervisor.stop tail-calls GenServer.stop, whose :noproc exit
@@ -103,7 +104,9 @@ defmodule ConferenceSim.LoadCourt do
   defp now(), do: {:mono, System.monotonic_time(:millisecond)}
 
   defp banner(court, n, elapsed) do
-    IO.puts("[load_court] #{court}: #{n} concurrent ops completed in #{elapsed}ms (floor-asserted)")
+    IO.puts(
+      "[load_court] #{court}: #{n} concurrent ops completed in #{elapsed}ms (floor-asserted)"
+    )
   end
 
   # -- court 1: concurrent registration (badge issue) ------------------------
@@ -268,7 +271,9 @@ defmodule ConferenceSim.LoadCourt do
       Enum.concat([
         for i <- 1..n_tasks do
           Task.Supervisor.async(ConferenceSimLoadTaskSup, fn ->
-            {:ok, _session} = ConferenceSim.open_session(sim, "mixed-#{rem(i, 11) + 1}", "mixed task #{i}")
+            {:ok, _session} =
+              ConferenceSim.open_session(sim, "mixed-#{rem(i, 11) + 1}", "mixed task #{i}")
+
             {:task, i}
           end)
         end,

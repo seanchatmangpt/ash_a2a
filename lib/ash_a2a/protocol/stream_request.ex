@@ -27,7 +27,11 @@ defmodule AshA2A.Protocol.StreamRequest do
 
   alias AshA2A.Protocol.JSON
 
-  @type t :: %__MODULE__{kind: :send_message | :subscribe, tenant: String.t() | nil, payload: map()}
+  @type t :: %__MODULE__{
+          kind: :send_message | :subscribe,
+          tenant: String.t() | nil,
+          payload: map()
+        }
   defstruct [:kind, :tenant, :payload]
 
   @spec decode(term()) :: {:ok, t()} | {:error, term()}
@@ -120,8 +124,11 @@ defmodule AshA2A.Protocol.StreamRequest do
 
   defp decode_message(%{} = raw) do
     case JSON.decode(raw, :message) do
-      {:ok, message} -> {:ok, message}
-      {:error, reason} -> {:error, {:invalid, "invalid message: #{inspect(reason)}", message_id(raw)}}
+      {:ok, message} ->
+        {:ok, message}
+
+      {:error, reason} ->
+        {:error, {:invalid, "invalid message: #{inspect(reason)}", message_id(raw)}}
     end
   end
 
@@ -131,13 +138,17 @@ defmodule AshA2A.Protocol.StreamRequest do
     Enum.reduce_while(updates, :ok, fn
       %{"artifact" => %{} = artifact}, :ok ->
         case JSON.decode(artifact, :artifact) do
-          {:ok, _} -> {:cont, :ok}
+          {:ok, _} ->
+            {:cont, :ok}
+
           {:error, reason} ->
-            {:halt, {:error, {:invalid, "invalid artifact: #{inspect(reason)}", artifact_id(artifact)}}}
+            {:halt,
+             {:error, {:invalid, "invalid artifact: #{inspect(reason)}", artifact_id(artifact)}}}
         end
 
       other, :ok ->
-        {:halt, {:error, {:invalid, "artifactUpdates entry needs an artifact", artifact_id(other)}}}
+        {:halt,
+         {:error, {:invalid, "artifactUpdates entry needs an artifact", artifact_id(other)}}}
     end)
   end
 

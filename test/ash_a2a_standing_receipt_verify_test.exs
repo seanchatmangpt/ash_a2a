@@ -12,9 +12,9 @@ defmodule AshA2a.StandingReceiptVerifyTest do
   @attest_bin "/Users/sac/graphlaw/target/debug/graphlaw-attest"
 
   # Loud skip (never a faked pass) when the sibling graphlaw build is absent.
-  @happy_skip (if File.exists?(@attest_bin),
-                 do: false,
-                 else: "SKIP: graphlaw-attest not built at #{@attest_bin}")
+  @happy_skip if File.exists?(@attest_bin),
+                do: false,
+                else: "SKIP: graphlaw-attest not built at #{@attest_bin}"
 
   @tag :tmp_dir
   @tag skip: @happy_skip
@@ -47,7 +47,15 @@ defmodule AshA2a.StandingReceiptVerifyTest do
     {stdout, 0} =
       System.cmd(
         "mix",
-        ["ash_a2a.standing_receipt.verify", "--in", out, "--attestation", att, "--trusted-key", pk],
+        [
+          "ash_a2a.standing_receipt.verify",
+          "--in",
+          out,
+          "--attestation",
+          att,
+          "--trusted-key",
+          pk
+        ],
         cd: @repo,
         stderr_to_stdout: true,
         env: [{"MIX_ENV", "test"}]
@@ -65,10 +73,20 @@ defmodule AshA2a.StandingReceiptVerifyTest do
     File.cp!(@attestation, att)
     # Mutate one byte of the payload.
     mutated =
-      File.read!(out) |> String.replace("PARTIAL-ALIVE", "PARTIAL-ALIVX") |> tap(&File.write!(out, &1))
+      File.read!(out)
+      |> String.replace("PARTIAL-ALIVE", "PARTIAL-ALIVX")
+      |> tap(&File.write!(out, &1))
 
     {stdout, code} =
-      System.cmd("mix", ["ash_a2a.standing_receipt.verify", "--in", out, "--attestation", Path.rootname(out) <> ".attestation.json"],
+      System.cmd(
+        "mix",
+        [
+          "ash_a2a.standing_receipt.verify",
+          "--in",
+          out,
+          "--attestation",
+          Path.rootname(out) <> ".attestation.json"
+        ],
         cd: @repo,
         stderr_to_stdout: true
       )

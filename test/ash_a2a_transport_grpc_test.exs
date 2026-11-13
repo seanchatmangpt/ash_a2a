@@ -147,7 +147,8 @@ defmodule AshA2A.TransportGrpcTest do
     end
 
     test "non-integer grpc-status is a typed refusal" do
-      assert {:error, {:bad_grpc_status, "five"}} = Framing.parse_trailers("grpc-status: five\r\n")
+      assert {:error, {:bad_grpc_status, "five"}} =
+               Framing.parse_trailers("grpc-status: five\r\n")
     end
   end
 
@@ -189,7 +190,10 @@ defmodule AshA2A.TransportGrpcTest do
                Dispatch.call("GetTask", %{"id" => "tsk-does-not-exist"}, handler, ctx)
     end
 
-    test "CancelTask of a terminal task maps -32002 to FAILED_PRECONDITION(9)", %{ctx: ctx, handler: handler} do
+    test "CancelTask of a terminal task maps -32002 to FAILED_PRECONDITION(9)", %{
+      ctx: ctx,
+      handler: handler
+    } do
       task_id = send_message(ctx, handler)
 
       assert {:error, 9, "Task cannot be canceled"} =
@@ -206,22 +210,36 @@ defmodule AshA2A.TransportGrpcTest do
       assert message =~ "Nope"
     end
 
-    test "push config CRUD without handler callbacks maps -32003 to UNIMPLEMENTED(12)", %{ctx: ctx, handler: handler} do
+    test "push config CRUD without handler callbacks maps -32003 to UNIMPLEMENTED(12)", %{
+      ctx: ctx,
+      handler: handler
+    } do
       task_id = send_message(ctx, handler)
 
       assert {:error, 12, "Push Notification is not supported"} =
-               Dispatch.call("CreateTaskPushNotificationConfig", %{
-                 "taskId" => task_id,
-                 "pushNotificationConfig" => %{"url" => "https://example.com/hook"}
-               }, handler, ctx)
+               Dispatch.call(
+                 "CreateTaskPushNotificationConfig",
+                 %{
+                   "taskId" => task_id,
+                   "pushNotificationConfig" => %{"url" => "https://example.com/hook"}
+                 },
+                 handler,
+                 ctx
+               )
     end
 
-    test "GetExtendedAgentCard maps -32007 to FAILED_PRECONDITION(9)", %{ctx: ctx, handler: handler} do
+    test "GetExtendedAgentCard maps -32007 to FAILED_PRECONDITION(9)", %{
+      ctx: ctx,
+      handler: handler
+    } do
       assert {:error, 9, "Authenticated Extended Card is not configured"} =
                Dispatch.call("GetExtendedAgentCard", %{}, handler, ctx)
     end
 
-    test "SendStreamingMessage returns the stream intent, message already validated", %{ctx: ctx, handler: handler} do
+    test "SendStreamingMessage returns the stream intent, message already validated", %{
+      ctx: ctx,
+      handler: handler
+    } do
       assert {:stream, "message/stream", params, id} =
                Dispatch.call("SendStreamingMessage", %{"message" => wire_message()}, handler, ctx)
 
@@ -229,7 +247,10 @@ defmodule AshA2A.TransportGrpcTest do
       assert is_binary(id)
     end
 
-    test "ListTasks is served owner-scoped: anonymous lists nothing", %{ctx: ctx, handler: handler} do
+    test "ListTasks is served owner-scoped: anonymous lists nothing", %{
+      ctx: ctx,
+      handler: handler
+    } do
       task_id = send_message(ctx, handler)
 
       assert {:ok, %{"tasks" => tasks, "totalSize" => 0}} =
@@ -240,6 +261,7 @@ defmodule AshA2A.TransportGrpcTest do
 
     test "trailers/1 and status_name/1 cover the mapped statuses" do
       assert %{"grpc-status" => 0} = Dispatch.trailers({:ok, %{}})
+
       assert %{"grpc-status" => 5, "grpc-message" => "Task not found"} =
                Dispatch.trailers({:error, 5, "Task not found"})
 

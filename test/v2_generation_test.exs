@@ -10,7 +10,9 @@ defmodule AshA2A.V2GenerationTest do
     def handle_message(%Message{} = msg, %{history: history}) do
       text = inspect(msg.parts)
 
-      if String.contains?(text, "finish"), do: {:reply, "done"}, else: {:input_required, "more?" <> to_string(length(history))}
+      if String.contains?(text, "finish"),
+        do: {:reply, "done"},
+        else: {:input_required, "more?" <> to_string(length(history))}
     end
   end
 
@@ -31,7 +33,11 @@ defmodule AshA2A.V2GenerationTest do
       assert {g1, g2, g3} == {2, 3, 4}
       assert t3.generation == 4
 
-      assert [%TimelineEntry{entry: {:message, _}}, %TimelineEntry{entry: {:status, _}}, %TimelineEntry{entry: {:status, %Status{state: :input_required}}}] =
+      assert [
+               %TimelineEntry{entry: {:message, _}},
+               %TimelineEntry{entry: {:status, _}},
+               %TimelineEntry{entry: {:status, %Status{state: :input_required}}}
+             ] =
                t3.timeline
 
       assert t3.status.state == :input_required

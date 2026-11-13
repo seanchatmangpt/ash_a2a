@@ -439,6 +439,7 @@ defmodule AshA2A.V1PbFidelityTest do
 
   test "mutation witness: renamed json_name and added pb-only key are flagged" do
     real = pb_names(Pb.Task)
+
     codec =
       MapSet.new([
         "id",

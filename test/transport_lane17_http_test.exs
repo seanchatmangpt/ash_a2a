@@ -240,7 +240,9 @@ defmodule AshA2A.TransportLane17.HTTPTest do
       assert %{"id" => config_id, "taskId" => ^id} = Jason.decode!(created.resp_body)
 
       listed = rest(opts, :get, "/tasks/#{id}/pushNotificationConfigs")
-      assert %{"configs" => [%{"taskId" => ^id}], "nextPageToken" => ""} = Jason.decode!(listed.resp_body)
+
+      assert %{"configs" => [%{"taskId" => ^id}], "nextPageToken" => ""} =
+               Jason.decode!(listed.resp_body)
 
       deleted = rest(opts, :delete, "/tasks/#{id}/pushNotificationConfigs/#{config_id}")
       assert deleted.status == 200
@@ -252,14 +254,18 @@ defmodule AshA2A.TransportLane17.HTTPTest do
       conn =
         rest(opts, :post, "/message:send", %{
           "message" => message_map("hi"),
-          "configuration" => %{"pushNotificationConfig" => %{"url" => "https://hook.example/inline"}}
+          "configuration" => %{
+            "pushNotificationConfig" => %{"url" => "https://hook.example/inline"}
+          }
         })
 
       assert conn.status == 200
       id = Jason.decode!(conn.resp_body)["task"]["id"]
 
       store = A2ATransport.push_store_name(transport)
-      assert [%{url: "https://hook.example/inline"}] = A2ATransport.PushConfigStore.list(store, id)
+
+      assert [%{url: "https://hook.example/inline"}] =
+               A2ATransport.PushConfigStore.list(store, id)
     end
 
     test "the card advertises pushNotifications truthfully", %{opts: opts} do

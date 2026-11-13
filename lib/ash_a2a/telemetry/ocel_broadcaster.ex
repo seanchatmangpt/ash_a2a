@@ -5,7 +5,7 @@
 defmodule AshA2A.Telemetry.OcelBroadcaster do
   @moduledoc """
   The enterprise OCEL broadcaster child (ARD v26.10.4 §2, gate key `:siem`,
-  `docs/jira/v26.10.4/ARD.md` line 35): a telemetry-handler GenServer that
+  `docs/archive/jira-releases/v26.10.4/ARD.md` line 35): a telemetry-handler GenServer that
   converts the repo's own telemetry events into IEEE OCEL v2 event maps
   (the exact shape `AshA2A.Telemetry.OcelForwarder` and
   `AshA2A.SemanticProjection.ocel_event/1` pin — consumed read-only),

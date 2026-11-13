@@ -39,7 +39,8 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest.Pipeline do
   end
 
   @impl Plug
-  def call(conn, %{auth: nil, transport: transport}), do: AshA2A.A2ATransport.Plug.call(conn, transport)
+  def call(conn, %{auth: nil, transport: transport}),
+    do: AshA2A.A2ATransport.Plug.call(conn, transport)
 
   def call(conn, %{auth: auth, transport: transport}) do
     conn
@@ -218,12 +219,15 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     # Raw keyword opts: `AshA2A.A2ATransport.Plug.init/1` is not idempotent on
     # its pinned map, and Bandit calls `init/1` itself on {plug, opts}.
     EphemeralHttp.start!(
-      {AshA2A.A2ATransport.Plug, [agent: agent, base_url: "http://127.0.0.1/a2a", extended_card: provider]}
+      {AshA2A.A2ATransport.Plug,
+       [agent: agent, base_url: "http://127.0.0.1/a2a", extended_card: provider]}
     )
   end
 
   defp start_rest_server!(agent) do
-    EphemeralHttp.start!({RestBinding, RestBinding.init(agent: agent, base_url: "http://127.0.0.1/fixture")})
+    EphemeralHttp.start!(
+      {RestBinding, RestBinding.init(agent: agent, base_url: "http://127.0.0.1/fixture")}
+    )
   end
 
   # REST server with a real auth plug in front of the REST binding.
@@ -263,7 +267,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   end
 
   defp public_card_skills(server) do
-    server.base_url <> "/.well-known/agent-card.json" |> Req.get!() |> Map.fetch!(:body) |> Map.fetch!("skills")
+    (server.base_url <> "/.well-known/agent-card.json")
+    |> Req.get!()
+    |> Map.fetch!(:body)
+    |> Map.fetch!("skills")
   end
 
   # =============================================================================
@@ -272,9 +279,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   # =============================================================================
 
   @tag :serial_shard
-  test "REST binding: an authenticated caller receives the provider-extended card for that call's identity", %{
-    agent: agent
-  } do
+  test "REST binding: an authenticated caller receives the provider-extended card for that call's identity",
+       %{
+         agent: agent
+       } do
     server = start_authenticated_rest_server!(agent, &admin_card_provider/2)
 
     resp = post_agent!(server, "valid-token-42")
@@ -301,9 +309,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   end
 
   @tag :serial_shard
-  test "REST binding: POST /agent without an auth plug still fails closed -- 401, Bearer challenge, -32600 envelope, never the public card", %{
-    agent: agent
-  } do
+  test "REST binding: POST /agent without an auth plug still fails closed -- 401, Bearer challenge, -32600 envelope, never the public card",
+       %{
+         agent: agent
+       } do
     server = start_bare_rest_server!(agent, &admin_card_provider/2)
 
     resp = post_agent!(server)
@@ -324,9 +333,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   end
 
   @tag :serial_shard
-  test "REST binding: no :extended_card provider answers the -32007 ErrorInfo envelope even for a verified caller, never the public card", %{
-    agent: agent
-  } do
+  test "REST binding: no :extended_card provider answers the -32007 ErrorInfo envelope even for a verified caller, never the public card",
+       %{
+         agent: agent
+       } do
     server = start_authenticated_rest_server!(agent, nil)
 
     resp = post_agent!(server, "valid-token-42")
@@ -351,9 +361,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   end
 
   @tag :serial_shard
-  test "REST binding: a failing provider answers -32007 with the reason, never the public card", %{
-    agent: agent
-  } do
+  test "REST binding: a failing provider answers -32007 with the reason, never the public card",
+       %{
+         agent: agent
+       } do
     server = start_authenticated_rest_server!(agent, &failing_provider/2)
 
     resp = post_agent!(server, "valid-token-42")
@@ -364,7 +375,11 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
              "error" => %{
                "code" => 400,
                "details" => [
-                 %{"@type" => @error_info, "reason" => @ext_not_configured, "metadata" => %{"detail" => detail}}
+                 %{
+                   "@type" => @error_info,
+                   "reason" => @ext_not_configured,
+                   "metadata" => %{"detail" => detail}
+                 }
                ]
              }
            } = Jason.decode!(resp.body)
@@ -393,9 +408,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     refute Jason.decode!(resp.body) |> Map.has_key?("skills")
   end
 
-  test "REST binding: the well-known card serves the extendedAgentCard capability as literal false", %{
-    agent: agent
-  } do
+  test "REST binding: the well-known card serves the extendedAgentCard capability as literal false",
+       %{
+         agent: agent
+       } do
     server = start_rest_server!(agent)
 
     card = Req.get!(url: server.base_url <> "/.well-known/agent-card.json").body
@@ -410,9 +426,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   # The CallbackRegistry closure holds on the REST surface too: a {m, f, a}
   # provider outside the registry is refused -32007 (the same envelope the
   # JSONRPC binding answers) and the callback is never executed.
-  test "REST binding: a {m, f, a} provider outside CallbackRegistry is -32007 and the callback is never executed", %{
-    agent: agent
-  } do
+  test "REST binding: a {m, f, a} provider outside CallbackRegistry is -32007 and the callback is never executed",
+       %{
+         agent: agent
+       } do
     :persistent_term.erase({__MODULE__, :forbidden_mfa_ran})
 
     server = start_authenticated_rest_server!(agent, {__MODULE__, :forbidden_mfa_provider, []})
@@ -433,13 +450,15 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   end
 
   # 404 control: a genuinely unknown path is still the plain catch-all 404.
-  test "REST binding: POST /agent:getAuthenticatedExtendedCard is a plain 404 fallthrough (not an implemented route)", %{
-    agent: agent
-  } do
+  test "REST binding: POST /agent:getAuthenticatedExtendedCard is a plain 404 fallthrough (not an implemented route)",
+       %{
+         agent: agent
+       } do
     server = start_rest_server!(agent)
 
     resp =
-      Req.post!(url: server.base_url <> "/agent:getAuthenticatedExtendedCard",
+      Req.post!(
+        url: server.base_url <> "/agent:getAuthenticatedExtendedCard",
         json: %{},
         decode_body: false
       )
@@ -454,7 +473,9 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
   # =============================================================================
 
   # (a) unauthenticated caller
-  test "(a) unauthenticated RPC through the real auth plug is 401 with a Bearer challenge", %{agent: agent} do
+  test "(a) unauthenticated RPC through the real auth plug is 401 with a Bearer challenge", %{
+    agent: agent
+  } do
     server = start_auth_server!(agent, {__MODULE__, :admin_card_provider, []})
 
     resp = rpc!(server, "agent/getAuthenticatedExtendedCard")
@@ -464,9 +485,10 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     assert resp.body == %{"error" => "Unauthorized"}
   end
 
-  test "(a) transport plug mounted WITHOUT an auth plug still fails closed: 401 + -32600 + WWW-Authenticate", %{
-    agent: agent
-  } do
+  test "(a) transport plug mounted WITHOUT an auth plug still fails closed: 401 + -32600 + WWW-Authenticate",
+       %{
+         agent: agent
+       } do
     server = start_transport_only_server!(agent, &admin_card_provider/2)
 
     resp = rpc!(server, "agent/getAuthenticatedExtendedCard")
@@ -474,16 +496,22 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     assert resp.status == 401
     assert resp.headers["www-authenticate"] == ["Bearer"]
 
-    assert %{"jsonrpc" => "2.0", "id" => 7, "error" => %{"code" => -32_600, "data" => "authentication required"}} =
+    assert %{
+             "jsonrpc" => "2.0",
+             "id" => 7,
+             "error" => %{"code" => -32_600, "data" => "authentication required"}
+           } =
              resp.body
   end
 
   # (b) authenticated caller -> provider-extended card, per call
-  test "(b) authenticated caller receives the provider-extended card; provider invoked per call with that call's identity", %{
-    agent: agent,
-    counter: counter
-  } do
-    server = start_auth_server!(agent, fn id, card -> counting_admin_provider(counter, id, card) end)
+  test "(b) authenticated caller receives the provider-extended card; provider invoked per call with that call's identity",
+       %{
+         agent: agent,
+         counter: counter
+       } do
+    server =
+      start_auth_server!(agent, fn id, card -> counting_admin_provider(counter, id, card) end)
 
     resp = rpc!(server, "agent/getAuthenticatedExtendedCard", "valid-token-42")
     assert resp.status == 200
@@ -525,11 +553,19 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
 
     assert resp.status == 200
 
-    assert %{"error" => %{
+    assert %{
+             "error" => %{
                "code" => -32_007,
                "message" => "Authenticated Extended Card is not configured",
-               "data" => [%{"@type" => @error_info, "reason" => @ext_not_configured, "metadata" => %{"detail" => detail}}]
-             }} = resp.body
+               "data" => [
+                 %{
+                   "@type" => @error_info,
+                   "reason" => @ext_not_configured,
+                   "metadata" => %{"detail" => detail}
+                 }
+               ]
+             }
+           } = resp.body
 
     assert detail =~ ":denied"
     refute Map.has_key?(resp.body, "result")
@@ -550,21 +586,29 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     refute Map.has_key?(resp.body, "result")
   end
 
-  test "(c) the public card fetched from the same failing-provider server carries no admin skill", %{agent: agent} do
+  test "(c) the public card fetched from the same failing-provider server carries no admin skill",
+       %{agent: agent} do
     server = start_auth_server!(agent, &failing_provider/2)
 
     refute "admin" in Enum.map(public_card_skills(server), & &1["id"])
   end
 
   # (d) no provider configured -> pinned refusal
-  test "(d) no :extended_card provider configured is -32007 even for a verified caller", %{agent: agent} do
+  test "(d) no :extended_card provider configured is -32007 even for a verified caller", %{
+    agent: agent
+  } do
     server = start_auth_server!(agent, nil)
 
     resp = rpc!(server, "agent/getAuthenticatedExtendedCard", "valid-token-42")
 
     assert resp.status == 200
 
-    assert %{"error" => %{"code" => -32_007, "data" => [%{"@type" => @error_info, "reason" => @ext_not_configured}]}} =
+    assert %{
+             "error" => %{
+               "code" => -32_007,
+               "data" => [%{"@type" => @error_info, "reason" => @ext_not_configured}]
+             }
+           } =
              resp.body
 
     refute Map.has_key?(resp.body, "result")
@@ -591,7 +635,9 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     # The strip is key-targeted, not card-blanking: non-internal provider
     # output (including provider-injected extra fields) serves verbatim.
     assert card["secret"] == "s3cr3t"
-    assert Enum.find(card["skills"], &(&1["id"] == "leak"))["description"] == "nested credential attempt"
+
+    assert Enum.find(card["skills"], &(&1["id"] == "leak"))["description"] ==
+             "nested credential attempt"
   end
 
   test "(e) an honest provider's output serves unchanged", %{agent: agent} do
@@ -611,7 +657,9 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
     refute Map.has_key?(card, "ash_a2a.owner")
   end
 
-  test "(e) the encoded public card handed to the provider carries no credential metadata", %{agent: agent} do
+  test "(e) the encoded public card handed to the provider carries no credential metadata", %{
+    agent: agent
+  } do
     parent = self()
 
     server =
@@ -620,7 +668,8 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
         {:ok, card}
       end)
 
-    assert %{"result" => _} = rpc!(server, "agent/getAuthenticatedExtendedCard", "valid-token-42").body
+    assert %{"result" => _} =
+             rpc!(server, "agent/getAuthenticatedExtendedCard", "valid-token-42").body
 
     assert_received {:provider_saw, card}
     assert is_map(card)
@@ -629,7 +678,8 @@ defmodule AshA2A.V1ExtendedHTTPJSONTest do
 
   # -- CallbackRegistry closure on the {m, f, a} provider form -----------------
 
-  test "{m, f, a} provider outside CallbackRegistry is -32007 and the callback is never executed", %{agent: agent} do
+  test "{m, f, a} provider outside CallbackRegistry is -32007 and the callback is never executed",
+       %{agent: agent} do
     :persistent_term.erase({__MODULE__, :forbidden_mfa_ran})
 
     server = start_auth_server!(agent, {__MODULE__, :forbidden_mfa_provider, []})

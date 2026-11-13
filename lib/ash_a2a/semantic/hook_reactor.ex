@@ -530,7 +530,8 @@ defmodule AshA2A.Semantic.HookReactor do
               input: intent.input
             )
 
-          message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(intent.input)])
+          message =
+            AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(intent.input)])
 
           {authority,
            CommandBus.run(command, message, cfg.resource_or_domain,

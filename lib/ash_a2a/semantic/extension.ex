@@ -308,6 +308,7 @@ defmodule AshA2A.Semantic.Extension do
   @spec activated?(AshA2A.Protocol.Message.t() | map()) :: boolean()
   def activated?(%AshA2A.Protocol.Message{extensions: extensions}),
     do: is_map_key(ext_map(extensions), @extension_key)
+
   def activated?(%{} = extensions), do: is_map_key(extensions, @extension_key)
   def activated?(_), do: false
 

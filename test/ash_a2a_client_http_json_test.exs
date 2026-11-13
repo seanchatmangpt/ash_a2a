@@ -279,13 +279,15 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
 
   # -- operations with no §5.3 REST route ------------------------------------------
 
-  test "http_json stream_message/3 streams bare StreamResponse frames from POST /message:stream", %{
-    client: client
-  } do
+  test "http_json stream_message/3 streams bare StreamResponse frames from POST /message:stream",
+       %{
+         client: client
+       } do
     assert {:ok, stream} = Client.stream_message(client, "go")
     events = Enum.to_list(stream)
 
     assert events != []
+
     assert Enum.any?(events, &match?(%Task{}, &1)) or
              Enum.any?(events, &match?(%AshA2A.Protocol.Event.StatusUpdate{}, &1))
   end
@@ -306,9 +308,10 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
   # through the real auth pipeline with a real bearer identity.
   @list_headers [{"authorization", "Bearer valid-token-42"}]
 
-  test "list_tasks/2 lists the verified caller's tasks from GET /tasks and decodes the page envelope", %{
-    client: _client
-  } do
+  test "list_tasks/2 lists the verified caller's tasks from GET /tasks and decodes the page envelope",
+       %{
+         client: _client
+       } do
     client = start_authed_client!(nil)
 
     {:ok, %Task{} = a} = Client.send_message(client, "list one", headers: @list_headers)
@@ -336,7 +339,13 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert page1.total_size >= 2
     assert is_binary(page1.next_page_token) and page1.next_page_token != ""
 
-    assert {:ok, page2} = Client.list_tasks(client, page_size: 1, page_token: page1.next_page_token, headers: headers)
+    assert {:ok, page2} =
+             Client.list_tasks(client,
+               page_size: 1,
+               page_token: page1.next_page_token,
+               headers: headers
+             )
+
     assert [%Task{} = other] = page2.tasks
     refute other.id == hd(page1.tasks).id
 
@@ -353,9 +362,10 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
 
   # -- push-notification-config CRUD over the REST routes ----------------------------
 
-  test "set_push_config/3 stores through the real PushConfigStore; webhook credentials are write-only", %{
-    client: client
-  } do
+  test "set_push_config/3 stores through the real PushConfigStore; webhook credentials are write-only",
+       %{
+         client: client
+       } do
     {:ok, %Task{} = task} = Client.send_message(client, "push me")
     %{transport: transport, hook: hook, client: push_client} = start_push_stack!()
 
@@ -376,7 +386,8 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     refute Map.has_key?(stored.authentication || %{}, :credentials)
 
     # ...but they really were stored in the real store.
-    {:ok, in_store} = PushConfigStore.get(AshA2A.A2ATransport.push_store_name(transport), task.id, stored.id)
+    {:ok, in_store} =
+      PushConfigStore.get(AshA2A.A2ATransport.push_store_name(transport), task.id, stored.id)
 
     # The client emits the v1 proto's singular `scheme` (proto fidelity court).
     assert in_store.authentication == %{
@@ -393,9 +404,10 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert {:error, :task_not_found} = Client.set_push_config(push_client, config)
   end
 
-  test "set_push_config/3 negative: push disabled answers 400 -32003 -> :push_notification_not_supported", %{
-    client: client
-  } do
+  test "set_push_config/3 negative: push disabled answers 400 -32003 -> :push_notification_not_supported",
+       %{
+         client: client
+       } do
     {:ok, %Task{} = task} = Client.send_message(client, "no push here")
 
     config = %PushNotificationConfig{
@@ -406,9 +418,10 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert {:error, :push_notification_not_supported} = Client.set_push_config(client, config)
   end
 
-  test "get_push_config/4 reads the config back from GET /tasks/{id}/pushNotificationConfig/{cid}", %{
-    client: client
-  } do
+  test "get_push_config/4 reads the config back from GET /tasks/{id}/pushNotificationConfig/{cid}",
+       %{
+         client: client
+       } do
     {:ok, %Task{} = task} = Client.send_message(client, "get cfg")
     %{hook: hook, client: push_client} = start_push_stack!()
 
@@ -424,9 +437,10 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     assert fetched.token == "tok-gl-2"
   end
 
-  test "get_push_config/4 negative: a missing config maps the 400 ErrorInfo to :invalid_params", %{
-    client: client
-  } do
+  test "get_push_config/4 negative: a missing config maps the 400 ErrorInfo to :invalid_params",
+       %{
+         client: client
+       } do
     {:ok, %Task{} = task} = Client.send_message(client, "missing cfg")
     %{client: push_client} = start_push_stack!()
 
@@ -434,9 +448,10 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
              Client.get_push_config(push_client, task.id, "cfg-never-registered")
   end
 
-  test "list_push_configs/3 lists the task's configs from GET /tasks/{id}/pushNotificationConfig", %{
-    client: client
-  } do
+  test "list_push_configs/3 lists the task's configs from GET /tasks/{id}/pushNotificationConfig",
+       %{
+         client: client
+       } do
     {:ok, %Task{} = task} = Client.send_message(client, "list cfgs")
     %{hook: hook, client: push_client} = start_push_stack!()
 
@@ -502,18 +517,20 @@ defmodule AshA2A.ClientHTTPJSONInteropTest do
     refute "admin" in Enum.map(public.skills, & &1.id)
   end
 
-  test "get_extended_card/2 negative: no credentials maps the 401 to {:unauthorized, challenge}", %{
-    client: _client
-  } do
+  test "get_extended_card/2 negative: no credentials maps the 401 to {:unauthorized, challenge}",
+       %{
+         client: _client
+       } do
     ext_client = start_authed_client!(&__MODULE__.admin_card_provider/2)
 
     assert {:error, {:unauthorized, challenge}} = Client.get_extended_card(ext_client)
     assert is_list(challenge)
   end
 
-  test "get_extended_card/2 negative: no provider maps the 400 ErrorInfo to :extended_card_not_configured", %{
-    client: _client
-  } do
+  test "get_extended_card/2 negative: no provider maps the 400 ErrorInfo to :extended_card_not_configured",
+       %{
+         client: _client
+       } do
     ext_client = start_authed_client!(nil)
 
     assert {:error, :extended_card_not_configured} =

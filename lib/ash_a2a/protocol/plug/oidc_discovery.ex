@@ -55,7 +55,8 @@ if Code.ensure_loaded?(Plug) do
       {opts, extra} = Keyword.split(extra, [:ttl, :force])
 
       with {:ok, jwks} <- jwks(issuer, opts) do
-        {:ok, Keyword.merge([algorithms: "RS256", issuer: issuer], extra) |> Keyword.put(:jwks, jwks)}
+        {:ok,
+         Keyword.merge([algorithms: "RS256", issuer: issuer], extra) |> Keyword.put(:jwks, jwks)}
       end
     end
 

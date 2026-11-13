@@ -94,7 +94,9 @@ defmodule AshA2A.AshPPlanActuationTest do
 
     command_id = "pplan-unauthorized-#{System.unique_integer([:positive])}"
     capability_id = "AshA2A.Test.Fixture.Item.create"
-    principal = Identity.principal("pplan-unauthorized-subject-#{System.unique_integer([:positive])}")
+
+    principal =
+      Identity.principal("pplan-unauthorized-subject-#{System.unique_integer([:positive])}")
 
     # No authority token provided for a :change consequence
     workflow_inputs = %{

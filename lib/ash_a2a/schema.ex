@@ -149,7 +149,8 @@ defmodule AshA2A.Schema do
       {:ok,
        %{
          "type" => "object",
-         "properties" => Map.new(schema["properties"], fn {name, sub} -> {wire_name.(name), sub} end),
+         "properties" =>
+           Map.new(schema["properties"], fn {name, sub} -> {wire_name.(name), sub} end),
          "required" => Enum.map(schema["required"], wire_name),
          "additionalProperties" => false
        }}
@@ -263,7 +264,12 @@ defmodule AshA2A.Schema do
       normalized in [Ash.Type.Time, Ash.Type.TimeUsec] ->
         {:ok, formatted_string("time")}
 
-      normalized in [Ash.Type.DateTime, Ash.Type.NaiveDatetime, Ash.Type.UtcDatetime, Ash.Type.UtcDatetimeUsec] ->
+      normalized in [
+        Ash.Type.DateTime,
+        Ash.Type.NaiveDatetime,
+        Ash.Type.UtcDatetime,
+        Ash.Type.UtcDatetimeUsec
+      ] ->
         {:ok, formatted_string("date-time")}
 
       normalized in [Ash.Type.UUID, Ash.Type.UUIDv7] ->

@@ -303,7 +303,9 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
 
       order = fn item ->
         %{
-          AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"item" => item, "quantity" => 1})])
+          AshA2A.Protocol.Message.new_user([
+            AshA2A.Protocol.Part.Data.new(%{"item" => item, "quantity" => 1})
+          ])
           | metadata: %{"skill" => "place_order"}
         }
       end
@@ -312,10 +314,14 @@ defmodule AshA2A.Chicago.EnvelopeNegotiationTransportTest do
       verified = "guard-verified-#{System.unique_integer([:positive])}"
 
       {:ok, _} =
-        AshA2A.Protocol.call(agent, order.(forged), metadata: %{"a2a.auth" => %{"identity" => principal}})
+        AshA2A.Protocol.call(agent, order.(forged),
+          metadata: %{"a2a.auth" => %{"identity" => principal}}
+        )
 
       {:ok, _} =
-        AshA2A.Protocol.call(agent, order.(verified), metadata: %{"a2a.auth" => %{identity: principal}})
+        AshA2A.Protocol.call(agent, order.(verified),
+          metadata: %{"a2a.auth" => %{identity: principal}}
+        )
 
       items = Ordering |> Ash.read!() |> Enum.map(& &1.item)
       assert forged in items

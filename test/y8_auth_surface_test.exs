@@ -169,36 +169,56 @@ defmodule AshA2A.Y8.AuthSurfaceTest do
       v = verifier("header")
 
       assert {:ok, %{identity: "svc-a"}} =
-               ApiKeyVerifier.authenticate(v, conn(:get, "/") |> put_req_header("x-api-key", "key-a-secret"))
+               ApiKeyVerifier.authenticate(
+                 v,
+                 conn(:get, "/") |> put_req_header("x-api-key", "key-a-secret")
+               )
 
       assert {:error, %{code: :invalid_api_key}} =
-               ApiKeyVerifier.authenticate(v, conn(:get, "/") |> put_req_header("x-api-key", "wrong"))
+               ApiKeyVerifier.authenticate(
+                 v,
+                 conn(:get, "/") |> put_req_header("x-api-key", "wrong")
+               )
 
       assert {:error, %{code: :missing_api_key}} = ApiKeyVerifier.authenticate(v, conn(:get, "/"))
     end
 
     test "query: accept, reject, missing" do
       v = verifier("query", "api_key")
-      assert {:ok, %{identity: "svc-b"}} = ApiKeyVerifier.authenticate(v, conn(:get, "/?api_key=key-b-secret"))
-      assert {:error, %{code: :invalid_api_key}} = ApiKeyVerifier.authenticate(v, conn(:get, "/?api_key=nope"))
-      assert {:error, %{code: :missing_api_key}} = ApiKeyVerifier.authenticate(v, conn(:get, "/?other=1"))
+
+      assert {:ok, %{identity: "svc-b"}} =
+               ApiKeyVerifier.authenticate(v, conn(:get, "/?api_key=key-b-secret"))
+
+      assert {:error, %{code: :invalid_api_key}} =
+               ApiKeyVerifier.authenticate(v, conn(:get, "/?api_key=nope"))
+
+      assert {:error, %{code: :missing_api_key}} =
+               ApiKeyVerifier.authenticate(v, conn(:get, "/?other=1"))
     end
 
     test "cookie: accept, reject, missing" do
       v = verifier("cookie", "k")
 
       assert {:ok, %{identity: "svc-a"}} =
-               ApiKeyVerifier.authenticate(v, conn(:get, "/") |> put_req_header("cookie", "k=key-a-secret"))
+               ApiKeyVerifier.authenticate(
+                 v,
+                 conn(:get, "/") |> put_req_header("cookie", "k=key-a-secret")
+               )
 
       assert {:error, %{code: :invalid_api_key}} =
-               ApiKeyVerifier.authenticate(v, conn(:get, "/") |> put_req_header("cookie", "k=bad"))
+               ApiKeyVerifier.authenticate(
+                 v,
+                 conn(:get, "/") |> put_req_header("cookie", "k=bad")
+               )
 
       assert {:error, %{code: :missing_api_key}} = ApiKeyVerifier.authenticate(v, conn(:get, "/"))
     end
 
     test "a key from the wrong location is not accepted" do
       v = verifier("header")
-      assert {:error, %{code: :missing_api_key}} = ApiKeyVerifier.authenticate(v, conn(:get, "/?x-api-key=key-a-secret"))
+
+      assert {:error, %{code: :missing_api_key}} =
+               ApiKeyVerifier.authenticate(v, conn(:get, "/?x-api-key=key-a-secret"))
     end
 
     test "plain key list verifies without identity" do
@@ -284,7 +304,8 @@ defmodule AshA2A.Y8.AuthSurfaceTest do
       assert {:error, _} = Live.uplink_call(agent, forged, req("more", %{"taskId" => id}))
 
       # control: the real owner continues
-      assert {:ack, _} = Live.uplink_call(agent, %{metadata: auth("alice")}, req("more", %{"taskId" => id}))
+      assert {:ack, _} =
+               Live.uplink_call(agent, %{metadata: auth("alice")}, req("more", %{"taskId" => id}))
     end
   end
 end

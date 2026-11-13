@@ -3,7 +3,7 @@ defmodule AshA2A.Transport.WireCompat do
   Wire (`A2A.*`, the `a2a` hex package structs) <-> protocol
   (`AshA2A.Protocol.*`) struct conversion at the ash_a2a boundary.
 
-  ## Why this module exists (Q6 wire gap, lane V8-Q6-f, 2026-11-08)
+  ## Why this module exists (wire/protocol struct gap)
 
   The hex `A2A.Plug` (`a2a` 0.3.0) decodes `message/send` bodies into wire
   `%A2A.Message{}` structs and hands them to the agent GenServer, but

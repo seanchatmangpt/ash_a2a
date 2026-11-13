@@ -210,7 +210,17 @@ defmodule AshA2A.V1StatePropertiesTest do
     auth_required: [:canceled, :completed, :failed, :working]
   }
 
-  @v1_actions [:start, :park_input, :resume_input, :park_auth, :resume_auth, :complete, :fail, :cancel, :reject]
+  @v1_actions [
+    :start,
+    :park_input,
+    :resume_input,
+    :park_auth,
+    :resume_auth,
+    :complete,
+    :fail,
+    :cancel,
+    :reject
+  ]
 
   @v1_declared_hops [
     {:start, :submitted, :working},
@@ -314,7 +324,8 @@ defmodule AshA2A.V1StatePropertiesTest do
 
   defp real_possible(record, nil), do: elem(TaskLifecycle.possible_next_states(record), 1)
 
-  defp real_possible(record, action), do: elem(TaskLifecycle.possible_next_states(record, action), 1)
+  defp real_possible(record, action),
+    do: elem(TaskLifecycle.possible_next_states(record, action), 1)
 
   defp expected_possible(from, action, hops) do
     hops
@@ -396,7 +407,9 @@ defmodule AshA2A.V1StatePropertiesTest do
   test ":unknown (codec-only state) is outside the admit vocabulary from every state" do
     Enum.each(Map.keys(@v1_recipes), fn from ->
       record = realize(V1Task, @v1_recipes[from])
-      assert TaskLifecycle.admit(record, :unknown, nil) == {:error, {:unknown_a2a_state, :unknown}}
+
+      assert TaskLifecycle.admit(record, :unknown, nil) ==
+               {:error, {:unknown_a2a_state, :unknown}}
     end)
   end
 
@@ -446,7 +459,8 @@ defmodule AshA2A.V1StatePropertiesTest do
   # ---------------------------------------------------------------------
 
   test "the pinned v1.0 legal-transition matrix holds exhaustively (every from x to x action)" do
-    records = Map.new(Map.keys(@v1_recipes), fn from -> {from, realize(V1Task, @v1_recipes[from])} end)
+    records =
+      Map.new(Map.keys(@v1_recipes), fn from -> {from, realize(V1Task, @v1_recipes[from])} end)
 
     # 1. The possible-next-state sets match the pinned table EXACTLY.
     Enum.each(Map.keys(@v1_recipes), fn from ->
@@ -474,7 +488,9 @@ defmodule AshA2A.V1StatePropertiesTest do
 
   test "the shared fixture's sub-matrix matches its pinned subset table exhaustively" do
     records =
-      Map.new(@shared_states, fn from -> {from, realize(StateMachineTask, @shared_recipes[from])} end)
+      Map.new(@shared_states, fn from ->
+        {from, realize(StateMachineTask, @shared_recipes[from])}
+      end)
 
     Enum.each(@shared_states, fn from ->
       pinned = expected_possible(from, nil, @shared_declared_hops)
@@ -509,7 +525,7 @@ defmodule AshA2A.V1StatePropertiesTest do
 
       # terminal?/1 agrees with the pinned terminal set.
       task = %Task{id: "tsk_1", status: Status.new(state)}
-      assert Task.terminal?(task) == (state in @terminals)
+      assert Task.terminal?(task) == state in @terminals
     end
   end
 
@@ -525,7 +541,9 @@ defmodule AshA2A.V1StatePropertiesTest do
     assert {:ok, :unknown} = JSON.decode_state("TASK_STATE_UNKNOWN")
 
     # Garbage never decodes -- typed refusal, not an exception.
-    assert JSON.decode_state("TASK_STATE_BANANA") == {:error, {:invalid_state, "TASK_STATE_BANANA"}}
+    assert JSON.decode_state("TASK_STATE_BANANA") ==
+             {:error, {:invalid_state, "TASK_STATE_BANANA"}}
+
     assert JSON.decode_state("") == {:error, {:invalid_state, ""}}
   end
 

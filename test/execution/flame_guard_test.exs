@@ -13,7 +13,8 @@ defmodule AshA2A.Execution.FlameGuardTest do
   alias AshA2A.Execution.FLAME, as: Adapter
   alias AshA2A.RuntimeReceipt
 
-  defp placement, do: RuntimeReceipt.new(:flame, :call, "cmd-1", {:ok, :x}, metadata: %{pool: "p"})
+  defp placement,
+    do: RuntimeReceipt.new(:flame, :call, "cmd-1", {:ok, :x}, metadata: %{pool: "p"})
 
   test "guarded passes a normal return through" do
     assert {:ok, 1} = Adapter.guarded(fn -> {:ok, 1} end)

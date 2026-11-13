@@ -188,7 +188,10 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
     Enum.with_index(receipt["events"], fn ev, index ->
       assert ev["seq"] == index
       assert is_binary(ev["event_type"]) and ev["event_type"] != ""
-      assert is_binary(ev["payload_commitment"]) and ev["payload_commitment"] =~ ~r/^[0-9a-f]{64}$/
+
+      assert is_binary(ev["payload_commitment"]) and
+               ev["payload_commitment"] =~ ~r/^[0-9a-f]{64}$/
+
       assert ev["objects"] == [] or is_list(ev["objects"])
     end)
 
@@ -221,14 +224,22 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
 
     assert Enum.all?(events, fn line ->
              match?(
-               %{"event_type" => <<_::binary>>, "event_time" => <<_::binary>>, "attributes" => %{}, "relationships" => [_ | _]},
+               %{
+                 "event_type" => <<_::binary>>,
+                 "event_time" => <<_::binary>>,
+                 "attributes" => %{},
+                 "relationships" => [_ | _]
+               },
                line
              )
            end)
 
     assert Enum.all?(objects, fn line ->
              match?(%{"object_type" => <<_::binary>>, "attributes" => [_ | _]}, line) and
-               Enum.all?(line["attributes"], &match?(%{"name" => _, "time" => _, "value" => _}, &1))
+               Enum.all?(
+                 line["attributes"],
+                 &match?(%{"name" => _, "time" => _, "value" => _}, &1)
+               )
            end)
 
     # FR-06.3 correlation closure: all four object types declared, and every
@@ -267,7 +278,10 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
     {:ok, decoded_lines} = Ocel2.decode_ndjson(ndjson)
 
     dropped_object =
-      Enum.reject(decoded_lines, &(&1["object_id"] == "wo-42" and Map.has_key?(&1, "object_type")))
+      Enum.reject(
+        decoded_lines,
+        &(&1["object_id"] == "wo-42" and Map.has_key?(&1, "object_type"))
+      )
 
     assert {:error, %{code: :undeclared_object}} = Ocel2.validate(dropped_object)
 
@@ -277,7 +291,10 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
     # A corrupted event_time.
     corrupted_time =
       Enum.map(decoded_lines, fn
-        line -> if Map.has_key?(line, "event_id"), do: %{line | "event_time" => "not-a-timestamp"}, else: line
+        line ->
+          if Map.has_key?(line, "event_id"),
+            do: %{line | "event_time" => "not-a-timestamp"},
+            else: line
       end)
 
     assert {:error, %{code: :bad_field}} = Ocel2.validate(corrupted_time)
@@ -285,7 +302,8 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
     # An object type outside the FR-06.3 vocabulary.
     alien_type =
       Enum.map(decoded_lines, fn
-        line -> if Map.has_key?(line, "object_id"), do: %{line | "object_type" => "Unicorn"}, else: line
+        line ->
+          if Map.has_key?(line, "object_id"), do: %{line | "object_type" => "Unicorn"}, else: line
       end)
 
     assert {:error, %{code: :unknown_object_type}} = Ocel2.validate(alien_type)
@@ -310,7 +328,8 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
       "expected_signing_input_hex" => @mldsa65_signing_input_hex
     }
 
-    assert {:ok, %{"verified" => true, "signing_input_hex" => computed, "canonical_bytes_len" => len}} =
+    assert {:ok,
+            %{"verified" => true, "signing_input_hex" => computed, "canonical_bytes_len" => len}} =
              AshAffidavit.call(request)
 
     # The engine recomputes exactly the KAT pre-image, byte for byte.
@@ -319,9 +338,14 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
 
     # One nibble of drift in the expectation: a typed `verified: false`
     # mismatch — the binding check answers "no", it does not raise.
-    tampered_request = %{request | "expected_signing_input_hex" => flip_last_hex_nibble(@mldsa65_signing_input_hex)}
+    tampered_request = %{
+      request
+      | "expected_signing_input_hex" => flip_last_hex_nibble(@mldsa65_signing_input_hex)
+    }
 
-    assert {:ok, %{"verified" => false, "signing_input_hex" => recomputed}} = AshAffidavit.call(tampered_request)
+    assert {:ok, %{"verified" => false, "signing_input_hex" => recomputed}} =
+             AshAffidavit.call(tampered_request)
+
     assert recomputed == @mldsa65_signing_input_hex
   end
 
@@ -389,10 +413,13 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
 
   defp probe_engine do
     case AshAffidavit.call(%{"op" => "capabilities"}) do
-      {:ok, caps} -> {:ok, caps}
+      {:ok, caps} ->
+        {:ok, caps}
+
       # {:refused | :trap | :unsupported, %AshAffidavit.Refusal{}} — the exact
       # typed refusal is embedded verbatim so the court record carries WHY.
-      {tag, %AshAffidavit.Refusal{} = refusal} -> {:unavailable, "#{inspect(tag)} #{inspect(refusal)}"}
+      {tag, %AshAffidavit.Refusal{} = refusal} ->
+        {:unavailable, "#{inspect(tag)} #{inspect(refusal)}"}
     end
   end
 
@@ -416,7 +443,8 @@ defmodule AshA2A.Enterprise.AffidavitOcel2CourtTest do
         "id" => "ev-3",
         "event_type" => "evidence.packaged",
         "objects" => ["wo-42:WorkOrder", "evp-9:EvidencePackage", "res-3:Resource"],
-        "payload_hex" => Base.encode16("{\"action\":\"package\",\"package\":\"evp-9\"}", case: :lower)
+        "payload_hex" =>
+          Base.encode16("{\"action\":\"package\",\"package\":\"evp-9\"}", case: :lower)
       },
       %{
         "id" => "ev-4",

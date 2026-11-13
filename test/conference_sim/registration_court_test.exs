@@ -185,7 +185,7 @@ defmodule AshA2A.Test.ConferenceSim.BadgeGate do
              attendee_id: claims["attendee_id"],
              tier: claims["tier"]
            }}
-        end
+      end
     end
   end
 
@@ -222,7 +222,9 @@ defmodule AshA2A.Test.ConferenceSim.BadgeGate do
          {:ok, %{"kid" => kid}} <- Jason.decode(protected) do
       {:ok, kid}
     else
-      err -> IO.inspect(err, label: "EV2KID"); {:error, %{code: :malformed_badge}}
+      err ->
+        IO.inspect(err, label: "EV2KID")
+        {:error, %{code: :malformed_badge}}
     end
   end
 
@@ -318,7 +320,10 @@ defmodule AshA2A.Test.ConferenceSim.RegistrationCourt do
              "tier" => "general",
              "badge_id" => "badge:attendee-ev2-general",
              "attendee_id" => "attendee-ev2-general",
-             "bound" => %{"badge_id" => "badge:attendee-ev2-general", "attendee_id" => "attendee-ev2-general"}
+             "bound" => %{
+               "badge_id" => "badge:attendee-ev2-general",
+               "attendee_id" => "attendee-ev2-general"
+             }
            }
   end
 
@@ -377,6 +382,7 @@ defmodule AshA2A.Test.ConferenceSim.RegistrationCourt do
     resp = post(c.venue.base_url, "/venue/workshop", badge)
 
     assert resp.status == 403
+
     assert body(resp) == %{
              "error" => %{
                "code" => "tier_access_denied",
@@ -426,7 +432,8 @@ defmodule AshA2A.Test.ConferenceSim.RegistrationCourt do
     assert body(resp) == %{"error" => "Unauthorized"}
   end
 
-  test "rebinding a badge to another attendee (tampered claims) is refused 401 (:digest_mismatch)", c do
+  test "rebinding a badge to another attendee (tampered claims) is refused 401 (:digest_mismatch)",
+       c do
     badge = RegistrationIssuer.issue("attendee-ev2-bind", :vip, c.venue_key)
     tampered = %{badge | description: "someone else's badge now"}
 
@@ -437,7 +444,9 @@ defmodule AshA2A.Test.ConferenceSim.RegistrationCourt do
 
   test "badge signed under an unknown kid is refused 401 (:unknown_kid)", c do
     badge =
-      RegistrationIssuer.issue("attendee-ev2-kid", :vip, c.venue_key, kid: "attacker-self-signed-key")
+      RegistrationIssuer.issue("attendee-ev2-kid", :vip, c.venue_key,
+        kid: "attacker-self-signed-key"
+      )
 
     resp = post(c.venue.base_url, "/venue/backstage", badge)
 

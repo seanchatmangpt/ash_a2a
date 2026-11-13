@@ -53,18 +53,30 @@ defmodule AshA2A.PassportTest do
   defp attestations do
     [
       %{"id" => "att-1", "capability" => "echo", "scope" => "read", "since" => "2026-01-01"},
-      %{"id" => "att-2", "capability" => "translate", "scope" => "read-write", "since" => "2026-02-01"}
+      %{
+        "id" => "att-2",
+        "capability" => "translate",
+        "scope" => "read-write",
+        "since" => "2026-02-01"
+      }
     ]
   end
 
   defp evidence do
     [
-      %{"id" => "ev-1", "kind" => "capability-index-digest", "digest" => String.duplicate("ab", 32)}
+      %{
+        "id" => "ev-1",
+        "kind" => "capability-index-digest",
+        "digest" => String.duplicate("ab", 32)
+      }
     ]
   end
 
   defp issued(opts \\ []) do
-    Passport.issue(card(), attestations(), evidence(),
+    Passport.issue(
+      card(),
+      attestations(),
+      evidence(),
       [key: @key, issuer: @issuer, now: @now] ++ opts
     )
   end
@@ -169,7 +181,9 @@ defmodule AshA2A.PassportTest do
       assert detail.position == 0
       assert detail.entry_id == "att-1"
       assert detail.signed_leaf == Enum.at(passport.merkle["leaves"], 0)
-      assert detail.leaf == Base.encode16(attestation_leaf(%{att_1 | "scope" => "admin"}), case: :lower)
+
+      assert detail.leaf ==
+               Base.encode16(attestation_leaf(%{att_1 | "scope" => "admin"}), case: :lower)
 
       # The proof pins the change: the SIGNED tree contained the OLD leaf.
       old_leaf = attestation_leaf(att_1)
@@ -219,7 +233,11 @@ defmodule AshA2A.PassportTest do
           List.replace_at(leaves, 0, Base.encode16(attestation_leaf(mutated_entry), case: :lower))
         end)
 
-      mutated = %{passport | attestations: [mutated_entry, Enum.at(passport.attestations, 1)], merkle: mutated_merkle}
+      mutated = %{
+        passport
+        | attestations: [mutated_entry, Enum.at(passport.attestations, 1)],
+          merkle: mutated_merkle
+      }
 
       assert {:error, {:merkle_root_mismatch, _}} = Passport.verify(mutated, @key)
     end
@@ -232,14 +250,19 @@ defmodule AshA2A.PassportTest do
       new_leaf = Base.encode16(attestation_leaf(mutated_entry), case: :lower)
 
       leaves =
-        passport.merkle["leaves"] |> List.replace_at(0, new_leaf) |> Enum.map(&Base.decode16!(&1, case: :lower))
+        passport.merkle["leaves"]
+        |> List.replace_at(0, new_leaf)
+        |> Enum.map(&Base.decode16!(&1, case: :lower))
 
       {:ok, root} = Merkle.root(leaves)
 
       mutated = %{
         passport
         | attestations: [mutated_entry, att_2],
-          merkle: %{"root" => Base.encode16(root, case: :lower), "leaves" => Enum.map(leaves, &Base.encode16(&1, case: :lower))}
+          merkle: %{
+            "root" => Base.encode16(root, case: :lower),
+            "leaves" => Enum.map(leaves, &Base.encode16(&1, case: :lower))
+          }
       }
 
       assert {:error, {:digest_mismatch, _}} = Passport.verify(mutated, @key)
@@ -292,6 +315,7 @@ defmodule AshA2A.PassportTest do
       tampered = update_in(list.entries, &[%{hd(&1) | reason: "innocent"}])
 
       assert {:error, {:digest_mismatch, _}} = Revocation.verify(tampered, @key)
+
       assert {:error, {:revocation_list_unverified, _}} =
                Passport.verify(passport, @key, revocation: tampered)
     end
@@ -341,9 +365,16 @@ defmodule AshA2A.PassportTest do
       # signatures ride inside the card, so they survive the passport's own
       # canonicalization and are cross-checked at verification time.
       signed_card = CardSigning.sign(card(), @key)
-      passport = Passport.issue(signed_card, attestations(), evidence(), key: @key, issuer: @issuer, now: @now)
+
+      passport =
+        Passport.issue(signed_card, attestations(), evidence(),
+          key: @key,
+          issuer: @issuer,
+          now: @now
+        )
 
       assert Passport.verify(passport, @key, card_key: @key) == :ok
+
       assert {:error, {:bad_signature, %{index: 0}}} =
                Passport.verify(passport, @key, card_key: @wrong_key)
     end
@@ -493,13 +524,20 @@ defmodule AshA2A.PassportTest do
       passport = issued()
       list = Passport.revoke(passport, @key, issuer: @issuer, now: @now)
 
-      conn = dispatch(passport_plug(passport, list), :GET, [".well-known", "agent-passport-revocations.json"])
+      conn =
+        dispatch(passport_plug(passport, list), :GET, [
+          ".well-known",
+          "agent-passport-revocations.json"
+        ])
+
       assert conn.status == 200
       assert {:ok, decoded} = Jason.decode(conn.resp_body)
       assert {:ok, list_decoded} = Revocation.from_json(decoded)
       assert Revocation.verify(list_decoded, @key) == :ok
 
-      conn = dispatch(passport_plug(passport), :GET, [".well-known", "agent-passport-revocations.json"])
+      conn =
+        dispatch(passport_plug(passport), :GET, [".well-known", "agent-passport-revocations.json"])
+
       assert conn.status == 404
     end
 

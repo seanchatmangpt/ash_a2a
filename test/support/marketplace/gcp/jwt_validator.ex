@@ -72,7 +72,8 @@ defmodule AshA2A.Marketplace.GCP.JwtValidator do
         {:error, %{code: :token_expired, detail: %{exp: payload["exp"], now: now}}}
 
       expected_aud && payload["aud"] != expected_aud ->
-        {:error, %{code: :invalid_audience, detail: %{expected: expected_aud, got: payload["aud"]}}}
+        {:error,
+         %{code: :invalid_audience, detail: %{expected: expected_aud, got: payload["aud"]}}}
 
       true ->
         :ok

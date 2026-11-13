@@ -79,7 +79,7 @@ defmodule AshA2A.Test.WoCheckinSim.WoVisit do
 
             true ->
               :log_check_in
-            end
+          end
 
         case AshA2A.Test.WoCheckinSim.MachineLaw.transition(initial, event) do
           {:ok, next, artifact} ->
@@ -88,6 +88,7 @@ defmodule AshA2A.Test.WoCheckinSim.WoVisit do
 
           :refused ->
             AshA2A.Test.WoCheckinSim.MachineLaw.commit(wo, visit_id, initial)
+
             {:ok,
              %{
                "state" => Atom.to_string(initial),

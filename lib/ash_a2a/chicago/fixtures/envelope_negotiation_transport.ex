@@ -105,7 +105,9 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
     @doc "An `AshA2A.Protocol.Message` that explicitly activates the SA2A extension."
     @spec activated(map(), map()) :: AshA2A.Protocol.Message.t()
     def activated(payload, metadata \\ %{}) do
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Text.new("semantic request")])
+      message =
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Text.new("semantic request")])
+
       %{Extension.activate(message, payload) | metadata: metadata}
     end
 
@@ -300,7 +302,9 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
 
           tokens ->
             AshA2A.Protocol.Plug.Auth.init(
-              schemes: %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}},
+              schemes: %{
+                "bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}
+              },
               verify: fn "bearer_auth", token, _conn ->
                 case Map.fetch(tokens, token) do
                   {:ok, identity} -> {:ok, identity}
@@ -453,12 +457,14 @@ defmodule AshA2A.Chicago.Fixtures.EnvelopeNegotiationTransport do
 
     @doc "The first `Part.Data` payload of a completed task's first artifact."
     @spec reply_data(AshA2A.Protocol.Task.t() | map()) :: map() | nil
-    def reply_data(%AshA2A.Protocol.Task{artifacts: [%AshA2A.Protocol.Artifact{parts: parts} | _]}),
-      do:
-        Enum.find_value(parts, fn
-          %AshA2A.Protocol.Part.Data{data: data} -> data
-          _ -> nil
-        end)
+    def reply_data(%AshA2A.Protocol.Task{
+          artifacts: [%AshA2A.Protocol.Artifact{parts: parts} | _]
+        }),
+        do:
+          Enum.find_value(parts, fn
+            %AshA2A.Protocol.Part.Data{data: data} -> data
+            _ -> nil
+          end)
 
     def reply_data(%{"result" => %{"task" => %{"artifacts" => [%{"parts" => parts} | _]}}}),
       do: Enum.find_value(parts, &Map.get(&1, "data"))

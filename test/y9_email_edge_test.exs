@@ -22,15 +22,25 @@ defmodule AshA2A.Y9EmailEdgeTest do
       assert :ok = Webhook.verify(:sendgrid, %{"Authorization" => auth}, secret: @secret)
 
       bad = "Basic " <> Base.encode64("user:wrong")
-      assert {:error, :unauthorized} = Webhook.verify(:sendgrid, %{"authorization" => bad}, secret: @secret)
+
+      assert {:error, :unauthorized} =
+               Webhook.verify(:sendgrid, %{"authorization" => bad}, secret: @secret)
     end
   end
 
   describe "workspace" do
     test "bearer token" do
-      assert :ok = Webhook.verify(:workspace, [{"authorization", "Bearer " <> @secret}], token: @secret)
-      assert {:error, :unauthorized} = Webhook.verify(:workspace, [{"authorization", "Bearer x"}], token: @secret)
-      assert {:error, :unauthorized} = Webhook.verify(:workspace, [{"authorization", @secret}], token: @secret)
+      assert :ok =
+               Webhook.verify(:workspace, [{"authorization", "Bearer " <> @secret}],
+                 token: @secret
+               )
+
+      assert {:error, :unauthorized} =
+               Webhook.verify(:workspace, [{"authorization", "Bearer x"}], token: @secret)
+
+      assert {:error, :unauthorized} =
+               Webhook.verify(:workspace, [{"authorization", @secret}], token: @secret)
+
       assert {:error, :not_configured} = Webhook.verify(:workspace, [], token: nil)
     end
   end
@@ -45,7 +55,8 @@ defmodule AshA2A.Y9EmailEdgeTest do
           "Timestamp" => "2026-11-13T00:00:00Z",
           "Signature" => Base.encode64("sig"),
           "SignatureVersion" => "1",
-          "SigningCertURL" => "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-x.pem"
+          "SigningCertURL" =>
+            "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-x.pem"
         },
         over
       )
@@ -54,23 +65,33 @@ defmodule AshA2A.Y9EmailEdgeTest do
     test "structure-only accepts valid, default is fail-closed" do
       assert :ok = Webhook.verify(:ses, sns(), structure_only: true)
       assert {:error, :signature_unverified} = Webhook.verify(:ses, sns(), [])
-      assert :ok = Webhook.verify(:ses, Jason.encode!(sns()), signature_verifier: fn _ -> true end)
-      assert {:error, :bad_signature} = Webhook.verify(:ses, sns(), signature_verifier: fn _ -> false end)
+
+      assert :ok =
+               Webhook.verify(:ses, Jason.encode!(sns()), signature_verifier: fn _ -> true end)
+
+      assert {:error, :bad_signature} =
+               Webhook.verify(:ses, sns(), signature_verifier: fn _ -> false end)
     end
 
     test "rejects hostile cert url, bad version, topic mismatch, junk" do
       assert {:error, :bad_cert_url} =
-               Webhook.verify(:ses, sns(%{"SigningCertURL" => "https://evil.example.com/a.pem"}), structure_only: true)
+               Webhook.verify(:ses, sns(%{"SigningCertURL" => "https://evil.example.com/a.pem"}),
+                 structure_only: true
+               )
 
       assert {:error, :bad_cert_url} =
-               Webhook.verify(:ses, sns(%{"SigningCertURL" => "http://sns.us-east-1.amazonaws.com/a.pem"}),
+               Webhook.verify(
+                 :ses,
+                 sns(%{"SigningCertURL" => "http://sns.us-east-1.amazonaws.com/a.pem"}),
                  structure_only: true
                )
 
       assert {:error, :bad_signature_version} =
                Webhook.verify(:ses, sns(%{"SignatureVersion" => "9"}), structure_only: true)
 
-      assert {:error, :topic_mismatch} = Webhook.verify(:ses, sns(), structure_only: true, topic_arn: "other")
+      assert {:error, :topic_mismatch} =
+               Webhook.verify(:ses, sns(), structure_only: true, topic_arn: "other")
+
       assert {:error, :malformed} = Webhook.verify(:ses, "not json", structure_only: true)
       assert {:error, :malformed} = Webhook.verify(:ses, %{}, structure_only: true)
     end
@@ -95,7 +116,9 @@ defmodule AshA2A.Y9EmailEdgeTest do
   test "sender rejects header injection and missing fields" do
     bad = %{to: "a@example.com\r\nBcc: x@y", from: "g@example.com", subject: "s", body: "b"}
     assert {:error, {:invalid_message, :to}} = Sender.deliver(Sender.Spool, bad, [])
-    assert {:error, {:invalid_message, :body}} = Sender.validate(%{to: "a", from: "b", subject: "c"})
+
+    assert {:error, {:invalid_message, :body}} =
+             Sender.validate(%{to: "a", from: "b", subject: "c"})
   end
 
   test "checkpoint_graph_digest/2 is public and deterministic" do

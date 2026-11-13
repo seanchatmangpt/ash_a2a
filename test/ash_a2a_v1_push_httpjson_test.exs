@@ -244,15 +244,18 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
   end
 
   defp rest_new_task(opts) do
-    %{"task" => %{"id" => id}} = rest_json(:post, "/message:send", opts, %{"message" => message()})
+    %{"task" => %{"id" => id}} =
+      rest_json(:post, "/message:send", opts, %{"message" => message()})
+
     id
   end
 
-  test "REST CRUD: set stores through the real store, get/list return it, credentials write-only", %{
-    httpjson_on: rest,
-    hook: hook,
-    transport: transport
-  } do
+  test "REST CRUD: set stores through the real store, get/list return it, credentials write-only",
+       %{
+         httpjson_on: rest,
+         hook: hook,
+         transport: transport
+       } do
     task_id = rest_new_task(rest)
 
     set_body = %{
@@ -288,13 +291,18 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
     # (the creating request's version, default "1.0").
     stored_wire = Map.put(expected, "protocolVersion", "1.0")
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-r1", rest) == stored_wire
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{"configs" => [stored_wire], "nextPageToken" => ""}
+
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{
+             "configs" => [stored_wire],
+             "nextPageToken" => ""
+           }
   end
 
-  test "REST CRUD: delete removes the config; a missing config answers the pinned -32602 envelope", %{
-    httpjson_on: rest,
-    hook: hook
-  } do
+  test "REST CRUD: delete removes the config; a missing config answers the pinned -32602 envelope",
+       %{
+         httpjson_on: rest,
+         hook: hook
+       } do
     task_id = rest_new_task(rest)
 
     rest_req(:post, "/tasks/#{task_id}/pushNotificationConfig", rest, %{
@@ -305,7 +313,10 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
     assert conn.status == 200
     assert conn.resp_body == "{}"
 
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{"configs" => [], "nextPageToken" => ""}
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{
+             "configs" => [],
+             "nextPageToken" => ""
+           }
 
     # Missing config: the SAME -32602 ErrorInfo envelope the JSON-RPC binding
     # answers (PushConfigRPC's get/delete miss, "data" renamed "details").
@@ -347,16 +358,21 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
                "code" => 404,
                "message" => "Task not found",
                "details" => [
-                 %{"@type" => @error_info_type, "domain" => "a2a-protocol.org", "reason" => "TASK_NOT_FOUND"}
+                 %{
+                   "@type" => @error_info_type,
+                   "domain" => "a2a-protocol.org",
+                   "reason" => "TASK_NOT_FOUND"
+                 }
                ]
              }
            } = conn.resp_body |> Jason.decode!()
   end
 
-  test "REST SSRF: a non-public webhook URL is refused with the typed detail and nothing is stored", %{
-    httpjson_on: rest,
-    hook: hook
-  } do
+  test "REST SSRF: a non-public webhook URL is refused with the typed detail and nothing is stored",
+       %{
+         httpjson_on: rest,
+         hook: hook
+       } do
     task_id = rest_new_task(rest)
 
     for {url, code, needle} <- [
@@ -385,14 +401,18 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
                    }
                  ]
                }
-             } = conn.resp_body |> Jason.decode!(), url
+             } = conn.resp_body |> Jason.decode!(),
+             url
 
       assert detail =~ code, url
       if needle, do: assert(detail =~ needle, url)
     end
 
     # None of the refused configs were stored.
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{"configs" => [], "nextPageToken" => ""}
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{
+             "configs" => [],
+             "nextPageToken" => ""
+           }
   end
 
   test "REST push disabled: every push route answers the -32003 envelope, never a 404", %{
@@ -424,7 +444,8 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
                    }
                  ]
                }
-             } = conn.resp_body |> Jason.decode!(), "#{method} #{path}"
+             } = conn.resp_body |> Jason.decode!(),
+             "#{method} #{path}"
     end
   end
 

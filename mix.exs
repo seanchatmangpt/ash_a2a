@@ -5,10 +5,7 @@
 defmodule AshA2A.MixProject do
   use Mix.Project
 
-  # Whole-suite line-coverage floor (see test_coverage/0). Measured 78.78%
-  # total on 2026-09-27 (`mix test.all --cover` at 8a69838 plus in-flight
-  # lane edits); the floor sits a few points under the measurement so
-  # scheduling noise does not flap CI, and is meant to ratchet upward.
+  # Whole-suite line-coverage floor, enforced by `mix test.all --cover`.
   @coverage_threshold 75
 
   def cli do
@@ -19,7 +16,6 @@ defmodule AshA2A.MixProject do
         "test.live": :test,
         "test.serial.shard": :test,
         "test.serial.solo": :test,
-        # `mix muzak.sec` (and `mix muzak` directly) runs in the :test env.
         muzak: :test,
         "muzak.sec": :test
       ]
@@ -37,116 +33,54 @@ defmodule AshA2A.MixProject do
       package: package(),
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
-      # MUZAK lane (mutation testing): muzak's oracle file set comes from the
-      # project's `:test_paths`. Default (env unset) = whole `test/` tree (the
-      # honest full court; full runs are hours). Scoping it is how the bounded
-      # sample / per-module runs keep the oracle to the matching security
-      # courts, e.g.:
+      # Mutation-testing oracle scope. Unset = whole `test/` tree. Example:
       #   MUZAK_TEST_PATHS=test/ash_a2a/protocol/plug MIX_ENV=test mix muzak.sec
-      # Zero effect on `mix test` unless the env var is explicitly set.
       test_paths: muzak_test_paths(),
       deps: deps(),
       docs: docs(),
       aliases: aliases(),
       test_coverage: test_coverage(),
-      # `:mix` was missing from the analysis PLT: dialyzer flagged every
-      # `Mix.shell/0` / `Mix.raise/1` / `Mix.Task.run/1` call in every
-      # `lib/mix/tasks/*` module as `unknown_function`, and every
-      # `use Mix.Task` module as `callback_info_missing` (~110 warnings,
-      # all the same root cause). `:ex_unit` is added on the same
-      # principle; dialyxir re-adds these to the existing PLT without a
-      # full rebuild.
+      # :mix and :ex_unit in the PLT so lib/mix/tasks/* modules type-check.
       dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
   end
 
   defp aliases do
     [
-      # `mix test` is now the fast-iteration default: the ~96 files tagged
-      # `:serial` are `async: false` for real shared-state reasons (see
-      # `test/test_helper.exs`'s broker comment, and each file's own
-      # moduledoc -- mostly a shared global `:telemetry` observer used for
-      # stimulus attribution) and run strictly one-at-a-time regardless of
-      # `--max-cases`, dominating full-suite wall clock (measured: ~240s
-      # for the fast lane vs. ~740-1300s for everything). Full coverage
-      # (what CI runs) is `mix test.all`; `mix test.serial` runs just the
-      # excluded tail.
-      #
-      # `test.all` deliberately reads `"test --include serial"`, not
-      # `"test"`: Mix's alias self-reference loop guard only fires when an
-      # alias invokes a task of its OWN name, not when a *different*
-      # alias's step resolves to an already-aliased task name -- so a bare
-      # `"test.all": "test"` would silently re-enter the `test` alias
-      # above (still excluding `:serial`) instead of reaching the real
-      # underlying task. `--include serial` is ExUnit's own, native way to
-      # cancel the earlier `--exclude serial`: ExUnit applies include/
-      # exclude filters for a tag in the order given, so the later
-      # `--include` wins for that tag, correctly yielding the full suite
-      # with zero custom logic. The trailing `--exclude graphlaw
-      # --exclude graphlaw_engine --exclude sibling_repos` re-applies the
-      # machine-conditional exclusions that test_helper.exs installs via
-      # `ExUnit.configure/1`: without them, `--include serial` would rescue
-      # machine-tagged tests (several are also `@moduletag :serial`) back
-      # into the run on a host where the real engine/sibling checkouts are
-      # absent -- the include/exclude filters apply in the order given, so
-      # the later `--exclude` wins for those tags.
+      # `mix test` is the fast default and skips the `:serial` files
+      # (`async: false` for shared-state reasons). `mix test.all` is the full
+      # suite CI runs. `--include serial` cancels the earlier `--exclude
+      # serial`; the trailing excludes re-apply the machine-conditional
+      # exclusions from test/test_helper.exs, which `--include serial` would
+      # otherwise override.
       test: "test --exclude serial",
-      "test.all": "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos",
+      "test.all":
+        "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos",
       "test.serial": "test --only serial",
-      # Local sharded tail (LOCAL ONLY; CI does not shard, it runs one
-      # `mix test.all --cover`): first run `mix compile` once and create the
-      # partition databases (`ash_a2a_test1..4`, see config/test.exs), then launch 4 OS
-      # processes, each `MIX_TEST_PARTITION=<n> mix test.serial.shard --partitions 4`
-      # for n in 1..4, plus one `mix test.serial.solo`.
       # Live, paid, networked LLM round-trips: explicit opt-in only.
       "test.live": "cmd ASH_A2A_LIVE_LLM=1 mix test --include serial --only external_api",
 
-      # `:serial` (all 96) splits into two DISJOINT, independently-tagged
-      # subsets rather than "serial minus an exclude": ExUnit's `--only`
-      # is a sole selector, not intersected with a same-invocation
-      # `--exclude` for a different tag (confirmed empirically -- `--only
-      # serial --exclude serial_solo` silently ran a `serial_solo`-tagged
-      # test anyway, letting a `:benchmark` resource-ceiling test slip
-      # through onto a loaded host). So instead of trying to subtract,
-      # each file gets exactly one of two positive tags:
-      #   - `:serial_solo` (~23 files): holds a real host-level shared
-      #     resource across OS processes (a fixed port, a real
-      #     `:peer`/multinode spawn, the shared Postgres test database,
-      #     the `hddl_cli` native subprocess) -- must run together in one
-      #     `mix test.serial.solo` invocation, never sharded.
-      #   - `:serial_shard` (~73 files): serial only for real but
-      #     VM-local shared state (a shared `:telemetry` observer, the
-      #     shared `AshA2A.Authority.Broker.InMemory`) -- safe to run via
-      #     `MIX_TEST_PARTITION=<n> mix test.serial.shard --partitions <N>`
-      #     launched as N separate OS processes (each tracked by its own
-      #     PID, never stopped by name/pattern) -- see the how-to guide.
+      # `:serial` splits into two disjoint positive tags (ExUnit `--only` does
+      # not intersect with `--exclude` for another tag):
+      #   :serial_solo  - host-level shared resources (fixed port, :peer
+      #                   nodes, shared Postgres, native subprocess); run in
+      #                   one invocation, never sharded.
+      #   :serial_shard - VM-local shared state; safe to shard with
+      #                   `MIX_TEST_PARTITION=<n> mix test.serial.shard --partitions <N>`.
       "test.serial.shard": "test --only serial_shard",
       "test.serial.solo": "test --only serial_solo",
 
-      # `mix ash_a2a.standing_ref` prints a SHA for `ref=$(...)` capture. On a
-      # `_build` so cold that the task module is not compiled yet, Mix compiles
-      # the project before it can dispatch the task, printing "Compiling N
-      # files (.ex)" / "Generated ash_a2a app" to stdout ahead of the SHA.
-      # Compile first with stdout on stderr, then run the real task (the
-      # alias's own-name step reaches the task, not the alias).
+      # Compile with stdout redirected to stderr first, so `ref=$(mix
+      # ash_a2a.standing_ref)` captures only the SHA on a cold `_build`.
       "ash_a2a.standing_ref": [&compile_on_stderr/1, "ash_a2a.standing_ref"],
 
-      # Lane G-G one-command quality gate. The alias dispatches to the
-      # `.check.exs` script (same shape as the ash-project PR bar: compile,
-      # tests, spark.formatter --check, conformance, docs, credo --strict,
-      # dialyzer, sobelow). `CHECK_STAGES` scopes the run to a subset, e.g.
+      # One-command quality gate; stages are selectable, e.g.
       #   CHECK_STAGES=compile,test mix check
-      # The default subset is the set currently green on this tree; the
-      # full set (and how to run any stage) is documented in `.check.exs`.
+      # See `.check.exs` for the stage list.
       check: "run .check.exs",
 
-      # Mutation testing over the security-critical auth/verify surface,
-      # scoped by `.muzak.exs`'s :default profile to exactly these modules:
-      #   Transport.Plug, Protocol.Plug.{Auth, SecurityValidators, JWTVerifier},
-      #   Protocol.CardSigning, Protocol.PushNotificationSender.HTTP
-      # with the oracle = the matching security courts (scopable via
-      # MUZAK_TEST_PATHS, see `project/0` above). Full runs are hours;
-      # bound them: `MIX_ENV=test mix muzak.sec --mutations 25`.
+      # Mutation testing over the auth/verify surface, scoped by `.muzak.exs`.
+      # Bound runs: `MIX_ENV=test mix muzak.sec --mutations 25`.
       "muzak.sec": ["muzak"]
     ]
   end
@@ -174,7 +108,6 @@ defmodule AshA2A.MixProject do
             "README.md",
             "CHANGELOG.md",
             "usage-rules.md",
-            "docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md",
             # Tutorials
             "docs/tutorials/getting-started.md",
             "documentation/tutorials/a2a-your-first-agent.livemd",
@@ -217,17 +150,14 @@ defmodule AshA2A.MixProject do
             "docs/explanation/canonical-graph-identity.md",
             "docs/explanation/graphlaw-wasm-integration.md"
           ],
-          # Pass already-shaped {path, opts} tuples (the DSL cheat-sheet entry
-          # with its :search_data) through unchanged -- wrapping them as
-          # {{path, opts}, []} feeds ExDoc a tuple where it expects a path
-          # string (String.Chars crash in ExDoc.Extras.build_extra/3).
+          # Entries already shaped as {path, opts} pass through unchanged.
           fn
             {_, _} = entry -> entry
             entry -> {entry, []}
           end
         ),
       groups_for_extras: [
-        Project: ~r"README|CHANGELOG|PHOENIX|usage-rules",
+        Project: ~r"README|CHANGELOG|usage-rules",
         Tutorials: ~r"(docs|documentation)/tutorials",
         "How-to guides": ~r"docs/how-to",
         Reference: ~r"docs/reference",
@@ -249,45 +179,27 @@ defmodule AshA2A.MixProject do
         "GitHub" => "https://github.com/seanchatmangpt/ash_a2a",
         "Changelog" => "https://hexdocs.pm/ash_a2a/changelog.html"
       },
-      # The four Diataxis quadrants ship in the package so `mix hex.publish`
-      # can build the ExDoc extras declared in docs/0 above. Internal trees
-      # (docs/archive, docs/rfc, research) deliberately do NOT ship.
-      #
-      # The two native helper crates ship as SOURCE ONLY (manifest, lock,
-      # toolchain pin, src -- never `target/`): lib/ code reads
-      # `native/hddl_cli/Cargo.toml` (AshA2A.Chicago.Release.CompositionLock)
-      # and resolves `native/*/target/release/*` binaries, so a Hex consumer
-      # must be able to rebuild the exact locked closure from the tarball
-      # (`cargo +1.97.1 build --release --locked --manifest-path ...`).
-      # `documentation/dsls/DSL-AshA2A.md` is a declared ExDoc extra in
-      # `docs/0` above (the generated DSL cheat sheet), so it must ship or
-      # `mix docs` fails for every Hex consumer. `generated/` (projections
-      # regenerable from priv/ ontology via ggen) and `examples/` (demo app,
-      # not library surface) deliberately do NOT ship.
-      files:
-        ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE SECURITY.md
+      # Ships lib, the priv subtrees read at runtime, and the docs that back
+      # the ExDoc extras. `sa2a_crypto/lib` must ship: `elixirc_paths/1`
+      # compiles it into this app (lib/ references SA2ACrypto modules).
+      files: ~w(lib
+           priv/architecture priv/dfcm priv/graphlaw priv/graphlaw_host priv/proto
+           priv/sa2a priv/sa2a_conformance priv/sa2a_conformance_vectors
+           priv/sa2a_graphlaw priv/semantic priv/spg_conformance
+           mix.exs README.md CHANGELOG.md LICENSE LICENSES REUSE.toml SECURITY.md
+           usage-rules.md
            documentation/dsls
-           docs/tutorials docs/how-to docs/reference docs/explanation sa2a_crypto/lib
-           usage-rules.md) ++
-          native_package_files()
+           docs/tutorials/*.md docs/how-to/*.md docs/reference/*.md
+           docs/explanation/architecture.md
+           docs/explanation/message-lifecycle.md
+           docs/explanation/canonical-graph-identity.md
+           docs/explanation/graphlaw-wasm-integration.md
+           sa2a_crypto/lib) ++ native_package_files()
     ]
   end
 
-  @native_crates ~w(hddl_cli graphlaw_host)
-
-  @doc false
-  def native_package_files do
-    for crate <- @native_crates,
-        file <- ~w(Cargo.toml Cargo.lock rust-toolchain.toml src),
-        do: "native/#{crate}/#{file}"
-  end
-
-  # Coverage gate (TQ-09). The floor is the measured whole-suite total at the
-  # time the gate was introduced, so it ratchets rather than silently
-  # regressing; CI runs `mix test.all --cover`, which exits 3 below the
-  # threshold (`--export-coverage` would skip the threshold entirely).
-  # Chicago bench/fixture code and test support are excluded: they are court
-  # material, not library surface.
+  # Coverage gate: `mix test.all --cover` exits 3 below the threshold.
+  # Chicago bench/fixture code and test support are not library surface.
   defp test_coverage do
     [
       summary: [threshold: @coverage_threshold],
@@ -298,16 +210,21 @@ defmodule AshA2A.MixProject do
     ]
   end
 
-  # sa2a_crypto remains independently testable as a nested Mix project, while
-  # its runtime modules are vendored into the root Hex package. Hex packages
-  # cannot depend on local path projects.
+  # sa2a_crypto stays independently testable as a nested Mix project, while
+  # its runtime modules are vendored into this package (Hex packages cannot
+  # depend on local path projects).
+  @native_crates ~w(hddl_cli graphlaw_host)
+  @doc false
+  def native_package_files do
+    for crate <- @native_crates,
+        file <- ~w(Cargo.toml Cargo.lock rust-toolchain.toml src),
+        do: "native/#{crate}/#{file}"
+  end
+
   defp elixirc_paths(:test), do: ["lib", "sa2a_crypto/lib", "test/support", "test/conference_sim"]
   defp elixirc_paths(_), do: ["lib", "sa2a_crypto/lib"]
 
-  # MUZAK lane: muzak reads the project's `:test_paths` for its oracle file
-  # set. Unset => nil => Mix default ("test"), i.e. the full court; set =>
-  # comma-separated scoped oracle for bounded per-module runs (see
-  # `.muzak.exs` and the `muzak.sec` alias).
+  # Unset => nil => Mix default ("test"); set => comma-separated scoped oracle.
   defp muzak_test_paths do
     case System.get_env("MUZAK_TEST_PATHS") do
       nil -> nil
@@ -316,7 +233,6 @@ defmodule AshA2A.MixProject do
     end
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger, :crypto],
@@ -324,143 +240,67 @@ defmodule AshA2A.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
+  # Sibling-checkout override for cross-repo development: with
+  # `ASH_A2A_LOCAL_DEPS=1`, :ash_graphlaw and :ash_pplan resolve from
+  # ../ash_graphlaw and ../ash_pplan instead of Hex. Versions are unchanged.
+  defp local_deps?, do: System.get_env("ASH_A2A_LOCAL_DEPS") == "1"
+
+  defp ash_graphlaw_dep do
+    if local_deps?(),
+      do: {:ash_graphlaw, path: "../ash_graphlaw"},
+      else: {:ash_graphlaw, "~> 26.10"}
+  end
+
+  defp ash_pplan_dep do
+    if local_deps?(),
+      do: {:ash_pplan, path: "../ash_pplan", only: :test},
+      else: {:ash_pplan, "~> 26.11", only: :test}
+  end
+
   defp deps do
     [
-      # W13 wave-2 dep review (resolved): no new deps required. The OTel bridge
-      # (lib/ash_a2a/protocol/telemetry/otel.ex) guards on Code.ensure_loaded?/
-      # apply/3, so it compiles without OpenTelemetry; :opentelemetry_api
-      # (locked in mix.lock) stays test-only below.
       # >= 3.33.11: EEF-CVE-2026-93477 (private action args settable via bulk update/destroy)
       {:ash, "~> 3.33 and >= 3.33.11"},
       {:igniter, "~> 0.6"},
-      # `only: :dev`: real, disclosed finding (swarm-test Docker build,
-      # this session) -- zero references to `GgenIgniter`/`ggen_igniter`
-      # anywhere in this repo's own lib/ or test/ (confirmed via a real
-      # grep across both), yet it was declared with no `:only`
-      # restriction, so every consumer's `MIX_ENV=prod` release build
-      # (not just interactive dev use) unconditionally paid its real,
-      # heavy transitive cost: a Rustler NIF (`ggen_graph_nif`) linking a
-      # vendored RocksDB via `oxrocksdb-sys` and using `bindgen`, which
-      # needs a real Rust toolchain, `libclang`, and a C++ toolchain at
-      # build time -- confirmed by two real, disclosed Docker build
-      # failures before this fix (missing Rust toolchain, then missing
-      # libclang) in swarm/Dockerfile's own commit history. Scoping to
-      # `:dev` keeps `mix ggen_igniter.doctor`/interactive use fully
-      # available; a real `MIX_ENV=prod mix deps.get` for this repo (and
-      # this feature's own swarm-test release) simply no longer fetches
-      # or compiles it.
+      # Dev only: its transitive Rustler/RocksDB NIF needs a Rust toolchain
+      # and libclang, and nothing in lib/ or test/ references it.
       {:ggen_igniter, "~> 26.9", only: :dev},
-      # ash_graphlaw: ASH_GRAPHLAW_PATH selects an explicit local checkout; else
-      # the sibling canonical checkout ../ash_graphlaw is used when present (it
-      # vendors the wasm engine; the Hex 26.10.1 package does not, so engine-
-      # backed tests fail with :wasm_not_vendored); else the Hex pin (mix.lock
-      # carries 26.10.1) for CI and consumers without the sibling checkout.
-      cond do
-        path = System.get_env("ASH_GRAPHLAW_PATH") ->
-          {:ash_graphlaw, path: path}
-
-        File.dir?(Path.expand("../ash_graphlaw", __DIR__)) ->
-          {:ash_graphlaw, path: "../ash_graphlaw"}
-
-        true ->
-          {:ash_graphlaw, "~> 26.10"}
-      end,
+      ash_graphlaw_dep(),
       {:ash_affidavit, "~> 26.10"},
       {:ash_ex4pm, "~> 26.10"},
       {:ash_ai, "~> 1.0"},
-      # HTTP client: AshA2A.Telemetry.OcelForwarder POSTs to beam4pm's OCEL
-      # ingest endpoint. Locked transitively (via :igniter); declared direct
-      # because lib/ calls it explicitly.
+      # HTTP client used by AshA2A.Telemetry.OcelForwarder.
       {:req, "~> 0.5"},
-      # Real local Bandit server for
-      # test/ash_a2a_telemetry_ocel_forwarder_test.exs's fixture standing
-      # in for BeamPM.OcelIngest.Router (same MicroBeam4pm-style pattern
-      # already used in ex4pm/ash_ex4pm/xaas this session).
+      # Local server for the OCEL forwarder test fixture.
       {:bandit, "~> 1.5", only: :test},
-      # Ash policy verification (test fixtures with policies) needs a SAT
-      # solver; without one every such fixture emits a compile warning and
-      # `MIX_ENV=test mix compile --warnings-as-errors` fails. Pure Elixir,
-      # test-only (Ash declares it optional).
+      # SAT solver for Ash policy verification in test fixtures (optional in Ash).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
-      # ash_pplan dep: Hex pin by default (mix.lock pins 26.11.10, which
-      # carries AshPPlan.Telemetry.*). Set ASH_PPLAN_PATH to a local
-      # canonical checkout to compile against path: instead -- dev-only
-      # cross-repo-court mode; CI always uses the Hex pin. Eval-time System.get_env is the only supported toggle:
-      # deps do not read env at compile time.
-      if path = System.get_env("ASH_PPLAN_PATH") do
-        {:ash_pplan, path: path, only: :test}
-      else
-        {:ash_pplan, "~> 26.11", only: :test}
-      end,
-      # MUZAK lane: mutation testing (mix muzak.sec). `only: :test`, not
-      # `:dev`: muzak's mix task declares `@preferred_cli_env :test` and its
-      # oracle is the ExUnit suite itself, so the dep must exist in :test --
-      # an `only: :dev` dep makes `mix muzak` fail with "task muzak could not
-      # be found" (verified empirically). `runtime: false` (never started).
-      # NOTE: muzak 1.1.1 (2022-12, unmaintained) needs the two Elixir-1.19
-      # compatibility shims compiled by `.muzak.exs` (see .muzak/*.ex).
+      ash_pplan_dep(),
+      # Mutation testing (`mix muzak.sec`); needs :test because its oracle is
+      # the ExUnit suite. Compatibility shims live in `.muzak.exs`.
       {:muzak, "~> 1.1", only: :test, runtime: false},
       {:opentelemetry_api, "~> 1.4", only: :test},
       {:req_llm, "~> 1.18"},
       {:ash_r2rml, "~> 26.8"},
-      # `:plug` is required in the prod closure by :phoenix, :ash_json_api and
-      # :open_api_spex (via :ash_ai), so it can no longer be restricted to
-      # `only: :test` (Mix rejects a narrower :only than a transitive dep
-      # requires). test/ash_a2a_plug_agent_card_test.exs drives a REAL
-      # AshA2A.Protocol.Plug HTTP pipeline via Plug.Test.
+      # Required in the prod closure by :phoenix, :ash_json_api and
+      # :open_api_spex, so it cannot be `only: :test`.
       {:plug, "~> 1.16"},
-      # Real provider implementations for the three runtime-provider
-      # boundaries: AshA2A.Execution.FLAME (Placement),
-      # AshA2A.Durability.DurableServer (Durability), and
-      # AshA2A.Topology.Presence (Topology). Declaring them as resolvable
-      # deps makes each adapter's available?/0 (or available?/1) true and
-      # its call path reachable; the adapters themselves remain
-      # authority-free regardless -- they never gain independent DO
-      # capability, only observed provider evidence via RuntimeReceipt.
+      # Runtime provider adapters: AshA2A.Execution.FLAME,
+      # AshA2A.Durability.DurableServer, AshA2A.Topology.Presence.
       {:flame, "~> 0.5"},
       {:durable_server, "~> 0.1.5"},
-      # v26.9.14: real provider implementations closing GAP D
-      # (AshA2A.Delivery.Oban, AshA2A.TaskLifecycle's AshStateMachine
-      # adapter). Same pattern as flame/durable_server above -- declaring
-      # them as resolvable deps makes each adapter's available?/0 true and
-      # its real call path reachable; the adapters themselves stay
-      # authority-free (queue acceptance is not an execution receipt; a
-      # state transition is not a DO -- both still funnel any real
-      # consequence through AshA2A.CommandBus).
+      # Delivery and task-lifecycle adapters: AshA2A.Delivery.Oban,
+      # AshA2A.TaskLifecycle (AshStateMachine).
       {:oban, "~> 2.24"},
       {:ash_oban, "~> 0.8 or ~> 0.9"},
       {:ash_state_machine, "~> 0.2"},
-      # Oban's real PostgreSQL storage engine driver, exercised for real
-      # against a real disposable local Postgres instance in this repo's
-      # own test suite. Cannot be `only: :test` -- `:ash_oban` itself
-      # requires `:postgrex` unconditionally (same real Mix dependency-only
-      # narrowing constraint the `:plug` comment above already documents).
+      # Required unconditionally by :ash_oban.
       {:postgrex, "~> 0.18"},
-      # DurableServer.Backends.EKVStore's real local storage engine, used by
-      # AshA2A.RuntimeProvidersIntegrationTest so Durability can be
-      # exercised with a real local durable-KV backend instead of the
-      # default ObjectStore/S3 backend (which needs cloud credentials).
-      # Promoted out of `only: :test`: AshA2A.ReceiptStore.Ekv (a real
-      # durable receipt store, not a test double) and
-      # AshA2A.Application.receipt_store_children/0's automatic EKV wiring
-      # both call the :ekv package directly outside of Mix.env() == :test,
-      # the same reason :plug was promoted out of only: :test earlier in
-      # this repo's history.
+      # Backs AshA2A.ReceiptStore.Ekv and the automatic EKV wiring in
+      # AshA2A.Application.
       {:ekv, "~> 0.4"},
-      # Real property/fuzz testing (test/ash_a2a_property_fuzz_test.exs).
-      # Already a required, unrestricted (non-`only:`) transitive dep of
-      # `:ash` itself (mix.lock: "stream_data": {:hex, :stream_data,
-      # "1.4.0", ...}; deps/ash/mix.exs declares it with no `:only`) --
-      # promoted to an explicit direct dep here so this repo's own property
-      # tests declare their real dependency instead of relying on an
-      # incidental transitive pin ash could drop or relax in a future
-      # version. Cannot be narrowed to `only: :test` -- Mix rejects a
-      # narrower `:only` than a transitive dependency requires, the same
-      # real constraint already documented above for `:plug`/`:postgrex`.
+      # Property tests; also a required transitive dep of :ash.
       {:stream_data, "~> 1.0"},
-      # Direct deps with real lib/ calls (versions already in mix.lock;
-      # bounds chosen so the locked versions still satisfy them).
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.0"},
       {:spark, "~> 2.2"},
@@ -470,124 +310,29 @@ defmodule AshA2A.MixProject do
       {:sourceror, "~> 1.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:phoenix, "~> 1.7"},
-      # v26.9.16: real libcluster + Horde proof-of-concept (real node
-      # discovery + a real CRDT-backed distributed process registry),
-      # named as prior art for the compute/coordination lenses in this
-      # session's requirements synthesis. `libcluster` is already a real
-      # dep of the separate `swarm/` mix project (`swarm/mix.exs`,
-      # `Cluster.Strategy.Kubernetes.DNS`) -- this declares it (and the
-      # new `Horde.Registry`/`Horde.DynamicSupervisor` pair) directly on
-      # the root `:ash_a2a` app instead, scoped to `:test` because the
-      # whole PoC lives in
-      # `test/ash_a2a/libcluster_horde_poc_test.exs` (real `:peer`-spawned
-      # second BEAM node, same pattern as
-      # `test/ash_a2a/distributed_node_loss_test.exs`) -- nothing in
-      # `lib/` references either module yet, so `only: :test` keeps a real
-      # `MIX_ENV=prod mix deps.get` from paying their cost, the same
-      # narrowing reasoning already documented above for `:bandit`.
+      # Cluster/CRDT test fixtures only; nothing in lib/ references them.
       {:libcluster, "~> 3.5", only: :test},
       {:horde, "~> 0.10.0", only: :test},
-      # v26.9.16 (RFC-SA2A-001 S12/S79): CANONICALIZATION AND
-      # SERIALIZATION/PARSING ONLY. ONE declaration, two real `lib/` uses:
-      #
-      #   * `AshA2A.Semantic.CanonicalGraph` -- the single authoritative RFC
-      #     S12 canonical graph identity: RDFC-1.0 (`RDF.Canonicalization`)
-      #     -> code-point-sorted N-Quads -> SHA-256, pinned as
-      #     `"RDFC-1.0/SHA-256/n-quads-sorted"`. The praxis-graphlaw wasm
-      #     `graph_hash` export is NOT RDFC-1.0 (not blank-node-relabel
-      #     invariant; see docs/explanation/canonical-graph-identity.md), so
-      #     S12 identity is taken in-BEAM here.
-      #   * `AshA2A.Semantic.Serialize.verify/3` -- an *independent* real
-      #     parser gating the engine canonical-digest path.
-      #
-      # Never for validation, reasoning or entailment, all of which stay in
-      # the praxis-graphlaw law package (S14 ShEx, S15 SHACL, S16 Datalog,
-      # S17 N3, S18 SPARQL); `:sparql`, `:json_ld` and `:shex` are NOT added
-      # and must not be.
-      #
-      # The `Serialize.verify/3` gate is not optional decoration. A real
-      # probe of the real prebuilt praxis-graphlaw wasm established that its
-      # `graph_hash/1` has no parse-error channel and reports no parsed-triple
-      # count:
-      # `graph_hash(good <> "GARBAGE !!!")` returned bit-for-bit the same
-      # digest as `graph_hash(good)`, and `graph_hash("GARBAGE !!!")`
-      # returned `af1349b9f5f9a1a6...` == `BLAKE3("")` == `graph_hash("")`.
-      # A malformed serialization therefore yields a confident, valid-looking
-      # digest of a *smaller or empty* graph. Parsing our own output back
-      # with a second real implementation is the only way to detect it.
-      #
-      # Zero marginal dependency weight: `rdf` 3.0.1 is ALREADY a required,
-      # unrestricted transitive dep of `:ash_r2rml` (a direct dep of this
-      # project) and is already pinned in `mix.lock` and present in `deps/` --
-      # adding `{:rdf, "~> 3.0"}` here left `mix.lock` byte-for-byte
-      # unchanged (verified with a real `mix deps.get` + `git diff mix.lock`).
-      # Promoted to an explicit direct dep for exactly the reason `:stream_data`
-      # above already documents: declare the real dependency instead of
-      # relying on an incidental transitive pin. Cannot be narrowed to
-      # `only: :test` -- `lib/ash_a2a/semantic/serialize.ex` and
-      # `lib/ash_a2a/semantic/canonical_graph.ex` call it outside the test
-      # env, the same real constraint documented for `:plug`/`:ekv`.
+      # RDF canonicalization and parsing only (AshA2A.Semantic.CanonicalGraph:
+      # RDFC-1.0 -> sorted N-Quads -> SHA-256; AshA2A.Semantic.Serialize.verify/3:
+      # independent parser gating the engine digest). Validation and reasoning
+      # stay in the graphlaw wasm engine; do not add :sparql, :json_ld or :shex.
       {:rdf, "~> 3.0"},
-      # RFC 8785 JSON Canonicalization Scheme. Already locked transitively
-      # through :rdf; promoted to a direct dependency because release-closure
-      # portable identity calls Jcs.encode/1 at runtime.
+      # RFC 8785 JSON Canonicalization, used by release-closure portable identity.
       {:jcs, "~> 0.2"},
-      # Affidavit-shaped cryptographic standing substrate. Source is vendored
-      # through elixirc_paths/package files above; local path deps are invalid
-      # in a Hex package closure.
-      # v26.9.16 (RFC-SA2A-001 S12/S79): the real in-BEAM WebAssembly host
-      # runtime. ONE declaration shared by two independent hosts of the same
-      # vendored `priv/graphlaw/praxis_graphlaw.wasm` law package:
-      #
-      #   * `AshA2A.GraphLaw.WasmexSession` -- runtime A of
-      #     `AshA2A.SA2A.Conformance` (the SA2A conformance court). It checks
-      #     `Code.ensure_loaded?(Wasmex)` and returns a typed
-      #     `:wasmex_unavailable` refusal rather than raising.
-      #   * `AshA2A.GraphLaw.WasmexHost` -- the application-supervised,
-      #     long-lived Wasmtime instance (started in `AshA2A.Application`).
-      #
-      # `:wasmex` wraps a real Wasmtime engine via a Rustler NIF; on
-      # aarch64-apple-darwin (and the other tier-1 targets)
-      # `rustler_precompiled` downloads a prebuilt NIF, so this does NOT
-      # require a Rust toolchain at build time -- unlike `:ggen_igniter`
-      # above, which is why that one is `only: :dev` and this one is not
-      # similarly restricted. Unrestricted (not `only:`) also because
-      # `lib/ash_a2a/graph_law/wasmex_host.ex` is real runtime library code,
-      # not a test fixture. This repo does NOT own an RDF canonicalization /
-      # SHACL / ShEx / Datalog / N3 implementation and must not grow one --
-      # `praxis-graphlaw` already is one; Elixir's job at this boundary is
-      # envelope, standing, refusal typing, authority, receipts and admission
-      # orchestration, never the derivation itself.
+      # In-BEAM Wasmtime host for the vendored priv/graphlaw wasm
+      # (AshA2A.GraphLaw.WasmexHost, AshA2A.GraphLaw.WasmexSession). Uses a
+      # precompiled NIF, so no Rust toolchain is needed at build time.
       {:wasmex, "~> 0.15.1"},
-      # Lane Z20 (real gRPC server transport, A2A v1.0 §gRPC binding):
-      #
-      #   * `:protobuf` -- runtime for the committed generated projection
-      #     `lib/ash_a2a/transport/grpc/pb/**` (regenerated from the vendored
-      #     `priv/proto/a2a.proto` with protoc-gen-elixir; regen command is
-      #     documented in that proto's provenance header). Also supplies
-      #     Protobuf.JSON, the proto3-JSON bridge the gRPC server uses to
-      #     map protobuf messages to/from the SAME proto-JSON maps the HTTP
-      #     binding dispatches. The well-known types it bundles cover the
-      #     proto's google/protobuf imports.
-      #   * `:grpc_server` -- the cowboy-backed gRPC server runtime
-      #     (elixir-grpc 1.0 split the server out of `:grpc`).
-      #   * `:grpc` -- client + stub runtime; the generated
-      #     `Lf.A2a.V1.A2AService.Stub` does `use GRPC.Stub`, so this must
-      #     be in every env, and the wire test drives the server over a real
-      #     loopback HTTP/2 connection through it.
-      #
-      # All three are actively maintained (grpc/grpc_server 1.0.5,
-      # protobuf 0.17.0 as of vendoring) and required unconditionally: the
-      # generated modules are lib/ code compiled in every environment.
+      # gRPC binding: :protobuf runs the generated lib/ash_a2a/transport/grpc/pb
+      # modules (from priv/proto/a2a.proto); :grpc_server is the server runtime;
+      # :grpc supplies the client stub used by the generated service module.
       {:protobuf, "~> 0.17"},
       {:grpc_server, "~> 1.0"},
       {:grpc, "~> 1.0"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      # Lane G-G one-command quality gate (`mix check` -> `.check.exs`),
-      # mirroring the ash-project PR bar: `mix credo --strict` and
-      # `mix sobelow` run as gate stages from `.check.exs`. `only: :dev`:
-      # both are CI-grade analysis tools, never runtime deps.
+      # `mix check` gate stages.
       {:credo, "~> 1.7", only: :dev, runtime: false},
       {:sobelow, "~> 0.13", only: :dev, runtime: false}
     ]

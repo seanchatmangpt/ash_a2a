@@ -243,7 +243,12 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
       method in ["message/send", "message/stream", "SendMessage"] ->
         %{"message" => message()}
 
-      method in ["tasks/list", "ListTasks", "agent/getAuthenticatedExtendedCard", "GetExtendedAgentCard"] ->
+      method in [
+        "tasks/list",
+        "ListTasks",
+        "agent/getAuthenticatedExtendedCard",
+        "GetExtendedAgentCard"
+      ] ->
         %{}
 
       method in ["tasks/pushNotificationConfig/set", "CreateTaskPushNotificationConfig"] ->
@@ -288,7 +293,8 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
   test "a required extension present in the header is never refused with -32008 on any method",
        %{agent: agent} do
     for {label, mod, opts} <- required_plugs(agent), method <- @all_methods do
-      conn = call_plug(mod, opts, method, params_for(method), [{"a2a-extensions", @passport.uri()}])
+      conn =
+        call_plug(mod, opts, method, params_for(method), [{"a2a-extensions", @passport.uri()}])
 
       body =
         case Plug.Conn.get_resp_header(conn, "content-type") do
@@ -301,7 +307,9 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
     end
   end
 
-  test "Transport.Plug activates, echoes and delivers the extension on message/send", %{agent: agent} do
+  test "Transport.Plug activates, echoes and delivers the extension on message/send", %{
+    agent: agent
+  } do
     opts =
       AshA2A.Transport.Plug.init(
         agent: agent,
@@ -316,7 +324,10 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
 
     assert Plug.Conn.get_resp_header(conn, "a2a-extensions") == [@ts_uri]
     ts_uri = @ts_uri
-    assert %{"result" => %{"task" => %{"metadata" => %{^ts_uri => stamp}}}} = Jason.decode!(conn.resp_body)
+
+    assert %{"result" => %{"task" => %{"metadata" => %{^ts_uri => stamp}}}} =
+             Jason.decode!(conn.resp_body)
+
     assert is_integer(stamp["received_at"])
     assert is_integer(stamp["completed_at"])
 

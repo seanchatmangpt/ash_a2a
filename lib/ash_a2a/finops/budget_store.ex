@@ -152,7 +152,11 @@ defmodule AshA2A.FinOps.BudgetStore do
 
     case :ets.lookup(table, {:budget, account_id}) do
       [{{:budget, ^account_id}, {_ceiling, window_ms}}] ->
-        bucket_usage(table, account_id, current_bucket(System.system_time(:millisecond), window_ms))
+        bucket_usage(
+          table,
+          account_id,
+          current_bucket(System.system_time(:millisecond), window_ms)
+        )
 
       [] ->
         0
@@ -179,7 +183,8 @@ defmodule AshA2A.FinOps.BudgetStore do
   on breach (code `:budget_exceeded`) or an unconfigured account
   (code `:missing_evidence` -- fail-closed: no ceiling is not unlimited).
   """
-  @spec record(store(), account_id(), non_neg_integer()) :: {:ok, record_ok()} | {:error, record_error()}
+  @spec record(store(), account_id(), non_neg_integer()) ::
+          {:ok, record_ok()} | {:error, record_error()}
   def record(store, account_id, amount) when is_integer(amount) and amount >= 0 do
     GenServer.call(store, {:record, account_id, amount})
   end
@@ -188,17 +193,32 @@ defmodule AshA2A.FinOps.BudgetStore do
 
   @impl true
   def init(opts) do
-    table = :ets.new(:finops_budget_store, [:protected, :set, read_concurrency: true, write_concurrency: true])
+    table =
+      :ets.new(:finops_budget_store, [
+        :protected,
+        :set,
+        read_concurrency: true,
+        write_concurrency: true
+      ])
 
     Enum.each(Keyword.get(opts, :budgets, []), fn {account_id, conf} ->
-      do_set_budget(table, account_id, conf[:ceiling], Keyword.get(conf, :window_ms, @default_window_ms))
+      do_set_budget(
+        table,
+        account_id,
+        conf[:ceiling],
+        Keyword.get(conf, :window_ms, @default_window_ms)
+      )
     end)
 
     {:ok, %__MODULE__{table: table}}
   end
 
   @impl true
-  def handle_call({:set_budget, account_id, ceiling, window_ms}, _from, %__MODULE__{table: table} = state) do
+  def handle_call(
+        {:set_budget, account_id, ceiling, window_ms},
+        _from,
+        %__MODULE__{table: table} = state
+      ) do
     do_set_budget(table, account_id, ceiling, window_ms)
     {:reply, :ok, state}
   end

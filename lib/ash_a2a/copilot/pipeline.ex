@@ -4,15 +4,15 @@ defmodule AshA2A.Copilot.Pipeline do
 
   Wires three landed surfaces into one interception path:
 
-    1. `AshA2A.Twin.Vince.evaluate_intent/2` — intent evaluation (GPM floor,
+    1. `AshA2A.Twin.CEO.evaluate_intent/2` — intent evaluation (GPM floor,
        monkey-math exact-half, round-number suspicion). On challenge: return
-       the challenge-as-state ledger entry (the ledger is state on the Vince
+       the challenge-as-state ledger entry (the ledger is state on the CEO
        struct, threaded through this pipeline — the pipeline is pure;
        callers own persistence via the returned state).
-    2. On Vince admit, in this order (first non-ok stage wins):
+    2. On CEO admit, in this order (first non-ok stage wins):
        a. optional mechanical prior (loadable `TradeReticle.Plumbing` or the
           `:prior` opt) — may challenge or refuse;
-       b. `AshA2A.Twin.Tony.handle_inbound/2` strain-check of the
+       b. `AshA2A.Twin.COO.handle_inbound/2` strain-check of the
           coordinator (`AshA2A.Strain.Tensor.hyperplane_check/2` saturation
           gate) → shed to the senior queue or admit;
        c. `AshA2A.Attestation.Gate` on the sensor frame (enclave, freshness,
@@ -42,26 +42,26 @@ defmodule AshA2A.Copilot.Pipeline do
   ## Bridge observation feed (Z7 seam join)
 
   The pipeline threads a live `AshA2A.Strain.Bridge` `mesh_state` alongside
-  the Tony mesh and folds every verdict back into it as observations:
+  the COO mesh and folds every verdict back into it as observations:
 
     * admit → `ticket_assigned` (`:active_leases` +1 for the coordinator)
-    * Vince challenge → `challenge_received` with `source: :vince`
+    * CEO challenge → `challenge_received` with `source: :ceo`
       (`:heuristic_frequency` +1)
     * refuse / escalate → `error_reported` (rolling error window)
 
-  ## Order decision: strain-first (route/2 before Vince)
+  ## Order decision: strain-first (route/2 before CEO)
 
   `route/2` delegates to `Bridge.route/2` and is the cheap strain gate: it
-  consults only the live tensor (no Vince interrogation, no attestation).
+  consults only the live tensor (no CEO interrogation, no attestation).
   Dispatch callers run `route/2` BEFORE `check/3`. Rationale: a saturated
   coordinator cannot take the ticket regardless of intent quality, so
-  evaluating Vince first would burn an expensive interrogation (and mutate
+  evaluating CEO first would burn an expensive interrogation (and mutate
   its challenge ledger) on a ticket that is shed anyway. Shedding first
-  protects the human and keeps the Vince ledger clean of tickets that never
-  had a coordinator. Inside `check/3` the existing per-coordinator Tony
-  gate still runs after Vince (it is keyed to `intent.coordinator_id`,
-  which Vince's verdict does not change); the mesh-level shed decision is
-  `route/2`'s job and happens before Vince by construction.
+  protects the human and keeps the CEO ledger clean of tickets that never
+  had a coordinator. Inside `check/3` the existing per-coordinator COO
+  gate still runs after CEO (it is keyed to `intent.coordinator_id`,
+  which CEO's verdict does not change); the mesh-level shed decision is
+  `route/2`'s job and happens before CEO by construction.
 
   ## Known unauthenticated channels (lane F8 disclosure)
 
@@ -79,14 +79,14 @@ defmodule AshA2A.Copilot.Pipeline do
       the binding stage is skipped observably (`[:ash_a2a, :copilot,
       :stage_skipped]`, as are absent mechanical prior / authority source).
 
-  Negative-NTE intents are FIXED upstream: `Vince.evaluate_intent/2` refuses
+  Negative-NTE intents are FIXED upstream: `CEO.evaluate_intent/2` refuses
   `nte <= 0` / negative offers with a typed `:invalid_intent` refusal.
 
   `coordinator_id: nil` is FIXED: it returns a typed `:invalid_intent`
-  refusal instead of raising inside `Tony.handle_inbound/2`.
+  refusal instead of raising inside `COO.handle_inbound/2`.
 
   The pipeline is **pure**: twins are called via their module functions and
-  all state (Vince challenge ledger, Tony mesh, Bridge mesh_state) is
+  all state (CEO challenge ledger, COO mesh, Bridge mesh_state) is
   threaded in and out. The only environmental read is the wall clock when
   the caller does not supply `:now` — disclosed for honesty; tests inject
   `:now` for determinism.
@@ -120,23 +120,23 @@ defmodule AshA2A.Copilot.Pipeline do
   alias AshA2A.Attestation.Gate
   alias AshA2A.Authority.PEP
   alias AshA2A.Strain.Bridge
-  alias AshA2A.Twin.Tony
-  alias AshA2A.Twin.Vince
+  alias AshA2A.Twin.COO
+  alias AshA2A.Twin.CEO
 
   @type result ::
           {:ok, map()}
-          | {:challenge, Vince.challenge_map()}
+          | {:challenge, CEO.challenge_map()}
           | {:refuse, :escalate_multisig | map()}
           | {:escalated, %{proposal_id: reference(), card: map(), proposal: map()}}
           | {:shed, {:senior_queue, term()}}
 
-  @type state :: %{vince: Vince.t(), mesh: Tony.mesh(), bridge: Bridge.mesh_state()}
+  @type state :: %{ceo: CEO.t(), mesh: COO.mesh(), bridge: Bridge.mesh_state()}
 
   @doc """
   Run the interception path for one intent over the given pipeline state.
 
-  Returns `{new_state, result}`. `state` carries the Vince evaluator (its
-  challenge ledger is the challenge-as-state store) and the Tony mesh.
+  Returns `{new_state, result}`. `state` carries the CEO evaluator (its
+  challenge ledger is the challenge-as-state store) and the COO mesh.
 
   ## Options
 
@@ -155,16 +155,16 @@ defmodule AshA2A.Copilot.Pipeline do
     * `:attention_broker` — an `AshA2A.Attention.Broker` module or
       `{module, broker_opts}` (lane G5; broker_opts may carry `:level` and
       `:now` defaults, overridden by `:proposal_level` / `:now`).
-      When set, escalate-class refuses (Vince repeat-challenge
+      When set, escalate-class refuses (CEO repeat-challenge
       `:escalate_multisig`, GPM-floor-class refuses) open a broker proposal
       and return `{:escalated, %{proposal_id, card}}` instead. When absent,
       refuses pass through unchanged.
-    * `:tony_triage` — optional Tony triage payload folded into the
+    * `:coo_triage` — optional COO triage payload folded into the
       escalation card by `Broker.build_card/3`.
     * `:proposal_level` — broker autonomy level for escalated proposals
       (default `:consent_by_silence`; use `:supervised` to forbid
       silence-consent execution).
-    * `:vince_mod` — Vince module or 2-arity fun (court instrumentation).
+    * `:ceo_mod` — CEO module or 2-arity fun (court instrumentation).
 
   The former `:coordinator_id` option was removed: `check/3` requires
   `intent.coordinator_id`, so the fallback was unreachable.
@@ -199,7 +199,11 @@ defmodule AshA2A.Copilot.Pipeline do
         check_bound(intent, actor, actor)
 
       {binding, actor} ->
-        check_bound(intent, actor, if(actor == nil, do: nil, else: lookup_binding(binding, actor)))
+        check_bound(
+          intent,
+          actor,
+          if(actor == nil, do: nil, else: lookup_binding(binding, actor))
+        )
     end
   end
 
@@ -235,28 +239,30 @@ defmodule AshA2A.Copilot.Pipeline do
   end
 
   defp do_check(
-        %{trade: trade, nte: nte, offer: offer, coordinator_id: coordinator_id} = intent,
-        %{vince: vince, mesh: _mesh} = state,
-        opts
-      )
-      when is_number(nte) and is_number(offer) and nte != 0 and not is_nil(coordinator_id) do
-    vince_mod = Keyword.get(opts, :vince_mod, Vince)
+         %{trade: trade, nte: nte, offer: offer, coordinator_id: coordinator_id} = intent,
+         %{ceo: ceo, mesh: _mesh} = state,
+         opts
+       )
+       when is_number(nte) and is_number(offer) and nte != 0 and not is_nil(coordinator_id) do
+    ceo_mod = Keyword.get(opts, :ceo_mod, CEO)
 
-    {vince1, vince_verdict} =
-      evaluate_vince(vince_mod, vince, %{trade: trade, nte: nte, offer: offer})
+    {ceo1, ceo_verdict} =
+      evaluate_ceo(ceo_mod, ceo, %{trade: trade, nte: nte, offer: offer})
 
-    case vince_verdict do
+    case ceo_verdict do
       {:refuse, _} = refuse ->
-        {%{state | vince: vince1, bridge: record(state, intent.coordinator_id, :error_reported)},
+        {%{state | ceo: ceo1, bridge: record(state, intent.coordinator_id, :error_reported)},
          maybe_escalated(intent, refuse, opts)}
 
       {:challenge, _} = challenge ->
-        {%{state | vince: vince1,
-           bridge: record(state, intent.coordinator_id, {:challenge_received, :vince})},
-         challenge}
+        {%{
+           state
+           | ceo: ceo1,
+             bridge: record(state, intent.coordinator_id, {:challenge_received, :ceo})
+         }, challenge}
 
       {:admit, _ticket} ->
-        admit_path(intent, %{state | vince: vince1}, opts)
+        admit_path(intent, %{state | ceo: ceo1}, opts)
     end
   end
 
@@ -279,16 +285,16 @@ defmodule AshA2A.Copilot.Pipeline do
 
   defp invalid_reason(_), do: :intent_not_a_map
 
-  @doc "Build initial pipeline state: `%{vince: Vince.new(opts), mesh: mesh, bridge: Bridge.new_mesh_state()}`."
-  @spec init(keyword(), Tony.mesh()) :: state()
-  def init(vince_opts \\ [], mesh \\ %{}) do
-    %{vince: Vince.new(vince_opts), mesh: mesh, bridge: Bridge.new_mesh_state(Map.keys(mesh))}
+  @doc "Build initial pipeline state: `%{ceo: CEO.new(opts), mesh: mesh, bridge: Bridge.new_mesh_state()}`."
+  @spec init(keyword(), COO.mesh()) :: state()
+  def init(ceo_opts \\ [], mesh \\ %{}) do
+    %{ceo: CEO.new(ceo_opts), mesh: mesh, bridge: Bridge.new_mesh_state(Map.keys(mesh))}
   end
 
   @doc """
   Strain gate over the live Bridge mesh_state: delegates to
   `AshA2A.Strain.Bridge.route/2`. Cheap — consults only the tensor, never
-  Vince — so callers run this BEFORE `check/3` (see moduledoc order
+  CEO — so callers run this BEFORE `check/3` (see moduledoc order
   decision). Returns `{:assign, coordinator_id}` or
   `{:shed, {:senior_queue, reason}}`.
   """
@@ -297,13 +303,14 @@ defmodule AshA2A.Copilot.Pipeline do
 
   # -- admit path: mechanical prior → strain → attestation -------------------
 
-  # Vince may be injected as a module or a 2-arity fun (court instrumentation).
-  defp evaluate_vince(mod, vince, claim) when is_atom(mod), do: mod.evaluate_intent(vince, claim)
-  defp evaluate_vince(fun, vince, claim) when is_function(fun, 2), do: fun.(vince, claim)
+  # CEO may be injected as a module or a 2-arity fun (court instrumentation).
+  defp evaluate_ceo(mod, ceo, claim) when is_atom(mod), do: mod.evaluate_intent(ceo, claim)
+  defp evaluate_ceo(fun, ceo, claim) when is_function(fun, 2), do: fun.(ceo, claim)
 
   defp admit_path(intent, state, opts) do
     with {:prior, :ok} <- {:prior, mechanical_prior(intent, opts)},
-         {:strain, {:admit, id}} <- {:strain, Tony.handle_inbound(state.mesh, %{coordinator_id: intent.coordinator_id})},
+         {:strain, {:admit, id}} <-
+           {:strain, COO.handle_inbound(state.mesh, %{coordinator_id: intent.coordinator_id})},
          {:attestation, {:ok, claims}} <-
            {:attestation, attestation_check(Map.get(intent, :sensor_frame), opts)},
          {:authority, :ok} <- {:authority, authority_check(intent, opts)} do
@@ -312,21 +319,25 @@ defmodule AshA2A.Copilot.Pipeline do
         %{
           trade: intent.trade,
           coordinator_id: id,
-          gpm: Vince.gpm(intent.nte, intent.offer),
+          gpm: CEO.gpm(intent.nte, intent.offer),
           attestation_claims: claims
         }}}
     else
       {:prior, {:challenge, _} = challenge} ->
-        {%{state | bridge: record(state, intent.coordinator_id, {:challenge_received, :vince})},
+        {%{state | bridge: record(state, intent.coordinator_id, {:challenge_received, :ceo})},
          challenge}
 
       {:prior, {:refuse, _} = refuse} ->
         {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
          maybe_escalated(intent, refuse, opts)}
-      {:strain, {:shed, _} = shed} -> {state, shed}
+
+      {:strain, {:shed, _} = shed} ->
+        {state, shed}
+
       {:attestation, {:refused, _} = refused} ->
         {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
          {:refuse, %{code: :attestation, reason: refused}}}
+
       {:authority, {:refused, :insufficient_authority, detail}} ->
         {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
          {:refuse, %{code: :authority, reason: detail}}}
@@ -358,7 +369,8 @@ defmodule AshA2A.Copilot.Pipeline do
 
         cond do
           is_nil(actor_id) ->
-            {:refused, :insufficient_authority, %{reason: :missing_actor_id, action: "a2a:copilot.check"}}
+            {:refused, :insufficient_authority,
+             %{reason: :missing_actor_id, action: "a2a:copilot.check"}}
 
           true ->
             scope = %{
@@ -390,17 +402,30 @@ defmodule AshA2A.Copilot.Pipeline do
         telemetry = Map.get(intent, :telemetry, %{})
 
         case prior.prior_verdict(claim, telemetry) do
-          {:admit, _} -> :ok
-          {:challenge, evidence, msg} -> {:challenge, %{code: :mechanical_prior, demanded_evidence: evidence, retry_token: make_ref(), msg: msg}}
+          {:admit, _} ->
+            :ok
+
+          {:challenge, evidence, msg} ->
+            {:challenge,
+             %{
+               code: :mechanical_prior,
+               demanded_evidence: evidence,
+               retry_token: make_ref(),
+               msg: msg
+             }}
+
           # surface the prior's own classification code when it carries one
           # (e.g. :gpm_breach) so the escalation feed can classify the refuse;
           # the full reason payload is preserved either way.
-          {:refuse, %{code: code} = reason} -> {:refuse, %{code: code, reason: reason}}
-          {:refuse, reason} -> {:refuse, %{code: :mechanical_prior, reason: reason}}
+          {:refuse, %{code: code} = reason} ->
+            {:refuse, %{code: code, reason: reason}}
+
+          {:refuse, reason} ->
+            {:refuse, %{code: :mechanical_prior, reason: reason}}
         end
     end
   end
-  
+
   @doc """
   Auto-detect a mechanical-prior module: the application env
   `:ash_a2a, :copilot_mechanical_prior` if set, else lane X5's
@@ -423,9 +448,9 @@ defmodule AshA2A.Copilot.Pipeline do
   # -- attention-broker escalation feed (lane G5) -----------------------------
   #
   # When `opts[:attention_broker]` is configured (an `AshA2A.Attention.Broker`
-  # module), a Vince repeat-challenge refuse (`:escalate_multisig`) or a
+  # module), a CEO repeat-challenge refuse (`:escalate_multisig`) or a
   # GPM-floor-class refuse is escalated: a decision card is built via the
-  # broker's `build_card/3` (Vince challenge payload + optional `:tony_triage`)
+  # broker's `build_card/3` (CEO challenge payload + optional `:coo_triage`)
   # and a proposal opened via `propose/3`, and the pipeline returns
   # `{:escalated, %{proposal_id, card}}` instead of the bare refuse.
   #
@@ -454,7 +479,7 @@ defmodule AshA2A.Copilot.Pipeline do
 
       spec ->
         {broker, bopts} = broker_spec(spec)
-        triage = Keyword.get(opts, :tony_triage)
+        triage = Keyword.get(opts, :coo_triage)
 
         card = broker.build_card(challenge_payload, triage, gpm_floor_breach: gpm_breach?)
 
@@ -465,8 +490,7 @@ defmodule AshA2A.Copilot.Pipeline do
 
         case broker.propose(intent.coordinator_id, card, level: level, now: now) do
           {:ok, proposal} ->
-            {:escalated,
-             %{proposal_id: proposal.id, card: proposal.card, proposal: proposal}}
+            {:escalated, %{proposal_id: proposal.id, card: proposal.card, proposal: proposal}}
 
           {:error, reason} ->
             {:refuse, %{code: :escalation_failed, reason: reason, original: refuse}}
@@ -481,18 +505,23 @@ defmodule AshA2A.Copilot.Pipeline do
 
   # Fold a pipeline verdict into the live Bridge mesh_state (Z7 seam).
   defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, :ticket_assigned) do
-    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{type: :ticket_assigned})
+    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{
+      type: :ticket_assigned
+    })
   end
 
-  defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, {:challenge_received, :vince}) do
+  defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, {:challenge_received, :ceo}) do
     Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{
       type: :challenge_received,
-      source: :vince
+      source: :ceo
     })
   end
 
   defp record(%{bridge: bridge0, mesh: mesh}, coordinator_id, :error_reported) do
-    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{type: :error_reported, error: true})
+    Bridge.record_observation(registered(bridge0, mesh, coordinator_id), coordinator_id, %{
+      type: :error_reported,
+      error: true
+    })
   end
 
   defp attestation_check(%{device_token: _, nonce: _, key: _} = sensor_frame, opts) do
@@ -501,7 +530,10 @@ defmodule AshA2A.Copilot.Pipeline do
 
     fresh_opts = [now: now, max_staleness_sec: staleness]
 
-    with {:ok, claims} <- Gate.verify_enclave({sensor_frame.device_token, sensor_frame.nonce}, key: sensor_frame.key),
+    with {:ok, claims} <-
+           Gate.verify_enclave({sensor_frame.device_token, sensor_frame.nonce},
+             key: sensor_frame.key
+           ),
          :ok <- Gate.verify_freshness(claims, fresh_opts),
          :ok <- Gate.verify_sensor_metadata(claims, fresh_opts) do
       {:ok, claims}
@@ -514,7 +546,7 @@ defmodule AshA2A.Copilot.Pipeline do
 
   defp attestation_check(_missing, _opts), do: {:refused, :missing_sensor_frame}
 
-  # Only coordinators registered in the Tony mesh (the admitted set) may own a
+  # Only coordinators registered in the COO mesh (the admitted set) may own a
   # Bridge entry; an id absent from the mesh is never minted (F8/A3).
   defp registered(bridge, mesh, id) do
     if Map.has_key?(mesh, id) and not Map.has_key?(bridge, id),

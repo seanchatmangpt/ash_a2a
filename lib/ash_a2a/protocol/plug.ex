@@ -263,6 +263,7 @@ if Code.ensure_loaded?(Plug) do
 
     defp serve_agent_card(conn, opts) do
       card = GenServer.call(opts.agent, :get_agent_card)
+
       agent_card_opts =
         card
         |> merge_extension_declarations(opts.agent_card_opts, opts.extensions)
@@ -869,7 +870,9 @@ if Code.ensure_loaded?(Plug) do
       total = Map.get(result, :total_size)
 
       total_size =
-        if is_integer(total), do: max(total - denied, length(authorized)), else: length(authorized)
+        if is_integer(total),
+          do: max(total - denied, length(authorized)),
+          else: length(authorized)
 
       %{result | tasks: authorized, total_size: total_size}
     end

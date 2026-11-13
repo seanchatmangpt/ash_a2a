@@ -9,7 +9,8 @@ defmodule AshA2A.EmailReplyIntentTest do
   end
 
   test "mixed approve and hold with note" do
-    {:ok, entries} = ReplyIntent.parse("Approve 1 and 3. Hold 2 until I talk to Larson.", [1, 2, 3])
+    {:ok, entries} =
+      ReplyIntent.parse("Approve 1 and 3. Hold 2 until I talk to Larson.", [1, 2, 3])
 
     assert Map.new(entries, &{&1.n, &1.decision}) == %{1 => :approve, 2 => :hold, 3 => :approve}
     assert Enum.find(entries, &(&1.n == 2)).note =~ "until I talk to Larson"
@@ -30,7 +31,12 @@ defmodule AshA2A.EmailReplyIntentTest do
 
   test "unmentioned actions are :unknown and never resolved as approved" do
     {:ok, entries} = ReplyIntent.parse("Approve 1", [1, 2, 3])
-    assert Map.new(entries, &{&1.n, &1.decision}) == %{1 => :approve, 2 => :unknown, 3 => :unknown}
+
+    assert Map.new(entries, &{&1.n, &1.decision}) == %{
+             1 => :approve,
+             2 => :unknown,
+             3 => :unknown
+           }
 
     actions = [%{n: 1}, %{n: 2}, %{n: 3}]
     assert ReplyIntent.resolve(entries, actions) == [%{n: 1}]

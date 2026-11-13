@@ -4,7 +4,7 @@ defmodule AshA2A.Attention.BrokerCourtTest do
   `Process.sleep`. Exercises window expiry, supervised override
   semantics, override short-circuit, founder escalation, and the
   GPM-floor signature invariant on cards built from the landed
-  Vince/Tony stack.
+  CEO/COO stack.
   """
 
   use ExUnit.Case, async: true
@@ -47,8 +47,12 @@ defmodule AshA2A.Attention.BrokerCourtTest do
     test "executes after the injected clock passes the window at :consent_by_silence" do
       {:ok, p} = Broker.propose(:co_1, card(), level: :consent_by_silence, now: 1_000)
 
-      assert {:awaiting, :window_open} = Broker.consent_by_silence(p, @window, 1_000 + @window - 1)
-      assert {:executed, :silence_consent} = Broker.consent_by_silence(p, @window, 1_000 + @window)
+      assert {:awaiting, :window_open} =
+               Broker.consent_by_silence(p, @window, 1_000 + @window - 1)
+
+      assert {:executed, :silence_consent} =
+               Broker.consent_by_silence(p, @window, 1_000 + @window)
+
       assert {:executed, :silence_consent} = Broker.consent_by_silence(p, @window, 9_999_999)
     end
 
@@ -77,7 +81,9 @@ defmodule AshA2A.Attention.BrokerCourtTest do
 
       assert entry.proposal_id == p.id
       assert entry.decision == :reject
-      assert {:refused, :already_decided} = Broker.consent_by_silence(p, @window, 10_000_000, ledger)
+
+      assert {:refused, :already_decided} =
+               Broker.consent_by_silence(p, @window, 10_000_000, ledger)
     end
 
     test "override with approval also blocks silence execution" do
@@ -106,7 +112,10 @@ defmodule AshA2A.Attention.BrokerCourtTest do
     test "registered undecided proposal is not 'decided' and is seen by escalation" do
       {:ok, p} = Broker.propose(:co_1, card(), now: 0)
       ledger = Broker.register(%{}, p)
-      assert {:executed, :silence_consent} = Broker.consent_by_silence(p, @window, @window, ledger)
+
+      assert {:executed, :silence_consent} =
+               Broker.consent_by_silence(p, @window, @window, ledger)
+
       assert {:page, :founder} = Broker.escalation_path(ledger, unresolved_threshold: 1)
     end
 
@@ -168,7 +177,7 @@ defmodule AshA2A.Attention.BrokerCourtTest do
       assert Enum.all?(p.card.options, &(&1.requires_signature == true))
     end
 
-    test "build_card/3 from a Tony triage escalation edge forces signatures" do
+    test "build_card/3 from a COO triage escalation edge forces signatures" do
       triage = {[], [%{ticket: %{id: "t1", warranty_status: :expired}}]}
 
       built = Broker.build_card(nil, triage)
@@ -185,7 +194,7 @@ defmodule AshA2A.Attention.BrokerCourtTest do
       assert Enum.all?(built.options, &(&1.requires_signature == false))
     end
 
-    test "build_card/3 from a GPM-floor vince challenge forces signatures" do
+    test "build_card/3 from a GPM-floor ceo challenge forces signatures" do
       challenge = %{code: :monkey_math, demanded_evidence: :cost_breakdown}
       built = Broker.build_card(challenge, nil)
       assert built.gpm_floor_breach == true
@@ -194,29 +203,29 @@ defmodule AshA2A.Attention.BrokerCourtTest do
   end
 
   describe "build_card integration with the landed stack (real collaborators)" do
-    test "vince GPM-floor breach challenge produces a signature-required card" do
-      vince = AshA2A.Twin.Vince.new()
+    test "ceo GPM-floor breach challenge produces a signature-required card" do
+      ceo = AshA2A.Twin.CEO.new()
       # offer 9000 on nte 10000 -> gpm 0.1 < floor 0.22 -> :gpm_floor challenge.
       nte = 10_000
       offer = 9_000
 
-      assert AshA2A.Twin.Vince.gpm_breach?(nte, offer, 0.22)
+      assert AshA2A.Twin.CEO.gpm_breach?(nte, offer, 0.22)
 
       {_, {:challenge, challenge}} =
-        AshA2A.Twin.Vince.evaluate_intent(vince, %{trade: "T1", nte: nte, offer: offer})
+        AshA2A.Twin.CEO.evaluate_intent(ceo, %{trade: "T1", nte: nte, offer: offer})
 
       assert challenge.code == :gpm_floor
       assert challenge.demanded_evidence != []
 
       built = Broker.build_card(challenge, nil)
-      assert built.source == :vince_challenge
+      assert built.source == :ceo_challenge
       assert built.gpm_floor_breach == true
 
       {:ok, p} = Broker.propose(:co_1, built)
       assert Enum.all?(p.card.options, &(&1.requires_signature == true))
     end
 
-    test "tony escalation-edge triage output produces a signature-required card" do
+    test "coo escalation-edge triage output produces a signature-required card" do
       now = ~U[2026-11-07 12:00:00Z]
 
       bad_ticket = %{
@@ -235,7 +244,7 @@ defmodule AshA2A.Attention.BrokerCourtTest do
         contractor_coi_valid: true
       }
 
-      {routine, edges} = AshA2A.Twin.Tony.triage([bad_ticket, good_ticket], now: now)
+      {routine, edges} = AshA2A.Twin.COO.triage([bad_ticket, good_ticket], now: now)
 
       assert length(routine) == 1
       assert length(edges) == 1

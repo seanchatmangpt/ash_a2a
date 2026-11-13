@@ -199,8 +199,13 @@ defmodule AshA2A.V1SSEReplayTest do
 
   # Finality rides on the terminal status state — StatusUpdate events carry no
   # "final" boolean on the wire.
-  @terminal_states ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
-                    "TASK_STATE_REJECTED", "TASK_STATE_AUTH_REQUIRED"]
+  @terminal_states [
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_AUTH_REQUIRED"
+  ]
 
   defp final(results) do
     Enum.find(results, fn result ->
@@ -228,9 +233,10 @@ defmodule AshA2A.V1SSEReplayTest do
   end
 
   @tag :serial
-  test "(a) disconnect mid-stream then resubscribe without Last-Event-ID replays the full backlog in order, no gap or overlap", %{
-    url: url
-  } do
+  test "(a) disconnect mid-stream then resubscribe without Last-Event-ID replays the full backlog in order, no gap or overlap",
+       %{
+         url: url
+       } do
     a = open_stream(url)
     task_id = await_task_id(a)
 
@@ -288,16 +294,18 @@ defmodule AshA2A.V1SSEReplayTest do
   end
 
   @tag :serial
-  test "(c) Last-Event-ID beyond the log replays nothing: snapshot only, then the connection closes (terminal) or idles out (live)", %{
-    url: url,
-    agent: agent,
-    transport: transport
-  } do
+  test "(c) Last-Event-ID beyond the log replays nothing: snapshot only, then the connection closes (terminal) or idles out (live)",
+       %{
+         url: url,
+         agent: agent,
+         transport: transport
+       } do
     # Terminal task, huge Last-Event-ID: the backlog's final event has
     # seq <= last, so the replay halts immediately after the snapshot.
     a = open_stream(url)
     task_id = await_task_id(a)
     _ = collect(a)
+
     assert {:ok, %AshA2A.Protocol.Task{status: %{state: :completed}}} =
              GenServer.call(agent, {:get_task, task_id})
 
@@ -310,9 +318,13 @@ defmodule AshA2A.V1SSEReplayTest do
 
     # Garbage Last-Event-ID is not an error: it parses as 0, i.e. full replay.
     {:frames, garbage_frames, _} =
-      url |> resubscribe(task_id, [{"last-event-id", "not-a-number"}]) |> Map.fetch!(:body) |> parse_sse()
+      url
+      |> resubscribe(task_id, [{"last-event-id", "not-a-number"}])
+      |> Map.fetch!(:body)
+      |> parse_sse()
 
-    assert artifact_texts(Enum.map(garbage_frames, &elem(&1, 1))) == for(i <- 1..5, do: "part #{i}")
+    assert artifact_texts(Enum.map(garbage_frames, &elem(&1, 1))) ==
+             for(i <- 1..5, do: "part #{i}")
 
     # Same overshoot on a still-live task: the snapshot arrives, no backlog
     # event replays (all seq <= last), and the subscriber joins the live
@@ -342,15 +354,18 @@ defmodule AshA2A.V1SSEReplayTest do
     # Nothing from the backlog replays ahead of the live sequence, and the
     # stream terminates on the terminal statusUpdate, not on an error.
     assert Enum.all?(tail2, fn {seq, frame} -> is_integer(seq) and is_map(frame) end)
+
     assert %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
              frames2 |> List.last() |> elem(1)
+
     refute body =~ ~s("error")
   end
 
   @tag :serial
-  test "(d) resubscribing to a completed task replays snapshot + full backlog + final statusUpdate", %{
-    url: url
-  } do
+  test "(d) resubscribing to a completed task replays snapshot + full backlog + final statusUpdate",
+       %{
+         url: url
+       } do
     a = open_stream(url)
     task_id = await_task_id(a)
     _ = collect(a)
@@ -374,9 +389,10 @@ defmodule AshA2A.V1SSEReplayTest do
     assert_strictly_increasing_ids(frames)
   end
 
-  test "(e) resubscribing to an unknown task is a -32001 TASK_NOT_FOUND ErrorInfo JSON envelope, not an SSE stream", %{
-    url: url
-  } do
+  test "(e) resubscribing to an unknown task is a -32001 TASK_NOT_FOUND ErrorInfo JSON envelope, not an SSE stream",
+       %{
+         url: url
+       } do
     resp = resubscribe(url, "no-such-task")
 
     assert resp.status == 200
@@ -409,9 +425,11 @@ defmodule AshA2A.V1SSEReplayTest do
 
     a_results = a |> collect() |> then(fn body -> elem(parse_sse(body), 1) end)
     b_frames = b |> collect() |> then(fn body -> elem(parse_sse(body), 1) end)
-    c_frames = c |>
-      collect() |>
-      then(fn body -> elem(parse_sse(body), 1) end)
+
+    c_frames =
+      c
+      |> collect()
+      |> then(fn body -> elem(parse_sse(body), 1) end)
 
     # Identical {id, result} sequences from the shared ordered event log.
     assert b_frames == c_frames

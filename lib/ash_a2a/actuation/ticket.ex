@@ -76,9 +76,14 @@ defmodule AshA2A.Actuation.Ticket do
       with :ok <- check_present(base),
            :ok <- check_valid(base) do
         {:ok,
-         %Ticket{id: digest(base), action_iri: base.action_iri, payload: base.payload,
-                 issued_by: base.issued_by, issued_at: issued_at,
-                 correlation: base.correlation}}
+         %Ticket{
+           id: digest(base),
+           action_iri: base.action_iri,
+           payload: base.payload,
+           issued_by: base.issued_by,
+           issued_at: issued_at,
+           correlation: base.correlation
+         }}
       end
     end
 
@@ -91,13 +96,21 @@ defmodule AshA2A.Actuation.Ticket do
 
     defp check_valid(b) do
       cond do
-        not (is_binary(b.action_iri) and b.action_iri != "") -> {:error, {:invalid_field, :action_iri}}
-        is_nil(b.issued_by) -> {:error, {:invalid_field, :issued_by}}
-        not is_integer(b.issued_at) -> {:error, {:invalid_field, :issued_at}}
+        not (is_binary(b.action_iri) and b.action_iri != "") ->
+          {:error, {:invalid_field, :action_iri}}
+
+        is_nil(b.issued_by) ->
+          {:error, {:invalid_field, :issued_by}}
+
+        not is_integer(b.issued_at) ->
+          {:error, {:invalid_field, :issued_at}}
+
         not (is_map(b.correlation) and Map.has_key?(b.correlation, :run_id) and
                  Map.has_key?(b.correlation, :step_ref)) ->
           {:error, {:invalid_field, :correlation}}
-        true -> :ok
+
+        true ->
+          :ok
       end
     end
 
@@ -107,8 +120,13 @@ defmodule AshA2A.Actuation.Ticket do
     """
     @spec digest(Ticket.t() | map()) :: String.t()
     def digest(%Ticket{} = t) do
-      digest(%{action_iri: t.action_iri, payload: t.payload, issued_by: t.issued_by,
-               issued_at: t.issued_at, correlation: t.correlation})
+      digest(%{
+        action_iri: t.action_iri,
+        payload: t.payload,
+        issued_by: t.issued_by,
+        issued_at: t.issued_at,
+        correlation: t.correlation
+      })
     end
 
     def digest(fields) when is_map(fields) do

@@ -24,12 +24,13 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementProcessConformanceTest do
             |> Enum.filter(fn {from, _to} -> from == prev end)
             |> Enum.map(fn {_from, to} -> to end)
 
-          {:error, %{
-            reason: :unadmitted_transition,
-            expected: expected,
-            observed: illegal,
-            fitness: 0.5
-          }}
+          {:error,
+           %{
+             reason: :unadmitted_transition,
+             expected: expected,
+             observed: illegal,
+             fitness: 0.5
+           }}
       end
     end
   end
@@ -47,8 +48,8 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementProcessConformanceTest do
   test "BRCE gate admits compliant sequential execution", ctx do
     trace = [
       %{"case_id" => "tx-100", "activity" => "ValidateEligible", "timestamp" => 1000},
-      %{"case_id" => "tx-100", "activity" => "HoldCollateral",   "timestamp" => 1005},
-      %{"case_id" => "tx-100", "activity" => "TransferFunds",    "timestamp" => 1010}
+      %{"case_id" => "tx-100", "activity" => "HoldCollateral", "timestamp" => 1005},
+      %{"case_id" => "tx-100", "activity" => "TransferFunds", "timestamp" => 1010}
     ]
 
     assert {:ok, :admitted} = ProcessModel.check_sequence(trace, ctx.transitions)
@@ -58,7 +59,7 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementProcessConformanceTest do
     deviant_trace = [
       %{"case_id" => "tx-100", "activity" => "ValidateEligible", "timestamp" => 1000},
       # VIOLATION: Skipped HoldCollateral directly to TransferFunds
-      %{"case_id" => "tx-100", "activity" => "TransferFunds",    "timestamp" => 1005}
+      %{"case_id" => "tx-100", "activity" => "TransferFunds", "timestamp" => 1005}
     ]
 
     assert {:error, refusal} = ProcessModel.check_sequence(deviant_trace, ctx.transitions)

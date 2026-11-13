@@ -384,7 +384,9 @@ defmodule AshA2AAgentSemanticReplanTest do
     refute_continuation_receipt_not_found(continuation_task)
 
     if continuation_task.status.state == :completed do
-      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: body}]}] = continuation_task.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: body}]}] =
+               continuation_task.artifacts
+
       assert body["standing"] == "candidate"
       assert body["authority"] == "none"
     end
@@ -551,7 +553,9 @@ defmodule AshA2AAgentSemanticReplanTest do
   # to `task.history` (`AshA2A.Protocol.Agent.Runtime.handle_reply/2`'s `{:error,
   # reason}` clause -- unlike its `{:reply, _}`/`{:input_required, _}`
   # clauses, which do append to history).
-  defp error_text(%{status: %{message: %AshA2A.Protocol.Message{} = message}}), do: AshA2A.Protocol.Message.text(message)
+  defp error_text(%{status: %{message: %AshA2A.Protocol.Message{} = message}}),
+    do: AshA2A.Protocol.Message.text(message)
+
   defp error_text(_task), do: nil
 
   defp refute_continuation_receipt_not_found(task) do

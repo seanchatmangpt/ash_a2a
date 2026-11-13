@@ -51,18 +51,22 @@ defmodule AshA2A.V1ArchitectureTest do
   # FINDING PIN — see moduledoc (a). I/O-bearing protocol modules outside the
   # perimeter, each with the side-effect families enumerated per module.
   @pinned_io_modules %{
-    "lib/ash_a2a/protocol/client.ex" =>
-      {:http_client, ["Req.post", "Req.get", "Req.delete"]},
-    "lib/ash_a2a/protocol/client/live.ex" =>
-      {:http_client, ["Req.post"]},
-    "lib/ash_a2a/protocol/card_cache.ex" =>
-      {:http_client, ["Req.get"]},
-    "lib/ash_a2a/protocol/push_notification_sender/http.ex" =>
-      {:http_client, ["Req.post"]},
+    "lib/ash_a2a/protocol/client.ex" => {:http_client, ["Req.post", "Req.get", "Req.delete"]},
+    "lib/ash_a2a/protocol/client/live.ex" => {:http_client, ["Req.post"]},
+    "lib/ash_a2a/protocol/card_cache.ex" => {:http_client, ["Req.get"]},
+    "lib/ash_a2a/protocol/push_notification_sender/http.ex" => {:http_client, ["Req.post"]},
     "lib/ash_a2a/protocol/registry.ex" =>
       {:ets, [":ets.new", ":ets.insert", ":ets.lookup", ":ets.tab2list", ":ets.delete"]},
     "lib/ash_a2a/protocol/task_store/ets.ex" =>
-      {:ets, [":ets.new", ":ets.insert", ":ets.lookup", ":ets.tab2list", ":ets.delete", ":ets.match_object"]}
+      {:ets,
+       [
+         ":ets.new",
+         ":ets.insert",
+         ":ets.lookup",
+         ":ets.tab2list",
+         ":ets.delete",
+         ":ets.match_object"
+       ]}
   }
 
   # Direct side-effect families scanned for in codec-purity court (a).
@@ -292,7 +296,8 @@ defmodule AshA2A.V1ArchitectureTest do
     @tag :tmp_dir
     test "ToA2AError Any fallback returns -32603 with an opaque ref and no detail", %{tmp_dir: _} do
       error =
-        AshA2A.ToA2AError.to_a2a_error({:opaque, %RuntimeError{message: "SECRET-SERVER-DETAIL"}},
+        AshA2A.ToA2AError.to_a2a_error(
+          {:opaque, %RuntimeError{message: "SECRET-SERVER-DETAIL"}},
           "req-arch-1"
         )
 
@@ -317,7 +322,8 @@ defmodule AshA2A.V1ArchitectureTest do
       assert String.contains?(source, "AshA2A.Verifiers.VerifySkills"),
              "VerifySkills missing from the verifier list in lib/ash_a2a.ex"
 
-      assert {:module, AshA2A.Verifiers.VerifySkills} = Code.ensure_loaded(AshA2A.Verifiers.VerifySkills)
+      assert {:module, AshA2A.Verifiers.VerifySkills} =
+               Code.ensure_loaded(AshA2A.Verifiers.VerifySkills)
 
       assert source =~ ~r/verifiers:\s*\[[^\]]*AshA2A\.Verifiers\.VerifySkills/,
              "VerifySkills is not inside the `verifiers:` list"

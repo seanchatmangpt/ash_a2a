@@ -191,7 +191,10 @@ defmodule AshA2A.Planning.RequestRouterTelemetryTest do
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      no_input_message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})])
+      no_input_message =
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"unrelated_key" => "value"})
+        ])
 
       assert {:error, %{code: :request_router_missing_input}} =
                RequestRouter.route(HddlDeterministicFixture, no_input_message)

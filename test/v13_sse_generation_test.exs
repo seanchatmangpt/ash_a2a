@@ -57,7 +57,10 @@ defmodule AshA2A.V13SSEGenerationTest do
   end
 
   defp gens(results) do
-    for r <- results, key <- ["statusUpdate", "artifactUpdate"], inner = r[key], do: inner["generation"]
+    for r <- results,
+        key <- ["statusUpdate", "artifactUpdate"],
+        inner = r[key],
+        do: inner["generation"]
   end
 
   test "1.1 stream: statusUpdate and artifactUpdate carry strictly increasing generations", %{

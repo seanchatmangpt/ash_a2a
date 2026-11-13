@@ -90,7 +90,8 @@ defmodule AshA2A.GraphLaw.EngineLoad do
   # `:unpinned` is admitted only when runtime config says so
   # (`config :ash_a2a, :graphlaw_allow_unpinned, true`), read per call so it
   # holds in releases (no Mix) and independent of the compiling env.
-  defp unpinned_allowed?, do: Application.get_env(:ash_a2a, :graphlaw_allow_unpinned, false) == true
+  defp unpinned_allowed?,
+    do: Application.get_env(:ash_a2a, :graphlaw_allow_unpinned, false) == true
 
   @doc """
   `:ok` when `digest` equals `expected`; `:unpinned` (an explicit opt-out)
@@ -104,7 +105,8 @@ defmodule AshA2A.GraphLaw.EngineLoad do
       {:error,
        %{
          code: :graphlaw_wasm_unpinned_refused,
-         detail: "expected_sha256: :unpinned is only admitted when :graphlaw_allow_unpinned is true"
+         detail:
+           "expected_sha256: :unpinned is only admitted when :graphlaw_allow_unpinned is true"
        }}
     end
   end

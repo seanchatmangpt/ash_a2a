@@ -13,7 +13,14 @@ defmodule AshA2A.Ingress.ChannelTest do
 
   defp device_claims(opts \\ []) do
     now = Keyword.get(opts, :now, @now)
-    gps = Keyword.get(opts, :gps, %{"lat" => 35.6812, "lon" => 139.7671, "accuracy" => 12.0, "timestamp" => now})
+
+    gps =
+      Keyword.get(opts, :gps, %{
+        "lat" => 35.6812,
+        "lon" => 139.7671,
+        "accuracy" => 12.0,
+        "timestamp" => now
+      })
 
     %{
       "nonce" => Keyword.get(opts, :nonce, "nonce-1"),
@@ -33,13 +40,22 @@ defmodule AshA2A.Ingress.ChannelTest do
       nonce: Keyword.get(opts, :nonce, "nonce-1"),
       device_token: Keyword.fetch!(opts, :token),
       timestamp: now,
-      gps: Keyword.get(opts, :gps, %{"lat" => 35.6812, "lon" => 139.7671, "accuracy" => 12.0, "timestamp" => now}),
+      gps:
+        Keyword.get(opts, :gps, %{
+          "lat" => 35.6812,
+          "lon" => 139.7671,
+          "accuracy" => 12.0,
+          "timestamp" => now
+        }),
       camera_make: Keyword.get(opts, :camera_make, "Google"),
       camera_model: Keyword.get(opts, :camera_model, "Pixel 8")
     }
   end
 
-  test "admits a correctly-signed fresh on-site check-in and normalizes the event", %{key: key, state: state} do
+  test "admits a correctly-signed fresh on-site check-in and normalizes the event", %{
+    key: key,
+    state: state
+  } do
     token = Key.sign(device_claims(), key)
     {{:ok, validated}, state2} = Channel.ingest(state, event(token: token), key: key, now: @now)
 
@@ -66,7 +82,9 @@ defmodule AshA2A.Ingress.ChannelTest do
     claims = device_claims() |> Map.put("is_virtual", true)
     token = Key.sign(claims, key)
 
-    {{:refused, :emulator_detected}, state2} = Channel.ingest(state, event(token: token), key: key, now: @now)
+    {{:refused, :emulator_detected}, state2} =
+      Channel.ingest(state, event(token: token), key: key, now: @now)
+
     assert Channel.stats(state2) == %{emulator_detected: 1}
   end
 
@@ -77,7 +95,10 @@ defmodule AshA2A.Ingress.ChannelTest do
     assert Channel.stats(state2) == %{stale: 1}
   end
 
-  test "refuses sensor metadata without camera claims as :spoofed_payload", %{key: key, state: state} do
+  test "refuses sensor metadata without camera claims as :spoofed_payload", %{
+    key: key,
+    state: state
+  } do
     token = Key.sign(device_claims(), key)
 
     {{:refused, :spoofed_payload}, state2} =
@@ -95,7 +116,10 @@ defmodule AshA2A.Ingress.ChannelTest do
       Channel.ingest(state, event(token: token, gps: bad_gps), key: key, now: @now)
   end
 
-  test "refuses a nonce mismatch as :spoofed_payload (folded vocabulary)", %{key: key, state: state} do
+  test "refuses a nonce mismatch as :spoofed_payload (folded vocabulary)", %{
+    key: key,
+    state: state
+  } do
     token = Key.sign(device_claims(nonce: "nonce-1"), key)
 
     {{:refused, reason}, state2} =
@@ -106,7 +130,8 @@ defmodule AshA2A.Ingress.ChannelTest do
   end
 
   test "refuses a structurally-broken token as :spoofed_payload", %{key: key, state: state} do
-    {{:refused, :spoofed_payload}, _} = Channel.ingest(state, event(token: "garbage"), key: key, now: @now)
+    {{:refused, :spoofed_payload}, _} =
+      Channel.ingest(state, event(token: "garbage"), key: key, now: @now)
   end
 
   test "refuses consecutive-event GPS teleport across two ingests", %{key: key, state: state} do
@@ -146,7 +171,13 @@ defmodule AshA2A.Ingress.ChannelTest do
     rogue = Key.generate()
 
     e1 = event(token: Key.sign(device_claims(nonce: "a"), rogue), nonce: "a", coordinator: "c1")
-    e2 = event(token: Key.sign(device_claims(nonce: "b", now: @now - 9999), key), nonce: "b", coordinator: "c2")
+
+    e2 =
+      event(
+        token: Key.sign(device_claims(nonce: "b", now: @now - 9999), key),
+        nonce: "b",
+        coordinator: "c2"
+      )
 
     {_, state1} = Channel.ingest(state, e1, key: key, now: @now)
     {_, state2} = Channel.ingest(state1, e2, key: key, now: @now)
@@ -164,7 +195,10 @@ defmodule AshA2A.Ingress.ChannelTest do
   # --- F7 defenses ---
 
   describe "nonce replay (per-coordinator consumed-nonce ledger)" do
-    test "a successfully-ingested event replayed verbatim is {:refused, :nonce_replayed}", %{key: key, state: state} do
+    test "a successfully-ingested event replayed verbatim is {:refused, :nonce_replayed}", %{
+      key: key,
+      state: state
+    } do
       token = Key.sign(device_claims(nonce: "n1"), key)
       e = event(token: token, nonce: "n1")
 
@@ -174,31 +208,62 @@ defmodule AshA2A.Ingress.ChannelTest do
       assert Channel.stats(state2) == %{nonce_replayed: 1}
     end
 
-    test "replay of a DIFFERENT token under an already-consumed nonce is refused", %{key: key, state: state} do
+    test "replay of a DIFFERENT token under an already-consumed nonce is refused", %{
+      key: key,
+      state: state
+    } do
       t1 = Key.sign(device_claims(nonce: "n1"), key)
-      {{:ok, _}, state1} = Channel.ingest(state, event(token: t1, nonce: "n1"), key: key, now: @now)
+
+      {{:ok, _}, state1} =
+        Channel.ingest(state, event(token: t1, nonce: "n1"), key: key, now: @now)
 
       t2 = Key.sign(device_claims(nonce: "n1", now: @now + 10), key)
-      {{:refused, :nonce_replayed}, _} = Channel.ingest(state1, event(token: t2, nonce: "n1"), key: key, now: @now + 10)
+
+      {{:refused, :nonce_replayed}, _} =
+        Channel.ingest(state1, event(token: t2, nonce: "n1"), key: key, now: @now + 10)
     end
 
-    test "replay refusal happens BEFORE crypto work (forged twin of consumed nonce refused identically)", %{key: key, state: state} do
+    test "replay refusal happens BEFORE crypto work (forged twin of consumed nonce refused identically)",
+         %{key: key, state: state} do
       t1 = Key.sign(device_claims(nonce: "n1"), key)
-      {{:ok, _}, state1} = Channel.ingest(state, event(token: t1, nonce: "n1"), key: key, now: @now)
+
+      {{:ok, _}, state1} =
+        Channel.ingest(state, event(token: t1, nonce: "n1"), key: key, now: @now)
 
       rogue = Key.generate()
-      {{:refused, :nonce_replayed}, _} = Channel.ingest(state1, event(token: Key.sign(device_claims(nonce: "n1"), rogue), nonce: "n1"), key: key, now: @now)
+
+      {{:refused, :nonce_replayed}, _} =
+        Channel.ingest(
+          state1,
+          event(token: Key.sign(device_claims(nonce: "n1"), rogue), nonce: "n1"),
+          key: key,
+          now: @now
+        )
     end
 
-    test "nonce ledgers are per-coordinator (same nonce from another coordinator is fresh)", %{key: key, state: state} do
+    test "nonce ledgers are per-coordinator (same nonce from another coordinator is fresh)", %{
+      key: key,
+      state: state
+    } do
       t1 = Key.sign(device_claims(nonce: "n1", now: @now), key)
-      {{:ok, _}, state1} = Channel.ingest(state, event(token: t1, nonce: "n1", coordinator: "c1"), key: key, now: @now)
+
+      {{:ok, _}, state1} =
+        Channel.ingest(state, event(token: t1, nonce: "n1", coordinator: "c1"),
+          key: key,
+          now: @now
+        )
 
       t2 = Key.sign(device_claims(nonce: "n1", now: @now), key)
-      {{:ok, _}, _} = Channel.ingest(state1, event(token: t2, nonce: "n1", coordinator: "c2"), key: key, now: @now)
+
+      {{:ok, _}, _} =
+        Channel.ingest(state1, event(token: t2, nonce: "n1", coordinator: "c2"),
+          key: key,
+          now: @now
+        )
     end
 
-    test "a refused ingest does not consume its nonce (retry with corrected metadata is allowed)", %{key: key, state: state} do
+    test "a refused ingest does not consume its nonce (retry with corrected metadata is allowed)",
+         %{key: key, state: state} do
       token = Key.sign(device_claims(), key)
 
       {{:refused, :spoofed_payload}, state1} =
@@ -208,13 +273,20 @@ defmodule AshA2A.Ingress.ChannelTest do
     end
   end
 
-  test "future-issued attestation beyond skew is {:refused, :clock_skew}", %{key: key, state: state} do
+  test "future-issued attestation beyond skew is {:refused, :clock_skew}", %{
+    key: key,
+    state: state
+  } do
     token = Key.sign(device_claims(now: @now + 60), key)
-    {{:refused, :clock_skew}, state2} = Channel.ingest(state, event(token: token), key: key, now: @now)
+
+    {{:refused, :clock_skew}, state2} =
+      Channel.ingest(state, event(token: token), key: key, now: @now)
+
     assert Channel.stats(state2) == %{clock_skew: 1}
   end
 
-  test "malleated-signature token is {:refused, :non_canonical_signature} (not :bad_signature)", %{key: key, state: state} do
+  test "malleated-signature token is {:refused, :non_canonical_signature} (not :bad_signature)",
+       %{key: key, state: state} do
     token = Key.sign(device_claims(nonce: "nm"), key)
     twin = malleate(token)
 
@@ -229,22 +301,29 @@ defmodule AshA2A.Ingress.ChannelTest do
   # reachable form of the "non-finite coordinate" attack on this substrate is
   # an adversarially huge integer, which the gate must refuse without letting
   # :math crash the caller.
-  test "adversarially huge integer coordinate is {:refused, :spoofed_payload} without crashing", %{key: key, state: state} do
+  test "adversarially huge integer coordinate is {:refused, :spoofed_payload} without crashing",
+       %{key: key, state: state} do
     huge = String.duplicate("9", 400) |> String.to_integer()
     bad_gps = %{"lat" => huge, "lon" => 139.7671, "accuracy" => 12.0, "timestamp" => @now}
     token = Key.sign(device_claims(), key)
 
-    {{:refused, :spoofed_payload}, _} = Channel.ingest(state, event(token: token, gps: bad_gps), key: key, now: @now)
+    {{:refused, :spoofed_payload}, _} =
+      Channel.ingest(state, event(token: token, gps: bad_gps), key: key, now: @now)
   end
 
-  test "coordinate supplied as a string is {:refused, :spoofed_payload}", %{key: key, state: state} do
+  test "coordinate supplied as a string is {:refused, :spoofed_payload}", %{
+    key: key,
+    state: state
+  } do
     string_gps = %{"lat" => "35.6812", "lon" => 139.7671, "accuracy" => 12.0, "timestamp" => @now}
     token = Key.sign(device_claims(), key)
 
-    {{:refused, :spoofed_payload}, _} = Channel.ingest(state, event(token: token, gps: string_gps), key: key, now: @now)
+    {{:refused, :spoofed_payload}, _} =
+      Channel.ingest(state, event(token: token, gps: string_gps), key: key, now: @now)
   end
 
-  test "signed-subset confusion: event GPS disagreeing with signed claims GPS is {:refused, :spoofed_payload}", %{key: key, state: state} do
+  test "signed-subset confusion: event GPS disagreeing with signed claims GPS is {:refused, :spoofed_payload}",
+       %{key: key, state: state} do
     # Token signed over a Tokyo fix; attacker submits the same token with a
     # Lisbon event fix — the signature does not cover the event, so the
     # channel must bind them.
@@ -259,7 +338,10 @@ defmodule AshA2A.Ingress.ChannelTest do
     assert state2.last_known == %{}
   end
 
-  test "signed claims without sensor fields do not bind (backward-compatible)", %{key: key, state: state} do
+  test "signed claims without sensor fields do not bind (backward-compatible)", %{
+    key: key,
+    state: state
+  } do
     claims = device_claims() |> Map.delete("gps")
     token = Key.sign(claims, key)
     {{:ok, _}, _} = Channel.ingest(state, event(token: token), key: key, now: @now)
@@ -291,5 +373,4 @@ defmodule AshA2A.Ingress.ChannelTest do
       _ -> bin
     end
   end
-
 end

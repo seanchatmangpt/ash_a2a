@@ -50,9 +50,10 @@ defmodule AshA2A.PlugAgentCardTest do
     %{agent: agent_name, pid: pid}
   end
 
-  test "a real AshA2A.Protocol.Plug GET to the agent-card path serves the real AshA2A-compiled card", %{
-    agent: agent
-  } do
+  test "a real AshA2A.Protocol.Plug GET to the agent-card path serves the real AshA2A-compiled card",
+       %{
+         agent: agent
+       } do
     base_url = "http://localhost:4000/a2a"
 
     plug_opts =
@@ -120,9 +121,10 @@ defmodule AshA2A.PlugAgentCardTest do
            } = served_card
   end
 
-  test "a real AshA2A.Protocol.Plug GET to the agent-card path with no base_url raises ArgumentError", %{
-    agent: agent
-  } do
+  test "a real AshA2A.Protocol.Plug GET to the agent-card path with no base_url raises ArgumentError",
+       %{
+         agent: agent
+       } do
     # `serve_agent_card/2`'s real, documented behavior
     # (`~/xaas/deps/a2a/lib/a2a/plug.ex:166-170`): with no `base_url`
     # configured anywhere, it raises rather than silently serving a
@@ -135,7 +137,9 @@ defmodule AshA2A.PlugAgentCardTest do
     end
   end
 
-  test "a real AshA2A.Protocol.Plug POST to the agent-card path is rejected with 405", %{agent: agent} do
+  test "a real AshA2A.Protocol.Plug POST to the agent-card path is rejected with 405", %{
+    agent: agent
+  } do
     plug_opts = AshA2A.Protocol.Plug.init(agent: agent, base_url: "http://localhost:4000/a2a")
 
     conn =

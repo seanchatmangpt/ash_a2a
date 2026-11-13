@@ -113,7 +113,6 @@ defmodule AshA2A.GraphLaw.WasmtimeRuntime do
                     __DIR__
                   )
 
-
   @default_timeout 60_000
 
   @arity %{

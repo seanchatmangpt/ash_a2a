@@ -327,7 +327,8 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
     opts = [store: dets_name, store_module: @dets]
 
     task_id =
-      park_and_watch(%{fx: fx, push_store: push_store, notify: notify, opts: opts},
+      park_and_watch(
+        %{fx: fx, push_store: push_store, notify: notify, opts: opts},
         "a2a-p2-notify-ok-1",
         hook,
         "cfg-ok"

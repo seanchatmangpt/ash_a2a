@@ -167,7 +167,11 @@ defmodule AshA2A.Chicago.Fixtures.UnknownLlm do
 
   @doc "A2A message carrying a typed goal-facts Data part."
   def facts_message(envelope, metadata \\ nil) do
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})])
+    message =
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"goal_facts" => envelope})
+      ])
+
     if metadata, do: %{message | metadata: metadata}, else: message
   end
 
@@ -251,7 +255,8 @@ defmodule AshA2A.Chicago.Fixtures.UnknownLlm do
   end
 
   @doc "The Data-part message for a ledger DO."
-  def ledger_message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  def ledger_message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   @doc "Labels currently persisted, read through an independent `Ash.read!/1`."
   def ledger_labels, do: Ledger |> Ash.read!() |> Enum.map(& &1.label)

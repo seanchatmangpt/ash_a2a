@@ -219,7 +219,11 @@ defmodule ConferenceSim.PushCourt do
     resp = rpc(ctx, user, "message/send", %{"message" => skill_message(nil, nil)})
 
     case resp do
-      %{"result" => %{"task" => %{"id" => id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}}} ->
+      %{
+        "result" => %{
+          "task" => %{"id" => id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}
+        }
+      } ->
         id
 
       other ->
@@ -262,8 +266,12 @@ defmodule ConferenceSim.PushCourt do
     found = TaskEvents.attempts(transport, task_id)
 
     cond do
-      length(found) >= n -> found
-      tries == 0 -> flunk("expected >=#{n} attempts, got #{inspect(found)}")
+      length(found) >= n ->
+        found
+
+      tries == 0 ->
+        flunk("expected >=#{n} attempts, got #{inspect(found)}")
+
       true ->
         # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
         AshA2A.TestSupport.Eventually.pause(20)
@@ -306,9 +314,10 @@ defmodule ConferenceSim.PushCourt do
 
   # -- court 1: fan-out, new state, auth, signature -------------------------------
 
-  test "rescheduling 5 sessions notifies all 5 receivers with the new state, token, bearer header and a verifying signature", %{
-    transport: transport
-  } = ctx do
+  test "rescheduling 5 sessions notifies all 5 receivers with the new state, token, bearer header and a verifying signature",
+       %{
+         transport: transport
+       } = ctx do
     attendees = [:alice, :bob, :carol, :dave, :erin]
 
     hooks = Map.new(attendees, fn a -> {a, start_receiver(a)} end)
@@ -378,9 +387,10 @@ defmodule ConferenceSim.PushCourt do
 
   # -- court 2: retry with backoff, and honest exhaustion --------------------------
 
-  test "a down receiver is retried with backoff and succeeds when it comes back", %{
-    transport: transport
-  } = ctx do
+  test "a down receiver is retried with backoff and succeeds when it comes back",
+       %{
+         transport: transport
+       } = ctx do
     hook = start_receiver(:retry)
     task_id = create_task(ctx, "retry")
     set_config(ctx, "retry", task_id, config_for(hook.base_url <> "/hook", "cfg-retry"))
@@ -426,9 +436,10 @@ defmodule ConferenceSim.PushCourt do
     assert %{"task" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}} = Jason.decode!(body)
   end
 
-  test "a receiver that never comes back is exhausted honestly at max_attempts", %{
-    transport: transport
-  } = ctx do
+  test "a receiver that never comes back is exhausted honestly at max_attempts",
+       %{
+         transport: transport
+       } = ctx do
     hook = down_receiver()
     task_id = create_task(ctx, "gone")
     set_config(ctx, "gone", task_id, config_for(hook.base_url <> "/hook", "cfg-gone"))
@@ -441,7 +452,10 @@ defmodule ConferenceSim.PushCourt do
     assert Enum.all?(all, &match?(%{outcome: {:transport_error, _}}, &1))
     # Backoff really backs off: strictly increasing sleeps between attempts.
     gaps =
-      Enum.map(1..(length(all) - 1), &PushDelivery.backoff(&1, base_backoff_ms: @backoff_ms, max_backoff_ms: 200))
+      Enum.map(
+        1..(length(all) - 1),
+        &PushDelivery.backoff(&1, base_backoff_ms: @backoff_ms, max_backoff_ms: 200)
+      )
 
     assert gaps == Enum.sort(gaps)
 
@@ -450,9 +464,10 @@ defmodule ConferenceSim.PushCourt do
 
   # -- court 3: mid-session config deletion ---------------------------------------
 
-  test "deleting a config mid-session stops that attendee's deliveries; others unaffected; get/list reflect it", %{
-    transport: transport
-  } = ctx do
+  test "deleting a config mid-session stops that attendee's deliveries; others unaffected; get/list reflect it",
+       %{
+         transport: transport
+       } = ctx do
     hook_mia = start_receiver(:mia)
     hook_live = start_receiver(:live)
 
@@ -508,6 +523,7 @@ defmodule ConferenceSim.PushCourt do
     refute_receive {:push_delivered, :mia, _, _}, 400
     # SLEEP-CLASS: REAL-INTERVAL (audited AshA2A.TestSupport.Eventually.pause)
     AshA2A.TestSupport.Eventually.pause(100)
+
     assert TaskEvents.attempts(transport, task_mia) == mia_attempts_before,
            "a delivery attempt was started for a deleted config"
   end

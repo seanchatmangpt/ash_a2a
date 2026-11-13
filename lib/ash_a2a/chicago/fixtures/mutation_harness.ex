@@ -39,7 +39,8 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness do
   def principal(name \\ @subject), do: Identity.principal(name)
 
   @spec message(String.t()) :: AshA2A.Protocol.Message.t()
-  def message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  def message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   @doc "A real authority for the Ledger capability (`opts` go to `Authority.new/3`)."
   @spec authority(Identity.t(), keyword()) :: Authority.t()

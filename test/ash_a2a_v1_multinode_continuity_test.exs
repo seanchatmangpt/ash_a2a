@@ -171,7 +171,8 @@ defmodule AshA2A.V1MultinodeContinuityTest do
   # Real verify callback (owner-scope court shape): the bearer token names
   # the user; the verified identity keys the owner via
   # `AshA2A.Transport.Principal.key/1` -> `"sub:<token>"`.
-  def verify("bearer", token, _conn), do: {:ok, %{sub: token, token: "raw-credential-of-" <> token}}
+  def verify("bearer", token, _conn),
+    do: {:ok, %{sub: token, token: "raw-credential-of-" <> token}}
 
   defp auth_chain(agent, transport) do
     AshA2A.V1MultinodeContinuityTest.AuthChain.init(%{
@@ -339,7 +340,9 @@ defmodule AshA2A.V1MultinodeContinuityTest do
 
   defp turn(url, opts) do
     params = %{"message" => user_message(Keyword.get(opts, :data), Keyword.get(opts, :task_id))}
-    params = if ctx = Keyword.get(opts, :context_id), do: Map.put(params, "contextId", ctx), else: params
+
+    params =
+      if ctx = Keyword.get(opts, :context_id), do: Map.put(params, "contextId", ctx), else: params
 
     url
     |> rpc("message/send", params)
@@ -465,7 +468,10 @@ defmodule AshA2A.V1MultinodeContinuityTest do
 
         # --- node A: real agent + plug over the 2-node cluster. ---------------
         store = EkvStore.task_store(ekv_name)
-        {:ok, agent_a_pid} = ConversationAgent.start_link(name: :v1mncont_agent_a, task_store: store)
+
+        {:ok, agent_a_pid} =
+          ConversationAgent.start_link(name: :v1mncont_agent_a, task_store: store)
+
         url_a = plug_and_transport(:v1mncont_agent_a)
 
         task1 = converse(%{"say" => "hail"}, url: url_a, context_id: "ctx-v1mn-a")
@@ -487,7 +493,9 @@ defmodule AshA2A.V1MultinodeContinuityTest do
                end),
                "the plug-created task must replicate to the peer's real EKV member"
 
-        assert {:ok, peer_task} = :erpc.call(peer_node, EkvStore, :get, [ekv_name, task_id], 10_000)
+        assert {:ok, peer_task} =
+                 :erpc.call(peer_node, EkvStore, :get, [ekv_name, task_id], 10_000)
+
         assert peer_task.id == task_id
         assert peer_task.context_id == "ctx-v1mn-a"
         assert peer_task.status.state == :input_required
@@ -497,7 +505,9 @@ defmodule AshA2A.V1MultinodeContinuityTest do
         assert Process.whereis(:v1mncont_agent_a) == nil
 
         # --- a SECOND agent process over the SAME store cluster. --------------
-        {:ok, agent_b_pid} = ConversationAgent.start_link(name: :v1mncont_agent_b, task_store: store)
+        {:ok, agent_b_pid} =
+          ConversationAgent.start_link(name: :v1mncont_agent_b, task_store: store)
+
         url_b = plug_and_transport(:v1mncont_agent_b)
 
         # Its in-memory task map is genuinely empty; the read falls through to
@@ -545,7 +555,10 @@ defmodule AshA2A.V1MultinodeContinuityTest do
     test "a fresh agent answers tasks/get, lists the stored task, and continues it; the terminal state lists too",
          %{cookie: _cookie, host: _host, code_paths: _code_paths} do
       %{name: ekv_name, store: store} = ekv_local("b")
-      {:ok, agent_a_pid} = ConversationAgent.start_link(name: :v1mncont_b_agent_a, task_store: store)
+
+      {:ok, agent_a_pid} =
+        ConversationAgent.start_link(name: :v1mncont_b_agent_a, task_store: store)
+
       url_a = plug_and_transport_auth(:v1mncont_b_agent_a)
 
       # alice creates the non-terminal task; the owner key (`"ash_a2a.owner"`
@@ -628,7 +641,9 @@ defmodule AshA2A.V1MultinodeContinuityTest do
       assert page.total_size == 2
 
       # --- the fresh agent continues the stored task. --------------------------
-      task2 = turn_as(url_b, "alice", task_id: task_id, data: %{"say" => "hail", "topic" => "weather"})
+      task2 =
+        turn_as(url_b, "alice", task_id: task_id, data: %{"say" => "hail", "topic" => "weather"})
+
       assert task2["id"] == task_id
       assert task2["status"]["state"] == "TASK_STATE_COMPLETED"
       assert task2["contextId"] == "ctx-v1mn-b"
@@ -653,6 +668,7 @@ defmodule AshA2A.V1MultinodeContinuityTest do
 
     test "pagination over the merged (in-memory + store) set is exact: no dup, no gap", _ctx do
       %{store: store} = ekv_local("b_walk")
+
       {:ok, agent_a_pid} =
         ConversationAgent.start_link(name: :v1mncont_bwalk_agent_a, task_store: store)
 
@@ -694,7 +710,9 @@ defmodule AshA2A.V1MultinodeContinuityTest do
 
       walked = Enum.map(t1 ++ t2, & &1["id"])
       assert Enum.uniq(walked) == walked, "no duplicate task across pages"
-      assert Enum.sort(walked) == Enum.sort(created), "no gap: the walk covers exactly the merged set"
+
+      assert Enum.sort(walked) == Enum.sort(created),
+             "no gap: the walk covers exactly the merged set"
 
       cleanup_agents([:v1mncont_bwalk_agent_a, :v1mncont_bwalk_agent_b])
     end
@@ -751,7 +769,10 @@ defmodule AshA2A.V1MultinodeContinuityTest do
       # on the fresh agent is refused typed -- the stream is node-local and
       # not resumable (the DurableServer continuity gap, GitHub issue #8).
       continuation =
-        GenServer.call(:v1mncont_c_agent_b, {:message, Message.new_user("resume"), task_id: task_id})
+        GenServer.call(
+          :v1mncont_c_agent_b,
+          {:message, Message.new_user("resume"), task_id: task_id}
+        )
 
       assert {:error, %{code: :task_in_progress}} = continuation
 
@@ -765,7 +786,10 @@ defmodule AshA2A.V1MultinodeContinuityTest do
       body = collect_until_closed(conn_pid, acc)
       frames = parse_sse(body)
 
-      assert [%{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_WORKING"}}} | rest] =
+      assert [
+               %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_WORKING"}}}
+               | rest
+             ] =
                frames
 
       # G3 (2d874565): the terminating cancel publishes the spec wire form —

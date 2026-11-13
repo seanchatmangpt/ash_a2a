@@ -1,7 +1,7 @@
-defmodule AshA2A.Twin.TonyTest do
+defmodule AshA2A.Twin.COOTest do
   use ExUnit.Case, async: true
 
-  alias AshA2A.Twin.Tony
+  alias AshA2A.Twin.COO
 
   # --- fixtures ---------------------------------------------------------
 
@@ -49,22 +49,22 @@ defmodule AshA2A.Twin.TonyTest do
 
   describe "handle_inbound/2" do
     test "admits when the target coordinator is under the saturation gate" do
-      mesh = Tony.register_coordinator(%{}, :colo_a, @fresh_tensor)
+      mesh = COO.register_coordinator(%{}, :colo_a, @fresh_tensor)
 
       assert {:admit, :colo_a} =
-               Tony.handle_inbound(mesh, %{coordinator_id: :colo_a})
+               COO.handle_inbound(mesh, %{coordinator_id: :colo_a})
     end
 
     test "sheds to the senior queue target at the saturation boundary" do
-      mesh = Tony.register_coordinator(%{}, :colo_b, saturated_tensor())
+      mesh = COO.register_coordinator(%{}, :colo_b, saturated_tensor())
 
-      assert {:shed, {:senior_queue, :tony_relief}} =
-               Tony.handle_inbound(mesh, %{coordinator_id: :colo_b})
+      assert {:shed, {:senior_queue, :coo_relief}} =
+               COO.handle_inbound(mesh, %{coordinator_id: :colo_b})
     end
 
     test "unknown coordinator raises (fail-closed)" do
       assert_raise KeyError, fn ->
-        Tony.handle_inbound(%{}, %{coordinator_id: :ghost})
+        COO.handle_inbound(%{}, %{coordinator_id: :ghost})
       end
     end
   end
@@ -108,7 +108,7 @@ defmodule AshA2A.Twin.TonyTest do
             }
           ]
 
-      {routine, edges} = Tony.triage(tickets, now: now)
+      {routine, edges} = COO.triage(tickets, now: now)
 
       assert length(routine) == 34
       assert length(edges) == 6
@@ -125,7 +125,7 @@ defmodule AshA2A.Twin.TonyTest do
         contractor_coi_valid: true
       }
 
-      assert {[^ticket], []} = Tony.triage([ticket])
+      assert {[^ticket], []} = COO.triage([ticket])
     end
   end
 
@@ -135,8 +135,8 @@ defmodule AshA2A.Twin.TonyTest do
     test "diverts high-friction tickets from saturated coordinators to the freshest one" do
       mesh =
         %{}
-        |> Tony.register_coordinator(:hot, saturated_tensor())
-        |> Tony.register_coordinator(:cold, @fresh_tensor)
+        |> COO.register_coordinator(:hot, saturated_tensor())
+        |> COO.register_coordinator(:cold, @fresh_tensor)
 
       tickets = [
         %{id: "T1", coordinator_id: :hot, friction: 0.9},
@@ -144,7 +144,7 @@ defmodule AshA2A.Twin.TonyTest do
         %{id: "T3", coordinator_id: :cold, friction: 0.9}
       ]
 
-      [t1, t2, t3] = Tony.balance(tickets, mesh)
+      [t1, t2, t3] = COO.balance(tickets, mesh)
 
       assert t1.coordinator_id == :cold
       assert t2.coordinator_id == :hot
@@ -152,10 +152,10 @@ defmodule AshA2A.Twin.TonyTest do
     end
 
     test "no saturated coordinators: tickets unchanged" do
-      mesh = Tony.register_coordinator(%{}, :a, @fresh_tensor)
+      mesh = COO.register_coordinator(%{}, :a, @fresh_tensor)
       tickets = [%{id: "T1", coordinator_id: :a, friction: 0.99}]
 
-      assert Tony.balance(tickets, mesh) == tickets
+      assert COO.balance(tickets, mesh) == tickets
     end
   end
 
@@ -175,7 +175,7 @@ defmodule AshA2A.Twin.TonyTest do
     end
 
     defp routine?(ticket, opts \\ []) do
-      {r, _e} = Tony.triage([ticket], Keyword.merge([now: @now], opts))
+      {r, _e} = COO.triage([ticket], Keyword.merge([now: @now], opts))
       r != []
     end
 
@@ -200,7 +200,7 @@ defmodule AshA2A.Twin.TonyTest do
       refute routine?(t(contractor_coi_valid: false))
       refute routine?(Map.delete(t([]), :sla_window))
       refute routine?(t(sla_window: {1, 2}))
-      {[], [:not_a_ticket]} = Tony.triage([:not_a_ticket], now: @now)
+      {[], [:not_a_ticket]} = COO.triage([:not_a_ticket], now: @now)
     end
 
     test "injected now makes triage deterministic across the same ticket" do
@@ -214,7 +214,7 @@ defmodule AshA2A.Twin.TonyTest do
       b = Map.put(t(warranty_status: :expired), :id, 2)
       c = Map.put(t([]), :id, 3)
       d = Map.put(t(operating_hours: 9999), :id, 4)
-      {r, e} = Tony.triage([a, b, c, d], now: @now)
+      {r, e} = COO.triage([a, b, c, d], now: @now)
       assert Enum.map(r, & &1.id) == [1, 3]
       assert Enum.map(e, & &1.id) == [2, 4]
     end
@@ -224,8 +224,8 @@ defmodule AshA2A.Twin.TonyTest do
     test "tickets without :friction or :coordinator_id pass through untouched" do
       mesh =
         %{}
-        |> Tony.register_coordinator(:sat, saturated_tensor())
-        |> Tony.register_coordinator(:fresh, @fresh_tensor)
+        |> COO.register_coordinator(:sat, saturated_tensor())
+        |> COO.register_coordinator(:fresh, @fresh_tensor)
 
       tickets = [
         %{id: 1, coordinator_id: :sat},
@@ -245,13 +245,13 @@ defmodule AshA2A.Twin.TonyTest do
                %{id: 5, coordinator_id: :sat},
                %{id: 6, coordinator_id: :sat},
                :junk
-             ] = Tony.balance(tickets, mesh)
+             ] = COO.balance(tickets, mesh)
     end
 
     test "all coordinators saturated: tickets unchanged (no fresh target)" do
-      mesh = Tony.register_coordinator(%{}, :sat, saturated_tensor())
+      mesh = COO.register_coordinator(%{}, :sat, saturated_tensor())
       tickets = [%{id: 1, coordinator_id: :sat, friction: 0.99}]
-      assert Tony.balance(tickets, mesh) == tickets
+      assert COO.balance(tickets, mesh) == tickets
     end
   end
 end

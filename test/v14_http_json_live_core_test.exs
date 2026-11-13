@@ -75,7 +75,8 @@ defmodule AshA2A.V14HTTPJSONLiveCoreTest do
   @deadline_ms 5_000
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
 
     versions = Enum.uniq(AshA2A.Protocol.Version.supported_default() ++ ["1.0", "1.1"])
     opts = [agent: @agent, base_url: "http://127.0.0.1/fixture", versions: versions]
@@ -155,7 +156,9 @@ defmodule AshA2A.V14HTTPJSONLiveCoreTest do
     end
   end
 
-  test "uplink by session id answers the ack task only; events arrive on the downlink", %{server: server} do
+  test "uplink by session id answers the ack task only; events arrive on the downlink", %{
+    server: server
+  } do
     ref = open_sse(live_url(server), send_body(parked()), @v11)
     {[%{"task" => %{"id" => id}} | _], buffer} = collect_until(ref, "", &(&1 != []))
     sid = session_id(ref)
@@ -173,7 +176,9 @@ defmodule AshA2A.V14HTTPJSONLiveCoreTest do
     assert %{"id" => ^id} = ack.body
     refute Map.has_key?(ack.body, "statusUpdate")
 
-    {frames, _} = collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+    {frames, _} =
+      collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+
     assert Enum.any?(frames, &Map.has_key?(&1, "messageUpdate"))
   end
 
@@ -192,7 +197,9 @@ defmodule AshA2A.V14HTTPJSONLiveCoreTest do
 
     assert ack.status == 200
 
-    {frames, _} = collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+    {frames, _} =
+      collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
+
     refute Enum.any?(frames, &Map.has_key?(&1, "messageUpdate"))
   end
 

@@ -75,9 +75,14 @@ defmodule AshA2A.V1CardSigningTest do
 
       # The MAC covers protected_b64 <> "." <> JCS(reserialization).
       protected_b64 = signed.signatures |> hd() |> Map.fetch!("protected")
-      expected_mac = :crypto.mac(:hmac, :sha256, key, protected_b64 <> "." <> canon.(reserialized))
 
-      assert :crypto.hash_equals(expected_mac, signed.signatures |> hd() |> Map.fetch!("signature") |> b64url_decode())
+      expected_mac =
+        :crypto.mac(:hmac, :sha256, key, protected_b64 <> "." <> canon.(reserialized))
+
+      assert :crypto.hash_equals(
+               expected_mac,
+               signed.signatures |> hd() |> Map.fetch!("signature") |> b64url_decode()
+             )
 
       # And the real verifier accepts the canonically identical document
       # (codec round trip: encode -> decode -> verify, wire-stable).

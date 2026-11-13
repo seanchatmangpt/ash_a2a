@@ -142,7 +142,10 @@ defmodule AshA2AV1ListDecodeTest do
     id2 = create_task(ctx, "alice", "two")
 
     assert %{"result" => page} = rpc(ctx, "alice", "tasks/list", %{})
-    assert %{"tasks" => wire_tasks, "totalSize" => 2, "pageSize" => 50, "nextPageToken" => ""} = page
+
+    assert %{"tasks" => wire_tasks, "totalSize" => 2, "pageSize" => 50, "nextPageToken" => ""} =
+             page
+
     assert length(wire_tasks) == 2
     assert MapSet.new(wire_tasks, & &1["id"]) == MapSet.new([id1, id2])
 
@@ -155,6 +158,7 @@ defmodule AshA2AV1ListDecodeTest do
     # Bob's list is owner-scoped: an empty page, and it decodes too.
     assert %{"result" => bob_page} = rpc(ctx, "bob", "tasks/list", %{})
     assert bob_page["totalSize"] == 0
+
     assert {:ok, %{tasks: [], total_size: 0, page_size: 50, next_page_token: ""}} =
              JSON.decode_list_result(bob_page)
   end
@@ -204,7 +208,9 @@ defmodule AshA2AV1ListDecodeTest do
              JSON.decode_list_result(%{"tasks" => [%{"id" => "t1"}]})
 
     assert {:error, {:missing_field, "id"}} =
-             JSON.decode_list_result(%{"tasks" => [%{"status" => %{"state" => "TASK_STATE_WORKING"}}]})
+             JSON.decode_list_result(%{
+               "tasks" => [%{"status" => %{"state" => "TASK_STATE_WORKING"}}]
+             })
   end
 
   test "wrongly-typed totalSize/pageSize/nextPageToken are typed refusals" do
@@ -268,6 +274,7 @@ defmodule AshA2AV1ListDecodeTest do
     # and its test are lane X6's; the ListTasksSuccess page has no entry
     # there, so the spec example shape is pinned here instead.
     assert {:ok, page} = JSON.decode_list_result(@spec_page)
+
     assert %{tasks: [first, second], total_size: 12, page_size: 2, next_page_token: "task-1d05"} =
              page
 

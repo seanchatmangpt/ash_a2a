@@ -2,7 +2,7 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
   @shortdoc "Verify a standing-receipt attestation (payload digest + Ed25519 via graphlaw-attest)"
 
   @moduledoc """
-  Verifies a standing receipt's attestation (L33 seam, lane L42).
+  Verifies a standing receipt's attestation.
 
   Two stages, both real:
 
@@ -12,7 +12,7 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
      with `--trusted-key` to verify the Ed25519 signature over the payload.
      If absent, stage 2 is `BLOCKED:graphlaw-attest-absent` -- never faked.
      (Stage 1 runs unconditionally, so a BLOCKED run still catches edits.)
-  3. **Revision chain** (L108): if a `<doc>.chain.jsonl` exists next to the
+  3. **Revision chain**: if a `<doc>.chain.jsonl` exists next to the
      doc, the fold is recomputed and the head event's `event_id` must equal
      the live doc's sha256. Refuses an edited doc even with a fresh valid
      signature -- re-mint via `mix ash_a2a.standing_receipt.revision`.
@@ -52,13 +52,15 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
     in_path =
       opts[:in] ||
         Path.expand(@default_receipt, Path.join(__DIR__, "../../.."))
+
     att_path =
       opts[:attestation] ||
-        (if String.ends_with?(in_path, ".md") do
-           String.replace_suffix(in_path, ".md", "") <> ".attestation.json"
-         else
-           in_path <> ".attestation.json"
-         end)
+        if String.ends_with?(in_path, ".md") do
+          String.replace_suffix(in_path, ".md", "") <> ".attestation.json"
+        else
+          in_path <> ".attestation.json"
+        end
+
     trusted = opts[:trusted_key] || @default_trusted
 
     case payload_digest_stage(in_path, att_path) do
@@ -75,24 +77,23 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Verify do
             Mix.shell().error("REFUSED: #{msg}")
             exit({:shutdown, 1})
         end
-
     end
   end
 
   defp attest_run(att_path, in_path, trusted, attest_bin) do
     case attest_stage(att_path, in_path, trusted, attest_bin) do
-          :ok ->
-            Mix.shell().info("VERIFIED")
-            :ok
+      :ok ->
+        Mix.shell().info("VERIFIED")
+        :ok
 
-          {:refused, msg} ->
-            Mix.shell().error("REFUSED: #{msg}")
-            exit({:shutdown, 1})
+      {:refused, msg} ->
+        Mix.shell().error("REFUSED: #{msg}")
+        exit({:shutdown, 1})
 
-          {:blocked, msg} ->
-            Mix.shell().error("BLOCKED: #{msg}")
-            exit({:shutdown, 2})
-        end
+      {:blocked, msg} ->
+        Mix.shell().error("BLOCKED: #{msg}")
+        exit({:shutdown, 2})
+    end
   end
 
   # --- stage 3: revision chain court (only if a chain file exists) ----------

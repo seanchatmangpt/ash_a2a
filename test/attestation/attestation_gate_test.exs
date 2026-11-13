@@ -68,7 +68,9 @@ defmodule AshA2A.Attestation.GateTest do
   describe "verify_enclave/2" do
     test "fresh, real-shaped payload passes" do
       {key, token} = signed()
-      assert {:ok, %{"device_id" => "device-abc"}} = Gate.verify_enclave({token, "nonce-123"}, key: key)
+
+      assert {:ok, %{"device_id" => "device-abc"}} =
+               Gate.verify_enclave({token, "nonce-123"}, key: key)
     end
 
     test "virtual claim triggers {:refused, :emulator_detected}" do
@@ -116,7 +118,12 @@ defmodule AshA2A.Attestation.GateTest do
 
     test "boundary: exactly max_staleness_sec old passes, +1s refuses" do
       assert :ok = Gate.verify_freshness(%{"issued_at" => @now - 90}, now: @now)
-      assert {:refused, :stale} = Gate.verify_freshness(%{"issued_at" => @now - 91}, now: @now, max_staleness_sec: 90)
+
+      assert {:refused, :stale} =
+               Gate.verify_freshness(%{"issued_at" => @now - 91},
+                 now: @now,
+                 max_staleness_sec: 90
+               )
     end
 
     test "missing issued_at is malformed" do
@@ -124,12 +131,15 @@ defmodule AshA2A.Attestation.GateTest do
     end
 
     test "future-issued beyond small skew is refused :clock_skew (typed, not :stale)" do
-      assert {:refused, :clock_skew} = Gate.verify_freshness(%{"issued_at" => @now + 60}, now: @now)
+      assert {:refused, :clock_skew} =
+               Gate.verify_freshness(%{"issued_at" => @now + 60}, now: @now)
     end
 
     test "boundary: exactly 5s forward skew accepted, +1s refused" do
       assert :ok = Gate.verify_freshness(%{"issued_at" => @now + 5}, now: @now)
-      assert {:refused, :clock_skew} = Gate.verify_freshness(%{"issued_at" => @now + 6}, now: @now)
+
+      assert {:refused, :clock_skew} =
+               Gate.verify_freshness(%{"issued_at" => @now + 6}, now: @now)
     end
   end
 
@@ -274,7 +284,9 @@ defmodule AshA2A.Attestation.GateTest do
 
     test "malleated twin through verify_enclave is {:refused, :non_canonical_signature}" do
       {key, token} = signed()
-      assert {:refused, :non_canonical_signature} = Gate.verify_enclave({malleate(token), "nonce-123"}, key: key)
+
+      assert {:refused, :non_canonical_signature} =
+               Gate.verify_enclave({malleate(token), "nonce-123"}, key: key)
     end
 
     defp malleate(token) do
@@ -301,5 +313,4 @@ defmodule AshA2A.Attestation.GateTest do
       end
     end
   end
-
 end

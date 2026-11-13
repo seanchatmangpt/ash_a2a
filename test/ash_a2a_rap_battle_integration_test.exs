@@ -44,7 +44,11 @@ defmodule AshA2ARapBattleIntegrationTest do
     assert {:ok, fifty_task} = FiftyCentAgent.call(FiftyCentAgent, data_message(%{}))
     assert fifty_task.status.state == :completed
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{result: fifty_verse}}]}] =
+    assert [
+             %AshA2A.Protocol.Artifact{
+               parts: [%AshA2A.Protocol.Part.Data{data: %{result: fifty_verse}}]
+             }
+           ] =
              fifty_task.artifacts
 
     assert is_binary(fifty_verse)
@@ -54,7 +58,11 @@ defmodule AshA2ARapBattleIntegrationTest do
     assert {:ok, jada_task} = JadakissAgent.call(JadakissAgent, data_message(%{}))
     assert jada_task.status.state == :completed
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{result: jada_verse}}]}] =
+    assert [
+             %AshA2A.Protocol.Artifact{
+               parts: [%AshA2A.Protocol.Part.Data{data: %{result: jada_verse}}]
+             }
+           ] =
              jada_task.artifacts
 
     assert is_binary(jada_verse)
@@ -73,7 +81,9 @@ defmodule AshA2ARapBattleIntegrationTest do
 
     assert {:ok, judge_task} = JudgePanelAgent.call(JudgePanelAgent, judge_message)
     assert judge_task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: verdict}]}] = judge_task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: verdict}]}] =
+             judge_task.artifacts
 
     # Real, state-based assertions on the real verdict computed from the
     # real verses that actually crossed the real A2A boundary twice.

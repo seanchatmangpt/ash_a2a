@@ -36,12 +36,12 @@ court) keep `code: :mechanical_prior` — the existing court still passes.
 
 ## Composition invariants (verified via the passing gate)
 
-- Moduledoc stage order matches code order: Vince → Tony strain →
+- Moduledoc stage order matches code order: CEO → COO strain →
   attestation → authority (last gate before admit). Confirmed by the G4
-  court asserting Vince consulted exactly once when the authority hop
+  court asserting CEO consulted exactly once when the authority hop
   refuses last.
-- Authority-refused leaves Vince/Tony counters untouched:
-  `new_state.bridge[:coord_a].tensor.active_leases == 0`, Vince ledger `%{}`
+- Authority-refused leaves CEO/COO counters untouched:
+  `new_state.bridge[:coord_a].tensor.active_leases == 0`, CEO ledger `%{}`
   on the AllowAll-admit path, no mesh mutation on the refusing path
   (test/copilot/pipeline_test.exs G4 block).
 - Escalated proposal carries `requires_signature: true` on every card option

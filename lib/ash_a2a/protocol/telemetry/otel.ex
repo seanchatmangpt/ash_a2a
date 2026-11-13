@@ -73,7 +73,10 @@ defmodule AshA2A.Protocol.Telemetry.OTel do
     case Process.delete(key) do
       {span, prev} ->
         if reason do
-          apply(:otel_span, :set_status, [span, apply(:opentelemetry, :status, [:error, inspect(reason)])])
+          apply(:otel_span, :set_status, [
+            span,
+            apply(:opentelemetry, :status, [:error, inspect(reason)])
+          ])
         end
 
         apply(:otel_span, :end_span, [span])

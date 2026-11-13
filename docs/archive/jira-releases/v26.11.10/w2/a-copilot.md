@@ -8,7 +8,7 @@ Standing: PARTIAL_ALIVE
 - lib/ash_a2a/copilot/pipeline.ex: opt-in `:coordinator_binding` (map or 1-arity fun, actor_id -> coordinator_id);
   mismatch/missing actor refused `:coordinator_mismatch`, no observation folded. Observable skip telemetry
   `[:ash_a2a,:copilot,:stage_skipped]` for binding / mechanical_prior / authority_source absent.
-  `init/2` registers mesh ids in bridge; `record` registers only ids present in the Tony mesh.
+  `init/2` registers mesh ids in bridge; `record` registers only ids present in the COO mesh.
 - test/copilot/f8_adversarial_test.exs: forged-coordinator test, no-auto-register test, skip-telemetry test (test file, outside owned list; disclosed).
 
 ## Commands + exits
@@ -24,5 +24,5 @@ Standing: PARTIAL_ALIVE
 
 ## Not done
 
-- Vince default-prior reconciliation (RefuseAll default vs pipeline detect_prior): not changed, needs design decision.
+- CEO default-prior reconciliation (RefuseAll default vs pipeline detect_prior): not changed, needs design decision.
 - ingress/channel.ex not touched (no binding wiring from channel to Pipeline opts).

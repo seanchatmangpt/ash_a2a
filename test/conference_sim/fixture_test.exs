@@ -179,6 +179,7 @@ defmodule ConferenceSim.FixtureTest do
 
     Enum.each(sim.attendees, fn a -> refute Process.alive?(a.pid) end)
     Enum.each(sim.exhibitors, fn e -> refute Process.alive?(e.pid) end)
+
     case GenServer.whereis(ConferenceSim.VenueAgent) do
       nil -> :ok
       pid -> refute Process.alive?(pid)

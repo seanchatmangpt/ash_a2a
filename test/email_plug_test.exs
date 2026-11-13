@@ -97,14 +97,23 @@ defmodule AshA2A.EmailPlugTest do
   end
 
   test "approve 1 and 3, hold 2 => exactly two dispatched under sender principal", %{rec: rec} do
-    conn = run(inbound_conn(brief(), "Approve 1 and 3. Hold 2 until I talk to Larson.", "pass"), opts(rec))
+    conn =
+      run(
+        inbound_conn(brief(), "Approve 1 and 3. Hold 2 until I talk to Larson.", "pass"),
+        opts(rec)
+      )
 
     assert conn.status == 200, conn.resp_body
     dispatched = state(rec).dispatched
     assert Enum.map(dispatched, fn {_, a} -> a.n end) == [1, 3]
-    assert Enum.all?(dispatched, fn {p, _} -> p.id == "principal:approver" and p.authority == :none end)
 
-    standings = Jason.decode!(conn.resp_body)["results"] |> Map.new(&{&1["action"], &1["standing"]})
+    assert Enum.all?(dispatched, fn {p, _} ->
+             p.id == "principal:approver" and p.authority == :none
+           end)
+
+    standings =
+      Jason.decode!(conn.resp_body)["results"] |> Map.new(&{&1["action"], &1["standing"]})
+
     assert standings == %{1 => "dispatched", 2 => "held", 3 => "dispatched"}
     assert [{@sender, _, _}] = state(rec).replies
   end

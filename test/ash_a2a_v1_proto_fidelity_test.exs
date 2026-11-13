@@ -232,7 +232,8 @@ defmodule AshA2A.V1ProtoFidelityTest do
     %{
       id: "Z16-F4",
       proto_side: "APIKeySecurityScheme.location (\"query\"/\"header\"/\"cookie\")",
-      fixed_side: "APIKeySecurityScheme emits \"location\" (was v0.3 \"in\"); struct key stays :in"
+      fixed_side:
+        "APIKeySecurityScheme emits \"location\" (was v0.3 \"in\"); struct key stays :in"
     }
   ]
 
@@ -460,7 +461,8 @@ defmodule AshA2A.V1ProtoFidelityTest do
       {"APIKeySecurityScheme", card["securitySchemes"]["api_key"]["apiKeySecurityScheme"]},
       {"HTTPAuthSecurityScheme", card["securitySchemes"]["http"]["httpAuthSecurityScheme"]},
       {"OAuth2SecurityScheme", card["securitySchemes"]["oauth2"]["oauth2SecurityScheme"]},
-      {"OpenIdConnectSecurityScheme", card["securitySchemes"]["oidc"]["openIdConnectSecurityScheme"]},
+      {"OpenIdConnectSecurityScheme",
+       card["securitySchemes"]["oidc"]["openIdConnectSecurityScheme"]},
       {"MutualTlsSecurityScheme", card["securitySchemes"]["mtls"]["mtlsSecurityScheme"]}
     ]
   end
@@ -671,7 +673,9 @@ defmodule AshA2A.V1ProtoFidelityTest do
 
       assert MapSet.equal?(
                proto_oneof_members(parsed, "SecurityScheme", "scheme"),
-               MapSet.new(~w(apiKeySecurityScheme httpAuthSecurityScheme oauth2SecurityScheme openIdConnectSecurityScheme mtlsSecurityScheme))
+               MapSet.new(
+                 ~w(apiKeySecurityScheme httpAuthSecurityScheme oauth2SecurityScheme openIdConnectSecurityScheme mtlsSecurityScheme)
+               )
              )
 
       schemes = encoded_card()["securitySchemes"]

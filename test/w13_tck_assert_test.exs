@@ -41,7 +41,8 @@ defmodule AshA2A.W13TckAssertTest do
   end
 
   test "a failed MUST requirement exits 1" do
-    path = tmp_json(%{"requirements" => [%{"id" => "X", "level" => "MUST", "status" => "FAILED"}]})
+    path =
+      tmp_json(%{"requirements" => [%{"id" => "X", "level" => "MUST", "status" => "FAILED"}]})
 
     case run_script(path) do
       {:skip, why} -> IO.puts("[SKIP] #{why}")
@@ -100,6 +101,7 @@ defmodule AshA2A.W13TckAssertTest do
     mix = File.read!(Path.join(@root, "mix.exs"))
     assert mix =~ ~s(version: "26.11.13")
     assert File.read!(Path.join(@root, "README.md")) =~ ~s({:ash_a2a, "~> 26.11.13"})
+
     assert File.read!(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md")) =~
              "Version: v26.11.13"
 
@@ -114,7 +116,9 @@ defmodule AshA2A.W13TckAssertTest do
     excluded = Mix.Tasks.AshA2a.V1ConformanceReport.excluded_v1_files()
 
     on_disk =
-      @root |> Path.join("test/ash_a2a_v1_*_test.exs") |> Path.wildcard()
+      @root
+      |> Path.join("test/ash_a2a_v1_*_test.exs")
+      |> Path.wildcard()
       |> Enum.map(&Path.relative_to(&1, @root))
 
     assert Enum.sort(listed) == Enum.sort(on_disk -- excluded)

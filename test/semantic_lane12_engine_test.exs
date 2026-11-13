@@ -50,10 +50,18 @@ defmodule SemanticLane12EngineTest do
   end
 
   test "hook condition routing parses tokens, not substrings" do
-    denial = "# kh: in a comment\n@prefix ex: <http://example.org/> .\n{ ?s ex:p \"kh:x\" } => false ."
+    denial =
+      "# kh: in a comment\n@prefix ex: <http://example.org/> .\n{ ?s ex:p \"kh:x\" } => false ."
+
     refute Hook.hook_pack_condition?(denial)
-    assert Hook.hook_pack_condition?("@prefix kh: <urn:kh#> .\nex:h a kh:Hook ; kh:kind \"delta\" .")
+
+    assert Hook.hook_pack_condition?(
+             "@prefix kh: <urn:kh#> .\nex:h a kh:Hook ; kh:kind \"delta\" ."
+           )
+
     assert :ok = Hook.condition_shape(:condition, denial)
-    assert {:error, %{code: :hook_condition_invalid}} = Hook.condition_shape(:condition, denial <> denial)
+
+    assert {:error, %{code: :hook_condition_invalid}} =
+             Hook.condition_shape(:condition, denial <> denial)
   end
 end

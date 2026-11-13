@@ -318,7 +318,10 @@ defmodule Mix.Tasks.AshA2a.V1ConformanceReport do
   end
 
   defp tck_status(value) when is_binary(value) do
-    Map.get(@tck_statuses, value |> String.trim() |> String.upcase() |> String.replace(~r/[ -]/, "_"))
+    Map.get(
+      @tck_statuses,
+      value |> String.trim() |> String.upcase() |> String.replace(~r/[ -]/, "_")
+    )
   end
 
   defp tck_status(_), do: nil

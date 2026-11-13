@@ -65,7 +65,9 @@ if Code.ensure_loaded?(Plug) do
     def call(%Plug.Conn{method: "POST", path_info: @path} = conn, opts), do: ingest(conn, opts)
 
     def call(%Plug.Conn{path_info: @path} = conn, _opts) do
-      conn |> put_resp_header("allow", "POST") |> send_json(405, %{"error" => "method_not_allowed"})
+      conn
+      |> put_resp_header("allow", "POST")
+      |> send_json(405, %{"error" => "method_not_allowed"})
     end
 
     def call(conn, _opts), do: send_json(conn, 404, %{"error" => "not_found"})
@@ -191,10 +193,19 @@ if Code.ensure_loaded?(Plug) do
 
           pairs =
             Enum.map(approved, fn %{n: n} ->
-              {n, tokens |> then(&Map.get(&1, Integer.to_string(n), Map.get(&1, n))) |> to_string() |> String.trim()}
+              {n,
+               tokens
+               |> then(&Map.get(&1, Integer.to_string(n), Map.get(&1, n)))
+               |> to_string()
+               |> String.trim()}
             end)
 
-          case AshA2A.Email.TokenLedger.reserve(ledger, brief_id(inbound), pairs, inbound.message_id) do
+          case AshA2A.Email.TokenLedger.reserve(
+                 ledger,
+                 brief_id(inbound),
+                 pairs,
+                 inbound.message_id
+               ) do
             :ok -> :ok
             {:replay, cached} -> {:replay, cached}
             {:error, :already_consumed} -> {:halt, 409, :already_consumed}
@@ -227,7 +238,13 @@ if Code.ensure_loaded?(Plug) do
       body = %{"results" => Enum.map(results, &serialize/1)}
 
       if ledger = Keyword.get(opts, :token_ledger),
-        do: AshA2A.Email.TokenLedger.record_result(ledger, brief_id(inbound), inbound.message_id, body)
+        do:
+          AshA2A.Email.TokenLedger.record_result(
+            ledger,
+            brief_id(inbound),
+            inbound.message_id,
+            body
+          )
 
       send_json(conn, 200, body)
     end

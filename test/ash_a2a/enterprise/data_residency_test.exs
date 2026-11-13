@@ -111,9 +111,11 @@ defmodule AshA2A.Enterprise.DataResidencyTest do
 
     assert {:ok, %{decision: :pass, matched_via: :untagged}} = DataResidency.admit(%{})
 
-    assert {:ok, %{matched_via: :untagged}} = DataResidency.admit(%{"metadata" => %{"data_jurisdiction" => ""}})
+    assert {:ok, %{matched_via: :untagged}} =
+             DataResidency.admit(%{"metadata" => %{"data_jurisdiction" => ""}})
 
-    assert {:ok, %{matched_via: :untagged}} = DataResidency.admit(%{"metadata" => %{"data_jurisdiction" => "   "}})
+    assert {:ok, %{matched_via: :untagged}} =
+             DataResidency.admit(%{"metadata" => %{"data_jurisdiction" => "   "}})
   end
 
   # --- court 5: region-group mapping ---
@@ -294,14 +296,19 @@ defmodule AshA2A.Enterprise.DataResidencyTest do
     ref = make_ref()
 
     resp =
-      dispatch(%{"metadata" => %{"data_jurisdiction" => "eu-central-1"}},
+      dispatch(
+        %{"metadata" => %{"data_jurisdiction" => "eu-central-1"}},
         [node_region: "us-east-1"],
         ref
       )
 
     assert resp.status == 403
     # Req decodes the JSON refusal body.
-    assert %{"error" => "refused_data_residency_violation", "stage" => "residency", "detail" => detail} =
+    assert %{
+             "error" => "refused_data_residency_violation",
+             "stage" => "residency",
+             "detail" => detail
+           } =
              resp.body
 
     assert detail =~ "us-east-1"
@@ -315,7 +322,12 @@ defmodule AshA2A.Enterprise.DataResidencyTest do
   test "matching region: dispatch proceeds through the residency stage and reaches the inner plug" do
     ref = make_ref()
 
-    resp = dispatch(%{"metadata" => %{"data_jurisdiction" => "eu-central-1"}}, [node_region: "eu-central-1"], ref)
+    resp =
+      dispatch(
+        %{"metadata" => %{"data_jurisdiction" => "eu-central-1"}},
+        [node_region: "eu-central-1"],
+        ref
+      )
 
     assert resp.status == 200
     assert executed?(ref)

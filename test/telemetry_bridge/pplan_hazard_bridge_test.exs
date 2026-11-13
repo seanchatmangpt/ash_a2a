@@ -27,13 +27,17 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
     |> Path.join("lib/ash_pplan/ebin/Elixir.AshPPlan.Telemetry.Event.beam")
 
   scratch_ebin = System.get_env("I3_TELEMETRY_EBIN")
-  pplan_scratch_beam = scratch_ebin && Path.join(scratch_ebin, "Elixir.AshPPlan.Telemetry.Event.beam")
 
-  @live_producer File.regular?(pplan_ebin) or (is_binary(pplan_scratch_beam) and File.regular?(pplan_scratch_beam))
+  pplan_scratch_beam =
+    scratch_ebin && Path.join(scratch_ebin, "Elixir.AshPPlan.Telemetry.Event.beam")
+
+  @live_producer File.regular?(pplan_ebin) or
+                   (is_binary(pplan_scratch_beam) and File.regular?(pplan_scratch_beam))
 
   @live_skip_reason if(@live_producer,
                       do: false,
-                      else: "LOUD SKIP: AshPPlan.Telemetry.Event not in resolved ash_pplan (need >= 26.11.10)"
+                      else:
+                        "LOUD SKIP: AshPPlan.Telemetry.Event not in resolved ash_pplan (need >= 26.11.10)"
                     )
 
   if not @live_producer do
@@ -53,7 +57,9 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
                       end)
 
   if is_nil(@pack_ontology_path) do
-    IO.warn("LOUD SKIP: latency-hazard-radar ontology.ttl not found on disk; vocabulary test skipped.")
+    IO.warn(
+      "LOUD SKIP: latency-hazard-radar ontology.ttl not found on disk; vocabulary test skipped."
+    )
   end
 
   defp contract_event(overrides) do
@@ -102,7 +108,11 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
   describe "shared vocabulary with latency-hazard-radar ontology" do
     # A missing pack on disk is a LOUD skip (IO.warn above + skip reason),
     # never a silent pass and never an assertion failure of the pack's absence.
-    @tag skip: if(is_nil(@pack_ontology_path), do: "LOUD SKIP: pack ontology.ttl not on disk", else: false)
+    @tag skip:
+           if(is_nil(@pack_ontology_path),
+             do: "LOUD SKIP: pack ontology.ttl not on disk",
+             else: false
+           )
     test "bridge defaults mirror the pack's pinned threshold and refusal atom" do
       source = File.read!(Path.expand(@pack_ontology_path))
 
@@ -261,8 +271,8 @@ defmodule AshA2A.TelemetryBridge.PPlanHazardTest do
       broadcaster_subscribe(:i3_broadcaster_b, topic)
 
       data = hazard_struct(run_id: "run-live-seq", hazard: %{z: 9.0, threshold: 2.5, mad: 1.0})
-broadcaster_broadcast(:i3_broadcaster_b, topic, data)
-broadcaster_broadcast(:i3_broadcaster_b, topic, data)
+      broadcaster_broadcast(:i3_broadcaster_b, topic, data)
+      broadcaster_broadcast(:i3_broadcaster_b, topic, data)
 
       assert_receive {:ash_pplan_telemetry, e1}, 2_000
       assert_receive {:ash_pplan_telemetry, e2}, 2_000
@@ -282,7 +292,7 @@ broadcaster_broadcast(:i3_broadcaster_b, topic, data)
           hazard: %{z: 0.0, threshold: 2.5, median: 50.0, mad: 0}
         )
 
-broadcaster_broadcast(:i3_broadcaster_c, topic, data)
+      broadcaster_broadcast(:i3_broadcaster_c, topic, data)
       assert_receive {:ash_pplan_telemetry, envelope}, 2_000
       assert envelope.type == :hazard_tripped
 

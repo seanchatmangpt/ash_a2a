@@ -52,7 +52,10 @@ defmodule W15RegistryDiscoveryTest do
   test "multi-criteria find", %{reg: reg} do
     assert [{AgentB, _}] = Registry.find(reg, %{tag: "risk", capabilities: %{streaming: false}})
     assert [{AgentA, _}] = Registry.find(reg, %{provider: "Acme", input_mode: "text/plain"})
-    assert [{AgentA, _}] = Registry.find(reg, %{skill_id: "a.price", output_mode: "application/json"})
+
+    assert [{AgentA, _}] =
+             Registry.find(reg, %{skill_id: "a.price", output_mode: "application/json"})
+
     assert [] = Registry.find(reg, %{tag: "pricing", provider: "Nobody"})
   end
 

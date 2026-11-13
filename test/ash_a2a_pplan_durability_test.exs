@@ -80,7 +80,10 @@ defmodule AshA2A.Providers.PPlanDurabilityTest do
         event_await: {Steps.Await, [signal: "go", timeout: nil]},
         state_hold:
           {Steps.Poll,
-           [until: {AshPPlan.Reactor.Adapters.Durable, :argument_until, [:ready]}, every: 3_600_000]}
+           [
+             until: {AshPPlan.Reactor.Adapters.Durable, :argument_until, [:ready]},
+             every: 3_600_000
+           ]}
       }
 
       AshPPlan.Reactor.Adapter.resolve(__MODULE__, table, op, options)
@@ -225,7 +228,8 @@ defmodule AshA2A.Providers.PPlanDurabilityTest do
             %{run_status: :waiting, waiters: ["go"], version: v_parked, error: nil}} =
              AshA2A.Providers.PPlan.status(task_id, opts)
 
-    assert {:ok, :completed, _result} = AshA2A.Providers.PPlan.resume(task_id, %{answer: 42}, opts)
+    assert {:ok, :completed, _result} =
+             AshA2A.Providers.PPlan.resume(task_id, %{answer: 42}, opts)
 
     # exactly one signal was delivered and it was consumed exactly once
     assert [%{name: "go", consumed_at: consumed}] = @dets.signals(store, task_id)
@@ -297,8 +301,7 @@ defmodule AshA2A.Providers.PPlanDurabilityTest do
     {:ok, store2} = @dets.start_link(path: path)
     opts2 = [store: store2, store_module: @dets]
 
-    assert {:ok, :input_required,
-            %{run_status: :waiting, waiters: ["go"], version: v_parked}} =
+    assert {:ok, :input_required, %{run_status: :waiting, waiters: ["go"], version: v_parked}} =
              AshA2A.Providers.PPlan.status(task_id, opts2)
 
     # the follow-up hop lands on the REBOOTED store and completes
@@ -356,7 +359,8 @@ defmodule AshA2A.Providers.PPlanDurabilityTest do
              AshA2A.Providers.PPlan.dispatch(task_id, await_model(), bindings(fx), opts)
 
     # a live migration- claim holds the run: the store's claim CAS must refuse the cancel
-    assert {:ok, _claimed} = @dets.claim(store, task_id, "migration-court-y6", 60_000, DateTime.utc_now())
+    assert {:ok, _claimed} =
+             @dets.claim(store, task_id, "migration-court-y6", 60_000, DateTime.utc_now())
 
     assert {:error, {:claim_held, ^task_id}} = AshA2A.Providers.PPlan.cancel(task_id, opts)
 

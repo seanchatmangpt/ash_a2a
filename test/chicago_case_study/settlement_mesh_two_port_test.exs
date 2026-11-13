@@ -18,7 +18,10 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementMeshTwoPortTest do
     Admit a command strictly if the work order digest matches the semantic subject digest.
     Returns {:ok, admitted_command} or {:error, %{code: code, class: class}}
     """
-    def admit(%MockWorkOrder{graph_digest: wo_digest}, %{semantic_subject: %{graph_digest: sub_digest}} = command) do
+    def admit(
+          %MockWorkOrder{graph_digest: wo_digest},
+          %{semantic_subject: %{graph_digest: sub_digest}} = command
+        ) do
       if wo_digest == sub_digest do
         {:ok, Map.put(command, :admission_standing, :ADMITTED)}
       else

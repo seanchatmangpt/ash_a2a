@@ -151,7 +151,7 @@ defmodule AshA2A.Reactor.CommandWorkflowTest do
   defp flatten_error(%{errors: nested}) when is_list(nested),
     do: Enum.flat_map(nested, &flatten_error/1)
 
-    defp flatten_error(other), do: [other]
+  defp flatten_error(other), do: [other]
 
   test "AshEx4pm.Reactor.OcelMiddleware emits telemetry events on step execution" do
     command_id = "reactor-workflow-telemetry-#{System.unique_integer([:positive])}"

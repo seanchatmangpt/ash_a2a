@@ -155,7 +155,9 @@ defmodule AshA2A.V1AuthFailureDedupTest do
     # name/arity shapes; exclude the definition heads by filtering to the
     # guard form `auth_failure?(reason)` inside the cond.
     sites = call_sites(@runtime_ast, :auth_failure?, 1)
-    assert Enum.count(sites, fn {_name, _meta, args} -> match?([{:reason, _, nil}], args) end) == 1
+
+    assert Enum.count(sites, fn {_name, _meta, args} -> match?([{:reason, _, nil}], args) end) ==
+             1
   end
 
   test "sibling admission_refusal?/1 family is untouched (eight clauses, unique)" do
@@ -205,7 +207,8 @@ defmodule AshA2A.V1AuthFailureDedupBehaviorTest do
     {:ok, agent: name}
   end
 
-  defp call(agent, text), do: AshA2A.Errc1AuthFailureDedup.TransportAgent.call(agent, Message.new_user(text))
+  defp call(agent, text),
+    do: AshA2A.Errc1AuthFailureDedup.TransportAgent.call(agent, Message.new_user(text))
 
   test "auth-required mapping: {:error, {:auth_required, _}} parks :auth_required (redacted)", %{
     agent: agent

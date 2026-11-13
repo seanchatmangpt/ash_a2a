@@ -168,7 +168,11 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       assert {:ok, task} = call("peek")
       assert task.status.state == :completed
 
-      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{peeked: true}}]}] = task.artifacts
+      assert [
+               %AshA2A.Protocol.Artifact{
+                 parts: [%AshA2A.Protocol.Part.Data{data: %{peeked: true}}]
+               }
+             ] = task.artifacts
     end
   end
 
@@ -217,8 +221,12 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       # ways -- the payloads match exactly, only the wrapper ids differ).
       assert ActuationCounter.count() == 1
 
-      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: first_data}]}] = first.artifacts
-      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: second_data}]}] = second.artifacts
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: first_data}]}] =
+               first.artifacts
+
+      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: second_data}]}] =
+               second.artifacts
+
       assert first_data == second_data
       assert first_data == %{actuated: true, note: "retry-me"}
     end

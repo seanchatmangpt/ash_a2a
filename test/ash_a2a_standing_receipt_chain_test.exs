@@ -78,8 +78,14 @@ defmodule AshA2a.StandingReceiptChainTest do
 
     test "single revision event folds off genesis" do
       event_id = Chain.sha256_hex("doc-v2")
-      line = Jason.encode!(%{"event_type" => "receipt-revision", "event_id" => event_id,
-                             "commitment" => @genesis, "ts" => "2026-10-13T00:00:00Z"})
+
+      line =
+        Jason.encode!(%{
+          "event_type" => "receipt-revision",
+          "event_id" => event_id,
+          "commitment" => @genesis,
+          "ts" => "2026-10-13T00:00:00Z"
+        })
 
       assert {:ok, Chain.digest(@genesis, event_id)} == Chain.fold([line])
     end
@@ -92,17 +98,27 @@ defmodule AshA2a.StandingReceiptChainTest do
       tampered =
         Chain.digest(good, event_id)
         |> flip_first_byte()
-        |> then(&Jason.encode!(%{"event_type" => "receipt-revision",
-                                 "event_id" => Chain.sha256_hex("doc-v3"),
-                                 "commitment" => &1, "ts" => "2026-10-13T00:00:01Z"}))
+        |> then(
+          &Jason.encode!(%{
+            "event_type" => "receipt-revision",
+            "event_id" => Chain.sha256_hex("doc-v3"),
+            "commitment" => &1,
+            "ts" => "2026-10-13T00:00:01Z"
+          })
+        )
 
       assert {:refused, msg} = Chain.fold([tampered])
       assert msg =~ "does not match prior chain head"
     end
 
     test "unknown event_type refuses" do
-      line = Jason.encode!(%{"event_type" => "forgery", "event_id" => "ff",
-                             "commitment" => @genesis, "ts" => "x"})
+      line =
+        Jason.encode!(%{
+          "event_type" => "forgery",
+          "event_id" => "ff",
+          "commitment" => @genesis,
+          "ts" => "x"
+        })
 
       assert {:refused, msg} = Chain.fold([line])
       assert msg =~ "unknown event_type"

@@ -4,7 +4,9 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamAgent do
   # inbound user text to pick a per-session (per-track) production schedule, so
   # four concurrent session tasks on ONE real transport have genuinely different
   # lifetimes: two short talks, one medium talk, and a keynote that runs long.
-  use AshA2A.Protocol.Agent, name: "conf-multitrack", description: "conference with tracks of different lengths"
+  use AshA2A.Protocol.Agent,
+    name: "conf-multitrack",
+    description: "conference with tracks of different lengths"
 
   alias AshA2A.Protocol.Message
   alias AshA2A.Protocol.Part
@@ -70,8 +72,13 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamCourt do
 
   @all_track_names ["track_a", "track_b", "track_c", "keynote", "loadtrack"]
 
-  @terminal_states ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
-                    "TASK_STATE_REJECTED", "TASK_STATE_AUTH_REQUIRED"]
+  @terminal_states [
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_AUTH_REQUIRED"
+  ]
 
   setup do
     uniq = System.unique_integer([:positive])
@@ -345,9 +352,10 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamCourt do
   # -- court 2: disconnect mid-session, Last-Event-ID replays exactly the
   #    missed events ---------------------------------------------------------
 
-  test "mid-session disconnect then Last-Event-ID resubscribe replays exactly the missed events", %{
-    url: url
-  } do
+  test "mid-session disconnect then Last-Event-ID resubscribe replays exactly the missed events",
+       %{
+         url: url
+       } do
     a = open_session(url, "track_c")
     task_id = await_task_id(a)
 
@@ -428,7 +436,7 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamCourt do
     # drains to silence, and the OS socket count stays bounded (concurrent
     # sibling tests and the shared Finch keepalive pool hold a few ports, so
     # this is a leak bound, not an exact-return-to-baseline court).
-    assert Enum.all?(conns, &not Process.alive?(&1))
+    assert Enum.all?(conns, &(not Process.alive?(&1)))
 
     eventually(fn ->
       assert length(:erlang.ports()) <= ports_before + 40
@@ -444,8 +452,12 @@ defmodule AshA2A.ConferenceSim.MultitrackStreamCourt do
     deadline = deadline || :erlang.monotonic_time(:millisecond) + 5_000
 
     cond do
-      fun.() -> :ok
-      :erlang.monotonic_time(:millisecond) > deadline -> flunk("condition not reached")
+      fun.() ->
+        :ok
+
+      :erlang.monotonic_time(:millisecond) > deadline ->
+        flunk("condition not reached")
+
       true ->
         # SLEEP-CLASS: POLL-STEP (audited AshA2A.TestSupport.Eventually.pause)
         AshA2A.TestSupport.Eventually.pause(50)

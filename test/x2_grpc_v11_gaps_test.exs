@@ -54,7 +54,8 @@ defmodule AshA2A.X2.GRPCV11GapsTest do
       capabilities: %{streaming: true}
 
     @impl AshA2A.Protocol.Agent
-    def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+    def handle_message(_message, _ctx),
+      do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
   end
 
   setup do
@@ -112,11 +113,14 @@ defmodule AshA2A.X2.GRPCV11GapsTest do
   end
 
   defp new_task(ch) do
-    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{} = task}}} = send_pb(ch, "ask")
+    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{} = task}}} =
+             send_pb(ch, "ask")
+
     task
   end
 
-  defp push(stream, payload), do: GRPC.Stub.send_request(stream, %Pb.StreamRequest{payload: payload})
+  defp push(stream, payload),
+    do: GRPC.Stub.send_request(stream, %Pb.StreamRequest{payload: payload})
 
   defp next(replies) do
     case Enum.take(replies, 1) do
@@ -137,7 +141,11 @@ defmodule AshA2A.X2.GRPCV11GapsTest do
     task = new_task(ch)
     assert task.generation > 0
 
-    stream = ch |> Stub.send_live_message(@v10 ++ [timeout: 15_000]) |> push({:subscribe, %Pb.SubscribeToTaskRequest{id: task.id}})
+    stream =
+      ch
+      |> Stub.send_live_message(@v10 ++ [timeout: 15_000])
+      |> push({:subscribe, %Pb.SubscribeToTaskRequest{id: task.id}})
+
     assert {:ok, replies} = GRPC.Stub.recv(stream, timeout: 10_000)
 
     assert {:task, %Pb.Task{} = snap} = next(replies)
@@ -145,7 +153,10 @@ defmodule AshA2A.X2.GRPCV11GapsTest do
     assert snap.timeline == []
 
     _stream =
-      push(stream, {:send_message, %Pb.SendMessageRequest{message: message("more", task_id: task.id)}})
+      push(
+        stream,
+        {:send_message, %Pb.SendMessageRequest{message: message("more", task_id: task.id)}}
+      )
 
     {kind, value} = next(replies)
     refute kind == :message_update
@@ -174,7 +185,9 @@ defmodule AshA2A.X2.GRPCV11GapsTest do
     task = new_task(ch)
     assert {:ok, _} = send_pb(ch, "two", task_id: task.id)
 
-    assert {:ok, %Pb.Task{timeline: full}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: task.id}, @v11)
+    assert {:ok, %Pb.Task{timeline: full}} =
+             Stub.get_task(ch, %Pb.GetTaskRequest{id: task.id}, @v11)
+
     assert full != []
 
     assert {:ok, %Pb.Task{timeline: cut}} =
@@ -191,7 +204,11 @@ defmodule AshA2A.X2.GRPCV11GapsTest do
 
     poll =
       Task.async(fn ->
-        Stub.get_task(ch, %Pb.GetTaskRequest{id: task.id, current_generation: gen}, @v11 ++ [timeout: 15_000])
+        Stub.get_task(
+          ch,
+          %Pb.GetTaskRequest{id: task.id, current_generation: gen},
+          @v11 ++ [timeout: 15_000]
+        )
       end)
 
     assert {:ok, _} = send_pb(ch, "again", task_id: task.id)

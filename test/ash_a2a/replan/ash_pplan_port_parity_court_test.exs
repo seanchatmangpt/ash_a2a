@@ -206,7 +206,12 @@ defmodule AshA2A.Replan.AshPPlanPortParityCourtTest do
       # "garbage opts always return a refusal ... they never raise" — the
       # port breaks that contract before the provider ever sees the call.
       # Re-enable this row when the port guard lands.
-      request = %{subject: "caller-a", formalism: :fond, domain: solvable_domain(), initial: :pending}
+      request = %{
+        subject: "caller-a",
+        formalism: :fond,
+        domain: solvable_domain(),
+        initial: :pending
+      }
 
       for bad_opts <- [nil, "opts", %{not: :keyword}, 42] do
         assert {:error, %{code: :planner_refused, detail: {:invalid_opts, ^bad_opts}}} =
@@ -223,7 +228,11 @@ defmodule AshA2A.Replan.AshPPlanPortParityCourtTest do
 
       assert {:error, %{code: :plan_not_found, detail: "https://no-such-plan.example"}} =
                Port.propose(
-                 %{subject: "caller-a", formalism: :powl, plan_iri: "https://no-such-plan.example"},
+                 %{
+                   subject: "caller-a",
+                   formalism: :powl,
+                   plan_iri: "https://no-such-plan.example"
+                 },
                  []
                )
     end

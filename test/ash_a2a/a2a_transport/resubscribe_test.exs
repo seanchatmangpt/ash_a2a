@@ -128,14 +128,20 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
   defp unwrap(%{"artifactUpdate" => event}), do: {:artifact, event}
 
   defp artifact_texts(results) do
-    for {:artifact, %{"artifact" => %{"parts" => [%{"text" => t}]}}} <- Enum.map(results, &unwrap/1),
+    for {:artifact, %{"artifact" => %{"parts" => [%{"text" => t}]}}} <-
+          Enum.map(results, &unwrap/1),
         do: t
   end
 
   # Finality rides on the terminal status state — StatusUpdate events carry no
   # "final" boolean on the wire.
-  @terminal_states ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
-                    "TASK_STATE_REJECTED", "TASK_STATE_AUTH_REQUIRED"]
+  @terminal_states [
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_AUTH_REQUIRED"
+  ]
 
   defp final(results) do
     Enum.find(results, fn result ->
@@ -172,6 +178,7 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
         {:artifact, event} -> refute Map.has_key?(event, "final")
       end
     end
+
     # backlog replay + live: the resubscriber sees every part, in order
     assert artifact_texts(a_results) == for(i <- 1..5, do: "part #{i}")
     assert artifact_texts(b_results) == artifact_texts(a_results)

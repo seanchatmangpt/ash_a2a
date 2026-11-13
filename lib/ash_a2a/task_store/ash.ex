@@ -167,26 +167,26 @@ defmodule AshA2A.TaskStore.Ash do
           :ok
 
         true ->
-        attrs = columns(task, current + 1)
+          attrs = columns(task, current + 1)
 
-        case existing do
-          nil ->
-            TaskRow
-            |> Ash.Changeset.for_create(
-              :create,
-              Map.merge(attrs, %{namespace: ns(ref), task_id: task_id})
-            )
-            |> Ash.create(authorize?: false)
-            |> ok_or_raise(:put, task_id)
+          case existing do
+            nil ->
+              TaskRow
+              |> Ash.Changeset.for_create(
+                :create,
+                Map.merge(attrs, %{namespace: ns(ref), task_id: task_id})
+              )
+              |> Ash.create(authorize?: false)
+              |> ok_or_raise(:put, task_id)
 
-          row ->
-            row
-            |> Ash.Changeset.for_update(:update, attrs)
-            |> Ash.update(authorize?: false)
-            |> ok_or_raise(:put, task_id)
-        end
+            row ->
+              row
+              |> Ash.Changeset.for_update(:update, attrs)
+              |> Ash.update(authorize?: false)
+              |> ok_or_raise(:put, task_id)
+          end
 
-        :ok
+          :ok
       end
     end)
   end

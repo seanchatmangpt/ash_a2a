@@ -166,7 +166,6 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
   @tag :conference_sim
   test "three exhibitors sign with distinct keys; the venue JWKS is kid-sorted and public-only",
        %{alpha: alpha, beta: beta, gamma: gamma, jwks: jwks} do
-
     # Three DISTINCT signing keys over the full G4 algorithm mix.
     refute alpha.key == beta.key
     refute beta.key == gamma.key
@@ -203,7 +202,6 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
   @tag :conference_sim
   test "each exhibitor's served card verifies against the venue key set",
        %{alpha: alpha, beta: beta, gamma: gamma, jwks: jwks} do
-
     # Asymmetric exhibitors verify straight off the published JWKS...
     assert CardSigning.verify(alpha.card, jwks) == :ok
     assert CardSigning.verify(beta.card, jwks) == :ok
@@ -238,7 +236,6 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
   @tag :conference_sim
   test "tampered card body refuses with :digest_mismatch; wrong exhibitor's key refuses",
        %{alpha: alpha, jwks: jwks} do
-
     # A post-signing content mutation flips the recomputed digest.
     tampered = %{alpha.card | description: "TAMPERED — impostor booth"}
 
@@ -294,7 +291,6 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
   @tag :conference_sim
   test "key rotation mid-event: grace serves both kids; post-revocation the old kid refuses",
        %{beta: beta} do
-
     old_key = beta.key
     old_card = beta.card
     new_key = :public_key.generate_key({:namedCurve, :secp256r1})
@@ -315,8 +311,7 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
     assert {:ok, revoked} = Venue.publish([{"ec-2026-beta-r2", new_key}])
     assert CardSigning.verify(new_card, revoked) == :ok
 
-    assert {:error,
-            {:bad_signature, %{index: 0, reason: :unknown_kid, kid: @ec_kid}}} =
+    assert {:error, {:bad_signature, %{index: 0, reason: :unknown_kid, kid: @ec_kid}}} =
              CardSigning.verify(old_card, revoked)
   end
 
@@ -325,7 +320,6 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
   @tag :conference_sim
   test "an attendee verifying a served exhibitor card through the real client",
        %{alpha: alpha, jwks: jwks} do
-
     # Real client discovery against the real Bandit booth.
     assert {:ok, card} = Client.discover(alpha.card.url)
 
@@ -337,7 +331,9 @@ defmodule AshA2A.ConferenceSim.ExhibitorSigningCourt do
     assert CardSigning.verify(card, served) == :ok
 
     # Tampered serve: the booth flips a description character after signing.
-    tampered_wire = JSON.encode_agent_card(%{alpha.card | description: "IMITATION BOOTH"}, url: alpha.card.url)
+    tampered_wire =
+      JSON.encode_agent_card(%{alpha.card | description: "IMITATION BOOTH"}, url: alpha.card.url)
+
     BoothStore.update(fn state -> %{state | card_body: Jason.encode!(tampered_wire)} end)
 
     assert {:ok, served_card} = Client.discover(alpha.card.url)

@@ -5,7 +5,7 @@ v26.9.17 HDDL domain+problem write-up, unedited, exactly as recovered from
 this session's transcript at
 `/Users/sac/.claude/projects/-Users-sac-ash-a2a/ec3dd2e8-fa19-4efe-90a3-eca0b048d05b.jsonl`
 (same recovery technique used earlier this session for
-`docs/rfc/RFC-SA2A-001-v26.9.16.md` and `docs/rfc/RFC-SA2A-002-v26.9.16.md`:
+`docs/archive/rfc/RFC-SA2A-001-v26.9.16.md` and `docs/archive/rfc/RFC-SA2A-002-v26.9.16.md`:
 grep the JSONL for the raw user turn and extract its exact `content` string).
 The message was typed as `ultracode <paste>`; the leading `ultracode ` slash
 command trigger has been stripped, and everything from `The clean

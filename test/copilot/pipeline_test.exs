@@ -5,8 +5,8 @@ defmodule AshA2A.Copilot.PipelineTest do
   alias AshA2A.Copilot.Pipeline
   alias AshA2A.Strain.Bridge
   alias AshA2A.Strain.Tensor
-  alias AshA2A.Twin.Tony
-  alias AshA2A.Twin.Vince
+  alias AshA2A.Twin.COO
+  alias AshA2A.Twin.CEO
 
   @now 1_700_000_100
 
@@ -32,7 +32,7 @@ defmodule AshA2A.Copilot.PipelineTest do
   end
 
   defp rested_mesh(id) do
-    %{} |> Tony.register_coordinator(id, Tensor.new(%{}))
+    %{} |> COO.register_coordinator(id, Tensor.new(%{}))
   end
 
   defp saturated_mesh(id) do
@@ -44,7 +44,7 @@ defmodule AshA2A.Copilot.PipelineTest do
         heuristic_frequency: 10
       })
 
-    %{} |> Tony.register_coordinator(id, tensor)
+    %{} |> COO.register_coordinator(id, tensor)
   end
 
   defp intent(overrides \\ %{}) do
@@ -78,7 +78,7 @@ defmodule AshA2A.Copilot.PipelineTest do
     assert ticket.attestation_claims["nonce"] == "nonce-admit"
 
     # challenge ledger untouched by the admit
-    assert new_state.vince.challenges == %{}
+    assert new_state.ceo.challenges == %{}
   end
 
   test "challenge path: GPM 0.19 fires gpm_floor with retry_token; repeat escalates to refuse" do
@@ -90,7 +90,7 @@ defmodule AshA2A.Copilot.PipelineTest do
     assert ch.code == :gpm_floor
     assert is_reference(ch.retry_token)
     assert "itemized_cost_breakdown" in ch.demanded_evidence
-    assert state1.vince.challenges[:trade_ch] == 1
+    assert state1.ceo.challenges[:trade_ch] == 1
 
     # same trade re-submitted (even with a repaired offer) escalates
     repaired = intent(%{trade: :trade_ch, nte: 1000, offer: 700})
@@ -106,9 +106,9 @@ defmodule AshA2A.Copilot.PipelineTest do
     {new_state, {:shed, {:senior_queue, target}}} =
       Pipeline.check(intent(%{coordinator_id: :coord_s, sensor_frame: frame}), state, now: @now)
 
-    assert target == :tony_relief
+    assert target == :coo_relief
     # shed does not touch the challenge ledger
-    assert new_state.vince.challenges == %{}
+    assert new_state.ceo.challenges == %{}
   end
 
   test "spoofed attestation: virtual claim refuses" do
@@ -185,11 +185,17 @@ defmodule AshA2A.Copilot.PipelineTest do
 
   defmodule FixIntentHelpers do
     def state do
-      Pipeline.init([gpm_floor: 0.22, tolerance: 0.0], Tony.register_coordinator(%{}, :alice, Tensor.new(%{})))
+      Pipeline.init(
+        [gpm_floor: 0.22, tolerance: 0.0],
+        COO.register_coordinator(%{}, :alice, Tensor.new(%{}))
+      )
     end
 
     def intent(over) do
-      Map.merge(%{trade: "t-fix", nte: 1000, offer: 720, coordinator_id: :alice, sensor_frame: :unused}, over)
+      Map.merge(
+        %{trade: "t-fix", nte: 1000, offer: 720, coordinator_id: :alice, sensor_frame: :unused},
+        over
+      )
     end
   end
 
@@ -275,7 +281,7 @@ defmodule AshA2A.Copilot.PipelineTest do
              Pipeline.check(FIH.intent(%{}), FIH.state(), now: @now, prior: nil)
   end
 
-  test "prior challenge is recorded on the bridge like a Vince challenge" do
+  test "prior challenge is recorded on the bridge like a CEO challenge" do
     defmodule ChallengingPrior do
       def prior_verdict(_c, _t), do: {:challenge, [:photo], "need photo"}
     end
@@ -300,23 +306,23 @@ defmodule AshA2A.Copilot.PipelineTest do
 
   # -- Z7 seam: Bridge observation feed + strain-first routing -----------------
 
-  defmodule CountingVince do
-    @moduledoc "Vince-compatible wrapper counting evaluate_intent/2 calls via a named Agent."
+  defmodule CountingCEO do
+    @moduledoc "CEO-compatible wrapper counting evaluate_intent/2 calls via a named Agent."
 
     def start_link(name), do: Agent.start_link(fn -> 0 end, name: name)
 
     def count(name), do: Agent.get(name, & &1)
 
-    def evaluate_intent(name, vince, claim) do
+    def evaluate_intent(name, ceo, claim) do
       Agent.update(name, &(&1 + 1))
-      Vince.evaluate_intent(vince, claim)
+      CEO.evaluate_intent(ceo, claim)
     end
   end
 
   setup do
     # T5 unblock (disclosed, minimal): whereis-then-stop races an agent that
     # died since the whereis — GenServer.stop then raises "no process".
-    case Process.whereis(:vince_counter_z7) do
+    case Process.whereis(:ceo_counter_z7) do
       nil ->
         :ok
 
@@ -328,7 +334,7 @@ defmodule AshA2A.Copilot.PipelineTest do
         end
     end
 
-    {:ok, _} = CountingVince.start_link(:vince_counter_z7)
+    {:ok, _} = CountingCEO.start_link(:ceo_counter_z7)
     :ok
   end
 
@@ -359,7 +365,7 @@ defmodule AshA2A.Copilot.PipelineTest do
     assert new_state.bridge[:coord_a].tensor.active_leases == 1
   end
 
-  test "Z7 challenge: heuristic_frequency increments with source :vince" do
+  test "Z7 challenge: heuristic_frequency increments with source :ceo" do
     state = %{Pipeline.init(gpm_floor: 0.22) | mesh: rested_mesh(:coord_a)}
 
     low_margin = intent(%{trade: :trade_z7, nte: 1000, offer: 810})
@@ -381,23 +387,23 @@ defmodule AshA2A.Copilot.PipelineTest do
     assert Bridge.error_rate(state2.bridge, :coord_a) == 1.0
   end
 
-  test "Z7 saturated bridge mesh: route sheds WITHOUT consulting Vince (counter == 0)" do
+  test "Z7 saturated bridge mesh: route sheds WITHOUT consulting CEO (counter == 0)" do
     mesh = saturated_bridge_mesh(:coord_s)
 
-    # non-vacuity: the counter demonstrably counts real Vince consultations
-    assert CountingVince.count(:vince_counter_z7) == 0
+    # non-vacuity: the counter demonstrably counts real CEO consultations
+    assert CountingCEO.count(:ceo_counter_z7) == 0
 
-    vince = Vince.new([])
-    CountingVince.evaluate_intent(:vince_counter_z7, vince, %{trade: :t, nte: 1000, offer: 700})
-    assert CountingVince.count(:vince_counter_z7) == 1
+    ceo = CEO.new([])
+    CountingCEO.evaluate_intent(:ceo_counter_z7, ceo, %{trade: :t, nte: 1000, offer: 700})
+    assert CountingCEO.count(:ceo_counter_z7) == 1
 
     # route over a saturated mesh sheds without a second consultation
     ticket = %{friction: 0.5, candidates: [:coord_s]}
     assert {:shed, {:senior_queue, _reason}} = Pipeline.route(ticket, mesh)
-    assert CountingVince.count(:vince_counter_z7) == 1
+    assert CountingCEO.count(:ceo_counter_z7) == 1
   end
 
-  test "Z7 check with counting vince mod: admit path consults Vince exactly once" do
+  test "Z7 check with counting ceo mod: admit path consults CEO exactly once" do
     key = Key.generate()
     frame = signed_frame("nonce-z7-cv", fresh_claims("nonce-z7-cv"), key)
 
@@ -405,15 +411,15 @@ defmodule AshA2A.Copilot.PipelineTest do
       Pipeline.init(gpm_floor: 0.22, tolerance: 0.0)
       |> then(&%{&1 | mesh: rested_mesh(:coord_a)})
 
-    assert CountingVince.count(:vince_counter_z7) == 0
+    assert CountingCEO.count(:ceo_counter_z7) == 0
 
-    # inject the counting module in place of Vince
-    vince_mod = fn v, claim -> CountingVince.evaluate_intent(:vince_counter_z7, v, claim) end
+    # inject the counting module in place of CEO
+    ceo_mod = fn v, claim -> CountingCEO.evaluate_intent(:ceo_counter_z7, v, claim) end
 
     {_state, {:ok, _}} =
-      Pipeline.check(intent(%{sensor_frame: frame}), state, now: @now, vince_mod: vince_mod)
+      Pipeline.check(intent(%{sensor_frame: frame}), state, now: @now, ceo_mod: ceo_mod)
 
-    assert CountingVince.count(:vince_counter_z7) == 1
+    assert CountingCEO.count(:ceo_counter_z7) == 1
   end
 
   test "Z7 route sweep: 20 tickets under rising strain — sheds appear, zero dropped" do
@@ -440,7 +446,8 @@ defmodule AshA2A.Copilot.PipelineTest do
 
         case Pipeline.route(ticket, mesh) do
           {:assign, id} ->
-            {Bridge.record_observation(mesh, id, %{type: :ticket_assigned}), acc ++ [{i, {:assign, id}}]}
+            {Bridge.record_observation(mesh, id, %{type: :ticket_assigned}),
+             acc ++ [{i, {:assign, id}}]}
 
           shed ->
             {mesh, acc ++ [{i, shed}]}
@@ -455,8 +462,8 @@ defmodule AshA2A.Copilot.PipelineTest do
     assert sheds > 0
 
     # both coordinators saturated by the assigns; overflow sheds to senior queue
-    assert Pipeline.route(%{friction: 0.5, candidates: [:c1, :c2]}, mesh)
-           == {:shed, {:senior_queue, :all_saturated}}
+    assert Pipeline.route(%{friction: 0.5, candidates: [:c1, :c2]}, mesh) ==
+             {:shed, {:senior_queue, :all_saturated}}
 
     # zero dropped: every ticket either assigned or shed-with-reason
     assert Enum.all?(results, fn
@@ -499,10 +506,10 @@ defmodule AshA2A.Copilot.PipelineTest do
 
     assert ticket.coordinator_id == :coord_a
     assert new_state.bridge[:coord_a].tensor.active_leases == 1
-    assert new_state.vince.challenges == %{}
+    assert new_state.ceo.challenges == %{}
   end
 
-  test "G4 authority: configured refusing source refuses with code :authority; Vince already consulted exactly once" do
+  test "G4 authority: configured refusing source refuses with code :authority; CEO already consulted exactly once" do
     key = Key.generate()
     frame = signed_frame("nonce-g4-deny", fresh_claims("nonce-g4-deny"), key)
 
@@ -510,19 +517,19 @@ defmodule AshA2A.Copilot.PipelineTest do
       Pipeline.init(gpm_floor: 0.22, tolerance: 0.0)
       |> then(&%{&1 | mesh: rested_mesh(:coord_a)})
 
-    assert CountingVince.count(:vince_counter_z7) == 0
+    assert CountingCEO.count(:ceo_counter_z7) == 0
 
-    vince_mod = fn v, claim -> CountingVince.evaluate_intent(:vince_counter_z7, v, claim) end
+    ceo_mod = fn v, claim -> CountingCEO.evaluate_intent(:ceo_counter_z7, v, claim) end
 
     {new_state, {:refuse, %{code: :authority, reason: reason}}} =
       Pipeline.check(intent(%{sensor_frame: frame, actor_id: "principal-1"}), state,
         now: @now,
         authority_source: RefusingSource,
-        vince_mod: vince_mod
+        ceo_mod: ceo_mod
       )
 
-    # authority is the LAST gate: Vince was already consulted (order preserved)
-    assert CountingVince.count(:vince_counter_z7) == 1
+    # authority is the LAST gate: CEO was already consulted (order preserved)
+    assert CountingCEO.count(:ceo_counter_z7) == 1
 
     assert match?({:refused, :insufficient_authority, _}, reason) or is_map(reason)
     assert reason.actor_id == "principal-1"
@@ -571,7 +578,7 @@ defmodule AshA2A.Copilot.PipelineTest do
       do: {:refuse, %{code: :gpm_breach, reason: "below declared floor"}}
   end
 
-  test "G5 escalation: broker configured — Vince repeat-challenge refuse opens a proposal with signature-required card" do
+  test "G5 escalation: broker configured — CEO repeat-challenge refuse opens a proposal with signature-required card" do
     state = %{Pipeline.init(gpm_floor: 0.22) | mesh: rested_mesh(:coord_a)}
 
     low_margin = intent(%{trade: :trade_g5, nte: 1000, offer: 810})
@@ -583,12 +590,12 @@ defmodule AshA2A.Copilot.PipelineTest do
       Pipeline.check(repaired, state1,
         attention_broker: Broker,
         now: @now,
-        tony_triage: {["ok"], ["supervisor_review_needed"]}
+        coo_triage: {["ok"], ["supervisor_review_needed"]}
       )
 
     assert is_reference(esc.proposal_id)
     card = esc.card
-    assert card.source == :vince_challenge
+    assert card.source == :ceo_challenge
     assert card.gpm_floor_breach == true
 
     # B5 invariant: GPM-floor card ALWAYS requires signature on every option
@@ -625,7 +632,7 @@ defmodule AshA2A.Copilot.PipelineTest do
       )
 
     assert esc.card.gpm_floor_breach == true
-    assert esc.card.source == :vince_challenge
+    assert esc.card.source == :ceo_challenge
     assert Enum.all?(esc.card.options, &(&1.requires_signature == true))
     assert esc.proposal.level == :consent_by_silence
   end

@@ -1,7 +1,7 @@
 # examples/copilot_demo.exs
 #
 # End-to-end demonstration of the Communicating Digital Twins copilot stack:
-# Vince (adversarial intent evaluation) -> Tony (coordinator strain gate)
+# CEO (adversarial intent evaluation) -> COO (coordinator strain gate)
 # -> Attestation.Gate (Article-10 on-site attestation).
 #
 # Chicago discipline: every stage calls the REAL landed modules, no mocks.
@@ -21,7 +21,7 @@ defmodule CopilotDemo do
   alias AshA2A.Attestation.Key
   alias AshA2A.Copilot.Pipeline
   alias AshA2A.Strain.Tensor
-  alias AshA2A.Twin.Tony
+  alias AshA2A.Twin.COO
 
   @gpm_floor 0.22
 
@@ -61,7 +61,7 @@ defmodule CopilotDemo do
   end
 
   def rested_mesh(id) do
-    %{} |> Tony.register_coordinator(id, Tensor.new(%{}))
+    %{} |> COO.register_coordinator(id, Tensor.new(%{}))
   end
 
   def intent(trade, nte, offer, coord, frame) do
@@ -71,7 +71,7 @@ defmodule CopilotDemo do
   # ---- stages ---------------------------------------------------------------
 
   def run(now) do
-    IO.puts("Copilot pipeline demo — Vince -> Tony -> Attestation.Gate")
+    IO.puts("Copilot pipeline demo — CEO -> COO -> Attestation.Gate")
     IO.puts("gpm_floor=#{@gpm_floor}  now=#{now}")
 
     # Stage 0: crypto substrate — mint a real ECDSA P-256 keypair.
@@ -90,9 +90,9 @@ defmodule CopilotDemo do
     intent1 = intent("plumbing.drain", 1000, 500, "c1", :not_reached)
     {state1, result1} = Pipeline.check(intent1, state, now: now)
     print_result("pipeline", result1)
-    IO.puts("  vince.challenges=#{inspect(state1.vince.challenges)}")
+    IO.puts("  ceo.challenges=#{inspect(state1.ceo.challenges)}")
 
-    # Stage 2: the lawful retry. Vince's challenge ledger is keyed by trade:
+    # Stage 2: the lawful retry. CEO's challenge ledger is keyed by trade:
     # resubmitting the SAME trade escalates to :escalate_multisig
     # (challenge-as-state). The retry is therefore a NEW dispute file
     # (plumbing.drain.r2) with a repaired offer (GPM 0.30) and a fresh token.
@@ -133,7 +133,7 @@ defmodule CopilotDemo do
         heuristic_frequency: 10
       })
 
-    mesh5 = %{} |> Tony.register_coordinator("c-burned", saturated)
+    mesh5 = %{} |> COO.register_coordinator("c-burned", saturated)
     state5 = %{Pipeline.init(gpm_floor: @gpm_floor) | mesh: mesh5}
     intent5 = intent("plumbing.drain.rush", 1000, 700, "c-burned", :not_reached)
     {_state5, result5} = Pipeline.check(intent5, state5, now: now)

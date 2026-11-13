@@ -35,10 +35,16 @@ defmodule AshA2A.V11CodecTest do
 
       {wire, back} = rt(task, :task)
       assert wire["generation"] == 7
-      assert [%{"message" => _, "generation" => 2}, %{"status" => _, "generation" => 5}] = wire["timeline"]
+
+      assert [%{"message" => _, "generation" => 2}, %{"status" => _, "generation" => 5}] =
+               wire["timeline"]
+
       assert back.generation == 7
-      assert [%TimelineEntry{entry: {:message, %Message{}}, generation: 2},
-              %TimelineEntry{entry: {:status, %Status{state: :working}}, generation: 5}] = back.timeline
+
+      assert [
+               %TimelineEntry{entry: {:message, %Message{}}, generation: 2},
+               %TimelineEntry{entry: {:status, %Status{state: :working}}, generation: 5}
+             ] = back.timeline
     end
 
     test "generation 0 is omitted" do
@@ -115,7 +121,9 @@ defmodule AshA2A.V11CodecTest do
 
   describe "events" do
     test "status and artifact updates carry generation" do
-      {w1, b1} = rt(StatusUpdate.new("t", Status.new(:working), generation: 4), :status_update_event)
+      {w1, b1} =
+        rt(StatusUpdate.new("t", Status.new(:working), generation: 4), :status_update_event)
+
       assert w1["generation"] == 4 and b1.generation == 4
 
       art = Artifact.new([AshA2A.Protocol.Part.Text.new("x")])
@@ -129,16 +137,32 @@ defmodule AshA2A.V11CodecTest do
     end
 
     test "MessageUpdate round trips through the StreamResponse wrapper" do
-      ev = MessageUpdate.new("t", user_msg(), context_id: "c", generation: 8, metadata: %{"k" => "v"})
+      ev =
+        MessageUpdate.new("t", user_msg(),
+          context_id: "c",
+          generation: 8,
+          metadata: %{"k" => "v"}
+        )
+
       {:ok, wrapped} = JSON.encode_stream_response(ev)
       assert Map.keys(wrapped) == ["messageUpdate"]
       back = wrapped |> Jason.encode!() |> Jason.decode!() |> JSON.decode!(:event)
-      assert %MessageUpdate{task_id: "t", context_id: "c", generation: 8, metadata: %{"k" => "v"}} = back
+
+      assert %MessageUpdate{task_id: "t", context_id: "c", generation: 8, metadata: %{"k" => "v"}} =
+               back
+
       assert %Message{} = back.message
     end
 
     test "StreamError round trips through the StreamResponse wrapper" do
-      err = %StreamError{task_id: "t", code: "INVALID_ARGUMENT", message: "bad", reference_id: "m1", metadata: %{"a" => 1}}
+      err = %StreamError{
+        task_id: "t",
+        code: "INVALID_ARGUMENT",
+        message: "bad",
+        reference_id: "m1",
+        metadata: %{"a" => 1}
+      }
+
       {:ok, wrapped} = JSON.encode_stream_response(err)
       assert %{"error" => %{"code" => "INVALID_ARGUMENT", "referenceId" => "m1"}} = wrapped
       assert ^err = wrapped |> Jason.encode!() |> Jason.decode!() |> JSON.decode!(:event)
@@ -152,7 +176,12 @@ defmodule AshA2A.V11CodecTest do
     test "known v1.0 wrappers still decode" do
       assert %StatusUpdate{} =
                JSON.decode!(
-                 %{"statusUpdate" => %{"taskId" => "t", "status" => %{"state" => "TASK_STATE_WORKING"}}},
+                 %{
+                   "statusUpdate" => %{
+                     "taskId" => "t",
+                     "status" => %{"state" => "TASK_STATE_WORKING"}
+                   }
+                 },
                  :event
                )
     end
@@ -161,7 +190,11 @@ defmodule AshA2A.V11CodecTest do
   describe "card + push config" do
     test "userArtifacts capability round trips" do
       card = %AshA2A.Protocol.AgentCard{
-        name: "a", description: "d", url: "https://a", version: "1", skills: [],
+        name: "a",
+        description: "d",
+        url: "https://a",
+        version: "1",
+        skills: [],
         capabilities: %{user_artifacts: true}
       }
 
@@ -177,7 +210,9 @@ defmodule AshA2A.V11CodecTest do
       assert wire["protocolVersion"] == "1.1"
       assert back.protocol_version == "1.1"
 
-      {w2, b2} = rt(%AshA2A.Protocol.PushNotificationConfig{url: "https://h"}, :push_notification_config)
+      {w2, b2} =
+        rt(%AshA2A.Protocol.PushNotificationConfig{url: "https://h"}, :push_notification_config)
+
       refute Map.has_key?(w2, "protocolVersion")
       assert b2.protocol_version == nil
     end
@@ -219,17 +254,27 @@ defmodule AshA2A.V11CodecTest do
                  }
                })
 
-      assert %{timeline_length: 5, history_length: 2, if_generation_match: 9, return_immediately: true} = cfg
+      assert %{
+               timeline_length: 5,
+               history_length: 2,
+               if_generation_match: 9,
+               return_immediately: true
+             } = cfg
     end
 
     test "GetTask / ListTasks / Subscribe v1.1 members" do
       assert {:ok, %{id: "t", timeline_length: 3, current_generation: 4}} =
-               JSON.decode_get_task_request(%{"id" => "t", "timelineLength" => 3, "currentGeneration" => 4})
+               JSON.decode_get_task_request(%{
+                 "id" => "t",
+                 "timelineLength" => 3,
+                 "currentGeneration" => 4
+               })
 
       assert {:ok, %{id: "t", current_generation: nil, timeline_length: nil}} =
                JSON.decode_get_task_request(%{"id" => "t"})
 
-      assert {:ok, %{timeline_length: 2}} = JSON.decode_list_tasks_request(%{"timelineLength" => 2})
+      assert {:ok, %{timeline_length: 2}} =
+               JSON.decode_list_tasks_request(%{"timelineLength" => 2})
 
       assert {:ok, %{id: "t", last_seen_generation: 11}} =
                JSON.decode_subscribe_request(%{"id" => "t", "lastSeenGeneration" => 11})
@@ -239,7 +284,10 @@ defmodule AshA2A.V11CodecTest do
 
     test "StreamRequest sendMessage / subscribe / unknown payload" do
       assert {:ok, %{tenant: "x", payload: {:send_message, %{message: %Message{}}}}} =
-               JSON.decode_stream_request(%{"tenant" => "x", "sendMessage" => %{"message" => @msg}})
+               JSON.decode_stream_request(%{
+                 "tenant" => "x",
+                 "sendMessage" => %{"message" => @msg}
+               })
 
       assert {:ok, %{payload: {:subscribe, %{id: "t"}}}} =
                JSON.decode_stream_request(%{"subscribe" => %{"id" => "t"}})

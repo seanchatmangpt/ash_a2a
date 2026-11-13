@@ -391,6 +391,7 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
     resp = post(c.venue.base_url, "/venue/keynote", headers: [badge_header()])
 
     assert resp.status == 200
+
     assert body(resp) == %{
              "granted" => true,
              "method" => "keynote",
@@ -416,7 +417,9 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
   test "workshop task: session token and SSO in, badge out (403)", c do
     assert post(c.venue.base_url, "/venue/workshop", headers: [badge_header()]).status == 403
 
-    resp = post(c.venue.base_url, "/venue/workshop", headers: [authorization("Bearer " <> c.session)])
+    resp =
+      post(c.venue.base_url, "/venue/workshop", headers: [authorization("Bearer " <> c.session)])
+
     assert resp.status == 200
     assert body(resp)["tier"] == "workshop"
 
@@ -427,11 +430,17 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
 
   test "backstage task: VIP only — badge and session both refused 403, VIP in", c do
     assert post(c.venue.base_url, "/venue/backstage", headers: [badge_header()]).status == 403
-    assert post(c.venue.base_url, "/venue/backstage", headers: [authorization("Bearer " <> c.session)]).status ==
+
+    assert post(c.venue.base_url, "/venue/backstage",
+             headers: [authorization("Bearer " <> c.session)]
+           ).status ==
              403
 
-    resp = post(c.venue.base_url, "/venue/backstage", headers: [authorization("Bearer " <> c.vip)])
+    resp =
+      post(c.venue.base_url, "/venue/backstage", headers: [authorization("Bearer " <> c.vip)])
+
     assert resp.status == 200
+
     assert body(resp) == %{
              "granted" => true,
              "method" => "backstage",
@@ -445,8 +454,13 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
     resp = post(c.venue.base_url, "/venue/backstage", headers: [badge_header()])
 
     assert resp.status == 403
+
     assert body(resp) == %{
-             "error" => %{"code" => "tier_access_denied", "method" => "backstage", "tier" => "expo"}
+             "error" => %{
+               "code" => "tier_access_denied",
+               "method" => "backstage",
+               "tier" => "expo"
+             }
            }
 
     refute Jason.encode!(body(resp)) =~ Venue.badge_id()
@@ -455,7 +469,10 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
   # -- 401 challenge path ----------------------------------------------------------
 
   test "expired VIP token is challenged with 401 + Bearer WWW-Authenticate", c do
-    resp = post(c.venue.base_url, "/venue/backstage", headers: [authorization("Bearer " <> c.expired_vip)])
+    resp =
+      post(c.venue.base_url, "/venue/backstage",
+        headers: [authorization("Bearer " <> c.expired_vip)]
+      )
 
     assert resp.status == 401
     challenges = get_resp_header(resp, "www-authenticate")
@@ -464,7 +481,10 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
   end
 
   test "VIP token without the venue:all scope is refused 403 (insufficient scope)", c do
-    resp = post(c.venue.base_url, "/venue/backstage", headers: [authorization("Bearer " <> c.noscope_vip)])
+    resp =
+      post(c.venue.base_url, "/venue/backstage",
+        headers: [authorization("Bearer " <> c.noscope_vip)]
+      )
 
     # RFC 6750 section 3.1: insufficient_scope is 403 with a Bearer challenge.
     assert resp.status == 403
@@ -507,7 +527,9 @@ defmodule AshA2A.Test.ConferenceSim.AuthTierCourt do
 
   test "same attendee authenticates via badge for the expo floor and bearer for sessions", c do
     expo = post(c.venue.base_url, "/venue/keynote", headers: [badge_header()])
-    sessions = post(c.venue.base_url, "/venue/keynote", headers: [authorization("Bearer " <> c.session)])
+
+    sessions =
+      post(c.venue.base_url, "/venue/keynote", headers: [authorization("Bearer " <> c.session)])
 
     assert expo.status == 200
     assert sessions.status == 200

@@ -276,8 +276,10 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
 
     # A resume against an id with NO run is typed, not silent.
     assert {:error, :no_such_run} =
-             Provider.resume("i7-never-dispatched-#{System.unique_integer([:positive])}",
-               %{}, opts
+             Provider.resume(
+               "i7-never-dispatched-#{System.unique_integer([:positive])}",
+               %{},
+               opts
              )
 
     assert store != nil
@@ -297,9 +299,10 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
              %{prepare: Effects.count(fx, :prepare), finish: Effects.count(fx, :finish)}
 
     # parked tape: prepare is standing; the Await step checkpoints at consume time
-    assert Enum.map(tape_before = @engine.steps(store, task_id, store_module: @dets), & &1.label) == [
-             ~s("urn:ash-pplan:workflow:a2a_pplan_binding_await#step-prepare")
-           ]
+    assert Enum.map(tape_before = @engine.steps(store, task_id, store_module: @dets), & &1.label) ==
+             [
+               ~s("urn:ash-pplan:workflow:a2a_pplan_binding_await#step-prepare")
+             ]
 
     # 5 concurrent follow-up messages on the SAME task id.
     results =
@@ -321,16 +324,17 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
     # Every concurrent caller observed a lawful outcome: the one consumer
     # drove completion; pass-through callers saw the sealed state; losers of
     # the consume-once race see a typed refusal — none silent.
-    outcomes = Enum.map(results, fn
-      {:ok, :completed, _} -> :completed
-      {:error, {:refused, _}} -> :refused
-      {:error, :no_signal_waiter} -> :no_signal_waiter
-      {:error, :taken} -> :taken
-      other -> {:unexpected, other}
-    end)
+    outcomes =
+      Enum.map(results, fn
+        {:ok, :completed, _} -> :completed
+        {:error, {:refused, _}} -> :refused
+        {:error, :no_signal_waiter} -> :no_signal_waiter
+        {:error, :taken} -> :taken
+        other -> {:unexpected, other}
+      end)
 
     assert :completed in outcomes
-    assert Enum.all?(outcomes, &match?(:completed, &1) or is_tuple(&1) or match?(:taken, &1))
+    assert Enum.all?(outcomes, &(match?(:completed, &1) or is_tuple(&1) or match?(:taken, &1)))
 
     # Binding bijection: still exactly ONE checkpoint tape, grown only by the
     # single consumer's steps (prepare standing at dispatch; await+finish land
@@ -426,6 +430,7 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
              %{prepare: Effects.count(fx, :prepare), finish: Effects.count(fx, :finish)}
 
     tape1 = @engine.steps(store, task_id, store_module: @dets)
+
     assert Enum.map(tape1, & &1.label) == [
              ~s("urn:ash-pplan:workflow:a2a_pplan_binding_linear#step-prepare"),
              ~s("urn:ash-pplan:workflow:a2a_pplan_binding_linear#step-finish")

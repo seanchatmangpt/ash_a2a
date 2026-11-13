@@ -29,7 +29,8 @@ defmodule AshA2A.Protocol.TaskStore do
   @doc """
   Retrieves a task by ID.
   """
-  @callback get(ref(), task_id :: String.t()) :: {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found}
+  @callback get(ref(), task_id :: String.t()) ::
+              {:ok, AshA2A.Protocol.Task.t()} | {:error, :not_found}
 
   @doc """
   Stores or updates a task.

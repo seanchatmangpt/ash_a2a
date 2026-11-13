@@ -42,7 +42,7 @@ defmodule AshA2A.Protocol.PushNotification do
   end
 
   defp spawn_delivery(module, opts, config, payload, task) do
-    Task.start(fn ->
+    Task.Supervisor.start_child(AshA2A.Protocol.PushTaskSupervisor, fn ->
       start = System.monotonic_time()
       result = module.deliver(config, payload, opts)
 

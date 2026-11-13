@@ -199,9 +199,7 @@ defmodule AshA2A.TwoPortGateTest do
         |> elem(1)
         |> flip_byte()
 
-      assert {:error,
-              {:refused_lease, 0xF,
-               %{codes: code_list}}} =
+      assert {:error, {:refused_lease, 0xF, %{codes: code_list}}} =
                TwoPortGate.evaluate(command(), broken, lease_public_key: pub)
 
       assert code_list == [
@@ -329,14 +327,20 @@ defmodule AshA2A.TwoPortGateTest do
       hook = fn name, failed? -> send(self(), {:conjunct, name, failed?}) end
 
       {:ok, valid} = Lease.for_command(cmd) |> Lease.sign(priv)
-      assert :admitted = TwoPortGate.evaluate(cmd, valid, lease_public_key: pub, conjunct_hook: hook)
+
+      assert :admitted =
+               TwoPortGate.evaluate(cmd, valid, lease_public_key: pub, conjunct_hook: hook)
+
       admitted_calls = drain([])
 
       broken = Lease.for_command(cmd) |> struct(scope_digest: @gd, root_digest: @ge)
       {:ok, broken_signed} = Lease.sign(broken, priv)
 
       assert {:error, {:refused_lease, _, _}} =
-               TwoPortGate.evaluate(cmd, broken_signed, lease_public_key: pub, conjunct_hook: hook)
+               TwoPortGate.evaluate(cmd, broken_signed,
+                 lease_public_key: pub,
+                 conjunct_hook: hook
+               )
 
       refused_calls = drain([])
 
@@ -407,9 +411,14 @@ defmodule AshA2A.TwoPortGateTest do
       handler_id = "two-port-skip-#{System.unique_integer()}"
 
       :ok =
-        :telemetry.attach(handler_id, [:ash_a2a, :command_bus, :lease_gate], fn _, _, _, _ ->
-          send(self(), :lease_gate_fired)
-        end, %{})
+        :telemetry.attach(
+          handler_id,
+          [:ash_a2a, :command_bus, :lease_gate],
+          fn _, _, _, _ ->
+            send(self(), :lease_gate_fired)
+          end,
+          %{}
+        )
 
       assert {:ok, receipt} =
                CommandBus.run(command(), data_message(%{}), Echo, store_opts: store_opts)

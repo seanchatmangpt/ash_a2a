@@ -78,7 +78,11 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
 
       if v1_wire?(ctx) or Map.has_key?(params, "pageSize") or Map.has_key?(params, "pageToken") do
         with {:ok, page, next} <- paginate(configs, params) do
-          result = %{"configs" => Enum.map(page, &encode(&1, flat?)), "nextPageToken" => next || ""}
+          result = %{
+            "configs" => Enum.map(page, &encode(&1, flat?)),
+            "nextPageToken" => next || ""
+          }
+
           {:ok, result}
         end
       else
@@ -310,7 +314,9 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
 
   defp credentials_safe(creds) do
     if String.contains?(creds, ["\r", "\n", "\0"]),
-      do: {:error, Error.invalid_params("\"authentication.credentials\" contains control characters")},
+      do:
+        {:error,
+         Error.invalid_params("\"authentication.credentials\" contains control characters")},
       else: :ok
   end
 
@@ -334,7 +340,10 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
        )}
 
   defp admit(url, push_opts) do
-    case WebhookPolicy.admit(url, Keyword.take(push_opts, [:allow_http, :allow_cidrs, :resolver, :allow_ports])) do
+    case WebhookPolicy.admit(
+           url,
+           Keyword.take(push_opts, [:allow_http, :allow_cidrs, :resolver, :allow_ports])
+         ) do
       {:ok, _} ->
         :ok
 

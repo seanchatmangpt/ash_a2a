@@ -194,7 +194,11 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     ctx = authority_ctx()
     request = AuthorityRequest.new(effect, ctx)
 
-    client = real_client(%{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"}, 2_000)
+    client =
+      real_client(
+        %{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"},
+        2_000
+      )
 
     assert {:ok, response, receipt} =
              Absorption.authorize(request, client, attested, binding, ctx)
@@ -284,7 +288,10 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     binding: binding
   } do
     assert {:error, :pdp_mixup} =
-             PDPBinding.admit(metadata, attested, %{binding | policy_decision_point: "https://other.example"})
+             PDPBinding.admit(metadata, attested, %{
+               binding
+               | policy_decision_point: "https://other.example"
+             })
   end
 
   ## ordering: binding refusals precede any HTTP
@@ -299,7 +306,11 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     ctx = authority_ctx()
     request = AuthorityRequest.new(effect, ctx)
 
-    client = real_client(%{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"}, 2_000)
+    client =
+      real_client(
+        %{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"},
+        2_000
+      )
 
     {:ok, imposter} =
       AttestedIdentity.from_verified("spiffe://prod.example/pdp/other",
@@ -327,7 +338,11 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     ctx = authority_ctx()
     request = AuthorityRequest.new(effect, ctx)
 
-    client = real_client(%{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"}, 2_000)
+    client =
+      real_client(
+        %{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"},
+        2_000
+      )
 
     # A healthy PDP first: the binding admits and the round-trip succeeds.
     assert {:ok, _response, _receipt} =
@@ -347,7 +362,10 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
 
     dead_client =
       real_client(
-        %{metadata | access_evaluation_endpoint: "http://127.0.0.1:#{dead_port}/access/v1/evaluation"},
+        %{
+          metadata
+          | access_evaluation_endpoint: "http://127.0.0.1:#{dead_port}/access/v1/evaluation"
+        },
         150
       )
 
@@ -375,7 +393,11 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     %{pid: stalled_pid, base_url: stalled_base} =
       EphemeralHttp.start!({PDP, %{table: table, stall_ms: 5_000}})
 
-    client = real_client(%{metadata | access_evaluation_endpoint: stalled_base <> "/access/v1/evaluation"}, 100)
+    client =
+      real_client(
+        %{metadata | access_evaluation_endpoint: stalled_base <> "/access/v1/evaluation"},
+        100
+      )
 
     assert {:error, :pdp_unreachable} =
              Absorption.authorize(request, client, attested, binding, ctx)
@@ -395,7 +417,11 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     effect = PreparedEffect.new("principal:alice", :payments, %{"id" => "boom"}, %{})
     request = AuthorityRequest.new(effect, authority_ctx())
 
-    client = real_client(%{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"}, 2_000)
+    client =
+      real_client(
+        %{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"},
+        2_000
+      )
 
     assert {:error, {:pdp_error, 500}} =
              Absorption.authorize(request, client, attested, binding, authority_ctx())
@@ -410,7 +436,11 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     effect = PreparedEffect.new("principal:alice", :payments, %{"id" => "garbage"}, %{})
     request = AuthorityRequest.new(effect, authority_ctx())
 
-    client = real_client(%{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"}, 2_000)
+    client =
+      real_client(
+        %{metadata | access_evaluation_endpoint: base_url <> "/access/v1/evaluation"},
+        2_000
+      )
 
     assert {:error, :invalid_decision} =
              Absorption.authorize(request, client, attested, binding, authority_ctx())
@@ -481,20 +511,21 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
     """
 
     def issue(request, _ctx) do
-      {:ok, %Certificate{
-        version: 1,
-        effect_digest: request.effect_digest,
-        principal: request.principal,
-        policy_epoch: request.policy_epoch,
-        revocation_epoch: request.revocation_epoch,
-        generation: request.generation,
-        nonce: "0123456789abcdef",
-        not_before_ms: 0,
-        expires_at_ms: 10_000,
-        audience: request.audience,
-        threshold: 1,
-        signatures: []
-      }}
+      {:ok,
+       %Certificate{
+         version: 1,
+         effect_digest: request.effect_digest,
+         principal: request.principal,
+         policy_epoch: request.policy_epoch,
+         revocation_epoch: request.revocation_epoch,
+         generation: request.generation,
+         nonce: "0123456789abcdef",
+         not_before_ms: 0,
+         expires_at_ms: 10_000,
+         audience: request.audience,
+         threshold: 1,
+         signatures: []
+       }}
     end
   end
 
@@ -507,5 +538,4 @@ defmodule AshA2A.SPIFFE.PDPBindingTest do
   end
 
   defp request_count(table), do: :ets.lookup_element(table, :request_count, 2)
-
 end

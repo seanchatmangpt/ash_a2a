@@ -216,13 +216,21 @@ defmodule AshA2A.Providers.PPlanOcelEvidenceCourtTest do
 
     # (1) dispatch a multi-step task through AshA2A.Execution.PPlan — parks on Await
     assert {:ok, %{state: :input_required, detail: ["go"], placement: p1}} =
-             AshA2A.Execution.PPlan.run(task_id, data_message(%{"q" => 1}), dispatch_config(store, await_model(), bindings(fx)))
+             AshA2A.Execution.PPlan.run(
+               task_id,
+               data_message(%{"q" => 1}),
+               dispatch_config(store, await_model(), bindings(fx))
+             )
 
     assert %AshA2A.RuntimeReceipt{} = p1
 
     # (2) resume with a follow-up message carrying the consume-once signal payload
     assert {:ok, %{state: :completed, detail: _result, placement: p2}} =
-             AshA2A.Execution.PPlan.run(task_id, data_message(%{"answer" => 42}), dispatch_config(store, await_model(), bindings(fx)))
+             AshA2A.Execution.PPlan.run(
+               task_id,
+               data_message(%{"answer" => 42}),
+               dispatch_config(store, await_model(), bindings(fx))
+             )
 
     assert %AshA2A.RuntimeReceipt{} = p2
 
@@ -259,7 +267,10 @@ defmodule AshA2A.Providers.PPlanOcelEvidenceCourtTest do
 
     # every relationship references an existing object id
     for ev <- events,
-        {_type, oid, _q} <- Enum.map(ev["relationships"], fn r -> {r["objectType"], r["objectId"], r["qualifier"]} end) do
+        {_type, oid, _q} <-
+          Enum.map(ev["relationships"], fn r ->
+            {r["objectType"], r["objectId"], r["qualifier"]}
+          end) do
       assert oid in object_ids, "event #{ev["id"]} references missing object #{oid}"
     end
 
@@ -323,7 +334,11 @@ defmodule AshA2A.Providers.PPlanOcelEvidenceCourtTest do
     task_id = "a2a-task-ocel-court-2"
 
     assert {:ok, %{state: :completed}} =
-             AshA2A.Execution.PPlan.run(task_id, data_message(%{"x" => 1}), dispatch_config(store, simple_model(), bindings(fx)))
+             AshA2A.Execution.PPlan.run(
+               task_id,
+               data_message(%{"x" => 1}),
+               dispatch_config(store, simple_model(), bindings(fx))
+             )
 
     assert {:ok, json} = @ocel.export(store, task_id, store_module: @dets)
     assert {:ok, %{"events" => events, "objects" => objects}} = Jason.decode(json)
@@ -355,7 +370,11 @@ defmodule AshA2A.Providers.PPlanOcelEvidenceCourtTest do
     task_id = "a2a-task-ocel-court-3"
 
     assert {:ok, %{state: :completed}} =
-             AshA2A.Execution.PPlan.run(task_id, data_message(%{"y" => 2}), dispatch_config(store, simple_model(), bindings(fx)))
+             AshA2A.Execution.PPlan.run(
+               task_id,
+               data_message(%{"y" => 2}),
+               dispatch_config(store, simple_model(), bindings(fx))
+             )
 
     assert {:ok, d_a} = @ocel.digest(store, task_id, store_module: @dets)
     assert {:ok, d_b} = @ocel.digest(store, task_id, store_module: @dets)

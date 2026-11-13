@@ -41,7 +41,10 @@ defmodule AshA2A.W14ErrorTablesTest do
   end
 
   test "unauthenticated / permission_denied carry ErrorInfo and keep -32600" do
-    for {fun, reason} <- [unauthenticated: "UNAUTHENTICATED", permission_denied: "PERMISSION_DENIED"] do
+    for {fun, reason} <- [
+          unauthenticated: "UNAUTHENTICATED",
+          permission_denied: "PERMISSION_DENIED"
+        ] do
       wire = Error.to_map(apply(Error, fun, ["nope"]))
       assert wire["code"] == -32_600
 
@@ -59,12 +62,22 @@ defmodule AshA2A.W14ErrorTablesTest do
 
     wire = Error.to_map(Error.task_not_cancelable("terminal", task_id: "tsk-2"))
 
-    assert [%{"reason" => "TASK_NOT_CANCELABLE", "metadata" => %{"taskId" => "tsk-2", "detail" => "terminal"}}] =
+    assert [
+             %{
+               "reason" => "TASK_NOT_CANCELABLE",
+               "metadata" => %{"taskId" => "tsk-2", "detail" => "terminal"}
+             }
+           ] =
              wire["data"]
 
     wire = Error.to_map(Error.version_not_supported("9.9", supported_versions: ["1.0", "0.3"]))
 
-    assert [%{"reason" => "VERSION_NOT_SUPPORTED", "metadata" => %{"supportedVersions" => "1.0,0.3", "detail" => "9.9"}}] =
+    assert [
+             %{
+               "reason" => "VERSION_NOT_SUPPORTED",
+               "metadata" => %{"supportedVersions" => "1.0,0.3", "detail" => "9.9"}
+             }
+           ] =
              wire["data"]
 
     assert Error.to_map(Error.task_not_found()) ==
@@ -80,12 +93,25 @@ defmodule AshA2A.W14ErrorTablesTest do
   end
 
   test "BadRequest violations builder and opt-in ToA2AError details" do
-    wire = Error.to_map(Error.invalid_params_with_violations("bad", [{:status, "must be one of"}]))
+    wire =
+      Error.to_map(Error.invalid_params_with_violations("bad", [{:status, "must be one of"}]))
 
-    assert [%{"reason" => "INVALID_PARAMS"}, %{"@type" => "type.googleapis.com/google.rpc.BadRequest", "fieldViolations" => [%{"field" => "status", "description" => "must be one of"}]}] =
+    assert [
+             %{"reason" => "INVALID_PARAMS"},
+             %{
+               "@type" => "type.googleapis.com/google.rpc.BadRequest",
+               "fieldViolations" => [%{"field" => "status", "description" => "must be one of"}]
+             }
+           ] =
              wire["data"]
 
-    arg = Ash.Error.Changes.InvalidArgument.exception(field: :status, message: "must be one of", value: "x")
+    arg =
+      Ash.Error.Changes.InvalidArgument.exception(
+        field: :status,
+        message: "must be one of",
+        value: "x"
+      )
+
     invalid = %Ash.Error.Invalid{errors: [arg]}
 
     # default: legacy single-ErrorInfo shape

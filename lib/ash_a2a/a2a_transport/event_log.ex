@@ -24,8 +24,14 @@ defmodule AshA2A.A2ATransport.EventLog do
   @type row :: {String.t(), non_neg_integer(), String.t(), map(), boolean()}
 
   @callback open(opts :: keyword()) :: {:ok, handle()} | {:error, term()}
-  @callback append(handle(), task_id :: String.t(), seq :: non_neg_integer(), kind :: String.t(),
-              payload :: map(), final? :: boolean()) :: :ok
+  @callback append(
+              handle(),
+              task_id :: String.t(),
+              seq :: non_neg_integer(),
+              kind :: String.t(),
+              payload :: map(),
+              final? :: boolean()
+            ) :: :ok
   @callback delete(handle(), task_id :: String.t(), seq :: non_neg_integer()) :: :ok
   @callback delete_task(handle(), task_id :: String.t()) :: :ok
   @callback load_all(handle()) :: [row()]

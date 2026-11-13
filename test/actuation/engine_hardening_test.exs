@@ -28,7 +28,9 @@ defmodule AshA2A.Actuation.EngineHardeningTest do
   end
 
   defp ctx(key, nonce, issued_at \\ System.system_time(:second)) do
-    token = Key.sign(%{"nonce" => nonce, "issued_at" => issued_at, "device" => %{"model" => "d"}}, key)
+    token =
+      Key.sign(%{"nonce" => nonce, "issued_at" => issued_at, "device" => %{"model" => "d"}}, key)
+
     %{attestation: {token, nonce}}
   end
 
@@ -43,7 +45,8 @@ defmodule AshA2A.Actuation.EngineHardeningTest do
   end
 
   defp opts(key, adapter, extra \\ []),
-    do: Keyword.merge([adapter: adapter, attestation_opts: [key: key], authorizer: &allow/2], extra)
+    do:
+      Keyword.merge([adapter: adapter, attestation_opts: [key: key], authorizer: &allow/2], extra)
 
   test "populated ledger: effect runs once; resubmit refused before dispatch" do
     key = Key.generate()
@@ -89,31 +92,43 @@ defmodule AshA2A.Actuation.EngineHardeningTest do
 
   test "non-standard authorizer returns are typed refusals" do
     key = Key.generate()
+
     for ret <- [:ok, :nope, nil, {:refused, :other}, {:error, 1}, {:refused, :a, %{}}] do
       auth = fn _t, _c -> ret end
+
       assert {:refused, :unauthorized} =
                Engine.submit(mint(), ctx(key, "n"), opts(key, Adapter.Noop, authorizer: auth))
     end
 
     raiser = fn _t, _c -> raise "boom" end
+
     assert {:refused, :unauthorized} =
              Engine.submit(mint(), ctx(key, "n"), opts(key, Adapter.Noop, authorizer: raiser))
   end
 
   test "PEP authorizer: default source denies, AllowAll admits" do
     key = Key.generate()
+
     assert {:refused, :unauthorized} =
-             Engine.submit(mint(), ctx(key, "n"),
-               opts(key, Adapter.Noop, authorizer: Engine.pep_authorizer()))
+             Engine.submit(
+               mint(),
+               ctx(key, "n"),
+               opts(key, Adapter.Noop, authorizer: Engine.pep_authorizer())
+             )
 
     assert {:ok, _, _} =
-             Engine.submit(mint(), ctx(key, "n"),
+             Engine.submit(
+               mint(),
+               ctx(key, "n"),
                opts(key, Adapter.Noop,
-                 authorizer: Engine.pep_authorizer(source: AshA2A.Authority.Source.AllowAll)))
+                 authorizer: Engine.pep_authorizer(source: AshA2A.Authority.Source.AllowAll)
+               )
+             )
   end
 
   test "adapter raise/throw/bad return -> typed adapter_error, ledger untouched" do
     key = Key.generate()
+
     bad = [
       fn _t, _c -> raise "x" end,
       fn _t, _c -> throw(:t) end,
@@ -130,7 +145,12 @@ defmodule AshA2A.Actuation.EngineHardeningTest do
   test "adapter receives attestation claims and ticket id" do
     key = Key.generate()
     {:ok, box} = Agent.start_link(fn -> nil end)
-    a = fn t, c -> Agent.update(box, fn _ -> c end); Adapter.Noop.execute(t, c) end
+
+    a = fn t, c ->
+      Agent.update(box, fn _ -> c end)
+      Adapter.Noop.execute(t, c)
+    end
+
     t = mint()
     assert {:ok, _, _} = Engine.submit(t, ctx(key, "nn"), opts(key, a))
     c = Agent.get(box, & &1)
@@ -142,14 +162,22 @@ defmodule AshA2A.Actuation.EngineHardeningTest do
     key = Key.generate()
     c = ctx(key, "n")
     t = mint()
-    assert {:refused, {:invalid_option, :adapter}} = Engine.submit(t, c, attestation_opts: [key: key])
-    assert {:refused, {:invalid_option, :adapter}} = Engine.submit(t, c, opts(key, NoSuchAdapterMod))
+
+    assert {:refused, {:invalid_option, :adapter}} =
+             Engine.submit(t, c, attestation_opts: [key: key])
+
+    assert {:refused, {:invalid_option, :adapter}} =
+             Engine.submit(t, c, opts(key, NoSuchAdapterMod))
+
     assert {:refused, {:invalid_option, :attestation_opts}} =
              Engine.submit(t, c, adapter: Adapter.Noop)
+
     assert {:refused, {:invalid_option, :attestation_opts}} =
              Engine.submit(t, c, adapter: Adapter.Noop, attestation_opts: [])
+
     assert {:refused, {:invalid_option, :authorizer}} =
              Engine.submit(t, c, opts(key, Adapter.Noop, authorizer: :nope))
+
     assert {:refused, {:invalid_option, :ledger}} =
              Engine.submit(t, c, opts(key, Adapter.Noop, ledger: :nope))
   end
@@ -189,7 +217,9 @@ defmodule AshA2A.Actuation.EngineHardeningTest do
     assert a.id == mint(%{payload: deep}).id
     refute a.id == mint(%{payload: Enum.reduce(1..12, %{leaf: 2}, fn _, acc -> %{k: acc} end)}).id
 
-    refute mint(%{payload: %URI{host: "a"}}).id == mint(%{payload: Map.from_struct(%URI{host: "a"})}).id
+    refute mint(%{payload: %URI{host: "a"}}).id ==
+             mint(%{payload: Map.from_struct(%URI{host: "a"})}).id
+
     assert mint(%{payload: %{b: 1, a: 2}}).id == mint(%{payload: %{a: 2, b: 1}}).id
   end
 

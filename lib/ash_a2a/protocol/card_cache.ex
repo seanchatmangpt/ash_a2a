@@ -301,14 +301,17 @@ defmodule AshA2A.Protocol.CardCache do
 
     path = cache_path(cache_dir, entry.url)
 
-    File.write!(path, Jason.encode!(%{
-      "url" => entry.url,
-      "body" => entry.body,
-      "etag" => entry.etag,
-      "last_modified" => entry.last_modified,
-      "cache_control" => entry.cache_control,
-      "fetched_at" => entry.fetched_at
-    }))
+    File.write!(
+      path,
+      Jason.encode!(%{
+        "url" => entry.url,
+        "body" => entry.body,
+        "etag" => entry.etag,
+        "last_modified" => entry.last_modified,
+        "cache_control" => entry.cache_control,
+        "fetched_at" => entry.fetched_at
+      })
+    )
   end
 
   defp load(cache_dir, url) do

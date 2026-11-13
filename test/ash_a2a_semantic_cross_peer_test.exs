@@ -593,7 +593,8 @@ defmodule AshA2A.SemanticCrossPeerTest do
 
   describe "S50 -- an A2A Artifact gains no standing from being an Artifact" do
     test "every artifact has standing :received, whatever it contains" do
-      artifact = AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new(Graphs.conforming_order())])
+      artifact =
+        AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new(Graphs.conforming_order())])
 
       assert Peer.standing_from_artifact(artifact) == :received
       refute Standing.admitted?(Peer.standing_from_artifact(artifact))
@@ -608,7 +609,11 @@ defmodule AshA2A.SemanticCrossPeerTest do
       assert reply_data(response)["standing"] == "admitted"
 
       {:ok, artifact} =
-        response |> task_result() |> Map.fetch!("artifacts") |> hd() |> AshA2A.Protocol.JSON.decode(:artifact)
+        response
+        |> task_result()
+        |> Map.fetch!("artifacts")
+        |> hd()
+        |> AshA2A.Protocol.JSON.decode(:artifact)
 
       # The exchange was admitted. The artifact carrying its result is still
       # only :received -- container-ness confers nothing.
@@ -637,7 +642,8 @@ defmodule AshA2A.SemanticCrossPeerTest do
     end
 
     test "an artifact with no semantic payload yields :profile_not_activated" do
-      artifact = AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("nothing semantic here")])
+      artifact =
+        AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("nothing semantic here")])
 
       assert {:error, %{code: :profile_not_activated}} = Peer.envelope_from_artifact(artifact)
     end

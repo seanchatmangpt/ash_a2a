@@ -177,12 +177,14 @@ defmodule AshA2A.Test.ConferenceSim.Interop.VenueVerifier do
 
   # Step 4: the payload binding (hash law over the canonical payload doc).
   defp payload_fence(credential) do
-    recomputed = Base.encode16(:crypto.hash(:sha256, Jason.encode!(credential["payload"])), case: :lower)
+    recomputed =
+      Base.encode16(:crypto.hash(:sha256, Jason.encode!(credential["payload"])), case: :lower)
 
     if recomputed == credential["payload_hash_hex"] do
       :ok
     else
-      {:refused, :payload_hash_mismatch, %{recomputed: recomputed, presented: credential["payload_hash_hex"]}}
+      {:refused, :payload_hash_mismatch,
+       %{recomputed: recomputed, presented: credential["payload_hash_hex"]}}
     end
   end
 end
@@ -208,7 +210,13 @@ defmodule AshA2A.Test.ConferenceSim.InteropCourt do
   test "court a: an exhibitor-issued signed credential is accepted by the venue (two wasm identities agree)",
        %{exhibit: exhibit, venue_host: venue_host} do
     {:ok, claims} =
-      VenueVerifier.adjudicate(exhibit["credential"], "attendee-X", exhibit["subject_registry"], exhibit["jwks"], venue_host)
+      VenueVerifier.adjudicate(
+        exhibit["credential"],
+        "attendee-X",
+        exhibit["subject_registry"],
+        exhibit["jwks"],
+        venue_host
+      )
 
     assert claims.subject == "attendee-X"
     assert claims.audience == "conference-sim.venue"
@@ -307,7 +315,14 @@ defmodule AshA2A.Test.ConferenceSim.InteropCourt do
     # The venue's own root: a real agent-card JWS (CardSigning over the RFC
     # 8785 wire projection, HS256 shared-secret root).
     venue_key = :crypto.strong_rand_bytes(32)
-    card = %{name: "venue-agent", url: "https://venue.example/a2a", description: "venue", version: "1.0.0"}
+
+    card = %{
+      name: "venue-agent",
+      url: "https://venue.example/a2a",
+      description: "venue",
+      version: "1.0.0"
+    }
+
     signed_card = AshA2A.Protocol.CardSigning.sign(card, venue_key, kid: "venue-hs1")
 
     assert :ok = AshA2A.Protocol.CardSigning.verify(signed_card, venue_key)
@@ -315,7 +330,13 @@ defmodule AshA2A.Test.ConferenceSim.InteropCourt do
     # The affidavit credential verifies under the exhibitor root at the same
     # time - neither admission depends on the other.
     {:ok, _claims} =
-      VenueVerifier.adjudicate(exhibit["credential"], "attendee-X", exhibit["subject_registry"], exhibit["jwks"], venue_host)
+      VenueVerifier.adjudicate(
+        exhibit["credential"],
+        "attendee-X",
+        exhibit["subject_registry"],
+        exhibit["jwks"],
+        venue_host
+      )
 
     # Cross-presentation is refused: the venue card does NOT verify under a
     # root derived from exhibitor key material.
@@ -351,14 +372,22 @@ defmodule AshA2A.Test.ConferenceSim.InteropCourt do
     # After all cross-presentation attempts, the honest credential still
     # verifies: coexistence did not disturb either root.
     {:ok, _} =
-      VenueVerifier.adjudicate(exhibit["credential"], "attendee-X", exhibit["subject_registry"], exhibit["jwks"], venue_host)
+      VenueVerifier.adjudicate(
+        exhibit["credential"],
+        "attendee-X",
+        exhibit["subject_registry"],
+        exhibit["jwks"],
+        venue_host
+      )
   end
 
   # ---- fixtures ----------------------------------------------------------------
 
   defp run_vendor_b! do
     script = Path.join([@ash_affidavit_dir, "examples", "vendor_b_exhibit.exs"])
-    result_path = Path.join(System.tmp_dir!(), "ev14-exhibit-#{System.unique_integer([:positive])}.json")
+
+    result_path =
+      Path.join(System.tmp_dir!(), "ev14-exhibit-#{System.unique_integer([:positive])}.json")
 
     {output, status} =
       System.cmd("mix", ["run", "--no-start", script],

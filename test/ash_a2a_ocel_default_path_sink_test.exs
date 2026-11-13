@@ -214,7 +214,10 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
              )
 
     assert task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] = task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] =
+             task.artifacts
+
     assert created.id
 
     events = wait_for_events(1, 2_000)
@@ -262,7 +265,9 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
                authenticated_call_opts("user-2")
              )
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] = create_task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] =
+             create_task.artifacts
+
     item_id = created.id
 
     # Drain the create's own real (single, merged) event before driving the
@@ -284,7 +289,10 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
              )
 
     assert update_task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: updated}]}] = update_task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: updated}]}] =
+             update_task.artifacts
+
     assert updated.label == "after-update"
 
     events = wait_for_events(1, 2_000)

@@ -36,6 +36,7 @@ defmodule AshA2A.FiboSimulationConformanceTest do
     {:ok, graph} = RDF.Turtle.read_file(prod_path)
 
     owl_imports = ~I<http://www.w3.org/2002/07/owl#imports>
+
     imported_iris =
       RDF.Graph.descriptions(graph)
       |> Enum.flat_map(fn desc -> RDF.Description.get(desc, owl_imports, []) end)
@@ -51,7 +52,8 @@ defmodule AshA2A.FiboSimulationConformanceTest do
     ]
 
     for expected_iri <- expected do
-      assert expected_iri in imported_iris, "Expected #{expected_iri} in owl:imports of AboutSA2AProd.ttl"
+      assert expected_iri in imported_iris,
+             "Expected #{expected_iri} in owl:imports of AboutSA2AProd.ttl"
     end
   end
 
@@ -66,7 +68,9 @@ defmodule AshA2A.FiboSimulationConformanceTest do
       ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/ReceiptNotSuccess>
     ]
 
-    law_class = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/DoctrineLaw>
+    law_class =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/DoctrineLaw>
+
     rdf_type = RDF.type()
 
     for law <- expected_laws do
@@ -78,11 +82,12 @@ defmodule AshA2A.FiboSimulationConformanceTest do
     alias AshA2A.{Command, Receipt}
 
     # 1. Instantiate real runtime command
-    cmd = Command.new("test:capability:001",
-      agent_id: "agent:worker:1",
-      principal_id: "principal:admin:1",
-      input: %{"target" => "system_update"}
-    )
+    cmd =
+      Command.new("test:capability:001",
+        agent_id: "agent:worker:1",
+        principal_id: "principal:admin:1",
+        input: %{"target" => "system_update"}
+      )
 
     assert is_binary(cmd.capability_id)
     assert is_binary(cmd.principal_id.value)
@@ -90,10 +95,18 @@ defmodule AshA2A.FiboSimulationConformanceTest do
 
     # 2. Project to canonical RDF Triples matching sa2a-bp:CommandEnvelope
     cmd_subject = RDF.iri("urn:uuid:#{cmd.command_id.value}")
-    cmd_envelope_class = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>
-    p_capability_id = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/capabilityId>
-    p_principal_id = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/principalId>
-    p_payload_digest = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/payloadDigest>
+
+    cmd_envelope_class =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>
+
+    p_capability_id =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/capabilityId>
+
+    p_principal_id =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/principalId>
+
+    p_payload_digest =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/payloadDigest>
 
     graph =
       RDF.Graph.new()
@@ -103,19 +116,26 @@ defmodule AshA2A.FiboSimulationConformanceTest do
       |> RDF.Graph.add({cmd_subject, p_payload_digest, RDF.literal(cmd.fingerprint)})
 
     assert RDF.Graph.include?(graph, {cmd_subject, RDF.type(), cmd_envelope_class})
-    assert RDF.Graph.include?(graph, {cmd_subject, p_capability_id, RDF.literal("test:capability:001")})
+
+    assert RDF.Graph.include?(
+             graph,
+             {cmd_subject, p_capability_id, RDF.literal("test:capability:001")}
+           )
 
     # 3. Instantiate real runtime receipt and project to sa2a-evi:ActuationReceipt
-    authority = AshA2A.Authority.new(cmd.principal_id, cmd.capability_id, source: :transport_verified)
+    authority =
+      AshA2A.Authority.new(cmd.principal_id, cmd.capability_id, source: :transport_verified)
+
     cmd_with_auth = %{cmd | authority: authority}
     exec_id = AshA2A.Identity.execution("exec:001")
 
-    receipt = Receipt.from_reply(
-      cmd_with_auth,
-      exec_id,
-      :observe,
-      {:reply, :ok}
-    )
+    receipt =
+      Receipt.from_reply(
+        cmd_with_auth,
+        exec_id,
+        :observe,
+        {:reply, :ok}
+      )
 
     assert receipt.receipt_id != nil
     assert receipt.fingerprint != nil
@@ -163,7 +183,9 @@ defmodule AshA2A.FiboSimulationConformanceTest do
     # 3. Check OWL equivalence axioms
     owl_equivalent_class = ~I<http://www.w3.org/2002/07/owl#equivalentClass>
     a2a_urn_cmd = ~I<urn:ash-a2a:vocab:Command>
-    sa2a_bp_cmd = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>
+
+    sa2a_bp_cmd =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/BP/ExecutionEnvelopes/CommandEnvelope>
 
     assert RDF.Graph.include?(graph, {a2a_urn_cmd, owl_equivalent_class, sa2a_bp_cmd})
   end

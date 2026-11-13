@@ -43,6 +43,7 @@ defmodule AshA2A.Negotiation.EngineCourtTest do
 
       assert offer["price"] == 8_000
       assert offer["round"] == 1
+
       assert terms == [
                {:portfolio_volume, "12 scheduled-maintenance units"},
                {:compliance_status, %{permit_status: :current, epa_608: :certified, findings: 0}}

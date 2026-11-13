@@ -137,10 +137,11 @@ defmodule AshA2A.Receipt.RProjection do
 
   defp verified_binding(receipt) do
     case Receipt.Binding.verify(receipt) do
-      {:ok, report} -> {:ok, report}
+      {:ok, report} ->
+        {:ok, report}
+
       {:error, %{code: code, detail: detail}} ->
-        {:error,
-         %{code: :r_projection_binding_unverified, detail: %{refused: code, why: detail}}}
+        {:error, %{code: :r_projection_binding_unverified, detail: %{refused: code, why: detail}}}
     end
   end
 
@@ -160,7 +161,9 @@ defmodule AshA2A.Receipt.RProjection do
   end
 
   defp present(_field, value) when is_binary(value) and value != "", do: :ok
-  defp present(field, nil), do: {:error, %{code: :r_projection_anchor_missing, detail: %{field: field}}}
+
+  defp present(field, nil),
+    do: {:error, %{code: :r_projection_anchor_missing, detail: %{field: field}}}
 
   defp present(field, value),
     do: {:error, %{code: :r_projection_anchor_missing, detail: %{field: field, observed: value}}}
@@ -168,14 +171,15 @@ defmodule AshA2A.Receipt.RProjection do
   defp valid_repo(repo) when is_binary(repo) and repo != "", do: :ok
 
   defp valid_repo(observed),
-    do: {:error, %{code: :r_projection_anchor_malformed, detail: %{field: :repo, observed: observed}}}
+    do:
+      {:error,
+       %{code: :r_projection_anchor_malformed, detail: %{field: :repo, observed: observed}}}
 
   defp valid_sha(field, sha) when is_binary(sha) do
     if Regex.match?(@sha40, sha),
       do: :ok,
       else:
-        {:error,
-         %{code: :r_projection_anchor_malformed, detail: %{field: field, observed: sha}}}
+        {:error, %{code: :r_projection_anchor_malformed, detail: %{field: field, observed: sha}}}
   end
 
   # metadata.work_order_digest wins over the opts fallback (R5: it is bound
@@ -204,7 +208,9 @@ defmodule AshA2A.Receipt.RProjection do
 
   defp ceiling(%Receipt{consequence: consequence} = receipt) do
     case Map.fetch(@ceiling_map, consequence) do
-      {:ok, ceiling} -> {:ok, ceiling}
+      {:ok, ceiling} ->
+        {:ok, ceiling}
+
       :error ->
         {:error,
          %{

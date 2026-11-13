@@ -287,7 +287,11 @@ defmodule AshA2A.Chicago.ReceiptBindingAttestationTest do
         )
       end
 
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})])
+      message =
+        AshA2A.Protocol.Message.new_user([
+          AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})
+        ])
+
       opts = [store_opts: store_opts, actuation_dedup: :strict]
       ledger = AshA2A.Chicago.Fixtures.Postcondition.Ledger
 

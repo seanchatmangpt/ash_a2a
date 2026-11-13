@@ -228,10 +228,20 @@ defmodule AshA2A.Enterprise.MonotonicGrantTest do
         PreparedEffect.new("mono-b-child", cap(:report), %{"ledger" => "x"}, %{})
 
       assert :ok =
-               DecisionGate.admit_delegated(policy_evidence(narrowed_effect), narrowed_effect, @pdp, hop1)
+               DecisionGate.admit_delegated(
+                 policy_evidence(narrowed_effect),
+                 narrowed_effect,
+                 @pdp,
+                 hop1
+               )
 
       assert :ok =
-               DecisionGate.admit_delegated(policy_evidence(narrowed_effect), narrowed_effect, @pdp, nil)
+               DecisionGate.admit_delegated(
+                 policy_evidence(narrowed_effect),
+                 narrowed_effect,
+                 @pdp,
+                 nil
+               )
 
       # Zero downstream side effects, proven on the real path: the child
       # principal holds exactly its lawful narrowed set in the real broker.

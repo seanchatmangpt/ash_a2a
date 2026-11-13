@@ -30,8 +30,11 @@ defmodule AshA2A.Protocol.Task.OrphanSweep do
 
     if Code.ensure_loaded?(store_mod) and function_exported?(store_mod, :list_all, 2) do
       case store_mod.list_all(store_ref, status: :working, page_size: 1_000_000) do
-        {:ok, %{tasks: tasks}} -> {:ok, fail_orphans(tasks, store_mod, store_ref, now, lease_ms, live?)}
-        other -> {:error, {:list_all_failed, other}}
+        {:ok, %{tasks: tasks}} ->
+          {:ok, fail_orphans(tasks, store_mod, store_ref, now, lease_ms, live?)}
+
+        other ->
+          {:error, {:list_all_failed, other}}
       end
     else
       :telemetry.execute([:ash_a2a, :task, :orphan_sweep_unsupported], %{count: 1}, %{

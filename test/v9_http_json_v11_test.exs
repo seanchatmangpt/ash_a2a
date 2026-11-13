@@ -75,7 +75,8 @@ defmodule AshA2A.V9HTTPJSONV11Test do
   @deadline_ms 5_000
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
 
     versions = Enum.uniq(AshA2A.Protocol.Version.supported_default() ++ ["1.0", "1.1"])
     opts = [agent: @agent, base_url: "http://127.0.0.1/fixture", versions: versions]
@@ -200,9 +201,10 @@ defmodule AshA2A.V9HTTPJSONV11Test do
 
   # -- POST /message:live ---------------------------------------------------------
 
-  test "live downlink opens with the task snapshot, then uplink events arrive on the downlink only", %{
-    server: server
-  } do
+  test "live downlink opens with the task snapshot, then uplink events arrive on the downlink only",
+       %{
+         server: server
+       } do
     {ref, _task} = open_sse(:post, live_url(server), live_send_body(parked()))
 
     {frames0, buffer} = collect_until(ref, "", &(&1 != []))
@@ -237,7 +239,9 @@ defmodule AshA2A.V9HTTPJSONV11Test do
     assert length(Enum.filter(frames2, &Map.has_key?(&1, "task"))) == 1
   end
 
-  test "a live uplink naming another task is a 400 and a StreamError on the downlink", %{server: server} do
+  test "a live uplink naming another task is a 400 and a StreamError on the downlink", %{
+    server: server
+  } do
     {ref, _task} = open_sse(:post, live_url(server), live_send_body(parked()))
     {[%{"task" => %{"id" => _id}} | _], buffer} = collect_until(ref, "", &(&1 != []))
     sid = live_session_id(ref)
@@ -252,14 +256,19 @@ defmodule AshA2A.V9HTTPJSONV11Test do
 
     assert bad.status == 400
 
-    {frames, _} = collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "error")) end)
-    assert %{"error" => %{"code" => "INVALID_ARGUMENT"}} = Enum.find(frames, &Map.has_key?(&1, "error"))
+    {frames, _} =
+      collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "error")) end)
+
+    assert %{"error" => %{"code" => "INVALID_ARGUMENT"}} =
+             Enum.find(frames, &Map.has_key?(&1, "error"))
   end
 
   test "live downlink on an unknown task frames a StreamError and never a transport failure", %{
     server: server
   } do
-    {ref, _task} = open_sse(:post, live_url(server), %{"subscribe" => %{"taskId" => "no-such-task"}})
+    {ref, _task} =
+      open_sse(:post, live_url(server), %{"subscribe" => %{"taskId" => "no-such-task"}})
+
     {frames, _} = collect_until(ref, "", &(&1 != []))
     assert [%{"error" => %{"code" => "TASK_NOT_FOUND", "taskId" => "no-such-task"}} | _] = frames
   end
@@ -285,15 +294,19 @@ defmodule AshA2A.V9HTTPJSONV11Test do
 
   # -- ifGenerationMatch ------------------------------------------------------------
 
-  test "ifGenerationMatch: stale generation is 409 TASK_GENERATION_MISMATCH, matching generation succeeds", %{
-    server: server
-  } do
+  test "ifGenerationMatch: stale generation is 409 TASK_GENERATION_MISMATCH, matching generation succeeds",
+       %{
+         server: server
+       } do
     {id, generation} = park_task(server)
     follow_up = Map.put(parked(), "taskId", id)
 
     stale = send_message(server, follow_up, %{"ifGenerationMatch" => generation + 5})
     assert stale.status == 409
-    assert %{"error" => %{"code" => 409, "status" => "ABORTED", "details" => details}} = stale.body
+
+    assert %{"error" => %{"code" => 409, "status" => "ABORTED", "details" => details}} =
+             stale.body
+
     assert Enum.any?(details, &(&1["reason"] == "TASK_GENERATION_MISMATCH"))
 
     ok = send_message(server, follow_up, %{"ifGenerationMatch" => generation})
@@ -308,13 +321,19 @@ defmodule AshA2A.V9HTTPJSONV11Test do
 
     poll =
       Task.async(fn ->
-        Req.get!(url: server.base_url <> "/tasks/#{id}?currentGeneration=0", headers: @v11, retry: false)
+        Req.get!(
+          url: server.base_url <> "/tasks/#{id}?currentGeneration=0",
+          headers: @v11,
+          retry: false
+        )
       end)
 
     assert %Req.Response{status: 200, body: %{"id" => ^id}} = Task.await(poll, @deadline_ms)
   end
 
-  test "currentGeneration at the task's generation parks until the task advances", %{server: server} do
+  test "currentGeneration at the task's generation parks until the task advances", %{
+    server: server
+  } do
     {id, generation} = park_task(server)
 
     poll =
@@ -341,7 +360,9 @@ defmodule AshA2A.V9HTTPJSONV11Test do
     {id, _} = park_task(server)
 
     for query <- ["timelineLength=-1", "currentGeneration=abc", "timelineLength=x"] do
-      resp = Req.get!(url: server.base_url <> "/tasks/#{id}?" <> query, headers: @v11, retry: false)
+      resp =
+        Req.get!(url: server.base_url <> "/tasks/#{id}?" <> query, headers: @v11, retry: false)
+
       assert resp.status == 400, query
     end
   end
@@ -353,20 +374,36 @@ defmodule AshA2A.V9HTTPJSONV11Test do
     full = Req.get!(url: server.base_url <> "/tasks/#{id}", headers: @v11, retry: false)
     assert length(full.body["timeline"] || []) >= 2
 
-    one = Req.get!(url: server.base_url <> "/tasks/#{id}?timelineLength=1", headers: @v11, retry: false)
+    one =
+      Req.get!(
+        url: server.base_url <> "/tasks/#{id}?timelineLength=1",
+        headers: @v11,
+        retry: false
+      )
+
     assert length(one.body["timeline"] || []) == 1
 
-    none = Req.get!(url: server.base_url <> "/tasks/#{id}?timelineLength=0", headers: @v11, retry: false)
+    none =
+      Req.get!(
+        url: server.base_url <> "/tasks/#{id}?timelineLength=0",
+        headers: @v11,
+        retry: false
+      )
+
     assert (none.body["timeline"] || []) == []
 
-    list = Req.get!(url: server.base_url <> "/tasks?timelineLength=1", headers: @v11, retry: false)
+    list =
+      Req.get!(url: server.base_url <> "/tasks?timelineLength=1", headers: @v11, retry: false)
+
     assert list.status == 200
     assert Enum.all?(list.body["tasks"], &(length(&1["timeline"] || []) <= 1))
   end
 
   # -- SubscribeToTask lastSeenGeneration ----------------------------------------------
 
-  test "subscribe sends the snapshot first; with lastSeenGeneration it sends none", %{server: server} do
+  test "subscribe sends the snapshot first; with lastSeenGeneration it sends none", %{
+    server: server
+  } do
     {id, generation} = park_task(server)
 
     {ref, _t} = open_sse(:get, server.base_url <> "/tasks/#{id}:subscribe")
@@ -390,7 +427,9 @@ defmodule AshA2A.V9HTTPJSONV11Test do
 
   # -- artifactUpdates -------------------------------------------------------------------
 
-  test "artifactUpdates are refused 400 UNSUPPORTED_OPERATION when the capability is off", %{server: server} do
+  test "artifactUpdates are refused 400 UNSUPPORTED_OPERATION when the capability is off", %{
+    server: server
+  } do
     {id, _} = park_task(server)
     artifact = AshA2A.Protocol.JSON.encode!(Artifact.new([Part.Data.new(%{"k" => "v"})]))
 
@@ -408,7 +447,9 @@ defmodule AshA2A.V9HTTPJSONV11Test do
 
   # -- version-gated frames ----------------------------------------------------------------
 
-  test "message:stream emits messageUpdate frames only for A2A-Version >= 1.1, all stamped", %{server: server} do
+  test "message:stream emits messageUpdate frames only for A2A-Version >= 1.1, all stamped", %{
+    server: server
+  } do
     stream = fn headers ->
       Req.post!(
         url: server.base_url <> "/message:stream",

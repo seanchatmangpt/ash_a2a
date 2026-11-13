@@ -1,6 +1,6 @@
 # Enterprise Reference
 
-The v26.10.4 enterprise surface (`docs/jira/v26.10.4/PRD.md`, FR-01 through
+The v26.10.4 enterprise surface (`docs/archive/jira-releases/v26.10.4/PRD.md`, FR-01 through
 FR-06): a config-gated layer of hardening subsystems around the A2A wire
 surface. Every child of the enterprise supervisor is default-OFF; a child
 starts only when its `config :ash_a2a, ...` key is set. `nil` and `false`

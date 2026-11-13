@@ -17,17 +17,27 @@ defmodule AshA2A.Transport.GRPCAuthTest.Handler do
   @impl AshA2A.Protocol.JSONRPC
   def handle_get(task_id, _params, %{agent: agent}) do
     case EchoAgent.get_task(agent, task_id) do
-      {:ok, task} -> {:ok, task}
-      {:error, :not_found} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
+      {:ok, task} ->
+        {:ok, task}
+
+      {:error, :not_found} ->
+        {:error,
+         %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
     end
   end
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_cancel(task_id, _params, %{agent: agent}) do
     case EchoAgent.cancel(agent, task_id) do
-      :ok -> EchoAgent.get_task(agent, task_id)
-      {:error, :not_found} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
-      {:error, reason} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32002, message: inspect(reason)}}
+      :ok ->
+        EchoAgent.get_task(agent, task_id)
+
+      {:error, :not_found} ->
+        {:error,
+         %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
+
+      {:error, reason} ->
+        {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32002, message: inspect(reason)}}
     end
   end
 end
@@ -204,7 +214,9 @@ defmodule AshA2A.Transport.GRPCAuthTest do
     assert error.message == ~s({"error":"Unauthorized"})
   end
 
-  test "invalid JWT signature is UNAUTHENTICATED(16) with the typed HTTP body", %{channel: channel} do
+  test "invalid JWT signature is UNAUTHENTICATED(16) with the typed HTTP body", %{
+    channel: channel
+  } do
     # Signed with the WRONG secret — real signature verification failure.
     rogue = rogue_token("mallory")
 

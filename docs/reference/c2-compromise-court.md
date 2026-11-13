@@ -284,7 +284,7 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
 
 ## See also
 
-* `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` s26, s29
-* `docs/rfc/RFC-SA2A-007-errata-v26.9.28.md`
-* `docs/assurance/sa2a-assurance-case-v26.9.28.md`
+* `docs/archive/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` s26, s29
+* `docs/archive/rfc/RFC-SA2A-007-errata-v26.9.28.md`
+* `docs/archive/assurance/sa2a-assurance-case-v26.9.28.md`
 * `actuator/lib/actuator/fence.ex`, `authority_service/lib/authority_service/issuer.ex`

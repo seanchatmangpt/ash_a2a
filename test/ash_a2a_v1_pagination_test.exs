@@ -62,7 +62,9 @@ defmodule AshA2A.Protocol.V1PaginationTest do
 
       assert %{"tasks" => t1, "totalSize" => 5, "nextPageToken" => tok1} = page1
       assert length(t1) == 2
-      assert is_binary(tok1) and tok1 != "", "nextPageToken MUST be present and non-empty mid-stream"
+
+      assert is_binary(tok1) and tok1 != "",
+             "nextPageToken MUST be present and non-empty mid-stream"
 
       # Page 2 resumes from the token.
       page2 = list_tasks(plug_opts, %{"pageSize" => 2, "pageToken" => tok1})
@@ -208,6 +210,7 @@ defmodule AshA2A.Protocol.V1PaginationTest do
       full = get_task(plug_opts, task_id, %{})
 
       assert %{"result" => %{"id" => ^task_id, "history" => history}} = full
+
       assert is_list(history) and length(history) >= 2,
              "a completed two-turn task must carry >= 2 history entries, got #{length(history)}"
 
@@ -229,6 +232,7 @@ defmodule AshA2A.Protocol.V1PaginationTest do
       none = get_task(plug_opts, task_id, %{"historyLength" => 0})
 
       assert %{"result" => result} = none
+
       refute Map.has_key?(result, "history"),
              "historyLength 0 must omit the history member, got: #{inspect(result["history"])}"
     end
@@ -328,7 +332,7 @@ defmodule AshA2A.Protocol.V1PaginationTest do
         task
       end
 
-    completed ++ parked |> Map.new(fn task -> {task["id"], task} end)
+    (completed ++ parked) |> Map.new(fn task -> {task["id"], task} end)
   end
 
   defp send_message(plug_opts, data) do
@@ -354,7 +358,11 @@ defmodule AshA2A.Protocol.V1PaginationTest do
     assert conn.status == 200
     wire = Jason.decode!(conn.resp_body)
 
-    assert %{"result" => %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+    assert %{
+             "result" => %{
+               "task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}
+             }
+           } =
              wire
 
     task_id

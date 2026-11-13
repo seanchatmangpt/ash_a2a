@@ -11,25 +11,27 @@ defmodule AshA2A.AuthZEN.AbsorptionTest do
 
   defmodule LocalIssuer do
     def issue(request, _ctx) do
-      {:ok, %Certificate{
-        version: 1,
-        effect_digest: request.effect_digest,
-        principal: request.principal,
-        policy_epoch: request.policy_epoch,
-        revocation_epoch: request.revocation_epoch,
-        generation: request.generation,
-        nonce: "0123456789abcdef",
-        not_before_ms: 0,
-        expires_at_ms: 10_000,
-        audience: request.audience,
-        threshold: 1,
-        signatures: []
-      }}
+      {:ok,
+       %Certificate{
+         version: 1,
+         effect_digest: request.effect_digest,
+         principal: request.principal,
+         policy_epoch: request.policy_epoch,
+         revocation_epoch: request.revocation_epoch,
+         generation: request.generation,
+         nonce: "0123456789abcdef",
+         not_before_ms: 0,
+         expires_at_ms: 10_000,
+         audience: request.audience,
+         threshold: 1,
+         signatures: []
+       }}
     end
   end
 
   test "external policy and workload identity still terminate at local certificate issuance" do
     effect = PreparedEffect.new("principal:alice", :payments, %{"id" => 42}, %{"amount" => 100})
+
     ctx = %{
       policy_epoch: 1,
       revocation_epoch: 2,
@@ -37,6 +39,7 @@ defmodule AshA2A.AuthZEN.AbsorptionTest do
       audience: "actuator:payments",
       local_certificate_issuer: LocalIssuer
     }
+
     request = AuthorityRequest.new(effect, ctx)
 
     {:ok, metadata} = Metadata.decode(%{"policy_decision_point" => "https://pdp.example"})
@@ -63,7 +66,9 @@ defmodule AshA2A.AuthZEN.AbsorptionTest do
       trust_domain: "prod.example"
     }
 
-    assert {:ok, response, receipt} = Absorption.authorize(request, client, attested, binding, ctx)
+    assert {:ok, response, receipt} =
+             Absorption.authorize(request, client, attested, binding, ctx)
+
     assert response.decision == :admit
     assert %Certificate{} = response.certificate
     assert response.certificate.effect_digest == effect.digest
@@ -73,7 +78,15 @@ defmodule AshA2A.AuthZEN.AbsorptionTest do
 
   test "PDP allow cannot bypass a SPIFFE binding mismatch" do
     effect = PreparedEffect.new("principal:alice", :payments, %{"id" => 42}, %{})
-    ctx = %{policy_epoch: 1, revocation_epoch: 2, generation: 3, audience: "a", local_certificate_issuer: LocalIssuer}
+
+    ctx = %{
+      policy_epoch: 1,
+      revocation_epoch: 2,
+      generation: 3,
+      audience: "a",
+      local_certificate_issuer: LocalIssuer
+    }
+
     request = AuthorityRequest.new(effect, ctx)
     {:ok, metadata} = Metadata.decode(%{"policy_decision_point" => "https://pdp.example"})
     client = %Client{metadata: metadata, transport: fn _, _ -> {:ok, %{"decision" => true}} end}

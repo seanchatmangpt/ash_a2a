@@ -29,7 +29,10 @@ defmodule AshA2AAgentMultiTurnCarryTest do
              )
 
     assert turn2.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = turn2.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] =
+             turn2.artifacts
+
     assert result[:left] == "a"
     assert result[:right] == "b"
   end
@@ -47,7 +50,9 @@ defmodule AshA2AAgentMultiTurnCarryTest do
                task_id: turn1.id
              )
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = turn2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] =
+             turn2.artifacts
+
     assert result[:left] == "new"
   end
 

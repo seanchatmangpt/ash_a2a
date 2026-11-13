@@ -31,7 +31,11 @@ defmodule AshA2A.Attestation.Key do
   @n 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
   @half_n div(@n, 2)
 
-  @type key :: %{required(:priv) => binary(), required(:pub) => binary(), optional(any()) => any()}
+  @type key :: %{
+          required(:priv) => binary(),
+          required(:pub) => binary(),
+          optional(any()) => any()
+        }
   @type token :: binary()
 
   @doc """

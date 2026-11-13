@@ -75,7 +75,10 @@ defmodule AshA2A.Docs.ModuleIndexCourtTest do
     broken =
       for path <- files,
           text = File.read!(path),
-          link <- Regex.scan(~r/\]\((docs\/[^)#\s]+)\)/, text) |> Enum.map(&Enum.at(&1, 1)) |> Enum.uniq(),
+          link <-
+            Regex.scan(~r/\]\((docs\/[^)#\s]+)\)/, text)
+            |> Enum.map(&Enum.at(&1, 1))
+            |> Enum.uniq(),
           not File.exists?(Path.join(@root, link)),
           do: {Path.relative_to(path, @root), link}
 
@@ -95,8 +98,14 @@ defmodule AshA2A.Docs.ModuleIndexCourtTest do
   @doc false
   def readme_doc_findings(readme_text, extras) do
     unaccounted =
-      for link <- Regex.scan(~r/\]\((docs\/[^)#\s]+)\)/, readme_text) |> Enum.map(&Enum.at(&1, 1)) |> Enum.uniq(),
-          line = readme_text |> String.split("\n") |> Enum.find(&String.contains?(&1, "(" <> link <> ")")),
+      for link <-
+            Regex.scan(~r/\]\((docs\/[^)#\s]+)\)/, readme_text)
+            |> Enum.map(&Enum.at(&1, 1))
+            |> Enum.uniq(),
+          line =
+            readme_text
+            |> String.split("\n")
+            |> Enum.find(&String.contains?(&1, "(" <> link <> ")")),
           not MapSet.member?(extras, link),
           not String.contains?(line, "repo-only"),
           do: link

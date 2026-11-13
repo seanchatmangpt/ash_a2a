@@ -54,11 +54,31 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     %{name: "CancelTask", internal: "tasks/cancel", streaming: false},
     %{name: "ListTasks", internal: "tasks/list", streaming: false},
     %{name: "SubscribeToTask", internal: "tasks/resubscribe", streaming: true},
-    %{name: "CreateTaskPushNotificationConfig", internal: "tasks/pushNotificationConfig/set", streaming: false},
-    %{name: "GetTaskPushNotificationConfig", internal: "tasks/pushNotificationConfig/get", streaming: false},
-    %{name: "ListTaskPushNotificationConfigs", internal: "tasks/pushNotificationConfig/list", streaming: false},
-    %{name: "DeleteTaskPushNotificationConfig", internal: "tasks/pushNotificationConfig/delete", streaming: false},
-    %{name: "GetExtendedAgentCard", internal: "agent/getAuthenticatedExtendedCard", streaming: false}
+    %{
+      name: "CreateTaskPushNotificationConfig",
+      internal: "tasks/pushNotificationConfig/set",
+      streaming: false
+    },
+    %{
+      name: "GetTaskPushNotificationConfig",
+      internal: "tasks/pushNotificationConfig/get",
+      streaming: false
+    },
+    %{
+      name: "ListTaskPushNotificationConfigs",
+      internal: "tasks/pushNotificationConfig/list",
+      streaming: false
+    },
+    %{
+      name: "DeleteTaskPushNotificationConfig",
+      internal: "tasks/pushNotificationConfig/delete",
+      streaming: false
+    },
+    %{
+      name: "GetExtendedAgentCard",
+      internal: "agent/getAuthenticatedExtendedCard",
+      streaming: false
+    }
   ]
 
   @doc false
@@ -103,8 +123,11 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
           # card does not declare the extendedAgentCard capability.
           short == "GetExtendedAgentCard" and exports?(handler, :handle_extended_card, 1) ->
             case safe_extended_card(handler, ctx) do
-              {:ok, card} -> {:ok, card}
-              {:error, %AshA2A.Protocol.JSONRPC.Error{} = error} -> error_tuple(AshA2A.Protocol.JSONRPC.Error.to_map(error))
+              {:ok, card} ->
+                {:ok, card}
+
+              {:error, %AshA2A.Protocol.JSONRPC.Error{} = error} ->
+                error_tuple(AshA2A.Protocol.JSONRPC.Error.to_map(error))
             end
 
           true ->
@@ -141,7 +164,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   end
 
   defp local_reason_to_error(:context_mismatch),
-    do: AshA2A.Protocol.JSONRPC.Error.invalid_params("contextId does not match the task's context")
+    do:
+      AshA2A.Protocol.JSONRPC.Error.invalid_params("contextId does not match the task's context")
 
   defp local_reason_to_error({:content_type_not_supported, _data} = reason),
     do: AshA2A.Protocol.InputModeValidator.to_error(reason)
@@ -243,7 +267,9 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   `grpc-status: 0`; `{:error, status, message}` to the status and message.
   """
   def trailers({:ok, _}), do: %{"grpc-status" => @grpc_ok}
-  def trailers({:error, status, message}), do: %{"grpc-status" => status, "grpc-message" => message}
+
+  def trailers({:error, status, message}),
+    do: %{"grpc-status" => status, "grpc-message" => message}
 
   defp error_tuple(%{"code" => code, "message" => message} = error) when is_integer(code) do
     {:error, Map.get(@grpc_from_jsonrpc, code, @grpc_unknown), message, error_info_details(error)}

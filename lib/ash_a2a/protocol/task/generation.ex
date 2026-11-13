@@ -90,8 +90,14 @@ defmodule AshA2A.Protocol.Task.Generation do
 
     artifacts =
       case existing do
-        nil -> task.artifacts ++ [stored]
-        _ -> Enum.map(task.artifacts, &if(&1.artifact_id == stored.artifact_id, do: stored, else: &1))
+        nil ->
+          task.artifacts ++ [stored]
+
+        _ ->
+          Enum.map(
+            task.artifacts,
+            &if(&1.artifact_id == stored.artifact_id, do: stored, else: &1)
+          )
       end
 
     {%{task | generation: gen, artifacts: artifacts}, stored}

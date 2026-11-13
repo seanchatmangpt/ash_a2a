@@ -94,7 +94,7 @@ defmodule Lf.A2a.V1.Part do
 
   use Protobuf, full_name: "lf.a2a.v1.Part", protoc_gen_elixir_version: "0.17.0", syntax: :proto3
 
-  oneof :content, 0
+  oneof(:content, 0)
 
   field :text, 1, type: :string, oneof: 0
   field :raw, 2, type: :bytes, oneof: 0
@@ -150,7 +150,7 @@ defmodule Lf.A2a.V1.TimelineEntry do
     protoc_gen_elixir_version: "0.17.0",
     syntax: :proto3
 
-  oneof :entry, 0
+  oneof(:entry, 0)
 
   field :message, 1, type: Lf.A2a.V1.Message, oneof: 0
   field :status, 2, type: Lf.A2a.V1.TaskStatus, oneof: 0
@@ -434,7 +434,7 @@ defmodule Lf.A2a.V1.SecurityScheme do
     protoc_gen_elixir_version: "0.17.0",
     syntax: :proto3
 
-  oneof :scheme, 0
+  oneof(:scheme, 0)
 
   field :api_key_security_scheme, 1,
     type: Lf.A2a.V1.APIKeySecurityScheme,
@@ -532,7 +532,7 @@ defmodule Lf.A2a.V1.OAuthFlows do
     protoc_gen_elixir_version: "0.17.0",
     syntax: :proto3
 
-  oneof :flow, 0
+  oneof(:flow, 0)
 
   field :authorization_code, 1,
     type: Lf.A2a.V1.AuthorizationCodeOAuthFlow,
@@ -729,7 +729,7 @@ defmodule Lf.A2a.V1.StreamRequest do
     protoc_gen_elixir_version: "0.17.0",
     syntax: :proto3
 
-  oneof :payload, 0
+  oneof(:payload, 0)
 
   field :tenant, 1, type: :string
   field :send_message, 2, type: Lf.A2a.V1.SendMessageRequest, json_name: "sendMessage", oneof: 0
@@ -893,7 +893,7 @@ defmodule Lf.A2a.V1.SendMessageResponse do
     protoc_gen_elixir_version: "0.17.0",
     syntax: :proto3
 
-  oneof :payload, 0
+  oneof(:payload, 0)
 
   field :task, 1, type: Lf.A2a.V1.Task, oneof: 0
   field :message, 2, type: Lf.A2a.V1.Message, oneof: 0
@@ -907,7 +907,7 @@ defmodule Lf.A2a.V1.StreamResponse do
     protoc_gen_elixir_version: "0.17.0",
     syntax: :proto3
 
-  oneof :payload, 0
+  oneof(:payload, 0)
 
   field :task, 1, type: Lf.A2a.V1.Task, oneof: 0
   field :message, 2, type: Lf.A2a.V1.Message, oneof: 0
@@ -962,37 +962,45 @@ defmodule Lf.A2a.V1.A2AService.Service do
 
   use GRPC.Service, name: "lf.a2a.v1.A2AService", protoc_gen_elixir_version: "0.17.0"
 
-  rpc :SendMessage, Lf.A2a.V1.SendMessageRequest, Lf.A2a.V1.SendMessageResponse
+  rpc(:SendMessage, Lf.A2a.V1.SendMessageRequest, Lf.A2a.V1.SendMessageResponse)
 
-  rpc :SendStreamingMessage, Lf.A2a.V1.SendMessageRequest, stream(Lf.A2a.V1.StreamResponse)
+  rpc(:SendStreamingMessage, Lf.A2a.V1.SendMessageRequest, stream(Lf.A2a.V1.StreamResponse))
 
-  rpc :SendLiveMessage, stream(Lf.A2a.V1.StreamRequest), stream(Lf.A2a.V1.StreamResponse)
+  rpc(:SendLiveMessage, stream(Lf.A2a.V1.StreamRequest), stream(Lf.A2a.V1.StreamResponse))
 
-  rpc :GetTask, Lf.A2a.V1.GetTaskRequest, Lf.A2a.V1.Task
+  rpc(:GetTask, Lf.A2a.V1.GetTaskRequest, Lf.A2a.V1.Task)
 
-  rpc :ListTasks, Lf.A2a.V1.ListTasksRequest, Lf.A2a.V1.ListTasksResponse
+  rpc(:ListTasks, Lf.A2a.V1.ListTasksRequest, Lf.A2a.V1.ListTasksResponse)
 
-  rpc :CancelTask, Lf.A2a.V1.CancelTaskRequest, Lf.A2a.V1.Task
+  rpc(:CancelTask, Lf.A2a.V1.CancelTaskRequest, Lf.A2a.V1.Task)
 
-  rpc :SubscribeToTask, Lf.A2a.V1.SubscribeToTaskRequest, stream(Lf.A2a.V1.StreamResponse)
+  rpc(:SubscribeToTask, Lf.A2a.V1.SubscribeToTaskRequest, stream(Lf.A2a.V1.StreamResponse))
 
-  rpc :CreateTaskPushNotificationConfig,
-      Lf.A2a.V1.TaskPushNotificationConfig,
-      Lf.A2a.V1.TaskPushNotificationConfig
+  rpc(
+    :CreateTaskPushNotificationConfig,
+    Lf.A2a.V1.TaskPushNotificationConfig,
+    Lf.A2a.V1.TaskPushNotificationConfig
+  )
 
-  rpc :GetTaskPushNotificationConfig,
-      Lf.A2a.V1.GetTaskPushNotificationConfigRequest,
-      Lf.A2a.V1.TaskPushNotificationConfig
+  rpc(
+    :GetTaskPushNotificationConfig,
+    Lf.A2a.V1.GetTaskPushNotificationConfigRequest,
+    Lf.A2a.V1.TaskPushNotificationConfig
+  )
 
-  rpc :ListTaskPushNotificationConfigs,
-      Lf.A2a.V1.ListTaskPushNotificationConfigsRequest,
-      Lf.A2a.V1.ListTaskPushNotificationConfigsResponse
+  rpc(
+    :ListTaskPushNotificationConfigs,
+    Lf.A2a.V1.ListTaskPushNotificationConfigsRequest,
+    Lf.A2a.V1.ListTaskPushNotificationConfigsResponse
+  )
 
-  rpc :GetExtendedAgentCard, Lf.A2a.V1.GetExtendedAgentCardRequest, Lf.A2a.V1.AgentCard
+  rpc(:GetExtendedAgentCard, Lf.A2a.V1.GetExtendedAgentCardRequest, Lf.A2a.V1.AgentCard)
 
-  rpc :DeleteTaskPushNotificationConfig,
-      Lf.A2a.V1.DeleteTaskPushNotificationConfigRequest,
-      Google.Protobuf.Empty
+  rpc(
+    :DeleteTaskPushNotificationConfig,
+    Lf.A2a.V1.DeleteTaskPushNotificationConfigRequest,
+    Google.Protobuf.Empty
+  )
 end
 
 defmodule Lf.A2a.V1.A2AService.Stub do

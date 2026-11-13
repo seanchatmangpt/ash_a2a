@@ -115,12 +115,19 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp put_streaming(acc, %{"streaming" => "true"}), do: Map.put(acc, :capabilities, %{streaming: true})
-    defp put_streaming(acc, %{"streaming" => "false"}), do: Map.put(acc, :capabilities, %{streaming: false})
+    defp put_streaming(acc, %{"streaming" => "true"}),
+      do: Map.put(acc, :capabilities, %{streaming: true})
+
+    defp put_streaming(acc, %{"streaming" => "false"}),
+      do: Map.put(acc, :capabilities, %{streaming: false})
+
     defp put_streaming(acc, _), do: acc
 
     defp respond(conn, opts, body) do
-      etag = "\"" <> (:crypto.hash(:sha256, body) |> Base.encode16(case: :lower) |> binary_part(0, 32)) <> "\""
+      etag =
+        "\"" <>
+          (:crypto.hash(:sha256, body) |> Base.encode16(case: :lower) |> binary_part(0, 32)) <>
+          "\""
 
       conn =
         conn

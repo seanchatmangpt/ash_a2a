@@ -108,7 +108,9 @@ defmodule AshA2A.Protocol.TaskUpdater do
   end
 
   defp normalize_message(nil, _u), do: nil
-  defp normalize_message(text, u) when is_binary(text), do: normalize_message(Message.new_agent(text), u)
+
+  defp normalize_message(text, u) when is_binary(text),
+    do: normalize_message(Message.new_agent(text), u)
 
   defp normalize_message(%Message{} = m, u),
     do: %{m | task_id: m.task_id || u.task_id, context_id: m.context_id || u.context_id}

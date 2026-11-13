@@ -159,16 +159,22 @@ defmodule AshA2A.W9AgentCardServingTest do
       assert CardServe.parse_http_date("nonsense") == :error
     end
 
-    test "a real CardCache revalidates a stale entry against a real server and gets 304", %{agent: agent} do
+    test "a real CardCache revalidates a stale entry against a real server and gets 304", %{
+      agent: agent
+    } do
       server =
         EphemeralHttp.start!(
           {AshA2A.Protocol.Plug, [agent: agent, base_url: "http://127.0.0.1:1/a2a"]}
         )
 
-      cache_dir = Path.join(System.tmp_dir!(), "w9-card-cache-#{System.unique_integer([:positive])}")
+      cache_dir =
+        Path.join(System.tmp_dir!(), "w9-card-cache-#{System.unique_integer([:positive])}")
+
       on_exit(fn -> File.rm_rf(cache_dir) end)
 
-      assert {:ok, card, :fresh} = AshA2A.Protocol.CardCache.fetch(server.base_url, cache_dir: cache_dir)
+      assert {:ok, card, :fresh} =
+               AshA2A.Protocol.CardCache.fetch(server.base_url, cache_dir: cache_dir)
+
       assert is_binary(card.name)
 
       # max_age: 0 makes the stored entry stale, forcing a conditional GET with
@@ -216,7 +222,12 @@ defmodule AshA2A.W9AgentCardServingTest do
   describe "tasks/list totalSize under :authorize_task" do
     defp list(opts, params) do
       body =
-        Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tasks/list", "params" => params})
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "tasks/list",
+          "params" => params
+        })
 
       :post
       |> Plug.Test.conn("/", body)
@@ -249,7 +260,9 @@ defmodule AshA2A.W9AgentCardServingTest do
     end
 
     test "totalSize is the pre-pagination count, not the page length", %{agent: agent} do
-      allow_all = AshA2A.Protocol.Plug.init(base(agent, authorize_task: fn _op, _task, _ctx -> :ok end))
+      allow_all =
+        AshA2A.Protocol.Plug.init(base(agent, authorize_task: fn _op, _task, _ctx -> :ok end))
+
       ids = for _ <- 1..3, do: send_task(allow_all)
       assert length(Enum.uniq(ids)) == 3
 
@@ -260,8 +273,12 @@ defmodule AshA2A.W9AgentCardServingTest do
       assert page["nextPageToken"] != ""
     end
 
-    test "denied tasks on the page are subtracted from the total, never below the page", %{agent: agent} do
-      allow_all = AshA2A.Protocol.Plug.init(base(agent, authorize_task: fn _op, _task, _ctx -> :ok end))
+    test "denied tasks on the page are subtracted from the total, never below the page", %{
+      agent: agent
+    } do
+      allow_all =
+        AshA2A.Protocol.Plug.init(base(agent, authorize_task: fn _op, _task, _ctx -> :ok end))
+
       for _ <- 1..3, do: send_task(allow_all)
 
       [first | _] = list(allow_all, %{"pageSize" => 2})["tasks"]
@@ -270,7 +287,9 @@ defmodule AshA2A.W9AgentCardServingTest do
       deny_one =
         AshA2A.Protocol.Plug.init(
           base(agent,
-            authorize_task: fn _op, task, _ctx -> if task.id == denied_id, do: false, else: :ok end
+            authorize_task: fn _op, task, _ctx ->
+              if task.id == denied_id, do: false, else: :ok
+            end
           )
         )
 
@@ -285,7 +304,13 @@ defmodule AshA2A.W9AgentCardServingTest do
   describe "capability consistency" do
     def extended(_identity, card), do: {:ok, card}
 
-    defp capabilities(mod, opts), do: mod |> get_card(opts) |> Map.fetch!(:resp_body) |> Jason.decode!() |> Map.fetch!("capabilities")
+    defp capabilities(mod, opts),
+      do:
+        mod
+        |> get_card(opts)
+        |> Map.fetch!(:resp_body)
+        |> Jason.decode!()
+        |> Map.fetch!("capabilities")
 
     test "extendedAgentCard follows the :extended_card provider both ways", %{agent: agent} do
       with_provider = A2ATransportPlug.init(base(agent, extended_card: &__MODULE__.extended/2))
@@ -295,7 +320,9 @@ defmodule AshA2A.W9AgentCardServingTest do
       # advertise one the plug would answer -32007 for.
       lying =
         A2ATransportPlug.init(
-          base(agent, agent_card_opts: [capabilities: %{streaming: true, extended_agent_card: true}])
+          base(agent,
+            agent_card_opts: [capabilities: %{streaming: true, extended_agent_card: true}]
+          )
         )
 
       assert capabilities(A2ATransportPlug, with_provider)["extendedAgentCard"] == true

@@ -126,8 +126,8 @@ earlier `REFUSED(ci:tck-not-in-tree)` framing is retired.
 
 ## See also
 
-- `docs/rfc/RFC-SA2A-007-errata-v26.9.28.md` section 4 (claim grammar)
-- `docs/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` (C0..C3 profiles)
-- `docs/assurance/sa2a-assurance-case-v26.9.28.md`
+- `docs/archive/rfc/RFC-SA2A-007-errata-v26.9.28.md` section 4 (claim grammar)
+- `docs/archive/rfc/RFC-SA2A-006-adversarial-control-plane-v26.9.28.md` (C0..C3 profiles)
+- `docs/archive/assurance/sa2a-assurance-case-v26.9.28.md`
 - `docs/reference/mix-tasks.md`
 - [A2A v1.1 conformance](a2a-v1-1-conformance.md)

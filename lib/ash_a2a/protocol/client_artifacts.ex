@@ -58,7 +58,8 @@ defmodule AshA2A.Protocol.ClientArtifacts do
   Decodes wire `artifactUpdates` into `[{artifact, append?, last_chunk?}]`.
   Any client-supplied `generation` is dropped by construction.
   """
-  @spec decode_updates([map()]) :: {:ok, [{Artifact.t(), boolean(), boolean() | nil}]} | {:error, term()}
+  @spec decode_updates([map()]) ::
+          {:ok, [{Artifact.t(), boolean(), boolean() | nil}]} | {:error, term()}
   def decode_updates(updates) when is_list(updates) do
     Enum.reduce_while(updates, {:ok, []}, fn update, {:ok, acc} ->
       with %{} = artifact_map <- update["artifact"],

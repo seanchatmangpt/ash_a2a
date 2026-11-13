@@ -7,7 +7,7 @@ subject, the Chicago court is the independent process that tries to falsify
 claims about that subject's real, executed behavior, rather than trusting a
 green test suite to have already done so.
 
-The full specification is `docs/rfc/RFC-SA2A-002-v26.9.16.md`. The
+The full specification is `docs/archive/rfc/RFC-SA2A-002-v26.9.16.md`. The
 implementation entry point is `AshA2A.Chicago` (`lib/ash_a2a/chicago.ex`);
 the command-line entry point is `mix ash_a2a.chicago`
 (`lib/mix/tasks/ash_a2a.chicago.ex`, full option reference via
@@ -89,7 +89,7 @@ Courts that need test-only fixtures run under `MIX_ENV=test`. See
 
 ## See Also
 
-- `docs/rfc/RFC-SA2A-002-v26.9.16.md` -- the full specification
+- `docs/archive/rfc/RFC-SA2A-002-v26.9.16.md` -- the full specification
 - `lib/ash_a2a/chicago.ex` -- `AshA2A.Chicago`, the module this document
   describes
 - `lib/mix/tasks/ash_a2a.chicago.ex` -- the `mix ash_a2a.chicago` task

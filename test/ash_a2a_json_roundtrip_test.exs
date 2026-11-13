@@ -61,7 +61,8 @@ defmodule AshA2AJsonRoundtripTest do
     # Real artifact content the fixture's :echo read action actually
     # produced, asserted before it goes anywhere near JSON so a codec bug
     # can't be blamed for a dispatch bug.
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{results: []}}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{results: []}}]}] =
+             task.artifacts
 
     # 1. Real encode: AshA2A.Protocol.Task -> JSON-ready map, via :a2a's own encoder.
     assert {:ok, wire_map} = AshA2A.Protocol.JSON.encode(task)
@@ -128,7 +129,12 @@ defmodule AshA2AJsonRoundtripTest do
                decoded_msg.role == original_msg.role
            end)
 
-    assert [_user_msg, %AshA2A.Protocol.Message{parts: [%AshA2A.Protocol.Part.Data{data: history_reply_data}]}] =
+    assert [
+             _user_msg,
+             %AshA2A.Protocol.Message{
+               parts: [%AshA2A.Protocol.Part.Data{data: history_reply_data}]
+             }
+           ] =
              decoded_task.history
 
     assert history_reply_data == %{"results" => []}

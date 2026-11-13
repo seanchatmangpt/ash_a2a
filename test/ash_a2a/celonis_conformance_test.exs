@@ -60,7 +60,14 @@ defmodule AshA2A.CelonisConformanceTest do
 
     test "precision >= 0.90 on state transitions" do
       observed_paths = [
-        ["ADMITTED", "CLAIMED", "RECEIPT_ANCHORED", "EXECUTING", "CONSEQUENCE_OBSERVED", "COMMITTED"],
+        [
+          "ADMITTED",
+          "CLAIMED",
+          "RECEIPT_ANCHORED",
+          "EXECUTING",
+          "CONSEQUENCE_OBSERVED",
+          "COMMITTED"
+        ],
         ["ADMITTED", "CLAIMED", "DEDUP_COMMITTED"]
       ]
 

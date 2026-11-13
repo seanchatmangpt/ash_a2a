@@ -122,7 +122,8 @@ defmodule AshA2A.FinOps.BudgetEnforcer do
 
   defp resolve_attribution(request) do
     with {:ok, cost_center} <- fetch_field(request, :cost_center, ["x-cost-center"]),
-         {:ok, budget_account_id} <- fetch_field(request, :budget_account_id, ["x-budget-account-id"]) do
+         {:ok, budget_account_id} <-
+           fetch_field(request, :budget_account_id, ["x-budget-account-id"]) do
       {:ok, {cost_center, budget_account_id}}
     else
       {:error, field} ->
@@ -170,11 +171,15 @@ defmodule AshA2A.FinOps.BudgetEnforcer do
   defp default_for(key) do
     case Application.get_env(:ash_a2a, :finops, []) do
       conf when is_list(conf) ->
-        default_key = if key == :cost_center, do: :default_cost_center, else: :default_budget_account_id
+        default_key =
+          if key == :cost_center, do: :default_cost_center, else: :default_budget_account_id
+
         conf[default_key]
 
       %{} = conf ->
-        default_key = if key == :cost_center, do: :default_cost_center, else: :default_budget_account_id
+        default_key =
+          if key == :cost_center, do: :default_cost_center, else: :default_budget_account_id
+
         conf[default_key]
 
       _other ->
@@ -195,7 +200,8 @@ defmodule AshA2A.FinOps.BudgetEnforcer do
         {:error,
          %{
            code: :missing_evidence,
-           detail: Map.merge(detail, %{reason: "no hard budget ceiling configured for this account"})
+           detail:
+             Map.merge(detail, %{reason: "no hard budget ceiling configured for this account"})
          }}
 
       {:error, %{code: :budget_exceeded, detail: detail}} ->

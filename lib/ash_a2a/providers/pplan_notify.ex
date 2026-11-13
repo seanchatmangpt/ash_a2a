@@ -136,7 +136,10 @@ defmodule AshA2A.Providers.PPlanNotify do
     with {:ok, _} <- fetch_opt(opts, :store),
          {:ok, _} <- fetch_opt(opts, :push_store),
          :ok <-
-           if(opts[:transport] || opts[:deliver], do: :ok, else: {:error, {:transport_required, :deliver}}) do
+           if(opts[:transport] || opts[:deliver],
+             do: :ok,
+             else: {:error, {:transport_required, :deliver}}
+           ) do
       GenServer.start_link(__MODULE__, opts, name: opts[:name])
     end
   end
@@ -302,17 +305,18 @@ defmodule AshA2A.Providers.PPlanNotify do
           state
           | notified:
               if(outcome == :ok, do: MapSet.put(state.notified, key), else: state.notified),
-            deliveries: [
-              %{
-                task_id: task_id,
-                config_id: config.id,
-                seq: seq,
-                outcome: outcome,
-                at: DateTime.utc_now()
-              }
-              | state.deliveries
-            ]
-            |> Enum.take(state.max_deliveries)
+            deliveries:
+              [
+                %{
+                  task_id: task_id,
+                  config_id: config.id,
+                  seq: seq,
+                  outcome: outcome,
+                  at: DateTime.utc_now()
+                }
+                | state.deliveries
+              ]
+              |> Enum.take(state.max_deliveries)
         }
       end
     end)
@@ -342,4 +346,4 @@ defmodule AshA2A.Providers.PPlanNotify do
         seq,
         state.push_opts
       )
-  end
+end

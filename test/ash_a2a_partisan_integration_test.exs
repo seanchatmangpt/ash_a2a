@@ -94,7 +94,9 @@ defmodule AshA2A.PartisanIntegrationTest do
         end
 
       String.starts_with?(req, ">=") ->
-        [req_major, req_minor, req_patch] = parse_version(String.split(req, ">=") |> Enum.at(1) |> String.trim())
+        [req_major, req_minor, req_patch] =
+          parse_version(String.split(req, ">=") |> Enum.at(1) |> String.trim())
+
         version >= {req_major, req_minor, req_patch}
 
       req =~ ~r/^\d/ ->
@@ -110,7 +112,8 @@ defmodule AshA2A.PartisanIntegrationTest do
 
   defp hex_get(url, attempts_left \\ 3)
 
-  defp hex_get(_url, 0), do: flunk("PARTISAN_TRACKING_COURT_NETWORK: hex.pm unreachable after retries")
+  defp hex_get(_url, 0),
+    do: flunk("PARTISAN_TRACKING_COURT_NETWORK: hex.pm unreachable after retries")
 
   defp hex_get(url, attempts_left) do
     {:ok, _} = Application.ensure_all_started(:inets)
@@ -120,11 +123,17 @@ defmodule AshA2A.PartisanIntegrationTest do
       {~c"user-agent", ~c"ash_a2a partisan-integration tracking court (hex.pm/ash_a2a)"}
     ]
 
-    request = :httpc.request(:get, {String.to_charlist(url), headers}, [
-      ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
-      timeout: 15_000,
-      connect_timeout: 15_000
-    ], [])
+    request =
+      :httpc.request(
+        :get,
+        {String.to_charlist(url), headers},
+        [
+          ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
+          timeout: 15_000,
+          connect_timeout: 15_000
+        ],
+        []
+      )
 
     case request do
       {:ok, {{_, 200, _}, _, body}} ->

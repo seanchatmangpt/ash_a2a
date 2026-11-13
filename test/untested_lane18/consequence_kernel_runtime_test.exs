@@ -50,7 +50,10 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelRuntimeTest do
 
   test "EffectorToken binds ids, digest and owner" do
     t = EffectorToken.issue(prepared(), :me)
-    assert %EffectorToken{request_id: "rq", effect_id: "ef", prepared_digest: @digest, owner: :me} = t
+
+    assert %EffectorToken{request_id: "rq", effect_id: "ef", prepared_digest: @digest, owner: :me} =
+             t
+
     assert t == EffectorToken.issue(prepared(), :me)
     refute t == EffectorToken.issue(prepared(), :other)
     assert_raise MatchError, fn -> EffectorToken.issue(%{instance: %{}}, :me) end
@@ -144,10 +147,16 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelRuntimeTest do
 
     test "invalid resolution refused; non-unknown record refused" do
       {pid, h} = store_at(:unknown_outcome)
-      assert {:error, {:invalid_reconciliation, :completed}} = ReconciliationStage.reconcile(h, @digest, :completed)
+
+      assert {:error, {:invalid_reconciliation, :completed}} =
+               ReconciliationStage.reconcile(h, @digest, :completed)
+
       assert state(pid) == :unknown_outcome
       {pid2, h2} = store_at(:applying)
-      assert {:error, :prepared_transition_refused} = ReconciliationStage.reconcile(h2, @digest, :reconciled)
+
+      assert {:error, :prepared_transition_refused} =
+               ReconciliationStage.reconcile(h2, @digest, :reconciled)
+
       assert state(pid2) == :applying
     end
   end

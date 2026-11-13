@@ -25,7 +25,10 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementOfflineAuditTest do
 
     # Cryptographically attest the transition
     receipt_payload = "#{genesis_digest}->#{target_digest}"
-    sig = :crypto.sign(:eddsa, :none, receipt_payload, [priv_key, :ed25519]) |> Base.encode16(case: :lower)
+
+    sig =
+      :crypto.sign(:eddsa, :none, receipt_payload, [priv_key, :ed25519])
+      |> Base.encode16(case: :lower)
 
     receipt = %{
       "genesis_digest" => genesis_digest,

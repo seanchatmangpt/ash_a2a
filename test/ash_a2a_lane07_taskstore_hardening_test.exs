@@ -43,7 +43,11 @@ defmodule AshA2A.Lane07TaskStoreHardeningTest do
     task = Task.new(id: "tsk-cancel-race") |> with_state(:canceled)
     :ok = TaskStore.ETS.put(name, task)
 
-    GenServer.cast(pid, {:stream_done, task.id, nil, [AshA2A.Protocol.Part.Text.new("late")], :complete})
+    GenServer.cast(
+      pid,
+      {:stream_done, task.id, nil, [AshA2A.Protocol.Part.Text.new("late")], :complete}
+    )
+
     assert {:ok, got} = GenServer.call(pid, {:get_task, task.id})
     assert got.status.state == :canceled
     assert got.artifacts == []
@@ -69,7 +73,12 @@ defmodule AshA2A.Lane07TaskStoreHardeningTest do
     spec = Ekv.child_spec(name: name, data_dir: dir)
     {:ok, sup} = Supervisor.start_link([spec], strategy: :one_for_one)
 
-    cfg = %AshA2A.Protocol.PushNotificationConfig{id: "c1", task_id: "t1", url: "https://x.test/h"}
+    cfg = %AshA2A.Protocol.PushNotificationConfig{
+      id: "c1",
+      task_id: "t1",
+      url: "https://x.test/h"
+    }
+
     cfg2 = %{cfg | id: "c2"}
     assert {:ok, ^cfg} = Ekv.set_push_config(name, cfg)
     assert {:ok, ^cfg2} = Ekv.set_push_config(name, cfg2)
@@ -149,7 +158,9 @@ defmodule AshA2A.Lane07TaskStoreHardeningTest do
 
     results =
       1..8
-      |> Enum.map(fn _ -> Elixir.Task.async(fn -> Handover.rehydrate_one(store, task, resume) end) end)
+      |> Enum.map(fn _ ->
+        Elixir.Task.async(fn -> Handover.rehydrate_one(store, task, resume) end)
+      end)
       |> Enum.map(&Elixir.Task.await(&1, 5_000))
 
     assert :counters.get(counter, 1) == 1
@@ -178,7 +189,12 @@ defmodule AshA2A.Lane07TaskStoreHardeningTest do
   test "orphan sweep fails stale :working tasks without a live worker" do
     name = :"lane07_ets_#{System.unique_integer([:positive])}"
     start_supervised!({TaskStore.ETS, [name: name]})
-    old = %{Task.new(id: "tsk-old") | status: %Status{state: :working, timestamp: ~U[2020-01-01 00:00:00Z]}}
+
+    old = %{
+      Task.new(id: "tsk-old")
+      | status: %Status{state: :working, timestamp: ~U[2020-01-01 00:00:00Z]}
+    }
+
     live = %{old | id: "tsk-live"}
     :ok = TaskStore.ETS.put(name, old)
     :ok = TaskStore.ETS.put(name, live)

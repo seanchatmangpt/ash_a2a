@@ -15,6 +15,7 @@ defmodule AshA2a.SelfCardTest do
     map = AshA2A.Protocol.JSON.encode_agent_card(card, url: card.url)
 
     assert %{} = map
+
     assert map["protocolVersion"] == AshA2A.Protocol.Version.protocol_version() or
              map["protocolVersion"] == nil
 
@@ -26,6 +27,7 @@ defmodule AshA2a.SelfCardTest do
     assert length(decoded.skills) == 7
 
     ids = decoded.skills |> Enum.map(& &1.id) |> Enum.sort()
+
     assert ids == [
              "capability_index.compile",
              "card.sign_verify",
@@ -47,8 +49,7 @@ defmodule AshA2a.SelfCardTest do
     Enum.each(decoded.supported_interfaces, fn iface ->
       assert iface.protocol_version == AshA2A.Protocol.Version.protocol_version()
       assert iface.protocol_binding == "JSONRPC"
-    end
-    )
+    end)
   end
 
   test "on-disk artifact exists, parses as JSON, and round-trips" do

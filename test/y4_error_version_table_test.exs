@@ -57,13 +57,16 @@ defmodule AshA2A.Y4ErrorVersionTableTest do
       assert {:ok, %{"task" => task}} = PushDelivery.payload_for(%{}, "task", payload)
       refute Map.has_key?(task, "generation")
       assert :skip = PushDelivery.payload_for(%{}, "message-update", payload)
+
       assert PushDelivery.payload_for(%{}, "task", payload) ==
                PushDelivery.payload_for(%{protocol_version: "0.3"}, "task", payload)
     end
 
     test "explicit 1.1 still receives the payload as logged" do
       payload = %{"task" => %{"id" => "t1", "generation" => 3}}
-      assert {:ok, ^payload} = PushDelivery.payload_for(%{protocol_version: "1.1"}, "task", payload)
+
+      assert {:ok, ^payload} =
+               PushDelivery.payload_for(%{protocol_version: "1.1"}, "task", payload)
     end
   end
 end

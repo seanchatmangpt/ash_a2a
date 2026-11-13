@@ -10,6 +10,7 @@ defmodule AshA2A.Attestation.GateGrantAllowlistTest do
 
   defp grant(overrides \\ []) do
     {area_overrides, top} = Keyword.split(overrides, [:area])
+
     Map.merge(
       %{
         grant_id: "g-1",
@@ -17,14 +18,15 @@ defmodule AshA2A.Attestation.GateGrantAllowlistTest do
         identifier_or_cidr: "203.0.113.0/24",
         ttl_hours: 24,
         approved_at: @now - 60,
-        area: Map.merge(
-          %{"lat" => 37.0, "lon" => -122.0, "radius_km" => 2000.0},
-          case area_overrides[:area] do
-            nil -> %{}
-            %{} = m -> m
-            kw -> Map.new(kw, fn {k, v} -> {Atom.to_string(k), v} end)
-          end
-        )
+        area:
+          Map.merge(
+            %{"lat" => 37.0, "lon" => -122.0, "radius_km" => 2000.0},
+            case area_overrides[:area] do
+              nil -> %{}
+              %{} = m -> m
+              kw -> Map.new(kw, fn {k, v} -> {Atom.to_string(k), v} end)
+            end
+          )
       },
       Map.new(top)
     )
@@ -55,6 +57,7 @@ defmodule AshA2A.Attestation.GateGrantAllowlistTest do
            ) == {:refused, :gps_impossible_jump}
 
     expired = grant(approved_at: @now - 24 * 3600 - 1)
+
     assert Gate.verify_gps_trajectory(jumping_obs(),
              now: @now,
              approved_grants: [expired]

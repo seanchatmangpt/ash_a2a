@@ -102,7 +102,9 @@ defmodule AshA2A.B3.V11CourtsTest do
 
   setup do
     agents = [AshA2A.B3.ClosedAgent, AshA2A.B3.OpenAgent]
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, agents)
+
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, agents)
 
     versions = Enum.uniq(AshA2A.Protocol.Version.supported_default() ++ ["1.0", "1.1"])
 
@@ -122,10 +124,20 @@ defmodule AshA2A.B3.V11CourtsTest do
   defp completing, do: wire([Part.Data.new(%{"text" => "hi"})])
 
   defp envelope(method, params),
-    do: %{"jsonrpc" => "2.0", "id" => System.unique_integer([:positive]), "method" => method, "params" => params}
+    do: %{
+      "jsonrpc" => "2.0",
+      "id" => System.unique_integer([:positive]),
+      "method" => method,
+      "params" => params
+    }
 
   defp rpc(server, method, params, headers \\ @v11) do
-    Req.post!(url: server.base_url <> "/", json: envelope(method, params), headers: headers, retry: false).body
+    Req.post!(
+      url: server.base_url <> "/",
+      json: envelope(method, params),
+      headers: headers,
+      retry: false
+    ).body
   end
 
   defp park_task(server) do
@@ -219,7 +231,9 @@ defmodule AshA2A.B3.V11CourtsTest do
     Req.cancel_async_response(resp)
   end
 
-  test "resubscribe with lastSeenGeneration == current sends no snapshot, only newer events", %{open: server} do
+  test "resubscribe with lastSeenGeneration == current sends no snapshot, only newer events", %{
+    open: server
+  } do
     {id, generation} = park_task(server)
 
     resp = open_stream(server, %{"id" => id, "lastSeenGeneration" => generation}, @v11)
@@ -240,11 +254,20 @@ defmodule AshA2A.B3.V11CourtsTest do
     Req.cancel_async_response(resp)
   end
 
-  test "resubscribe by a foreign principal is -32001, indistinguishable from an unknown task", %{open: server} do
+  test "resubscribe by a foreign principal is -32001, indistinguishable from an unknown task", %{
+    open: server
+  } do
     {id, _} = park_task(server)
 
     foreign = rpc(server, "tasks/resubscribe", %{"id" => id}, @v11 ++ [{"x-test-user", "bob"}])
-    unknown = rpc(server, "tasks/resubscribe", %{"id" => "tsk-no-such-task"}, @v11 ++ [{"x-test-user", "bob"}])
+
+    unknown =
+      rpc(
+        server,
+        "tasks/resubscribe",
+        %{"id" => "tsk-no-such-task"},
+        @v11 ++ [{"x-test-user", "bob"}]
+      )
 
     assert %{"error" => %{"code" => -32_001}} = foreign
     assert get_in(foreign, ["error", "code"]) == get_in(unknown, ["error", "code"])
@@ -254,7 +277,9 @@ defmodule AshA2A.B3.V11CourtsTest do
 
   # -- 2. messageUpdate version gating on message/stream -------------------------
 
-  test "message/stream frames carry messageUpdate for A2A-Version 1.1 and not for 1.0", %{open: server} do
+  test "message/stream frames carry messageUpdate for A2A-Version 1.1 and not for 1.0", %{
+    open: server
+  } do
     stream = fn version ->
       resp =
         Req.post!(
@@ -288,7 +313,9 @@ defmodule AshA2A.B3.V11CourtsTest do
     open_card = Req.get!(url: open.base_url <> "/.well-known/agent-card.json", retry: false).body
     assert get_in(open_card, ["capabilities", "userArtifacts"]) == true
 
-    closed_card = Req.get!(url: closed.base_url <> "/.well-known/agent-card.json", retry: false).body
+    closed_card =
+      Req.get!(url: closed.base_url <> "/.well-known/agent-card.json", retry: false).body
+
     refute get_in(closed_card, ["capabilities", "userArtifacts"]) == true
   end
 
@@ -296,9 +323,15 @@ defmodule AshA2A.B3.V11CourtsTest do
     closed: server
   } do
     {id, generation} = park_task(server)
-    artifact = AshA2A.Protocol.JSON.encode!(AshA2A.Protocol.Artifact.new([Part.Data.new(%{"k" => "v"})]))
 
-    resp = rpc(server, "message/send", %{"artifactUpdates" => [%{"taskId" => id, "artifact" => artifact}]})
+    artifact =
+      AshA2A.Protocol.JSON.encode!(AshA2A.Protocol.Artifact.new([Part.Data.new(%{"k" => "v"})]))
+
+    resp =
+      rpc(server, "message/send", %{
+        "artifactUpdates" => [%{"taskId" => id, "artifact" => artifact}]
+      })
+
     assert %{"error" => %{"code" => -32_004}} = resp
 
     assert %{"result" => %{"id" => ^id} = task} = rpc(server, "tasks/get", %{"id" => id})
@@ -307,7 +340,9 @@ defmodule AshA2A.B3.V11CourtsTest do
 
   # -- 4. ifGenerationMatch ----------------------------------------------------------
 
-  test "ifGenerationMatch mismatch is -32010 TASK_GENERATION_MISMATCH; match proceeds", %{open: server} do
+  test "ifGenerationMatch mismatch is -32010 TASK_GENERATION_MISMATCH; match proceeds", %{
+    open: server
+  } do
     {id, generation} = park_task(server)
     follow_up = Map.put(parked(), "taskId", id)
 

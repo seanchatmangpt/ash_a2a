@@ -11,8 +11,20 @@ defmodule AshA2A.V11.ClientGenerationTest do
   alias AshA2A.Protocol.Event.{ArtifactUpdate, MessageUpdate, StatusUpdate}
   alias AshA2A.Protocol.Task, as: T
 
-  defp status(gen), do: %StatusUpdate{task_id: "t1", status: %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"}, generation: gen, final: false}
-  defp snapshot(gen), do: %T{id: "t1", status: %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"}, generation: gen}
+  defp status(gen),
+    do: %StatusUpdate{
+      task_id: "t1",
+      status: %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"},
+      generation: gen,
+      final: false
+    }
+
+  defp snapshot(gen),
+    do: %T{
+      id: "t1",
+      status: %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"},
+      generation: gen
+    }
 
   describe "Generation.observe/2" do
     test "consecutive generations are ok" do
@@ -65,7 +77,12 @@ defmodule AshA2A.V11.ClientGenerationTest do
     end
 
     test "message and artifact updates carry generation too" do
-      art = %ArtifactUpdate{task_id: "t1", artifact: %Artifact{parts: [], artifact_id: "a"}, generation: 2}
+      art = %ArtifactUpdate{
+        task_id: "t1",
+        artifact: %Artifact{parts: [], artifact_id: "a"},
+        generation: 2
+      }
+
       upd = %MessageUpdate{task_id: "t1", message: Message.new_user("x"), generation: 4}
       {results, _} = Generation.fold([snapshot(1), art, upd])
       assert Enum.map(results, &elem(&1, 1)) == [:ok, :ok, {:gap, 3, 4}]
@@ -96,14 +113,21 @@ defmodule AshA2A.V11.ClientGenerationTest do
     defp entry(gen, kind), do: %TimelineEntry{entry: kind, generation: gen}
 
     defp task_with(timeline, artifacts \\ []),
-      do: %T{id: "t1", status: %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"}, timeline: timeline, artifacts: artifacts}
+      do: %T{
+        id: "t1",
+        status: %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"},
+        timeline: timeline,
+        artifacts: artifacts
+      }
 
     test "timeline/1 sorts by generation and skips unknown entries" do
       m = {:message, Message.new_user("a")}
       s = {:status, %T.Status{state: :working, timestamp: "2026-01-01T00:00:00Z"}}
 
       task = task_with([entry(3, s), entry(2, {:unknown, %{"x" => 1}}), entry(1, m)])
-      assert [%TimelineEntry{generation: 1}, %TimelineEntry{generation: 3}] = Client.timeline(task)
+
+      assert [%TimelineEntry{generation: 1}, %TimelineEntry{generation: 3}] =
+               Client.timeline(task)
     end
 
     test "interleave_artifacts/1 orders by start generation, entries first on ties" do
@@ -140,11 +164,22 @@ defmodule AshA2A.V11.ClientGenerationTest do
     end
 
     test "artifact_updates refused locally without the userArtifacts capability" do
-      card = %AgentCard{name: "n", description: "d", url: "http://127.0.0.1:1", version: "1", skills: [], capabilities: %{streaming: true}}
+      card = %AgentCard{
+        name: "n",
+        description: "d",
+        url: "http://127.0.0.1:1",
+        version: "1",
+        skills: [],
+        capabilities: %{streaming: true}
+      }
+
       client = Client.new("http://127.0.0.1:1", transport: :http_json, card: card)
 
       assert {:error, :user_artifacts_not_supported} =
-               Client.send_message(client, nil, task_id: "t1", artifact_updates: [%{"taskId" => "t1"}])
+               Client.send_message(client, nil,
+                 task_id: "t1",
+                 artifact_updates: [%{"taskId" => "t1"}]
+               )
 
       assert {:error, :user_artifacts_not_supported} =
                Client.stream_message(client, "x", artifact_updates: [%{"taskId" => "t1"}])

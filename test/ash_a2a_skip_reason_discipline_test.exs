@@ -23,7 +23,9 @@ defmodule AshA2A.SkipReasonDisciplineTest do
         |> File.read!()
         |> String.split("\n")
         |> Enum.with_index(1)
-        |> Enum.filter(fn {line, _} -> Regex.match?(@bare, line) or Regex.match?(@boolean, line) end)
+        |> Enum.filter(fn {line, _} ->
+          Regex.match?(@bare, line) or Regex.match?(@boolean, line)
+        end)
         |> Enum.map(fn {line, n} -> "#{file}:#{n}: #{String.trim(line)}" end)
       end)
 

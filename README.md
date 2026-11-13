@@ -5,28 +5,117 @@
 [![CI](https://github.com/seanchatmangpt/ash_a2a/actions/workflows/ci.yml/badge.svg)](https://github.com/seanchatmangpt/ash_a2a/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A `Spark.Dsl.Extension` that exposes `Ash.Resource`/`Ash.Domain` actions as
-[A2A protocol](https://github.com/a2aproject/A2A) agent skills, with the
-wire codec hosted in-repo as `AshA2A.Protocol.*` (ported from
-[a2a-elixir](https://github.com/actioncard/a2a-elixir) 0.3.0, Apache-2.0 —
-see `lib/ash_a2a/protocol/NOTICE`) over JSON-RPC 2.0/HTTP with SSE
-streaming.
+A `Spark.Dsl.Extension` that exposes your `Ash.Resource`/`Ash.Domain` actions as
+[A2A protocol](https://github.com/a2aproject/A2A) agent skills.
 
-> **Naming**: the library and module prefix is **AshA2A**, the Hex package
-> is `ash_a2a`, and **SA2A** is the internal project codename used by the
-> RFCs (`docs/rfc/`) and the conformance courts (`docs/explanation/`).
+- Add `extensions: [AshA2A]`: every public action becomes a skill, and an agent card is built from them.
+- Serve the agent over JSON-RPC/HTTP (SSE streaming), HTTP+JSON, or gRPC; your Ash policies still decide who can do what.
+- Skill overrides are checked at compile time; consequence-bearing skills go through receipted, grant-gated dispatch.
+
+## Installation
+
+```elixir
+def deps do
+  [
+    {:ash_a2a, "~> 26.11.13"}
+  ]
+end
+```
+
+`mix ash_a2a.install` (an Igniter task) wires the extension into an existing
+project; see `Mix.Tasks.AshA2a.Install`. Requires Elixir `~> 1.19` and Ash `~> 3.0`.
+
+## Quickstart
+
+```elixir
+defmodule MyApp.Echo do
+  use Ash.Resource, domain: MyApp.Domain, data_layer: Ash.DataLayer.Ets, extensions: [AshA2A]
+
+  attributes do
+    uuid_primary_key(:id)
+    attribute(:message, :string, public?: true)
+  end
+
+  actions do
+    defaults([:read])
+  end
+end
+
+defmodule MyApp.Domain do
+  use Ash.Domain, extensions: [AshA2A]
+
+  resources do
+    resource(MyApp.Echo)
+  end
+end
+```
+
+Public actions are exposed with no `a2a` block at all. Wrap the domain in an agent,
+register it, and mount the plug:
+
+```elixir
+defmodule MyApp.EchoAgent do
+  use AshA2A.Agent, resource_or_domain: MyApp.Echo, name: "echo_agent",
+    require_authenticated_caller: false  # read-only demo; drop this in real use
+end
+
+# config/config.exs
+config :ash_a2a, :agents, [MyApp.EchoAgent]
+
+# your Application's children (or `forward "/a2a", AshA2A.Protocol.Plug, ...` in Phoenix)
+{Bandit, plug: {AshA2A.Protocol.Plug, agent: MyApp.EchoAgent, base_url: "http://localhost:4000"}}
+```
+
+The agent card is then served at `http://localhost:4000/.well-known/agent-card.json`,
+listing the `echo` skill. The full walkthrough, including calling it with
+`AshA2A.Protocol.Client`, is the [Getting Started tutorial](docs/tutorials/getting-started.md).
+
+## Usage
+
+Declare the DSL on a resource (shown above) or domain. `a2a do skill(:echo, :read) end`
+is an optional override (rename, describe, tag, exclude, or classify).
+`AshA2A.Transformers.BuildCapabilityIndex` compiles the residual overrides and
+`AshA2A.Verify` checks the projection fail-closed after compilation.
+
+Dispatch a message directly (no process):
+
+```elixir
+message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+
+{:reply, [%AshA2A.Protocol.Part.Data{data: %{results: []}}]} =
+  AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
+```
+
+`dispatch/6` takes further `history`, `auth_identity`, and `opts` arguments
+(`history` defaults to `[]`, `auth_identity` to `nil`, `opts` to `[]` —
+e.g. `:resolved_skill` carries the exact resolved skill through a
+`CommandBus` re-dispatch, fixing multi-resource namesake
+`:capability_mismatch` refusals). `auth_identity` is the trust boundary: with the
+default `nil`, `context.actor`/`context.tenant` resolve to `nil` and
+dispatch fails closed for anything your Ash policies gate on identity —
+identity only ever arrives from transport-verified auth
+(`AshA2A.Protocol.Plug.Auth`), never from message metadata. See
+[Authenticate inbound A2A requests](docs/how-to/authenticate-agent-requests.md).
+
+For the exact wire contract, see the
+[A2A endpoint reference](docs/reference/a2a-endpoint-contract.md). On top of
+the base `AshA2A.Protocol.Plug`, the library ships its own
+`AshA2A.A2ATransport.Plug` — a drop-in wrapper implementing the methods the
+base plug refuses: supervised `message/stream` fan-out with
+`tasks/resubscribe` replay, push-notification config RPCs with signed
+webhook delivery, and the authenticated extended card (same reference).
+
+## What you get
 
 Every **public** Ash action on an extended resource or domain is projected
-into a verified capability index — no declaration required. An optional
-`a2a do skill ... end` block adds A2A-only metadata overrides, and the
-compiled index:
+into a verified capability index. The compiled index:
 
 - builds a real `AshA2A.Protocol.AgentCard` (`AshA2A.Info.agent_card/2`) advertising each
   exposed skill,
 - fails closed at compile time (`AshA2A.Verify`) if a skill override names a
   nonexistent action (`:REFUSED_ACTION_NOT_FOUND`) or duplicates a skill
   name (`:REFUSED_DUPLICATE_SKILL_NAME`),
-- and dispatches an inbound `AshA2A.Protocol.Message` to the right Ash action
+- dispatches an inbound `AshA2A.Protocol.Message` to the right Ash action
   (`AshA2A.Dispatcher.dispatch/6`; arities `/3`–`/5` remain valid via
   defaults), either as a bare function call or
   through a real supervised `AshA2A.Protocol.Agent` process (`AshA2A.Agent`) — routing
@@ -40,13 +129,17 @@ compiled index:
   subject (the private `checkpoint_graph_digest/2` in
   `lib/ash_a2a/hilt/work_order.ex`) — drift refuses `:stale_graph_identity`.
 
-Around that core, the v1.0/v1.1 surfaces ship in the same package:
+The wire codec is hosted in-repo as `AshA2A.Protocol.*` (ported from
+[a2a-elixir](https://github.com/actioncard/a2a-elixir) 0.3.0, Apache-2.0 —
+see `lib/ash_a2a/protocol/NOTICE`). The library and module prefix is **AshA2A**
+and the Hex package is `ash_a2a`; there is no separate wire-protocol dependency.
+
+Around that core, the package also ships:
 
 - **Email gateway** — `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}`;
   `POST /v1/email:ingest` turns an approver's reply to a mailed brief into governed
   dispatches (auth is identity only; unapproved items never dispatch). See
   [Operate by email](docs/how-to/operate-by-email.md). Standing UNVERIFIED.
-
 - **HTTP+JSON binding** — `AshA2A.Transport.HTTPJSON` serves the A2A v1.0
   spec's native REST shape (§5.3): `POST /message:send`,
   `GET /tasks/{id}`, `POST /tasks/{id}:cancel`, plus the §8.2 well-known
@@ -89,136 +182,19 @@ Around that core, the v1.0/v1.1 surfaces ship in the same package:
   two-phase drain, FinOps budget ceilings, and affidavit/OCEL v2 evidence
   ([reference](docs/reference/enterprise.md) (repo-only)).
 
-## Requirements
+## Security
 
-- Elixir `~> 1.19` (developed and tested on Elixir 1.20.4 / OTP 29.1.1; CI
-  installs exactly `.tool-versions` via `erlef/setup-beam` with
-  `version-type: strict`, and the swarm Docker image pins the same pair).
-- Ash `~> 3.0`.
-- No Rust toolchain is needed to **use** the published package. Rust is only
-  needed to build the native HDDL/FOND planner when developing this repo or
-  when you use the deterministic planning path — the binary is not shipped
-  on Hex, so point `config :ash_a2a, :hddl_cli_path` at your own build (see
-  [Configuration](docs/reference/configuration.md)).
-
-## Installation
-
-```elixir
-def deps do
-  [
-    {:ash_a2a, "~> 26.11.13"}
-  ]
-end
-```
-
-There is no separate wire-protocol dependency to pin: the codec ships
-inside `ash_a2a` as the `AshA2A.Protocol.*` modules, so call them directly
-whenever your own code needs protocol-level types.
-
-`mix ash_a2a.install` (an Igniter task) wires the extension into an
-existing project; see `Mix.Tasks.AshA2a.Install`.
-
-## Usage
-
-Declare the DSL on a resource (or domain):
-
-```elixir
-defmodule MyApp.Echo do
-  use Ash.Resource,
-    domain: MyApp.Domain,
-    data_layer: Ash.DataLayer.Ets,
-    extensions: [AshA2A]
-
-  attributes do
-    uuid_primary_key(:id)
-    attribute(:message, :string, public?: true)
-  end
-
-  actions do
-    defaults([:read])
-  end
-end
-
-defmodule MyApp.Domain do
-  use Ash.Domain, extensions: [AshA2A]
-
-  resources do
-    resource(MyApp.Echo)
-  end
-end
-```
-
-Public actions are exposed with no `a2a` block at all; `a2a do
-skill(:echo, :read) end` is an optional override (rename, describe, tag,
-exclude, or classify). `AshA2A.Transformers.BuildCapabilityIndex` compiles
-the residual overrides and `AshA2A.Verify` checks the projection fail-closed
-after compilation.
-
-Dispatch a message directly (no process):
-
-```elixir
-message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
-
-{:reply, [%AshA2A.Protocol.Part.Data{data: %{results: []}}]} =
-  AshA2A.Dispatcher.dispatch(:echo, message, MyApp.Echo)
-```
-
-`dispatch/6` takes further `history`, `auth_identity`, and `opts` arguments
-(`history` defaults to `[]`, `auth_identity` to `nil`, `opts` to `[]` —
-e.g. `:resolved_skill` carries the exact resolved skill through a
-`CommandBus` re-dispatch, fixing multi-resource namesake
-`:capability_mismatch` refusals). `auth_identity` is the trust boundary: with the
-default `nil`, `context.actor`/`context.tenant` resolve to `nil` and
-dispatch fails closed for anything your Ash policies gate on identity —
-identity only ever arrives from transport-verified auth
-(`AshA2A.Protocol.Plug.Auth`), never from message metadata. See
-[Authenticate inbound A2A requests](docs/how-to/authenticate-agent-requests.md).
-
-To boot supervised agent processes, serve them over HTTP (agent card +
-JSON-RPC + SSE), and drive them with `AshA2A.Protocol.Client`, continue with the
-[Getting Started tutorial](docs/tutorials/getting-started.md); for the exact
-wire contract, see the
-[A2A endpoint reference](docs/reference/a2a-endpoint-contract.md). On top of
-the base `AshA2A.Protocol.Plug`, the library ships its own
-`AshA2A.A2ATransport.Plug` — a drop-in wrapper implementing the methods the
-base plug refuses: supervised `message/stream` fan-out with
-`tasks/resubscribe` replay, push-notification config RPCs with signed
-webhook delivery, and the authenticated extended card (same reference).
-
-## Local development setup
-
-Running this repo's own `mix test` requires one native Rust CLI binary to be
-built first. CI (`.github/workflows/ci.yml`) builds it automatically (pinned
-Rust 1.97.1); a local clone does not, so this is a real, one-time manual
-step:
-
-```sh
-cd native/hddl_cli && cargo build --release --locked && cd -
-```
-
-- `native/hddl_cli` is the sole integration surface for the real FOND/HTN
-  planner (`ferroplan`) — dozens of tests (deterministic HDDL synthesis,
-  the FreedomGym facilitator fixture, request-router phase dispatch,
-  Chicago qualification courts) invoke this binary as a subprocess and
-  raise a clear, actionable error (`hddl_cli_not_built`) if it is missing —
-  never a silent skip. Without it, `mix test` reports real test *failures*
-  (not skips), which is easy to mistake for a code regression.
-- `native/graphlaw_host` (optional, NOT built by CI) backs the GraphLaw
-  WASM runtime B; if left unbuilt, the one test that needs it reports a
-  named, correctly-handled skip rather than a failure.
-- Postgres 16 on `localhost:55432` (user/password `postgres`, db
-  `ash_a2a_test`, per `config/test.exs`) is needed by the real Oban
-  delivery qualification tests.
-- `mix test` (no args) is the fast-iteration default — it excludes the
-  `:serial`-tagged tail (see the how-to guide below). The canonical
-  full-suite invocation, and what CI runs, is `mix test.all --max-cases 6`
-  (the suite spawns `:peer` nodes and subprocesses; higher parallelism
-  trips port-bind races). Known-flaky tests are documented in the
-  [CHANGELOG](CHANGELOG.md).
-
-Full detail: [Testing ash_a2a (your app and this
-repo)](docs/how-to/test-your-ash_a2a-app.md). Both `target/` directories are
-gitignored build artifacts and are never committed.
+Identity is a trust boundary: `actor`/`tenant` only ever come from
+transport-verified `AshA2A.Protocol.Plug.Auth` output, and consequential
+(`:change`/`:external_do`) skills additionally require a standing grant from
+`AshA2A.Authority.Grant` — authentication alone never confers authority.
+Neither shipped broker (`InMemory`, `Ekv`) is
+Sybil-resistant; bring your own identity system for production. Optional
+boundaries extend that identity system: SPIFFE workload-attested
+identities (`AshA2A.SPIFFE.*`) and OpenID AuthZEN PDP policy evidence
+(`AshA2A.AuthZEN.*`) bind external decisions in as evidence — never as
+authority. See [the authentication how-to](docs/how-to/authenticate-agent-requests.md)
+and [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
@@ -278,9 +254,9 @@ reference for lookup, and explanation for understanding. It is published on
   - [Canonical graph identity](docs/explanation/canonical-graph-identity.md)
     and [GraphLaw WASM integration](docs/explanation/graphlaw-wasm-integration.md).
   - [Copilot membrane](docs/explanation/copilot-membrane.md) (repo-only) — the twin
-    pipeline (Vince intent interrogation, Tony/Strain saturation,
+    pipeline (CEO intent interrogation, COO/Strain saturation,
     attestation ingress) and its stage order.
-- **Control plane & conformance** (shipped with the repo): [C2 certificate
+- **Control plane** (shipped with the repo): [C2 certificate
   model](docs/reference/c2-certificate.md),
   [C2 wire interop](docs/reference/c2-wire-interop.md) (external
   authority/actuator projects, AuthZEN PDP policy evidence),
@@ -291,118 +267,128 @@ reference for lookup, and explanation for understanding. It is published on
   the [approver app](docs/how-to/approver-apps.md) (repo-only),
   and the [release path](docs/how-to/release.md) (repo-only).
 
-### Internal evidence and reports (not user documentation)
+## Requirements and local development
 
-These artifacts are deliberately published with the repository but are
-point-in-time engineering records, not guides. As of v26.9.31 the audit-era
-records live under `docs/archive/`, grouped by kind:
+- Elixir `~> 1.19` (developed and tested on Elixir 1.20.4 / OTP 29.1.1; CI
+  installs exactly `.tool-versions` via `erlef/setup-beam` with
+  `version-type: strict`).
+- Ash `~> 3.0`.
+- No Rust toolchain is needed to **use** the published package. Rust is only
+  needed to build the native HDDL/FOND planner when developing this repo or
+  when you use the deterministic planning path — the binary is not shipped
+  on Hex, so point `config :ash_a2a, :hddl_cli_path` at your own build (see
+  [Configuration](docs/reference/configuration.md)).
 
-- `docs/archive/reports/` — measured evidence: the v26.9.17 hardening/
-  benchmark/stress pass (`chicago-benchmark-report.md`,
-  `v26.9.17-{stress-report,hardening-audit,commandbus-scale}.md`,
-  `sa2a-v26-9-17-{capability-coverage-sweep,hddl-reachability-analysis}.md`,
-  referenced from the CHANGELOG), the `partisan-integration-investigation.md`
-  spike note, and the security-posture reports gathered against the `k8s/`
-  swarm manifests (`AIRGAP_READINESS_REPORT.md`, `ENTERPRISE_READINESS_REPORT.md`,
-  `SSP_CONTROL_APPENDIX.md`; kind-cluster scope, 2026-09-15; explicitly not
-  an ATO).
-- `docs/archive/jira/` — RFC-style tickets, checkpoints, and ARD/PRD pairs
-  from v26.9.11 through v26.9.18's development.
-- `docs/archive/session-history/` — `MANUFACTURING_RECEIPT.md` and
-  `litho.docs/`, internal session history and manufacturing records.
-- `DOCS_AUDIT_v26.9.21.md` (repo root) — the accounting of this
-  documentation audit itself: every file kept/updated/archived, and why.
-- `docs/explanation/chicago-conformance-court.md` — what the RFC-SA2A-002
-  conformance court is (kept in place: a durable explanation, not a
-  point-in-time record).
-- `docs/rfc/` — RFC-SA2A-001–007 (Proposed Standard status; kept in place —
-  001/002 date from v26.9.16, 003–007 from v26.9.28, plus the
-  `adoption/SPIFFE_ABSORPTION.md` record and the v26.9.26 ABB/SBB
-  implementation notes).
-- `research/` — kept in place, outside `docs/archive/`.
+Running this repo's own `mix test` requires one native Rust CLI binary to be
+built first. CI (`.github/workflows/ci.yml`) builds it automatically (pinned
+Rust 1.97.1); a local clone does not, so this is a one-time manual step:
 
-## Security
+```sh
+cd native/hddl_cli && cargo build --release --locked && cd -
+```
 
-Identity is a trust boundary: `actor`/`tenant` only ever come from
-transport-verified `AshA2A.Protocol.Plug.Auth` output, and consequential
-(`:change`/`:external_do`) skills additionally require a standing grant from
-`AshA2A.Authority.Grant` — authentication alone never confers authority
-(RFC-SA2A-001 S29). Neither shipped broker (`InMemory`, `Ekv`) is
-Sybil-resistant; bring your own identity system for production. Optional
-absorbed boundaries extend that identity system: SPIFFE workload-attested
-identities (`AshA2A.SPIFFE.*`) and OpenID AuthZEN PDP policy evidence
-(`AshA2A.AuthZEN.*`) bind external decisions in as evidence — never as
-authority. See [the authentication how-to](docs/how-to/authenticate-agent-requests.md)
-and [SECURITY.md](SECURITY.md).
+- `native/hddl_cli` is the sole integration surface for the FOND/HTN
+  planner (`ferroplan`) — many tests invoke this binary as a subprocess and
+  raise a clear, actionable error (`hddl_cli_not_built`) if it is missing —
+  never a silent skip. Without it, `mix test` reports real test *failures*
+  (not skips), which is easy to mistake for a code regression.
+- `native/graphlaw_host` (optional, NOT built by CI) backs the GraphLaw
+  WASM runtime B; if left unbuilt, the one test that needs it reports a
+  named, correctly-handled skip rather than a failure.
+- Postgres 16 on `localhost:55432` (user/password `postgres`, db
+  `ash_a2a_test`, per `config/test.exs`) is needed by the real Oban
+  delivery tests.
+- `mix test` (no args) is the fast-iteration default — it excludes the
+  `:serial`-tagged tail. The full-suite invocation, and what CI runs, is
+  `mix test.all --max-cases 6` (the suite spawns `:peer` nodes and
+  subprocesses; higher parallelism trips port-bind races). Known-flaky
+  tests are listed in the testing how-to below.
 
-## Copilot membrane & sovereignty surfaces
+Full detail: [Testing ash_a2a (your app and this
+repo)](docs/how-to/test-your-ash_a2a-app.md). Both `target/` directories are
+gitignored build artifacts and are never committed. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
-Landed namespaces proving the copilot membrane and authority-gated
-actuation, each with its court suite (`mix test <file>`):
+## Additional surfaces
+
+Namespaces for authority-gated actuation and operator-in-the-loop workflows,
+each with its own test suite (`mix test <file>`):
 
 - `AshA2A.Twin.*` (`lib/ash_a2a/twin.ex` and `lib/ash_a2a/twin/`:
   `asset.ex`, `lease.ex`, `operator.ex`, `partner.ex`, `server.ex`,
-  `hazard.ex`, `tony.ex`) — gen_statem digital twins with
-  hazard injection; 13 tests in `test/twin/twin_test.exs`, 7 in
-  `test/twin/tony_test.exs` (Tony saturation twin).
-- `AshA2A.Twin.Vince` (`twin/vince.ex`) with `MechanicalPrior` — intent
-  interrogation without an LLM in the admission path; 18 tests in
-  `test/twin/vince_test.exs`.
+  `hazard.ex`, `coo.ex`) — gen_statem digital twins with
+  hazard injection; tests in `test/twin/twin_test.exs` and
+  `test/twin/coo_test.exs`.
+- `AshA2A.Twin.CEO` (`twin/ceo.ex`) with `MechanicalPrior` — intent
+  interrogation without an LLM in the admission path; tests in
+  `test/twin/ceo_test.exs`.
 - `AshA2A.Strain.Tensor` / `AshA2A.Strain.Bridge` — saturation tensor and
-  pplan telemetry bridge; 12 tests in `test/strain/tensor_test.exs`, 15 in
-  `test/strain/bridge_test.exs`, plus 11 pplan-hazard-bridge tests in
+  pplan telemetry bridge; tests in `test/strain/` and
   `test/telemetry_bridge/pplan_hazard_bridge_test.exs`.
 - `AshA2A.Attestation.Key` / `AshA2A.Attestation.Gate` with
-  `AshA2A.Ingress.Channel` — attested ingress channel; 34 tests in
-  `test/attestation/attestation_gate_test.exs`, 22 in
+  `AshA2A.Ingress.Channel` — attested ingress channel; tests in
+  `test/attestation/attestation_gate_test.exs` and
   `test/ingress/channel_test.exs`.
 - `AshA2A.Copilot.Pipeline` (`copilot/pipeline.ex`, with `MechanicalPrior`)
-  — the membrane pipeline composing Vince → Strain → attestation, with the
-  G4 authority hop as the last gate before admit and the G5 escalation feed
-  into the attention broker; 29 tests in
-  `test/copilot/pipeline_test.exs`, plus 10 adversarial courts in
-  `test/copilot/f8_adversarial_test.exs`.
+  — the pipeline composing CEO → Strain → attestation, with an authority
+  hop as the last gate before admit and an escalation feed
+  into the attention broker; tests in `test/copilot/`.
 - `AshA2A.Authority.PEP` / `AshA2A.Authority.Source` (with
   `AllowAll`/`DenyAll` sources) — policy enforcement point over authority
-  sources; 14 tests in `test/authority/pep_test.exs`.
-- `AshA2A.Authority.GraphPin` — pinned-graph authority; 6 tests in
+  sources; tests in `test/authority/pep_test.exs`.
+- `AshA2A.Authority.GraphPin` — pinned-graph authority; tests in
   `test/authority/graph_pin_test.exs`.
 - `AshA2A.Actuation.Engine` (with `Adapter`, `Ticket`; C2 clients live in `lib/ash_a2a/c2/`) —
-  authority-gated actuation engine; 9 tests in
+  authority-gated actuation engine; tests in
   `test/actuation/engine_court_test.exs`.
 - `AshA2A.Negotiation.Strategy` behaviour with `AshA2A.Negotiation.Engine`
   and `AshA2A.Negotiation.DefaultStrategy` (`negotiation/`) — thin-liquidity
   detection, baseline-capped leverage counters, escrow → `Steps.Await`
-  mapping; 8 tests in `test/negotiation/negotiation_engine_court_test.exs`.
-- `AshA2A.Attention.Broker` (`attention/broker.ex`) — Article-14 attention:
-  autonomy levels, consent-by-silence window, override ledger, founder
-  escalation, GPM-floor signature invariant; 20 tests in
-  `test/attention/broker_court_test.exs`.
+  mapping; tests in `test/negotiation/negotiation_engine_court_test.exs`.
+- `AshA2A.Attention.Broker` (`attention/broker.ex`) — attention
+  management: autonomy levels, consent-by-silence window, override ledger,
+  founder escalation; tests in `test/attention/broker_court_test.exs`.
 - `mix ash_a2a.pplan_courts` (`lib/mix/tasks/ash_a2a.pplan_courts.ex`) —
-  runs the ash_pplan parity courts against a local checkout via the
-  `ASH_PPLAN_PATH` toggle (Hex pin by default; CI never sets the toggle).
-- `examples/copilot_demo.exs` — end-to-end membrane demo:
+  runs the ash_pplan parity tests against a local checkout via the
+  `ASH_A2A_LOCAL_DEPS=1` toggle (Hex pins by default; CI never sets the toggle).
+- `examples/copilot_demo.exs` — end-to-end demo:
   `mix run examples/copilot_demo.exs`.
 
-## Status
+## Conformance and status
 
 Protocol target: A2A **v1.1.0** (upstream tag `v1.1.0-rc`, not yet a GitHub
-release). Emitted cards advertise `protocolVersion` 1.1; the server accepts
-`A2A-Version` 0.3, 1.0 and 1.1 (`AshA2A.Protocol.Version.supported_default/0`); the
-client-header default (`Version.default/0`) is still 1.0. v1.1
-Standing: PARTIAL (no v1.1 TCK verdict); see
-[v1.1 conformance](docs/reference/a2a-v1-1-conformance.md) (repo-only). Selected via the
-`A2A-Version: 1.1` header. Test count: default tier 4705 tests, 0 failures at
-`d8f593dc` per that statement (not re-run by the doc pass); the serial tier has
-env-blocked tests (Postgres :55432, Oban, wasm pins, hddl).
-`config :ash_a2a, :long_poll_timeout_ms` bounds
-`currentGeneration` long polls; agent cards may advertise `user_artifacts`.
+release). Standing: PARTIAL (no v1.1 TCK verdict).
 
-Versioning is calendar-based (`26.11.x`; `mix.exs` is at `26.11.13`);
-`~> 26.11.13` pins within the 26.11 series at or above 26.11.13.
-Semantic Versioning is intended after 1.0. See the
-[CHANGELOG](CHANGELOG.md) — note that `main` routinely runs ahead of the
-latest published Hex release.
+- Emitted cards advertise `protocolVersion` 1.1; the server accepts
+  `A2A-Version` 0.3, 1.0 and 1.1 (`AshA2A.Protocol.Version.supported_default/0`); the
+  client-header default (`Version.default/0`) is still 1.0. Select v1.1 with the
+  `A2A-Version: 1.1` header.
+- Per the conformance statement, the default test tier ran 4705 tests with 0 failures
+  at `d8f593dc` (not re-run by the doc pass); the serial tier has env-blocked tests
+  (Postgres :55432, Oban, wasm pins, hddl).
+- `config :ash_a2a, :long_poll_timeout_ms` bounds `currentGeneration` long polls;
+  agent cards may advertise `user_artifacts`.
+
+Details:
+
+- [v1.1 conformance](docs/reference/a2a-v1-1-conformance.md) (repo-only) — row-level status and evidence.
+- [v1.1 known divergences](docs/reference/v1-1-known-divergences.md) (repo-only).
+
+Engineering records (point-in-time, not guides) are kept in the repository:
+
+- `docs/archive/reports/` — measured hardening, benchmark and stress reports, and
+  security-posture reports for the `k8s/` swarm manifests (kind-cluster scope; not an ATO).
+- `docs/archive/jira/` and `docs/archive/session-history/` — development tickets and
+  session history.
+- `docs/explanation/chicago-conformance-court.md` — the conformance test suite design.
+- `docs/archive/rfc/` — RFC-SA2A-001–007 for the semantic layer (RDF/SHACL-checked requests)
+  built on top of the protocol (the `SA2A` name refers to that layer).
+- `research/` — research notes.
+
+Versioning is calendar-based (`26.11.x`); `~> 26.11.13` pins within the 26.11
+series at or above 26.11.13. Semantic Versioning is intended after 1.0. See the
+[CHANGELOG](CHANGELOG.md) — `main` routinely runs ahead of the latest published
+Hex release.
 
 ## License
 

@@ -141,4 +141,4 @@ Run against your host after migrating:
 - [Configuration reference](../reference/configuration.md)
 - [Verify authority on async paths](verify-authority-on-async-paths.md)
 - [Test governed actions](test-governed-actions.md)
-- `docs/rfc/RFC-SA2A-004-v26.9.28.md` (normative) and `RFC-SA2A-007-errata-v26.9.28.md`
+- `docs/archive/rfc/RFC-SA2A-004-v26.9.28.md` (normative) and `RFC-SA2A-007-errata-v26.9.28.md`

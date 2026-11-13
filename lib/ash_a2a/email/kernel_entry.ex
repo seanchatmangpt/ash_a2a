@@ -35,7 +35,8 @@ defmodule AshA2A.Email.KernelEntry do
 
     with {:ok, subject} <- subject(principal),
          {:ok, sk} <- resolve_skill(resource, skill),
-         {:ok, authority} <- live_authority(subject.value, sk.id, Keyword.get(opts, :grant_opts, [])) do
+         {:ok, authority} <-
+           live_authority(subject.value, sk.id, Keyword.get(opts, :grant_opts, [])) do
       message = Message.new_user([Part.Data.new(input)])
 
       command =

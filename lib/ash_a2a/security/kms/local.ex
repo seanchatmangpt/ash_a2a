@@ -109,7 +109,9 @@ defmodule AshA2A.Security.KMS.Local do
     name = Keyword.get(opts, :name, @default_name)
 
     case GenServer.whereis(name) do
-      nil -> :ok
+      nil ->
+        :ok
+
       # Bind the pid: if the harness dies between whereis/2 and stop/1
       # (test-suite teardown race), the named-resolution exit must not
       # propagate into a caller's on_exit.

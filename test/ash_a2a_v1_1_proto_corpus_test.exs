@@ -100,8 +100,7 @@ defmodule AshA2A.V1_1ProtoCorpusTest do
       {:implemented, "AshA2A.Protocol.JSON SubscribeToTaskRequest decoder", @json,
        ~s|parse_int64(Map.get(map, "lastSeenGeneration"))|},
     {:field, "AgentCapabilities", "user_artifacts"} =>
-      {:implemented, "AshA2A.Protocol.JSON agent-card capabilities codec", @json,
-       "userArtifacts"},
+      {:implemented, "AshA2A.Protocol.JSON agent-card capabilities codec", @json, "userArtifacts"},
     {:field, "SendMessageRequest", "artifact_updates"} =>
       {:implemented, "AshA2A.Protocol.JSON SendMessageRequest decoder", @json,
        ~s|Map.get(map, "artifactUpdates")|},
@@ -109,8 +108,7 @@ defmodule AshA2A.V1_1ProtoCorpusTest do
       {:implemented, "AshA2A.Protocol.JSON push config encode", @json,
        ~s|put_unless_nil("protocolVersion", config.protocol_version)|},
     {:error, "-32010"} =>
-      {:implemented, "AshA2A.Protocol.JSONRPC.Error (task generation mismatch)", @errors,
-       "32010"}
+      {:implemented, "AshA2A.Protocol.JSONRPC.Error (task generation mismatch)", @errors, "32010"}
   }
 
   defp proto, do: File.read!(@proto)

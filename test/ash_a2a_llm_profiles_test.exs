@@ -66,7 +66,12 @@ defmodule AshA2ALLMProfilesTest do
 
     assert task.status.state == :completed
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{answer: answer}}]}] = task.artifacts
+    assert [
+             %AshA2A.Protocol.Artifact{
+               parts: [%AshA2A.Protocol.Part.Data{data: %{answer: answer}}]
+             }
+           ] = task.artifacts
+
     assert is_binary(answer)
     assert String.length(answer) > 0
   end

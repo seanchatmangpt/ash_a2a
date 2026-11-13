@@ -19,11 +19,11 @@ side (`ash_a2a`), and its verdicts are consumed downstream as inputs to
 ```
  intent ──► Pipeline.check/3
               │
-              ├─► AshA2A.Twin.Vince.evaluate_intent/2      (intent interrogation)
+              ├─► AshA2A.Twin.CEO.evaluate_intent/2      (intent interrogation)
               │     ├─ gpm_floor / monkey_math / round_number_suspicious
               │     └─ mechanical prior via MechanicalPrior behaviour
               ├─► mechanical prior (optional)              (MechanicalPrior behaviour)
-              ├─► AshA2A.Twin.Tony.handle_inbound/2        (per-coordinator strain gate)
+              ├─► AshA2A.Twin.COO.handle_inbound/2        (per-coordinator strain gate)
               │     └─ AshA2A.Strain.Tensor.hyperplane_check/2
               ├─► AshA2A.Attestation.Gate                  (sensor-frame attestation)
               ├─► AshA2A.Authority.PEP.assert_standing/4   (authority hop, opt-in)
@@ -31,20 +31,20 @@ side (`ash_a2a`), and its verdicts are consumed downstream as inputs to
 ```
 
 The pipeline (`AshA2A.Copilot.Pipeline`, `lib/ash_a2a/copilot/pipeline.ex`)
-is pure: twins are called via module functions and all state (Vince's
-challenge ledger, the Tony mesh, Bridge's mesh_state) is threaded in and out
+is pure: twins are called via module functions and all state (CEO's
+challenge ledger, the COO mesh, Bridge's mesh_state) is threaded in and out
 through the returned `{new_state, result}`. The only environmental read is
 the wall clock when the caller does not inject `:now` (disclosed in the
 moduledoc); tests inject `:now` for determinism.
 
-## Vince — intent interrogation
+## CEO — intent interrogation
 
-`AshA2A.Twin.Vince` (`lib/ash_a2a/twin/vince.ex`) is the adversarial twin.
+`AshA2A.Twin.CEO` (`lib/ash_a2a/twin/ceo.ex`) is the adversarial twin.
 Every offer is evaluated against mechanical detectors ("Monkey Math") before
 any trust is extended:
 
 - **GPM floor** — gross profit margin `gpm/2 = (nte - offer) / nte` below the
-  floor (default `0.22`, configurable at `Vince.new/1` via `:gpm_floor`)
+  floor (default `0.22`, configurable at `CEO.new/1` via `:gpm_floor`)
   challenges with code `:gpm_floor`, demanding `itemized_cost_breakdown` and
   `subcontractor_quote_doc`. Vocabulary per the `financial-margin-envelope`
   pack (`fme:floor`, law `(NTE - quote)/NTE >= floor`).
@@ -60,9 +60,9 @@ any trust is extended:
 Detector order is fixed: repeat-challenge escalation first (a trade already
 in the challenge ledger refuses with `:escalate_multisig`), then GPM floor,
 then exact-half, then round-number; first firing detector wins
-(`Vince.evaluate_intent/2`).
+(`CEO.evaluate_intent/2`).
 
-Challenges are **state**: the ledger is a map on the Vince struct
+Challenges are **state**: the ledger is a map on the CEO struct
 (`challenges`), threaded through the pipeline. A repeat challenge on the same
 trade escalates to `{:refuse, :escalate_multisig}`.
 
@@ -70,11 +70,11 @@ Mechanical priors: `AshA2A.Twin.MechanicalPrior` is a one-callback behaviour
 (`prior_verdict/2` mapping `{claim, telemetry}` to a typed verdict). The
 default `AshA2A.Twin.MechanicalPrior.RefuseAll` stub is an injection point,
 not a policy — a real trade domain supplies its own prior via
-`Vince.new(prior: MyReticle)` or `Pipeline.check/3`'s `:prior` opt. Trade
+`CEO.new(prior: MyReticle)` or `Pipeline.check/3`'s `:prior` opt. Trade
 reticle packs (generated from `ggen-marketplace` pack
 `packs/trade-reticle-plumbing`) implement this behaviour.
 
-## Tony + Strain — load and saturation
+## COO + Strain — load and saturation
 
 `AshA2A.Strain.Tensor` (`lib/ash_a2a/strain/tensor.ex`) is the AHDCLT
 cognitive-load tensor: six named dimensions, each typed with a documented
@@ -94,15 +94,15 @@ normalized strains (weights 0.30 / 0.25 / 0.20 / 0.10 / 0.05 / 0.10) is
 compared against threshold 0.7; above threshold returns
 `{:breach, {:saturation_gate, total, threshold}}`.
 
-`AshA2A.Twin.Tony` (`lib/ash_a2a/twin/tony.ex`) is the ergonomic load
+`AshA2A.Twin.COO` (`lib/ash_a2a/twin/coo.ex`) is the ergonomic load
 balancer over a coordinator mesh. Pure functions over tensor snapshots:
 
-- `Tony.register_coordinator/3` puts an id → tensor snapshot into the mesh.
-- `Tony.handle_inbound/2` strain-checks the target coordinator:
-  `{:admit, id}` or `{:shed, {:senior_queue, :tony_relief}}`.
-- `Tony.triage/2` partitions tickets via the pre-staging checklist
+- `COO.register_coordinator/3` puts an id → tensor snapshot into the mesh.
+- `COO.handle_inbound/2` strain-checks the target coordinator:
+  `{:admit, id}` or `{:shed, {:senior_queue, :coo_relief}}`.
+- `COO.triage/2` partitions tickets via the pre-staging checklist
   (`:warranty_status`, `:operating_hours`, `:sla_window`,
-  `:contractor_coi_valid`); `Tony.balance/3` diverts high-friction tickets
+  `:contractor_coi_valid`); `COO.balance/3` diverts high-friction tickets
   (friction > 0.7) from saturated coordinators to the freshest (lowest total
   strain).
 
@@ -197,14 +197,14 @@ Reference: [Ingress attestation](../reference/ingress-attestation.md).
 
 `AshA2A.Copilot.Pipeline.check/3` runs the interception path:
 
-1. **Vince** — `Vince.evaluate_intent/2` (GPM floor, monkey math, round
+1. **CEO** — `CEO.evaluate_intent/2` (GPM floor, monkey math, round
    numbers). On challenge: return the challenge-as-state ledger entry. On
    refuse: return refuse (optionally escalated, see below).
-2. **Mechanical prior** — consulted on the Vince-admit path
+2. **Mechanical prior** — consulted on the CEO-admit path
    (`mechanical_prior/2`, private): `Pipeline.detect_prior/0` resolves the
    application env `:ash_a2a, :copilot_mechanical_prior`, else
    `TradeReticle.Plumbing` if loadable, else the stage is skipped (`nil`).
-3. **Tony strain gate** — `Tony.handle_inbound/2` (keyed to
+3. **COO strain gate** — `COO.handle_inbound/2` (keyed to
    `intent.coordinator_id`; the mesh-level shed is `route/2`'s job).
 4. **Attestation** — `Gate.verify_enclave/2` -> `verify_freshness/2` ->
    `verify_sensor_metadata/2` on `intent.sensor_frame`; a refusal surfaces
@@ -212,7 +212,7 @@ Reference: [Ingress attestation](../reference/ingress-attestation.md).
 5. **Authority** — `Authority.PEP.assert_standing/4`, last gate before
    admit; active only when the `:authority_source` opt is given.
 
-Within the admit path the order is prior -> tony -> attestation ->
+Within the admit path the order is prior -> coo -> attestation ->
 authority (`admit_path/3` in `lib/ash_a2a/copilot/pipeline.ex`); the first
 non-ok stage wins. Missing `:sensor_frame` is a typed attestation refusal
 (`:missing_sensor_frame`); malformed intents return
@@ -232,17 +232,17 @@ Result shape (typed, no strings-as-state):
 ```
 
 `{:escalated, ...}` appears only when `:attention_broker` is configured and
-a Vince repeat-challenge or GPM-floor-class refuse opens a broker proposal.
+a CEO repeat-challenge or GPM-floor-class refuse opens a broker proposal.
 
-**Strain-vs-Vince order decision** (from the `Copilot.Pipeline` moduledoc):
+**Strain-vs-CEO order decision** (from the `Copilot.Pipeline` moduledoc):
 the moduledoc's rationale is that a saturated coordinator cannot take the
-ticket regardless of intent quality, so evaluating Vince first would burn an
+ticket regardless of intent quality, so evaluating CEO first would burn an
 expensive interrogation (and mutate its challenge ledger) on a ticket that is
-shed anyway. Shedding first protects the human and keeps the Vince ledger
+shed anyway. Shedding first protects the human and keeps the CEO ledger
 clean of tickets that never had a coordinator. Inside `check/3` the
-per-coordinator Tony gate still runs *after* Vince (it is keyed to
-`intent.coordinator_id`, which Vince's verdict does not change); the
-mesh-level shed decision is `route/2`'s job and happens before Vince by
+per-coordinator COO gate still runs *after* CEO (it is keyed to
+`intent.coordinator_id`, which CEO's verdict does not change); the
+mesh-level shed decision is `route/2`'s job and happens before CEO by
 construction.
 
 `route/2` exists on `AshA2A.Copilot.Pipeline` (`Pipeline.route/2` in
@@ -309,10 +309,10 @@ as `:attention_broker` in either form: a module, or `{module, opts}`
 
 | attack | status |
 |---|---|
-| A1 trade respell resets the challenge ledger | closed: Vince normalizes string trades (trim, case-fold); atoms keep exact keys |
+| A1 trade respell resets the challenge ledger | closed: CEO normalizes string trades (trim, case-fold); atoms keep exact keys |
 | A2 authority hop fail-open | closed: absent source is a documented skip; configured source with no `actor_id` refuses; bad attestation refuses before the hop |
 | A3 strain spoof via forged `coordinator_id` | OPEN: observations credit the declared id (test documents it) |
-| A4 `retry_token` redemption | closed: token not redeemable; Vince ledger decides |
+| A4 `retry_token` redemption | closed: token not redeemable; CEO ledger decides |
 | A5 negative NTE / nil `coordinator_id` | closed: typed `:invalid_intent` refusals |
 
 ## See Also

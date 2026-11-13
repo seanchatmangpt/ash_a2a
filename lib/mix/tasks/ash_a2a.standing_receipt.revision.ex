@@ -3,7 +3,7 @@ defmodule Mix.Tasks.AshA2a.StandingReceipt.Revision do
 
   @moduledoc """
   Appends a `receipt-revision` event to the standing-receipt chain file
-  (JSONL, next to the doc) and prints the new chain head (lane L108).
+  (JSONL, next to the doc) and prints the new chain head.
 
   Each line:
 

@@ -261,7 +261,11 @@ defmodule AshA2A.SemanticExtensionTest do
     end
 
     test "a message carrying some OTHER A2A extension is not activated" do
-      message = %{AshA2A.Protocol.Message.new_user("hi") | extensions: %{"some-other-ext" => %{"x" => 1}}}
+      message = %{
+        AshA2A.Protocol.Message.new_user("hi")
+        | extensions: %{"some-other-ext" => %{"x" => 1}}
+      }
+
       refute Extension.activated?(message)
       assert {:error, %{code: :profile_not_activated}} = Extension.payload(message)
     end
@@ -278,10 +282,14 @@ defmodule AshA2A.SemanticExtensionTest do
 
     test "activation survives a real AshA2A.Protocol.JSON message encode/decode round trip" do
       message =
-        Extension.activate(AshA2A.Protocol.Message.new_user("hi"), %{"profile" => Extension.profile_id()})
+        Extension.activate(AshA2A.Protocol.Message.new_user("hi"), %{
+          "profile" => Extension.profile_id()
+        })
 
       {:ok, encoded} = AshA2A.Protocol.JSON.encode(message)
-      {:ok, decoded} = encoded |> Jason.encode!() |> Jason.decode!() |> AshA2A.Protocol.JSON.decode(:message)
+
+      {:ok, decoded} =
+        encoded |> Jason.encode!() |> Jason.decode!() |> AshA2A.Protocol.JSON.decode(:message)
 
       assert Extension.activated?(decoded)
       assert {:ok, %{"profile" => "SA2A-PROFILE-v26.9.20"}} = Extension.payload(decoded)

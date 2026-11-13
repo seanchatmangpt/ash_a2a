@@ -375,7 +375,8 @@ defmodule AshA2A.Chicago.Fixtures.PlanGates do
   end
 
   @spec step_message(BoundedPlan.step()) :: AshA2A.Protocol.Message.t()
-  def step_message(%{input: input}), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
+  def step_message(%{input: input}),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
 
   @doc "Independent reader: persisted consequence rows (ledger + external) naming `token`."
   @spec consequence_rows(String.t()) :: non_neg_integer()

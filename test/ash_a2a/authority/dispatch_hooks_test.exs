@@ -69,10 +69,13 @@ defmodule AshA2A.DispatchHooksTest do
   setup do
     Process.register(self(), :dispatch_hooks_sink)
     old = Application.get_env(:ash_a2a, :dispatch_hooks)
+
     on_exit(fn ->
-      if old, do: Application.put_env(:ash_a2a, :dispatch_hooks, old),
+      if old,
+        do: Application.put_env(:ash_a2a, :dispatch_hooks, old),
         else: Application.delete_env(:ash_a2a, :dispatch_hooks)
     end)
+
     :ok
   end
 
@@ -80,7 +83,11 @@ defmodule AshA2A.DispatchHooksTest do
 
   test "gate and both hooks are read by the dispatcher and fire" do
     assert AshA2A.Info.authority_gate(Item) == :disabled
-    Application.put_env(:ash_a2a, :dispatch_hooks, %{pre_hook: {Hooks, :pre}, post_hook: {Hooks, :post}})
+
+    Application.put_env(:ash_a2a, :dispatch_hooks, %{
+      pre_hook: {Hooks, :pre},
+      post_hook: {Hooks, :post}
+    })
 
     assert {:reply, _} = AshA2A.Dispatcher.dispatch(:ping, msg(), Item)
     assert_received {:pre, :pre_dispatch, _}
@@ -88,11 +95,18 @@ defmodule AshA2A.DispatchHooksTest do
   end
 
   test "pre hook denial refuses before execution; unresolved hook fails closed" do
-    Application.put_env(:ash_a2a, :dispatch_hooks, %{pre_hook: {Hooks, :deny}, post_hook: {Hooks, :post}})
-    assert {:error, {:pre_dispatch_hook, {:pre_hook, :nope}}} = AshA2A.Dispatcher.dispatch(:ping, msg(), Item)
+    Application.put_env(:ash_a2a, :dispatch_hooks, %{
+      pre_hook: {Hooks, :deny},
+      post_hook: {Hooks, :post}
+    })
+
+    assert {:error, {:pre_dispatch_hook, {:pre_hook, :nope}}} =
+             AshA2A.Dispatcher.dispatch(:ping, msg(), Item)
+
     refute_received {:post, _, _}
 
     Application.delete_env(:ash_a2a, :dispatch_hooks)
+
     assert {:error, {:pre_dispatch_hook, {:pre_hook, :hook_unresolved}}} =
              AshA2A.Dispatcher.dispatch(:ping, msg(), Item)
   end

@@ -32,7 +32,9 @@ defmodule AshA2A.V1SecurityRequirementsTest do
   # this kind of card-content declaration (the card is test data; the Plug
   # pipeline, the GenServer, the codec and the HTTP semantics are all real).
   defmodule SecuredSkillAgent do
-    use AshA2A.Agent, resource_or_domain: AshA2A.Test.PlugFixture.Greeter, name: "secured_skill_agent"
+    use AshA2A.Agent,
+      resource_or_domain: AshA2A.Test.PlugFixture.Greeter,
+      name: "secured_skill_agent"
 
     @impl AshA2A.Protocol.Agent
     def agent_card do
@@ -346,8 +348,13 @@ defmodule AshA2A.V1SecurityRequirementsTest do
         url: "https://agent.example",
         version: "1.0.0",
         skills: [
-          %{id: "s1", name: "Scoped", description: "Scoped skill", tags: ["t"],
-            security_requirements: [%{"api_key" => ["greet:read"]}]},
+          %{
+            id: "s1",
+            name: "Scoped",
+            description: "Scoped skill",
+            tags: ["t"],
+            security_requirements: [%{"api_key" => ["greet:read"]}]
+          },
           %{id: "s2", name: "Unscoped", description: "Unscoped skill", tags: ["t"]}
         ]
       }
@@ -373,11 +380,16 @@ defmodule AshA2A.V1SecurityRequirementsTest do
         url: "https://agent.example",
         version: "1.0.0",
         skills: [
-          %{id: "s1", name: "Scoped", description: "Scoped skill", tags: ["t"],
+          %{
+            id: "s1",
+            name: "Scoped",
+            description: "Scoped skill",
+            tags: ["t"],
             security_requirements: [
               %{"schemes" => %{"oidc" => %{"list" => ["openid"]}}},
               %{"api_key" => []}
-            ]}
+            ]
+          }
         ]
       }
 
@@ -397,12 +409,22 @@ defmodule AshA2A.V1SecurityRequirementsTest do
           "description" => "A test agent",
           "version" => "1.0.0",
           "skills" => [
-            %{"id" => "s1", "name" => "Scoped", "description" => "d", "tags" => [],
+            %{
+              "id" => "s1",
+              "name" => "Scoped",
+              "description" => "d",
+              "tags" => [],
               "securityRequirements" => [
                 %{"schemes" => %{"google" => %{"list" => ["openid", "email"]}}}
-              ]},
-            %{"id" => "s2", "name" => "FlatScoped", "description" => "d", "tags" => [],
-              "securityRequirements" => [%{"api_key" => ["scope1"]}]},
+              ]
+            },
+            %{
+              "id" => "s2",
+              "name" => "FlatScoped",
+              "description" => "d",
+              "tags" => [],
+              "securityRequirements" => [%{"api_key" => ["scope1"]}]
+            },
             %{"id" => "s3", "name" => "Unscoped", "description" => "d", "tags" => []}
           ],
           "supportedInterfaces" => [],
@@ -430,8 +452,13 @@ defmodule AshA2A.V1SecurityRequirementsTest do
         url: "https://agent.example",
         version: "1.0.0",
         skills: [
-          %{id: "s1", name: "Scoped", description: "Scoped skill", tags: ["t"],
-            security_requirements: requirements}
+          %{
+            id: "s1",
+            name: "Scoped",
+            description: "Scoped skill",
+            tags: ["t"],
+            security_requirements: requirements
+          }
         ],
         security: [%{"api_key" => ["card:scope"]}]
       }
@@ -479,7 +506,10 @@ defmodule AshA2A.V1SecurityRequirementsTest do
       assert {:ok, decoded} = JSON.decode_agent_card(served)
       decoded_by_id = Map.new(decoded.skills, fn skill -> {skill.id, skill} end)
 
-      assert decoded_by_id["Greeter.read"].security_requirements == [%{"api_key" => ["greet:read"]}]
+      assert decoded_by_id["Greeter.read"].security_requirements == [
+               %{"api_key" => ["greet:read"]}
+             ]
+
       refute Map.has_key?(decoded_by_id["Greeter.unscoped"], :security_requirements)
     end
 

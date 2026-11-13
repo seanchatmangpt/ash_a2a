@@ -320,7 +320,9 @@ defmodule AshA2A.Security.DataResidency do
   # region name.
   defp member_match?(pattern, region) when is_binary(pattern) and is_binary(region) do
     if String.ends_with?(pattern, "*") do
-      region |> String.downcase() |> String.starts_with?(pattern |> String.trim_trailing("*") |> String.downcase())
+      region
+      |> String.downcase()
+      |> String.starts_with?(pattern |> String.trim_trailing("*") |> String.downcase())
     else
       String.downcase(pattern) == String.downcase(region)
     end

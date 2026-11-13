@@ -68,7 +68,8 @@ defmodule AshA2A.Protocol.Registry do
 
   Reads ETS directly — no message passing.
   """
-  @spec get(GenServer.server(), module()) :: {:ok, AshA2A.Protocol.Agent.card()} | {:error, :not_found}
+  @spec get(GenServer.server(), module()) ::
+          {:ok, AshA2A.Protocol.Agent.card()} | {:error, :not_found}
   def get(registry, module) do
     case :ets.lookup(registry, module) do
       [{^module, card}] -> {:ok, card}

@@ -184,7 +184,8 @@ defmodule AshA2ADispatcherFetchRecordTest do
 
     message = data_message(%{"ticket_ref" => ticket.ticket_ref})
 
-    assert {:reply, [%AshA2A.Protocol.Part.Data{}]} = ReceiptedDispatch.dispatch(:remove, message, Ticket)
+    assert {:reply, [%AshA2A.Protocol.Part.Data{}]} =
+             ReceiptedDispatch.dispatch(:remove, message, Ticket)
 
     assert match?({:error, _}, Ash.get(Ticket, ticket.ticket_ref))
   end

@@ -86,7 +86,10 @@ defmodule AshA2A.W9VersionsTest do
       query = Plug.Test.conn(:get, "/?A2A-Version=1.0")
       assert Version.negotiated_version(query) == "1.0"
 
-      both = Plug.Test.conn(:get, "/?A2A-Version=1.0") |> Plug.Conn.put_req_header("a2a-version", "1.1")
+      both =
+        Plug.Test.conn(:get, "/?A2A-Version=1.0")
+        |> Plug.Conn.put_req_header("a2a-version", "1.1")
+
       assert Version.negotiated_version(both) == "1.1"
 
       assert Version.negotiated_version(Plug.Test.conn(:get, "/")) == "0.3"
@@ -130,7 +133,10 @@ defmodule AshA2A.W9VersionsTest do
     test ":versions narrows the accepted set (default unchanged elsewhere)", %{agent: agent} do
       for {label, mod, opts} <- plugs(agent, versions: ["1.1"]) do
         assert %{"result" => _} =
-                 mod |> send_message(opts, [{"a2a-version", "1.1"}]) |> Map.fetch!(:resp_body) |> Jason.decode!(),
+                 mod
+                 |> send_message(opts, [{"a2a-version", "1.1"}])
+                 |> Map.fetch!(:resp_body)
+                 |> Jason.decode!(),
                label
 
         for refused <- ["0.3", "1.0"] do
@@ -171,7 +177,8 @@ defmodule AshA2A.W9VersionsTest do
     test "A2ATransport.Plug records it on locally-gated methods", %{agent: agent} do
       opts = AshA2A.A2ATransport.Plug.init(agent: agent, base_url: "http://localhost:4000/a2a")
 
-      body = Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tasks/list", "params" => %{}})
+      body =
+        Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tasks/list", "params" => %{}})
 
       conn =
         :post

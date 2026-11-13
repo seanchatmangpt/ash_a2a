@@ -100,7 +100,7 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
 
   @mldsa65_canonical ~s({"algorithm":"ML_DSA65","audience":"affidavit.kat","expires_at":4102444800,"generation":1,"key_id":"afk1_932a436a743d67cd","nonce":[49,148,240,225,154,244,132,33,20,7,183,98,118,211,47,50],"not_before":1700000000,"policy_epoch":1,"profile":"PQC","revocation_epoch":0,"subject_digest":[18,60,249,28,128,193,211,38,120,198,222,80,164,85,43,52,17,76,4,173,228,175,245,220,104,114,253,206,55,248,114,68],"version":"CTP-ENVELOPE-v1"})
 
-@mldsa65_signing_input_hex "6166666964617669742e63727970746f2d74727573742d706c616e652e7631006166666964617669742e63727970746f2d74727573742d706c616e652e76310000000000000001ac7b22616c676f726974686d223a224d4c5f4453413635222c2261756469656e6365223a226166666964617669742e6b6174222c22657870697265735f6174223a343130323434343830302c2267656e65726174696f6e223a312c226b65795f6964223a2261666b315f39333261343336613734336436376364222c226e6f6e6365223a5b34392c3134382c3234302c3232352c3135342c3234342c3133322c33332c32302c372c3138332c39382c3131382c3231312c34372c35305d2c226e6f745f6265666f7265223a313730303030303030302c22706f6c6963795f65706f6368223a312c2270726f66696c65223a22505143222c227265766f636174696f6e5f65706f6368223a302c227375626a6563745f646967657374223a5b31382c36302c3234392c32382c3132382c3139332c3231312c33382c3132302c3139382c3232322c38302c3136342c38352c34332c35322c31372c37362c342c3137332c3232382c3137352c3234352c3232302c3130342c3131342c3235332c3230362c35352c3234382c3131342c36385d2c2276657273696f6e223a224354502d454e56454c4f50452d7631227d"
+  @mldsa65_signing_input_hex "6166666964617669742e63727970746f2d74727573742d706c616e652e7631006166666964617669742e63727970746f2d74727573742d706c616e652e76310000000000000001ac7b22616c676f726974686d223a224d4c5f4453413635222c2261756469656e6365223a226166666964617669742e6b6174222c22657870697265735f6174223a343130323434343830302c2267656e65726174696f6e223a312c226b65795f6964223a2261666b315f39333261343336613734336436376364222c226e6f6e6365223a5b34392c3134382c3234302c3232352c3135342c3234342c3133322c33332c32302c372c3138332c39382c3131382c3231312c34372c35305d2c226e6f745f6265666f7265223a313730303030303030302c22706f6c6963795f65706f6368223a312c2270726f66696c65223a22505143222c227265766f636174696f6e5f65706f6368223a302c227375626a6563745f646967657374223a5b31382c36302c3234392c32382c3132382c3139332c3231312c33382c3132302c3139382c3232322c38302c3136342c38352c34332c35322c31372c37362c342c3137332c3232382c3137352c3234352c3232302c3130342c3131342c3235332c3230362c35352c3234382c3131342c36385d2c2276657273696f6e223a224354502d454e56454c4f50452d7631227d"
 
   # ---------------------------------------------------------------------------
   # SPIFFE SVID validation — full plug call over a runtime-manufactured chain
@@ -289,7 +289,9 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
 
     chain = Monotonic.root(["message/send", "task.read"])
 
-    fn -> DecisionGate.admit_delegated(evidence, effect, "https://slo-court-pdp.example", chain) end
+    fn ->
+      DecisionGate.admit_delegated(evidence, effect, "https://slo-court-pdp.example", chain)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -394,7 +396,11 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
       %{
         "event_type" => "enterprise.pipeline.response",
         "objects" => ["rpc:slo-42"],
-        "payload" => Jason.encode!(%{"bytes" => byte_size(body), "stages" => [:dispatch, :dlp_outbound, :cmek, :affidavit]})
+        "payload" =>
+          Jason.encode!(%{
+            "bytes" => byte_size(body),
+            "stages" => [:dispatch, :dlp_outbound, :cmek, :affidavit]
+          })
       },
       %{
         "event_type" => "enterprise.pipeline.authzen",
@@ -412,7 +418,9 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
       {tag, %AshAffidavit.Refusal{} = refusal} ->
         flunk(
           "WASM engine UNAVAILABLE-in-test (typed, never silently skipped): " <>
-            inspect(tag) <> " " <> inspect(refusal) <>
+            inspect(tag) <>
+            " " <>
+            inspect(refusal) <>
             " — the affidavit SLO court requires the real Affidavit WASM engine."
         )
     end
@@ -442,9 +450,15 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
       assert is_binary(assembled["receipt"]["chain_hash"])
 
       {_median, _p99} =
-        slo("affidavit.wasm_receipt_assemble", @affidavit_budget_us, fn ->
-          Affidavit.assemble_receipt(events)
-        end, @affidavit_median_headroom, @affidavit_p99_headroom)
+        slo(
+          "affidavit.wasm_receipt_assemble",
+          @affidavit_budget_us,
+          fn ->
+            Affidavit.assemble_receipt(events)
+          end,
+          @affidavit_median_headroom,
+          @affidavit_p99_headroom
+        )
 
       # The ML-DSA-65 (PQ-SEAL-v1) op that exists: signing-INPUT binding over
       # the engine's own KAT vector (court 4 of affidavit_ocel2_test.exs).
@@ -452,9 +466,15 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
       assert {:ok, %{"verified" => true}} = AshAffidavit.call(request)
 
       {_median2, _p992} =
-        slo("affidavit.wasm_signature_input_binding", @affidavit_budget_us, fn ->
-          AshAffidavit.call(request)
-        end, @affidavit_median_headroom, @affidavit_p99_headroom)
+        slo(
+          "affidavit.wasm_signature_input_binding",
+          @affidavit_budget_us,
+          fn ->
+            AshAffidavit.call(request)
+          end,
+          @affidavit_median_headroom,
+          @affidavit_p99_headroom
+        )
     end
   end
 
@@ -580,7 +600,9 @@ defmodule AshA2A.Enterprise.SloBudgetTest do
     @tag :slo
     test "dlp: redact/2 over 64KB p99 within 2.5ms" do
       op = dlp_op()
-      {_median, _p99} = slo("dlp.redact_64k", @dlp_budget_us, op, @dlp_median_headroom, @dlp_p99_headroom)
+
+      {_median, _p99} =
+        slo("dlp.redact_64k", @dlp_budget_us, op, @dlp_median_headroom, @dlp_p99_headroom)
     end
 
     @tag :slo

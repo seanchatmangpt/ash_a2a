@@ -194,9 +194,7 @@ defmodule AshA2A.W11Test.DslSurfaceTest do
             end
 
             a2a do
-              skill(:echo, AshA2A.W11Test.Res, :read,
-                security_requirements: [%{"ghost" => []}]
-              )
+              skill(:echo, AshA2A.W11Test.Res, :read, security_requirements: [%{"ghost" => []}])
             end
           end
         end
@@ -249,7 +247,10 @@ defmodule AshA2A.W11Test.DslSurfaceTest do
       assert caps.extended_agent_card == true
 
       assert [
-               %AshA2A.Protocol.AgentExtension{uri: "https://example.com/ext/one", required: true},
+               %AshA2A.Protocol.AgentExtension{
+                 uri: "https://example.com/ext/one",
+                 required: true
+               },
                %AshA2A.Protocol.AgentExtension{
                  uri: "https://example.com/ext/two",
                  params: %{"k" => "v"}
@@ -330,10 +331,10 @@ defmodule AshA2A.W11Test.DslSurfaceTest do
         base_url("https://t.example.com")
 
         mount agent: AshA2A.W11Test.DslSurfaceTest.TenantAgent,
-          path: "/t",
-          binding: :jsonrpc,
-          tenant: "acme",
-          protocol_version: "1.0"
+              path: "/t",
+              binding: :jsonrpc,
+              tenant: "acme",
+              protocol_version: "1.0"
       end
     end
 
@@ -364,7 +365,8 @@ defmodule AshA2A.W11Test.DslSurfaceTest do
   describe "generic-action return contract" do
     alias AshA2A.Protocol.{Message, Part}
 
-    defp dispatch(skill), do: AshA2A.Dispatcher.dispatch_observe(skill, Message.new_user("hi"), Res)
+    defp dispatch(skill),
+      do: AshA2A.Dispatcher.dispatch_observe(skill, Message.new_user("hi"), Res)
 
     test "{:input_required, parts} replies input_required" do
       assert {:input_required, [%Part.Text{text: "need more"}]} = dispatch(:needs_more)

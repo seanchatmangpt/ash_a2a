@@ -69,7 +69,11 @@ defmodule AshA2APlugAuthTest do
     # "derive canonical skills from public Ash actions" -- explicit
     # `metadata["skill"]` is required to disambiguate (real regression,
     # confirmed via {:ambiguous_skill, ...} on a real failing run).
-    message = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})]) | metadata: %{"skill" => "whoami"}}
+    message = %{
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{})])
+      | metadata: %{"skill" => "whoami"}
+    }
+
     {:ok, message_json} = AshA2A.Protocol.JSON.encode(message)
 
     Jason.encode!(%{

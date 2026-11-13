@@ -22,7 +22,13 @@ defmodule AshA2A.Test.ReceiptedDispatch do
 
   alias AshA2A.{Authority, Command, CommandBus, Identity, Receipt}
 
-  @spec dispatch(atom() | String.t(), AshA2A.Protocol.Message.t(), module(), [AshA2A.Protocol.Message.t()], term()) ::
+  @spec dispatch(
+          atom() | String.t(),
+          AshA2A.Protocol.Message.t(),
+          module(),
+          [AshA2A.Protocol.Message.t()],
+          term()
+        ) ::
           AshA2A.Dispatcher.reply()
   def dispatch(skill_name, message, resource_or_domain, history \\ [], auth_identity \\ nil) do
     capability_id = to_string(skill_name)

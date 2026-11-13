@@ -186,8 +186,7 @@ defmodule AshA2A.SupplyChain.ReleasePathTest do
           "docs/reference",
           "docs/how-to",
           "docs/tutorials",
-          "docs/explanation",
-          "docs/jira"
+          "docs/explanation"
         ]
         |> Enum.flat_map(fn path ->
           full = Path.join(@root, path)

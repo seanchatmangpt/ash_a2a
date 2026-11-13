@@ -115,7 +115,13 @@ defmodule AshA2A.Transport.Live.Session do
         send_message(st, r, mode)
 
       {:error, {:unknown_payload, keys}} ->
-        reject(st, mode, "UNIMPLEMENTED", "unknown payload kind: " <> Enum.map_join(keys, ",", &inspect/1), nil)
+        reject(
+          st,
+          mode,
+          "UNIMPLEMENTED",
+          "unknown payload kind: " <> Enum.map_join(keys, ",", &inspect/1),
+          nil
+        )
 
       {:error, {:invalid, detail, ref}} ->
         reject(st, mode, "INVALID_ARGUMENT", detail, ref)
@@ -138,7 +144,13 @@ defmodule AshA2A.Transport.Live.Session do
   defp subscribe(st, r, mode) do
     cond do
       st.started? ->
-        reject(st, mode, "FAILED_PRECONDITION", "subscribe is only valid as the first request of a stream", nil)
+        reject(
+          st,
+          mode,
+          "FAILED_PRECONDITION",
+          "subscribe is only valid as the first request of a stream",
+          nil
+        )
 
       match?({:ack, _}, mode) ->
         reject(st, mode, "FAILED_PRECONDITION", "an uplink call cannot open a stream", nil)
@@ -206,7 +218,11 @@ defmodule AshA2A.Transport.Live.Session do
     ref = p.message && p.message.message_id
     task_id = st.task_id || p.task_id
 
-    with :ok <- if(st.call == nil, do: :ok, else: {:reject, "UNAVAILABLE", "a previous request is still being processed"}),
+    with :ok <-
+           if(st.call == nil,
+             do: :ok,
+             else: {:reject, "UNAVAILABLE", "a previous request is still being processed"}
+           ),
          :ok <- validate_send(st.card, st.task_id, p),
          {:ok, gen_match} <- parse_gen_match(p.configuration),
          :ok <- check_owned(st, task_id, tenant) do
@@ -216,7 +232,13 @@ defmodule AshA2A.Transport.Live.Session do
         reject(st, mode, code, message, ref)
 
       {:error, :bad_gen} ->
-        reject(st, mode, "INVALID_ARGUMENT", "ifGenerationMatch must be a non-negative integer", ref)
+        reject(
+          st,
+          mode,
+          "INVALID_ARGUMENT",
+          "ifGenerationMatch must be a non-negative integer",
+          ref
+        )
 
       {:error, :not_found} when is_nil(st.task_id) ->
         reply_error(:not_found, mode)
@@ -245,7 +267,8 @@ defmodule AshA2A.Transport.Live.Session do
 
     cond do
       bound_task_id != nil and p.task_id != nil and p.task_id != bound_task_id ->
-        {:reject, "INVALID_ARGUMENT", "request names a different task than the one this stream is bound to"}
+        {:reject, "INVALID_ARGUMENT",
+         "request names a different task than the one this stream is bound to"}
 
       p.artifact_updates != [] and not Live.capability?(card, :user_artifacts) ->
         {:reject, "UNSUPPORTED_OPERATION", "userArtifacts capability is not declared"}
@@ -260,15 +283,20 @@ defmodule AshA2A.Transport.Live.Session do
 
   defp parse_gen_match(configuration) do
     case Map.get(configuration, "ifGenerationMatch") do
-      nil -> {:ok, nil}
-      n when is_integer(n) and n >= 0 -> {:ok, n}
+      nil ->
+        {:ok, nil}
+
+      n when is_integer(n) and n >= 0 ->
+        {:ok, n}
+
       s when is_binary(s) ->
         case Integer.parse(s) do
           {n, ""} when n >= 0 -> {:ok, n}
           _ -> {:error, :bad_gen}
         end
 
-      _ -> {:error, :bad_gen}
+      _ ->
+        {:error, :bad_gen}
     end
   end
 
@@ -412,12 +440,24 @@ defmodule AshA2A.Transport.Live.Session do
   @doc false
   def error_code(:not_found), do: {"NOT_FOUND", "task not found"}
   def error_code(:context_mismatch), do: {"INVALID_ARGUMENT", "contextId does not match the task"}
-  def error_code(:not_continuable), do: {"FAILED_PRECONDITION", "task is terminal and cannot be continued"}
-  def error_code(:generation_mismatch), do: {"ABORTED", "ifGenerationMatch does not match the task generation"}
+
+  def error_code(:not_continuable),
+    do: {"FAILED_PRECONDITION", "task is terminal and cannot be continued"}
+
+  def error_code(:generation_mismatch),
+    do: {"ABORTED", "ifGenerationMatch does not match the task generation"}
+
   def error_code(:task_in_progress), do: {"UNAVAILABLE", "agent is not accepting input right now"}
-  def error_code(%{code: code}) when code in @busy, do: {"UNAVAILABLE", "agent is not accepting input right now"}
-  def error_code({:unsupported_operation, _}), do: {"UNSUPPORTED_OPERATION", "operation not supported"}
-  def error_code({:invalid_params, detail}) when is_binary(detail), do: {"INVALID_ARGUMENT", detail}
+
+  def error_code(%{code: code}) when code in @busy,
+    do: {"UNAVAILABLE", "agent is not accepting input right now"}
+
+  def error_code({:unsupported_operation, _}),
+    do: {"UNSUPPORTED_OPERATION", "operation not supported"}
+
+  def error_code({:invalid_params, detail}) when is_binary(detail),
+    do: {"INVALID_ARGUMENT", detail}
+
   def error_code(_other), do: {"INTERNAL", "internal error"}
 
   # -- observation / diff -------------------------------------------------------
@@ -546,7 +586,11 @@ defmodule AshA2A.Transport.Live.Session do
                     ]
 
                 {:message, %Message{role: :user} = m} ->
-                  acc ++ [{eg, MessageUpdate.new(task.id, m, context_id: task.context_id, generation: eg)}]
+                  acc ++
+                    [
+                      {eg,
+                       MessageUpdate.new(task.id, m, context_id: task.context_id, generation: eg)}
+                    ]
 
                 _ ->
                   acc
@@ -617,7 +661,12 @@ defmodule AshA2A.Transport.Live.Session do
 
       {:error, {:unknown_payload, keys}} ->
         {:error,
-         Live.stream_error("UNIMPLEMENTED", "unknown payload kind: " <> Enum.map_join(keys, ",", &inspect/1), nil, nil)}
+         Live.stream_error(
+           "UNIMPLEMENTED",
+           "unknown payload kind: " <> Enum.map_join(keys, ",", &inspect/1),
+           nil,
+           nil
+         )}
 
       {:error, {:invalid, detail, ref}} ->
         {:error, Live.stream_error("INVALID_ARGUMENT", detail, nil, ref)}
@@ -651,10 +700,23 @@ defmodule AshA2A.Transport.Live.Session do
           {:error, Live.stream_error(code, text, p.task_id, ref)}
       end
     else
-      {:reject, code, text} -> {:error, Live.stream_error(code, text, p.task_id, ref)}
-      {:error, :bad_gen} -> {:error, Live.stream_error("INVALID_ARGUMENT", "ifGenerationMatch must be a non-negative integer", p.task_id, ref)}
-      {:error, :not_found} -> {:error, :not_found}
-      {:error, :unavailable} -> {:error, :unavailable}
+      {:reject, code, text} ->
+        {:error, Live.stream_error(code, text, p.task_id, ref)}
+
+      {:error, :bad_gen} ->
+        {:error,
+         Live.stream_error(
+           "INVALID_ARGUMENT",
+           "ifGenerationMatch must be a non-negative integer",
+           p.task_id,
+           ref
+         )}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+
+      {:error, :unavailable} ->
+        {:error, :unavailable}
     end
   end
 

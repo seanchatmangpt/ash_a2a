@@ -60,7 +60,7 @@ defmodule AshA2A.Transport.SchemaEndpoints do
       array of `{uri, required, description?, params?}` (AgentCapabilities
       fields 1-4 + AgentExtension fields 1-4, a2a.proto lines 436-459) --
       the v1.0 proto has no `stateTransitionHistory` member (it was dropped
-      in v1.0, Z16-F3) and no `preferredTransport` member (transport
+      in v1.0) and no `preferredTransport` member (transport
       preference is positional over `supportedInterfaces`, a2a.proto:370);
     * `$defs.TaskState` carries the nine proto enum values verbatim
       (`TASK_STATE_UNSPECIFIED` .. `TASK_STATE_AUTH_REQUIRED`,
@@ -76,8 +76,7 @@ defmodule AshA2A.Transport.SchemaEndpoints do
   @typedoc "The pinned schema-endpoint options map fragment produced by `init/1`."
   @type opts :: %{
           required(:serve_schemas) => boolean(),
-          required(:schema_index) =>
-            module() | (-> [AshA2A.Skill.t()]) | [AshA2A.Skill.t()] | nil
+          required(:schema_index) => module() | (-> [AshA2A.Skill.t()]) | [AshA2A.Skill.t()] | nil
         }
 
   @doc "The two schema endpoint path segments, for plug-path dispatch."
@@ -140,7 +139,10 @@ defmodule AshA2A.Transport.SchemaEndpoints do
     serve_schema(conn, agent_card_schema())
   end
 
-  def serve(%{method: "GET", path_info: @skills_schema_path} = conn, %{serve_schemas: true} = opts) do
+  def serve(
+        %{method: "GET", path_info: @skills_schema_path} = conn,
+        %{serve_schemas: true} = opts
+      ) do
     serve_schema(conn, skills_schema(opts.schema_index))
   end
 
@@ -204,7 +206,8 @@ defmodule AshA2A.Transport.SchemaEndpoints do
     "additionalProperties" => false,
     "$defs" => %{
       "AgentInterface" => %{
-        "description" => "a2a.proto message AgentInterface (lines 360-382), fields 1/2/4 REQUIRED",
+        "description" =>
+          "a2a.proto message AgentInterface (lines 360-382), fields 1/2/4 REQUIRED",
         "type" => "object",
         "properties" => %{
           "url" => %{"type" => "string"},
@@ -245,7 +248,8 @@ defmodule AshA2A.Transport.SchemaEndpoints do
         "additionalProperties" => false
       },
       "AgentCapabilities" => %{
-        "description" => "a2a.proto message AgentCapabilities (lines 436-447); all members optional",
+        "description" =>
+          "a2a.proto message AgentCapabilities (lines 436-447); all members optional",
         "type" => "object",
         "properties" => %{
           "streaming" => %{"type" => "boolean"},
@@ -256,7 +260,8 @@ defmodule AshA2A.Transport.SchemaEndpoints do
         "additionalProperties" => false
       },
       "AgentExtension" => %{
-        "description" => "a2a.proto message AgentExtension (lines 448-459), field 1 (uri) required",
+        "description" =>
+          "a2a.proto message AgentExtension (lines 448-459), field 1 (uri) required",
         "type" => "object",
         "properties" => %{
           "uri" => %{"type" => "string"},
@@ -338,9 +343,9 @@ defmodule AshA2A.Transport.SchemaEndpoints do
   projection cannot represent (same convention as
   `AshA2A.Protocol.Extensions.Schema`).
   """
-  @spec skills_schema(
-          module() | (-> [AshA2A.Skill.t()]) | [AshA2A.Skill.t()]
-        ) :: %{optional(String.t()) => term()}
+  @spec skills_schema(module() | (-> [AshA2A.Skill.t()]) | [AshA2A.Skill.t()]) :: %{
+          optional(String.t()) => term()
+        }
   def skills_schema(schema_index) do
     {schemas, omitted} =
       schema_index

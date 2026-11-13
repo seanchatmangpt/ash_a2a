@@ -234,7 +234,9 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation do
         {:error, :peer_b_unavailable}
 
       pid ->
-        message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+        message =
+          AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+
         message = %{message | metadata: %{"skill" => "record"}}
         AshA2A.Protocol.call(pid, message, metadata: %{"a2a.auth" => %{identity: identity}})
     end
@@ -250,7 +252,9 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation do
   # around peer B's own front door", never conflating it with an authority
   # question CHI-FED-002 already covers.
   defp bypass_peer_b(label, identity) do
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+    message =
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+
     AshA2A.Dispatcher.dispatch(:record, message, PeerB, [], identity)
   end
 

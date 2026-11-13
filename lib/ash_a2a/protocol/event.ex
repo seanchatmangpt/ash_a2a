@@ -10,7 +10,10 @@ defmodule AshA2A.Protocol.Event do
     the stream carries it alone and there is no task to update
   """
 
-  @type t :: AshA2A.Protocol.Event.StatusUpdate.t() | AshA2A.Protocol.Event.ArtifactUpdate.t() | AshA2A.Protocol.Message.t()
+  @type t ::
+          AshA2A.Protocol.Event.StatusUpdate.t()
+          | AshA2A.Protocol.Event.ArtifactUpdate.t()
+          | AshA2A.Protocol.Message.t()
 end
 
 defmodule AshA2A.Protocol.Event.StatusUpdate do

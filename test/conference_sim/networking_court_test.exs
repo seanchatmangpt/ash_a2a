@@ -113,14 +113,31 @@ defmodule AshA2A.ConferenceSim.Networking.Attendee do
     config = :persistent_term.get({agent_mod, :conference_sim_config})
     %{"from" => sender, "tier" => sender_tier, "body" => body} = data_part(message)
 
-    case AshA2A.ConferenceSim.Networking.Policy.evaluate(config.blocked, config.tier, sender, sender_tier) do
+    case AshA2A.ConferenceSim.Networking.Policy.evaluate(
+           config.blocked,
+           config.tier,
+           sender,
+           sender_tier
+         ) do
       :ok ->
-        AshA2A.ConferenceSim.Networking.Attendee.record(config.transcript, config.name, :message, sender, body)
+        AshA2A.ConferenceSim.Networking.Attendee.record(
+          config.transcript,
+          config.name,
+          :message,
+          sender,
+          body
+        )
 
         {:reply, [AshA2A.Protocol.Part.Data.new(%{"ack" => body, "from" => config.name})]}
 
       {:refused, code} ->
-        AshA2A.ConferenceSim.Networking.Attendee.record(config.transcript, config.name, :refusal, sender, body)
+        AshA2A.ConferenceSim.Networking.Attendee.record(
+          config.transcript,
+          config.name,
+          :refusal,
+          sender,
+          body
+        )
 
         {:message,
          [
@@ -343,7 +360,14 @@ defmodule AshA2A.ConferenceSim.NetworkingCourt do
   alias AshA2A.Protocol.{Client, Message, Part, Task}
   alias AshA2A.Test.{AgentSupervisorCase, EphemeralHttp}
 
-  @tiers %{Alice => "vip", Ben => "vip", Carol => "general", Dee => "general", Eli => "vip", Fay => "general"}
+  @tiers %{
+    Alice => "vip",
+    Ben => "vip",
+    Carol => "general",
+    Dee => "general",
+    Eli => "vip",
+    Fay => "general"
+  }
   @agents [Alice, Ben, Carol, Dee, Eli, Fay]
 
   setup do
@@ -367,11 +391,13 @@ defmodule AshA2A.ConferenceSim.NetworkingCourt do
     servers =
       Map.new(@agents, fn mod ->
         {mod,
-         EphemeralHttp.start!({AshA2A.Transport.HTTPJSON,
-          AshA2A.Transport.HTTPJSON.init(
-            agent: mod,
-            base_url: "http://127.0.0.1/attendee-#{attendee_name(mod)}"
-          )})}
+         EphemeralHttp.start!(
+           {AshA2A.Transport.HTTPJSON,
+            AshA2A.Transport.HTTPJSON.init(
+              agent: mod,
+              base_url: "http://127.0.0.1/attendee-#{attendee_name(mod)}"
+            )}
+         )}
       end)
 
     venue = EphemeralHttp.start!({Venue, table: venue_table})
@@ -574,7 +600,10 @@ defmodule AshA2A.ConferenceSim.NetworkingCourt do
 
     # Ben's delivered-message transcript is untouched.
     assert Attendee.transcript(transcript, "ben", :message) == []
-    assert Attendee.transcript(transcript, "ben", :refusal) == [{"alice", "still want to connect?"}]
+
+    assert Attendee.transcript(transcript, "ben", :refusal) == [
+             {"alice", "still want to connect?"}
+           ]
 
     # Ben is unaffected elsewhere: he can still initiate to eli ...
     {:ok, %Task{status: %{state: :completed}} = out_task} =
@@ -596,7 +625,12 @@ defmodule AshA2A.ConferenceSim.NetworkingCourt do
 
     tasks =
       for i <- 1..20 do
-        case attendee_send(servers, Alice, Ben, "rapid-#{String.pad_leading(Integer.to_string(i), 3, "0")}") do
+        case attendee_send(
+               servers,
+               Alice,
+               Ben,
+               "rapid-#{String.pad_leading(Integer.to_string(i), 3, "0")}"
+             ) do
           {:ok, %Task{} = task} -> task
           other -> flunk("message #{i} lost: #{inspect(other)}")
         end

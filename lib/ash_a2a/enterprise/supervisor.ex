@@ -5,7 +5,7 @@
 defmodule AshA2A.Enterprise.Supervisor do
   @moduledoc """
   The ARD v26.10.4 §2 enterprise supervision subtree
-  (`docs/jira/v26.10.4/ARD.md` §2): an optional, config-gated layer of
+  (`docs/archive/jira-releases/v26.10.4/ARD.md` §2): an optional, config-gated layer of
   enterprise children under the application root (`AshA2A.Supervisor`,
   `AshA2A.Application`).
 
@@ -50,7 +50,7 @@ defmodule AshA2A.Enterprise.Supervisor do
       Configure the key only when the release carrying the child is pinned.
     * `{:not_startable, module}` — the module is compiled but defines no
       `child_spec/1`. No process is fabricated for a stateless module. As of
-      V4-22 every gated child (`AshA2A.Security.KeyManager` included, via its
+      now every gated child (`AshA2A.Security.KeyManager` included, via its
       supervised `child_spec/1`) is startable, so this skip is a fail-closed
       guard for future children, not a live case.
 

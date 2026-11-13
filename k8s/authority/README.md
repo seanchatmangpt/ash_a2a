@@ -61,4 +61,4 @@ can never be deployed. Replace it with the real digest of the release image buil
 
 - `authority_service/lib/authority_service/listener.ex` (wire), `issuer.ex` (refusal codes)
 - `k8s/README.md`, `k8s/network-policy.yaml` (conventions reused)
-- `docs/rfc/RFC-SA2A-006-*` s7.4 / s13
+- `docs/archive/rfc/RFC-SA2A-006-*` s7.4 / s13

@@ -311,7 +311,8 @@ defmodule AshA2A.Chicago.Courts.TransportIndependence do
                 "consequenceBearing" => true
               }
             ),
-          m_fresh_message_id: client_send(url, %{m | message_id: AshA2A.Protocol.ID.generate("msg")}),
+          m_fresh_message_id:
+            client_send(url, %{m | message_id: AshA2A.Protocol.ID.generate("msg")}),
           n_activation_attempt:
             client_send(url, n,
               headers: [{"x-a2a-extensions", Extension.profile_id()}],

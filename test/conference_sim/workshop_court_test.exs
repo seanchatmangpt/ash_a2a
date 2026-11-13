@@ -59,7 +59,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt.Agent do
         }
       })
 
-    {:input_required, [prompt, materials, Part.Text.new("Reply with your attendee name to check in")]}
+    {:input_required,
+     [prompt, materials, Part.Text.new("Reply with your attendee name to check in")]}
   end
 
   defp resume(context) do
@@ -159,7 +160,12 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
   # -- wire helpers ----------------------------------------------------------
 
   defp envelope(method, params),
-    do: %{"jsonrpc" => "2.0", "id" => System.unique_integer([:positive]), "method" => method, "params" => params}
+    do: %{
+      "jsonrpc" => "2.0",
+      "id" => System.unique_integer([:positive]),
+      "method" => method,
+      "params" => params
+    }
 
   defp wire_message(text, task_id \\ nil) do
     {:ok, encoded} = JSON.encode(%{Message.new_user(text) | task_id: task_id})
@@ -231,7 +237,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
     result["task"] || result
   end
 
-  defp state(task), do: task["status"]["state"] |> String.downcase() |> String.replace_prefix("task_state_", "")
+  defp state(task),
+    do: task["status"]["state"] |> String.downcase() |> String.replace_prefix("task_state_", "")
 
   defp status_message(task), do: task["status"]["message"]
 
@@ -276,8 +283,13 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
 
   defp keepalives(body), do: Regex.scan(~r/^: keepalive$/m, body) |> length()
 
-  @terminal_states ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
-                    "TASK_STATE_REJECTED", "TASK_STATE_AUTH_REQUIRED"]
+  @terminal_states [
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_AUTH_REQUIRED"
+  ]
 
   defp terminal_frame?(frames) do
     Enum.any?(frames, fn {_seq, result} ->
@@ -308,7 +320,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
   # -- courts ----------------------------------------------------------------
 
   @tag :conference_sim
-  test "G3 / full interactive lifecycle: enroll parks input-required, the resubscribe stream STAYS OPEN, and the attendee's submit resumes and completes", %{url: url} do
+  test "G3 / full interactive lifecycle: enroll parks input-required, the resubscribe stream STAYS OPEN, and the attendee's submit resumes and completes",
+       %{url: url} do
     # Attendee enrolls over message/send; the task parks input-required.
     task = send_message(url, "enroll: taming")
     assert state(task) == "input_required"
@@ -344,11 +357,14 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
     assert terminal_frame?(w_frames)
 
     # And the certificate is real, on the task surface.
-    assert "certificate: Ada completed the taming workshop" in artifact_texts(get_task(url, task_id))
+    assert "certificate: Ada completed the taming workshop" in artifact_texts(
+             get_task(url, task_id)
+           )
   end
 
   @tag :conference_sim
-  test "attendee never submits: the venue idles honestly — still input-required after the window, stream alive, no phantom terminal", %{url: url} do
+  test "attendee never submits: the venue idles honestly — still input-required after the window, stream alive, no phantom terminal",
+       %{url: url} do
     task = send_message(url, "enroll: idle")
     assert state(task) == "input_required"
     task_id = task["id"]
@@ -373,7 +389,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
   end
 
   @tag :conference_sim
-  test "late submission after the deadline: typed refusal — terminal failed with workshop_closed", %{url: url} do
+  test "late submission after the deadline: typed refusal — terminal failed with workshop_closed",
+       %{url: url} do
     task = send_message(url, "enroll: timeboxed")
     task_id = task["id"]
     assert state(task) == "input_required"
@@ -391,7 +408,8 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
   end
 
   @tag :conference_sim
-  test "two attendees, one workshop: interleaved enroll/submit, each gets their own output, no cross-wiring", %{url: url} do
+  test "two attendees, one workshop: interleaved enroll/submit, each gets their own output, no cross-wiring",
+       %{url: url} do
     ada = send_message(url, "enroll: concurrency")
     grace = send_message(url, "enroll: concurrency")
 
@@ -411,14 +429,22 @@ defmodule AshA2A.ConferenceSim.WorkshopCourt do
   end
 
   @tag :conference_sim
-  test "workshop materials: File part attached before parking is fetchable via tasks/get; the completed task exposes the certificate artifact", %{url: url} do
+  test "workshop materials: File part attached before parking is fetchable via tasks/get; the completed task exposes the certificate artifact",
+       %{url: url} do
     task = send_message(url, "enroll: materials")
     task_id = task["id"]
 
     # Materials were attached BEFORE the park: visible in the parked task's
     # history as a real File part.
     files = history_files(task)
-    assert [%{"filename" => "materials-materials.md", "mediaType" => "text/markdown", "raw" => bytes}] =
+
+    assert [
+             %{
+               "filename" => "materials-materials.md",
+               "mediaType" => "text/markdown",
+               "raw" => bytes
+             }
+           ] =
              files
 
     assert bytes == Base.encode64("# Workshop: materials\nAttendees check in by name.\n")

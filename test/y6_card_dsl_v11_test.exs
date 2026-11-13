@@ -53,7 +53,7 @@ defmodule AshA2A.Y6CardDslV11Test.OAuthDomain do
   end
 
   security do
-    security_scheme :oauth, :oauth2,
+    security_scheme(:oauth, :oauth2,
       oauth_flows: %{
         "deviceCode" => %{
           "deviceAuthorizationUrl" => "https://auth.example.com/device",
@@ -61,8 +61,9 @@ defmodule AshA2A.Y6CardDslV11Test.OAuthDomain do
           "scopes" => %{"read" => "Read access"}
         }
       }
+    )
 
-    security_scheme :oauth_pkce, :oauth2,
+    security_scheme(:oauth_pkce, :oauth2,
       oauth_flows: %{
         "authorizationCode" => %{
           "authorizationUrl" => "https://auth.example.com/authorize",
@@ -71,6 +72,7 @@ defmodule AshA2A.Y6CardDslV11Test.OAuthDomain do
           "pkceRequired" => true
         }
       }
+    )
 
     requirements ["oauth"]
   end
@@ -78,20 +80,21 @@ defmodule AshA2A.Y6CardDslV11Test.OAuthDomain do
   transport do
     base_url "https://y6.example.com"
 
-    extension "https://example.com/ext/y6/v1",
+    extension("https://example.com/ext/y6/v1",
       description: "Y6 extension",
       required: true,
       params: %{"mode" => "strict"}
+    )
 
     mount agent: AshA2A.Y6CardDslV11Test.Agent,
-      path: "/rpc",
-      binding: :jsonrpc
+          path: "/rpc",
+          binding: :jsonrpc
 
     mount agent: AshA2A.Y6CardDslV11Test.Agent,
-      path: "/rest",
-      binding: :rest,
-      tenant: "tenant-y6",
-      protocol_version: "1.1"
+          path: "/rest",
+          binding: :rest,
+          tenant: "tenant-y6",
+          protocol_version: "1.1"
   end
 end
 
@@ -115,7 +118,9 @@ defmodule AshA2A.Y6CardDslV11Test do
   end
 
   test "interface tenant and protocolVersion are emitted and decoded" do
-    rest = wire(card())["supportedInterfaces"] |> Enum.find(&(&1["protocolBinding"] == "HTTP+JSON"))
+    rest =
+      wire(card())["supportedInterfaces"] |> Enum.find(&(&1["protocolBinding"] == "HTTP+JSON"))
+
     assert rest["tenant"] == "tenant-y6"
     assert rest["protocolVersion"] == "1.1"
 
@@ -134,14 +139,30 @@ defmodule AshA2A.Y6CardDslV11Test do
     assert ext["params"] == %{"mode" => "strict"}
 
     schemes = wire["securitySchemes"]
-    assert get_in(schemes, ["oauth", "oauth2SecurityScheme", "flows", "deviceCode", "deviceAuthorizationUrl"]) ==
+
+    assert get_in(schemes, [
+             "oauth",
+             "oauth2SecurityScheme",
+             "flows",
+             "deviceCode",
+             "deviceAuthorizationUrl"
+           ]) ==
              "https://auth.example.com/device"
 
-    assert get_in(schemes, ["oauth_pkce", "oauth2SecurityScheme", "flows", "authorizationCode", "pkceRequired"]) ==
+    assert get_in(schemes, [
+             "oauth_pkce",
+             "oauth2SecurityScheme",
+             "flows",
+             "authorizationCode",
+             "pkceRequired"
+           ]) ==
              true
 
     assert {:ok, decoded} = Codec.decode_agent_card(wire)
-    assert [%{uri: "https://example.com/ext/y6/v1", required: true}] = decoded.capabilities.extensions
+
+    assert [%{uri: "https://example.com/ext/y6/v1", required: true}] =
+             decoded.capabilities.extensions
+
     assert Map.has_key?(decoded.security_schemes, "oauth")
     assert Map.has_key?(decoded.security_schemes, "oauth_pkce")
   end
@@ -153,7 +174,15 @@ defmodule AshA2A.Y6CardDslV11Test do
     assert [%{"protected" => _, "signature" => _}] = wire["signatures"]
     assert CardSigning.verify(wire, @key) == :ok
     assert [%{"uri" => "https://example.com/ext/y6/v1"}] = wire["capabilities"]["extensions"]
-    assert get_in(wire, ["securitySchemes", "oauth", "oauth2SecurityScheme", "flows", "deviceCode"])
+
+    assert get_in(wire, [
+             "securitySchemes",
+             "oauth",
+             "oauth2SecurityScheme",
+             "flows",
+             "deviceCode"
+           ])
+
     assert Enum.any?(wire["supportedInterfaces"], &(&1["tenant"] == "tenant-y6"))
 
     tampered = put_in(wire, ["capabilities", "extensions"], [])
@@ -200,7 +229,9 @@ defmodule AshA2A.Y6CardDslV11Test do
       assert {:error, _} = AshA2A.Domain.validate_oauth_flows("nope")
       # deviceCode missing REQUIRED members
       assert {:error, _} =
-               AshA2A.Domain.validate_oauth_flows(%{"deviceCode" => %{"tokenUrl" => "https://a/t"}})
+               AshA2A.Domain.validate_oauth_flows(%{
+                 "deviceCode" => %{"tokenUrl" => "https://a/t"}
+               })
     end
 
     test "a domain declaring a bad flow fails at compile time" do

@@ -3,8 +3,8 @@ defmodule AshA2A.Trace.W3C do
   W3C Trace Context (traceparent / tracestate) parsing, extraction and injection.
 
   Pure module. `@traceparent_regex` matches the regex in `AshA2A.Dispatcher`
-  (version-traceid-spanid-flags, lowercase hex); lane W11 may call
-  `valid_traceparent?/1` in place of the private copy.
+  (version-traceid-spanid-flags, lowercase hex); the dispatcher may call
+  `valid_traceparent?/1` in place of its private copy.
 
   Precedence: HTTP header over `message.metadata["traceparent"]`
   (see `resolve/2`).
@@ -28,7 +28,8 @@ defmodule AshA2A.Trace.W3C do
   append `-extra` after the flags.
   """
   @spec parse_traceparent(term) ::
-          {:ok, %{version: String.t(), trace_id: String.t(), span_id: String.t(), flags: String.t()}}
+          {:ok,
+           %{version: String.t(), trace_id: String.t(), span_id: String.t(), flags: String.t()}}
           | :error
   def parse_traceparent(value) when is_binary(value) do
     candidate =
@@ -164,7 +165,11 @@ defmodule AshA2A.Trace.W3C do
   end
 
   def inject(headers, ctx) when is_list(headers) do
-    ctx = extract([{"traceparent", Map.get(ctx, :traceparent)}, {"tracestate", Map.get(ctx, :tracestate)}])
+    ctx =
+      extract([
+        {"traceparent", Map.get(ctx, :traceparent)},
+        {"tracestate", Map.get(ctx, :tracestate)}
+      ])
 
     if map_size(ctx) == 0 do
       headers

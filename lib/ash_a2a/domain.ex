@@ -416,8 +416,13 @@ defmodule AshA2A.Domain do
   `base_url <> mount` when a `base_url` is declared.
   """
   @spec card_identity(map(), map()) ::
-          %{name: String.t() | nil, url: String.t() | nil, version: String.t() | nil,
-            endpoint: String.t() | nil, mount: String.t()}
+          %{
+            name: String.t() | nil,
+            url: String.t() | nil,
+            version: String.t() | nil,
+            endpoint: String.t() | nil,
+            mount: String.t()
+          }
   def card_identity(agent, transport) do
     url = transport[:base_url] || agent[:url]
     mount = transport[:mount] || "/a2a"

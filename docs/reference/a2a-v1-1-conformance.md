@@ -63,7 +63,7 @@ Date: 2026-11-13. Evidence logs are coordinator-run; this lane ran no suites.
 - Scope: the JSON-RPC binding defines no live method in the v1.1 proto; row 1 covers
   the two bindings that do (gRPC, HTTP+JSON).
 - Evidence binds to commit `d8f593dc` (default tier 4705 tests, 0 failures, twice;
-  serial tier 0 failures). See `docs/jira/v26.11.13/RECEIPT.md`.
+  serial tier 0 failures). See `docs/archive/jira-releases/v26.11.13/RECEIPT.md`.
 - Table-level Standing is PARTIAL (not CONFORMANT): all 17 rows are CONFORMANT by named
   courts without per-test log lines, and there is no v1.1 TCK verdict.
 

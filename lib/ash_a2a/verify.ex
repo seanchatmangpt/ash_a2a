@@ -130,11 +130,7 @@ defmodule AshA2A.Verify do
         dsl
         |> Ash.Domain.Info.resources()
         |> Enum.flat_map(fn resource ->
-          resource_overrides =
-            case Spark.Dsl.Extension.get_persisted(resource, :ash_a2a_skill_overrides, nil) do
-              list when is_list(list) -> list
-              _ -> []
-            end
+          resource_overrides = AshA2A.Info.skill_overrides(resource)
 
           AshA2A.CapabilityIndex.Compiler.compile(
             resource,

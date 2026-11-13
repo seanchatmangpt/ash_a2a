@@ -480,14 +480,47 @@ defmodule AshA2A.Cluster.DrainManager.SignalHandler do
   # swap_handler/3 calls init({Args, OldHandlerTerminate}); add_handler/3
   # calls init(Args). Accept both shapes and keep only the manager name.
   @impl :gen_event
-  def init({name, _swapped_out_handler_value}), do: {:ok, name}
-  def init(name), do: {:ok, name}
+  def init({name, _swapped_out_handler_value}), do: {:ok, ensure_table(name)}
+  def init(name), do: {:ok, ensure_table(name)}
+
+  @doc """
+  Operational observability read: `{:last_sigterm_at | :last_drain_error, value}`
+  entries live in the named public ETS table `#{inspect(__MODULE__)}` owned by the
+  signal-server process that hosts this handler (created in `init/1`).
+  """
+  @spec observed(:last_sigterm_at | :last_drain_error) :: term() | nil
+  def observed(key) do
+    case :ets.whereis(__MODULE__) do
+      :undefined ->
+        nil
+
+      _ ->
+        case :ets.lookup(__MODULE__, key) do
+          [{^key, v}] -> v
+          [] -> nil
+        end
+    end
+  end
+
+  # Runs inside the gen_event process (init/1), so that process owns the table.
+  defp ensure_table(name) do
+    if :ets.whereis(__MODULE__) == :undefined do
+      :ets.new(__MODULE__, [:named_table, :public, :set, read_concurrency: true])
+    end
+
+    name
+  end
+
+  defp record(key, value) do
+    if :ets.whereis(__MODULE__) != :undefined, do: :ets.insert(__MODULE__, {key, value})
+    :ok
+  end
 
   @impl :gen_event
   def handle_event(:sigterm, name) do
     # Operational observability: when the last SIGTERM was really received
-    # (read via :persistent_term.get({__MODULE__, :last_sigterm_at})).
-    :persistent_term.put({__MODULE__, :last_sigterm_at}, System.system_time(:millisecond))
+    # (read via observed(:last_sigterm_at)).
+    record(:last_sigterm_at, System.system_time(:millisecond))
 
     # Fast, non-blocking: drain/2 only flips Phase 1 state and schedules
     # the drain tick loop; Phase 3 calls System.stop/1 itself. A missing
@@ -497,16 +530,10 @@ defmodule AshA2A.Cluster.DrainManager.SignalHandler do
       AshA2A.Cluster.DrainManager.drain(name, halt: true)
     rescue
       e ->
-        :persistent_term.put(
-          {__MODULE__, :last_drain_error},
-          {:rescue, Exception.message(e)}
-        )
-
-        :ok
+        record(:last_drain_error, {:rescue, Exception.message(e)})
     catch
       :exit, reason ->
-        :persistent_term.put({__MODULE__, :last_drain_error}, {:exit, reason})
-        :ok
+        record(:last_drain_error, {:exit, reason})
     end
 
     {:ok, name}

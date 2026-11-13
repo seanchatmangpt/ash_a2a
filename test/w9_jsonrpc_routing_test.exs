@@ -59,7 +59,13 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
     end
 
     test "an unknown method is still version-gated first (-32009 beats -32601)", %{agent: agent} do
-      body = Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "NoSuchMethod", "params" => %{}})
+      body =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "NoSuchMethod",
+          "params" => %{}
+        })
 
       conn =
         :post
@@ -97,14 +103,18 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
         assert code(rpc(TransportPlug, o, method, %{"id" => "t"})) == -32_601, method
       end
 
-      assert {_, %{"result" => _}} = rpc(TransportPlug, o, "SendMessage", %{"message" => message()})
+      assert {_, %{"result" => _}} =
+               rpc(TransportPlug, o, "SendMessage", %{"message" => message()})
+
       # PascalCase still routes: an owner-scoped miss is -32001, not -32601.
       assert code(rpc(TransportPlug, o, "GetTask", %{"id" => "no-such-task"})) == -32_001
     end
   end
 
   describe "tasks/subscribe alias" do
-    test "routes to tasks/resubscribe on A2ATransport.Plug (unknown task -> -32001)", %{agent: agent} do
+    test "routes to tasks/resubscribe on A2ATransport.Plug (unknown task -> -32001)", %{
+      agent: agent
+    } do
       # Transport instance not running -> the resubscribe is delegated to the
       # vendored plug (which needs `streaming` declared to reach the task lookup).
       o =
@@ -114,14 +124,18 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
         )
 
       assert code(rpc(TransportPlug, o, "tasks/subscribe", %{"id" => "no-such-task"})) == -32_001
-      assert code(rpc(TransportPlug, o, "tasks/resubscribe", %{"id" => "no-such-task"})) == -32_001
+
+      assert code(rpc(TransportPlug, o, "tasks/resubscribe", %{"id" => "no-such-task"})) ==
+               -32_001
+
       assert code(rpc(TransportPlug, o, "SubscribeToTask", %{"id" => "no-such-task"})) == -32_001
     end
 
     test "routes to tasks/resubscribe on Transport.Plug (unknown task -> -32001)", %{agent: agent} do
       o = AshA2A.Transport.Plug.init(agent: agent, base_url: "http://x/a2a")
 
-      assert code(rpc(AshA2A.Transport.Plug, o, "tasks/subscribe", %{"id" => "no-such-task"})) == -32_001
+      assert code(rpc(AshA2A.Transport.Plug, o, "tasks/subscribe", %{"id" => "no-such-task"})) ==
+               -32_001
     end
   end
 
@@ -151,7 +165,9 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
 
       assert dispatched != []
       assert TransportPlug.canonical_methods() == dispatched
-      assert TransportPlug.canonical_methods() == TransportPlug.method_aliases() |> Map.values() |> Enum.sort()
+
+      assert TransportPlug.canonical_methods() ==
+               TransportPlug.method_aliases() |> Map.values() |> Enum.sort()
     end
 
     test "extra (slash) aliases are routing-only and target a canonical method" do
@@ -168,12 +184,18 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
   describe "push methods with push disabled" do
     @push_methods [
       {"tasks/pushNotificationConfig/set",
-       %{"taskId" => "t", "pushNotificationConfig" => %{"id" => "c", "url" => "https://93.184.215.14/h"}}},
+       %{
+         "taskId" => "t",
+         "pushNotificationConfig" => %{"id" => "c", "url" => "https://93.184.215.14/h"}
+       }},
       {"tasks/pushNotificationConfig/get", %{"id" => "t", "pushNotificationConfigId" => "c"}},
       {"tasks/pushNotificationConfig/list", %{"id" => "t"}},
       {"tasks/pushNotificationConfig/delete", %{"id" => "t", "pushNotificationConfigId" => "c"}},
       {"CreateTaskPushNotificationConfig",
-       %{"taskId" => "t", "pushNotificationConfig" => %{"id" => "c", "url" => "https://93.184.215.14/h"}}},
+       %{
+         "taskId" => "t",
+         "pushNotificationConfig" => %{"id" => "c", "url" => "https://93.184.215.14/h"}
+       }},
       {"ListTaskPushNotificationConfigs", %{"id" => "t"}}
     ]
 
@@ -185,7 +207,11 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
 
     test "push_notifications: true without a running transport instance still answers -32003",
          %{agent: agent} do
-      o = opts(agent, push_notifications: true, transport: :"w9_not_running_#{System.unique_integer([:positive])}")
+      o =
+        opts(agent,
+          push_notifications: true,
+          transport: :"w9_not_running_#{System.unique_integer([:positive])}"
+        )
 
       for {method, params} <- @push_methods do
         assert code(rpc(TransportPlug, o, method, params)) == -32_003, method
@@ -221,7 +247,8 @@ defmodule AshA2A.W9JSONRPCRoutingTest do
     end
 
     test "absent params without a provider is -32007, never a crash", %{agent: agent} do
-      assert code(rpc(TransportPlug, opts(agent), "GetExtendedAgentCard", :absent, %{sub: "u9"})) == -32_007
+      assert code(rpc(TransportPlug, opts(agent), "GetExtendedAgentCard", :absent, %{sub: "u9"})) ==
+               -32_007
     end
   end
 end

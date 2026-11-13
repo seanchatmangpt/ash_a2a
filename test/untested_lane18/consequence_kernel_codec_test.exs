@@ -68,7 +68,10 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelCodecTest do
 
     test "version admits only current tag" do
       assert :ok = IdentityVersion.admit(IdentityVersion.current())
-      assert {:error, :canonical_schema_tag_required} = IdentityVersion.admit("sa2a.c1.identity.v0")
+
+      assert {:error, :canonical_schema_tag_required} =
+               IdentityVersion.admit("sa2a.c1.identity.v0")
+
       assert {:error, :canonical_schema_tag_required} = IdentityVersion.admit(nil)
     end
   end

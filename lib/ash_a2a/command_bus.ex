@@ -88,7 +88,7 @@ defmodule AshA2A.CommandBus do
   `:contradicted` one sets status `:postcondition_contradicted` and returns
   `{:error, %{code: :postcondition_contradicted}}`. See `AshA2A.Postcondition`.
 
-  ## Sustained-load tail-latency SLO (v26.9.17, ticket b4p-f5-02)
+  ## Sustained-load tail-latency SLO
 
   Under sustained concurrent dispatch, `run/4`'s late-half p99 latency must
   stay within **3.0x** of its early-half p99 (`degradation_ratio_p99 <= 3.0`,
@@ -193,7 +193,12 @@ defmodule AshA2A.CommandBus do
   end
 
   @spec run(Command.t(), AshA2A.Protocol.Message.t(), module(), keyword()) :: result()
-  def run(%Command{} = command, %AshA2A.Protocol.Message{} = message, resource_or_domain, opts \\ []) do
+  def run(
+        %Command{} = command,
+        %AshA2A.Protocol.Message{} = message,
+        resource_or_domain,
+        opts \\ []
+      ) do
     store = Keyword.get(opts, :store, default_store())
     store_opts = Keyword.get(opts, :store_opts, [])
 
@@ -1499,7 +1504,10 @@ defmodule AshA2A.CommandBus do
         _ -> :ok
       end
 
-    emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome), %{duration: duration})
+    emit_boundary([:actuate, :stop], command, Map.put(meta, :outcome, outcome), %{
+      duration: duration
+    })
+
     reply
   end
 
@@ -1604,7 +1612,7 @@ defmodule AshA2A.CommandBus do
     :telemetry.execute([:ash_a2a, :receipt, :committed], %{}, %{receipt: receipt})
   end
 
-  # W4: consequence-bearing dispatch crosses the portable kernel boundary.
+  # Kernel fence: consequence-bearing dispatch crosses the portable kernel boundary.
   # The legacy BRCE anchor remains correlation evidence during migration; it is
   # not authority and cannot independently admit Dispatcher DO.
   defp dispatch_with_ocel_correlation(skill, message, resource_or_domain, opts, anchor) do
@@ -1689,32 +1697,27 @@ defmodule AshA2A.CommandBus do
   # `:dispatch_timeout`; a reply racing the kill is flushed. A caller that
   # traps exits sees a signal death as `:dispatch_lost` instead of dying.
   defp bounded_dispatch(skill, message, resource_or_domain, opts, anchor, timeout) do
-    parent = self()
-    ref = make_ref()
     inherited = inheritable_dictionary()
-    callers = [parent | List.wrap(Process.get(:"$callers"))]
 
-    pid =
-      spawn_link(fn ->
+    # `Task.async/1` links, monitors and sets `$callers` itself.
+    task =
+      Task.async(fn ->
         Enum.each(inherited, fn {key, value} -> Process.put(key, value) end)
-        Process.put(:"$callers", callers)
         reply = guarded_dispatch(skill, message, resource_or_domain, opts, anchor)
-        send(parent, {ref, reply, Process.get(@ocel_pending_key)})
+        {reply, Process.get(@ocel_pending_key)}
       end)
 
-    monitor = Process.monitor(pid)
-
-    receive do
-      {^ref, reply, pending} ->
-        release_child(pid, monitor)
+    case Task.yield(task, timeout) do
+      {:ok, {reply, pending}} ->
+        release_child(task.pid, nil)
         if pending != nil, do: Process.put(@ocel_pending_key, pending)
         reply
 
       # Reached only when this process traps exits (otherwise the link has
       # already taken it down): DO died without replying, so whether it
       # crossed the consequence boundary is unknown, exactly like a timeout.
-      {:DOWN, ^monitor, :process, ^pid, reason} ->
-        release_child(pid, nil)
+      {:exit, reason} ->
+        release_child(task.pid, nil)
 
         {:error,
          %{
@@ -1722,17 +1725,11 @@ defmodule AshA2A.CommandBus do
            detail: "dispatch process died without replying; outcome unknown",
            reason: inspect(reason, limit: 5)
          }}
-    after
-      timeout ->
-        Process.unlink(pid)
-        Process.exit(pid, :kill)
-        release_child(pid, monitor)
 
-        receive do
-          {^ref, _late_reply, _pending} -> :ok
-        after
-          0 -> :ok
-        end
+      nil ->
+        # Unlinks, kills and flushes any reply racing the kill.
+        _ = Task.shutdown(task, :brutal_kill)
+        release_child(task.pid, nil)
 
         {:error,
          %{

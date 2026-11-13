@@ -45,8 +45,11 @@ defmodule AshA2A.Actuation.EngineCourtTest do
   defp attested_ctx(key, nonce \\ @nonce) do
     token =
       Key.sign(
-        %{"nonce" => nonce, "issued_at" => System.system_time(:second),
-          "device" => %{"model" => "court-device"}},
+        %{
+          "nonce" => nonce,
+          "issued_at" => System.system_time(:second),
+          "device" => %{"model" => "court-device"}
+        },
         key
       )
 
@@ -75,7 +78,9 @@ defmodule AshA2A.Actuation.EngineCourtTest do
     ticket = mint()
     ctx = attested_ctx(key)
 
-    assert {:ok, receipt, ledger} = Engine.submit(ticket, ctx, base_opts(key, authorizer: &allow_all/2))
+    assert {:ok, receipt, ledger} =
+             Engine.submit(ticket, ctx, base_opts(key, authorizer: &allow_all/2))
+
     assert receipt.adapter == Adapter.Noop
     assert is_binary(receipt.receipt_digest) and receipt.receipt_digest != ""
 
@@ -91,6 +96,7 @@ defmodule AshA2A.Actuation.EngineCourtTest do
     tampered = %Ticket{ticket | payload: %{"to" => "+15559999", "body" => "court"}}
 
     {:ok, spy} = Agent.start_link(fn -> 0 end)
+
     spy_adapter = fn t, _ctx ->
       Agent.update(spy, &(&1 + 1))
       Adapter.Noop.execute(t, %{})
@@ -98,8 +104,10 @@ defmodule AshA2A.Actuation.EngineCourtTest do
 
     assert {:refused, :tampered_ticket} =
              Engine.submit(tampered, attested_ctx(key),
-               adapter: spy_adapter, attestation_opts: [key: key],
-               authorizer: &allow_all/2)
+               adapter: spy_adapter,
+               attestation_opts: [key: key],
+               authorizer: &allow_all/2
+             )
 
     assert 0 = Agent.get(spy, & &1)
   end
@@ -109,7 +117,11 @@ defmodule AshA2A.Actuation.EngineCourtTest do
     ticket = mint()
 
     assert {:refused, :unattested} =
-             Engine.submit(ticket, %{attestation: {nil, nil}}, base_opts(key, authorizer: &allow_all/2))
+             Engine.submit(
+               ticket,
+               %{attestation: {nil, nil}},
+               base_opts(key, authorizer: &allow_all/2)
+             )
 
     assert {:refused, :unattested} =
              Engine.submit(ticket, %{}, base_opts(key, authorizer: &allow_all/2))
@@ -133,6 +145,7 @@ defmodule AshA2A.Actuation.EngineCourtTest do
              Engine.submit(ticket, attested_ctx(key), base_opts(key))
 
     deny = fn _t, _c -> {:refused, :unauthorized} end
+
     assert {:refused, :unauthorized} =
              Engine.submit(ticket, attested_ctx(key), base_opts(key, authorizer: deny))
   end
@@ -144,8 +157,10 @@ defmodule AshA2A.Actuation.EngineCourtTest do
 
     assert {:refused, {:adapter_error, :sms_gateway_down}} =
              Engine.submit(mint(), attested_ctx(key),
-               adapter: failing, attestation_opts: [key: key],
-               authorizer: &allow_all/2)
+               adapter: failing,
+               attestation_opts: [key: key],
+               authorizer: &allow_all/2
+             )
   end
 
   test "double settle refused; settle is pure" do

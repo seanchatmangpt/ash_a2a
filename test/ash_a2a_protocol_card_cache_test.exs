@@ -207,7 +207,10 @@ defmodule AshA2A.Protocol.CardCacheTest do
     entry = cached_entry!(cache_dir, url)
     assert {:ok, stored_card} = Jason.decode(entry["body"])
     assert stored_card["version"] == "1.0.0"
-    assert entry["etag"] == ~s(") <> Base.encode16(:crypto.hash(:sha256, entry["body"]), case: :lower) <> ~s(")
+
+    assert entry["etag"] ==
+             ~s(") <> Base.encode16(:crypto.hash(:sha256, entry["body"]), case: :lower) <> ~s(")
+
     assert entry["cache_control"] == "public, max-age=300"
     assert entry["last_modified"] == "Wed, 21 Oct 2026 07:28:00 GMT"
     assert is_integer(entry["fetched_at"])

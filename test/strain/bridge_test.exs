@@ -26,14 +26,14 @@ defmodule AshA2A.Strain.BridgeTest do
       assert ms[:a].tensor.active_leases == 0
     end
 
-    test "challenge_received from Vince increments heuristic_frequency" do
+    test "challenge_received from CEO increments heuristic_frequency" do
       ms = Bridge.new_mesh_state([:a])
 
       ms =
         Enum.reduce(1..3, ms, fn _, acc ->
           Bridge.record_observation(acc, :a, %{
             type: :challenge_received,
-            source: :vince,
+            source: :ceo,
             heuristic: :gaslight_pattern
           })
         end)

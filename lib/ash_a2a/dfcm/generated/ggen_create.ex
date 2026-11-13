@@ -10,5 +10,7 @@ defmodule AshA2A.DfCM.Generated.GgenCreate do
   def contract, do: AshA2A.DfCM.FleetIntake.fetch!(@donor_id)
   def envelope, do: AshA2A.DfCM.FleetIntake.envelope(@donor_id)
   def project(payload \\ %{}), do: AshA2A.DfCM.FleetIntake.project(@donor_id, payload)
-  def admit_projection(projection), do: AshA2A.DfCM.FleetIntake.admit_projection(@donor_id, projection)
+
+  def admit_projection(projection),
+    do: AshA2A.DfCM.FleetIntake.admit_projection(@donor_id, projection)
 end

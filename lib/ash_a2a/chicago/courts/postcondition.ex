@@ -377,7 +377,10 @@ defmodule AshA2A.Chicago.Courts.Postcondition do
         input: %{key: key, value: @reported}
       )
 
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => @reported})])
+    message =
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => @reported})
+      ])
 
     postcondition =
       verifier &&

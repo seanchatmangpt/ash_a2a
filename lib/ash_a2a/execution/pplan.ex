@@ -112,7 +112,8 @@ defmodule AshA2A.Execution.PPlan do
           {:ok, %{state: state(), detail: term(), placement: RuntimeReceipt.t()}}
           | {:error, %{reason: term(), placement: RuntimeReceipt.t()}}
           | {:error, {:unsupported, :ash_pplan}}
-  def run(task_id, %AshA2A.Protocol.Message{} = message, execution_config) when is_binary(task_id) do
+  def run(task_id, %AshA2A.Protocol.Message{} = message, execution_config)
+      when is_binary(task_id) do
     if available?() do
       with {:ok, opts} <- pplan_opts(execution_config) do
         result = safe_dispatch_or_resume(task_id, message, opts)
@@ -215,12 +216,20 @@ defmodule AshA2A.Execution.PPlan do
     |> case do
       # last duplicate key wins (Keyword.new/2 semantics, relied on by callers
       # that append overrides)
-      {:ok, acc} -> {:ok, acc |> Enum.reverse() |> Enum.reduce(%{}, fn {k, v}, m -> Map.put(m, k, v) end) |> Map.to_list()}
-      error -> error
+      {:ok, acc} ->
+        {:ok,
+         acc
+         |> Enum.reverse()
+         |> Enum.reduce(%{}, fn {k, v}, m -> Map.put(m, k, v) end)
+         |> Map.to_list()}
+
+      error ->
+        error
     end
   end
 
-  defp resolve_value({:mfa, m, f, a}) when is_atom(m) and is_atom(f) and is_list(a), do: call_mfa(m, f, a)
+  defp resolve_value({:mfa, m, f, a}) when is_atom(m) and is_atom(f) and is_list(a),
+    do: call_mfa(m, f, a)
 
   defp resolve_value({m, f, a} = value) when is_atom(m) and is_atom(f) and is_list(a) do
     if Code.ensure_loaded?(m) and function_exported?(m, f, length(a)),

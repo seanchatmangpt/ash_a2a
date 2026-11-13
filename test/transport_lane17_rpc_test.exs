@@ -87,7 +87,9 @@ defmodule AshA2A.TransportLane17.RPCTest do
   end
 
   describe "version/extension gate on locally-handled methods (finding 2)" do
-    test "tasks/list, tasks/resubscribe, push and extended-card paths answer -32009", %{plug: plug} do
+    test "tasks/list, tasks/resubscribe, push and extended-card paths answer -32009", %{
+      plug: plug
+    } do
       for {method, params} <- [
             {"tasks/list", %{}},
             {"tasks/resubscribe", %{"id" => "t1"}},
@@ -139,7 +141,13 @@ defmodule AshA2A.TransportLane17.RPCTest do
 
   describe "body handling (finding 2)" do
     test "an over-cap body is a typed -32600 error and leaks no inspect(reason)", %{plug: plug} do
-      big = Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tasks/list", "params" => %{"pad" => String.duplicate("x", 9_000)}})
+      big =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "tasks/list",
+          "params" => %{"pad" => String.duplicate("x", 9_000)}
+        })
 
       conn =
         conn(:post, "/", big)
@@ -164,7 +172,13 @@ defmodule AshA2A.TransportLane17.RPCTest do
     end
 
     defp set(plug, task_id, config),
-      do: decode(rpc(plug, "tasks/pushNotificationConfig/set", %{"taskId" => task_id, "pushNotificationConfig" => config}))
+      do:
+        decode(
+          rpc(plug, "tasks/pushNotificationConfig/set", %{
+            "taskId" => task_id,
+            "pushNotificationConfig" => config
+          })
+        )
 
     test "id, url, token, authentication are type- and length-bounded", %{plug: plug, task_id: id} do
       ok = %{"url" => "https://hook.example/cb"}
@@ -202,7 +216,8 @@ defmodule AshA2A.TransportLane17.RPCTest do
       assert code in [-32_001, -32_602, -32_000]
     end
 
-    test "streamed parts share ONE artifact: first create, rest append, lastChunk only on the final chunk", %{plug: plug} do
+    test "streamed parts share ONE artifact: first create, rest append, lastChunk only on the final chunk",
+         %{plug: plug} do
       conn = rpc(plug, "message/stream", %{"message" => message()})
       all = frames(conn.resp_body)
 
@@ -212,14 +227,20 @@ defmodule AshA2A.TransportLane17.RPCTest do
       assert Enum.map(artifacts, &(&1["append"] == true)) == [false, true, true]
       assert Enum.map(artifacts, &(&1["lastChunk"] == true)) == [false, false, true]
 
-      assert %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}} = List.last(all)
+      assert %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
+               List.last(all)
     end
   end
 
   describe "PushConfigStore / TaskEvents sweep (finding 7)" do
-    test "delete_task removes every config of the task and only that task", %{transport: transport} do
+    test "delete_task removes every config of the task and only that task", %{
+      transport: transport
+    } do
       store = A2ATransport.push_store_name(transport)
-      cfg = fn task, id -> %{id: id, task_id: task, url: "https://h.example/#{id}", token: nil, authentication: nil} end
+
+      cfg = fn task, id ->
+        %{id: id, task_id: task, url: "https://h.example/#{id}", token: nil, authentication: nil}
+      end
 
       {:ok, _} = PushConfigStore.put(store, cfg.("ta", "1"))
       {:ok, _} = PushConfigStore.put(store, cfg.("ta", "2"))
@@ -235,15 +256,31 @@ defmodule AshA2A.TransportLane17.RPCTest do
       transport = :"lane17_sweep_#{uniq}"
 
       start_supervised!(
-        {A2ATransport, name: transport, retention_ms: 1, push: [resolver: &__MODULE__.public_resolver/2]},
+        {A2ATransport,
+         name: transport, retention_ms: 1, push: [resolver: &__MODULE__.public_resolver/2]},
         id: :sweep_transport
       )
 
       store = A2ATransport.push_store_name(transport)
       task_id = "tsk-sweep-#{uniq}"
-      {:ok, _} = PushConfigStore.put(store, %{id: "c", task_id: task_id, url: "https://h.example/c", token: nil, authentication: nil})
 
-      final = %{"statusUpdate" => %{"taskId" => task_id, "final" => true, "status" => %{"state" => "TASK_STATE_COMPLETED"}}}
+      {:ok, _} =
+        PushConfigStore.put(store, %{
+          id: "c",
+          task_id: task_id,
+          url: "https://h.example/c",
+          token: nil,
+          authentication: nil
+        })
+
+      final = %{
+        "statusUpdate" => %{
+          "taskId" => task_id,
+          "final" => true,
+          "status" => %{"state" => "TASK_STATE_COMPLETED"}
+        }
+      }
+
       TaskEvents.publish(transport, task_id, "status-update", final, true)
 
       deadline = System.monotonic_time(:millisecond) + 5_000
@@ -255,15 +292,31 @@ defmodule AshA2A.TransportLane17.RPCTest do
       transport = :"lane17_sweep2_#{uniq}"
 
       start_supervised!(
-        {A2ATransport, name: transport, retention_ms: 1, push: [resolver: &__MODULE__.public_resolver/2]},
+        {A2ATransport,
+         name: transport, retention_ms: 1, push: [resolver: &__MODULE__.public_resolver/2]},
         id: :sweep_transport2
       )
 
       store = A2ATransport.push_store_name(transport)
       task_id = "tsk-paused-#{uniq}"
-      {:ok, _} = PushConfigStore.put(store, %{id: "c", task_id: task_id, url: "https://h.example/c", token: nil, authentication: nil})
 
-      paused = %{"statusUpdate" => %{"taskId" => task_id, "final" => true, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}}
+      {:ok, _} =
+        PushConfigStore.put(store, %{
+          id: "c",
+          task_id: task_id,
+          url: "https://h.example/c",
+          token: nil,
+          authentication: nil
+        })
+
+      paused = %{
+        "statusUpdate" => %{
+          "taskId" => task_id,
+          "final" => true,
+          "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+        }
+      }
+
       TaskEvents.publish(transport, task_id, "status-update", paused, true)
 
       # The log sweep is observable (backlog empties); the configs must remain.
@@ -278,7 +331,9 @@ defmodule AshA2A.TransportLane17.RPCTest do
       assert %{code: -32_001} = SSE.stream_error({:error, :not_found})
       assert %{code: -32_004} = SSE.stream_error({:not_streaming, %{secret: "x"}})
 
-      assert %{code: -32_000, data: data} = SSE.stream_error({:pump_start_failed, {:error, :max_children}})
+      assert %{code: -32_000, data: data} =
+               SSE.stream_error({:pump_start_failed, {:error, :max_children}})
+
       assert %{"ref" => _} = data
       refute inspect(data) =~ "max_children"
     end
@@ -287,8 +342,12 @@ defmodule AshA2A.TransportLane17.RPCTest do
   # Bounded poll on a real observable: deadline-checked, no fixed sleeps.
   defp eventually(deadline, fun) do
     cond do
-      fun.() -> true
-      System.monotonic_time(:millisecond) > deadline -> false
+      fun.() ->
+        true
+
+      System.monotonic_time(:millisecond) > deadline ->
+        false
+
       true ->
         :erlang.yield()
         eventually(deadline, fun)

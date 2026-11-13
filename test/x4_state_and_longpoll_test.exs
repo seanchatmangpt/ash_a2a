@@ -159,7 +159,8 @@ defmodule AshA2A.X4StateAndLongPollTest do
   end
 
   defp state_of(frame) do
-    get_in(frame, ["statusUpdate", "status", "state"]) || get_in(frame, ["task", "status", "state"])
+    get_in(frame, ["statusUpdate", "status", "state"]) ||
+      get_in(frame, ["task", "status", "state"])
   end
 
   defp has_state?(frames, state), do: Enum.any?(frames, &(state_of(&1) == state))
@@ -176,7 +177,9 @@ defmodule AshA2A.X4StateAndLongPollTest do
 
   # -- HTTP long-poll timeout + foreign owner ------------------------------------------
 
-  test "long-poll at the current generation returns the unchanged task at the timeout", %{server: server} do
+  test "long-poll at the current generation returns the unchanged task at the timeout", %{
+    server: server
+  } do
     {id, task} = new_task(server, "ask")
     generation = gen(task)
 
@@ -229,8 +232,11 @@ defmodule AshA2A.X4StateAndLongPollTest do
         {"input-required", "ask", "TASK_STATE_INPUT_REQUIRED"},
         {"auth-required", "auth", "TASK_STATE_AUTH_REQUIRED"}
       ] do
-    test "stream ends at #{label} (paused segment) and a follow-up completes the task", %{server: server} do
-      {ref, sse} = open_sse(server.base_url <> "/message:stream", %{"message" => wire(unquote(text))})
+    test "stream ends at #{label} (paused segment) and a follow-up completes the task", %{
+      server: server
+    } do
+      {ref, sse} =
+        open_sse(server.base_url <> "/message:stream", %{"message" => wire(unquote(text))})
 
       {frames0, _buffer} = collect_until(ref, "", &has_state?(&1, unquote(paused)))
       id = Enum.find_value(frames0, &get_in(&1, ["task", "id"]))

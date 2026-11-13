@@ -9,7 +9,11 @@ defmodule AshA2A.W10ExtendedCardResignTest do
   defp public_map(signatures_key \\ nil) do
     card = AshA2A.Info.agent_card(AshA2A.Test.Fixture.Echo)
     card = if signatures_key, do: CardSigning.sign(card, signatures_key), else: card
-    card |> JSON.encode_agent_card(url: "http://localhost/a2a") |> Jason.encode!() |> Jason.decode!()
+
+    card
+    |> JSON.encode_agent_card(url: "http://localhost/a2a")
+    |> Jason.encode!()
+    |> Jason.decode!()
   end
 
   defp verifies?(map, key) do

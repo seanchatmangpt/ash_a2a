@@ -47,7 +47,9 @@ defmodule AshA2A.WoCheckinSimWorkerTest do
     end)
 
     server =
-      EphemeralHttp.start!({AshA2A.Protocol.Plug, agent: name, base_url: "http://127.0.0.1:4000/a2a"})
+      EphemeralHttp.start!(
+        {AshA2A.Protocol.Plug, agent: name, base_url: "http://127.0.0.1:4000/a2a"}
+      )
 
     %{server: server, agent_pid: pid}
   end
@@ -134,9 +136,10 @@ defmodule AshA2A.WoCheckinSimWorkerTest do
     assert payload["visited"] == ["visit_detail_ready", "check_in", "visit_detail_ready"]
   end
 
-  test "geofence refusal parks; empty-justification override stays parked; justified override completes", %{
-    server: server
-  } do
+  test "geofence refusal parks; empty-justification override stays parked; justified override completes",
+       %{
+         server: server
+       } do
     resp =
       send_check_in(server, %{
         "workOrderId" => "wo-sim-2",

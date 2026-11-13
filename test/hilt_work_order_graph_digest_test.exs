@@ -69,7 +69,9 @@ defmodule AshA2A.Hilt.WorkOrderGraphDigestTest do
         :error -> []
       end
 
-    WorkOrder.for_command!(command, :observe,
+    WorkOrder.for_command!(
+      command,
+      :observe,
       [
         work_order_id: "hilt-graph-wo-1",
         observation_bounds: %{resources: ["echo"], max_items: 1},
@@ -253,7 +255,8 @@ defmodule AshA2A.Hilt.WorkOrderGraphDigestTest do
       assert bound_divergent.metadata.work_order_digest ==
                WorkOrder.identity_digest(divergent)
 
-      assert bound_carried.metadata.work_order_digest == bound_divergent.metadata.work_order_digest
+      assert bound_carried.metadata.work_order_digest ==
+               bound_divergent.metadata.work_order_digest
     end
   end
 

@@ -278,5 +278,6 @@ defmodule AshA2A.Chicago.BrceGate7Test do
     Receipt.pending(command, Identity.execution(Ash.UUIDv7.generate()), consequence)
   end
 
-  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  defp message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 end

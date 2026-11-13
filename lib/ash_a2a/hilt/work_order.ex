@@ -189,7 +189,8 @@ defmodule AshA2A.Hilt.WorkOrder do
       # command subject's graph_digest as checkpoint evidence; an explicit
       # opts[:graph_digest] overrides the carried value (nil opts out of the
       # checkpoint entirely).
-      graph_digest: Keyword.get(opts, :graph_digest, subject_graph_digest(command.semantic_subject)),
+      graph_digest:
+        Keyword.get(opts, :graph_digest, subject_graph_digest(command.semantic_subject)),
       metadata: Keyword.get(opts, :metadata, %{})
     )
   end
@@ -297,6 +298,7 @@ defmodule AshA2A.Hilt.WorkOrder do
   def checkpoint_graph_digest(nil, _subject_digest), do: :ok
   def checkpoint_graph_digest(_order_digest, nil), do: :ok
   def checkpoint_graph_digest(order_digest, order_digest), do: :ok
+
   def checkpoint_graph_digest(_order_digest, _subject_digest),
     do: {:error, :stale_graph_identity}
 

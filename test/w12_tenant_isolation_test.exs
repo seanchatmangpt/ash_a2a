@@ -89,7 +89,9 @@ defmodule AshA2A.W12TenantIsolationTest do
     assert Principal.key({"sub:u1", "acme"}) == "sub:u1"
   end
 
-  test "a tenant-A task cannot be continued or read by tenant B or untenanted callers", %{agent: agent} do
+  test "a tenant-A task cannot be continued or read by tenant B or untenanted callers", %{
+    agent: agent
+  } do
     assert {:ok, task} = send_as(agent, "park", "acme")
     assert task.status.state == :input_required
     assert Runtime.task_tenant(task) == "acme"
@@ -97,9 +99,17 @@ defmodule AshA2A.W12TenantIsolationTest do
     assert {:error, :not_found} = send_as(agent, "hi", "beta", task_id: task.id)
     assert {:error, :not_found} = send_as(agent, "hi", nil, task_id: task.id)
 
-    assert {:ok, _} = GenServer.call(agent, {:ash_a2a_get_task, Principal.scope(:anonymous, "acme"), task.id})
+    assert {:ok, _} =
+             GenServer.call(
+               agent,
+               {:ash_a2a_get_task, Principal.scope(:anonymous, "acme"), task.id}
+             )
+
     assert {:error, :not_found} =
-             GenServer.call(agent, {:ash_a2a_get_task, Principal.scope(:anonymous, "beta"), task.id})
+             GenServer.call(
+               agent,
+               {:ash_a2a_get_task, Principal.scope(:anonymous, "beta"), task.id}
+             )
 
     # Negative control: the right tenant continues to completion.
     assert {:ok, done} = send_as(agent, "hi", "acme", task_id: task.id)

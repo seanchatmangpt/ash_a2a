@@ -122,5 +122,4 @@ defmodule AshA2A.MockDisciplineTest do
            "banned tokens outside the disclosure allowlist: #{inspect(offending)}" <>
              "\nraw hits:\n#{out}"
   end
-
 end

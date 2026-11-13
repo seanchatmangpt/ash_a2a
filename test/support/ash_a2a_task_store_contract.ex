@@ -134,7 +134,14 @@ defmodule AshA2A.TaskStoreContract do
         ref = start_store("push")
 
         c1 = %PushNotificationConfig{id: "c1", task_id: "tsk-1", url: "https://x.test/1"}
-        c2 = %PushNotificationConfig{id: "c2", task_id: "tsk-1", url: "https://x.test/2", token: "t"}
+
+        c2 = %PushNotificationConfig{
+          id: "c2",
+          task_id: "tsk-1",
+          url: "https://x.test/2",
+          token: "t"
+        }
+
         other = %PushNotificationConfig{id: "c1", task_id: "tsk-2", url: "https://x.test/3"}
 
         assert {:ok, ^c1} = @store.set_push_config(ref, c1)

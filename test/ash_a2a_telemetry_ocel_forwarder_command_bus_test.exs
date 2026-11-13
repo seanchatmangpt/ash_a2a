@@ -116,8 +116,7 @@ defmodule AshA2A.Telemetry.OcelForwarderCommandBusTest do
       Application.delete_env(:ash_a2a, :ocel_ingest_url)
     end)
 
-    {:ok, base_url: base_url,
-     store: AshA2A.ReceiptStore.Ekv, store_opts: [name: ekv_name]}
+    {:ok, base_url: base_url, store: AshA2A.ReceiptStore.Ekv, store_opts: [name: ekv_name]}
   end
 
   test "a real CommandBus-routed :next_phase dispatch produces exactly ONE OCEL event, carrying both receipt and dispatch evidence",

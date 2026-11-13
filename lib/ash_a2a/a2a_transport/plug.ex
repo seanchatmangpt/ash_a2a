@@ -188,10 +188,16 @@ defmodule AshA2A.A2ATransport.Plug do
       # Unknown method (PascalCase or slash), or a legacy slash name under
       # `strict_pascal_case: true`: a typed -32601, never a delegate.
       {:unknown_method, req} ->
-        gated(conn, req, opts, &send_json(&1, Response.error(req.id, Error.method_not_found(req.method))))
+        gated(
+          conn,
+          req,
+          opts,
+          &send_json(&1, Response.error(req.id, Error.method_not_found(req.method)))
+        )
 
       # Malformed envelopes: AshA2A.Protocol.Plug produces the canonical error.
-      _ -> delegate(conn, decoded, opts)
+      _ ->
+        delegate(conn, decoded, opts)
     end
   end
 
@@ -214,9 +220,9 @@ defmodule AshA2A.A2ATransport.Plug do
   # gated by the vendored plug and are not gated twice (extension
   # `activate/3` is side-effecting).
   defp gate_locally?(%Request{method: method}, opts) do
+    # Push methods are answered here in BOTH states (served when enabled,
+    # -32003 when disabled), so the negotiation gate always runs first.
     method in ["agent/getAuthenticatedExtendedCard", "tasks/resubscribe", "tasks/list"] or
-      # Push methods are answered here in BOTH states (served when enabled,
-      # -32003 when disabled), so the negotiation gate always runs first.
       String.starts_with?(method, "tasks/pushNotificationConfig/") or
       (method == "message/stream" and transport?(opts))
   end
@@ -231,7 +237,12 @@ defmodule AshA2A.A2ATransport.Plug do
          {:ok, _activations, uris} <-
            Extension.activate(opts.a2a.extensions, requested, %{conn: conn}) do
       conn = conn |> put_resp_header("a2a-version", version) |> Version.put_negotiated(version)
-      conn = if uris == [], do: conn, else: put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
+
+      conn =
+        if uris == [],
+          do: conn,
+          else: put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
+
       fun.(conn)
     else
       {:error, _} = error -> negotiation_error(conn, req, error)
@@ -308,7 +319,9 @@ defmodule AshA2A.A2ATransport.Plug do
   defp dispatch(conn, %Request{method: method} = req, raw, opts)
        when method in ["message/send", "message/stream"] do
     case continued_task(req.params) do
-      nil -> dispatch_message(conn, req, raw, opts)
+      nil ->
+        dispatch_message(conn, req, raw, opts)
+
       task_id ->
         op = if req.method == "message/stream", do: :message_stream
         if_owned(conn, req, task_id, opts, &dispatch_message(&1, req, raw, opts), op)
@@ -383,19 +396,49 @@ defmodule AshA2A.A2ATransport.Plug do
           )
 
         {:error, :invalid_page_token} ->
-          commit_list_refusal(:refused_structure, :invalid_page_token, principal, {:list, principal}, -32_602)
-          send_json(conn, Response.error(req.id, Error.invalid_params("\"pageToken\" is invalid")))
+          commit_list_refusal(
+            :refused_structure,
+            :invalid_page_token,
+            principal,
+            {:list, principal},
+            -32_602
+          )
+
+          send_json(
+            conn,
+            Response.error(req.id, Error.invalid_params("\"pageToken\" is invalid"))
+          )
 
         {:error, :unsupported} ->
           # Bare `AshA2A.Protocol.Agent` — the typed (non-lethal) branch of
           # the same refusal the `catch :exit` backstop answers below; the
           # agent now survives the probe and keeps serving later requests.
-          commit_list_refusal(:unsupported_profile, :unsupported, principal, {:list, principal}, -32_004)
+          commit_list_refusal(
+            :unsupported_profile,
+            :unsupported,
+            principal,
+            {:list, principal},
+            -32_004
+          )
+
           send_json(conn, Response.error(req.id, Error.unsupported_operation()))
 
         {:error, reason} ->
-          commit_list_refusal(:blocked_unknown, :unclassified_error, principal, {:list, principal}, -32_603)
-          send_json(conn, Response.error(req.id, Error.internal_error(AshA2A.Transport.SafeError.redact(reason))))
+          commit_list_refusal(
+            :blocked_unknown,
+            :unclassified_error,
+            principal,
+            {:list, principal},
+            -32_603
+          )
+
+          send_json(
+            conn,
+            Response.error(
+              req.id,
+              Error.internal_error(AshA2A.Transport.SafeError.redact(reason))
+            )
+          )
       end
     rescue
       # Client-side encode failures fall back to the vendored delegate
@@ -408,7 +451,14 @@ defmodule AshA2A.A2ATransport.Plug do
       # refusal instead of delegating into the vendored plug's own crash
       # (observed -32700 on this exact path).
       :exit, _exit ->
-        commit_list_refusal(:unsupported_profile, :unsupported, principal, {:list, principal}, -32_004)
+        commit_list_refusal(
+          :unsupported_profile,
+          :unsupported,
+          principal,
+          {:list, principal},
+          -32_004
+        )
+
         send_json(conn, Response.error(req.id, Error.unsupported_operation()))
     end
   end
@@ -504,7 +554,10 @@ defmodule AshA2A.A2ATransport.Plug do
       {:error, reason} ->
         send_json(
           conn,
-          Response.error(req.id, Error.invalid_params(AshA2A.Transport.SafeError.redact(reason) |> inspect()))
+          Response.error(
+            req.id,
+            Error.invalid_params(AshA2A.Transport.SafeError.redact(reason) |> inspect())
+          )
         )
     end
   end
@@ -559,7 +612,10 @@ defmodule AshA2A.A2ATransport.Plug do
       {:ok, task} ->
         # `operation: nil` = the request is delegated to the vendored plug,
         # which authorizes (and commits its refusal receipt) itself.
-        case if(operation, do: Ownership.authorize(authorizer(conn, req, opts), operation, task), else: :ok) do
+        case if(operation,
+               do: Ownership.authorize(authorizer(conn, req, opts), operation, task),
+               else: :ok
+             ) do
           :ok -> fun.(conn)
           {:error, error} -> send_json(conn, Response.error(req.id, error))
         end

@@ -27,16 +27,12 @@ defmodule AshA2A.AIRoDescriptionTest do
   # Enforcing modules cited in the TTL as airo:RiskControl, mapped to their
   # on-disk source path relative to the repo root.
   @control_modules %{
-    "AshA2A.SecurityProfile.Boot" =>
-      "lib/ash_a2a/security_profile/boot.ex",
-    "AshA2A.Authority.Broker.Ekv" =>
-      "lib/ash_a2a/authority/broker/ekv.ex",
-    "AshA2A.KillSwitch" =>
-      "lib/ash_a2a/kill_switch.ex",
+    "AshA2A.SecurityProfile.Boot" => "lib/ash_a2a/security_profile/boot.ex",
+    "AshA2A.Authority.Broker.Ekv" => "lib/ash_a2a/authority/broker/ekv.ex",
+    "AshA2A.KillSwitch" => "lib/ash_a2a/kill_switch.ex",
     "AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile" =>
       "lib/ash_a2a/consequence_kernel/effect_claim_store/durable_file.ex",
-    "AshA2A.ReceiptStore" =>
-      "lib/ash_a2a/receipt_store.ex"
+    "AshA2A.ReceiptStore" => "lib/ash_a2a/receipt_store.ex"
   }
 
   test "ttl file exists" do

@@ -73,7 +73,7 @@ never PASS). Court families on disk:
 | OCEL-evidence | `test/ash_a2a_pplan_ocel_evidence_court_test.exs` | pplan execution emits OCEL-consumable evidence events |
 | margin-gate | `test/ash_a2a_margin_gate_e2e_test.exs` | the financial-margin-envelope pack gates real plans end to end |
 
-Path mode (`ASH_PPLAN_PATH`, below) is required for these courts; Hex-pin
+Path mode (`ASH_A2A_LOCAL_DEPS=1`, below) is required for these courts; Hex-pin
 mode exercises only the published API surface.
 
 ## Execution adapter opts and error shapes
@@ -120,14 +120,14 @@ armed.
 ## Dependency wiring (dev-only path override)
 
 The `ash_pplan` dep in `mix.exs` is a Hex pin (`~> 26.11`) by default.
-Setting `ASH_PPLAN_PATH` to a local canonical checkout (e.g.
+Setting `ASH_A2A_LOCAL_DEPS=1` resolves `ash_pplan` (and `ash_graphlaw`) from sibling checkouts (e.g.
 `/Users/sac/ash_pplan`) switches the dep to `path:` at mix.exs eval time
 (`System.get_env/1` — deps do not read env at compile time, so eval-time
 selection is the only supported toggle).
 
 * Default (no env): Hex pin. `mix.lock` resolves 26.11.10; **ash_a2a CI always
-  uses the Hex pin** — CI never sets `ASH_PPLAN_PATH`.
-* Path mode: `ASH_PPLAN_PATH=.../ash_pplan MIX_ENV=test mix deps.get
+  uses the Hex pin** — CI never sets `ASH_A2A_LOCAL_DEPS`.
+* Path mode: `ASH_A2A_LOCAL_DEPS=1 MIX_ENV=test mix deps.get
   deps.compile ash_pplan && MIX_ENV=test mix compile`. Path deps are not
   recorded in `mix.lock`, so the stale Hex row is tolerated while the env
   is set; after unsetting, `mix deps.get` restores the Hex lock (verified

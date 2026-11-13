@@ -86,6 +86,7 @@ defmodule AshA2A.CapabilityReleaseTest do
              CapabilityRelease.freeze([release_mismatch])
 
     forged_identity = digest("f")
+
     forged = %{
       cap
       | release_digest: forged_identity,
@@ -118,7 +119,12 @@ defmodule AshA2A.CapabilityReleaseTest do
          |> Base.encode16(case: :lower))
 
     conflated_binding = %{conflated_binding | portable_identity: forged_identity}
-    cap = %{released("authority") | standing_binding: conflated_binding, release_digest: forged_identity}
+
+    cap = %{
+      released("authority")
+      | standing_binding: conflated_binding,
+        release_digest: forged_identity
+    }
 
     assert {:error, :runtime_authority_conflated} = CapabilityRelease.freeze([cap])
   end

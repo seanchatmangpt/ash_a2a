@@ -322,7 +322,10 @@ defmodule AshA2A.Chicago.PostconditionTest do
         input: %{key: key, value: "X"}
       )
 
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})])
+    message =
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})
+      ])
 
     opts =
       [store_opts: store_opts] ++

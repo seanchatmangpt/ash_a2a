@@ -129,7 +129,8 @@ defmodule AshA2A.Chicago.Courts.SemanticBoundary do
   end
 
   @doc "The agent card the real Plug pipeline serves for `agent` (decoded)."
-  @spec served_card!(atom(), :compatible | :none | {:version, String.t()}) :: AshA2A.Protocol.AgentCard.t()
+  @spec served_card!(atom(), :compatible | :none | {:version, String.t()}) ::
+          AshA2A.Protocol.AgentCard.t()
   def served_card!(agent, advertise) do
     {:ok, card, _json} = Http.served_card(agent: agent, advertise: advertise)
     card

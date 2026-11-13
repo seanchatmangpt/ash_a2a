@@ -13,7 +13,10 @@ defmodule AshA2A.ChicagoCaseStudy.MutationCourtsTest do
   end
 
   defmodule LocalTwoPortGate do
-    def admit(%LocalWorkOrder{graph_digest: wo_digest}, %{semantic_subject: %{graph_digest: sub_digest}} = cmd) do
+    def admit(
+          %LocalWorkOrder{graph_digest: wo_digest},
+          %{semantic_subject: %{graph_digest: sub_digest}} = cmd
+        ) do
       if wo_digest == sub_digest do
         {:ok, Map.put(cmd, :admission_standing, :ADMITTED)}
       else
@@ -28,7 +31,8 @@ defmodule AshA2A.ChicagoCaseStudy.MutationCourtsTest do
       signature = Base.decode16!(signed_lease["signature"], case: :lower)
       pub_key = Base.decode16!(hd(trusted_keys), case: :lower)
 
-      payload = "ceiling:#{signed_lease["ceiling"]}|expires:#{signed_lease["expires_unix"]}|holder:#{signed_lease["holder"]}|id:#{signed_lease["id"]}|scope:#{signed_lease["scope"]}"
+      payload =
+        "ceiling:#{signed_lease["ceiling"]}|expires:#{signed_lease["expires_unix"]}|holder:#{signed_lease["holder"]}|id:#{signed_lease["id"]}|scope:#{signed_lease["scope"]}"
 
       valid_sig? = :crypto.verify(:eddsa, :none, payload, signature, [pub_key, :ed25519])
 
@@ -40,7 +44,8 @@ defmodule AshA2A.ChicagoCaseStudy.MutationCourtsTest do
           {:error, %{code: "LeaseRefused", class: "Expiration", broken_term: "lease:expired"}}
 
         signed_lease["ceiling"] != required_ceiling ->
-          {:error, %{code: "LeaseRefused", class: "Ceiling", broken_term: "ceiling:#{required_ceiling}"}}
+          {:error,
+           %{code: "LeaseRefused", class: "Ceiling", broken_term: "ceiling:#{required_ceiling}"}}
 
         true ->
           {:ok, :admitted}
@@ -63,12 +68,13 @@ defmodule AshA2A.ChicagoCaseStudy.MutationCourtsTest do
             |> Enum.filter(fn {from, _to} -> from == prev end)
             |> Enum.map(fn {_from, to} -> to end)
 
-          {:error, %{
-            reason: :unadmitted_transition,
-            expected: expected,
-            observed: illegal,
-            fitness: 0.5
-          }}
+          {:error,
+           %{
+             reason: :unadmitted_transition,
+             expected: expected,
+             observed: illegal,
+             fitness: 0.5
+           }}
       end
     end
   end
@@ -106,16 +112,20 @@ defmodule AshA2A.ChicagoCaseStudy.MutationCourtsTest do
       "signature" => Base.encode16(signature, case: :lower)
     }
 
-    assert {:error, refusal} = LocalKernelGate.verify_lease(expired_lease, trusted_keys, "construct")
+    assert {:error, refusal} =
+             LocalKernelGate.verify_lease(expired_lease, trusted_keys, "construct")
+
     assert refusal.code == "LeaseRefused"
     assert refusal.class == "Expiration"
   end
 
   test "MUT-BRCE-003 is KILLED: illegal activity jump fails with :unadmitted_transition" do
     allowed = [{"A", "B"}, {"B", "C"}]
+
     corrupted_trace = [
       %{"activity" => "A"},
-      %{"activity" => "C"} # Mutated: skipped B
+      # Mutated: skipped B
+      %{"activity" => "C"}
     ]
 
     assert {:error, refusal} = LocalProcessModel.check_sequence(corrupted_trace, allowed)

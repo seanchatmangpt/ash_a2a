@@ -42,7 +42,10 @@ defmodule AshA2A.Dogfood.Beam4pmAgentTest do
       assert {:ok, card} = Client.discover(url)
       assert card.name == "beam4pm_a2a_agent"
       assert length(card.skills) > 0
-      IO.puts("[dogfood] card: #{length(card.skills)} skills, protocol_version=#{inspect(Map.get(card, :protocol_version))}")
+
+      IO.puts(
+        "[dogfood] card: #{length(card.skills)} skills, protocol_version=#{inspect(Map.get(card, :protocol_version))}"
+      )
     end
   end
 

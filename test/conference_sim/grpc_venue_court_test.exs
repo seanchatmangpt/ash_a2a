@@ -159,8 +159,11 @@ defmodule AshA2A.ConferenceSim.GRPCVenueHandler do
             %{scheme: scheme}
             |> maybe_put(:credentials, auth["credentials"])
 
-          auth when is_map(auth) -> auth
-          _ -> nil
+          auth when is_map(auth) ->
+            auth
+
+          _ ->
+            nil
         end
     }
   end
@@ -482,7 +485,8 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
       "protocolVersion" => "1.0"
     }
 
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-grpc-1", rest) == expected1
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-grpc-1", rest) ==
+             expected1
 
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) ==
              %{"configs" => [expected1], "nextPageToken" => ""}
@@ -570,7 +574,8 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
     jsonrpc: jsonrpc,
     channel: channel
   } do
-    assert %{"error" => %{"code" => -32_001}} = rpc(jsonrpc, "tasks/get", %{"id" => "no-such-task"})
+    assert %{"error" => %{"code" => -32_001}} =
+             rpc(jsonrpc, "tasks/get", %{"id" => "no-such-task"})
 
     assert {:error, %GRPC.RPCError{status: 5} = error} =
              Lf.A2a.V1.A2AService.Stub.get_task(channel, %Pb.GetTaskRequest{id: "no-such-task"})
@@ -579,10 +584,11 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
              error_infos(error)
   end
 
-  test "court 3b: missing push config — gRPC INVALID_ARGUMENT(3)+INVALID_PARAMS vs REST 400 envelope", %{
-    rest: rest,
-    channel: channel
-  } do
+  test "court 3b: missing push config — gRPC INVALID_ARGUMENT(3)+INVALID_PARAMS vs REST 400 envelope",
+       %{
+         rest: rest,
+         channel: channel
+       } do
     task_id = rest_new_task(rest, "typed errors task")
 
     assert %{"error" => %{"code" => 400, "details" => [%{"reason" => "INVALID_PARAMS"}]}} =
@@ -624,7 +630,8 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
     rest: rest,
     channel: channel
   } do
-    grpc_jobs = for i <- 1..20, do: Task.async(fn -> grpc_send_task_id(channel, "load grpc #{i}") end)
+    grpc_jobs =
+      for i <- 1..20, do: Task.async(fn -> grpc_send_task_id(channel, "load grpc #{i}") end)
 
     jsonrpc_jobs =
       for i <- 1..20, do: Task.async(fn -> new_task_jsonrpc(jsonrpc, "load jsonrpc #{i}") end)

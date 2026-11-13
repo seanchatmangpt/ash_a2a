@@ -364,7 +364,7 @@ tested -- corrected here rather than left stale:
 - [canonical-graph-identity.md](canonical-graph-identity.md) and
   [graphlaw-wasm-integration.md](graphlaw-wasm-integration.md) — the
   semantic identity and law-engine layers.
-- `docs/rfc/` — RFC-SA2A-001/002 (Proposed Standard), the normative
+- `docs/archive/rfc/` — RFC-SA2A-001/002 (Proposed Standard), the normative
   source most moduledocs cite.
 - External sibling: `ash_surface` documentation —
   `~/ash_surface/docs/diataxis/how-to/expose-a2a-agent-card.md`

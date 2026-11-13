@@ -135,7 +135,8 @@ defmodule AshA2A.Transport.GRPCServerTest.FullHandler do
       |> Enum.map(fn {{:task, _}, task} -> task end)
       |> Enum.sort_by(& &1.id)
 
-    {:ok, %{tasks: tasks, total_size: length(tasks), page_size: length(tasks), next_page_token: nil}}
+    {:ok,
+     %{tasks: tasks, total_size: length(tasks), page_size: length(tasks), next_page_token: nil}}
   end
 
   @impl AshA2A.Protocol.JSONRPC
@@ -219,6 +220,7 @@ defmodule AshA2A.Transport.GRPCServerTest do
       )
 
     {:ok, _endpoint_pid, port} = GRPC.Server.start_endpoint(@endpoint, 0)
+
     on_exit(fn ->
       try do
         GRPC.Server.stop_endpoint(@endpoint)
@@ -370,7 +372,13 @@ defmodule AshA2A.Transport.GRPCServerTest do
 
     assert kinds != []
     assert [last_event | _] = Enum.reverse(events)
-    assert match?(%Pb.StreamResponse{payload: {:status_update, %{status: %{state: :TASK_STATE_COMPLETED}}}}, last_event)
+
+    assert match?(
+             %Pb.StreamResponse{
+               payload: {:status_update, %{status: %{state: :TASK_STATE_COMPLETED}}}
+             },
+             last_event
+           )
   end
 
   # -- G-E pinned gRPC TCK-failure closures (lane G-Q) -----------------------
@@ -400,9 +408,10 @@ defmodule AshA2A.Transport.GRPCServerTest do
              Google.Rpc.ErrorInfo.decode(any.value)
   end
 
-  test "SendStreamingMessage to a non-streamable agent is FAILED_PRECONDITION(9) with a string message", %{
-    channel: channel
-  } do
+  test "SendStreamingMessage to a non-streamable agent is FAILED_PRECONDITION(9) with a string message",
+       %{
+         channel: channel
+       } do
     # The refusal may surface at call time or at enumeration time (the client
     # stream is lazy), so enumerate under rescue. The MessageOnlyAgent drives
     # the same else-branch `{:not_streaming, %Task{}}` lands in: any non-
@@ -431,9 +440,10 @@ defmodule AshA2A.Transport.GRPCServerTest do
     assert is_binary(error.message)
   end
 
-  test "unsupported A2A-Version metadata is refused UNIMPLEMENTED(12) with a VERSION_NOT_SUPPORTED ErrorInfo", %{
-    channel: channel
-  } do
+  test "unsupported A2A-Version metadata is refused UNIMPLEMENTED(12) with a VERSION_NOT_SUPPORTED ErrorInfo",
+       %{
+         channel: channel
+       } do
     assert {:error, %GRPC.RPCError{status: 12} = error} =
              Lf.A2a.V1.A2AService.Stub.send_message(
                channel,
@@ -454,7 +464,10 @@ defmodule AshA2A.Transport.GRPCServerTest do
     # Absent header: default tolerance (§3.6.2 — missing version means "0.3"),
     # the request processes normally.
     assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{}}}} =
-             Lf.A2a.V1.A2AService.Stub.send_message(channel, user_message_request("no version header"))
+             Lf.A2a.V1.A2AService.Stub.send_message(
+               channel,
+               user_message_request("no version header")
+             )
   end
 
   # -- full-surface wire tests (lane G1): ListTasks, push-config CRUD,
@@ -522,38 +535,51 @@ defmodule AshA2A.Transport.GRPCServerTest do
       assert created.token == "tok-1"
 
       assert {:ok, %Pb.TaskPushNotificationConfig{} = got} =
-               Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(channel, %Pb.GetTaskPushNotificationConfigRequest{
-                 task_id: task_id,
-                 id: "cfg-1"
-               })
+               Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(
+                 channel,
+                 %Pb.GetTaskPushNotificationConfigRequest{
+                   task_id: task_id,
+                   id: "cfg-1"
+                 }
+               )
 
       assert got.id == "cfg-1" and got.url == "https://hooks.example.com/a2a"
 
       assert {:ok, %Pb.ListTaskPushNotificationConfigsResponse{configs: configs}} =
-               Lf.A2a.V1.A2AService.Stub.list_task_push_notification_configs(channel, %Pb.ListTaskPushNotificationConfigsRequest{
-                 task_id: task_id
-               })
+               Lf.A2a.V1.A2AService.Stub.list_task_push_notification_configs(
+                 channel,
+                 %Pb.ListTaskPushNotificationConfigsRequest{
+                   task_id: task_id
+                 }
+               )
 
       assert [%{id: "cfg-1"}] = configs
 
       assert {:ok, %Google.Protobuf.Empty{}} =
-               Lf.A2a.V1.A2AService.Stub.delete_task_push_notification_config(channel, %Pb.DeleteTaskPushNotificationConfigRequest{
-                 task_id: task_id,
-                 id: "cfg-1"
-               })
+               Lf.A2a.V1.A2AService.Stub.delete_task_push_notification_config(
+                 channel,
+                 %Pb.DeleteTaskPushNotificationConfigRequest{
+                   task_id: task_id,
+                   id: "cfg-1"
+                 }
+               )
 
       # Real state: the row is gone, so a get now refuses NOT_FOUND(5).
       assert {:error, %GRPC.RPCError{status: 5} = err} =
-               Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(channel, %Pb.GetTaskPushNotificationConfigRequest{
-                 task_id: task_id,
-                 id: "cfg-1"
-               })
+               Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(
+                 channel,
+                 %Pb.GetTaskPushNotificationConfigRequest{
+                   task_id: task_id,
+                   id: "cfg-1"
+                 }
+               )
 
       assert err.message == "Task not found"
     end)
   end
 
-  test "GetExtendedAgentCard with no provider is FAILED_PRECONDITION(9) over the wire (-32007)", %{channel: channel} do
+  test "GetExtendedAgentCard with no provider is FAILED_PRECONDITION(9) over the wire (-32007)",
+       %{channel: channel} do
     assert {:error, %GRPC.RPCError{status: 9} = err} =
              Lf.A2a.V1.A2AService.Stub.get_extended_agent_card(
                channel,

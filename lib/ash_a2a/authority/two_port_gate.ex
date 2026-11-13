@@ -217,7 +217,7 @@ defmodule AshA2A.Authority.TwoPortGate do
   end
 
   defp clock_failed?(%Lease{issued_monotonic_ms: nil} = lease, _now_mono, now_wall) do
-    not (DateTime.compare(lease.not_before, now_wall) in [:lt, :eq]) or
+    DateTime.compare(lease.not_before, now_wall) not in [:lt, :eq] or
       DateTime.compare(now_wall, lease.expires_at) == :gt
   end
 

@@ -147,7 +147,13 @@ defmodule AshA2A.Transport.HTTPJSON.TCKClosuresTest do
                "code" => 404,
                "status" => "NOT_FOUND",
                "message" => "Task not found",
-               "details" => [%{"@type" => @error_info, "domain" => "a2a-protocol.org", "reason" => "TASK_NOT_FOUND"}]
+               "details" => [
+                 %{
+                   "@type" => @error_info,
+                   "domain" => "a2a-protocol.org",
+                   "reason" => "TASK_NOT_FOUND"
+                 }
+               ]
              }
            } = resp.body
   end
@@ -158,8 +164,13 @@ defmodule AshA2A.Transport.HTTPJSON.TCKClosuresTest do
     for version <- [nil, "0.3", "1.0"] do
       resp =
         case version do
-          nil -> post_json!(server, "/message:send", %{"message" => message_map("v-gate nil")})
-          v -> post_json!(server, "/message:send", %{"message" => message_map("v-gate " <> v)}, [{"a2a-version", v}])
+          nil ->
+            post_json!(server, "/message:send", %{"message" => message_map("v-gate nil")})
+
+          v ->
+            post_json!(server, "/message:send", %{"message" => message_map("v-gate " <> v)}, [
+              {"a2a-version", v}
+            ])
         end
 
       assert resp.status == 200
@@ -171,7 +182,10 @@ defmodule AshA2A.Transport.HTTPJSON.TCKClosuresTest do
   test "an unsupported A2A-Version answers 400 -32009 with the rejected version echoed", %{
     server: server
   } do
-    resp = post_json!(server, "/message:send", %{"message" => message_map("v-gate bad")}, [{"a2a-version", "99.0"}])
+    resp =
+      post_json!(server, "/message:send", %{"message" => message_map("v-gate bad")}, [
+        {"a2a-version", "99.0"}
+      ])
 
     assert resp.status == 400
     assert Enum.join(resp.headers["a2a-version"], "") == "99.0"
@@ -228,7 +242,8 @@ defmodule AshA2A.Transport.HTTPJSON.TCKClosuresTest do
 
   test "message:stream answers SSE with StreamResponse data frames", %{server: server} do
     resp =
-      Req.post!(url: server.base_url <> "/message:stream",
+      Req.post!(
+        url: server.base_url <> "/message:stream",
         json: %{"message" => message_map("stream me")},
         headers: [{"accept", "text/event-stream"}],
         decode_body: false
@@ -292,9 +307,12 @@ defmodule AshA2A.Transport.HTTPJSON.TCKClosuresTest do
       assert %{
                "error" => %{
                  "code" => 400,
-                 "details" => [%{"@type" => @error_info, "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"}]
+                 "details" => [
+                   %{"@type" => @error_info, "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"}
+                 ]
                }
-             } = resp.body, "#{method} #{path}"
+             } = resp.body,
+             "#{method} #{path}"
     end
   end
 end

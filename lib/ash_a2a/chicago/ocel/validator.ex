@@ -837,8 +837,8 @@ defmodule AshA2A.Chicago.Ocel.Validator do
   end
 
   defp warn(acc, code, path) do
+    # dual-safe Map.update (absent key stores default unmodified)
     warnings =
-      # dual-safe Map.update (absent key stores default unmodified)
       case Map.fetch(acc.warnings, code) do
         :error ->
           Map.put(acc.warnings, code, %{"code" => code, "count" => 1, "first_path" => path})

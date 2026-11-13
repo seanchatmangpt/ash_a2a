@@ -172,7 +172,6 @@ if Code.ensure_loaded?(Plug) do
       _ -> []
     end
 
-
     # -- API key ---------------------------------------------------------------
 
     @doc """
@@ -288,7 +287,8 @@ if Code.ensure_loaded?(Plug) do
           introspection_verdict(result, config)
 
         {:ok, %Req.Response{status: status}} ->
-          {:error, %{code: :introspection_error, detail: "introspection endpoint returned #{status}"}}
+          {:error,
+           %{code: :introspection_error, detail: "introspection endpoint returned #{status}"}}
 
         {:error, err} ->
           {:error, %{code: :introspection_error, detail: Exception.message(err)}}
@@ -353,7 +353,8 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp resolve_oidc_config(config) do
-      case {Keyword.get(config, :jwks), Keyword.get(config, :jwks_uri), Keyword.get(config, :discovery)} do
+      case {Keyword.get(config, :jwks), Keyword.get(config, :jwks_uri),
+            Keyword.get(config, :discovery)} do
         {nil, nil, discovery} when is_binary(discovery) ->
           with {:ok, jwks_uri} <- fetch_jwks_uri(discovery) do
             {:ok, Keyword.put(config, :jwks_uri, jwks_uri)}
@@ -450,7 +451,11 @@ if Code.ensure_loaded?(Plug) do
           if alg in expected do
             :ok
           else
-            {:error, %{code: :algorithm_mismatch, detail: "expected one of #{inspect(expected)}, got #{alg}"}}
+            {:error,
+             %{
+               code: :algorithm_mismatch,
+               detail: "expected one of #{inspect(expected)}, got #{alg}"
+             }}
           end
 
         _alg ->
@@ -509,7 +514,7 @@ if Code.ensure_loaded?(Plug) do
               is_nil(n) or is_nil(e) ->
                 {:error, %{code: :invalid_jwk, detail: "RSA JWK missing n/e"}}
 
-              rsa_verify?(signing_input, sig, {:"RSAPublicKey", n, e}) ->
+              rsa_verify?(signing_input, sig, {:RSAPublicKey, n, e}) ->
                 :ok
 
               true ->
@@ -544,7 +549,9 @@ if Code.ensure_loaded?(Plug) do
 
       candidates =
         keys
-        |> Enum.filter(fn k -> is_map(k) and k["kty"] == "RSA" and (is_nil(kid) or k["kid"] == kid) end)
+        |> Enum.filter(fn k ->
+          is_map(k) and k["kty"] == "RSA" and (is_nil(kid) or k["kid"] == kid)
+        end)
         |> then(fn cands ->
           use_x5c = Keyword.get(config, :use_x5c, false)
 

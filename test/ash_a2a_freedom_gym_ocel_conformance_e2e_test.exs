@@ -94,8 +94,10 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
       types_path = Path.join(@beam4pm_path, "lib/beam4pm_types.ex")
 
       unless File.exists?(router_path) and File.exists?(types_path) do
-        skip_and_fail("beam4pm canonical checkout not found at #{@beam4pm_path} " <>
-                        "(set BEAM4PM_PATH)")
+        skip_and_fail(
+          "beam4pm canonical checkout not found at #{@beam4pm_path} " <>
+            "(set BEAM4PM_PATH)"
+        )
       end
 
       # Types first (the router's decode path calls the generated
@@ -107,8 +109,10 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
         Enum.reject(@beam4pm_required_modules, &Code.ensure_loaded?/1)
 
       if still_missing != [] do
-        skip_and_fail("beam4pm modules failed to compile from #{@beam4pm_path}: " <>
-                        Enum.map_join(still_missing, ", ", &inspect/1))
+        skip_and_fail(
+          "beam4pm modules failed to compile from #{@beam4pm_path}: " <>
+            Enum.map_join(still_missing, ", ", &inspect/1)
+        )
       end
     end
 
@@ -203,7 +207,12 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
                )
 
       assert task.status.state == :completed
-      assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{phase: phase}}]}] = task.artifacts
+
+      assert [
+               %AshA2A.Protocol.Artifact{
+                 parts: [%AshA2A.Protocol.Part.Data{data: %{phase: phase}}]
+               }
+             ] = task.artifacts
 
       %{
         "event_id" => Ash.UUIDv7.generate(),
@@ -313,7 +322,8 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
     # must make the engine's verify verdict `accepted: false` with a named
     # failing stage -- a typed refusal, never a silent pass.
     tampered =
-      Map.update!(assembled_receipt["receipt"], "chain_hash", fn <<_first::binary-size(1), rest::binary>> ->
+      Map.update!(assembled_receipt["receipt"], "chain_hash", fn <<_first::binary-size(1),
+                                                                   rest::binary>> ->
         "F" <> rest
       end)
 
@@ -347,7 +357,7 @@ defmodule AshA2A.FreedomGymOcelConformanceE2ETest do
           "deviant_capture_file" => deviant_path,
           "ingest_url" => ingest_url(),
           "affidavit_receipt_chain_hash" => chain_hash,
-          "affidavit_receipt_content_address" => assembled_receipt["content_address"],
+          "affidavit_receipt_content_address" => assembled_receipt["content_address"]
         },
         notes:
           "Deviant capture deliberately omits the clean_house phase event -- consumed by " <>

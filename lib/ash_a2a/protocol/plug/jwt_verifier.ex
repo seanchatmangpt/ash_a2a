@@ -119,9 +119,14 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
 
       jwks_result =
         case {Map.get(config, :jwks), Map.get(config, :oidc_issuer)} do
-          {%{} = jwks, _} -> {:ok, jwks}
-          {_, issuer} when is_binary(issuer) -> OIDCDiscovery.jwks(issuer, ttl: Map.get(config, :jwks_ttl, 300))
-          _ -> {:error, %{detail: "no JWKS or OIDC issuer configured for RS256"}}
+          {%{} = jwks, _} ->
+            {:ok, jwks}
+
+          {_, issuer} when is_binary(issuer) ->
+            OIDCDiscovery.jwks(issuer, ttl: Map.get(config, :jwks_ttl, 300))
+
+          _ ->
+            {:error, %{detail: "no JWKS or OIDC issuer configured for RS256"}}
         end
 
       with {:ok, jwks} <- jwks_result do

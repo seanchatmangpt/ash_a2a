@@ -36,10 +36,12 @@ defmodule AshA2A.W608MapUpdateCourtTest do
         key = "w608-#{run}-#{site}"
 
         empty = insert(site, key)
+
         assert empty == expected(site, key, :empty),
                "site #{site} run #{run}: empty-baseline diverged: #{inspect(empty)}"
 
         populated = insert_populated(site, key)
+
         assert populated == expected(site, key, :populated),
                "site #{site} run #{run}: populated-baseline diverged: #{inspect(populated)}"
       end

@@ -49,7 +49,12 @@ defmodule AshA2A.EmailBriefTest do
 
   test "content change invalidates old tokens" do
     b = brief()
-    changed = %{b | actions: Enum.map(b.actions, &if(&1.n == 1, do: %{&1 | graph_digest: @d2}, else: &1))}
+
+    changed = %{
+      b
+      | actions: Enum.map(b.actions, &if(&1.n == 1, do: %{&1 | graph_digest: @d2}, else: &1))
+    }
+
     t = Brief.reply_token(b, 1)
     refute Brief.reply_token(changed, 1) == t
     assert {:error, :bad_token} = Brief.verify_reply_token(changed, 1, t)

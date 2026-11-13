@@ -95,6 +95,7 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         |> then(&JSON.decode!(&1, :message))
 
       assert round_tripped == message
+
       assert round_tripped.parts == [
                %Part.Text{text: "hi", metadata: %{"lang" => "en"}},
                %Part.Data{data: %{"q" => 1}, metadata: %{}}
@@ -173,6 +174,7 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         wrapped = status_update_wire("tsk_f", state)
 
         assert %Event.StatusUpdate{} = event = JSON.decode!(wrapped, :event)
+
         assert event.final == true,
                "state #{inspect(state)} is terminal: decode must reconstruct final == true"
 
@@ -208,8 +210,10 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
       registry = [
         {Error.task_not_found("tsk_missing"), -32_001, "TASK_NOT_FOUND"},
         {Error.task_not_cancelable("tsk_done"), -32_002, "TASK_NOT_CANCELABLE"},
-        {Error.push_notification_not_supported("msg/stream"), -32_003, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
-        {Error.unsupported_operation("agent/getAuthenticatedExtendedCard"), -32_004, "UNSUPPORTED_OPERATION"},
+        {Error.push_notification_not_supported("msg/stream"), -32_003,
+         "PUSH_NOTIFICATION_NOT_SUPPORTED"},
+        {Error.unsupported_operation("agent/getAuthenticatedExtendedCard"), -32_004,
+         "UNSUPPORTED_OPERATION"},
         {Error.invalid_params(%{"field" => "historyLength"}), -32_602, "INVALID_PARAMS"}
       ]
 
@@ -222,8 +226,10 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         assert [%{"@type" => @error_info_type} = info] = mapped["data"]
         assert info["domain"] == @a2a_domain
         assert info["reason"] == reason
+
         assert info["reason"] == String.upcase(info["reason"]),
                "reason must be UPPER_SNAKE_CASE, got: #{info["reason"]}"
+
         assert Map.has_key?(info, "metadata"), "free-form data rides under metadata"
       end
     end
@@ -256,7 +262,13 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
       assert %{
                "error" => %{
                  "code" => -32001,
-                 "data" => [%{"@type" => @error_info_type, "domain" => @a2a_domain, "reason" => "TASK_NOT_FOUND"}]
+                 "data" => [
+                   %{
+                     "@type" => @error_info_type,
+                     "domain" => @a2a_domain,
+                     "reason" => "TASK_NOT_FOUND"
+                   }
+                 ]
                }
              } = wire
     end
@@ -361,7 +373,14 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         |> rpc("message/send", %{"message" => data_message(%{})})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => task_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{
+                   "id" => task_id,
+                   "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+                 }
+               }
+             } =
                turn1
 
       assert is_binary(task_id) and task_id != ""
@@ -377,11 +396,17 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         |> rpc("message/send", %{"message" => JSON.encode!(follow_up)})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}
+               }
+             } =
                turn2
 
       # The completed result is a real artifact the action produced.
-      assert %{"result" => %{"task" => %{"artifacts" => [%{"parts" => [%{"data" => result}]}]}}} = turn2
+      assert %{"result" => %{"task" => %{"artifacts" => [%{"parts" => [%{"data" => result}]}]}}} =
+               turn2
+
       assert result["text"] == "second turn"
       assert result["prior_turns"] >= 1
 
@@ -392,12 +417,14 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         |> rpc("tasks/get", %{"id" => task_id})
         |> decode_response()
 
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}} = fetched
+      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
+               fetched
     end
 
-    test "positive control: an out-of-band follow-up without the task's pending argument stays parked", %{
-      plug_opts: plug_opts
-    } do
+    test "positive control: an out-of-band follow-up without the task's pending argument stays parked",
+         %{
+           plug_opts: plug_opts
+         } do
       turn1 =
         plug_opts
         |> rpc("message/send", %{"message" => data_message(%{})})
@@ -415,7 +442,14 @@ defmodule AshA2A.Protocol.V1ConformanceTest do
         |> rpc("message/send", %{"message" => JSON.encode!(still_parked)})
         |> decode_response()
 
-      assert %{"result" => %{"task" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}}} =
+      assert %{
+               "result" => %{
+                 "task" => %{
+                   "id" => ^task_id,
+                   "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+                 }
+               }
+             } =
                turn2
     end
   end

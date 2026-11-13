@@ -304,7 +304,9 @@ defmodule AshA2A.Protocol.Agent do
       @impl GenServer
       def init(opts) do
         task_store = Keyword.get(opts, :task_store)
-        push_sender = Keyword.get(opts, :push_sender, AshA2A.Protocol.PushNotification.default_sender())
+
+        push_sender =
+          Keyword.get(opts, :push_sender, AshA2A.Protocol.PushNotification.default_sender())
 
         {:ok,
          %AshA2A.Protocol.Agent.State{
@@ -356,7 +358,12 @@ defmodule AshA2A.Protocol.Agent do
                     admit_continue_immediately(message, task, extensions, from, state)
 
                   true ->
-                    spawn_task_worker({:continue, message, task, extensions}, from, task.id, state)
+                    spawn_task_worker(
+                      {:continue, message, task, extensions},
+                      from,
+                      task.id,
+                      state
+                    )
                 end
 
               {:error, :not_found} ->
@@ -389,7 +396,9 @@ defmodule AshA2A.Protocol.Agent do
       # `validate_input_modes: false`).
       defp validate_message_input(message, opts) do
         card =
-          if function_exported?(__MODULE__, :agent_card, 0), do: __MODULE__.agent_card(), else: nil
+          if function_exported?(__MODULE__, :agent_card, 0),
+            do: __MODULE__.agent_card(),
+            else: nil
 
         AshA2A.Protocol.InputModeValidator.validate_input(message, card, opts)
       end
@@ -402,7 +411,8 @@ defmodule AshA2A.Protocol.Agent do
         principal = Keyword.get(opts, :principal)
 
         result =
-          Enum.reduce_while(List.wrap(message.reference_task_ids), {:ok, []}, fn ref_id, {:ok, acc} ->
+          Enum.reduce_while(List.wrap(message.reference_task_ids), {:ok, []}, fn ref_id,
+                                                                                 {:ok, acc} ->
             with {:ok, ref} <- AshA2A.Protocol.Agent.State.get_task(state, ref_id),
                  true <- is_nil(principal) or AshA2A.Transport.Runtime.owned_by?(ref, principal) do
               {:cont, {:ok, [ref | acc]}}
@@ -441,7 +451,7 @@ defmodule AshA2A.Protocol.Agent do
         case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
           {:ok, state} ->
             state = AshA2A.Protocol.Agent.State.track_context(state, task)
-            reply_to(from,{:ok, task})
+            reply_to(from, {:ok, task})
             spawn_task_worker({:admitted, message, task, extensions}, :detached, task.id, state)
 
           {:error, reason} ->
@@ -528,9 +538,15 @@ defmodule AshA2A.Protocol.Agent do
       # `if_generation_match` is rechecked here, inside the serialized
       # GenServer, so a check-then-apply race across HTTP processes cannot
       # admit two writers against one generation.
-      def handle_call({:apply_artifact_updates, task_id, decoded, if_generation_match}, _from, state) do
+      def handle_call(
+            {:apply_artifact_updates, task_id, decoded, if_generation_match},
+            _from,
+            state
+          ) do
         card =
-          if function_exported?(__MODULE__, :agent_card, 0), do: __MODULE__.agent_card(), else: nil
+          if function_exported?(__MODULE__, :agent_card, 0),
+            do: __MODULE__.agent_card(),
+            else: nil
 
         with :ok <- AshA2A.Protocol.ClientArtifacts.check_user_artifacts(card, decoded),
              {:ok, task} <- AshA2A.Protocol.Agent.State.get_task(state, task_id),
@@ -573,7 +589,9 @@ defmodule AshA2A.Protocol.Agent do
       end
 
       def handle_call({:delete_push_config, task_id, config_id}, _from, state) do
-        {state, result} = AshA2A.Protocol.Agent.State.delete_push_config(state, task_id, config_id)
+        {state, result} =
+          AshA2A.Protocol.Agent.State.delete_push_config(state, task_id, config_id)
+
         {:reply, result, state}
       end
 
@@ -588,7 +606,9 @@ defmodule AshA2A.Protocol.Agent do
               # {:stream_done, …}, duplicating artifacts and history. A
               # subscriber receives pushed events instead.
               snapshot = AshA2A.Protocol.Task.strip_stream_metadata(task)
-              {:reply, {:ok, snapshot}, AshA2A.Protocol.Agent.State.add_subscriber(state, task_id, pid)}
+
+              {:reply, {:ok, snapshot},
+               AshA2A.Protocol.Agent.State.add_subscriber(state, task_id, pid)}
             end
 
           {:error, :not_found} ->
@@ -711,7 +731,8 @@ defmodule AshA2A.Protocol.Agent do
         stored = AshA2A.Protocol.Agent.State.get_task(state, task_id)
 
         case {stored, result} do
-          {{:ok, %{status: %{state: s}}}, _} when s in [:completed, :failed, :canceled, :rejected] ->
+          {{:ok, %{status: %{state: s}}}, _}
+          when s in [:completed, :failed, :canceled, :rejected] ->
             state
 
           {{:ok, task}, {:ok, {%AshA2A.Protocol.Message{} = agent_message, _snapshot}}} ->
@@ -738,7 +759,7 @@ defmodule AshA2A.Protocol.Agent do
       defp apply_default_result(_task_id, from, result, state) do
         case result do
           {:ok, {%AshA2A.Protocol.Message{} = agent_message, _snapshot}} ->
-            reply_to(from,{:ok, agent_message})
+            reply_to(from, {:ok, agent_message})
             state
 
           {:ok, {%AshA2A.Protocol.Task{} = task, _snapshot}} ->
@@ -749,16 +770,16 @@ defmodule AshA2A.Protocol.Agent do
                 state = AshA2A.Protocol.Agent.State.track_context(state, task)
                 AshA2A.Protocol.PushNotification.deliver(state, task)
                 state = notify_subscribers(state, task)
-                reply_to(from,{:ok, task})
+                reply_to(from, {:ok, task})
                 state
 
               {:error, reason} ->
-                reply_to(from,{:error, reason})
+                reply_to(from, {:error, reason})
                 state
             end
 
           {:error, reason} ->
-            reply_to(from,{:error, reason})
+            reply_to(from, {:error, reason})
             state
         end
       end
@@ -778,7 +799,7 @@ defmodule AshA2A.Protocol.Agent do
             if AshA2A.Protocol.Task.terminal?(task) do
               # Defensive, mirrors `AshA2A.Transport.Runtime.finish/5`: a task
               # finalized by another path is never overwritten.
-              reply_to(from,{:ok, task})
+              reply_to(from, {:ok, task})
               state
             else
               error_msg =
@@ -790,12 +811,12 @@ defmodule AshA2A.Protocol.Agent do
               state = AshA2A.Protocol.Agent.State.put_task(state, task)
               AshA2A.Protocol.PushNotification.deliver(state, task)
               state = notify_subscribers(state, task)
-              reply_to(from,{:ok, task})
+              reply_to(from, {:ok, task})
               state
             end
 
           _no_task ->
-            reply_to(from,{:error, error})
+            reply_to(from, {:error, error})
             state
         end
       end
@@ -832,8 +853,12 @@ defmodule AshA2A.Protocol.Agent do
                 nil -> AshA2A.Protocol.Artifact.new(parts)
                 id -> struct(AshA2A.Protocol.Artifact, artifact_id: id, parts: parts)
               end
+
             agent_msg = AshA2A.Protocol.Message.new_agent(parts)
-            {task, _stored} = AshA2A.Protocol.Task.Generation.record_artifact(task, artifact, true)
+
+            {task, _stored} =
+              AshA2A.Protocol.Task.Generation.record_artifact(task, artifact, true)
+
             task = %{task | history: task.history ++ [agent_msg]}
             task = %{task | metadata: Map.delete(task.metadata, :stream)}
 

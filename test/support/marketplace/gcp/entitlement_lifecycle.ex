@@ -57,6 +57,7 @@ defmodule AshA2A.Marketplace.GCP.EntitlementLifecycle do
   @doc "Approves an entitlement, marking it active and eligible for committed cloud spend drawdown."
   @spec approve(t(), keyword()) :: {:ok, t()} | {:error, term()}
   def approve(ent, opts \\ [])
+
   def approve(%__MODULE__{state: :pending_creation} = ent, opts) do
     spend = Keyword.get(opts, :allocated_spend_usd, 50_000.0)
 

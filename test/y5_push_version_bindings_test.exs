@@ -87,7 +87,11 @@ defmodule AshA2A.Y5.PushVersion.GrpcHandler do
 
   @impl true
   def handle_get_push_config(task_id, config_id, _params, ctx) do
-    case push("tasks/pushNotificationConfig/get", %{"id" => task_id, "pushNotificationConfigId" => config_id}, ctx) do
+    case push(
+           "tasks/pushNotificationConfig/get",
+           %{"id" => task_id, "pushNotificationConfigId" => config_id},
+           ctx
+         ) do
       {:ok, envelope} -> {:ok, lift(envelope)}
       {:error, _} = error -> error
     end
@@ -104,7 +108,12 @@ defmodule AshA2A.Y5.PushVersion.GrpcHandler do
 
   @impl true
   def handle_delete_push_config(task_id, config_id, _params, ctx),
-    do: push("tasks/pushNotificationConfig/delete", %{"id" => task_id, "pushNotificationConfigId" => config_id}, ctx)
+    do:
+      push(
+        "tasks/pushNotificationConfig/delete",
+        %{"id" => task_id, "pushNotificationConfigId" => config_id},
+        ctx
+      )
 
   defp put_version(raw, v) when is_binary(v) and v != "", do: Map.put(raw, "protocolVersion", v)
   defp put_version(raw, _), do: raw
@@ -177,7 +186,13 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
 
     start_supervised!(
       {AshA2A.A2ATransport,
-       name: transport, push: [allow_http: true, allow_cidrs: ["127.0.0.1/32"], max_attempts: 1, base_backoff_ms: 5]}
+       name: transport,
+       push: [
+         allow_http: true,
+         allow_cidrs: ["127.0.0.1/32"],
+         max_attempts: 1,
+         base_backoff_ms: 5
+       ]}
     )
 
     on_exit(fn -> Application.delete_env(:ash_a2a, @server) end)
@@ -205,7 +220,11 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
         versions: versions
       )
 
-    {:ok, channel: ch, rest: rest, transport: transport, store: AshA2A.A2ATransport.push_store_name(transport)}
+    {:ok,
+     channel: ch,
+     rest: rest,
+     transport: transport,
+     store: AshA2A.A2ATransport.push_store_name(transport)}
   end
 
   # -- gRPC helpers --------------------------------------------------------------
@@ -219,7 +238,9 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
       }
     }
 
-    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} = Stub.send_message(ch, req, @v11)
+    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} =
+             Stub.send_message(ch, req, @v11)
+
     id
   end
 
@@ -229,7 +250,12 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
   end
 
   defp grpc_get(ch, task_id, id, opts),
-    do: Stub.get_task_push_notification_config(ch, %Pb.GetTaskPushNotificationConfigRequest{task_id: task_id, id: id}, opts)
+    do:
+      Stub.get_task_push_notification_config(
+        ch,
+        %Pb.GetTaskPushNotificationConfigRequest{task_id: task_id, id: id},
+        opts
+      )
 
   # -- REST helpers --------------------------------------------------------------
 
@@ -258,12 +284,19 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
   end
 
   defp rest_set(opts, task_id, config, headers \\ [], extra \\ %{}) do
-    rest_req(:post, "/tasks/#{task_id}/pushNotificationConfig", opts, Map.merge(%{"pushNotificationConfig" => config}, extra), headers)
+    rest_req(
+      :post,
+      "/tasks/#{task_id}/pushNotificationConfig",
+      opts,
+      Map.merge(%{"pushNotificationConfig" => config}, extra),
+      headers
+    )
   end
 
   # -- gRPC ------------------------------------------------------------------------
 
-  test "gRPC: an explicit protocol_version round-trips create/get/list and lands in the store", ctx do
+  test "gRPC: an explicit protocol_version round-trips create/get/list and lands in the store",
+       ctx do
     task_id = grpc_task(ctx.channel)
 
     assert {:ok, %Pb.TaskPushNotificationConfig{protocol_version: "1.1"}} =
@@ -280,7 +313,9 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
              )
 
     assert Enum.any?(configs, &(&1.id == "g-explicit" and &1.protocol_version == "1.1"))
-    assert {:ok, %{protocol_version: "1.1"}} = PushConfigStore.get(ctx.store, task_id, "g-explicit")
+
+    assert {:ok, %{protocol_version: "1.1"}} =
+             PushConfigStore.get(ctx.store, task_id, "g-explicit")
   end
 
   test "gRPC: an explicit protocol_version wins over the request's A2A-Version", ctx do
@@ -289,7 +324,9 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
     assert {:ok, _} = grpc_create(ctx.channel, task_id, "g-wins", @v11, protocol_version: "1.0")
 
     assert {:ok, %{protocol_version: "1.0"}} = PushConfigStore.get(ctx.store, task_id, "g-wins")
-    assert {:ok, %Pb.TaskPushNotificationConfig{protocol_version: "1.0"}} = grpc_get(ctx.channel, task_id, "g-wins", @v11)
+
+    assert {:ok, %Pb.TaskPushNotificationConfig{protocol_version: "1.0"}} =
+             grpc_get(ctx.channel, task_id, "g-wins", @v11)
   end
 
   test "gRPC: without protocol_version the default is the creating request's A2A-Version", ctx do
@@ -298,14 +335,18 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
     assert {:ok, _} = grpc_create(ctx.channel, task_id, "g-default-11", @v11)
     assert {:ok, _} = grpc_create(ctx.channel, task_id, "g-default-10", @v10)
 
-    assert {:ok, %{protocol_version: "1.1"}} = PushConfigStore.get(ctx.store, task_id, "g-default-11")
-    assert {:ok, %{protocol_version: "1.0"}} = PushConfigStore.get(ctx.store, task_id, "g-default-10")
+    assert {:ok, %{protocol_version: "1.1"}} =
+             PushConfigStore.get(ctx.store, task_id, "g-default-11")
+
+    assert {:ok, %{protocol_version: "1.0"}} =
+             PushConfigStore.get(ctx.store, task_id, "g-default-10")
 
     assert {:ok, %Pb.TaskPushNotificationConfig{protocol_version: "1.1"}} =
              grpc_get(ctx.channel, task_id, "g-default-11", @v11)
   end
 
-  test "gRPC: a malformed protocol_version is refused INVALID_ARGUMENT(3) and nothing is stored", ctx do
+  test "gRPC: a malformed protocol_version is refused INVALID_ARGUMENT(3) and nothing is stored",
+       ctx do
     task_id = grpc_task(ctx.channel)
 
     assert {:error, %GRPC.RPCError{status: 3}} =
@@ -319,7 +360,13 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
   test "REST: an explicit protocolVersion round-trips set/get/list and lands in the store", ctx do
     task_id = rest_task(ctx.rest)
 
-    conn = rest_set(ctx.rest, task_id, %{"id" => "r-explicit", "url" => @hook, "protocolVersion" => "1.1"})
+    conn =
+      rest_set(ctx.rest, task_id, %{
+        "id" => "r-explicit",
+        "url" => @hook,
+        "protocolVersion" => "1.1"
+      })
+
     assert conn.status == 200
     assert %{"id" => "r-explicit", "protocolVersion" => "1.1"} = rest_json(conn)
 
@@ -331,14 +378,20 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
     assert %{"configs" => configs} = rest_json(list)
     assert Enum.any?(configs, &(&1["id"] == "r-explicit" and &1["protocolVersion"] == "1.1"))
 
-    assert {:ok, %{protocol_version: "1.1"}} = PushConfigStore.get(ctx.store, task_id, "r-explicit")
+    assert {:ok, %{protocol_version: "1.1"}} =
+             PushConfigStore.get(ctx.store, task_id, "r-explicit")
   end
 
   test "REST: an explicit protocolVersion wins over the A2A-Version header", ctx do
     task_id = rest_task(ctx.rest)
 
     conn =
-      rest_set_flat(ctx.rest, task_id, %{"id" => "r-wins", "url" => @hook, "protocolVersion" => "1.0"}, [{"a2a-version", "1.1"}])
+      rest_set_flat(
+        ctx.rest,
+        task_id,
+        %{"id" => "r-wins", "url" => @hook, "protocolVersion" => "1.0"},
+        [{"a2a-version", "1.1"}]
+      )
 
     assert conn.status == 200
     # <1.1 configs are reported in the exact pre-1.1 shape (no protocolVersion key);
@@ -350,21 +403,34 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
   test "REST: without protocolVersion the default is the creating request's A2A-Version", ctx do
     task_id = rest_task(ctx.rest)
 
-    c11 = rest_set(ctx.rest, task_id, %{"id" => "r-default-11", "url" => @hook}, [{"a2a-version", "1.1"}])
+    c11 =
+      rest_set(ctx.rest, task_id, %{"id" => "r-default-11", "url" => @hook}, [
+        {"a2a-version", "1.1"}
+      ])
+
     assert %{"protocolVersion" => "1.1"} = rest_json(c11)
 
-    c10 = rest_set_flat(ctx.rest, task_id, %{"id" => "r-default-10", "url" => @hook}, [{"a2a-version", "1.0"}])
+    c10 =
+      rest_set_flat(ctx.rest, task_id, %{"id" => "r-default-10", "url" => @hook}, [
+        {"a2a-version", "1.0"}
+      ])
+
     refute Map.has_key?(rest_json(c10), "protocolVersion")
 
-    assert {:ok, %{protocol_version: "1.1"}} = PushConfigStore.get(ctx.store, task_id, "r-default-11")
-    assert {:ok, %{protocol_version: "1.0"}} = PushConfigStore.get(ctx.store, task_id, "r-default-10")
+    assert {:ok, %{protocol_version: "1.1"}} =
+             PushConfigStore.get(ctx.store, task_id, "r-default-11")
+
+    assert {:ok, %{protocol_version: "1.0"}} =
+             PushConfigStore.get(ctx.store, task_id, "r-default-10")
   end
 
   test "REST: a top-level protocolVersion beside pushNotificationConfig passes through", ctx do
     task_id = rest_task(ctx.rest)
 
     conn =
-      rest_set(ctx.rest, task_id, %{"id" => "r-top", "url" => @hook}, [], %{"protocolVersion" => "1.1"})
+      rest_set(ctx.rest, task_id, %{"id" => "r-top", "url" => @hook}, [], %{
+        "protocolVersion" => "1.1"
+      })
 
     assert conn.status == 200
     assert %{"protocolVersion" => "1.1"} = rest_json(conn)
@@ -374,7 +440,8 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
   test "REST: a malformed protocolVersion is 400 and nothing is stored", ctx do
     task_id = rest_task(ctx.rest)
 
-    conn = rest_set(ctx.rest, task_id, %{"id" => "r-bad", "url" => @hook, "protocolVersion" => "nope"})
+    conn =
+      rest_set(ctx.rest, task_id, %{"id" => "r-bad", "url" => @hook, "protocolVersion" => "nope"})
 
     assert conn.status == 400
     assert :error = PushConfigStore.get(ctx.store, task_id, "r-bad")
@@ -382,12 +449,19 @@ defmodule AshA2A.Y5.PushVersionBindingsTest do
 
   # -- cross-binding -----------------------------------------------------------------
 
-  test "a version stored via gRPC and one stored via REST are read identically from the one store", ctx do
+  test "a version stored via gRPC and one stored via REST are read identically from the one store",
+       ctx do
     g_task = grpc_task(ctx.channel)
     r_task = rest_task(ctx.rest)
 
     assert {:ok, _} = grpc_create(ctx.channel, g_task, "x-g", @v11, protocol_version: "1.1")
-    assert 200 == rest_set(ctx.rest, r_task, %{"id" => "x-r", "url" => @hook, "protocolVersion" => "1.1"}).status
+
+    assert 200 ==
+             rest_set(ctx.rest, r_task, %{
+               "id" => "x-r",
+               "url" => @hook,
+               "protocolVersion" => "1.1"
+             }).status
 
     assert {:ok, %{protocol_version: gv}} = PushConfigStore.get(ctx.store, g_task, "x-g")
     assert {:ok, %{protocol_version: rv}} = PushConfigStore.get(ctx.store, r_task, "x-r")

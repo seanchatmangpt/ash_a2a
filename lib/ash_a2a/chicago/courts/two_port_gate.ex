@@ -118,7 +118,8 @@ defmodule AshA2A.Chicago.Courts.TwoPortGate do
           "A lease whose Ed25519 signature does not verify under the authorizing " <>
             "authority's public key is refused with exactly mask 0x8 " <>
             "(:lease_signature_invalid)",
-        stimulus: "TwoPortGate.evaluate/3 over a command and a lease with flipped signature bytes",
+        stimulus:
+          "TwoPortGate.evaluate/3 over a command and a lease with flipped signature bytes",
         boundary: @boundary,
         forbidden_outcome: ":admitted, or a refusal whose mask lacks bit 0x8",
         attempt_evidence: "the real gate evaluated the forged lease",
@@ -423,14 +424,18 @@ defmodule AshA2A.Chicago.Courts.TwoPortGate do
           |> Lease.sign(priv)
           |> then(fn {:ok, signed} -> signed end)
 
-        admitted = TwoPortGate.evaluate(command, valid, lease_public_key: pub, conjunct_hook: hook)
+        admitted =
+          TwoPortGate.evaluate(command, valid, lease_public_key: pub, conjunct_hook: hook)
+
         admitted_calls = drain.()
 
         {pub2, priv2} = :crypto.generate_key(:eddsa, :ed25519)
 
         broken = tampered_lease(command, :all, priv2)
 
-        refused = TwoPortGate.evaluate(command, broken, lease_public_key: pub2, conjunct_hook: hook)
+        refused =
+          TwoPortGate.evaluate(command, broken, lease_public_key: pub2, conjunct_hook: hook)
+
         refused_calls = drain.()
 
         {admitted, admitted_calls, refused, refused_calls}
@@ -491,8 +496,12 @@ defmodule AshA2A.Chicago.Courts.TwoPortGate do
 
     lease =
       case kind do
-        :scope -> %{lease | scope_digest: "sha256:" <> String.duplicate("d", 64)}
-        :root -> %{lease | root_digest: "sha256:" <> String.duplicate("e", 64)}
+        :scope ->
+          %{lease | scope_digest: "sha256:" <> String.duplicate("d", 64)}
+
+        :root ->
+          %{lease | root_digest: "sha256:" <> String.duplicate("e", 64)}
+
         :clock ->
           %{
             lease
@@ -500,7 +509,10 @@ defmodule AshA2A.Chicago.Courts.TwoPortGate do
               not_before: ~U[2020-01-01 00:00:00Z],
               expires_at: ~U[2020-01-02 00:00:00Z]
           }
-        :signature -> lease
+
+        :signature ->
+          lease
+
         :all ->
           %{
             lease

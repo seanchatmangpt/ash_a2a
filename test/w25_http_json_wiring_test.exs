@@ -71,7 +71,9 @@ defmodule AshA2A.W25HTTPJSONTest do
   @traceparent "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+
     opts = [agent: @agent, base_url: "http://127.0.0.1/fixture"]
     {:ok, server: EphemeralHttp.start!({Pipeline, Pipeline.init(opts)})}
   end
@@ -110,7 +112,9 @@ defmodule AshA2A.W25HTTPJSONTest do
 
   test "follow-up to a terminal task answers 400 UNSUPPORTED_OPERATION", %{server: server} do
     done = send_message(server, wire([Part.Data.new(%{"text" => "hi"})]))
-    assert %{"task" => %{"id" => id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}} = done.body
+
+    assert %{"task" => %{"id" => id, "status" => %{"state" => "TASK_STATE_COMPLETED"}}} =
+             done.body
 
     resp = send_message(server, Map.put(parked(), "taskId", id))
 
@@ -182,7 +186,10 @@ defmodule AshA2A.W25HTTPJSONTest do
 
     assert Req.get!(url: server.base_url <> "/tasks/nope", retry: false).status == 404
 
-    assert_receive {:span, [:ash_a2a, :transport, :request, :error], %{binding: :http_json}}, 2_000
-    assert_receive {:span, [:ash_a2a, :transport, :request, :stop], %{route: "GET /tasks/{id}"}}, 2_000
+    assert_receive {:span, [:ash_a2a, :transport, :request, :error], %{binding: :http_json}},
+                   2_000
+
+    assert_receive {:span, [:ash_a2a, :transport, :request, :stop], %{route: "GET /tasks/{id}"}},
+                   2_000
   end
 end

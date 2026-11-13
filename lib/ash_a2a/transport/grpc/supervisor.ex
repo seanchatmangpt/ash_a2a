@@ -84,7 +84,10 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
   def terminate(_reason, _state), do: :ok
 
   defp put_server_env(opts) do
-    kw = for key <- [:handler, :ctx, :versions, :extensions], Keyword.has_key?(opts, key), do: {key, opts[key]}
+    kw =
+      for key <- [:handler, :ctx, :versions, :extensions],
+          Keyword.has_key?(opts, key),
+          do: {key, opts[key]}
 
     if kw != [] do
       existing = Application.get_env(:ash_a2a, AshA2A.Transport.GRPC.Server, [])

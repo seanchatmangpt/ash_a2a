@@ -150,7 +150,9 @@ defmodule AshA2A.Rfc004AgentScopeTest do
     task
   end
 
-  defp error_text(%{status: %{message: %AshA2A.Protocol.Message{} = m}}), do: AshA2A.Protocol.Message.text(m)
+  defp error_text(%{status: %{message: %AshA2A.Protocol.Message{} = m}}),
+    do: AshA2A.Protocol.Message.text(m)
+
   defp error_text(_), do: nil
 
   test "principal B cannot replan principal A's continuation; refusal equals not-found" do

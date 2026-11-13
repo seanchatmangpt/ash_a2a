@@ -219,7 +219,8 @@ if Code.ensure_loaded?(Req) do
     """
     @spec from_card(AshA2A.Protocol.AgentCard.t(), keyword()) ::
             {:ok, t()}
-            | {:error, :no_supported_interface | {:required_extension_not_supported, [String.t()]}}
+            | {:error,
+               :no_supported_interface | {:required_extension_not_supported, [String.t()]}}
     def from_card(%AshA2A.Protocol.AgentCard{} = card, opts \\ []) do
       {preferred, opts} = Keyword.pop(opts, :preferred_bindings)
 
@@ -245,14 +246,22 @@ if Code.ensure_loaded?(Req) do
 
     defp iface(interface, key) when is_map(interface), do: Map.get(interface, key)
 
-    defp select_interface(%AshA2A.Protocol.AgentCard{supported_interfaces: ifaces} = card, preferred)
+    defp select_interface(
+           %AshA2A.Protocol.AgentCard{supported_interfaces: ifaces} = card,
+           preferred
+         )
          when ifaces in [nil, []] do
       binding_name = card.preferred_transport || "JSONRPC"
 
       case Map.fetch(@card_bindings, binding_name) do
         {:ok, binding} ->
           if binding_allowed?(binding, preferred) and is_binary(card.url) do
-            {:ok, binding, %{url: card.url, protocol_binding: binding_name, protocol_version: card.protocol_version}}
+            {:ok, binding,
+             %{
+               url: card.url,
+               protocol_binding: binding_name,
+               protocol_version: card.protocol_version
+             }}
           else
             {:error, :no_supported_interface}
           end
@@ -276,7 +285,9 @@ if Code.ensure_loaded?(Req) do
             List.first(supported)
 
           list when is_list(list) ->
-            Enum.find_value(list, fn wanted -> Enum.find(supported, fn {b, _} -> b == wanted end) end)
+            Enum.find_value(list, fn wanted ->
+              Enum.find(supported, fn {b, _} -> b == wanted end)
+            end)
         end
 
       case chosen do
@@ -366,7 +377,14 @@ if Code.ensure_loaded?(Req) do
       end
 
       {req_opts, _rest} =
-        Keyword.split(opts, [:headers, :connect_options, :retry, :max_retries, :retry_delay, :plug])
+        Keyword.split(opts, [
+          :headers,
+          :connect_options,
+          :retry,
+          :max_retries,
+          :retry_delay,
+          :plug
+        ])
 
       # G7: reads (GET) retry transient failures by default (Req's
       # :safe_transient: 408/429/5xx + socket errors, GET/HEAD only); POSTs
@@ -450,7 +468,16 @@ if Code.ensure_loaded?(Req) do
 
       if is_binary(body) or (is_map(body) and not is_struct(body)) or is_list(body) do
         {request,
-         %{response | body: %{"__a2a_auth_error" => %{"status" => status, "challenge" => challenge, "body" => body}}}}
+         %{
+           response
+           | body: %{
+               "__a2a_auth_error" => %{
+                 "status" => status,
+                 "challenge" => challenge,
+                 "body" => body
+               }
+             }
+         }}
       else
         {request, response}
       end
@@ -520,7 +547,16 @@ if Code.ensure_loaded?(Req) do
     # on-disk). The cached card is run through the SAME admission gate as a
     # fresh one — a cache hit never skips signature verification.
     defp discover_once(base_url, opts, true, verify_key) do
-      cache_opts = Keyword.take(opts, [:cache_dir, :agent_card_path, :max_age, :headers, :timeout, :plug, :now])
+      cache_opts =
+        Keyword.take(opts, [
+          :cache_dir,
+          :agent_card_path,
+          :max_age,
+          :headers,
+          :timeout,
+          :plug,
+          :now
+        ])
 
       case AshA2A.Protocol.CardCache.fetch(base_url, cache_opts) do
         {:ok, card, _cache_state} -> admit_card({:ok, card}, verify_key)
@@ -736,7 +772,8 @@ if Code.ensure_loaded?(Req) do
     def __response_stream__(%Req.Response{} = response), do: build_sse_stream(response)
 
     @doc false
-    def __streaming_declared__(%__MODULE__{card: card}), do: capability_declared?(card, :streaming)
+    def __streaming_declared__(%__MODULE__{card: card}),
+      do: capability_declared?(card, :streaming)
 
     @doc false
     def __event_stream__?(%Req.Response{} = response), do: event_stream?(response)
@@ -751,7 +788,6 @@ if Code.ensure_loaded?(Req) do
     # Shared with AshA2A.Protocol.Client.GRPC (same request shaping + error vocabulary).
     @doc false
     def __build_send_params__(message, opts), do: build_send_params(message, opts)
-
 
     @doc """
     Sends a message, streaming when the agent supports it.
@@ -997,8 +1033,12 @@ if Code.ensure_loaded?(Req) do
       client = ensure_client(target)
 
       case client.transport do
-        :http_json -> http_json_get_task(client, task_id, opts)
-        :grpc -> GrpcClient.get_task(client, task_id, opts)
+        :http_json ->
+          http_json_get_task(client, task_id, opts)
+
+        :grpc ->
+          GrpcClient.get_task(client, task_id, opts)
+
         :jsonrpc ->
           req_opts = take_req_opts(opts)
 
@@ -1081,8 +1121,12 @@ if Code.ensure_loaded?(Req) do
       client = ensure_client(target)
 
       case client.transport do
-        :http_json -> http_json_cancel_task(client, task_id, opts)
-        :grpc -> GrpcClient.cancel_task(client, task_id, opts)
+        :http_json ->
+          http_json_cancel_task(client, task_id, opts)
+
+        :grpc ->
+          GrpcClient.cancel_task(client, task_id, opts)
+
         :jsonrpc ->
           req_opts = take_req_opts(opts)
           params = %{"id" => task_id}
@@ -1496,6 +1540,7 @@ if Code.ensure_loaded?(Req) do
     defp long_poll_client(client, opts) do
       if opts[:current_generation] != nil and opts[:timeout] == nil do
         base = Map.get(client.req.options, :receive_timeout) || @default_receive_timeout
+
         %{client | req: Req.merge(client.req, receive_timeout: base + @long_poll_margin)}
         |> disable_retry_for_long_poll()
       else
@@ -1503,7 +1548,8 @@ if Code.ensure_loaded?(Req) do
       end
     end
 
-    defp disable_retry_for_long_poll(client), do: %{client | req: Req.merge(client.req, retry: false)}
+    defp disable_retry_for_long_poll(client),
+      do: %{client | req: Req.merge(client.req, retry: false)}
 
     defp http_json_cancel_task(client, task_id, opts) do
       req_opts = take_req_opts(opts)
@@ -1587,7 +1633,10 @@ if Code.ensure_loaded?(Req) do
 
         req = merge_req_opts(client.req, take_req_opts(opts))
 
-        case Req.post(req, url: push_item_url(task_id), json: %{"pushNotificationConfig" => encoded}) do
+        case Req.post(req,
+               url: push_item_url(task_id),
+               json: %{"pushNotificationConfig" => encoded}
+             ) do
           {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
             decode_push_config_resource(body)
 
@@ -1661,12 +1710,16 @@ if Code.ensure_loaded?(Req) do
     defp decode_push_config_resource(%{"pushNotificationConfig" => inner} = wrapper)
          when is_map(inner) do
       case AshA2A.Protocol.JSON.decode(inner, :push_notification_config) do
-        {:ok, config} -> {:ok, %{config | task_id: config.task_id || push_wrapper_task_id(wrapper)}}
-        {:error, _} = error -> error
+        {:ok, config} ->
+          {:ok, %{config | task_id: config.task_id || push_wrapper_task_id(wrapper)}}
+
+        {:error, _} = error ->
+          error
       end
     end
 
-    defp decode_push_config_resource(body), do: AshA2A.Protocol.JSON.decode(body, :push_notification_config)
+    defp decode_push_config_resource(body),
+      do: AshA2A.Protocol.JSON.decode(body, :push_notification_config)
 
     # REST list shape (§5.3): `{"configs": [...], "nextPageToken": ""}`.
     defp decode_push_config_list(%{"configs" => configs}) when is_list(configs),
@@ -1820,6 +1873,7 @@ if Code.ensure_loaded?(Req) do
 
     defp build_send_params(message, opts) do
       req_opts = take_req_opts(opts)
+
       base =
         case message do
           # artifact-only update of an existing task (v1.1)
@@ -2106,7 +2160,10 @@ if Code.ensure_loaded?(Req) do
               []
 
             {:error, reason} ->
-              Logger.warning("AshA2A.Protocol.Client: dropped undecodable stream event: #{inspect(reason)}")
+              Logger.warning(
+                "AshA2A.Protocol.Client: dropped undecodable stream event: #{inspect(reason)}"
+              )
+
               []
           end
 
@@ -2135,7 +2192,10 @@ if Code.ensure_loaded?(Req) do
           decode_bare_frame(frame)
 
         other ->
-          Logger.warning("AshA2A.Protocol.Client: dropped stream frame with no result: #{inspect(other)}")
+          Logger.warning(
+            "AshA2A.Protocol.Client: dropped stream frame with no result: #{inspect(other)}"
+          )
+
           []
       end)
     end
@@ -2149,7 +2209,10 @@ if Code.ensure_loaded?(Req) do
           []
 
         {:error, reason} ->
-          Logger.warning("AshA2A.Protocol.Client: dropped undecodable stream event: #{inspect(reason)}")
+          Logger.warning(
+            "AshA2A.Protocol.Client: dropped undecodable stream event: #{inspect(reason)}"
+          )
+
           []
       end
     end
@@ -2171,7 +2234,8 @@ if Code.ensure_loaded?(Req) do
     `AshA2A.Protocol.Client.Generation.interleave_artifacts/1`.
     """
     @spec interleave_artifacts(AshA2A.Protocol.Task.t()) :: [
-            {:entry, AshA2A.Protocol.TimelineEntry.t()} | {:artifact, AshA2A.Protocol.Artifact.t()}
+            {:entry, AshA2A.Protocol.TimelineEntry.t()}
+            | {:artifact, AshA2A.Protocol.Artifact.t()}
           ]
     defdelegate interleave_artifacts(task), to: AshA2A.Protocol.Client.Generation
   end

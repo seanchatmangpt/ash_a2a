@@ -15,7 +15,9 @@ defmodule AshA2A.Y3EventLogDurabilityTest do
 
   defp start_events(event_log) do
     unless Process.whereis(A2ATransport.registry_name(@transport)) do
-      start_supervised!({Registry, keys: :duplicate, name: A2ATransport.registry_name(@transport)})
+      start_supervised!(
+        {Registry, keys: :duplicate, name: A2ATransport.registry_name(@transport)}
+      )
     end
 
     unless Process.whereis(A2ATransport.push_store_name(@transport)) do
@@ -85,7 +87,10 @@ defmodule AshA2A.Y3EventLogDurabilityTest do
   test "dets backend: trimmed events stay trimmed after restart", %{dir: dir} do
     log = {EventLog.Dets, dir: dir}
     start_events(log)
-    for _ <- 1..105, do: TaskEvents.publish(@transport, "t2", "status-update", status("t2", "working"))
+
+    for _ <- 1..105,
+        do: TaskEvents.publish(@transport, "t2", "status-update", status("t2", "working"))
+
     before = TaskEvents.backlog(@transport, "t2")
     assert length(before) == 100
 

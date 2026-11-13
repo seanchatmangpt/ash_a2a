@@ -185,7 +185,9 @@ defmodule AshA2AAgentCommandBusTest do
     assert create_receipt.status == :completed
     refute create_receipt.replayed?
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}] =
+             task.artifacts
+
     item_id = created.id
 
     # -- update -> Agent -> CommandBus -> Ash.update -> Receipt ----------
@@ -204,7 +206,9 @@ defmodule AshA2AAgentCommandBusTest do
     assert update_receipt.consequence == :change
     assert update_receipt.status == :completed
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: updated}]}] = update_task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: updated}]}] =
+             update_task.artifacts
+
     assert updated.label == "widget-v2"
 
     # -- destroy -> Agent -> CommandBus -> Ash.destroy -> Receipt --------
@@ -255,7 +259,12 @@ defmodule AshA2AAgentCommandBusTest do
 
     assert {:ok, task} = ItemAgent.call(ItemAgent, message, authenticated_call_opts("user-1"))
     assert task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{result: "pong"}}]}] = task.artifacts
+
+    assert [
+             %AshA2A.Protocol.Artifact{
+               parts: [%AshA2A.Protocol.Part.Data{data: %{result: "pong"}}]
+             }
+           ] = task.artifacts
 
     refute_receive {:receipt_committed, _receipt}, 200
   end
@@ -312,8 +321,12 @@ defmodule AshA2AAgentCommandBusTest do
     assert task2.status.state == :completed
     refute_receive {:receipt_committed, _no_new_receipt_on_replay}, 200
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created1}]}] = task1.artifacts
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created2}]}] = task2.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created1}]}] =
+             task1.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created2}]}] =
+             task2.artifacts
+
     assert created1.id == created2.id
 
     assert {:ok, all_items} =

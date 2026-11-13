@@ -17,7 +17,10 @@ defmodule AshA2A.W27.GRPCWiringTest.Handler do
     md = ctx |> Map.get(:opts, %{}) |> Map.get(:metadata, %{})
 
     opts =
-      [task_id: params["id"] || message.task_id, context_id: params["contextId"] || message.context_id]
+      [
+        task_id: params["id"] || message.task_id,
+        context_id: params["contextId"] || message.context_id
+      ]
       |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
       |> Keyword.put(:metadata, md)
 
@@ -58,10 +61,13 @@ defmodule AshA2A.W27.GRPCWiringTest do
   @server AshA2A.Transport.GRPC.Server
   @traceparent "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 
-  def forward(event, measurements, meta, pid), do: send(pid, {:telemetry, event, measurements, meta})
+  def forward(event, measurements, meta, pid),
+    do: send(pid, {:telemetry, event, measurements, meta})
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [EchoAgent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [EchoAgent])
+
     transport = Module.concat(__MODULE__, Transport)
     start_supervised!({AshA2A.A2ATransport, name: transport})
     on_exit(fn -> Application.delete_env(:ash_a2a, @server) end)
@@ -97,13 +103,16 @@ defmodule AshA2A.W27.GRPCWiringTest do
   defp send_req(text, extra \\ [], tenant \\ ""),
     do: %Pb.SendMessageRequest{tenant: tenant, message: message(text, extra)}
 
-  test "tenant isolation: a task is visible only under the tenant that created it", %{transport: t} do
+  test "tenant isolation: a task is visible only under the tenant that created it", %{
+    transport: t
+  } do
     ch = connect(AshA2A.Transport.Plug, t, __MODULE__.TenantSup)
 
     assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} =
              Stub.send_message(ch, send_req("hi", [], "acme"))
 
-    assert {:ok, %Pb.Task{id: ^id}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: id, tenant: "acme"})
+    assert {:ok, %Pb.Task{id: ^id}} =
+             Stub.get_task(ch, %Pb.GetTaskRequest{id: id, tenant: "acme"})
 
     assert {:error, %GRPC.RPCError{status: 5}} =
              Stub.get_task(ch, %Pb.GetTaskRequest{id: id, tenant: "globex"})
@@ -115,13 +124,24 @@ defmodule AshA2A.W27.GRPCWiringTest do
     ch = connect(AshA2A.Transport.Plug, t, __MODULE__.ForgeSup)
 
     forged =
-      send_req("hi", [metadata: %Google.Protobuf.Struct{fields: %{"ash_a2a.tenant" => %Google.Protobuf.Value{kind: {:string_value, "acme"}}}}], "")
+      send_req(
+        "hi",
+        [
+          metadata: %Google.Protobuf.Struct{
+            fields: %{"ash_a2a.tenant" => %Google.Protobuf.Value{kind: {:string_value, "acme"}}}
+          }
+        ],
+        ""
+      )
 
-    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} = Stub.send_message(ch, forged)
+    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} =
+             Stub.send_message(ch, forged)
 
     # The forged message metadata was dropped, so the task is untenanted.
     assert {:ok, %Pb.Task{id: ^id}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: id})
-    assert {:error, %GRPC.RPCError{status: 5}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: id, tenant: "acme"})
+
+    assert {:error, %GRPC.RPCError{status: 5}} =
+             Stub.get_task(ch, %Pb.GetTaskRequest{id: id, tenant: "acme"})
   end
 
   test "context mismatch on a continuation -> INVALID_ARGUMENT(3)", %{transport: t} do
@@ -131,13 +151,19 @@ defmodule AshA2A.W27.GRPCWiringTest do
              Stub.send_message(ch, send_req("hi"))
 
     assert {:error, %GRPC.RPCError{status: 3}} =
-             Stub.send_message(ch, send_req("again", task_id: id, context_id: "ctx-not-the-tasks"))
+             Stub.send_message(
+               ch,
+               send_req("again", task_id: id, context_id: "ctx-not-the-tasks")
+             )
   end
 
-  test "content type not supported -> INVALID_ARGUMENT(3) CONTENT_TYPE_NOT_SUPPORTED", %{transport: t} do
+  test "content type not supported -> INVALID_ARGUMENT(3) CONTENT_TYPE_NOT_SUPPORTED", %{
+    transport: t
+  } do
     ch = connect(Handler, t, __MODULE__.CtypeSup)
 
-    assert {:error, %GRPC.RPCError{status: 3, details: details}} = Stub.send_message(ch, send_req("ctype"))
+    assert {:error, %GRPC.RPCError{status: 3, details: details}} =
+             Stub.send_message(ch, send_req("ctype"))
 
     reasons =
       for %Google.Protobuf.Any{value: v} <- List.wrap(details),
@@ -155,10 +181,13 @@ defmodule AshA2A.W27.GRPCWiringTest do
     assert {:ok, %Pb.SendMessageResponse{}} =
              Stub.send_message(ch, send_req("hi"), metadata: %{"traceparent" => @traceparent})
 
-    assert_receive {:telemetry, [:ash_a2a, :dispatch, :start], _m, %{traceparent: @traceparent}}, 5_000
+    assert_receive {:telemetry, [:ash_a2a, :dispatch, :start], _m, %{traceparent: @traceparent}},
+                   5_000
   end
 
-  test "each RPC runs inside a :grpc request span; error statuses emit the error event", %{transport: t} do
+  test "each RPC runs inside a :grpc request span; error statuses emit the error event", %{
+    transport: t
+  } do
     ch = connect(AshA2A.Transport.Plug, t, __MODULE__.SpanSup)
     id = "w27-span-#{System.unique_integer([:positive])}"
 
@@ -173,7 +202,12 @@ defmodule AshA2A.W27.GRPCWiringTest do
 
     assert {:error, %GRPC.RPCError{status: 5}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: "nope"})
 
-    assert_receive {:telemetry, [:ash_a2a, :transport, :request, :stop], _, %{binding: :grpc, rpc: "GetTask"}}, 5_000
-    assert_receive {:telemetry, [:ash_a2a, :transport, :request, :error], _, %{binding: :grpc, rpc: "GetTask"}}, 5_000
+    assert_receive {:telemetry, [:ash_a2a, :transport, :request, :stop], _,
+                    %{binding: :grpc, rpc: "GetTask"}},
+                   5_000
+
+    assert_receive {:telemetry, [:ash_a2a, :transport, :request, :error], _,
+                    %{binding: :grpc, rpc: "GetTask"}},
+                   5_000
   end
 end

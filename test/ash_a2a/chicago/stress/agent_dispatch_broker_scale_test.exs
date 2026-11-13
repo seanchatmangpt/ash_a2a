@@ -401,7 +401,9 @@ defmodule AshA2A.Chicago.Stress.AgentDispatchBrokerScaleTest do
          {:ok,
           %{
             status: %{state: :completed},
-            artifacts: [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}]
+            artifacts: [
+              %AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: created}]}
+            ]
           }},
          duration_us
        ) do

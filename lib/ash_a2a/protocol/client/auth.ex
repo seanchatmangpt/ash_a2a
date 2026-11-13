@@ -74,7 +74,9 @@ if Code.ensure_loaded?(Req) do
     """
     @spec parse_challenge(String.t() | [String.t()] | nil) :: [challenge()]
     def parse_challenge(nil), do: []
-    def parse_challenge(values) when is_list(values), do: Enum.flat_map(values, &parse_challenge/1)
+
+    def parse_challenge(values) when is_list(values),
+      do: Enum.flat_map(values, &parse_challenge/1)
 
     def parse_challenge(value) when is_binary(value) do
       ~r/([A-Za-z][A-Za-z0-9._+-]*)(?=\s|,|$)|([A-Za-z0-9_-]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,"]+))/
@@ -99,9 +101,11 @@ if Code.ensure_loaded?(Req) do
 
     defp empty, do: %{headers: [], query: [], cookies: []}
 
-    defp place(acc, _scheme, {:bearer, token}), do: header(acc, "authorization", "Bearer " <> token)
+    defp place(acc, _scheme, {:bearer, token}),
+      do: header(acc, "authorization", "Bearer " <> token)
 
-    defp place(acc, _scheme, {:basic, user, pass}), do: header(acc, "authorization", basic(user, pass))
+    defp place(acc, _scheme, {:basic, user, pass}),
+      do: header(acc, "authorization", basic(user, pass))
 
     defp place(acc, %HTTPAuth{}, {user, pass}) when is_binary(user) and is_binary(pass),
       do: header(acc, "authorization", basic(user, pass))
@@ -109,12 +113,14 @@ if Code.ensure_loaded?(Req) do
     defp place(acc, nil, {user, pass}) when is_binary(user) and is_binary(pass),
       do: header(acc, "authorization", basic(user, pass))
 
-    defp place(acc, scheme, {:api_key, key}) when is_binary(key), do: place_api_key(acc, scheme, key, [])
+    defp place(acc, scheme, {:api_key, key}) when is_binary(key),
+      do: place_api_key(acc, scheme, key, [])
 
     defp place(acc, scheme, {:api_key, key, opts}) when is_binary(key) and is_list(opts),
       do: place_api_key(acc, scheme, key, opts)
 
-    defp place(acc, %APIKey{} = scheme, key) when is_binary(key), do: place_api_key(acc, scheme, key, [])
+    defp place(acc, %APIKey{} = scheme, key) when is_binary(key),
+      do: place_api_key(acc, scheme, key, [])
 
     defp place(acc, %HTTPAuth{scheme: http_scheme}, credential) when is_binary(credential) do
       case http_scheme |> to_string() |> String.downcase() do
@@ -181,7 +187,11 @@ if Code.ensure_loaded?(Req) do
           request
 
         pairs ->
-          Req.Request.put_header(request, "cookie", Enum.map_join(pairs, "; ", fn {k, v} -> k <> "=" <> v end))
+          Req.Request.put_header(
+            request,
+            "cookie",
+            Enum.map_join(pairs, "; ", fn {k, v} -> k <> "=" <> v end)
+          )
       end
     end
 

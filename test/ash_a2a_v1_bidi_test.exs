@@ -2,7 +2,9 @@ defmodule AshA2A.V1BidiTest.BidiEchoAgent do
   @moduledoc false
   # Real `AshA2A.Protocol.Agent` whose skill opens a real bidi channel for its
   # own task and echoes every mid-stream client input as an output part.
-  use AshA2A.Protocol.Agent, name: "bidi-echo", description: "echoes mid-stream inputs as artifacts"
+  use AshA2A.Protocol.Agent,
+    name: "bidi-echo",
+    description: "echoes mid-stream inputs as artifacts"
 
   @impl AshA2A.Protocol.Agent
   def handle_message(_message, ctx) do
@@ -49,8 +51,12 @@ defmodule AshA2A.V1BidiTest do
   alias AshA2A.Bidi.Channel
   alias AshA2A.Test.EphemeralHttp
 
-  @terminal ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
-             "TASK_STATE_REJECTED"]
+  @terminal [
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED"
+  ]
 
   setup do
     # Self-healing against a lingering default-named instance from a previous
@@ -240,9 +246,10 @@ defmodule AshA2A.V1BidiTest do
   # -- courts -------------------------------------------------------------------------
 
   @tag :bidi_wire
-  test "(a) three mid-stream inputs, three interleaved artifacts in order, explicit close finalizes COMPLETED, late input refused", %{
-    url: url
-  } do
+  test "(a) three mid-stream inputs, three interleaved artifacts in order, explicit close finalizes COMPLETED, late input refused",
+       %{
+         url: url
+       } do
     a = open_stream(url)
     {task_id, acc} = await_task_id(a)
 
@@ -298,9 +305,10 @@ defmodule AshA2A.V1BidiTest do
            } = resp.body
   end
 
-  test "(c) channel buffers pre-pull inputs in order; close yields :eof; late delivery is refused", %{
-    url: _url
-  } do
+  test "(c) channel buffers pre-pull inputs in order; close yields :eof; late delivery is refused",
+       %{
+         url: _url
+       } do
     task_id = "chan-#{System.unique_integer([:positive])}"
     channel = AshA2A.Bidi.open(task_id)
 
@@ -317,6 +325,7 @@ defmodule AshA2A.V1BidiTest do
     # Explicit close: the next pull gets :eof, later delivery is refused.
     assert AshA2A.Bidi.close(task_id) == :ok
     assert Channel.pull(channel, 1_000) == :eof
+
     assert AshA2A.Bidi.deliver(task_id, AshA2A.Protocol.Message.new_user("late")) ==
              {:error, :closed}
   end

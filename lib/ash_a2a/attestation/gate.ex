@@ -50,7 +50,17 @@ defmodule AshA2A.Attestation.Gate do
     "com.android.fly"
   ]
 
-  @type refused :: {:refused, :bad_signature | :emulator_detected | :stale | :spoofed_payload | :gps_impossible_jump | :malformed_token | :clock_skew | :nonce_mismatch | :non_canonical_signature}
+  @type refused ::
+          {:refused,
+           :bad_signature
+           | :emulator_detected
+           | :stale
+           | :spoofed_payload
+           | :gps_impossible_jump
+           | :malformed_token
+           | :clock_skew
+           | :nonce_mismatch
+           | :non_canonical_signature}
 
   @doc """
   Verifies `{device_token, nonce}`: signature over nonce + device claims,
@@ -89,13 +99,15 @@ defmodule AshA2A.Attestation.Gate do
   #{@max_future_skew_sec}s of forward skew is accepted for real device clock
   drift.
   """
-  @spec verify_freshness(map(), Keyword.t()) :: :ok | {:refused, :stale | :clock_skew | :malformed_token}
+  @spec verify_freshness(map(), Keyword.t()) ::
+          :ok | {:refused, :stale | :clock_skew | :malformed_token}
   def verify_freshness(claims, opts \\ []) when is_map(claims) do
     max_age = Keyword.get(opts, :max_staleness_sec, @default_max_staleness_sec)
     now = Keyword.get(opts, :now, System.system_time(:second))
 
     case claims do
-      %{"issued_at" => issued_at} when is_integer(issued_at) and issued_at > now + @max_future_skew_sec ->
+      %{"issued_at" => issued_at}
+      when is_integer(issued_at) and issued_at > now + @max_future_skew_sec ->
         {:refused, :clock_skew}
 
       %{"issued_at" => issued_at} when is_integer(issued_at) ->
@@ -116,7 +128,8 @@ defmodule AshA2A.Attestation.Gate do
 
   Returns `:ok` or `{:refused, :spoofed_payload}`.
   """
-  @spec verify_sensor_metadata(map(), Keyword.t()) :: :ok | {:refused, :spoofed_payload | :stale | :clock_skew}
+  @spec verify_sensor_metadata(map(), Keyword.t()) ::
+          :ok | {:refused, :spoofed_payload | :stale | :clock_skew}
   def verify_sensor_metadata(claims, opts \\ []) when is_map(claims) do
     max_age = Keyword.get(opts, :max_staleness_sec, @default_max_staleness_sec)
     now = Keyword.get(opts, :now, System.system_time(:second))
@@ -151,9 +164,7 @@ defmodule AshA2A.Attestation.Gate do
   # the range bounds. Anything non-finite must never reach :math (a NaN
   # latitude propagates through the haversine and `:math.sqrt/1` on a
   # negative intermediate raises badarg — a crash, not a typed refusal).
-  defp valid_gps?(
-         %{"accuracy" => accuracy, "lat" => lat, "lon" => lon}
-       )
+  defp valid_gps?(%{"accuracy" => accuracy, "lat" => lat, "lon" => lon})
        when is_number(accuracy) and accuracy > 0 and accuracy <= @max_accuracy_m and
               is_number(lat) and lat >= -90 and lat <= 90 and lat == lat and
               is_number(lon) and lon >= -180 and lon <= 180 and lon == lon,
@@ -167,7 +178,8 @@ defmodule AshA2A.Attestation.Gate do
   #{@max_jump_km} km between consecutive observations whose timestamps are
   within 60 seconds yields `{:refused, :gps_impossible_jump}`; otherwise `:ok`.
   """
-  @spec verify_gps_trajectory(list(map())) :: :ok | {:refused, :gps_impossible_jump | :spoofed_payload}
+  @spec verify_gps_trajectory(list(map())) ::
+          :ok | {:refused, :gps_impossible_jump | :spoofed_payload}
   def verify_gps_trajectory(observations) when is_list(observations) do
     verify_gps_trajectory(observations, [])
   end
@@ -187,7 +199,12 @@ defmodule AshA2A.Attestation.Gate do
         now = Keyword.get(opts, :now, System.system_time(:second))
         grants = Keyword.get(opts, :approved_grants, [])
 
-        case GateGrantAllowlist.override?(observations, grants, now, Keyword.take(opts, [:org_id, :identifier])) do
+        case GateGrantAllowlist.override?(
+               observations,
+               grants,
+               now,
+               Keyword.take(opts, [:org_id, :identifier])
+             ) do
           :ok -> :ok
           _ -> refused
         end
@@ -264,7 +281,6 @@ defmodule AshA2A.Attestation.Gate do
   end
 
   defp detect_emulator(claims, fingerprint, packages) do
-
     virtual? = claims["is_virtual"] == true
     fingerprint_hit? = fingerprint =~ ~r/(emulator|generic|sdk_gphone|vbox|qemu)/i
     package_hit? = Enum.any?(packages, fn pkg -> emulator_package?(pkg) end)
@@ -277,7 +293,9 @@ defmodule AshA2A.Attestation.Gate do
   end
 
   defp emulator_package?(pkg) when is_binary(pkg) do
-    Enum.any?(@emulator_packages, fn emu -> String.contains?(String.downcase(pkg), prefix_of(emu)) end)
+    Enum.any?(@emulator_packages, fn emu ->
+      String.contains?(String.downcase(pkg), prefix_of(emu))
+    end)
   end
 
   defp emulator_package?(_), do: false
@@ -304,10 +322,10 @@ defmodule AshA2A.Attestation.Gate do
 
   defp compute_haversine_km(%{"lat" => lat1, "lon" => lon1}, %{"lat" => lat2, "lon" => lon2}) do
     r = 6371.0
-    dlat = :math.pi * (lat2 - lat1) / 180
-    dlon = :math.pi * (lon2 - lon1) / 180
-    lat1r = :math.pi * lat1 / 180
-    lat2r = :math.pi * lat2 / 180
+    dlat = :math.pi() * (lat2 - lat1) / 180
+    dlon = :math.pi() * (lon2 - lon1) / 180
+    lat1r = :math.pi() * lat1 / 180
+    lat2r = :math.pi() * lat2 / 180
 
     a =
       :math.sin(dlat / 2) * :math.sin(dlat / 2) +

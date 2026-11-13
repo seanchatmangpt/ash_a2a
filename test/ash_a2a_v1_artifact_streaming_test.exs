@@ -36,7 +36,8 @@ defmodule AshA2A.V1ArtifactStreamingTest.PlainAgent do
 
   @impl AshA2A.Protocol.Agent
   def handle_message(_message, _context) do
-    {:reply, [AshA2A.Protocol.Part.Text.new("answer-alpha"), AshA2A.Protocol.Part.Text.new("answer-beta")]}
+    {:reply,
+     [AshA2A.Protocol.Part.Text.new("answer-alpha"), AshA2A.Protocol.Part.Text.new("answer-beta")]}
   end
 end
 
@@ -160,7 +161,10 @@ defmodule AshA2A.V1ArtifactStreamingTest do
   end
 
   defp completed_task(plug_opts, task_id, _tries) do
-    flunk("task #{task_id} never reached TASK_STATE_COMPLETED: " <> inspect(rpc(plug_opts, "tasks/get", %{"id" => task_id})))
+    flunk(
+      "task #{task_id} never reached TASK_STATE_COMPLETED: " <>
+        inspect(rpc(plug_opts, "tasks/get", %{"id" => task_id}))
+    )
   end
 
   # -- court (a): streaming wire shape ----------------------------------------
@@ -258,7 +262,10 @@ defmodule AshA2A.V1ArtifactStreamingTest do
     # carried (the `{:stream_done, ...}` fold reuses the pre-minted
     # :stream_artifact_id — v1.0 reassembly keys on artifactId end to end).
     task = completed_task(opts, task_id)
-    assert [%{"artifactId" => final_id, "parts" => [%{"text" => "chunk 1"}, _, _]}] = task["artifacts"]
+
+    assert [%{"artifactId" => final_id, "parts" => [%{"text" => "chunk 1"}, _, _]}] =
+             task["artifacts"]
+
     assert final_id == hd(chunk_ids)
   end
 
@@ -270,23 +277,38 @@ defmodule AshA2A.V1ArtifactStreamingTest do
 
     # Real shape: task snapshot, one artifactUpdate per task artifact (here 1),
     # then the final statusUpdate.
-    assert [%{"task" => %{"id" => task_id}}, %{"artifactUpdate" => update}, %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}] =
+    assert [
+             %{"task" => %{"id" => task_id}},
+             %{"artifactUpdate" => update},
+             %{"statusUpdate" => %{"status" => %{"state" => "TASK_STATE_COMPLETED"}}}
+           ] =
              results
 
     refute Map.has_key?(update, "append")
     refute Map.has_key?(update, "lastChunk")
-    assert %{"taskId" => ^task_id, "artifact" => %{"parts" => [%{"text" => "answer-alpha"}, %{"text" => "answer-beta"}]}} =
+
+    assert %{
+             "taskId" => ^task_id,
+             "artifact" => %{"parts" => [%{"text" => "answer-alpha"}, %{"text" => "answer-beta"}]}
+           } =
              update
 
     task = completed_task(opts, task_id)
-    assert [%{"artifactId" => _, "parts" => [%{"text" => "answer-alpha"}, %{"text" => "answer-beta"}]}] =
+
+    assert [
+             %{
+               "artifactId" => _,
+               "parts" => [%{"text" => "answer-alpha"}, %{"text" => "answer-beta"}]
+             }
+           ] =
              task["artifacts"]
   end
 
   # -- court (e): codec round-trip of append/lastChunk -------------------------
 
   test "court (e): artifactUpdate frames encode/decode with append and lastChunk intact for every boolean combination" do
-    artifact = AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("piece")], name: "replay")
+    artifact =
+      AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("piece")], name: "replay")
 
     for append <- [true, false], last_chunk <- [true, false] do
       event =
@@ -299,7 +321,9 @@ defmodule AshA2A.V1ArtifactStreamingTest do
       {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
 
       # false is a real value (put_unless_nil), so BOTH booleans always ride the wire.
-      assert %{"artifactUpdate" => %{"append" => ^append, "lastChunk" => ^last_chunk} = inner} = encoded
+      assert %{"artifactUpdate" => %{"append" => ^append, "lastChunk" => ^last_chunk} = inner} =
+               encoded
+
       assert inner["taskId"] == "tsk-roundtrip"
       assert inner["contextId"] == "ctx-roundtrip"
       assert inner["artifact"]["artifactId"] == artifact.artifact_id
@@ -316,7 +340,10 @@ defmodule AshA2A.V1ArtifactStreamingTest do
 
   test "court (e): artifactUpdate frames without append/lastChunk omit both keys and decode back to nil flags" do
     event =
-      ArtifactUpdate.new("tsk-bare", AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("x")]))
+      ArtifactUpdate.new(
+        "tsk-bare",
+        AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("x")])
+      )
 
     {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
     assert %{"artifactUpdate" => inner} = encoded
@@ -341,8 +368,10 @@ defmodule AshA2A.V1ArtifactStreamingTest do
 
     assert {:ok, decoded} = AshA2A.Protocol.JSON.decode(encoded, :task)
 
-    assert [%{artifact_id: id1, parts: [%AshA2A.Protocol.Part.Text{text: "first"}]},
-            %{artifact_id: id2, parts: [%AshA2A.Protocol.Part.Text{text: "second"}]}] =
+    assert [
+             %{artifact_id: id1, parts: [%AshA2A.Protocol.Part.Text{text: "first"}]},
+             %{artifact_id: id2, parts: [%AshA2A.Protocol.Part.Text{text: "second"}]}
+           ] =
              decoded.artifacts
 
     assert id1 != id2

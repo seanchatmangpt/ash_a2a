@@ -197,7 +197,10 @@ defmodule AshA2A.Chicago.Fixtures.ReceiptBindingAttestation do
         input: %{key: key, value: "X"}
       )
 
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})])
+    message =
+      AshA2A.Protocol.Message.new_user([
+        AshA2A.Protocol.Part.Data.new(%{"key" => key, "value" => "X"})
+      ])
 
     reply =
       CommandBus.run(command, message, Ledger,

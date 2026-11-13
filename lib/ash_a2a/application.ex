@@ -191,6 +191,9 @@ defmodule AshA2A.Application do
           {Task.Supervisor,
            name: AshA2A.Telemetry.TaskSupervisor,
            max_children: AshA2A.Telemetry.OcelForwarder.max_in_flight()},
+          # Supervised, unbounded-by-default home for push-notification
+          # webhook deliveries (`AshA2A.Protocol.PushNotification`).
+          {Task.Supervisor, name: AshA2A.Protocol.PushTaskSupervisor},
           {AshA2A.Semantic.PackageStore, []},
           # `AshA2A.KillSwitch`: a real, standalone class-level halt
           # primitive (see its moduledoc). Started here as a node-wide

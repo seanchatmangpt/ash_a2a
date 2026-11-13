@@ -13,6 +13,7 @@ defmodule AshA2A.AuthZEN.SearchBindingTest do
     assert state.page_token == "page-2"
 
     mutated = put_in(initial, ["resource", "type"], "payment")
+
     assert {:error, :pagination_request_mutated} =
              SearchBinding.next(state, mutated, "page-3")
   end

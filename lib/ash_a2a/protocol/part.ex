@@ -9,7 +9,10 @@ defmodule AshA2A.Protocol.Part do
   - `AshA2A.Protocol.Part.Data` — structured data (map)
   """
 
-  @type t :: AshA2A.Protocol.Part.Text.t() | AshA2A.Protocol.Part.File.t() | AshA2A.Protocol.Part.Data.t()
+  @type t ::
+          AshA2A.Protocol.Part.Text.t()
+          | AshA2A.Protocol.Part.File.t()
+          | AshA2A.Protocol.Part.Data.t()
 end
 
 defmodule AshA2A.Protocol.Part.Text do

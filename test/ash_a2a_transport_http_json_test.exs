@@ -158,6 +158,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
     resp = post_json!(server, "/message:send", %{"message" => continuation})
 
     assert resp.status == 400
+
     assert %{
              "error" => %{
                "code" => 400,
@@ -210,6 +211,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
     resp = post_json!(server, "/tasks/#{task_id}:cancel", %{})
 
     assert resp.status == 409
+
     assert %{
              "error" => %{
                "code" => 409,
@@ -227,13 +229,21 @@ defmodule AshA2A.Transport.HTTPJSONTest do
 
   test "malformed JSON body is 400 parse error", %{server: server} do
     resp =
-      Req.post!(url: server.base_url <> "/message:send",
+      Req.post!(
+        url: server.base_url <> "/message:send",
         headers: [{"content-type", "application/json"}],
         body: "definitely not json"
       )
 
     assert resp.status == 400
-    assert %{"error" => %{"code" => 400, "status" => "INVALID_ARGUMENT", "message" => "Invalid JSON payload"}} =
+
+    assert %{
+             "error" => %{
+               "code" => 400,
+               "status" => "INVALID_ARGUMENT",
+               "message" => "Invalid JSON payload"
+             }
+           } =
              resp.body
   end
 
@@ -241,6 +251,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
     resp = post_json!(server, "/message:send", %{"configuration" => %{}})
 
     assert resp.status == 400
+
     assert %{
              "error" => %{
                "code" => 400,
@@ -261,7 +272,10 @@ defmodule AshA2A.Transport.HTTPJSONTest do
          )}
       )
 
-    resp = post_json!(small, "/message:send", %{"message" => message_map("this is much longer than sixteen bytes")})
+    resp =
+      post_json!(small, "/message:send", %{
+        "message" => message_map("this is much longer than sixteen bytes")
+      })
 
     assert resp.status == 413
     assert %{"error" => %{"code" => 413, "details" => "Body too large"}} = resp.body
@@ -276,6 +290,7 @@ defmodule AshA2A.Transport.HTTPJSONTest do
     resp = post_json!(server, "/tasks/#{task_id}:subscribe", %{})
 
     assert resp.status == 400
+
     assert %{
              "error" => %{
                "code" => 400,
@@ -288,7 +303,8 @@ defmodule AshA2A.Transport.HTTPJSONTest do
 
   test "known paths with the wrong method answer 405 with an allow header", %{server: server} do
     resp =
-      Req.post!(url: server.base_url <> "/.well-known/agent-card.json",
+      Req.post!(
+        url: server.base_url <> "/.well-known/agent-card.json",
         json: %{},
         decode_body: false
       )

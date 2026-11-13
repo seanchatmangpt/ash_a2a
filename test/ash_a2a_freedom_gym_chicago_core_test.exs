@@ -63,7 +63,10 @@ defmodule AshA2AFreedomGymChicagoCoreTest do
              )
 
     assert task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] =
+             task.artifacts
+
     result
   end
 
@@ -73,7 +76,10 @@ defmodule AshA2AFreedomGymChicagoCoreTest do
 
     assert {:ok, task} = agent.call(agent, message)
     assert task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] = task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: result}]}] =
+             task.artifacts
+
     result
   end
 

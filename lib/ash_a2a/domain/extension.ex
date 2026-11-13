@@ -7,7 +7,14 @@ defmodule AshA2A.Domain.Extension do
   (`AshA2A.Domain.Verifiers.VerifyExtensions`).
   """
 
-  defstruct [:uri, :description, :__identifier__, :__spark_metadata__, required: false, params: %{}]
+  defstruct [
+    :uri,
+    :description,
+    :__identifier__,
+    :__spark_metadata__,
+    required: false,
+    params: %{}
+  ]
 
   @type t :: %__MODULE__{
           uri: String.t(),

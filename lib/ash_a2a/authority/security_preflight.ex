@@ -162,7 +162,8 @@ defmodule AshA2A.Authority.SecurityPreflight do
       |> Enum.map(fn name ->
         %{
           code: :card_security_unknown_scheme,
-          detail: "security requirement references #{inspect(name)} which is not in security_schemes"
+          detail:
+            "security requirement references #{inspect(name)} which is not in security_schemes"
         }
       end)
 

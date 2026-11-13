@@ -263,7 +263,13 @@ defmodule AshA2A.KillSwitch do
 
   defp term_key(name), do: {__MODULE__, :trips, name}
 
-  defp publish(%{name: name, trips: trips}), do: :persistent_term.put(term_key(name), trips)
+  # Skip the put when unchanged: an identical put is free, but a changed one
+  # triggers a global scan, so only real trip/reset transitions pay it.
+  defp publish(%{name: name, trips: trips}) do
+    key = term_key(name)
+    if :persistent_term.get(key, :unavailable) != trips, do: :persistent_term.put(key, trips)
+    :ok
+  end
 
   defp open_dets(_name, nil), do: nil
 

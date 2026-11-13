@@ -21,7 +21,10 @@ defmodule AshA2A.UntestedLane18.MiscTest do
       assert {:error, :canonical_key_collision} = Encodable.validate(%{:a => 1, "a" => 2})
       assert {:error, :canonical_invalid_utf8} = Encodable.validate(<<255, 254>>)
       assert {:error, :canonical_integer_out_of_range} = Encodable.validate(9_007_199_254_740_992)
-      assert {:error, :canonical_integer_out_of_range} = Encodable.validate(-9_007_199_254_740_992)
+
+      assert {:error, :canonical_integer_out_of_range} =
+               Encodable.validate(-9_007_199_254_740_992)
+
       assert :ok = Encodable.validate(9_007_199_254_740_991)
     end
 
@@ -33,7 +36,9 @@ defmodule AshA2A.UntestedLane18.MiscTest do
 
     test "max_bytes is 1 MiB and enforced by encode" do
       assert Encodable.max_bytes() == 1_048_576
-      assert {:error, :canonical_size_exceeded} = Canonical.encode(String.duplicate("a", 1_048_600))
+
+      assert {:error, :canonical_size_exceeded} =
+               Canonical.encode(String.duplicate("a", 1_048_600))
     end
   end
 
@@ -60,7 +65,12 @@ defmodule AshA2A.UntestedLane18.MiscTest do
   describe "PolicyEvidenceFactory" do
     test "builds authority-free evidence bound to the effect digest" do
       effect = PreparedEffect.new("p1", "cap", %{"s" => 1}, %{"x" => 2})
-      md = %Metadata{policy_decision_point: "https://pdp.example", access_evaluation_endpoint: "https://pdp.example/eval"}
+
+      md = %Metadata{
+        policy_decision_point: "https://pdp.example",
+        access_evaluation_endpoint: "https://pdp.example/eval"
+      }
+
       dec = %Types.Decision{decision: true, context: %{"why" => "ok"}}
       ev = PolicyEvidenceFactory.from_decision(dec, effect, md, 1234)
 
@@ -79,7 +89,14 @@ defmodule AshA2A.UntestedLane18.MiscTest do
     test "deny decision and nil context" do
       effect = PreparedEffect.new("p1", "cap", %{}, %{})
       md = %Metadata{policy_decision_point: "pdp", access_evaluation_endpoint: "e"}
-      ev = PolicyEvidenceFactory.from_decision(%Types.Decision{decision: false, context: nil}, effect, md)
+
+      ev =
+        PolicyEvidenceFactory.from_decision(
+          %Types.Decision{decision: false, context: nil},
+          effect,
+          md
+        )
+
       refute PolicyEvidence.allowed?(ev)
       assert ev.context == %{}
       assert is_integer(ev.observed_at)
@@ -94,14 +111,26 @@ defmodule AshA2A.UntestedLane18.MiscTest do
     end
 
     test "ReceiptCursor projects only cursor fields" do
-      c = ReceiptCursor.from(%{receipt_id: "r1", terminal_status: :executed, projection_digest: "d", extra: 1})
-      assert %ReceiptCursor{receipt_id: "r1", terminal_status: :executed, projection_digest: "d"} = c
+      c =
+        ReceiptCursor.from(%{
+          receipt_id: "r1",
+          terminal_status: :executed,
+          projection_digest: "d",
+          extra: 1
+        })
+
+      assert %ReceiptCursor{receipt_id: "r1", terminal_status: :executed, projection_digest: "d"} =
+               c
+
       assert %ReceiptCursor{receipt_id: nil} = ReceiptCursor.from(%{})
     end
 
     test "ReceiptFeedback routes terminal statuses to decisions" do
       mk = fn s -> %{semantic_subject: "sub", receipt_id: "r", terminal_status: s} end
-      assert %{kind: :stop, subject: "sub", reason: :executed} = ReceiptFeedback.ingest(mk.(:executed))
+
+      assert %{kind: :stop, subject: "sub", reason: :executed} =
+               ReceiptFeedback.ingest(mk.(:executed))
+
       assert %{kind: :stop, reason: :refused} = ReceiptFeedback.ingest(mk.(:refused))
       assert %{kind: :replan, reason: :failed} = ReceiptFeedback.ingest(mk.(:failed))
 
@@ -112,28 +141,53 @@ defmodule AshA2A.UntestedLane18.MiscTest do
 
   describe "Reactor steps" do
     test "BuildCommand builds a real Command" do
-      args = %{capability_id: "cap", agent_id: "agent-1", principal_id: "principal-1", input: %{"a" => 1}, authority: nil}
-      assert {:ok, %AshA2A.Command{capability_id: "cap", input: %{"a" => 1}}} = BuildCommand.run(args, %{}, [])
+      args = %{
+        capability_id: "cap",
+        agent_id: "agent-1",
+        principal_id: "principal-1",
+        input: %{"a" => 1},
+        authority: nil
+      }
+
+      assert {:ok, %AshA2A.Command{capability_id: "cap", input: %{"a" => 1}}} =
+               BuildCommand.run(args, %{}, [])
     end
 
     test "BuildCommand honours explicit command_id and nil input" do
       id = Ash.UUIDv7.generate()
-      args = %{capability_id: "cap", agent_id: "agent-1", principal_id: "principal-1", command_id: id}
+
+      args = %{
+        capability_id: "cap",
+        agent_id: "agent-1",
+        principal_id: "principal-1",
+        command_id: id
+      }
+
       assert {:ok, cmd} = BuildCommand.run(args, %{}, [])
       assert cmd.command_id.value == id
       assert cmd.input == %{}
     end
 
     test "BuildCommand surfaces missing keys as typed error" do
-      assert {:error, %{code: :invalid_command_input, detail: d}} = BuildCommand.run(%{capability_id: "c"}, %{}, [])
+      assert {:error, %{code: :invalid_command_input, detail: d}} =
+               BuildCommand.run(%{capability_id: "c"}, %{}, [])
+
       assert is_binary(d)
     end
 
     test "ConfirmReceipt passes completed and refuses others" do
       base = %AshA2A.Receipt{
-        receipt_id: "r", command_id: "c", execution_id: "e", agent_id: "a", principal_id: "p",
-        capability_id: "cap", fingerprint: "f", consequence: :observe, status: :completed,
-        standing: :derived, recorded_at: DateTime.utc_now()
+        receipt_id: "r",
+        command_id: "c",
+        execution_id: "e",
+        agent_id: "a",
+        principal_id: "p",
+        capability_id: "cap",
+        fingerprint: "f",
+        consequence: :observe,
+        status: :completed,
+        standing: :derived,
+        recorded_at: DateTime.utc_now()
       }
 
       assert {:ok, ^base} = ConfirmReceipt.run(%{receipt: base}, %{}, [])

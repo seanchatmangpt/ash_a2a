@@ -145,5 +145,5 @@ two-transport differential evidence only.
 - `docs/reference/a2a-endpoint-contract.md`
 - [A2A v1.1 conformance statement](a2a-v1-1-conformance.md)
 - [v1.1 live and generations how-to](../how-to/v1-1-live-and-generations.md)
-- `docs/rfc/RFC-SA2A-001-v26.9.16.md`
+- `docs/archive/rfc/RFC-SA2A-001-v26.9.16.md`
 - `lib/ash_a2a/a2a_transport/plug.ex`

@@ -23,7 +23,8 @@ defmodule AshA2A.W8.SemanticsAgent do
         {:input_required, [Part.Text.new("need more")]}
 
       "mixed" ->
-        {:reply, [Part.Text.new("t"), %Part.Data{data: %{"a" => 1}, media_type: "application/json"}]}
+        {:reply,
+         [Part.Text.new("t"), %Part.Data{data: %{"a" => 1}, media_type: "application/json"}]}
 
       other ->
         {:reply, [Part.Text.new("echo " <> other)]}
@@ -108,7 +109,10 @@ defmodule AshA2A.W8.SemanticsTest do
                AshA2A.Protocol.call(agent, follow, task_id: task.id, context_id: "ctx-2")
 
       same = %{Message.new_user("more") | context_id: "ctx-1"}
-      assert {:ok, done} = AshA2A.Protocol.call(agent, same, task_id: task.id, context_id: "ctx-1")
+
+      assert {:ok, done} =
+               AshA2A.Protocol.call(agent, same, task_id: task.id, context_id: "ctx-1")
+
       assert done.status.state == :completed
     end
 
@@ -147,7 +151,10 @@ defmodule AshA2A.W8.SemanticsTest do
       }
 
       png = %Message{role: :user, parts: [%Part.Text{text: "", media_type: "image/png"}]}
-      assert {:error, {:content_type_not_supported, _}} = InputModeValidator.validate_input(png, card)
+
+      assert {:error, {:content_type_not_supported, _}} =
+               InputModeValidator.validate_input(png, card)
+
       assert :ok = InputModeValidator.validate_input(png, card, skill_id: "img")
       assert %{code: -32_005} = InputModeValidator.to_error({:content_type_not_supported, %{}})
     end
@@ -156,7 +163,10 @@ defmodule AshA2A.W8.SemanticsTest do
       task = %{
         Task.new(id: "t1")
         | artifacts: [
-            Artifact.new([Part.Text.new("a"), %Part.Data{data: %{}, media_type: "application/json"}])
+            Artifact.new([
+              Part.Text.new("a"),
+              %Part.Data{data: %{}, media_type: "application/json"}
+            ])
           ]
       }
 
@@ -179,9 +189,15 @@ defmodule AshA2A.W8.SemanticsTest do
 
     test "statusTimestampAfter is inclusive" do
       tasks = [task_at("a", 100), task_at("b", 200)]
-      {:ok, %{tasks: kept}} = Filter.apply(tasks, status_timestamp_after: DateTime.from_unix!(200))
+
+      {:ok, %{tasks: kept}} =
+        Filter.apply(tasks, status_timestamp_after: DateTime.from_unix!(200))
+
       assert Enum.map(kept, & &1.id) == ["b"]
-      {:ok, %{tasks: both}} = Filter.apply(tasks, status_timestamp_after: DateTime.from_unix!(100))
+
+      {:ok, %{tasks: both}} =
+        Filter.apply(tasks, status_timestamp_after: DateTime.from_unix!(100))
+
       assert length(both) == 2
     end
 

@@ -78,7 +78,8 @@ defmodule AshA2A.Protocol.V1RejectedStateTest do
     :ok
   end
 
-  defp call(text, opts \\ []), do: RejectionAgent.call(RejectionAgent, Message.new_user(text), opts)
+  defp call(text, opts \\ []),
+    do: RejectionAgent.call(RejectionAgent, Message.new_user(text), opts)
 
   test "authority-gate refusal lands the task terminal :rejected with a redacted reason" do
     assert {:ok, task} = call("forbidden")
@@ -119,9 +120,7 @@ defmodule AshA2A.Protocol.V1RejectedStateTest do
     assert {:ok, task} = call("forbidden")
 
     assert {:error, :not_continuable} =
-             RejectionAgent.call(RejectionAgent, Message.new_user("try again"),
-               task_id: task.id
-             )
+             RejectionAgent.call(RejectionAgent, Message.new_user("try again"), task_id: task.id)
   end
 
   test "capability-resolution refusal also lands terminal :rejected" do
@@ -129,6 +128,7 @@ defmodule AshA2A.Protocol.V1RejectedStateTest do
 
     assert task.status.state == :rejected
     assert Task.terminal?(task)
+
     assert {:error, :not_continuable} =
              RejectionAgent.call(RejectionAgent, Message.new_user("try again"),
                task_id: wire_id(task)

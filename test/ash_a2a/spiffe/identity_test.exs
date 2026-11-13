@@ -24,6 +24,7 @@ defmodule AshA2A.SPIFFE.IdentityTest do
                bundle_digest: "sha256:bundle",
                observed_at: 10
              )
+
     assert attested.svid_type == :x509
   end
 end

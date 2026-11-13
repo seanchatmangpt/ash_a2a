@@ -379,7 +379,12 @@ defmodule AshA2A.Agent do
   # `%{code: :unauthenticated}` before any `:observe` skill or semantic
   # compilation runs, unless the skill is listed in `:public_skills`.
   @doc false
-  @spec __dispatch__(module(), AshA2A.Protocol.Message.t(), AshA2A.Protocol.Agent.context() | map(), keyword()) ::
+  @spec __dispatch__(
+          module(),
+          AshA2A.Protocol.Message.t(),
+          AshA2A.Protocol.Agent.context() | map(),
+          keyword()
+        ) ::
           AshA2A.Dispatcher.reply()
   def __dispatch__(resource_or_domain, message, context, opts \\ [])
 
@@ -515,7 +520,8 @@ defmodule AshA2A.Agent do
     if prior == %{} do
       message
     else
-      {data_parts, other_parts} = Enum.split_with(message.parts, &match?(%AshA2A.Protocol.Part.Data{}, &1))
+      {data_parts, other_parts} =
+        Enum.split_with(message.parts, &match?(%AshA2A.Protocol.Part.Data{}, &1))
 
       current =
         Enum.reduce(data_parts, %{}, fn %AshA2A.Protocol.Part.Data{data: data}, acc ->
@@ -619,7 +625,11 @@ defmodule AshA2A.Agent do
   # retyping spec that dialyzer correctly refused.
   @spec dispatch_semantic_route(module(), AshA2A.Protocol.Message.t(), AshA2A.Identity.t()) ::
           AshA2A.Dispatcher.reply()
-  defp dispatch_semantic_route(resource_or_domain, %AshA2A.Protocol.Message{} = message, principal) do
+  defp dispatch_semantic_route(
+         resource_or_domain,
+         %AshA2A.Protocol.Message{} = message,
+         principal
+       ) do
     case AshA2A.Planning.RequestRouter.detect_tier(message) do
       {:facts, _envelope} ->
         dispatch_semantic_goal_facts(resource_or_domain, message, principal)
@@ -660,7 +670,11 @@ defmodule AshA2A.Agent do
   # lifecycle from this point on.
   @spec dispatch_semantic_goal_facts(module(), AshA2A.Protocol.Message.t(), AshA2A.Identity.t()) ::
           AshA2A.Dispatcher.reply()
-  defp dispatch_semantic_goal_facts(resource_or_domain, %AshA2A.Protocol.Message{} = message, principal) do
+  defp dispatch_semantic_goal_facts(
+         resource_or_domain,
+         %AshA2A.Protocol.Message{} = message,
+         principal
+       ) do
     case AshA2A.Planning.RequestRouter.route(resource_or_domain, message) do
       {:ok, package} ->
         package = bind_package_principal(package, principal)
@@ -696,7 +710,11 @@ defmodule AshA2A.Agent do
   # same real store `dispatch_semantic_replan/2` below reads from, so a
   # caller that later presents this package's `"execution_package_fingerprint"`
   # back as a `:continuation_fingerprint` can resolve it for real.
-  defp dispatch_semantic_compile(resource_or_domain, %AshA2A.Protocol.Message{} = message, principal) do
+  defp dispatch_semantic_compile(
+         resource_or_domain,
+         %AshA2A.Protocol.Message{} = message,
+         principal
+       ) do
     case AshA2A.Protocol.Message.text(message) do
       nil ->
         {:error, %{code: :semantic_request_missing_text}}
@@ -1050,7 +1068,12 @@ defmodule AshA2A.Agent do
   # fingerprint `:command_conflict` refusal above -- only one real closing
   # dispatch may claim a given execution package this way, exactly the
   # single-writer semantics the correlation depends on.
-  @spec build_command(module(), AshA2A.Dispatcher.skill_name(), AshA2A.Protocol.Message.t(), term()) ::
+  @spec build_command(
+          module(),
+          AshA2A.Dispatcher.skill_name(),
+          AshA2A.Protocol.Message.t(),
+          term()
+        ) ::
           AshA2A.Command.t()
   defp build_command(resource_or_domain, skill_name, message, auth_identity) do
     # Both the command's own `capability_id` (its DO/receipt/OCEL/fingerprint
@@ -1179,7 +1202,7 @@ defmodule AshA2A.Agent do
   defp verified_auth_identity(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "a2a.auth") do
       # In-process calls pass atom-keyed maps; the wire JSON-RPC round trip
-      # (lane V8-Q6-f) stringifies keys, so the wire shape must resolve to
+      # stringifies keys, so the wire shape must resolve to
       # the SAME verified identity or every wire caller lands :unauthenticated.
       %{identity: identity} -> identity
       %{"identity" => identity} -> identity

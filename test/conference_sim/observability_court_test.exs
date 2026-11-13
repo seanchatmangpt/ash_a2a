@@ -52,12 +52,18 @@ defmodule ConferenceSim.ObservabilityVenue do
   end
 
   @impl AshA2A.Protocol.Agent
-  def handle_message(%AshA2A.Protocol.Message{parts: [%Part.Data{data: %{"activity" => "stream"}}]}, _context) do
+  def handle_message(
+        %AshA2A.Protocol.Message{parts: [%Part.Data{data: %{"activity" => "stream"}}]},
+        _context
+      ) do
     {:stream, Stream.map(1..3, fn i -> Part.Text.new("talk-chunk-#{i}") end)}
   end
 
   @impl AshA2A.Protocol.Agent
-  def handle_message(%AshA2A.Protocol.Message{parts: [%Part.Data{data: %{"activity" => "task"}}]}, _context) do
+  def handle_message(
+        %AshA2A.Protocol.Message{parts: [%Part.Data{data: %{"activity" => "task"}}]},
+        _context
+      ) do
     {:reply, [Part.Data.new(%{"activity" => "task", "status" => "created"})]}
   end
 
@@ -165,7 +171,9 @@ defmodule ConferenceSim.ObservabilityCourt do
     def events(table) do
       table
       |> :ets.tab2list()
-      |> Enum.filter(fn row -> is_tuple(row) and tuple_size(row) == 4 and is_integer(elem(row, 0)) end)
+      |> Enum.filter(fn row ->
+        is_tuple(row) and tuple_size(row) == 4 and is_integer(elem(row, 0))
+      end)
       |> Enum.sort_by(&elem(&1, 0))
       |> Enum.map(fn {seq, event, measurements, meta} ->
         %{
@@ -218,7 +226,10 @@ defmodule ConferenceSim.ObservabilityCourt do
 
   defp register!(venue, table, attendee) do
     assert {:ok, %Protocol.Task{status: %{state: :completed}} = task} =
-             Protocol.call(venue, data_message(%{"activity" => "register", "attendee" => attendee}))
+             Protocol.call(
+               venue,
+               data_message(%{"activity" => "register", "attendee" => attendee})
+             )
 
     task
   end
@@ -233,7 +244,10 @@ defmodule ConferenceSim.ObservabilityCourt do
     # The real {:stream_done, _} cast folds the task to :completed; poll the
     # real task store rather than sleeping blind.
     wait_until(2_000, fn ->
-      match?({:ok, %Protocol.Task{status: %{state: :completed}}}, ObservabilityVenue.get_task(venue, task.id))
+      match?(
+        {:ok, %Protocol.Task{status: %{state: :completed}}},
+        ObservabilityVenue.get_task(venue, task.id)
+      )
     end)
 
     task

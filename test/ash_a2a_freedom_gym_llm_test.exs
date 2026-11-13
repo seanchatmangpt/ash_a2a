@@ -74,7 +74,8 @@ defmodule AshA2AFreedomGymLlmTest do
     assert {:ok, task} = LlmAvatarAgent.call(LlmAvatarAgent, message, timeout: 170_000)
     assert task.status.state == :completed
 
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: response}]}] = task.artifacts
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: response}]}] =
+             task.artifacts
 
     # Real, state-based assertions on the real object the real Z.AI call
     # returned -- not on its exact wording.

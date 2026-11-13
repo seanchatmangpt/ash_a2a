@@ -83,11 +83,20 @@ defmodule AshA2A.Email.Inbound do
 
         auth =
           cond do
-            is_map(m["auth_results"]) -> normalize_auth(m["auth_results"])
-            is_map(m["authentication_results"]) -> normalize_auth(m["authentication_results"])
-            is_binary(m["authentication_results"]) -> parse_auth_header(m["authentication_results"])
-            h = headers["authentication-results"] -> parse_auth_header(h)
-            true -> normalize_auth(%{"dkim" => m["dkim"], "spf" => m["spf"], "dmarc" => m["dmarc"]})
+            is_map(m["auth_results"]) ->
+              normalize_auth(m["auth_results"])
+
+            is_map(m["authentication_results"]) ->
+              normalize_auth(m["authentication_results"])
+
+            is_binary(m["authentication_results"]) ->
+              parse_auth_header(m["authentication_results"])
+
+            h = headers["authentication-results"] ->
+              parse_auth_header(h)
+
+            true ->
+              normalize_auth(%{"dkim" => m["dkim"], "spf" => m["spf"], "dmarc" => m["dmarc"]})
           end
 
         {:ok,
@@ -184,7 +193,10 @@ defmodule AshA2A.Email.Inbound do
             pct = String.downcase(ph["content-type"] || "text/plain")
 
             if String.starts_with?(pct, "text/plain") and
-                 not String.contains?(String.downcase(ph["content-disposition"] || ""), "attachment"),
+                 not String.contains?(
+                   String.downcase(ph["content-disposition"] || ""),
+                   "attachment"
+                 ),
                do: String.trim_trailing(pb)
           end)
 
@@ -274,9 +286,9 @@ defmodule AshA2A.Email.Inbound do
   defp attribution?(line) do
     t = String.trim(line)
 
+    # attribution wrapped onto next line: "On Mon, ... <a@b>" without terminator
     (String.starts_with?(t, "On ") and String.ends_with?(t, "wrote:")) or
       Regex.match?(~r/^-{2,}\s*Original Message\s*-{2,}$/i, t) or
-      # attribution wrapped onto next line: "On Mon, ... <a@b>" without terminator
       (String.starts_with?(t, "On ") and Regex.match?(~r/\d{4}.*(<[^>]+>|at \d)/, t) and
          not String.ends_with?(t, "."))
   end

@@ -507,7 +507,9 @@ defmodule AshA2A.Elicitation do
   defp type_check(value, sub), do: enum_check(value, sub)
 
   defp shape(true, _expected, _value), do: :ok
-  defp shape(false, expected, value), do: {:error, "expected #{expected}, got #{type_name(value)}"}
+
+  defp shape(false, expected, value),
+    do: {:error, "expected #{expected}, got #{type_name(value)}"}
 
   # -- value constraints -------------------------------------------------------
 

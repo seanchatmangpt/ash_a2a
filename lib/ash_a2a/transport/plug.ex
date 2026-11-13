@@ -259,7 +259,8 @@ defmodule AshA2A.Transport.Plug do
     base_url = AshA2A.Protocol.Plug.get_base_url(conn) || opts.base_url
 
     if is_nil(base_url) do
-      raise ArgumentError, "AshA2A.Transport.Plug requires :base_url for ash_a2a agent card requests"
+      raise ArgumentError,
+            "AshA2A.Transport.Plug requires :base_url for ash_a2a agent card requests"
     end
 
     card = GenServer.call(opts.agent, :get_agent_card)
@@ -380,7 +381,10 @@ defmodule AshA2A.Transport.Plug do
   # AshA2A.Protocol.JSONRPC's own PascalCase table does not carry; resolved
   # here so both HTTP plugs accept the same spellings.
   defp alias_method(%{"method" => method} = decoded) when is_binary(method) do
-    %{decoded | "method" => Map.get(AshA2A.A2ATransport.Plug.extra_method_aliases(), method, method)}
+    %{
+      decoded
+      | "method" => Map.get(AshA2A.A2ATransport.Plug.extra_method_aliases(), method, method)
+    }
   end
 
   defp alias_method(decoded), do: decoded
@@ -479,7 +483,8 @@ defmodule AshA2A.Transport.Plug do
 
     # handle_request/handle_response hooks of the activated extensions run
     # around the agent call (declaration order), as in AshA2A.Protocol.Plug.
-    with {:ok, message, params, activations} <- Extension.run_request(activations, message, params) do
+    with {:ok, message, params, activations} <-
+           Extension.run_request(activations, message, params) do
       ctx = Map.put(ctx, :extensions, activations)
 
       case call_agent(ctx.agent, message, call_opts(params, message, ctx)) do
@@ -574,11 +579,13 @@ defmodule AshA2A.Transport.Plug do
   @spec wire_error(term()) :: Error.t()
   def wire_error(:not_found), do: Error.task_not_found()
 
-  def wire_error(reason) when reason in [:generation_mismatch, :context_mismatch, :not_continuable],
-    do: reason_error(reason)
+  def wire_error(reason)
+      when reason in [:generation_mismatch, :context_mismatch, :not_continuable],
+      do: reason_error(reason)
 
-  def wire_error({tag, _} = reason) when tag in [:unsupported_operation, :content_type_not_supported],
-    do: reason_error(reason) || Error.internal_error()
+  def wire_error({tag, _} = reason)
+      when tag in [:unsupported_operation, :content_type_not_supported],
+      do: reason_error(reason) || Error.internal_error()
 
   # -32000 is the JSON-RPC *server-error* code (not one of the Error module's
   # A2A-specific -32001..-32009 constructors), the free-form `data` map is
@@ -688,9 +695,9 @@ defmodule AshA2A.Transport.Plug do
     # pre-minted by the agent runtime when it wrapped the stream
     # (:stream_artifact_id on the task metadata); mint here only as a
     # fallback for paths that never stamped it.
+    # Protocol.Task.metadata is typed `map()` (never nil), so the old
+    # `|| %{}` fallback was dead.
     artifact_id =
-      # Protocol.Task.metadata is typed `map()` (never nil), so the old
-      # `|| %{}` fallback was dead.
       Map.get(task.metadata, :stream_artifact_id) ||
         AshA2A.Protocol.ID.generate("art")
 
@@ -788,7 +795,11 @@ defmodule AshA2A.Transport.Plug do
       |> struct(artifact_id: artifact_id)
 
     event =
-      AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact, [context_id: task.context_id] ++ opts)
+      AshA2A.Protocol.Event.ArtifactUpdate.new(
+        task.id,
+        artifact,
+        [context_id: task.context_id] ++ opts
+      )
 
     send_event(conn, jsonrpc_id, event)
   end

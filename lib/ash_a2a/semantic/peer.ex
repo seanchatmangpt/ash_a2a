@@ -264,7 +264,10 @@ defmodule AshA2A.Semantic.Peer do
   @spec consequence_bearing?(t(), AshA2A.Protocol.Message.t()) :: boolean()
   def consequence_bearing?(%__MODULE__{capabilities: nil}, %AshA2A.Protocol.Message{}), do: false
 
-  def consequence_bearing?(%__MODULE__{capabilities: capabilities}, %AshA2A.Protocol.Message{} = message) do
+  def consequence_bearing?(
+        %__MODULE__{capabilities: capabilities},
+        %AshA2A.Protocol.Message{} = message
+      ) do
     case requested_consequence(capabilities, message) do
       :observe -> false
       consequence when consequence in [:change, :external_do] -> true

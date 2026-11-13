@@ -66,7 +66,13 @@ defmodule AshA2A.V1ElicitationTest.ElicitAgent do
         case AshA2A.Elicitation.resume(pending, message) do
           {:ok, data} ->
             msg = %{message | parts: [AshA2A.Protocol.Part.Data.new(data)]}
-            AshA2A.Agent.__dispatch__(@ash_a2a_resource_or_domain, msg, context, @ash_a2a_dispatch_opts)
+
+            AshA2A.Agent.__dispatch__(
+              @ash_a2a_resource_or_domain,
+              msg,
+              context,
+              @ash_a2a_dispatch_opts
+            )
 
           {:error, %AshA2A.Protocol.JSONRPC.Error{} = err} ->
             # Fail-closed: park with the typed error, never dispatch. The task
@@ -133,9 +139,10 @@ defmodule AshA2A.V1ElicitationTest do
     %{server: server}
   end
 
-  test "elicit -> wrong shape refused with the schema error, task stays parked -> correct shape resumes to COMPLETED", %{
-    server: server
-  } do
+  test "elicit -> wrong shape refused with the schema error, task stays parked -> correct shape resumes to COMPLETED",
+       %{
+         server: server
+       } do
     # Turn 1: elicit. The agent mints a schema-constrained input request and
     # parks the task.
     {:ok, %Req.Response{status: 200, body: %{"task" => parked}}} =
@@ -161,7 +168,11 @@ defmodule AshA2A.V1ElicitationTest do
     {:ok, %Req.Response{status: 200, body: %{"task" => refused}}} =
       post_message(
         server,
-        user_message(%{"text" => 123}, %{"skill" => "create", "elicitationId" => elicitation_id}, parked["id"])
+        user_message(
+          %{"text" => 123},
+          %{"skill" => "create", "elicitationId" => elicitation_id},
+          parked["id"]
+        )
       )
 
     assert refused["id"] == parked["id"]
@@ -176,7 +187,9 @@ defmodule AshA2A.V1ElicitationTest do
     assert info["metadata"]["detail"] =~ "text"
 
     # The task is still parked, not consumed: tasks/get says INPUT_REQUIRED.
-    {:ok, %Req.Response{status: 200, body: fetched}} = Req.get(url: task_url(server, parked["id"]))
+    {:ok, %Req.Response{status: 200, body: fetched}} =
+      Req.get(url: task_url(server, parked["id"]))
+
     assert fetched["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
 
     # Turn 3 (correct shape): the SAME task id resumes through the real
@@ -200,7 +213,9 @@ defmodule AshA2A.V1ElicitationTest do
     assert part["data"]["recorded"] == true
 
     # The resumed task is the persisted task, not a same-shaped new one.
-    {:ok, %Req.Response{status: 200, body: fetched}} = Req.get(url: task_url(server, parked["id"]))
+    {:ok, %Req.Response{status: 200, body: fetched}} =
+      Req.get(url: task_url(server, parked["id"]))
+
     assert fetched["status"]["state"] == "TASK_STATE_COMPLETED"
   end
 
@@ -215,19 +230,26 @@ defmodule AshA2A.V1ElicitationTest do
     {:ok, %Req.Response{body: %{"task" => refused}}} =
       post_message(
         server,
-        user_message(%{"text" => "valid shape, wrong correlation"}, %{"skill" => "create"}, parked["id"])
+        user_message(
+          %{"text" => "valid shape, wrong correlation"},
+          %{"skill" => "create"},
+          parked["id"]
+        )
       )
 
     assert refused["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
     error = error_part(refused)
     assert error["code"] == -32_602
     assert error["data"] |> hd() |> Map.fetch!("reason") == "INVALID_PARAMS"
-    assert error["data"] |> hd() |> Map.fetch!("metadata") |> Map.fetch!("detail") =~ elicitation_id
+
+    assert error["data"] |> hd() |> Map.fetch!("metadata") |> Map.fetch!("detail") =~
+             elicitation_id
   end
 
-  test "expiry (configured) transitions the parked task to terminal FAILED through the lifecycle", %{
-    server: server
-  } do
+  test "expiry (configured) transitions the parked task to terminal FAILED through the lifecycle",
+       %{
+         server: server
+       } do
     Application.put_env(:ash_a2a, :v1_elicitation_expires_in, 30)
 
     on_exit(fn -> Application.delete_env(:ash_a2a, :v1_elicitation_expires_in) end)
@@ -262,7 +284,11 @@ defmodule AshA2A.V1ElicitationTest do
     {:ok, %Req.Response{status: 400, body: body}} =
       post_message(
         server,
-        user_message(%{"text" => "again"}, %{"skill" => "create", "elicitationId" => elicitation_id}, parked["id"])
+        user_message(
+          %{"text" => "again"},
+          %{"skill" => "create", "elicitationId" => elicitation_id},
+          parked["id"]
+        )
       )
 
     assert body["error"]["code"] == 400
@@ -276,11 +302,15 @@ defmodule AshA2A.V1ElicitationTest do
 
     # tasks/get still reports the terminal state -- the lifecycle never went
     # backwards.
-    {:ok, %Req.Response{status: 200, body: fetched}} = Req.get(url: task_url(server, parked["id"]))
+    {:ok, %Req.Response{status: 200, body: fetched}} =
+      Req.get(url: task_url(server, parked["id"]))
+
     assert fetched["status"]["state"] == "TASK_STATE_FAILED"
   end
 
-  test "default expiry is OFF: an elicitation without :expires_in never expires", %{server: server} do
+  test "default expiry is OFF: an elicitation without :expires_in never expires", %{
+    server: server
+  } do
     # No app env set -> `:expires_in` nil -> never expires. Turn 2 with a
     # deliberately malformed shape PROVES the refusal came from the schema
     # (parked, -32602), not from an expiry shortcut.
@@ -293,7 +323,11 @@ defmodule AshA2A.V1ElicitationTest do
     {:ok, %Req.Response{body: %{"task" => refused}}} =
       post_message(
         server,
-        user_message(%{"wrong" => "key"}, %{"skill" => "create", "elicitationId" => elicitation_id}, parked["id"])
+        user_message(
+          %{"wrong" => "key"},
+          %{"skill" => "create", "elicitationId" => elicitation_id},
+          parked["id"]
+        )
       )
 
     assert refused["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
@@ -329,7 +363,9 @@ defmodule AshA2A.V1ElicitationTest do
     {:error, violations} = AshA2A.Elicitation.validate(schema, %{"text" => "hi", "age" => 5})
     assert %{"property" => "age", "error" => "below minimum 18"} in violations
 
-    {:error, violations} = AshA2A.Elicitation.validate(schema, %{"text" => "hi", "score" => 101.5})
+    {:error, violations} =
+      AshA2A.Elicitation.validate(schema, %{"text" => "hi", "score" => 101.5})
+
     assert %{"property" => "score", "error" => "above maximum 100"} in violations
 
     {:error, violations} = AshA2A.Elicitation.validate(schema, %{"text" => "hi", "ok" => "yes"})
@@ -374,7 +410,12 @@ defmodule AshA2A.V1ElicitationTest do
     one_of = %{
       "type" => "object",
       "properties" => %{
-        "c" => %{"oneOf" => [%{"const" => "#f00", "title" => "Red"}, %{"const" => "#0f0", "title" => "Green"}]}
+        "c" => %{
+          "oneOf" => [
+            %{"const" => "#f00", "title" => "Red"},
+            %{"const" => "#0f0", "title" => "Green"}
+          ]
+        }
       },
       "required" => []
     }

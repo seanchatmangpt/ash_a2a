@@ -46,7 +46,7 @@ defmodule DocsNavCoverageTest do
     |> File.read!()
     |> String.split("\n")
     |> Enum.filter(&(&1 =~ ~r/^#+\s/))
-    |> Enum.map(&(slugify(String.replace(&1, ~r/^#+\s/, ""))))
+    |> Enum.map(&slugify(String.replace(&1, ~r/^#+\s/, "")))
   end
 
   test "docs/README.md exists and is the nav surface" do
@@ -75,6 +75,7 @@ defmodule DocsNavCoverageTest do
   # fragment anchors inside docs/
   test "every relative .md fragment link in docs/ resolves to a real heading" do
     files = MapSet.to_list(quadrant_files()) ++ ["README.md"]
+
     Enum.each(files, fn f ->
       path = Path.join(@docs_dir, f)
       dir = Path.dirname(path)

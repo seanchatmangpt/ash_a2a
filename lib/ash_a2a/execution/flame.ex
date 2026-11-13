@@ -20,7 +20,13 @@ defmodule AshA2A.Execution.FLAME do
   @spec run(term(), Command.t(), AshA2A.Protocol.Message.t(), module(), keyword()) ::
           {:ok, %{receipt: AshA2A.Receipt.t(), placement: RuntimeReceipt.t()}}
           | {:error, term()}
-  def run(pool, %Command{} = command, %AshA2A.Protocol.Message{} = message, resource_or_domain, opts \\ []) do
+  def run(
+        pool,
+        %Command{} = command,
+        %AshA2A.Protocol.Message{} = message,
+        resource_or_domain,
+        opts \\ []
+      ) do
     if available?() do
       flame_opts = Keyword.get(opts, :flame_opts, [])
       bus_opts = Keyword.get(opts, :command_bus_opts, [])

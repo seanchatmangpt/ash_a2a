@@ -120,7 +120,8 @@ defmodule AshA2A.V1.GrpcMustCourt do
     {-32_004, :unsupported_operation, 12, "UNSUPPORTED_OPERATION"},
     {-32_005, :content_type_not_supported, 3, "CONTENT_TYPE_NOT_SUPPORTED"},
     {-32_006, :invalid_agent_response, 13, "INVALID_AGENT_RESPONSE"},
-    {-32_007, :authenticated_extended_card_not_configured, 9, "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
+    {-32_007, :authenticated_extended_card_not_configured, 9,
+     "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
     {-32_008, :extension_support_required, 9, "EXTENSION_SUPPORT_REQUIRED"},
     {-32_009, :version_not_supported, 12, "VERSION_NOT_SUPPORTED"}
   ]
@@ -255,9 +256,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
     assert got.status.state == :TASK_STATE_COMPLETED
   end
 
-  test "W2 GetTask with an unknown id refuses NOT_FOUND(5) with TASK_NOT_FOUND ErrorInfo over the wire", %{
-    channel: channel
-  } do
+  test "W2 GetTask with an unknown id refuses NOT_FOUND(5) with TASK_NOT_FOUND ErrorInfo over the wire",
+       %{
+         channel: channel
+       } do
     assert {:error, %GRPC.RPCError{status: 5} = error} =
              Lf.A2a.V1.A2AService.Stub.get_task(
                channel,
@@ -268,9 +270,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
     assert_error_info(error, "TASK_NOT_FOUND", "tsk-x15-missing")
   end
 
-  test "W3 CancelTask of a terminal task refuses FAILED_PRECONDITION(9) with TASK_NOT_CANCELABLE ErrorInfo over the wire", %{
-    channel: channel
-  } do
+  test "W3 CancelTask of a terminal task refuses FAILED_PRECONDITION(9) with TASK_NOT_CANCELABLE ErrorInfo over the wire",
+       %{
+         channel: channel
+       } do
     task_id = send_and_get_task_id(channel, "x15 terminal cancel")
 
     assert {:error, %GRPC.RPCError{status: 9} = error} =
@@ -280,9 +283,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
     assert_error_info(error, "TASK_NOT_CANCELABLE")
   end
 
-  test "W4 GetTask with missing id is a real -32602: INVALID_ARGUMENT(3) with INVALID_PARAMS ErrorInfo over the wire", %{
-    channel: channel
-  } do
+  test "W4 GetTask with missing id is a real -32602: INVALID_ARGUMENT(3) with INVALID_PARAMS ErrorInfo over the wire",
+       %{
+         channel: channel
+       } do
     assert {:error, %GRPC.RPCError{status: 3} = error} =
              Lf.A2a.V1.A2AService.Stub.get_task(channel, %Pb.GetTaskRequest{})
 
@@ -292,9 +296,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
 
   # -- W5/W6: server-streaming MUSTs over real socket --------------------------
 
-  test "W5 SendStreamingMessage streams snapshot plus events ending in a final TASK_STATE_COMPLETED status update", %{
-    channel: channel
-  } do
+  test "W5 SendStreamingMessage streams snapshot plus events ending in a final TASK_STATE_COMPLETED status update",
+       %{
+         channel: channel
+       } do
     Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server,
       handler: ErrorProbeHandler,
       ctx: %{
@@ -326,14 +331,17 @@ defmodule AshA2A.V1.GrpcMustCourt do
     assert [last_event | _] = Enum.reverse(events)
 
     assert match?(
-             %Pb.StreamResponse{payload: {:status_update, %{status: %{state: :TASK_STATE_COMPLETED}}}},
+             %Pb.StreamResponse{
+               payload: {:status_update, %{status: %{state: :TASK_STATE_COMPLETED}}}
+             },
              last_event
            )
   end
 
-  test "W6 SubscribeToTask of a terminal task refuses UNIMPLEMENTED(12) with UNSUPPORTED_OPERATION ErrorInfo over the wire", %{
-    channel: channel
-  } do
+  test "W6 SubscribeToTask of a terminal task refuses UNIMPLEMENTED(12) with UNSUPPORTED_OPERATION ErrorInfo over the wire",
+       %{
+         channel: channel
+       } do
     task_id = send_and_get_task_id(channel, "x15 terminal resubscribe")
 
     error =
@@ -350,9 +358,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
 
   # -- W7: A2A-Version metadata gate (spec §3.6.2 / -32009) --------------------
 
-  test "W7 unsupported A2A-Version is refused UNIMPLEMENTED(12) with VERSION_NOT_SUPPORTED ErrorInfo on SendMessage and GetTask", %{
-    channel: channel
-  } do
+  test "W7 unsupported A2A-Version is refused UNIMPLEMENTED(12) with VERSION_NOT_SUPPORTED ErrorInfo on SendMessage and GetTask",
+       %{
+         channel: channel
+       } do
     metadata = %{"a2a-version" => "99.0"}
 
     assert {:error, %GRPC.RPCError{status: 12} = send_error} =
@@ -401,9 +410,10 @@ defmodule AshA2A.V1.GrpcMustCourt do
 
   # -- W8: full A2A error band over the real socket ----------------------------
 
-  test "W8 every A2A error code -32001..-32009 maps to its §3.3.2 gRPC status with its §5.4 ErrorInfo over the wire", %{
-    channel: channel
-  } do
+  test "W8 every A2A error code -32001..-32009 maps to its §3.3.2 gRPC status with its §5.4 ErrorInfo over the wire",
+       %{
+         channel: channel
+       } do
     for {code, constructor, expected_status, expected_reason} <- @error_matrix do
       ErrorProbeHandler.configure_error(apply(Error, constructor, ["x15-probe-#{code}"]))
 

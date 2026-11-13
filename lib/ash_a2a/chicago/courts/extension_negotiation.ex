@@ -118,7 +118,8 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
       ),
       negative("004",
         invariant: "A remote card without the SA2A advertisement does not negotiate",
-        stimulus: "negotiate/2 against the card AshA2A.Protocol.Plug serves for a non-advertising remote",
+        stimulus:
+          "negotiate/2 against the card AshA2A.Protocol.Plug serves for a non-advertising remote",
         boundary: "AshA2A.Semantic.Extension.negotiate/2",
         forbidden_outcome: "negotiation outcome :ok",
         attempt: {:observed, @negotiate},
@@ -310,7 +311,10 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   defp ordinary_as_semantic(ctx, f, peer, payload) do
     message =
       Envelopes.ordinary(
-        [AshA2A.Protocol.Part.Data.new(payload), AshA2A.Protocol.Part.Text.new(Jason.encode!(payload))],
+        [
+          AshA2A.Protocol.Part.Data.new(payload),
+          AshA2A.Protocol.Part.Text.new(Jason.encode!(payload))
+        ],
         %{
           "sa2a" => payload,
           "extensions" => [Extension.profile_id()],
@@ -358,7 +362,12 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   defp harmless_label(ctx, f, peer) do
     message =
       Envelopes.ordinary(
-        [AshA2A.Protocol.Part.Data.new(%{"item" => Fx.unique("chicago-neg-harmless"), "quantity" => 1})],
+        [
+          AshA2A.Protocol.Part.Data.new(%{
+            "item" => Fx.unique("chicago-neg-harmless"),
+            "quantity" => 1
+          })
+        ],
         %{"skill" => "place_order", "consequenceBearing" => false}
       )
 
@@ -374,7 +383,12 @@ defmodule AshA2A.Chicago.Courts.ExtensionNegotiation do
   defp downgrade(ctx, f, peer, local_card, remote) do
     message =
       Envelopes.ordinary(
-        [AshA2A.Protocol.Part.Data.new(%{"item" => Fx.unique("chicago-neg-downgrade"), "quantity" => 2})],
+        [
+          AshA2A.Protocol.Part.Data.new(%{
+            "item" => Fx.unique("chicago-neg-downgrade"),
+            "quantity" => 2
+          })
+        ],
         %{"skill" => "place_order"}
       )
 

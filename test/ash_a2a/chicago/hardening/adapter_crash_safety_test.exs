@@ -63,7 +63,9 @@ defmodule AshA2A.Test.Hardening.CrashSafeCommandWorker do
 
     with {:ok, authority_to_dispatch_with} <- authority_result do
       command = %{reconstructed_command | authority: authority_to_dispatch_with}
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(args["input"] || %{})])
+
+      message =
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(args["input"] || %{})])
 
       case CommandBus.run(command, message, AshA2A.Test.Fixture.Item, store_opts: store_opts) do
         {:ok, _receipt} -> :ok

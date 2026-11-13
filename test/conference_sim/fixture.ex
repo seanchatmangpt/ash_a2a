@@ -160,7 +160,7 @@ defmodule ConferenceSim do
     alive =
       sim.attendees
       |> Enum.map(& &1.pid)
-      |> Enum.filter(&is_pid(&1) and Process.alive?(&1))
+      |> Enum.filter(&(is_pid(&1) and Process.alive?(&1)))
 
     leaked = Port.list() -- sim.ports_before
 

@@ -6,1901 +6,553 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project intends to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches 1.0.
 
+Statuses of v1.1 items below are stated conservatively: unless a test run is cited, they
+are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level status.
+
 ## [Unreleased]
-
-### v1.1 docs honesty pass and email gateway
-
-- Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}`;
-  `POST /v1/email:ingest` (`lib/ash_a2a/email/plug.ex`). Tests present:
-  `test/email_{inbound,brief,reply_intent,plug,kernel_entry}_test.exs`. Guide:
-  `docs/how-to/operate-by-email.md`. Standing UNVERIFIED (no run cited here).
-- `Message.extensions` is now a list of extension URIs (`[String.t()] | map()` in the
-  type; default `[]`). UNVERIFIED.
-- The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`
-  (`lib/ash_a2a/protocol/json.ex`). UNVERIFIED.
-- Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`; the owned-transport
-  ownership module carries no `tenant` reference. UNVERIFIED, partial.
-- `user_artifacts` is served on the agent card (`AgentCard` type field). UNVERIFIED.
-- Version surface: `Version.protocol_version/0` is `"1.1"`; accepted versions
-  `["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); the client-header default
-  `Version.default/0` is still `"1.0"`. Docs corrected to match.
-- Test counts: per `docs/reference/a2a-v1-1-conformance.md`, evidence at `d8f593dc`
-  is default tier 4705 tests, 0 failures; serial tier 0 failures. Not re-run by this
-  doc pass.
-
-### A2A v1.1 support
-
-- Target A2A v1.1.0 (upstream tag `v1.1.0-rc`). Standing: PARTIAL. 17 delta rows are
-  CONFORMANT by named courts; no v1.1 TCK verdict exists. Row-level courts and
-  evidence: [a2a-v1-1-conformance.md](docs/reference/a2a-v1-1-conformance.md).
-- Cards advertise `protocolVersion` 1.1; `A2A-Version` accepts 0.3, 1.0, 1.1.
-- Task `generation`/`timeline`, `ifGenerationMatch` (`-32010`, HTTP 409 `ABORTED`),
-  `POST /message:live`, `currentGeneration` long poll, `lastSeenGeneration` resume,
-  `userArtifacts`/`artifactUpdates`. Guide:
-  [v1-1-live-and-generations](docs/how-to/v1-1-live-and-generations.md).
-- Config documented: `:long_poll_timeout_ms`, `:events_transport`, `user_artifacts`,
-  `cancel_in_flight`, `validate_input_modes`, mount `tenant`
-  ([configuration](docs/reference/configuration.md)).
-
-## [26.11.13] - 2026-11-13
-
-### Wave-2 lanes
-
-v1.1 capabilities landed in code (all standing UNVERIFIED; no court run
-confirmed by this entry):
-
-- `message/live` (`SendLiveMessage`), `StreamRequest`, `StreamError` frames
-  (`TaskEvents.send_stream_error/3`, `SSE.write_stream_error/3`). UNVERIFIED.
-- Task `generation` + `timeline`, `TaskMessageUpdateEvent`, generation on
-  status/artifact events, `timelineLength`, `ifGenerationMatch` (-32010),
-  `currentGeneration` long poll. UNVERIFIED.
-- `tasks/resubscribe` with `lastSeenGeneration` on both HTTP plugs:
-  `A2ATransport.SSE.resubscribe/6` replays from the event log; the
-  `AshA2A.Transport.Plug` path now attaches through
-  `Protocol.Plug.SSE.subscribe_task/6` for owned tasks (previously answered
-  -32004), with no Task snapshot when the client is current. The log-gap
-  fallback on this path is a snapshot. UNVERIFIED (no court added here).
-- `userArtifacts` / `artifactUpdates`, `TaskPushNotificationConfig.protocolVersion`.
-  UNVERIFIED.
-- `Verify` warning text and conformance docs refreshed: the dispatcher now
-  reads `authority gate :disabled` and `hooks`; stale gRPC `UNIMPLEMENTED`
-  extended-card mentions marked as historical (re-run UNVERIFIED).
-- `docs/reference/a2a-v1-1-conformance.md`: every row remains UNVERIFIED; TCK
-  has no v1.1 coverage.
-
-### v1.1 compat (wave 2)
-
-- Target: A2A v1.1.0 (upstream tag `v1.1.0-rc`, not yet a GitHub release;
-  vendored `priv/a2a_v1_1_spec_corpus/a2a.proto`, SHA-256 `8d9c363f...ab127`).
-  A2A v1.0.1 remains supported; v0.3 is decode-only legacy.
-- Delta: `SendLiveMessage` (`message/live`), `StreamRequest`, `StreamError`,
-  `TimelineEntry`, `TaskMessageUpdateEvent`, `Task.generation`/`timeline`,
-  `Artifact.startGeneration`/`endGeneration`/`role`, `generation` on update
-  events, `timelineLength`, `ifGenerationMatch` (mismatch -32010),
-  `currentGeneration` long poll, `lastSeenGeneration`, `userArtifacts` /
-  `artifactUpdates`, `TaskPushNotificationConfig.protocolVersion`.
-- New config: `config :ash_a2a, :long_poll_timeout_ms`; agent card capability
-  `user_artifacts`; `A2A-Version: 1.1` negotiation.
-- New: `docs/reference/a2a-v1-1-conformance.md`, corpus court
-  `test/ash_a2a_v1_1_proto_corpus_test.exs` (fails loudly on pending items).
-  Standing UNVERIFIED until courts run. TCK has no 1.1 coverage yet.
-
-### Changed (lane W13)
-
-- Version bump 26.10.9 -> 26.11.0 (`mix.exs`, README, spec mapping).
-- Conformance docs now state A2A v1.0.1 (wire-compatible with v1.0.0);
-  TCK results recorded as `{pass, fail, not_tested, skipped, manual}` bound
-  to a pin SHA and date, not a single percentage headline.
-- CI `tck` job: `pip install -e .`, reads `reports/compatibility.json`,
-  adds the gRPC transport, single `TCK_PIN_SHA`; assertion moved to
-  `scripts/tck_assert.py` (court: `test/w13_tck_assert_test.exs`).
-- `mix ash_a2a.v1_conformance_report`: court list derived from a glob of
-  `test/ash_a2a_v1_*_test.exs`; optional `--tck-report PATH`.
 
 ### Added
 
-- `Attestation.Gate.verify_gps_trajectory/2` and
-  `AshA2A.Attestation.GateGrantAllowlist` (T-015): an approved, unexpired,
-  in-area grant overrides a `:gps_impossible_jump` refusal to `:ok`; no grants
-  means behavior identical to `/1`.
+- Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
+  `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
+  dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified.
+- A2A v1.1 support (target: upstream tag `v1.1.0-rc`, status PARTIAL; no v1.1 TCK verdict
+  exists). Cards advertise `protocolVersion` 1.1 and `A2A-Version` accepts 0.3, 1.0 and 1.1.
+  Task `generation`/`timeline`, `ifGenerationMatch` (`-32010`, HTTP 409 `ABORTED`),
+  `POST /message:live`, `currentGeneration` long poll, `lastSeenGeneration` resume, and
+  `userArtifacts`/`artifactUpdates`. Guide: `docs/how-to/v1-1-live-and-generations.md`.
+- User-artifact support is served on the agent card (`user_artifacts`).
+- Documented configuration: `:long_poll_timeout_ms`, `:events_transport`, `user_artifacts`,
+  `cancel_in_flight`, `validate_input_modes`, and the mount `tenant` option
+  (`docs/reference/configuration.md`).
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
-### Added (commits dated 2026-11-08 onward)
+### Changed
 
-- `AshA2A.Transport.WireCompat` (`lib/ash_a2a/transport/wire_compat.ex`):
-  wire (`A2A.*` hex structs) <-> protocol (`AshA2A.Protocol.*`) struct
-  conversion at the agent boundary, wired through `Transport.Runtime`
-  (Q6); court: `test/ash_a2a_transport_wire_compat_test.exs`.
-- `Ingress.Channel` (ingress wire, lane A10) with per-coordinator
-  nonce-replay defense; `test/ingress/channel_test.exs`.
-- `Copilot.Pipeline` wire-verify (lane F2): `test/copilot/pipeline_test.exs`
-  and `test/copilot/f8_adversarial_test.exs`.
-- `AshA2A.TelemetryBridge.PplanHazard` and its court
-  `test/telemetry_bridge/pplan_hazard_bridge_test.exs`.
-- Tests: real-supervisor durability continuity
-  (`durable_server_continuity_real_test.exs`, completes V8-ELX-DURABLE) and
-  V8 sim-worker tests (`test/ash_a2a_wo_checkin_sim_worker_test.exs`,
-  `test/support/wo_checkin_sim_fixture.ex`).
-- `mix ash_a2a.pplan_courts` parity-court runner documented in
-  `docs/how-to/run-pplan-courts.md`; `ASH_PPLAN_PATH` toggle in `mix.exs`.
+- `Message.extensions` is now a list of extension URIs (`[String.t()] | map()`, default `[]`).
+- The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
+- Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`.
+- The server accepts `A2A-Version` 0.3, 1.0 and 1.1; the client-header default stays 1.0.
+- README reorganized: install and quickstart first, conformance and status material last.
 
-### Fixed (commits dated 2026-11-08 onward)
+## [26.11.13] - 2026-11-13
 
-- Wire-shaped `a2a.auth` identity maps: over the hex `A2A.Plug` path the
-  JSON-RPC round trip stringifies metadata keys, so
-  `%{"identity" => principal}` now resolves in
-  `Transport.Principal.from_metadata/1` and
-  `Agent.verified_auth_identity/1` as the same identity as the atom-key
-  in-process shape (no widening; atom-key clause unchanged).
+### Added
 
-### Changed (commits dated 2026-11-08 onward)
+- A2A v1.1 capabilities (unverified; no test run is cited here): `message/live`,
+  `StreamRequest` and `StreamError` frames, task `generation` and `timeline`,
+  `TaskMessageUpdateEvent`, `timelineLength`, `ifGenerationMatch` (`-32010`),
+  `currentGeneration` long poll, `userArtifacts`/`artifactUpdates`, and
+  `TaskPushNotificationConfig.protocolVersion`. Vendored upstream proto at
+  `priv/a2a_v1_1_spec_corpus/a2a.proto`; v1.0.1 remains supported and v0.3 is decode-only.
+- `config :ash_a2a, :long_poll_timeout_ms` and the `user_artifacts` agent-card capability.
+- `docs/reference/a2a-v1-1-conformance.md` and a corpus test that fails loudly on pending
+  items.
+- `Attestation.Gate.verify_gps_trajectory/2` and `AshA2A.Attestation.GateGrantAllowlist`:
+  an approved, unexpired, in-area grant overrides a `:gps_impossible_jump` refusal; with no
+  grants, behavior is identical to `/1`.
+- `AshA2A.Transport.WireCompat`: conversion between the wire (`A2A.*`) and protocol
+  (`AshA2A.Protocol.*`) structs at the agent boundary.
+- Nonce-replay defense in `Ingress.Channel`, `AshA2A.TelemetryBridge.PplanHazard`, and
+  real-supervisor durability continuity tests.
+- `mix ash_a2a.pplan_courts` parity runner (`docs/how-to/run-pplan-courts.md`) and the
+  `ASH_PPLAN_PATH` toggle.
+- `mix ash_a2a.v1_conformance_report` derives its test list from a glob of
+  `test/ash_a2a_v1_*_test.exs` and accepts `--tck-report PATH`.
 
-- Dependency update (41 `mix.lock` entries): `ash_pplan` 26.11.10,
-  `ash` 3.37.4, `bandit` 1.14.1, `grpc` 1.0.6, `req_llm` 1.30.0, plus
-  transitive entries.
+### Changed
+
+- `tasks/resubscribe` with `lastSeenGeneration` now works on both HTTP plugs; on
+  `AshA2A.Transport.Plug` owned tasks attach to the live stream (previously answered
+  `-32004`), with no snapshot when the client is current.
+- Conformance docs now state A2A v1.0.1 (wire-compatible with v1.0.0) and record TCK
+  results as `{pass, fail, not_tested, skipped, manual}` bound to a pin SHA and date.
+- The CI `tck` job reads `reports/compatibility.json` and adds the gRPC transport.
+- Dependency updates: `ash_pplan` 26.11.10, `ash` 3.37.4, `bandit` 1.14.1, `grpc` 1.0.6,
+  `req_llm` 1.30.0.
+- Verifier warning text now reflects the dispatcher's `authority gate :disabled` and
+  `hooks` behavior.
+
+### Fixed
+
+- Wire-shaped `a2a.auth` identity maps (string keys after a JSON-RPC round trip) now
+  resolve as the same identity as the in-process atom-key shape, with no widening of
+  access.
 
 ## [26.10.9] - 2026-11-07
 
 ### Added
 
-- `AshA2A.Twin` digital-twin family: gen_statem twins for `Asset`,
-  `Partner`, and `Operator` (`lib/ash_a2a/twin/`), with hazard statistics
-  (median / MAD / Z-score) in `AshA2A.Twin.Hazard` and the `Twin.Vince`
-  adversarial interrogator built on the `MechanicalPrior` behaviour.
-- `AshA2A.Strain.Tensor` and `AshA2A.Strain.Bridge` (AHDCLT strain bridge).
-- Attestation `Key`/`Gate` (`lib/ash_a2a/attestation/`) and
-  `Ingress.Channel`.
-- `Copilot.Pipeline` dispatch pre-check chain, with the lane-G4 authority
-  hop: the `:authority_source` opt (an `AshA2A.Authority.Source` module or
-  `{module, opts}`) enforces an `assert_standing` gate as the last check
-  before admit; refusal surfaces as `{:refuse, %{code: :authority}}`, and
-  absence of the opt is a documented skip, not a silent pass.
-- `Copilot.Pipeline` -> `Strain.Bridge` seam join (Z7): the pipeline threads
-  a live Bridge `mesh_state` alongside the Vince/Tony state and routes
-  strain-first (`route/2` delegates to `Bridge.route/2`) — saturated mesh
-  sheds before Vince is ever consulted; admit/challenge/refuse observations
-  fold into the Bridge rolling windows (lane F2's joint verification:
-  `test/copilot/pipeline_test.exs` exercises the full chain through real
-  Bridge mesh state).
-- `AshA2A.Negotiation` family (`lib/ash_a2a/negotiation/`): `Engine`,
-  `Strategy` behaviour, and `DefaultStrategy` (lane B4).
-- `AshA2A.Attention.Broker` (`lib/ash_a2a/attention/broker.ex`): proposal
-  ledger triage with routine vs escalation edges and the
-  `escalation_path/2` founder-paging check (lane B5).
-- `AshA2A.Actuation` family (`lib/ash_a2a/actuation/`): `Engine`,
-  `Adapter`, and `Ticket`, with the actuation court
-  (`test/actuation/engine_court_test.exs`) (lane Z11 via W3 closure).
-- Replan port surface: conformance, parity, binding, OCEL-evidence, and
-  hazard-bridge courts; `pplan_courts` mix/CLI runner; `ASH_PPLAN_PATH`
-  dependency toggle for source-local ash_pplan consumption.
-
-### Fixed
-
-- Port totality holes in `AshA2A.Replan.Port` (verified on disk: no `raise`
-  sites remain in `lib/ash_a2a/replan/port/*.ex`; opts-based module lookup,
-  provider availability, and the `:powl` legacy fetch all return typed
-  `{:error, _}` — `:ash_pplan_unavailable`, `:plan_not_found`,
-  `:unsupported_formalism`, `:missing_domain`, `:missing_initial`,
-  `:invalid_ash_pplan_result`).
-- Hazard-bridge `Process.info` defects and twin hazard typespec defects
-  (no `Process.info` call sites remain in `lib/ash_a2a/strain/` or
-  `lib/ash_a2a/twin/`).
-- `Twin.Tony` guard syntax.
-- Attestation hardening (lane F7, verified on disk — PARTIAL, one piece in
-  flight): canonical low-s ECDSA signature enforcement in
-  `AshA2A.Attestation.Key` (the malleated `(r, n - s)` twin is refused with
-  `:non_canonical_signature`); future-skew bound in
-  `Attestation.Gate.verify_freshness/2` (`issued_at <= now + 5` alongside
-  the max-staleness check); GPS coordinate validation in
-  `Attestation.Gate.verify_gps_trajectory/1` (haversine distance,
-  `{:refused, :gps_impossible_jump}` for > 500 km within 60s between
-  consecutive observations). Per-coordinator nonce-replay tracking landed
-  in `Ingress.Channel` (bounded FIFO consumed-nonce set; re-submission
-  refused `{:refused, :nonce_replayed}` before crypto work;
-  `lib/ash_a2a/ingress/channel.ex` "Replay defense"); the gate itself
-  checks nonce *match* only.
-
-### Known Issues
-
-None — both prior entries resolved upstream (see "Resolved upstream" under
-Fixed).
-
-### Fixed (upstream attribution, synced 2026-11-07)
-
-- Terminal-signal refusal in the durable engine (disjunctive I7): landed
-  upstream in ash_pplan. Signals to a terminal run return
-  `{:error, {:run_terminal, status}}` instead of creating an orphan waiter;
-  cancelling/unwinding runs still accept signals. Evidence: ran
-  `MIX_BUILD_ROOT=_build-x5 mix test test/durable/engine_terminal_signal_test.exs`
-  in /Users/sac/ash_pplan — 2 tests, 0 failures, exit 0
-  (`test/durable/engine_terminal_signal_test.exs`).
-- `marketplace_sim` dashboard repairs: landed upstream in ash_pplan
-  (`test/support/marketplace_sim/web/dashboard_live.ex`) — every surface reads
-  real ash_pplan state (capability catalog, durable ETS store, pid-scoped
-  telemetry attach), and the telemetry-handler leak is fixed by a dedicated
-  watcher tied to a `:DOWN` monitor on the LiveView pid (cleanup no longer
-  relies on `terminate/2` running through crash/reconnect). Evidence: read the
-  repaired handlers on disk (lines 1-80, watcher at 61-80).
-
-### Removed
-
-- `AshA2A.SagaControl` (`fc0de4f5`): the module and its test are deleted;
-  nothing else in `lib/` referenced it.
+- `AshA2A.Twin` digital-twin family (`Asset`, `Partner`, `Operator`) with hazard statistics
+  in `AshA2A.Twin.Hazard` and the `Twin.CEO` interrogator built on `MechanicalPrior`.
+- `AshA2A.Strain.Tensor` and `AshA2A.Strain.Bridge`.
+- Attestation `Key`/`Gate` and `Ingress.Channel`.
+- `Copilot.Pipeline` dispatch pre-check chain, including an `:authority_source` option that
+  enforces a standing check as the last gate before admit (refusal surfaces as
+  `{:refuse, %{code: :authority}}`), and strain-first routing through `Strain.Bridge`.
+- `AshA2A.Negotiation` (`Engine`, `Strategy`, `DefaultStrategy`), `AshA2A.Attention.Broker`
+  and `AshA2A.Actuation` (`Engine`, `Adapter`, `Ticket`).
+- Replanning port surface and the `ASH_PPLAN_PATH` toggle for source-local `ash_pplan`.
 
 ### Changed
 
-- graphlaw v26.10.28 compatibility (`5fcf1538`, `fc0de4f5`; consumer note:
-  `docs/reference/graphlaw-v26.10.28-compat.md`): `open/1` keys the
-  hook-reactor runtime off the engine-reported `surface_blake3` — a digest
-  mismatch is carried as `nil`, never a stale value. The engine's retired
-  `validate_all`/`N3_DENIAL` op pair is replaced: N3-denial conditions are
-  re-derived through `AshGraphLaw.n3/2` — the condition must be exactly one
-  `{ BODY } => false .` rule (anything else is the typed refusal
-  `:hook_condition_invalid`), the arm rewrites the (inert) `=> false`
-  consequent to a ground sentinel triple, and the denial matches iff the
-  sentinel appears in the engine's `derived` text.
-- Refusal mapping and receipt tooling truth-syncs for the v26.10.28 registry
-  values (`d8c6829f`): `AshA2A.Semantic.Refusal`, `mix ash_a2a.self_card`,
-  and `mix ash_a2a.standing_receipt.verify`.
-- Dependency locks (`9abc3054`): `mix.lock` — ash 3.35.0 et al.
+- graphlaw v26.10.28 compatibility: the hook runtime keys off the engine-reported surface
+  digest, and N3-denial conditions are re-derived through `AshGraphLaw.n3/2`
+  (see `docs/reference/graphlaw-v26.10.28-compat.md`).
+- Refusal mapping and receipt tooling updated for the new registry values.
+- Dependency lock updates (`ash` 3.35.0 and others).
+
+### Fixed
+
+- `AshA2A.Replan.Port` no longer raises; failures return typed `{:error, _}` values.
+- Hazard-bridge `Process.info` defects, twin hazard typespecs, and a `Twin.COO` guard.
+- Attestation hardening: canonical low-s ECDSA signatures are enforced (malleated twins are
+  refused with `:non_canonical_signature`), freshness checks bound future skew, GPS
+  trajectories are validated (`:gps_impossible_jump` above 500 km in 60 s), and
+  `Ingress.Channel` refuses replayed nonces.
+- Terminal runs in the durable engine refuse further signals with
+  `{:error, {:run_terminal, status}}` (fixed upstream in `ash_pplan`).
+
+### Removed
+
+- `AshA2A.SagaControl` (unused).
 
 ## [26.10.5] - 2026-10-05
 
 ### Added
 
-- Official TCK surface (lanes AT2/DY3/G3/G6): the in-repo SUT harness
-  (`tck_sut.exs`) boots a real agent behind the owned transports with a
-  JWS-signed card, the extended-card endpoint, push-config RPCs, and a
-  gRPC `A2AService` handler; the official `a2aproject/a2a-tck`
-  compatibility suite ran against it across all three bindings
-  (jsonrpc, http_json, grpc) — 73.6% overall, 92 PASS / 7 FAIL /
-  4 SKIPPED / 26 NOT TESTED (full per-class verdict:
-  `docs/reference/a2a-v1-conformance.md`). CI gained a `tck` job
-  running the official suite against the in-tree SUT (`6342ab2d`).
-- Transport-backed streaming for `message/stream` and
-  `tasks/resubscribe` (lane G3, `62324a29`): replay streams from the
-  recorded task event log over SSE, converting the TCK streaming
-  classes (STREAM-SUB-001..003, STREAM-ORDER-001..003) to PASS on all
-  three bindings.
-- Card signing on the wire (lane DY3, `a1efe7e2` + `5003ac96`): the
-  agent card carries JWS `signatures`; `AshA2A.Protocol.CardSigning`
-  gained HS256/RS256/ES256 algorithms with `kid` in the JWS protected
-  header, exercised by CARD-SIGN courts.
-- Auth-scheme hardening surface (lane DY, `0115f188`,
-  `f5e34bea`): reserved-key metadata strip, ref-only internal error
-  payloads, push-sender URL scheme and CRLF gates, SSRF-safe push
-  sender defaults, private extended-card cache.
+- Official TCK run across all three bindings (jsonrpc, http_json, grpc) against an in-repo
+  server harness: 92 pass, 7 fail, 4 skipped, 26 not tested. Details:
+  `docs/reference/a2a-v1-conformance.md`. CI gained a `tck` job.
+- Streaming for `message/stream` and `tasks/resubscribe` replays from the recorded task
+  event log over SSE, on all three bindings.
+- Agent cards carry JWS `signatures` on the wire; `AshA2A.Protocol.CardSigning` supports
+  HS256, RS256 and ES256 with `kid` in the protected header.
 
 ### Changed
 
-- Chicago court strengthening (C7, 619bbb3): six new falsifiers kill the three
-  authority/envelope courts that passed vacuously. SA2A-AUTH-022/023/024 pin
-  subject/capability binding and expiry through the real Grant -> CommandBus
-  path; SA2A-AUTH-GRANT-012/013 pin grant-layer binding and past-`expires_at`
-  refusal; CHI-ADM-014 witnesses an envelope declaring its own standing being
-  refused `:standing_self_declared` (the guard previously made 0 calls on the
-  court path). The SA2A-ENV/CHI-BRCE courts no longer hand-mint authority:
-  they start a court-owned broker and mint through the real Grant API.
-  Mutation run: 14 killed / 1 unknown (was 3 survived + 2 unknown); the
-  mutation manifest is re-pinned.
-- Legacy-compat census and audit (D6, 0bdc6b7): 46 non-chicago Memory
-  receipt-store consumers censused -- 2 incidental Memory stores migrated to
-  real on-disk EKV instances (with a `receipt.standing == :durable`
-  post-condition so the swap is falsifiable), the rest lawfully classified by
-  the store-as-subject law. `docs/jira/v26.10.2/LEGACY-COMPAT-AUDIT.md`
-  states the retirement criterion: `:legacy_compat` is deprecable -- zero
-  in-repo consumers boot under it, and no documented host path recommends it.
-- Security: `ash` bumped 3.34.0 -> 3.34.4 closing CVE-2026-94201 (HIGH,
-  `91b93129`); cowlib EEF-CVE-2026-43966/43969 dispositioned
-  ACCEPT-TYPED:NOT-EXPOSED with evidence-backed exposure assessment
-  (`58fd4695`).
+- Authority and envelope tests no longer hand-mint authority; they run through the real
+  grant and command-bus path, and new tests pin subject/capability binding and expiry.
+- In-repo census of the legacy in-memory receipt store; the `:legacy_compat` mode is
+  deprecable (no in-repo consumer boots under it).
+
+### Security
+
+- Auth-scheme hardening: reserved-key metadata is stripped, internal error payloads are
+  reference-only, push senders gate URL scheme and CRLF and default to SSRF-safe behavior,
+  and the extended-card cache is private.
+- `ash` 3.34.0 to 3.34.4, closing CVE-2026-94201 (high). Two cowlib advisories were
+  assessed as not exposed.
 
 ## [26.10.4] - 2026-10-05
 
 ### Added
 
-- Enterprise surface (PRD v26.10.4, `docs/jira/v26.10.4/PRD.md`
-  FR-01..FR-06): a config-gated, default-OFF supervision subtree
-  (`AshA2A.Enterprise.Supervisor`, court
-  `test/ash_a2a/enterprise/supervisor_test.exs`) plus one ordered inbound
-  pipeline plug (`AshA2A.Enterprise.Pipeline`, court
-  `test/ash_a2a/enterprise/pipeline_test.exs`) wiring the landed gates in
-  ARD §2 order around any inner transport plug. Gate keys `:spiffe_socket`,
-  `:authzen_pdp_url`, `:kms`, `:finops`, `:drain`, `:affidavit`, `:siem`
-  each start their child only when configured; a gated-on child whose
-  module is not compiled in is a typed skip, logged, never silent. The
-  `:affidavit` and `:siem` gate children (affidavit pool, OCEL broadcaster)
-  are landed as gate keys and typed skips; the child modules are landed,
-  court pending. Reference: `docs/reference/enterprise.md`.
-- FR-01 zero-trust identity and policy: SPIFFE workload identity
-  (`lib/ash_a2a/spiffe/` — `AshA2A.SPIFFE.WorkloadWatcher`,
-  `AshA2A.SPIFFE.SvidValidator`, `AshA2A.SPIFFE.TrustBundle`; courts
-  `test/ash_a2a/enterprise/spiffe_workload_watcher_test.exs`,
-  `test/ash_a2a/enterprise/svid_validator_test.exs`) streaming and
-  rotating X.509 SVIDs from a real SPIRE agent socket over the Workload
-  API framing, fail-closed on bundle expiry; OpenID AuthZEN evaluation
-  (`lib/ash_a2a/authzen/` — `AshA2A.AuthZEN.Client`,
-  `AshA2A.AuthZEN.DecisionPool`, `AshA2A.AuthZEN.DecisionGate`; courts
-  `test/ash_a2a/enterprise/authzen_client_test.exs`,
-  `test/ash_a2a/authzen/decision_gate_test.exs`) through a real Finch pool
-  with typed `:pdp_unreachable` fail-closed refusals; monotonic delegation
-  narrowing (`AshA2A.AuthZEN.Monotonic`, court
-  `test/ash_a2a/enterprise/monotonic_grant_test.exs`) refusing
-  `:refused_non_monotonic_grant` on any delegation expansion
-  (`C_child ⊆ C_parent` at every hop).
-- FR-02 inline DLP and data residency: `AshA2A.Security.DLPFilter`
-  (`lib/ash_a2a/security/dlp_filter.ex`, court
-  `test/ash_a2a/enterprise/dlp_filter_test.exs`) tokenizing PCI-DSS PAN,
-  US SSN, high-entropy API keys, and PHI spans in both wire directions
-  (`AshA2A.Security.DLPFilter.Plug`); `AshA2A.Security.DataResidency`
-  (`lib/ash_a2a/security/data_residency.ex`, court
-  `test/ash_a2a/enterprise/data_residency_test.exs`) refusing
-  jurisdiction-tagged workloads outside the node region or group,
-  fail-closed on unknown node region.
-- FR-03 CMEK envelope encryption: `AshA2A.Security.KeyManager` with the
-  `AshA2A.Security.CMEK` AES-256-GCM payload layer and the
-  `AshA2A.Security.KMS.Client` binding (`lib/ash_a2a/security/cmek.ex`,
-  `lib/ash_a2a/security/key_manager.ex`, `lib/ash_a2a/security/kms/`;
-  court `test/ash_a2a/enterprise/cmek_test.exs`) — per-task DEKs wrapped
-  under a customer KEK, rotation without payload rewrite, typed
-  `:refused_cmek_*` refusals, fail-closed with no KMS binding.
-- FR-04 two-phase drain: `AshA2A.Cluster.DrainManager`
-  (`lib/ash_a2a/cluster/`, court `test/ash_a2a/enterprise/drain_test.exs`,
-  covering `AshA2A.Cluster.HealthPlug`, `AshA2A.Cluster.Checkpoint`, and
-  `AshA2A.Cluster.Handover`) — real OS SIGTERM disposition, cordon (503 +
-  `Retry-After`, `{:error, :cordoned}` on new work), tracked-task drain
-  deadline, checkpoint plus handover of unfinished frames, clean exit
-  inside the 30s grace period.
-- FR-05 FinOps hard quotas: `AshA2A.FinOps.BudgetEnforcer`
-  (`lib/ash_a2a/finops/`, court `test/ash_a2a/enterprise/finops_test.exs`)
-  — pre-dispatch hard-ceiling reservation (`:budget_exceeded` before any
-  downstream token spend), fail-closed `:missing_evidence` when no ceiling
-  is configured, `:invalid_request` on unresolvable attribution,
-  `[:ash_a2a, :finops, :chargeback]` telemetry on every verdict.
-- FR-06 affidavit trust plane and SIEM egress: `AshA2A.Evidence.Affidavit`
-  and `AshA2A.Evidence.Ocel2` (`lib/ash_a2a/evidence/`; courts
-  `test/ash_a2a/evidence/affidavit_test.exs`,
-  `test/ash_a2a/enterprise/affidavit_ocel2_test.exs`) bridging receipts,
-  traces, and identity claims to the real `AshAffidavit` WASM engine and
-  serializing IEEE OCEL v2 event logs; `AshA2A.Telemetry.SIEM`
-  (`lib/ash_a2a/telemetry/siem.ex`, court
-  `test/ash_a2a/enterprise/siem_test.exs`) batched, retried,
-  SSRF-admitted egress of OCEL v2 events to Splunk HEC, Google Chronicle,
-  and Datadog Logs, fail-fast per batch with typed
-  `{:error, {:siem_delivery_failed, platform, reason}}` exhaustion.
-- Adjacent protocol surfaces landed with the release: `AshA2A.Passport`
-  (signed, portable agent identity document: agent card, capability
-  attestations, and evidence chain under one Merkle root and detached JWS;
-  court `test/ash_a2a_passport_test.exs`), `AshA2A.Trace`
-  (TRACE-compliant, OTLP/JSON-exportable task-saga traces with
-  task-derived deterministic ids; court `test/ash_a2a_trace_test.exs`),
-  `AshA2A.Bidi` (bidirectional streaming over the SSE transport via
-  per-stream POST input endpoints; court `test/ash_a2a_v1_bidi_test.exs`),
-  and `AshA2A.Elicitation` (typed, schema-constrained `INPUT_REQUIRED`
-  contract; court `test/ash_a2a_v1_elicitation_test.exs`).
-
+- Enterprise surface (all config-gated, default off): `AshA2A.Enterprise.Supervisor` and
+  `AshA2A.Enterprise.Pipeline` (reference: `docs/reference/enterprise.md`).
+- Zero-trust identity and policy: SPIFFE workload identity (`AshA2A.SPIFFE.*`), OpenID
+  AuthZEN evaluation (`AshA2A.AuthZEN.*`, fail-closed `:pdp_unreachable`), and monotonic
+  delegation narrowing (`:refused_non_monotonic_grant`).
+- Inline DLP (`AshA2A.Security.DLPFilter`) and data residency
+  (`AshA2A.Security.DataResidency`).
+- CMEK envelope encryption (`AshA2A.Security.KeyManager`, AES-256-GCM, rotation without
+  payload rewrite).
+- Two-phase drain (`AshA2A.Cluster.DrainManager`) with cordon, tracked-task drain,
+  checkpoint and handover.
+- FinOps hard budget ceilings (`AshA2A.FinOps.BudgetEnforcer`).
+- Affidavit and OCEL v2 evidence (`AshA2A.Evidence.Affidavit`, `AshA2A.Evidence.Ocel2`)
+  and SIEM egress to Splunk HEC, Google Chronicle and Datadog Logs
+  (`AshA2A.Telemetry.SIEM`).
+- `AshA2A.Passport` (signed portable agent identity), `AshA2A.Trace` (OTLP/JSON task
+  traces), `AshA2A.Bidi` (bidirectional streaming over SSE), and `AshA2A.Elicitation`
+  (typed `INPUT_REQUIRED` contract).
 
 ## [26.10.3] - 2026-10-04
 
-### Breaking
+### Changed
 
-- **Removed the `:a2a` hex dependency; wire protocol retargeted to A2A
-  v1.0.0.** The wire surface is hosted in-repo as the `AshA2A.Protocol.*`
-  modules (`lib/ash_a2a/protocol/`, a mechanical `A2A.*` ->
-  `AshA2A.Protocol.*` namespace port of a2a-elixir 0.3.0, Apache-2.0;
-  attribution in `lib/ash_a2a/protocol/NOTICE`). `AshA2A.Protocol.Version`
-  makes `"1.0"` the default `protocolVersion`, carried per-entry on the
-  card's `supportedInterfaces` (`"0.3"` stays listed for negotiation; the
-  top-level `url`/`protocolVersion` card fields are gone from the wire
-  format). Docs swept to match: module references, auth/getting-started
-  mechanics, and the endpoint/spec-mapping references now describe the
-  in-repo codec.
-- **v1.0 wire shapes.** Parts and stream frames carry no `kind`
-  discriminator on emission — the wrapper key (`task`/`message`/
-  `statusUpdate`/`artifactUpdate`) is the discriminator; the decoder still
-  accepts a v0.3-style `"kind"` on input. Stream events carry no `final`
-  boolean; finality is a terminal state (`completed`/`failed`/`canceled`/
-  `rejected`/`input_required`/`auth_required`). Artifact streaming is true
-  chunking: `artifactUpdate` frames append to a stable `artifactId` under
-  the `append`/`lastChunk` flags.
-- **v1.0 error registry.** `AshA2A.ToA2AError` is the single failure
-  normalizer: a missing/unknown task maps to `-32001`
-  (`TaskNotFoundError`, ErrorInfo reason `TASK_NOT_FOUND`; policy denials
-  reuse `-32001`, distinguished on the wire only by the ErrorInfo reason),
-  and every A2A-range code — including `-32602` (`INVALID_PARAMS`) —
-  serializes a `google.rpc.ErrorInfo` `data` object.
-- **Multi-turn task states.** `TASK_STATE_INPUT_REQUIRED` and
-  `TASK_STATE_AUTH_REQUIRED` are first-class non-terminal, resumable states,
-  and `TASK_STATE_REJECTED` is in the emitted state registry.
-- **New surfaces.** `AshA2A.Executor` (verified transport call -> real,
-  policy-authorized Ash action -> JSON-RPC-shaped result via
-  `AshA2A.ToA2AError`), the `AshA2A.Domain` DSL,
-  `AshA2A.Verifiers.VerifySkills`, `AshA2A.Schema` (per-skill JSON Schema
-  projection), `AshA2A.Protocol.CardSigning`,
-  `AshA2A.Protocol.CardCache`, the HTTP+JSON binding
-  `AshA2A.Transport.HTTPJSON`, extension negotiation
-  (`AshA2A.Protocol.Extension`), the schema-advertisement extension
-  (`AshA2A.Protocol.Extensions.Schema`, URI `urn:sa2a:extension:schema:v1`),
-  and the pplan provider seam.
-- `mix ash_a2a.install` no longer adds `:a2a` to the generated `mix.exs`;
-  the only dependency it manages is `ash_a2a` itself.
-- **ash_pplan durability provider** (`AshA2A.Providers.PPlan`): ash_a2a
-  stays a thin declarative Spark gateway, with durability supplied by
-  `ash_pplan` behind `mix ash_a2a.install --with-pplan`; the swarm release
-  mints CONFORMANT standing receipts backed by real court evidence
-  (`swarm/rel/overlays/standing/`, chicago court manifest + digests; 187
-  falsifiers, 0 survived on the pinned subject).
-- **SEC-01 owner-scoped `tasks/list`.** The wrapper transport plug answers
-  `tasks/list` from the verified principal (owner-scoped
-  `{:ash_a2a_list_tasks, principal, params}`) instead of delegating to the
-  vendored plug's unscoped listing, closing anonymous/other-principal task
-  enumeration (`AshA2A.A2ATransport.Plug`).
-- **SEC-08 `message/stream` error redaction.** The SSE transport's error
-  reply sends a typed error class only — `SafeError.redact/1` strips the
-  task struct (and any `metadata["a2a.auth"]` credential it carried) before
-  `inspect/1` could echo it to the wire (`AshA2A.A2ATransport.SSE`).
-- **Auth plug hardening** (`AshA2A.Protocol.Plug.Auth`): RFC 7235 §2.1
-  case-insensitive scheme comparison, RFC 7235 §3.1 multi-challenge 401s
-  (one `WWW-Authenticate` header per scheme, appended not replaced), and
-  fail-closed `verify/3` — a raising verifier yields the generic 401, with
-  detail server-side only.
-- **Extended card key stripping.** The extended agent card deep-strips the
-  internal key convention (`a2a.auth`, `ash_a2a.owner`, `:stream`) from
-  every map in the card, not just top-level metadata
-  (`AshA2A.A2ATransport.ExtendedCard`).
-- **contextId integrity.** A continuation whose explicit, non-empty
-  `contextId` differs from the stored task's is refused as `:not_found`
-  (indistinguishable from a missing task), and new tasks get server-minted
-  CSPRNG context ids (`ctx-` + 128 bits) when the client supplies none
-  (`AshA2A.Transport.Runtime`).
-- **Admission refusals are terminal `rejected`.** Both task-finalizing
-  dispatch paths (`AshA2A.Protocol.Agent.Runtime` and
-  `AshA2A.Transport.Runtime`) classify pre-handler refusals
-  (forbidden/skill-miss/consequence-unclassified) as `:rejected`, never
-  `:failed`; auth-class failures stay resumable `:auth_required`.
-- **Artifact chunk ids minted once.** The streaming artifact id is minted a
-  single time per stream and shared by the SSE chunk emitter and the
-  `stream_done` fold, so v1.0 `append`/`lastChunk` frames reassemble under
-  one stable `artifactId` (`AshA2A.Transport.Runtime`).
-- **TCK-driven transport fixes** (`AshA2A.Transport.Plug`, pinned in
-  `test/ash_a2a/transport/transport_court_test.exs`): an unsupported
-  `A2A-Version` request header is refused `-32009` `VERSION_NOT_SUPPORTED`
-  as a `google.rpc.ErrorInfo` (TCK `VER-SERVER-002`; an absent header is
-  tolerated at the negotiated default and echoed back); `tasks/resubscribe`
-  on an unknown or foreign task answers `-32001` `TASK_NOT_FOUND` while an
-  owned task on this plug answers `-32004` `UNSUPPORTED_OPERATION`, since
-  only `message/stream` is a served streaming method (TCK
-  `STREAM-SUB-004`); and the agent card serves spec §8.6.1 caching headers
-  (`Cache-Control: max-age=60`, `ETag` body digest, `Last-Modified`)
-  (TCK `CARD-CACHE-001`).
+- **Breaking:** the `:a2a` hex dependency was removed and the wire protocol retargeted to
+  A2A v1.0.0. The codec is hosted in-repo as `AshA2A.Protocol.*` (ported from a2a-elixir
+  0.3.0, Apache-2.0; attribution in `lib/ash_a2a/protocol/NOTICE`). The default
+  `protocolVersion` is `"1.0"`, carried per entry in the card's `supportedInterfaces`
+  (`"0.3"` stays listed for negotiation).
+- **Breaking:** v1.0 wire shapes. Parts and stream frames carry no `kind` discriminator on
+  emission (the decoder still accepts it); stream events carry no `final` boolean
+  (finality is a terminal state); artifact streaming uses `append`/`lastChunk` chunking.
+- **Breaking:** v1.0 error registry. `AshA2A.ToA2AError` is the single failure normalizer;
+  unknown tasks map to `-32001` and A2A-range errors carry a `google.rpc.ErrorInfo` object.
+- `TASK_STATE_INPUT_REQUIRED` and `TASK_STATE_AUTH_REQUIRED` are resumable non-terminal
+  states; `TASK_STATE_REJECTED` is emitted for admission refusals (never `failed`).
+- `mix ash_a2a.install` no longer adds `:a2a` to `mix.exs`.
+- A continuation with a mismatched `contextId` is refused as not found, and new tasks get
+  server-minted random context ids.
 
 ### Added
 
-- **TCK compatibility run (JSONRPC binding).** The official
-  `a2aproject/a2a-tck` suite ran against a real `ash_a2a` JSONRPC server
-  (2026-10-05, lane Z19): **69.2%** overall compatibility (MUST 70.4%,
-  SHOULD 42.9%, MAY 100%); the jsonrpc matrix is 68 pass / 5 fail / 15
-  skip of 88. The three MUST infrastructure failures were fixed
-  in-session (see the TCK-driven transport-fixes bullet above); the 5
-  remaining jsonrpc failures are pinned as the TCK echo-SUT behavioral
-  contract (DM-ART-001/DM-MSG-001), not spec violations. Full matrix and
-  scope: `docs/reference/a2a-v1-conformance.md`.
-- **gRPC binding** (`AshA2A.Transport.GRPC.Server`): the canonical
-  `lf.a2a.v1.A2AService` over HTTP/2 via `:grpc_server` — 9 unary RPCs
-  plus 2 server-streaming (`SendStreamingMessage`, `SubscribeToTask`)
-  pumping the same `TaskEvents` log as SSE. Protobuf messages are
-  codegen'd from the vendored `priv/proto/a2a.proto` into
-  `lib/ash_a2a/transport/grpc/pb/` and bridged to the codec's proto-JSON
-  maps via `Protobuf.JSON`; length-prefixed framing in
-  `AshA2A.Transport.Grpc.Framing`; new deps `:protobuf`/`:grpc_server`/
-  `:grpc` in `mix.exs`. Verified over a real gRPC channel
-  (`test/ash_a2a_transport_grpc_server_test.exs`); no TCK run over gRPC.
-- **HTTP+JSON REST surface** (`AshA2A.Transport.HTTPJSON`):
-  `POST /message:send`, `GET /tasks`, `GET /tasks/{id}`,
-  `POST /tasks/{id}:cancel`, the pushNotificationConfig CRUD routes
-  (`POST`/`GET`/`GET {cid}`/`DELETE {cid}`), the authenticated
-  extended-card route `POST /agent`, and the well-known agent card —
-  delegating to the same handlers as the JSON-RPC binding
-  (`PushConfigRPC`, `ExtendedCard`), so both bindings answer identical
-  error envelopes by construction.
-- **pplan deep integration.** `AshA2A.Execution.PPlan` — the `:pplan`
-  execution adapter (run id IS the A2A task id; fresh/resume/parked
-  pass-through semantics), `AshA2A.Providers.PPlanNotify` — the
-  durable-run completion -> push-notification webhook bridge, the seam
-  docs (`docs/explanation/pplan-seams.md`), and restart-proven
-  durability (`test/ash_a2a/durable_server_real_restart_test.exs`).
-- **Marketplace pack family.** Eight a2a/sa2a ggen-marketplace packs
-  (a2a-v1-protocol-pack, a2a-conformance-pack, a2a-security-pack,
-  a2a-durability-pack, a2a-hex-migration-pack, sa2a-bridge-pack,
-  sa2a-chicago-court-pack, sa2a-semantic-evidence-pack), qualified by a
-  run-derived baseline: `qualification/baseline.json` records 290 ALIVE
-  (6 REFUSED / 1 SKIPPED / 9 WARN) across the 306-pack qualify run
-  (ggen 26.9.28). ash_a2a self-hosts the capital via in-repo `ggen.toml`
-  (canonical-ash-projection-generator; `ggen sync run`).
-- **Docs set.** Conformance statement with the TCK per-transport matrix
-  (`docs/reference/a2a-v1-conformance.md`), security guide
+- gRPC binding (`AshA2A.Transport.GRPC.Server`): the canonical `lf.a2a.v1.A2AService` with
+  9 unary and 2 server-streaming RPCs, generated from the vendored `priv/proto/a2a.proto`.
+- HTTP+JSON binding (`AshA2A.Transport.HTTPJSON`): message send, task get/list/cancel,
+  push-notification config CRUD, extended card, and the well-known agent card.
+- `AshA2A.Executor`, `AshA2A.Domain` DSL, `AshA2A.Verifiers.VerifySkills`,
+  `AshA2A.Schema` (per-skill JSON Schema), `AshA2A.Protocol.CardSigning`,
+  `AshA2A.Protocol.CardCache`, extension negotiation, and the schema-advertisement card
+  extension (`urn:sa2a:extension:schema:v1`).
+- Durability through `ash_pplan`: `AshA2A.Providers.PPlan`, `AshA2A.Execution.PPlan` (the
+  run id is the A2A task id), push-notification bridge `AshA2A.Providers.PPlanNotify`, and
+  restart-proven durability. Install with `mix ash_a2a.install --with-pplan`.
+- TCK run over the JSON-RPC binding: 69.2% overall compatibility (68 pass, 5 fail,
+  15 skipped of 88); the remaining failures are pinned as the test server's behavior, not
+  spec violations. Details: `docs/reference/a2a-v1-conformance.md`.
+- Documentation: conformance statement, security guide
   (`docs/how-to/secure-an-a2a-deployment.md`), migration guide
-  (`docs/how-to/migrate-from-a2a-hex.md`), perf baseline
-  (`docs/reference/performance.md`), DSL reference
-  (`docs/reference/dsl.md`), and the resolutions ledger
-  (`docs/jira/v26.10.3-v1-protocol/_RESOLUTIONS.md`).
+  (`docs/how-to/migrate-from-a2a-hex.md`), performance baseline, and DSL reference.
+
+### Fixed
+
+- `Transport.Plug`: unsupported `A2A-Version` is refused `-32009`; `tasks/resubscribe` on an
+  unknown or foreign task answers `-32001`; the agent card serves `Cache-Control`, `ETag`
+  and `Last-Modified` headers.
+- Streaming artifact ids are minted once per stream so chunks reassemble under one id.
+
+### Security
+
+- `tasks/list` is owner-scoped: it answers from the verified principal, closing anonymous
+  and cross-principal task enumeration.
+- `message/stream` error replies send a typed error class only, redacting task structs and
+  any credential they carried.
+- Auth plug: case-insensitive scheme comparison, multi-challenge 401s, and fail-closed
+  verification (a raising verifier yields a generic 401).
+- The extended agent card strips internal keys (`a2a.auth`, `ash_a2a.owner`, `:stream`)
+  from every nested map.
 
 ## [26.10.2] - 2026-10-02
 
-Documentation drift closure (ERRC) per `docs/jira/v26.10.2/ARD.md` + `PRD.md`. No wire,
-authority, or dispatch-path change; one test-harness code default changed.
+Documentation accuracy release. No wire, authority, or dispatch-path change.
 
-### Eliminated
+### Changed
 
-- Hand-synced `Version:` sites: `HANDOFF.md` and `how-to/release.md` no longer restate the
-  package version; `release_path_test` now checks `mix.exs` against the one admitted site
-  (`a2a-spec-version-mapping.md`) and refuses any second `Version: v` restatement (EL1).
-- Stray duplicate `## [Unreleased] - 2026-09-25` CHANGELOG header removed; a one-header
-  structure guard now enforces it (EL2).
+- `:chicago_topology_root` no longer defaults to a machine path; when unset it refuses with
+  `:chicago_topology_root_unset`.
+- Package version is restated in one documentation site only; the release-path test refuses
+  any second restatement.
 
-### Reduced
+### Added
 
-- `AshA2A.DocsTruthTest` generalized: every documented configuration default row is either
-  verified by running the real consumer (36 execution oracles, up from 3) or explicitly
-  allowlisted with a reason; unaccounted literal defaults are a court failure (RD1).
-- New courts: telemetry-catalog court (every emitted literal event family documented,
-  variable families declared per emitter), mix-task catalog court (rows vs `@shortdoc`,
-  both directions), module-citation/link court (README + indexed docs), README usage-example
-  court (the DSL example compiles and dispatches as documented) — each with a red-first
-  witness (RD2/RD3/RD4/RD5, CR1).
+- Tests that verify documented configuration defaults by running the real reader, that
+  every emitted telemetry event and mix task is documented, and that README examples
+  compile and run.
+- `@moduledoc` for all SPIFFE and AuthZEN modules; more HexDocs extras.
+- Public default readers for several configuration values (for example
+  `Application.agents/0`, `Health.outbox_ready_max/0`, `Planning.HddlSolver.timeout_ms/0`).
 
-### Raised
+### Fixed
 
-- `@moduledoc` for all 13 previously undocumented SPIFFE/AuthZEN modules (RA1).
-- HexDocs extras now ship `test-governed-actions.md`, `migrate-legacy-to-strict.md`,
-  `c2-certificate.md`, `c2-wire-interop.md`, `conformance-claim.md`,
-  `conformance-profiles.md`; the rest of the README control-plane group is marked
-  repo-only, court-enforced (RA2).
-- Public default readers added where courts needed single-site oracles:
-  `Application.agents/0`, `.env/0`, `.require_durable_receipts?/0`;
-  `Telemetry.OcelForwarder.max_in_flight/0`, `.ingest_timeout_ms/0`, `.log_body?/0`,
-  `.log_interval_ms/0`, `.task_supervisor/0`; `ReceiptOutbox.Reconciler.interval_ms/0`,
-  `.stuck_attempts_threshold/0`; `Health.outbox_ready_max/0`, `.health_kill_switch_classes/0`,
-  `.health_ocel_failed_max/0`; `Planning.HddlSolver.timeout_ms/0`, `.max_output_bytes/0`;
-  `GraphLaw.WasmexHost.max_queue/0` (part of RD1).
-
-### Created
-
-- `:chicago_topology_root` no longer defaults to a machine path: unset refuses
-  `:chicago_topology_root_unset`; `config/test.exs` pins the checkout (CR2).
-- `docs/jira/v26.10.2/` ARD/PRD/ERRC tracker seeded and executed (CR3).
+- Removed a duplicate `Unreleased` header; a test now enforces a single header.
 
 ## [26.9.31] - 2026-10-02
 
-Release preparation and documentation alignment: version bumped in `mix.exs`; no tag, no
-publish. Verified by `mix hex.build` and `mix hex.publish --dry-run`. The SA2A profile
-constants (`SA2A-*-v26.9.20`) and the pinned graphlaw engine/wasm are unchanged.
-
-### Fixed
-
-- Documentation alignment pass: README and connected docs restated the implementation.
-  Version lines synced across `mix.exs`, `a2a-spec-version-mapping.md`,
-  `v26.9.29/HANDOFF.md`, and `how-to/release.md` (release-path court green). `mix-tasks.md`
-  and the module index now cover all 15 shipped tasks (added `ash_a2a.c2.court`,
-  `ash_a2a.standing_ref`). `configuration.md` gained the keys the library reads but the
-  catalog omitted (`:security_profile`, `:allow_legacy_authority_policy`,
-  `:claim_store*`, `:receipt_outbox_key`, `:prepared_journal_dir`, `:outbox_ready_max`,
-  HDDL/graphlaw/OCel runtime bounds, ...) and corrected the `:graph_law` default
-  (WasmexHost-first since PERF-01) and the env-var reader module names. `telemetry.md`
-  gained the undocumented event families (`:dispatch, :exception`, `:health, :checked`,
-  OCEL `:delivered`/`:failed`, the `:semantic, *` pipeline families). `index.md` gained
-  the transport plugs, `Receipt.RProjection`, and the SPIFFE/AuthZEN absorbed-boundary
-  families; README gained the owned-transport pointer, the SPIFFE/AuthZEN security note,
-  RFC-SA2A-001–007 inventory, and the control-plane doc pointers.
+Release preparation and documentation alignment; no tag, no publish.
 
 ### Added
 
-- `AshA2A.C2.PolicyEvidence` (AuthZEN PDP adapter: SARC request builder, response binding, HTTPS-only metadata validation) and the Req-based `PolicyEvidence.PdpClient` PEP-side client (04eec80/42671ef).
-- `AuthorityService.authorize/3` opt-in policy-evidence precondition (`policy_evidence_required`/`policy_evidence` ctx opts; refusals `:policy_evidence_missing`/`:policy_evidence_mismatch`) — a PDP allow is evidence, never a substitute for admission.
-- `AshA2A.C2.PolicyEvidence.McpProjection`: projects an MCP `tools/call` (COAZ-MCP) into a powerless `PreparedEffect` with capability id `mcp.tool:<name>` (6226254).
-- `AshA2A.Semantic.InterchangeContract`: evidence-only identity for a semantic interchangeable implementation, schema `ash-a2a.semantic-interchange/v1` (bb4a6c0).
-- `AshA2A.DfCM.FleetIntake` and `AshA2A.DfCM.Court`: evidence-only DfCM fleet-capability intake from a JSON donor manifest and loader/validator for DfCM-generated fleet courts.
-- CHI-FIN synthetic-finance Chicago court (`AshA2A.Chicago.Courts.FiboFinance` + fixtures) over the graphlaw ABI: synthetic `fin:` vocabulary, ETS-ledger subject, authority NONE.
-- 33 new S42 refusal classifications for SPIFFE identity, DfCM court, semantic-interchange and standing-receipt codes (fbea18c).
-- HILT two-port graph-digest integrity: `AshA2A.Hilt.WorkOrder` optionally carries `graph_digest` (sha256:64-hex validated, carried from the command subject by default, explicit-opt override) and `admit_command/2` pins it against the executing command's `semantic_subject.graph_digest` via `checkpoint_graph_digest/2`, refusing `:stale_graph_identity` before claim — SA2A work-order identity (`identity_digest/1`) deliberately excludes it. Qualified by gate-1 court `CHI-HILT` (5 falsifiers) and anti-vacuity mutant `hilt_graph_digest_ok` (killed by CHI-HILT-001/002).
-- `AshA2A.Receipt.RProjection` — projects S31 command receipts onto the fleet R schema v2 (`work_order_id`/`origin_authority`/`provider`/`provider_execution_id` + `provider_ext.ash_a2a` self-digest), evidence-only: standing derives from `terminal_status` × store standing (ALIVE requires `:durable`; an `:observed` executed receipt refuses `:r_projection_standing_not_durable`), the authority ceiling is a fixed map of the receipt's own consequence with no caller override, and the git anchor (`repo`/`subject_sha`/`base_sha`) is caller-supplied and pattern-validated only — the projector runs no git and `consequence.commits` is always `[]`. Deterministic (no wall-clock fields).
+- `AshA2A.C2.PolicyEvidence` (AuthZEN PDP adapter) and its Req-based PDP client;
+  `AuthorityService.authorize/3` gained an opt-in policy-evidence precondition
+  (an allow is evidence, never a substitute for admission).
+- `AshA2A.C2.PolicyEvidence.McpProjection` projects an MCP `tools/call` into a powerless
+  prepared effect.
+- `AshA2A.Semantic.InterchangeContract`, `AshA2A.DfCM.FleetIntake` and `AshA2A.DfCM.Court`.
+- HILT graph-digest integrity: `AshA2A.Hilt.WorkOrder` can carry a `graph_digest` that is
+  pinned against the executing command's semantic subject; drift refuses
+  `:stale_graph_identity`.
+- `AshA2A.Receipt.RProjection`, projecting command receipts onto a fleet receipt schema
+  (evidence-only, deterministic).
+- 33 refusal classifications for SPIFFE, semantic-interchange and standing-receipt codes.
 
 ### Changed
 
-- AuthZEN wire request `action` now emits the canonical Authorization API 1.0 shape `{"name": ..., "properties": ...}` (c3a4be8/ca2e43f).
-- `CapabilityRelease.freeze/2` replays and re-admits each member's durable standing evidence (`AshA2A.StandingBinding.verify_durable/2`) at the closure boundary and refuses `:standing_release_digest_mismatch` when the release digest differs from the binding's portable identity (1ad83d9).
+- The AuthZEN request `action` uses the canonical `{"name": ..., "properties": ...}` shape.
+- `CapabilityRelease.freeze/2` re-admits each member's durable standing evidence and refuses
+  `:standing_release_digest_mismatch` on a digest difference.
+- Documentation (README, `mix-tasks.md`, `configuration.md`, `telemetry.md`, module index)
+  brought in line with the implementation.
 
 ## [26.9.30] - 2026-09-30
 
-Release preparation only: version bumped in `mix.exs`; no tag, no publish. Verified by
-`mix hex.build` and `mix hex.publish --dry-run`. The SA2A contract version strings
-(`v26.9.29`) and the pinned graphlaw engine/wasm are unchanged.
+Release preparation only: version bump; no tag, no publish.
 
 ## [26.9.29] - 2026-09-29
 
-Release preparation only: version bumped in `mix.exs`; no tag, no publish. Built from
-`git log v26.9.22..HEAD` (533 commits; there is no `v26.9.28` tag, and
-26.9.23 to 26.9.28 were never tagged or documented here). No conformance
-profile is claimed: `mix ash_a2a.verify_conformance --profile c0..c3` reports NOT CONFORMANT
-in the development build (see `docs/jira/v26.9.29/HANDOFF.md`). C1, C2 and C3 remain
-not-yet-claimed.
+Release preparation only; no tag, no publish. No conformance profile is claimed:
+`mix ash_a2a.verify_conformance --profile c0..c3` reported not conformant in the
+development build at this release.
 
 ### Added
 
-- Consequence kernel (C1 lane): W3 runtime hardening (prepare, claim, crash-window,
-  outcome stages, authenticated prepared-effect store), W4 dispatch inversion
-  (`CommandBus` dispatch now routes through `ConsequenceKernel.W4.DispatchInversion`),
-  W4C graph-derived closure court and raw effect edge projection, and W5
-  authenticated effect claims and recovery.
-- C2/C3 authority: portable RFC 8785 (JCS) SHA-256 `PreparedEffect` identity, portable
-  certificate fields and wire, external `authority_service/` and `actuator/` mix projects
-  (16-check fence, write-ahead claims, hash-chained ledger), `sa2a_crypto/` standing
-  project (key registry, revocation epochs, durable nonce store, custodian-distinct quorum),
-  and certificate signature verification.
+- Consequence kernel: runtime hardening (prepare, claim, crash-window, outcome stages,
+  authenticated prepared-effect store), dispatch inversion so `CommandBus` routes through
+  the kernel, and authenticated effect claims and recovery.
+- C2/C3 authority: portable RFC 8785 (JCS) SHA-256 prepared-effect identity, certificate
+  signing and verification, and external `authority_service/`, `actuator/` and
+  `sa2a_crypto/` mix projects.
 - `AshA2A.SecurityProfile` (`:strict` default, `:legacy_compat`, `:dev_bypass` compiled out
-  of prod) and `SecurityProfile.Boot` enforcement at `Application.start/2`.
-- `mix ash_a2a.verify_conformance --profile c0..c3`: computes the claim from executed
-  probes; refuses on a dirty tree, non-strict profile and any failing probe.
-- Semantic evidence reference (`Semantic.EvidenceRef`) bound into prepared-effect identity;
-  SA2A semantic gates (authority-none, evidence-only, exact-subject, source-digest).
-- Replanning (`replan`): recovery core, provider ports, bounded failover, portable SA2A
-  consequence envelope, AshPPlan owner-side provider preference.
-- CASTLE SA2A edge capability intake (ttl, module, tests).
-- GALL bounded-intervention closure with receipt and replay paths; SPG conformance corpus
-  executed at runtime; semantic-work identity and replay boundaries.
-- Diataxis SA2A documentation set; RFC-SA2A-003..007 and RFC-007 errata; production
-  k8s/swarm manifests; lane map and HANDOFF for the v26.9.28 kernel milestone.
+  of prod), enforced at application start.
+- `mix ash_a2a.verify_conformance --profile c0..c3`, which computes a claim from executed
+  probes and refuses on a dirty tree or failing probe.
+- Replanning (recovery core, provider ports, bounded failover), bounded-intervention
+  closure with receipt and replay paths, and semantic-work identity and replay boundaries.
+- `AshA2A.SpgIdentity`, `AshA2A.ExecutionSnapshot`, `AshA2A.CapabilityRelease` (frozen
+  capability lifecycle, guarding the card and the dispatcher),
+  `AshA2A.ConditionalCommitment`, `AshA2A.Semantic.PolicyPhenotype`,
+  `AshA2A.Hilt.WorkOrder` and `AshA2A.ExecutionIdentity`.
+- Production Kubernetes/swarm manifests and the Diataxis documentation set.
 
 ### Changed
 
-- Build toolchain moved to Elixir 1.20.4 / OTP 29.1.1.
-- CI: single release path (`release.yml`), first-step authority check, non-publishing
-  attested dry run, Dependabot, Scorecard; historical per-version publishers retired.
-- Refusal classification extended (S42 totality) for merged GALL, semantic-work, SPG,
-  castle and W5 codes.
+- Toolchain moved to Elixir 1.20.4 / OTP 29.1.1.
+- CI uses a single release path with a non-publishing attested dry run, Dependabot and
+  Scorecard.
+- Closure layer deduplicated onto `Gall.Closure.*`; redundant modules removed
+  (see `docs/explanation/closure-implementations.md`).
+- Refusal classification extended so classification stays total for all new codes.
+- `AshA2A.Command` carries an optional `:spg_identity` that joins the fingerprint.
+- `AshA2A.Planning.BoundedPlan` gains `:work_order_digest`; a step claiming a different
+  work-order identity is refused `:preflight_work_order_mismatch`.
+- Closure identity gains a cross-runtime `portable_digest`.
 
 ### Fixed
 
-- SafeExec allowlist and `CallbackRegistry` replace raw `System.cmd` and `apply/3` sites;
-  SSRF admission for the OCEL forwarder, HDDL subprocess timeout, ERC path sanitization.
-- GraphLaw subprocess release race; dispatcher fence reconciled with the sole-DO gate and
-  `CommandBus`; telemetry, port-allocation and timing deflakes.
+- Raw `System.cmd` and `apply/3` sites replaced by an allowlisted executor and callback
+  registry; SSRF admission for the OCEL forwarder; HDDL subprocess timeout; path
+  sanitization.
+- A GraphLaw subprocess release race, plus several test timing and port-allocation flakes.
 
-### Known not done
+### Known issues
 
-- No C1/C2/C3 claim; c1 probes failing in dev build: `closure_report` (failed at probe time: ClosureCourt.report/0 absent; module now in tree, not re-run),
-  `durable_claim_store`, `keyed_journal`, `security_profile_strict`.
-- Supply-chain facts (`--github`) and built-release `RELEASE_DISTRIBUTION=none` inspection
-  were not run.
-
-### Added
-
-- `AshA2A.SpgIdentity` module (d660a9e) — SPG evidence identity for commands:
-  `graph_id`/`graph_version`/`node_id` required, `edge_id`/`projection_family`
-  optional; evidence only, grants neither capability nor authority;
-  `new/1` refuses with `{:error, {:refused_spg_identity, field}}`.
-- `AshA2A.ExecutionSnapshot` (1af4d78) — durable task state independent of any
-  one worker process; descriptive and authority-free so a different worker can
-  reconstruct admitted work after a crash. Provider/runtime topology is
-  deliberately excluded from the semantic work identity.
-- `AshA2A.CapabilityRelease` (77e3265) — frozen capability lifecycle and
-  deployment closure (candidate/admitted/released/retired); `guard/2` is wired
-  into `AshA2A.CommandBus` and reads the new application-env keys
-  `:capability_release_closure` (frozen released-closure digest set, default
-  `nil`) and `:capability_release_mode` (default `:legacy`; passing a closure
-  in opts implies `:strict` for that call).
-- `AshA2A.ConditionalCommitment` (a9979ed) — deterministic pre-DO classifier
-  of a command's standing (`proposal != authority != prepared consequence`);
-  `AshA2A.BrceAnchor` remains the sole-DO fence.
-- `AshA2A.Semantic.PolicyPhenotype` (bf438c7) — candidate-only SA2A
-  declaration of one behavioral realization of a policy; transport-neutral and
-  authority-free, never a capability grant.
-- `AshA2A.Hilt.WorkOrder` and `AshA2A.ExecutionIdentity` (5109c5a) —
-  executable HILT work-order contract plus the canonical bridge to a durable
-  `AshA2A.ExecutionSnapshot` identity: the ExecutionSnapshot replay boundary.
-  Work-order identity is folded into the command fingerprint via
-  `bind_command/2` and verified in `CommandBus`, so provider substitution and
-  transport retries preserve the same command while stale/reused work orders
-  do not. Version bumped to 26.9.25.
-- Total refusal classification (13054ac) — the nine unmapped v26.9.25/26
-  refusal codes now carry explicit S42 classes: `claim_not_allowed`,
-  `start_not_allowed`, `checkpoint_not_monotonic`, `worker_loss_not_applicable`
-  → `:refused_identity`; `completion_not_allowed`, `duplicate_consequence` →
-  `:refused_consequence`; `receipt_binding_mismatch` → `:refused_receipt`;
-  `capability_release_refused` → `:refused_capability`;
-  `capability_release_closure_missing` → `:refused_provenance`.
-
-### Changed
-
-- `AshA2A.Command` carries an optional `:spg_identity` (`AshA2A.SpgIdentity`);
-  its token joins the deterministic fingerprint digest, and receipts,
-  `SemanticProjection` output, and OCEL events forward the five `spg_*`
-  attributes (`spg_graph_id`, `spg_graph_version`, `spg_node_id`,
-  `spg_edge_id`, `spg_projection_family`) when SPG identity is present.
-- Closure layer deduplicated: `Gall.Closure.*` is the canonical implementation.
-  26 redundant `GallClosure.*` and 21 redundant `SemanticWork.*` modules (and their
-  tests) were removed; the remaining `GallClosure.LeaseGuard` and `SemanticWork.*`
-  envelopes have no canonical counterpart and now share `SemanticWork.Envelope`.
-  49 closure/SPG refusal codes are classified in `Semantic.Refusal`. See
-  `docs/explanation/closure-implementations.md`. Nothing here grants authority
-  (only `CommandBus` and `BrceAnchor` DO).
-- `AshA2A.Planning.BoundedPlan` gains `:work_order_digest` (39752e9) —
-  `AshA2A.Planning.Preflight` folds the admitted work-order digest into the
-  preflight identity, so a step claiming a different work-order identity is
-  refused `:preflight_work_order_mismatch` (reporting the planned
-  `:plan_digest` vs the claimed `:work_order_digest`), classified S42
-  `:refused_identity`.
-- Closure identity gains `portable_digest` (015e126) — SHA-256 over RFC 8785
-  canonical JSON of a `chatman.release-closure/v1` payload (lexically
-  sorted), recomputable cross-runtime without BEAM term encoding; the
-  existing digest remains the compatibility identity.
-- Strict-mode receipts merge `AshA2A.CapabilityRelease.attributes/1` into
-  `intended_effect` before commit; `intended_effect` is omitted entirely
-  when the merged map is empty (658c959).
-- Release-closure gating reaches the card and the direct dispatch path
-  (6fcc5b7, c846fac): `AshA2A.Info.agent_card/2` builds from the capability
-  index filtered through the active release closure — legacy mode (default)
-  advertises the full index with wire behavior unchanged, strict mode
-  advertises only exact released skill ids, and a closure refusal raises
-  `ArgumentError` at card-build time — with new public companions
-  `AshA2A.Info.released_capability_index/2` (returns `nil` when not
-  compiled) and the non-raising `AshA2A.Info.released_capability_index_result/2`;
-  `AshA2A.Dispatcher.dispatch/6` now guards every skill through
-  `AshA2A.CapabilityRelease.guard/2` before context resolution, so in strict
-  mode a non-member skill (even `:read`) fails with
-  `{:error, {:release_gate, {:capability_release_refused, ...}}}` (task
-  `:failed`; `:release_gate` is a new stage in stage-tagged error tuples).
+- No C1/C2/C3 claim: several C1 probes failed in the development build.
+- Supply-chain facts and built-release distribution checks were not run.
 
 ## [26.9.22] - 2026-09-23
 
-### Fixed
+### Added
 
-- **GraphLaw wasm resolvers now default to the vendored artifact.** Seven
-  resolvers defaulted to a developer-home path (`/Users/sac/praxis`), which
-  made every hosted CI run exclude the live-engine tests by a named-printed
-  exclusion and fail 110 tests (run 35662751905 at 5969606). The vendored
-  `priv/graphlaw/praxis_graphlaw.wasm` is now the default everywhere
-  (merge 19cd30e from `errc/ash-a2a-format`, with the falsifier tests that
-  prove it: `wasm_default_resolution_test`,
-  `falsifier_wasm_default_reachability_test`,
-  `graphlaw_engine_stop_host_test`). Hosted CI at 43ac109 runs the
-  live-engine tests with zero `EXCLUDING :graphlaw` lines (run
-  35807754337).
-- **`mix test.all` can no longer re-admit `:external_api`/`:benchmark`
-  tests** (regression from 5969606): ExUnit's include filter rescues any
-  matching test from ALL exclusions, so `--include serial` fired real
-  live-API tests in the CI lane -- observed locally as 50 real concurrent
-  Z.AI dispatches with 46 HTTP 429s. The Zai probe's skip is now
-  `@moduletag`-level (it previously sat on a `@describetag` in a module
-  with no `describe` block, so it never attached); the five whole-module
-  benchmark files dropped their serial tags; the three mixed
-  semantic-agent test files carry the repo's compile-time named-skip
-  convention (f85abfd).
-- **Test determinism** (merge 831fb99 from `fix/test-determinism-v26.9.21`):
-  the wall_time_ms property no longer asserts equality on a measured
-  dimension; the stale forbidden-grant test and two shutdown/tmp-dir races
-  are fixed; `GraphlawEngine.stop_host/1` is deduplicated onto
-  `stop_pid/1` (three consecutive identical suite runs verified).
-- **CI-exposed test repairs** (f822d85): the composition-lock test reads
-  the real `native/hddl_cli/Cargo.toml` rev instead of a hard-coded pin,
-  and the two `:sibling_repos` topology tests carry the named skip (the
-  serial include had been rescuing them from the test_helper exclusion on
-  hosted runners). The darwin-only `/var` symlink comparison failures in
-  the vendor-tool cwd test are fixed by OS-level canonicalization.
+- Scheduled conformance workflow uploading receipts for each push to main plus a daily run.
+  Hosted runs report the true result (the topology tests need local sibling checkouts).
+- `mix ash_a2a.install --skill name:action[:consequence]` emits explicit skill declarations
+  and writes the `a2a do` block idempotently.
 
 ### Changed
 
-- **Dependency security**: `ash` 3.33.1 → 3.33.9 (EEF-CVE-2026-86338) and
-  `mint` 1.10.0 → 1.10.1 (EEF-CVE-2026-82672); `mix hex.audit` is clean.
-- **`native/hddl_cli` repinned** to ferroplan `e90928d` (v0.28.0), the
-  commit beam4pm's submodule carries (df903df); cargo `--locked` build and
-  the SA2A v26.9.17 FOND/reachability qualification tests verified.
-- **PR #27 landed (c74c2e9)**: the Semantic Work Envelope conserves the
-  work-order subject (`work_order_iri`, `checkpoint_iri`, RDFC-1.0
-  `graph_digest`, `repository_identity`, `base_sha`) through SA2A
-  transport, with 488ae22's S42 refusal-class mapping; the competing
-  `feat/v26.9.19-work-envelope-v2` lineage is retired and the Semantic
-  Work Envelope Court runs on main via workflow dispatch.
-- **PR #31 landed (6e16553)**: engineering-standards adoption re-rendered
-  against the v26.9.22 line head (ALIVE claim pinned to a CI-green
-  subject, not the red 5969606 baseline).
-- **Court manifest re-pinned** (70d2666) after the lawful court-machinery
-  changes above, unblocking `mix ash_a2a.chicago --profile core
-  --require-conformant` on the workstation (standing CONFORMANT, 3/3
-  gates, 134 falsifiers killed, 0 survived).
+- Security updates: `ash` 3.33.1 to 3.33.9 (EEF-CVE-2026-86338) and `mint` 1.10.0 to 1.10.1
+  (EEF-CVE-2026-82672).
+- `native/hddl_cli` repinned to ferroplan v0.28.0.
+- The Semantic Work Envelope conserves the work-order subject through transport.
 
-### Added
+### Fixed
 
-- **Durable exact-SHA SA2A court receipts on a schedule**
-  (`.github/workflows/sa2a-conformance.yml`): every push to main and a
-  daily cron run both courts and upload `sa2a-conformance-<sha>` with
-  `sa2a-conformance.json` + `chicago/standing_receipt.json`, behind a
-  court-manifest drift tripwire. The receipts record the hosted truth
-  (NONCONFORMANT: SA2A-TOPO-002's collaborators are the 11
-  author-workstation checkouts; strict FAIL: blank-node `graph_hash/1` is
-  not repetition-stable) -- CONFORMANT remains a workstation claim.
-- **`mix ash_a2a.install --skill name:action[:consequence]`** (64cb56e):
-  emits explicit `skill` declarations with `consequence: :external_do`
-  inside the `a2a do` block, closing ggen_igniter's
-  UNSUPPORTED(generator-capability) row; the `a2a do` block is now
-  written idempotently (two runs yield exactly one block and one
-  declaration per skill).
-- **`receipts/v26.9.22/`**: one JSON receipt per v26.9.22 work order
-  (commands, exits, standing), committed in-repo instead of gitignored
-  `tmp/` output.
-
-### Removed
-
-- Superseded PRs closed with citations (#22-#26, #29, #30; #28 retargeted
-  to main and documented as needing a design reconciliation on
-  `process_intervention.ex`); stashes disposed into
-  `preserve/v26.9.22/*` branches; merged worktrees and the ported
-  `feat/sa2a-*-v26.9.16` branches retired.
+- GraphLaw WASM resolvers default to the vendored artifact instead of a developer-home
+  path, which had made hosted CI fail 110 tests.
+- `mix test.all` can no longer re-admit `:external_api`/`:benchmark` tests (which had fired
+  real concurrent live-API calls).
+- Test determinism fixes (measured-value assertion, shutdown and tmp-dir races, macOS
+  `/var` symlink comparison).
 
 ## [26.9.21] - 2026-09-21
 
 ### Changed
 
-- No functional source changes (see "Documentation" below for prose-only
-  moduledoc/comment path updates). This version records merging the local
-  `release/v26.9.20` branch (commits `8eb4335`, `bb47a99`) into `main` as
-  `2730c9b` -- the round-2 GALL-003/GALL-029/030 work landed on `main`
-  after the `[26.9.20]` entry below was written, so this entry closes that
-  gap. Full suite re-verified on `main` post-merge: 58 doctests, 29
+- No functional source changes. Merged the round-2 GALL work from `release/v26.9.20` into
+  `main` and removed fully merged branches. Full suite at the time: 58 doctests, 29
   properties, 2122 tests, 0 failures, 2 skipped.
-- Repository cleanup: removed worktrees and local branches fully subsumed
-  by that merge (`chore/f5-01-bench-wiring`, `chore/f5-01-defect1-verify`,
-  `chore/f5-01-defect2-verify`, `fix/hddlsolver-crossvm-tempdir`,
-  `fix/router-counters-isolation`, `fix/commandbus-skill-name-resolution`,
-  `feat/sa2a-002-chicago-foundation-v26.9.16`, `feat/gall-swf-v26.9.18`,
-  `w9-sweep/format-main`, `release/v26.9.18`, `release/v26.9.20`) --
-  each was either 0 commits ahead of `main` already or byte-identical
-  content already folded in.
-- No new upstream PR content included this round. Of the 9 open PRs on
-  `ash_a2a` at merge time: #22-#26/#29/#30 are already-included duplicates
-  (confirmed via diff, e.g. PR #30's formatting fix is identical to what
-  shipped in `[26.9.20]`); #28 is a narrowing stacked on #26's branch and
-  needs #26 pushed + rebased before it can land; #27 (Semantic Work
-  identity conservation) still has real WASM/SAT-solver environment
-  failures, not a mechanical fix -- deferred, unchanged from the prior
-  two rounds' reasoning.
-
-### Documentation
-
-Full documentation audit and archive pass ahead of external review:
-
-- Created `docs/archive/` and moved 47 point-in-time engineering records
-  out of the active docs tree: the entire `docs/jira/` RFC-ticket/ARD-PRD
-  scratch area (34 files, `v26.9.11`-`v26.9.18` plus the cross-cutting
-  GALL-CHECKPOINT-003 set) to `docs/archive/jira/`; the v26.9.17
-  benchmark/stress/hardening/coverage reports, the partisan-integration
-  spike note, and the AIRGAP/ENTERPRISE/SSP security-posture reports (10
-  files) to `docs/archive/reports/`; and `MANUFACTURING_RECEIPT.md` plus
-  `litho.docs/` (14 files) to `docs/archive/session-history/`. All moves
-  via `git mv` (history preserved). Left in place as durable, non-
-  point-in-time docs: `docs/explanation/chicago-conformance-court.md`,
-  `docs/rfc/` (versioned specs), `docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md`.
-- Updated every real citation of a moved file's path in `lib/ash_a2a/
-  {command_bus,agent}.ex` moduledocs, `docs/how-to/{authenticate-agent-
-  requests,verify-authority-on-async-paths}.md`, three test files'
-  moduledoc/error-message strings, `k8s/README.md`, and `SECURITY.md` --
-  prose/comment-only edits, no logic changes; confirmed via a repo-wide
-  grep for the old paths (zero dangling references outside historical
-  CHANGELOG entries) and a full green test run.
-- `docs/reference/index.md` (the module-status source of truth) was 4
-  versions stale ("re-verified at v26.9.17"). A `defmodule` grep over
-  `lib/` found 9 real modules missing from its tables -- the 8 GALL
-  structured-work-fabric/receipt modules and `AshA2A.Reconciliation.MapeK`
-  -- now added as a new "GALL structured-work-fabric & receipt courts"
-  section, classified `PARTIAL (not default path)` (real, tested, not
-  reached by `Agent.__dispatch__`'s default path). Re-verified at v26.9.21.
-- `docs/reference/a2a-spec-version-mapping.md` existed on disk and shipped
-  in the Hex package tarball but wasn't wired into ExDoc's `docs()` extras
-  or linked from README -- added to both.
-- `docs/how-to/test-your-ash_a2a-app.md`'s "Known flakiness" section named
-  a stale flake set (`:hddl_solve_error` mapping, `:eaddrinuse`) from
-  v26.9.17; replaced with the current, actually-observed flakes
-  (`BoundsExhaustionTest`'s "no self-grant" property,
-  `AshA2A.CancelInflightTest`) per this session's own full-suite evidence.
-- Full accounting of every file touched (kept/updated/archived, with
-  reasons) recorded in `DOCS_AUDIT_v26.9.21.md` at the repo root.
+- Point-in-time engineering records moved from `docs/` into `docs/archive/` (`jira/`,
+  `reports/`, `session-history/`); live docs updated to match, and `docs/reference/index.md`
+  gained the previously missing modules.
+- `docs/reference/a2a-spec-version-mapping.md` is now part of the ExDoc extras and the
+  README.
 
 ## [26.9.20] - 2026-09-20
 
 ### Added
 
-- **`AshA2A.Reconciliation.MapeK`**: a named Monitor/Analyze/Plan/Execute
-  loop over shared Knowledge, built on the existing
-  `AshA2A.Reconciliation.classify/4` and `.reconcile/4` (purely additive,
-  no change to either) (`test/ash_a2a/reconciliation_mape_k_test.exs`).
-- **GALL structured-work-fabric (SWF) message types**: six new modules
-  under `lib/ash_a2a/gall/` -- `Capability`, `Checkpoint`,
-  `EvidenceReceipt`, `Fields`, `Message`, `WorkLease` -- typed message
-  shapes for GALL checkpoint/lease/receipt exchange with typed authority
-  refusals (`test/ash_a2a_gall_swf_message_test.exs`, 21 tests, 0
-  failures).
-- Per-method A2A JSON-RPC conformance tests over the real vendored
-  `A2A.Plug` (`test/ash_a2a_a2a_methods_test.exs`) and
-  `docs/reference/a2a-spec-version-mapping.md`. One test in this file,
-  `message/stream answers with an SSE event stream`, is `@tag :skip`'d: it
-  exposed a genuine gap -- `A2A.stream/3` returns an error (observed as a
-  real `application/json` reply, not `text/event-stream`) for an agent
-  built over a plain `:read`-skill Ash resource. Left skipped with the
-  gap documented inline rather than silently weakened or deleted; fixing
-  `AshA2A.Agent`'s streaming-skill support is real feature work out of
-  this release's scope.
-- `CITATION.cff`, `REPRODUCE.md`.
-- Two GALL process-intervention specs (from `gall/v26.9.18-final-specs`):
-  `docs/jira/v26.9.18/GALL-029-process-finding-admission-{PRD,ARD}.md`,
-  `docs/jira/v26.9.18/GALL-030-bounded-process-intervention-{PRD,ARD}.md`.
-- **GALL-003 command-receipt court** (from PR #25): `lib/ash_a2a/gall/
-  command_receipt.ex`, a `mix run` script
-  (`scripts/gall_checkpoint_003_receipt.exs`) and CI workflow producing a
-  durable, portable command-receipt seal binding a receipt to its exact
-  command/capability/consequence-terminal-state identity
-  (`test/ash_a2a_gall_command_authority_test.exs`,
-  `test/gall_checkpoint_003_command_authority_chicago_test.exs`).
-- **GALL-029/030 process intervention** (from PR #26):
-  `lib/ash_a2a/gall/process_intervention.ex` -- admits a process finding,
-  binds it to an independently-observed, digest-matched candidate and its
-  receipt, and routes a bounded `CommandBus` intervention only once every
-  identity/authority/consequence check passes
-  (`test/gall_process_intervention_test.exs`). `Command.fingerprint/1`
-  (`lib/ash_a2a/command.ex`) now additionally folds in a
-  `:gall_029_candidate_digest` metadata field when present -- a deliberate
-  identity-widening fix closing a replay hole where two different admitted
-  findings could otherwise share one command fingerprint; ordinary
-  transport-only metadata remains excluded.
-- 16 new S42 refusal codes introduced by the above two additions --
-  `semantic_subject_missing`, `invalid_gall_command_receipt`,
-  `non_consequence_receipt`, `consequence_terminal_state_unbound`,
-  `capability_mismatch`, `receipt_capability_mismatch`,
-  `requested_capability_id`, `gall_029_admission_required`,
-  `candidate_digest_mismatch`, `candidate_binding_mismatch`,
-  `receipt_candidate_binding_mismatch`, `receipt_command_mismatch`,
-  `independent_observer_required`, `independent_observer_not_verified`,
-  `secret_bearing_finding`, `actuation_store_unavailable` -- registered in
-  `AshA2A.Semantic.Refusal`'s S42 taxonomy so `classify/1` stays total
-  (caught by the existing refusal-drift test,
-  `test/ash_a2a/semantic_refusal_test.exs`, before this fix and passing
-  after it).
+- `AshA2A.Reconciliation.MapeK`, a Monitor/Analyze/Plan/Execute loop over shared knowledge.
+- Structured-work-fabric message types under `lib/ash_a2a/gall/` (`Capability`,
+  `Checkpoint`, `EvidenceReceipt`, `Fields`, `Message`, `WorkLease`).
+- Per-method A2A JSON-RPC conformance tests over the real plug, and
+  `docs/reference/a2a-spec-version-mapping.md`. One streaming test is skipped with a
+  documented gap.
+- A durable command-receipt seal binding a receipt to its exact command, capability and
+  terminal-state identity (`lib/ash_a2a/gall/command_receipt.ex`).
+- Process-intervention admission (`lib/ash_a2a/gall/process_intervention.ex`); the command
+  fingerprint now also folds in the admitted candidate digest, closing a replay hole.
+- 16 refusal codes classified so `classify/1` stays total.
+- `CITATION.cff` and `REPRODUCE.md`.
 
 ### Changed
 
-- SA2A profile identifiers moved from v26.9.16 to v26.9.20
-  (`SA2A-PROFILE-v26.9.20`, `urn:sa2a:profile:v26.9.20`,
-  `SA2A-STRICT-v26.9.20`) in `AshA2A.SA2A.Conformance` and
-  `AshA2A.Semantic.Extension`, with matching test-fixture updates.
+- SA2A profile identifiers moved to the 26.9.20 line.
 
 ## [26.9.18] - 2026-09-19
 
-### Fixed
-
-- **`RouterCounters` telemetry cross-contamination between concurrent
-  same-node instances** (v26.9.17 stress finding, resolved):
-  `:telemetry.execute/3` broadcasts
-  `[:ash_a2a, :router, :tier_selected]` to every attached handler on the
-  node, so two overlapping instances each counted the other's dispatches --
-  the exact per-batch mismatch the stress wave reproduced and had to prune
-  around (`multinode_concurrency_test.exs`). `attach!/3` now accepts
-  `owner: pid` (default `:any`, the unchanged historical semantics), the
-  same design `AshA2A.Telemetry.AllocationCounters` shipped for the
-  identical broadcast problem; `handle_event/4` runs in the emitting
-  process, so a pid-scoped instance counts exactly its own dispatches.
-  Fail-before: two concurrent drivers x (2 facts + 1 phrase) dispatches
-  each read `%{deterministic: 4, phrase: 2}`; pass-after: each reads its
-  own exact counts (`test/ash_a2a/telemetry/router_counters_isolation_test.exs`).
-  `AshA2A.Test.MultinodeRouterCounters.drive_and_report/3` (the reference
-  consumer that hit the defect) now attaches with `owner: self()`.
-
 ### Added
 
-- **Standing `CommandBus.run/4` tail-latency SLO tripwire**
-  (`AshA2A.Chicago.Stress.CommandBusTailLatencyTripwireTest`, `:benchmark`
-  tag): under sustained concurrent load, late-half p99 must stay within
-  **3.0x** early-half p99 with zero errors -- 2x headroom over the worst
-  non-pathological `Memory`-store measurement (1.274x-1.515x), versus the
-  pathological 181x observed under heavy host contention. The tripwire
-  reports the store's real max mailbox length and outbox depth alongside
-  the ratio (so a trip arrives with its mechanism attached) and carries an
-  explicit forced-synthetic knob (`ASH_A2A_TAIL_TRIPWIRE_FORCE_X`) used
-  only for its own fail-before evidence (forced 10x late-half run trips:
-  measured ratio 12.158x). SLO and mechanism documented in
-  `AshA2A.CommandBus`'s moduledoc. Mechanism diagnosis behind the bound:
-  per-dispatch sampler evidence shows the store mailbox and the receipt
-  outbox do NOT accumulate through a run (both ~0 from start to finish),
-  while mean/p50 climb and throughput decays track host contention -- the
-  shared-mailbox deschedule amplification the
-  `v26.9.17-commandbus-scale.md` Memory-vs-Ekv differential already
-  measured, not unbounded in-SUT state growth; callers needing the
-  tightest tail on contended hosts configure `:receipt_store, Ekv`
-  (0.812x-1.072x on the same metric).
+- A standing tail-latency tripwire for `CommandBus.run/4` under sustained load (late-half
+  p99 within 3.0x early-half p99, zero errors).
+- Three public vocabulary prefixes in `AshA2A.Semantic.Vocabulary`: `ssn`, `saref`, `qudt`.
 
-- Three new public-vocabulary prefixes in `AshA2A.Semantic.Vocabulary`:
-  `ssn` (http://www.w3.org/ns/ssn/), `saref`
-  (https://saref.etsi.org/core/), and `qudt`
-  (http://qudt.org/schema/qudt/), alongside the existing
-  rdf/rdfs/owl/prov/time/odrl/skos/schema/oa/sosa registry. No other
-  behavior changes -- `expand/1`, `local/1`, and every other prefix keep
-  their existing IRIs. Prompted by a planned SA2A-MFG-01 synthetic
-  manufacturing case study (in a separate repo) that needs
-  equipment/quantity semantics expressed on public ontologies rather than
-  a bespoke domain schema; landed here first since the case study depends
-  on it.
+### Fixed
+
+- `RouterCounters` telemetry no longer cross-contaminates between concurrent instances on
+  one node; `attach!/3` accepts `owner: pid` (default `:any`, unchanged).
 
 ## [26.9.17] - 2026-09-17
 
-### Fixed -- HddlSolver cross-VM temp-file collision (the stress pass's disclosed defect, now fixed at the source)
-
-- `AshA2A.Planning.HddlSolver.run/4` derived its temp paths from
-  `System.unique_integer/1`, which is unique only WITHIN one BEAM VM. On
-  the stress wave's own shape (real `:peer` nodes on one shared host, all
-  resolving the same `System.tmp_dir!/0`), two fresh VMs' monotonic
-  counters emit identical sequences, so same-sequence solves derived the
-  SAME absolute temp paths; the concurrent `File.write!/2` + `File.rm/1`
-  pairs then corrupted each other's solve (the original stress run caught
-  two peers both computing `ash_a2a_hddl_domain_11.hddl`, one peer's
-  cleanup unlinking the file under the other peer's in-flight
-  `System.cmd/3` read). The fix prefixes a sanitized `node()` tag to the
-  per-invocation unique integer, making paths unique ACROSS VMs by
-  construction (distinct nodes have distinct names); cleanup is unchanged
-  and per-owner. Reproduction:
-  `AshA2A.PlanningHddlSolverCrossvmTest` (`test/ash_a2a_planning_hddl_solver_crossvm_test.exs`)
-  drives TWO real `:peer` nodes concurrently over a shared `tmp_dir`, one
-  with the genuinely solvable `freedom_gym_meeting` pair and one with the
-  genuinely unsolvable `unsolvable_qualification` pair, and asserts every
-  outcome stayed consistent with its own node's inputs. Fail-before
-  (unfixed code; re-verified on this branch): `1 test, 1 failure` on every
-  run, with run-varying real cross-contamination through the shared paths
-  -- the solvable node returning `:hddl_solve_error` for solutions that
-  were its own bytes, and on the original stress run, node B's first
-  iteration returning `ok: true`, a solve of node A's bytes. Pass-after:
-  `1 test, 0 failures` (plus 2 stability reruns), related
-  planning/multinode/HddlSolver suites (8 files) `42 tests, 0 failures`,
-  `mix test --max-cases 6` clean except the disclosed pre-existing
-  graphlaw-family flakes (`GraphLawVendorToolVersionCwdTest` `/private/var`;
-  `GraphlawEngineTest` `on_exit` teardown races), all green in isolation.
-  The stress harness's test-side
-  `isolate_peer_unique_integer_counters/1` band mitigation
-  (`test/ash_a2a/chicago/stress/multinode_concurrency_test.exs`) remains
-  harmless but is now redundant; removing it belongs to that file's own
-  scope.
-
-### Docs
-- Production-readiness documentation pass (v26.9.17 dry run): README
-  front-door rewrite (correcting the false "vendored `:a2a` SDK" claim —
-  it is the published `actioncard/a2a-elixir` Hex package — and the CI
-  native-build claim: CI builds `hddl_cli` only), a corrected Getting
-  Started (agents boot via `config :ash_a2a, :agents` because the library
-  app already runs `A2A.AgentSupervisor`; new HTTP-serving step with
-  `A2A.Plug`/`A2A.Client`), new reference pages (DSL schema,
-  configuration, telemetry events, mix tasks, A2A endpoint contract), a
-  new message-lifecycle explanation, new how-tos (testing, verifying
-  authority on async Oban paths), auth/OCEL how-to corrections, status
-  banners on the v26.9.17 reports, `SECURITY.md`, and hex-package
-  shipping of the `docs/` quadrants (previously `mix hex.publish` would
-  fail to build ExDoc extras the package did not contain).
-
-### Fixed -- CommandBus production-scale story: real gap closed, Ekv wiring now genuinely config-only
-
-- Merged both v26.9.17 Benchmark-phase branches
-  (`feat/bench-ekv-receipt-store-scale`, `feat/bench-ekv-authority-broker-scale`)
-  that measured `AshA2A.ReceiptStore.Ekv` and `AshA2A.Authority.Broker.Ekv`
-  against their `Memory`/`InMemory` counterparts under real sustained
-  concurrent load. Real, disclosed findings (both against the hypothesized
-  "Ekv resolves scale" outcome, verified rather than assumed): the receipt
-  store's Ekv variant resolves the specific *climbing* p99-under-load
-  pattern `Memory` shows, but trades it for materially lower throughput and
-  occasional multi-second I/O-contended outliers on a shared/loaded host;
-  the authority broker's Ekv variant does not resolve anything at that
-  read-heavy layer -- it is ~1.7x-2.2x higher latency than `InMemory` at
-  every percentile, with no throughput upside. Neither is an unqualified
-  scale win; both are real durability-vs-latency trades. Full numbers in
-  `docs/explanation/v26.9.17-commandbus-scale.md`.
-- **Real gap found and fixed while investigating why a production caller
-  would choose `Ekv` at all**: `AshA2A.Application.start/2` auto-wired a
-  real `EKV` instance for `:receipt_store` when set to
-  `AshA2A.ReceiptStore.Ekv`, but had no equivalent clause for
-  `:authority_broker` -- so `docs/how-to/authenticate-agent-requests.md`'s
-  own primary example (`config :ash_a2a, :authority_broker,
-  AshA2A.Authority.Broker.Ekv`, alone) was not actually config-only: no
-  `EKV` instance existed for the broker to read/write, so every real
-  `granted?/3` call rescued/caught to `false`. Fixed with a new
-  `authority_broker_children/0` in `lib/ash_a2a/application.ex`, mirroring
-  `receipt_store_children/0` exactly (bare-module and `{module, opts}`
-  tuple config forms both handled, a distinct default `:name`/`:data_dir`
-  so the two Ekv-backed layers never share an on-disk keyspace by
-  accident). `AshA2A.Authority.Broker.InMemory` keeps its existing
-  host-started convention -- only the durable `Ekv` broker needed this.
-- Two new real (no mock/stub) tests in `test/ash_a2a/application_test.exs`
-  prove the fix: one starts the real application with only the config line
-  above set and round-trips a real grant through
-  `AshA2A.Authority.Grant.grant/3`/`granted?/3`/`revoke/3` with no manual
-  `EKV` start anywhere in the test; the other configures both
-  `:receipt_store` and `:authority_broker` as `Ekv` simultaneously and
-  asserts two distinct, real, alive `EKV` children. Both fixed two further
-  real defects these tests themselves caught while being written
-  (`EKV.child_spec/1`'s real supervision type, and directory/subject-name
-  uniqueness that a bare `System.unique_integer/1` does not guarantee
-  across separate `mix test` process invocations) -- confirmed stable
-  across 9 repeated runs (5 back-to-back plus 4 distinct `--seed` values),
-  0 failures.
-
-### Hardened, benchmarked, and stress-tested -- v26.9.17 harden/benchmark/stress pass
-
-- 14 disjoint worktree tasks ran in parallel against v26.9.17 (6
-  hardening, 5 benchmark-authoring covering 7 new RFC-SA2A-002
-  categories, 3 stress/soak), then merged serially (`--no-ff`, no
-  conflicts) onto `main`. Final head `fea05cd`.
-- **Hardening (6 tasks)**: 4 clean bills of health -- no real defect
-  found in `CommandBus`/S55 actuation-claim concurrency, crash
-  boundaries (RFC S70), the mock/Dialyzer posture (0 mock violations,
-  0 new Dialyzer warning classes), or `Bounds`/`Allocator` resource-
-  exhaustion/escalation paths. 2 tasks found real production defects,
-  both correctly left unfixed here (the fix lives in a file shared
-  with other parallel worktrees) and flagged for the serial
-  MergeVerify/integration phase instead: (1)
-  `AshA2A.Semantic.Peer.admit_candidate/2` silently admits non-Turtle
-  garbage that parses to zero triples over the real HTTP wire (no
-  parse-stage witness, unlike `AdmissionPipeline`); (2) the shipped
-  `test/support/command_worker.ex` never calls
-  `ObanAuthority.verify_live!/3`, so a revoked-but-unexpired authority
-  still actuates through it. Verbatim findings and commit SHAs in
-  `docs/explanation/chicago-benchmark-report.md`'s new "Hardening
-  findings" section. **Both defects were subsequently fixed on `main` in
-  `1f06cab` (2026-09-17)**: `Peer.admit_candidate/2` now requires a
-  parse-stage witness, and `test/support/command_worker.ex` now calls
-  `ObanAuthority.verify_live!/3` with receipt-peek ordering.
-- **Benchmarks**: RFC-SA2A-002 names 10 benchmark categories; before
-  this pass only 3 (B1/B5/B9) had a real standalone module. This pass
-  adds real, measured modules for the other 7 (B2 logic closure, B3
-  Knowledge Hook reflex, B4 HDDL/FOND planning, B6 reactive cascade,
-  B7 cross-runtime portability, B8 offline replay, B10 crash/
-  recovery) -- all 10 categories now produce real numbers, though the
-  7 new modules are not yet wired into `Bench.@benchmarks`/the mix
-  task (a disclosed follow-up, not done here since that touches a
-  file shared with other parallel worktrees). Full numbers in
-  `docs/explanation/chicago-benchmark-report.md`.
-- **Stress/soak (3 tasks)**: sustained-throughput found a real,
-  reproduced tail-latency-climbs-under-load pattern in
-  `CommandBus.run/4` (34,881 dispatches across three 12s runs, 0
-  errors, 0 process leak, but late-half p99 up to 181x early-half
-  p99); multinode-concurrency ran 6 real `:peer` BEAM nodes cleanly
-  (0 failures across 5 seeds) while surfacing two real out-of-scope
-  defects (a cross-VM temp-file collision in `HddlSolver`, and
-  `RouterCounters` telemetry cross-contamination between concurrent
-  instances on one node); resource-ceiling drove 130 real delegations
-  against a 100-execution ceiling and terminated exactly at 100/100
-  with zero leak past the ceiling. Full detail in
-  `docs/explanation/v26.9.17-stress-report.md` and the benchmark
-  report's new "Stress test results" section.
-- Post-merge full suite (`mix test --max-cases 6`): 58 doctests, 29
-  properties, 2086 tests. 1-2 failures observed across repeated runs,
-  in different tests each run (`AshA2A.SemanticRefusalTest`'s
-  `:hddl_solve_error` mapping check; an `:eaddrinuse` port-bind race
-  under parallel execution) -- confirmed pre-existing on `main`
-  before this pass (none of this pass's merges touched `lib/` files
-  that could move either check), not a regression introduced here.
-  Architecture verifier: 11/11 clean on the final merge.
-
-### Verified -- v26.9.17 PRD/ARD 50-agent pass: ash_a2a's own scope only
-
-- Scope note, stated plainly: this entry covers `ash_a2a`'s own portion of a
-  v26.9.17 requirements pass. It is **not** a full 11-repo RFC-SA2A-003
-  ecosystem CONFORMANT claim -- no other repo in that RFC was touched,
-  re-verified, or re-scored as part of this pass.
-- Real numbers from this pass: 83 requirements already implemented, 18 real
-  gaps found, 16 real gaps built and merged (see the `feat/sa2a-ard-*`
-  merge commits in `git log`), 0 gaps deferred to a follow-up within this
-  pass's ARD scope (the deferred list is empty for this pass; one
-  regression surfaced during the pass and was deferred to the owning
-  cluster rather than this task's scope -- see the "Fixed --
-  IrAdmissionSeal regression" entry later in this same 26.9.17 section,
-  closed there).
-- CalVer bump to 26.9.17 committed (`mix.exs` version line only, single-line
-  diff, confirmed via `git diff` before commit).
-- Real `mix hex.publish --dry-run` outcome: built `ash_a2a 26.9.17` correctly
-  end to end -- all 20 declared deps resolved, full lib/priv/mix.exs/README/
-  CHANGELOG/LICENSE file manifest listed (several hundred files, including
-  every `chicago/*` court module and `semantic/*`, including the new
-  `ir_admission_seal.ex`, plus `priv/graphlaw` and `priv/sa2a_conformance`
-  fixtures). The prompt reached `Publishing package to public repository
-  hexpm. Proceed? [Yn]` and was answered `n` -- no publish occurred (and
-  `--dry-run` itself never calls hex.pm's publish endpoint regardless of the
-  answer given).
-- Architecture-verifier test named by this task
-  (`test/ash_a2a_architecture_verifier_test.exs`): 11 tests, 0 failures,
-  clean.
-- Real, reproducible full-suite regression found and root-caused, **not**
-  fixed in this pass (out of this task's assigned scope of bump + verify +
-  dry-run + report): `mix test --max-cases 6`, run twice for reproducibility
-  (515.8s and 586.3s), reported identical counts both runs -- 58 doctests,
-  19 properties, 2036 tests, **24 failures**, 8 invalid, 1 skipped (14
-  excluded). The 8 invalid match the known pre-existing baseline (no local
-  Postgres) and are not new. The 24 failures are new relative to the stated
-  0-failure baseline and are not a flake: every one returns
-  `{:error, %{code: :semantic_ir_unsealed, detail: %{source_id: ...}}}`.
-  Root cause, confirmed by reading source: the recently-merged
-  `lib/ash_a2a/semantic/ir_admission_seal.ex` now gates
-  `AshA2A.Semantic.Ontology.from_ir/1`, `PlanningIR.from_ir/2`,
-  `ExecutionPackage.new/6`, and `RequestRouter.route/3` behind
-  `IrAdmissionSeal.verify/1`, which rejects any IR lacking a real
-  `admission_seal`/`admission_receipt_id` minted by `Admission.admit/2`.
-  Roughly 15 pre-existing test files still hand-construct
-  `%IR{standing: :admitted, authority: :none, ...}` directly instead of
-  routing through `Admission.admit/2` -- exactly the forgery class
-  `ir_admission_seal.ex`'s own moduledoc names as the gap it closes (citing
-  only one already-fixed helper, in `semantic_execution_package_test.exs`).
-  Affected files include (non-exhaustive):
-  `test/ash_a2a/semantic_feedback_test.exs`,
-  `test/ash_a2a/planning/request_router_test.exs`,
-  `test/ash_a2a_agent_semantic_router_wiring_test.exs`,
-  `test/ash_a2a/chicago/*_test.exs`, and
-  `test/ash_a2a/planning/request_router_telemetry_test.exs`. Triage and fix
-  of these ~15 files is left to whichever cluster owns
-  `ir_admission_seal.ex` / the affected test files; it is out of this
-  task's assigned scope.
-- Honest overall standing for this pass, at the time it landed: the version
-  bump was real and committed; the named architecture-verifier test was
-  real and green; the `hex.publish --dry-run` output was real; the
-  full-suite baseline was **not** clean -- see the immediately following
-  entry for the real fix that closed this out.
-
-### Fixed -- IrAdmissionSeal regression from the v26.9.17 50-agent pass (closed)
-
-- The 24-test regression named in the entry above is now closed for real,
-  not by weakening `IrAdmissionSeal.verify/1`. Root causes: (1)
-  `AshA2A.Planning.GoalFacts.to_semantic_structs/2` is a pre-existing,
-  legitimate SECOND real admission chain (typed facts, no free text, so
-  `Admission.admit/2`'s substring check is a category error there) that set
-  `standing: :admitted` without minting a seal -- now mints one for real via
-  `IrAdmissionSeal.mint/1` after its own real checks pass. (2)
-  `lib/ash_a2a/chicago/courts/authority_non_implication.ex`'s
-  `plan_package/2` hand-built an unsealed `%IR{standing: :admitted}` with no
-  real admission chain at all -- a genuine gap the seal correctly caught;
-  routed through real `IR.from_map/2` + `Admission.admit/2`. (3) the 8 new
-  refusal codes this pass introduced had no S42 classification -- added
-  (`semantic_ir_unsealed`/`semantic_ir_seal_invalid` -> `refused_identity`,
-  `peer_b_unavailable` -> `blocked_resource`, 5 `evidence_bounds_*`/
-  `evidence_fan_out_exceeded` codes -> `refused_bounds`). (4) two test files
-  (`semantic_feedback_test.exs`,
-  `ash_a2a_authority_non_implications_test.exs`) had genuine hand-forged
-  unsealed IR literals -- fixed via real `IR.from_map/2` +
-  `Admission.admit/2`, matching `semantic_execution_package_test.exs`'s
-  established pattern. (5) `unknown_llm_gate12_test.exs`'s hardcoded
-  `@expected` verdict map was missing the real `SA2A-MX-006` falsifier this
-  same pass added to `machine_experience.ex` -- added the entry.
-- Checked, not changed: `AshA2A.Chicago.Fixtures.ShexShaclAdmission.
-  premarked_canonical_provenance/0` also hand-sets `standing: :admitted` --
-  confirmed this is a deliberate negative-control forgery witness for a
-  real gate-2 falsifier, not a bug.
-- Real, current verification: `mix format --check-formatted` and
-  `mix compile --warnings-as-errors` clean; mock grep clean across every
-  changed file; architecture verifier + Chicago rollup test 15/15; full
-  suite (`mix test --max-cases 6`): 58 doctests, 19 properties, 2036 tests,
-  **0 failures**, 8 invalid (known no-local-Postgres baseline, unchanged),
-  1 skipped -- the known-stable baseline is restored.
-
-### Fixed -- Local dev-setup gap misread as a board-persona regression
-
-- Real defect found while independently verifying the board-persona
-  deliberation plan (`test/ash_a2a/board_persona_deliberation_test.exs`,
-  itself fully green and unrelated to this): a fresh worktree's full
-  `mix test` run reported 37 real failures and 4 new `setup_all` invalids
-  against the stated baseline. Root-caused (not asserted) by reproducing
-  the exact failure in an isolated worktree first: `native/hddl_cli`'s
-  `target/release/hddl_cli` binary was never built there, so every test
-  that dispatches through it (directly, or via the shared
-  `test/support/freedom_gym_meeting_plan.ex` fixture) hit the real,
-  correctly-raised `hddl_cli_not_built` error instead of a skip. CI
-  (`.github/workflows/ci.yml`) already builds this binary as an explicit
-  step, and the fixture's own error message already names the fix
-  (`cd native/hddl_cli && cargo build --release`) -- this was never a
-  source-code bug in `native/hddl_cli/src/main.rs` or in the fixture, and
-  no assertion was weakened or deleted to "fix" it.
-- Real fix: ran `cargo build --release --locked` for `native/hddl_cli`
-  (`Cargo.lock` unchanged) in the isolated worktree; the previously-failing
-  suite then reported 0 failures. Added a "Local Development Setup"
-  section to `README.md` documenting the two native builds a fresh clone
-  or worktree needs before `mix test` (this repo had no such documentation
-  anywhere, which is the actual reason the gap existed to begin with).
-
-### Verified -- v26.9.17 FOND/HDDL Self-Improvement Domain
-
-- **`test/ash_a2a/chicago/sa2a_v26_9_17_fond_qualification_test.exs`**: the
-  v26.9.17 FOND/HDDL model of the cross-repo SA2A self-improvement
-  qualification loop (`test/support/hddl/sa2a_v26_9_17_dogfood/{domain,problem}.hddl`)
-  was verified against the real `native/hddl_cli` (ferroplan, strong-cyclic
-  FOND) solver, not asserted from description. The real, disclosed outcome
-  is `solved: false` -- genuine `NoPlan`, quoted precisely from the real
-  solver run: `{"error":"planner error: NoPlan"}`. This is a semantic
-  `NoPlan`, not a parse/grounding error (the fixture grounds cleanly; a
-  separate test asserts this). Per-branch ablation isolates the exact
-  irreducible cause to a small set of predicates left deliberately terminal
-  (no repair method added because one would fabricate confidence or bypass
-  a real invariant): `unsupported`, `candidate-unsupported`,
-  `verification-failed`/`process-nonconformant` (both episodes),
-  `candidate-refused` on the knowledge-promotion court, `equivalence-failed`,
-  `receipt-reconcile-blocked` (both episodes), and episode 2's
-  replay-specific `authority-refused`/`actuation-failed` occurrences.
-  Restoring every other, genuinely recoverable branch in combination still
-  reports real `solved: true`, so no other latent modeling defect remains.
-- The `receipt-reconcile-blocked` terminal branches confirm a real,
-  unresolved tension between BRCE's zero-unreceipted-actuation "NEVER
-  replay automatically" invariant (`AshA2A.CommandBus`) and this pinned
-  ferroplan revision's `PlanningType::Fond` universal-coverage requirement:
-  there is no HDDL syntax in this rev to declare an accepted non-goal
-  terminal state, so a domain that faithfully models the invariant cannot
-  also report a strong-cyclic solve for the predicates that invariant
-  touches. An honest `NoPlan` is the correct report here, not a defect.
-
-### Added -- v26.9.17 FOND/HDDL planning: ash_a2a-side completion
-
-- The v26.9.17 FOND/HDDL planning work's remaining ash_a2a-side pieces were
-  finished via four orthogonal, independently-committed additions: a
-  source-fidelity audit recovering and mechanically verifying the original
-  domain/problem paste (`test/ash_a2a/chicago/sa2a_v26_9_17_source_fidelity_test.exs`),
-  a permanent cross-repo topology-existence court
-  (`AshA2A.Chicago.Courts.SA2AV269_17Topology`, confirming 11 repos alive),
-  a reachability-analysis doc re-running `hddl_analyze` independently
-  (`docs/explanation/sa2a-v26-9-17-hddl-reachability-analysis.md`), and a
-  capability-coverage sweep comparing ash_a2a's own 42+ Chicago courts
-  against the 9 v26.9.17 capability categories
-  (`docs/explanation/sa2a-v26-9-17-capability-coverage-sweep.md`): 4
-  categories fully covered, 4 partially covered, 1 with no matching court
-  (`cap-framework-projection`, a disclosed real gap, not force-mapped).
-  All four merged to `main` with a full-suite regression run afterward
-  (1923 tests, 0 failures, 8 invalid -- no local Postgres -- matching the
-  pre-existing baseline).
-
-### Added -- RFC-SA2A-002 Chicago Conformance Court
-
-- **`AshA2A.Chicago`**: a falsification-based conformance court for
-  RFC-SA2A-002 v26.9.16 (`docs/rfc/RFC-SA2A-002-v26.9.16.md`). Conformance
-  is earned by attempted falsification, not green unit tests:
-  `Conformant(S) => ExactIdentity(S) ^ FalsifiersAttempted(S) ^
-  ForbiddenStandingAbsent(S) ^ RequiredConsequencesObserved(S) ^
-  IndependentEvidence(S)`. Pieces: `Court` (behaviour), `Falsifier` (S11),
-  `Result` (S12 verdict algebra), `Context`, `Subject` (S5 exact-subject
-  identity), `Observer` (independent OCEL 2.0 process observer), `Query`,
-  `Runner` (S104 execution order), `StandingReceipt` (S115), `Crown`
-  (release-facing assembly, S31/S98/S114/S145/Appendix C). Entry point:
-  `mix ash_a2a.chicago --profile core|logic|plan|do|strict [--court ID]
-  [--list] [--crown]` (`mix help ash_a2a.chicago` for the full option
-  reference).
-- **42 discoverable courts** (`lib/ash_a2a/chicago/courts/`), covering all
-  twelve RFC-SA2A-002 gates -- Gate 1 (Exact Identity Fenced) through
-  Gate 12 (Zero Runtime Inference on KNOWN) -- plus the admission-pipeline
-  courts (ShEx, SHACL, Safe Datalog, N3, SPARQL, canonical graph identity,
-  root manifest, semantic envelope, extension negotiation, and others).
-- **Mandatory falsifier corpus** (`priv/sa2a/chicago_mandatory_corpus.json`,
-  S98): the fourteen RFC-SA2A-001 counterexamples, each resolved against a
-  real, currently-declared court falsifier id by
-  `Crown.mandatory_corpus_coverage/2`. A member that fails to resolve is a
-  reported evidence gap, never silently dropped, and blocks a `:strict`
-  claim from reading CONFORMANT.
-- **Benchmarks**: `AshA2A.Chicago.Courts.Benchmarks` and
-  `mix ash_a2a.chicago.bench`, writing verifiable raw timing results and
-  refusing a tampered result file.
-- **Mutation testing**: `AshA2A.Chicago.Mutation.Catalog` plus
-  `mix ash_a2a.chicago.mutate` and the `SA2A-MUTATION` court, which proves
-  each catalog mutant is actually killed by a real court falsifier rather
-  than assumed killed. `AshA2A.Test.ChicagoSelfTest` (`CHI-SELFTEST`)
-  qualifies the qualification machinery itself against a deliberately
-  lying court fixture.
-- **Real defects the court found and fixed, not weakened around**:
-  - `SA2A-AUTH-017` -- capability substitution across agents: a standing
-    grant for one resource's skill authorized the same-named skill on any
-    other resource, because `Agent.build_command/4` authorized against the
-    caller-supplied wire skill selector instead of the canonical,
-    resource-qualified capability id. Fixed in `AshA2A.Agent.build_command/4`.
-  - `SA2A-CHAOS-019`/`SA2A-CHAOS-020` -- bounded claim-lease liveness gap:
-    a crash between `ReceiptStore.claim/2` and receipt-anchor preparation
-    left a command permanently `:in_flight`, with no live executor able to
-    resolve it. Fixed by `AshA2A.ReceiptStore.ClaimLease`.
-  - `CHI-SELFTEST-REPLAY-001` -- the self-test court never drove a replay,
-    so the `replay_calls_actuator` mutation could survive undetected.
-    Closed by `AshA2A.Test.ChicagoSelfTest.ReplayCourt`.
-
-### Security -- BREAKING (fail-closed default change)
-
-- **Authority escalation on the default `AshA2A.Agent` dispatch path closed
-  (RFC-SA2A-001 S28/S29/S30/S60).** `AshA2A.Agent.build_command/4` took
-  `capability_id` from the inbound message's own `skill` metadata -- a
-  caller-supplied value -- and handed it straight to
-  `AshA2A.Authority.from_verified_identity/2`, which is a pure *constructor*
-  that mints a full `%AshA2A.Authority{}` for whatever capability id it is
-  given (`source: :transport_verified`). `AshA2A.CommandBus.admit/2` then
-  checked `AshA2A.Authority.admits?/2`, which compares the authority's own
-  `capability_id` against the command's -- and so passed by construction,
-  every time. Net effect: **any transport-authenticated caller held authority
-  for every skill on the agent card**, including every `:change` and
-  `:external_do` skill. RFC-SA2A-001 S29 ("Authentication does NOT imply
-  Authority") was false on the real production dispatch path.
-
-  Reproduced before the fix against a real `A2A.Agent` process and a real
-  actuation counter: an authenticated principal holding no grant of any kind
-  actuated both an `:external_do` and a `:change` skill (2 real actuations).
-  After the fix the identical run produces 0 actuations and two `failed`
-  tasks. Regression coverage:
-  `test/ash_a2a_authority_capability_grant_test.exs`.
-
-  The fix introduces `AshA2A.Authority.Grant` -- the real capability-GRANT
-  decision that sits between "identity verified by the transport" and
-  "authority held for this capability" -- wired into `agent.ex` in place of
-  the direct `from_verified_identity/2` call. It consults the configured
-  `AshA2A.Authority.Broker` (the seam RFC S28 names, which already existed in
-  this codebase with two real implementations and had never been reachable
-  from any dispatch path). No grant means no authority, and
-  `CommandBus.admit/2`'s existing `:authority_required` refusal fails the
-  dispatch closed before the Ash action runs, before any record is written,
-  and before any receipt is committed.
-
-  **`:observe` skills are unaffected** -- `admit/2` admits them
-  unconditionally, by design, and they need no grant.
-
-  **Replay is preserved.** `AshA2A.Command.fingerprint/1` hashes
-  `authority.token_id`, and a fresh token id per dispatch was a real,
-  previously reproduced regression that broke `CommandBus` replay detection
-  for every authenticated caller. `Grant.authorize/3` therefore still builds
-  the authority through `from_verified_identity/2`, whose token id is the
-  deterministic `AshA2A.Authority.grant_token_id/2`: the grant decision
-  changes *whether* an authority is produced, never *which* one. Proven by a
-  real regression test that dispatches the same real message twice as a
-  granted caller and asserts the action body ran exactly once.
-
 ### Added
 
-- `AshA2A.Authority.Grant` -- `authorize/3` (the dispatch-path grant
-  decision), `grant/3`, `granted?/3`, and `policy/1`.
-- `AshA2A.Authority.Broker.granted?/3` -- a new callback on the existing
-  behaviour: "does a standing, unrevoked grant of this capability to this
-  subject exist right now". Implemented in both shipped brokers as a pure
-  read of the issued/revoked state each one already maintained for
-  `issue/3`/`revoke/2`, and required to fail closed (return `false`) on any
-  uncertainty. `issue/3` is deliberately not usable in its place: it has a
-  real recording side effect and refuses a second call under the same grant
-  token id, so per-dispatch use would both mutate broker state on every
-  request and refuse every retry.
-- `AshA2A.Authority.grant_token_id/2` -- the previously private deterministic
-  `(subject, capability_id)` token id, made public because it is the shared
-  key the authority constructor, `Grant.grant/3`, and every broker's
-  `granted?/3` must all agree on.
-- `AshA2A.Test.AuthorityGrantCase` -- real test-support helper that issues
-  real grants into the real run-wide broker (no mocks, no policy bypass).
+- Falsification-based conformance suite `AshA2A.Chicago` (`mix ash_a2a.chicago --profile
+  core|logic|plan|do|strict`): 42 discoverable checks covering twelve gates, a mandatory
+  counterexample corpus, benchmarks (`mix ash_a2a.chicago.bench`), and mutation testing
+  (`mix ash_a2a.chicago.mutate`). It found and fixed capability substitution across agents,
+  a claim-lease liveness gap after a crash, and a replay-coverage gap.
+- `AshA2A.Authority.Grant` (`authorize/3`, `grant/3`, `granted?/3`, `policy/1`), a new
+  `AshA2A.Authority.Broker.granted?/3` callback, and public
+  `AshA2A.Authority.grant_token_id/2`.
+- Real distributed-node, Oban, state-machine and failure-injection tests; benchmarks for all
+  ten benchmark categories; stress and soak tests (sustained throughput, six-node
+  concurrency, resource ceiling).
+- `authority_broker_children/0`: configuring `AshA2A.Authority.Broker.Ekv` alone is now
+  enough; the application starts the backing store.
+- `docs/explanation/v26.9.17-commandbus-scale.md` measuring the `Ekv` receipt store and
+  broker against the in-memory ones (a durability-versus-latency trade, not a pure win).
+- Documentation: README rewrite, corrected Getting Started, new reference pages (DSL,
+  configuration, telemetry, mix tasks, endpoint contract), message-lifecycle explanation,
+  and `SECURITY.md`; `docs/` is shipped in the Hex package.
 
-### Changed -- MIGRATION REQUIRED
+### Changed
 
-- New config `config :ash_a2a, :authority_policy, mode`, defaulting to
-  **`:broker`** (fail-closed). The pre-fix behavior remains available,
-  explicitly, as `:transport_verified_grants_capability`, which logs a real
-  warning naming the escalation on first use.
-- New config `config :ash_a2a, :authority_broker, MyBroker` (or
-  `{MyBroker, opts}`). Under the `:broker` policy with no broker configured,
-  no grant can be proven, so **every `:change`/`:external_do` dispatch is
-  refused** with `:authority_required`; a real warning names the missing
-  configuration so the refusals are never silent.
+- **Migration required.** `config :ash_a2a, :authority_policy` defaults to `:broker`
+  (fail-closed); `config :ash_a2a, :authority_broker` selects the broker. With no broker
+  configured, every `:change`/`:external_do` dispatch is refused with `:authority_required`
+  and a warning names the missing configuration. The previous behavior remains available
+  as `:transport_verified_grants_capability`, which logs a warning. See
+  `docs/how-to/authenticate-agent-requests.md`.
 
-  **Why fail-closed is the default, deliberately, despite being the more
-  disruptive choice:** the alternative is shipping a library whose documented
-  security property (S29) is known to be false while the default is in
-  effect. A deployment that upgrades and changes nothing gets loud, typed,
-  diagnosable refusals on consequential skills instead of a silent,
-  invisible privilege escalation. Both modes are named, documented, and
-  warned about, and switching is one config line in either direction.
+### Fixed
 
-  **To migrate:** configure a broker, start it in your supervision tree, and
-  issue a real grant per `(principal, capability_id)` pair your callers
-  legitimately need -- see `docs/how-to/authenticate-agent-requests.md`
-  ("Authentication is NOT authority"). Or set
-  `:authority_policy` to `:transport_verified_grants_capability` for a
-  migration window, accepting the documented escalation.
-- This repository's own test suite was migrated accordingly, not weakened:
-  `config/test.exs` names the `:broker` policy and a real broker,
-  `test/test_helper.exs` starts it, and each affected test issues its own
-  real grants for exactly the capabilities it dispatches
-  (`ash_a2a_agent_command_bus_test.exs`, `ash_a2a_ocel_default_path_sink_test.exs`,
-  `ash_a2a_plug_tenant_actor_test.exs`, `ash_a2a_freedom_gym_hddl_plan_test.exs`,
-  `ash_a2a_freedom_gym_phase_admission_test.exs`,
-  `ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs`,
-  `ash_a2a_agent_semantic_replan_test.exs`). `:observe` and `:unknown`
-  capabilities were deliberately left ungranted so the tests that assert on
-  those paths still prove what they claim.
+- `HddlSolver` temp paths are unique across VMs (they collided between peer nodes).
+- Semantic IR admission seal: remaining unsealed admission paths now mint a real seal, and
+  new refusal codes are classified.
+- `Semantic.Peer.admit_candidate/2` requires a parse-stage witness, and the shipped test
+  worker verifies live authority before actuating.
+- The README documents the one-time native build needed before `mix test`.
+
+### Security
+
+- **Breaking, fail-closed.** The default `AshA2A.Agent` dispatch path no longer lets any
+  transport-authenticated caller hold authority for every skill. Authority now requires a
+  standing grant from the configured broker; authentication alone confers none.
+  `:observe` skills are unaffected and replay detection is preserved.
 
 ## [26.9.16] - 2026-09-16
 
-No curated entry was cut for this release at the time; the milestone's
-record lives in `docs/jira/v26.9.16/` and the git history (RFC-SA2A-002
-Chicago gate work, canonical graph identity, RDF serialization gates,
-GraphLaw engine work).
+No curated entry was cut for this release at the time; see the git history (conformance
+suite work, canonical graph identity, RDF serialization gates, GraphLaw engine work).
 
 ## [26.9.15] - 2026-09-15
 
-No curated entry was cut for this release at the time; the milestone's
-record lives in `docs/jira/v26.9.15/` and the git history.
+No curated entry was cut for this release at the time; see the git history.
 
 ## [26.9.14] - 2026-09-14
 
-### Fixed (test suite, `--include external_api` only -- default `mix test` unaffected)
-- **Real `:external_api` test suite made runnable end to end for the first
-  time this session**: this environment carries real `ZAI_API_KEY`/
-  `GROQ_API_KEY`/`ANTHROPIC_API_KEY` credentials, meaning the 5
-  `@moduletag :external_api`-tagged files (excluded from the default `mix
-  test` run) had never actually been exercised despite being fully
-  runnable. Running them for real surfaced two real, disclosed findings,
-  both fixed:
-  - **Real cross-test rate-limit contention**: every real, unseamed
-    live-LLM-calling test in the `:external_api` set
-    (`ash_a2a_llm_profiles_test.exs`, `ash_a2a_freedom_gym_llm_test.exs`,
-    `ash_a2a_freedom_gym_zai_test.exs`, `ash_a2a_agent_semantic_request_test.exs`,
-    `ash_a2a_agent_semantic_replan_test.exs`) has a genuine interaction with
-    `ash_a2a_zai_concurrency_ocel_test.exs`'s real 50-way concurrency probe
-    when the full suite runs together: the probe genuinely exhausts the
-    real ZAI API's rate limit (confirmed via real HTTP 429 responses), and
-    a real-but-slower call attempted shortly after -- non-deterministically,
-    depending on real rate-limit recovery timing, not a fixed test order --
-    can then exceed both `A2A.Agent.call/3`'s own 60s `GenServer.call`
-    default and ExUnit's own 60s test-process default before the real API
-    recovers. Fixed by raising both real timeout layers
-    (`timeout: 170_000` on the call option, `@tag timeout: 180_000` on the
-    test) on every real unseamed LLM-call site across all 5 files, matching
-    the pattern `ash_a2a_zai_concurrency_ocel_test.exs` itself already
-    established. Confirmed via repeated real full-suite reproduction (3
-    real timeouts in one run, 1 more in a different file on the next run
-    after a partial fix, 0 in the fully-converged run) -- not assumed fixed
-    after the first partial pass.
-  - `ash_a2a_freedom_gym_ocel_conformance_e2e_test.exs` (the real
-    end-to-end HDDL-plan -> A2A dispatch -> OCEL -> POWL-conformance loop
-    against a real `beam4pm` `BeamPM.OcelIngest.Router` server) had never
-    run in this session either -- confirmed genuinely passing once a real
-    local `beam4pm` server instance was started for real and made
-    reachable at its default `OCEL_INGEST_URL`.
-  Final, fully converged result, real and reproduced: `mix test --include
-  external_api` -- **3 doctests, 9 properties, 347 tests, 0 failures, 0
-  skipped** (with the real `beam4pm` server up). None of this affects the
-  default `mix test` run (still `3 doctests, 9 properties, 340 tests, 0
-  failures (7 excluded)`, unchanged, reconfirmed after every fix) -- these
-  fixes only matter when running the full suite with `--include
-  external_api`, an opt-in, credential-dependent validation mode.
-
 ### Added
-- **Real `ash_oban` `scheduled_actions` (cron) usage**: `mix.exs` declared
-  `{:ash_oban, "~> 0.8"}` with zero resource using it anywhere in this
-  repository until now. `AshA2A.Test.Fixture.ScheduledSweep`
-  (`test/support/scheduled_sweep_fixture.ex`) declares a real
-  `oban do scheduled_actions do schedule ... end end` cron entry, qualified
-  by `test/ash_a2a/scheduled_sweep_qualification_test.exs` against a real
-  Postgres-backed `oban_jobs` table via `AshOban.Test.schedule_and_run_triggers/2`
-  (Oban's own real, documented drain-queue test helper — no hand-rolled
-  scheduler, no mocked cron clock). Note for integrators: the installed
-  `ash_oban` version's generated worker invokes a scheduled action's `run/2`
-  purely through the generic-action path (`Ash.ActionInput`/
-  `Ash.run_action!`) regardless of whether the target is a `:create` or
-  generic `:action` — point `scheduled_actions`' `action:` at a real generic
-  `:action` that performs the create internally, not directly at a `:create`
-  action, or the job discards with `No such action ... of type :action`.
-- **`AshA2A.ReceiptStore.Ekv`**: a real, on-disk-persisted `ReceiptStore`
-  implementation backed by the `:ekv` dependency (promoted out of
-  `only: :test` — it is now a real, non-test collaborator, the same
-  precedent as the earlier `:plug` promotion). Closes the previous gap
-  where the only shipped store (`AshA2A.ReceiptStore.Memory`) lost every
-  receipt on process restart. `claim/2`/`commit/2`/`fetch/2` replicate
-  `Memory`'s replay / `:command_conflict` / `:in_flight` decision logic
-  against real durable storage. `AshA2A.Application.receipt_store_children/0`
-  auto-wires a supervised `EKV` child when `:ash_a2a, :receipt_store` is
-  configured as `AshA2A.ReceiptStore.Ekv`, configurable via
-  `:ash_a2a, :receipt_store_ekv_opts`.
-- **`AshA2A.Receipt.standing` vocabulary**: `:durable`, alongside the
-  existing `:observed`. `CommandBus.run/4` marks a committed receipt
-  `:durable` only when the configured store exports `durable?/0 -> true`
-  (checked via the same `Code.ensure_loaded?`/`function_exported?` idiom
-  already used for `DurableServer`/`FLAME` provider detection — no
-  hardcoded module allowlist). `AshA2A.ReceiptStore.Memory` is unaffected;
-  its receipts still carry `standing: :observed`.
-- **Typed per-skill arguments in the capability index**:
-  `AshA2A.CapabilityIndex.Compiler.project/3` now derives real
-  `AshA2A.Argument` entries from `Ash.Resource.Info.action/2`'s real
-  `arguments` (public actions) and, for `:create`/`:update`, from
-  `action.accept`-derived attributes — closing a gap `AshA2A.Skill`'s own
-  moduledoc had already promised ("Action arguments are always derived
-  from Ash introspection") but `project/3` never implemented, leaving
-  every skill's `arguments` field hardcoded to `[]`. The wire
-  `A2A.AgentCard` projection still cannot carry per-argument schema data
-  (the vendored `A2A.AgentCard` skill struct has no schema field — a real,
-  separate constraint of that dependency, not worked around here); the
-  real, useful surface is the in-process `AshA2A.Info.capability_index/1`
-  and `AshA2A.Info.skill/2` API, which an in-process composer can call
-  directly.
 
-### Fixed
-- **`AshA2A.FlamePlacementTest` real happy-path coverage**: the only
-  existing FLAME test wrapped its entire body in
-  `unless FLAME.available?() do ... end` with no else branch, so in any
-  environment where FLAME is actually available (including this one) the
-  test passed vacuously and never exercised the real
-  `CommandBus`-through-`FLAME` path. Added a real integration test against
-  FLAME's own documented local execution mode (a real `FLAME.Pool` on
-  `FLAME.LocalBackend`, not a mock), asserting on the real returned
-  receipt/placement structs including a genuine replay round-trip. Also
-  fixed a real bug found while writing it: the module's own
-  `alias AshA2A.{..., Execution.FLAME, ...}` shadowed the bare `FLAME`
-  name, so an unqualified `{FLAME.Pool, ...}` child spec resolved to the
-  nonexistent `AshA2A.Execution.FLAME.Pool`.
-- **OCEL double-event emission on `CommandBus`-routed dispatch, fixed**:
-  every CommandBus-routed dispatch previously fired two independent OCEL
-  events for one logical action ([:ash_a2a, :dispatch, :stop] and
-  [:ash_a2a, :receipt, :committed] both reaching the sink). A per-process
-  correlation marker now stashes the dispatch span's data and merges it
-  into the single receipt-derived event; direct `Dispatcher.dispatch/5`
-  callers are unaffected. Resolves the item the parallel v26.9.14 release-
-  closure work below disclosed as open and unresolved.
-- **`mix ash_a2a.install` detect-and-merge extensions**: running install
-  against a module that already declares an `extensions:` list no longer
-  adds a duplicate key -- uses `Spark.Igniter.add_extension/5`, matching
-  `ash_r2rml.install.ex`'s own established pattern.
-- **`docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md`**, closing GitHub issue #11:
-  `DurableServer`/`Group`/`Presence` classified Reuse, `FLAME` classified
-  Compose, each backed by real `mix test` output per subsystem.
-- **`AshA2A.SemanticSubject`**: A2A command/receipt identity bound to a
-  semantic graph digest + generated-projection digest + manufacturer
-  digest, folded into `Command.fingerprint/1` and copied into `Receipt`.
-  `CommandBus` remains the only later DO path; `SemanticSubject` grants no
-  authority and does not change `Receipt.standing`.
-
-- **Explicit production semantic-request A2A surface**: a resource/domain
-  opts in via `a2a do semantic_requests true end` (real, compiled DSL
-  truth, `AshA2A.Info.semantic_requests_enabled?/1`); a caller opts in by
-  setting `:semantic_request`/`"semantic_request"` message metadata to
-  `true` (the same atom-then-string convention `:skill` metadata already
-  uses). Both gates must be true, or dispatch falls straight through to
-  ordinary skill resolution exactly as before -- never a silent fallback
-  for an unrecognized skill name or arbitrary free text. Routes to
-  `AshA2A.Semantic.Compiler.compile/3` for real, converting the resulting
-  `ExecutionPackage` into a real `AshA2A.Dispatcher.reply()` via
-  `ExecutionPackage.to_reply/1` (candidate-standing, `authority: none`
-  evidence only).
-- **Receipt-driven replanning**, automatic only for a continuation
-  carrying a prior `ExecutionPackage`'s fingerprint (`:continuation_fingerprint`
-  message metadata): a follow-up semantic request correlates back to the
-  real committed `AshA2A.Receipt` that closed the original package and
-  routes through `AshA2A.Semantic.Compiler.replan/4` for real
-  (`Feedback.from_receipt/2` -> `PlanningIR.with_observation/2` ->
-  re-synthesis) -- never a fresh compile, never auto-DO. A continuation
-  fingerprint with no matching committed receipt is refused closed
-  (`:continuation_receipt_not_found`). New `AshA2A.Semantic.PackageStore`
-  (started alongside the default receipt store) correlates a package's
-  one-way content-addressed fingerprint back to the full struct
-  `replan/4` needs.
-- **Real Oban integration** (`AshA2A.Delivery.Oban`): a real Postgres-backed
-  `oban_jobs` table and a real `Oban.Worker` reconstructing an admitted
-  `AshA2A.Command` from persisted job args and re-admitting through
-  `CommandBus` -- proving queue acceptance != execution receipt and that
-  Oban's at-least-once delivery replays through `CommandBus` rather than
-  double-executing.
-- **Real AshStateMachine integration** (`AshA2A.TaskLifecycle`): a real
-  fixture resource genuinely transitions state through the real extension
-  (`possible_next_states/2` now returns real extension-sourced values
-  instead of the `:unsupported` degrade path for an opted-in resource).
-- **Real Reactor DAG execution**: `AshA2A.Reactor.CommandWorkflow` composes
-  real steps run through the actual `Reactor.run/2` engine (previously
-  only the `Reactor.Step` callback contract had ever been exercised, via a
-  bare function call) -- proving a deliberately unauthorized command halts
-  the real Reactor run before any receipt commits or record is created.
-- **Real single-node DurableServer restart evidence**: a real managed
-  process is really killed (`Process.exit/2`) and the real dependency's
-  own lifecycle manager really restarts it under real supervision with
-  real recovered state -- real cross-node rehome remains a disclosed,
-  separate gap (see below).
-- **Real distributed BEAM peer-node evidence**: a genuine second node via
-  OTP 28's `:peer` module, real `:nodedown` delivery, and a real
-  cross-node `Group` membership purge on node loss -- proving
-  `TaskID != PID != Node` with real distributed evidence.
-- **Real Group, FLAME, and ash_r2rml exercises**: `AshA2A.Topology.Group`
-  against a real running registry; `AshA2A.Execution.FLAME` placing a real
-  `CommandBus.run/4` dispatch on a distinct real process via
-  `FLAME.LocalBackend`; a real fixture genuinely declaring the `AshR2RML`
-  extension with a real, admitted subject map (previously only the
-  refusal path had ever been exercised).
-- **Real OCEL sink for the default dispatch path**: a real local sink
-  genuinely receives real HTTP POSTs derived from a real committed
-  Receipt for a CommandBus-routed dispatch through the default `Agent`
-  path.
-- Architecture verifier extended 4 -> 9 real checks (`mix
-  ash_a2a.verify_architecture`); real property/fuzz suite
-  (`test/ash_a2a_property_fuzz_test.exs`); real concurrency/replay stress
-  test (30 concurrent racers, same command_id, exactly one execution);
-  consolidated real failure-injection suite; performance harness extended
-  to 8 benchmarked operations.
-
-### Fixed
-- `Oban.Testing.perform_job/2` crashed (`DateTime.diff/3`
-  `FunctionClauseError`) on a job fetched straight off the DB because
-  `attempted_at` is nil until a real dequeue happens -- worked around with
-  a real Ecto `dequeue!/1` step mirroring Oban's own producer SQL.
-- `DurableServer.Backends.EKVStore` round-trips state as a native
-  atom-keyed term, not string-keyed JSON -- the pre-existing
-  `DurableServerFixture`'s `load_state/2` clause never actually matched
-  this backend and silently fell through to a default, latent only
-  because that fixture was never restarted before this release's real
-  restart test existed.
+- `AshA2A.ReceiptStore.Ekv`, an on-disk receipt store (auto-wired when configured), and a
+  `:durable` receipt standing for stores that persist.
+- Typed per-skill arguments in the capability index, derived from Ash action arguments.
+- `AshA2A.SemanticSubject`, binding command and receipt identity to a semantic graph digest.
+- Opt-in semantic-request surface (`a2a do semantic_requests true end` plus per-message
+  `semantic_request` metadata) and receipt-driven replanning for continuations.
+- Real integrations: `AshA2A.Delivery.Oban`, `AshA2A.TaskLifecycle` (AshStateMachine),
+  `AshA2A.Reactor.CommandWorkflow`, DurableServer restart, distributed peer nodes, Group,
+  FLAME and ash_r2rml, and a real `ash_oban` scheduled-action fixture.
+- The architecture verifier grew from 4 to 9 checks.
 
 ### Changed
-- `docs/explanation/architecture.md`'s "ecosystem adapters" section,
-  stale since earlier dependency additions, corrected: `oban`,
-  `ash_oban`, `ash_state_machine`, `flame`, `durable_server`, and the
-  `group`/`phoenix_pubsub` transitive/direct deps are all real, and every
-  adapter now has a real qualification test cited by name.
 
-### Disclosed, not silently resolved
-- DurableServer cross-node rehome (a second node taking over an orphaned
-  task) remains unexercised; only real single-node restart is proven.
-- A resource author can still explicitly declare `consequence: :observe`
-  on an otherwise-mutating action via source-code DSL override -- an
-  intentional escape hatch, never something a remote caller can trigger.
-- `AshA2A.Topology.Group` currently has unit-test coverage only, no
-  live-process integration test, unlike `DurableServer`/`Presence`/`FLAME`
-  (recorded in `docs/PHOENIX_RUNTIME_PRIOR_ART_AUDIT.md`).
+- Architecture documentation corrected for the real ecosystem dependencies.
+
+### Fixed
+
+- Dispatch through `CommandBus` fired two OCEL events for one action; it now fires one.
+- `mix ash_a2a.install` merges into an existing `extensions:` list instead of duplicating.
+- The FLAME test now exercises the real path instead of passing vacuously.
+- The opt-in `:external_api` test suite is runnable end to end (timeouts raised for
+  rate-limited live calls).
+
+### Known limitations
+
+- DurableServer cross-node rehome is unexercised; only single-node restart is proven.
+- A resource author can explicitly declare `consequence: :observe` on a mutating action;
+  this is an intentional source-level escape hatch.
 
 ## [26.9.13] - 2026-09-13
 
 ### Added
-- **Semantic closed-loop pipeline** (`AshA2A.Semantic.{Source,IR,Admission,
-  Ontology,PlanningIR,Schema,Vocabulary,Compiler,Feedback,ExecutionPackage}`,
-  `AshA2A.Planning.SemanticSynthesis`): text → admitted semantic IR →
-  ontology → PlanningIR → LLM-synthesized HDDL/FOND candidate → canonical
-  capability re-admission → `ExecutionPackage`, with real solver
-  verification against the CI-built `native/hddl_cli` (ferroplan) binary.
-  Full real-collaborator (zero-mock) test coverage across all 11 modules.
-  **Not yet wired to a production A2A caller** — reachable today only from
-  tests; see "Consequence semantics" below for the closest related fix.
-- **`AshA2A.Skill.consequence`**: `:observe` / `:change` / `:external_do` /
-  `:unknown`, computed once at compile time
-  (`AshA2A.CapabilityIndex.Compiler`) from the real Ash `action.type`, with
-  an explicit `a2a do skill ..., consequence: ... end` override. Real
-  capability truth, not a value re-derived ad hoc from `action.type` at
-  dispatch time — `action.type` alone cannot distinguish a pure generic
-  `:action` from a real consequence-bearing one. An unclassified (`:unknown`)
-  capability is refused closed (`:consequence_unclassified`) rather than
-  defaulting to either safe-to-skip or safe-to-execute.
+
+- Semantic closed-loop pipeline (`AshA2A.Semantic.*`, `AshA2A.Planning.SemanticSynthesis`):
+  text to admitted IR, ontology, planning IR, candidate plan, and an execution package.
+- `AshA2A.Skill.consequence` (`:observe`, `:change`, `:external_do`, `:unknown`), computed
+  at compile time with an explicit override. Unclassified capabilities are refused
+  (`:consequence_unclassified`).
 
 ### Changed
-- **`CommandBus` is now on the default `AshA2A.Agent.__dispatch__` path**
-  for every `:change`/`:external_do`-consequence skill — the gap the
-  26.9.12 entry above flagged as "not yet wired." A real
-  `AshA2A.Command` is built per dispatch (`command_id` is the real,
-  protocol-native `A2A.Message.message_id`, not a fresh id per call, so a
-  genuine client retry replays instead of re-executing, and a same-id/
-  different-content retry is a real `:command_conflict` refusal); real
-  `AshA2A.Authority` is synthesized from the already-verified transport
-  identity (`AshA2A.Authority.from_verified_identity/2`, deterministic
-  `token_id` so replay fingerprinting stays stable across retries) and
-  fails `:change`/`:external_do` admission closed for an unauthenticated
-  caller. `:read` and `:observe`-classified skills stay on the direct
-  dispatch path (a streaming `:read` reply would otherwise have its real
-  `Enumerable.t()` collapsed by `Receipt.from_reply/4`'s `summarize/1`).
-- `AshA2A.Telemetry.OcelForwarder.attach!/0` is now called from
-  `AshA2A.Application.start` — previously real and correct but never
-  attached outside tests, so a host got no OCEL forwarding by default even
-  after configuring `:ocel_ingest_url`. Idempotent and a no-op cost when
-  `:ocel_ingest_url` is unconfigured.
-- `AshA2A.Dispatcher`'s skill lookup now matches a caller-supplied selector
-  against a skill's canonical `id` as well as its `name` (previously
-  `name`-only), matching `AshA2A.Info.skill/2`'s existing two-field match —
-  a selector-consistency fix between the direct-dispatch and
-  `CommandBus`-routed lookup paths, not a security change (fail-closed
-  either way).
+
+- `CommandBus` is now on the default `AshA2A.Agent` dispatch path for every
+  `:change`/`:external_do` skill. A client retry replays instead of re-executing, and a
+  same-id retry with different content is a `:command_conflict`. `:read` and `:observe`
+  skills stay on the direct path.
+- `AshA2A.Telemetry.OcelForwarder.attach!/0` is called at application start.
+- Skill lookup matches a selector against a skill's canonical `id` as well as its `name`.
 
 ### Fixed
-- `AshA2A.Dispatcher.run_update/4` passed the raw dispatch input (including
-  the resolved primary-key field) straight to `Ash.Changeset.for_update/3`,
-  raising a spurious `Ash.Error.Invalid.NoSuchInput` for any update action
-  whose `accept` list doesn't also happen to include its own primary-key
-  attribute. Fixed the same way `run_destroy/4` already was: strip the
-  resolved primary-key field(s) before building the update changeset.
-- `AshA2A.Authority.from_verified_identity/2` was minting a fresh random
-  `token_id` on every call; since `AshA2A.Command.fingerprint/1` hashes the
-  authority's `token_id`, this made every authenticated retry's fingerprint
-  differ from the last, permanently defeating `CommandBus` replay detection
-  with a spurious `:command_conflict`. Fixed by deriving a deterministic
-  `token_id` from `{subject, capability_id}` — a synthesized standing claim
-  must be idempotent for the same pair, unlike a one-time-issued credential
-  grant.
+
+- Update actions no longer fail when `accept` omits the primary key.
+- `Authority.from_verified_identity/2` derives a deterministic token id, so authenticated
+  retries no longer defeat replay detection.
 
 ## [26.9.12] - 2026-09-12
 
 ### Added
-- **Canonical capability projection** (`AshA2A.CapabilityIndex.Compiler`):
-  skills are now derived live from every public Ash action
-  (`Ash.Resource.Info.public_actions/1`), not just explicitly-declared
-  `a2a do skill ... end` entries — those now act as overrides/renames on
-  top of the canonical set rather than an allowlist. Skill `id` is a
-  fully-qualified `<Resource>.<action>` identity (avoids collisions across
-  resources sharing a short skill name); `name` carries the short,
-  human-facing name.
-- **Typed command/receipt machinery** (`AshA2A.Command`, `AshA2A.Identity`,
-  `AshA2A.CommandBus`, `AshA2A.ReceiptStore` + `ReceiptStore.Memory`,
-  `AshA2A.RuntimeReceipt`): command/task/agent/principal identity are
-  separately-typed values; `CommandBus.run/4` provides a real
-  admit → claim → dispatch → receipt → telemetry path with idempotent
-  replay on duplicate command identity and refusal on conflicting reuse.
-  **Not yet wired into the default `AshA2A.Agent.__dispatch__` path** —
-  available today as opt-in infrastructure (used by the Reactor step,
-  Oban, and FLAME adapters below), not a mandatory boundary every A2A call
-  passes through.
-- **Admission bridge** (`AshA2A.Authority`, `AshA2A.Planning.candidate_fence/1`):
-  a real, non-fixture SELECT-vs-DO authority check and a planner-candidate
-  fence that refuses any candidate claiming standing beyond `:candidate`/
-  authority beyond `:none`. Same wiring caveat as above — real, tested,
-  not on the default path yet.
-- **Lifecycle/Reactor composition** (`AshA2A.TaskLifecycle`,
-  `AshA2A.Reactor.ExecuteCommand`): a thin adapter deferring transition
-  legality to `AshStateMachine.possible_next_states/1,2` when that
-  extension is installed (it is not currently a project dependency, so
-  this degrades to `{:error, {:unsupported, :ash_state_machine}}` in this
-  repo today), plus a Reactor step wired to `CommandBus.run/4`.
-- **Ecosystem adapter seams** (`AshA2A.Delivery.Oban`,
-  `AshA2A.Topology.Group`, `AshA2A.Topology.Presence`,
-  `AshA2A.Durability.DurableServer`, `AshA2A.Execution.FLAME`): one
-  `Code.ensure_loaded?/1`-guarded, receipted adapter module per named
-  ecosystem primitive (provider-substitutable by design), each with real
-  restart/node-loss or payload-shape test coverage. **None of the six
-  underlying libraries (AshStateMachine, AshOban/Oban, Group,
-  DurableServer, Phoenix Presence, FLAME) is currently a real dependency
-  of this project** — every adapter self-degrades to an `:unsupported`
-  refusal until a real provider is added.
-- **Semantic/OCEL evidence projection** (`AshA2A.SemanticProjection`):
-  real `ocel_event/1`, `capability/2`, `r2rml_mapping_result/1` helpers
-  projecting receipts into OCEL/RDF-shaped evidence.
+
+- Canonical capability projection: skills are derived from every public Ash action; `a2a do
+  skill ... end` entries are overrides. Skill ids are `<Resource>.<action>`.
+- Typed command and receipt machinery (`AshA2A.Command`, `AshA2A.Identity`,
+  `AshA2A.CommandBus`, `AshA2A.ReceiptStore`) with idempotent replay and conflict refusal.
+- Admission bridge (`AshA2A.Authority`, `AshA2A.Planning.candidate_fence/1`).
+- Lifecycle and Reactor composition, adapter seams for Oban, Group, Presence, DurableServer
+  and FLAME (each degrades to an `:unsupported` refusal without its library), and
+  `AshA2A.SemanticProjection` for OCEL/RDF-shaped evidence.
+- A Diataxis-structured documentation set under `docs/`.
 
 ### Fixed
-- `AshA2A.Telemetry.OcelForwarder` now forwards a real `relationships`
-  entry (from the dispatched object's real identity) alongside dispatch
-  attributes — previously dropped in an intermediate refactor, restored
-  during this release's merge.
-- Six test files updated for the canonical-capability-projection semantics
-  change (capability-id shape, `:ambiguous_skill` disambiguation for
-  fixtures that now correctly expose 2+ real skills, `DslError` wording,
-  supervision-tree assertions accounting for the new
-  `AshA2A.ReceiptStore.Memory` default child).
 
-### Docs
-- Added a [Diataxis](https://diataxis.fr/)-structured documentation set
-  under `docs/`: **tutorials** (`docs/tutorials/`), **how-to guides**
-  (`docs/how-to/`), **reference** (`docs/reference/`), and **explanation**
-  (`docs/explanation/`). README.md's inline usage walkthrough was trimmed
-  to a short quick-start and now links into this set.
+- `AshA2A.Telemetry.OcelForwarder` forwards `relationships` again.
 
-### Status note
-This release's admission/receipt/lifecycle/ecosystem-adapter machinery is
-real, committed, and independently tested, but **not yet the architecture's
-enforced default path** — `AshA2A.Agent.__dispatch__` still calls
-`AshA2A.Dispatcher.dispatch/5` directly. Wiring `CommandBus` into that
-default path, and adding real ecosystem-primitive dependencies, are
-deliberately deferred to a follow-up release, not silently implied by this
-one.
+### Notes
 
-### Candidate architecture design record
-
-The stacked PR series #1 through #6 defined one candidate sequence:
-derive capabilities from Ash public actions, separate machine identities,
-add the receipted command path, compose lifecycle behavior with
-AshStateMachine and Reactor, separate background delivery through Oban,
-and project Group as runtime topology. The design keeps task, command,
-execution, runtime, delivery, and topology identities distinct instead of
-collapsing them into one agent identifier. (Historical design-state note
-written while that work was still CANDIDATE; the shipped behavior is
-described in the sections above.)
+- At this release the command-bus machinery was opt-in infrastructure, not yet the default
+  dispatch path (see 26.9.13).
 
 ## [26.9.10] - 2026-09-10
 
 ### Added
-- Spark DSL for defining A2A (Agent-to-Agent) agents, actions, and skills.
-- Capability index (`AshA2A.CapabilityIndex`) with `Validator` and `AgentCardBuilder`
-  decomposed as separate modules.
-- Dispatcher for routing A2A requests to Ash actions/skills.
-- Task history/context threading through to dispatch instead of being discarded.
+
+- Spark DSL for defining A2A agents, actions and skills.
+- Capability index with validator and agent-card builder.
+- Dispatcher routing A2A requests to Ash actions, with task history and context threaded
+  through.
 - Installer for wiring `ash_a2a` into a host application.
 
 ### Fixed
-- `AgentCard` `supported_interfaces` proto-drift.
+
+- `AgentCard` `supported_interfaces` drift.
 - Dispatcher `KeyError` on skill lookup.
 - `__spark_metadata__` verification issues.

@@ -39,7 +39,8 @@ defmodule AshA2A.Passport.Plug do
     %{
       passport: Keyword.fetch!(opts, :passport),
       revocation: Keyword.get(opts, :revocation),
-      passport_path: path(Keyword.get(opts, :passport_path, [".well-known", "agent-passport.json"])),
+      passport_path:
+        path(Keyword.get(opts, :passport_path, [".well-known", "agent-passport.json"])),
       revocation_path:
         path(
           Keyword.get(opts, :revocation_path, [

@@ -9,20 +9,21 @@ defmodule AshA2A.AuthZEN.AuthorityPolicyTest do
 
   defmodule LocalIssuer do
     def issue(request, _ctx) do
-      {:ok, %Certificate{
-        version: 1,
-        effect_digest: request.effect_digest,
-        principal: request.principal,
-        policy_epoch: request.policy_epoch,
-        revocation_epoch: request.revocation_epoch,
-        generation: request.generation,
-        nonce: "0123456789abcdef",
-        not_before_ms: 0,
-        expires_at_ms: 10_000,
-        audience: request.audience,
-        threshold: 1,
-        signatures: []
-      }}
+      {:ok,
+       %Certificate{
+         version: 1,
+         effect_digest: request.effect_digest,
+         principal: request.principal,
+         policy_epoch: request.policy_epoch,
+         revocation_epoch: request.revocation_epoch,
+         generation: request.generation,
+         nonce: "0123456789abcdef",
+         not_before_ms: 0,
+         expires_at_ms: 10_000,
+         audience: request.audience,
+         threshold: 1,
+         signatures: []
+       }}
     end
   end
 
@@ -39,11 +40,12 @@ defmodule AshA2A.AuthZEN.AuthorityPolicyTest do
       observed_at: 1
     }
 
-    policy_ctx = Map.merge(ctx, %{
-      authzen_evidence: evidence,
-      authzen_expected_pdp: "https://pdp.example",
-      local_certificate_issuer: LocalIssuer
-    })
+    policy_ctx =
+      Map.merge(ctx, %{
+        authzen_evidence: evidence,
+        authzen_expected_pdp: "https://pdp.example",
+        local_certificate_issuer: LocalIssuer
+      })
 
     assert :ok = AuthorityPolicy.admit(request, policy_ctx)
     assert {:ok, %Certificate{effect_digest: digest}} = AuthorityPolicy.issue(request, policy_ctx)

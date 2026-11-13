@@ -94,8 +94,10 @@ defmodule AshA2A.Authority.GraphPinTest do
   test "pluggable store: ETS backend preserves the same contract" do
     assert :ok = GraphPin.pin("order-ets", @digest, store: EtsStore)
     assert :ok = GraphPin.assert_fresh("order-ets", @digest, store: EtsStore)
+
     assert {:error, :stale_graph_identity} =
              GraphPin.assert_fresh("order-ets", @other_digest, store: EtsStore)
+
     assert {:error, :unpinned} = GraphPin.assert_fresh("order-ets", @digest)
   end
 

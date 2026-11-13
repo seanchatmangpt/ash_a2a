@@ -196,7 +196,11 @@ if Code.ensure_loaded?(Req) do
     end
 
     @doc "`CreateTaskPushNotificationConfig`."
-    def set_push_config(%Client{} = client, %AshA2A.Protocol.PushNotificationConfig{} = config, opts \\ []) do
+    def set_push_config(
+          %Client{} = client,
+          %AshA2A.Protocol.PushNotificationConfig{} = config,
+          opts \\ []
+        ) do
       case config.task_id || opts[:task_id] do
         nil ->
           {:error, :task_not_found}
@@ -314,9 +318,12 @@ if Code.ensure_loaded?(Req) do
     defp stub_unary(:delete_task_push_notification_config, ch, req, o),
       do: Stub.delete_task_push_notification_config(ch, req, o)
 
-    defp stub_unary(:get_extended_agent_card, ch, req, o), do: Stub.get_extended_agent_card(ch, req, o)
+    defp stub_unary(:get_extended_agent_card, ch, req, o),
+      do: Stub.get_extended_agent_card(ch, req, o)
 
-    defp stub_stream(:send_streaming_message, ch, req, o), do: Stub.send_streaming_message(ch, req, o)
+    defp stub_stream(:send_streaming_message, ch, req, o),
+      do: Stub.send_streaming_message(ch, req, o)
+
     defp stub_stream(:subscribe_to_task, ch, req, o), do: Stub.subscribe_to_task(ch, req, o)
 
     defp call_unary(client, rpc, request, opts) do
@@ -395,7 +402,10 @@ if Code.ensure_loaded?(Req) do
           []
 
         {:error, reason} ->
-          Logger.warning("AshA2A.Protocol.Client.GRPC: dropped undecodable stream frame: #{inspect(reason)}")
+          Logger.warning(
+            "AshA2A.Protocol.Client.GRPC: dropped undecodable stream frame: #{inspect(reason)}"
+          )
+
           []
       end
     end
@@ -472,7 +482,8 @@ if Code.ensure_loaded?(Req) do
     """
     @spec live_send(session(), term(), keyword()) :: :ok | {:error, term()}
     def live_send(%Session{client: client} = session, message_or_map, opts \\ []) do
-      with {:ok, request} <- to_pb(put_tenant(build_live_request(message_or_map, opts), client), Pb.StreamRequest) do
+      with {:ok, request} <-
+             to_pb(put_tenant(build_live_request(message_or_map, opts), client), Pb.StreamRequest) do
         push(session, request)
       end
     end
@@ -482,7 +493,8 @@ if Code.ensure_loaded?(Req) do
     def live_subscribe(%Session{client: client} = session, task_id, opts \\ []) do
       subscribe = put(%{"id" => task_id}, "lastSeenGeneration", opts[:last_seen_generation])
 
-      with {:ok, request} <- to_pb(put_tenant(%{"subscribe" => subscribe}, client), Pb.StreamRequest) do
+      with {:ok, request} <-
+             to_pb(put_tenant(%{"subscribe" => subscribe}, client), Pb.StreamRequest) do
         push(session, request)
       end
     end
@@ -508,8 +520,9 @@ if Code.ensure_loaded?(Req) do
       :exit, reason -> {:error, {:live_closed, reason}}
     end
 
-    defp build_live_request(%{} = map, _opts) when is_map_key(map, "sendMessage") or is_map_key(map, "subscribe"),
-      do: map
+    defp build_live_request(%{} = map, _opts)
+         when is_map_key(map, "sendMessage") or is_map_key(map, "subscribe"),
+         do: map
 
     defp build_live_request(%AshA2A.Protocol.Message{} = message, opts) do
       {:ok, encoded} = JSON.encode(message)
@@ -619,7 +632,9 @@ if Code.ensure_loaded?(Req) do
 
     defp state_name(nil), do: nil
     defp state_name(name) when is_binary(name), do: name
-    defp state_name(atom) when is_atom(atom), do: "TASK_STATE_" <> String.upcase(Atom.to_string(atom))
+
+    defp state_name(atom) when is_atom(atom),
+      do: "TASK_STATE_" <> String.upcase(Atom.to_string(atom))
 
     defp timestamp(nil), do: nil
     defp timestamp(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
@@ -648,7 +663,9 @@ if Code.ensure_loaded?(Req) do
         for {name, values} <- req.headers,
             name not in ["content-type", "accept"],
             into: %{},
-            do: {String.downcase(to_string(name)), values |> List.wrap() |> List.first() |> to_string()}
+            do:
+              {String.downcase(to_string(name)),
+               values |> List.wrap() |> List.first() |> to_string()}
 
       extra =
         for {name, value} <- List.wrap(opts[:headers]),

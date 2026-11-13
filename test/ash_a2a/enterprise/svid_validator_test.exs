@@ -147,7 +147,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       conn = call_plug(leaf, assign: :workload_identity)
@@ -163,7 +167,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       assert {401, "missing_svid"} = refusal_reason(call_plug(nil))
@@ -175,10 +183,15 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
-      assert {401, "svid_malformed"} = refusal_reason(call_plug(<<0, 1, 2, 3, "not a certificate">>))
+      assert {401, "svid_malformed"} =
+               refusal_reason(call_plug(<<0, 1, 2, 3, "not a certificate">>))
     end
 
     test "expired SVID -> 401 svid_expired" do
@@ -190,7 +203,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       assert {401, "svid_expired"} = refusal_reason(call_plug(leaf))
@@ -201,7 +218,8 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
       {leaf, inter, _foreign_root} =
         CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
 
-      {our_leaf, _our_inter, our_root} = CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/x"], nil)
+      {our_leaf, _our_inter, our_root} =
+        CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/x"], nil)
 
       BundleSource.put(
         {:ok,
@@ -222,7 +240,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       assert {401, "trust_domain_mismatch"} = refusal_reason(call_plug(leaf))
@@ -233,7 +255,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       assert {401, "svid_identity_absent"} = refusal_reason(call_plug(leaf))
@@ -251,7 +277,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       assert {401, "svid_multiple_uris"} = refusal_reason(call_plug(leaf))
@@ -262,7 +292,11 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
       BundleSource.put(
         {:ok,
-         %{trust_domain: @trust_domain, root_certificates: [root], intermediate_certificates: [inter]}}
+         %{
+           trust_domain: @trust_domain,
+           root_certificates: [root],
+           intermediate_certificates: [inter]
+         }}
       )
 
       assert {401, "identity_path_invalid"} = refusal_reason(call_plug(leaf))
@@ -271,28 +305,32 @@ defmodule AshA2A.Enterprise.SvidValidatorTest do
 
   describe "trust-bundle faults (fail-closed, 503)" do
     test "bundle source returns an error -> 503 trust_bundle_unavailable" do
-      {leaf, _inter, _root} = CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
+      {leaf, _inter, _root} =
+        CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
 
       BundleSource.put({:error, :rotating})
       assert {503, "trust_bundle_unavailable"} = refusal_reason(call_plug(leaf))
     end
 
     test "bundle source module not loaded -> 503 bundle_source_unavailable" do
-      {leaf, _inter, _root} = CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
+      {leaf, _inter, _root} =
+        CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
 
       assert {503, "bundle_source_unavailable"} =
                refusal_reason(call_plug(leaf, bundle_source: NoSuchBundleSource))
     end
 
     test "empty root set -> 503 trust_bundle_empty" do
-      {leaf, _inter, _root} = CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
+      {leaf, _inter, _root} =
+        CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
 
       BundleSource.put({:ok, %{trust_domain: @trust_domain, root_certificates: []}})
       assert {503, "trust_bundle_empty"} = refusal_reason(call_plug(leaf))
     end
 
     test "bundle without trust domain -> 503 trust_bundle_unavailable" do
-      {leaf, _inter, _root} = CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
+      {leaf, _inter, _root} =
+        CertFactory.chain(["spiffe://#{@trust_domain}/ns/prod/sa/checker"], nil)
 
       BundleSource.put({:ok, %{root_certificates: [<<1, 2, 3>>]}})
       assert {503, "trust_bundle_unavailable"} = refusal_reason(call_plug(leaf))

@@ -69,7 +69,8 @@ defmodule Mix.Tasks.AshA2a.SelfCard do
 
   @impl Mix.Task
   def run(argv) do
-    {opts, rest, invalid} = OptionParser.parse(argv, strict: [output: :string, url: :string, stdout: :boolean])
+    {opts, rest, invalid} =
+      OptionParser.parse(argv, strict: [output: :string, url: :string, stdout: :boolean])
 
     if invalid != [] or rest != [] do
       Mix.raise("invalid arguments: #{inspect(invalid ++ rest)}")

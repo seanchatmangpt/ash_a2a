@@ -12,7 +12,9 @@ defmodule SemanticLane12SerializationTest do
   end
 
   test "Ontology.to_ntriples cannot be injected through subject IRI and re-parses as one triple" do
-    out = Ontology.to_ntriples([%{subject: @evil, predicate: "http://example.org/p", object: "o\rx"}])
+    out =
+      Ontology.to_ntriples([%{subject: @evil, predicate: "http://example.org/p", object: "o\rx"}])
+
     assert length(String.split(out, "\n", trim: true)) == 1
     refute out =~ "> <http://evil/p>"
     assert out =~ "\\r"
@@ -42,7 +44,9 @@ defmodule SemanticLane12SerializationTest do
 
   test "FalsifierSuite.to_ntriples escapes IRIs" do
     out =
-      AshA2A.Semantic.FalsifierSuite.to_ntriples([{@evil, "http://example.org/p", {:lit, "a\rb"}}])
+      AshA2A.Semantic.FalsifierSuite.to_ntriples([
+        {@evil, "http://example.org/p", {:lit, "a\rb"}}
+      ])
 
     assert length(String.split(out, "\n", trim: true)) == 1
     refute out =~ "> <http://evil/p>"

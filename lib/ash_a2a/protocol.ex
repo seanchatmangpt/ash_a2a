@@ -130,7 +130,9 @@ defmodule AshA2A.Protocol do
       |> Stream.run()
   """
   @spec stream(GenServer.server(), String.t() | AshA2A.Protocol.Message.t(), keyword()) ::
-          {:ok, AshA2A.Protocol.Task.t(), Enumerable.t()} | {:ok, AshA2A.Protocol.Message.t()} | {:error, term()}
+          {:ok, AshA2A.Protocol.Task.t(), Enumerable.t()}
+          | {:ok, AshA2A.Protocol.Message.t()}
+          | {:error, term()}
   def stream(agent, message, opts \\ [])
 
   def stream(agent, message, opts) when is_binary(message) do

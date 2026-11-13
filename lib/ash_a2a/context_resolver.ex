@@ -135,7 +135,12 @@ defmodule AshA2A.ContextResolver do
       [reply]
 
   """
-  @spec from_a2a_message(AshA2A.Protocol.Message.t(), module(), [AshA2A.Protocol.Message.t()], term()) ::
+  @spec from_a2a_message(
+          AshA2A.Protocol.Message.t(),
+          module(),
+          [AshA2A.Protocol.Message.t()],
+          term()
+        ) ::
           ExecutionContext.t()
   def from_a2a_message(
         %AshA2A.Protocol.Message{metadata: metadata},

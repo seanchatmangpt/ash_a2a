@@ -89,9 +89,7 @@ defmodule AshA2A.X3EmailHardeningTest do
     nil_b = update_in(b.actions, fn [a1, a2] -> [Map.put(a1, :graph_digest, nil), a2] end)
 
     o =
-      opts(rec, ledger,
-        brief_lookup: fn ^mid -> {:ok, nil_b, %{1 => @digest, 2 => @digest}} end
-      )
+      opts(rec, ledger, brief_lookup: fn ^mid -> {:ok, nil_b, %{1 => @digest, 2 => @digest}} end)
 
     # Tokens in the request are bound to the original brief; a mismatching token halts at 403
     # before freshness, so mint the request against nil_b's tokens.

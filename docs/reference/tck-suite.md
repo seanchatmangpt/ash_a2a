@@ -95,7 +95,7 @@ JSON verdict.
 `mix ash_a2a.v1_conformance_report` at post-bump HEAD `a9cc903b`
 (v26.10.8): **26/26 PASS, 0 FAIL** (`totals: {total: 26, pass: 26, fail:
 0}`, task exit 0), executed 2026-10-08T10:01:27Z. Witnessed in the
-campaign receipt `docs/jira/v26.10.8/RECEIPT.md` ("Gate verdicts"),
+campaign receipt `docs/archive/jira-releases/v26.10.8/RECEIPT.md` ("Gate verdicts"),
 branch `feat/tck-vuln-hardening`. **As-of-date**: this verdict is bound
 to subject `a9cc903b`; re-run the report to renew it at a later head.
 

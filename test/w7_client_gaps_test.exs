@@ -212,11 +212,19 @@ defmodule AshA2A.W7.ClientGapsTest do
     assert {:error, :no_supported_interface} = Client.from_card(c)
 
     c2 = card(supported_interfaces: [iface("JSONRPC", "http://rpc.example")])
-    assert {:error, :no_supported_interface} = Client.from_card(c2, preferred_bindings: [:http_json])
+
+    assert {:error, :no_supported_interface} =
+             Client.from_card(c2, preferred_bindings: [:http_json])
   end
 
   test "from_card/2 falls back to legacy card.url + preferred_transport" do
-    c = card(supported_interfaces: [], url: "http://legacy.example", preferred_transport: "HTTP+JSON")
+    c =
+      card(
+        supported_interfaces: [],
+        url: "http://legacy.example",
+        preferred_transport: "HTTP+JSON"
+      )
+
     assert {:ok, client} = Client.from_card(c)
     assert client.transport == :http_json
     assert client.url == "http://legacy.example"
@@ -328,7 +336,9 @@ defmodule AshA2A.W7.ClientGapsTest do
 
     assert {:ok, %AshA2A.Protocol.Task{}} = Client.get_task(client, "t1")
     assert_receive {:req, "POST", _, _, _, body}
-    assert %{"method" => "GetTask", "params" => %{"tenant" => "acme", "id" => "t1"}} = Jason.decode!(body)
+
+    assert %{"method" => "GetTask", "params" => %{"tenant" => "acme", "id" => "t1"}} =
+             Jason.decode!(body)
   end
 
   # -- G5: streaming error bodies, Last-Event-ID, await_task -----------------------------
@@ -470,7 +480,9 @@ defmodule AshA2A.W7.ClientGapsTest do
     server = serve!(:legacy_card)
 
     assert {:error, {:unexpected_status, 404}} = Client.discover(server.base_url)
-    assert {:ok, %AgentCard{name: "w7"}} = Client.discover(server.base_url, agent_json_fallback: true)
+
+    assert {:ok, %AgentCard{name: "w7"}} =
+             Client.discover(server.base_url, agent_json_fallback: true)
   end
 
   test "discover/2 cache: true serves the second call from disk without a request" do
@@ -478,10 +490,14 @@ defmodule AshA2A.W7.ClientGapsTest do
     on_exit(fn -> File.rm_rf!(dir) end)
     server = serve!(:card)
 
-    assert {:ok, %AgentCard{name: "w7"}} = Client.discover(server.base_url, cache: true, cache_dir: dir, max_age: 300)
+    assert {:ok, %AgentCard{name: "w7"}} =
+             Client.discover(server.base_url, cache: true, cache_dir: dir, max_age: 300)
+
     assert_receive {:req, "GET", "/.well-known/agent-card.json", _, _, _}
 
-    assert {:ok, %AgentCard{name: "w7"}} = Client.discover(server.base_url, cache: true, cache_dir: dir, max_age: 300)
+    assert {:ok, %AgentCard{name: "w7"}} =
+             Client.discover(server.base_url, cache: true, cache_dir: dir, max_age: 300)
+
     refute_receive {:req, _, _, _, _, _}, 0
   end
 

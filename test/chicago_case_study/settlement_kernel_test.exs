@@ -22,7 +22,8 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementKernelTest do
       signature = Base.decode16!(signed_lease["signature"], case: :lower)
       pub_key = Base.decode16!(hd(trusted_keys), case: :lower)
 
-      payload = "ceiling:#{signed_lease["ceiling"]}|expires:#{signed_lease["expires_unix"]}|holder:#{signed_lease["holder"]}|id:#{signed_lease["id"]}|scope:#{signed_lease["scope"]}"
+      payload =
+        "ceiling:#{signed_lease["ceiling"]}|expires:#{signed_lease["expires_unix"]}|holder:#{signed_lease["holder"]}|id:#{signed_lease["id"]}|scope:#{signed_lease["scope"]}"
 
       valid_sig? = :crypto.verify(:eddsa, :none, payload, signature, [pub_key, :ed25519])
 
@@ -34,7 +35,8 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementKernelTest do
           {:error, %{code: "LeaseRefused", class: "Expiration", broken_term: "lease:expired"}}
 
         signed_lease["ceiling"] != required_ceiling ->
-          {:error, %{code: "LeaseRefused", class: "Ceiling", broken_term: "ceiling:#{required_ceiling}"}}
+          {:error,
+           %{code: "LeaseRefused", class: "Ceiling", broken_term: "ceiling:#{required_ceiling}"}}
 
         true ->
           {:ok, :admitted}
@@ -44,7 +46,10 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementKernelTest do
 
   test "admits compliant settlement with valid signed lease", ctx do
     now = System.system_time(:second)
-    lease_payload = "ceiling:construct|expires:#{now + 300}|holder:bank_agent_1|id:lease-42|scope:urn:settlement:tx-100"
+
+    lease_payload =
+      "ceiling:construct|expires:#{now + 300}|holder:bank_agent_1|id:lease-42|scope:urn:settlement:tx-100"
+
     signature = :crypto.sign(:eddsa, :none, lease_payload, [ctx.priv_key, :ed25519])
 
     signed_lease = %{
@@ -57,12 +62,16 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementKernelTest do
       "signature" => Base.encode16(signature, case: :lower)
     }
 
-    assert {:ok, :admitted} = KernelAdmission.verify_lease(signed_lease, ctx.trusted_keys, "construct")
+    assert {:ok, :admitted} =
+             KernelAdmission.verify_lease(signed_lease, ctx.trusted_keys, "construct")
   end
 
   test "refuses settlement with CeilingsRefused when lease ceiling is :observe", ctx do
     now = System.system_time(:second)
-    lease_payload = "ceiling:observe|expires:#{now + 300}|holder:bank_agent_1|id:lease-42|scope:urn:settlement:tx-100"
+
+    lease_payload =
+      "ceiling:observe|expires:#{now + 300}|holder:bank_agent_1|id:lease-42|scope:urn:settlement:tx-100"
+
     signature = :crypto.sign(:eddsa, :none, lease_payload, [ctx.priv_key, :ed25519])
 
     signed_lease = %{
@@ -75,7 +84,9 @@ defmodule AshA2A.ChicagoCaseStudy.SettlementKernelTest do
       "signature" => Base.encode16(signature, case: :lower)
     }
 
-    assert {:error, refusal} = KernelAdmission.verify_lease(signed_lease, ctx.trusted_keys, "construct")
+    assert {:error, refusal} =
+             KernelAdmission.verify_lease(signed_lease, ctx.trusted_keys, "construct")
+
     assert refusal.code == "LeaseRefused"
     assert refusal.class == "Ceiling"
     assert refusal.broken_term == "ceiling:construct"

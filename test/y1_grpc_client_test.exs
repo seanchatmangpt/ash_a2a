@@ -39,8 +39,11 @@ defmodule AshA2A.Y1.GRPCClientTest.Handler do
   @impl true
   def handle_list(params, ctx) do
     case GenServer.call(ctx.agent, {:ash_a2a_list_tasks, ctx.principal, params}) do
-      {:ok, %{tasks: tasks} = result} -> {:ok, %{result | tasks: Enum.map(tasks, &Runtime.wire_task/1)}}
-      {:error, _} -> {:error, Error.internal_error()}
+      {:ok, %{tasks: tasks} = result} ->
+        {:ok, %{result | tasks: Enum.map(tasks, &Runtime.wire_task/1)}}
+
+      {:error, _} ->
+        {:error, Error.internal_error()}
     end
   end
 
@@ -113,7 +116,8 @@ defmodule AshA2A.Y1.GRPCClientTest do
     def handle_message(%{parts: [%AshA2A.Protocol.Part.Text{text: "stream me"} | _]}, _ctx),
       do: {:stream, Stream.map(1..3, &AshA2A.Protocol.Part.Text.new("chunk #{&1}"))}
 
-    def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+    def handle_message(_message, _ctx),
+      do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
   end
 
   setup do
@@ -203,11 +207,16 @@ defmodule AshA2A.Y1.GRPCClientTest do
     assert gen > task.generation
   end
 
-  test "A2A-Version metadata: an explicit 1.0 client gets no v1.1 timeline", %{client: client, port: port} do
+  test "A2A-Version metadata: an explicit 1.0 client gets no v1.1 timeline", %{
+    client: client,
+    port: port
+  } do
     task = new_task(client)
     assert {:ok, %{timeline: [_ | _]}} = Client.get_task(client, task.id)
 
-    v10 = Client.new("localhost:#{port}", transport: :grpc, version: "1.0", channel: client.channel)
+    v10 =
+      Client.new("localhost:#{port}", transport: :grpc, version: "1.0", channel: client.channel)
+
     assert {:ok, %{timeline: []}} = Client.get_task(v10, task.id)
   end
 
@@ -240,7 +249,11 @@ defmodule AshA2A.Y1.GRPCClientTest do
   test "push config CRUD over the four RPCs", %{client: client} do
     task = new_task(client)
 
-    config = %AshA2A.Protocol.PushNotificationConfig{task_id: task.id, url: "https://example.com/hook", token: "t0"}
+    config = %AshA2A.Protocol.PushNotificationConfig{
+      task_id: task.id,
+      url: "https://example.com/hook",
+      token: "t0"
+    }
 
     assert {:ok, %AshA2A.Protocol.PushNotificationConfig{id: id, url: "https://example.com/hook"}} =
              Client.set_push_config(client, config)
@@ -255,7 +268,8 @@ defmodule AshA2A.Y1.GRPCClientTest do
   end
 
   test "get_extended_card decodes the extended card", %{client: client} do
-    assert {:ok, %AshA2A.Protocol.AgentCard{name: "y1-extended"}} = Client.get_extended_card(client)
+    assert {:ok, %AshA2A.Protocol.AgentCard{name: "y1-extended"}} =
+             Client.get_extended_card(client)
   end
 
   # -- channel handling ------------------------------------------------------------
@@ -291,7 +305,10 @@ defmodule AshA2A.Y1.GRPCClientTest do
       )
 
     assert {:error, :no_supported_interface} = Client.from_card(card)
-    assert {:ok, %Client{transport: :grpc, version: "1.1"} = client} = Client.from_card(card, preferred_bindings: [:grpc])
+
+    assert {:ok, %Client{transport: :grpc, version: "1.1"} = client} =
+             Client.from_card(card, preferred_bindings: [:grpc])
+
     assert {:ok, %AshA2A.Protocol.Task{}} = Client.send_message(client, "via card")
   end
 
@@ -310,12 +327,17 @@ defmodule AshA2A.Y1.GRPCClientTest do
            ]
   end
 
-  test "resubscribe with last_seen_generation replays events without a snapshot", %{client: client} do
+  test "resubscribe with last_seen_generation replays events without a snapshot", %{
+    client: client
+  } do
     task = new_task(client)
 
     sub =
       Task.async(fn ->
-        case Client.resubscribe(client, task.id, last_seen_generation: task.generation, timeout: 10_000) do
+        case Client.resubscribe(client, task.id,
+               last_seen_generation: task.generation,
+               timeout: 10_000
+             ) do
           {:ok, stream} -> {:ok, Enum.take(stream, 1)}
           other -> other
         end
@@ -369,7 +391,10 @@ defmodule AshA2A.Y1.GRPCClientTest do
     assert :task_not_found = GrpcClient.map_error(%GRPC.RPCError{status: 5, message: "x"})
     assert {:unauthorized, []} = GrpcClient.map_error(%GRPC.RPCError{status: 16, message: "x"})
     assert {:forbidden, "no"} = GrpcClient.map_error(%GRPC.RPCError{status: 7, message: "no"})
-    assert {:grpc_error, 13, "boom"} = GrpcClient.map_error(%GRPC.RPCError{status: 13, message: "boom"})
+
+    assert {:grpc_error, 13, "boom"} =
+             GrpcClient.map_error(%GRPC.RPCError{status: 13, message: "boom"})
+
     assert :passthrough = GrpcClient.map_error(:passthrough)
   end
 
@@ -387,7 +412,11 @@ defmodule AshA2A.Y1.GRPCClientTest do
     end
 
     assert :task_not_cancelable =
-             GrpcClient.map_error(%GRPC.RPCError{status: 9, message: "m", details: [info.("TASK_NOT_CANCELABLE", %{})]})
+             GrpcClient.map_error(%GRPC.RPCError{
+               status: 9,
+               message: "m",
+               details: [info.("TASK_NOT_CANCELABLE", %{})]
+             })
 
     assert {:task_generation_mismatch, %{metadata: %{"actualGeneration" => "3"}, message: "m"}} =
              GrpcClient.map_error(%GRPC.RPCError{
@@ -397,6 +426,10 @@ defmodule AshA2A.Y1.GRPCClientTest do
              })
 
     assert {:grpc_error, 9, "m"} =
-             GrpcClient.map_error(%GRPC.RPCError{status: 9, message: "m", details: [info.("SOMETHING_NEW", %{})]})
+             GrpcClient.map_error(%GRPC.RPCError{
+               status: 9,
+               message: "m",
+               details: [info.("SOMETHING_NEW", %{})]
+             })
   end
 end

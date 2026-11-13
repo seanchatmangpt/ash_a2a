@@ -228,6 +228,8 @@ defmodule AshA2ATest do
 
     assert {:ok, task} = EchoAgent.call(EchoAgent, message)
     assert task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{results: []}}]}] = task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: %{results: []}}]}] =
+             task.artifacts
   end
 end

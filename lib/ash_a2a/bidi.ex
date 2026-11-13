@@ -195,8 +195,11 @@ defmodule AshA2A.Bidi do
         {:error, :not_found}
     end
     |> tap(fn
-      {:ok, :accepted} -> :telemetry.execute([:a2a, :bidi, :input], %{count: 1}, %{task_id: task_id})
-      _ -> :ok
+      {:ok, :accepted} ->
+        :telemetry.execute([:a2a, :bidi, :input], %{count: 1}, %{task_id: task_id})
+
+      _ ->
+        :ok
     end)
   end
 

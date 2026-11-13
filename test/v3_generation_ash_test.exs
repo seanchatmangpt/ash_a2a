@@ -57,7 +57,7 @@ defmodule AshA2A.V3.UserArtifactsDomain do
   end
 
   transport do
-    user_artifacts true
+    user_artifacts(true)
   end
 end
 
@@ -226,7 +226,10 @@ defmodule AshA2A.V3.GenerationAshTest do
       assert AshA2A.Domain.Info.transport(AshA2A.V3.UserArtifactsDomain).user_artifacts == true
       card = AshA2A.Info.agent_card(AshA2A.V3.UserArtifactsDomain)
       assert AshA2A.Protocol.ClientArtifacts.user_artifacts?(card)
-      refute AshA2A.Protocol.ClientArtifacts.user_artifacts?(AshA2A.Info.agent_card(AshA2A.V3.Converse))
+
+      refute AshA2A.Protocol.ClientArtifacts.user_artifacts?(
+               AshA2A.Info.agent_card(AshA2A.V3.Converse)
+             )
     end
   end
 
@@ -271,7 +274,9 @@ defmodule AshA2A.V3.GenerationAshTest do
       refute Elixir.Task.yield(poll, 0)
 
       assert {:ok, _} =
-               send_msg(AshA2A.V3.PlainAgent, agent, data_message(%{text: "go"}), task_id: task.id)
+               send_msg(AshA2A.V3.PlainAgent, agent, data_message(%{text: "go"}),
+                 task_id: task.id
+               )
 
       assert {:ok, %Task{generation: gen}} = Elixir.Task.await(poll, 5_000)
       assert gen > task.generation
@@ -304,7 +309,9 @@ defmodule AshA2A.V3.GenerationAshTest do
     test "status, artifact and message_update events carry the post-mutation generation" do
       agent = start(AshA2A.V3.PlainAgent)
       task = parked(AshA2A.V3.PlainAgent, agent)
-      {:ok, done} = send_msg(AshA2A.V3.PlainAgent, agent, data_message(%{text: "x"}), task_id: task.id)
+
+      {:ok, done} =
+        send_msg(AshA2A.V3.PlainAgent, agent, data_message(%{text: "x"}), task_id: task.id)
 
       assert %{generation: 8, final: true} = Runtime.status_event(done)
       [artifact] = done.artifacts

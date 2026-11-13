@@ -353,6 +353,7 @@ defmodule AshA2A.A2ATransport.TaskEvents do
         :error -> Map.put(state.attempts, task_id, [attempt])
         {:ok, prior} -> Map.put(state.attempts, task_id, Enum.take([attempt | prior], 100))
       end
+
     {:noreply, %{state | attempts: attempts}}
   end
 
@@ -472,7 +473,12 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   end
 
   defp drop_attempt(config),
-    do: %{config_id: config.id, attempt: 0, outcome: {:dropped, :queue_full}, at: DateTime.utc_now()}
+    do: %{
+      config_id: config.id,
+      attempt: 0,
+      outcome: {:dropped, :queue_full},
+      at: DateTime.utc_now()
+    }
 
   defp start_fun(state) do
     fn {config, payload, seq} ->

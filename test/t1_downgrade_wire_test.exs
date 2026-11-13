@@ -81,10 +81,20 @@ defmodule AshA2A.T1.DowngradeWireTest do
   defp parked, do: AshA2A.Protocol.JSON.encode!(Message.new_user([Part.Data.new(%{})]))
 
   defp envelope(method, params),
-    do: %{"jsonrpc" => "2.0", "id" => System.unique_integer([:positive]), "method" => method, "params" => params}
+    do: %{
+      "jsonrpc" => "2.0",
+      "id" => System.unique_integer([:positive]),
+      "method" => method,
+      "params" => params
+    }
 
   defp rpc(server, method, params, headers) do
-    Req.post!(url: server.base_url <> "/", json: envelope(method, params), headers: headers, retry: false).body
+    Req.post!(
+      url: server.base_url <> "/",
+      json: envelope(method, params),
+      headers: headers,
+      retry: false
+    ).body
   end
 
   defp send_task(server, headers) do
@@ -139,8 +149,11 @@ defmodule AshA2A.T1.DowngradeWireTest do
     receive do
       msg ->
         case Req.parse_message(resp, msg) do
-          {:ok, chunks} -> collect(resp, buffer <> for({:data, d} <- chunks, into: "", do: d), deadline)
-          _ -> collect(resp, buffer, deadline)
+          {:ok, chunks} ->
+            collect(resp, buffer <> for({:data, d} <- chunks, into: "", do: d), deadline)
+
+          _ ->
+            collect(resp, buffer, deadline)
         end
     after
       remaining -> flunk("deadline; frames so far: #{inspect(frames(buffer))}")

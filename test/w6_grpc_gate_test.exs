@@ -25,8 +25,11 @@ defmodule AshA2A.W6.GRPCGateTest.Handler do
   @impl true
   def handle_get(task_id, _params, %{agent: agent}) do
     case EchoAgent.get_task(agent, task_id) do
-      {:ok, task} -> {:ok, task}
-      {:error, :not_found} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "nf"}}
+      {:ok, task} ->
+        {:ok, task}
+
+      {:error, :not_found} ->
+        {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "nf"}}
     end
   end
 
@@ -72,7 +75,9 @@ defmodule AshA2A.W6.GRPCGateTest do
   end
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [EchoAgent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [EchoAgent])
+
     transport = Module.concat(__MODULE__, Transport)
     start_supervised!({AshA2A.A2ATransport, name: transport})
 
@@ -89,7 +94,10 @@ defmodule AshA2A.W6.GRPCGateTest do
       :ash_a2a,
       @server,
       Keyword.merge(
-        [handler: Handler, ctx: %{agent: EchoAgent, opts: [], transport: transport, test_pid: self()}],
+        [
+          handler: Handler,
+          ctx: %{agent: EchoAgent, opts: [], transport: transport, test_pid: self()}
+        ],
         extra
       )
     )
@@ -141,26 +149,48 @@ defmodule AshA2A.W6.GRPCGateTest do
 
     calls = [
       {"SendMessage", fn -> Stub.send_message(ch, message_request(), @bad_version) end},
-      {"SendStreamingMessage", fn -> Stub.send_streaming_message(ch, message_request(), @bad_version) end},
+      {"SendStreamingMessage",
+       fn -> Stub.send_streaming_message(ch, message_request(), @bad_version) end},
       {"GetTask", fn -> Stub.get_task(ch, %Pb.GetTaskRequest{id: "x"}, @bad_version) end},
-      {"CancelTask", fn -> Stub.cancel_task(ch, %Pb.CancelTaskRequest{id: "x"}, @bad_version) end},
+      {"CancelTask",
+       fn -> Stub.cancel_task(ch, %Pb.CancelTaskRequest{id: "x"}, @bad_version) end},
       {"ListTasks", fn -> Stub.list_tasks(ch, %Pb.ListTasksRequest{}, @bad_version) end},
-      {"SubscribeToTask", fn -> Stub.subscribe_to_task(ch, %Pb.SubscribeToTaskRequest{id: "x"}, @bad_version) end},
+      {"SubscribeToTask",
+       fn -> Stub.subscribe_to_task(ch, %Pb.SubscribeToTaskRequest{id: "x"}, @bad_version) end},
       {"CreateTaskPushNotificationConfig",
-       fn -> Stub.create_task_push_notification_config(ch, %Pb.TaskPushNotificationConfig{}, @bad_version) end},
+       fn ->
+         Stub.create_task_push_notification_config(
+           ch,
+           %Pb.TaskPushNotificationConfig{},
+           @bad_version
+         )
+       end},
       {"GetTaskPushNotificationConfig",
        fn ->
-         Stub.get_task_push_notification_config(ch, %Pb.GetTaskPushNotificationConfigRequest{}, @bad_version)
+         Stub.get_task_push_notification_config(
+           ch,
+           %Pb.GetTaskPushNotificationConfigRequest{},
+           @bad_version
+         )
        end},
       {"ListTaskPushNotificationConfigs",
        fn ->
-         Stub.list_task_push_notification_configs(ch, %Pb.ListTaskPushNotificationConfigsRequest{}, @bad_version)
+         Stub.list_task_push_notification_configs(
+           ch,
+           %Pb.ListTaskPushNotificationConfigsRequest{},
+           @bad_version
+         )
        end},
       {"DeleteTaskPushNotificationConfig",
        fn ->
-         Stub.delete_task_push_notification_config(ch, %Pb.DeleteTaskPushNotificationConfigRequest{}, @bad_version)
+         Stub.delete_task_push_notification_config(
+           ch,
+           %Pb.DeleteTaskPushNotificationConfigRequest{},
+           @bad_version
+         )
        end},
-      {"GetExtendedAgentCard", fn -> Stub.get_extended_agent_card(ch, %Pb.GetExtendedAgentCardRequest{}, @bad_version) end}
+      {"GetExtendedAgentCard",
+       fn -> Stub.get_extended_agent_card(ch, %Pb.GetExtendedAgentCardRequest{}, @bad_version) end}
     ]
 
     assert length(calls) == 11
@@ -171,7 +201,9 @@ defmodule AshA2A.W6.GRPCGateTest do
     end
   end
 
-  test "SendLiveMessage (v1.1 bidi) refuses an unsupported a2a-version with UNIMPLEMENTED(12)", %{transport: t} do
+  test "SendLiveMessage (v1.1 bidi) refuses an unsupported a2a-version with UNIMPLEMENTED(12)", %{
+    transport: t
+  } do
     put_server(t)
     ch = start_listener()
 
@@ -193,7 +225,9 @@ defmodule AshA2A.W6.GRPCGateTest do
     assert error.status == 12
   end
 
-  test "required extension missing -> FAILED_PRECONDITION(9); present -> ok + echoed metadata", %{transport: t} do
+  test "required extension missing -> FAILED_PRECONDITION(9); present -> ok + echoed metadata", %{
+    transport: t
+  } do
     put_server(t, extensions: [Ext])
     ch = start_listener()
 
@@ -211,7 +245,8 @@ defmodule AshA2A.W6.GRPCGateTest do
     assert headers["a2a-extensions"] == Ext.uri()
 
     # Streaming and unary alike are gated.
-    assert %GRPC.RPCError{status: 9} = first_error(Stub.send_streaming_message(ch, message_request()))
+    assert %GRPC.RPCError{status: 9} =
+             first_error(Stub.send_streaming_message(ch, message_request()))
   end
 
   test "supported versions are configurable", %{transport: t} do
@@ -225,7 +260,9 @@ defmodule AshA2A.W6.GRPCGateTest do
              Stub.send_message(ch, message_request(), metadata: %{"a2a-version" => "1.0"})
   end
 
-  test "forbidden interceptor outcome maps to PERMISSION_DENIED(7); unauthenticated stays 16", %{transport: t} do
+  test "forbidden interceptor outcome maps to PERMISSION_DENIED(7); unauthenticated stays 16", %{
+    transport: t
+  } do
     put_server(t)
     Application.put_env(:ash_a2a, @endpoint, auth: {Forbidder, nil})
     ch = start_listener()
@@ -239,7 +276,9 @@ defmodule AshA2A.W6.GRPCGateTest do
     assert AshA2A.Transport.GRPC.Auth.forbidden().status == 7
   end
 
-  test "ListTasks: UNSPECIFIED status is no filter; history_length passes through", %{transport: t} do
+  test "ListTasks: UNSPECIFIED status is no filter; history_length passes through", %{
+    transport: t
+  } do
     put_server(t)
     ch = start_listener()
 
@@ -252,7 +291,9 @@ defmodule AshA2A.W6.GRPCGateTest do
     assert params["pageSize"] == 5
   end
 
-  test "supervised listener boots on an ephemeral port and answers a loopback call", %{transport: t} do
+  test "supervised listener boots on an ephemeral port and answers a loopback call", %{
+    transport: t
+  } do
     spec =
       {AshA2A.Transport.GRPC.Supervisor,
        port: 0,

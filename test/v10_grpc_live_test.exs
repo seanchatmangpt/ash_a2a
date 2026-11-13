@@ -68,14 +68,16 @@ defmodule AshA2A.V10.GRPCLiveTest do
       capabilities: %{streaming: true, user_artifacts: true}
 
     @impl AshA2A.Protocol.Agent
-    def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+    def handle_message(_message, _ctx),
+      do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
   end
 
   defmodule PlainAgent do
     use AshA2A.Protocol.Agent, name: "v10-plain", description: "no streaming"
 
     @impl AshA2A.Protocol.Agent
-    def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+    def handle_message(_message, _ctx),
+      do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
   end
 
   setup do
@@ -129,9 +131,11 @@ defmodule AshA2A.V10.GRPCLiveTest do
     Stub.send_live_message(ch, @v11 ++ [timeout: 15_000])
   end
 
-  defp push(stream, payload), do: GRPC.Stub.send_request(stream, %Pb.StreamRequest{payload: payload})
+  defp push(stream, payload),
+    do: GRPC.Stub.send_request(stream, %Pb.StreamRequest{payload: payload})
 
-  defp subscribe(id, extra \\ []), do: {:subscribe, struct(%Pb.SubscribeToTaskRequest{id: id}, extra)}
+  defp subscribe(id, extra \\ []),
+    do: {:subscribe, struct(%Pb.SubscribeToTaskRequest{id: id}, extra)}
 
   defp send_msg(text, extra \\ []) do
     {:send_message, %Pb.SendMessageRequest{message: message(text, extra)}}
@@ -173,7 +177,9 @@ defmodule AshA2A.V10.GRPCLiveTest do
     refute match?({:error, _}, frame), "follow-up was rejected: #{inspect(frame)}"
   end
 
-  test "SendLiveMessage: wrong-task request yields StreamError and keeps the stream open", %{transport: t} do
+  test "SendLiveMessage: wrong-task request yields StreamError and keeps the stream open", %{
+    transport: t
+  } do
     ch = connect(LiveAgent, t, __MODULE__.WrongSup)
 
     stream = ch |> open_live() |> push(send_msg("ask"))
@@ -194,7 +200,9 @@ defmodule AshA2A.V10.GRPCLiveTest do
     refute match?({:error, _}, frame)
   end
 
-  test "SendLiveMessage on a non-streaming agent -> UNIMPLEMENTED(12) UNSUPPORTED_OPERATION", %{transport: t} do
+  test "SendLiveMessage on a non-streaming agent -> UNIMPLEMENTED(12) UNSUPPORTED_OPERATION", %{
+    transport: t
+  } do
     ch = connect(PlainAgent, t, __MODULE__.PlainSup)
 
     stream = ch |> open_live() |> push(send_msg("ask"))
@@ -226,7 +234,9 @@ defmodule AshA2A.V10.GRPCLiveTest do
     assert "TASK_GENERATION_MISMATCH" in rpc_error_reasons(error)
   end
 
-  test "artifactUpdates are refused with UNSUPPORTED_OPERATION(12) when the capability is off", %{transport: t} do
+  test "artifactUpdates are refused with UNSUPPORTED_OPERATION(12) when the capability is off", %{
+    transport: t
+  } do
     ch = connect(LiveAgent, t, __MODULE__.ArtOffSup)
     task = new_task(ch)
 
@@ -258,7 +268,9 @@ defmodule AshA2A.V10.GRPCLiveTest do
       ]
     }
 
-    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} = Stub.send_message(ch, req, @v11)
+    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{id: id}}}} =
+             Stub.send_message(ch, req, @v11)
+
     assert id == task.id
   end
 
@@ -267,11 +279,14 @@ defmodule AshA2A.V10.GRPCLiveTest do
     task = new_task(ch)
     assert task.generation > 0
 
-    assert {:ok, %Pb.Task{generation: gen}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: task.id}, @v11)
+    assert {:ok, %Pb.Task{generation: gen}} =
+             Stub.get_task(ch, %Pb.GetTaskRequest{id: task.id}, @v11)
+
     assert gen == task.generation
   end
 
-  test "SubscribeToTask lastSeenGeneration falls back to a snapshot when replay is unavailable", %{transport: t} do
+  test "SubscribeToTask lastSeenGeneration falls back to a snapshot when replay is unavailable",
+       %{transport: t} do
     ch = connect(LiveAgent, t, __MODULE__.LastSeenSup)
     task = new_task(ch)
 

@@ -141,15 +141,19 @@ defmodule AshA2A.V1WirePropertiesTest do
   defp data_gen, do: map_of(safe_key_gen(), value_gen(), max_length: 4)
 
   defp text_part_gen do
-    gen all text <- string(:printable, min_length: 1, max_length: 40),
-            metadata <- wire_map_gen() do
+    gen all(
+          text <- string(:printable, min_length: 1, max_length: 40),
+          metadata <- wire_map_gen()
+        ) do
       Part.Text.new(text, metadata)
     end
   end
 
   defp data_part_gen do
-    gen all data <- data_gen(),
-            metadata <- wire_map_gen() do
+    gen all(
+          data <- data_gen(),
+          metadata <- wire_map_gen()
+        ) do
       Part.Data.new(data, metadata)
     end
   end
@@ -159,22 +163,26 @@ defmodule AshA2A.V1WirePropertiesTest do
   # Full-microsecond-precision UTC timestamps: the wire emits the 6-digit
   # fraction, so the decoded struct's `microsecond` matches exactly.
   defp timestamp_gen do
-    gen all secs <- integer(1_600_000_000..3_000_000_000),
-            us <- integer(0..999_999) do
+    gen all(
+          secs <- integer(1_600_000_000..3_000_000_000),
+          us <- integer(0..999_999)
+        ) do
       dt = DateTime.add(~U[2020-09-01T00:00:00Z], secs, :second)
       %{dt | microsecond: {us, 6}}
     end
   end
 
   defp message_gen do
-    gen all message_id <- nonempty_string(),
-            role <- member_of([:user, :agent]),
-            parts <- list_of(part_gen(), min_length: 1, max_length: 3),
-            task_id <- one_of([constant(nil), nonempty_string()]),
-            context_id <- one_of([constant(nil), nonempty_string()]),
-            reference_task_ids <- list_of(nonempty_string(), max_length: 3),
-            metadata <- wire_map_gen(),
-            extensions <- list_of(nonempty_string(), max_length: 2) do
+    gen all(
+          message_id <- nonempty_string(),
+          role <- member_of([:user, :agent]),
+          parts <- list_of(part_gen(), min_length: 1, max_length: 3),
+          task_id <- one_of([constant(nil), nonempty_string()]),
+          context_id <- one_of([constant(nil), nonempty_string()]),
+          reference_task_ids <- list_of(nonempty_string(), max_length: 3),
+          metadata <- wire_map_gen(),
+          extensions <- list_of(nonempty_string(), max_length: 2)
+        ) do
       %Message{
         message_id: message_id,
         role: role,
@@ -189,20 +197,24 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp status_gen do
-    gen all state <- member_of(TaskLifecycle.states()),
-            message <- one_of([constant(nil), message_gen()]),
-            timestamp <- timestamp_gen() do
+    gen all(
+          state <- member_of(TaskLifecycle.states()),
+          message <- one_of([constant(nil), message_gen()]),
+          timestamp <- timestamp_gen()
+        ) do
       %Task.Status{state: state, message: message, timestamp: timestamp}
     end
   end
 
   defp task_gen do
-    gen all id <- nonempty_string(),
-            context_id <- one_of([constant(nil), nonempty_string()]),
-            status <- status_gen(),
-            history <- list_of(message_gen(), max_length: 3),
-            artifacts <- list_of(artifact_gen(), max_length: 2),
-            metadata <- wire_map_gen() do
+    gen all(
+          id <- nonempty_string(),
+          context_id <- one_of([constant(nil), nonempty_string()]),
+          status <- status_gen(),
+          history <- list_of(message_gen(), max_length: 3),
+          artifacts <- list_of(artifact_gen(), max_length: 2),
+          metadata <- wire_map_gen()
+        ) do
       %Task{
         id: id,
         context_id: context_id,
@@ -215,12 +227,14 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp artifact_gen do
-    gen all artifact_id <- nonempty_string(),
-            name <- one_of([constant(nil), nonempty_string()]),
-            description <- one_of([constant(nil), nonempty_string()]),
-            parts <- list_of(part_gen(), min_length: 1, max_length: 3),
-            extensions <- list_of(nonempty_string(), max_length: 2),
-            metadata <- wire_map_gen() do
+    gen all(
+          artifact_id <- nonempty_string(),
+          name <- one_of([constant(nil), nonempty_string()]),
+          description <- one_of([constant(nil), nonempty_string()]),
+          parts <- list_of(part_gen(), min_length: 1, max_length: 3),
+          extensions <- list_of(nonempty_string(), max_length: 2),
+          metadata <- wire_map_gen()
+        ) do
       %Artifact{
         artifact_id: artifact_id,
         name: name,
@@ -233,10 +247,12 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp status_update_gen do
-    gen all task_id <- nonempty_string(),
-            context_id <- one_of([constant(nil), nonempty_string()]),
-            status <- status_gen(),
-            metadata <- wire_map_gen() do
+    gen all(
+          task_id <- nonempty_string(),
+          context_id <- one_of([constant(nil), nonempty_string()]),
+          status <- status_gen(),
+          metadata <- wire_map_gen()
+        ) do
       %Event.StatusUpdate{
         task_id: task_id,
         context_id: context_id,
@@ -248,12 +264,14 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp artifact_update_gen do
-    gen all task_id <- nonempty_string(),
-            context_id <- one_of([constant(nil), nonempty_string()]),
-            append <- one_of([constant(nil), boolean()]),
-            last_chunk <- one_of([constant(nil), boolean()]),
-            artifact <- artifact_gen(),
-            metadata <- wire_map_gen() do
+    gen all(
+          task_id <- nonempty_string(),
+          context_id <- one_of([constant(nil), nonempty_string()]),
+          append <- one_of([constant(nil), boolean()]),
+          last_chunk <- one_of([constant(nil), boolean()]),
+          artifact <- artifact_gen(),
+          metadata <- wire_map_gen()
+        ) do
       %Event.ArtifactUpdate{
         task_id: task_id,
         context_id: context_id,
@@ -266,10 +284,12 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp caps_gen do
-    gen all streaming <- boolean(),
-            push_notifications <- boolean(),
-            extended_agent_card <- boolean(),
-            extensions <- list_of(agent_extension_gen(), max_length: 2) do
+    gen all(
+          streaming <- boolean(),
+          push_notifications <- boolean(),
+          extended_agent_card <- boolean(),
+          extensions <- list_of(agent_extension_gen(), max_length: 2)
+        ) do
       base = %{
         streaming: streaming,
         push_notifications: push_notifications,
@@ -285,19 +305,23 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp agent_extension_gen do
-    gen all uri <- nonempty_string(),
-            description <- one_of([constant(nil), nonempty_string()]),
-            required <- boolean(),
-            params <- one_of([constant(nil), wire_map_gen()]) do
+    gen all(
+          uri <- nonempty_string(),
+          description <- one_of([constant(nil), nonempty_string()]),
+          required <- boolean(),
+          params <- one_of([constant(nil), wire_map_gen()])
+        ) do
       %AgentExtension{uri: uri, description: description, required: required, params: params}
     end
   end
 
   defp skill_gen do
-    gen all id <- nonempty_string(),
-            name <- nonempty_string(),
-            description <- nonempty_string(),
-            tags <- list_of(nonempty_string(), max_length: 2) do
+    gen all(
+          id <- nonempty_string(),
+          name <- nonempty_string(),
+          description <- nonempty_string(),
+          tags <- list_of(nonempty_string(), max_length: 2)
+        ) do
       %{id: id, name: name, description: description, tags: tags}
     end
   end
@@ -305,16 +329,20 @@ defmodule AshA2A.V1WirePropertiesTest do
   defp url_gen, do: map(nonempty_string(), &("https://" <> &1))
 
   defp provider_gen do
-    gen all organization <- nonempty_string(),
-            url <- url_gen() do
+    gen all(
+          organization <- nonempty_string(),
+          url <- url_gen()
+        ) do
       %{organization: organization, url: url}
     end
   end
 
   defp interface_gen do
-    gen all url <- url_gen(),
-            protocol_binding <- member_of(["JSONRPC", "GRPC", "HTTP+JSON"]),
-            protocol_version <- nonempty_string() do
+    gen all(
+          url <- url_gen(),
+          protocol_binding <- member_of(["JSONRPC", "GRPC", "HTTP+JSON"]),
+          protocol_version <- nonempty_string()
+        ) do
       %{url: url, protocol_binding: protocol_binding, protocol_version: protocol_version}
     end
   end
@@ -324,13 +352,13 @@ defmodule AshA2A.V1WirePropertiesTest do
     scopes = map_of(safe_key_gen(), nonempty_string(), max_length: 2)
 
     one_of([
-      gen all a <- url_gen(), t <- url_gen(), s <- scopes do
+      gen all(a <- url_gen(), t <- url_gen(), s <- scopes) do
         %{"authorizationCode" => %{"authorizationUrl" => a, "tokenUrl" => t, "scopes" => s}}
       end,
-      gen all t <- url_gen(), s <- scopes do
+      gen all(t <- url_gen(), s <- scopes) do
         %{"clientCredentials" => %{"tokenUrl" => t, "scopes" => s}}
       end,
-      gen all d <- url_gen(), t <- url_gen(), s <- scopes do
+      gen all(d <- url_gen(), t <- url_gen(), s <- scopes) do
         %{
           "deviceCode" => %{
             "deviceAuthorizationUrl" => d,
@@ -346,18 +374,22 @@ defmodule AshA2A.V1WirePropertiesTest do
 
   defp scheme_gen do
     one_of([
-      gen all name <- nonempty_string(),
-              location <- member_of(["query", "header", "cookie"]) do
+      gen all(
+            name <- nonempty_string(),
+            location <- member_of(["query", "header", "cookie"])
+          ) do
         %SecurityScheme.APIKey{name: name, in: location}
       end,
-      gen all scheme <- nonempty_string() do
+      gen all(scheme <- nonempty_string()) do
         %SecurityScheme.HTTPAuth{scheme: scheme}
       end,
-      gen all flows <- oauth_flows_gen(),
-              metadata_url <- one_of([constant(nil), url_gen()]) do
+      gen all(
+            flows <- oauth_flows_gen(),
+            metadata_url <- one_of([constant(nil), url_gen()])
+          ) do
         %SecurityScheme.OAuth2{flows: flows, oauth2_metadata_url: metadata_url}
       end,
-      gen all oauth_url <- url_gen() do
+      gen all(oauth_url <- url_gen()) do
         %SecurityScheme.OpenIDConnect{open_id_connect_url: oauth_url}
       end,
       constant(%SecurityScheme.MutualTLS{})
@@ -366,8 +398,10 @@ defmodule AshA2A.V1WirePropertiesTest do
 
   defp security_gen do
     list_of(
-      gen all name <- safe_key_gen(),
-              scopes <- list_of(nonempty_string(), max_length: 2) do
+      gen all(
+            name <- safe_key_gen(),
+            scopes <- list_of(nonempty_string(), max_length: 2)
+          ) do
         %{name => scopes}
       end,
       max_length: 2
@@ -375,29 +409,33 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp sig_gen do
-    gen all protected <- nonempty_string(),
-            signature <- nonempty_string(),
-            header <- wire_map_gen() do
+    gen all(
+          protected <- nonempty_string(),
+          signature <- nonempty_string(),
+          header <- wire_map_gen()
+        ) do
       %{"protected" => protected, "signature" => signature, "header" => header}
     end
   end
 
   defp agent_card_gen do
-    gen all name <- nonempty_string(),
-            description <- nonempty_string(),
-            url <- url_gen(),
-            version <- nonempty_string(),
-            skills <- list_of(skill_gen(), max_length: 3),
-            capabilities <- caps_gen(),
-            input_modes <- list_of(nonempty_string(), min_length: 1, max_length: 3),
-            output_modes <- list_of(nonempty_string(), min_length: 1, max_length: 3),
-            provider <- one_of([constant(nil), provider_gen()]),
-            documentation_url <- one_of([constant(nil), url_gen()]),
-            icon_url <- one_of([constant(nil), url_gen()]),
-            interfaces <- list_of(interface_gen(), min_length: 1, max_length: 2),
-            schemes <- schemes_gen(),
-            security <- security_gen(),
-            signatures <- list_of(sig_gen(), max_length: 2) do
+    gen all(
+          name <- nonempty_string(),
+          description <- nonempty_string(),
+          url <- url_gen(),
+          version <- nonempty_string(),
+          skills <- list_of(skill_gen(), max_length: 3),
+          capabilities <- caps_gen(),
+          input_modes <- list_of(nonempty_string(), min_length: 1, max_length: 3),
+          output_modes <- list_of(nonempty_string(), min_length: 1, max_length: 3),
+          provider <- one_of([constant(nil), provider_gen()]),
+          documentation_url <- one_of([constant(nil), url_gen()]),
+          icon_url <- one_of([constant(nil), url_gen()]),
+          interfaces <- list_of(interface_gen(), min_length: 1, max_length: 2),
+          schemes <- schemes_gen(),
+          security <- security_gen(),
+          signatures <- list_of(sig_gen(), max_length: 2)
+        ) do
       %AgentCard{
         name: name,
         description: description,
@@ -439,17 +477,19 @@ defmodule AshA2A.V1WirePropertiesTest do
       constant(%{"jsonrpc" => "1.0", "method" => "message/send", "params" => %{}, "id" => "a1"}),
       constant(%{"method" => "tasks/get", "params" => %{}, "id" => "a2"}),
       constant(%{"jsonrpc" => "2.0", "method" => 42, "params" => %{}, "id" => "a3"}),
-      gen all bad_id <- one_of([constant(1.5), constant([1])]) do
+      gen all(bad_id <- one_of([constant(1.5), constant([1])])) do
         %{"jsonrpc" => "2.0", "id" => bad_id, "method" => "tasks/get", "params" => %{}}
       end
     ])
   end
 
   defp send_request_gen do
-    gen all id <- rpc_id_gen(),
-            method <- member_of(["message/send", "SendMessage"]),
-            msg <- message_gen(),
-            extra_metadata <- one_of([constant(nil), wire_map_gen()]) do
+    gen all(
+          id <- rpc_id_gen(),
+          method <- member_of(["message/send", "SendMessage"]),
+          msg <- message_gen(),
+          extra_metadata <- one_of([constant(nil), wire_map_gen()])
+        ) do
       params = %{"message" => JSON.encode!(msg)}
       params = if extra_metadata, do: Map.put(params, "metadata", extra_metadata), else: params
       raw = %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}
@@ -458,10 +498,18 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp get_request_gen do
-    gen all id <- rpc_id_gen(),
-            method <- member_of(["tasks/get", "GetTask"]),
-            task <- task_gen() do
-      request = %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => %{"id" => task.id}}
+    gen all(
+          id <- rpc_id_gen(),
+          method <- member_of(["tasks/get", "GetTask"]),
+          task <- task_gen()
+        ) do
+      request = %{
+        "jsonrpc" => "2.0",
+        "id" => id,
+        "method" => method,
+        "params" => %{"id" => task.id}
+      }
+
       {request, task}
     end
   end
@@ -546,7 +594,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   # ---------------------------------------------------------------------
 
   property "Message: encode/Jason/decode round-trips to an equivalent struct" do
-    check all msg <- message_gen(), max_runs: 50 do
+    check all(msg <- message_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(msg)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode(json, :message)
@@ -555,7 +603,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Part.Text: encode/Jason/decode round-trips to an equivalent struct" do
-    check all part <- text_part_gen(), max_runs: 50 do
+    check all(part <- text_part_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(part)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode(json, :part)
@@ -564,7 +612,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Part.Data: encode/Jason/decode round-trips to an equivalent struct" do
-    check all part <- data_part_gen(), max_runs: 50 do
+    check all(part <- data_part_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(part)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode(json, :part)
@@ -573,7 +621,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Task.Status: encode/Jason/decode round-trips to an equivalent struct" do
-    check all status <- status_gen(), max_runs: 50 do
+    check all(status <- status_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(status)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode(json, :status)
@@ -582,7 +630,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Task: encode/Jason/decode round-trips to an equivalent struct" do
-    check all task <- task_gen(), max_runs: 50 do
+    check all(task <- task_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(task)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode(json, :task)
@@ -591,7 +639,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Artifact: encode/Jason/decode round-trips to an equivalent struct" do
-    check all artifact <- artifact_gen(), max_runs: 50 do
+    check all(artifact <- artifact_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(artifact)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode(json, :artifact)
@@ -600,7 +648,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Event.StatusUpdate: StreamResponse-wrapped round-trips to an equivalent struct" do
-    check all event <- status_update_gen(), max_runs: 50 do
+    check all(event <- status_update_gen(), max_runs: 50) do
       {:ok, wrapped} = JSON.encode_stream_response(event)
       assert Map.has_key?(wrapped, "statusUpdate")
       json = round_trip_json(wrapped)
@@ -610,7 +658,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "Event.ArtifactUpdate: StreamResponse-wrapped round-trips to an equivalent struct" do
-    check all event <- artifact_update_gen(), max_runs: 50 do
+    check all(event <- artifact_update_gen(), max_runs: 50) do
       {:ok, wrapped} = JSON.encode_stream_response(event)
       assert Map.has_key?(wrapped, "artifactUpdate")
       json = round_trip_json(wrapped)
@@ -620,7 +668,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "AgentCard: encode_agent_card/decode_agent_card round-trips field-wise" do
-    check all card <- agent_card_gen(), max_runs: 50 do
+    check all(card <- agent_card_gen(), max_runs: 50) do
       encoded = JSON.encode_agent_card(card, url: card.url)
       json = round_trip_json(encoded)
       {:ok, decoded} = JSON.decode_agent_card(json)
@@ -668,7 +716,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   # ---------------------------------------------------------------------
 
   property "encode output never contains a kind or final key at any depth" do
-    check all struct <- encodable_gen(), card <- agent_card_gen(), max_runs: 50 do
+    check all(struct <- encodable_gen(), card <- agent_card_gen(), max_runs: 50) do
       {:ok, encoded} = JSON.encode(struct)
       assert no_kind_or_final?(encoded)
 
@@ -692,7 +740,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   # ---------------------------------------------------------------------
 
   property "message/send: generated request survives handle/envelope/Jason/decode" do
-    check all {raw, msg} <- send_request_gen(), max_runs: 50 do
+    check all({raw, msg} <- send_request_gen(), max_runs: 50) do
       params = raw["params"]
 
       assert {:reply, response} = JSONRPC.handle(raw, EchoHandler)
@@ -713,7 +761,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "tasks/get: generated request survives handle/envelope/Jason/decode" do
-    check all {raw, task} <- get_request_gen(), max_runs: 50 do
+    check all({raw, task} <- get_request_gen(), max_runs: 50) do
       Process.put(:w8_task, task)
 
       assert {:reply, response} = JSONRPC.handle(raw, EchoHandler)
@@ -730,7 +778,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "malformed envelope: handle answers -32600 and the error round-trips" do
-    check all raw <- malformed_request_gen(), max_runs: 50 do
+    check all(raw <- malformed_request_gen(), max_runs: 50) do
       assert {:reply, response} = JSONRPC.handle(raw, EchoHandler)
       assert response["error"]["code"] == -32_600
       assert response["jsonrpc"] == "2.0"
@@ -747,10 +795,12 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "error envelope: all 14 codes round-trip with ErrorInfo normalization" do
-    check all code <- member_of(@error_codes),
-              data <- one_of([constant(nil), scalar_gen()]),
-              id <- rpc_id_gen(),
-              max_runs: 50 do
+    check all(
+            code <- member_of(@error_codes),
+            data <- one_of([constant(nil), scalar_gen()]),
+            id <- rpc_id_gen(),
+            max_runs: 50
+          ) do
       error = error_for_code(code, data)
       envelope = Response.error(id, error)
       json = round_trip_json(envelope)
@@ -809,7 +859,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   # ---------------------------------------------------------------------
 
   property "idempotence: decode(encode(decode(encode(x)))) == decode(encode(x))" do
-    check all struct <- encodable_gen(), max_runs: 50 do
+    check all(struct <- encodable_gen(), max_runs: 50) do
       if match?(%Event.StatusUpdate{}, struct) or match?(%Event.ArtifactUpdate{}, struct) do
         # Streaming events round-trip through the v1.0 StreamResponse wrapper.
         {:ok, wrapped} = JSON.encode_stream_response(struct)
@@ -828,7 +878,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   property "AgentCard idempotence: re-encoding a decoded card is a fixed point" do
-    check all card <- agent_card_gen(), max_runs: 50 do
+    check all(card <- agent_card_gen(), max_runs: 50) do
       encoded = JSON.encode_agent_card(card, url: card.url)
       {:ok, once} = JSON.decode_agent_card(round_trip_json(encoded))
 

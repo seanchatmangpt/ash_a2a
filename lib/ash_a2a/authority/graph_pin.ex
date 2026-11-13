@@ -110,8 +110,12 @@ defmodule AshA2A.Authority.GraphPin do
     store = Keyword.get(opts, :store, @default_store)
 
     cond do
-      not (is_binary(order_id) and order_id != "") -> {:error, :invalid_order_id}
-      not (is_binary(digest) and digest =~ @digest_format) -> {:error, :invalid_digest}
+      not (is_binary(order_id) and order_id != "") ->
+        {:error, :invalid_order_id}
+
+      not (is_binary(digest) and digest =~ @digest_format) ->
+        {:error, :invalid_digest}
+
       true ->
         case store.put(order_id, digest) do
           :ok -> :ok

@@ -1,9 +1,9 @@
-defmodule AshA2A.Twin.Vince do
+defmodule AshA2A.Twin.CEO do
   @moduledoc """
-  Vince — the adversarial twin: intent evaluator for the Communicating
+  CEO — the adversarial twin: intent evaluator for the Communicating
   Digital Twins subsystem.
 
-  Vince sits opposite the partner twin and evaluates every offer/claim
+  CEO sits opposite the partner twin and evaluates every offer/claim
   against mechanical detectors ("Monkey Math") before any trust is extended:
 
     * exact-half split detector — the offer is exactly NTE/2 within a
@@ -39,7 +39,7 @@ defmodule AshA2A.Twin.Vince do
   point for trade reticle packs.
   """
 
-  alias AshA2A.Twin.Vince
+  alias AshA2A.Twin.CEO
 
   @enforce_keys [:prior, :challenges]
   defstruct prior: AshA2A.Twin.MechanicalPrior.RefuseAll,
@@ -51,7 +51,7 @@ defmodule AshA2A.Twin.Vince do
   @max_count 1_000
 
   @type trade_ref :: term()
-  @type t :: %Vince{
+  @type t :: %CEO{
           prior: module(),
           challenges: %{trade_ref() => pos_integer()},
           gpm_floor: float(),
@@ -78,10 +78,10 @@ defmodule AshA2A.Twin.Vince do
           | {:challenge, challenge_map()}
           | {:refuse, :escalate_multisig | map()}
 
-  @doc "New Vince evaluator. `:prior` is an `AshA2A.Twin.MechanicalPrior` module."
-  @spec new(keyword()) :: Vince.t()
+  @doc "New CEO evaluator. `:prior` is an `AshA2A.Twin.MechanicalPrior` module."
+  @spec new(keyword()) :: CEO.t()
   def new(opts \\ []) do
-    %Vince{
+    %CEO{
       prior: Keyword.get(opts, :prior, AshA2A.Twin.MechanicalPrior.RefuseAll),
       challenges: %{},
       gpm_floor: Keyword.get(opts, :gpm_floor, 0.22),
@@ -98,10 +98,10 @@ defmodule AshA2A.Twin.Vince do
   in through `check_claim/3`. First firing detector wins. A repeat
   challenge on the same trade escalates to `{:refuse, :escalate_multisig}`.
 
-  Returns `{new_state, verdict}` — the challenge ledger is state on Vince.
+  Returns `{new_state, verdict}` — the challenge ledger is state on CEO.
   """
-  @spec evaluate_intent(Vince.t(), intent()) :: {Vince.t(), verdict()}
-  def evaluate_intent(%Vince{} = v, %{trade: trade, nte: nte, offer: offer})
+  @spec evaluate_intent(CEO.t(), intent()) :: {CEO.t(), verdict()}
+  def evaluate_intent(%CEO{} = v, %{trade: trade, nte: nte, offer: offer})
       when is_number(nte) and is_number(offer) and nte > 0 and offer >= 0 do
     cond do
       Map.has_key?(v.challenges, trade_key(trade)) ->
@@ -122,10 +122,10 @@ defmodule AshA2A.Twin.Vince do
     end
   end
 
-  def evaluate_intent(%Vince{} = v, intent), do: {v, invalid_intent(intent)}
+  def evaluate_intent(%CEO{} = v, intent), do: {v, invalid_intent(intent)}
 
   @doc """
-  Mechanical-prior interrogation hook: `check_claim(vince, claim, telemetry)`.
+  Mechanical-prior interrogation hook: `check_claim(ceo, claim, telemetry)`.
 
   `claim` and `telemetry` are opaque domain terms (e.g. a blown-motor claim
   with ambient-temp telemetry). Delegates to the configured prior module's
@@ -138,8 +138,8 @@ defmodule AshA2A.Twin.Vince do
   `{:refuse, %{code: :mechanical_prior, reason: {:invalid_prior, _} |
   {:invalid_prior_verdict, term}}}`.
   """
-  @spec check_claim(Vince.t(), term(), term()) :: {Vince.t(), verdict()}
-  def check_claim(%Vince{prior: prior} = v, claim, telemetry) do
+  @spec check_claim(CEO.t(), term(), term()) :: {CEO.t(), verdict()}
+  def check_claim(%CEO{prior: prior} = v, claim, telemetry) do
     if is_atom(prior) and Code.ensure_loaded?(prior) and
          function_exported?(prior, :prior_verdict, 2) do
       v |> check_prior(prior.prior_verdict(claim, telemetry))
@@ -206,7 +206,7 @@ defmodule AshA2A.Twin.Vince do
   defp rem100(n) when is_integer(n), do: Integer.mod(n, 100)
   defp rem100(n) when is_float(n), do: :erlang.trunc(n) |> Integer.mod(100)
 
-  defp challenge(%Vince{} = v, trade, code, evidence) do
+  defp challenge(%CEO{} = v, trade, code, evidence) do
     if map_size(v.challenges) >= v.max_ledger do
       {v, {:refuse, %{code: :ledger_full, reason: :challenge_ledger_at_capacity}}}
     else
@@ -223,7 +223,7 @@ defmodule AshA2A.Twin.Vince do
     end
   end
 
-  defp escalate(%Vince{} = v, trade) do
+  defp escalate(%CEO{} = v, trade) do
     {%{v | challenges: Map.update!(v.challenges, trade_key(trade), &bump/1)},
      {:refuse, :escalate_multisig}}
   end
@@ -263,7 +263,7 @@ end
 
 defmodule AshA2A.Twin.MechanicalPrior do
   @moduledoc """
-  Behaviour for mechanical priors consulted by `AshA2A.Twin.Vince.check_claim/3`.
+  Behaviour for mechanical priors consulted by `AshA2A.Twin.CEO.check_claim/3`.
 
   A prior maps `{claim, telemetry}` to a typed verdict. The default
   `AshA2A.Twin.MechanicalPrior.RefuseAll` stub refuses every claim; trade
@@ -282,7 +282,7 @@ defmodule AshA2A.Twin.MechanicalPrior.RefuseAll do
   Default mechanical prior: refuse every claim.
 
   Injection point, not a policy: any real trade domain replaces this via
-  `AshA2A.Twin.Vince.new(prior: MyReticle)`.
+  `AshA2A.Twin.CEO.new(prior: MyReticle)`.
   """
 
   @behaviour AshA2A.Twin.MechanicalPrior

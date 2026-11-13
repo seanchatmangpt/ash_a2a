@@ -51,7 +51,8 @@ defmodule AshA2A.Protocol.JSONRPC.Request do
         {:error, Error.invalid_params("\"ifGenerationMatch\" must be a non-negative integer")}
 
       bad_artifact_updates?(params) ->
-        {:error, Error.invalid_params("\"artifactUpdates\" must be a list of artifact update objects")}
+        {:error,
+         Error.invalid_params("\"artifactUpdates\" must be a list of artifact update objects")}
 
       bad_history_length?(params) ->
         {:error, Error.invalid_params("\"historyLength\" must be a non-negative integer")}

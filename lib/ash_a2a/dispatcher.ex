@@ -168,7 +168,7 @@ defmodule AshA2A.Dispatcher do
         opts \\ []
       )
       when is_list(history) and is_list(opts) do
-    # The W4 kernel fence is enforced per skill in `do_dispatch/6`, after the sole-DO anchor gate:
+    # The consequence-kernel fence is enforced per skill in `do_dispatch/6`, after the sole-DO anchor gate:
     # a consequence-bearing skill is refused unless the call entered through
     # `ConsequenceKernel.W4.DispatcherFence` (the kernel's `DispatchInversion`); an observation
     # skill needs no fence (W4B `EntryPolicy.admit(:observe, :observation)`).
@@ -330,7 +330,7 @@ defmodule AshA2A.Dispatcher do
          {:ok, admitted_anchor} <-
            tag_stage(AshA2A.BrceAnchor.admit(skill, anchor), :brce_gate),
          :ok <- tag_stage(kernel_fence(admitted_anchor), :kernel_fence),
-         # FR-05 FinOps gate (PRD §4.5 / ARD §3.5, lane V4-18): the V4-9
+         # FR-05 FinOps gate (PRD §4.5 / ARD §3.5): the
          # `AshA2A.FinOps.BudgetEnforcer` enforcement point, invoked here so a
          # budget breach refuses typed (`:budget_exceeded` -> S42
          # `:refused_bounds`) BEFORE any execution side effect. Config-gated:
@@ -338,8 +338,16 @@ defmodule AshA2A.Dispatcher do
          # every consumer without FinOps wiring keeps its exact prior
          # behavior.
          :ok <- tag_stage(finops_gate(a2a_message, opts), :finops_gate),
-         :ok <- tag_stage(declared_authority_gate(resource_or_domain, admitted_anchor), :authority_gate),
-         :ok <- tag_stage(run_hooks(resource_or_domain, :pre_dispatch, skill, a2a_message), :pre_dispatch_hook) do
+         :ok <-
+           tag_stage(
+             declared_authority_gate(resource_or_domain, admitted_anchor),
+             :authority_gate
+           ),
+         :ok <-
+           tag_stage(
+             run_hooks(resource_or_domain, :pre_dispatch, skill, a2a_message),
+             :pre_dispatch_hook
+           ) do
       :ok = AshA2A.BrceAnchor.actuating(skill, admitted_anchor)
       {reply, object_id} = run_skill(skill, action, input, exec_context)
       run_post_hooks(resource_or_domain, skill, a2a_message, reply)
@@ -402,7 +410,7 @@ defmodule AshA2A.Dispatcher do
       else: {:error, :consequence_kernel_required}
   end
 
-  # FR-05 FinOps gate (PRD §4.5 / ARD §3.5, lane V4-18): delegates the real
+  # FR-05 FinOps gate (PRD §4.5 / ARD §3.5): delegates the real
   # check-and-reserve to `AshA2A.FinOps.BudgetEnforcer.authorize/3` against
   # the configured ETS `AshA2A.FinOps.BudgetStore`. The store handle comes
   # from `config :ash_a2a, :finops, budget_store: pid_or_name` (a missing
@@ -418,7 +426,7 @@ defmodule AshA2A.Dispatcher do
   #
   # Config-gated passthrough: when `config :ash_a2a, :finops` is absent
   # (`Application.get_env/3` -> nil) the gate returns `:ok` without touching
-  # the enforcer, so dispatch is byte-for-byte the pre-V4-18 behavior.
+  # the enforcer, so dispatch is byte-for-byte the behavior without the gate.
   defp finops_gate(%Message{metadata: metadata}, opts) do
     case Application.get_env(:ash_a2a, :finops) do
       nil ->
@@ -474,7 +482,16 @@ defmodule AshA2A.Dispatcher do
   # redacted. `config :ash_a2a, :telemetry_raw_errors, true` restores raw
   # terms for in-VM handlers.
   defp stop_meta({:error, {stage, reason}})
-       when stage in [:skill_lookup, :release_gate, :action_resolution, :brce_gate, :finops_gate, :authority_gate, :pre_dispatch_hook, :execution] do
+       when stage in [
+              :skill_lookup,
+              :release_gate,
+              :action_resolution,
+              :brce_gate,
+              :finops_gate,
+              :authority_gate,
+              :pre_dispatch_hook,
+              :execution
+            ] do
     %{stage: stage, error: AshA2A.Telemetry.Redact.telemetry_error(reason)}
   end
 
@@ -522,7 +539,7 @@ defmodule AshA2A.Dispatcher do
   # canonical lookup paths, not a security issue (it only ever fails closed,
   # never admits something it shouldn't), but a real usability/consistency
   # bug this fixes.
-  # b4p-f5-10: `AshA2A.CommandBus` re-dispatches a consequence-bearing skill
+  # `AshA2A.CommandBus` re-dispatches a consequence-bearing skill
   # it has ALREADY resolved (`inspect_target/2` -> `AshA2A.Info.skill/2`).
   # Re-matching that skill by bare display `name` here would index-first-match
   # a different resource's namesake on a multi-resource domain (every public

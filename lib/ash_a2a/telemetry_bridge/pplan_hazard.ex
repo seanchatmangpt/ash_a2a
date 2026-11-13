@@ -117,10 +117,15 @@ defmodule AshA2A.TelemetryBridge.PPlanHazard do
 
       trip?(z, threshold) ->
         if is_nil(mad),
-          do: Logger.debug("hazard bridge: :mad absent, dispersion unverified (run_id=#{inspect(Map.get(event, :run_id))})")
+          do:
+            Logger.debug(
+              "hazard bridge: :mad absent, dispersion unverified (run_id=#{inspect(Map.get(event, :run_id))})"
+            )
 
         metadata = task.metadata || %{}
-        {:ok, %{task | metadata: Map.put(metadata, @annotation_key, annotation(event, threshold))}}
+
+        {:ok,
+         %{task | metadata: Map.put(metadata, @annotation_key, annotation(event, threshold))}}
 
       true ->
         {:ok, task}

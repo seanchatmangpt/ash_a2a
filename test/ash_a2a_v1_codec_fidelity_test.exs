@@ -121,9 +121,14 @@ defmodule AshA2A.V1CodecFidelityTest do
   # -- message / artifact / task -------------------------------------------------
 
   test "Message.extensions as a list round-trips as a list" do
-    msg = %{Message.new_user("x") | extensions: ["https://ext.example/a", "https://ext.example/b"]}
+    msg = %{
+      Message.new_user("x")
+      | extensions: ["https://ext.example/a", "https://ext.example/b"]
+    }
+
     {:ok, wire} = JSON.encode(msg)
     assert wire["extensions"] == ["https://ext.example/a", "https://ext.example/b"]
+
     assert {:ok, %Message{extensions: ["https://ext.example/a", "https://ext.example/b"]}} =
              roundtrip(msg, :message)
   end
@@ -131,8 +136,12 @@ defmodule AshA2A.V1CodecFidelityTest do
   test "messageId is a required non-empty strings on decode" do
     base = %{"role" => "ROLE_USER", "parts" => [%{"text" => "x"}]}
     assert {:error, {:missing_field, "messageId"}} = JSON.decode(base, :message)
-    assert {:error, {:invalid_field, "messageId"}} = JSON.decode(Map.put(base, "messageId", ""), :message)
-    assert {:ok, %Message{message_id: "m1"}} = JSON.decode(Map.put(base, "messageId", "m1"), :message)
+
+    assert {:error, {:invalid_field, "messageId"}} =
+             JSON.decode(Map.put(base, "messageId", ""), :message)
+
+    assert {:ok, %Message{message_id: "m1"}} =
+             JSON.decode(Map.put(base, "messageId", "m1"), :message)
   end
 
   test "Task contextId nil encodes as proto default \"\" and a real id round-trips" do
@@ -144,7 +153,9 @@ defmodule AshA2A.V1CodecFidelityTest do
 
     {:ok, wire} = JSON.encode(task)
     assert wire["contextId"] == ""
-    assert {:ok, %AshA2A.Protocol.Task{context_id: "c1"}} = JSON.decode(%{wire | "contextId" => "c1"}, :task)
+
+    assert {:ok, %AshA2A.Protocol.Task{context_id: "c1"}} =
+             JSON.decode(%{wire | "contextId" => "c1"}, :task)
   end
 
   # -- agent card ----------------------------------------------------------------
@@ -153,7 +164,13 @@ defmodule AshA2A.V1CodecFidelityTest do
     {:ok, decoded} =
       card(%{
         "skills" => [
-          %{"id" => "s", "name" => "S", "description" => "d", "tags" => [], "examples" => ["do x", "do y"]}
+          %{
+            "id" => "s",
+            "name" => "S",
+            "description" => "d",
+            "tags" => [],
+            "examples" => ["do x", "do y"]
+          }
         ],
         "supportedInterfaces" => [
           %{
@@ -177,14 +194,33 @@ defmodule AshA2A.V1CodecFidelityTest do
     {:ok, decoded} =
       card(%{
         "securitySchemes" => %{
-          "b" => %{"httpAuthSecurityScheme" => %{"scheme" => "Bearer", "bearerFormat" => "JWT", "description" => "tok"}},
-          "k" => %{"apiKeySecurityScheme" => %{"name" => "X-Key", "location" => "header", "description" => "key"}},
-          "o" => %{"openIdConnectSecurityScheme" => %{"openIdConnectUrl" => "https://i/.well-known", "description" => "oidc"}},
+          "b" => %{
+            "httpAuthSecurityScheme" => %{
+              "scheme" => "Bearer",
+              "bearerFormat" => "JWT",
+              "description" => "tok"
+            }
+          },
+          "k" => %{
+            "apiKeySecurityScheme" => %{
+              "name" => "X-Key",
+              "location" => "header",
+              "description" => "key"
+            }
+          },
+          "o" => %{
+            "openIdConnectSecurityScheme" => %{
+              "openIdConnectUrl" => "https://i/.well-known",
+              "description" => "oidc"
+            }
+          },
           "m" => %{"mtlsSecurityScheme" => %{"description" => "mtls"}}
         }
       })
 
-    assert %SecurityScheme.HTTPAuth{bearer_format: "JWT", description: "tok"} = decoded.security_schemes["b"]
+    assert %SecurityScheme.HTTPAuth{bearer_format: "JWT", description: "tok"} =
+             decoded.security_schemes["b"]
+
     assert %SecurityScheme.APIKey{description: "key"} = decoded.security_schemes["k"]
     assert %SecurityScheme.OpenIDConnect{description: "oidc"} = decoded.security_schemes["o"]
     assert %SecurityScheme.MutualTLS{description: "mtls"} = decoded.security_schemes["m"]
@@ -221,7 +257,8 @@ defmodule AshA2A.V1CodecFidelityTest do
   # -- JSON-RPC param validation ---------------------------------------------------
 
   test "push config methods without taskId answer -32602" do
-    opts = start_plug!(AshA2A.Test.PlugFixture.GreeterAgent, capabilities: %{push_notifications: true})
+    opts =
+      start_plug!(AshA2A.Test.PlugFixture.GreeterAgent, capabilities: %{push_notifications: true})
 
     for {method, params} <- [
           {"tasks/pushNotificationConfig/set", %{"url" => "https://h.example/w"}},
@@ -247,11 +284,14 @@ defmodule AshA2A.V1CodecFidelityTest do
 
   test "extended card with no provider answers -32007 (ExtendedAgentCardNotConfigured)" do
     opts = start_plug!(AshA2A.Test.PlugFixture.GreeterAgent)
-    assert %{"error" => %{"code" => -32_007}} = rpc_body(opts, "agent/getAuthenticatedExtendedCard", %{})
+
+    assert %{"error" => %{"code" => -32_007}} =
+             rpc_body(opts, "agent/getAuthenticatedExtendedCard", %{})
   end
 
   test "push config list paginates with pageSize/pageToken/nextPageToken" do
-    opts = start_plug!(AshA2A.Test.PlugFixture.GreeterAgent, capabilities: %{push_notifications: true})
+    opts =
+      start_plug!(AshA2A.Test.PlugFixture.GreeterAgent, capabilities: %{push_notifications: true})
 
     %{"result" => %{"task" => %{"id" => task_id}}} =
       rpc_body(opts, "message/send", %{"message" => wire_message()})
@@ -291,7 +331,10 @@ defmodule AshA2A.V1CodecFidelityTest do
              })
 
     assert %{"error" => %{"code" => -32_602}} =
-             rpc_body(opts, "tasks/pushNotificationConfig/list", %{"taskId" => task_id, "pageSize" => 0})
+             rpc_body(opts, "tasks/pushNotificationConfig/list", %{
+               "taskId" => task_id,
+               "pageSize" => 0
+             })
   end
 
   # -- client ----------------------------------------------------------------------
@@ -327,7 +370,8 @@ defmodule AshA2A.V1CodecFidelityTest do
       configuration: %{return_immediately: true}
     )
 
-    assert_receive {:request_body, %{"params" => %{"configuration" => %{"returnImmediately" => true}}}}
+    assert_receive {:request_body,
+                    %{"params" => %{"configuration" => %{"returnImmediately" => true}}}}
   end
 
   defp replay(conn, body, plug_opts) do

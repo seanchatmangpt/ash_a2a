@@ -164,6 +164,28 @@ defmodule AshA2A.Info do
       true
   end
 
+  @doc """
+  The residual skill overrides declared in the `a2a` block of a resource or domain.
+
+  Returns `[]` when the module has no compiled AshA2A extension state.
+  """
+  @spec skill_overrides(module()) :: [AshA2A.Skill.t()]
+  def skill_overrides(resource_or_domain) do
+    case Extension.get_persisted(resource_or_domain, :ash_a2a_skill_overrides, nil) do
+      overrides when is_list(overrides) -> overrides
+      _ -> []
+    end
+  end
+
+  @doc """
+  The kind of AshA2A subject the module is (`:resource` or `:domain`), or `nil`
+  when the extension has not compiled on it.
+  """
+  @spec subject_kind(module()) :: :resource | :domain | nil
+  def subject_kind(resource_or_domain) do
+    Extension.get_persisted(resource_or_domain, :ash_a2a_subject_kind, nil)
+  end
+
   @doc "The compiled authority admission gate (:two_port, :open, or :disabled)."
   @spec authority_gate(module()) :: atom()
   def authority_gate(resource_or_domain) do

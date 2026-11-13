@@ -57,7 +57,8 @@ defmodule AshA2A.V11.ClientLiveTest do
       capabilities: %{streaming: true}
 
     @impl AshA2A.Protocol.Agent
-    def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+    def handle_message(_message, _ctx),
+      do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
   end
 
   defmodule ArtAgent do
@@ -67,7 +68,8 @@ defmodule AshA2A.V11.ClientLiveTest do
       capabilities: %{streaming: true, user_artifacts: true}
 
     @impl AshA2A.Protocol.Agent
-    def handle_message(_message, _ctx), do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
+    def handle_message(_message, _ctx),
+      do: {:input_required, [AshA2A.Protocol.Part.Text.new("more?")]}
   end
 
   setup do
@@ -77,8 +79,15 @@ defmodule AshA2A.V11.ClientLiveTest do
     unless Process.whereis(AshA2A.Transport.Live.Registry),
       do: start_supervised!(AshA2A.Transport.Live.Supervisor)
 
-    open = EphemeralHttp.start!({Binding, Binding.init(agent: OpenAgent, base_url: "http://127.0.0.1/open")})
-    art = EphemeralHttp.start!({Binding, Binding.init(agent: ArtAgent, base_url: "http://127.0.0.1/art")})
+    open =
+      EphemeralHttp.start!(
+        {Binding, Binding.init(agent: OpenAgent, base_url: "http://127.0.0.1/open")}
+      )
+
+    art =
+      EphemeralHttp.start!(
+        {Binding, Binding.init(agent: ArtAgent, base_url: "http://127.0.0.1/art")}
+      )
 
     %{
       open: Client.new(open.base_url, transport: :http_json, version: "1.1"),
@@ -100,7 +109,12 @@ defmodule AshA2A.V11.ClientLiveTest do
              Client.send_message(art, nil,
                task_id: id,
                if_generation_match: 9_999,
-               artifact_updates: [%{"taskId" => id, "artifact" => %{"artifactId" => "a1", "parts" => [%{"text" => "x"}]}}]
+               artifact_updates: [
+                 %{
+                   "taskId" => id,
+                   "artifact" => %{"artifactId" => "a1", "parts" => [%{"text" => "x"}]}
+                 }
+               ]
              )
   end
 
@@ -115,7 +129,8 @@ defmodule AshA2A.V11.ClientLiveTest do
   test "get_task long-poll returns once the generation advances", %{open: client} do
     assert {:ok, %T{id: id, generation: gen}} = Client.send_message(client, "hello")
 
-    poll = Task.async(fn -> Client.get_task(client, id, current_generation: gen, timeout: 10_000) end)
+    poll =
+      Task.async(fn -> Client.get_task(client, id, current_generation: gen, timeout: 10_000) end)
 
     assert {:ok, %T{}} = Client.send_message(client, "again", task_id: id)
 
@@ -135,12 +150,17 @@ defmodule AshA2A.V11.ClientLiveTest do
     assert {:ok, %T{id: id, generation: gen}} = Client.send_message(client, "hello")
 
     assert {:ok, stream} =
-             Client.resubscribe(client, id, last_seen_generation: gen, timeout: 10_000, track_generation: true)
+             Client.resubscribe(client, id,
+               last_seen_generation: gen,
+               timeout: 10_000,
+               track_generation: true
+             )
 
     assert {:ok, _} = Client.send_message(client, "next", task_id: id)
 
     assert [{:event, first} | _] = Enum.take(stream, 1)
     refute match?(%T{}, first)
+
     assert match?(%StatusUpdate{}, first) or match?(%MessageUpdate{}, first) or
              match?(%AshA2A.Protocol.Event.ArtifactUpdate{}, first)
   end

@@ -14,7 +14,9 @@ defmodule AshA2A.A2AProtocolV210ConformanceTest do
       assert File.exists?(path), "Expected #{filename} to exist"
 
       assert {:ok, graph} = RDF.Turtle.read_file(path)
-      assert RDF.Graph.triple_count(graph) >= 40, "Graph #{filename} must contain full triple count"
+
+      assert RDF.Graph.triple_count(graph) >= 40,
+             "Graph #{filename} must contain full triple count"
     end
   end
 
@@ -41,7 +43,8 @@ defmodule AshA2A.A2AProtocolV210ConformanceTest do
     ]
 
     for cls <- expected_classes do
-      assert RDF.Graph.include?(graph, {cls, rdf_type, owl_class}), "Missing class #{inspect(cls)}"
+      assert RDF.Graph.include?(graph, {cls, rdf_type, owl_class}),
+             "Missing class #{inspect(cls)}"
     end
 
     # Check SHACL shapes
@@ -54,11 +57,13 @@ defmodule AshA2A.A2AProtocolV210ConformanceTest do
     ]
 
     for shape <- expected_shapes do
-      assert RDF.Graph.include?(graph, {shape, rdf_type, sh_nodeshape}), "Missing shape #{inspect(shape)}"
+      assert RDF.Graph.include?(graph, {shape, rdf_type, sh_nodeshape}),
+             "Missing shape #{inspect(shape)}"
     end
 
     # Check TaskState individuals
     task_state_class = ~I<https://a2a-protocol.org/ontology#TaskState>
+
     expected_states = [
       ~I<https://a2a-protocol.org/ontology#Submitted>,
       ~I<https://a2a-protocol.org/ontology#Working>,
@@ -69,7 +74,8 @@ defmodule AshA2A.A2AProtocolV210ConformanceTest do
     ]
 
     for state <- expected_states do
-      assert RDF.Graph.include?(graph, {state, rdf_type, task_state_class}), "Missing task state #{inspect(state)}"
+      assert RDF.Graph.include?(graph, {state, rdf_type, task_state_class}),
+             "Missing task state #{inspect(state)}"
     end
   end
 
@@ -97,19 +103,22 @@ defmodule AshA2A.A2AProtocolV210ConformanceTest do
     {:ok, graph} = RDF.Turtle.read_file(path)
 
     # 1. Check doctrine laws
-    doctrine_law = ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/DoctrineLaw>
+    doctrine_law =
+      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/DoctrineLaw>
+
     assert RDF.Graph.include?(graph, {
-      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/SelectNotConstruct>,
-      RDF.type(),
-      doctrine_law
-    })
+             ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/FND/Law/OperatingDoctrine/SelectNotConstruct>,
+             RDF.type(),
+             doctrine_law
+           })
 
     # 2. Check 5-field ActuationReceipt subClassOf a2a:Artifact
     rdfs_subclass = ~I<http://www.w3.org/2000/01/rdf-schema#subClassOf>
+
     assert RDF.Graph.include?(graph, {
-      ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/ActuationReceipt>,
-      rdfs_subclass,
-      ~I<https://a2a-protocol.org/ontology#Artifact>
-    })
+             ~I<https://spec.seanchatmangpt.dev/sa2a/ontology/EVI/Receipts/ActuationReceipt>,
+             rdfs_subclass,
+             ~I<https://a2a-protocol.org/ontology#Artifact>
+           })
   end
 end

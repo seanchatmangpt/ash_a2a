@@ -38,7 +38,13 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
   defp claims(overrides \\ %{}) do
     Map.merge(
-      %{"sub" => "user-1", "iss" => "https://auth.example.com", "aud" => "a2a-api", "exp" => @now + 600, "scope" => "a2a:read a2a:write"},
+      %{
+        "sub" => "user-1",
+        "iss" => "https://auth.example.com",
+        "aud" => "a2a-api",
+        "exp" => @now + 600,
+        "scope" => "a2a:read a2a:write"
+      },
       overrides
     )
   end
@@ -56,7 +62,15 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
   defp jwk_from_key(key, kid) do
     {:RSAPrivateKey, _, n, e, _, _, _, _, _, _, _} = key
-    %{"kty" => "RSA", "kid" => kid, "n" => b64(:binary.encode_unsigned(n)), "e" => b64(:binary.encode_unsigned(e)), "alg" => "RS256", "use" => "sig"}
+
+    %{
+      "kty" => "RSA",
+      "kid" => kid,
+      "n" => b64(:binary.encode_unsigned(n)),
+      "e" => b64(:binary.encode_unsigned(e)),
+      "alg" => "RS256",
+      "use" => "sig"
+    }
   end
 
   defp rs256_token(claims, key, kid, header_overrides \\ %{}) do
@@ -77,7 +91,13 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     test "valid token passes with claims intact" do
       token = hs256_token(claims(), "s3cret")
 
-      assert {:ok, result} = SecurityValidators.validate_bearer(token, secret: "s3cret", issuer: "https://auth.example.com", audience: "a2a-api")
+      assert {:ok, result} =
+               SecurityValidators.validate_bearer(token,
+                 secret: "s3cret",
+                 issuer: "https://auth.example.com",
+                 audience: "a2a-api"
+               )
+
       assert result["sub"] == "user-1"
       assert result[:scheme_kind] == :bearer
     end
@@ -85,50 +105,67 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     test "expired token refused" do
       token = hs256_token(claims(%{"exp" => @now - 3600}), "s3cret")
 
-      assert {:error, %{code: :token_expired}} = SecurityValidators.validate_bearer(token, secret: "s3cret")
+      assert {:error, %{code: :token_expired}} =
+               SecurityValidators.validate_bearer(token, secret: "s3cret")
     end
 
     test "bad issuer refused" do
       token = hs256_token(claims(%{"iss" => "https://evil.example.com"}), "s3cret")
 
       assert {:error, %{code: :invalid_issuer, detail: %{expected: "https://auth.example.com"}}} =
-               SecurityValidators.validate_bearer(token, secret: "s3cret", issuer: "https://auth.example.com")
+               SecurityValidators.validate_bearer(token,
+                 secret: "s3cret",
+                 issuer: "https://auth.example.com"
+               )
     end
 
     test "bad audience refused" do
       token = hs256_token(claims(%{"aud" => "other-api"}), "s3cret")
 
-      assert {:error, %{code: :invalid_audience}} = SecurityValidators.validate_bearer(token, secret: "s3cret", audience: "a2a-api")
+      assert {:error, %{code: :invalid_audience}} =
+               SecurityValidators.validate_bearer(token, secret: "s3cret", audience: "a2a-api")
     end
 
     test "audience list containing expected passes" do
       token = hs256_token(claims(%{"aud" => ["other-api", "a2a-api"]}), "s3cret")
 
-      assert {:ok, _} = SecurityValidators.validate_bearer(token, secret: "s3cret", audience: "a2a-api")
+      assert {:ok, _} =
+               SecurityValidators.validate_bearer(token, secret: "s3cret", audience: "a2a-api")
     end
 
     test "missing scope refused" do
       token = hs256_token(claims(%{"scope" => "a2a:read"}), "s3cret")
 
       assert {:error, %{code: :insufficient_scope, detail: ["a2a:write"]}} =
-               SecurityValidators.validate_bearer(token, secret: "s3cret", required_scopes: ["a2a:read", "a2a:write"])
+               SecurityValidators.validate_bearer(token,
+                 secret: "s3cret",
+                 required_scopes: ["a2a:read", "a2a:write"]
+               )
     end
 
     test "scp claim honored as scope source" do
       token = hs256_token(claims(%{"scope" => nil, "scp" => "a2a:read a2a:write"}), "s3cret")
 
-      assert {:ok, _} = SecurityValidators.validate_bearer(token, secret: "s3cret", required_scopes: ["a2a:write"])
+      assert {:ok, _} =
+               SecurityValidators.validate_bearer(token,
+                 secret: "s3cret",
+                 required_scopes: ["a2a:write"]
+               )
     end
 
     test "bad signature refused" do
       token = hs256_token(claims(), "wrong-secret")
 
-      assert {:error, %{code: :bad_signature}} = SecurityValidators.validate_bearer(token, secret: "s3cret")
+      assert {:error, %{code: :bad_signature}} =
+               SecurityValidators.validate_bearer(token, secret: "s3cret")
     end
 
     test "malformed token refused" do
-      assert {:error, %{code: :malformed_token}} = SecurityValidators.validate_bearer("not-a-jwt", secret: "s3cret")
-      assert {:error, %{code: :invalid_token}} = SecurityValidators.validate_bearer(42, secret: "s3cret")
+      assert {:error, %{code: :malformed_token}} =
+               SecurityValidators.validate_bearer("not-a-jwt", secret: "s3cret")
+
+      assert {:error, %{code: :invalid_token}} =
+               SecurityValidators.validate_bearer(42, secret: "s3cret")
     end
 
     test "unsupported algorithm refused (alg none)" do
@@ -145,7 +182,10 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
       token = hs256_token(%{"iss" => "https://auth.example.com"}, "s3cret")
 
       assert {:error, %{code: :missing_claim, detail: ["sub"]}} =
-               SecurityValidators.validate_bearer(token, secret: "s3cret", required_claims: ["sub"])
+               SecurityValidators.validate_bearer(token,
+                 secret: "s3cret",
+                 required_claims: ["sub"]
+               )
     end
   end
 
@@ -153,15 +193,18 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
   describe "validate_api_key/2" do
     test "matching key passes" do
-      assert {:ok, %{scheme_kind: :key}} = SecurityValidators.validate_api_key("k-123", keys: ["k-123", "k-456"])
+      assert {:ok, %{scheme_kind: :key}} =
+               SecurityValidators.validate_api_key("k-123", keys: ["k-123", "k-456"])
     end
 
     test "wrong key refused with typed error" do
-      assert {:error, %{code: :invalid_api_key}} = SecurityValidators.validate_api_key("nope", keys: ["k-123"])
+      assert {:error, %{code: :invalid_api_key}} =
+               SecurityValidators.validate_api_key("nope", keys: ["k-123"])
     end
 
     test "empty key set refuses everything (fail-closed)" do
-      assert {:error, %{code: :invalid_api_key}} = SecurityValidators.validate_api_key("anything", keys: [])
+      assert {:error, %{code: :invalid_api_key}} =
+               SecurityValidators.validate_api_key("anything", keys: [])
     end
   end
 
@@ -172,10 +215,15 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
       token = hs256_token(claims(%{"scope" => "a2a:read"}), "s3cret")
 
       assert {:error, %{code: :insufficient_scope}} =
-               SecurityValidators.validate_oauth2(token, secret: "s3cret", required_scopes: ["a2a:write"])
+               SecurityValidators.validate_oauth2(token,
+                 secret: "s3cret",
+                 required_scopes: ["a2a:write"]
+               )
 
       token2 = hs256_token(claims(), "s3cret")
-      assert {:ok, %{scheme_kind: :oauth2}} = SecurityValidators.validate_oauth2(token2, secret: "s3cret")
+
+      assert {:ok, %{scheme_kind: :oauth2}} =
+               SecurityValidators.validate_oauth2(token2, secret: "s3cret")
     end
   end
 
@@ -190,7 +238,10 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
     test "active token with required scopes passes", %{introspection_url: url} do
       assert {:ok, claims} =
-               SecurityValidators.validate_oauth2("tok-active", introspection_url: url, required_scopes: ["a2a:read"])
+               SecurityValidators.validate_oauth2("tok-active",
+                 introspection_url: url,
+                 required_scopes: ["a2a:read"]
+               )
 
       assert claims["sub"] == "user-1"
       assert claims[:scheme_kind] == :oauth2
@@ -198,10 +249,15 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
     test "inactive token refused" do
       port = free_port()
-      start_supervised({Bandit, plug: {__MODULE__.IntrospectionServer, inactive: true}, port: port})
+
+      start_supervised(
+        {Bandit, plug: {__MODULE__.IntrospectionServer, inactive: true}, port: port}
+      )
 
       assert {:error, %{code: :token_inactive}} =
-               SecurityValidators.validate_oauth2("tok-dead", introspection_url: "http://127.0.0.1:#{port}/introspect")
+               SecurityValidators.validate_oauth2("tok-dead",
+                 introspection_url: "http://127.0.0.1:#{port}/introspect"
+               )
     end
 
     test "expired introspected token refused", %{introspection_url: url} do
@@ -211,7 +267,10 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
     test "missing scope refused", %{introspection_url: url} do
       assert {:error, %{code: :insufficient_scope, detail: ["a2a:admin"]}} =
-               SecurityValidators.validate_oauth2("tok-active", introspection_url: url, required_scopes: ["a2a:admin"])
+               SecurityValidators.validate_oauth2("tok-active",
+                 introspection_url: url,
+                 required_scopes: ["a2a:admin"]
+               )
     end
   end
 
@@ -223,9 +282,14 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
       kid = "test-key-1"
       port = free_port()
 
-      start_supervised({Bandit, plug: {__MODULE__.DiscoveryServer, [key: key, kid: kid, port: port]}, port: port})
+      start_supervised(
+        {Bandit, plug: {__MODULE__.DiscoveryServer, [key: key, kid: kid, port: port]}, port: port}
+      )
 
-      {:ok, discovery: "http://127.0.0.1:#{port}/.well-known/openid-configuration", key: key, kid: kid,
+      {:ok,
+       discovery: "http://127.0.0.1:#{port}/.well-known/openid-configuration",
+       key: key,
+       kid: kid,
        jwk: jwk_from_key(key, kid)}
     end
 
@@ -233,7 +297,11 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
       token = rs256_token(claims(), key, kid)
 
       assert {:ok, result} =
-               SecurityValidators.validate_oidc(token, discovery: discovery, issuer: "https://auth.example.com", audience: "a2a-api")
+               SecurityValidators.validate_oidc(token,
+                 discovery: discovery,
+                 issuer: "https://auth.example.com",
+                 audience: "a2a-api"
+               )
 
       assert result["sub"] == "user-1"
     end
@@ -242,19 +310,22 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
       other_key = rsa_keypair()
       token = rs256_token(claims(), other_key, kid)
 
-      assert {:error, %{code: :bad_signature}} = SecurityValidators.validate_oidc(token, discovery: discovery)
+      assert {:error, %{code: :bad_signature}} =
+               SecurityValidators.validate_oidc(token, discovery: discovery)
     end
 
     test "unknown kid refused", %{discovery: discovery, key: key} do
       token = rs256_token(claims(), key, "unknown-kid")
 
-      assert {:error, %{code: :unknown_kid}} = SecurityValidators.validate_oidc(token, discovery: discovery)
+      assert {:error, %{code: :unknown_kid}} =
+               SecurityValidators.validate_oidc(token, discovery: discovery)
     end
 
     test "expired token refused", %{discovery: discovery, key: key, kid: kid} do
       token = rs256_token(claims(%{"exp" => @now - 100}), key, kid)
 
-      assert {:error, %{code: :token_expired}} = SecurityValidators.validate_oidc(token, discovery: discovery)
+      assert {:error, %{code: :token_expired}} =
+               SecurityValidators.validate_oidc(token, discovery: discovery)
     end
 
     test "pre-loaded :jwks skips discovery", %{key: key, kid: kid, jwk: jwk} do
@@ -266,7 +337,9 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     test "discovery endpoint failure is a typed error" do
       # Nothing listening on this port (Bandit not started for 1).
       assert {:error, %{code: :discovery_error}} =
-               SecurityValidators.validate_oidc("t", discovery: "http://127.0.0.1:1/.well-known/openid-configuration")
+               SecurityValidators.validate_oidc("t",
+                 discovery: "http://127.0.0.1:1/.well-known/openid-configuration"
+               )
     end
   end
 
@@ -280,7 +353,11 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     end
 
     test "kind dispatch per scheme name" do
-      vf = SecurityValidators.verifier(%{"key" => [kind: :key, keys: ["k-1"]], "bearer" => [secret: "s"]})
+      vf =
+        SecurityValidators.verifier(%{
+          "key" => [kind: :key, keys: ["k-1"]],
+          "bearer" => [secret: "s"]
+        })
 
       assert {:ok, _} = vf.("key", "k-1", nil)
       assert {:error, %{code: :invalid_api_key}} = vf.("key", "k-2", nil)
@@ -381,9 +458,19 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
 
           resp =
             if token == "tok-expired" do
-              %{"active" => true, "sub" => "user-1", "scope" => "a2a:read a2a:write", "exp" => System.system_time(:second) - 100}
+              %{
+                "active" => true,
+                "sub" => "user-1",
+                "scope" => "a2a:read a2a:write",
+                "exp" => System.system_time(:second) - 100
+              }
             else
-              %{"active" => active, "sub" => "user-1", "scope" => "a2a:read a2a:write", "exp" => System.system_time(:second) + 600}
+              %{
+                "active" => active,
+                "sub" => "user-1",
+                "scope" => "a2a:read a2a:write",
+                "exp" => System.system_time(:second) + 600
+              }
             end
 
           conn
@@ -408,7 +495,13 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
         [".well-known", "openid-configuration"] ->
           conn
           |> put_resp_content_type("application/json")
-          |> send_resp(200, Jason.encode!(%{"issuer" => "https://auth.example.com", "jwks_uri" => "http://127.0.0.1:#{opts.port}/jwks"}))
+          |> send_resp(
+            200,
+            Jason.encode!(%{
+              "issuer" => "https://auth.example.com",
+              "jwks_uri" => "http://127.0.0.1:#{opts.port}/jwks"
+            })
+          )
 
         ["jwks"] ->
           kid = opts.kid

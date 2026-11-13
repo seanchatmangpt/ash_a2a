@@ -22,6 +22,10 @@ defmodule AshA2A.TaskLifecycle do
   * `:failed` — attempted-and-errored: the handler ran and failed mid-run.
   """
 
+  # `possible_next_states/1,2` arity varies across ash_state_machine releases;
+  # each call site is guarded by `function_exported?/3`.
+  @compile {:no_warn_undefined, AshStateMachine}
+
   @states [
     :submitted,
     :working,
@@ -75,10 +79,10 @@ defmodule AshA2A.TaskLifecycle do
         {:error, {:unsupported, :ash_state_machine}}
 
       is_nil(action) and function_exported?(AshStateMachine, :possible_next_states, 1) ->
-        {:ok, apply(AshStateMachine, :possible_next_states, [record])}
+        {:ok, AshStateMachine.possible_next_states(record)}
 
       function_exported?(AshStateMachine, :possible_next_states, 2) ->
-        {:ok, apply(AshStateMachine, :possible_next_states, [record, action])}
+        {:ok, AshStateMachine.possible_next_states(record, action)}
 
       true ->
         {:error, {:unsupported, :possible_next_states}}

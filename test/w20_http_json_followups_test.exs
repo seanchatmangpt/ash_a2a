@@ -76,7 +76,9 @@ defmodule AshA2A.W20HTTPJSONTest do
   @agent AshA2A.W20HTTPJSON.Agent
 
   setup do
-    {_sup, _registry} = AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+    {_sup, _registry} =
+      AshA2A.Test.AgentSupervisorCase.start_supervised_agents!(__MODULE__, [@agent])
+
     :ok
   end
 
@@ -91,11 +93,16 @@ defmodule AshA2A.W20HTTPJSONTest do
 
   test "extended card never carries inherited (stale) signatures" do
     provider = fn _identity, public ->
-      {:ok, public |> Map.put("name", "w20-extended") |> Map.put("signatures", [%{"signature" => "stale"}])}
+      {:ok,
+       public
+       |> Map.put("name", "w20-extended")
+       |> Map.put("signatures", [%{"signature" => "stale"}])}
     end
 
     server = start(extended_card: provider)
-    resp = Req.get!(url: server.base_url <> "/extendedAgentCard", headers: [authorization: "Bearer t"])
+
+    resp =
+      Req.get!(url: server.base_url <> "/extendedAgentCard", headers: [authorization: "Bearer t"])
 
     assert resp.status == 200
     assert resp.body["name"] == "w20-extended"
@@ -110,7 +117,10 @@ defmodule AshA2A.W20HTTPJSONTest do
         url: server.base_url <> "/message:send",
         json: %{
           "message" => parked_message(),
-          "configuration" => %{"returnImmediately" => true, "acceptedOutputModes" => ["text/plain"]}
+          "configuration" => %{
+            "returnImmediately" => true,
+            "acceptedOutputModes" => ["text/plain"]
+          }
         }
       )
 
@@ -120,15 +130,21 @@ defmodule AshA2A.W20HTTPJSONTest do
 
   test "push list on a push-disabled server stays -32003 even with paging params" do
     server = start()
-    resp = Req.get!(url: server.base_url <> "/tasks/x/pushNotificationConfigs?pageSize=1&pageToken=")
+
+    resp =
+      Req.get!(url: server.base_url <> "/tasks/x/pushNotificationConfigs?pageSize=1&pageToken=")
+
     assert resp.status == 400
   end
 
   test "GET :subscribe on a non-terminal task streams the snapshot; terminal 400; unknown 404" do
     server = start()
 
-    resp = Req.post!(url: server.base_url <> "/message:send", json: %{"message" => parked_message()})
-    assert %{"task" => %{"id" => id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}} = resp.body
+    resp =
+      Req.post!(url: server.base_url <> "/message:send", json: %{"message" => parked_message()})
+
+    assert %{"task" => %{"id" => id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}} =
+             resp.body
 
     # Halt after the first SSE frame (the snapshot); the stream would
     # otherwise follow until a final event.

@@ -125,7 +125,10 @@ defmodule AshA2A.ConferenceSim.RedTeam.TokenServer do
   defp jwks(conn) do
     conn
     |> put_resp_content_type("application/json")
-    |> send_resp(200, Jason.encode!(%{"keys" => [AshA2A.ConferenceSim.RedTeam.RSA.venue_public_jwk()]}))
+    |> send_resp(
+      200,
+      Jason.encode!(%{"keys" => [AshA2A.ConferenceSim.RedTeam.RSA.venue_public_jwk()]})
+    )
     |> halt()
   end
 end
@@ -360,17 +363,27 @@ defmodule AshA2A.ConferenceSim.RedTeam.GRPCHandler do
   @impl AshA2A.Protocol.JSONRPC
   def handle_get(task_id, _params, %{agent: agent}) do
     case EchoAgent.get_task(agent, task_id) do
-      {:ok, task} -> {:ok, task}
-      {:error, :not_found} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
+      {:ok, task} ->
+        {:ok, task}
+
+      {:error, :not_found} ->
+        {:error,
+         %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
     end
   end
 
   @impl AshA2A.Protocol.JSONRPC
   def handle_cancel(task_id, _params, %{agent: agent}) do
     case EchoAgent.cancel(agent, task_id) do
-      :ok -> EchoAgent.get_task(agent, task_id)
-      {:error, :not_found} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
-      {:error, reason} -> {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32002, message: inspect(reason)}}
+      :ok ->
+        EchoAgent.get_task(agent, task_id)
+
+      {:error, :not_found} ->
+        {:error,
+         %AshA2A.Protocol.JSONRPC.Error{code: -32001, message: "task not found: #{task_id}"}}
+
+      {:error, reason} ->
+        {:error, %AshA2A.Protocol.JSONRPC.Error{code: -32002, message: inspect(reason)}}
     end
   end
 end
@@ -537,7 +550,9 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
       # The refusal is a real expiry refusal: the identical token minted with
       # a fresh exp is served — same signer, same claims, only `exp` differs.
       fresh = Venue.session_token(%{"sub" => "attendee-session"})
-      conn_ok = venue_get(venue_url, ["venue", "keynote"], [{"authorization", "Bearer " <> fresh}])
+
+      conn_ok =
+        venue_get(venue_url, ["venue", "keynote"], [{"authorization", "Bearer " <> fresh}])
 
       assert %{"granted" => true, "tier" => "session"} = Jason.decode!(conn_ok.resp_body)
     end
@@ -548,8 +563,13 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
 
       assert conn.status == 403
 
-      assert %{"error" => %{"code" => "tier_access_denied", "method" => "workshop",
-                            "tier" => "general"}} = Jason.decode!(conn.resp_body)
+      assert %{
+               "error" => %{
+                 "code" => "tier_access_denied",
+                 "method" => "workshop",
+                 "tier" => "general"
+               }
+             } = Jason.decode!(conn.resp_body)
 
       # The same badge on the keynote (which its tier allows) is served — the
       # 403 is the tier law, not a broken badge.
@@ -598,7 +618,12 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
       end
 
       # Positive control: alice still owns and reads her task after the attack.
-      assert %{"result" => %{"id" => ^task_id, "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}}} =
+      assert %{
+               "result" => %{
+                 "id" => ^task_id,
+                 "status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}
+               }
+             } =
                rpc(ctx, "alice", "tasks/get", %{"id" => task_id})
     end
 
@@ -735,7 +760,10 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
 
       # Bob's forged owner claim changed nothing: the task is still bob's, and
       # alice cannot see it.
-      assert_task_not_found(rpc(ctx, "alice", "tasks/get", %{"id" => bob_task}), "alice on bob task")
+      assert_task_not_found(
+        rpc(ctx, "alice", "tasks/get", %{"id" => bob_task}),
+        "alice on bob task"
+      )
 
       # Positive control: bob's benign params metadata ("seat") still rides.
       assert get_in(response, ["result", "metadata", "seat"]) == "hall-b"
@@ -820,6 +848,7 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
     transport = :"red_team_transport_#{uniq}"
 
     start_supervised!({Agent, name: agent})
+
     transport_pid =
       start_supervised!(
         {AshA2A.A2ATransport,
@@ -849,7 +878,8 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
     }
   end
 
-  def verify("bearer", token, _conn), do: {:ok, %{sub: token, token: "raw-credential-of-" <> token}}
+  def verify("bearer", token, _conn),
+    do: {:ok, %{sub: token, token: "raw-credential-of-" <> token}}
 
   # Real chain: bearer auth middleware -> wrapper transport plug (Plug.Test
   # adapter, same shape the owner-scope court uses).
@@ -980,7 +1010,10 @@ defmodule AshA2A.ConferenceSim.RedTeamCourt do
     end)
 
     {:ok, _client_sup} =
-      DynamicSupervisor.start_link(strategy: :one_for_one, name: Module.concat(__MODULE__, ClientSup))
+      DynamicSupervisor.start_link(
+        strategy: :one_for_one,
+        name: Module.concat(__MODULE__, ClientSup)
+      )
 
     {:ok, _pid, port} = GRPC.Server.start_endpoint(AshA2A.Transport.GRPC.Server.Endpoint, 0)
 

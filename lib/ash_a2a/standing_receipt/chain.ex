@@ -1,6 +1,6 @@
 defmodule AshA2a.StandingReceipt.Chain do
   @moduledoc """
-  Append-only hash-chain over standing-receipt revisions (lane L108, L33 rank-1).
+  Append-only hash-chain over standing-receipt revisions.
 
   Chain file: JSONL next to the standing receipt,
   e.g. `docs/sjira/v26.10.8/STANDING-RECEIPT.chain.jsonl`. One revision event
@@ -123,7 +123,8 @@ defmodule AshA2a.StandingReceipt.Chain do
     end
   end
 
-  defp chain_present(path), do: if(File.exists?(path), do: {:present, path}, else: {:absent, path})
+  defp chain_present(path),
+    do: if(File.exists?(path), do: {:present, path}, else: {:absent, path})
 
   defp read_chain(path) do
     case File.read(path) do

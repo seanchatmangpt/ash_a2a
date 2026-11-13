@@ -51,6 +51,7 @@ defmodule AshA2A.V1SpecCorpusTest do
 
     test "covers every required spec member family" do
       families = MapSet.new(@examples, & &1["family"])
+
       for family <- @required_families do
         assert family in families, "corpus is missing family #{family}"
       end

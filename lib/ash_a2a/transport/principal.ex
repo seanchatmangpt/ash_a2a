@@ -137,7 +137,8 @@ defmodule AshA2A.Transport.Principal do
   # A bare binary identity is typically the raw bearer credential: never embed
   # it, key by a SHA-256 prefix instead.
   def key(identity) when is_binary(identity) do
-    "id:" <> (:crypto.hash(:sha256, identity) |> Base.encode16(case: :lower) |> binary_part(0, 16))
+    "id:" <>
+      (:crypto.hash(:sha256, identity) |> Base.encode16(case: :lower) |> binary_part(0, 16))
   end
 
   def key(identity) when is_map(identity) do

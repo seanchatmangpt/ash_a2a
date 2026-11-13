@@ -57,6 +57,7 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelW4CTest do
   test "RawEffectEdges drops observation and kernel edges" do
     assert [@raw] = RawEffectEdges.from_report([@raw, @kernel, @obs])
     assert [] = RawEffectEdges.from_report([])
+
     assert [%GraphEdge{kind: :dispatcher}] =
              RawEffectEdges.from_report([%{caller: "x", callee: :y, kind: :dispatcher}])
   end
@@ -66,7 +67,9 @@ defmodule AshA2A.UntestedLane18.ConsequenceKernelW4CTest do
   end
 
   test "ClosurePredicate / ChicagoAdapter / ClosureReceipt agree" do
-    assert {:ok, :zero_consequential_raw_effect_edges} = ClosurePredicate.evaluate([@kernel, @obs])
+    assert {:ok, :zero_consequential_raw_effect_edges} =
+             ClosurePredicate.evaluate([@kernel, @obs])
+
     assert {:error, {:raw_effect_edges, [@raw]}} = ClosurePredicate.evaluate([@raw, @kernel])
     assert {:ok, _} = ChicagoAdapter.evaluate(%{edges: [@kernel]})
     assert {:error, {:raw_effect_edges, [_]}} = ChicagoAdapter.evaluate([@raw])

@@ -198,7 +198,11 @@ defmodule AshA2A.TransportCourt.Pipeline do
 
     conn =
       if auth?,
-        do: AshA2A.Protocol.Plug.Auth.call(conn, AshA2A.Protocol.Plug.Auth.init(schemes: @schemes, verify: &verify/3)),
+        do:
+          AshA2A.Protocol.Plug.Auth.call(
+            conn,
+            AshA2A.Protocol.Plug.Auth.init(schemes: @schemes, verify: &verify/3)
+          ),
         else: conn
 
     if conn.halted,
@@ -309,7 +313,11 @@ defmodule AshA2A.TransportCourtTest do
       refute Jason.encode!(a) =~ "SECRET"
 
       # B continues A's task: refused, indistinguishable from unknown id.
-      cont = %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"right" => "R"})]) | task_id: task_id}
+      cont = %{
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"right" => "R"})])
+        | task_id: task_id
+      }
+
       {:ok, cont} = AshA2A.Protocol.JSON.encode(%{cont | metadata: %{"skill" => "pair"}})
       b = rpc_json(url, "message/send", %{"message" => cont}, "tok-bob")
 

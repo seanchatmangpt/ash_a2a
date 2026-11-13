@@ -1177,7 +1177,8 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   defp nonce_data(nil), do: %{}
   defp nonce_data(nonce), do: %{"nonce" => nonce}
 
-  defp data_message(nonce), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})])
+  defp data_message(nonce),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})])
 
   defp reply_code({:ok, %{status: status}}), do: "ok:#{status}"
   defp reply_code({:ok, _}), do: "ok"

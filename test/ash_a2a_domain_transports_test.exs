@@ -70,16 +70,16 @@ defmodule AshA2A.DomainTransportsTest.MountedDomain do
     base_url "https://agents.example.com"
 
     mount agent: AshA2A.DomainTransportsTest.EchoAgent,
-      path: "/echo",
-      binding: :jsonrpc
+          path: "/echo",
+          binding: :jsonrpc
 
     mount agent: AshA2A.DomainTransportsTest.RestAgent,
-      path: "/greeter",
-      binding: :rest
+          path: "/greeter",
+          binding: :rest
 
     mount agent: AshA2A.DomainTransportsTest.EchoAgent,
-      path: "/echo-grpc",
-      binding: :grpc
+          path: "/echo-grpc",
+          binding: :grpc
   end
 end
 
@@ -120,16 +120,16 @@ defmodule AshA2A.DomainTransportsTest.CardDomain do
     base_url "https://cards.example.com"
 
     mount agent: AshA2A.DomainTransportsTest.EchoAgent,
-      path: "/echo",
-      binding: :jsonrpc
+          path: "/echo",
+          binding: :jsonrpc
 
     mount agent: AshA2A.DomainTransportsTest.RestAgent,
-      path: "/greeter",
-      binding: :rest
+          path: "/greeter",
+          binding: :rest
 
     mount agent: AshA2A.DomainTransportsTest.EchoAgent,
-      path: "/echo-grpc",
-      binding: :grpc
+          path: "/echo-grpc",
+          binding: :grpc
   end
 end
 
@@ -184,10 +184,7 @@ defmodule AshA2A.DomainTransportsTest do
       ])
 
     %{
-      server:
-        EphemeralHttp.start!(
-          {Router, domain: AshA2A.DomainTransportsTest.MountedDomain}
-        )
+      server: EphemeralHttp.start!({Router, domain: AshA2A.DomainTransportsTest.MountedDomain})
     }
   end
 
@@ -197,6 +194,7 @@ defmodule AshA2A.DomainTransportsTest do
     mounts = Info.mounts(AshA2A.DomainTransportsTest.MountedDomain)
 
     assert length(mounts) == 3
+
     assert Enum.map(mounts, &{&1.agent, &1.path, &1.binding}) == [
              {AshA2A.DomainTransportsTest.EchoAgent, "/echo", :jsonrpc},
              {AshA2A.DomainTransportsTest.RestAgent, "/greeter", :rest},
@@ -295,7 +293,8 @@ defmodule AshA2A.DomainTransportsTest do
     assert %{"name" => "domain_transports_echo_agent"} = card.body
 
     resp =
-      Req.post!(url: server.base_url <> "/echo",
+      Req.post!(
+        url: server.base_url <> "/echo",
         json: %{
           "jsonrpc" => "2.0",
           "id" => 1,
@@ -315,7 +314,8 @@ defmodule AshA2A.DomainTransportsTest do
     assert %{"name" => "domain_transports_rest_agent"} = card.body
 
     resp =
-      Req.post!(url: server.base_url <> "/greeter/message:send",
+      Req.post!(
+        url: server.base_url <> "/greeter/message:send",
         headers: [{"content-type", "application/json"}],
         json: %{"message" => message_map("hello over rest")}
       )
@@ -329,7 +329,10 @@ defmodule AshA2A.DomainTransportsTest do
     resp = Req.post!(url: server.base_url <> "/echo-grpc", json: %{"any" => "body"})
 
     assert resp.status == 501
-    assert %{"error" => %{"code" => "grpc_not_served_over_http", "details" => details}} = resp.body
+
+    assert %{"error" => %{"code" => "grpc_not_served_over_http", "details" => details}} =
+             resp.body
+
     assert details["reason"] == "GRPC_BINDING_NOT_ROUTABLE"
     assert details["metadata"]["endpoint"] =~ "GRPC.Server.Endpoint"
   end
@@ -358,8 +361,8 @@ defmodule AshA2A.DomainTransportsTest do
             base_url "https://misdeclared.example.com"
 
             mount agent: This.Agent.Does.Not.Exist,
-              path: "/nowhere",
-              binding: :jsonrpc
+                  path: "/nowhere",
+                  binding: :jsonrpc
           end
         end
       end

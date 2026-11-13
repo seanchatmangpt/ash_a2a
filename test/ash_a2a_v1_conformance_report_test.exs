@@ -48,6 +48,7 @@ defmodule AshA2A.V1ConformanceReportTest do
 
     assert court["exit_code"] == 0
     assert court["verdict"] == "PASS"
+
     assert court["summary_line"] =~ ~r/\d+ tests?, 0 failures?/ or
              court["summary_line"] =~ ~r/Result:\s+\d+(\/\d+)?\s+passed/
 
@@ -84,7 +85,9 @@ defmodule AshA2A.V1ConformanceReportTest do
     on_disk = Path.wildcard("test/ash_a2a_v1_*_test.exs") ++ v11
 
     unaccounted = on_disk -- (courts ++ v11 ++ excluded)
-    assert unaccounted == [], "v1 test files neither in @v1_courts nor excluded: #{inspect(unaccounted)}"
+
+    assert unaccounted == [],
+           "v1 test files neither in @v1_courts nor excluded: #{inspect(unaccounted)}"
 
     missing = (courts ++ v11 ++ excluded) -- on_disk
     assert missing == [], "registered files absent from disk: #{inspect(missing)}"

@@ -29,7 +29,7 @@ defmodule AshA2A.Chicago do
     * `AshA2A.Chicago.StandingReceipt` -- §115 standing receipt
     * `mix ash_a2a.chicago` -- command-line entry point
 
-  The full specification is `docs/rfc/RFC-SA2A-002-v26.9.16.md`.
+  The full specification is `docs/archive/rfc/RFC-SA2A-002-v26.9.16.md`.
   """
 
   alias AshA2A.Chicago.{Court, Profile, Runner}

@@ -150,7 +150,9 @@ defmodule AshA2A.Protocol.JSONRPC do
   # -- dispatch --------------------------------------------------------------
 
   defp dispatch(%Request{method: "message/send"} = req, handler, ctx) do
-    configuration = if is_map(req.params["configuration"]), do: req.params["configuration"], else: %{}
+    configuration =
+      if is_map(req.params["configuration"]), do: req.params["configuration"], else: %{}
+
     history_length = Request.history_length(configuration)
 
     timeline_length =
@@ -214,7 +216,8 @@ defmodule AshA2A.Protocol.JSONRPC do
 
     with {:ok, task} <-
            safe_call(fn -> handler.handle_cancel(task_id, req.params, ctx) end),
-         {:ok, encoded} <- AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Task.strip_stream_metadata(task)) do
+         {:ok, encoded} <-
+           AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Task.strip_stream_metadata(task)) do
       {:reply, Response.success(req.id, encoded)}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
@@ -228,7 +231,8 @@ defmodule AshA2A.Protocol.JSONRPC do
           timeline_length = Request.timeline_length(req.params)
           {:reply, Response.success(req.id, encode_list_result(result, timeline_length))}
 
-        {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+        {:error, %Error{} = error} ->
+          {:reply, Response.error(req.id, error)}
       end
     else
       {:reply, Response.error(req.id, Error.method_not_found(req.method))}
@@ -431,7 +435,10 @@ defmodule AshA2A.Protocol.JSONRPC do
   end
 
   defp decode_optional_message(%{"message" => nil}), do: {:ok, nil}
-  defp decode_optional_message(%{"message" => m} = params) when is_map(m), do: decode_message(params)
+
+  defp decode_optional_message(%{"message" => m} = params) when is_map(m),
+    do: decode_message(params)
+
   defp decode_optional_message(_params), do: {:ok, nil}
 
   defp card_of(%{agent_card: card}) when not is_nil(card), do: card
@@ -518,7 +525,8 @@ defmodule AshA2A.Protocol.JSONRPC do
     safe_call(fn -> handler.handle_send(message, params, ctx) end)
   end
 
-  defp apply_artifact_updates(_ctx, result, _message, []) when not is_tuple(result), do: {:ok, result}
+  defp apply_artifact_updates(_ctx, result, _message, []) when not is_tuple(result),
+    do: {:ok, result}
 
   defp apply_artifact_updates(ctx, {:artifact_only, task_id}, _message, decoded) do
     apply_to_agent(ctx, task_id, decoded, true)

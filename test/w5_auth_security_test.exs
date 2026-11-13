@@ -169,7 +169,12 @@ defmodule AshA2AW5AuthSecurityTest do
       off = Auth.call(base, mtls_opts(fingerprints: [fingerprint(@der)]))
       assert off.status == 401
 
-      on = Auth.call(base, mtls_opts([fingerprints: [fingerprint(@der)]], mtls_header: "x-client-cert"))
+      on =
+        Auth.call(
+          base,
+          mtls_opts([fingerprints: [fingerprint(@der)]], mtls_header: "x-client-cert")
+        )
+
       refute on.halted
     end
   end
@@ -195,7 +200,9 @@ defmodule AshA2AW5AuthSecurityTest do
       assert :ok = SecurityPreflight.check_card_security(ok)
 
       bad = %{ok | skills: [%{security_requirements: [%{"ghost" => []}]}]}
-      assert {:error, [%{code: :card_security_unknown_scheme}]} = SecurityPreflight.check_card_security(bad)
+
+      assert {:error, [%{code: :card_security_unknown_scheme}]} =
+               SecurityPreflight.check_card_security(bad)
     end
   end
 end

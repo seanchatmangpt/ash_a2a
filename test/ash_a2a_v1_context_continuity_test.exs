@@ -262,10 +262,14 @@ defmodule AshA2AV1ContextContinuityTest do
       # (turn-1 user, turn-1 agent, turn-2 user). If A's history bled into B
       # (or vice versa), either count would be wrong.
       b2 =
-        turn(url, task_id: b1["id"], context_id: ctx_b, data: %{
-          "say" => "B-say",
-          "topic" => "B-topic"
-        })
+        turn(url,
+          task_id: b1["id"],
+          context_id: ctx_b,
+          data: %{
+            "say" => "B-say",
+            "topic" => "B-topic"
+          }
+        )
 
       assert b2["status"]["state"] == "TASK_STATE_COMPLETED"
 

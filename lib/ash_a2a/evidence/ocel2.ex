@@ -69,7 +69,8 @@ defmodule AshA2A.Evidence.Ocel2 do
       "attributes" =>
         attributes
         |> Map.new(fn {name, value} ->
-          {to_string(name), %{"name" => to_string(name), "time" => iso8601(time), "value" => value}}
+          {to_string(name),
+           %{"name" => to_string(name), "time" => iso8601(time), "value" => value}}
         end)
         |> Map.values()
     }
@@ -80,8 +81,15 @@ defmodule AshA2A.Evidence.Ocel2 do
   `AshA2A.Telemetry.OcelForwarder` emits).
   """
   @spec event(String.t(), String.t(), DateTime.t(), map(), [map()]) :: map()
-  def event(event_id, event_type, event_time \\ DateTime.utc_now(), attributes \\ %{}, relationships \\ [])
-      when is_binary(event_id) and is_binary(event_type) and is_map(attributes) and is_list(relationships) do
+  def event(
+        event_id,
+        event_type,
+        event_time \\ DateTime.utc_now(),
+        attributes \\ %{},
+        relationships \\ []
+      )
+      when is_binary(event_id) and is_binary(event_type) and is_map(attributes) and
+             is_list(relationships) do
     %{
       "event_id" => event_id,
       "event_type" => event_type,
@@ -120,19 +128,20 @@ defmodule AshA2A.Evidence.Ocel2 do
       Enum.map_reduce(events, [], fn event, acc ->
         refs = receipt_object_refs(Map.get(event, "objects", []))
 
-        line = event(
-          Map.get(event, "id"),
-          Map.get(event, "event_type"),
-          time,
-          %{
-            "seq" => Map.get(event, "seq"),
-            "payload_commitment" => Map.get(event, "payload_commitment"),
-            "format_version" => receipt["format_version"]
-          },
-          Enum.map(refs, fn {oid, otype, qualifier} ->
-            %{"qualifier" => qualifier || "related", "object_id" => oid, "object_type" => otype}
-          end)
-        )
+        line =
+          event(
+            Map.get(event, "id"),
+            Map.get(event, "event_type"),
+            time,
+            %{
+              "seq" => Map.get(event, "seq"),
+              "payload_commitment" => Map.get(event, "payload_commitment"),
+              "format_version" => receipt["format_version"]
+            },
+            Enum.map(refs, fn {oid, otype, qualifier} ->
+              %{"qualifier" => qualifier || "related", "object_id" => oid, "object_type" => otype}
+            end)
+          )
 
         {line, refs ++ acc}
       end)
@@ -148,7 +157,9 @@ defmodule AshA2A.Evidence.Ocel2 do
   end
 
   def from_receipt(_other, _opts),
-    do: {:error, %{code: :bad_field, detail: "not a core/v1 receipt: missing format_version/events"}}
+    do:
+      {:error,
+       %{code: :bad_field, detail: "not a core/v1 receipt: missing format_version/events"}}
 
   # Receipt object refs arrive from the real engine as `%{"id" => ..., "obj_type" => ...}`
   # maps (the serialized `ObjectRef`); qualifiers are nullable.
@@ -189,8 +200,12 @@ defmodule AshA2A.Evidence.Ocel2 do
     |> Enum.sort_by(&line_sort_key/1)
     |> Enum.reduce_while({:ok, []}, fn line, {:ok, acc} ->
       case Jason.encode(line) do
-        {:ok, encoded} -> {:cont, {:ok, [encoded, "\n" | acc]}}
-        {:error, reason} -> {:halt, {:error, %{code: :bad_field, detail: "line does not JSON-encode: " <> inspect(reason)}}}
+        {:ok, encoded} ->
+          {:cont, {:ok, [encoded, "\n" | acc]}}
+
+        {:error, reason} ->
+          {:halt,
+           {:error, %{code: :bad_field, detail: "line does not JSON-encode: " <> inspect(reason)}}}
       end
     end)
     |> case do
@@ -205,7 +220,8 @@ defmodule AshA2A.Evidence.Ocel2 do
     end
   end
 
-  def encode_ndjson(_other), do: {:error, %{code: :bad_field, detail: "ndjson payload must be a list of lines"}}
+  def encode_ndjson(_other),
+    do: {:error, %{code: :bad_field, detail: "ndjson payload must be a list of lines"}}
 
   # Line sort key: events before objects, then by id.
   defp line_sort_key(%{"event_id" => id}) when is_binary(id), do: {0, id}
@@ -224,9 +240,16 @@ defmodule AshA2A.Evidence.Ocel2 do
     |> String.split("\n", trim: true)
     |> Enum.reduce_while({:ok, []}, fn line, {:ok, acc} ->
       case Jason.decode(line) do
-        {:ok, %{} = line_map} -> {:cont, {:ok, [line_map | acc]}}
-        {:ok, _other} -> {:halt, {:error, %{code: :bad_field, detail: "ndjson line is not a JSON object: " <> line}}}
-        {:error, reason} -> {:halt, {:error, %{code: :bad_json, detail: "ndjson line does not parse: " <> inspect(reason)}}}
+        {:ok, %{} = line_map} ->
+          {:cont, {:ok, [line_map | acc]}}
+
+        {:ok, _other} ->
+          {:halt,
+           {:error, %{code: :bad_field, detail: "ndjson line is not a JSON object: " <> line}}}
+
+        {:error, reason} ->
+          {:halt,
+           {:error, %{code: :bad_json, detail: "ndjson line does not parse: " <> inspect(reason)}}}
       end
     end)
     |> case do
@@ -235,7 +258,8 @@ defmodule AshA2A.Evidence.Ocel2 do
     end
   end
 
-  def decode_ndjson(_other), do: {:error, %{code: :bad_field, detail: "ndjson payload must be a binary"}}
+  def decode_ndjson(_other),
+    do: {:error, %{code: :bad_field, detail: "ndjson payload must be a binary"}}
 
   @doc """
   Validates a decoded OCEL v2 stream: every line is a well-formed event or
@@ -272,7 +296,9 @@ defmodule AshA2A.Evidence.Ocel2 do
          {:error,
           %{
             code: :missing_field,
-            detail: "line is neither an OCEL event line nor an object line: " <> inspect(other, limit: 5)
+            detail:
+              "line is neither an OCEL event line nor an object line: " <>
+                inspect(other, limit: 5)
           }}}
     end)
   end
@@ -297,8 +323,15 @@ defmodule AshA2A.Evidence.Ocel2 do
 
   defp string_field(line, key) do
     case Map.get(line, key) do
-      value when is_binary(value) and value != "" -> :ok
-      value -> {:error, %{code: :missing_field, detail: "#{key} must be a non-empty string, got #{inspect(value)}"}}
+      value when is_binary(value) and value != "" ->
+        :ok
+
+      value ->
+        {:error,
+         %{
+           code: :missing_field,
+           detail: "#{key} must be a non-empty string, got #{inspect(value)}"
+         }}
     end
   end
 
@@ -309,11 +342,19 @@ defmodule AshA2A.Evidence.Ocel2 do
           :ok
         else
           {:error,
-           %{code: :unknown_object_type, detail: "object_type #{inspect(value)} is outside the OCEL vocabulary #{inspect(vocabulary)}"}}
+           %{
+             code: :unknown_object_type,
+             detail:
+               "object_type #{inspect(value)} is outside the OCEL vocabulary #{inspect(vocabulary)}"
+           }}
         end
 
       value ->
-        {:error, %{code: :missing_field, detail: "object_type must be a non-empty string, got #{inspect(value)}"}}
+        {:error,
+         %{
+           code: :missing_field,
+           detail: "object_type must be a non-empty string, got #{inspect(value)}"
+         }}
     end
   end
 
@@ -321,12 +362,16 @@ defmodule AshA2A.Evidence.Ocel2 do
     case Map.get(line, key) do
       value when is_binary(value) ->
         case DateTime.from_iso8601(value) do
-          {:ok, _dt, _offset} -> :ok
-          {:error, reason} -> {:error, %{code: :bad_field, detail: "#{key} is not ISO 8601: #{inspect(reason)}"}}
+          {:ok, _dt, _offset} ->
+            :ok
+
+          {:error, reason} ->
+            {:error, %{code: :bad_field, detail: "#{key} is not ISO 8601: #{inspect(reason)}"}}
         end
 
       value ->
-        {:error, %{code: :bad_field, detail: "#{key} must be an ISO 8601 string, got #{inspect(value)}"}}
+        {:error,
+         %{code: :bad_field, detail: "#{key} must be an ISO 8601 string, got #{inspect(value)}"}}
     end
   end
 
@@ -340,7 +385,11 @@ defmodule AshA2A.Evidence.Ocel2 do
         end
 
       value ->
-        {:error, %{code: :bad_field, detail: "attributes must be a string-keyed map, got #{inspect(value)}"}}
+        {:error,
+         %{
+           code: :bad_field,
+           detail: "attributes must be a string-keyed map, got #{inspect(value)}"
+         }}
     end
   end
 
@@ -366,7 +415,8 @@ defmodule AshA2A.Evidence.Ocel2 do
         end)
 
       value ->
-        {:error, %{code: :bad_field, detail: "relationships must be a list, got #{inspect(value)}"}}
+        {:error,
+         %{code: :bad_field, detail: "relationships must be a list, got #{inspect(value)}"}}
     end
   end
 
@@ -400,11 +450,16 @@ defmodule AshA2A.Evidence.Ocel2 do
              end) do
           :ok
         else
-          {:error, %{code: :bad_field, detail: "object attributes must be {name, time, value} rows"}}
+          {:error,
+           %{code: :bad_field, detail: "object attributes must be {name, time, value} rows"}}
         end
 
       value ->
-        {:error, %{code: :bad_field, detail: "object attributes must be a list of timed rows, got #{inspect(value)}"}}
+        {:error,
+         %{
+           code: :bad_field,
+           detail: "object attributes must be a list of timed rows, got #{inspect(value)}"
+         }}
     end
   end
 

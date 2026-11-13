@@ -107,7 +107,10 @@ defmodule AshA2A.Enterprise.AffidavitPoolCourtTest do
 
     # The start SUCCEEDS with engine bytes that cannot load: the pool never
     # crash-loops the supervisor, the member heals in the background.
-    start_supervised!({AffidavitPool, name: name, size: 1, wasm_path: "/nonexistent/affidavit-unavailable-in-test.wasm"})
+    start_supervised!(
+      {AffidavitPool,
+       name: name, size: 1, wasm_path: "/nonexistent/affidavit-unavailable-in-test.wasm"}
+    )
 
     assert {:refused, %Refusal{code: :wasm_not_vendored} = refusal} =
              AffidavitPool.call(name, %{"op" => "capabilities"})

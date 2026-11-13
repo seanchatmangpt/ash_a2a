@@ -153,7 +153,9 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
     do: %AshA2A.Protocol.SecurityScheme.OAuth2{flows: Map.get(s, :oauth_flows) || %{}}
 
   defp protocol_scheme(%{kind: :openid_connect} = s),
-    do: %AshA2A.Protocol.SecurityScheme.OpenIDConnect{open_id_connect_url: Map.get(s, :openid_url)}
+    do: %AshA2A.Protocol.SecurityScheme.OpenIDConnect{
+      open_id_connect_url: Map.get(s, :openid_url)
+    }
 
   defp protocol_scheme(%{kind: :mtls}), do: %AshA2A.Protocol.SecurityScheme.MutualTLS{}
 

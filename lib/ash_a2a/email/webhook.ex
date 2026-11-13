@@ -37,8 +37,11 @@ defmodule AshA2A.Email.Webhook do
   def verify(:workspace, input, opts) do
     with {:ok, token} <- configured(opts[:token]) do
       case header(input, "authorization") do
-        "Bearer " <> given -> if secure_equal?(given, token), do: :ok, else: {:error, :unauthorized}
-        _ -> {:error, :unauthorized}
+        "Bearer " <> given ->
+          if secure_equal?(given, token), do: :ok, else: {:error, :unauthorized}
+
+        _ ->
+          {:error, :unauthorized}
       end
     end
   end
@@ -48,8 +51,11 @@ defmodule AshA2A.Email.Webhook do
          :ok <- ses_structure(msg),
          :ok <- ses_topic(msg, opts[:topic_arn]) do
       case opts[:signature_verifier] do
-        fun when is_function(fun, 1) -> if fun.(msg) == true, do: :ok, else: {:error, :bad_signature}
-        _ -> if opts[:structure_only] == true, do: :ok, else: {:error, :signature_unverified}
+        fun when is_function(fun, 1) ->
+          if fun.(msg) == true, do: :ok, else: {:error, :bad_signature}
+
+        _ ->
+          if opts[:structure_only] == true, do: :ok, else: {:error, :signature_unverified}
       end
     end
   end
@@ -132,5 +138,7 @@ defmodule AshA2A.Email.Webhook do
   end
 
   defp ses_topic(_msg, nil), do: :ok
-  defp ses_topic(msg, arn), do: if(secure_equal?(msg["TopicArn"], arn), do: :ok, else: {:error, :topic_mismatch})
+
+  defp ses_topic(msg, arn),
+    do: if(secure_equal?(msg["TopicArn"], arn), do: :ok, else: {:error, :topic_mismatch})
 end

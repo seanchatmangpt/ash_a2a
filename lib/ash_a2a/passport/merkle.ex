@@ -44,7 +44,8 @@ defmodule AshA2A.Passport.Merkle do
   and whether the sibling sits on the `:left` or `:right`.
   """
   @spec proof([leaf_hash()], non_neg_integer()) ::
-          {:ok, [%{required(:side) => :left | :right, required(:hash) => leaf_hash()}]} | {:error, term()}
+          {:ok, [%{required(:side) => :left | :right, required(:hash) => leaf_hash()}]}
+          | {:error, term()}
   def proof(leaves, index) when is_list(leaves) and is_integer(index) do
     cond do
       leaves == [] -> {:error, :empty}

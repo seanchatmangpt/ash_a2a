@@ -76,6 +76,7 @@ defmodule AshA2A.A2ATransport.PushDelivery do
     Map.new(payload, fn
       {"task", %{} = task} ->
         task = Map.drop(task, @v11_event_keys)
+
         task =
           case Map.fetch(task, "artifacts") do
             {:ok, arts} -> Map.put(task, "artifacts", strip_artifacts(arts))
@@ -299,10 +300,18 @@ defmodule AshA2A.A2ATransport.PushDelivery do
     down = String.downcase(scheme)
 
     cond do
-      down in ["bearer", "oauth2", "oauth", "oidc", "openidconnect"] -> {:ok, :bearer}
-      down == "basic" -> {:ok, :basic}
-      down in ["apikey", "api-key", "api_key"] -> {:ok, :api_key}
-      down in ["mtls", "mutualtls", "mutual-tls", "mutual_tls"] -> {:error, :mtls}
+      down in ["bearer", "oauth2", "oauth", "oidc", "openidconnect"] ->
+        {:ok, :bearer}
+
+      down == "basic" ->
+        {:ok, :basic}
+
+      down in ["apikey", "api-key", "api_key"] ->
+        {:ok, :api_key}
+
+      down in ["mtls", "mutualtls", "mutual-tls", "mutual_tls"] ->
+        {:error, :mtls}
+
       true ->
         case Enum.find(@iana_schemes, &(String.downcase(&1) == down)) do
           nil -> {:error, :unsupported}

@@ -58,8 +58,6 @@ defmodule AshA2A.A2ATransport.At5HardeningTest do
     }
   end
 
-
-
   defp rpc(ctx, user, agent, method, params) do
     body =
       Jason.encode!(%{"jsonrpc" => "2.0", "id" => 7, "method" => method, "params" => params})
@@ -124,7 +122,12 @@ defmodule AshA2A.A2ATransport.At5HardeningTest do
     body = rpc(ctx, "alice", ctx.crash_agent, "message/send", %{"message" => message()})
     raw = Jason.encode!(body)
 
-    assert %{"error" => %{"code" => -32_603, "data" => %{"ref" => ref, "code" => "internal_error"}}} =
+    assert %{
+             "error" => %{
+               "code" => -32_603,
+               "data" => %{"ref" => ref, "code" => "internal_error"}
+             }
+           } =
              body
 
     assert is_binary(ref) and ref != ""

@@ -35,6 +35,7 @@ defmodule AshA2A.Authority.PEPTest do
 
     test "honors the custom source decision" do
       assert :ok = PEP.assert_standing("admin", "a2a:kill", %{}, source: ScopeAllow)
+
       assert {:refused, :insufficient_authority, _} =
                PEP.assert_standing("pleb", "a2a:kill", %{}, source: ScopeAllow)
     end
@@ -48,6 +49,7 @@ defmodule AshA2A.Authority.PEPTest do
       end
 
       assert :ok = PEP.assert_standing("x", "s", %{}, source: {OptsEcho, mode: :open})
+
       assert {:refused, :insufficient_authority, _} =
                PEP.assert_standing("x", "s", %{}, source: {OptsEcho, mode: :closed})
     end
@@ -96,8 +98,7 @@ defmodule AshA2A.Authority.PEPTest do
     end
 
     test "map missing :action -> typed refusal" do
-      assert {:refused, :insufficient_authority,
-              %{reason: {:invalid_scope_missing_action, _}}} =
+      assert {:refused, :insufficient_authority, %{reason: {:invalid_scope_missing_action, _}}} =
                PEP.assert_standing("a", %{resource: "r"}, %{},
                  source: AshA2A.Authority.Source.AllowAll
                )

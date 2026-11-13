@@ -86,7 +86,9 @@ defmodule AshA2A.Test.Support.CommandWorker do
 
     with {:ok, live_authority} <- authority_result do
       command = %{reconstructed | authority: live_authority}
-      message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(args["input"] || %{})])
+
+      message =
+        AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(args["input"] || %{})])
 
       case CommandBus.run(command, message, AshA2A.Test.Fixture.Item) do
         {:ok, _receipt} -> :ok

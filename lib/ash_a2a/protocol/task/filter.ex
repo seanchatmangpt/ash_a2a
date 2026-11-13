@@ -20,7 +20,8 @@ defmodule AshA2A.Protocol.Task.Filter do
   - `:timeline_length` — truncate timeline (nil = keep all, 0 = none, N = last N)
   - `:include_artifacts` — keep artifacts (default false)
   """
-  @spec apply([AshA2A.Protocol.Task.t()], keyword()) :: {:ok, map()} | {:error, :invalid_page_token}
+  @spec apply([AshA2A.Protocol.Task.t()], keyword()) ::
+          {:ok, map()} | {:error, :invalid_page_token}
   def apply(tasks, opts \\ []) do
     context_id = Keyword.get(opts, :context_id)
     status = Keyword.get(opts, :status)

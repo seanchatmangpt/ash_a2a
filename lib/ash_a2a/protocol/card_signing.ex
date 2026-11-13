@@ -213,7 +213,8 @@ defmodule AshA2A.Protocol.CardSigning do
 
   # A string-keyed wire document (e.g. `Jason.decode!/1` of a served card) is
   # restored through the shipped codec first, exactly as a client does.
-  def verify(%{} = card, key_or_keys, opts) when not is_struct(card) and is_map_key(card, "name") do
+  def verify(%{} = card, key_or_keys, opts)
+      when not is_struct(card) and is_map_key(card, "name") do
     case AshA2A.Protocol.JSON.decode_agent_card(card) do
       {:ok, decoded} -> verify(decoded, key_or_keys, opts)
       {:error, reason} -> {:error, {:malformed, reason}}
@@ -247,6 +248,7 @@ defmodule AshA2A.Protocol.CardSigning do
   """
   @spec verifier_for_jwk(map()) :: (map() -> :ok | {:error, term()})
   def verifier_for_jwk(%{"kty" => _} = jwk), do: fn card -> verify(card, jwk) end
+
   def verifier_for_jwk(%{"keys" => keys} = jwks) when is_list(keys),
     do: fn card -> verify(card, jwks) end
 
@@ -586,7 +588,8 @@ defmodule AshA2A.Protocol.CardSigning do
     do: raise(ArgumentError, "unsupported RSA key material: #{inspect(other)}")
 
   defp rsa_public_from_jwk(%{"n" => n, "e" => e}) do
-    {:RSAPublicKey, :binary.decode_unsigned(b64url_decode!(n)), :binary.decode_unsigned(b64url_decode!(e))}
+    {:RSAPublicKey, :binary.decode_unsigned(b64url_decode!(n)),
+     :binary.decode_unsigned(b64url_decode!(e))}
   end
 
   defp ec_public({:ECPoint, _point} = rec), do: rec
@@ -701,7 +704,14 @@ defmodule AshA2A.Protocol.CardSigning do
 
   defp ec_jwk_from_point_rec({{:ECPoint, point}, _params}) do
     <<0x04, x::binary-32, y::binary-32>> = point
-    %{"kty" => "EC", "crv" => "P-256", "x" => b64url_encode(x), "y" => b64url_encode(y), "alg" => "ES256"}
+
+    %{
+      "kty" => "EC",
+      "crv" => "P-256",
+      "x" => b64url_encode(x),
+      "y" => b64url_encode(y),
+      "alg" => "ES256"
+    }
   end
 
   defp b64url_uint(int), do: int |> :binary.encode_unsigned() |> b64url_encode()

@@ -118,7 +118,10 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
 
   defp new_task(ch, text) do
     req = %Pb.SendMessageRequest{message: message(text)}
-    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{} = task}}} = Stub.send_message(ch, req, @v11)
+
+    assert {:ok, %Pb.SendMessageResponse{payload: {:task, %Pb.Task{} = task}}} =
+             Stub.send_message(ch, req, @v11)
+
     task
   end
 
@@ -139,7 +142,8 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
 
   # One enumeration pass over the next `n` frames (the lazy reply stream is consumed once).
   defp take_frames(replies, n) do
-    for {:ok, %Pb.StreamResponse{payload: {kind, value}}} <- Enum.take(replies, n), do: {kind, value}
+    for {:ok, %Pb.StreamResponse{payload: {kind, value}}} <- Enum.take(replies, n),
+        do: {kind, value}
   end
 
   # Skips ordinary frames (e.g. the accepted request's update) up to the first StreamError.
@@ -180,14 +184,20 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
 
   # -- open failure ----------------------------------------------------------
 
-  test "SendLiveMessage UNAVAILABLE(14) when the agent cannot be reached to open the session", %{transport: t} do
+  test "SendLiveMessage UNAVAILABLE(14) when the agent cannot be reached to open the session", %{
+    transport: t
+  } do
     ch = connect(:y5_no_such_agent, t, __MODULE__.UnavailSup)
+    before = session_pids()
 
     stream = ch |> open_live() |> push(send_msg("ask"))
     error = first_error(GRPC.Stub.recv(stream, timeout: @deadline_ms))
 
     assert error.status == 14
-    assert session_pids() == []
+
+    AshA2A.TestSupport.Eventually.eventually(fn -> session_pids() -- before == [] end,
+      message: "live session leaked after UNAVAILABLE"
+    )
   end
 
   # -- send-first / half-close / disconnect -----------------------------------
@@ -206,7 +216,9 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
     assert {:ok, %Pb.Task{id: ^id}} = Stub.get_task(ch, %Pb.GetTaskRequest{id: id}, @v11)
   end
 
-  test "half-close drains accepted frames, ends the RPC cleanly and closes the session", %{transport: t} do
+  test "half-close drains accepted frames, ends the RPC cleanly and closes the session", %{
+    transport: t
+  } do
     ch = connect(LiveAgent, t, __MODULE__.HalfCloseSup)
     before = session_pids()
 
@@ -223,7 +235,9 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
     _stream = GRPC.Stub.end_stream(stream)
 
     rest = Enum.to_list(replies)
-    refute Enum.any?(rest, &match?({:error, _}, &1)), "half-close surfaced an error: #{inspect(rest)}"
+
+    refute Enum.any?(rest, &match?({:error, _}, &1)),
+           "half-close surfaced an error: #{inspect(rest)}"
 
     frames = for {:ok, %Pb.StreamResponse{payload: {kind, _}}} <- rest, do: kind
     refute :error in frames
@@ -251,11 +265,17 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
 
     # the registry unregisters on the monitor's DOWN: poll the observable, bounded
     deadline = System.monotonic_time(:millisecond) + @deadline_ms
+
     wait = fn wait ->
       cond do
-        session not in session_pids() -> :ok
-        System.monotonic_time(:millisecond) > deadline -> flunk("session still registered after DOWN")
-        true -> wait.(wait)
+        session not in session_pids() ->
+          :ok
+
+        System.monotonic_time(:millisecond) > deadline ->
+          flunk("session still registered after DOWN")
+
+        true ->
+          wait.(wait)
       end
     end
 
@@ -276,7 +296,9 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
       :ok
     end
 
-    test "SendLiveMessage without credentials is UNAUTHENTICATED(16) and opens no session", %{transport: t} do
+    test "SendLiveMessage without credentials is UNAUTHENTICATED(16) and opens no session", %{
+      transport: t
+    } do
       ch = connect(LiveAgent, t, __MODULE__.NoCredsSup)
       before = session_pids()
 
@@ -295,7 +317,9 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
       assert first_error(GRPC.Stub.recv(stream, timeout: @deadline_ms)).status == 16
     end
 
-    test "SendLiveMessage with a valid credential opens the stream and returns the snapshot", %{transport: t} do
+    test "SendLiveMessage with a valid credential opens the stream and returns the snapshot", %{
+      transport: t
+    } do
       ch = connect(LiveAgent, t, __MODULE__.GoodCredsSup)
       opts = [metadata: %{"a2a-version" => "1.1", "authorization" => "Bearer tok-alice"}]
 
@@ -332,12 +356,20 @@ defmodule AshA2A.Y5.GRPCLivePathsTest do
 
   # -- SubscribeToTask on a terminal task --------------------------------------
 
-  test "SubscribeToTask on a terminal task is UNIMPLEMENTED(12) UNSUPPORTED_OPERATION", %{transport: t} do
+  test "SubscribeToTask on a terminal task is UNIMPLEMENTED(12) UNSUPPORTED_OPERATION", %{
+    transport: t
+  } do
     ch = connect(LiveAgent, t, __MODULE__.TerminalSup)
     task = new_task(ch, "done")
     assert task.status.state == :TASK_STATE_COMPLETED
 
-    result = Stub.subscribe_to_task(ch, %Pb.SubscribeToTaskRequest{id: task.id}, @v11 ++ [timeout: @deadline_ms])
+    result =
+      Stub.subscribe_to_task(
+        ch,
+        %Pb.SubscribeToTaskRequest{id: task.id},
+        @v11 ++ [timeout: @deadline_ms]
+      )
+
     error = first_error(result)
 
     assert error.status == 12

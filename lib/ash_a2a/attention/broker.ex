@@ -15,7 +15,7 @@ defmodule AshA2A.Attention.Broker do
 
   Decision cards are pre-validated option sets. GPM-floor cards (gross
   margin below the declared floor — the monkey-math family from
-  `AshA2A.Twin.Vince`) ALWAYS carry `requires_signature: true`; this is
+  `AshA2A.Twin.CEO`) ALWAYS carry `requires_signature: true`; this is
   asserted as an invariant, not a convention.
   """
 
@@ -35,7 +35,7 @@ defmodule AshA2A.Attention.Broker do
   @typedoc "Decision card: pre-validated options presented for oversight."
   @type decision_card :: %{
           required(:options) => [option()],
-          optional(:source) => :vince_challenge | :tony_triage | :gpm_floor | term(),
+          optional(:source) => :ceo_challenge | :coo_triage | :gpm_floor | term(),
           optional(:gpm_floor_breach) => boolean()
         }
 
@@ -221,11 +221,11 @@ defmodule AshA2A.Attention.Broker do
 
   @doc """
   Pure card constructor integrating the landed stack:
-  `build_card/3` with `{vince_challenge_or_nil, tony_triage_or_nil,
+  `build_card/3` with `{ceo_challenge_or_nil, coo_triage_or_nil,
   opts}`. Builds options from the challenge state (demanded evidence /
   retry token) and triage output (routine vs escalation edges).
 
-  GPM-floor law: a card sourced from a GPM-floor breach, or a Tony
+  GPM-floor law: a card sourced from a GPM-floor breach, or a COO
   triage escalation edge, ALWAYS sets `requires_signature: true` on
   every option — asserted by `enforce_gpm_floor_invariant/1` and by the
   court.
@@ -243,7 +243,7 @@ defmodule AshA2A.Attention.Broker do
           {:reject, "refuse the claim and re-scope the trade"},
           {:escalate, "route to a human supervisor"}
         ],
-        "attention required: vince challenge and/or tony triage escalation edge",
+        "attention required: ceo challenge and/or coo triage escalation edge",
         requires_signature: gpm_breach?
       )
 
@@ -293,6 +293,6 @@ defmodule AshA2A.Attention.Broker do
     end)
   end
 
-  defp source(nil, triage), do: if(triage, do: :tony_triage, else: :manual)
-  defp source(challenge, _triage), do: if(challenge, do: :vince_challenge, else: :manual)
+  defp source(nil, triage), do: if(triage, do: :coo_triage, else: :manual)
+  defp source(challenge, _triage), do: if(challenge, do: :ceo_challenge, else: :manual)
 end

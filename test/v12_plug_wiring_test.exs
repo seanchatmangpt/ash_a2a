@@ -62,7 +62,9 @@ defmodule AshA2A.V12.PlugWiringTest do
   end
 
   defp new_task(agent) do
-    %{"result" => %{"task" => task}} = rpc(agent, "SendMessage", %{"message" => wire_message("ask")})
+    %{"result" => %{"task" => task}} =
+      rpc(agent, "SendMessage", %{"message" => wire_message("ask")})
+
     task
   end
 
@@ -86,7 +88,10 @@ defmodule AshA2A.V12.PlugWiringTest do
     resp =
       rpc(ClosedAgent, "SendMessage", %{
         "artifactUpdates" => [
-          %{"taskId" => task["id"], "artifact" => %{"artifactId" => "a1", "parts" => [%{"text" => "x"}]}}
+          %{
+            "taskId" => task["id"],
+            "artifact" => %{"artifactId" => "a1", "parts" => [%{"text" => "x"}]}
+          }
         ]
       })
 
@@ -127,12 +132,17 @@ defmodule AshA2A.V12.PlugWiringTest do
   describe "Transport.Plug reason table" do
     test "wire_error and reason_error agree on typed send refusals" do
       assert %Error{code: -32_010} = TransportPlug.wire_error(:generation_mismatch)
-      assert %Error{code: -32_004} = TransportPlug.wire_error({:unsupported_operation, :user_artifacts})
+
+      assert %Error{code: -32_004} =
+               TransportPlug.wire_error({:unsupported_operation, :user_artifacts})
+
       assert %Error{code: -32_602} = TransportPlug.wire_error(:context_mismatch)
       assert %Error{code: -32_004} = TransportPlug.wire_error(:not_continuable)
 
       assert %Error{code: -32_005} =
-               TransportPlug.wire_error({:content_type_not_supported, %{acceptedOutputModes: ["x/y"]}})
+               TransportPlug.wire_error(
+                 {:content_type_not_supported, %{acceptedOutputModes: ["x/y"]}}
+               )
 
       assert TransportPlug.reason_error(:something_else) == nil
     end

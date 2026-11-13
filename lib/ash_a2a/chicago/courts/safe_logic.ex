@@ -985,7 +985,8 @@ defmodule AshA2A.Chicago.Courts.SafeLogic do
 
   defp intent_labels, do: Intent |> Ash.read!() |> Enum.map(& &1.label)
 
-  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  defp message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   defp intent_command(label, authorized?) do
     {:ok, skill} = AshA2A.Info.skill(Intent, :create_intent)

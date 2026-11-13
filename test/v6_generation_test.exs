@@ -84,7 +84,9 @@ defmodule AshA2A.V6.GenerationTest do
   end
 
   defp new_task(agent) do
-    %{"result" => %{"task" => task}} = rpc(agent, "SendMessage", %{"message" => wire_message("ask")})
+    %{"result" => %{"task" => task}} =
+      rpc(agent, "SendMessage", %{"message" => wire_message("ask")})
+
     task
   end
 
@@ -96,7 +98,10 @@ defmodule AshA2A.V6.GenerationTest do
     err = Error.task_generation_mismatch(nil, task_id: "t", expected: 1, actual: 3)
     assert err.code == -32_010
     map = Error.to_map(err)
-    assert [%{"reason" => "TASK_GENERATION_MISMATCH", "domain" => "a2a-protocol.org"} = info] = map["data"]
+
+    assert [%{"reason" => "TASK_GENERATION_MISMATCH", "domain" => "a2a-protocol.org"} = info] =
+             map["data"]
+
     assert info["metadata"]["expectedGeneration"] == "1"
     assert Error.spec_http_status(-32_010) == 409
     assert Error.grpc_status(-32_010) == 10
@@ -142,7 +147,10 @@ defmodule AshA2A.V6.GenerationTest do
     resp =
       rpc(ClosedAgent, "SendMessage", %{
         "artifactUpdates" => [
-          %{"taskId" => task["id"], "artifact" => %{"artifactId" => "a1", "parts" => [%{"text" => "x"}]}}
+          %{
+            "taskId" => task["id"],
+            "artifact" => %{"artifactId" => "a1", "parts" => [%{"text" => "x"}]}
+          }
         ]
       })
 
@@ -256,8 +264,12 @@ defmodule AshA2A.V6.GenerationTest do
   end
 
   test "pure helpers return tagged errors" do
-    t = Generation.append_message(AshA2A.Protocol.Task.new(), AshA2A.Protocol.Message.new_user("x"))
-    assert {:error, :generation_mismatch} = AshA2A.Protocol.ClientArtifacts.check_generation(t, 99)
+    t =
+      Generation.append_message(AshA2A.Protocol.Task.new(), AshA2A.Protocol.Message.new_user("x"))
+
+    assert {:error, :generation_mismatch} =
+             AshA2A.Protocol.ClientArtifacts.check_generation(t, 99)
+
     assert :ok = AshA2A.Protocol.ClientArtifacts.check_generation(nil, 99)
 
     assert {:error, {:unsupported_operation, :user_artifacts}} =

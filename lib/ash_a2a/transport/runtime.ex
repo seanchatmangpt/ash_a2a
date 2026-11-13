@@ -170,7 +170,7 @@ defmodule AshA2A.Transport.Runtime do
         ) ::
           {:reply, term(), State.t()} | {:noreply, State.t()}
   def handle_message_call(module, agent_opts, message, opts, from, state) do
-    # Q6 wire boundary (lane V8-Q6-f): `A2A.Plug` (hex `a2a` 0.3.0) delivers
+    # Wire boundary: `A2A.Plug` (hex `a2a` 0.3.0) delivers
     # decoded wire `%A2A.Message{}` structs. Convert wire -> protocol before
     # `prepare_task/4` history folding and `__dispatch__/4`, and remember the
     # direction so the reply is converted back (wire in -> wire out,
@@ -271,7 +271,7 @@ defmodule AshA2A.Transport.Runtime do
   # v1.1 message_update: the appended client message is published to the
   # per-task event log (`AshA2A.A2ATransport.TaskEvents`) as a stamped
   # `Event.MessageUpdate` (wire kind `"message-update"`). Delivery gating to
-  # >= 1.1 consumers is the event log/SSE layer's job (lane V4). No-op when
+  # >= 1.1 consumers is the event log/SSE layer's job. No-op when
   # the agent is not wired to an events transport
   # (`execution: [events_transport: name]` or `config :ash_a2a,
   # :events_transport`), which is the in-process default.
@@ -1044,7 +1044,7 @@ defmodule AshA2A.Transport.Runtime do
     {:noreply, state}
   end
 
-  # Q6 wire boundary (lane V8-Q6-f): wire-originated requests get wire
+  # Wire boundary: wire-originated requests get wire
   # structs back so `A2A.JSONRPC.encode_send_result/2` has a matching
   # clause; protocol-originated requests keep protocol structs.
   defp wire_reply(result, false), do: result
@@ -1192,7 +1192,9 @@ defmodule AshA2A.Transport.Runtime do
           token = make_ref()
 
           timeout =
-            AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms(Keyword.get(opts, :long_poll_timeout_ms))
+            AshA2A.Protocol.ClientArtifacts.long_poll_timeout_ms(
+              Keyword.get(opts, :long_poll_timeout_ms)
+            )
 
           waiter = %{
             from: from,
@@ -1310,7 +1312,7 @@ defmodule AshA2A.Transport.Runtime do
       if principal == :anonymous do
         %{}
       else
-        # Store read-through (lane F16): the store's tasks join the page
+        # Store read-through: the store's tasks join the page
         # through the SAME `owned_by?/2` gate as the in-memory tasks — the
         # persisted `"ash_a2a.owner"` metadata IS the owner key (it survives
         # at rest; the EKV store redacts only `"a2a.auth"` and `:stream`), so

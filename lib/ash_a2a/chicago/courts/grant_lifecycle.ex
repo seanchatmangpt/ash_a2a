@@ -555,7 +555,9 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
               authority: minted,
               input: %{"nonce" => nonce}
             ),
-            AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})]),
+            AshA2A.Protocol.Message.new_user([
+              AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})
+            ]),
             Probe
           )
 
@@ -610,7 +612,9 @@ defmodule AshA2A.Chicago.Courts.GrantLifecycle do
               authority: authority,
               input: %{"nonce" => nonce}
             ),
-            AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})]),
+            AshA2A.Protocol.Message.new_user([
+              AshA2A.Protocol.Part.Data.new(%{"nonce" => nonce})
+            ]),
             Probe
           )
 

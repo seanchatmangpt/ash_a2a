@@ -132,6 +132,30 @@ one it routes implicitly; with two or more it fails `{:ambiguous_skill, _}` unle
 names or free text to ever reach `AshA2A.Semantic.Compiler` — both gates must be true,
 by design.
 
+## A2A v1.1 surface
+
+**Do** declare card capabilities on the domain `transport` section: `user_artifacts true`
+sets `capabilities.userArtifacts`; `extended_agent_card true` only when an authenticated
+extended card is really served. **Don't** send `artifactUpdates` to an agent that has not
+declared `user_artifacts` — HTTP answers 400, live streams answer `UNSUPPORTED_OPERATION`.
+
+**Do** declare agent extensions with `extension "https://example.com/ext/v1", required: true`
+inside `transport`. Requests naming an unsupported required extension in the
+`A2A-Extensions` header are refused (`-32008`); activated URIs are echoed back in the
+`A2A-Extensions` response header.
+
+**Do** set `tenant` on a `mount` to advertise a tenant id on that mount's
+`supportedInterfaces` entry (REST routes also accept a `/{tenant}` prefix).
+
+**Do** use `POST /message:live` (SSE) or `AshA2A.Transport.Live` for live exchanges; it needs
+`capabilities.streaming`. Start `AshA2A.Transport.Live.Supervisor` in your application tree
+so uplink calls can route by session or task id.
+
+**Do** use generations for optimistic concurrency: status and artifact events carry a
+`generation`; `configuration.ifGenerationMatch` on `SendMessage` is refused when stale
+(HTTP 409, `-32010` `TASK_GENERATION_MISMATCH`; `ABORTED` on live streams); `subscribe`
+with `lastSeenGeneration` skips the snapshot and replays only newer events.
+
 ## Compile-time enforcement
 
 **Do** let the verifiers refuse bad declarations at compile time. `AshA2A.Verifiers.VerifySkills`

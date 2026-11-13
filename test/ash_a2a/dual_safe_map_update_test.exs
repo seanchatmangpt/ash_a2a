@@ -120,12 +120,20 @@ defmodule AshA2A.DualSafeMapUpdateTest do
         |> grep_map_update()
         |> Enum.reject(fn {file, _line, text} ->
           # Safe sites per w525d census: fun is idempotent over the default.
-          safe_markers = ["MapSet.new([from])", "MapSet.put", "&max(", "Map.put(&1, resolver", "{0, {:completed"]
+          safe_markers = [
+            "MapSet.new([from])",
+            "MapSet.put",
+            "&max(",
+            "Map.put(&1, resolver",
+            "{0, {:completed"
+          ]
+
           file_suffix = Path.relative_to(file, lib)
           file_suffix in @w525d_safe_files or Enum.any?(safe_markers, &String.contains?(text, &1))
         end)
 
-      assert remaining == [], "reliant Map.update sites reintroduced: #{inspect(remaining, pretty: true)}"
+      assert remaining == [],
+             "reliant Map.update sites reintroduced: #{inspect(remaining, pretty: true)}"
     end
   end
 

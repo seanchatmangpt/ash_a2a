@@ -131,8 +131,13 @@ defmodule AshA2A.Protocol.StreamOrderingTest do
     end
   end
 
-  @terminal_states ["TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
-                    "TASK_STATE_REJECTED", "TASK_STATE_AUTH_REQUIRED"]
+  @terminal_states [
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_AUTH_REQUIRED"
+  ]
 
   defp final(results) do
     Enum.find(results, fn {_seq, result} ->

@@ -138,7 +138,9 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
     assert %{
              "error" => %{
                "code" => -32_003,
-               "data" => [%{"domain" => "a2a-protocol.org", "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"}]
+               "data" => [
+                 %{"domain" => "a2a-protocol.org", "reason" => "PUSH_NOTIFICATION_NOT_SUPPORTED"}
+               ]
              }
            } = rpc(off, "message/send", params)
   end

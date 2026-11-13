@@ -370,7 +370,9 @@ defmodule AshA2A.Chicago.Courts.SemanticEnvelope do
       {:ok, receipt} =
         CommandBus.run(
           command,
-          Envelopes.ordinary([AshA2A.Protocol.Part.Data.new(%{"item" => label, "quantity" => 1})]),
+          Envelopes.ordinary([
+            AshA2A.Protocol.Part.Data.new(%{"item" => label, "quantity" => 1})
+          ]),
           Ordering,
           store_opts: [name: store],
           authority_broker: broker_opts

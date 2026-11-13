@@ -57,16 +57,19 @@ defmodule AshA2A.Marketplace.GCPProcurementCourtTest do
 
     # 1. Invalid issuer (rogue token)
     rogue_claims = %{"iss" => "https://attacker.com", "sub" => "acct-1", "exp" => now + 3600}
+
     assert {:error, %{code: :invalid_issuer}} =
              JwtValidator.validate_token(make_test_jwt(rogue_claims), now: now)
 
     # 2. Expired token
     expired_claims = %{"iss" => @google_iss, "sub" => "acct-1", "exp" => now - 10}
+
     assert {:error, %{code: :token_expired}} =
              JwtValidator.validate_token(make_test_jwt(expired_claims), now: now)
 
     # 3. Missing subject
     no_sub_claims = %{"iss" => @google_iss, "sub" => "", "exp" => now + 3600}
+
     assert {:error, %{code: :missing_subject}} =
              JwtValidator.validate_token(make_test_jwt(no_sub_claims), now: now)
 

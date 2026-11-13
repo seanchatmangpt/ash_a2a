@@ -56,8 +56,7 @@ defmodule AshA2A.V1TaskStoreDurabilityTest do
 
     @impl AshA2A.Protocol.Agent
     def handle_message(_message, _context) do
-      {:stream,
-       Stream.map(1..3, fn i -> AshA2A.Protocol.Part.Text.new("chunk #{i}") end)}
+      {:stream, Stream.map(1..3, fn i -> AshA2A.Protocol.Part.Text.new("chunk #{i}") end)}
     end
   end
 
@@ -185,7 +184,8 @@ defmodule AshA2A.V1TaskStoreDurabilityTest do
       table = ets_setup("fidelity")
       start_agent!(ReplyAgent, {TaskStore.ETS, table})
 
-      {:ok, %Task{} = returned} = ReplyAgent.call(ReplyAgent, AshA2A.Protocol.Message.new_user("hi"))
+      {:ok, %Task{} = returned} =
+        ReplyAgent.call(ReplyAgent, AshA2A.Protocol.Message.new_user("hi"))
 
       assert returned.status.state == :completed
       assert length(returned.history) == 2
@@ -229,7 +229,7 @@ defmodule AshA2A.V1TaskStoreDurabilityTest do
       assert {:ok, ^returned} = State.get_task(fresh_state, task_id)
       assert {:error, :not_found} = State.get_task(fresh_state, "tsk-never-existed")
     end
-    end
+  end
 
   describe "court (b): EKV store fidelity across a REAL store-process restart" do
     test "tasks from real agent runs survive stop/restart of the EKV child at the same data_dir" do
@@ -267,6 +267,7 @@ defmodule AshA2A.V1TaskStoreDurabilityTest do
 
       assert {:ok, stored_streaming} = EkvStore.get(name, streaming.id)
       refute Map.has_key?(stored_streaming.metadata, :stream)
+
       assert Task.strip_stream_metadata(stored_streaming) ==
                Task.strip_stream_metadata(streaming)
 
@@ -430,7 +431,7 @@ defmodule AshA2A.V1TaskStoreDurabilityTest do
                ])
 
       required = callbacks -- optional
-      assert MapSet.new(required) == MapSet.new([get: 2, put: 2, delete: 2, list: 2])
+      assert MapSet.new(required) == MapSet.new(get: 2, put: 2, delete: 2, list: 2)
 
       for mod <- [TaskStore.ETS, EkvStore] do
         # function_exported?/3 reads false for a loaded-but-not-yet-claimed

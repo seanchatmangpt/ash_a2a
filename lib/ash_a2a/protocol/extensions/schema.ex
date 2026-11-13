@@ -74,7 +74,8 @@ defmodule AshA2A.Protocol.Extensions.Schema do
       refused).
   """
   @spec declaration(module(), keyword()) :: AgentExtension.t()
-  def declaration(resource_or_domain, opts \\ []) when is_atom(resource_or_domain) and is_list(opts) do
+  def declaration(resource_or_domain, opts \\ [])
+      when is_atom(resource_or_domain) and is_list(opts) do
     skills = AshA2A.Info.capability_index!(resource_or_domain)
 
     {schemas, omitted} =

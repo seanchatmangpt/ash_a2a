@@ -191,7 +191,9 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
 
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :completed
-    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: body}]}] = task.artifacts
+
+    assert [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: body}]}] =
+             task.artifacts
 
     # Real, solver-synthesized reply body (`ExecutionPackage.to_reply/1`) --
     # never `standing: "candidate"`/`authority: "none"` by construction
@@ -295,7 +297,10 @@ defmodule AshA2AAgentSemanticRouterWiringTest do
       data_message(%{"payload" => %{"goal_facts" => envelope}}, %{
         metadata: %{semantic_request: true}
       })
-      |> Map.update!(:parts, &(&1 ++ [AshA2A.Protocol.Part.Text.new("advance the admitted workflow")]))
+      |> Map.update!(
+        :parts,
+        &(&1 ++ [AshA2A.Protocol.Part.Text.new("advance the admitted workflow")])
+      )
 
     assert {:ok, task} = SemanticRouterWiredAgent.call(SemanticRouterWiredAgent, message)
     assert task.status.state == :failed

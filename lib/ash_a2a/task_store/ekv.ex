@@ -146,8 +146,11 @@ defmodule AshA2A.TaskStore.Ekv do
   @impl AshA2A.Protocol.TaskStore
   def set_push_config(name, %AshA2A.Protocol.PushNotificationConfig{} = config) do
     case EKV.put(name, push_key(config.task_id, config.id), config) do
-      :ok -> {:ok, config}
-      other -> raise WriteError, operation: :set_push_config, task_id: config.task_id, reason: other
+      :ok ->
+        {:ok, config}
+
+      other ->
+        raise WriteError, operation: :set_push_config, task_id: config.task_id, reason: other
     end
   end
 

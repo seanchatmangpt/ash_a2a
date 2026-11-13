@@ -1120,8 +1120,11 @@ defmodule AshA2A.Chicago.Courts.Brce do
   defp task_summary({:ok, %AshA2A.Protocol.Task{} = task}) do
     body =
       case task.artifacts do
-        [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: data} | _]} | _] -> data
-        _ -> %{}
+        [%AshA2A.Protocol.Artifact{parts: [%AshA2A.Protocol.Part.Data{data: data} | _]} | _] ->
+          data
+
+        _ ->
+          %{}
       end
 
     %{

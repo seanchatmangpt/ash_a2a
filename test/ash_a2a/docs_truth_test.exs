@@ -42,20 +42,24 @@ defmodule AshA2A.DocsTruthTest do
     :dispatch_timeout_ms => {:inspect, {CommandBus, :dispatch_timeout_ms, [[]]}},
     :durable_server_provider => {:inspect, {AshA2A.Durability.DurableServer, :provider, []}},
     :ocel_max_in_flight => {:inspect, {AshA2A.Telemetry.OcelForwarder, :max_in_flight, []}},
-    :ocel_ingest_timeout_ms => {:inspect, {AshA2A.Telemetry.OcelForwarder, :ingest_timeout_ms, []}},
+    :ocel_ingest_timeout_ms =>
+      {:inspect, {AshA2A.Telemetry.OcelForwarder, :ingest_timeout_ms, []}},
     :ocel_log_body => {:inspect, {AshA2A.Telemetry.OcelForwarder, :log_body?, []}},
     :ocel_log_interval_ms => {:inspect, {AshA2A.Telemetry.OcelForwarder, :log_interval_ms, []}},
     :ocel_task_supervisor => {:inspect, {AshA2A.Telemetry.OcelForwarder, :task_supervisor, []}},
     :expose_error_detail => {:inspect, {AshA2A.Transport.SafeError, :expose_detail?, []}},
-    :outbox_reconciler_interval_ms => {:inspect, {AshA2A.ReceiptOutbox.Reconciler, :interval_ms, []}},
-    :outbox_stuck_attempts_threshold => {:inspect, {AshA2A.ReceiptOutbox.Reconciler, :stuck_attempts_threshold, []}},
+    :outbox_reconciler_interval_ms =>
+      {:inspect, {AshA2A.ReceiptOutbox.Reconciler, :interval_ms, []}},
+    :outbox_stuck_attempts_threshold =>
+      {:inspect, {AshA2A.ReceiptOutbox.Reconciler, :stuck_attempts_threshold, []}},
     :outbox_ready_max => {:inspect, {AshA2A.Health, :outbox_ready_max, []}},
     :hddl_timeout_ms => {:inspect, {AshA2A.Planning.HddlSolver, :timeout_ms, []}},
     :hddl_max_output_bytes => {:inspect, {AshA2A.Planning.HddlSolver, :max_output_bytes, []}},
     :graphlaw_max_queue => {:inspect, {AshA2A.GraphLaw.WasmexHost, :max_queue, []}},
     :graphlaw_subprocess_timeout_ms => {:inspect, {AshA2A.GraphLaw.Subprocess, :timeout_ms, []}},
     :health_kill_switch_classes => {:inspect, {AshA2A.Health, :health_kill_switch_classes, []}},
-    :receipt_commit_retry_delays_ms => {:inspect, {CommandBus, :receipt_commit_retry_delays_ms, []}},
+    :receipt_commit_retry_delays_ms =>
+      {:inspect, {CommandBus, :receipt_commit_retry_delays_ms, []}},
     :kill_switch_class => {:inspect, {CommandBus, :kill_switch_class, []}},
     :receipt_store => {:inspect, {AshA2A.Application, :receipt_store, []}},
     :receipt_store_ekv_opts => {:inspect, {AshA2A.Application, :receipt_store_ekv_opts, []}},
@@ -75,33 +79,45 @@ defmodule AshA2A.DocsTruthTest do
   # Each entry needs a reason; shrink this map, never grow it, by adding a
   # public reader and moving the key to @execution_oracles.
   @documented_not_executable %{
-    :capability_release_closure => "CapabilityRelease.binding/2 is behavioral and per-deployment; test env configures a closure, so no env-deleted default oracle",
+    :capability_release_closure =>
+      "CapabilityRelease.binding/2 is behavioral and per-deployment; test env configures a closure, so no env-deleted default oracle",
     :receipt_store_call_timeout_ms => "Memory store resolves per-call from state; reader pending",
-    :receipt_binding_key => "default cell carries the refusal-code token; no literal default (unset refuses keyed binding)",
+    :receipt_binding_key =>
+      "default cell carries the refusal-code token; no literal default (unset refuses keyed binding)",
     :execution => "Transport.Runtime reads with default [] inline; no single-site reader yet",
-    :semantic_max_text_bytes => "shared multi-key row; Compiler.max_text_bytes/1 covers it behaviorally; its own cell token is —",
+    :semantic_max_text_bytes =>
+      "shared multi-key row; Compiler.max_text_bytes/1 covers it behaviorally; its own cell token is —",
     :graphlaw_host_path => "override block row; default cell carries the vectors-path token",
-    :graphlaw_probe_host_path => "override block row; default cell carries the vectors-path token",
+    :graphlaw_probe_host_path =>
+      "override block row; default cell carries the vectors-path token",
     :graphlaw_node_path => "override block row; default cell carries the vectors-path token",
     :node_executable => "override block row; default cell carries the vectors-path token",
     :graphlaw_host_script => "override block row; default cell carries the vectors-path token",
-    :graphlaw_runtime_b_executable => "override block row; default cell carries the vectors-path token",
-    :chicago_topology_root => "default cell carries the refusal-code token; unset refuses :chicago_topology_root_unset (v26.10.2 CR2)",
+    :graphlaw_runtime_b_executable =>
+      "override block row; default cell carries the vectors-path token",
+    :chicago_topology_root =>
+      "default cell carries the refusal-code token; unset refuses :chicago_topology_root_unset (v26.10.2 CR2)",
     :receipt_outbox_dir => "computed tmp-dir default, documented as unsafe-by-design",
     :prepared_journal_dir => "shared multi-key row; falls back to :receipt_outbox_dir",
     :strict_observe_generic_actions => "Agent resolves per-dispatch with per-agent opt override",
-    :require_authenticated_caller => "Agent and Transport.Plug resolve per-call with per-plug opt override",
+    :require_authenticated_caller =>
+      "Agent and Transport.Plug resolve per-call with per-plug opt override",
     :production => "SecurityProfile.Boot internal snapshot input",
-    :security_profile => "compile-time and per-env by design (config/config.exs selects per Mix env)",
-    :llm_profiles => "LLMProfiles.model_spec!/1 raises on unconfigured roles (fail-closed), no default to read",
+    :security_profile =>
+      "compile-time and per-env by design (config/config.exs selects per Mix env)",
+    :llm_profiles =>
+      "LLMProfiles.model_spec!/1 raises on unconfigured roles (fail-closed), no default to read",
     :ocel_egress_policy => "per-Mix-env conditional default, documented as such",
-    :graph_law => "conditional default (WasmexHost when it serves the configured wasm bytes, else the node runner), documented as such",
+    :graph_law =>
+      "conditional default (WasmexHost when it serves the configured wasm bytes, else the node runner), documented as such",
     :graphlaw_wasm_path => "source-relative computed default (vendored artifact)",
     :graphlaw_pool_size => "shared multi-key row; no literal default",
     :graphlaw_subprocess_max_concurrency => "shared multi-key row; no literal default",
     :graphlaw_conformance_vectors_path => "source-relative computed default (vendored vectors)",
-    :authority_broker => "unset refuses every consequential dispatch; verified behaviorally by the authority tests",
-    :allow_legacy_authority_policy => "sentinel-gated (must equal :i_accept_privilege_escalation)",
+    :authority_broker =>
+      "unset refuses every consequential dispatch; verified behaviorally by the authority tests",
+    :allow_legacy_authority_policy =>
+      "sentinel-gated (must equal :i_accept_privilege_escalation)",
     :health_ocel_failed_max => "shared multi-key row; no literal default",
     :standing_ledger_key => "no literal default (per-node random when unset, documented as such)"
   }

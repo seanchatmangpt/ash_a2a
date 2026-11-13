@@ -19,7 +19,7 @@ this livebook needs no Mix project behind it.
 ## Setup
 
 ```elixir
-Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.10.3"}],
+Mix.install([{:ash, "~> 3.0"}, {:ash_a2a, "~> 26.11.13"}],
   consolidate_protocols: false,
   config: [
     ash: [

@@ -15,9 +15,16 @@ defmodule W16.TaskUpdaterTest do
 
   test "lifecycle events and terminal guard" do
     u = TaskUpdater.new("t1", context_id: "c1")
-    assert {:ok, u, %StatusUpdate{status: %{state: :working}, final: false}} = TaskUpdater.start_work(u)
-    assert {:ok, u, %StatusUpdate{status: %{state: :input_required}}} = TaskUpdater.requires_input(u, "more?")
-    assert {:ok, u, %StatusUpdate{status: %{state: :completed}, final: true}} = TaskUpdater.complete(u)
+
+    assert {:ok, u, %StatusUpdate{status: %{state: :working}, final: false}} =
+             TaskUpdater.start_work(u)
+
+    assert {:ok, u, %StatusUpdate{status: %{state: :input_required}}} =
+             TaskUpdater.requires_input(u, "more?")
+
+    assert {:ok, u, %StatusUpdate{status: %{state: :completed}, final: true}} =
+             TaskUpdater.complete(u)
+
     assert {:error, {:terminal_state, :completed}} = TaskUpdater.fail(u)
     assert {:error, {:terminal_state, :completed}} = TaskUpdater.cancel(u)
     assert {:error, {:terminal_state, :completed}} = TaskUpdater.add_artifact(u, "x")
@@ -28,7 +35,14 @@ defmodule W16.TaskUpdaterTest do
     {:ok, u, s1} = TaskUpdater.start_work(u, "go")
     {:ok, u, a1} = TaskUpdater.add_artifact(u, "Hel", artifact_id: "A")
     {:ok, u, a2} = TaskUpdater.add_artifact(u, "lo", artifact_id: "A", append: true)
-    {:ok, u, a3} = TaskUpdater.add_artifact(u, [Part.Text.new("!")], artifact_id: "A", append: true, last_chunk: true)
+
+    {:ok, u, a3} =
+      TaskUpdater.add_artifact(u, [Part.Text.new("!")],
+        artifact_id: "A",
+        append: true,
+        last_chunk: true
+      )
+
     {:ok, _u, s2} = TaskUpdater.complete(u)
 
     assert %ArtifactUpdate{append: true, last_chunk: true} = a3

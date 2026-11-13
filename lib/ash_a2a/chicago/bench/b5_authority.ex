@@ -255,7 +255,8 @@ defmodule AshA2A.Chicago.Bench.B5Authority do
         input: %{label: label}
       )
 
-    message = AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+    message =
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
     reply =
       CommandBus.run(command, message, Ledger,

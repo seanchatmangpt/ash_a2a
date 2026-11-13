@@ -294,7 +294,8 @@ defmodule AshA2A.Protocol.Extension do
   """
   @spec required_uris([compiled()]) :: [String.t()]
   def required_uris(compiled) do
-    for {_mod, _state, %AshA2A.Protocol.AgentExtension{required: true, uri: uri}} <- compiled, do: uri
+    for {_mod, _state, %AshA2A.Protocol.AgentExtension{required: true, uri: uri}} <- compiled,
+        do: uri
   end
 
   @doc """

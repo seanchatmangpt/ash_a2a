@@ -31,9 +31,11 @@ defmodule AshA2A.X5GenerationDurabilityTest do
       status: status,
       history: [],
       artifacts: [
-        %{Artifact.new([Part.Text.new("a")], name: "a")
+        %{
+          Artifact.new([Part.Text.new("a")], name: "a")
           | start_generation: 2,
-            end_generation: generation}
+            end_generation: generation
+        }
       ],
       metadata: %{},
       generation: generation,

@@ -81,24 +81,48 @@ defmodule AshA2A.Attestation.Lane01HardeningTest do
 
   test "grant missing :area is not covering; no crash" do
     g = Map.delete(grant(), :area)
-    assert {:refused, :gps_impossible_jump} = Gate.verify_gps_trajectory(jumping(), approved_grants: [g], now: @now)
+
+    assert {:refused, :gps_impossible_jump} =
+             Gate.verify_gps_trajectory(jumping(), approved_grants: [g], now: @now)
   end
 
   test "unsorted observations are sorted like the base check" do
-    assert :ok = Gate.verify_gps_trajectory(Enum.reverse(jumping()), approved_grants: [grant()], now: @now)
+    assert :ok =
+             Gate.verify_gps_trajectory(Enum.reverse(jumping()),
+               approved_grants: [grant()],
+               now: @now
+             )
   end
 
   test "future approved_at grant is rejected" do
     g = grant(%{approved_at: @now + 1000})
-    assert {:refused, :gps_impossible_jump} = Gate.verify_gps_trajectory(jumping(), approved_grants: [g], now: @now)
+
+    assert {:refused, :gps_impossible_jump} =
+             Gate.verify_gps_trajectory(jumping(), approved_grants: [g], now: @now)
   end
 
   test "grants are scoped by org_id / identifier when supplied" do
-    assert :ok = Gate.verify_gps_trajectory(jumping(), approved_grants: [grant()], now: @now, org_id: "org-1")
+    assert :ok =
+             Gate.verify_gps_trajectory(jumping(),
+               approved_grants: [grant()],
+               now: @now,
+               org_id: "org-1"
+             )
+
     assert {:refused, :gps_impossible_jump} =
-             Gate.verify_gps_trajectory(jumping(), approved_grants: [grant()], now: @now, org_id: "org-2")
+             Gate.verify_gps_trajectory(jumping(),
+               approved_grants: [grant()],
+               now: @now,
+               org_id: "org-2"
+             )
+
     assert {:refused, :gps_impossible_jump} =
-             Gate.verify_gps_trajectory(jumping(), approved_grants: [grant()], now: @now, identifier: "other")
+             Gate.verify_gps_trajectory(jumping(),
+               approved_grants: [grant()],
+               now: @now,
+               identifier: "other"
+             )
+
     assert :ok = GateGrantAllowlist.override?(jumping(), [grant()], @now, identifier: "id-1")
   end
 

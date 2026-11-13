@@ -88,7 +88,8 @@ defmodule AshA2A.Semantic.RefusalReceiptTest do
       assert via_module ==
                :crypto.hash(
                  :sha256,
-                 "refused_structure" <> <<0>> <> :erlang.term_to_binary({:frame, :strata_valve_parity, @frame_seed})
+                 "refused_structure" <>
+                   <<0>> <> :erlang.term_to_binary({:frame, :strata_valve_parity, @frame_seed})
                )
     end
   end

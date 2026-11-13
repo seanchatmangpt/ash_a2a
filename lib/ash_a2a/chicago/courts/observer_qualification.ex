@@ -1219,7 +1219,8 @@ defmodule AshA2A.Chicago.Courts.ObserverQualification do
     )
   end
 
-  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  defp message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   defp reply_code({:ok, _receipt}), do: "ok"
   defp reply_code({:error, %{code: code}}), do: inspect(code)

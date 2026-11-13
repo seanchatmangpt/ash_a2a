@@ -38,7 +38,11 @@ defmodule AshA2A.W9ExtensionCompileTest do
   end
 
   test "compile/1 warns for an unversioned URI and stays silent for a versioned one" do
-    log = capture_log([level: :warning], fn -> assert [{Unversioned, _, _}] = Extension.compile([Unversioned]) end)
+    log =
+      capture_log([level: :warning], fn ->
+        assert [{Unversioned, _, _}] = Extension.compile([Unversioned])
+      end)
+
     assert log =~ "without a /vN version suffix"
     assert log =~ "https://w9.example/ext/unversioned"
 

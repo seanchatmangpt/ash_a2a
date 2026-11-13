@@ -114,7 +114,9 @@ if Code.ensure_loaded?(Plug) do
 
             replayed_final? =
               Enum.any?(replay, fn {_, kind, payload, final?} ->
-                final? or (kind == "status-update" and AshA2A.A2ATransport.TaskEvents.terminal_payload?(payload))
+                final? or
+                  (kind == "status-update" and
+                     AshA2A.A2ATransport.TaskEvents.terminal_payload?(payload))
               end)
 
             st = %{

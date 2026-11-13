@@ -331,8 +331,7 @@ defmodule AshA2A.Chicago.Bench.B11Wire do
       duration_us: finished - t0,
       outcome: send_outcome(resp),
       phases: send_phases(timeline, t0, returned, finished),
-      invariant:
-        send_invariant(resp, timeline, present?, credential_free?(resp.body, env.token))
+      invariant: send_invariant(resp, timeline, present?, credential_free?(resp.body, env.token))
     }
   end
 
@@ -430,7 +429,10 @@ defmodule AshA2A.Chicago.Bench.B11Wire do
   end
 
   defp stream_phases(t0, first_frame_us, finished) do
-    %{"time_to_first_frame" => first_frame_us && first_frame_us - t0, "end_to_end" => finished - t0}
+    %{
+      "time_to_first_frame" => first_frame_us && first_frame_us - t0,
+      "end_to_end" => finished - t0
+    }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()
   end
@@ -452,7 +454,8 @@ defmodule AshA2A.Chicago.Bench.B11Wire do
 
     checks = [
       {resp.status == 200, "HTTP status #{resp.status}"},
-      {content_type_streaming?(resp), "content type #{inspect(content_type(resp))}, not text/event-stream"},
+      {content_type_streaming?(resp),
+       "content type #{inspect(content_type(resp))}, not text/event-stream"},
       {frames != [] and Enum.all?(frames, &is_map/1),
        "unparseable or empty SSE frame stream (#{length(frames)} frames)"},
       {artifacts >= @seed_rows,
@@ -476,10 +479,10 @@ defmodule AshA2A.Chicago.Bench.B11Wire do
   end
 
   defp message(input, selector) do
-    AshA2A.Protocol.JSON.encode!(
-      %{AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)]) |
-        metadata: %{"skill" => selector}}
-    )
+    AshA2A.Protocol.JSON.encode!(%{
+      AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(input)])
+      | metadata: %{"skill" => selector}
+    })
   end
 
   defp headers(env), do: [{"authorization", "Bearer " <> env.token}]

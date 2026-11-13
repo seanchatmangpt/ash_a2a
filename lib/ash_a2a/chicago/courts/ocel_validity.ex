@@ -548,7 +548,8 @@ defmodule AshA2A.Chicago.Courts.OcelValidity do
     )
   end
 
-  defp message(label), do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
+  defp message(label),
+    do: AshA2A.Protocol.Message.new_user([AshA2A.Protocol.Part.Data.new(%{"label" => label})])
 
   defp reply_code({:error, %{code: code}}), do: inspect(code)
   defp reply_code({:ok, _}), do: "ok"

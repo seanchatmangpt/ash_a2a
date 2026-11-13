@@ -50,7 +50,13 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
 
   use Mix.Task
 
-  @switches [only: :string, with_oracle: :boolean, ash_pplan_path: :string, receipt: :string, run_serial: :boolean]
+  @switches [
+    only: :string,
+    with_oracle: :boolean,
+    ash_pplan_path: :string,
+    receipt: :string,
+    run_serial: :boolean
+  ]
   @aliases [o: :only]
 
   @impl Mix.Task
@@ -81,7 +87,7 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
     receipt_path =
       opts[:receipt] || Path.join(receipts_dir, "pplan-courts-#{date_str(started)}.md")
 
-    env = %{"ASH_PPLAN_PATH" => pplan_path}
+    env = %{"ASH_PPLAN_PATH" => pplan_path, "ASH_A2A_LOCAL_DEPS" => "1"}
 
     {results, overall} =
       if court_files == [] do
@@ -208,7 +214,10 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
       Mix.shell().info("[pplan_courts] oracle daemon started (port #{inspect(port.id)})")
       {:port, port, script}
     else
-      Mix.shell().info("[pplan_courts] --with-oracle requested but #{script} not found -- LOUD SKIP")
+      Mix.shell().info(
+        "[pplan_courts] --with-oracle requested but #{script} not found -- LOUD SKIP"
+      )
+
       {:skipped, script}
     end
   end

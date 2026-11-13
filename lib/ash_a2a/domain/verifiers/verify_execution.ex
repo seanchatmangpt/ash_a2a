@@ -30,8 +30,16 @@ defmodule AshA2A.Domain.Verifiers.VerifyExecution do
     module = Spark.Dsl.Verifier.get_persisted(dsl_state, :module)
 
     case Spark.Dsl.Verifier.get_option(dsl_state, [:transport], :user_artifacts, false) do
-      v when is_boolean(v) -> :ok
-      other -> {:error, error(module, [:transport, :user_artifacts], "`user_artifacts` must be a boolean, got #{inspect(other)}")}
+      v when is_boolean(v) ->
+        :ok
+
+      other ->
+        {:error,
+         error(
+           module,
+           [:transport, :user_artifacts],
+           "`user_artifacts` must be a boolean, got #{inspect(other)}"
+         )}
     end
   end
 
@@ -43,7 +51,12 @@ defmodule AshA2A.Domain.Verifiers.VerifyExecution do
   def validate(execution, module \\ nil) when is_list(execution) do
     with :ok <- check_events_transport(Keyword.get(execution, :events_transport), module),
          :ok <- check_cancel(Keyword.get(execution, :cancel_in_flight), module),
-         :ok <- check_bool(:validate_input_modes, Keyword.get(execution, :validate_input_modes), module) do
+         :ok <-
+           check_bool(
+             :validate_input_modes,
+             Keyword.get(execution, :validate_input_modes),
+             module
+           ) do
       check_bool(:user_artifacts, Keyword.get(execution, :user_artifacts), module)
     end
   end

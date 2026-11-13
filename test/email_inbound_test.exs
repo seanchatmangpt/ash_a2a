@@ -21,7 +21,13 @@ defmodule AshA2A.EmailInboundTest do
 
   test "all pass + allowlisted => identity-only principal" do
     assert {:ok, p} = Inbound.verify_sender(inbound(@pass), @policy)
-    assert p == %{id: "principal:vito", address: "vito@example.com", authenticated_via: :email, authority: :none}
+
+    assert p == %{
+             id: "principal:vito",
+             address: "vito@example.com",
+             authenticated_via: :email,
+             authority: :none
+           }
   end
 
   test "in_reply_to angle brackets stripped" do

@@ -19,7 +19,11 @@ defmodule AshA2A.UntestedLane18.C2AuthorityTest do
   end
 
   defp cert(overrides \\ %{}),
-    do: Map.merge(%{generation: 5, policy_epoch: 3, revocation_epoch: 2, principal: "p1"}, overrides)
+    do:
+      Map.merge(
+        %{generation: 5, policy_epoch: 3, revocation_epoch: 2, principal: "p1"},
+        overrides
+      )
 
   describe "BudgetLedger" do
     test "allocate debits parent and yields child with limit" do
