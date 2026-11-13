@@ -70,3 +70,18 @@ defmodule AshA2A.SecurityReviewRemediationTest do
     end
   end
 end
+
+defmodule AshA2A.Protocol.JSONGuardTest do
+  use ExUnit.Case, async: true
+  alias AshA2A.Protocol.JSONGuard
+
+  test "deep nesting is refused, normal bodies decode" do
+    assert {:error, {:nesting_exceeded, 64}} = JSONGuard.decode(String.duplicate("[", 100_000))
+    assert {:ok, %{"a" => [1, %{"b" => 2}]}} = JSONGuard.decode(~s({"a":[1,{"b":2}]}))
+  end
+
+  test "brackets inside strings do not count toward depth" do
+    body = Jason.encode!(%{"s" => String.duplicate("[", 500) <> "\\\"["})
+    assert {:ok, _} = JSONGuard.decode(body, 4)
+  end
+end

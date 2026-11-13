@@ -107,6 +107,8 @@ defmodule AshA2A.Dispatcher do
   either.
   """
 
+  require Logger
+
   alias AshA2A.FinOps.BudgetEnforcer
   alias AshA2A.Protocol.Message
   alias AshA2A.Protocol.Part
@@ -761,6 +763,9 @@ defmodule AshA2A.Dispatcher do
       domain: Map.get(skill, :domain) || exec_context.domain,
       actor: exec_context.actor,
       tenant: exec_context.tenant,
+      # Explicit: a host-wide `config :ash, authorize?: false` must never
+      # silently disable policies for wire-originated calls.
+      authorize?: true,
       # ExecutionContext types `context` as `map()` and `history` as a list
       # (both default non-nil), so the old `|| %{} / || []` fallbacks were dead.
       context: Map.put(exec_context.context, :a2a_history, exec_context.history)
@@ -1070,7 +1075,10 @@ defmodule AshA2A.Dispatcher do
   # class name and message are legible text on the wire rather than opaque
   # Elixir term syntax.
   defp to_reply({:error, %{class: :forbidden} = error}) do
-    {:error, class_message(:forbidden, Ash.Error.to_class(error) |> Exception.message())}
+    # The policy breakdown can name actors, filters and internal fields: log it
+    # server-side and give the caller a stable, non-revealing message.
+    Logger.debug("A2A forbidden: #{Ash.Error.to_class(error) |> Exception.message()}")
+    {:error, class_message(:forbidden, "not authorized for this action")}
   end
 
   defp to_reply({:error, %{class: :framework} = error}) do

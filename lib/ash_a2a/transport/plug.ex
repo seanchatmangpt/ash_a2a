@@ -397,7 +397,7 @@ defmodule AshA2A.Transport.Plug do
   defp read_json_body(%{body_params: %Plug.Conn.Unfetched{}} = conn, max) do
     case read_body(conn, length: max) do
       {:ok, body, conn} ->
-        case Jason.decode(body) do
+        case AshA2A.Protocol.JSONGuard.decode(body) do
           {:ok, decoded} when is_map(decoded) -> {:ok, decoded, conn}
           _ -> {:error, :parse_error}
         end

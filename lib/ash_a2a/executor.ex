@@ -217,6 +217,9 @@ defmodule AshA2A.Executor do
       domain: exec_context.domain,
       actor: exec_context.actor,
       tenant: exec_context.tenant,
+      # Explicit: a host-wide `config :ash, authorize?: false` must never
+      # silently disable policies for wire-originated calls.
+      authorize?: true,
       # ExecutionContext types `context` as `map()` and `history` as a list
       # (both default non-nil), so the old `|| %{} / || []` fallbacks were dead.
       context: Map.put(exec_context.context, :a2a_history, exec_context.history)

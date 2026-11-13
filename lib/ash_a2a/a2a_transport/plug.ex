@@ -745,7 +745,7 @@ defmodule AshA2A.A2ATransport.Plug do
   defp read_json(%{body_params: %Plug.Conn.Unfetched{}} = conn, opts) do
     case read_body(conn, length: opts.max_body_bytes) do
       {:ok, body, conn} ->
-        case Jason.decode(body) do
+        case AshA2A.Protocol.JSONGuard.decode(body) do
           {:ok, decoded} -> {:ok, decoded, conn}
           {:error, _} -> {:error, Error.parse_error(), conn}
         end
@@ -754,7 +754,9 @@ defmodule AshA2A.A2ATransport.Plug do
         {:error, Error.invalid_request("Body too large"), conn}
 
       {:error, _reason} ->
-        {:error, Error.internal_error(), conn}
+        # A client that disconnects mid-upload is a malformed request, not a
+        # server fault.
+        {:error, Error.parse_error(), conn}
     end
   end
 

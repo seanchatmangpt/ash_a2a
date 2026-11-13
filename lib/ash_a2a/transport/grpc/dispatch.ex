@@ -188,7 +188,10 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     try do
       handler.handle_extended_card(ctx)
     rescue
-      e -> {:error, AshA2A.Protocol.JSONRPC.Error.internal_error(inspect(e))}
+      e ->
+        require Logger
+        Logger.error("A2A extended card provider raised: #{Exception.message(e)}")
+        {:error, AshA2A.Protocol.JSONRPC.Error.internal_error("extended card provider failed")}
     end
   end
 

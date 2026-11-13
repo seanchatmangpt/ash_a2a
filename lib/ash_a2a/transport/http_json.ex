@@ -759,9 +759,7 @@ defmodule AshA2A.Transport.HTTPJSON do
               send_error(
                 conn,
                 400,
-                Error.authenticated_extended_card_not_configured(
-                  "provider returned #{inspect(other)}"
-                )
+                Error.authenticated_extended_card_not_configured(log_provider_failure(other))
               )
           end
       end
@@ -2163,6 +2161,14 @@ defmodule AshA2A.Transport.HTTPJSON do
   # `data` list as `details` (TCK HTTP_JSON-ERR-002). `Error.to_map/1` is
   # consumed read-only: the A2A code still travels inside the ErrorInfo, the
   # JSON-RPC `"data"` key is renamed `"details"`.
+  # The provider's failure detail is logged server-side; the 400 body carries
+  # only a fixed message so internal terms never cross the wire.
+  defp log_provider_failure(detail) do
+    require Logger
+    Logger.error("A2A extended card provider failed: #{inspect(detail)}")
+    "extended card provider failed"
+  end
+
   defp send_error(conn, status, %Error{} = error) do
     send_json(conn, status, aip193_body(status, Error.to_map(error)))
   end
@@ -2225,7 +2231,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   defp read_json_body(%{body_params: %Plug.Conn.Unfetched{}} = conn, max) do
     case read_body(conn, length: max) do
       {:ok, body, conn} ->
-        case Jason.decode(body) do
+        case AshA2A.Protocol.JSONGuard.decode(body) do
           {:ok, decoded} when is_map(decoded) -> {:ok, decoded, conn}
           _ -> {:error, :parse_error}
         end
