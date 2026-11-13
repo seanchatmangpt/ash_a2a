@@ -35,6 +35,30 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 - The server accepts `A2A-Version` 0.3, 1.0 and 1.1; the client-header default stays 1.0.
 - README reorganized: install and quickstart first, conformance and status material last.
 
+## [26.11.14] - 2026-11-13
+
+### Security
+
+- Legacy push-notification sender resolves and refuses non-public addresses and
+  never follows redirects (SSRF).
+- gRPC ignores the forwarded-certificate header unless
+  `trust_forwarded_cert: true`.
+- `A2A-Version` echoed in a response header is limited to a short printable token.
+- HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
+- Ash calls pass `authorize?: true` explicitly; `forbidden` replies and
+  extended-card provider failures no longer carry internal detail.
+
+### Fixed
+
+- A failing checkpoint no longer aborts a node drain; a worker is evicted only
+  when its frame landed.
+- A failed task-event journal write is logged instead of crashing the events server.
+- `KillSwitch.trip/3` waits up to 30 s so a slow disk cannot fail the halt.
+- The transport worker is killed when its agent dies.
+- `mix ash_a2a.gen.skill` appends into the `a2a` block and no longer defaults
+  `consequence` to `observe`.
+- `ash_ai` is a test-only dependency.
+
 ## [26.11.13] - 2026-11-13
 
 ### Changed

@@ -97,16 +97,26 @@ defmodule AshA2A.TckAssertScriptTest do
     refute conf =~ "A2A v1.0.0**"
   end
 
-  test "release version: mix.exs, README, spec mapping, CHANGELOG agree on 26.11.13" do
+  test "release version: mix.exs, README, tutorials, spec mapping, CITATION, CHANGELOG agree" do
     mix = File.read!(Path.join(@root, "mix.exs"))
-    assert mix =~ ~s(version: "26.11.13")
-    assert File.read!(Path.join(@root, "README.md")) =~ ~s({:ash_a2a, "~> 26.11.13"})
+    [_, version] = Regex.run(~r/version: "(\d+\.\d+\.\d+)"/, mix)
+
+    assert File.read!(Path.join(@root, "README.md")) =~ ~s({:ash_a2a, "~> #{version}"})
+
+    assert File.read!(Path.join(@root, "docs/tutorials/getting-started.md")) =~
+             ~s("~> #{version}")
+
+    for livemd <- Path.wildcard(Path.join(@root, "documentation/tutorials/*.livemd")) do
+      assert File.read!(livemd) =~ ~s({:ash_a2a, "~> #{version}"}), livemd
+    end
+
+    assert File.read!(Path.join(@root, "CITATION.cff")) =~ ~s(version: "#{version}")
 
     assert File.read!(Path.join(@root, "docs/reference/a2a-spec-version-mapping.md")) =~
-             "Version: v26.11.13"
+             "Version: v#{version}"
 
     changelog = File.read!(Path.join(@root, "CHANGELOG.md"))
-    assert changelog =~ "## [26.11.13] - 2026-11-13"
+    assert changelog =~ "## [#{version}] - "
     assert changelog =~ "## [Unreleased]"
   end
 

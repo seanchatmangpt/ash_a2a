@@ -17,7 +17,7 @@ A `Spark.Dsl.Extension` that exposes your `Ash.Resource`/`Ash.Domain` actions as
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.11.13"}
+    {:ash_a2a, "~> 26.11.14"}
   ]
 end
 ```
@@ -385,8 +385,8 @@ Engineering records (point-in-time, not guides) are kept in the repository:
   built on top of the protocol (the `SA2A` name refers to that layer).
 - `research/` — research notes.
 
-Versioning is calendar-based (`26.11.x`); `~> 26.11.13` pins within the 26.11
-series at or above 26.11.13. Semantic Versioning is intended after 1.0. See the
+Versioning is calendar-based (`26.11.x`); `~> 26.11.14` pins within the 26.11
+series at or above 26.11.14. Semantic Versioning is intended after 1.0. See the
 [CHANGELOG](CHANGELOG.md) — `main` routinely runs ahead of the latest published
 Hex release.
 
