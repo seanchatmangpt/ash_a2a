@@ -14,8 +14,8 @@ if Code.ensure_loaded?(Igniter) do
         mix ash_a2a.gen.skill MyApp.Support.Ticket create_ticket create --consequence external_do
 
     Options:
-      * `--consequence` - One of `observe`, `change`, `external_do` (default: `observe`)
-      * `--description` - Optional human-readable description for the skill
+      * `--consequence` - One of `observe`, `change`, `external_do`, `unknown`; omitted by default (the class is derived from the action type)
+      * `--description` - Optional human-readable description (omitted by default)
     """
 
     use Igniter.Mix.Task
@@ -43,19 +43,24 @@ if Code.ensure_loaded?(Igniter) do
       resource = Igniter.Project.Module.parse(positional[:resource])
       skill_name = identifier_atom!(positional[:skill_name], "skill_name")
       action_name = identifier_atom!(positional[:action_name], "action_name")
-      consequence_str = Keyword.get(options, :consequence, "observe")
+      consequence_str = Keyword.get(options, :consequence)
 
+      # No default: `observe` is a compile-time error on a mutating action, so
+      # the class is written only when the caller names it.
       consequence =
-        Enum.find(
-          [:observe, :change, :external_do, :unknown],
-          &(Atom.to_string(&1) == consequence_str)
-        ) ||
-          Mix.raise(
-            "Invalid --consequence #{inspect(consequence_str)}. " <>
-              "Must be one of: observe, change, external_do, unknown."
-          )
+        case consequence_str do
+          nil ->
+            nil
 
-      description = Keyword.get(options, :description, "A2A skill for #{action_name}")
+          str ->
+            Enum.find([:observe, :change, :external_do, :unknown], &(Atom.to_string(&1) == str)) ||
+              Mix.raise(
+                "Invalid --consequence #{inspect(str)}. " <>
+                  "Must be one of: observe, change, external_do, unknown."
+              )
+        end
+
+      description = Keyword.get(options, :description)
 
       case Igniter.Project.Module.find_module(igniter, resource) do
         {:ok, {igniter, _source, _path}} ->
@@ -86,19 +91,10 @@ if Code.ensure_loaded?(Igniter) do
           AshA2A
         )
 
-      # Insert the skill DSL block
-      skill_code = """
-      skill #{inspect(skill_name)}, #{inspect(action_name)} do
-        description #{inspect(description)}
-        consequence #{inspect(consequence)}
-      end
-      """
-
-      Spark.Igniter.set_option(
+      Mix.Tasks.AshA2a.Install.add_dsl_block(
         igniter,
         resource,
-        [:a2a, skill_name],
-        Sourceror.parse_string!(skill_code)
+        [{skill_name, action_name, consequence, description}]
       )
     end
   end

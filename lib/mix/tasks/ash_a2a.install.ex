@@ -66,7 +66,7 @@ if Code.ensure_loaded?(Igniter) do
     ## Router forward
 
     The post-install notice always carries the exact router snippet
-    (`forward "/a2a", AshA2A.Transport.Plug, agent: MyApp.Agent`).
+    (`forward "/a2a", AshA2A.Protocol.Plug, agent: MyApp.Agent`).
     When a Phoenix router is detectable, the notice names it; the snippet
     is disclosed as a manual step either way (the same honest fallback
     shape as the no-target notice -- router-body injection has no safe,
@@ -387,7 +387,7 @@ if Code.ensure_loaded?(Igniter) do
 
       No Phoenix router was detected. To serve A2A over HTTP, add to your router:
 
-          forward "/a2a", AshA2A.Transport.Plug, agent: MyApp.Agent
+          forward "/a2a", AshA2A.Protocol.Plug, agent: MyApp.Agent
       """
     end
 
@@ -398,7 +398,7 @@ if Code.ensure_loaded?(Igniter) do
 
       Phoenix router detected: #{inspect(router)}. To serve A2A over HTTP, add to it:
 
-          forward "/a2a", AshA2A.Transport.Plug, agent: MyApp.Agent
+          forward "/a2a", AshA2A.Protocol.Plug, agent: MyApp.Agent
       """
     end
 
@@ -535,7 +535,8 @@ if Code.ensure_loaded?(Igniter) do
     #     are appended into the block body. The prior implementation inserted
     #     unconditionally, so a second install run produced a second `a2a do`
     #     block -- a compile-legal but wrong, duplicated projection.
-    defp add_dsl_block(igniter, target_module, skills) do
+    @doc false
+    def add_dsl_block(igniter, target_module, skills) do
       Igniter.Project.Module.find_and_update_module!(igniter, target_module, fn zipper ->
         case Igniter.Code.Function.move_to_function_call(zipper, :a2a, 1) do
           {:ok, a2a_zipper} ->
@@ -559,7 +560,7 @@ if Code.ensure_loaded?(Igniter) do
     # written again, so two runs leave exactly one `a2a do` block with exactly
     # one declaration per requested skill.
     defp merge_skills_into_block(a2a_zipper, skills) do
-      missing = Enum.reject(skills, fn {name, _, _} -> skill_declared?(a2a_zipper, name) end)
+      missing = Enum.reject(skills, fn skill -> skill_declared?(a2a_zipper, elem(skill, 0)) end)
 
       case missing do
         [] ->
@@ -620,13 +621,23 @@ if Code.ensure_loaded?(Igniter) do
       "a2a do\n" <> body <> "end\n"
     end
 
-    defp skill_line({name, action, nil}) do
-      "  skill #{inspect(name)}, #{inspect(action)}\n"
+    defp skill_line({name, action, consequence}), do: skill_line({name, action, consequence, nil})
+
+    defp skill_line({name, action, consequence, description}) do
+      opts =
+        Enum.reject(
+          [consequence: consequence, description: description],
+          fn {_key, value} -> is_nil(value) end
+        )
+
+      case opts do
+        [] -> "  skill #{inspect(name)}, #{inspect(action)}\n"
+        opts -> "  skill #{inspect(name)}, #{inspect(action)}, #{inspect_opts(opts)}\n"
+      end
     end
 
-    defp skill_line({name, action, consequence}) do
-      "  skill #{inspect(name)}, #{inspect(action)}, consequence: #{inspect(consequence)}\n"
-    end
+    defp inspect_opts(opts),
+      do: Enum.map_join(opts, ", ", fn {key, value} -> "#{key}: #{inspect(value)}" end)
   end
 else
   defmodule Mix.Tasks.AshA2a.Install do
@@ -641,7 +652,7 @@ else
 
       1. Add `:ash_a2a` to your `mix.exs` dependencies:
 
-             {:ash_a2a, "~> 0.1"}
+             {:ash_a2a, "~> 26.11"}
 
       2. Add `import_deps: [:ash_a2a]` and `plugins: [Spark.Formatter]` to your
          `.formatter.exs`.

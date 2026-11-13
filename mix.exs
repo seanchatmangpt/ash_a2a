@@ -268,7 +268,7 @@ defmodule AshA2A.MixProject do
       ash_graphlaw_dep(),
       {:ash_affidavit, "~> 26.10"},
       {:ash_ex4pm, "~> 26.10"},
-      {:ash_ai, "~> 1.0"},
+      {:ash_ai, "~> 1.0", only: :test},
       # HTTP client used by AshA2A.Telemetry.OcelForwarder.
       {:req, "~> 0.5"},
       # Local server for the OCEL forwarder test fixture.
