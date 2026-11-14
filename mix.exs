@@ -271,6 +271,12 @@ defmodule AshA2A.MixProject do
       else: {:ash_pplan, "~> 26.11", only: :test}
   end
 
+  defp pm4exunit_dep do
+    if local_deps?(),
+      do: {:pm4exunit, path: "../pm4exunit", only: :test},
+      else: {:pm4exunit, "~> 26.11", only: :test}
+  end
+
   defp deps do
     [
       # >= 3.33.11: EEF-CVE-2026-93477 (private action args settable via bulk update/destroy)
@@ -290,6 +296,7 @@ defmodule AshA2A.MixProject do
       # SAT solver for Ash policy verification in test fixtures (optional in Ash).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
       ash_pplan_dep(),
+      pm4exunit_dep(),
       # Mutation testing (`mix muzak.sec`); needs :test because its oracle is
       # the ExUnit suite. Compatibility shims live in `.muzak.exs`.
       {:muzak, "~> 1.1", only: :test, runtime: false},
