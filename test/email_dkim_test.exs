@@ -16,12 +16,17 @@ defmodule AshA2A.EmailDkimTest do
     {:SubjectPublicKeyInfo, der, :not_encrypted} =
       :public_key.pem_entry_encode(:SubjectPublicKeyInfo, pub)
 
-    {:RSAPrivateKey, _, n2, e2, _, _, _, _, _, _, _} = other = :public_key.generate_key({:rsa, 2048, 65537})
-    _ = {n2, e2}
+    other = :public_key.generate_key({:rsa, 2048, 65537})
     {:ok, priv: priv, other: other, p: Base.encode64(der), pub: pub}
   end
 
-  defp resolver(p), do: fn "example.com", "sel" -> {:ok, p}; _, _ -> {:error, :nxdomain} end
+  defp resolver(p) do
+    fn
+      "example.com", "sel" -> {:ok, p}
+      _, _ -> {:error, :nxdomain}
+    end
+  end
+
   defp opts(p, extra \\ []), do: [key_resolver: resolver(p), now: fn -> @now end] ++ extra
 
   defp canon_body(body) do

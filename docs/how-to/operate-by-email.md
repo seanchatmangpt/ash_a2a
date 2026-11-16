@@ -72,9 +72,34 @@ The request body carries `"reply_tokens"`: action number to token
 the refusals above through `Plug.Test` (standing UNVERIFIED: written without an Elixir
 toolchain, no run cited).
 
-Remaining: SES RSA signature checking needs a caller-supplied `:signature_verifier`; no DKIM
-cryptography is done here; the `TokenLedger` is in-memory and single-node. Unit tests: `test/email_{inbound,brief,
-reply_intent,kernel_entry}_test.exs`.
+## DKIM and durable replay ledger (UNVERIFIED)
+
+`AshA2A.Email.Dkim` (`lib/ash_a2a/email/dkim.ex`) verifies `DKIM-Signature` headers with
+`:public_key`: rsa-sha256, relaxed/relaxed, `bh=`, `h=` (must cover `from`), key from your resolver
+(the DNS `p=` value). It refuses `l=`, expired `x=`, unsigned or duplicated From, From not aligned
+with `d=`, weak (<1024-bit) or revoked keys. Wire it as the SES `:signature_verifier`:
+
+    webhook: {:ses, signature_verifier: AshA2A.Email.Dkim.verifier(key_resolver: &MyApp.Dns.dkim_key/2)}
+
+The verifier takes a raw message, a map with `"content"`, or an SNS envelope whose `"Message"`
+JSON carries `"content"`. It proves the signing domain vouched for the message; it confers no
+authority.
+
+`AshA2A.Email.TokenLedgerStore` (`lib/ash_a2a/email/token_ledger_store.ex`) is an EKV-backed ledger
+answering the same calls as `TokenLedger`, so the plug accepts it unchanged:
+
+    {AshA2A.TaskStore.Ekv, ...}  # child_spec(name: MyApp.EmailKv, data_dir: "...")
+    {AshA2A.Email.TokenLedgerStore, name: MyApp.EmailLedger, store: MyApp.EmailKv}
+    # plug option: token_ledger: MyApp.EmailLedger
+
+Token consumption and replay results are durable and cluster-wide (EKV CAS); reply tokens are
+stored hashed. Tests: `test/email_dkim_test.exs`, `test/email_token_ledger_store_test.exs`
+(UNVERIFIED: written without an Elixir toolchain, no run cited).
+
+Remaining: `rate_check/4` in `TokenLedgerStore` is node-local and in-memory; the store has no
+capacity bound or eviction; `TokenLedger` itself stays in-memory single-node. DKIM supports only
+RSA-SHA256 with relaxed/relaxed (no ed25519, simple canonicalization or DNS lookup; the resolver
+is yours). Unit tests: `test/email_{inbound,brief,reply_intent,kernel_entry}_test.exs`.
 
 ## See Also
 
