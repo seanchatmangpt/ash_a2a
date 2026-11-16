@@ -100,9 +100,20 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
       security_schemes: Keyword.get(opts, :security_schemes) || domain_security_schemes(domain),
       security: Keyword.get(opts, :security) || domain_security(domain),
       supported_interfaces:
-        normalize_supported_interfaces(Keyword.get(opts, :supported_interfaces), url)
+        normalize_supported_interfaces(Keyword.get(opts, :supported_interfaces), url),
+      signatures: card_signatures(Keyword.get(opts, :card_signatures))
     }
   end
+
+  # Optional `:card_signatures` passthrough (UNVERIFIED, no toolchain): a list
+  # of signature maps is placed under the card's `signatures` key unmodified.
+  # Nothing is generated or validated here; anything that is not a list of
+  # maps is dropped to the empty default rather than advertised.
+  defp card_signatures(sigs) when is_list(sigs) do
+    if Enum.all?(sigs, &is_map/1), do: sigs, else: []
+  end
+
+  defp card_signatures(_), do: []
 
   defp domain_agent(nil), do: %{}
   defp domain_agent(domain), do: AshA2A.Domain.Info.agent(domain)

@@ -259,6 +259,12 @@ defmodule AshA2A.Protocol.Agent do
       ## Options
 
       - `:timeout` — GenServer call timeout in ms (default: `60_000`)
+      - `:admit_first` — when `true`, a new (task-less) send is persisted as a
+        task before its handler starts, so `tasks/get` sees it and `cancel/3`
+        interrupts it by id while this call is still blocked (a handler that
+        answers a bare message completes the stored task). Off by default.
+      - `:notify` — with `:admit_first`, a pid sent
+        `{:ash_a2a_task_admitted, task_id}` once the task is stored
       """
       @spec call(GenServer.server(), AshA2A.Protocol.Message.t(), keyword()) ::
               {:ok, AshA2A.Protocol.Task.t() | AshA2A.Protocol.Message.t()} | {:error, term()}
@@ -372,15 +378,31 @@ defmodule AshA2A.Protocol.Agent do
           else
             case resolve_references(message, context_id, opts, state) do
               {:ok, context_id} ->
-                if immediate? do
-                  admit_new_immediately(message, context_id, metadata, extensions, from, state)
-                else
-                  spawn_task_worker(
-                    {:new, message, context_id, metadata, extensions},
-                    from,
-                    nil,
-                    state
-                  )
+                cond do
+                  immediate? ->
+                    admit_new_immediately(message, context_id, metadata, extensions, from, state)
+
+                  # Opt-in (`admit_first: true`): persist the task before its
+                  # worker starts so it can be read/canceled by id while the
+                  # blocking send is still pending.
+                  Keyword.get(opts, :admit_first, false) == true ->
+                    admit_new_blocking(
+                      message,
+                      context_id,
+                      metadata,
+                      extensions,
+                      Keyword.get(opts, :notify),
+                      from,
+                      state
+                    )
+
+                  true ->
+                    spawn_task_worker(
+                      {:new, message, context_id, metadata, extensions},
+                      from,
+                      nil,
+                      state
+                    )
                 end
 
               {:error, _} = error ->
@@ -439,6 +461,28 @@ defmodule AshA2A.Protocol.Agent do
         task = AshA2A.Protocol.Task.new(context_id: context_id, metadata: metadata)
         task = AshA2A.Protocol.Task.Generation.append_message(task, message)
         admit_immediately(message, task, extensions, from, state)
+      end
+
+      # Pre-admitted blocking send: the task (carrying the caller's metadata,
+      # so owner/tenant gating applies as for any stored task) is persisted
+      # `:submitted` before the worker starts, and `notify` (a pid) receives
+      # `{:ash_a2a_task_admitted, task_id}` so the caller can cancel by id
+      # while `call/3` is still blocked. The caller itself stays the reply
+      # target: it is answered when the worker finishes or the task is
+      # canceled.
+      defp admit_new_blocking(message, context_id, metadata, extensions, notify, from, state) do
+        task = AshA2A.Protocol.Task.new(context_id: context_id, metadata: metadata)
+        task = AshA2A.Protocol.Task.Generation.append_message(task, message)
+
+        case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+          {:ok, state} ->
+            state = AshA2A.Protocol.Agent.State.track_context(state, task)
+            if is_pid(notify), do: send(notify, {:ash_a2a_task_admitted, task.id})
+            spawn_task_worker({:admitted, message, task, extensions}, from, task.id, state)
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
       end
 
       defp admit_continue_immediately(message, task, extensions, from, state) do
@@ -775,11 +819,11 @@ defmodule AshA2A.Protocol.Agent do
         end
       end
 
-      defp apply_default_result(_task_id, from, result, state) do
+      defp apply_default_result(task_id, from, result, state) do
         case result do
           {:ok, {%AshA2A.Protocol.Message{} = agent_message, _snapshot}} ->
             reply_to(from, {:ok, agent_message})
-            state
+            complete_admitted_with_message(task_id, agent_message, state)
 
           {:ok, {%AshA2A.Protocol.Task{} = task, _snapshot}} ->
             task = maybe_wrap_stream(task, from)
@@ -799,6 +843,27 @@ defmodule AshA2A.Protocol.Agent do
 
           {:error, reason} ->
             reply_to(from, {:error, reason})
+            state
+        end
+      end
+
+      # A pre-admitted task (`admit_first: true`) whose handler answered with a
+      # bare Message must not stay stranded `:submitted`: it completes with
+      # that message. No-op when there is no stored task or it is terminal.
+      defp complete_admitted_with_message(nil, _message, state), do: state
+
+      defp complete_admitted_with_message(task_id, agent_message, state) do
+        case AshA2A.Protocol.Agent.State.get_task(state, task_id) do
+          {:ok, task} ->
+            if AshA2A.Protocol.Task.terminal?(task) do
+              state
+            else
+              task = %{task | history: task.history ++ [agent_message]}
+              task = AshA2A.Protocol.Agent.State.transition(task, :completed, agent_message)
+              AshA2A.Protocol.Agent.State.put_task(state, task)
+            end
+
+          _ ->
             state
         end
       end

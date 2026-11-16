@@ -73,7 +73,7 @@ func writeFixtures(dir: String) throws {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-guard let cmd = args.first else { fail("usage: sa2a-approver sign|pubkey|fixtures ...") }
+guard let cmd = args.first else { fail("usage: sa2a-approver sign|approve|pubkey|fixtures ...") }
 do {
     let o = opts(Array(args.dropFirst()))
     switch cmd {
@@ -83,6 +83,17 @@ do {
         let r = try Approver.approve(messageBytes: msg, effectBytes: eff, signer: try makeSigner(o))
         try r.signature.write(to: URL(fileURLWithPath: need(o, "out")))
         print(r.summary)
+    case "approve":
+        // Sign (same WYSIWYS gate as `sign`) and submit the approval to the authority service's
+        // "approve" op over a unix socket. UNVERIFIED: not built or run.
+        let msg = try Data(contentsOf: URL(fileURLWithPath: need(o, "message")))
+        let eff = try Data(contentsOf: URL(fileURLWithPath: need(o, "effect")))
+        let r = try Approver.approve(messageBytes: msg, effectBytes: eff, signer: try makeSigner(o))
+        let body = try WireApproval.requestBody(approver: need(o, "approver"), result: r, messageBytes: msg)
+        let reply = try UnixFrameClient.call(path: need(o, "socket"), body: body)
+        print(r.summary)
+        if let code = try WireApproval.refusalCode(inReply: reply) { fail("authority refused: \(code)") }
+        print("submitted")
     case "pubkey":
         let s = try makeSigner(o)
         try s.publicKeySPKI.write(to: URL(fileURLWithPath: need(o, "out")))

@@ -82,7 +82,7 @@ defmodule AuthorityService.ApproverChannel.Mailbox do
   end
 
   defp verify_with(v, env, bytes, approver_id, digest, generation) do
-    now = (Keyword.get(v, :clock) || (&System.os_time/0)).() |> normalize_now()
+    now = (Keyword.get(v, :clock) || fn -> System.os_time(:second) end).()
     skew = Keyword.get(v, :skew, 0)
 
     check = fn at ->
@@ -109,8 +109,6 @@ defmodule AuthorityService.ApproverChannel.Mailbox do
   rescue
     _ -> {:error, :approval_invalid}
   end
-
-  defp normalize_now(n) when is_integer(n), do: n
 
   @impl true
   def solicit(server, approver_id, %{effect_digest: d, generation: g}) do
