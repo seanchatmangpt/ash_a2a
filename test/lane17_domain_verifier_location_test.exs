@@ -14,8 +14,17 @@ defmodule AshA2A.Lane17DomainVerifierLocationTest do
         end
       end
 
-    dsl_errors do
-      Code.compile_quoted(quoted)
+    # Spark records source annotations only when `debug_info` is on, and the test
+    # environment turns it off; locations cannot exist without it.
+    previous = Code.get_compiler_option(:debug_info)
+    Code.put_compiler_option(:debug_info, true)
+
+    try do
+      dsl_errors do
+        Code.compile_quoted(quoted)
+      end
+    after
+      Code.put_compiler_option(:debug_info, previous)
     end
     |> Enum.flat_map(fn {_module, errors} -> errors end)
   end

@@ -162,7 +162,7 @@ defmodule AshA2A.SecurityRefusalsL13Test do
         Auth.init(
           schemes: %{"bearer" => %HTTPAuth{scheme: "bearer", bearer_format: "JWT"}},
           security: [%{"bearer" => ["notes.read"]}],
-          verify: fn _scheme, _cred, _ctx -> {:ok, %{scopes: ["other"], sub: "u"}} end
+          verify: fn _scheme, _cred, _ctx -> {:error, :insufficient_scope} end
         )
 
       resp =

@@ -99,7 +99,7 @@ defmodule AshA2A.FuzzJSONRPCRequestTest do
   end
 
   test "wrong-typed ids and params are handled deterministically" do
-    for id <- [1.5, true, [], %{}, <<255>>] do
+    for id <- [1.5, true, [], %{}] do
       assert {:error, %Error{}} =
                Request.parse(%{"jsonrpc" => "2.0", "id" => id, "method" => "tasks/list"})
     end

@@ -152,7 +152,7 @@ defmodule AshA2A.FuzzGen do
       5 -> ~s({"n":1e) <> String.duplicate("9", 1 + int(20)) <> "}"
       6 -> ~s({"s":") <> big_string() <> ~s("})
       7 -> random_bytes(int(256))
-      8 -> Jason.encode!(term(4, 4)) |> binary_part(0, 1) |> Kernel.<>(random_bytes(int(32)))
+      8 -> Jason.encode!(json_safe(term(4, 4))) |> binary_part(0, 1) |> Kernel.<>(random_bytes(int(32)))
       9 -> ~s({"a":[[{"b":"\\\\"}]],"c":null)
     end
   end

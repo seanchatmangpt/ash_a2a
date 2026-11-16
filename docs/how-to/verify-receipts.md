@@ -18,7 +18,7 @@ mix ash_a2a.receipts.verify path/to/receipt.md --root . --git
 | `` `path` sha256:<64 hex> `` | Hash claim, checked against the file. |
 | `Commit: <hex>` | Must be 7 to 40 hex; with `--git`, must exist in the repo. |
 | `` `test/..._test.exs` `` | Cited test file must exist. |
-| Table row containing CONFORMANT | Refused if the row, or a cited `.md` doc with `Status:`/`Standing:`, says UNVERIFIED. |
+| Table row carrying a conformance label | Refused if the row, or a cited `.md` doc with `Status:`/`Standing:`, says UNVERIFIED. |
 
 ## Findings
 
