@@ -62,7 +62,7 @@ defmodule AshA2A.EventJournalEkvTest do
   end
 
   describe "two real nodes" do
-    setup_all do
+    setup do
       System.cmd("epmd", ["-daemon"], stderr_to_stdout: true)
       already_alive? = Node.alive?()
 

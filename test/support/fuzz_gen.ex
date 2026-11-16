@@ -72,7 +72,7 @@ defmodule AshA2A.FuzzGen do
       2 -> <<0xC0, 0x80>>
       3 -> "\u0000"
       4 -> String.duplicate("é", 1_000)
-      5 -> "‮﻿"
+      5 -> "\u202E\uFEFF"
       6 -> random_bytes(1 + int(64))
       7 -> "\\u00"
       8 -> String.duplicate("x", 10_000)
@@ -168,7 +168,7 @@ defmodule AshA2A.FuzzGen do
     }
   end
 
-  defp evil_utf8_safe, do: pick(["\u0000", String.duplicate("é", 50), "‮"])
+  defp evil_utf8_safe, do: pick(["\u0000", String.duplicate("é", 50), "\u202E"])
 
   def valid_task do
     %{
