@@ -1,6 +1,5 @@
 defmodule AshA2A.Lane17DomainVerifierLocationTest do
-  # UNVERIFIED: written without an Elixir toolchain; not compiled or run.
-  use ExUnit.Case, async: true
+    use ExUnit.Case, async: true
 
   import Spark.Test
 
@@ -29,7 +28,7 @@ defmodule AshA2A.Lane17DomainVerifierLocationTest do
 
   test "VerifyConfig refusals carry path and location" do
     body =
-      quote do
+      quote location: :keep do
         agent do
           description "x"
         end
@@ -44,7 +43,7 @@ defmodule AshA2A.Lane17DomainVerifierLocationTest do
 
   test "VerifyMounts refusals carry path and location" do
     body =
-      quote do
+      quote location: :keep do
         agent do
           name "n"
           url "https://x.example.com"

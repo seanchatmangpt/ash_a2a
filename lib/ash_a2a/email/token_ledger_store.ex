@@ -113,8 +113,8 @@ defmodule AshA2A.Email.TokenLedgerStore do
     {inserted, outcome} =
       Enum.reduce_while(keys, {[], :ok}, fn k, {ins, :ok} ->
         case EKV.put(store, k, %{mid: mid}, if_vsn: nil) do
-          {:ok, _vsn} ->
-            {:cont, {[k | ins], :ok}}
+          {:ok, vsn} ->
+            {:cont, {[{k, vsn} | ins], :ok}}
 
           {:error, :conflict} ->
             {:halt, {ins, :conflict}}
@@ -159,7 +159,11 @@ defmodule AshA2A.Email.TokenLedgerStore do
     end
   end
 
-  defp rollback(store, keys), do: Enum.each(keys, &EKV.delete(store, &1))
+  # The keys were inserted in CAS mode, so an eventual `EKV.delete/2` is refused with
+  # `:cas_managed_key`; roll back with a CAS delete against the version we wrote. A conflict
+  # means another writer already changed the key, which is not ours to undo.
+  defp rollback(store, inserted),
+    do: Enum.each(inserted, fn {k, vsn} -> EKV.delete(store, k, if_vsn: vsn) end)
 
   defp key(brief_id, n, token) do
     @key_prefix <> digest({brief_id, n, token})

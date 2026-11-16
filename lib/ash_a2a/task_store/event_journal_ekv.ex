@@ -28,7 +28,7 @@ defmodule AshA2A.TaskStore.EventJournalEkv do
     * Replay is a prefix scan and reads the local replica (eventual): an event
       just appended on another node may not be visible yet.
 
-  Status: UNVERIFIED (not compiled or run).
+  Status: compiled; see `test/ash_a2a/event_journal_ekv_test.exs`.
   """
 
   @behaviour AshA2A.Protocol.EventJournal
@@ -55,8 +55,8 @@ defmodule AshA2A.TaskStore.EventJournalEkv do
     events =
       name
       |> entries(task_id)
-      |> Enum.filter(fn {_key, record} -> record.generation > generation end)
-      |> Enum.map(fn {_key, record} -> record.event end)
+      |> Enum.filter(fn {_key, record, _vsn} -> record.generation > generation end)
+      |> Enum.map(fn {_key, record, _vsn} -> record.event end)
 
     {:ok, events}
   rescue
@@ -71,9 +71,13 @@ defmodule AshA2A.TaskStore.EventJournalEkv do
 
     all
     |> Enum.take(drop)
-    |> Enum.reduce_while(:ok, fn {key, _record}, :ok ->
-      case EKV.delete(name, key) do
-        :ok -> {:cont, :ok}
+    |> Enum.reduce_while(:ok, fn {key, _record, vsn}, :ok ->
+      # Keys are written in CAS mode (`if_vsn: nil`), so an eventual `EKV.delete/2`
+      # is refused with `:cas_managed_key`; delete in CAS mode against the version read.
+      case EKV.delete(name, key, if_vsn: vsn) do
+        {:ok, _} -> {:cont, :ok}
+        # Someone else already changed or removed it; trim is best-effort bounding.
+        {:error, :conflict} -> {:cont, :ok}
         other -> {:halt, {:error, other}}
       end
     end)
@@ -94,9 +98,10 @@ defmodule AshA2A.TaskStore.EventJournalEkv do
   defp entries(name, task_id) do
     name
     |> EKV.scan(task_prefix(task_id))
-    |> Enum.map(fn {key, value, _vsn} -> {key, value} end)
-    |> Enum.filter(fn {_key, value} -> match?(%{task_id: ^task_id, generation: _}, value) end)
-    |> Enum.sort_by(fn {key, _value} -> key end)
+    |> Enum.filter(fn {_key, value, _vsn} ->
+      match?(%{task_id: ^task_id, generation: _}, value)
+    end)
+    |> Enum.sort_by(fn {key, _value, _vsn} -> key end)
   end
 
   # Task ids are base64url-encoded so an id containing "/" cannot collide with

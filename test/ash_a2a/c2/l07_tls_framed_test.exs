@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshA2A.C2.L07TlsFramedTest do
-  # UNVERIFIED: written without an Elixir toolchain. Uses a real :ssl listener (no mocks).
+  # Uses a real :ssl listener (no mocks).
   use ExUnit.Case, async: false
 
   alias AshA2A.C2.L07Tls.Transport
@@ -13,10 +13,14 @@ defmodule AshA2A.C2.L07TlsFramedTest do
   defp san(name),
     do: [{:Extension, {2, 5, 29, 17}, false, [{:dNSName, String.to_charlist(name)}]}]
 
+  # RSA keys: the default (ECDSA) test keys fail the TLS 1.3 handshake here with
+  # `unable_to_supply_acceptable_cert`, independent of the transport under test.
+  defp rsa, do: [key: :public_key.generate_key({:rsa, 2048, 65_537})]
+
   defp pki do
     :public_key.pkix_test_data(%{
-      server_chain: %{root: [], intermediates: [], peer: [extensions: san("localhost")]},
-      client_chain: %{root: [], intermediates: [], peer: []}
+      server_chain: %{root: rsa(), intermediates: [], peer: rsa() ++ [extensions: san("localhost")]},
+      client_chain: %{root: rsa(), intermediates: [], peer: rsa()}
     })
   end
 
