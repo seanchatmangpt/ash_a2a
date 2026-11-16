@@ -199,8 +199,12 @@ defmodule AshA2A.Transport.Runtime do
 
       # returnImmediately: a NEW task is stored `:submitted`, a continuation
       # `:working`; the non-immediate path always runs the task `:working`.
+      # An admit-first stream (`subscribe: pid`) is answered with the task its
+      # stream opens on, and the work starts at once: that task is `:working`.
+      stream_admit? = is_pid(Keyword.get(opts, :subscribe))
+
       task =
-        if immediate? and not continuing?,
+        if immediate? and not continuing? and not stream_admit?,
           do: task,
           else: State.transition(task, :working)
 
@@ -236,19 +240,8 @@ defmodule AshA2A.Transport.Runtime do
           # Reply with the stored task now; the worker's result folds into the
           # stored task later (`finish/6`, which never overwrites a terminal
           # state). `:detached` has no caller to answer.
-          reply = wire_reply({:ok, task}, wire?)
-
-          # The caller is answered with the task as admitted (`:submitted`
-          # for a new one). The work starts now, and that is a mutation of
-          # its own: the stored task turns `:working` and its subscribers are
-          # shown it, so a stream reports working before the handler's result.
-          {task, state} =
-            if task.status.state == :submitted,
-              do: start_working(task, state),
-              else: {task, state}
-
           spawn_worker(handler, task, :detached, wire?)
-          {:reply, reply, state}
+          {:reply, wire_reply({:ok, task}, wire?), state}
 
         :inline ->
           task.id |> finish(from, handler.(), state, :inline, wire?) |> wake_reply()
@@ -260,18 +253,6 @@ defmodule AshA2A.Transport.Runtime do
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
-  end
-
-  defp start_working(task, state) do
-    task = State.transition(task, :working)
-    state = State.put_task(state, task)
-    snapshot = AshA2A.Protocol.Task.strip_stream_metadata(task)
-
-    for pid <- State.subscribers_for(state, task.id) do
-      send(pid, {:a2a_task_event, task.id, snapshot})
-    end
-
-    {task, wake_waiters(state)}
   end
 
   # v1.1 `artifactUpdates` admission: gated on the agent card's

@@ -172,10 +172,22 @@ defmodule AshA2A.JSONRPCRoutingTest do
 
     test "extra (slash) aliases are routing-only and target a canonical method" do
       extra = TransportPlug.extra_method_aliases()
-      assert extra["tasks/subscribe"] == "tasks/resubscribe"
+
+      # Spec v1.1 section 5.3 lists `SendLiveMessage` as a JSON-RPC method.
+      # It has no slash spelling and is served by its own route clause, so
+      # its table name `message/live` is not one of the dispatched canonical
+      # methods; every other extra alias targets one.
+      assert extra == %{
+               "tasks/subscribe" => "tasks/resubscribe",
+               "SendLiveMessage" => "message/live"
+             }
+
+      refute "message/live" in TransportPlug.canonical_methods()
 
       for {alias_name, canonical} <- extra do
-        assert canonical in TransportPlug.canonical_methods()
+        if alias_name != "SendLiveMessage",
+          do: assert(canonical in TransportPlug.canonical_methods())
+
         refute Map.has_key?(TransportPlug.method_aliases(), alias_name)
       end
     end

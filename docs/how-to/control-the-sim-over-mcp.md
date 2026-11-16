@@ -167,9 +167,6 @@ mix test test/ash_a2a/sim/sim_mcp_test.exs
   `scripts/a2a_v1_1_parity/setup.sh` installs. Without it the tool answers
   `ran: false` with the reason, and the `parity:` rows of
   `scripts/mcp_drive.py` fail.
-- An undecodable gRPC message answers `UNKNOWN` and an unknown gRPC method
-  answers a bare HTTP `404`; see "Needs owner" in the
-  [parity findings](../reference/a2a-v1-1-parity-findings.md#needs-owner).
 - A gRPC reply's `body` is the reply rendered as protobuf JSON and
   `body_base64` is the reply encoded as protobuf. To see the DATA bytes as
   they arrived, use `a2a_raw_request` with `binding: "grpc"`.

@@ -27,16 +27,7 @@ defmodule AshA2A.Sim.GrpcHandler do
   alias AshA2A.Transport.Plug, as: TransportPlug
 
   @impl true
-  def handle_send(message, params, ctx) do
-    result = TransportPlug.handle_send(message, params, ctx)
-
-    # A task answered while still running is followed, so its push configs
-    # hear how it ends, as on the HTTP mounts.
-    with {:ok, %AshA2A.Protocol.Task{} = task} <- result,
-         do: AshA2A.A2ATransport.DetachedWatch.start(ctx.agent, ctx.transport, task)
-
-    result
-  end
+  def handle_send(message, params, ctx), do: TransportPlug.handle_send(message, params, ctx)
 
   @impl true
   def handle_get(task_id, params, ctx), do: TransportPlug.handle_get(task_id, params, scoped(ctx))

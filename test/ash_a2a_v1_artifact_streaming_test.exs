@@ -284,8 +284,11 @@ defmodule AshA2A.V1ArtifactStreamingTest do
            ] =
              results
 
+    # The one frame is the whole artifact: nothing is appended, and it is
+    # "the final chunk of the artifact" (TaskArtifactUpdateEvent.last_chunk in
+    # specification/a2a.proto, v1.0.1 and v1.1.0-rc), so `lastChunk` is true.
     refute Map.has_key?(update, "append")
-    refute Map.has_key?(update, "lastChunk")
+    assert update["lastChunk"] == true
 
     assert %{
              "taskId" => ^task_id,

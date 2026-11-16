@@ -1130,14 +1130,18 @@ if Code.ensure_loaded?(Bandit) do
           expect: [
             ex("ok", "eq", false),
             ex("status", "ne", 0),
-            ex("trailers.grpc-status", "exists")
+            ex("trailers.grpc-status", "eq", "3")
           ]
         ),
         step(
           "an RPC the service does not have is refused",
           {"a2a_raw_request",
            %{"binding" => "grpc", "path" => "/lf.a2a.v1.A2AService/NoSuchRpc", "body" => ""}},
-          expect: [ex("ok", "eq", false), ex("status", "ne", 0)]
+          expect: [
+            ex("ok", "eq", false),
+            ex("status", "ne", 0),
+            ex("trailers.grpc-status", "eq", "12")
+          ]
         )
       ]
     end

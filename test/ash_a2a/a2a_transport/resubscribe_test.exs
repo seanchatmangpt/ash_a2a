@@ -210,8 +210,10 @@ defmodule AshA2A.A2ATransport.ResubscribeTest do
     _ = collect(a)
 
     all = url |> resubscribe(task_id) |> Map.fetch!(:body) |> frames()
-    # seq 1 = task snapshot, seq 2..6 = parts, seq 7 = final; skip through part 3 (seq 4)
-    tail = url |> resubscribe(task_id, [{"last-event-id", "4"}]) |> Map.fetch!(:body) |> frames()
+    # The stream is admitted first: seq 1 = the submitted task snapshot, seq 2
+    # = the working status (the handler returned its stream), seq 3..7 =
+    # parts, seq 8 = final; skip through part 3 (seq 5).
+    tail = url |> resubscribe(task_id, [{"last-event-id", "5"}]) |> Map.fetch!(:body) |> frames()
 
     assert artifact_texts(all) == for(i <- 1..5, do: "part #{i}")
     assert artifact_texts(tail) == ["part 4", "part 5"]

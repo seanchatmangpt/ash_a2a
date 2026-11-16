@@ -590,6 +590,40 @@ def run_streams(b, env):
                 f"last frame generation {last}, GetTask generation {final.generation}; streamed artifacts stored: "
                 f"{artifact_ids <= {a.artifact_id for a in final.artifacts}} (3.2.7: one event per mutation)")
 
+    # TaskArtifactUpdateEvent (a2a.proto): `append` marks a chunk that extends
+    # an artifact already sent, `last_chunk` the final chunk of the artifact.
+    updates = [f.artifact_update for f in result.frames if f.WhichOneof("payload") == "artifact_update"]
+    by_artifact = {}
+    for update in updates:
+        by_artifact.setdefault(update.artifact.artifact_id, []).append(update)
+    problems = []
+    if not updates:
+        problems.append("no artifactUpdate frame")
+    for artifact_id, chunks in by_artifact.items():
+        last_flags = [chunk.last_chunk for chunk in chunks]
+        if last_flags.count(True) != 1 or not last_flags[-1]:
+            problems.append(f"artifact {artifact_id}: lastChunk per chunk {last_flags}, expected only the final one true")
+        append_flags = [chunk.append for chunk in chunks]
+        if append_flags != [False] + [True] * (len(chunks) - 1):
+            problems.append(f"artifact {artifact_id}: append per chunk {append_flags}, expected false then true")
+    sem(b, op, "lastChunk on the final chunk of each artifact only", not problems, "; ".join(problems) or
+        "; ".join(f"{len(chunks)} chunk(s), lastChunk on the last" for chunks in by_artifact.values()))
+
+    # TimelineEntry.status (a2a.proto): "Streamed via TaskStatusUpdateEvent".
+    # Every status the task recorded after the opening snapshot, TASK_STATE_WORKING
+    # included, is one statusUpdate at that entry's generation (3.2.7).
+    if result.frames and result.frames[0].WhichOneof("payload") == "task":
+        opening = result.frames[0].task
+        final = await_state(b, opening.id, h.TERMINAL)
+        if final is not None:
+            recorded = [(e.generation, e.status.state) for e in final.timeline
+                        if e.WhichOneof("entry") == "status" and e.generation > opening.generation]
+            streamed = [(f.status_update.generation, f.status_update.status.state) for f in result.frames
+                        if f.WhichOneof("payload") == "status_update"]
+            names = lambda pairs: [f"{g}:{pb.TaskState.Name(s)}" for g, s in pairs]
+            sem(b, op, "every recorded status is a statusUpdate", recorded == streamed,
+                f"timeline after the snapshot {names(recorded)}, streamed {names(streamed)}")
+
     result = b.stream(op, send_request("create_note", {"body": "no title"}),
                       "interrupted stream stays valid", stop=lambda f: h.frame_state(f) == pb.TASK_STATE_INPUT_REQUIRED, wait=10)
     problems = stream_invariants(result, require_terminal=False)

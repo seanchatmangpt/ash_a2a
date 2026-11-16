@@ -78,7 +78,11 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   Each element is stored as its own task mutation before it is handed to the
   consumer (`{:stream_chunk, ...}`: the stream's artifact gains the chunk and
   the task generation advances by one), so the generation a chunk is emitted
-  with is the generation `tasks/get` reports after it (A2A v1.1 3.2.7).
+  with is the generation `tasks/get` reports after it (A2A v1.1 3.2.7). The
+  final element is stored as the chunk that completes the artifact
+  (`end_generation`), which is what `lastChunk: true` is derived from; to know
+  it is final, an element is handed out when its successor arrives or the
+  stream ends.
   `chunk_generation/1` returns that generation to the consuming process.
 
   The closing notification carries how the enumeration ended.
@@ -98,15 +102,36 @@ defmodule AshA2A.Protocol.Agent.Runtime do
     # emitter); otherwise one is minted here for the default path.
     artifact_id = artifact_id || AshA2A.Protocol.ID.generate("art")
 
+    # One-ahead: a lazy stream reveals its last element only by ending, so
+    # chunk i is stored and handed out when chunk i+1 arrives, and the final
+    # chunk when the stream ends. The final chunk is therefore STORED as the
+    # one that completes the artifact, and every event derived from the stored
+    # task (`AshA2A.Protocol.Task.Delta`) carries `lastChunk: true` on it and
+    # on no other, whoever reports it first.
     Stream.transform(
       enum,
-      fn -> {[], :incomplete} end,
-      fn part, {acc, outcome} ->
-        store_chunk(server, task_id, artifact_id, part)
-        {[part], {[part | acc], outcome}}
+      fn -> {nil, [], :incomplete} end,
+      fn part, {pending, acc, outcome} ->
+        case pending do
+          nil ->
+            {[], {{:chunk, part}, [part | acc], outcome}}
+
+          {:chunk, held} ->
+            store_chunk(server, task_id, artifact_id, held, false)
+            {[held], {{:chunk, part}, [part | acc], outcome}}
+        end
       end,
-      fn {acc, _outcome} -> {[], {acc, :complete}} end,
-      fn {acc, outcome} ->
+      fn
+        {{:chunk, held}, acc, _outcome} ->
+          store_chunk(server, task_id, artifact_id, held, true)
+          {[held], {nil, acc, :complete}}
+
+        {nil, acc, _outcome} ->
+          {[], {nil, acc, :complete}}
+      end,
+      fn {_pending, acc, outcome} ->
+        # A chunk still held here (the stream raised or was abandoned) was
+        # never stored; `finish_stream_artifact/2` folds it.
         parts = Enum.reverse(acc)
         GenServer.cast(server, {:stream_done, task_id, artifact_id, parts, outcome})
       end
@@ -114,6 +139,7 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   end
 
   @chunk_generation_key :ash_a2a_stream_chunk_generation
+  @chunk_last_key :ash_a2a_stream_chunk_last
 
   @doc """
   The task generation after the chunk the calling process last took from a
@@ -123,15 +149,22 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   @spec chunk_generation(String.t()) :: pos_integer() | nil
   def chunk_generation(task_id), do: Process.get({@chunk_generation_key, task_id})
 
+  @doc """
+  Whether the chunk the calling process last took from a wrapped stream of
+  `task_id` is the stream's final one (`lastChunk`).
+  """
+  @spec chunk_last?(String.t()) :: boolean()
+  def chunk_last?(task_id), do: Process.get({@chunk_last_key, task_id}) == true
+
   # A stream enumerated inside the agent process itself cannot call the agent;
   # its parts are folded by `finish_stream_artifact/2` instead.
-  defp store_chunk(server, task_id, artifact_id, part) do
+  defp store_chunk(server, task_id, artifact_id, part, last?) do
     reply =
       if server == self() do
         :not_stored
       else
         try do
-          GenServer.call(server, {:stream_chunk, task_id, artifact_id, part}, 15_000)
+          GenServer.call(server, {:stream_chunk, task_id, artifact_id, part, last?}, 15_000)
         catch
           :exit, _ -> :not_stored
         end
@@ -141,6 +174,8 @@ defmodule AshA2A.Protocol.Agent.Runtime do
       {:ok, generation} -> Process.put({@chunk_generation_key, task_id}, generation)
       _ -> Process.delete({@chunk_generation_key, task_id})
     end
+
+    Process.put({@chunk_last_key, task_id}, last?)
 
     :ok
   end

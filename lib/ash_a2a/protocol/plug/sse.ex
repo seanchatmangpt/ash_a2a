@@ -528,6 +528,7 @@ if Code.ensure_loaded?(Plug) do
           AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
             context_id: task.context_id,
             append: if(last > start, do: true),
+            last_chunk: if(AshA2A.Protocol.Agent.Runtime.chunk_last?(task.id), do: true),
             generation: gen
           )
 

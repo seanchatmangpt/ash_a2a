@@ -25,10 +25,33 @@ defmodule AshA2A.Protocol.StreamGenerationTest do
       case AshA2A.Protocol.Message.text(message) do
         "stream" -> {:stream, Stream.map(1..3, &Text.new("chunk #{&1}"))}
         "empty" -> {:stream, []}
+        "gated " <> gate -> {:stream, AshA2A.Protocol.StreamGenerationTest.gated_stream(gate)}
         "ask" -> {:input_required, [Text.new("more?")]}
         _ -> {:reply, [Text.new("answer")]}
       end
     end
+  end
+
+  # Two chunks, then a message barrier before the stream ends: the process
+  # enumerating it tells the test it is at the gate and waits for `:release`.
+  def gated_stream(gate) do
+    test = gate |> Base.decode64!() |> :erlang.binary_to_term()
+
+    Stream.resource(
+      fn -> 1 end,
+      fn
+        n when n <= 2 ->
+          {[Text.new("chunk #{n}")], n + 1}
+
+        3 ->
+          send(test, {:at_gate, self()})
+
+          receive do
+            :release -> {:halt, :done}
+          end
+      end,
+      fn _ -> :ok end
+    )
   end
 
   setup do
@@ -160,6 +183,69 @@ defmodule AshA2A.Protocol.StreamGenerationTest do
              Enum.filter(events, &Map.has_key?(&1, "artifactUpdate"))
   end
 
+  test "the final chunk carries lastChunk whoever observes the task first (TaskArtifactUpdateEvent)",
+       %{agent: agent} do
+    gate = self() |> :erlang.term_to_binary() |> Base.encode64()
+
+    producer =
+      Task.async(fn ->
+        Plug.Test.conn(:post, "/", "")
+        |> AshA2A.Protocol.Plug.SSE.stream_message(
+          agent,
+          AshA2A.Protocol.Message.new_user("gated " <> gate),
+          1
+        )
+      end)
+
+    # The producer is held at the barrier: it has produced both chunks but does
+    # not know yet that the second one is the last.
+    assert_receive {:at_gate, enumerator}, 2_000
+    [task_id] = agent |> :sys.get_state() |> Map.fetch!(:tasks) |> Map.keys()
+
+    # A subscriber gets in first. Before the fix the second chunk was already
+    # stored and published here, without lastChunk, and never corrected.
+    {:ok, baseline} = GenServer.call(agent, {:subscribe, task_id})
+    assert [open] = baseline.artifacts
+    assert Enum.map(open.parts, & &1.text) == ["chunk 1"]
+    assert open.end_generation == nil
+    refute_received {:a2a_task_event, ^task_id, _}
+
+    send(enumerator, :release)
+
+    # What every binding's subscribe stream derives from the agent's snapshots.
+    events = collect_events(task_id, baseline, [])
+    artifacts = for {_gen, %ArtifactUpdate{} = event} <- events, do: event
+
+    assert [%ArtifactUpdate{append: true, last_chunk: true} = last] = artifacts
+    assert Enum.map(last.artifact.parts, & &1.text) == ["chunk 2"]
+    assert {_, %StatusUpdate{final: true}} = List.last(events)
+
+    # The producer's own stream: one artifact, lastChunk on its final frame only.
+    frames = for %{"artifactUpdate" => update} <- frames(Task.await(producer, 5_000)), do: update
+
+    assert Enum.map(frames, &Map.get(&1, "lastChunk")) == [nil, true]
+    assert Enum.map(frames, &Map.get(&1, "append")) == [nil, true]
+    assert frames |> Enum.map(& &1["artifact"]["artifactId"]) |> Enum.uniq() |> length() == 1
+
+    # ... and the stored artifact was completed BY that chunk's mutation.
+    final = await_terminal(agent, task_id)
+    assert [stored] = final.artifacts
+    assert stored.end_generation == last.generation
+  end
+
+  defp collect_events(task_id, previous, acc) do
+    receive do
+      {:a2a_task_event, ^task_id, snapshot} ->
+        acc = acc ++ Delta.events(previous, snapshot)
+
+        if AshA2A.Protocol.Task.terminal?(snapshot),
+          do: acc,
+          else: collect_events(task_id, snapshot, acc)
+    after
+      2_000 -> flunk("the task never finished; events so far: #{inspect(acc, limit: 6)}")
+    end
+  end
+
   defp wait_for_subscriber(agent, task_id, tries \\ 200) do
     state = :sys.get_state(agent)
 
@@ -191,6 +277,24 @@ defmodule AshA2A.Protocol.StreamGenerationTest do
 
       assert artifact.generation == gen
       assert {_, %StatusUpdate{final: true}} = List.last(events)
+
+      # The working status the task passed through is a mutation of its own
+      # (a2a.proto TimelineEntry.status: "Streamed via TaskStatusUpdateEvent"),
+      # so a stream that starts before it MUST carry it.
+      all = Delta.events(nil, done)
+
+      working =
+        for {gen, %StatusUpdate{status: %{state: :working}, final: false}} <- all, do: gen
+
+      assert length(working) == 2
+      assert working == Enum.uniq(working)
+
+      for {gen, %StatusUpdate{} = status} <- all do
+        assert %AshA2A.Protocol.TimelineEntry{entry: {:status, recorded}} =
+                 Enum.find(done.timeline, &(&1.generation == gen))
+
+        assert recorded.state == status.status.state
+      end
 
       assert Delta.events(done, done) == []
 

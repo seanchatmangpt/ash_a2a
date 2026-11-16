@@ -25,6 +25,10 @@ rule applies to.
 | F-09 | 401 and 403 bodies were not in the binding's error format | `AshA2A.Protocol.Plug.Auth` option `:error_format` (`:http_json`, `:jsonrpc`; default `:plain` is unchanged) |
 | F-10 | the JSON-RPC binding had no `SendLiveMessage` | `AshA2A.Transport.Live.JSONRPC`, served by both JSON-RPC mounts (5.3) |
 | F-11 | the `/jsonrpc` mount replayed a client message after the snapshot and answered a version refusal with `id: null` | no replay; the refusal carries the request id (`AshA2A.Transport.Plug`) |
+| F-12 | the final chunk of a streamed artifact could go out without `lastChunk` (it was stored before the stream was known to have ended, and the flag was never sent afterwards) | the stream wrapper stores a chunk when its successor arrives or the stream ends, so the final chunk is stored as the one that completes the artifact; every event derived from the stored task carries `lastChunk: true` on it and on no other (`AshA2A.Protocol.Agent.Runtime.wrap_stream/4`). Vector `lastChunk on the final chunk of each artifact only` |
+| F-13 | (question, no defect at this revision) must a stream carry `TASK_STATE_WORKING`? | yes when it happened after the opening `Task`: `a2a.proto` `TimelineEntry.status` is "Streamed via `TaskStatusUpdateEvent`" and 3.2.7 allows no generation gap. The task store records working as its own generation and `AshA2A.Protocol.Task.Delta` emits it; a stream whose opening `Task` is already working has nothing to add. Vector `every recorded status is a statusUpdate` |
+| G-01 | an undecodable gRPC request message answered `UNKNOWN` (`grpc_server` decodes before any interceptor or service function and turns the raise into `UNKNOWN`) | `INVALID_ARGUMENT` with `ErrorInfo{INVALID_PARAMS}`: the server's own request codecs (`AshA2A.Transport.GRPC.Codec`, given to `use GRPC.Server, codecs:`) hand the RPC a marker instead of raising; on `SendLiveMessage` the bad `StreamRequest` is a `StreamError` and the stream stays open |
+| G-02 | an RPC the service does not have answered a bare HTTP/2 `404` (`GRPC.Server.Adapters.Cowboy.Router`) | HTTP `200`, Trailers-Only `grpc-status: 12` (`UNIMPLEMENTED`): `AshA2A.Transport.GRPC.Supervisor` appends `AshA2A.Transport.GRPC.UnknownMethod` as the last route of the listener it starts. A host that starts the endpoint itself (not through that supervisor) calls `AshA2A.Transport.GRPC.UnknownMethod.install/1` after `GRPC.Server.start_endpoint/3`, or keeps the adapter's 404 |
 
 F-07's JSON-RPC half touched `lib/ash_a2a/a2a_transport/sse.ex` and
 `plug.ex`, a few lines each.
@@ -80,6 +84,37 @@ Found by the first run of the check and fixed in the library.
 | F-07 (gRPC): `SendStreamingMessage` refused non-streaming and interrupting skills | `FAILED_PRECONDITION` `Task is not streamable` | every skill streams: `Task` first (sent before the handler runs, so its id is usable at once), one event per stored mutation, ending on a terminal or interrupted status (3.1.2) | `AshA2A.Transport.GRPC.Server`, `AshA2A.Transport.Runtime` (detached streams are drained) |
 | F-08 (gRPC half): inline push config and unary publication | `configuration.taskPushNotificationConfig` dropped over gRPC; a task answered by `SendMessage` / `CancelTask` fired no webhook unless the host handler published it | stored as `CreateTaskPushNotificationConfig` would; the server publishes the answered task | `AshA2A.Transport.GRPC.Server` (the `AshA2A.Sim.GrpcHandler` workaround is removed) |
 
+## Needs owner: version gating
+
+Raised by the record lane on 2026-11-16 while repairing older tests against
+`docs/specification.md` at tags `v1.0.1` and `v1.1.0-rc`. No repaired test needed a gate: every
+changed assertion is required by text that is the same at both tags (see the table above), and
+the tests were updated to that text, not loosened. Three cases are left for the owner of
+version gating, because earlier notes in this repository say the pinned TCK expects another
+status than section 5.4 does (no TCK checkout was available to re-read):
+
+| Case | Request | Section 5.4 (both tags) | TCK pin recorded in this repository | Served now |
+|---|---|---|---|---|
+| VG-01 | `POST /tasks/{id}:cancel` on a terminal task (`TaskNotCancelableError`, `-32002`) | `400 Bad Request` | `409` (`CORE-CANCEL-002`, cited by the old assertion in `test/ash_a2a_v1_error_registry_test.exs`) | `400` |
+| VG-02 | HTTP+JSON answer for `ContentTypeNotSupportedError` (`-32005`) | `400 Bad Request` | `415` (`tck/requirements/base.py`, cited in [error mapping decisions](a2a-error-mapping-decisions.md)) | `400` |
+| VG-03 | HTTP+JSON answer for `InvalidAgentResponseError` (`-32006`) | `500 Internal Server Error` | `502` (same source) | `500` |
+
+Two tables in `lib/` disagree on these codes: `status_for/1` in
+`lib/ash_a2a/transport/http_json.ex` answers 400 / 400 / 500, while `@spec_http` in
+`lib/ash_a2a/protocol/jsonrpc/error.ex` (`Error.spec_http_status/1`) still says 409 / 415 / 502
+and `test/error_version_table_test.exs` pins the latter. One of the two must change, or the
+difference must become an explicit gate on the negotiated version.
+
+Also for an owner:
+
+- `-32603` still passes free-form `data` through (`Error.internal_error("boom")` serializes
+  `"data": "boom"`), while section 9.5 describes `error.data` as an array of `@type` objects.
+- `message/stream` on a skill that does not chunk its output now answers a stream (3.1.2)
+  instead of `-32004`, so `test/ash_a2a_v1_owner_scope_test.exs` court (h) no longer reaches the
+  redacted `{:error, reason}` frame of `lib/ash_a2a/a2a_transport/sse.ex`. The court now pins
+  the served stream; that error branch has no transport-driven redaction test until another
+  trigger is supplied.
+
 ## Advisory
 
 - HTTP+JSON responses carry `content-type: application/json`. Spec 11.1 says
@@ -87,50 +122,3 @@ Found by the first run of the check and fixed in the library.
 - The HTTP statuses 400/400/500 above follow the spec table (5.4). The
   upstream TCK pinned 409/415/502 for the same three errors; a TCK run against
   this library will disagree until the TCK follows the specification.
-
-## Needs owner
-
-Open defects found by driving the gRPC endpoint through the MCP tool
-`a2a_raw_request` (`binding: "grpc"`). Both are decided inside the
-`grpc_server` dependency, before any function of
-`AshA2A.Transport.GRPC.Server` runs. Owner: the gRPC transport
-(`lib/ash_a2a/transport/grpc/`).
-
-### G-01: an undecodable request message answers `UNKNOWN`
-
-- **Reproduce:** call `a2a_raw_request` with
-  `{"binding": "grpc", "body_base64": "////AQI="}` (five bytes that are not a
-  `SendMessageRequest`).
-- **Observed:** HTTP/2 `200`, trailers `grpc-status: 2` (`UNKNOWN`),
-  `grpc-message: Internal Server Error`. The server logs a
-  `Protobuf.DecodeError`.
-- **Expected:** `grpc-status: 3` (`INVALID_ARGUMENT`). The A2A v1.1
-  specification maps a request that fails validation to gRPC
-  `INVALID_ARGUMENT`, HTTP `400` and JSON-RPC `-32602`; the HTTP+JSON and
-  JSON-RPC mounts already answer `400` and `-32700` for the same bytes.
-- **Cause:** `GRPC.Server.do_handle_request/4` calls `codec.decode/2` before
-  the interceptors and before the service function. `GRPC.Codec.Proto.decode/2`
-  raises, and the Cowboy handler turns every raise in that process into
-  `UNKNOWN` (`info({:EXIT, pid, {:handle_error, _}}, ...)`), an
-  `GRPC.RPCError` included. An interceptor therefore cannot catch it.
-- **Possible fix:** give the server its own codec
-  (`use GRPC.Server, service: ..., codecs: [...]`) whose `decode/2` returns a
-  marker instead of raising when `Protobuf.decode/2` fails, and have `unary/4`
-  and `streaming/3` answer `{:error, GRPC.RPCError.exception(status: :invalid_argument, ...)}`
-  for that marker.
-
-### G-02: an RPC the service does not have answers a bare HTTP `404`
-
-- **Reproduce:** call `a2a_raw_request` with
-  `{"binding": "grpc", "path": "/lf.a2a.v1.A2AService/NoSuchRpc", "body": ""}`.
-- **Observed:** HTTP/2 `404` with no `grpc-status` and no `content-type`.
-- **Expected:** HTTP/2 `200` with `grpc-status: 12` (`UNIMPLEMENTED`), which
-  is what the gRPC status code guide gives for a method the server does not
-  implement. A gRPC client that receives a bare `404` synthesises
-  `UNIMPLEMENTED` itself, so stock clients see the right code; a client that
-  reads the trailers does not.
-- **Cause:** `GRPC.Server.Adapters.Cowboy.Router.execute/2` replies `404`
-  when no route matches the path; no server module is called.
-- **Possible fix:** none inside `AshA2A.Transport.GRPC.Server`. It needs a
-  catch-all route in the endpoint's Cowboy dispatch, or a change upstream in
-  `grpc_server`.

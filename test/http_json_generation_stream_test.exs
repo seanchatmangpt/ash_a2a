@@ -219,11 +219,15 @@ defmodule AshA2A.HttpJsonGenerationStreamTest do
       )
     end
 
-    # taskId-correlated uplink: ack Task only (bare task JSON), no event frames.
+    # taskId-correlated uplink: ack Task only, no event frames.
     ack = uplink.()
     assert ack.status == 200
-    assert %{"id" => ^id} = ack.body
-    refute Map.has_key?(ack.body, "statusUpdate")
+    # Spec v1.1 section 3.1.12: an uplink call "MUST return only an
+    # acknowledgement — the current Task state". The operation returns
+    # StreamResponse, so the acknowledgement is a StreamResponse whose payload
+    # is the task: exactly one member, `task`.
+    assert %{"task" => %{"id" => ^id}} = ack.body
+    assert Map.keys(ack.body) == ["task"]
 
     {_frames1, buffer} = collect_until(ref, buffer, &(length(status_updates(&1)) >= 1))
 
@@ -270,13 +274,21 @@ defmodule AshA2A.HttpJsonGenerationStreamTest do
       open_sse(:post, live_url(server), %{"subscribe" => %{"taskId" => "no-such-task"}})
 
     {frames, _} = collect_until(ref, "", &(&1 != []))
-    assert [%{"error" => %{"code" => "TASK_NOT_FOUND", "taskId" => "no-such-task"}} | _] = frames
+    # StreamError.code uses "the same codes as the equivalent unary operation
+    # (e.g. `INVALID_ARGUMENT` ...)" (specification/a2a.proto v1.1.0-rc,
+    # message StreamError): a missing task is NOT_FOUND, as in section 5.4.
+    assert [%{"error" => %{"code" => "NOT_FOUND", "taskId" => "no-such-task"}} | _] = frames
   end
 
-  test "live downlink with an unknown payload kind frames UNKNOWN_PAYLOAD", %{server: server} do
+  # Spec v1.1 section 3.2.3 (payload extensibility): an unrecognised
+  # StreamRequest payload kind is rejected with a StreamError; its `code` is
+  # the unary code for a malformed request, INVALID_ARGUMENT (message
+  # StreamError in specification/a2a.proto).
+  test "live downlink with an unknown payload kind frames INVALID_ARGUMENT", %{server: server} do
     {ref, _task} = open_sse(:post, live_url(server), %{"telepathy" => %{}})
     {frames, _} = collect_until(ref, "", &(&1 != []))
-    assert [%{"error" => %{"code" => "UNKNOWN_PAYLOAD"}} | _] = frames
+    assert [%{"error" => %{"code" => "INVALID_ARGUMENT", "message" => message}} | _] = frames
+    assert message =~ "telepathy"
   end
 
   test "live uplink with an unknown session id is a 400 JSON error", %{server: server} do
@@ -447,9 +459,15 @@ defmodule AshA2A.HttpJsonGenerationStreamTest do
 
   # -- version-gated frames ----------------------------------------------------------------
 
-  test "message:stream emits messageUpdate frames only for A2A-Version >= 1.1, all stamped", %{
-    server: server
-  } do
+  # Spec v1.1 section 3.2.8: client-message timeline entries reach only clients
+  # that request A2A-Version 1.1 or later. Section 3.2.7: a streamed event
+  # carries the generation after its mutation, so the opening message, which
+  # the Task snapshot already contains, is not replayed as a messageUpdate
+  # frame behind that snapshot.
+  test "message:stream gives the client message to A2A-Version >= 1.1 only, in the snapshot timeline",
+       %{
+         server: server
+       } do
     stream = fn headers ->
       Req.post!(
         url: server.base_url <> "/message:stream",
@@ -462,7 +480,18 @@ defmodule AshA2A.HttpJsonGenerationStreamTest do
     new = stream.([{"a2a-version", "1.1"}])
     assert new.status == 200
     new_frames = frames(new.body)
-    assert Enum.any?(new_frames, &Map.has_key?(&1, "messageUpdate"))
+
+    assert [%{"task" => %{"generation" => snapshot_generation, "timeline" => timeline}} | _] =
+             new_frames
+
+    assert [%{"generation" => message_generation, "message" => %{"role" => "ROLE_USER"}}] =
+             Enum.filter(timeline, &Map.has_key?(&1, "message"))
+
+    assert String.to_integer(message_generation) < String.to_integer(snapshot_generation)
+
+    for %{"messageUpdate" => update} <- new_frames do
+      assert String.to_integer(update["generation"]) > String.to_integer(snapshot_generation)
+    end
 
     final = new_frames |> status_updates() |> List.last()
     assert is_map(final["statusUpdate"]) and Map.has_key?(final["statusUpdate"], "generation")
@@ -471,6 +500,7 @@ defmodule AshA2A.HttpJsonGenerationStreamTest do
     assert old.status == 200
     old_frames = frames(old.body)
     refute Enum.any?(old_frames, &Map.has_key?(&1, "messageUpdate"))
+    refute Enum.any?(old_frames, &match?(%{"task" => %{"timeline" => _}}, &1))
     assert Enum.any?(old_frames, &Map.has_key?(&1, "statusUpdate"))
   end
 end

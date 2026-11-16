@@ -701,7 +701,12 @@ defmodule AshA2A.Protocol.Agent do
       # the chunk's parts and the generation advances by one (A2A v1.1 3.2.7).
       # Called by the stream wrapper (`AshA2A.Protocol.Agent.Runtime.wrap_stream/4`)
       # from the process that enumerates the stream; replies `{:ok, generation}`.
-      def handle_call({:stream_chunk, task_id, artifact_id, part}, _from, state) do
+      def handle_call({:stream_chunk, task_id, artifact_id, part}, from, state),
+        do: handle_call({:stream_chunk, task_id, artifact_id, part, false}, from, state)
+
+      # `last?`: the chunk completes the artifact (`end_generation` is this
+      # mutation's generation), so its event carries `lastChunk: true`.
+      def handle_call({:stream_chunk, task_id, artifact_id, part, last?}, _from, state) do
         case AshA2A.Protocol.Agent.State.get_task(state, task_id) do
           {:ok, %{status: %{state: terminal}}}
           when terminal in [:completed, :failed, :canceled, :rejected] ->
@@ -711,7 +716,8 @@ defmodule AshA2A.Protocol.Agent do
             chunk =
               struct(AshA2A.Protocol.Artifact, artifact_id: artifact_id, parts: List.wrap(part))
 
-            {task, _stored} = AshA2A.Protocol.Task.Generation.record_artifact(task, chunk, false)
+            {task, _stored} =
+              AshA2A.Protocol.Task.Generation.record_artifact(task, chunk, last? == true)
 
             case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
               {:ok, state} ->

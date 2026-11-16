@@ -759,60 +759,63 @@ defmodule AshA2AV1OwnerScopeTest do
     end
   end
 
-  describe "(h) the SSE error path is redacted (lane X2)" do
+  # Spec section 3.1.2 (Send Streaming Message, v1.0.1 and v1.1.0-rc): a
+  # message the agent answers with a Task is a stream that begins with the
+  # Task and carries its updates. A skill that does not chunk its output is
+  # no longer refused with -32004; its result is one artifact frame. This
+  # court used to drive the redacted `{:error, reason}` frame of
+  # a2a_transport/sse.ex through that refusal; the refusal is gone, so what
+  # it pins now is that no frame of the served stream carries internal state.
+  describe "(h) the SSE stream of a non-chunking skill carries no internal state (lane X2)" do
     @tag :serial
-    test "message/stream on a non-streaming skill answers a redacted typed -32004 frame, not the task inspect",
+    test "message/stream on a non-chunking skill answers task, one whole artifact, terminal status; nothing internal on the wire",
          ctx do
       secret = "raw-credential-of-alice"
 
-      # Real rows the non-streaming read folds into the task's artifacts: if
-      # the redaction at a2a_transport/sse.ex (the `{:error, reason}` branch
-      # of stream_message/6) is ever reverted to a bare `inspect(reason)`,
-      # these strings went onto the wire verbatim.
       Enum.each(1..3, fn i ->
         Ash.Seed.seed!(AshA2AV1OwnerScopeTest.Converse, %{label: "w12-redact-#{i}"})
       end)
 
-      # A real message/stream against a skill that does NOT stream (the read
-      # skill without the dispatcher's `stream: true` data flag): Protocol
-      # .stream/3 answers {:error, {:not_streaming, task}} and the SSE
-      # handler answers the JSON-RPC error frame, not event frames.
       conn = call(ctx, "alice", "message/stream", %{"message" => skill_message("stream_chunks")})
       body = conn.resp_body
-      decoded = Jason.decode!(body)
 
-      # Anti-vacuity: this body IS the error frame. The code pin proves the
-      # error path was really taken -- marker refutations on a success frame
-      # would pass vacuously (the silent pass X2 proved).
-      assert %{"error" => %{"code" => -32_004}} = decoded
+      frames =
+        for "data: " <> json <- String.split(body, "\n"), do: Jason.decode!(json)
+
+      # Anti-vacuity: this body IS the three-frame stream, not an error frame.
+      assert [
+               %{"result" => %{"task" => %{"id" => task_id}}},
+               %{"result" => %{"artifactUpdate" => %{"taskId" => task_id, "lastChunk" => true}}},
+               %{
+                 "result" => %{
+                   "statusUpdate" => %{
+                     "taskId" => task_id,
+                     "status" => %{"state" => "TASK_STATE_COMPLETED"}
+                   }
+                 }
+               }
+             ] = frames
 
       # The task struct inspect never reaches the wire.
       refute body =~ "%AshA2A.Protocol.Task{"
 
-      # No credential material, no owner key, no seeded row content.
+      # No credential material and no owner key. (The seeded rows are the
+      # skill's own answer to its owner and are expected in the artifact.)
       refute body =~ secret
       refute body =~ "a2a.auth"
       refute body =~ "ash_a2a.owner"
-      refute body =~ "w12-redact-"
+      assert body =~ "w12-redact-1"
 
-      assert_no_internal_keys(decoded, "$stream_error")
+      for {frame, index} <- Enum.with_index(frames) do
+        assert_no_internal_keys(frame, "$stream[#{index}]")
+      end
 
-      # Teeth on real state: the stored task the error tuple carries DOES
-      # carry the leak markers internally, so the refutations above are
-      # load-bearing -- reverting the redaction re-leaks exactly these.
-      assert %{"result" => %{"tasks" => [task | _]}} =
-               scoped_rpc(ctx, "alice", "tasks/list", %{})
-
-      assert {:ok, internal} = GenServer.call(ctx.agent, {:get_task, task["id"]})
-
-      # The stored task is exactly the struct the error tuple carries: its
-      # inspect embeds the struct header, the owner key and the completed
-      # read's row artifacts, so the refutations above are load-bearing --
-      # reverting the sse.ex redaction re-leaks exactly these.
-      leak_vector = inspect({:not_streaming, internal})
+      # Teeth on real state: the stored task DOES carry the markers
+      # internally, so the refutations above are load-bearing.
+      assert {:ok, internal} = GenServer.call(ctx.agent, {:get_task, task_id})
+      leak_vector = inspect(internal)
       assert leak_vector =~ "%AshA2A.Protocol.Task{", "leak vector lost the task struct header"
       assert leak_vector =~ "ash_a2a.owner", "leak vector lost the owner-key marker"
-      assert leak_vector =~ "w12-redact-1", "internal task no longer carries the row content"
     end
   end
 

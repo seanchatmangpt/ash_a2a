@@ -1150,6 +1150,16 @@ defmodule AshA2A.Transport.GRPC.Server.SendHandler do
         {:ok, %AshA2A.Protocol.Task{} = task} = ok ->
           Server.attach_inline_push(task, push_config, ctx)
           Server.publish_task(ctx, task)
+
+          # A task answered while still running (`returnImmediately`) is
+          # followed, so its push configs hear how it ends, as on the HTTP
+          # bindings.
+          AshA2A.A2ATransport.DetachedWatch.start(
+            Map.get(ctx, :agent),
+            Map.get(ctx, :transport),
+            task
+          )
+
           ok
 
         {:error, reason} = error ->

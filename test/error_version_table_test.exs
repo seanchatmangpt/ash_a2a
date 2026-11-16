@@ -16,17 +16,20 @@ defmodule AshA2A.ErrorVersionTableTest do
   alias AshA2A.Transport.Grpc.Dispatch
 
   # {constructor, jsonrpc code, http status, grpc numeric, ErrorInfo reason}
+  # gRPC column: spec section 5.4 (v1.0.1 and v1.1.0-rc), where
+  # PushNotificationNotSupportedError, UnsupportedOperationError and
+  # VersionNotSupportedError are FAILED_PRECONDITION (9).
   @rows [
     {:task_not_found, -32_001, 404, 5, "TASK_NOT_FOUND"},
     {:task_not_cancelable, -32_002, 409, 9, "TASK_NOT_CANCELABLE"},
-    {:push_notification_not_supported, -32_003, 400, 12, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
-    {:unsupported_operation, -32_004, 400, 12, "UNSUPPORTED_OPERATION"},
+    {:push_notification_not_supported, -32_003, 400, 9, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
+    {:unsupported_operation, -32_004, 400, 9, "UNSUPPORTED_OPERATION"},
     {:content_type_not_supported, -32_005, 415, 3, "CONTENT_TYPE_NOT_SUPPORTED"},
     {:invalid_agent_response, -32_006, 502, 13, "INVALID_AGENT_RESPONSE"},
     {:authenticated_extended_card_not_configured, -32_007, 400, 9,
      "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
     {:extension_support_required, -32_008, 400, 9, "EXTENSION_SUPPORT_REQUIRED"},
-    {:version_not_supported, -32_009, 400, 12, "VERSION_NOT_SUPPORTED"},
+    {:version_not_supported, -32_009, 400, 9, "VERSION_NOT_SUPPORTED"},
     {:task_generation_mismatch, -32_010, 409, 10, "TASK_GENERATION_MISMATCH"}
   ]
 

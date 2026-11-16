@@ -173,8 +173,12 @@ defmodule AshA2A.HttpJsonLiveSessionTest do
       )
 
     assert ack.status == 200
-    assert %{"id" => ^id} = ack.body
-    refute Map.has_key?(ack.body, "statusUpdate")
+    # Spec v1.1 section 3.1.12: an uplink call "MUST return only an
+    # acknowledgement — the current Task state". The operation returns
+    # StreamResponse, so the acknowledgement is a StreamResponse whose payload
+    # is the task: exactly one member, `task`.
+    assert %{"task" => %{"id" => ^id}} = ack.body
+    assert Map.keys(ack.body) == ["task"]
 
     {frames, _} =
       collect_until(ref, buffer, fn fs -> Enum.any?(fs, &Map.has_key?(&1, "statusUpdate")) end)
