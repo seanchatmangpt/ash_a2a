@@ -40,13 +40,16 @@ defmodule AshA2A.C2.L07Tls.Transport do
   end
 
   @doc false
-  def send({mod, s}, data), do: mod.send(s, data)
+  def send({:gen_tcp, s}, data), do: :gen_tcp.send(s, data)
+  def send({:ssl, s}, data), do: :ssl.send(s, data)
 
   @doc false
-  def recv({mod, s}, len, timeout), do: mod.recv(s, len, timeout)
+  def recv({:gen_tcp, s}, len, timeout), do: :gen_tcp.recv(s, len, timeout)
+  def recv({:ssl, s}, len, timeout), do: :ssl.recv(s, len, timeout)
 
   @doc false
-  def close({mod, s}), do: mod.close(s)
+  def close({:gen_tcp, s}), do: :gen_tcp.close(s)
+  def close({:ssl, s}), do: :ssl.close(s)
 
   defp connect_uds(path, base_opts, timeout) when is_binary(path) do
     case :gen_tcp.connect({:local, String.to_charlist(path)}, 0, base_opts, timeout) do
