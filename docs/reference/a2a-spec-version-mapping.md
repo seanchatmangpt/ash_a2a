@@ -126,10 +126,19 @@ config store are node-local ETS. Durable tasks are implemented through the
 pluggable `AshA2A.Protocol.TaskStore` seam: `AshA2A.TaskStore.Ekv` survives an
 agent restart, and plug-created tasks are readable from a second node over a
 real 2-node EKV cluster (courts `test/ash_a2a_v1_taskstore_durability_test.exs`
-and `test/ash_a2a_v1_multinode_continuity_test.exs`). Pinned gaps:
-`tasks/list` pages the in-memory map only, and a mid-flight stream stays
-node-local (a resubscribed stream on a fresh agent never progresses by
-itself). Durable cross-node task continuity: PARTIAL.
+and `test/ash_a2a_v1_multinode_continuity_test.exs`). `tasks/list` reads
+through the store via `AshA2A.Transport.Runtime.list_tasks_for/3` (store tasks
+merged with the in-memory map, owner-gated, one pagination pass, store read
+failure surfaced as an error; covered by
+`test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, UNVERIFIED,
+not yet run). Pinned gap: a mid-flight stream stays node-local: the replay journal behind `tasks/resubscribe` (`lastSeenGeneration`
+replay) is the node-local ETS event log, so a resubscribe on a fresh agent or a
+second node gets the stored task snapshot from the `TaskStore` but no replayed
+events, and it never progresses by itself (no live producer is attached to that
+agent). Closing this needs a durable task-event journal; it is NOT implemented.
+Status: UNVERIFIED (no Elixir toolchain in the authoring environment; the
+narrowing is pinned by `test/lane_l05/resubscribe_claim_test.exs`, not yet run).
+Durable cross-node task continuity: PARTIAL.
 
 ## External TCK
 

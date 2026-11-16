@@ -106,6 +106,15 @@ defmodule AshA2A.Protocol.JSONRPC.Request do
         {:error,
          Error.invalid_params("\"statusTimestampAfter\" must be a valid ISO 8601 timestamp")}
 
+      bad_list_bool?(params, "includeArtifacts") ->
+        {:error, Error.invalid_params("\"includeArtifacts\" must be a boolean")}
+
+      bad_list_string?(params, "contextId") ->
+        {:error, Error.invalid_params("\"contextId\" must be a string")}
+
+      bad_list_string?(params, "pageToken") ->
+        {:error, Error.invalid_params("\"pageToken\" must be a string")}
+
       true ->
         :ok
     end
@@ -357,6 +366,22 @@ defmodule AshA2A.Protocol.JSONRPC.Request do
     case AshA2A.Protocol.JSONRPC.Request.history_length(map) do
       nil -> false
       hl -> not is_integer(hl) or hl < 0
+    end
+  end
+
+  # ListTasksRequest scalar members: a present, non-null value of the wrong
+  # JSON type is refused (-32602) instead of being silently coerced or ignored.
+  defp bad_list_bool?(params, key) do
+    case Map.get(params, key) do
+      nil -> false
+      v -> not is_boolean(v)
+    end
+  end
+
+  defp bad_list_string?(params, key) do
+    case Map.get(params, key) do
+      nil -> false
+      v -> not is_binary(v)
     end
   end
 

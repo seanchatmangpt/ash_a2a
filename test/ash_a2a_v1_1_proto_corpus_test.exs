@@ -122,7 +122,10 @@ defmodule AshA2A.V1_1ProtoCorpusTest do
 
   defp present?(text, {:rpc, name}), do: text =~ ~r/rpc #{name}\(/
   defp present?(text, {:message, name}), do: message_block(text, name) != nil
-  defp present?(text, {:error, code}), do: text =~ code or code == "-32010"
+  # The proto carries no numeric JSON-RPC codes; the generation-mismatch error
+  # is pinned to the proto concept it guards (`if_generation_match`).
+  defp present?(text, {:error, "-32010"}), do: text =~ "if_generation_match"
+  defp present?(_text, {:error, _code}), do: false
 
   defp present?(text, {:field, msg, field}) do
     case message_block(text, msg) do

@@ -63,7 +63,7 @@ met. "Court" is the specific test in the cited file.
 | 19 | `Task.history` accumulates every prior user+agent message in order | CONFORMANT | same file, court (e) — role sequences `user agent` → `user agent user agent` → 6-message thread, content-asserted |
 | 20 | Cancel idempotency (§3.3.1): repeat cancellation has the same effect; a repeat MAY return `TaskNotFound` after purge | CONFORMANT | `test/ash_a2a_v1_cancellation_test.exs` court (e) — the second cancel of an already-canceled task is idempotent success: 200 with the canceled task, and `:ok` at the agent GenServer surface; only an already-terminal non-canceled task still refuses `-32002` |
 | 21 | In-flight cancel: the server attempts cancellation, success not guaranteed (§3.1.5) | IMPLEMENTED, UNVERIFIED (no Elixir toolchain; courts not run) | `AshA2A.Agent` path: `AshA2A.Transport.Runtime.cancel_in_flight/3` runs the cancel hook, persists `:canceled`, kills the worker and answers the pending send with the canceled task; `test/ash_a2a_v1_cancellation_test.exs` court (b) asserts this over the wire, court (b') the opt-in `execution: [cancel_in_flight: :refuse]` `-32002`. `AshA2A.Protocol.Agent` path: `interrupt_task_worker/2` in `lib/ash_a2a/protocol/agent.ex` kills the default-path worker after the canceled task is persisted; `test/ash_a2a_protocol_agent_inflight_cancel_test.exs`. Remaining: a plain `{:new}` send is not stored as a task until its worker finishes, so it cannot be canceled by id; custom `handle_cancel/1` hooks that do not stop their own side effects are still best effort |
-| 22 | `tasks/list` request shape per `ListTasksRequest` | PARTIAL (fix in flight, UNVERIFIED until coordinator runs courts) | Correction: `historyLength` IS a real `ListTasksRequest` field upstream, so the "spec defines it only on `tasks/get`" premise below is wrong; wave-2 lane W8 fixes the behavior and this row. Pre-fix text: `test/ash_a2a_v1_pagination_test.exs` court D — the repo also accepts `historyLength` on `tasks/list` (the spec defines it only on `tasks/get`) and defaults it to `0`, so listed tasks carry no history unless the client opts in; response `pageSize` echoes the requested cap (`authorize_task_list` in `lib/ash_a2a/protocol/plug.ex` keeps the cap set by `Task.Filter.apply`; filtering shrinks the page, not the reported cap) |
+| 22 | `tasks/list` request shape per `ListTasksRequest` | PARTIAL, UNVERIFIED (no Elixir toolchain; courts not run) | Lane L02: `JSONRPC.Request.validate_params/1` for `tasks/list` now also refuses wrong-typed `includeArtifacts`, `contextId` and `pageToken` with `-32602`; test in `test/ash_a2a_v1_pagination_test.exs` court E. Remaining: REST query and gRPC decoding of the same members not re-audited; `JSON.decode_list_tasks_request/1` still does not type-check. Correction: `historyLength` IS a real `ListTasksRequest` field upstream, so the "spec defines it only on `tasks/get`" premise below is wrong; wave-2 lane W8 fixes the behavior and this row. Pre-fix text: `test/ash_a2a_v1_pagination_test.exs` court D — the repo also accepts `historyLength` on `tasks/list` (the spec defines it only on `tasks/get`) and defaults it to `0`, so listed tasks carry no history unless the client opts in; response `pageSize` echoes the requested cap (`authorize_task_list` in `lib/ash_a2a/protocol/plug.ex` keeps the cap set by `Task.Filter.apply`; filtering shrinks the page, not the reported cap) |
 | 23 | Final merged artifact id equals the emitted chunk-sequence id | CONFORMANT | `test/ash_a2a_v1_artifact_streaming_test.exs` court (c) — the fold reuses the pre-minted `:stream_artifact_id` end to end (`lib/ash_a2a/protocol/agent.ex` `stream_done`, `lib/ash_a2a/a2a_transport/plug.ex` `stream_parts`); the court asserts `final_id == hd(chunk_ids)` |
 | 24 | Agents MUST reject messages with mismatching `contextId` and `taskId` (§3.4.3/§4.1.4) | CONFORMANT | `test/ash_a2a_v1_context_continuity_test.exs` court (d) — a non-empty request `contextId` differing from the stored one is refused with the typed `-32001` not-found envelope, indistinguishable from an unknown task (§9.5 parity); `tasks/get` agrees the task was never touched |
 | 25 | Agents MAY generate a new `contextId` when the message omits one (§3.4.1) | CONFORMANT | same file, court (a) — the server mints `ctx-` + 128 CSPRNG bits (`AshA2A.Transport.Runtime.secure_context_id/0`), non-empty and stable across follow-ups |
@@ -173,6 +173,41 @@ introduced **no TCK regression**. Test-level counts shifted 235/30/0 →
 234/31/0: one additional environment-dependent test skip, no
 requirement flipped status. Raw reports: `/Users/sac/a2a-tck/reports/`
 (session-ephemeral).
+
+### Which tests are skipped, and why (lane L16, UNVERIFIED)
+
+**The 31 skipped test IDs and their skip reasons are not recoverable
+from this repository.** The raw reports (JUnit, HTML,
+`compatibility.json`) were session-ephemeral and are not committed;
+`reports/` does not exist in the tree, and no toolchain or TCK checkout
+was available when this section was revised. What the recorded notes
+support, and no more:
+
+- Per-transport skips from the 2026-10-13 run: jsonrpc 7, http_json 5,
+  grpc 3 (15 transport-level rows). The remaining 16 of the 31
+  test-level skips are not attributed to any transport or requirement
+  in the notes.
+- The earlier 2026-10-05 run recorded 4 requirement-level skips,
+  `CORE-CAP-*`, with the reason "SUT configuration did not enable those
+  capabilities". Which capability each one probes was not recorded, so
+  it cannot be said whether the current `tck_sut.exs` (streaming, push
+  notifications and the extended card advertised) still skips them.
+- The 2026-10-13 notes call one extra skip (30 to 31) "environment
+  dependent"; that attribution is unverified.
+
+Consequence: no SUT change was made in `tck_sut.exs` or
+`tck_sut_auth.exs` for this gap. Enabling a capability without knowing
+which skip it unblocks would be guesswork, and nothing could be run to
+check it. The gap is narrowed to "unattributed", not closed.
+
+To attribute the skips, re-run the suite at the current pin and keep
+the reports: use the command above with `pytest -rs` (or read the
+`<skipped message=...>` elements of the JUnit XML), then classify each
+skip as server-feasible (a capability or behaviour the SUT could
+enable), TCK-side (needs a client, TLS or auth prerequisite the main
+SUT lacks; DY4 covers some of those), or environmental. Only then
+change the SUT, and record the new tuple with its pin SHA and date.
+This remains UNVERIFIED and is not TCK certification.
 
 ## Earlier run (2026-10-05, G6 integration tree `2379635c`)
 

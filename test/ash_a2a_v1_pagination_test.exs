@@ -313,6 +313,21 @@ defmodule AshA2A.Protocol.V1PaginationTest do
 
       assert error["code"] == -32_602
     end
+
+    test "wrong-typed includeArtifacts, contextId and pageToken are refused with -32602", %{
+      plug_opts: plug_opts
+    } do
+      for {key, value} <- [
+            {"includeArtifacts", "yes"},
+            {"contextId", 7},
+            {"pageToken", 7}
+          ] do
+        error = rpc_error(plug_opts, "tasks/list", %{key => value})
+
+        assert error["code"] == -32_602
+        assert param_detail(error) =~ key
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------

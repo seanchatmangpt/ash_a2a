@@ -107,7 +107,7 @@ defmodule AshA2A.Semantic.Compiler do
 
   defp do_compile_source(resource_or_domain, %Source{} = source, opts) do
     role = Keyword.get(opts, :role, @default_role)
-    generate = Keyword.get(opts, :generate_object, &ReqLLM.generate_object/4)
+    generate = Keyword.get(opts, :generate_object, &default_generate_object/4)
 
     # `[:ash_a2a, :llm, :invoke]`: this path allocates exploratory model
     # inference. Emitted on entry, before role resolution, so a misconfigured
@@ -137,6 +137,17 @@ defmodule AshA2A.Semantic.Compiler do
     else
       {:error, %{code: _} = refusal} -> {:error, refusal}
       {:error, reason} -> {:error, %{code: :semantic_compilation_failed, detail: reason}}
+    end
+  end
+
+  # Optional dep guard: :req_llm may be absent in a consumer build. Return a
+  # typed error instead of raising UndefinedFunctionError.
+  @doc false
+  def default_generate_object(model_spec, prompt, schema, opts) do
+    if Code.ensure_loaded?(ReqLLM) and function_exported?(ReqLLM, :generate_object, 4) do
+      apply(ReqLLM, :generate_object, [model_spec, prompt, schema, opts])
+    else
+      {:error, {:unsupported, :req_llm}}
     end
   end
 

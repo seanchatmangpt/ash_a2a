@@ -30,7 +30,9 @@ Smallest change on each side:
 1. `authority_service` `Issuer` derives the policy class from an actuator-shaped effect
    (`consequence_class`, tier amount 0) as well as from `effect_class`/`amount`. Unknown classes
    still refuse. One canonical byte string is now what the authority certifies and what the
-   actuator executes.
+   actuator executes. `Issuer.to_actuator_certificate/1` maps `{envelope, message}` to the
+   actuator's `signatures: [...]` certificate form (UNVERIFIED: written without an Elixir
+   toolchain, not run).
 2. Control plane: `AshA2A.C2.ActuatorProfile` (effect mapping and certificate conversions) and
    two framed clients, `AuthorityClient.Framed` (`:authority_socket`) and
    `ActuatorClient.Framed` (`:actuator_socket`). The actuator client re-derives the effect bytes

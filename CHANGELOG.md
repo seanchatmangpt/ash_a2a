@@ -11,20 +11,24 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ## [Unreleased]
 
+Package version in `mix.exs` is still 26.11.13 (the 26.11.14/15 notes were folded into
+this block, not published separately). Release target is v26.11.15; see
+`docs/reference/release-readiness-v26.11.15.md` for blockers. Labels: **Unverified** means
+no test or build run is cited for it in this tree; **Verified (recorded)** means a run is
+recorded in a cited receipt but was not re-run when this entry was written.
+
 ### Added
 
 - Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
   `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
   dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified.
-- A2A v1.1 support (target: upstream tag `v1.1.0-rc`, status PARTIAL; no v1.1 TCK verdict
-  exists). Cards advertise `protocolVersion` 1.1 and `A2A-Version` accepts 0.3, 1.0 and 1.1.
-  Task `generation`/`timeline`, `ifGenerationMatch` (`-32010`, HTTP 409 `ABORTED`),
-  `POST /message:live`, `currentGeneration` long poll, `lastSeenGeneration` resume, and
-  `userArtifacts`/`artifactUpdates`. Guide: `docs/how-to/v1-1-live-and-generations.md`.
-- User-artifact support is served on the agent card (`user_artifacts`).
-- Documented configuration: `:long_poll_timeout_ms`, `:events_transport`, `user_artifacts`,
-  `cancel_in_flight`, `validate_input_modes`, and the mount `tenant` option
-  (`docs/reference/configuration.md`).
+- A2A v1.1 deltas on top of the 26.11.13 entry below (target: upstream tag `v1.1.0-rc`,
+  status PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and
+  `A2A-Version` accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration`
+  resume. Guide: `docs/how-to/v1-1-live-and-generations.md`. Unverified here; row-level
+  evidence is in `docs/reference/a2a-v1-1-conformance.md`.
+- Documented configuration: `:events_transport`, `cancel_in_flight`, `validate_input_modes`
+  and the mount `tenant` option (`docs/reference/configuration.md`). Unverified.
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
 ### Changed
@@ -32,39 +36,23 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 - `Message.extensions` is now a list of extension URIs (`[String.t()] | map()`, default `[]`).
 - The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
 - Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`.
-- The server accepts `A2A-Version` 0.3, 1.0 and 1.1; the client-header default stays 1.0.
+- The client-header default stays 1.0.
 - README reorganized: install and quickstart first, conformance and status material last.
-
-### Changed (packaging and supervision)
-
 - `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`
-  and `req_llm` are optional dependencies; a consumer compiles `ash_a2a` without
-  them (verified against a path-dependent consumer project).
-- The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
+  and `req_llm` are optional dependencies, so a consumer can compile `ash_a2a` without
+  them. A path-dependent consumer build was reported as passing in the commit history;
+  not re-run here. Unverified.
+- The root supervisor is `:rest_for_one` (stores first) with a wider restart budget. Unverified.
 - ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
 
-### Fixed (durability)
+### Fixed
 
 - A checkpoint the store silently dropped is no longer reported as landed
-  (`Checkpoint.land/4` reads back and raises).
+  (`Checkpoint.land/4` reads back and raises). Unverified.
 - Handover completion and claim release carry the claim token: a runner whose
-  claim was taken over gets `:claim_lost` and cannot overwrite the peer.
-
-### Security
-
-- Legacy push-notification sender resolves and refuses non-public addresses and
-  never follows redirects (SSRF).
-- gRPC ignores the forwarded-certificate header unless
-  `trust_forwarded_cert: true`.
-- `A2A-Version` echoed in a response header is limited to a short printable token.
-- HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
-- Ash calls pass `authorize?: true` explicitly; `forbidden` replies and
-  extended-card provider failures no longer carry internal detail.
-
-### Fixed (runtime)
-
+  claim was taken over gets `:claim_lost` and cannot overwrite the peer. Unverified.
 - A failing checkpoint no longer aborts a node drain; a worker is evicted only
-  when its frame landed.
+  when its frame landed. Unverified.
 - A failed task-event journal write is logged instead of crashing the events server.
 - `KillSwitch.trip/3` waits up to 30 s so a slow disk cannot fail the halt.
 - The transport worker is killed when its agent dies.
@@ -72,7 +60,19 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
   `consequence` to `observe`.
 - `ash_ai` is a test-only dependency.
 - The `lease_required?` verifier reads the persisted `:authorizers` key, so resources that
-  carry `Ash.Policy.Authorizer` are no longer refused.
+  carry `Ash.Policy.Authorizer` are no longer refused. Unverified.
+
+### Security
+
+All entries below are Unverified in this tree (no run cited).
+
+- Legacy push-notification sender resolves and refuses non-public addresses and
+  never follows redirects (SSRF).
+- gRPC ignores the forwarded-certificate header unless `trust_forwarded_cert: true`.
+- `A2A-Version` echoed in a response header is limited to a short printable token.
+- HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
+- Ash calls pass `authorize?: true` explicitly; `forbidden` replies and
+  extended-card provider failures no longer carry internal detail.
 
 ## [26.11.13] - 2026-11-13
 
@@ -90,13 +90,15 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ### Added
 
-- A2A v1.1 capabilities (unverified; no test run is cited here): `message/live`,
+- A2A v1.1 capabilities (unverified in this entry; the evidence binding is in
+  `docs/reference/a2a-v1-1-conformance.md`): `message/live`,
   `StreamRequest` and `StreamError` frames, task `generation` and `timeline`,
   `TaskMessageUpdateEvent`, `timelineLength`, `ifGenerationMatch` (`-32010`),
   `currentGeneration` long poll, `userArtifacts`/`artifactUpdates`, and
   `TaskPushNotificationConfig.protocolVersion`. Vendored upstream proto at
   `priv/a2a_v1_1_spec_corpus/a2a.proto`; v1.0.1 remains supported and v0.3 is decode-only.
-- `config :ash_a2a, :long_poll_timeout_ms` and the `user_artifacts` agent-card capability.
+- `config :ash_a2a, :long_poll_timeout_ms` and the `user_artifacts` agent-card capability
+  (served on the agent card as `user_artifacts`).
 - `docs/reference/a2a-v1-1-conformance.md` and a corpus test that fails loudly on pending
   items.
 - `Attestation.Gate.verify_gps_trajectory/2` and `AshA2A.Attestation.GateGrantAllowlist`:

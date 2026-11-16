@@ -43,6 +43,53 @@ defmodule AuthorityService.Issuer do
     GenServer.call(server, {:issue, request, Keyword.get(opts, :now)}, 15_000)
   end
 
+  @doc """
+  Maps an issued `%{"envelope", "message"}` certificate to the actuator's certificate map
+  (`Actuator.Certificate` key set: `v effect_digest principal policy_epoch revocation_epoch
+  generation not_before expires audience signatures`), with one signature entry
+  `%{"kid", "alg", "nonce", "signature"}` (`signature` base64url). Pure and explicit: the
+  fields are read from the signed message and cross-checked against the envelope, and the
+  actuator's key set is not widened. Returns `{:error, :malformed_certificate}` or
+  `{:error, :envelope_message_mismatch}` on any inconsistency. UNVERIFIED: not run (no
+  Elixir toolchain when written).
+  """
+  @spec to_actuator_certificate(map()) :: {:ok, map()} | {:error, atom()}
+  def to_actuator_certificate(%{"envelope" => env, "message" => msg})
+      when is_map(env) and is_binary(msg) do
+    with {:ok, envelope} <- Envelope.decode(Jcs.encode(env)) |> tag(:malformed_certificate),
+         {:ok, bytes} <- Envelope.b64(msg) |> tag(:malformed_certificate),
+         {:ok, m} <- SignedMessage.parse(bytes) |> tag(:malformed_certificate),
+         true <-
+           (SignedMessage.digest(bytes) == envelope.signed_bytes_digest and
+              m["kid"] == envelope.kid and m["alg"] == envelope.alg and
+              m["nonce"] == envelope.nonce) or {:error, :envelope_message_mismatch} do
+      {:ok,
+       %{
+         "v" => m["v"],
+         "effect_digest" => m["effect_digest"],
+         "principal" => m["principal"],
+         "policy_epoch" => m["policy_epoch"],
+         "revocation_epoch" => m["revocation_epoch"],
+         "generation" => m["generation"],
+         "not_before" => m["not_before"],
+         "expires" => m["expires"],
+         "audience" => m["audience"],
+         "signatures" => [
+           %{
+             "kid" => envelope.kid,
+             "alg" => envelope.alg,
+             "nonce" => envelope.nonce,
+             "signature" => Base.url_encode64(envelope.signature, padding: false)
+           }
+         ]
+       }}
+    end
+  rescue
+    _ -> {:error, :malformed_certificate}
+  end
+
+  def to_actuator_certificate(_), do: {:error, :malformed_certificate}
+
   @impl true
   def init(%Config{} = config) do
     case Journal.open(config.journal_path, config.anchor_path) do

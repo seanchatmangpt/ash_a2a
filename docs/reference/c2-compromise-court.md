@@ -265,15 +265,14 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
 
 ## Known gaps and handoffs
 
-* **AuthorityService cannot issue for the actuator today.** `AuthorityService.Issuer` parses
-  effects requiring `effect_class` and `amount`; `Actuator.Effect` requires an exact key set
-  without them. The authority emits `{envelope, message}` while the actuator wants
-  `{..., signatures: [...]}` (the same signed message, mechanically convertible). Until one
-  side maps
-  `consequence_class`/`params` to the policy class and amount, actuator-shaped certificates in this
-  court come from the keymaster stand-in, which journals intended issuances exactly like the real
-  issuer; the real authority is attacked on its own terms (`C2C-B*`). The `compat` section of
-  the report records both refusals (`BLOCKED`).
+* **AuthorityService to actuator mapping (UNVERIFIED, not run: no Elixir toolchain).**
+  `AuthorityService.Issuer` now derives the policy class from an actuator-shaped effect
+  (`consequence_class`, amount 0) and `Issuer.to_actuator_certificate/1` maps `{envelope,
+  message}` to the actuator's exact certificate key set with a `signatures` list; the actuator's
+  key set is unchanged. Remaining: the court harness still uses the keymaster stand-in for
+  actuator-shaped certificates until it is switched to the real issuer, and the `compat`
+  section's recorded refusals are stale until re-run. The actuator profile still refuses
+  general `PreparedEffect`s (`:payload_profile`), by design.
 * Check 12's `malformed_window` branch is not reachable through the wire: the crypto boundary
   (check 10) refuses a certificate whose `expires <= not_before` first with `malformed_envelope`
   (attack `C2C-A14` accepts either code).
