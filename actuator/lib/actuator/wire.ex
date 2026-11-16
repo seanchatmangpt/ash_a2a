@@ -55,6 +55,9 @@ defmodule Actuator.Wire do
     else
       {:error, code} when is_atom(code) ->
         refuse(if(code == :config_unavailable, do: "config", else: "parse"), code)
+
+      _ ->
+        refuse("parse", :malformed_request)
     end
   end
 

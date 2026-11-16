@@ -101,15 +101,14 @@ if Code.ensure_loaded?(Plug) do
            :ok <- bind_approver(brief, principal),
            {:ok, entries, approved} <- intent(inbound, brief),
            :ok <- verify_tokens(brief, approved, body),
-           :ok <- check_fresh(approved, digests),
+           :ok <- stale_with(check_fresh(approved, digests), inbound, conn),
            :ok <- consume(inbound, approved, body, opts) do
         run(conn, inbound, principal, entries, approved, opts)
       else
         {:replay, cached} ->
           send_json(conn, 200, Map.merge(cached || %{"results" => []}, %{"replayed" => true}))
 
-        :stale ->
-          {:ok, inbound} = Inbound.parse(conn.body_params)
+        {:stale, inbound, conn} ->
           send_reply(opts, inbound, "Reconfirm required", reconfirm_text())
           send_json(conn, 409, %{"error" => "stale_graph_digest", "results" => []})
 
@@ -117,6 +116,11 @@ if Code.ensure_loaded?(Plug) do
           send_json(conn, status, %{"error" => to_string_safe(reason)})
       end
     end
+
+    # `check_fresh/2` answers `:stale`; carry the parsed message and the
+    # post-read conn out of the `with` so the 409 branch does not re-parse.
+    defp stale_with(:stale, inbound, conn), do: {:stale, inbound, conn}
+    defp stale_with(other, _inbound, _conn), do: other
 
     defp policy(opts), do: Keyword.get(opts, :policy) || %{allowlist: %{}}
 

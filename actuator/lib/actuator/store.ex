@@ -116,38 +116,6 @@ defmodule Actuator.Store do
     end
   end
 
-  defp resolve_ctx(f) when is_function(f, 0) do
-    case f.() do
-      {:ok, ctx} -> {:ok, ctx}
-      {:error, code} when is_atom(code) -> {:error, code}
-      _ -> {:error, :config_unavailable}
-    end
-  end
-
-  defp resolve_ctx(ctx), do: {:ok, ctx}
-
-  defp execute_with(ctx, req, _from, st) do
-    id = req.effect.effect_instance_id
-    seen = Map.get(st.records, id)
-    view = %{record: seen, nonce_owner: st.nonce_owner}
-
-    case Fence.run(ctx, req, view) do
-      :ok ->
-        do_execute(ctx, req, seen, st)
-
-      {:error, _n, code} = refusal
-      when code in [:effect_already_completed, :unknown_outcome, :claim_closed] ->
-        if seen.effect_digest == req.cert.effect_digest and seen.generation == req.cert.generation do
-          {:reply, {:ok, %{status: :replayed, evidence: evidence(seen)}}, st}
-        else
-          {:reply, refusal, st}
-        end
-
-      refusal ->
-        {:reply, refusal, st}
-    end
-  end
-
   def handle_call({:reconcile, id, resolution, note}, _from, st) do
     case Map.get(st.records, id) do
       %{state: :unknown_outcome} = rec ->
@@ -188,6 +156,38 @@ defmodule Actuator.Store do
   end
 
   def handle_call(:snapshot, _from, st), do: {:reply, st.records, st}
+
+  defp resolve_ctx(f) when is_function(f, 0) do
+    case f.() do
+      {:ok, ctx} -> {:ok, ctx}
+      {:error, code} when is_atom(code) -> {:error, code}
+      _ -> {:error, :config_unavailable}
+    end
+  end
+
+  defp resolve_ctx(ctx), do: {:ok, ctx}
+
+  defp execute_with(ctx, req, _from, st) do
+    id = req.effect.effect_instance_id
+    seen = Map.get(st.records, id)
+    view = %{record: seen, nonce_owner: st.nonce_owner}
+
+    case Fence.run(ctx, req, view) do
+      :ok ->
+        do_execute(ctx, req, seen, st)
+
+      {:error, _n, code} = refusal
+      when code in [:effect_already_completed, :unknown_outcome, :claim_closed] ->
+        if seen.effect_digest == req.cert.effect_digest and seen.generation == req.cert.generation do
+          {:reply, {:ok, %{status: :replayed, evidence: evidence(seen)}}, st}
+        else
+          {:reply, refusal, st}
+        end
+
+      refusal ->
+        {:reply, refusal, st}
+    end
+  end
 
   @impl true
   def handle_info({:EXIT, _port, _reason}, st), do: {:noreply, st}
