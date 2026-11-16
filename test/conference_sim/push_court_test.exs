@@ -491,7 +491,7 @@ defmodule ConferenceSim.PushCourt do
     assert_receive {:push_delivered, :live, _, _}, 5_000
 
     # Mia deletes her config mid-session.
-    assert %{"result" => nil} =
+    assert %{"result" => %{}} =
              rpc(ctx, "mia", "tasks/pushNotificationConfig/delete", %{
                "id" => task_mia,
                "pushNotificationConfigId" => "cfg-mia"

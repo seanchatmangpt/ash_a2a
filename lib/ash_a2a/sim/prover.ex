@@ -109,7 +109,7 @@ if Code.ensure_loaded?(Bandit) do
     @doc "Every probe, in run order, without running any."
     @spec probes() :: [probe()]
     def probes do
-      Enum.flat_map(Surface.items(), &probes_for/1)
+      Enum.flat_map(Surface.items() ++ Surface.parity(), &probes_for/1)
     end
 
     defp run_probe(probe, info) do

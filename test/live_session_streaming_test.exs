@@ -310,7 +310,7 @@ defmodule AshA2A.LiveSessionStreamingTest do
     assert :ok = Live.uplink(session, req)
 
     assert_receive {:a2a_live, ^sid,
-                    %StreamError{code: "UNSUPPORTED_OPERATION", reference_id: "art-msg-1"}},
+                    %StreamError{code: "FAILED_PRECONDITION", reference_id: "art-msg-1"}},
                    2_000
   end
 

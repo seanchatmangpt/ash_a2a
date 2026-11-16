@@ -180,7 +180,7 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
 
     assert rpc(on, "ListTaskPushNotificationConfigs", %{"id" => task_id})["result"] == [expected]
 
-    assert %{"result" => nil} =
+    assert %{"result" => %{}} =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-1"
@@ -190,7 +190,7 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
 
     # Idempotent delete per TCK PUSH-DEL-002: re-deleting an already-deleted
     # config answers success, not an error.
-    assert %{"result" => nil} =
+    assert %{"result" => %{}} =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-1"

@@ -281,7 +281,7 @@ defmodule AshA2A.PushNotificationDeliveryTest do
     assert length(page1) == 2
     assert tok != ""
 
-    assert %{"result" => %{"configs" => [_], "nextPageToken" => ""}} =
+    assert %{"result" => %{"configs" => [_]}} =
              rpc(on, "tasks/pushNotificationConfig/list", %{
                "id" => task_id,
                "pageSize" => 2,

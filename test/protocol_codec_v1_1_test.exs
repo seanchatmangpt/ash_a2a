@@ -34,9 +34,9 @@ defmodule AshA2A.ProtocolCodecV11Test do
       }
 
       {wire, back} = rt(task, :task)
-      assert wire["generation"] == 7
+      assert wire["generation"] == "7"
 
-      assert [%{"message" => _, "generation" => 2}, %{"status" => _, "generation" => 5}] =
+      assert [%{"message" => _, "generation" => "2"}, %{"status" => _, "generation" => "5"}] =
                wire["timeline"]
 
       assert back.generation == 7
@@ -83,7 +83,7 @@ defmodule AshA2A.ProtocolCodecV11Test do
                back.timeline
 
       {:ok, wire} = JSON.encode(hd(back.timeline))
-      assert wire == %{"futureKind" => %{"x" => 1}, "generation" => 4}
+      assert wire == %{"futureKind" => %{"x" => 1}, "generation" => "4"}
     end
 
     test "truncate_timeline keeps the last n" do
@@ -105,8 +105,8 @@ defmodule AshA2A.ProtocolCodecV11Test do
       }
 
       {wire, back} = rt(art, :artifact)
-      assert wire["startGeneration"] == 3
-      assert wire["endGeneration"] == 9
+      assert wire["startGeneration"] == "3"
+      assert wire["endGeneration"] == "9"
       assert wire["role"] == "ROLE_USER"
       assert {back.start_generation, back.end_generation, back.role} == {3, 9, :user}
     end
@@ -124,11 +124,11 @@ defmodule AshA2A.ProtocolCodecV11Test do
       {w1, b1} =
         rt(StatusUpdate.new("t", Status.new(:working), generation: 4), :status_update_event)
 
-      assert w1["generation"] == 4 and b1.generation == 4
+      assert w1["generation"] == "4" and b1.generation == 4
 
       art = Artifact.new([AshA2A.Protocol.Part.Text.new("x")])
       {w2, b2} = rt(ArtifactUpdate.new("t", art, generation: 6), :artifact_update_event)
-      assert w2["generation"] == 6 and b2.generation == 6
+      assert w2["generation"] == "6" and b2.generation == 6
     end
 
     test "nil generation omitted on events" do

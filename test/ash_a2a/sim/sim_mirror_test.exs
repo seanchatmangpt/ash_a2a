@@ -50,7 +50,7 @@ defmodule AshA2A.Sim.MirrorTest do
     end
 
     test "every probe names a real surface item" do
-      ids = MapSet.new(Surface.ids())
+      ids = MapSet.new(Surface.ids() ++ Enum.map(Surface.parity(), & &1.id))
 
       strays =
         Prover.probes() |> Enum.map(& &1.surface) |> Enum.reject(&(&1 in ids)) |> Enum.uniq()

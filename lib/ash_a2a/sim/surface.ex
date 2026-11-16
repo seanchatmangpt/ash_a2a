@@ -228,12 +228,16 @@ if Code.ensure_loaded?(Bandit) do
         http_routes() ++
         skills() ++
         consequences() ++
-        task_states() ++ security_schemes() ++ mounts() ++ parity()
+        task_states() ++ security_schemes() ++ mounts()
     end
 
     @doc """
     The A2A v1.1 parity surfaces: one per binding the parity script reports
     on (`AshA2A.Sim.Parity.bindings/0`), as `"parity:<binding>"`.
+
+    They are not part of `items/0`: a parity surface is a comparison with the
+    upstream reference, not something the library serves. `AshA2A.Sim.Prover`
+    probes them after the served items.
     """
     @spec parity() :: [item()]
     def parity do
