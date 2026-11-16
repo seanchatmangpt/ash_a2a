@@ -138,20 +138,22 @@ failure surfaced as an error; covered by
 `config :ash_a2a, :event_journal, {module, ref}` (unset means no journal). The
 journal has a writer: every task write passes through
 `AshA2A.Protocol.Agent.State.put_task_checked/2`, which appends one
-`messageUpdate` / `statusUpdate` event per new timeline entry, stamped with its
-task generation (`EventJournal.record_task/3`), whether or not a subscriber is
+`messageUpdate`, `statusUpdate` or `artifactUpdate` event per mutation, stamped
+with the task generation after it (`EventJournal.record_task/3`, derived by
+`AshA2A.Protocol.Task.Delta`), whether or not a subscriber is
 attached. An append failure never fails the task write; it is logged and emitted
 as `[:ash_a2a, :event_journal, :append_failed]`. A terminal task's journal is
 trimmed to `:event_journal_keep_last` events (default 256). On the read side the
 module is resolved at runtime; if it is unset, not loaded, errors, or retains
 nothing for a client that is behind, the stream
 falls back to the node-local transport event log, then to a TaskStore snapshot.
-Replay is by generation: artifact writes are not journaled as `artifactUpdate`
-events, and a client further behind than the retained tail gets only that tail.
+Replay is by generation: a client further behind than the retained tail gets
+only that tail.
 Remaining gap: no live producer migrates between nodes. When a task that is
 still being worked on (submitted or working)
 is resubscribed after a journal replay and this agent holds no local
-producer (heuristic: no stream-backed task in memory), the stream waits a
+producer (the agent process does not hold the task in memory; it can only
+read it through the TaskStore), the stream waits a
 bounded grace (`:resubscribe_orphan_grace_ms`, default 500) and then ends with a
 `StreamError` frame, code `PRODUCER_UNAVAILABLE`; the task is not reported
 terminal, so clients should `tasks/get` and resubscribe against the owning node.

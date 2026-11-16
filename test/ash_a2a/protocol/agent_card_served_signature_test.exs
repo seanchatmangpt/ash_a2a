@@ -175,7 +175,13 @@ defmodule AshA2A.Protocol.AgentCardServedSignatureTest do
   def verify_bearer("bearer", token, _conn), do: {:ok, %{sub: token}}
 
   def extended_provider(_identity, public) do
-    skill = %{"id" => "extended-only", "name" => "Extra", "description" => "added", "tags" => ["x"]}
+    skill = %{
+      "id" => "extended-only",
+      "name" => "Extra",
+      "description" => "added",
+      "tags" => ["x"]
+    }
+
     {:ok, Map.update!(public, "skills", &(&1 ++ [skill]))}
   end
 

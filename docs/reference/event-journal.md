@@ -30,17 +30,19 @@ every callback; the callback names are fixed.
 - EKV order across nodes is wall-clock order; clock skew can reorder concurrent appends to the same generation.
 - EKV replay reads the local replica (eventual); an event appended on another node moments ago may not be visible yet.
 - The journal is storage, not authority. A replaying caller must pass the same owner check as `tasks/get`. Events are stored as given: callers must not journal credentials (`"a2a.auth"`).
-- Artifact writes bump the task generation but are not journaled as `artifactUpdate` events; the closing `statusUpdate` of that write carries the generation.
+- Several chunks of one artifact written within a single task write are journaled as one `artifactUpdate` at the last of their generations. Streamed chunks are one task write each, so each is its own event.
 - A client further behind than the retained tail (see Retention) gets only that tail, with no gap marker.
 
 ## Writer
 
 With `config :ash_a2a, :event_journal, {module, ref}` set, `AshA2A.Protocol.Agent.State.put_task_checked/2`
 (the one function every task write of `AshA2A.Protocol.Agent` and `AshA2A.Agent` goes through) calls
-`AshA2A.Protocol.EventJournal.record_task/3` after the write is accepted. It appends, for each timeline
-entry newer than the previously stored generation, a `StreamResponse` map (`messageUpdate` or
-`statusUpdate`) at that entry's generation, then a closing `statusUpdate` at the task's current
-generation when the timeline has none. Events are journaled whether or not a subscriber is attached.
+`AshA2A.Protocol.EventJournal.record_task/3` after the write is accepted. It appends one
+`StreamResponse` map per mutation between the previously stored task and the new one
+(`AshA2A.Protocol.Task.Delta.events/2`): a `messageUpdate` or `statusUpdate` for each new timeline
+entry, an `artifactUpdate` carrying the new parts of each artifact that was added or appended to,
+each at the task's generation after that mutation (A2A v1.1 specification 3.2.7).
+Events are journaled whether or not a subscriber is attached.
 
 An append that returns an error, raises, throws or exits does not fail the task write or crash the
 agent: it is logged and emitted as `[:ash_a2a, :event_journal, :append_failed]`

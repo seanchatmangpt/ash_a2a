@@ -177,7 +177,9 @@ defmodule AshA2A.Protocol.Agent.Runtime do
         %{task | artifacts: artifacts}
 
       {missing, _} ->
-        {task, _stored} = Task.Generation.record_artifact(task, %{artifact | parts: missing}, true)
+        {task, _stored} =
+          Task.Generation.record_artifact(task, %{artifact | parts: missing}, true)
+
         task
     end
   end

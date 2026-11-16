@@ -53,11 +53,20 @@ card = Jason.decode!(body)
 The entry shape is the A2A v1.1 `AgentCardSignature` message (`protected`,
 `signature`, optional `header`). `sign_with: [key: ..., alg: :HS256, kid: ...]`
 still selects the older `AshA2A.Protocol.CardSigning` scheme; the two cannot be
-combined on one mount. The authenticated extended card is re-signed only by the
-older scheme; with a JWK it is served without `signatures`.
+combined on one mount.
 
-`AshA2A.Sim.Server` signs every card it serves with a fresh ES256 key
-(`info.card_jwks`), and `mix ash_a2a.sim --prove` verifies it on every mount.
+The authenticated extended card is signed with the same key on every binding
+that serves it (`agent/getAuthenticatedExtendedCard`, `GET /extendedAgentCard`):
+signatures inherited from the public card are dropped and the card the
+provider returned is signed as served. A gRPC host signs the card itself with
+`AshA2A.Protocol.Plug.CardServe.sign_card/2` before answering
+`GetExtendedAgentCard` (see `AshA2A.Sim.GrpcHandler`); there the signature is
+over the ProtoJSON form of the `AgentCard` message, which is what a gRPC client
+can reproduce.
+
+`AshA2A.Sim.Server` signs every card it serves, public and extended, with a
+fresh Ed25519 key (`info.card_jwks`), and `mix ash_a2a.sim --prove` verifies
+them on every mount and binding.
 Tests: `test/ash_a2a/protocol/agent_card_served_signature_test.exs` (real HTTP
 listeners) and `test/ash_a2a/protocol/agent_card_signature_test.exs`.
 

@@ -155,8 +155,10 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
 
   defp signing_opts(nil), do: nil
   defp signing_opts({key, o}) when is_list(o), do: Keyword.put(o, :key, key)
+
   defp signing_opts(o) when is_list(o),
     do: if(Keyword.has_key?(o, :key) or Keyword.has_key?(o, :jwk), do: o)
+
   defp signing_opts(_), do: nil
 
   defp call_provider(provider, identity, public) do
