@@ -76,7 +76,13 @@ defmodule AshA2A.EventJournalEkvTest do
 
     test "events appended on node A replay on node B",
          _ctx do
-      host = Node.self() |> Atom.to_string() |> String.split("@") |> List.last() |> String.to_charlist()
+      host =
+        Node.self()
+        |> Atom.to_string()
+        |> String.split("@")
+        |> List.last()
+        |> String.to_charlist()
+
       cookie = Node.get_cookie()
       code_paths = :code.get_path()
 
@@ -87,8 +93,13 @@ defmodule AshA2A.EventJournalEkvTest do
         assert :erpc.call(node_a, Node, :ping, [node_b], 10_000) == :pong
 
         ekv_name = :"ash_a2a_ejournal_#{System.unique_integer([:positive, :monotonic])}"
-        dir_a = Path.join(System.tmp_dir!(), "ash_a2a_ejournal_a_#{System.unique_integer([:positive])}")
-        dir_b = Path.join(System.tmp_dir!(), "ash_a2a_ejournal_b_#{System.unique_integer([:positive])}")
+
+        dir_a =
+          Path.join(System.tmp_dir!(), "ash_a2a_ejournal_a_#{System.unique_integer([:positive])}")
+
+        dir_b =
+          Path.join(System.tmp_dir!(), "ash_a2a_ejournal_b_#{System.unique_integer([:positive])}")
+
         on_exit(fn -> File.rm_rf!(dir_a) end)
         on_exit(fn -> File.rm_rf!(dir_b) end)
 
@@ -139,7 +150,11 @@ defmodule AshA2A.EventJournalEkvTest do
     peer_name = :"ash_a2a_ejournal_peer_#{System.unique_integer([:positive, :monotonic])}"
 
     {:ok, peer_pid, peer_node} =
-      :peer.start_link(%{name: peer_name, host: host, args: [~c"-setcookie", Atom.to_charlist(cookie)]})
+      :peer.start_link(%{
+        name: peer_name,
+        host: host,
+        args: [~c"-setcookie", Atom.to_charlist(cookie)]
+      })
 
     assert :ok = :rpc.call(peer_node, :code, :add_pathsz, [code_paths])
     {peer_pid, peer_node}
@@ -153,8 +168,11 @@ defmodule AshA2A.EventJournalEkvTest do
 
   defp await_started(peer_node) do
     receive do
-      {:ekv_member_started, ^peer_node, sup_pid} -> sup_pid
-      {:ekv_member_start_failed, ^peer_node, reason} -> flunk("EKV member failed: #{inspect(reason)}")
+      {:ekv_member_started, ^peer_node, sup_pid} ->
+        sup_pid
+
+      {:ekv_member_start_failed, ^peer_node, reason} ->
+        flunk("EKV member failed: #{inspect(reason)}")
     after
       30_000 -> flunk("EKV member on #{inspect(peer_node)} not ready within 30s")
     end

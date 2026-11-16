@@ -13,9 +13,9 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 Package version in `mix.exs` is still 26.11.13 (the 26.11.14/15 notes were folded into
 this block, not published separately). Release target is v26.11.15; see
-`docs/reference/release-readiness-v26.11.15.md` for blockers. Labels: **Unverified** means
-no test or build run is cited for it in this tree; **Verified (recorded)** means a run is
-recorded in a cited receipt but was not re-run when this entry was written.
+`docs/reference/release-readiness-v26.11.15.md` for blockers. An entry that names a test
+file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` and passed.
+**Unverified** means no test or build run is cited for that statement in this tree.
 
 ### Added
 
@@ -24,24 +24,53 @@ recorded in a cited receipt but was not re-run when this entry was written.
   drives each served method, route and RPC over the wire. `AshA2A.Sim.Surface` derives the
   inventory from the library, so a method, route or RPC with no probe fails
   `test/ash_a2a/sim/sim_mirror_test.exs`. Run it with `mix ash_a2a.sim --prove`. Guide:
-  `docs/how-to/run-the-simulation-server.md`. Verified: 204 probes pass, 1 skip, on a run
-  of `mix ash_a2a.sim --prove` in this tree.
+  `docs/how-to/run-the-simulation-server.md`. On 2026-11-16 `mix ash_a2a.sim --prove`
+  printed `221 probes over 83 surface items: 221 pass, 0 fail, 0 skip` in the `test` Mix
+  environment and again with `MIX_ENV=dev`; `test/ash_a2a/sim/sim_mirror_test.exs` passes.
+- MCP control of the simulation server: `mix ash_a2a.sim.mcp` (launcher `bin/a2a-sim-mcp`,
+  registered in `.mcp.json`) serves `AshA2A.Sim.MCP.Server`, a Model Context Protocol server
+  (revision 2025-11-25; stdio and Streamable HTTP) with 66 tools: one per served JSON-RPC
+  method, HTTP+JSON route and gRPC RPC, `a2a_*` tools that take `binding`, `a2a_raw_request`
+  for malformed input, and `sim_*` tools for grants, Ash rows, webhook deliveries, the
+  surface, the coverage plan and the prover. `AshA2A.Sim.MCP.Coverage` maps every
+  `AshA2A.Sim.Surface` item to tool calls; an item with no tool path fails
+  `test/ash_a2a/sim/sim_mcp_test.exs`, which drives the real stdio and HTTP servers as OS
+  processes. Guide: `docs/how-to/control-the-sim-over-mcp.md`. On 2026-11-16
+  `python3 scripts/mcp_drive.py` printed `83 surface items served, 83 driven through MCP:
+  83 pass, 0 fail; 0 uncovered` and `mix test test/ash_a2a/sim/sim_mcp_test.exs` passed.
+- `AshA2A.Sim.Auth` accepts any `sim-agent-<name>` bearer token as an identity of its own
+  with no grants.
+- `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog and runs the
+  courts expected to kill it. On 2026-11-16 `mix ash_a2a.chicago.mutate --require-killed`
+  killed 19 of 19 mutants and exited 0.
+- Public readers for configuration defaults: `AshA2A.Dispatcher.dispatch_hooks/0`,
+  `AshA2A.Protocol.ID.generator/0`, `AshA2A.Email.Sender.Spool.spool_dir/1` and
+  `AshA2A.GraphLaw.EngineLoad.unpinned_allowed?/0`. `test/ash_a2a/docs_truth_test.exs` checks
+  the documented default of each against them.
 - `AshA2A.Transport.HTTPJSON` accepts `:agent_card_opts`, like `AshA2A.Transport.Plug`, so
   its card and extended card can state the `supported_interfaces` the mount is served at.
 - Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
   `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
-  dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified. Hardened: the plug now
+  dispatches. Guide: `docs/how-to/operate-by-email.md`. Hardened: the plug
   requires `:webhook` (authenticated ingress) and `:token_ledger` (replay protection), caps
   body/reply/depth/nodes (413), strips CRLF from reply headers and can bind an optional
   `:approver` to the sender. **Breaking:** `:webhook` and `:token_ledger` are required.
-  Unverified; no DKIM cryptography, and `TokenLedger` is in-memory and single-node.
+  Tests: `test/email_plug_test.exs`, `test/email_gateway_hardening_test.exs`,
+  `test/email_replay_rate_limit_test.exs`. `TokenLedger` is in-memory and single-node.
+- `AshA2A.Email.Dkim` verifies `DKIM-Signature` headers (rsa-sha256, relaxed/relaxed) and
+  `AshA2A.Email.TokenLedgerStore` is an EKV-backed ledger the plug accepts in place of
+  `TokenLedger`. Tests: `test/email_dkim_test.exs`, `test/email_token_ledger_store_test.exs`.
 - A2A v1.1 deltas on top of the 26.11.13 entry below (target: upstream tag `v1.1.0-rc`,
   status PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and
   `A2A-Version` accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration`
-  resume. Guide: `docs/how-to/v1-1-live-and-generations.md`. Unverified here; row-level
-  evidence is in `docs/reference/a2a-v1-1-conformance.md`.
+  resume. Guide: `docs/how-to/v1-1-live-and-generations.md`. Row-level standings from the
+  2026-11-16 court run are in `docs/reference/a2a-v1-1-conformance.md`: 10 of 17 rows
+  CONFORMANT, 7 PARTIAL with the failing court named (for example
+  `test/protocol_codec_v1_1_test.exs`).
 - Documented configuration: `:events_transport`, `cancel_in_flight`, `validate_input_modes`
-  and the mount `tenant` option (`docs/reference/configuration.md`). Unverified.
+  and the mount `tenant` option (`docs/reference/configuration.md`). The first three are
+  exercised by `test/dsl_verifiers_v1_1_test.exs`, `test/ash_a2a_v1_cancellation_test.exs` and
+  `test/task_semantics_test.exs`; the `tenant` row is unverified (no test run cited).
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
 ### Changed
@@ -53,13 +82,25 @@ recorded in a cited receipt but was not re-run when this entry was written.
 - README reorganized: install and quickstart first, conformance and status material last.
 - `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`
   and `req_llm` are optional dependencies, so a consumer can compile `ash_a2a` without
-  them. A path-dependent consumer build was reported as passing in the commit history;
-  not re-run here. Unverified.
-- The root supervisor is `:rest_for_one` (stores first) with a wider restart budget. Unverified.
+  them. A path-dependent consumer build with none of them added compiled on 2026-11-16
+  (`mix compile --warnings-as-errors` exit 0; `ash_state_machine` and `postgrex` were still
+  resolved transitively). `scripts/check_optional_deps.sh` was not run and is unverified; see
+  `docs/how-to/optional-dependencies.md`. Guard tests: `test/ash_a2a/l18_optional_deps_test.exs`.
+- The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
+  Unverified: no test asserts the strategy (read in `lib/ash_a2a/application.ex`).
+- `bandit` and `simple_sat` are optional dependencies (they were test-only), so
+  `mix ash_a2a.sim` also runs with `MIX_ENV=dev`. Every `AshA2A.Sim.*` module is compiled
+  only when Bandit is present.
 - ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
 
 ### Fixed
 
+- Simulation server: a task that a gRPC `SendMessage` or `CancelTask` brings to its answer
+  is now published to the shared task event log by `AshA2A.Sim.GrpcHandler`, so its push
+  notification webhooks fire. Before, a config stored on any binding delivered nothing when
+  the task finished over gRPC. `AshA2A.Transport.GRPC.Server` itself still publishes
+  nothing for unary RPCs; a host's gRPC handler has to. Found through MCP; covered by
+  `test/ash_a2a/sim/sim_mcp_test.exs` ("a push config delivers a real webhook").
 - `tasks/resubscribe` on `AshA2A.A2ATransport.Plug` no longer hangs until the idle bound
   for a task started by a non-blocking `message/send`: a logged task snapshot is treated
   as a running stream pump only while a pump process is alive. Probe: `tasks/resubscribe`
@@ -75,11 +116,13 @@ recorded in a cited receipt but was not re-run when this entry was written.
   stack traces. Probe: `TASK_STATE_INPUT_REQUIRED` in
   `test/ash_a2a/sim/sim_mirror_test.exs`.
 - A checkpoint the store silently dropped is no longer reported as landed
-  (`Checkpoint.land/4` reads back and raises). Unverified.
+  (`Checkpoint.land/4` reads back and raises). Test:
+  `test/ash_a2a/cluster/drain_isolation_test.exs`.
 - Handover completion and claim release carry the claim token: a runner whose
-  claim was taken over gets `:claim_lost` and cannot overwrite the peer. Unverified.
+  claim was taken over gets `:claim_lost` and cannot overwrite the peer. Test:
+  `test/ash_a2a/cluster/handover_fencing_test.exs`.
 - A failing checkpoint no longer aborts a node drain; a worker is evicted only
-  when its frame landed. Unverified.
+  when its frame landed. Test: `test/ash_a2a/cluster/drain_isolation_test.exs`.
 - A failed task-event journal write is logged instead of crashing the events server.
 - `KillSwitch.trip/3` waits up to 30 s so a slow disk cannot fail the halt.
 - The transport worker is killed when its agent dies.
@@ -87,19 +130,22 @@ recorded in a cited receipt but was not re-run when this entry was written.
   `consequence` to `observe`.
 - `ash_ai` is a test-only dependency.
 - The `lease_required?` verifier reads the persisted `:authorizers` key, so resources that
-  carry `Ash.Policy.Authorizer` are no longer refused. Unverified.
+  carry `Ash.Policy.Authorizer` are no longer refused. Test:
+  `test/verify_skills_authorizer_test.exs`.
 
 ### Security
 
-All entries below are Unverified in this tree (no run cited).
+Tests for the entries below: `test/security_refusals_l13_test.exs` and
+`test/security_review_remediation_test.exs`.
 
 - Legacy push-notification sender resolves and refuses non-public addresses and
   never follows redirects (SSRF).
 - gRPC ignores the forwarded-certificate header unless `trust_forwarded_cert: true`.
 - `A2A-Version` echoed in a response header is limited to a short printable token.
 - HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
-- Ash calls pass `authorize?: true` explicitly; `forbidden` replies and
-  extended-card provider failures no longer carry internal detail.
+- `forbidden` replies no longer carry internal detail.
+- Ash calls pass `authorize?: true` explicitly, and extended-card provider failures no
+  longer carry internal detail. Unverified: neither statement has a test run cited.
 
 ## [26.11.13] - 2026-11-13
 

@@ -6,7 +6,10 @@ defmodule AshA2A.Domain.Verifiers.Location do
 
   @doc false
   @spec locate(term(), map()) :: term()
-  def locate({:error, %Spark.Error.DslError{location: nil, path: [section | _]} = error}, dsl_state)
+  def locate(
+        {:error, %Spark.Error.DslError{location: nil, path: [section | _]} = error},
+        dsl_state
+      )
       when is_atom(section) do
     {:error, %{error | location: Spark.Dsl.Transformer.get_section_anno(dsl_state, [section])}}
   end

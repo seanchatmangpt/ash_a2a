@@ -24,6 +24,7 @@ if Code.ensure_loaded?(Bandit) do
     | `:task_state` | the `TaskState` enum of the generated proto module |
     | `:security_scheme` | the security schemes on the agent card of `AshA2A.Sim.Agent` |
     | `:mount` | the mounts of the simulation server's router |
+    | `:parity` | the bindings `AshA2A.Sim.Parity` checks against the upstream v1.1 reference |
 
     Each item is `%{id: String.t(), kind: atom(), name: String.t(), source: String.t()}`.
     The `id` is `"<kind>:<name>"`, for example `"jsonrpc_method:tasks/get"` or
@@ -227,7 +228,19 @@ if Code.ensure_loaded?(Bandit) do
         http_routes() ++
         skills() ++
         consequences() ++
-        task_states() ++ security_schemes() ++ mounts()
+        task_states() ++ security_schemes() ++ mounts() ++ parity()
+    end
+
+    @doc """
+    The A2A v1.1 parity surfaces: one per binding the parity script reports
+    on (`AshA2A.Sim.Parity.bindings/0`), as `"parity:<binding>"`.
+    """
+    @spec parity() :: [item()]
+    def parity do
+      Enum.map(
+        AshA2A.Sim.Parity.bindings(),
+        &item(:parity, &1, "scripts/a2a_v1_1_parity/parity.py")
+      )
     end
 
     @doc "The ids of every served surface item."

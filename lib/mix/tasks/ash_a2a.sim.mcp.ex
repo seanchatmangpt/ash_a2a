@@ -37,8 +37,9 @@ defmodule Mix.Tasks.AshA2a.Sim.Mcp do
   error for the whole VM and gives the task the real standard output as
   descriptor 3 (`--out-fd 3`).
 
-  The task runs in the `test` Mix environment, where Bandit (the HTTP
-  listener the simulation server uses) is a dependency.
+  The simulation server needs Bandit (its HTTP listener), an optional
+  dependency of ash_a2a. In this repository it is available in the `test` and
+  `dev` Mix environments.
   """
 
   use Mix.Task
@@ -67,8 +68,9 @@ defmodule Mix.Tasks.AshA2a.Sim.Mcp do
 
     unless Code.ensure_loaded?(runner) do
       Mix.raise(
-        "the simulation server needs Bandit, which is a test-only dependency of ash_a2a. " <>
-          "Run the task with MIX_ENV=test."
+        "the simulation server needs Bandit, which is an optional dependency of ash_a2a. " <>
+          "Add {:bandit, \"~> 1.5\"} to your dependencies and recompile ash_a2a " <>
+          "(mix deps.compile ash_a2a --force)."
       )
     end
 

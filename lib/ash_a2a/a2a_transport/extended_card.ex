@@ -99,7 +99,24 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
   def public_card(conn, opts) do
     base_url = AshA2A.Protocol.Plug.get_base_url(conn) || opts.a2a.base_url
     card = GenServer.call(opts.a2a.agent, :get_agent_card)
-    AshA2A.Protocol.JSON.encode_agent_card(card, [url: base_url] ++ opts.a2a.agent_card_opts)
+
+    # The extended card states the same served capabilities as the public
+    # card (`:capability_overrides`, layered over the card's own): a card
+    # answered by `GetExtendedAgentCard` cannot say `extendedAgentCard: false`.
+    agent_card_opts =
+      case Map.get(opts.a2a, :capability_overrides) do
+        overrides when is_map(overrides) and map_size(overrides) > 0 ->
+          base =
+            Keyword.get(opts.a2a.agent_card_opts, :capabilities) ||
+              Map.get(card, :capabilities, %{})
+
+          Keyword.put(opts.a2a.agent_card_opts, :capabilities, Map.merge(base, overrides))
+
+        _none ->
+          opts.a2a.agent_card_opts
+      end
+
+    AshA2A.Protocol.JSON.encode_agent_card(card, [url: base_url] ++ agent_card_opts)
   end
 
   # The provider may have changed the card (added skills), so signatures

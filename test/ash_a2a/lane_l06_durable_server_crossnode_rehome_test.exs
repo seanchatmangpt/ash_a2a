@@ -45,7 +45,8 @@ defmodule AshA2A.LaneL06DurableServerCrossnodeRehomeTest do
   end
 
   test "rehome from one node terminates a task living on another node and recovers durable state" do
-    host = Node.self() |> Atom.to_string() |> String.split("@") |> List.last() |> String.to_charlist()
+    host =
+      Node.self() |> Atom.to_string() |> String.split("@") |> List.last() |> String.to_charlist()
 
     {:ok, peer_pid, peer_node} =
       :peer.start_link(%{
@@ -90,8 +91,11 @@ defmodule AshA2A.LaneL06DurableServerCrossnodeRehomeTest do
       start_supervised!({DurableServer.Supervisor, sup_opts})
 
       receive do
-        {:l06_peer_started, ^peer_node, _sup} -> :ok
-        {:l06_peer_start_failed, ^peer_node, reason} -> flunk("peer start failed: #{inspect(reason)}")
+        {:l06_peer_started, ^peer_node, _sup} ->
+          :ok
+
+        {:l06_peer_start_failed, ^peer_node, reason} ->
+          flunk("peer start failed: #{inspect(reason)}")
       after
         30_000 -> flunk("peer did not report ready within 30s")
       end
@@ -131,8 +135,10 @@ defmodule AshA2A.LaneL06DurableServerCrossnodeRehomeTest do
       assert rehome_receipt.status == :completed
 
       assert eventually(fn ->
-               match?({pid, _} when is_pid(pid) and pid != pid_before,
-                      Durability.lookup(sup_name, task_id))
+               match?(
+                 {pid, _} when is_pid(pid) and pid != pid_before,
+                 Durability.lookup(sup_name, task_id)
+               )
              end),
              "no new pid resolved under #{inspect(task_key)} after cross-node rehome"
 

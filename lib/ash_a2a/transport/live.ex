@@ -75,7 +75,7 @@ defmodule AshA2A.Transport.Live do
   | unknown payload kind | `UNIMPLEMENTED` |
   | malformed request | `INVALID_ARGUMENT` (`reference_id` = messageId / artifactId) |
   | agent busy / refusing input (`task_in_progress`, `server_busy`, `rate_limited`, a send already in flight) | `UNAVAILABLE` |
-  | `artifactUpdates` without capability | `UNSUPPORTED_OPERATION` |
+  | `artifactUpdates` without capability | `FAILED_PRECONDITION` |
   | `ifGenerationMatch` mismatch | `ABORTED` |
   | task vanished | `NOT_FOUND` |
   | agent returned another error | `INTERNAL` (opaque) |

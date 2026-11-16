@@ -122,7 +122,10 @@ defmodule AshA2A.GRPCWave2ErrorInfoTest do
     assert {:error, %GRPC.RPCError{status: 12} = e} =
              Stub.send_message(ch, request(), metadata: %{"a2a-version" => "99.0"})
 
-    assert [%Google.Rpc.ErrorInfo{reason: "VERSION_NOT_SUPPORTED", domain: "a2a-protocol.org"} = i] =
+    assert [
+             %Google.Rpc.ErrorInfo{reason: "VERSION_NOT_SUPPORTED", domain: "a2a-protocol.org"} =
+               i
+           ] =
              infos(e)
 
     assert i.metadata["detail"] =~ "99"
@@ -133,7 +136,12 @@ defmodule AshA2A.GRPCWave2ErrorInfoTest do
 
     assert {:error, %GRPC.RPCError{status: 9} = e} = Stub.send_message(ch, request())
 
-    assert [%Google.Rpc.ErrorInfo{reason: "EXTENSION_SUPPORT_REQUIRED", domain: "a2a-protocol.org"} = i] =
+    assert [
+             %Google.Rpc.ErrorInfo{
+               reason: "EXTENSION_SUPPORT_REQUIRED",
+               domain: "a2a-protocol.org"
+             } = i
+           ] =
              infos(e)
 
     assert i.metadata["detail"] =~ Required.uri()

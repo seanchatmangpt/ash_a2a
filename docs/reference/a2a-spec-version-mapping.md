@@ -130,8 +130,8 @@ and `test/ash_a2a_v1_multinode_continuity_test.exs`). `tasks/list` reads
 through the store via `AshA2A.Transport.Runtime.list_tasks_for/3` (store tasks
 merged with the in-memory map, owner-gated, one pagination pass, store read
 failure surfaced as an error; covered by
-`test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, UNVERIFIED,
-not yet run). Resubscribe replay: `tasks/resubscribe` with
+`test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, 3 passed on
+2026-11-16). Resubscribe replay: `tasks/resubscribe` with
 `lastSeenGeneration` replays missed events through the
 `AshA2A.Protocol.EventJournal` behaviour (`append/4`, `replay_after/3`,
 `trim/3`; see `docs/reference/event-journal.md`), configured by

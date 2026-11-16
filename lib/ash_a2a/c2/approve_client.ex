@@ -52,7 +52,10 @@ defmodule AshA2A.C2.ApproveClient do
   def submit(_, _, _, _, _), do: {:error, :malformed_request}
 
   defp decode(%{"ok" => true}), do: :ok
-  defp decode(%{"ok" => false, "refusal" => code}) when is_binary(code), do: {:error, {:refused, code}}
+
+  defp decode(%{"ok" => false, "refusal" => code}) when is_binary(code),
+    do: {:error, {:refused, code}}
+
   defp decode(_), do: {:error, :authority_transport_refused}
 
   defp socket(%{c2_tls: _}), do: {:ok, nil}

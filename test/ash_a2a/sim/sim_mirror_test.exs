@@ -166,7 +166,13 @@ defmodule AshA2A.Sim.MirrorTest do
     end
 
     test "the skipped probes are exactly the allowlist", %{results: results} do
-      skipped = for %{status: :skip} = result <- results, do: result
+      # The `parity:` probes skip when the Python reference is not installed
+      # and for the known defects of the parity findings; they are accounted
+      # for in sim_parity_v1_1_test.exs.
+      skipped =
+        for %{status: :skip} = result <- results,
+            not String.starts_with?(result.surface, "parity:"),
+            do: result
 
       assert length(skipped) == map_size(@allowed_skips)
 

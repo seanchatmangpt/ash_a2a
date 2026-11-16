@@ -294,7 +294,7 @@ defmodule AshA2A.Transport.Live.Session do
          "request names a different task than the one this stream is bound to"}
 
       p.artifact_updates != [] and not Live.capability?(card, :user_artifacts) ->
-        {:reject, "UNSUPPORTED_OPERATION", "userArtifacts capability is not declared"}
+        {:reject, "FAILED_PRECONDITION", "userArtifacts capability is not declared"}
 
       task_id == nil and p.message == nil ->
         {:reject, "INVALID_ARGUMENT", "message is required when creating a task"}
@@ -476,7 +476,7 @@ defmodule AshA2A.Transport.Live.Session do
     do: {"UNAVAILABLE", "agent is not accepting input right now"}
 
   def error_code({:unsupported_operation, _}),
-    do: {"UNSUPPORTED_OPERATION", "operation not supported"}
+    do: {"FAILED_PRECONDITION", "operation not supported"}
 
   def error_code({:invalid_params, detail}) when is_binary(detail),
     do: {"INVALID_ARGUMENT", detail}

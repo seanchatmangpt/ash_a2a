@@ -126,7 +126,8 @@ defmodule AshA2A.Email.Dkim do
   end
 
   defp signed_names(tags) do
-    names = tags["h"] |> String.split(":") |> Enum.map(&(&1 |> String.trim() |> String.downcase()))
+    names =
+      tags["h"] |> String.split(":") |> Enum.map(&(&1 |> String.trim() |> String.downcase()))
 
     if "from" in names, do: {:ok, names}, else: {:error, :from_not_signed}
   end
@@ -214,7 +215,9 @@ defmodule AshA2A.Email.Dkim do
     lines =
       body
       |> String.split("\r\n")
-      |> Enum.map(fn line -> line |> String.replace(~r/[ \t]+/, " ") |> String.trim_trailing(" ") end)
+      |> Enum.map(fn line ->
+        line |> String.replace(~r/[ \t]+/, " ") |> String.trim_trailing(" ")
+      end)
       |> Enum.reverse()
       |> Enum.drop_while(&(&1 == ""))
       |> Enum.reverse()

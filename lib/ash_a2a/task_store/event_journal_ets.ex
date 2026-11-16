@@ -27,7 +27,8 @@ defmodule AshA2A.TaskStore.EventJournalEts do
   @doc "Child spec; requires `:name` (the table name, also the journal ref)."
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
-    name = Keyword.get(opts, :name) || raise ArgumentError, "#{inspect(__MODULE__)} requires :name"
+    name =
+      Keyword.get(opts, :name) || raise ArgumentError, "#{inspect(__MODULE__)} requires :name"
 
     %{
       id: {__MODULE__, name},
@@ -49,7 +50,14 @@ defmodule AshA2A.TaskStore.EventJournalEts do
   @impl AshA2A.Protocol.EventJournal
   def append(table, task_id, generation, event)
       when is_binary(task_id) and is_integer(generation) and generation >= 0 do
-    seq = :ets.update_counter(table, {:counter, task_id, generation}, 1, {{:counter, task_id, generation}, 0})
+    seq =
+      :ets.update_counter(
+        table,
+        {:counter, task_id, generation},
+        1,
+        {{:counter, task_id, generation}, 0}
+      )
+
     key = {task_id, generation, seq}
     true = :ets.insert(table, {key, event})
 

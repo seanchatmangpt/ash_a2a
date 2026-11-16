@@ -290,6 +290,66 @@ def unknown_field_paths(message, path="$"):
     return found
 
 
+# -- protobuf wire bytes, map entries in a canonical order ----------------------
+
+
+def _varint(buf, i):
+    shift = value = 0
+    while True:
+        byte = buf[i]
+        i += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, i
+        shift += 7
+
+
+def canonical_wire(buf, descriptor):
+    """The same bytes with the entries of every `map<>` field sorted bytewise.
+
+    Nothing else is touched: tags, lengths and scalar payloads are copied as
+    sent, so field order, default-value emission, packing and non-minimal
+    varints still show up as differences. Map entry order is the one thing
+    protobuf leaves undefined on the wire ("deterministic" serialisation is
+    only stable within one implementation), so it is the one thing sorted.
+    """
+    i, segments = 0, []
+    while i < len(buf):
+        start = i
+        tag, i = _varint(buf, i)
+        number, wire_type = tag >> 3, tag & 7
+        field = descriptor.fields_by_number.get(number)
+        if wire_type == 0:
+            _, i = _varint(buf, i)
+            segment = buf[start:i]
+        elif wire_type == 1:
+            i += 8
+            segment = buf[start:i]
+        elif wire_type == 5:
+            i += 4
+            segment = buf[start:i]
+        elif wire_type == 2:
+            length, body = _varint(buf, i)
+            i = body + length
+            payload = buf[body:i]
+            if field is not None and field.type == FD.TYPE_MESSAGE:
+                payload = canonical_wire(payload, field.message_type)
+            segment = buf[start:body] + payload
+        else:
+            raise ValueError(f"wire type {wire_type} at offset {start}")
+        segments.append((number if field is not None and _is_map(field) else None, segment))
+    out, run, run_field = [], [], None
+    for map_field, segment in segments + [(None, b"")]:
+        if map_field is not None and map_field == run_field:
+            run.append(segment)
+            continue
+        out.extend(sorted(run))
+        run, run_field = ([segment], map_field) if map_field is not None else ([], None)
+        if map_field is None:
+            out.append(segment)
+    return b"".join(out)
+
+
 def reachable_fields():
     """Every field of every message reachable from an RPC response type."""
     seen, fields, stack = set(), [], [m.output_type for m in SERVICE.methods]

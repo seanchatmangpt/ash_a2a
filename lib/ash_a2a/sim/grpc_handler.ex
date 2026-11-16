@@ -44,6 +44,7 @@ defmodule AshA2A.Sim.GrpcHandler do
     raw =
       %{"id" => config.id, "url" => config.url, "token" => config.token}
       |> put_some("protocolVersion", config.protocol_version)
+      |> put_some("authentication", authentication_params(config.authentication))
       |> Map.reject(fn {_k, v} -> is_nil(v) end)
 
     with {:ok, envelope} <-
@@ -64,8 +65,9 @@ defmodule AshA2A.Sim.GrpcHandler do
   @impl true
   def handle_list_push_configs(task_id, _params, ctx) do
     case push("tasks/pushNotificationConfig/list", %{"id" => task_id}, ctx) do
-      {:ok, %{"configs" => envelopes}} -> {:ok, Enum.map(envelopes, &lift/1)}
       {:ok, envelopes} when is_list(envelopes) -> {:ok, Enum.map(envelopes, &lift/1)}
+      # A page with no configs carries no "configs" member.
+      {:ok, %{} = page} -> {:ok, page |> Map.get("configs", []) |> Enum.map(&lift/1)}
       {:error, %Error{}} = error -> error
     end
   end
@@ -165,7 +167,26 @@ defmodule AshA2A.Sim.GrpcHandler do
       task_id: task_id,
       url: source["url"],
       token: source["token"],
+      authentication: lift_authentication(source["authentication"]),
       protocol_version: source["protocolVersion"]
     }
   end
+
+  # `AuthenticationInfo` travels to the store string-keyed and comes back
+  # without `credentials`, which are write-only.
+  defp authentication_params(%{} = auth) do
+    params =
+      %{}
+      |> put_some("scheme", auth[:scheme] || auth["scheme"])
+      |> put_some("credentials", auth[:credentials] || auth["credentials"])
+
+    if params == %{}, do: nil, else: params
+  end
+
+  defp authentication_params(_none), do: nil
+
+  defp lift_authentication(%{"scheme" => scheme} = auth) when is_binary(scheme),
+    do: %{scheme: scheme, credentials: auth["credentials"]}
+
+  defp lift_authentication(_none), do: nil
 end

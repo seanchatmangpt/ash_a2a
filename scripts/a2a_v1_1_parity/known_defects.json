@@ -1,0 +1,173 @@
+{
+  "about": "Failing parity rows that are known library defects. Each entry names the finding in docs/reference/a2a-v1-1-parity-findings.md that states the defect, its repro and the expected bytes. Patterns are fnmatch globs over binding, operation, vector and check. An entry that matches no failing row fails the run, so the list cannot outlive the defect.",
+  "defects": [
+    {
+      "finding": "F-01",
+      "binding": "grpc",
+      "operation": "SendMessage",
+      "vector": "userArtifacts: client artifact_updates",
+      "check": "error"
+    },
+    {
+      "finding": "F-01",
+      "binding": "grpc",
+      "operation": "SubscribeToTask",
+      "vector": "terminal task",
+      "check": "error"
+    },
+    {
+      "finding": "F-01",
+      "binding": "grpc",
+      "operation": "SendMessage",
+      "vector": "message to a terminal task",
+      "check": "error"
+    },
+    {
+      "finding": "F-01",
+      "binding": "grpc",
+      "operation": "GetTask",
+      "vector": "A2A-Version 9.9",
+      "check": "error"
+    },
+    {
+      "finding": "F-02",
+      "binding": "grpc",
+      "operation": "SendStreamingMessage",
+      "vector": "message to an unknown task",
+      "check": "error"
+    },
+    {
+      "finding": "F-02",
+      "binding": "grpc",
+      "operation": "SendStreamingMessage",
+      "vector": "ifGenerationMatch mismatch",
+      "check": "error"
+    },
+    {
+      "finding": "F-02",
+      "binding": "grpc",
+      "operation": "SendLiveMessage",
+      "vector": "open with subscribe to an unknown task",
+      "check": "error"
+    },
+    {
+      "finding": "F-03",
+      "binding": "grpc",
+      "operation": "SubscribeToTask",
+      "vector": "*",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-04",
+      "binding": "*",
+      "operation": "SendStreamingMessage",
+      "vector": "stream generation agrees with GetTask",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-04",
+      "binding": "http+json",
+      "operation": "SendStreamingMessage",
+      "vector": "task, artifact chunks, terminal status",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-05",
+      "binding": "http+json",
+      "operation": "SubscribeToTask",
+      "vector": "*",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-05",
+      "binding": "jsonrpc",
+      "operation": "SubscribeToTask",
+      "vector": "*",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-05",
+      "binding": "jsonrpc:/jsonrpc",
+      "operation": "SubscribeToTask",
+      "vector": "*",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-06",
+      "binding": "*",
+      "operation": "SendLiveMessage",
+      "vector": "client message arrives as TaskMessageUpdateEvent",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-07",
+      "binding": "grpc",
+      "operation": "SendStreamingMessage",
+      "vector": "interrupted stream stays valid",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-07",
+      "binding": "jsonrpc",
+      "operation": "SendStreamingMessage",
+      "vector": "interrupted stream stays valid",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-07",
+      "binding": "jsonrpc",
+      "operation": "SendStreamingMessage",
+      "vector": "ifGenerationMatch mismatch",
+      "check": "error"
+    },
+    {
+      "finding": "F-08",
+      "binding": "*",
+      "operation": "push delivery",
+      "vector": "returnImmediately task: completion is delivered",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-08",
+      "binding": "grpc",
+      "operation": "ListTaskPushNotificationConfigs",
+      "vector": "inline config is listed",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-09",
+      "binding": "*",
+      "operation": "GetTask",
+      "vector": "no credentials",
+      "check": "error"
+    },
+    {
+      "finding": "F-09",
+      "binding": "*",
+      "operation": "GetTask",
+      "vector": "token without the scope",
+      "check": "error"
+    },
+    {
+      "finding": "F-10",
+      "binding": "jsonrpc",
+      "operation": "SendLiveMessage",
+      "vector": "*",
+      "check": "*"
+    },
+    {
+      "finding": "F-11",
+      "binding": "jsonrpc:/jsonrpc",
+      "operation": "SendStreamingMessage",
+      "vector": "task, artifact chunks, terminal status",
+      "check": "semantics"
+    },
+    {
+      "finding": "F-11",
+      "binding": "jsonrpc:/jsonrpc",
+      "operation": "GetTask",
+      "vector": "A2A-Version 9.9",
+      "check": "error"
+    }
+  ]
+}

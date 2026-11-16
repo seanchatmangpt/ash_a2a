@@ -65,7 +65,7 @@ Goal-oriented procedures:
   not run here).
 - [`how-to/optional-dependencies.md`](how-to/optional-dependencies.md) — which
   dependencies are optional and what each guarded module does when one is absent
-  (UNVERIFIED).
+  (the compile-matrix script is not yet run).
 - [`how-to/run-doctor.md`](how-to/run-doctor.md) — diagnose an app's A2A wiring with
   `mix ash_a2a.doctor`.
 - [`how-to/sign-agent-cards.md`](how-to/sign-agent-cards.md) — sign and verify agent

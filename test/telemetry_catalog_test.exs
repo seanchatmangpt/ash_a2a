@@ -81,7 +81,9 @@ defmodule AshA2A.TelemetryCatalogTest do
     end
 
     events = Enum.map(all, & &1.event)
-    assert events == Enum.uniq(events), "duplicate catalog events: #{inspect(events -- Enum.uniq(events))}"
+
+    assert events == Enum.uniq(events),
+           "duplicate catalog events: #{inspect(events -- Enum.uniq(events))}"
   end
 
   test "every event-name list in lib/ is catalogued" do

@@ -710,6 +710,7 @@ defmodule C2Harness.Catalog do
           far = Env.issue!(env, Env.effect(), not_before_off: 150, expires_off: 450)
           Env.submit(env, far.effect, far.cert)
           short = Env.issue!(env, Env.effect(), not_before_off: -60, expires_off: 3)
+
           # SLEEP-CLASS: REAL-ELAPSED-TIME (cert expires_off: 3s must really lapse; no event to await)
           Process.sleep(4_500)
           Env.submit(env, short.effect, short.cert)

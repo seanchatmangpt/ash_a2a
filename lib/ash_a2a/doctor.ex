@@ -153,8 +153,9 @@ defmodule AshA2A.Doctor do
           ],
           else: []
         ) ++
-        if(is_nil(AshA2A.Domain.Info.base_url(domain)) and
-             is_nil(AshA2A.Domain.Info.agent_url(domain)),
+        if(
+          is_nil(AshA2A.Domain.Info.base_url(domain)) and
+            is_nil(AshA2A.Domain.Info.agent_url(domain)),
           do: [
             finding(
               :warn,
@@ -307,7 +308,8 @@ defmodule AshA2A.Doctor do
 
   defp card_findings(domains) do
     for domain <- domains,
-        agent_mounts = Enum.filter(AshA2A.Domain.Info.mounts(domain), &AshA2A.Domain.Mount.agent_mount?/1),
+        agent_mounts =
+          Enum.filter(AshA2A.Domain.Info.mounts(domain), &AshA2A.Domain.Mount.agent_mount?/1),
         agent_mounts != [],
         identity = AshA2A.Domain.Info.card_identity(domain),
         not is_nil(identity.endpoint),

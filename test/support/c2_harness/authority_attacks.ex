@@ -233,6 +233,7 @@ defmodule C2Harness.AuthorityAttacks do
         {e, d} = effect(env)
         apps = approvals(env, d)
         task = Task.async(fn -> issue(env, e, d, apps) end)
+
         # SLEEP-CLASS: RACE-JITTER (deliberate random delay before the kill to vary the interleaving)
         Process.sleep(:rand.uniform(30) - 1)
         C2Harness.Fleet.kill_authority(env.fleet)

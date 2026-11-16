@@ -44,7 +44,12 @@ defmodule AshA2A.Protocol.AgentCardSignatureTest do
       jwks = %{"keys" => [pub]}
       c = signed(priv, kid: "k1")
       assert {:ok, ["k1"]} = Sig.verify(c, jwks)
-      assert {:ok, ["k1"]} = Sig.verify(c, fn "k1" -> pub; _ -> nil end)
+
+      assert {:ok, ["k1"]} =
+               Sig.verify(c, fn
+                 "k1" -> pub
+                 _ -> nil
+               end)
 
       tampered = Map.put(c, "name", "Evil")
       assert {:error, :bad_signature} = Sig.verify(tampered, jwks)
@@ -58,7 +63,12 @@ defmodule AshA2A.Protocol.AgentCardSignatureTest do
 
     # forge an entry without kid
     protected = b64(~s({"alg":"ES256"}))
-    c = Sig.attach(card(), [%{"protected" => protected, "signature" => b64(:crypto.strong_rand_bytes(64))}])
+
+    c =
+      Sig.attach(card(), [
+        %{"protected" => protected, "signature" => b64(:crypto.strong_rand_bytes(64))}
+      ])
+
     assert {:error, :missing_kid} = Sig.verify(c, %{"keys" => [pub]})
   end
 
@@ -90,13 +100,17 @@ defmodule AshA2A.Protocol.AgentCardSignatureTest do
 
     # JWK pinned to a different alg
     pinned = Map.put(ec_pub, "alg", "EdDSA")
-    assert {:error, :alg_key_mismatch} = Sig.verify(signed(ec_priv, kid: "k1"), %{"keys" => [pinned]})
+
+    assert {:error, :alg_key_mismatch} =
+             Sig.verify(signed(ec_priv, kid: "k1"), %{"keys" => [pinned]})
   end
 
   test "wrong key and truncated signature refused" do
     {priv, _} = ec_keys("k1")
     {_, other_pub} = ec_keys("k1")
-    assert {:error, :bad_signature} = Sig.verify(signed(priv, kid: "k1"), %{"keys" => [other_pub]})
+
+    assert {:error, :bad_signature} =
+             Sig.verify(signed(priv, kid: "k1"), %{"keys" => [other_pub]})
 
     {:ok, entry} = Sig.sign(card(), priv, kid: "k1")
     {_, pub} = ec_keys("k1")

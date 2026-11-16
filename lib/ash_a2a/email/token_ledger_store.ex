@@ -44,7 +44,9 @@ defmodule AshA2A.Email.TokenLedgerStore do
   @result_prefix "email_ledger/result/"
 
   def start_link(opts) do
-    unless Keyword.get(opts, :store), do: raise(ArgumentError, "#{inspect(__MODULE__)} requires :store")
+    unless Keyword.get(opts, :store),
+      do: raise(ArgumentError, "#{inspect(__MODULE__)} requires :store")
+
     gen_opts = if opts[:name], do: [name: opts[:name]], else: []
     GenServer.start_link(__MODULE__, opts, gen_opts)
   end

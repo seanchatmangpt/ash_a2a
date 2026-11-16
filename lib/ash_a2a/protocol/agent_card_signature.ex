@@ -260,7 +260,12 @@ defmodule AshA2A.Protocol.AgentCardSignature do
 
   defp raw_sign(_, _, _), do: {:error, :missing_private_key}
 
-  defp raw_verify("ES256", %{"x" => x, "y" => y}, input, <<r::unsigned-big-size(256), s::unsigned-big-size(256)>>) do
+  defp raw_verify(
+         "ES256",
+         %{"x" => x, "y" => y},
+         input,
+         <<r::unsigned-big-size(256), s::unsigned-big-size(256)>>
+       ) do
     with {:ok, xb} <- decode_b64(x, :bad_key),
          {:ok, yb} <- decode_b64(y, :bad_key),
          32 <- byte_size(xb),

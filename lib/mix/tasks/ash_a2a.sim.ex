@@ -14,6 +14,7 @@ defmodule Mix.Tasks.AshA2a.Sim do
       mix ash_a2a.sim                  # serve until stopped, print the URLs
       mix ash_a2a.sim --prove          # boot, run every probe, print the matrix
       mix ash_a2a.sim --prove --json   # the same matrix as JSON
+      mix ash_a2a.sim --parity         # compare the wire with the upstream A2A v1.1 reference
 
   ## Options
 
@@ -21,6 +22,15 @@ defmodule Mix.Tasks.AshA2a.Sim do
       row per probe (surface, probe, status, detail), then exit. The exit
       status is `1` when any probe fails or any served surface item has no
       probe, else `0`.
+    * `--parity` - run the A2A v1.1 parity script
+      (`scripts/a2a_v1_1_parity/parity.py`, see `AshA2A.Sim.Parity`) against the
+      booted server and print its matrix. The exit status is `1` when a row
+      fails, and `0` when every row passes or the only failing rows are the
+      known defects listed in `docs/reference/a2a-v1-1-parity-findings.md`.
+      Add `--strict` to exit `1` for known defects too, and `--json` to print
+      the report as JSON. Needs the Python virtual environment that
+      `scripts/a2a_v1_1_parity/setup.sh` creates; without it the task says so
+      and exits `2`.
     * `--json` - with `--prove`, print a JSON object with `summary`,
       `uncovered` and `results` instead of the table.
     * `--http-port`, `--grpc-port`, `--push-port` - listen ports. Each
@@ -43,6 +53,8 @@ defmodule Mix.Tasks.AshA2a.Sim do
 
   @switches [
     prove: :boolean,
+    parity: :boolean,
+    strict: :boolean,
     json: :boolean,
     http_port: :integer,
     grpc_port: :integer,
@@ -77,15 +89,43 @@ defmodule Mix.Tasks.AshA2a.Sim do
       )
     end
 
-    if opts[:prove], do: Logger.configure(level: :error)
+    if opts[:prove] || opts[:parity], do: Logger.configure(level: :error)
 
     {:ok, _pid} = server.start_link(Keyword.take(opts, [:http_port, :grpc_port, :push_port]))
     info = server.info()
 
-    if opts[:prove] do
-      prove(info, opts[:json] == true)
-    else
-      serve(info)
+    cond do
+      opts[:parity] -> parity(info, opts[:json] == true, opts[:strict] == true)
+      opts[:prove] -> prove(info, opts[:json] == true)
+      true -> serve(info)
+    end
+  end
+
+  defp parity(info, json?, strict?) do
+    parity = Module.concat(AshA2A.Sim, Parity)
+
+    case parity.run(info) do
+      {:ok, report} ->
+        {matrix, report} = Map.pop(report, "matrix")
+        summary = report["summary"]
+        Mix.shell().info(if json?, do: Jason.encode!(report, pretty: true), else: matrix)
+
+        unless json? do
+          Mix.shell().info(
+            "\n#{summary["pass"]} pass, #{summary["fail"]} fail, #{summary["known"]} known " <>
+              "(#{Enum.join(report["known_defects"], ", ")}), #{summary["skip"]} skip"
+          )
+        end
+
+        if summary["fail"] > 0 or (strict? and summary["known"] > 0), do: exit({:shutdown, 1})
+
+      {:skip, reason} ->
+        Mix.shell().error("parity not run: " <> reason)
+        exit({:shutdown, 2})
+
+      {:error, reason} ->
+        Mix.shell().error(reason)
+        exit({:shutdown, 1})
     end
   end
 

@@ -1,5 +1,5 @@
 defmodule AshA2A.Lane17DomainVerifierLocationTest do
-    use ExUnit.Case, async: true
+  use ExUnit.Case, async: true
 
   import Spark.Test
 
@@ -65,6 +65,7 @@ defmodule AshA2A.Lane17DomainVerifierLocationTest do
 
     assert_located(errors(body, "NotAnAgent"), [:transport, :mount])
   end
+
   # VerifyExtensions duplicate-uri: Spark's entity `identifier: :uri` may reject
   # duplicates before the verifier runs, so it is not asserted here (UNVERIFIED).
 end

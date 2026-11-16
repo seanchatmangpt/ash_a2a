@@ -196,7 +196,44 @@ if Code.ensure_loaded?(Bandit) do
       for {label, fun} <- mount_scenarios(mount), do: p(item, label, fun)
     end
 
+    # One probe per binding of the parity report. The script runs once per
+    # server; every probe reads the same report.
+    defp probes_for(%{kind: :parity, name: binding} = item) do
+      [
+        p(item, "wire output matches the upstream v1.1 reference", fn info ->
+          case parity_report(info) do
+            {:ok, report} ->
+              case AshA2A.Sim.Parity.verdict(report, binding) do
+                {:pass, detail} -> detail
+                {:skip, detail} -> {:skip, detail}
+                {:fail, detail} -> fail!(detail)
+              end
+
+            {:skip, reason} ->
+              {:skip, reason}
+
+            {:error, reason} ->
+              fail!(reason)
+          end
+        end)
+      ]
+    end
+
     defp probes_for(_item), do: []
+
+    defp parity_report(info) do
+      key = {__MODULE__, :parity, info.http_port, info.grpc_port}
+
+      case :persistent_term.get(key, nil) do
+        nil ->
+          result = AshA2A.Sim.Parity.run(info, timeout: @probe_timeout - 3_000)
+          :persistent_term.put(key, result)
+          result
+
+        result ->
+          result
+      end
+    end
 
     # == JSON-RPC ================================================================
 
@@ -589,10 +626,10 @@ if Code.ensure_loaded?(Bandit) do
              c,
              "tasks/pushNotificationConfig/get",
              %{"id" => task["id"], "pushNotificationConfigId" => one["id"]},
-             -32_602
+             -32_001
            )
 
-           "config #{one["id"]} gone (get answers -32602), #{two["id"]} kept"
+           "config #{one["id"]} gone (get answers -32001), #{two["id"]} kept"
          end}
       ]
     end
@@ -695,8 +732,17 @@ if Code.ensure_loaded?(Bandit) do
              gens = Enum.map(frames, &frame_generation/1)
 
              check!(frames != [], "no frames replayed")
-             check!("task" not in kinds, "a resume carries no Task snapshot, got #{inspect(kinds)}")
-             check!(Enum.all?(gens, &is_integer/1), "a frame has no generation: #{inspect(kinds)}")
+
+             check!(
+               "task" not in kinds,
+               "a resume carries no Task snapshot, got #{inspect(kinds)}"
+             )
+
+             check!(
+               Enum.all?(gens, &is_integer/1),
+               "a frame has no generation: #{inspect(kinds)}"
+             )
+
              check!(gens == Enum.sort(gens), "replay out of order: #{inspect(gens)}")
 
              check!(
@@ -704,7 +750,10 @@ if Code.ensure_loaded?(Bandit) do
                "replayed generations #{inspect(gens)} are not within #{seen + 1}..#{current}"
              )
 
-             check!("messageUpdate" in kinds, "the follow-up message was not replayed: #{inspect(kinds)}")
+             check!(
+               "messageUpdate" in kinds,
+               "the follow-up message was not replayed: #{inspect(kinds)}"
+             )
 
              last = List.last(frames)
 
@@ -1499,11 +1548,11 @@ if Code.ensure_loaded?(Bandit) do
 
            "config #{two["id"]} of 2 read back"
          end},
-        {"a missing config is 400",
+        {"a missing config is 404",
          fn info ->
            task = rest_parked!(info)
-           rest_error!(info, :get, "/tasks/#{task["id"]}/#{segment}/no-such-config", 400)
-           "HTTP 400"
+           rest_error!(info, :get, "/tasks/#{task["id"]}/#{segment}/no-such-config", 404)
+           "HTTP 404"
          end}
       ]
     end
@@ -1702,11 +1751,15 @@ if Code.ensure_loaded?(Bandit) do
         {"a message the decoder refuses (no parts) is INVALID_ARGUMENT",
          fn info ->
            grpc(info, :writer, fn ch, opts ->
-             params = update_in(send_params("count_notes", %{}), ["message"], &Map.put(&1, "parts", []))
+             params =
+               update_in(send_params("count_notes", %{}), ["message"], &Map.put(&1, "parts", []))
+
              request = pb(Pb.SendMessageRequest, params)
 
              error =
-               ch |> Stub.send_message(request, opts) |> grpc_status!(3, "SendMessage without parts")
+               ch
+               |> Stub.send_message(request, opts)
+               |> grpc_status!(3, "SendMessage without parts")
 
              "gRPC status 3 INVALID_ARGUMENT: #{clip(to_string(error.message), 80)}"
            end)

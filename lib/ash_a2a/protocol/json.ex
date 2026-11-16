@@ -266,8 +266,8 @@ defmodule AshA2A.Protocol.JSON do
     map =
       %{"taskId" => event.task_id, "artifact" => artifact}
       |> put_unless_nil("contextId", event.context_id)
-      |> put_unless_nil("append", event.append)
-      |> put_unless_nil("lastChunk", event.last_chunk)
+      |> put_if_true("append", event.append)
+      |> put_if_true("lastChunk", event.last_chunk)
       |> put_unless_empty("metadata", event.metadata)
       |> put_generation("generation", event.generation)
 
@@ -1265,6 +1265,11 @@ defmodule AshA2A.Protocol.JSON do
 
   defp put_unless_nil(map, _key, nil), do: map
   defp put_unless_nil(map, key, value), do: Map.put(map, key, value)
+
+  # A proto3 `bool` without presence: `false` is the default and ProtoJSON
+  # omits it, so `"append": false` never reaches the wire.
+  defp put_if_true(map, key, true), do: Map.put(map, key, true)
+  defp put_if_true(map, _key, _false_or_nil), do: map
 
   defp put_unless_empty(map, _key, val) when val == %{}, do: map
   defp put_unless_empty(map, _key, val) when val == [], do: map

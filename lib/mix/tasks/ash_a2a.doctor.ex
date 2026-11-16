@@ -43,7 +43,9 @@ defmodule Mix.Tasks.AshA2a.Doctor do
 
     if opts[:json] do
       findings
-      |> Enum.map(fn f -> %{f | severity: Atom.to_string(f.severity), code: Atom.to_string(f.code)} end)
+      |> Enum.map(fn f ->
+        %{f | severity: Atom.to_string(f.severity), code: Atom.to_string(f.code)}
+      end)
       |> Jason.encode!(pretty: true)
       |> Mix.shell().info()
     else

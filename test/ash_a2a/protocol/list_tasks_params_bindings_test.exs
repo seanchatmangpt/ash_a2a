@@ -125,6 +125,7 @@ defmodule AshA2A.ListTasksParamsBindingsTest do
   test "the shared validator and JSON.decode_list_tasks_request/1 agree" do
     for {_label, params, _query} <- @bad_inputs do
       assert {:error, message} = AshA2A.Protocol.ListTasksParams.validate(params)
+
       assert {:error, {:invalid_params, ^message}} =
                AshA2A.Protocol.JSON.decode_list_tasks_request(params)
     end

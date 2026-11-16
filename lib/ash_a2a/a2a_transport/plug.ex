@@ -290,7 +290,7 @@ defmodule AshA2A.A2ATransport.Plug do
     do: send_json(conn, Response.error(req.id, err))
 
   defp dispatch(conn, %Request{method: "agent/getAuthenticatedExtendedCard"} = req, _raw, opts),
-    do: ExtendedCard.handle(conn, req.id, opts)
+    do: ExtendedCard.handle(conn, req.id, %{opts | a2a: advertise(opts)})
 
   defp dispatch(conn, %Request{method: "tasks/pushNotificationConfig/" <> _} = req, _raw, opts) do
     if push_enabled?(opts) do
@@ -591,6 +591,12 @@ defmodule AshA2A.A2ATransport.Plug do
   end
 
   defp closed_wire_state?(_), do: false
+
+  # v1.1 names the member `taskPushNotificationConfig`; the 1.0 spelling
+  # `pushNotificationConfig` is still read.
+  defp inline_push(%{"configuration" => %{"taskPushNotificationConfig" => config}})
+       when not is_nil(config),
+       do: config
 
   defp inline_push(%{"configuration" => %{"pushNotificationConfig" => config}})
        when not is_nil(config),

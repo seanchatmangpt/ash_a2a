@@ -22,10 +22,19 @@ defmodule AshA2A.FuzzJSONGuardTest do
       body = FuzzGen.raw_body()
 
       case FuzzGen.run_with_deadline(fn -> JSONGuard.decode(body) end) do
-        {:ok, {:ok, _}} -> :ok
-        {:ok, {:error, {:nesting_exceeded, 64}}} -> :ok
-        {:ok, {:error, %Jason.DecodeError{}}} -> :ok
-        other -> flunk("iteration #{i} (seed 1), body size #{byte_size(body)}: #{inspect(other, limit: 5)}")
+        {:ok, {:ok, _}} ->
+          :ok
+
+        {:ok, {:error, {:nesting_exceeded, 64}}} ->
+          :ok
+
+        {:ok, {:error, %Jason.DecodeError{}}} ->
+          :ok
+
+        other ->
+          flunk(
+            "iteration #{i} (seed 1), body size #{byte_size(body)}: #{inspect(other, limit: 5)}"
+          )
       end
     end
   end
@@ -59,6 +68,7 @@ defmodule AshA2A.FuzzJSONGuardTest do
 
   test "1MB of open brackets is refused quickly, not parsed" do
     body = String.duplicate("[", 1_000_000)
+
     assert {:ok, {:error, {:nesting_exceeded, 64}}} =
              FuzzGen.run_with_deadline(fn -> JSONGuard.decode(body) end, 5_000)
   end
@@ -89,7 +99,9 @@ defmodule AshA2A.FuzzJSONGuardTest do
     assert {:ok, %{"a" => ^kept}} = JSONGuard.decode(~s({"a":1,"a":2}))
 
     big = String.duplicate("9", 100_000)
-    assert {:ok, _} = FuzzGen.run_with_deadline(fn -> JSONGuard.decode(~s({"n":#{big}})) end, 20_000)
+
+    assert {:ok, _} =
+             FuzzGen.run_with_deadline(fn -> JSONGuard.decode(~s({"n":#{big}})) end, 20_000)
   end
 
   test "invalid UTF-8 and out-of-range floats yield an error tuple, not a raise" do

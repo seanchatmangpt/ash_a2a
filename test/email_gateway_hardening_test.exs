@@ -90,7 +90,9 @@ defmodule AshA2A.EmailGatewayHardeningTest do
   end
 
   test "wrong provider webhook credential => 401 even with forged passing auth_results", ctx do
-    c = EmailPlug.call(post(params(), "Bearer wrong-wrong-wrong-wrong"), opts(ctx.rec, ctx.ledger))
+    c =
+      EmailPlug.call(post(params(), "Bearer wrong-wrong-wrong-wrong"), opts(ctx.rec, ctx.ledger))
+
     assert c.status == 401
     assert dispatched(ctx.rec) == []
   end

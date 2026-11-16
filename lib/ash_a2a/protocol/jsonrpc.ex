@@ -287,10 +287,12 @@ defmodule AshA2A.Protocol.JSONRPC do
             {:ok, page, next_token} ->
               encoded = Enum.map(page, &AshA2A.Protocol.JSON.encode!/1)
 
+              # Neither member is REQUIRED: an empty list and an absent token
+              # are proto3 defaults, which ProtoJSON omits.
               result =
-                if next_token,
-                  do: %{"configs" => encoded, "nextPageToken" => next_token},
-                  else: %{"configs" => encoded}
+                %{}
+                |> then(&if(encoded == [], do: &1, else: Map.put(&1, "configs", encoded)))
+                |> then(&if(next_token, do: Map.put(&1, "nextPageToken", next_token), else: &1))
 
               {:reply, Response.success(req.id, result)}
 

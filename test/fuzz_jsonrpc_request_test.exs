@@ -28,8 +28,12 @@ defmodule AshA2A.FuzzJSONRPCRequestTest do
   ]
 
   defp envelope(params) do
-    %{"jsonrpc" => "2.0", "id" => FuzzGen.pick(["1", 7, nil]), "method" => FuzzGen.pick(@methods),
-      "params" => params}
+    %{
+      "jsonrpc" => "2.0",
+      "id" => FuzzGen.pick(["1", 7, nil]),
+      "method" => FuzzGen.pick(@methods),
+      "params" => params
+    }
   end
 
   defp decode_and_validate(raw) do
@@ -48,9 +52,14 @@ defmodule AshA2A.FuzzJSONRPCRequestTest do
         end
 
       case FuzzGen.run_with_deadline(fn -> decode_and_validate(raw) end) do
-        {:ok, :ok} -> :ok
-        {:ok, {:error, %Error{}}} -> :ok
-        other -> flunk("iteration #{i} (seed 20): #{inspect(other, limit: 8, printable_limit: 80)}")
+        {:ok, :ok} ->
+          :ok
+
+        {:ok, {:error, %Error{}}} ->
+          :ok
+
+        other ->
+          flunk("iteration #{i} (seed 20): #{inspect(other, limit: 8, printable_limit: 80)}")
       end
     end
   end
@@ -70,9 +79,14 @@ defmodule AshA2A.FuzzJSONRPCRequestTest do
         end)
 
       case result do
-        {:ok, :ok} -> :ok
-        {:ok, {:error, _}} -> :ok
-        other -> flunk("iteration #{i} (seed 21): #{inspect(other, limit: 8, printable_limit: 80)}")
+        {:ok, :ok} ->
+          :ok
+
+        {:ok, {:error, _}} ->
+          :ok
+
+        other ->
+          flunk("iteration #{i} (seed 21): #{inspect(other, limit: 8, printable_limit: 80)}")
       end
     end
   end

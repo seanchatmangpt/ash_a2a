@@ -62,7 +62,13 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     # -32602 is a standard JSON-RPC code with no spec-defined reason; the
     # ErrorInfo (domain a2a-protocol.org, reason INVALID_PARAMS) is added by
     # lane V3 so validation/changeset failures carry a typed reason too.
-    -32_602 => "INVALID_PARAMS"
+    -32_602 => "INVALID_PARAMS",
+    # Spec 9.5: `error.data` is an array of objects that each carry `@type`.
+    # Free-form data on the remaining standard codes rides the ErrorInfo's
+    # `metadata.detail` instead of replacing the array.
+    -32_700 => "JSON_PARSE",
+    -32_600 => "INVALID_REQUEST",
+    -32_601 => "METHOD_NOT_FOUND"
   }
 
   @doc "Builds a parse error (-32700)."

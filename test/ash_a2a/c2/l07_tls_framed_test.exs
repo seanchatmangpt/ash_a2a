@@ -19,7 +19,11 @@ defmodule AshA2A.C2.L07TlsFramedTest do
 
   defp pki do
     :public_key.pkix_test_data(%{
-      server_chain: %{root: rsa(), intermediates: [], peer: rsa() ++ [extensions: san("localhost")]},
+      server_chain: %{
+        root: rsa(),
+        intermediates: [],
+        peer: rsa() ++ [extensions: san("localhost")]
+      },
       client_chain: %{root: rsa(), intermediates: [], peer: rsa()}
     })
   end
@@ -31,7 +35,8 @@ defmodule AshA2A.C2.L07TlsFramedTest do
     {:ok, l} =
       :ssl.listen(
         0,
-        sc ++ [:binary, packet: 4, active: false, reuseaddr: true] ++
+        sc ++
+          [:binary, packet: 4, active: false, reuseaddr: true] ++
           [verify: :verify_peer, fail_if_no_peer_cert: true]
       )
 

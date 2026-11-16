@@ -17,6 +17,7 @@ import http.client
 import json
 import queue
 import re
+import socket
 import threading
 import time
 import urllib.parse
@@ -66,8 +67,27 @@ class Report:
             detail = f"{count} {what}" if not found else "; ".join(found[:4])
             self.add(binding, operation, vector, check, not found, detail)
 
+    def apply_known(self, defects):
+        """Re-labels failing rows that match a known defect; returns the
+        entries that matched nothing (stale)."""
+        import fnmatch
+
+        stale = []
+        for entry in defects:
+            hit = False
+            for row in self.rows:
+                if row["status"] in ("fail", "known") and all(
+                    fnmatch.fnmatchcase(row[key], entry.get(key, "*")) for key in ("binding", "operation", "vector", "check")
+                ):
+                    row["status"] = "known"
+                    row["finding"] = entry["finding"]
+                    hit = True
+            if not hit:
+                stale.append(entry)
+        return stale
+
     def summary(self):
-        out = {"pass": 0, "fail": 0, "warn": 0, "skip": 0}
+        out = {"pass": 0, "fail": 0, "known": 0, "skip": 0}
         for row in self.rows:
             out[row["status"]] += 1
         return out
@@ -94,7 +114,7 @@ def check_pb(report, raw, cls):
     if unknown:
         problems["strict"] = [f"unknown field at {item}" for item in unknown]
     again = message.SerializeToString(deterministic=True)
-    if again != raw:
+    if again != raw and ref.canonical_wire(again, cls.DESCRIPTOR) != ref.canonical_wire(raw, cls.DESCRIPTOR):
         problems["wire"] = [
             f"{len(raw)} bytes on the wire, reference re-serialises to {len(again)}: "
             f"wire {raw.hex()[:120]} reference {again.hex()[:120]}"
@@ -247,6 +267,7 @@ class SseStream:
         self.error = None
         self._conn, path = _connect(url, timeout)
         self._conn.request(method, path, body=body, headers=headers)
+        self._sock = self._conn.sock
         self._resp = self._conn.getresponse()
         self.status = self._resp.status
         self.headers = {k.lower(): v for k, v in self._resp.getheaders()}
@@ -294,6 +315,16 @@ class SseStream:
             return None
 
     def close(self):
+        # Shut the socket down first: closing the response while the reader
+        # thread sits in readline() would wait on the buffer's lock forever.
+        try:
+            if self._sock is not None:
+                self._sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        thread = getattr(self, "_thread", None)
+        if thread is not None:
+            thread.join(timeout=5)
         try:
             self._conn.close()
         except Exception:
@@ -499,6 +530,8 @@ class GrpcBinding(Binding):
 
 
 class GrpcLive:
+    duplex = True
+
     def __init__(self, binding, first, vector, token, version):
         self.binding = binding
         self.vector = vector
@@ -632,10 +665,24 @@ class HttpBinding(Binding):
         return HttpLive(self, first, vector, token, version)
 
 
+class UplinkAnswer:
+    def __init__(self, status, headers, bodies, still_open):
+        self.status = status
+        self.headers = headers
+        self.bodies = bodies
+        self.still_open = still_open
+
+    def describe(self):
+        shown = b" | ".join(self.bodies)[:200]
+        return f"HTTP {self.status} {self.headers.get('content-type')}, {len(self.bodies)} body(ies){', left open' if self.still_open else ''}: {shown!r}"
+
+
 class HttpLive:
     """`SendLiveMessage` over HTTP: the first call's response is the downlink;
     every later request is its own short call to the same operation (spec
     3.1.12)."""
+
+    duplex = False
 
     def __init__(self, binding, first, vector, token, version):
         self.binding = binding
@@ -675,10 +722,26 @@ class HttpLive:
                 return None
 
     def send(self, request):
-        """An uplink call. Returns the HttpResponse of the short-lived call."""
+        """An uplink call: its own short-lived call to the same operation.
+
+        Returns an `UplinkAnswer`. The server may answer with a JSON body or
+        with an event stream; an event stream that stays open is read for two
+        idle seconds and then dropped.
+        """
         ref.note_request_coverage(request, self.binding.report.request_coverage)
         method, url, body = self.binding._request("SendLiveMessage", request)
-        return http_call(method, url, self.binding._headers(self.token, self.version, True), body)
+        sse = SseStream(method, url, self.binding._headers(self.token, self.version, True), body, timeout=20)
+        if sse.response is not None:
+            return UplinkAnswer(sse.status, sse.headers, [sse.response.body], False)
+        datas = []
+        while True:
+            data = sse.next(2)
+            if data is None:
+                break
+            datas.append(data.encode("utf-8"))
+        still_open = not sse.closed_by_server
+        sse.close()
+        return UplinkAnswer(sse.status, sse.headers, datas, still_open)
 
     def half_close(self):
         pass
@@ -784,7 +847,10 @@ class RestBinding(HttpBinding):
         )
 
     def _unwrap_frame(self, value):
-        if isinstance(value, dict) and set(value) == {"error"}:
+        # `{"error": ...}` is either the HTTP error envelope (11.6, integer
+        # `code`) or a StreamResponse carrying a StreamError (string `code`).
+        inner = value.get("error") if isinstance(value, dict) else None
+        if isinstance(inner, dict) and set(value) == {"error"} and not isinstance(inner.get("code"), str):
             fake = HttpResponse(value["error"].get("code", 0), {}, json.dumps(value).encode("utf-8"))
             error = self._error(fake)
             error.http_status = None

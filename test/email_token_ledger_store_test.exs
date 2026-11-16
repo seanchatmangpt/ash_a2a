@@ -51,7 +51,10 @@ defmodule AshA2A.EmailTokenLedgerStoreTest do
   test "multi-key reserve is all-or-nothing", %{kv: kv} do
     l = start_ledger(kv)
     assert :ok = TokenLedgerStore.reserve(l, "b1", [{2, "t2"}], "m1")
-    assert {:error, :already_consumed} = TokenLedgerStore.reserve(l, "b1", [{1, "t1"}, {2, "t2"}], "m2")
+
+    assert {:error, :already_consumed} =
+             TokenLedgerStore.reserve(l, "b1", [{1, "t1"}, {2, "t2"}], "m2")
+
     # key 1 was rolled back, so it is still spendable
     assert :ok = TokenLedgerStore.reserve(l, "b1", [{1, "t1"}], "m3")
   end
@@ -65,7 +68,9 @@ defmodule AshA2A.EmailTokenLedgerStoreTest do
     assert {:error, :already_consumed} = TokenLedgerStore.reserve(l2, "b1", [{1, "t1"}], "m9")
   end
 
-  test "two ledger processes over one store share consumption (stands in for two nodes)", %{kv: kv} do
+  test "two ledger processes over one store share consumption (stands in for two nodes)", %{
+    kv: kv
+  } do
     a = start_ledger(kv)
     b = start_ledger(kv)
     assert :ok = TokenLedgerStore.reserve(a, "b1", [{1, "t1"}], "m1")
@@ -135,7 +140,8 @@ defmodule AshA2A.EmailTokenLedgerStoreTest do
     |> put_req_header("authorization", "Bearer " <> @secret)
   end
 
-  test "real plug: replay with another message_id is 409 and dispatched once; same id replays", ctx do
+  test "real plug: replay with another message_id is 409 and dispatched once; same id replays",
+       ctx do
     l = start_ledger(ctx.kv)
     o = plug_opts(ctx.rec, l)
 

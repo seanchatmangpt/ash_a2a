@@ -178,7 +178,11 @@ defmodule AshA2A.Protocol.AgentCard do
 
   defp card_view(%__MODULE__{} = card) do
     %{
-      bindings: Enum.map(card.supported_interfaces || [], &fetch(&1, :protocol_binding, "protocolBinding")),
+      bindings:
+        Enum.map(
+          card.supported_interfaces || [],
+          &fetch(&1, :protocol_binding, "protocolBinding")
+        ),
       capabilities: card.capabilities || %{},
       skill_ids: Enum.map(card.skills || [], &fetch(&1, :id, "id")),
       scheme_names: Enum.map(Map.keys(card.security_schemes || %{}), &to_string/1),
@@ -236,7 +240,8 @@ defmodule AshA2A.Protocol.AgentCard do
           [
             %{
               code: :unknown_binding,
-              message: "supportedInterfaces advertises unknown protocolBinding #{inspect(binding)}"
+              message:
+                "supportedInterfaces advertises unknown protocolBinding #{inspect(binding)}"
             }
           ]
 
@@ -296,7 +301,9 @@ defmodule AshA2A.Protocol.AgentCard do
 
       index ->
         Enum.map(index, fn
-          %{id: id} when is_binary(id) -> id
+          %{id: id} when is_binary(id) ->
+            id
+
           %{resource: resource, action: action} ->
             AshA2A.CapabilityIndex.Compiler.capability_id(resource, action)
         end)

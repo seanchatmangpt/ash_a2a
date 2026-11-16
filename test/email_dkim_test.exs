@@ -10,8 +10,11 @@ defmodule AshA2A.EmailDkimTest do
   @now 1_800_000_000
 
   setup_all do
-    {:RSAPrivateKey, _, n, e, _, _, _, _, _, _, _} = priv = :public_key.generate_key({:rsa, 2048, 65537})
+    {:RSAPrivateKey, _, n, e, _, _, _, _, _, _, _} =
+      priv = :public_key.generate_key({:rsa, 2048, 65537})
+
     pub = {:RSAPublicKey, n, e}
+
     {:SubjectPublicKeyInfo, der, :not_encrypted} =
       :public_key.pem_entry_encode(:SubjectPublicKeyInfo, pub)
 
@@ -63,10 +66,12 @@ defmodule AshA2A.EmailDkimTest do
       Enum.map_join(signed, &(canon_hdr(&1) <> "\r\n")) <> canon_hdr({"DKIM-Signature", value})
 
     sig = :public_key.sign(data, :sha256, priv) |> Base.encode64()
-    folded = sig |> String.graphemes() |> Enum.chunk_every(60) |> Enum.map_join("\r\n\t", &Enum.join/1)
+
+    folded =
+      sig |> String.graphemes() |> Enum.chunk_every(60) |> Enum.map_join("\r\n\t", &Enum.join/1)
 
     all = [{"DKIM-Signature", " " <> value <> folded}] ++ headers
-    Enum.map_join(all, &("#{elem(&1, 0)}:#{elem(&1, 1)}\r\n")) <> "\r\n" <> body
+    Enum.map_join(all, &"#{elem(&1, 0)}:#{elem(&1, 1)}\r\n") <> "\r\n" <> body
   end
 
   defp headers do
@@ -88,7 +93,11 @@ defmodule AshA2A.EmailDkimTest do
 
   test "relaxed canonicalization tolerates whitespace rewrites in headers and body", ctx do
     msg = sign(ctx.priv, headers(), @body)
-    rewritten = String.replace(msg, "Hello   there", "Hello there") |> String.replace("trailing   spaces ", "trailing spaces")
+
+    rewritten =
+      String.replace(msg, "Hello   there", "Hello there")
+      |> String.replace("trailing   spaces ", "trailing spaces")
+
     assert :ok = Dkim.verify(rewritten, opts(ctx.p))
   end
 
@@ -100,7 +109,9 @@ defmodule AshA2A.EmailDkimTest do
 
   test "tampered body is refused", ctx do
     msg = sign(ctx.priv, headers(), @body)
-    assert {:error, :body_hash_mismatch} = Dkim.verify(String.replace(msg, "Approve 1.", "Approve 9."), opts(ctx.p))
+
+    assert {:error, :body_hash_mismatch} =
+             Dkim.verify(String.replace(msg, "Approve 1.", "Approve 9."), opts(ctx.p))
   end
 
   test "tampered signed header is refused", ctx do
@@ -147,20 +158,35 @@ defmodule AshA2A.EmailDkimTest do
 
   test "missing, revoked, bogus and weak keys are refused", ctx do
     msg = sign(ctx.priv, headers(), @body)
-    assert {:error, :key_unavailable} = Dkim.verify(msg, key_resolver: fn _, _ -> {:error, :nxdomain} end, now: fn -> @now end)
-    assert {:error, :key_unavailable} = Dkim.verify(msg, key_resolver: fn _, _ -> raise "dns" end, now: fn -> @now end)
+
+    assert {:error, :key_unavailable} =
+             Dkim.verify(msg,
+               key_resolver: fn _, _ -> {:error, :nxdomain} end,
+               now: fn -> @now end
+             )
+
+    assert {:error, :key_unavailable} =
+             Dkim.verify(msg, key_resolver: fn _, _ -> raise "dns" end, now: fn -> @now end)
+
     assert {:error, :key_revoked} = Dkim.verify(msg, opts(""))
     assert {:error, :bad_key} = Dkim.verify(msg, opts("bm90IGEga2V5"))
 
     {:RSAPrivateKey, _, n, e, _, _, _, _, _, _, _} = :public_key.generate_key({:rsa, 512, 65537})
-    {:SubjectPublicKeyInfo, der, _} = :public_key.pem_entry_encode(:SubjectPublicKeyInfo, {:RSAPublicKey, n, e})
+
+    {:SubjectPublicKeyInfo, der, _} =
+      :public_key.pem_entry_encode(:SubjectPublicKeyInfo, {:RSAPublicKey, n, e})
+
     assert {:error, :weak_key} = Dkim.verify(msg, opts(Base.encode64(der)))
   end
 
   test "unsupported algorithm and canonicalization are refused", ctx do
     msg = sign(ctx.priv, headers(), @body)
-    assert {:error, :unsupported_algorithm} = Dkim.verify(String.replace(msg, "rsa-sha256", "rsa-sha1"), opts(ctx.p))
-    assert {:error, :unsupported_canonicalization} = Dkim.verify(String.replace(msg, "relaxed/relaxed", "simple/simple"), opts(ctx.p))
+
+    assert {:error, :unsupported_algorithm} =
+             Dkim.verify(String.replace(msg, "rsa-sha256", "rsa-sha1"), opts(ctx.p))
+
+    assert {:error, :unsupported_canonicalization} =
+             Dkim.verify(String.replace(msg, "relaxed/relaxed", "simple/simple"), opts(ctx.p))
   end
 
   test "unsigned message and non-binary input are refused", ctx do

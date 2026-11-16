@@ -384,10 +384,10 @@ if Code.ensure_loaded?(Bandit) do
     @doc false
     def interfaces(info) do
       [
-        %{url: info.a2a_url, protocol_binding: "JSONRPC", protocol_version: "1.0"},
-        %{url: info.jsonrpc_url, protocol_binding: "JSONRPC", protocol_version: "1.0"},
-        %{url: info.rest_url, protocol_binding: "HTTP+JSON", protocol_version: "1.0"},
-        %{url: info.grpc_target, protocol_binding: "GRPC", protocol_version: "1.0"}
+        %{url: info.a2a_url, protocol_binding: "JSONRPC", protocol_version: "1.1"},
+        %{url: info.jsonrpc_url, protocol_binding: "JSONRPC", protocol_version: "1.1"},
+        %{url: info.rest_url, protocol_binding: "HTTP+JSON", protocol_version: "1.1"},
+        %{url: info.grpc_target, protocol_binding: "GRPC", protocol_version: "1.1"}
       ]
     end
 

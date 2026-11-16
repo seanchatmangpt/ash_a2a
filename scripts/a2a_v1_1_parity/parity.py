@@ -7,8 +7,9 @@ against the upstream reference. See README.md next to this file.
 
     parity.py --http http://127.0.0.1:PORT --grpc 127.0.0.1:PORT [--report FILE] [--json]
 
-Exit status: 0 when no row fails, 1 when any row fails, 2 when the reference
-stubs are missing.
+Exit status: 0 when every row passes, 1 when a row fails, 3 when the only
+failing rows are known defects listed in the --known file, 2 when the
+reference stubs are missing.
 """
 
 import argparse
@@ -65,10 +66,6 @@ UNREACHABLE = {
     "AgentProvider.organization": "AshA2A.Sim.Agent declares no provider",
     "AgentCard.documentation_url": "AshA2A.Sim.Agent declares no documentation URL",
     "AgentCard.icon_url": "AshA2A.Sim.Agent declares no icon",
-    "AgentCard.signatures": "the simulation server does not sign its card",
-    "AgentCardSignature.protected": "the simulation server does not sign its card",
-    "AgentCardSignature.signature": "the simulation server does not sign its card",
-    "AgentCardSignature.header": "the simulation server does not sign its card",
     "AgentCapabilities.extensions": "AshA2A.Sim.Agent declares no extension",
     "AgentExtension.uri": "AshA2A.Sim.Agent declares no extension",
     "AgentExtension.description": "AshA2A.Sim.Agent declares no extension",
@@ -93,6 +90,12 @@ UNREACHABLE = {
     "StreamError.metadata": "the server attaches no metadata to a stream rejection",
     "Artifact.extensions": "AshA2A.Sim.Agent declares no extension",
     "Artifact.description": "the Sim skills do not describe their artifacts",
+    "Artifact.name": "the Sim skills do not name their artifacts",
+    "Artifact.metadata": "the Sim skills attach no artifact metadata",
+    "Artifact.role": "ROLE_USER artifacts need capabilities.userArtifacts, which AshA2A.Sim.Agent does not declare",
+    "AgentCapabilities.user_artifacts": "AshA2A.Sim.Agent does not declare userArtifacts (the refusal is a vector)",
+    "AgentCardSignature.header": "the card signature carries only a protected header",
+    "AuthenticationInfo.credentials": "write-only: the server never echoes push credentials",
 }
 for _name in (
     "APIKeySecurityScheme", "OAuth2SecurityScheme", "OpenIdConnectSecurityScheme", "MutualTlsSecurityScheme",
@@ -105,6 +108,7 @@ for _name in (
 # Request-side fields the script does not send, with the reason.
 UNSENT = {
     "tenant": "the simulation server is single-tenant (no /{tenant}/ route is mounted)",
+    "page_token": "push configs: the server answers every config in one page, so no token exists to send back",
 }
 
 NORMALISATIONS = [
@@ -122,6 +126,11 @@ NORMALISATIONS = [
         "what": "REQUIRED fields at their zero value",
         "how": "the reference emits a field the upstream proto marks REQUIRED even when it holds the zero value",
         "why": "spec 5.7: a REQUIRED field MUST be present; the spec's own ListTasks example (6.5) carries \"nextPageToken\": \"\". Every other default-valued field must be omitted, as the reference encoder does",
+    },
+    {
+        "what": "protobuf map entry order (gRPC)",
+        "how": "when the wire bytes differ from the reference re-serialisation, both are compared again with the entries of each map<> field sorted bytewise; every other byte stays as sent",
+        "why": "the protobuf encoding leaves map entry order undefined, and deterministic serialisation is only stable within one implementation (the Python runtime does not sort keys lexicographically)",
     },
     {
         "what": "JSON-RPC envelope",
@@ -143,8 +152,15 @@ NORMALISATIONS = [
 NOT_NORMALISED = (
     "enum spelling, field naming (camelCase), int64-as-string, timestamp format, "
     "default-value emission, null members, unknown or extra members, duplicate members, "
-    "protobuf field order, map entry order and unknown protobuf fields are all compared as sent"
+    "protobuf field order, packing, varint form and unknown protobuf fields are all compared as sent"
 )
+
+
+STATUS_NAMES = {
+    "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND", "ALREADY_EXISTS",
+    "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE",
+    "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE", "DATA_LOSS", "UNAUTHENTICATED",
+}
 
 
 # -- request builders ----------------------------------------------------------
@@ -601,9 +617,7 @@ def run_streams(b, env):
 
 def run_push(b, env):
     tag = uid("hook")
-    task = send(b, "seed for push configs", "slow_count", {"delay_ms": 1200}, {"returnImmediately": True})
-    if task is None:
-        return
+    task = send(b, "seed for push configs", "create_note", {"body": "no title"})
     config = pb.TaskPushNotificationConfig(
         task_id=task.id, id=uid("cfg"), url=env.webhook.url(tag), token="tok-" + tag, protocol_version="1.1",
         authentication=pb.AuthenticationInfo(scheme="Bearer", credentials="cred-" + tag),
@@ -631,6 +645,8 @@ def run_push(b, env):
         ok = len(listed.configs) == 1 and listed.configs[0] == created
         sem(b, "ListTaskPushNotificationConfigs", "lists the task's configs", ok, f"{len(listed.configs)} config(s)")
 
+    send(b, "resume the task the config watches", "create_note", {"title": uid("push"), "body": "b"},
+         task_id=task.id, context_id=task.context_id)
     deliveries = env.webhook.wait(tag, lambda d: b"TASK_STATE_COMPLETED" in d["body"])
     problems, merged = [], {}
     if not deliveries:
@@ -661,16 +677,22 @@ def run_push(b, env):
         sem(b, op, "delete is idempotent", again.error is None,
             "second delete succeeds (3.1.10 MUST be idempotent)" if again.error is None else again.error.describe())
 
-    # A config supplied inline on SendMessage is equivalent to Create (3.1.12, 3.2.2).
-    inline = uid("cfg")
+    # A config supplied inline on SendMessage is equivalent to Create (3.1.12,
+    # 3.2.2), and a task that finishes after the call returned is exactly
+    # what push notifications are for (3.5.1).
+    inline, tag = uid("cfg"), uid("hook")
     task = send(b, "inline taskPushNotificationConfig", "slow_count", {"delay_ms": 300},
-                {"returnImmediately": True, "taskPushNotificationConfig": {"id": inline, "url": env.webhook.url(uid("hook")), "token": "t"}})
+                {"returnImmediately": True, "taskPushNotificationConfig": {"id": inline, "url": env.webhook.url(tag), "token": "t"}})
     if task is not None:
         listed = b.expect("ListTaskPushNotificationConfigs", pb.ListTaskPushNotificationConfigsRequest(task_id=task.id), "inline config is listed")
         if listed is not None:
             ids = [c.id for c in listed.configs]
             sem(b, "ListTaskPushNotificationConfigs", "inline config is listed", inline in ids, f"configs {ids}")
         await_state(b, task.id, h.TERMINAL)
+        deliveries = env.webhook.wait(tag, lambda d: b"TASK_STATE_COMPLETED" in d["body"], timeout=2)
+        done = [d for d in deliveries if b"TASK_STATE_COMPLETED" in d["body"]]
+        sem(b, "push delivery", "returnImmediately task: completion is delivered", bool(done),
+            f"{len(deliveries)} deliveries, {len(done)} carrying TASK_STATE_COMPLETED (3.5.1: push is for long-running tasks)")
 
 
 def run_card(b, env):
@@ -776,15 +798,24 @@ def run_live(b, env):
         if task.status.state != pb.TASK_STATE_INPUT_REQUIRED:
             drain(live, lambda f: h.frame_state(f) == pb.TASK_STATE_INPUT_REQUIRED, 8)
 
-        name = "later subscribe is rejected with a StreamError"
-        answer = live.send(pb.StreamRequest(subscribe=pb.SubscribeToTaskRequest(id=task.id)))
-        sem(b, op, name, *expect_live_rejection(b, live, answer))
-
-        name = "request naming another task is rejected with a StreamError"
-        other = send(b, "seed another task", "count_notes")
-        answer = live.send(pb.StreamRequest(send_message=send_request(
-            "count_notes", task_id=other.id if other is not None else "tsk-other", context_id=task.context_id)))
-        sem(b, op, name, *expect_live_rejection(b, live, answer))
+        # Per-request rejection needs a request the server can tell apart
+        # from a new stream. Over HTTP every call is its own request to the
+        # same operation, so a `subscribe`, or a message naming another task,
+        # legitimately opens another stream (3.5.2 allows several per task).
+        for name, build in (
+            ("later subscribe is rejected with a StreamError",
+             lambda: pb.StreamRequest(subscribe=pb.SubscribeToTaskRequest(id=task.id))),
+            ("request naming another task is rejected with a StreamError",
+             lambda: pb.StreamRequest(send_message=send_request("count_notes", task_id=other_id, context_id=task.context_id))),
+        ):
+            if not live.duplex:
+                b.report.add(b.name, op, name, "semantics", "skip",
+                             "native-duplex only: over HTTP this request is a new call that opens its own stream (3.1.12)")
+                continue
+            other = send(b, "seed another task", "count_notes")
+            other_id = other.id if other is not None else "tsk-other"
+            live.send(build())
+            sem(b, op, name, *expect_live_rejection(b, live, None))
 
         name = "client message arrives as TaskMessageUpdateEvent"
         follow = pb.StreamRequest(send_message=send_request(
@@ -850,10 +881,13 @@ def run_live(b, env):
     if error is not None:
         outcome = h.Outcome(error=error)
         expect_a2a_error(b, op, vector, outcome, "TaskNotFoundError", "3.1.12", in_stream=True)
+    elif frame is not None and frame.WhichOneof("payload") == "error":
+        # A rejection of the opening request as a StreamError is the other
+        # reading of 3.1.12; its code is the unary operation's (NOT_FOUND).
+        ok = frame.error.code == "NOT_FOUND"
+        sem(b, op, vector, ok, f"StreamError code {frame.error.code!r} (the unary operation answers NOT_FOUND), taskId {frame.error.task_id!r}")
     else:
-        sem(b, op, vector, False,
-            f"no TaskNotFoundError; got {frame.WhichOneof('payload') if frame is not None else 'nothing'}"
-            + (f" {frame.error.code!r}" if frame is not None and frame.WhichOneof("payload") == "error" else ""))
+        sem(b, op, vector, False, f"no TaskNotFoundError and no StreamError; got {frame.WhichOneof('payload') if frame is not None else 'nothing'}")
     live.close()
 
 
@@ -866,39 +900,34 @@ def expect_live_rejection(b, live, answer):
         errors = [f.error for f in live.frames if f.WhichOneof("payload") == "error"]
         if len(errors) > seen:
             error = errors[-1]
-            if not error.code:
-                return False, "StreamError.code is REQUIRED and empty"
+            if error.code not in STATUS_NAMES:
+                return False, f"StreamError.code {error.code!r} is not a code of the unary operation (proto: e.g. INVALID_ARGUMENT, UNAVAILABLE)"
             if live.closed or getattr(live, "error", None) is not None:
                 return False, f"StreamError {error.code!r} arrived but the stream ended"
             return True, f"StreamError code {error.code!r}, referenceId {error.reference_id!r}; stream still open"
         live.next(0.5)
-    extra = ""
-    if answer is not None:
-        extra = f"; the uplink call answered HTTP {answer.status} {answer.body[:160]!r}"
-    return False, "no StreamError on the downlink within 6s" + extra
+    return False, "no StreamError on the downlink within 6s"
 
 
 def live_ack_problems(b, answer, task_id, vector):
     """An HTTP uplink call answers only the acknowledgement: the current Task
     (3.1.12). The operation's response type is StreamResponse."""
-    problems = []
     if answer.status != 200:
-        return [f"uplink call answered HTTP {answer.status}: {answer.body[:160]!r}"]
-    if "text/event-stream" in answer.content_type:
-        datas = [line[5:].strip() for line in answer.body.decode("utf-8").splitlines() if line.startswith("data:")]
-        values = [ref.loads(d) for d in datas]
-    else:
-        values = [ref.loads(answer.body)]
-    if len(values) != 1:
-        return [f"uplink call answered {len(values)} events, the spec says only the acknowledgement"]
-    payload, error, _ = b._unwrap_frame(values[0])
+        return ["uplink call refused: " + answer.describe()]
+    if len(answer.bodies) != 1 or answer.still_open:
+        return ["the uplink call must answer only the acknowledgement and end (3.1.12): " + answer.describe()]
+    try:
+        value = ref.loads(answer.bodies[0])
+    except Exception as exc:
+        return [f"uplink acknowledgement is not JSON: {exc}"]
+    payload, error, _ = b._unwrap_frame(value)
     if error is not None:
         return ["uplink call refused: " + error.describe()]
     message, found = h.check_json(b.report, payload, pb.StreamResponse)
     b.report.problems(b.name, "SendLiveMessage", vector + " (uplink ack)", found, 1, "uplink acknowledgement")
     if message is None or message.WhichOneof("payload") != "task" or message.task.id != task_id:
-        problems.append("the uplink acknowledgement is not the current Task as a StreamResponse")
-    return problems
+        return ["the uplink acknowledgement is not the current Task in a StreamResponse: " + answer.describe()]
+    return []
 
 
 def run_user_artifacts(b, env):
@@ -1080,14 +1109,8 @@ def run_errors(b, env):
     if done is not None:
         outcome = b.unary("GetTaskPushNotificationConfig",
                           pb.GetTaskPushNotificationConfigRequest(task_id=done.id, id="cfg-missing"), "unknown config")
-        if outcome.error is None:
-            b.report.add(b.name, "GetTaskPushNotificationConfig", "unknown config", "error", False, "no error for a config that does not exist")
-        else:
-            problems = _judge(b, outcome.error, None, "NOT_FOUND", 404, None)
-            if b.kind == "jsonrpc" and not isinstance(outcome.error.code, int):
-                problems.append("no JSON-RPC error code")
-            b.report.add(b.name, "GetTaskPushNotificationConfig", "unknown config", "error", not problems,
-                         ("; ".join(problems) + " | got " if problems else "resource error (3.3.2): ") + outcome.error.describe())
+        expect_a2a_error(b, "GetTaskPushNotificationConfig", "unknown config", outcome, "TaskNotFoundError",
+                         "3.1.8: the push notification configuration does not exist")
 
 
 def run_jsonrpc_protocol_errors(b):
@@ -1231,7 +1254,8 @@ def run_coverage(env, report):
 
     wanted = ref.request_fields()
     unsent = [f for f in wanted if f not in report.request_coverage]
-    unexplained = [f for f in unsent if f.split(".")[1] not in UNSENT]
+    unexplained = [f for f in unsent if f.split(".")[1] not in UNSENT
+                   or (f.endswith(".page_token") and not f.startswith("ListTaskPushNotificationConfigsRequest"))]
     report.add("coverage", "request fields", "every field of every RPC request", "coverage", not unexplained,
                f"{len(wanted) - len(unsent)} of {len(wanted)} sent; {len(unsent) - len(unexplained)} unsent with a stated reason"
                + (f"; UNEXPLAINED: {unexplained}" if unexplained else ""))
@@ -1281,15 +1305,15 @@ def print_matrix(report, coverage, out):
     for row in rows:
         if row["binding"] not in bindings:
             bindings.append(row["binding"])
-    out.write(f"{'BINDING':<16}{'pass':>6}{'fail':>6}{'warn':>6}{'skip':>6}\n")
+    out.write(f"{'BINDING':<18}{'pass':>6}{'fail':>6}{'known':>6}{'skip':>6}\n")
     for name in bindings:
-        counts = {"pass": 0, "fail": 0, "warn": 0, "skip": 0}
+        counts = {"pass": 0, "fail": 0, "known": 0, "skip": 0}
         for row in rows:
             if row["binding"] == name:
                 counts[row["status"]] += 1
-        out.write(f"{name:<16}{counts['pass']:>6}{counts['fail']:>6}{counts['warn']:>6}{counts['skip']:>6}\n")
+        out.write(f"{name:<18}{counts['pass']:>6}{counts['fail']:>6}{counts['known']:>6}{counts['skip']:>6}\n")
     total = report.summary()
-    out.write(f"{'total':<16}{total['pass']:>6}{total['fail']:>6}{total['warn']:>6}{total['skip']:>6}\n")
+    out.write(f"{'total':<18}{total['pass']:>6}{total['fail']:>6}{total['known']:>6}{total['skip']:>6}\n")
     out.write(f"\n{report.raw_canonical[0]} of {report.raw_canonical[1]} JSON bodies were already in RFC 8785 form as sent\n")
     fields = coverage["response_fields"]
     out.write(f"{fields['observed']} of {fields['reachable']} response fields observed; "
@@ -1306,6 +1330,7 @@ def main(argv=None):
     parser.add_argument("--reader-token", default="sim-reader-token")
     parser.add_argument("--unscoped-token", default="sim-unscoped-token")
     parser.add_argument("--trace", action="store_true", help="print each row to stderr as it is recorded")
+    parser.add_argument("--known", help="JSON file of known defects; a failing row that matches one is reported as `known`")
     parser.add_argument("--groups", help="debugging: comma-separated vector groups (card,send,get,streams,push,live,artifacts,errors,cross)")
     parser.add_argument("--only", help="comma-separated bindings to run: grpc,http+json,jsonrpc,jsonrpc:/jsonrpc")
     args = parser.parse_args(argv)
@@ -1356,6 +1381,10 @@ def main(argv=None):
         report.add("cross-binding", "GetTask", "vector group", "call", False, f"{type(exc).__name__}: {exc}")
     coverage = run_coverage(env, report)
 
+    stale = report.apply_known(load_known(args.known))
+    for entry in stale:
+        report.add("known-defects", entry["finding"], f"{entry['binding']} | {entry['operation']} | {entry['vector']}", "current", False,
+                   "listed as a known defect but no row fails any more: remove it from known_defects.json")
     summary = report.summary()
     document = {
         "reference": {"spec": SPEC, **ref.proto_source()},
@@ -1364,6 +1393,7 @@ def main(argv=None):
         "normalisations": NORMALISATIONS,
         "not_normalised": NOT_NORMALISED,
         "coverage": coverage,
+        "known_defects": sorted({row["finding"] for row in report.rows if row["status"] == "known"}),
         "raw_canonical_json_bodies": {"already_canonical": report.raw_canonical[0], "total": report.raw_canonical[1]},
         "rows": report.rows,
     }
@@ -1376,7 +1406,16 @@ def main(argv=None):
         sys.stdout.write("\n")
     else:
         print_matrix(report, coverage, sys.stdout)
-    return 1 if summary["fail"] else 0
+    if summary["fail"]:
+        return 1
+    return 3 if summary["known"] else 0
+
+
+def load_known(path):
+    if not path:
+        return []
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)["defects"]
 
 
 def run_errors_core(b, env):
