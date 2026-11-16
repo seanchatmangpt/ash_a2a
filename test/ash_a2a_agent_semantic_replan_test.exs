@@ -497,7 +497,10 @@ defmodule AshA2AAgentSemanticReplanTest do
     # `:authority_required` BEFORE `store.claim/2` is ever called -- no
     # receipt is committed under this fingerprint's `command_id`, for real.
     assert {:ok, closing_task} = SemanticReplanAgent.call(SemanticReplanAgent, closing_message)
-    assert closing_task.status.state == :failed
+    # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+    # decided to not perform the task" (TaskState in specification/a2a.proto,
+    # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+    assert closing_task.status.state == :rejected
 
     refute_receive {:receipt_committed, _receipt}, 200
 

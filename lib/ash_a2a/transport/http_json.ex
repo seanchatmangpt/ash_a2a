@@ -189,7 +189,7 @@ defmodule AshA2A.Transport.HTTPJSON do
 
   alias AshA2A.A2ATransport.{ExtendedCard, PushConfigRPC}
   alias AshA2A.Protocol.JSONRPC.{Error, Request}
-  alias AshA2A.Transport.{Principal, Runtime, SafeError}
+  alias AshA2A.Transport.{Follow, Principal, Runtime, SafeError}
 
   @default_max_body_bytes 1_000_000
   @json_ct "application/json"
@@ -915,12 +915,12 @@ defmodule AshA2A.Transport.HTTPJSON do
   # admission, client `artifactUpdates` (user_artifacts capability gate), the
   # agent call, output-mode validation. `message` may be nil only for an
   # artifact-only request (the task is then named by the first update).
-  defp execute_send(conn, opts, params, message, output_modes? \\ true) do
+  defp execute_send(conn, opts, params, message, output_modes? \\ true, extra_call_opts \\ []) do
     with {:ok, cfg} <- v11_config(params),
          {:ok, push_config} <- inline_push(params, opts),
          {:ok, updates} <- decode_updates(params, opts),
          message = message && with_trace(message, conn),
-         call_opts = call_opts(params, message, conn, opts, cfg),
+         call_opts = Keyword.merge(call_opts(params, message, conn, opts, cfg), extra_call_opts),
          {:ok, result} <- run_send(opts.agent, message, updates, call_opts, params, cfg, conn),
          {:ok, result} <- maybe_output_modes(result, call_opts, output_modes?) do
       {:ok, result, push_config, cfg}
@@ -1155,43 +1155,30 @@ defmodule AshA2A.Transport.HTTPJSON do
   # answer is a single frame, and every failure before the stream starts is
   # the AIP-193 JSON error envelope.
 
+  # Admit first (spec 3.1.2): the send is admitted with `return_immediately`
+  # and this process joins the task's subscriber fan-out at admission
+  # (`AshA2A.Transport.Follow.admit_opts/1`), so the Task frame is written
+  # before the handler runs and its id is usable at once. The stream then
+  # carries one event per stored mutation until the task is terminal or
+  # interrupted; while the handler is quiet a `: keepalive` comment is written
+  # every tick, the stream is not cut for silence.
   defp handle_stream(conn, opts) do
     with {:ok, params, conn} <- read_json_body(conn, opts.max_body_bytes),
          :ok <- validate_message_params("message/stream", params),
          {:ok, message} <- decode_message(params),
-         {:ok, result, push_config, _cfg} <- execute_send(conn, opts, params, message, false) do
+         {:ok, result, push_config, _cfg} <-
+           execute_send(conn, opts, params, message, false, Follow.admit_opts([])) do
       conn = start_sse(conn)
 
       case result do
-        %AshA2A.Protocol.Task{metadata: %{stream: enum}} = task ->
+        %AshA2A.Protocol.Task{} = task ->
           attach_push(conn, opts, task, push_config)
-          # The opening Task already reflects every client message on its
-          # timeline; replaying them as messageUpdate frames would deliver
-          # generations the snapshot has passed (spec 3.2.7: no event twice).
-          conn = send_frame(conn, Runtime.wire_task(task))
-          stream_parts(conn, opts, task, enum)
+          publish_task(opts, task)
+          follow_task(conn, opts, task)
 
         %AshA2A.Protocol.Message{} = msg ->
           {:ok, encoded} = AshA2A.Protocol.JSON.encode(msg)
           send_raw_frame(conn, %{"message" => encoded})
-
-        %AshA2A.Protocol.Task{} = task ->
-          conn = send_frame(conn, Runtime.wire_task(task))
-
-          conn =
-            Enum.reduce(List.wrap(task.artifacts), conn, fn artifact, conn ->
-              send_frame(
-                conn,
-                AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
-                  context_id: task.context_id,
-                  generation: artifact_generation(artifact, task)
-                )
-              )
-            end)
-
-          # A non-streaming task already has its real state: report THAT,
-          # never a synthesized :completed.
-          final_status(conn, task, task.status)
       end
     else
       {:error, %Error{} = error} ->
@@ -1206,122 +1193,27 @@ defmodule AshA2A.Transport.HTTPJSON do
     end
   end
 
-  # Same chunk framing as `AshA2A.Transport.Plug.stream_parts/4`: chunk i's
-  # frame is emitted when chunk i+1 arrives (so `append: true` is known), the
-  # drain emits the pending final chunk with `lastChunk: true`; all frames of
-  # one streamed artifact share the pre-minted `:stream_artifact_id`.
-  defp stream_parts(conn, opts, task, enum) do
-    artifact_id =
-      Map.get(task.metadata, :stream_artifact_id) ||
-        AshA2A.Protocol.ID.generate("art")
+  # The opening Task already reflects every client message on its timeline;
+  # only later mutations follow it (spec 3.2.7: no event twice).
+  defp follow_task(conn, opts, task) do
+    wired = Follow.wire(task)
 
-    # Each chunk is a stored task mutation; its frame carries the task's
-    # generation after it (A2A v1.1 3.2.7), read when the chunk is taken.
-    {conn, pending} =
-      Enum.reduce(enum, {conn, nil}, fn part, {conn, pending} ->
-        gen = AshA2A.Protocol.Agent.Runtime.chunk_generation(task.id)
+    stream_opts =
+      [subscribed?: true, keepalive: true] ++
+        Follow.stream_opts(Map.get(opts, :stream, []))
 
-        case pending do
-          nil ->
-            {conn, {:chunk, part, false, gen}}
-
-          {:chunk, prev_part, append?, prev_gen} ->
-            conn =
-              send_chunk_frame(
-                conn,
-                task,
-                artifact_id,
-                prev_part,
-                generation_opts(prev_gen) ++ append_opts(append?)
-              )
-
-            {conn, {:chunk, part, true, gen}}
+    opts.agent
+    |> Follow.events(wired, [wired], :send, stream_opts)
+    |> Enum.reduce_while(conn, fn
+      :keepalive, conn ->
+        case chunk(conn, ": keepalive\n\n") do
+          {:ok, conn} -> {:cont, conn}
+          {:error, _closed} -> {:halt, conn}
         end
-      end)
 
-    conn =
-      case pending do
-        nil ->
-          conn
-
-        {:chunk, part, append?, gen} ->
-          send_chunk_frame(
-            conn,
-            task,
-            artifact_id,
-            part,
-            generation_opts(gen) ++ append_opts(append?) ++ [last_chunk: true]
-          )
-      end
-
-    # The agent's stream wrapper records the real post-stream state; this
-    # call is ordered after it. Falls back to :completed only when the task
-    # cannot be read back.
-    case owned_task(opts.agent, :internal, task.id, task) do
-      {:ok, done} -> final_status(conn, done, done.status)
-      _ -> final_status(conn, task, :completed, nil)
-    end
-  rescue
-    error ->
-      %{ref: ref} = SafeError.internal(:internal_error, error, __STACKTRACE__)
-      final_status(conn, task, :failed, "Error: internal_error ref=#{ref}")
-  end
-
-  # The pump-side read of the task's real state: unscoped (the stream already
-  # belongs to this caller), unlike the owner-scoped `owned_task/3`.
-  defp owned_task(agent, :internal, task_id, _task) do
-    case GenServer.call(agent, {:get_task, task_id}) do
-      {:ok, done} -> {:ok, done}
-      other -> other
-    end
-  catch
-    :exit, _ -> {:error, :unavailable}
-  end
-
-  defp append_opts(true), do: [append: true]
-  defp append_opts(false), do: []
-
-  defp send_chunk_frame(conn, task, artifact_id, part, opts) do
-    artifact =
-      [part]
-      |> AshA2A.Protocol.Artifact.new()
-      |> struct(artifact_id: artifact_id)
-
-    event =
-      AshA2A.Protocol.Event.ArtifactUpdate.new(
-        task.id,
-        artifact,
-        [context_id: task.context_id] ++
-          opts ++ [generation: AshA2A.Protocol.Task.Generation.generation_of(task)]
-      )
-
-    send_frame(conn, event)
-  end
-
-  defp generation_opts(gen) when is_integer(gen), do: [generation: gen]
-  defp generation_opts(_gen), do: []
-
-  # Event generation of an artifact frame: the artifact's own stamp
-  # (end_generation, else start_generation), falling back to the task's.
-  defp artifact_generation(artifact, task) do
-    Map.get(artifact, :end_generation) || Map.get(artifact, :start_generation) ||
-      AshA2A.Protocol.Task.Generation.generation_of(task)
-  end
-
-  defp final_status(conn, task, state, text) do
-    message = if text, do: AshA2A.Protocol.Message.new_agent(text)
-    final_status(conn, task, AshA2A.Protocol.Task.Status.new(state, message))
-  end
-
-  defp final_status(conn, task, %AshA2A.Protocol.Task.Status{} = status) do
-    event =
-      AshA2A.Protocol.Event.StatusUpdate.new(task.id, status,
-        context_id: task.context_id,
-        final: true,
-        generation: AshA2A.Protocol.Task.Generation.generation_of(task)
-      )
-
-    send_frame(conn, event)
+      event, conn ->
+        {:cont, send_frame(conn, event)}
+    end)
   end
 
   defp start_sse(conn) do
@@ -1666,7 +1558,13 @@ defmodule AshA2A.Transport.HTTPJSON do
     # `lastSeenGeneration`), whichever source an event comes from. `prev` is
     # the last snapshot seen, which the agent fan-out's next one is compared
     # with (`AshA2A.Protocol.Task.Delta`).
-    st = %{floor: last_seen || gen, seen: last_seen || gen, v11?: v11?(conn), prev: task}
+    st = %{
+      floor: last_seen || gen,
+      seen: last_seen || gen,
+      v11?: v11?(conn),
+      prev: task,
+      agent: opts.agent
+    }
 
     conn = start_sse_once(conn)
 
@@ -1795,6 +1693,13 @@ defmodule AshA2A.Transport.HTTPJSON do
     after
       @subscribe_heartbeat_ms ->
         idle = idle + @subscribe_heartbeat_ms
+
+        # The idle bound closes a stream nothing can come to any more; a task
+        # that is still running keeps its subscriber (spec 3.1.6).
+        idle =
+          if idle >= @subscribe_max_idle_ms and Follow.running?(Map.get(st, :agent), task_id),
+            do: 0,
+            else: idle
 
         with true <- idle < @subscribe_max_idle_ms,
              {:ok, conn} <- chunk(conn, ": keepalive\n\n") do

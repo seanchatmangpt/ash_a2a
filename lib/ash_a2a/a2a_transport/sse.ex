@@ -53,39 +53,111 @@ defmodule AshA2A.A2ATransport.SSE do
         ) ::
           Plug.Conn.t()
   def stream_message(conn, transport, agent, message, id, call_opts, sse_opts) do
-    with {:ok, task, enum} <- stream_or_message(agent, message, call_opts),
-         _ = run_on_task(Keyword.get(sse_opts, :on_task), task),
-         snapshot = encode_task(task),
-         _ = maybe_publish_message_update(transport, task, message),
-         _seq = TaskEvents.publish(transport, task.id, "task", snapshot, false, task_gen(task)),
-         {:ok, _pid} <- start_pump(transport, agent, task, enum) |> pump_started() do
+    # Admit first (spec 3.1.2): the send is admitted with `return_immediately`,
+    # so the Task is published (and written as the first frame) before the
+    # handler runs and its id is usable at once. A pump that joined the task's
+    # subscriber fan-out at admission then publishes one event per stored
+    # mutation until the task is terminal or interrupted.
+    with {:ok, pump} <- start_follow_pump(transport, agent) |> pump_started(),
+         admit_opts =
+           call_opts
+           |> Keyword.put(:return_immediately, true)
+           |> Keyword.put(:subscribe, pump),
+         {:ok, %AshA2A.Protocol.Task{} = task} <- admit(agent, message, admit_opts, pump) do
+      run_on_task(Keyword.get(sse_opts, :on_task), task)
+      snapshot = encode_task(task)
+      maybe_publish_message_update(transport, task, message)
+      TaskEvents.publish(transport, task.id, "task", snapshot, false, task_gen(task))
+      send(pump, {:ash_a2a_follow, task})
+
       backlog =
         TaskEvents.subscribe(transport, task.id, version: negotiated_version(conn, sse_opts))
 
       conn
       |> start_sse()
-      |> replay_and_follow(transport, task.id, id, backlog, 0, sse_opts)
+      |> replay_and_follow(
+        transport,
+        task.id,
+        id,
+        backlog,
+        0,
+        Keyword.put(sse_opts, :agent, agent)
+      )
     else
       {:message, %AshA2A.Protocol.Message{} = reply} ->
         # Spec §3.1.2: a message-only stream is exactly one Message, then close.
         conn |> start_sse() |> write_frame(id, nil, encode_event(reply))
-
-      {:error, {:not_streaming, %AshA2A.Protocol.Task{} = task}} ->
-        # The skill answered without a chunk stream (it finished at once, or
-        # parked at input-required / auth-required). Spec §3.1.2: the stream
-        # still opens with the Task, which already carries that state; an
-        # interrupted state is no reason to refuse the stream.
-        run_on_task(Keyword.get(sse_opts, :on_task), task)
-        snapshot = encode_task(task)
-        closed? = task.status.state not in [:submitted, :working]
-        TaskEvents.publish(transport, task.id, "task", snapshot, closed?, task_gen(task))
-        conn |> start_sse() |> write_frame(id, nil, snapshot)
 
       other ->
         # Typed errors survive (-32001 / -32602 / -32000); SEC-08: no raw
         # reason (it can carry a task with metadata["a2a.auth"]) reaches the wire.
         send_json(conn, Response.error(id, stream_error(other)))
     end
+  end
+
+  defp admit(agent, message, opts, pump) do
+    result =
+      try do
+        AshA2A.Protocol.call(agent, message, opts)
+      catch
+        :exit, reason -> {:error, {:agent_exit, reason}}
+      end
+
+    case result do
+      {:ok, %AshA2A.Protocol.Task{}} = admitted ->
+        admitted
+
+      {:ok, %AshA2A.Protocol.Message{} = reply} ->
+        send(pump, :ash_a2a_follow_abort)
+        {:message, reply}
+
+      other ->
+        send(pump, :ash_a2a_follow_abort)
+        other
+    end
+  end
+
+  # The pump exists before the send so it can be the admission-time subscriber
+  # (`subscribe: pump`); it starts following when it is handed the task.
+  defp start_follow_pump(transport, agent) do
+    Task.Supervisor.start_child(A2ATransport.task_sup_name(transport), fn ->
+      receive do
+        {:ash_a2a_follow, %AshA2A.Protocol.Task{} = task} -> follow_pump(transport, agent, task)
+        :ash_a2a_follow_abort -> :ok
+      after
+        120_000 -> :ok
+      end
+    end)
+  end
+
+  defp follow_pump(transport, agent, task) do
+    register_pump(transport, task.id)
+    wired = AshA2A.Transport.Follow.wire(task)
+
+    agent
+    |> AshA2A.Transport.Follow.events(wired, [], :send, subscribed?: true)
+    |> Enum.each(fn event ->
+      {kind, final?} =
+        case event do
+          %AshA2A.Protocol.Event.StatusUpdate{status: %{state: state}} ->
+            {"status-update",
+             state in [:completed, :failed, :canceled, :rejected, :input_required, :auth_required]}
+
+          %AshA2A.Protocol.Event.ArtifactUpdate{} ->
+            {"artifact-update", false}
+
+          %AshA2A.Protocol.Event.MessageUpdate{} ->
+            {"message-update", false}
+        end
+
+      gen_opts =
+        case Map.get(event, :generation) do
+          gen when is_integer(gen) and gen > 0 -> [generation: gen, once: true]
+          _ -> []
+        end
+
+      TaskEvents.publish(transport, task.id, kind, encode_event(event), final?, gen_opts)
+    end)
   end
 
   # A continuation (message.task_id set) appended the client message to the
@@ -165,13 +237,6 @@ defmodule AshA2A.A2ATransport.SSE do
 
   defp negotiated_version(conn, sse_opts),
     do: Keyword.get(sse_opts, :version) || AshA2A.Protocol.Version.get_negotiated(conn) || "1.0"
-
-  defp stream_or_message(agent, message, call_opts) do
-    case AshA2A.Protocol.stream(agent, message, call_opts) do
-      {:ok, %AshA2A.Protocol.Message{} = reply} -> {:message, reply}
-      other -> other
-    end
-  end
 
   @doc false
   def stream_error({:error, reason}), do: stream_error(reason)
@@ -268,6 +333,7 @@ defmodule AshA2A.A2ATransport.SSE do
         _ -> sse_opts
       end
 
+    sse_opts = Keyword.put(sse_opts, :agent, agent)
     replay_and_follow(conn, transport, task_id, id, backlog, after_seq, sse_opts)
   end
 
@@ -320,12 +386,6 @@ defmodule AshA2A.A2ATransport.SSE do
   defp pump_started({:ok, pid}) when is_pid(pid), do: {:ok, pid}
   defp pump_started({:ok, pid, _info}) when is_pid(pid), do: {:ok, pid}
   defp pump_started(other), do: {:error, {:pump_start_failed, other}}
-
-  defp start_pump(transport, agent, task, enum) do
-    Task.Supervisor.start_child(A2ATransport.task_sup_name(transport), fn ->
-      pump(transport, agent, task, enum)
-    end)
-  end
 
   @doc false
   def pump(transport, agent, task, enum) do
@@ -515,6 +575,15 @@ defmodule AshA2A.A2ATransport.SSE do
     after
       heartbeat ->
         idle = idle + heartbeat
+
+        # The idle bound closes a stream nothing can come to any more. A task
+        # that is still running keeps its subscriber, however quiet its
+        # handler is (spec 3.1.6: the stream ends on a terminal state).
+        idle =
+          if idle >= max_idle and
+               AshA2A.Transport.Follow.running?(Keyword.get(opts, :agent), task_id),
+             do: 0,
+             else: idle
 
         if idle >= max_idle do
           done(conn, transport, task_id)

@@ -98,14 +98,20 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
   describe "(a) an authenticated principal WITHOUT a capability grant" do
     test "cannot actuate an :external_do skill -- zero real actuations" do
       assert {:ok, task} = call("touch")
-      assert task.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert task.status.state == :rejected
 
       assert ActuationCounter.count() == 0
     end
 
     test "cannot actuate a :change skill -- zero real actuations" do
       assert {:ok, task} = call("mutate")
-      assert task.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert task.status.state == :rejected
 
       assert ActuationCounter.count() == 0
     end
@@ -140,7 +146,10 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       # Same authenticated principal, same agent card, DIFFERENT capability:
       # refused. This is the exact escalation the defect allowed.
       assert {:ok, touch_task} = call("touch", %{"note" => "escalation attempt"})
-      assert touch_task.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert touch_task.status.state == :rejected
       assert ActuationCounter.count() == 1
     end
 
@@ -155,7 +164,10 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
       assert :ok = InMemory.revoke(authority, ctx.broker_opts)
 
       assert {:ok, after_revoke} = call("touch", %{"note" => "after revoke"})
-      assert after_revoke.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert after_revoke.status.state == :rejected
       assert ActuationCounter.count() == 1
     end
   end
@@ -276,7 +288,10 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
       # End to end through the real supervised agent and real counter.
       assert {:ok, task} = call("touch", %{"note" => "expired"})
-      assert task.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert task.status.state == :rejected
       assert ActuationCounter.count() == 0
     end
 
@@ -396,7 +411,10 @@ defmodule AshA2AAuthorityCapabilityGrantTest do
 
     test "is REFUSED at request time without the explicit acknowledgement -- zero actuations" do
       assert {:ok, task} = call("touch", %{"note" => "strict"})
-      assert task.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert task.status.state == :rejected
       assert ActuationCounter.count() == 0
 
       assert Authority.Grant.authorize(@principal, capability_id(:touch)) == nil

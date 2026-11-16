@@ -83,7 +83,7 @@ defmodule AshA2A.Transport.Plug do
   import Plug.Conn
 
   alias AshA2A.Protocol.JSONRPC.{Error, Response}
-  alias AshA2A.Transport.{Principal, Runtime, SafeError}
+  alias AshA2A.Transport.{Follow, Principal, Runtime, SafeError}
 
   @doc "Typed transport refusal codes, classified for S42 totality."
   @spec __sa2a_refusal_codes__() :: %{atom() => atom()}
@@ -645,158 +645,45 @@ defmodule AshA2A.Transport.Plug do
     end
   end
 
+  # Admit first (spec 3.1.2): the send is admitted with `return_immediately`
+  # and this process joins the task's subscriber fan-out at admission
+  # (`AshA2A.Transport.Follow.admit_opts/1`), so the Task frame is written
+  # before the handler runs and its id is usable at once. The stream then
+  # carries one event per stored mutation (each at the generation the task
+  # store gave it) until the task is terminal or interrupted. While the
+  # handler is quiet a `: keepalive` comment is written every tick; the stream
+  # is not cut for silence.
   defp stream_message(conn, ctx, params, jsonrpc_id) do
     message = params["message"]
+    call_opts = params |> call_opts(message, ctx) |> Follow.admit_opts()
 
-    case call_agent(ctx.agent, message, call_opts(params, message, ctx)) do
-      {:ok, %AshA2A.Protocol.Task{metadata: %{stream: enum}} = task} ->
-        conn = start_sse(conn)
-        conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
-        stream_parts(conn, jsonrpc_id, task, enum)
+    case call_agent(ctx.agent, message, call_opts) do
+      {:ok, %AshA2A.Protocol.Task{} = task} ->
+        wired = Follow.wire(task)
+
+        stream_opts =
+          [subscribed?: true, keepalive: true] ++ Follow.stream_opts(Map.get(ctx, :opts, %{}))
+
+        ctx.agent
+        |> Follow.events(wired, [wired], :send, stream_opts)
+        |> Enum.reduce_while(start_sse(conn), fn
+          :keepalive, conn ->
+            case chunk(conn, ": keepalive\n\n") do
+              {:ok, conn} -> {:cont, conn}
+              {:error, _closed} -> {:halt, conn}
+            end
+
+          event, conn ->
+            {:cont, send_event(conn, jsonrpc_id, event)}
+        end)
 
       {:ok, %AshA2A.Protocol.Message{} = msg} ->
         conn = start_sse(conn)
         send_event(conn, jsonrpc_id, msg)
 
-      {:ok, %AshA2A.Protocol.Task{} = task} ->
-        conn = start_sse(conn)
-        conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
-
-        conn =
-          Enum.reduce(task.artifacts, conn, fn artifact, conn ->
-            send_event(
-              conn,
-              jsonrpc_id,
-              AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
-                context_id: task.context_id,
-                generation:
-                  artifact.end_generation || artifact.start_generation ||
-                    AshA2A.Protocol.Task.Generation.generation_of(task)
-              )
-            )
-          end)
-
-        final =
-          AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-            context_id: task.context_id,
-            final: true,
-            generation: AshA2A.Protocol.Task.Generation.generation_of(task)
-          )
-
-        send_event(conn, jsonrpc_id, final)
-
       {:error, reason} ->
         send_json(conn, Response.error(jsonrpc_id, wire_error(reason)))
     end
-  end
-
-  # v1.0 §TaskArtifactUpdateEvent: the chunk frames of one streamed artifact
-  # share ONE artifactId; `append: true` appends a chunk to the
-  # previously-sent artifact with the same id, and `lastChunk: true` marks the
-  # final chunk (so clients can reassemble by id). The first chunk is a new
-  # artifact: `append` is left unset. `last_chunk` is only set on the final
-  # chunk; `put_unless_nil` drops it from the earlier frames.
-  defp stream_parts(conn, jsonrpc_id, task, enum) do
-    # The chunk emitter and the stream_done fold share ONE stable artifact id,
-    # pre-minted by the agent runtime when it wrapped the stream
-    # (:stream_artifact_id on the task metadata); mint here only as a
-    # fallback for paths that never stamped it.
-    # Protocol.Task.metadata is typed `map()` (never nil), so the old
-    # `|| %{}` fallback was dead.
-    artifact_id =
-      Map.get(task.metadata, :stream_artifact_id) ||
-        AshA2A.Protocol.ID.generate("art")
-
-    # A lazy stream reveals its last element only by ending, so the frame for
-    # chunk i is emitted when chunk i+1 arrives and the drain emits the pending
-    # final chunk. The pending flag records whether chunk i's frame already has
-    # a predecessor on the wire (=> the next frame needs `append: true`).
-    # Frame generations are strictly increasing, starting above the snapshot.
-    base = AshA2A.Protocol.Task.Generation.generation_of(task)
-
-    {conn, pending, n} =
-      Enum.reduce(enum, {conn, nil, 0}, fn part, {conn, pending, n} ->
-        case pending do
-          nil ->
-            {conn, {:chunk, part, false}, n}
-
-          {:chunk, prev_part, append?} ->
-            conn =
-              send_chunk_frame(
-                conn,
-                jsonrpc_id,
-                task,
-                artifact_id,
-                prev_part,
-                append_opts(append?) ++ [generation: base + n + 1]
-              )
-
-            {conn, {:chunk, part, true}, n + 1}
-        end
-      end)
-
-    {conn, n} =
-      case pending do
-        nil ->
-          {conn, n}
-
-        {:chunk, part, append?} ->
-          {send_chunk_frame(
-             conn,
-             jsonrpc_id,
-             task,
-             artifact_id,
-             part,
-             append_opts(append?) ++ [last_chunk: true, generation: base + n + 1]
-           ), n + 1}
-      end
-
-    final_status(conn, jsonrpc_id, task, :completed, nil, base + n + 1)
-  rescue
-    error ->
-      %{ref: ref} = SafeError.internal(:internal_error, error, __STACKTRACE__)
-
-      final_status(
-        conn,
-        jsonrpc_id,
-        task,
-        :failed,
-        "Error: internal_error ref=#{ref}",
-        AshA2A.Protocol.Task.Generation.generation_of(task) + 1
-      )
-  end
-
-  defp append_opts(true), do: [append: true]
-  defp append_opts(false), do: []
-
-  defp send_chunk_frame(conn, jsonrpc_id, task, artifact_id, part, opts) do
-    artifact =
-      [part]
-      |> AshA2A.Protocol.Artifact.new()
-      |> struct(artifact_id: artifact_id)
-
-    event =
-      AshA2A.Protocol.Event.ArtifactUpdate.new(
-        task.id,
-        artifact,
-        [context_id: task.context_id] ++ opts
-      )
-
-    send_event(conn, jsonrpc_id, event)
-  end
-
-  defp final_status(conn, jsonrpc_id, task, state, text, generation) do
-    message = if text, do: AshA2A.Protocol.Message.new_agent(text)
-    status = AshA2A.Protocol.Task.Status.new(state, message)
-
-    event =
-      AshA2A.Protocol.Event.StatusUpdate.new(task.id, status,
-        context_id: task.context_id,
-        final: true,
-        generation: generation
-      )
-
-    send_event(conn, jsonrpc_id, event)
   end
 
   defp start_sse(conn) do

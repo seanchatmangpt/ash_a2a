@@ -1162,6 +1162,37 @@ def run_jsonrpc_protocol_errors(b):
                      ("; ".join(problems) + " | got " if problems else f"{code} (9.5): ") + error.describe())
 
 
+def run_grpc_protocol_errors(b):
+    """gRPC's own status codes for a request the service cannot read or route
+    (gRPC status code guide; A2A 5.4 maps invalid parameters to INVALID_ARGUMENT)."""
+    vector = "request bytes that are not the request message"
+    error = b.raw_call("/lf.a2a.v1.A2AService/SendMessage", bytes([0xFF, 0xFF, 0xFF, 0x01, 0x02]))
+    problems = []
+    if error is None:
+        problems.append("no error")
+    else:
+        problems += list(error.problems)
+        if error.code != "INVALID_ARGUMENT":
+            problems.append(f"gRPC status {error.code}, an undecodable request is INVALID_ARGUMENT")
+    b.report.add(b.name, "gRPC", vector, "error", not problems,
+                 ("; ".join(problems) + " | got " if problems else "INVALID_ARGUMENT: ") + (error.describe() if error else "a reply"))
+
+    vector = "an RPC the service does not have"
+    error = b.raw_call("/lf.a2a.v1.A2AService/NoSuchMethod", b"")
+    problems = []
+    if error is None:
+        problems.append("no error")
+    else:
+        if error.code != "UNIMPLEMENTED":
+            problems.append(f"gRPC status {error.code}, an unknown method is UNIMPLEMENTED")
+        # A client library answers UNIMPLEMENTED by itself for a bare HTTP 404;
+        # the status has to come from the server's own trailers.
+        if "http2 header with status" in (error.message or "").lower() or "404" in (error.message or ""):
+            problems.append("the server sent a bare HTTP 404, not grpc-status 12 in trailers")
+    b.report.add(b.name, "gRPC", vector, "error", not problems,
+                 ("; ".join(problems) + " | got " if problems else "UNIMPLEMENTED in the server's trailers: ") + (error.describe() if error else "a reply"))
+
+
 def run_public_cards(env, report):
     """The well-known Agent Card at the root and at every mount (spec 8, 14.3)."""
     base = env.args.http.rstrip("/")
@@ -1412,6 +1443,8 @@ def main(argv=None):
             guarded(report, b, "errors", run_errors if b.full else run_errors_core, env)
             if b.kind == "jsonrpc":
                 run_jsonrpc_protocol_errors(b)
+            if b.kind == "grpc":
+                run_grpc_protocol_errors(b)
     if wanted is not None and "cross" not in wanted:
         print_matrix(report, {"response_fields": {"observed": 0, "reachable": 0, "unreachable": {}}}, sys.stdout)
         return 1 if report.summary()["fail"] else 0

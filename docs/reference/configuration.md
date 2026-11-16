@@ -101,7 +101,8 @@ fail-closed defaults are deliberate.
 | `:ocel_pending_dispatch_ttl_ms` | 5000 ms | `AshA2A.Telemetry.OcelForwarder` max age of a stashed CommandBus dispatch span. |
 | `:bidi_max_queue` | 1000 | `AshA2A.Bidi.Channel` max queued messages; per-channel `:max_queue` arg wins; non-positive or non-integer falls back to the module default. |
 | `:trace_max_records` | 50000 | `AshA2A.Trace.Recorder` record cap; non-positive or non-integer falls back to 50000. |
-| `:stream_idle_ms` | 60000 ms (gRPC transport ctx key, not an Application env key) | `AshA2A.Transport.GRPC.Server` stream idle timeout read from the request ctx; non-positive or non-integer falls back to 60000. |
+| `:stream_tick_ms` | 15000 | `AshA2A.Transport.Follow`: how long a `SendStreamingMessage` / gRPC `SubscribeToTask` stream waits in silence before it reads the task again from the agent and, on the SSE bindings, writes a `: keepalive` comment. A per-request ctx key of the same name wins; non-positive or non-integer falls back to 15000. |
+| `:stream_max_idle_ms` | unbounded (transport ctx key, not an Application env key) | Bound on the silence of such a stream. Unset, a quiet handler never ends the stream: it closes when the task is terminal (or, for a send, interrupted). The earlier ctx key `:stream_idle_ms` is read as this bound. |
 
 ## Application config — semantic engine / GraphLaw (opt-in surfaces)
 

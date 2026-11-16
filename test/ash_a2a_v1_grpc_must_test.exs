@@ -113,17 +113,20 @@ defmodule AshA2A.V1.GrpcMustCourt do
   # §3.3.2 cross-binding error table × §5.4 ErrorInfo reasons
   # (@ AshA2A.Protocol.JSONRPC.Error.error_info_reasons). {jsonrpc_code,
   # error_constructor, expected_grpc_status, expected_error_info_reason}.
+  # gRPC statuses per spec section 5.4 (identical at v1.0.1 and v1.1.0-rc):
+  # PushNotificationNotSupportedError, UnsupportedOperationError and
+  # VersionNotSupportedError are FAILED_PRECONDITION (9), not UNIMPLEMENTED.
   @error_matrix [
     {-32_001, :task_not_found, 5, "TASK_NOT_FOUND"},
     {-32_002, :task_not_cancelable, 9, "TASK_NOT_CANCELABLE"},
-    {-32_003, :push_notification_not_supported, 12, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
-    {-32_004, :unsupported_operation, 12, "UNSUPPORTED_OPERATION"},
+    {-32_003, :push_notification_not_supported, 9, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
+    {-32_004, :unsupported_operation, 9, "UNSUPPORTED_OPERATION"},
     {-32_005, :content_type_not_supported, 3, "CONTENT_TYPE_NOT_SUPPORTED"},
     {-32_006, :invalid_agent_response, 13, "INVALID_AGENT_RESPONSE"},
     {-32_007, :authenticated_extended_card_not_configured, 9,
      "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
     {-32_008, :extension_support_required, 9, "EXTENSION_SUPPORT_REQUIRED"},
-    {-32_009, :version_not_supported, 12, "VERSION_NOT_SUPPORTED"}
+    {-32_009, :version_not_supported, 9, "VERSION_NOT_SUPPORTED"}
   ]
 
   setup do
@@ -338,7 +341,7 @@ defmodule AshA2A.V1.GrpcMustCourt do
            )
   end
 
-  test "W6 SubscribeToTask of a terminal task refuses UNIMPLEMENTED(12) with UNSUPPORTED_OPERATION ErrorInfo over the wire",
+  test "W6 SubscribeToTask of a terminal task refuses FAILED_PRECONDITION(9) with UNSUPPORTED_OPERATION ErrorInfo over the wire",
        %{
          channel: channel
        } do
@@ -351,20 +354,22 @@ defmodule AshA2A.V1.GrpcMustCourt do
         })
       )
 
-    assert error.status == 12
+    # Spec section 5.4: UnsupportedOperationError is FAILED_PRECONDITION.
+    assert error.status == 9
     assert error.message == "This operation is not supported"
     assert_error_info(error, "UNSUPPORTED_OPERATION")
   end
 
   # -- W7: A2A-Version metadata gate (spec §3.6.2 / -32009) --------------------
 
-  test "W7 unsupported A2A-Version is refused UNIMPLEMENTED(12) with VERSION_NOT_SUPPORTED ErrorInfo on SendMessage and GetTask",
+  test "W7 unsupported A2A-Version is refused FAILED_PRECONDITION(9) with VERSION_NOT_SUPPORTED ErrorInfo on SendMessage and GetTask",
        %{
          channel: channel
        } do
     metadata = %{"a2a-version" => "99.0"}
 
-    assert {:error, %GRPC.RPCError{status: 12} = send_error} =
+    # Spec section 5.4: VersionNotSupportedError is FAILED_PRECONDITION.
+    assert {:error, %GRPC.RPCError{status: 9} = send_error} =
              Lf.A2a.V1.A2AService.Stub.send_message(
                channel,
                user_message_request("x15 bad version"),
@@ -374,7 +379,7 @@ defmodule AshA2A.V1.GrpcMustCourt do
     assert send_error.message == "Version not supported"
     assert_error_info(send_error, "VERSION_NOT_SUPPORTED", "99.0")
 
-    assert {:error, %GRPC.RPCError{status: 12} = get_error} =
+    assert {:error, %GRPC.RPCError{status: 9} = get_error} =
              Lf.A2a.V1.A2AService.Stub.get_task(
                channel,
                %Pb.GetTaskRequest{id: "tsk-whatever"},

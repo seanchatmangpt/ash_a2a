@@ -31,6 +31,7 @@ if Code.ensure_loaded?(Bandit) do
     alias Lf.A2a.V1, as: Pb
     alias Lf.A2a.V1.A2AService.Stub
     alias AshA2A.Transport.Live.SessionSup, as: LiveSessionSup
+    alias AshA2A.Sim.MCP.Wire, as: RawWire
 
     @type probe :: %{surface: String.t(), probe: String.t(), run: (map() -> term())}
     @type result :: %{
@@ -399,6 +400,22 @@ if Code.ensure_loaded?(Bandit) do
            )
 
            "#{length(frames)} frames: #{Enum.join(Enum.uniq(kinds), ", ")}"
+         end},
+        {"the Task frame arrives while the handler is still running",
+         fn c ->
+           body = %{
+             "jsonrpc" => "2.0",
+             "id" => System.unique_integer([:positive]),
+             "method" => c.name.("message/stream"),
+             "params" => send_params("slow_count", %{"delay_ms" => 1_500})
+           }
+
+           c.info
+           |> timed_sse!(c.url, body, fn
+             %{"result" => result} -> result
+             other -> fail!("SSE frame is not a JSON-RPC result: #{clip(inspect(other))}")
+           end)
+           |> check_admit_first!(1_500, &jr_get!(c, &1))
          end}
       ]
     end
@@ -1309,6 +1326,16 @@ if Code.ensure_loaded?(Bandit) do
            )
 
            "#{length(frames)} frames: #{Enum.join(Enum.uniq(kinds), ", ")}"
+         end},
+        {"the Task frame arrives while the handler is still running",
+         fn info ->
+           info
+           |> timed_sse!(
+             info.rest_url <> "/message:stream",
+             send_params("slow_count", %{"delay_ms" => 1_500}),
+             & &1
+           )
+           |> check_admit_first!(1_500, &rest_get!(info, &1))
          end}
       ]
     end
@@ -2007,6 +2034,28 @@ if Code.ensure_loaded?(Bandit) do
              )
 
              "#{length(frames)} frames: #{Enum.join(Enum.uniq(kinds), ", ")}"
+           end)
+         end},
+        {"the Task frame arrives while the handler is still running",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             request =
+               pb(Pb.SendMessageRequest, send_params("slow_count", %{"delay_ms" => 1_500}))
+
+             started = System.monotonic_time(:millisecond)
+
+             {:ok, replies} =
+               case Stub.send_streaming_message(ch, request, opts) do
+                 {:ok, _replies} = ok -> ok
+                 other -> fail!("SendStreamingMessage answered #{clip(inspect(other))}")
+               end
+
+             replies
+             |> Enum.map(fn
+               {:ok, frame} -> {System.monotonic_time(:millisecond) - started, unpb(frame)}
+               other -> fail!("unexpected stream element #{clip(inspect(other))}")
+             end)
+             |> check_admit_first!(1_500, &grpc_get!(ch, opts, &1))
            end)
          end}
       ]
@@ -3502,6 +3551,53 @@ if Code.ensure_loaded?(Bandit) do
              expect_state!(task, "TASK_STATE_COMPLETED")
              "dialed #{target} from the card and completed a task"
            end)
+         end},
+        {"request bytes that are not the request message are INVALID_ARGUMENT",
+         fn info ->
+           headers = [
+             {"a2a-version", "1.1"},
+             {"authorization", "Bearer " <> token_value(info, :writer)}
+           ]
+
+           {:ok, answer} =
+             RawWire.grpc_raw(
+               info.grpc_target,
+               "/lf.a2a.v1.A2AService/SendMessage",
+               headers,
+               <<0xFF, 0xFF, 0xFF, 0x01, 0x02>>
+             )
+
+           check!(answer["status"] == 200, "HTTP #{inspect(answer["status"])}")
+           status = answer["trailers"]["grpc-status"]
+           check!(status == "3", "grpc-status #{inspect(status)}: #{inspect(answer["trailers"])}")
+
+           check!(
+             Base.decode64!(answer["trailers"]["grpc-status-details-bin"] || "", padding: false) =~
+               "INVALID_PARAMS",
+             "no ErrorInfo INVALID_PARAMS in grpc-status-details-bin"
+           )
+
+           # The channel is still good for a well-formed call.
+           grpc(info, :writer, fn ch, opts ->
+             expect_state!(grpc_send!(ch, opts, "count_notes", %{}), "TASK_STATE_COMPLETED")
+           end)
+
+           "grpc-status 3 INVALID_ARGUMENT with ErrorInfo INVALID_PARAMS"
+         end},
+        {"an RPC the service does not have is UNIMPLEMENTED in gRPC trailers",
+         fn info ->
+           path = "/lf.a2a.v1.A2AService/NoSuchMethod"
+           {:ok, answer} = RawWire.grpc_raw(info.grpc_target, path, [], "")
+           check!(answer["status"] == 200, "HTTP #{inspect(answer["status"])}, not 200")
+           status = answer["trailers"]["grpc-status"]
+           check!(status == "12", "grpc-status #{inspect(status)}: #{inspect(answer)}")
+
+           check!(
+             (answer["headers"]["content-type"] || "") =~ "application/grpc",
+             "content-type #{inspect(answer["headers"]["content-type"])}"
+           )
+
+           "HTTP 200, grpc-status 12 UNIMPLEMENTED: #{answer["trailers"]["grpc-message"]}"
          end}
       ]
     end
@@ -3828,6 +3924,81 @@ if Code.ensure_loaded?(Bandit) do
 
     # SSE bodies: JSON-RPC mounts wrap each StreamResponse in a JSON-RPC
     # envelope; the HTTP+JSON mount sends the StreamResponse itself.
+    # POSTs `json` and reads the SSE answer as it arrives: `[{ms since the
+    # request, StreamResponse map}]`, one entry per `data:` frame. `unwrap`
+    # takes a frame's JSON to its StreamResponse (identity for HTTP+JSON, the
+    # JSON-RPC `result` otherwise).
+    defp timed_sse!(info, url, json, unwrap) do
+      started = System.monotonic_time(:millisecond)
+      table = :ets.new(:timed_sse, [:ordered_set, :public])
+
+      collect = fn {:data, data}, acc ->
+        elapsed = System.monotonic_time(:millisecond) - started
+        :ets.insert(table, {System.unique_integer([:monotonic]), elapsed, data})
+        {:cont, acc}
+      end
+
+      resp =
+        Req.request!(
+          method: :post,
+          url: url,
+          json: json,
+          headers: [
+            {"a2a-version", "1.1"},
+            {"authorization", "Bearer " <> token_value(info, :writer)}
+          ],
+          retry: false,
+          receive_timeout: 20_000,
+          into: collect
+        )
+
+      chunks = :ets.tab2list(table)
+      :ets.delete(table)
+      check!(resp.status == 200, "HTTP #{resp.status}")
+
+      for {_key, elapsed, data} <- chunks,
+          block <- String.split(data, "\n\n"),
+          line <- String.split(block, "\n"),
+          String.starts_with?(line, "data: ") do
+        {elapsed, line |> String.replace_prefix("data: ", "") |> Jason.decode!() |> unwrap.()}
+      end
+    end
+
+    # The admit-first contract of a stream (A2A v1.1 3.1.2): the Task frame is
+    # on the wire while the handler is still running, and its id is usable.
+    defp check_admit_first!(timed, delay_ms, get_task) do
+      check!(timed != [], "no frame")
+      [{first_at, first} | _rest] = timed
+      {last_at, last} = List.last(timed)
+      check!(frame_kind(first) == "task", "first frame was #{inspect(frame_kind(first))}")
+
+      check!(
+        first_at < delay_ms,
+        "the Task frame arrived after #{first_at} ms, the handler runs #{delay_ms} ms"
+      )
+
+      check!(
+        frame_state(first) in ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"],
+        "the first frame already says #{frame_state(first)}"
+      )
+
+      check!(last_at >= delay_ms, "the stream ended after #{last_at} ms, before the work")
+
+      check!(
+        frame_state(last) == "TASK_STATE_COMPLETED",
+        "last frame was #{clip(inspect(last), 200)}"
+      )
+
+      states =
+        timed |> Enum.map(fn {_at, frame} -> frame_state(frame) end) |> Enum.reject(&is_nil/1)
+
+      check!("TASK_STATE_WORKING" in states, "no working status in #{inspect(states)}")
+      expect_state!(get_task.(first["task"]["id"]), "TASK_STATE_COMPLETED")
+
+      "Task frame after #{first_at} ms of a #{delay_ms} ms handler, " <>
+        "#{length(timed)} frames, completed after #{last_at} ms"
+    end
+
     defp sse_frames!(resp) do
       check!(resp.status == 200, "HTTP #{resp.status}: #{clip(resp.raw)}")
 

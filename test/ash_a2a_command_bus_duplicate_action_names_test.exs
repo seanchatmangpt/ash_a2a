@@ -152,7 +152,10 @@ defmodule AshA2ACommandBusDuplicateActionNamesTest do
     message = data_message(%{"label" => "ambiguous"}, %{metadata: %{skill: "create"}})
 
     assert {:ok, task} = DupAgent.call(DupAgent, message, authenticated_call_opts("user-1"))
-    assert task.status.state == :failed
+    # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+    # decided to not perform the task" (TaskState in specification/a2a.proto,
+    # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+    assert task.status.state == :rejected
 
     # Typed and disclosed: the failure names the ambiguity instead of
     # silently picking the capability-index-first `create`.

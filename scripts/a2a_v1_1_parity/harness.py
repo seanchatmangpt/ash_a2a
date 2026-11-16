@@ -482,6 +482,16 @@ class GrpcBinding(Binding):
             details = list(status.details)
         return ErrorView("grpc", exc.code().name, exc.details(), details, problems=problems)
 
+    def raw_call(self, path, body, token="writer", version="1.1"):
+        """Sends `body` unchanged as the request message of `path`; returns the
+        `ErrorView` of the refusal, or None when the call succeeded."""
+        call = self.channel.unary_unary(path, request_serializer=lambda raw: raw, response_deserializer=lambda raw: raw)
+        try:
+            call(body, metadata=self._metadata(token, version), timeout=30)
+        except grpc.RpcError as exc:
+            return self._error(exc)
+        return None
+
     def _unary(self, rpc, request, token, version):
         try:
             raw = getattr(self.stub, rpc)(request, metadata=self._metadata(token, version), timeout=30)

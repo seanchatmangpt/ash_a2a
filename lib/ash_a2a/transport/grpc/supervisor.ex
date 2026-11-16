@@ -40,7 +40,10 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
       restart: :permanent,
-      shutdown: 5_000
+      # Stopping the listener waits for its open connections (ranch gives each
+      # up to 5 s); a shorter shutdown here kills this process mid-stop and
+      # leaves the listener half removed for the next start.
+      shutdown: 15_000
     }
   end
 
@@ -64,10 +67,48 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
 
     start_opts = if cred = opts[:cred], do: [cred: cred], else: []
 
-    case GRPC.Server.start_endpoint(endpoint, port, start_opts) do
-      {:ok, _pid, bound} -> {:ok, %{endpoint: endpoint, port: bound}}
-      {:error, reason} -> {:stop, reason}
+    case start_endpoint(endpoint, port, start_opts) do
+      {:ok, _pid, bound} ->
+        # An RPC the service does not have answers UNIMPLEMENTED in gRPC
+        # trailers instead of the adapter's bare HTTP 404.
+        case AshA2A.Transport.GRPC.UnknownMethod.install(endpoint) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            require Logger
+
+            Logger.warning(
+              "AshA2A gRPC: unknown methods keep the adapter's HTTP 404 (#{inspect(reason)})"
+            )
+        end
+
+        {:ok, %{endpoint: endpoint, port: bound}}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
+  end
+
+  # A listener of this endpoint that is still being stopped (its connections
+  # are draining) is registered but not running: ranch answers
+  # `:already_present`. Finishing that stop and starting again is the only
+  # correct outcome, so do that once instead of failing the start.
+  defp start_endpoint(endpoint, port, start_opts, retry? \\ true) do
+    case GRPC.Server.start_endpoint(endpoint, port, start_opts) do
+      {:error, :already_present} when retry? ->
+        _ = stop_endpoint(endpoint)
+        start_endpoint(endpoint, port, start_opts, false)
+
+      other ->
+        other
+    end
+  end
+
+  defp stop_endpoint(endpoint) do
+    GRPC.Server.stop_endpoint(endpoint)
+  catch
+    :exit, _ -> :ok
   end
 
   @impl true

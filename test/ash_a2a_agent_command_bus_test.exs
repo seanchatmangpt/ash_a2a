@@ -240,7 +240,10 @@ defmodule AshA2AAgentCommandBusTest do
     # real shape `test/ash_a2a_agent_multi_turn_test.exs` already
     # establishes for an unrelated `{:error, _}` dispatch reply).
     assert {:ok, task} = ItemAgent.call(ItemAgent, message)
-    assert task.status.state == :failed
+    # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+    # decided to not perform the task" (TaskState in specification/a2a.proto,
+    # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+    assert task.status.state == :rejected
 
     refute_receive {:receipt_committed, _receipt}, 200
   end

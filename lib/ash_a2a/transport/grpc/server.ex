@@ -58,7 +58,15 @@ defmodule AshA2A.Transport.GRPC.Server do
   documented in `priv/proto/a2a.proto`'s provenance header.
   """
 
-  use GRPC.Server, service: Lf.A2a.V1.A2AService.Service
+  # The request codecs hand an undecodable request to the RPC as a marker
+  # (answered INVALID_ARGUMENT) instead of raising inside the adapter (UNKNOWN).
+  use GRPC.Server,
+    service: Lf.A2a.V1.A2AService.Service,
+    codecs: [
+      AshA2A.Transport.GRPC.Codec.Proto,
+      AshA2A.Transport.GRPC.Codec.WebText,
+      AshA2A.Transport.GRPC.Codec.JSON
+    ]
 
   alias AshA2A.A2ATransport
   alias AshA2A.A2ATransport.{PushConfigRPC, SSE, TaskEvents}
@@ -67,6 +75,7 @@ defmodule AshA2A.Transport.GRPC.Server do
   alias AshA2A.Protocol.Telemetry
   alias AshA2A.Trace.W3C
   alias AshA2A.Transport.Grpc.Dispatch
+  alias AshA2A.Transport.Follow
   alias AshA2A.Transport.GRPC.Downgrade
   alias AshA2A.Transport.Principal
   alias Lf.A2a.V1, as: Pb
@@ -216,6 +225,10 @@ defmodule AshA2A.Transport.GRPC.Server do
                   _accepted_or_closed -> :ok
                 end
 
+              {:error, %GRPC.RPCError{message: message}} ->
+                # An undecodable StreamRequest rejects that request only.
+                send(parent, {ref, :rejected, message})
+
               {:error, _} ->
                 :ok
             end
@@ -260,6 +273,11 @@ defmodule AshA2A.Transport.GRPC.Server do
 
       {^ref, :not_found} ->
         {:error, task_not_found()}
+
+      {^ref, :rejected, message} ->
+        error = AshA2A.Transport.Live.stream_error("INVALID_ARGUMENT", message, nil, nil)
+        send_live_event(mat, error, version)
+        live_loop(mat, session, refs, version)
 
       {^ref, :half_closed} ->
         # Client half-close: the uplink is complete, the downlink is not. The
@@ -603,17 +621,13 @@ defmodule AshA2A.Transport.GRPC.Server do
 
     with :ok <- owned_continuation(agent, message, ctx),
          {:ok, push_config} <- inline_push(params, ctx),
-         call_opts =
-           params
-           |> call_opts(message, ctx, auth)
-           |> Keyword.put(:return_immediately, true)
-           |> Keyword.put(:subscribe, self()),
+         call_opts = params |> call_opts(message, ctx, auth) |> Follow.admit_opts(),
          {:ok, result} <- Protocol.call(agent, message, call_opts) do
       case result do
         %AshA2A.Protocol.Task{} = task ->
           attach_inline_push(task, push_config, ctx)
-          wired = AshA2A.Transport.Live.wire(task)
-          {:ok, follow(agent, ctx, wired, [wired], :send)}
+          wired = Follow.wire(task)
+          {:ok, follow(agent, ctx, wired, [wired], :send, subscribed?: true)}
 
         %AshA2A.Protocol.Message{} = reply ->
           # Spec 3.1.2: a message-only stream is exactly one Message.
@@ -707,13 +721,6 @@ defmodule AshA2A.Transport.GRPC.Server do
     end
   end
 
-  defp idle_ms(ctx) do
-    case Map.get(ctx, :stream_idle_ms) do
-      ms when is_integer(ms) and ms > 0 -> ms
-      _ -> 60_000
-    end
-  end
-
   defp start_resubscribe_stream(params, ctx) do
     handler = handler!()
     task_id = Map.fetch!(params, "id")
@@ -734,7 +741,7 @@ defmodule AshA2A.Transport.GRPC.Server do
            details: [error_info("UNSUPPORTED_OPERATION", task_id)]
          )}
       else
-        wired = AshA2A.Transport.Live.wire(task)
+        wired = Follow.wire(task)
 
         # v1.1 lastSeenGeneration: when set and the stored task can replay
         # from it, no snapshot is sent, only the events after that generation;
@@ -745,7 +752,7 @@ defmodule AshA2A.Transport.GRPC.Server do
             seen -> replay_from(wired, seen)
           end
 
-        {:ok, follow(agent, ctx, wired, opening, :subscribe)}
+        {:ok, follow(agent, ctx, wired, opening, :subscribe, [])}
       end
     else
       {:error, code, msg, details} ->
@@ -761,128 +768,29 @@ defmodule AshA2A.Transport.GRPC.Server do
 
   # -- following a task -------------------------------------------------------
 
-  # A lazy enumerator of `{StreamResponse wrapper map, seq}` for one task,
-  # consumed by `stream_loop/2` in the RPC's own process. `opening` (the Task
-  # snapshot, or replayed events) is emitted first; the process then joins the
-  # agent's subscriber fan-out and, for every stored task it is shown, emits
-  # the mutations it has not sent yet, read from the task's own timeline and
-  # artifacts. Each event therefore carries the generation the task store
-  # assigned to that mutation (spec 3.2.7), a mutation that landed before the
-  # subscription is not lost, and nothing is sent twice. The stream ends when
-  # the task is terminal, and for `:send` also when it is interrupted
-  # (input-required / auth-required); an idle stream ends after `idle_ms`.
-  defp follow(agent, ctx, %AshA2A.Protocol.Task{} = wired, opening, mode) do
-    idle_ms = idle_ms(ctx)
-    task_id = wired.id
+  # `{StreamResponse wrapper map, seq}` for `stream_loop/2`, over the shared
+  # `AshA2A.Transport.Follow` event stream: `opening`, then one event per
+  # stored mutation until the task is terminal (for `:send` also interrupted).
+  # A quiet handler does not end the RPC; `ctx[:stream_max_idle_ms]` bounds
+  # the silence when a host wants a bound. The task that ends the stream is
+  # published (push notifications).
+  defp follow(agent, ctx, %AshA2A.Protocol.Task{} = wired, opening, mode, opts) do
+    publish_task(ctx, wired)
 
-    Stream.resource(
-      fn ->
-        publish_task(ctx, wired)
+    opts =
+      opts
+      |> Keyword.merge(Follow.stream_opts(ctx))
+      |> Keyword.put(:on_settled, fn task -> if task != wired, do: publish_task(ctx, task) end)
 
-        if settled?(wired, mode) do
-          {opening, :done}
-        else
-          case mode do
-            # Subscribed at admission (`subscribe: self()`): every mutation
-            # after the opening Task is already on its way here.
-            :send ->
-              {opening, {:follow, wired}}
-
-            :subscribe ->
-              current =
-                case safe_agent_subscribe(agent, task_id) do
-                  {:ok, %AshA2A.Protocol.Task{} = snapshot} -> snapshot
-                  _terminal_or_gone -> refetch(agent, task_id, ctx) || wired
-                end
-
-              advance(opening, wired, AshA2A.Transport.Live.wire(current), mode, ctx)
-          end
-        end
-      end,
-      fn
-        {[event | rest], next} ->
-          {[{AshA2A.Transport.Live.encode(event), 0}], {rest, next}}
-
-        {[], :done} ->
-          {:halt, :done}
-
-        {[], {:follow, last}} ->
-          receive do
-            {:a2a_task_event, ^task_id, %AshA2A.Protocol.Task{} = task} ->
-              {[], advance([], last, AshA2A.Transport.Live.wire(task), mode, ctx)}
-          after
-            idle_ms -> {:halt, :done}
-          end
-      end,
-      fn _state -> :ok end
-    )
-    |> Stream.map(& &1)
-  end
-
-  defp advance(queue, last, task, mode, ctx) do
-    if generation(task) < generation(last) do
-      {queue, {:follow, last}}
-    else
-      events = events_after(task, last)
-
-      if settled?(task, mode) do
-        publish_task(ctx, task)
-        {queue ++ events, :done}
-      else
-        {queue ++ events, {:follow, task}}
-      end
-    end
-  end
-
-  defp settled?(task, :subscribe), do: AshA2A.Protocol.Task.terminal?(task)
-
-  defp settled?(task, :send),
-    do:
-      AshA2A.Protocol.Task.terminal?(task) or
-        task.status.state in [:input_required, :auth_required]
-
-  defp refetch(agent, task_id, ctx) do
-    case A2ATransport.Ownership.fetch_strict(agent, task_id, Map.get(ctx, :principal, :anonymous)) do
-      {:ok, task} -> task
-      _ -> nil
-    end
-  end
-
-  defp generation(task), do: AshA2A.Protocol.Task.Generation.generation_of(task)
-
-  # The mutations that turned `last` into `task`, in generation order:
-  # statuses and client messages from the timeline, artifacts by comparing the
-  # two tasks (a new artifact, or the parts appended to a known one). A task
-  # without a timeline still reports a status change.
-  defp events_after(task, last) do
-    seen = generation(last)
-
-    events =
-      (timeline_events(task, seen) ++ artifact_events(task, last))
-      |> Enum.sort_by(&elem(&1, 0))
-      |> Enum.map(&elem(&1, 1))
-
-    status_reported? =
-      Enum.any?(events, &match?(%AshA2A.Protocol.Event.StatusUpdate{}, &1))
-
-    if not status_reported? and task.status.state != last.status.state do
-      events ++
-        [
-          AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-            context_id: task.context_id,
-            final: AshA2A.Protocol.Task.terminal?(task),
-            generation: generation(task)
-          )
-        ]
-    else
-      events
-    end
+    agent
+    |> Follow.events(wired, opening, mode, opts)
+    |> Stream.map(&{AshA2A.Transport.Live.encode(&1), 0})
   end
 
   # lastSeenGeneration replay: the events after `seen`, or the snapshot when
   # the task cannot replay from there.
   defp replay_from(task, seen) do
-    current = generation(task)
+    current = AshA2A.Protocol.Task.Generation.generation_of(task)
 
     cond do
       # Ahead of the task, or before it existed (generation starts at 1): there
@@ -894,87 +802,11 @@ defmodule AshA2A.Transport.GRPC.Server do
         []
 
       true ->
-        whole =
-          for artifact <- task.artifacts,
-              gen = artifact.end_generation || artifact.start_generation,
-              is_integer(gen) and gen > seen,
-              do: {gen, artifact_event(task, artifact, artifact, false, gen)}
-
-        case Enum.sort_by(timeline_events(task, seen) ++ whole, &elem(&1, 0)) do
+        case AshA2A.Protocol.Task.Delta.events_after(task, seen) do
           [] -> [task]
           events -> Enum.map(events, &elem(&1, 1))
         end
     end
-  end
-
-  defp timeline_events(task, seen) do
-    for %{entry: entry, generation: gen} <- task.timeline, gen > seen, reduce: [] do
-      acc ->
-        case entry do
-          {:status, status} ->
-            acc ++
-              [
-                {gen,
-                 AshA2A.Protocol.Event.StatusUpdate.new(task.id, status,
-                   context_id: task.context_id,
-                   final: status.state in [:completed, :failed, :canceled, :rejected],
-                   generation: gen
-                 )}
-              ]
-
-          {:message, %AshA2A.Protocol.Message{role: :user} = message} ->
-            acc ++
-              [
-                {gen,
-                 AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
-                   context_id: task.context_id,
-                   generation: gen
-                 )}
-              ]
-
-          _other ->
-            acc
-        end
-    end
-  end
-
-  # A streamed artifact grows one stored chunk per mutation and each chunk is
-  # shown to the subscribers, so the generation of an unfinished artifact's
-  # newest chunk is the task's own.
-  defp artifact_events(task, last) do
-    Enum.flat_map(task.artifacts, fn artifact ->
-      previous = Enum.find(last.artifacts, &(&1.artifact_id == artifact.artifact_id))
-      gen = artifact.end_generation || generation(task)
-
-      cond do
-        previous == nil ->
-          [{gen, artifact_event(task, artifact, artifact, false, gen)}]
-
-        length(artifact.parts) > length(previous.parts) ->
-          fresh = %{artifact | parts: Enum.drop(artifact.parts, length(previous.parts))}
-          [{gen, artifact_event(task, fresh, artifact, true, gen)}]
-
-        true ->
-          []
-      end
-    end)
-  end
-
-  defp artifact_event(task, sent, whole, append?, gen) do
-    opts = [
-      context_id: task.context_id,
-      last_chunk: whole.end_generation != nil or AshA2A.Protocol.Task.terminal?(task),
-      generation: gen
-    ]
-
-    opts = if append?, do: Keyword.put(opts, :append, true), else: opts
-    AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, sent, opts)
-  end
-
-  defp safe_agent_subscribe(agent, task_id) do
-    GenServer.call(agent, {:subscribe, task_id}, 5_000)
-  catch
-    :exit, _ -> :error
   end
 
   # -- push notifications -----------------------------------------------------
@@ -1243,6 +1075,19 @@ defmodule AshA2A.Transport.GRPC.Server do
   end
 
   # -- proto-JSON bridge ----------------------------------------------------
+
+  # Bytes that are not the RPC's request message (see
+  # `AshA2A.Transport.GRPC.Codec`): the caller's error, INVALID_ARGUMENT.
+  defp to_params(%AshA2A.Transport.GRPC.Codec.Undecodable{module: module}) do
+    detail = "the request is not a valid #{inspect(module.full_name())} message"
+
+    {:error,
+     GRPC.RPCError.exception(
+       status: 3,
+       message: "Invalid parameters",
+       details: [error_info("INVALID_PARAMS", detail)]
+     )}
+  end
 
   defp to_params(req) do
     {:ok,

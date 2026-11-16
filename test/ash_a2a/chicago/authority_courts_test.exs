@@ -311,7 +311,10 @@ defmodule AshA2A.Chicago.AuthorityCourtsTest do
                  metadata: %{"a2a.auth" => %{"identity" => "someone-with-grants"}}
                )
 
-      assert task.status.state == :failed
+      # A refusal before any dispatch is TASK_STATE_REJECTED: "the agent has
+      # decided to not perform the task" (TaskState in specification/a2a.proto,
+      # v1.0.1 and v1.1.0-rc). TASK_STATE_FAILED is "finished with an error".
+      assert task.status.state == :rejected
 
       assert_receive {:decision,
                       %{
