@@ -17,8 +17,9 @@ the divergence is pinned as a `PARTIAL` or `GAP` row, not papered over.
   v1.0.1 clarifications were audited; rows touched by them are
   re-verified only when a court says so.
 - Code now emits `protocolVersion` 1.1 and accepts `A2A-Version` 0.3/1.0/1.1; this
-  statement's rows were witnessed at the v1.0 level and are not re-run for v1.1
-  (UNVERIFIED; v1.1 rows live in `a2a-v1-1-conformance.md`).
+  statement's rows are witnessed at the v1.0 level. Their courts were re-run on 2026-11-16
+  (see "Re-run of the row courts" under Verification); v1.1 rows live in
+  `a2a-v1-1-conformance.md`.
 - A2A 0.3 is legacy/compat only (accepted for interop, not a conformance
   target).
 - Bindings covered: **JSON-RPC 2.0 over HTTP POST**, plus SSE streaming
@@ -62,8 +63,8 @@ met. "Court" is the specific test in the cited file.
 | 18 | Conversations with different `contextId`s never see each other's history | CONFORMANT | same file, court (c) — interleaved turns, action-observed `prior_turns` counts (3 vs 5) prove isolation |
 | 19 | `Task.history` accumulates every prior user+agent message in order | CONFORMANT | same file, court (e) — role sequences `user agent` → `user agent user agent` → 6-message thread, content-asserted |
 | 20 | Cancel idempotency (§3.3.1): repeat cancellation has the same effect; a repeat MAY return `TaskNotFound` after purge | CONFORMANT | `test/ash_a2a_v1_cancellation_test.exs` court (e) — the second cancel of an already-canceled task is idempotent success: 200 with the canceled task, and `:ok` at the agent GenServer surface; only an already-terminal non-canceled task still refuses `-32002` |
-| 21 | In-flight cancel: the server attempts cancellation, success not guaranteed (§3.1.5) | IMPLEMENTED (courts run 2026-11-16, Elixir 1.20.4 / OTP 29.1.1: `mix test test/ash_a2a_v1_cancellation_test.exs --include serial`, 6 passed; `mix test test/ash_a2a_protocol_agent_inflight_cancel_test.exs --include serial`, 3 passed) | `AshA2A.Agent` path: `AshA2A.Transport.Runtime.cancel_in_flight/3` runs the cancel hook, persists `:canceled`, kills the worker and answers the pending send with the canceled task; `test/ash_a2a_v1_cancellation_test.exs` court (b) asserts this over the wire, court (b') the opt-in `execution: [cancel_in_flight: :refuse]` `-32002`. `AshA2A.Protocol.Agent` path: `interrupt_task_worker/2` in `lib/ash_a2a/protocol/agent.ex` kills the default-path worker after the canceled task is persisted; `test/ash_a2a_protocol_agent_inflight_cancel_test.exs`. W2-03: opt-in `admit_first: true` (+ `notify: pid`) on `AshA2A.Protocol.Agent.call/3` persists a fresh send as a task before its worker starts, so `tasks/get` sees it and cancel by id interrupts it; the owner-gated `handle_cancel` refuses another identity (same test file). Remaining: it is opt-in and no transport sets it, so a default wire `message/send` is still stored only when its worker finishes (the client does not know the id until then); custom `handle_cancel/1` hooks that do not stop their own side effects are still best effort |
-| 22 | `tasks/list` request shape per `ListTasksRequest` | PARTIAL (court run 2026-11-16, Elixir 1.20.4 / OTP 29.1.1: `mix test test/ash_a2a/protocol/list_tasks_params_bindings_test.exs --include serial`, 37 passed; partial because the gRPC leg is not driven through a live gRPC server) | Lane W2-09: one shared validator `AshA2A.Protocol.ListTasksParams.validate/1` (`lib/ash_a2a/protocol/list_tasks_params.ex`) refuses wrong-typed or out-of-range `pageSize`, `historyLength`, `timelineLength`, `includeArtifacts`, `contextId`, `pageToken`, `status` and `statusTimestampAfter`; it is called from `JSONRPC.Request.validate_params/1` (-32602), the HTTP+JSON `GET /tasks` handler (400 INVALID_ARGUMENT; `includeArtifacts` now only `true`/`false`, other values are refused instead of read as false) and `JSON.decode_list_tasks_request/1` (`{:error, {:invalid_params, msg}}`). The gRPC `ListTasks` path reaches the same validator through `Dispatch` -> `JSONRPC.handle/3` (INVALID_ARGUMENT 3); `grpc/server.ex` was not edited. Test: `test/ash_a2a/protocol/list_tasks_params_bindings_test.exs` (table-driven through the real JSON-RPC plug, HTTP+JSON plug and gRPC dispatch). Remaining: the gRPC test drives `Dispatch.call/4`, not a live gRPC server; proto-typed fields cannot arrive wrong-typed over the real wire. Correction: `historyLength` IS a real `ListTasksRequest` field upstream; response `pageSize` echoes the requested cap (`authorize_task_list` in `lib/ash_a2a/protocol/plug.ex`) |
+| 21 | In-flight cancel: the server attempts cancellation, success not guaranteed (§3.1.5) | IMPLEMENTED | `AshA2A.Agent` path: `AshA2A.Transport.Runtime.cancel_in_flight/3` runs the cancel hook, persists `:canceled`, kills the worker and answers the pending send with the canceled task; `test/ash_a2a_v1_cancellation_test.exs` court (b) asserts this over the wire, court (b') the opt-in `execution: [cancel_in_flight: :refuse]` `-32002`. `AshA2A.Protocol.Agent` path: `interrupt_task_worker/2` in `lib/ash_a2a/protocol/agent.ex` kills the default-path worker after the canceled task is persisted; `test/ash_a2a_protocol_agent_inflight_cancel_test.exs`. W2-03: opt-in `admit_first: true` (+ `notify: pid`) on `AshA2A.Protocol.Agent.call/3` persists a fresh send as a task before its worker starts, so `tasks/get` sees it and cancel by id interrupts it; the owner-gated `handle_cancel` refuses another identity (same test file). Remaining: it is opt-in and no transport sets it, so a default wire `message/send` is still stored only when its worker finishes (the client does not know the id until then); custom `handle_cancel/1` hooks that do not stop their own side effects are still best effort |
+| 22 | `tasks/list` request shape per `ListTasksRequest` | PARTIAL (the gRPC leg is not driven through a live gRPC server) | Lane W2-09: one shared validator `AshA2A.Protocol.ListTasksParams.validate/1` (`lib/ash_a2a/protocol/list_tasks_params.ex`) refuses wrong-typed or out-of-range `pageSize`, `historyLength`, `timelineLength`, `includeArtifacts`, `contextId`, `pageToken`, `status` and `statusTimestampAfter`; it is called from `JSONRPC.Request.validate_params/1` (-32602), the HTTP+JSON `GET /tasks` handler (400 INVALID_ARGUMENT; `includeArtifacts` now only `true`/`false`, other values are refused instead of read as false) and `JSON.decode_list_tasks_request/1` (`{:error, {:invalid_params, msg}}`). The gRPC `ListTasks` path reaches the same validator through `Dispatch` -> `JSONRPC.handle/3` (INVALID_ARGUMENT 3); `grpc/server.ex` was not edited. Test: `test/ash_a2a/protocol/list_tasks_params_bindings_test.exs` (table-driven through the real JSON-RPC plug, HTTP+JSON plug and gRPC dispatch). Remaining: the gRPC test drives `Dispatch.call/4`, not a live gRPC server; proto-typed fields cannot arrive wrong-typed over the real wire. Correction: `historyLength` IS a real `ListTasksRequest` field upstream; response `pageSize` echoes the requested cap (`authorize_task_list` in `lib/ash_a2a/protocol/plug.ex`) |
 | 23 | Final merged artifact id equals the emitted chunk-sequence id | CONFORMANT | `test/ash_a2a_v1_artifact_streaming_test.exs` court (c) — the fold reuses the pre-minted `:stream_artifact_id` end to end (`lib/ash_a2a/protocol/agent.ex` `stream_done`, `lib/ash_a2a/a2a_transport/plug.ex` `stream_parts`); the court asserts `final_id == hd(chunk_ids)` |
 | 24 | Agents MUST reject messages with mismatching `contextId` and `taskId` (§3.4.3/§4.1.4) | CONFORMANT | `test/ash_a2a_v1_context_continuity_test.exs` court (d) — a non-empty request `contextId` differing from the stored one is refused with the typed `-32001` not-found envelope, indistinguishable from an unknown task (§9.5 parity); `tasks/get` agrees the task was never touched |
 | 25 | Agents MAY generate a new `contextId` when the message omits one (§3.4.1) | CONFORMANT | same file, court (a) — the server mints `ctx-` + 128 CSPRNG bits (`AshA2A.Transport.Runtime.secure_context_id/0`), non-empty and stable across follow-ups |
@@ -73,6 +74,48 @@ met. "Court" is the specific test in the cited file.
 | 29 | A raising auth verify callback fails CLOSED: the caller sees a generic 401, exception detail never on the wire | CONFORMANT | same file — a verify callback that raises yields a halted 401 with the exact `Bearer` challenge; the response body never contains the exception text (`safe_verify/4` in `lib/ash_a2a/protocol/plug/auth.ex`) |
 
 ## Verification
+
+<!-- rerun-2026-11-16:start -->
+### Re-run of the row courts (2026-11-16)
+
+Elixir 1.20.4 / OTP 29.1.1, Postgres on `localhost:55432`. Commit `fea857b5a55fd94d32eb388de2bc218839a6d6aa` (`git rev-parse HEAD`)
+plus 1 uncommitted path in the working tree when the run started
+(`test/generation_gating_courts_test.exs`, not a court of this statement). Each cited file
+was run on its own with `--trace`. A row keeps its status only when the courts it names passed
+in this run; otherwise it is PARTIAL and names the failing test. Totals: 27 CONFORMANT, 1 IMPLEMENTED, 1 PARTIAL.
+
+| # | Command and result | Status |
+| --- | --- | --- |
+| 1 | `mix test test/ash_a2a_v1_conformance_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 14 passed | CONFORMANT |
+| 2 | `mix test test/ash_a2a_v1_conformance_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 14 passed | CONFORMANT |
+| 3 | `mix test test/ash_a2a_v1_conformance_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 14 passed | CONFORMANT |
+| 4 | `mix test test/ash_a2a_v1_conformance_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 14 passed | CONFORMANT |
+| 5 | `mix test test/ash_a2a_v1_conformance_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 14 passed | CONFORMANT |
+| 6 | `mix test test/ash_a2a_v1_pagination_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 17 passed | CONFORMANT |
+| 7 | `mix test test/ash_a2a_v1_pagination_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 17 passed | CONFORMANT |
+| 8 | `mix test test/ash_a2a_v1_pagination_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 17 passed | CONFORMANT |
+| 9 | `mix test test/ash_a2a_v1_pagination_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 17 passed | CONFORMANT |
+| 10 | `mix test test/ash_a2a_v1_cancellation_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 6 passed | CONFORMANT |
+| 11 | `mix test test/ash_a2a_v1_cancellation_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 6 passed | CONFORMANT |
+| 12 | `mix test test/ash_a2a_v1_cancellation_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 6 passed | CONFORMANT |
+| 13 | `mix test test/ash_a2a_v1_artifact_streaming_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 7 passed | CONFORMANT |
+| 14 | `mix test test/ash_a2a_v1_artifact_streaming_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 7 passed | CONFORMANT |
+| 15 | `mix test test/ash_a2a_v1_artifact_streaming_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 7 passed | CONFORMANT |
+| 16 | `mix test test/ash_a2a_v1_artifact_streaming_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 7 passed | CONFORMANT |
+| 17 | `mix test test/ash_a2a_v1_context_continuity_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 5 passed | CONFORMANT |
+| 18 | `mix test test/ash_a2a_v1_context_continuity_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 5 passed | CONFORMANT |
+| 19 | `mix test test/ash_a2a_v1_context_continuity_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 5 passed | CONFORMANT |
+| 20 | `mix test test/ash_a2a_v1_cancellation_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 6 passed | CONFORMANT |
+| 21 | `mix test test/ash_a2a_v1_cancellation_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 6 passed; `mix test test/ash_a2a_protocol_agent_inflight_cancel_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 3 passed | IMPLEMENTED |
+| 22 | `mix test test/ash_a2a/protocol/list_tasks_params_bindings_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 37 passed | PARTIAL |
+| 23 | `mix test test/ash_a2a_v1_artifact_streaming_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 7 passed | CONFORMANT |
+| 24 | `mix test test/ash_a2a_v1_context_continuity_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 5 passed | CONFORMANT |
+| 25 | `mix test test/ash_a2a_v1_context_continuity_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 5 passed | CONFORMANT |
+| 26 | `mix test test/ash_a2a_v1_rejected_state_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 5 passed | CONFORMANT |
+| 27 | `mix test test/ash_a2a_v1_auth_challenge_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 24 passed | CONFORMANT |
+| 28 | `mix test test/ash_a2a_v1_auth_challenge_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 24 passed | CONFORMANT |
+| 29 | `mix test test/ash_a2a_v1_auth_challenge_test.exs --include serial --include serial_shard --include serial_solo --trace`: exit 0, 24 passed | CONFORMANT |
+<!-- rerun-2026-11-16:end -->
 
 Run the courts directly (each exits 0 on conformance):
 

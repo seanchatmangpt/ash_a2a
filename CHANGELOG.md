@@ -25,8 +25,15 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   inventory from the library, so a method, route or RPC with no probe fails
   `test/ash_a2a/sim/sim_mirror_test.exs`. Run it with `mix ash_a2a.sim --prove`. Guide:
   `docs/how-to/run-the-simulation-server.md`. On 2026-11-16 `mix ash_a2a.sim --prove`
-  printed `221 probes over 83 surface items: 221 pass, 0 fail, 0 skip` in the `test` Mix
+  printed `242 probes over 85 surface items: 242 pass, 0 fail, 0 skip` in the `test` Mix
   environment and again with `MIX_ENV=dev`; `test/ash_a2a/sim/sim_mirror_test.exs` passes.
+- A2A v1.1 parity check: `mix ash_a2a.sim --parity` compares every response of the simulation
+  server, on gRPC, HTTP+JSON and JSON-RPC, with a reference encoder built from the upstream
+  proto at tag `v1.1.0-rc` and the official protobuf runtime (`--strict` also fails on known
+  defects). Guide: `docs/how-to/check-a2a-v1-1-parity.md`; findings and the version each wire
+  rule applies to: `docs/reference/a2a-v1-1-parity-findings.md`. On 2026-11-16
+  `mix ash_a2a.sim --parity --strict` printed `1267 pass, 0 fail, 0 known (), 0 skip` and
+  exited 0. Test: `test/ash_a2a/sim/sim_parity_v1_1_test.exs`.
 - MCP control of the simulation server: `mix ash_a2a.sim.mcp` (launcher `bin/a2a-sim-mcp`,
   registered in `.mcp.json`) serves `AshA2A.Sim.MCP.Server`, a Model Context Protocol server
   (revision 2025-11-25; stdio and Streamable HTTP) with 66 tools: one per served JSON-RPC
@@ -36,8 +43,9 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   `AshA2A.Sim.Surface` item to tool calls; an item with no tool path fails
   `test/ash_a2a/sim/sim_mcp_test.exs`, which drives the real stdio and HTTP servers as OS
   processes. Guide: `docs/how-to/control-the-sim-over-mcp.md`. On 2026-11-16
-  `python3 scripts/mcp_drive.py` printed `83 surface items served, 83 driven through MCP:
-  83 pass, 0 fail; 0 uncovered` and `mix test test/ash_a2a/sim/sim_mcp_test.exs` passed.
+  `python3 scripts/mcp_drive.py` printed `93 surface items served, 93 driven through MCP:
+  93 pass, 0 fail; 0 uncovered; 267 tools/call requests; 0 outputSchema violations; 0 non-MCP
+  lines on stdout`. Test: `test/ash_a2a/sim/sim_mcp_test.exs`.
 - MCP tool `sim_parity` runs `AshA2A.Sim.Parity` and answers one verdict per binding;
   `AshA2A.Sim.MCP.Coverage` now also maps every `AshA2A.Sim.Surface.parity/0` item, and a
   JSON-RPC method served only under an alias (`SendLiveMessage`) gets a tool of its own.
@@ -67,9 +75,9 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   status PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and
   `A2A-Version` accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration`
   resume. Guide: `docs/how-to/v1-1-live-and-generations.md`. Row-level standings from the
-  2026-11-16 court run are in `docs/reference/a2a-v1-1-conformance.md`: 10 of 17 rows
-  CONFORMANT, 7 PARTIAL with the failing court named (for example
-  `test/protocol_codec_v1_1_test.exs`).
+  2026-11-16 court run are in `docs/reference/a2a-v1-1-conformance.md`: every court named by
+  the 17 rows passed (for example `test/protocol_codec_v1_1_test.exs`), so all 17 rows are
+  CONFORMANT in that table's sense. The statement as a whole stays PARTIAL.
 - Documented configuration: `:events_transport`, `cancel_in_flight`, `validate_input_modes`
   and the mount `tenant` option (`docs/reference/configuration.md`). The first three are
   exercised by `test/dsl_verifiers_v1_1_test.exs`, `test/ash_a2a_v1_cancellation_test.exs` and
@@ -78,6 +86,44 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
 
 ### Changed
 
+- **Breaking (wire):** responses now follow `docs/specification.md` and ProtoJSON as checked by
+  the parity run above. A client that pinned the earlier shapes has to change. Unless noted,
+  the rule is the same at `v1.0.1` and `v1.1.0-rc`, so it applies to every negotiated version.
+  - A missing push-notification config is `TaskNotFoundError` (`-32001`, HTTP 404, gRPC
+    `NOT_FOUND`), not `-32602`; deleting one answers `{}`, not `null`. Tests:
+    `test/ash_a2a_v1_push_httpjson_test.exs`, `test/conference_sim/grpc_venue_court_test.exs`.
+  - Default-valued members are omitted: `append: false`, `lastChunk: false`, an empty
+    `configs` list and an empty `nextPageToken`. A reply sent as one artifact frame carries
+    `lastChunk: true`. Test: `test/ash_a2a_v1_artifact_streaming_test.exs`.
+  - `error.data` and `error.details` are arrays of typed objects: `-32700`, `-32600` and
+    `-32601` carry one `google.rpc.ErrorInfo` (`JSON_PARSE`, `INVALID_REQUEST`,
+    `METHOD_NOT_FOUND`) with free-form detail in `metadata.detail`. `-32603` still passes
+    free-form data through. Test: `test/ash_a2a_v1_error_registry_test.exs`.
+  - HTTP+JSON statuses follow section 5.4: `TaskNotCancelableError` 400 (was 409),
+    `ContentTypeNotSupportedError` 400 (was 415), `InvalidAgentResponseError` 500 (was 502).
+    `AshA2A.Protocol.JSONRPC.Error.spec_http_status/1` still returns the old values; see
+    VG-01 to VG-03 in `docs/reference/a2a-v1-1-parity-findings.md`. Test:
+    `test/ash_a2a_v1_error_registry_test.exs`.
+  - gRPC statuses follow section 5.4: `PushNotificationNotSupportedError`,
+    `UnsupportedOperationError` and `VersionNotSupportedError` are `FAILED_PRECONDITION`
+    (were `UNIMPLEMENTED`). Tests: `test/ash_a2a_v1_grpc_must_test.exs`,
+    `test/protocol_error_tables_test.exs`.
+  - A refusal before dispatch (no authority, unauthenticated, ambiguous skill) lands the task
+    in `TASK_STATE_REJECTED`, not `TASK_STATE_FAILED`. Test:
+    `test/ash_a2a_authority_capability_grant_test.exs`.
+  - `message/stream` on a skill that does not chunk its output answers a stream (task,
+    artifact, terminal status) instead of `-32004`. Test:
+    `test/ash_a2a_v1_owner_scope_test.exs`.
+  - Timestamps carry 0, 3 or 6 fractional digits. Test:
+    `test/ash_a2a_v1_wire_properties_test.exs`.
+  - v1.1 only: int64 members (`generation`, `startGeneration`, `endGeneration`) are decimal
+    strings; the live uplink acknowledgement is `{"task": ...}`; `StreamError.code` uses the
+    unary codes (`NOT_FOUND`, `INVALID_ARGUMENT`); the opening client message is in the
+    snapshot `timeline` and is not replayed as a `messageUpdate` frame; JSON-RPC serves
+    `SendLiveMessage`. `protocolVersion` is withheld from push-config answers to a request
+    negotiated at 1.0. Tests: `test/protocol_codec_v1_1_test.exs`,
+    `test/http_json_generation_stream_test.exs`, `test/http_json_live_session_test.exs`,
+    `test/generation_gating_courts_test.exs`, `test/push_config_protocol_version_test.exs`.
 - `Message.extensions` is now a list of extension URIs (`[String.t()] | map()`, default `[]`).
 - The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
 - Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`.
@@ -87,8 +133,11 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   and `req_llm` are optional dependencies, so a consumer can compile `ash_a2a` without
   them. A path-dependent consumer build with none of them added compiled on 2026-11-16
   (`mix compile --warnings-as-errors` exit 0; `ash_state_machine` and `postgrex` were still
-  resolved transitively). `scripts/check_optional_deps.sh` was not run and is unverified; see
-  `docs/how-to/optional-dependencies.md`. Guard tests: `test/ash_a2a/l18_optional_deps_test.exs`.
+  resolved transitively). `scripts/check_optional_deps.sh` ran its ten cases on 2026-11-16 and
+  exited 0 (`optional deps matrix: all cases compiled`); it now builds the dependencies before
+  forcing `ash_a2a` and fails only on a compiler warning that names an optional dependency.
+  Its CI workflow has not run. See `docs/how-to/optional-dependencies.md`. Guard tests:
+  `test/ash_a2a/l18_optional_deps_test.exs`, `test/optional_deps_matrix_test.exs`.
 - The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
   Unverified: no test asserts the strategy (read in `lib/ash_a2a/application.ex`).
 - `bandit` and `simple_sat` are optional dependencies (they were test-only), so

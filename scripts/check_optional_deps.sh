@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# UNVERIFIED: not run end to end. Its first case (no optional deps) was run by hand on
-# 2026-11-16 and compiles, but prints compiler warnings that the warning gate below rejects.
-# See docs/how-to/optional-dependencies.md.
-#
 # Compiles ash_a2a from a throwaway consumer project that depends on it by path:
 # once with none of the optional deps, then once per single optional dep added.
 # Fails on a compile error, or on a compiler warning that names an optional

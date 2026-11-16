@@ -1,8 +1,8 @@
 # Optional dependencies
 
-Status: PARTIAL (2026-11-16, Elixir 1.20.4 / OTP 29.1.1). Run: the guard tests below and one
-consumer build with none of the optional dependencies added. Not run: the full matrix script
-(see Compile matrix).
+Status: verified locally (2026-11-16, Elixir 1.20.4 / OTP 29.1.1): the guard tests below pass
+and `scripts/check_optional_deps.sh` ran all ten cases and exited 0 (see Compile matrix). Its CI
+workflow has never run.
 
 `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`, `req_llm`,
 `bandit` and `simple_sat` are declared `optional: true` in `mix.exs`. A consumer may omit any
@@ -34,23 +34,35 @@ build `Bandit`, `SimpleSat`, `Oban`, `FLAME` and `ReqLLM` are not loaded, no `As
 module exists and `AshA2A.Transport.Plug` loads. `ash_state_machine` and `postgrex` were still
 resolved into that build's lock file, so their absence was not exercised. Compiling `ash_a2a`
 there printed 43 compiler warnings (Elixir 1.20 type-checker findings such as "the following
-clause will never match"); none names an optional dependency or a `Sim` module.
+clause will never match"); none names an optional dependency or a `Sim` module. Four mechanical
+ones were fixed afterwards (an unused alias, two bitstring sizes, a type named `record/0`).
 
 With the optional dependencies present, `MIX_ENV=dev mix compile` exits 0 and
-`MIX_ENV=dev mix ash_a2a.sim --prove` passes 221 of 221 probes.
+`MIX_ENV=dev mix ash_a2a.sim --prove` passed every probe (221 of 221 when it was run).
 
-## Compile matrix (UNVERIFIED)
+## Compile matrix
 
 `scripts/check_optional_deps.sh` builds a throwaway consumer project with a path dependency on
-this repo, then runs `mix deps.get`, a forced `mix deps.compile ash_a2a` (any `warning:` line
-fails the case) and `mix compile --warnings-as-errors`. It runs once with none of the optional
-deps and once per single optional dep. `.github/workflows/optional-deps.yml` runs it on push
+this repo, then runs `mix deps.get`, `mix deps.compile`, a forced `mix deps.compile ash_a2a`
+and `mix compile --warnings-as-errors`. A case fails on a compile error, or when a compiler
+warning printed while compiling `ash_a2a` names a module of an optional dependency (`Oban`,
+`AshOban`, `AshStateMachine`, `Postgrex`, `FLAME`, `DurableServer`, `ReqLLM`, `Bandit`,
+`SimpleSat`), which is how a missing guard shows up. Other compiler warnings are printed as a
+count and do not fail the script. It runs once with none of the optional deps and once per
+single optional dep. `.github/workflows/optional-deps.yml` runs it on push
 and pull request. `test/optional_deps_matrix_test.exs` asserts the script's list equals the
 `optional: true` deps in `mix.exs`.
 
-Status: UNVERIFIED for the script and the workflow. `mix test test/optional_deps_matrix_test.exs`
-passes (3 passed), so the script's list equals `mix.exs`. The script itself was not run: it does
-ten cold consumer builds, and its first case would fail its own warning gate today, because
-compiling `ash_a2a` prints the 43 warnings described above. The workflow has never run in CI.
-Remaining: clear those compiler warnings or narrow the gate, run the script, cover combinations
-of optional deps, and make the workflow a required check.
+Status: the script ran here on 2026-11-16 and exited 0 with `optional deps matrix: all cases
+compiled` after ten cases (none, then `oban`, `ash_oban`, `ash_state_machine`, `postgrex`,
+`flame`, `durable_server`, `req_llm`, `bandit`, `simple_sat`). No warning named an optional
+dependency. Each case reported 40 to 43 other compiler warnings in `ash_a2a` (type-checker
+findings; the count moved because `lib/` was being edited during the run). Two changes were
+needed before it could pass: the script now builds the dependencies before it force-compiles
+`ash_a2a` (it did not, so the first case stopped on `Plug.Conn is not loaded`), and its gate is
+the optional-dependency check described above instead of "any warning".
+`mix test test/optional_deps_matrix_test.exs` passes (3 passed), so the script's list equals
+`mix.exs`.
+
+UNVERIFIED: the workflow has never run in CI. Remaining: clear the other compiler warnings,
+cover combinations of optional deps, and make the workflow a required check.

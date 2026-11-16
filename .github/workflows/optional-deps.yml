@@ -1,6 +1,6 @@
 name: Optional deps
 
-# UNVERIFIED: written without an Elixir toolchain; never run in CI.
+# UNVERIFIED: never run in CI. The script it calls ran locally on 2026-11-16 and exited 0.
 on:
   push:
     branches: [main]

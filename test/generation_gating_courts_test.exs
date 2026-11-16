@@ -279,9 +279,15 @@ defmodule AshA2A.GenerationGatingCourtsTest do
 
   # -- 2. messageUpdate version gating on message/stream -------------------------
 
-  test "message/stream frames carry messageUpdate for A2A-Version 1.1 and not for 1.0", %{
-    open: server
-  } do
+  # Spec v1.1 section 3.2.8: client-message timeline entries reach only clients
+  # that request A2A-Version 1.1 or later. Section 3.2.7: a streamed event
+  # carries the generation after its mutation, so the opening message, which
+  # the Task snapshot already contains, is not replayed as a messageUpdate
+  # frame behind that snapshot.
+  test "message/stream gives the client message to A2A-Version 1.1 in the snapshot timeline and not to 1.0",
+       %{
+         open: server
+       } do
     stream = fn version ->
       resp =
         Req.post!(
@@ -297,11 +303,23 @@ defmodule AshA2A.GenerationGatingCourtsTest do
     end
 
     new = stream.("1.1")
-    assert Enum.any?(new, &Map.has_key?(&1, "messageUpdate"))
+
+    assert [%{"task" => %{"generation" => snapshot_generation, "timeline" => timeline}} | _] = new
+
+    assert [%{"generation" => message_generation, "message" => %{"role" => "ROLE_USER"}}] =
+             Enum.filter(timeline, &Map.has_key?(&1, "message"))
+
+    assert String.to_integer(message_generation) < String.to_integer(snapshot_generation)
+
+    for %{"messageUpdate" => update} <- new do
+      assert String.to_integer(update["generation"]) > String.to_integer(snapshot_generation)
+    end
+
     assert Enum.any?(new, &Map.has_key?(&1, "statusUpdate"))
 
     old = stream.("1.0")
     refute Enum.any?(old, &Map.has_key?(&1, "messageUpdate"))
+    refute Enum.any?(old, &match?(%{"task" => %{"timeline" => _}}, &1))
     refute Enum.any?(old, &Map.has_key?(&1, "error"))
     assert Enum.any?(old, &Map.has_key?(&1, "statusUpdate"))
   end
