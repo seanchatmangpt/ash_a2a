@@ -512,6 +512,7 @@ defmodule AshA2A.Protocol.Agent do
               {:ok, state} ->
                 AshA2A.Protocol.PushNotification.deliver(state, task)
                 state = notify_subscribers(state, task)
+                interrupt_task_worker(task.id, task)
                 {:reply, :ok, state}
 
               {:error, reason} ->
@@ -520,6 +521,24 @@ defmodule AshA2A.Protocol.Agent do
 
           {:error, reason} ->
             {:reply, {:error, reason}, state}
+        end
+      end
+
+      # A2A v1.0 §3.1.5 in-flight cancel: once the canceled task is
+      # persisted, the still-running default-path worker for it is demonitored
+      # and killed (so its effect never commits), its token is dropped (a late
+      # result or DOWN is a no-op) and a pending `message/send` caller is
+      # answered with the canceled task rather than left to complete.
+      defp interrupt_task_worker(task_id, canceled) do
+        case Enum.find(task_workers(), fn {_token, {_ref, _from, id, _pid}} -> id == task_id end) do
+          {token, {mref, from, _id, pid}} ->
+            Process.demonitor(mref, [:flush])
+            Process.exit(pid, :kill)
+            Process.put(@task_workers_key, Map.delete(task_workers(), token))
+            reply_to(from, {:ok, canceled})
+
+          nil ->
+            :ok
         end
       end
 
@@ -637,8 +656,8 @@ defmodule AshA2A.Protocol.Agent do
       # a fresh opaque ref, by `SafeError.internal/3`).
       @impl GenServer
       def handle_info({:DOWN, mref, :process, _pid, reason}, state) do
-        case Enum.find(task_workers(), fn {_token, {ref, _from, _id}} -> ref == mref end) do
-          {token, {_mref, from, task_id}} ->
+        case Enum.find(task_workers(), fn {_token, {ref, _from, _id, _pid}} -> ref == mref end) do
+          {token, {_mref, from, task_id, _pid}} ->
             {_entry, rest} = Map.pop(task_workers(), token)
             Process.put(@task_workers_key, rest)
             {:noreply, fail_worker_task(task_id, from, reason, state)}
@@ -652,7 +671,7 @@ defmodule AshA2A.Protocol.Agent do
 
       def handle_info({:ash_a2a_protocol_task_done, token, result}, state) do
         case Map.pop(task_workers(), token) do
-          {{mref, from, task_id}, rest} ->
+          {{mref, from, task_id, _pid}, rest} ->
             Process.demonitor(mref, [:flush])
             Process.put(@task_workers_key, rest)
             {:noreply, apply_default_result(task_id, from, result, state)}
@@ -670,13 +689,13 @@ defmodule AshA2A.Protocol.Agent do
         callers = [parent | Process.get(:"$callers", [])]
         token = make_ref()
 
-        {_pid, mref} =
+        {pid, mref} =
           spawn_monitor(fn ->
             Process.put(:"$callers", callers)
             send(parent, {:ash_a2a_protocol_task_done, token, run_default_task(job)})
           end)
 
-        Process.put(@task_workers_key, Map.put(task_workers(), token, {mref, from, task_id}))
+        Process.put(@task_workers_key, Map.put(task_workers(), token, {mref, from, task_id, pid}))
         {:noreply, state}
       end
 
