@@ -117,12 +117,11 @@ defmodule AshA2A.Email.TokenLedgerStore do
             {:cont, {[k | ins], :ok}}
 
           {:error, :conflict} ->
-            {:cont, {ins, :conflict}}
+            {:halt, {ins, :conflict}}
 
           _other ->
             {:halt, {ins, :unavailable}}
         end
-        |> continue_after_conflict()
       end)
 
     cond do
@@ -141,10 +140,6 @@ defmodule AshA2A.Email.TokenLedgerStore do
         {:error, :already_consumed}
     end
   end
-
-  # Once a conflict is seen, keep going only to learn nothing more: stop immediately.
-  defp continue_after_conflict({:cont, {ins, :conflict}}), do: {:halt, {ins, :conflict}}
-  defp continue_after_conflict(other), do: other
 
   defp replay?(_store, _keys, mid) when not is_binary(mid), do: false
 
