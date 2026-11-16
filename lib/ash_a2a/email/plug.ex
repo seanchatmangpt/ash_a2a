@@ -24,6 +24,20 @@ if Code.ensure_loaded?(Plug) do
       arguments. Default refuses every action with `:unresolvable`.
     - `:reply_sender` -- `(to, subject, text -> any)`; receipt summary or reconfirm mail
       (default: no-op).
+    - `:webhook` -- required. `{provider, opts}` handed to `AshA2A.Email.Webhook.verify/3`
+      (`:sendgrid | :workspace | :ses`); the provider's request authentication gates the whole
+      request (401 `webhook_unauthorized`) BEFORE any `auth_results` in the body is trusted.
+      `:trusted_ingress` states that an upstream hop already authenticated the provider; absent,
+      the plug refuses with 503 `webhook_auth_unconfigured`.
+    - `:max_body_bytes` (default 262_144; 413 `payload_too_large`), `:max_reply_chars`
+      (default 16_384; 413). Parsed bodies deeper than 8 levels or with more than 2_000 nodes
+      are refused (413 `payload_too_complex`).
+    - `:unsafe_no_replay_ledger` -- `true` permits running without `:token_ledger`
+      (tests only); otherwise a missing ledger refuses with 503 `replay_protection_unconfigured`.
+
+    Approver binding: when the brief map carries `:approver` (a principal id), the verified
+    sender principal must equal it, else 403 `approver_mismatch`. Without `:approver` any
+    allowlisted sender holding a valid reply token may approve; set it for per-approver briefs.
 
     ## Request body
 
@@ -41,11 +55,11 @@ if Code.ensure_loaded?(Plug) do
     Staleness (fail-closed): an approved action is stale when `action.graph_digest` or
     `current_digests[n]` is missing, or they differ. Stale => 409, no dispatch.
 
-    Replay and rate limit (opt-in via `:token_ledger`, an `AshA2A.Email.TokenLedger`
-    server): approved `(brief_id, n, token)` triples are single-use (409 `already_consumed`);
+    Replay and rate limit (`:token_ledger`, an `AshA2A.Email.TokenLedger`
+    server, required unless `:unsafe_no_replay_ledger`): approved `(brief_id, n, token)` triples are single-use (409 `already_consumed`);
     an identical inbound `message_id` replays the cached response without re-dispatch.
     `:rate_limit` (`{max, window_ms}`) bounds requests per sender (429 `rate_limited`).
-    Without `:token_ledger` neither protection is active.
+    Status: UNVERIFIED (no Elixir toolchain was available when these checks were written).
 
     Per-action standing: `dispatched | held | refused`. Unmentioned actions are omitted.
     """
@@ -75,11 +89,16 @@ if Code.ensure_loaded?(Plug) do
     # -- pipeline ---------------------------------------------------------------
 
     defp ingest(conn, opts) do
-      with {:ok, body, conn} <- read_json(conn),
+      with :ok <- require_config(opts),
+           {:ok, body, conn} <- read_json(conn, opts),
+           :ok <- bounded(body, opts),
+           :ok <- webhook_auth(conn, body, opts),
            {:ok, inbound} <- stage(400, Inbound.parse(body)),
+           :ok <- reply_cap(inbound, opts),
            {:ok, principal} <- stage(401, Inbound.verify_sender(inbound, policy(opts))),
            :ok <- rate_limit(inbound, opts),
            {:ok, brief, digests} <- find_brief(inbound, opts),
+           :ok <- bind_approver(brief, principal),
            {:ok, entries, approved} <- intent(inbound, brief),
            :ok <- verify_tokens(brief, approved, body),
            :ok <- check_fresh(approved, digests),
@@ -105,16 +124,99 @@ if Code.ensure_loaded?(Plug) do
     defp stage(status, {:error, reason}), do: {:halt, status, reason}
     defp stage(status, other), do: {:halt, status, other}
 
-    defp read_json(%Plug.Conn{body_params: %{} = params} = conn)
+    @max_body 262_144
+    @max_reply 16_384
+    @max_depth 8
+    @max_nodes 2_000
+
+    defp require_config(opts) do
+      cond do
+        Keyword.get(opts, :webhook) in [nil, false] ->
+          {:halt, 503, :webhook_auth_unconfigured}
+
+        is_nil(Keyword.get(opts, :token_ledger)) and
+            Keyword.get(opts, :unsafe_no_replay_ledger) != true ->
+          {:halt, 503, :replay_protection_unconfigured}
+
+        true ->
+          :ok
+      end
+    end
+
+    defp read_json(%Plug.Conn{body_params: %{} = params} = conn, _opts)
          when map_size(params) > 0 and not is_struct(params, Plug.Conn.Unfetched),
          do: {:ok, params, conn}
 
-    defp read_json(conn) do
-      with {:ok, raw, conn} <- read_body(conn),
-           {:ok, %{} = map} <- Jason.decode(raw) do
-        {:ok, map, %{conn | body_params: map}}
-      else
-        _ -> {:halt, 400, :invalid_json}
+    defp read_json(conn, opts) do
+      max = Keyword.get(opts, :max_body_bytes, @max_body)
+
+      case read_body(conn, length: max) do
+        {:ok, raw, conn} when byte_size(raw) <= max ->
+          case Jason.decode(raw) do
+            {:ok, %{} = map} -> {:ok, map, %{conn | body_params: map}}
+            _ -> {:halt, 400, :invalid_json}
+          end
+
+        _ ->
+          {:halt, 413, :payload_too_large}
+      end
+    end
+
+    # Depth and node caps on the parsed body (it may come pre-parsed from Plug.Parsers).
+    defp bounded(body, _opts) do
+      case walk(body, 0, 0) do
+        {:ok, _} -> :ok
+        :error -> {:halt, 413, :payload_too_complex}
+      end
+    end
+
+    defp walk(_, depth, _) when depth > @max_depth, do: :error
+    defp walk(_, _, count) when count > @max_nodes, do: :error
+
+    defp walk(%{} = m, depth, count) when not is_struct(m),
+      do: walk_all(Map.to_list(m) |> Enum.flat_map(fn {k, v} -> [k, v] end), depth + 1, count + 1)
+
+    defp walk(l, depth, count) when is_list(l), do: walk_all(l, depth + 1, count + 1)
+    defp walk(_, _, count), do: {:ok, count + 1}
+
+    defp walk_all(items, depth, count) do
+      Enum.reduce_while(items, {:ok, count}, fn item, {:ok, c} ->
+        case walk(item, depth, c) do
+          {:ok, c2} -> {:cont, {:ok, c2}}
+          :error -> {:halt, :error}
+        end
+      end)
+    end
+
+    defp reply_cap(%Inbound{body_text: t}, opts) do
+      if byte_size(t) > Keyword.get(opts, :max_reply_chars, @max_reply),
+        do: {:halt, 413, :payload_too_large},
+        else: :ok
+    end
+
+    defp webhook_auth(conn, body, opts) do
+      case Keyword.get(opts, :webhook) do
+        :trusted_ingress ->
+          :ok
+
+        {provider, wopts} when is_atom(provider) and is_list(wopts) ->
+          input = if provider == :ses, do: body, else: conn
+
+          case AshA2A.Email.Webhook.verify(provider, input, wopts) do
+            :ok -> :ok
+            {:error, _} -> {:halt, 401, :webhook_unauthorized}
+          end
+
+        _ ->
+          {:halt, 401, :webhook_unauthorized}
+      end
+    end
+
+    defp bind_approver(brief, principal) do
+      case Map.get(brief, :approver) do
+        nil -> :ok
+        id when id == principal.id -> :ok
+        _ -> {:halt, 403, :approver_mismatch}
       end
     end
 
@@ -297,9 +399,17 @@ if Code.ensure_loaded?(Plug) do
 
     # -- helpers ----------------------------------------------------------------
 
+    # Subject comes from the sender: strip CR/LF/control chars (header injection) and cap length.
+    defp safe_header(v) do
+      v
+      |> to_string()
+      |> String.replace(~r/[\x00-\x1f\x7f]+/, " ")
+      |> String.slice(0, 200)
+    end
+
     defp send_reply(opts, %Inbound{from: from}, subject, text) do
       case Keyword.get(opts, :reply_sender) do
-        fun when is_function(fun, 3) -> fun.(from, subject, text)
+        fun when is_function(fun, 3) -> fun.(safe_header(from), safe_header(subject), text)
         _ -> :ok
       end
     end

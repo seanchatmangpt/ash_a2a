@@ -276,6 +276,17 @@ jobs:
       - name: Serial solo lane
         if: ${{ matrix.name == 'solo' }}
         run: mix test.serial.solo --cover --export-coverage solo
+      # Files tagged `:serial` but in neither `:serial_shard` nor `:serial_solo`
+      # matched no lane (the fast lane excludes `:serial`), so they never ran in
+      # CI. Selected by path at run time so a newly added file cannot be missed.
+      - name: Serial untiered files
+        if: ${{ matrix.name == 'solo' }}
+        shell: bash
+        run: |
+          files=$(grep -rlE '(moduletag|tag) :serial\b' test | xargs grep -LE 'serial_(shard|solo)' || true)
+          [ -z "$files" ] && { echo "no untiered serial files"; exit 0; }
+          echo "$files"
+          mix test.serial $files --cover --export-coverage rest
       - name: Serial shard (${{ matrix.name }})
         if: ${{ startsWith(matrix.name, 'shard-') }}
         env:

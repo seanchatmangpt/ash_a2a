@@ -55,10 +55,13 @@ defmodule AshA2A.MixProject do
       # serial`; the trailing excludes re-apply the machine-conditional
       # exclusions from test/test_helper.exs, which `--include serial` would
       # otherwise override.
-      test: "test --exclude serial",
+      # The tier tags are excluded too: files tagged only `:serial_shard` /
+      # `:serial_solo` carry no `:serial` tag, so excluding `:serial` alone let
+      # them run in the default tier and again in their own lane (UNVERIFIED).
+      test: "test --exclude serial --exclude serial_shard --exclude serial_solo",
       "test.all":
         "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos",
-      "test.serial": "test --only serial",
+      "test.serial": "test --only serial --only serial_shard --only serial_solo",
       # Live, paid, networked LLM round-trips: explicit opt-in only.
       "test.live": "cmd ASH_A2A_LIVE_LLM=1 mix test --include serial --only external_api",
 

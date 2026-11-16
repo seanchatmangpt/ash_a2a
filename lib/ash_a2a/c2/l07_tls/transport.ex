@@ -58,7 +58,7 @@ defmodule AshA2A.C2.L07Tls.Transport do
   defp connect_uds(_, _, _), do: {:error, :connect_failed}
 
   defp connect_tls(cfg, base_opts, timeout) do
-    with {:ok, host, port, sni, tls_opts} <- tls_options(cfg),
+    with {:ok, host, port, tls_opts} <- tls_options(cfg),
          {:ok, _} <- Application.ensure_all_started(:ssl),
          {:ok, s} <-
            :ssl.connect(String.to_charlist(host), port, tls_opts ++ base_opts, timeout) do
@@ -68,10 +68,7 @@ defmodule AshA2A.C2.L07Tls.Transport do
       {:error, reason} -> {:error, {:tls_refused, reason}}
       _ -> {:error, {:tls_refused, :unknown}}
     end
-    |> tag_sni_unused()
   end
-
-  defp tag_sni_unused(result), do: result
 
   defp tls_options(%{host: host, port: port} = cfg)
        when is_binary(host) and host != "" and is_integer(port) and port > 0 do
@@ -88,7 +85,7 @@ defmodule AshA2A.C2.L07Tls.Transport do
           depth: 4
         ] ++ ca ++ id
 
-      {:ok, host, port, sni, opts}
+      {:ok, host, port, opts}
     else
       _ -> {:error, :c2_tls_config_invalid}
     end

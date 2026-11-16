@@ -6,6 +6,10 @@ defmodule Actuator.Wire.UDS do
   use GenServer
   alias Actuator.Wire
 
+  # Minor item: bounded concurrent connections; a connection over the cap is closed at once.
+  @max_conns 64
+  def max_conns, do: @max_conns
+
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   @impl true
@@ -18,7 +22,8 @@ defmodule Actuator.Wire.UDS do
     case bind(path) do
       {:ok, lsock} ->
         parent = self()
-        pid = spawn_link(fn -> accept(lsock, store, ctx_fun) end)
+        conns = :counters.new(1, [])
+        pid = spawn_link(fn -> accept(lsock, store, ctx_fun, conns) end)
         {:ok, %{lsock: lsock, path: path, acceptor: pid, parent: parent}}
 
       {:error, reason} ->
@@ -94,19 +99,31 @@ defmodule Actuator.Wire.UDS do
     File.rm(p)
   end
 
-  defp accept(lsock, store, ctx_fun) do
+  defp accept(lsock, store, ctx_fun, conns) do
     case :gen_tcp.accept(lsock) do
       {:ok, sock} ->
-        pid =
-          spawn(fn ->
-            receive do
-              :go -> serve(sock, store, ctx_fun)
-            end
-          end)
+        if :counters.get(conns, 1) >= @max_conns do
+          :gen_tcp.close(sock)
+        else
+          :counters.add(conns, 1, 1)
 
-        :ok = :gen_tcp.controlling_process(sock, pid)
-        send(pid, :go)
-        accept(lsock, store, ctx_fun)
+          pid =
+            spawn(fn ->
+              receive do
+                :go ->
+                  try do
+                    serve(sock, store, ctx_fun)
+                  after
+                    :counters.sub(conns, 1, 1)
+                  end
+              end
+            end)
+
+          :ok = :gen_tcp.controlling_process(sock, pid)
+          send(pid, :go)
+        end
+
+        accept(lsock, store, ctx_fun, conns)
 
       {:error, _} ->
         :ok

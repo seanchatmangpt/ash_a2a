@@ -8,7 +8,8 @@ defmodule AuthorityService.Listener do
   `{:tls, port, [certfile:, keyfile:, cacertfile:]}` (TLS 1.3, mutual authentication:
   `verify_peer` + `fail_if_no_peer_cert`).
 
-  Ops: `"issue"` -> `{"ok": true, "certificate": ...}` or
+  Ops: `"approve"` (only with a `:mailbox`; deposits `{approver, effect_digest, generation,
+  approval}` for `ApproverChannel.Mailbox`) -> `{"ok": true}` or a refusal; `"issue"` -> `{"ok": true, "certificate": ...}` or
   `{"ok": false, "refusal": code, "detail": [...]}`. Anything else is refused.
   """
   use GenServer
@@ -32,6 +33,7 @@ defmodule AuthorityService.Listener do
         lsock: lsock,
         kind: kind(transport),
         issuer: Keyword.fetch!(opts, :issuer),
+        mailbox: Keyword.get(opts, :mailbox),
         max: Keyword.get(opts, :max_bytes, @default_max),
         conns: :counters.new(1, []),
         transport: transport
@@ -179,6 +181,28 @@ defmodule AuthorityService.Listener do
       {:refused, code, detail} -> refusal(code, detail)
     end
   end
+
+  # Approver channel: deposit one signed approval for a later `issue` (the Issuer re-verifies
+  # it; this op grants nothing). Only available when a `:mailbox` is configured.
+  defp dispatch(
+         %{
+           "op" => "approve",
+           "approver" => approver,
+           "effect_digest" => digest,
+           "generation" => gen,
+           "approval" => approval
+         },
+         %{mailbox: mb}
+       )
+       when not is_nil(mb) do
+    case AuthorityService.ApproverChannel.Mailbox.submit(mb, approver, digest, gen, approval) do
+      :ok -> %{"ok" => true}
+      {:error, code} -> refusal(code, [])
+    end
+  end
+
+  defp dispatch(%{"op" => "approve"}, %{mailbox: mb}) when not is_nil(mb),
+    do: refusal(:malformed_request, [])
 
   defp dispatch(_, _), do: refusal(:unknown_op, [])
 

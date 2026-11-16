@@ -19,18 +19,18 @@ defmodule AshA2A.Domain.Verifiers.VerifyExtensions do
       |> Enum.frequencies_by(& &1.uri)
       |> Enum.find(fn {_uri, count} -> count > 1 end)
       |> case do
-      nil ->
-        :ok
+        nil ->
+          :ok
 
-      {uri, count} ->
-        {:error,
-         Spark.Error.DslError.exception(
-           module: module,
-           path: [:transport, :extension, uri],
-           message:
-             "extension uri #{inspect(uri)} is declared #{count} times; extension uris must be unique"
-         )}
-    end
+        {uri, count} ->
+          {:error,
+           Spark.Error.DslError.exception(
+             module: module,
+             path: [:transport, :extension, uri],
+             message:
+               "extension uri #{inspect(uri)} is declared #{count} times; extension uris must be unique"
+           )}
+      end
 
     AshA2A.Domain.Verifiers.Location.locate(result, dsl_state)
   end

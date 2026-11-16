@@ -7,6 +7,10 @@ defmodule Actuator.Wire.TLS do
   use GenServer
   alias Actuator.Wire
 
+  # Minor item: bounded concurrent connections; a connection over the cap is closed at once.
+  @max_conns 64
+  def max_conns, do: @max_conns
+
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   @doc "SSL options for the listener, or {:error, :mtls_config_incomplete}."
@@ -40,7 +44,8 @@ defmodule Actuator.Wire.TLS do
          {:ok, lsock} <- :ssl.listen(Keyword.get(opts, :port, 0), ssl) do
       store = Keyword.fetch!(opts, :store)
       ctx_fun = Keyword.fetch!(opts, :ctx_fun)
-      spawn_link(fn -> accept(lsock, store, ctx_fun) end)
+      conns = :counters.new(1, [])
+      spawn_link(fn -> accept(lsock, store, ctx_fun, conns) end)
       {:ok, %{lsock: lsock}}
     else
       {:error, reason} -> {:stop, reason}
@@ -55,23 +60,33 @@ defmodule Actuator.Wire.TLS do
     {:reply, p, st}
   end
 
-  defp accept(lsock, store, ctx_fun) do
+  defp accept(lsock, store, ctx_fun, conns) do
     case :ssl.transport_accept(lsock) do
       {:ok, t} ->
-        spawn(fn ->
-          case :ssl.handshake(t, 10_000) do
-            {:ok, sock} -> serve(sock, store, ctx_fun)
-            _ -> :ok
-          end
-        end)
+        if :counters.get(conns, 1) >= @max_conns do
+          :ssl.close(t)
+        else
+          :counters.add(conns, 1, 1)
 
-        accept(lsock, store, ctx_fun)
+          spawn(fn ->
+            try do
+              case :ssl.handshake(t, 10_000) do
+                {:ok, sock} -> serve(sock, store, ctx_fun)
+                _ -> :ok
+              end
+            after
+              :counters.sub(conns, 1, 1)
+            end
+          end)
+        end
+
+        accept(lsock, store, ctx_fun, conns)
 
       {:error, :closed} ->
         :ok
 
       {:error, _} ->
-        accept(lsock, store, ctx_fun)
+        accept(lsock, store, ctx_fun, conns)
     end
   end
 

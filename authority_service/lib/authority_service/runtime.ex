@@ -4,7 +4,7 @@ defmodule AuthorityService.Runtime do
   The environment supplies file PATHS only; the policy key is read from a 0600 file.
   A configuration that cannot load stops the release (fail closed).
   """
-  alias AuthorityService.{Config, Issuer, Listener}
+  alias AuthorityService.{ApproverChannel.Mailbox, Config, Issuer, Listener}
 
   def children do
     rt = Application.fetch_env!(:authority_service, :runtime)
@@ -20,7 +20,10 @@ defmodule AuthorityService.Runtime do
            ])
          ) do
       {:ok, config} ->
+        config = %{config | channel: {Mailbox, Mailbox}}
+
         [
+          %{id: Mailbox, start: {Mailbox, :start_link, [[name: Mailbox]]}},
           %{id: Issuer, start: {Issuer, :start_link, [[config: config, name: Issuer]]}},
           %{
             id: Listener,
@@ -29,6 +32,7 @@ defmodule AuthorityService.Runtime do
                [
                  [
                    issuer: Issuer,
+                   mailbox: Mailbox,
                    transport: Keyword.fetch!(rt, :transport),
                    max_bytes: Keyword.get(rt, :max_bytes, 65_536)
                  ]
