@@ -40,6 +40,18 @@ The same run is a test:
 mix test test/ash_a2a/sim/sim_mirror_test.exs
 ```
 
+## Check A2A v1.1 parity
+
+```console
+mix ash_a2a.sim --parity
+```
+
+This compares the server's wire output with an independent reference built
+from the upstream v1.1 proto. It needs a Python virtual environment; see
+[How to check A2A v1.1 parity](check-a2a-v1-1-parity.md). The same comparison
+appears as the `parity:` rows of `--prove`, which report `skip` when the
+environment is missing.
+
 ## Serve it and call it yourself
 
 ```console
