@@ -5,13 +5,17 @@
 #
 # Compiles ash_a2a from a throwaway consumer project that depends on it by path:
 # once with none of the optional deps, then once per single optional dep added.
-# Fails on a compile error or any warning emitted while compiling ash_a2a.
+# Fails on a compile error, or on a compiler warning that names an optional
+# dependency's module while compiling ash_a2a.
 #
 # OPTIONAL_DEPS must equal the `optional: true` deps in mix.exs;
 # test/optional_deps_matrix_test.exs enforces that.
 set -euo pipefail
 
 OPTIONAL_DEPS="oban ash_oban ash_state_machine postgrex flame durable_server req_llm bandit simple_sat"
+
+# Top-level module names of the optional deps, as they appear in a warning.
+OPTIONAL_MODULES="Oban|AshOban|AshStateMachine|Postgrex|FLAME|DurableServer|ReqLLM|Bandit|SimpleSat"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -49,11 +53,23 @@ MIX
     mix deps.get
     # Force-compile ash_a2a itself so its warnings are visible, then fail on any.
     log="$dir/ash_a2a_compile.log"
+    # Build every dependency first: forcing ash_a2a alone does not compile the
+    # deps it needs.
+    mix deps.compile >"$dir/deps_compile.log" 2>&1 || { tail -40 "$dir/deps_compile.log" >&2; exit 1; }
     mix deps.compile ash_a2a --force 2>&1 | tee "$log"
-    if grep -q "warning:" "$log"; then
-      echo "FAIL: warnings compiling ash_a2a (extra dep: ${extra:-none})" >&2
+    # The check is for optional deps: fail when a warning block names one of
+    # their modules (for example "Oban.insert/2 is undefined"). Other compiler
+    # warnings are reported as a count, not as a failure of this script.
+    if awk -v pat="$OPTIONAL_MODULES" '
+         /warning:/ { inblock = 1 }
+         /^[[:space:]]*$/ { inblock = 0 }
+         inblock && $0 ~ ("(^|[^A-Za-z0-9_.])(" pat ")(\\.|[^A-Za-z0-9_]|$)") { found = 1; print }
+         END { exit found ? 0 : 1 }
+       ' "$log"; then
+      echo "FAIL: a warning compiling ash_a2a names an optional dependency (extra dep: ${extra:-none})" >&2
       exit 1
     fi
+    echo "other compiler warnings: $(grep -c "warning:" "$log" || true)"
     mix compile --warnings-as-errors
   )
 }

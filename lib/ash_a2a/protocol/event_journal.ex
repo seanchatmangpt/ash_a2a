@@ -46,9 +46,9 @@ defmodule AshA2A.Protocol.EventJournal do
 
   With `config :ash_a2a, :event_journal, {module, ref}` set, every agent
   (`AshA2A.Protocol.Agent` and `AshA2A.Agent`) journals each task write whose
-  generation advanced: one `messageUpdate` / `statusUpdate` `StreamResponse`
-  map per new timeline entry, plus a closing `statusUpdate` at the task's
-  current generation. `tasks/resubscribe` with `lastSeenGeneration` replays
+  generation advanced: one `messageUpdate`, `statusUpdate` or `artifactUpdate`
+  `StreamResponse` map per mutation, at the task's generation after it
+  (`AshA2A.Protocol.Task.Delta`). `tasks/resubscribe` with `lastSeenGeneration` replays
   them. A failed append never fails the task write: it is logged and emitted
   as `[:ash_a2a, :event_journal, :append_failed]`. When a task reaches a
   terminal state its journal is trimmed to the newest
@@ -59,9 +59,7 @@ defmodule AshA2A.Protocol.EventJournal do
 
   require Logger
 
-  alias AshA2A.Protocol.Event.{MessageUpdate, StatusUpdate}
   alias AshA2A.Protocol.Task.Generation
-  alias AshA2A.Protocol.TimelineEntry
 
   @default_keep_last 256
 
@@ -113,39 +111,48 @@ defmodule AshA2A.Protocol.EventJournal do
   @doc """
   Journals the events of one task write.
 
-  `previous_generation` is the generation the task had before the write (0
-  for a new task). Nothing is appended unless the task's generation is
-  greater. Always returns `:ok`: an append or trim failure is logged and
-  emitted as `[:ash_a2a, :event_journal, :append_failed]`, never raised.
+  `previous` is the task as it was stored before the write (`nil` for a new
+  task). One event is appended per mutation in between
+  (`AshA2A.Protocol.Task.Delta.events/2`: `statusUpdate`, `artifactUpdate`,
+  `messageUpdate`), each at the task's generation after it. Always returns
+  `:ok`: an append or trim failure is logged and emitted as
+  `[:ash_a2a, :event_journal, :append_failed]`, never raised.
   """
-  @spec record_task(journal() | nil, generation(), AshA2A.Protocol.Task.t()) :: :ok
-  def record_task(nil, _previous_generation, _task), do: :ok
+  @spec record_task(journal() | nil, AshA2A.Protocol.Task.t() | nil, AshA2A.Protocol.Task.t()) ::
+          :ok
+  def record_task(nil, _previous, _task), do: :ok
 
-  def record_task({mod, _ref} = journal, previous_generation, %AshA2A.Protocol.Task{} = task)
-      when is_atom(mod) and is_integer(previous_generation) do
+  def record_task({mod, _ref} = journal, previous, %AshA2A.Protocol.Task{} = task)
+      when is_atom(mod) do
     generation = Generation.generation_of(task)
 
-    if generation > previous_generation do
-      guarded(task.id, generation, :append, fn ->
-        task
-        |> events_after(previous_generation, generation)
-        |> Enum.reduce_while(:ok, fn {gen, event}, :ok ->
-          case append(journal, task.id, gen, event) do
-            :ok -> {:cont, :ok}
-            other -> {:halt, other}
-          end
-        end)
-      end)
+    guarded(task.id, generation, :append, fn ->
+      previous
+      |> AshA2A.Protocol.Task.Delta.events(task)
+      |> Enum.reduce_while(:ok, fn {gen, event}, :ok ->
+        case wire(event) do
+          nil ->
+            {:cont, :ok}
 
-      if AshA2A.Protocol.Task.terminal?(task) do
-        guarded(task.id, generation, :trim, fn -> trim(journal, task.id, keep_last()) end)
-      end
+          wrapped ->
+            case append(journal, task.id, gen, wrapped) do
+              :ok -> {:cont, :ok}
+              other -> {:halt, other}
+            end
+        end
+      end)
+    end)
+
+    advanced? = is_nil(previous) or generation > Generation.generation_of(previous)
+
+    if advanced? and AshA2A.Protocol.Task.terminal?(task) do
+      guarded(task.id, generation, :trim, fn -> trim(journal, task.id, keep_last()) end)
     end
 
     :ok
   end
 
-  def record_task(_journal, _previous_generation, _task), do: :ok
+  def record_task(_journal, _previous, _task), do: :ok
 
   @doc "How many events a terminal task keeps (`:event_journal_keep_last`, default 256)."
   @spec keep_last() :: non_neg_integer()
@@ -154,47 +161,6 @@ defmodule AshA2A.Protocol.EventJournal do
       n when is_integer(n) and n >= 0 -> n
       _ -> @default_keep_last
     end
-  end
-
-  # `{generation, StreamResponse map}` for every timeline entry newer than
-  # `previous`, oldest first, closed by a statusUpdate at the task's current
-  # generation (an artifact write bumps the generation without a timeline
-  # entry, and a subscriber's cursor must be able to reach it).
-  defp events_after(task, previous, generation) do
-    entries =
-      for %TimelineEntry{entry: entry, generation: gen} <- List.wrap(task.timeline),
-          is_integer(gen) and gen > previous and gen <= generation,
-          event = timeline_event(task, entry, gen),
-          do: {gen, event}
-
-    closed? =
-      Enum.any?(List.wrap(task.timeline), fn
-        %TimelineEntry{entry: {:status, _}, generation: ^generation} -> true
-        _ -> false
-      end)
-
-    if closed?,
-      do: entries,
-      else: entries ++ [{generation, status_event(task, task.status, generation)}]
-  end
-
-  defp timeline_event(task, {:message, message}, gen) do
-    task.id
-    |> MessageUpdate.new(message, context_id: task.context_id, generation: gen)
-    |> wire()
-  end
-
-  defp timeline_event(task, {:status, status}, gen), do: status_event(task, status, gen)
-  defp timeline_event(_task, _other, _gen), do: nil
-
-  defp status_event(task, status, gen) do
-    task.id
-    |> StatusUpdate.new(status,
-      context_id: task.context_id,
-      final: AshA2A.Protocol.Task.terminal?(%{task | status: status}),
-      generation: gen
-    )
-    |> wire()
   end
 
   defp wire(event) do

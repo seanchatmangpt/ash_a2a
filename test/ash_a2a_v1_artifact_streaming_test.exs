@@ -306,6 +306,11 @@ defmodule AshA2A.V1ArtifactStreamingTest do
 
   # -- court (e): codec round-trip of append/lastChunk -------------------------
 
+  # `append` and `last_chunk` are plain proto3 `bool` fields of
+  # TaskArtifactUpdateEvent (fields 4 and 5 in specification/a2a.proto at
+  # v1.0.1 and v1.1.0-rc: not `optional`, not REQUIRED). ProtoJSON omits a
+  # default `false`, so only `true` rides the wire and an absent member reads
+  # as false.
   test "court (e): artifactUpdate frames encode/decode with append and lastChunk intact for every boolean combination" do
     artifact =
       AshA2A.Protocol.Artifact.new([AshA2A.Protocol.Part.Text.new("piece")], name: "replay")
@@ -320,17 +325,19 @@ defmodule AshA2A.V1ArtifactStreamingTest do
 
       {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
 
-      # false is a real value (put_unless_nil), so BOTH booleans always ride the wire.
-      assert %{"artifactUpdate" => %{"append" => ^append, "lastChunk" => ^last_chunk} = inner} =
-               encoded
+      assert %{"artifactUpdate" => inner} = encoded
+      assert Map.get(inner, "append") == if(append, do: true)
+      assert Map.get(inner, "lastChunk") == if(last_chunk, do: true)
+      assert Map.has_key?(inner, "append") == append
+      assert Map.has_key?(inner, "lastChunk") == last_chunk
 
       assert inner["taskId"] == "tsk-roundtrip"
       assert inner["contextId"] == "ctx-roundtrip"
       assert inner["artifact"]["artifactId"] == artifact.artifact_id
 
       assert {:ok, %ArtifactUpdate{} = decoded} = AshA2A.Protocol.JSON.decode(encoded, :event)
-      assert decoded.append == append
-      assert decoded.last_chunk == last_chunk
+      assert (decoded.append || false) == append
+      assert (decoded.last_chunk || false) == last_chunk
       assert decoded.task_id == "tsk-roundtrip"
       assert decoded.context_id == "ctx-roundtrip"
       assert decoded.artifact.artifact_id == artifact.artifact_id

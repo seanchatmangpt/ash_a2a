@@ -6,6 +6,12 @@ no TCK checkout exists in this environment.
 
 ## Decision 1: -32005 and -32006 HTTP status
 
+Superseded in part on 2026-11-16: `docs/specification.md` section 5.4 at tags `v1.0.1` and
+`v1.1.0-rc` does state HTTP statuses (`-32005` is `400 Bad Request`, `-32006` is
+`500 Internal Server Error`), and the HTTP+JSON binding (`status_for/1`) now answers those.
+`Error.spec_http_status/1` still returns the TCK values below. The open question is tracked as
+VG-02 and VG-03 in [parity findings](a2a-v1-1-parity-findings.md).
+
 | code | name | HTTP (old) | HTTP (now) | gRPC | JSON-RPC |
 |---|---|---|---|---|---|
 | -32005 | ContentTypeNotSupported | 400 | 415 | INVALID_ARGUMENT (3) | -32005 |

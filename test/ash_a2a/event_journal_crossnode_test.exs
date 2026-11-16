@@ -88,6 +88,10 @@ defmodule AshA2A.EventJournalCrossnodeTest do
       assert {:status, g2, "TASK_STATE_INPUT_REQUIRED"} in summaries
       assert List.last(summaries) == {:status, g3, "TASK_STATE_COMPLETED"}
 
+      # The artifact node A's agent wrote replays on node B as its own event.
+      assert {:artifact, g3 - 1, nil} in summaries
+      assert Fixture.artifact_texts(frames) == ["finished"]
+
       texts =
         for %{"messageUpdate" => %{"message" => %{"parts" => [%{"text" => text}]}}} <- frames,
             do: text

@@ -35,8 +35,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
       this tuple is returned.
     * A2A JSON-RPC error codes are mapped to gRPC statuses per v1.0 §3.3.2:
       -32001 -> NOT_FOUND(5), -32600/-32602/-32700/-32005 ->
-      INVALID_ARGUMENT(3), -32002/-32007/-32008 -> FAILED_PRECONDITION(9),
-      -32003/-32004/-32009/-32601 -> UNIMPLEMENTED(12), -32603/-32006 ->
+      INVALID_ARGUMENT(3), -32002/-32003/-32004/-32007/-32008/-32009 ->
+      FAILED_PRECONDITION(9), -32601 -> UNIMPLEMENTED(12), -32603/-32006 ->
       INTERNAL(13), -32000 (server busy) -> UNAVAILABLE(14), v1.1 -32010
       (generation mismatch) -> ABORTED(10); any unlisted code -> UNKNOWN(2).
       `trailers/1`
@@ -138,7 +138,7 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
           # in the same way the HTTP binding's router does: a handler that
           # exports `handle_extended_card/1` answers GetExtendedAgentCard
           # directly. Without the callback the dispatcher's -32004 refusal stands
-          # (UNIMPLEMENTED(12) on gRPC per the pinned TCK table below) — correct
+          # (FAILED_PRECONDITION(9) on gRPC, spec 5.4) — correct
           # exactly when the served card does not declare the extendedAgentCard
           # capability.
           short == "GetExtendedAgentCard" and exports?(handler, :handle_extended_card, 1) ->
@@ -231,7 +231,7 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   @grpc_internal 13
   @grpc_unavailable 14
 
-  # A2A v1.0 §3.3.2 cross-binding error mapping: JSON-RPC error code ->
+  # A2A v1.1 §5.4 cross-binding error mapping: JSON-RPC error code ->
   # gRPC status code. Validation (parse/request/params) is INVALID_ARGUMENT,
   # method-level absence is UNIMPLEMENTED, resource absence is NOT_FOUND,
   # state conflicts and unsupported features/operations/versions
@@ -249,15 +249,16 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     -32_000 => @grpc_unavailable,
     -32_001 => @grpc_not_found,
     -32_002 => @grpc_failed_precondition,
-    # Pinned TCK (STREAM-SUB-003, GRPC-ERR-002, binding_grpc.py): PushNotification-
-    # NotSupported, UnsupportedOperation and VersionNotSupported are UNIMPLEMENTED.
-    -32_003 => @grpc_unimplemented,
-    -32_004 => @grpc_unimplemented,
+    # Spec 5.4 (v1.1): PushNotificationNotSupported, UnsupportedOperation and
+    # VersionNotSupported are FAILED_PRECONDITION. (The upstream TCK pinned
+    # UNIMPLEMENTED for these; the specification table wins.)
+    -32_003 => @grpc_failed_precondition,
+    -32_004 => @grpc_failed_precondition,
     -32_005 => @grpc_invalid_argument,
     -32_006 => @grpc_internal,
     -32_007 => @grpc_failed_precondition,
     -32_008 => @grpc_failed_precondition,
-    -32_009 => @grpc_unimplemented,
+    -32_009 => @grpc_failed_precondition,
     # v1.1 TaskGenerationMismatchError (ifGenerationMatch) -> ABORTED
     -32_010 => 10
   }

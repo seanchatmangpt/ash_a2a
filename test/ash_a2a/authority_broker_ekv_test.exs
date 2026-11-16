@@ -331,4 +331,84 @@ defmodule AshA2A.AuthorityBrokerEkvTest do
       assert %{status: :issued} = EKV.get(ekv_name, key)
     end
   end
+
+  describe "issue/3 after revoke/2" do
+    test "the grant stands again, and the revoked authority stays revoked", %{
+      store_opts: store_opts
+    } do
+      subject = Identity.principal("regrant-subject")
+      token = Authority.grant_token_id(subject, "widgets:write")
+      opts = store_opts
+
+      assert {:ok, first} = Ekv.issue(subject, "widgets:write", [token_id: token] ++ opts)
+      assert Ekv.granted?(subject, "widgets:write", opts)
+
+      # While the grant stands, its token id is taken.
+      assert {:error, %{reason: :token_id_taken}} =
+               Ekv.issue(subject, "widgets:write", [token_id: token] ++ opts)
+
+      assert :ok = Ekv.revoke(first, opts)
+      refute Ekv.granted?(subject, "widgets:write", opts)
+      assert {:error, %{reason: :revoked}} = Ekv.verify(first, opts)
+
+      assert {:ok, second} = Ekv.issue(subject, "widgets:write", [token_id: token] ++ opts)
+      assert second.token_id == first.token_id
+      assert DateTime.compare(second.issued_at, first.issued_at) == :gt
+      assert Ekv.granted?(subject, "widgets:write", opts)
+      assert {:ok, ^second} = Ekv.verify(second, opts)
+
+      # Re-issuing did not resurrect the credential that was revoked, nor a
+      # copy of it backdated to before the revocation.
+      assert {:error, %{reason: :revoked}} = Ekv.verify(first, opts)
+
+      assert {:error, %{reason: :revoked}} =
+               Ekv.verify(%{second | issued_at: first.issued_at}, opts)
+
+      # A second revoke tears the new grant down too.
+      assert :ok = Ekv.revoke(second, opts)
+      refute Ekv.granted?(subject, "widgets:write", opts)
+      assert {:error, %{reason: :revoked}} = Ekv.verify(second, opts)
+    end
+
+    test "a backdated issued_at cannot place the new authority before the revocation", %{
+      store_opts: store_opts
+    } do
+      subject = Identity.principal("backdate-subject")
+      token = Authority.grant_token_id(subject, "widgets:write")
+      opts = store_opts
+      long_ago = ~U[2020-01-01 00:00:00.000000Z]
+
+      assert {:ok, first} = Ekv.issue(subject, "widgets:write", [token_id: token] ++ opts)
+      assert :ok = Ekv.revoke(first, opts)
+
+      assert {:ok, second} =
+               Ekv.issue(
+                 subject,
+                 "widgets:write",
+                 [token_id: token, issued_at: long_ago] ++ opts
+               )
+
+      assert DateTime.compare(second.issued_at, first.issued_at) == :gt
+      assert {:ok, _} = Ekv.verify(second, opts)
+    end
+
+    test "a revoked token id cannot be issued to another principal or capability", %{
+      store_opts: store_opts
+    } do
+      subject = Identity.principal("owner-subject")
+      opts = store_opts
+
+      assert {:ok, first} = Ekv.issue(subject, "widgets:write", opts)
+      assert :ok = Ekv.revoke(first, opts)
+      taken = [token_id: first.token_id.value] ++ opts
+
+      assert {:error, %{reason: :token_id_taken}} =
+               Ekv.issue(Identity.principal("other-subject"), "widgets:write", taken)
+
+      assert {:error, %{reason: :token_id_taken}} =
+               Ekv.issue(subject, "widgets:delete", taken)
+
+      assert {:error, %{reason: :revoked}} = Ekv.verify(first, opts)
+    end
+  end
 end

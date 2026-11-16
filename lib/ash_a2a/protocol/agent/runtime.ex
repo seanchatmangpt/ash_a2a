@@ -72,36 +72,114 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   end
 
   @doc """
-  Wraps a stream so that consuming it notifies the agent GenServer to
-  finalize the task (create the artifact, transition to a terminal state).
+  Wraps a stream so that consuming it stores every chunk and, at the end,
+  notifies the agent GenServer to finalize the task.
 
-  The notification carries how the enumeration ended. `Stream.transform/5`
-  runs its `last_fun` only on normal completion, while the `after_fun` runs
-  however enumeration stops — so the difference between the two is what
-  separates a stream that finished from one that raised or was abandoned
-  when the client disconnected. Without it the cleanup hook reports success
-  for every ending, and a failed stream is stored as completed.
+  Each element is stored as its own task mutation before it is handed to the
+  consumer (`{:stream_chunk, ...}`: the stream's artifact gains the chunk and
+  the task generation advances by one), so the generation a chunk is emitted
+  with is the generation `tasks/get` reports after it (A2A v1.1 3.2.7).
+  `chunk_generation/1` returns that generation to the consuming process.
+
+  The closing notification carries how the enumeration ended.
+  `Stream.transform/5` runs its `last_fun` only on normal completion, while
+  the `after_fun` runs however enumeration stops — so the difference between
+  the two is what separates a stream that finished from one that raised or
+  was abandoned when the client disconnected. Without it the cleanup hook
+  reports success for every ending, and a failed stream is stored as completed.
   """
   @spec wrap_stream(Enumerable.t(), GenServer.server(), String.t(), String.t() | nil) ::
           Enumerable.t()
   def wrap_stream(enum, server, task_id, artifact_id \\ nil) do
-    # One stable artifact id per stream: the SSE chunk emitter and the
-    # stream_done fold MUST reference the same artifact (v1.0 chunk
-    # reassembly is keyed on artifactId). The caller may pre-mint it (the
-    # protocol agent stamps it onto the task metadata for the chunk emitter);
-    # otherwise one is minted here for the default path.
+    # One stable artifact id per stream: the chunk mutations, the SSE chunk
+    # emitter and the stream_done fold MUST reference the same artifact (v1.0
+    # chunk reassembly is keyed on artifactId). The caller may pre-mint it
+    # (the protocol agent stamps it onto the task metadata for the chunk
+    # emitter); otherwise one is minted here for the default path.
     artifact_id = artifact_id || AshA2A.Protocol.ID.generate("art")
 
     Stream.transform(
       enum,
       fn -> {[], :incomplete} end,
-      fn part, {acc, outcome} -> {[part], {[part | acc], outcome}} end,
+      fn part, {acc, outcome} ->
+        store_chunk(server, task_id, artifact_id, part)
+        {[part], {[part | acc], outcome}}
+      end,
       fn {acc, _outcome} -> {[], {acc, :complete}} end,
       fn {acc, outcome} ->
         parts = Enum.reverse(acc)
         GenServer.cast(server, {:stream_done, task_id, artifact_id, parts, outcome})
       end
     )
+  end
+
+  @chunk_generation_key :ash_a2a_stream_chunk_generation
+
+  @doc """
+  The task generation after the chunk the calling process last took from a
+  wrapped stream of `task_id`, or `nil` when that chunk was not stored (the
+  task was already terminal, or the agent could not be reached).
+  """
+  @spec chunk_generation(String.t()) :: pos_integer() | nil
+  def chunk_generation(task_id), do: Process.get({@chunk_generation_key, task_id})
+
+  # A stream enumerated inside the agent process itself cannot call the agent;
+  # its parts are folded by `finish_stream_artifact/2` instead.
+  defp store_chunk(server, task_id, artifact_id, part) do
+    reply =
+      if server == self() do
+        :not_stored
+      else
+        try do
+          GenServer.call(server, {:stream_chunk, task_id, artifact_id, part}, 15_000)
+        catch
+          :exit, _ -> :not_stored
+        end
+      end
+
+    case reply do
+      {:ok, generation} -> Process.put({@chunk_generation_key, task_id}, generation)
+      _ -> Process.delete({@chunk_generation_key, task_id})
+    end
+
+    :ok
+  end
+
+  @doc """
+  Closes a stream's artifact on the stored `task`. `artifact` carries every
+  part the stream produced. Parts the chunk mutations already stored are left
+  alone and the artifact is marked complete at the task's current generation
+  (no new mutation); parts that were never stored are appended as one
+  mutation. A stream that produced no part stores no artifact.
+  """
+  @spec finish_stream_artifact(Task.t(), Artifact.t()) :: Task.t()
+  def finish_stream_artifact(%Task{} = task, %Artifact{} = artifact) do
+    parts = Enum.flat_map(artifact.parts, &List.wrap/1)
+    existing = Enum.find(task.artifacts, &(&1.artifact_id == artifact.artifact_id))
+    stored = if existing, do: length(existing.parts), else: 0
+
+    case {Enum.drop(parts, stored), existing} do
+      {[], nil} ->
+        task
+
+      {[], %Artifact{}} ->
+        generation = Task.Generation.generation_of(task)
+
+        artifacts =
+          Enum.map(task.artifacts, fn
+            %Artifact{artifact_id: id} = a when id == artifact.artifact_id ->
+              %{a | end_generation: a.end_generation || generation}
+
+            other ->
+              other
+          end)
+
+        %{task | artifacts: artifacts}
+
+      {missing, _} ->
+        {task, _stored} = Task.Generation.record_artifact(task, %{artifact | parts: missing}, true)
+        task
+    end
   end
 
   defp run_task(module, message, task, state, extensions) do

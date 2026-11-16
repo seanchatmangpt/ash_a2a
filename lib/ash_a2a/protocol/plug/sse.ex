@@ -132,9 +132,13 @@ if Code.ensure_loaded?(Plug) do
                      AshA2A.A2ATransport.TaskEvents.terminal_payload?(payload))
               end)
 
+            # `prev` is the snapshot the agent fan-out's next one is compared
+            # with: every mutation in between is one event at its own
+            # generation (`AshA2A.Protocol.Task.Delta`, A2A v1.1 3.2.7).
             st = %{
               floor: if(resume?, do: last_seen),
               seen: gen,
+              prev: task,
               v11?: v11?,
               id: jsonrpc_id,
               task_id: task_id
@@ -274,13 +278,11 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    # Heuristic: only a stream-backed task keeps `metadata[:stream]` in this
-    # agent's memory; a task read through the TaskStore does not.
+    # A task this agent process ran or continued is held in its memory; a
+    # task it can only read through the TaskStore (fresh agent, second node)
+    # has no producer here.
     defp local_producer?(agent, task_id) do
-      case GenServer.call(agent, {:get_task, task_id}) do
-        {:ok, %{metadata: %{} = md}} -> Map.has_key?(md, :stream)
-        _ -> false
-      end
+      GenServer.call(agent, {:ash_a2a_task_local?, task_id}) == true
     catch
       :exit, _ -> false
     end
@@ -382,33 +384,40 @@ if Code.ensure_loaded?(Plug) do
 
         {:a2a_task_event, _task_id, task} ->
           terminal? = AshA2A.Protocol.Task.terminal?(task)
-          gen = AshA2A.Protocol.Task.Generation.generation_of(task)
 
-          if is_integer(st.floor) and gen <= st.floor and not terminal? do
-            relay_task_events(conn, jsonrpc_id, idle_timeout, st)
-          else
-            conn = send_new_messages(conn, jsonrpc_id, task, st)
+          # One frame per mutation since the previous snapshot, each at the
+          # task's generation after it; nothing at a generation already sent.
+          events =
+            for {gen, event} <- AshA2A.Protocol.Task.Delta.events(Map.get(st, :prev), task),
+                gen > st.seen,
+                st.v11? or not match?(%AshA2A.Protocol.Event.MessageUpdate{}, event),
+                do: {gen, event}
 
-            event =
-              AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-                context_id: task.context_id,
-                final: terminal?,
-                generation: gen
-              )
+          result =
+            Enum.reduce_while(events, conn, fn {_gen, event}, conn ->
+              {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
 
-            {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
+              case send_event(conn, jsonrpc_id, encoded) do
+                {:error, conn} -> {:halt, {:error, conn}}
+                conn -> {:cont, conn}
+              end
+            end)
 
-            case send_event(conn, jsonrpc_id, encoded) do
-              {:error, conn} ->
-                conn
+          case result do
+            {:error, conn} ->
+              conn
 
-              conn ->
-                st = %{st | seen: max(st.seen, gen)} |> Map.put(:orphan_grace, nil)
+            conn ->
+              gen = AshA2A.Protocol.Task.Generation.generation_of(task)
 
-                if terminal?,
-                  do: conn,
-                  else: relay_task_events(conn, jsonrpc_id, idle_timeout, st)
-            end
+              st =
+                %{st | seen: max(st.seen, gen)}
+                |> Map.put(:prev, task)
+                |> Map.put(:orphan_grace, if(events == [], do: Map.get(st, :orphan_grace)))
+
+              if terminal?,
+                do: conn,
+                else: relay_task_events(conn, jsonrpc_id, idle_timeout, st)
           end
 
         # Unknown StreamResponse payloads forwarded verbatim.
@@ -504,14 +513,21 @@ if Code.ensure_loaded?(Plug) do
     defp stream_parts(conn, jsonrpc_id, task, enum) do
       start = AshA2A.Protocol.Task.Generation.generation_of(task)
 
+      # Every chunk of one stream belongs to one artifact (the id the agent
+      # stores it under) and is one stored mutation: its frame carries the
+      # task's generation after it (A2A v1.1 3.2.7).
+      artifact_id =
+        Map.get(task.metadata, :stream_artifact_id) || AshA2A.Protocol.ID.generate("art")
+
       Enum.reduce_while(enum, {conn, start}, fn part, {conn, last} ->
-        artifact = AshA2A.Protocol.Artifact.new([part])
-        own = artifact.end_generation || artifact.start_generation
-        gen = if is_integer(own) and own > last, do: own, else: last + 1
+        artifact = %{AshA2A.Protocol.Artifact.new([part]) | artifact_id: artifact_id}
+        stored = AshA2A.Protocol.Agent.Runtime.chunk_generation(task.id)
+        gen = if is_integer(stored) and stored > last, do: stored, else: last + 1
 
         event =
           AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
             context_id: task.context_id,
+            append: if(last > start, do: true),
             generation: gen
           )
 

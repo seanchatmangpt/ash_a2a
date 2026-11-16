@@ -90,6 +90,13 @@ The comparison applies these and no others. They are also in the JSON report
 | HTTP 204 for a delete | An empty 204 body is accepted as `google.protobuf.Empty`. | Spec 3.1.10: the confirmation of a delete is implementation-specific. |
 | Protobuf map entry order | When the gRPC bytes differ, both sides are compared again with the entries of each `map<>` field sorted. Every other byte stays as sent. | The protobuf encoding leaves map order undefined, and the Python runtime's deterministic order is not lexicographic. |
 
+| Agent Card signature bytes | The `signature` of each card signature is blanked in the cross-binding comparison only. | ECDSA signatures are randomised per answer; the prover verifies each one. |
+
+Two `SendLiveMessage` vectors (a later `subscribe`, a message naming another
+task) run over gRPC only. Over HTTP each request is its own call and opens
+its own stream (spec 3.1.12), so there is nothing to reject. The report lists
+them under `not_applicable`.
+
 Enum spelling, camelCase names, int64-as-string, timestamp format,
 default-value emission, `null` members, unknown and duplicate members,
 protobuf field order and unknown protobuf fields are compared as sent.
@@ -113,4 +120,5 @@ the defect is fixed.
 | `reference.py` | The reference encoder, the RFC 8785 writer and the proto facts. |
 | `harness.py` | The three clients and the byte-level checks. |
 | `parity.py` | The vectors, the matrix and the JSON report. |
+| `parity_v1_0.py` | The vectors sent with `A2A-Version: 1.0`, compared with stubs from the upstream `v1.0.1` proto (`a2a_v1_0.proto.sha256`). `parity.py` runs it in its own process and reports its rows under the binding `v1.0`. |
 | `known_defects.json` | The known-defect rows. |

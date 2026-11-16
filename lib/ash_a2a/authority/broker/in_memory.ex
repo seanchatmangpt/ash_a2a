@@ -55,7 +55,13 @@ defmodule AshA2A.Authority.Broker.InMemory do
     # membership) and (b) a rebound authority (same token id, rewritten
     # `subject`) verified cleanly. Both pieces of state are needed by
     # different real callers below, so both are stored together per key.
-    GenServer.start_link(__MODULE__, %{issued: %{}, revoked: MapSet.new()},
+    #
+    # `not_before` (key -> the instant of the last revocation) is what lets a
+    # revoked grant be issued again without resurrecting the credential that
+    # was revoked: see the `{:issue, ...}` clause below.
+    GenServer.start_link(
+      __MODULE__,
+      %{issued: %{}, revoked: MapSet.new(), not_before: %{}},
       name: Keyword.get(opts, :name, __MODULE__)
     )
   end
@@ -139,17 +145,38 @@ defmodule AshA2A.Authority.Broker.InMemory do
 
     key = Identity.external(authority.token_id)
 
-    if Map.has_key?(state.issued, key) do
-      {:reply, {:error, %{reason: :token_id_taken, token_id: authority.token_id}}, state}
-    else
-      entry = %{expires_at: authority.expires_at, binding: token_binding(authority)}
-      {:reply, {:ok, authority}, %{state | issued: Map.put(state.issued, key, entry)}}
+    # A token id is taken while its grant STANDS, and for good once it has
+    # been bound to another principal or capability. A grant that was revoked
+    # (or ran out) may be issued again to the same principal for the same
+    # capability: the new authority is stamped strictly after the revocation,
+    # and `verify/2` keeps refusing every authority issued at or before it,
+    # so the revoked credential itself is never resurrected.
+    case reissuable(state, key, authority) do
+      :taken ->
+        {:reply, {:error, %{reason: :token_id_taken, token_id: authority.token_id}}, state}
+
+      :free ->
+        authority = after_revocation(authority, Map.get(state.not_before, key))
+        entry = %{expires_at: authority.expires_at, binding: token_binding(authority)}
+
+        {:reply, {:ok, authority},
+         %{
+           state
+           | issued: Map.put(state.issued, key, entry),
+             revoked: MapSet.delete(state.revoked, key)
+         }}
     end
   end
 
   def handle_call({:revoke, %Authority{} = authority}, _from, state) do
     key = Identity.external(authority.token_id)
-    {:reply, :ok, %{state | revoked: MapSet.put(state.revoked, key)}}
+
+    {:reply, :ok,
+     %{
+       state
+       | revoked: MapSet.put(state.revoked, key),
+         not_before: Map.put(state.not_before, key, DateTime.utc_now())
+     }}
   end
 
   def handle_call({:grant_status, key}, _from, state) do
@@ -174,7 +201,7 @@ defmodule AshA2A.Authority.Broker.InMemory do
       Authority.expired?(authority) ->
         {:reply, {:error, %{reason: :expired, token_id: authority.token_id}}, state}
 
-      MapSet.member?(state.revoked, key) ->
+      MapSet.member?(state.revoked, key) or superseded?(state, key, authority) ->
         {:reply, {:error, %{reason: :revoked, token_id: authority.token_id}}, state}
 
       rebound?(state, key, authority) ->
@@ -286,6 +313,36 @@ defmodule AshA2A.Authority.Broker.InMemory do
       {:ok, entry} -> entry.binding != token_binding(authority)
       :error -> false
     end
+  end
+
+  defp reissuable(state, key, authority) do
+    case {grant_status(state, key), Map.fetch(state.issued, key)} do
+      {:standing, _entry} ->
+        :taken
+
+      {_status, {:ok, entry}} ->
+        if entry.binding == token_binding(authority), do: :free, else: :taken
+
+      {_status, :error} ->
+        :free
+    end
+  end
+
+  # An authority issued at or before the last revocation of its token id is
+  # the revoked credential (or a copy of it), whatever was issued since.
+  defp superseded?(state, key, authority) do
+    case Map.fetch(state.not_before, key) do
+      {:ok, floor} -> DateTime.compare(authority.issued_at, floor) != :gt
+      :error -> false
+    end
+  end
+
+  defp after_revocation(authority, nil), do: authority
+
+  defp after_revocation(authority, floor) do
+    if DateTime.compare(authority.issued_at, floor) == :gt,
+      do: authority,
+      else: %{authority | issued_at: DateTime.add(floor, 1, :microsecond)}
   end
 
   defp token_binding(%Authority{} = authority),

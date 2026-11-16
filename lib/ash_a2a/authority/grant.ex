@@ -223,6 +223,11 @@ defmodule AshA2A.Authority.Grant do
   `renew/3` to extend or shorten a standing grant's `expires_at` in place
   rather than a `revoke/3` + `grant/3` round trip.
 
+  A grant that `revoke/3` tore down, or that ran out, can be issued again
+  with `grant/3`: the grant stands again from that call on. The authority
+  that was revoked stays revoked; the broker refuses every authority issued
+  at or before the revocation.
+
       subject = AshA2A.Identity.principal("user-1")
       {:ok, _authority} = AshA2A.Authority.Grant.grant(subject, "create_item")
   """

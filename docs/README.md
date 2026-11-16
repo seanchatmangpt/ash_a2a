@@ -39,6 +39,9 @@ Goal-oriented procedures:
 - [`how-to/run-the-simulation-server.md`](how-to/run-the-simulation-server.md) — boot
   every transport over one agent with real Ash mutations and prove each served
   method, route and RPC over the wire (`mix ash_a2a.sim --prove`).
+- [`how-to/check-a2a-v1-1-parity.md`](how-to/check-a2a-v1-1-parity.md) — compare every
+  response of the simulation server with a reference encoder built from the upstream
+  v1.1 proto (`mix ash_a2a.sim --parity`).
 - [`how-to/control-the-sim-over-mcp.md`](how-to/control-the-sim-over-mcp.md) — drive
   every A2A operation of the simulation server from an MCP client
   (`mix ash_a2a.sim.mcp`, `bin/a2a-sim-mcp`, `scripts/mcp_drive.py`).
@@ -131,6 +134,8 @@ Exact factual contracts:
 - [`reference/qme-1.md`](reference/qme-1.md) — QME-1 ecosystem reference: this
   repository's role (PreparedEffect, receipt and replay consequence protocol) and its
   binding to the canonical chatman-ecosystem specification.
+- [`reference/a2a-v1-1-parity-findings.md`](reference/a2a-v1-1-parity-findings.md) —
+  open and fixed findings of the v1.1 parity check, including the version-gating cases.
 - [`reference/agent-card-honesty.md`](reference/agent-card-honesty.md) —
   `AgentCard.audit/2`: discrepancy codes between a card's claims and the mounted
   surface.

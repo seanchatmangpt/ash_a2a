@@ -383,9 +383,10 @@ defmodule AshA2A.Transport.GRPCServerTest do
 
   # -- G-E pinned gRPC TCK-failure closures (lane G-Q) -----------------------
 
-  test "SubscribeToTask of a terminal task is UNIMPLEMENTED(12) with UNSUPPORTED_OPERATION", %{
-    channel: channel
-  } do
+  test "SubscribeToTask of a terminal task is FAILED_PRECONDITION(9) with UNSUPPORTED_OPERATION",
+       %{
+         channel: channel
+       } do
     task_id = send_and_get_task_id(channel, "terminal resubscribe")
 
     error =
@@ -395,10 +396,10 @@ defmodule AshA2A.Transport.GRPCServerTest do
         })
       )
 
-    assert error.status == 12
+    assert error.status == 9
 
-    # Pinned TCK (STREAM-SUB-003) binds UnsupportedOperationError (-32004)
-    # to UNIMPLEMENTED with reason UNSUPPORTED_OPERATION.
+    # Spec 5.4 binds UnsupportedOperationError (-32004) to FAILED_PRECONDITION
+    # with reason UNSUPPORTED_OPERATION.
     assert error.message == "This operation is not supported"
 
     assert [%Google.Protobuf.Any{type_url: "type.googleapis.com/google.rpc.ErrorInfo"} = any] =
@@ -408,14 +409,15 @@ defmodule AshA2A.Transport.GRPCServerTest do
              Google.Rpc.ErrorInfo.decode(any.value)
   end
 
-  test "SendStreamingMessage to a non-streamable agent is FAILED_PRECONDITION(9) with a string message",
+  # A2A v1.1 3.1.2: SendStreamingMessage works for every message. The stream
+  # is admitted first (the Task is the first frame, sent before the handler
+  # runs) and then follows the task; an agent that answers with a bare
+  # message completes that task with it. It used to be refused
+  # FAILED_PRECONDITION "Task is not streamable".
+  test "SendStreamingMessage to an agent that never streams opens with the Task and ends completed",
        %{
          channel: channel
        } do
-    # The refusal may surface at call time or at enumeration time (the client
-    # stream is lazy), so enumerate under rescue. The MessageOnlyAgent drives
-    # the same else-branch `{:not_streaming, %Task{}}` lands in: any non-
-    # `{:ok, task, enum}` reply is refused here.
     agent_name = :"grpc_message_only_#{System.unique_integer([:positive])}"
     start_supervised!({AshA2A.Transport.GRPCServerTest.MessageOnlyAgent, name: agent_name})
 
@@ -424,27 +426,28 @@ defmodule AshA2A.Transport.GRPCServerTest do
       ctx: %{agent: agent_name, opts: [], transport: transport_name()}
     )
 
-    error =
-      rpc_error_from_stream(
-        Lf.A2a.V1.A2AService.Stub.send_streaming_message(
-          channel,
-          user_message_request("no stream please")
-        )
-      )
+    assert {:ok, stream} =
+             Lf.A2a.V1.A2AService.Stub.send_streaming_message(
+               channel,
+               user_message_request("no stream please")
+             )
 
-    assert error.status == 9
-    assert error.message =~ "Task is not streamable:"
+    frames = Enum.map(stream, fn {:ok, %Pb.StreamResponse{payload: payload}} -> payload end)
 
-    # A binary message: the redacted term was rendered with inspect/1 before
-    # interpolation, so no crash-and-INTERNAL detour.
-    assert is_binary(error.message)
+    assert [{:task, %Pb.Task{id: task_id}} | events] = frames
+    assert task_id != ""
+
+    assert {:status_update, %Pb.TaskStatusUpdateEvent{task_id: ^task_id, status: status}} =
+             List.last(events)
+
+    assert status.state == :TASK_STATE_COMPLETED
   end
 
-  test "unsupported A2A-Version metadata is refused UNIMPLEMENTED(12) with a VERSION_NOT_SUPPORTED ErrorInfo",
+  test "unsupported A2A-Version metadata is refused FAILED_PRECONDITION(9) with a VERSION_NOT_SUPPORTED ErrorInfo",
        %{
          channel: channel
        } do
-    assert {:error, %GRPC.RPCError{status: 12} = error} =
+    assert {:error, %GRPC.RPCError{status: 9} = error} =
              Lf.A2a.V1.A2AService.Stub.send_message(
                channel,
                user_message_request("bad version"),

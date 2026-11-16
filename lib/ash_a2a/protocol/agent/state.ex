@@ -149,7 +149,7 @@ defmodule AshA2A.Protocol.Agent.State do
   @spec put_task_checked(t(), AshA2A.Protocol.Task.t()) :: {:ok, t()} | {:error, term()}
   def put_task_checked(%{task_store: {mod, ref}} = state, task) do
     journal = AshA2A.Protocol.EventJournal.configured()
-    previous = journal && previous_generation(state, task.id)
+    previous = journal && previous_task(state, task.id)
 
     case safe_store_put(mod, ref, task) do
       :ok ->
@@ -168,7 +168,7 @@ defmodule AshA2A.Protocol.Agent.State do
 
   def put_task_checked(state, task) do
     journal = AshA2A.Protocol.EventJournal.configured()
-    journal_task(journal, journal && previous_generation(state, task.id), task)
+    journal_task(journal, journal && previous_task(state, task.id), task)
     {:ok, %{state | tasks: Map.put(state.tasks, task.id, task)}}
   end
 
@@ -178,19 +178,19 @@ defmodule AshA2A.Protocol.Agent.State do
   defp journal_task(nil, _previous, _task), do: :ok
 
   defp journal_task(journal, previous, task),
-    do: AshA2A.Protocol.EventJournal.record_task(journal, previous || 0, task)
+    do: AshA2A.Protocol.EventJournal.record_task(journal, previous, task)
 
-  # The generation already journaled for this task: the in-memory copy, else
-  # (fresh agent, second node) the stored one, else 0 for a new task.
-  defp previous_generation(state, task_id) do
+  # The task as last journaled: the in-memory copy, else (fresh agent, second
+  # node) the stored one, else `nil` for a new task.
+  defp previous_task(state, task_id) do
     case get_task(state, task_id) do
-      {:ok, previous} -> AshA2A.Protocol.Task.Generation.generation_of(previous)
-      _ -> 0
+      {:ok, previous} -> previous
+      _ -> nil
     end
   rescue
-    _ -> 0
+    _ -> nil
   catch
-    _, _ -> 0
+    _, _ -> nil
   end
 
   defp safe_store_put(mod, ref, task) do

@@ -114,12 +114,12 @@ defmodule AshA2A.GRPCWave2ErrorInfoTest do
         do: Google.Rpc.ErrorInfo.decode(v)
   end
 
-  test "unsupported a2a-version -> UNIMPLEMENTED(12) + ErrorInfo VERSION_NOT_SUPPORTED", %{
+  test "unsupported a2a-version -> FAILED_PRECONDITION(9) + ErrorInfo VERSION_NOT_SUPPORTED", %{
     transport: t
   } do
     ch = listen(t, [])
 
-    assert {:error, %GRPC.RPCError{status: 12} = e} =
+    assert {:error, %GRPC.RPCError{status: 9} = e} =
              Stub.send_message(ch, request(), metadata: %{"a2a-version" => "99.0"})
 
     assert [

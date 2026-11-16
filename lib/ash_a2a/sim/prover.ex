@@ -297,6 +297,33 @@ if Code.ensure_loaded?(Bandit) do
       end)
     end
 
+    defp jsonrpc_scenarios("message/live") do
+      [
+        {"live downlink: session id, task snapshot in JSON-RPC responses",
+         fn c ->
+           resp =
+             jr(c, "message/live", %{"sendMessage" => send_params("count_notes", %{})},
+               receive_timeout: 15_000
+             )
+
+           check!(resp.status == 200, "HTTP #{resp.status}: #{clip(resp.raw)}")
+           sid = resp.headers["a2a-live-session-id"]
+           check!(is_binary(sid) and sid != "", "no a2a-live-session-id response header")
+           frames = sse_results!(resp)
+           kinds = Enum.map(frames, &frame_kind/1)
+           check!("task" in kinds, "no task frame in #{inspect(kinds)}")
+           states = frames |> Enum.map(&frame_state/1) |> Enum.reject(&is_nil/1)
+
+           check!(
+             List.last(states) == "TASK_STATE_COMPLETED",
+             "live stream ended in #{inspect(List.last(states))}"
+           )
+
+           "session #{sid}: #{length(frames)} frame(s) ending TASK_STATE_COMPLETED"
+         end}
+      ]
+    end
+
     defp jsonrpc_scenarios("message/send") do
       [
         {"blocking send completes with an artifact",
@@ -656,8 +683,47 @@ if Code.ensure_loaded?(Bandit) do
 
            check!(public_ids -- ids == [], "extended card dropped public skills")
            "#{length(ids)} skills, #{length(ids) - length(public_ids)} more than the public card"
+         end},
+        {"the extended card's signature verifies, and a changed byte is refused",
+         fn c ->
+           card = jr_result!(c, "agent/getAuthenticatedExtendedCard", %{})
+           extended_signature!(c.info, card)
          end}
       ]
+    end
+
+    # The extended card is signed with the key of the public card
+    # (`info.card_jwks`), over the card each binding serves.
+    defp extended_signature!(info, card) do
+      alias AshA2A.Protocol.AgentCardSignature, as: Signature
+
+      signatures = card["signatures"]
+
+      check!(
+        match?([%{"protected" => _, "signature" => _} | _], signatures),
+        "the extended card carries no signatures entry: #{clip(inspect(signatures), 200)}"
+      )
+
+      check!(
+        "AshA2A.Sim.extended_only" in Enum.map(card["skills"] || [], & &1["id"]),
+        "not the extended card"
+      )
+
+      kids =
+        case Signature.verify(card, info.card_jwks, require: :all) do
+          {:ok, kids} -> kids
+          {:error, reason} -> fail!("signature refused: #{inspect(reason)}")
+        end
+
+      <<first, rest::binary>> = card["name"]
+      tampered = Map.put(card, "name", <<Bitwise.bxor(first, 1)>> <> rest)
+
+      case Signature.verify(tampered, info.card_jwks) do
+        {:error, :bad_signature} -> :ok
+        other -> fail!("a changed byte was not refused: #{inspect(other)}")
+      end
+
+      "#{length(signatures)} signature, kid #{Enum.join(kids, ", ")} verified over the served extended card; one changed byte refused"
     end
 
     defp jsonrpc_scenarios(_method), do: []
@@ -1616,6 +1682,12 @@ if Code.ensure_loaded?(Bandit) do
 
            "#{length(ids)} skills, cache-control #{resp.headers["cache-control"]}"
          end},
+        {"the extended card's signature verifies, and a changed byte is refused",
+         fn info ->
+           opts = if method == :post, do: [json: %{}], else: []
+           resp = rest_error!(info, method, path, 200, opts)
+           extended_signature!(info, Jason.decode!(resp.raw))
+         end},
         {"refused without credentials",
          fn info ->
            opts = if method == :post, do: [json: %{}], else: []
@@ -1855,16 +1927,16 @@ if Code.ensure_loaded?(Bandit) do
              "gRPC status 10 ABORTED, no row created"
            end)
          end},
-        {"an unsupported A2A-Version is UNIMPLEMENTED",
+        {"an unsupported A2A-Version is FAILED_PRECONDITION",
          fn info ->
            grpc(info, :writer, fn ch, _opts ->
              opts = grpc_opts(info, :writer, %{"a2a-version" => "9.9"})
              request = pb(Pb.SendMessageRequest, send_params("count_notes", %{}))
 
              error =
-               ch |> Stub.send_message(request, opts) |> grpc_status!(12, "SendMessage v9.9")
+               ch |> Stub.send_message(request, opts) |> grpc_status!(9, "SendMessage v9.9")
 
-             "gRPC status 12: #{clip(to_string(error.message), 80)}"
+             "gRPC status 9: #{clip(to_string(error.message), 80)}"
            end)
          end},
         {"a non-blocking send's task id is usable at once: get, then cancel",
@@ -2614,6 +2686,18 @@ if Code.ensure_loaded?(Bandit) do
              )
 
              "#{length(ids)} skills; the card names the gRPC endpoint #{info.grpc_target}"
+           end)
+         end},
+        {"the extended card's signature verifies, and a changed byte is refused",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             card =
+               ch
+               |> Stub.get_extended_agent_card(%Pb.GetExtendedAgentCardRequest{}, opts)
+               |> grpc_ok!("GetExtendedAgentCard")
+
+             # The ProtoJSON form of the protobuf message that was received.
+             extended_signature!(info, card)
            end)
          end}
       ]

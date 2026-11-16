@@ -692,6 +692,7 @@ class HttpLive:
         self.result = StreamResult()
         ref.note_request_coverage(first, binding.report.request_coverage)
         method, url, body = binding._request("SendLiveMessage", first)
+        self.request_id = getattr(binding, "_last_id", None)
         self.sse = SseStream(method, url, binding._headers(token, version, True), body, timeout=40)
         self.error = None
         if self.sse.response is not None:
@@ -713,6 +714,9 @@ class HttpLive:
             if data is None:
                 return None
             before = len(self.result.frames)
+            # Downlink frames answer the call that opened the stream, not
+            # whichever uplink call was made last.
+            self.binding._last_id = self.request_id
             self.binding._frame("SendLiveMessage", data, self.result, None)
             if self.result.error is not None and self.error is None:
                 self.error = self.result.error
@@ -907,6 +911,10 @@ class JsonRpcBinding(HttpBinding):
                 return Outcome(error=ErrorView(self.name, None, "", [], resp.status, problems=[err], raw=resp.body), http=resp), {}
             return Outcome(http=resp, raw=resp.body), {"strict": [err]}
         problems = {}
+        # Credentials are refused before the body is read, so the request id
+        # is unknown: JSON-RPC 2.0 says `id` is null then.
+        if resp.status in (401, 403) and isinstance(value, dict) and value.get("id") is None:
+            request_id = None
         envelope = self._envelope(value, request_id)
         if isinstance(value, dict) and "error" in value:
             return Outcome(error=self._error(value["error"], resp.status, envelope, resp.body), http=resp), {}

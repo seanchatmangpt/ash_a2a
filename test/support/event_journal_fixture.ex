@@ -70,9 +70,17 @@ defmodule AshA2A.Test.EventJournalFixture do
     do: {:status, to_int(g), state}
 
   def summary(%{"messageUpdate" => %{"generation" => g}}), do: {:message, to_int(g), nil}
+  def summary(%{"artifactUpdate" => %{"generation" => g}}), do: {:artifact, to_int(g), nil}
   def summary(%{"task" => _}), do: {:task, nil, nil}
   def summary(%{"error" => %{"code" => code}}), do: {:error, nil, code}
   def summary(other), do: {:other, nil, other}
+
+  @doc "The text parts of every replayed `artifactUpdate` frame, in order."
+  def artifact_texts(frames) do
+    for %{"artifactUpdate" => %{"artifact" => %{"parts" => parts}}} <- frames,
+        %{"text" => text} <- parts,
+        do: text
+  end
 
   defp to_int(g) when is_integer(g), do: g
   defp to_int(g) when is_binary(g), do: String.to_integer(g)

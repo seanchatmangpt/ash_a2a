@@ -13,7 +13,8 @@ scripts/a2a_v1_1_parity/setup.sh
 
 The script creates a Python virtual environment in
 `/tmp/a2a_v1_1_parity/venv` and generates stubs from
-`specification/a2a.proto` at tag `v1.1.0-rc`. Set `A2A_PARITY_VENV` to use
+`specification/a2a.proto` at tag `v1.1.0-rc`, and a second set from tag
+`v1.0.1` for the vectors sent with `A2A-Version: 1.0`. Set `A2A_PARITY_VENV` to use
 another directory, and keep it set when you run the check. You need Python
 3.10 or later and access to PyPI.
 
@@ -30,13 +31,14 @@ counts:
 ```text
 BINDING             pass  fail known  skip
 agent-card            16     0     0     0
-grpc                 259     0    14     0
-http+json            264     0     7     2
-jsonrpc              235     0     9     0
-jsonrpc:/jsonrpc     145     0     7     0
+grpc                 277     0     0     0
+http+json            272     0     0     0
+jsonrpc              276     0     0     0
+jsonrpc:/jsonrpc     152     0     0     0
+v1.0                 204     0     0     0
 cross-binding          7     0     0     0
 coverage               5     0     0     0
-total                931     0    37     2
+total               1209     0     0     0
 ```
 
 The exit status is `1` when a row fails. A `known` row is a mismatch that is

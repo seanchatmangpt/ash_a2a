@@ -292,13 +292,15 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
     stored_wire = Map.put(expected, "protocolVersion", "1.0")
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-r1", rest) == stored_wire
 
+    # ListTaskPushNotificationConfigsResponse (specification/a2a.proto, v1.0.1
+    # and v1.1.0-rc): `configs` and `next_page_token` are plain proto3 fields,
+    # neither `optional` nor REQUIRED, so ProtoJSON omits them when empty.
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{
-             "configs" => [stored_wire],
-             "nextPageToken" => ""
+             "configs" => [stored_wire]
            }
   end
 
-  test "REST CRUD: delete removes the config; a missing config answers the pinned -32602 envelope",
+  test "REST CRUD: delete removes the config; a missing config answers the TaskNotFound envelope",
        %{
          httpjson_on: rest,
          hook: hook
@@ -313,25 +315,26 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
     assert conn.status == 200
     assert conn.resp_body == "{}"
 
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{
-             "configs" => [],
-             "nextPageToken" => ""
-           }
+    # ListTaskPushNotificationConfigsResponse (specification/a2a.proto, v1.0.1
+    # and v1.1.0-rc): `configs` and `next_page_token` are plain proto3 fields,
+    # neither `optional` nor REQUIRED, so ProtoJSON omits them when empty.
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{}
 
-    # Missing config: the SAME -32602 ErrorInfo envelope the JSON-RPC binding
-    # answers (PushConfigRPC's get/delete miss, "data" renamed "details").
+    # Missing config: spec section 3.1.8 (Get Push Notification Config, v1.0.1
+    # and v1.1.0-rc) names TaskNotFoundError for "The push notification
+    # configuration does not exist"; section 5.4 maps it to `404 Not Found`.
     error = rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-r2", rest)
 
     assert %{
              "error" => %{
-               "code" => 400,
-               "message" => "Invalid parameters",
+               "code" => 404,
+               "status" => "NOT_FOUND",
+               "message" => "Task not found",
                "details" => [
                  %{
                    "@type" => @error_info_type,
                    "domain" => "a2a-protocol.org",
-                   "reason" => "INVALID_PARAMS",
-                   "metadata" => %{"detail" => "push notification config not found"}
+                   "reason" => "TASK_NOT_FOUND"
                  }
                ]
              }
@@ -409,10 +412,10 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
     end
 
     # None of the refused configs were stored.
-    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{
-             "configs" => [],
-             "nextPageToken" => ""
-           }
+    # ListTaskPushNotificationConfigsResponse (specification/a2a.proto, v1.0.1
+    # and v1.1.0-rc): `configs` and `next_page_token` are plain proto3 fields,
+    # neither `optional` nor REQUIRED, so ProtoJSON omits them when empty.
+    assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) == %{}
   end
 
   test "REST push disabled: every push route answers the -32003 envelope, never a 404", %{
@@ -557,26 +560,30 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
       "pushNotificationConfig" => %{"id" => "cfg-c1", "url" => hook}
     })
 
-    assert %{"result" => nil} =
+    # DeleteTaskPushNotificationConfig returns google.protobuf.Empty
+    # (specification/a2a.proto, v1.0.1 and v1.1.0-rc; spec section 9.4.7), whose
+    # JSON form is the empty object, not null.
+    assert %{"result" => deleted} =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-c1"
              })
 
+    assert deleted == %{}
+
     assert rpc(on, "tasks/pushNotificationConfig/list", %{"id" => task_id})["result"] == []
 
-    # Pinned not-found error for a missing config: -32602 with the
-    # ErrorInfo metadata detail "push notification config not found"
-    # (PushConfigRPC's get/delete miss answer, verbatim).
+    # Not-found error for a missing config: spec section 3.1.8 (v1.0.1 and
+    # v1.1.0-rc) names TaskNotFoundError for "The push notification
+    # configuration does not exist"; section 5.4 maps it to -32001.
     not_found = %{
-      "code" => -32_602,
-      "message" => "Invalid parameters",
+      "code" => -32_001,
+      "message" => "Task not found",
       "data" => [
         %{
           "@type" => @error_info_type,
           "domain" => "a2a-protocol.org",
-          "reason" => "INVALID_PARAMS",
-          "metadata" => %{"detail" => "push notification config not found"}
+          "reason" => "TASK_NOT_FOUND"
         }
       ]
     }
@@ -590,11 +597,13 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
     assert get_error == not_found
 
     # Re-delete of the missing config: idempotent success per TCK PUSH-DEL-002.
-    assert %{"result" => nil} =
+    assert %{"result" => redeleted} =
              rpc(on, "tasks/pushNotificationConfig/delete", %{
                "id" => task_id,
                "pushNotificationConfigId" => "cfg-c1"
              })
+
+    assert redeleted == %{}
   end
 
   # -- (d) SSRF admission refusal with the typed detail --------------------------------

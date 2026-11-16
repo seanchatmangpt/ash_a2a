@@ -213,13 +213,13 @@ defmodule AshA2A.TransportGrpcTest do
       assert message =~ "Nope"
     end
 
-    test "push config CRUD without handler callbacks maps -32003 to UNIMPLEMENTED(12)", %{
+    test "push config CRUD without handler callbacks maps -32003 to FAILED_PRECONDITION(9)", %{
       ctx: ctx,
       handler: handler
     } do
       task_id = send_message(ctx, handler)
 
-      assert {:error, 12, "Push Notification is not supported"} =
+      assert {:error, 9, "Push Notification is not supported"} =
                Dispatch.call(
                  "CreateTaskPushNotificationConfig",
                  %{

@@ -32,6 +32,10 @@ if Code.ensure_loaded?(Plug) do
     - `:exempt_paths` — list of path_info lists that bypass authentication
       (default: `[[".well-known", "agent-card.json"]]`)
     - `:realm` — realm string for WWW-Authenticate headers (default: `"a2a"`)
+    - `:error_format` — the body of a 401/403: `:plain` (default,
+      `{"error": "Unauthorized"}`), `:http_json` (the HTTP+JSON binding's
+      `{"error": {code, status, message, details}}`) or `:jsonrpc` (a JSON-RPC
+      error response with a null `id`)
 
     ## Verify Callback
 
@@ -99,7 +103,8 @@ if Code.ensure_loaded?(Plug) do
         verify: verify,
         security: security,
         exempt_paths: exempt_paths,
-        realm: realm
+        realm: realm,
+        error_format: Keyword.get(opts, :error_format, :plain)
       }
     end
 
@@ -471,7 +476,7 @@ if Code.ensure_loaded?(Plug) do
 
       conn
       |> put_resp_content_type("application/json")
-      |> send_resp(401, Jason.encode!(%{"error" => "Unauthorized"}))
+      |> send_resp(401, refusal_body(opts, 401, %{"error" => "Unauthorized"}))
       |> halt()
     end
 
@@ -485,9 +490,53 @@ if Code.ensure_loaded?(Plug) do
       |> put_resp_content_type("application/json")
       |> send_resp(
         403,
-        Jason.encode!(%{"error" => "insufficient_scope", "scope" => Enum.join(scopes, " ")})
+        refusal_body(opts, 403, %{
+          "error" => "insufficient_scope",
+          "scope" => Enum.join(scopes, " ")
+        })
       )
       |> halt()
+    end
+
+    # The body of a 401/403, in the error format of the binding the plug
+    # guards (`:error_format`). `:plain` is the OAuth-style object; the two
+    # binding formats are spec 11.6 (`google.rpc.Status` JSON) and 9.5 (a
+    # JSON-RPC error object; the request id is unknown before the body is
+    # read, so `id` is null).
+    defp refusal_body(opts, status, plain) do
+      alias AshA2A.Protocol.JSONRPC.Error
+
+      {name, message, error} =
+        case status do
+          401 ->
+            {"UNAUTHENTICATED", "Unauthorized", Error.unauthenticated(nil)}
+
+          403 ->
+            detail = "insufficient_scope: " <> plain["scope"]
+
+            {"PERMISSION_DENIED", detail,
+             %{Error.permission_denied(plain["scope"]) | message: detail}}
+        end
+
+      case Map.get(opts, :error_format, :plain) do
+        :http_json ->
+          details = Error.to_map(error)["data"]
+
+          Jason.encode!(%{
+            "error" => %{
+              "code" => status,
+              "status" => name,
+              "message" => message,
+              "details" => details
+            }
+          })
+
+        :jsonrpc ->
+          Jason.encode!(%{"jsonrpc" => "2.0", "id" => nil, "error" => Error.to_map(error)})
+
+        _plain ->
+          Jason.encode!(plain)
+      end
     end
 
     defp challenge_for(%HTTPAuth{scheme: scheme}, realm) do

@@ -299,7 +299,8 @@ if Code.ensure_loaded?(Bandit) do
       sim_grant_authority and sim_revoke_authority change the standing grants the \
       mutating skills need; sim_push_deliveries shows the webhooks received; \
       sim_coverage is a runnable plan that reaches every surface item; sim_prove \
-      runs the library's own prover.
+      runs the library's own prover; sim_parity compares the wire byte for byte \
+      with the upstream A2A v1.1 reference.
       """
     end
 

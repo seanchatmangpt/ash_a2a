@@ -206,6 +206,16 @@ defmodule AshA2A.Transport.Runtime do
 
       remember_output_modes(task, opts)
       state = state |> State.put_task(task) |> State.track_context(task)
+
+      # `subscribe: pid` (with `return_immediately`): the pid joins the task's
+      # subscriber fan-out in the step that stores the task, so it is shown
+      # every later mutation (admit-first streaming).
+      state =
+        case Keyword.get(opts, :subscribe) do
+          pid when is_pid(pid) and immediate? -> State.add_subscriber(state, task.id, pid)
+          _ -> state
+        end
+
       publish_message_update(task, message, config)
       state = wake_waiters(state)
 
@@ -1027,6 +1037,7 @@ defmodule AshA2A.Transport.Runtime do
                 |> apply_output_modes()
 
               state = State.put_task(state, task)
+              drain_detached_stream(task, from)
 
               # STREAM-SUB-002: a transition persisted here is wire-observable
               # (SSE resubscribe subscribers and registered push webhooks must
@@ -1208,6 +1219,24 @@ defmodule AshA2A.Transport.Runtime do
   end
 
   defp maybe_wrap_stream(task), do: task
+
+  # No caller will ever consume a detached (returnImmediately, or admit-first
+  # streaming) task's stream, so an unmonitored drainer does: each chunk is
+  # stored as its own mutation and `:stream_done` folds the final status,
+  # exactly as `AshA2A.Protocol.Agent` does for its own detached tasks.
+  # Without it the task would stay `:working` forever.
+  defp drain_detached_stream(%{metadata: %{stream: stream}}, :detached) do
+    callers = [self() | Process.get(:"$callers", [])]
+
+    spawn(fn ->
+      Process.put(:"$callers", callers)
+      Stream.run(stream)
+    end)
+
+    :ok
+  end
+
+  defp drain_detached_stream(_task, _from), do: :ok
 
   # A terminal task never runs again, so it no longer needs the verified
   # credential; keeping it would only widen what a task store persists.

@@ -14,7 +14,7 @@ if Code.ensure_loaded?(Bandit) do
     | `jsonrpc_*`, `http_*`, `grpc_*` | one tool per item of `AshA2A.Sim.Surface` of kind `:jsonrpc_method`, `:http_route` and `:grpc_rpc`, taking the binding's own request shape |
     | `a2a_send_message`, `a2a_get_task`, ... | one tool per A2A operation, taking `binding` (`"jsonrpc"`, `"http_json"`, `"grpc"`) and the operation's parameters |
     | `a2a_raw_request` | bytes the caller chose, sent to a binding over HTTP, gRPC or a bare TCP socket |
-    | `sim_*` | the simulation server itself: URLs and tokens, authority grants, the Ash rows, webhook deliveries, the surface inventory, the coverage plan and the prover |
+    | `sim_*` | the simulation server itself: URLs and tokens, authority grants, the Ash rows, webhook deliveries, the surface inventory, the coverage plan, the prover and the v1.1 parity check |
 
     `list/0` is the catalog (`name`, `title`, `description`, `inputSchema`,
     `outputSchema`). `call/3` validates the arguments against the tool's
@@ -37,7 +37,7 @@ if Code.ensure_loaded?(Bandit) do
 
     alias AshA2A.Authority.Grant
     alias AshA2A.Sim.MCP.{Coverage, Wire}
-    alias AshA2A.Sim.{Auth, Note, Prover, PushReceiver, Surface}
+    alias AshA2A.Sim.{Auth, Note, Parity, Prover, PushReceiver, Surface}
 
     @bindings ~w(jsonrpc http_json grpc)
     @last_matrix {__MODULE__, :last_matrix}
@@ -45,6 +45,7 @@ if Code.ensure_loaded?(Bandit) do
     @jsonrpc_ops %{
       "message/send" => :send,
       "message/stream" => :stream,
+      "message/live" => :live,
       "tasks/get" => :get,
       "tasks/list" => :list,
       "tasks/cancel" => :cancel,
@@ -169,7 +170,31 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp operation_tools do
-      for item <- Surface.items(), tool = operation_tool(item), do: operation_tool_def(item, tool)
+      for item <- operation_items(),
+          tool = operation_tool(item),
+          do: operation_tool_def(item, tool)
+    end
+
+    # The served items that get a tool of their own, plus one for every
+    # JSON-RPC method that is served only under an alias spelling.
+    defp operation_items do
+      items = Surface.items()
+      methods = for %{kind: :jsonrpc_method, name: name} <- items, do: name
+
+      alias_only =
+        for %{name: spelling} <- Surface.jsonrpc_aliases(),
+            target = Surface.alias_target(spelling),
+            target not in methods,
+            uniq: true do
+          %{
+            id: "jsonrpc_alias:" <> spelling,
+            kind: :jsonrpc_method,
+            name: target,
+            source: "JSON-RPC method alias tables"
+          }
+        end
+
+      items ++ alias_only
     end
 
     defp operation_tool_def(%{kind: :jsonrpc_method, name: method} = item, tool) do
@@ -199,7 +224,7 @@ if Code.ensure_loaded?(Bandit) do
           "method_spelling" => %{
             "type" => "string",
             "enum" => spellings,
-            "default" => method,
+            "default" => default_spelling(method) || method,
             "description" =>
               "The method name to put on the wire: the canonical name or one of its aliases."
           },
@@ -428,7 +453,7 @@ if Code.ensure_loaded?(Bandit) do
           "a2a_live_message",
           "Open a live session",
           "Opens a live session (`POST /message:live`, gRPC `SendLiveMessage`), sends one message or one " <>
-            "subscribe request and collects the stream responses. JSON-RPC has no live method.",
+            "subscribe request and collects the stream responses. Over JSON-RPC the method is `SendLiveMessage`.",
           Map.merge(message_props, %{
             "subscribe_task_id" => %{
               "type" => "string",
@@ -441,8 +466,7 @@ if Code.ensure_loaded?(Bandit) do
               "description" => "gRPC only: send END_STREAM after the request."
             }
           }),
-          [],
-          ["http_json", "grpc"]
+          []
         ),
         a2a(
           "a2a_get_task",
@@ -693,9 +717,7 @@ if Code.ensure_loaded?(Bandit) do
           "sim_revoke_authority",
           "Revoke a standing grant",
           "Revokes a standing authority grant (`AshA2A.Authority.Grant.revoke/2`), so the skill is refused for " <>
-            "that identity. The in-memory broker never issues a revoked grant again: after a revoke, " <>
-            "`sim_grant_authority` for the same identity and skill is refused `token_id_taken` until the server " <>
-            "restarts. Revoke a `sim-agent-<name>` identity rather than `writer`, whose grants the prover needs.",
+            "that identity until `sim_grant_authority` issues the grant again. The prover needs the `writer` grants.",
           identity,
           [],
           grants_output
@@ -879,6 +901,75 @@ if Code.ensure_loaded?(Bandit) do
               }
             },
             ["summary", "uncovered", "results"]
+          )
+        ),
+        sim(
+          "sim_parity",
+          "Run the A2A v1.1 parity check",
+          "Runs the byte-for-byte parity script (`AshA2A.Sim.Parity`, `scripts/a2a_v1_1_parity/parity.py`) " <>
+            "against the running simulation server: an independent reference built from the upstream A2A v1.1 " <>
+            "proto calls every RPC, route and method and compares the bytes on the wire. Answers one verdict per " <>
+            "binding (`pass`, `known` when its only failing rows are documented defects, `fail`), the row counts " <>
+            "and the rows asked for. The script runs once per server; later calls answer from that report unless " <>
+            "`fresh` is set. `ran` is false, with the `reason`, when the Python reference is not installed " <>
+            "(`scripts/a2a_v1_1_parity/setup.sh`).",
+          %{
+            "binding" => %{
+              "type" => "string",
+              "enum" => Parity.bindings(),
+              "description" => "Only this binding's verdict, counts and rows."
+            },
+            "strict" => %{
+              "type" => "boolean",
+              "default" => false,
+              "description" => "Count a known defect as a failure."
+            },
+            "statuses" => %{
+              "type" => "array",
+              "items" => %{"type" => "string", "enum" => ["pass", "fail", "known", "skip"]},
+              "description" =>
+                "Which rows to return. Defaults to `fail` and `known`; the counts always cover every row."
+            },
+            "operation" => %{
+              "type" => "string",
+              "description" => "Only rows whose operation contains this text."
+            },
+            "fresh" => %{
+              "type" => "boolean",
+              "default" => false,
+              "description" => "Run the script again."
+            },
+            "timeout_ms" => %{"type" => "integer", "minimum" => 1, "default" => 120_000}
+          },
+          [],
+          object(
+            %{
+              "ran" => %{"type" => "boolean"},
+              "ok" => %{"type" => "boolean"},
+              "reason" => %{"type" => "string"},
+              "strict" => %{"type" => "boolean"},
+              "summary" =>
+                object(
+                  Map.new(~w(pass fail known skip), &{&1, %{"type" => "integer"}}),
+                  ~w(pass fail known skip)
+                ),
+              "known_defects" => %{"type" => "array", "items" => %{"type" => "string"}},
+              "verdicts" => %{
+                "type" => "array",
+                "items" =>
+                  object(
+                    %{
+                      "binding" => %{"type" => "string"},
+                      "verdict" => %{"type" => "string", "enum" => ["pass", "known", "fail"]},
+                      "detail" => %{"type" => "string"}
+                    },
+                    ["binding", "verdict", "detail"]
+                  )
+              },
+              "row_count" => %{"type" => "integer"},
+              "rows" => %{"type" => "array", "items" => %{"type" => "object"}}
+            },
+            ["ran", "ok", "summary", "known_defects", "verdicts", "row_count", "rows"]
           )
         )
       ]
@@ -1073,6 +1164,7 @@ if Code.ensure_loaded?(Bandit) do
     defp run("sim_surface", args, _ctx), do: {:ok, surface(args)}
     defp run("sim_coverage", args, _ctx), do: {:ok, coverage(args)}
     defp run("sim_prove", args, ctx), do: {:ok, prove(args, ctx)}
+    defp run("sim_parity", args, ctx), do: parity(args, ctx)
 
     defp run("a2a_" <> _ = name, args, ctx) do
       {_name, op} = List.keyfind(@a2a_tools, name, 0)
@@ -1084,7 +1176,7 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp run(name, args, ctx) do
-      case Enum.find(Surface.items(), &(operation_tool(&1) == name)) do
+      case Enum.find(operation_items(), &(operation_tool(&1) == name)) do
         %{kind: :jsonrpc_method, name: method} -> jsonrpc(method, args, ctx)
         %{kind: :http_route, name: route} -> http_route(route, args, ctx)
         %{kind: :grpc_rpc, name: rpc} -> grpc(rpc, args, ctx)
@@ -1111,7 +1203,10 @@ if Code.ensure_loaded?(Bandit) do
                 common
                 |> Map.put("params", payload(op, args))
                 |> put_some("mount", args["jsonrpc_mount"])
-                |> put_some("method_spelling", args["method_spelling"])
+                |> put_some(
+                  "method_spelling",
+                  args["method_spelling"] || default_spelling(method)
+                )
 
               {:ok, "jsonrpc_" <> slug(method), native_args}
 
@@ -1132,6 +1227,17 @@ if Code.ensure_loaded?(Bandit) do
 
         other ->
           {:error, "binding must be one of #{Enum.join(@bindings, ", ")}, got #{inspect(other)}"}
+      end
+    end
+
+    # A method served only under an alias goes on the wire under that alias.
+    defp default_spelling(method) do
+      methods = for %{name: name} <- Surface.jsonrpc_methods(), do: name
+
+      if method not in methods do
+        Enum.find_value(Surface.jsonrpc_aliases(), fn %{name: spelling} ->
+          if Surface.alias_target(spelling) == method, do: spelling
+        end)
       end
     end
 
@@ -1259,7 +1365,7 @@ if Code.ensure_loaded?(Bandit) do
       envelope = %{
         "jsonrpc" => "2.0",
         "id" => args["request_id"] || System.unique_integer([:positive]),
-        "method" => args["method_spelling"] || method,
+        "method" => args["method_spelling"] || default_spelling(method) || method,
         "params" => Map.get(args, "params", %{})
       }
 
@@ -1821,7 +1927,7 @@ if Code.ensure_loaded?(Bandit) do
       tools = Coverage.tools_by_surface()
 
       items =
-        for item <- Surface.items(),
+        for item <- Coverage.items(),
             is_nil(args["kind"]) or to_string(item.kind) == args["kind"] do
           %{
             "id" => item.id,
@@ -1881,6 +1987,84 @@ if Code.ensure_loaded?(Bandit) do
 
       :persistent_term.put(@last_matrix, Map.put(matrix, "surface_prefix", prefix))
       matrix
+    end
+
+    # The script runs once per server; `fresh: true` runs it again.
+    defp parity(args, ctx) do
+      key = {__MODULE__, :parity, ctx.info.http_port, ctx.info.grpc_port}
+
+      outcome =
+        case {args["fresh"] == true, :persistent_term.get(key, nil)} do
+          {false, {:ok, _report} = cached} ->
+            cached
+
+          _run ->
+            result = Parity.run(ctx.info, timeout: args["timeout_ms"] || 120_000)
+            :persistent_term.put(key, result)
+            result
+        end
+
+      case outcome do
+        {:ok, report} -> {:ok, parity_answer(report, args)}
+        {:skip, reason} -> {:ok, parity_not_run(reason)}
+        {:error, reason} -> {:error, "the parity script failed: " <> reason}
+      end
+    end
+
+    defp parity_not_run(reason) do
+      %{
+        "ran" => false,
+        "ok" => false,
+        "reason" => reason,
+        "summary" => %{"pass" => 0, "fail" => 0, "known" => 0, "skip" => 0},
+        "known_defects" => [],
+        "verdicts" => [],
+        "row_count" => 0,
+        "rows" => []
+      }
+    end
+
+    defp parity_answer(report, args) do
+      strict? = args["strict"] == true
+      binding = args["binding"]
+      statuses = args["statuses"] || ["fail", "known"]
+      all = Enum.filter(report["rows"], &(is_nil(binding) or &1["binding"] == binding))
+
+      verdicts =
+        for name <- Parity.bindings(), is_nil(binding) or name == binding do
+          {verdict, detail} = Parity.verdict(report, name)
+
+          verdict =
+            case verdict do
+              :pass -> "pass"
+              :skip -> if strict?, do: "fail", else: "known"
+              :fail -> "fail"
+            end
+
+          %{"binding" => name, "verdict" => verdict, "detail" => detail}
+        end
+
+      rows =
+        for row <- all,
+            row["status"] in statuses,
+            is_nil(args["operation"]) or to_string(row["operation"]) =~ args["operation"] do
+          Map.take(row, ~w(binding operation vector check status detail finding))
+        end
+
+      %{
+        "ran" => true,
+        "ok" => verdicts != [] and Enum.all?(verdicts, &(&1["verdict"] != "fail")),
+        "strict" => strict?,
+        "summary" =>
+          Map.new(~w(pass fail known skip), fn status ->
+            {status, Enum.count(all, &(&1["status"] == status))}
+          end),
+        "known_defects" =>
+          all |> Enum.map(& &1["finding"]) |> Enum.reject(&is_nil/1) |> Enum.uniq() |> Enum.sort(),
+        "verdicts" => verdicts,
+        "row_count" => length(all),
+        "rows" => rows
+      }
     end
 
     @doc "The matrix of the last `sim_prove` run in this VM, or `nil`."

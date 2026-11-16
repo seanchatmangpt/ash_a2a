@@ -501,7 +501,9 @@ defmodule ConferenceSim.PushCourt do
     assert %{"result" => []} =
              rpc(ctx, "mia", "tasks/pushNotificationConfig/list", %{"id" => task_mia})
 
-    assert %{"error" => %{"code" => -32_602, "data" => [%{"reason" => "INVALID_PARAMS"}]}} =
+    # Spec section 3.1.8 (v1.0.1 and v1.1.0-rc): a configuration that does
+    # not exist is TaskNotFoundError (-32001 per section 5.4).
+    assert %{"error" => %{"code" => -32_001, "data" => [%{"reason" => "TASK_NOT_FOUND"}]}} =
              rpc(ctx, "mia", "tasks/pushNotificationConfig/get", %{
                "id" => task_mia,
                "pushNotificationConfigId" => "cfg-mia"

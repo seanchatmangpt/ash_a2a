@@ -200,9 +200,10 @@ defmodule AshA2A.GRPCLiveSessionTest do
     refute match?({:error, _}, frame)
   end
 
-  test "SendLiveMessage on a non-streaming agent -> UNIMPLEMENTED(12) UNSUPPORTED_OPERATION", %{
-    transport: t
-  } do
+  test "SendLiveMessage on a non-streaming agent -> FAILED_PRECONDITION(9) UNSUPPORTED_OPERATION",
+       %{
+         transport: t
+       } do
     ch = connect(PlainAgent, t, __MODULE__.PlainSup)
 
     stream = ch |> open_live() |> push(send_msg("ask"))
@@ -217,7 +218,7 @@ defmodule AshA2A.GRPCLiveSessionTest do
           e
       end
 
-    assert error.status == 12
+    assert error.status == 9
     assert "UNSUPPORTED_OPERATION" in rpc_error_reasons(error)
   end
 
@@ -234,9 +235,10 @@ defmodule AshA2A.GRPCLiveSessionTest do
     assert "TASK_GENERATION_MISMATCH" in rpc_error_reasons(error)
   end
 
-  test "artifactUpdates are refused with UNSUPPORTED_OPERATION(12) when the capability is off", %{
-    transport: t
-  } do
+  test "artifactUpdates are refused with UNSUPPORTED_OPERATION, FAILED_PRECONDITION(9), when the capability is off",
+       %{
+         transport: t
+       } do
     ch = connect(LiveAgent, t, __MODULE__.ArtOffSup)
     task = new_task(ch)
 
@@ -250,7 +252,7 @@ defmodule AshA2A.GRPCLiveSessionTest do
       ]
     }
 
-    assert {:error, %GRPC.RPCError{status: 12} = error} = Stub.send_message(ch, req, @v11)
+    assert {:error, %GRPC.RPCError{status: 9} = error} = Stub.send_message(ch, req, @v11)
     assert "UNSUPPORTED_OPERATION" in rpc_error_reasons(error)
   end
 

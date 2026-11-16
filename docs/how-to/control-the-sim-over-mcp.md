@@ -71,6 +71,7 @@ the simulation server; each defaults to a free port.
 | `sim_surface` | The served surface, with the tools that reach each item. |
 | `sim_coverage` | A runnable plan: the tool calls that reach each surface item and what each must answer. |
 | `sim_prove` | Run `AshA2A.Sim.Prover` and return its matrix. |
+| `sim_parity` | Run the byte-for-byte A2A v1.1 parity script (`AshA2A.Sim.Parity`) and return one verdict per binding, the counts and the failing rows. `binding` narrows it, `strict` counts known defects as failures. |
 
 Every wire tool also takes:
 
@@ -120,7 +121,7 @@ Streamable HTTP, a `tools/call` from a client that accepts
 ## Prove that MCP reaches the whole surface
 
 `AshA2A.Sim.MCP.Coverage` maps every item of `AshA2A.Sim.Surface` to tool
-calls. A surface item with no tool path is listed by
+calls: the served items and the `parity:` surfaces. A surface item with no tool path is listed by
 `AshA2A.Sim.MCP.Coverage.uncovered/0`, and the test fails.
 
 ```console
@@ -135,7 +136,7 @@ SURFACE                       TOOL                  BINDING  STATUS  DETAIL
 jsonrpc_method:tasks/cancel   jsonrpc_tasks_cancel  jsonrpc  pass    3/3 steps; HTTP 200, TASK_STATE_CANCELED, 625 body bytes
 grpc_rpc:SendStreamingMessage grpc_SendStreamingMessage grpc pass    2/2 steps; OK, TASK_STATE_COMPLETED, 7 frames
 ...
-83 surface items served, 83 driven through MCP: 83 pass, 0 fail; 0 uncovered; ...
+92 surface items served, 92 driven through MCP: 92 pass, 0 fail; 0 uncovered; ...
 ```
 
 It exits `1` on a failed step, an uncovered surface item, a result that does
@@ -158,12 +159,17 @@ mix test test/ash_a2a/sim/sim_mcp_test.exs
 
 ## Known limits
 
-- A grant that `sim_revoke_authority` revoked cannot be issued again while
-  the server runs: the in-memory authority broker refuses the reused token id
-  (`token_id_taken`). Use a fresh `sim-agent-<name>` token for each
-  grant-and-revoke experiment, and leave the `writer` grants alone.
-- `a2a_live_message` has no `jsonrpc` binding: A2A defines the live session
-  for HTTP+JSON and gRPC only.
+- A `sim_revoke_authority` on the `writer` identity makes the prover's
+  mutation probes fail until `sim_grant_authority` issues the grant again.
+  Any `sim-agent-<name>` token gives you a caller of your own to experiment
+  with.
+- `sim_parity` needs the Python reference that
+  `scripts/a2a_v1_1_parity/setup.sh` installs. Without it the tool answers
+  `ran: false` with the reason, and the `parity:` rows of
+  `scripts/mcp_drive.py` fail.
+- An undecodable gRPC message answers `UNKNOWN` and an unknown gRPC method
+  answers a bare HTTP `404`; see "Needs owner" in the
+  [parity findings](../reference/a2a-v1-1-parity-findings.md#needs-owner).
 - A gRPC reply's `body` is the reply rendered as protobuf JSON and
   `body_base64` is the reply encoded as protobuf. To see the DATA bytes as
   they arrived, use `a2a_raw_request` with `binding: "grpc"`.

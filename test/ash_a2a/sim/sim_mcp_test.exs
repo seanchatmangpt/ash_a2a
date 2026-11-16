@@ -342,7 +342,9 @@ defmodule AshA2A.Sim.McpTest do
                Enum.map_join(uncovered, "\n", &"  #{&1.id} (from #{&1.source})")
 
       plan = Coverage.plan()
-      assert Enum.map(plan, & &1["surface"]) == Surface.ids()
+
+      assert Enum.map(plan, & &1["surface"]) ==
+               Surface.ids() ++ Enum.map(Surface.parity(), & &1.id)
 
       for entry <- plan do
         assert Enum.any?(entry["steps"], & &1["tested"]), "#{entry["surface"]} has no tested step"
@@ -441,13 +443,48 @@ defmodule AshA2A.Sim.McpTest do
     end
 
     test "every surface item is reached through tools/call", %{ctx: ctx, info: info} do
+      # The parity plans need the Python reference; without it they are run
+      # (and reported) by "the parity check is reached through sim_parity".
       failures =
-        for entry <- Coverage.plan(), {:error, reason} <- [run_entry(ctx, entry, info)] do
+        for entry <- Coverage.plan(),
+            entry["kind"] != "parity",
+            {:error, reason} <- [run_entry(ctx, entry, info)] do
           "  #{entry["surface"]} [#{entry["tool"]}]: #{reason}"
         end
 
       assert failures == [],
              "surface items that failed through MCP:\n" <> Enum.join(failures, "\n")
+    end
+
+    test "the parity check is reached through sim_parity", %{ctx: ctx, info: info} do
+      entries = Enum.filter(Coverage.plan(), &(&1["kind"] == "parity"))
+      assert Enum.map(entries, & &1["name"]) == AshA2A.Sim.Parity.bindings()
+      assert Enum.all?(entries, &(&1["tool"] == "sim_parity"))
+
+      case AshA2A.Sim.Parity.check() do
+        {:ok, _python} ->
+          failures =
+            for entry <- entries, {:error, reason} <- [run_entry(ctx, entry, info)] do
+              "  #{entry["surface"]}: #{reason}"
+            end
+
+          assert failures == [],
+                 "parity surfaces that failed through MCP:\n" <> Enum.join(failures, "\n")
+
+          assert {:ok, strict} =
+                   call_tool(ctx, "sim_parity", %{"strict" => true, "statuses" => ["fail"]})
+
+          assert strict["ran"]
+          assert strict["summary"]["fail"] == 0
+          assert strict["rows"] == []
+          assert length(strict["verdicts"]) == length(entries)
+          assert strict["ok"] == (strict["summary"]["known"] == 0)
+
+        {:skip, reason} ->
+          # Without the reference the tool says so instead of answering a verdict.
+          assert {:ok, %{"ran" => false, "ok" => false, "reason" => ^reason, "verdicts" => []}} =
+                   call_tool(ctx, "sim_parity", %{})
+      end
     end
 
     test "create, update and destroy change the Ash rows, read back with sim_read_rows", %{
@@ -511,7 +548,8 @@ defmodule AshA2A.Sim.McpTest do
       end
     end
 
-    test "a grant issued through MCP admits the caller and a revoke refuses it again", %{ctx: ctx} do
+    test "a grant issued through MCP admits the caller, a revoke refuses it, a re-grant admits it again",
+         %{ctx: ctx} do
       agent = "sim-agent-" <> Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)
       grant = %{"identity" => agent, "skill" => "create_note"}
 
@@ -537,10 +575,33 @@ defmodule AshA2A.Sim.McpTest do
 
       assert {:ok, %{"state" => "TASK_STATE_REJECTED"}} = create.(agent <> "-after")
 
-      assert {:ok, %{"rows" => [%{"title" => only}]}} =
+      # A revoked grant can be issued again, and the mutation is admitted again.
+      assert {:ok, %{"grants" => [%{"granted" => true, "outcome" => "granted"}]}} =
+               call_tool(ctx, "sim_grant_authority", grant)
+
+      for binding <- ["jsonrpc", "http_json", "grpc"] do
+        assert {:ok, %{"state" => "TASK_STATE_COMPLETED"}} =
+                 call_tool(ctx, "a2a_send_message", %{
+                   "binding" => binding,
+                   "skill" => "create_note",
+                   "data" => %{"title" => agent <> "-regranted-" <> binding},
+                   "token" => agent
+                 })
+      end
+
+      assert {:ok, %{"grants" => [%{"granted" => false}]}} =
+               call_tool(ctx, "sim_revoke_authority", grant)
+
+      assert {:ok, %{"state" => "TASK_STATE_REJECTED"}} = create.(agent <> "-revoked-twice")
+
+      assert {:ok, %{"rows" => rows}} =
                call_tool(ctx, "sim_read_rows", %{"title_prefix" => agent})
 
-      assert only == agent <> "-granted"
+      assert Enum.sort(Enum.map(rows, & &1["title"])) ==
+               Enum.sort([
+                 agent <> "-granted"
+                 | for(b <- ~w(jsonrpc http_json grpc), do: agent <> "-regranted-" <> b)
+               ])
     end
 
     test "a stream is collected, and each frame is a progress notification", %{
@@ -764,7 +825,7 @@ defmodule AshA2A.Sim.McpTest do
       assert Map.has_key?(card["securitySchemes"], "bearer_auth")
 
       surface = read.("sim://surface")
-      assert Enum.map(surface["items"], & &1["id"]) == Surface.ids()
+      assert Enum.map(surface["items"], & &1["id"]) == Enum.map(Coverage.items(), & &1.id)
       assert surface["uncovered"] == []
       assert Enum.all?(surface["items"], &(&1["tools"] != []))
 

@@ -70,7 +70,10 @@ defmodule AshA2A.V1WirePropertiesTest do
     :auth_required
   ]
 
-  @a2a_error_info_codes Enum.to_list(-32_009..-32_001) ++ [-32_602]
+  # Spec section 9.5 (v1.0.1 and v1.1.0-rc): `error.data` is an array of
+  # `@type` objects, so -32700, -32600, -32601 and -32602 carry one ErrorInfo
+  # like the A2A-range codes. Only -32603 passes free-form data through.
+  @a2a_error_info_codes Enum.to_list(-32_009..-32_001) ++ [-32_602, -32_700, -32_600, -32_601]
 
   # ---------------------------------------------------------------------
   # Real JSON-RPC handler collaborator (no doubles)
@@ -524,9 +527,19 @@ defmodule AshA2A.V1WirePropertiesTest do
   defp expected(%Message{} = m), do: m
   defp expected(%Part.Text{} = p), do: p
   defp expected(%Part.Data{} = p), do: p
+  # google.protobuf.Timestamp in ProtoJSON carries 0, 3, 6 or 9 fractional
+  # digits, and spec section 5.6.1 lets the fraction be omitted: a timestamp on
+  # a whole second is written without one and decodes at second precision.
+  defp expected(%Task.Status{timestamp: %DateTime{microsecond: {0, _}} = ts} = s),
+    do: %{s | timestamp: DateTime.truncate(ts, :second)}
+
   defp expected(%Task.Status{} = s), do: s
   defp expected(%Artifact{} = a), do: a
-  defp expected(%Event.ArtifactUpdate{} = e), do: e
+  # `append` and `last_chunk` are plain proto3 `bool` fields
+  # (TaskArtifactUpdateEvent fields 4 and 5, not `optional`, not REQUIRED), so
+  # ProtoJSON omits `false` and it decodes back as unset.
+  defp expected(%Event.ArtifactUpdate{} = e),
+    do: %{e | append: e.append || nil, last_chunk: e.last_chunk || nil}
 
   defp expected(%Task{} = t) do
     %{

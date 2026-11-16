@@ -320,7 +320,19 @@ def summarize(structured):
         if body is not None:
             parts.append("%d body bytes" % len(body.encode("utf-8")))
         return ", ".join(parts)
-    if "rows" in structured:
+    if "verdicts" in structured:
+        if not structured.get("ran"):
+            return "not run: %s" % structured.get("reason")
+        summary = structured["summary"]
+        verdicts = ", ".join("%s %s" % (v["binding"], v["verdict"]) for v in structured["verdicts"])
+        return "%s; %d rows pass, %d fail, %d known %s" % (
+            verdicts,
+            summary["pass"],
+            summary["fail"],
+            summary["known"],
+            structured["known_defects"],
+        )
+    if "rows" in structured and "count" in structured:
         return "%d row(s)" % structured["count"]
     if "deliveries" in structured:
         return "%d delivery(ies)" % structured["count"]

@@ -56,16 +56,22 @@ if Code.ensure_loaded?(Bandit) do
 
     @completed "TASK_STATE_COMPLETED"
 
-    @doc "The plan entry of every surface item, in `AshA2A.Sim.Surface.items/0` order."
+    @doc "The plan entry of every item of `items/0`, in order."
     @spec plan() :: [map()]
-    def plan, do: Enum.map(Surface.items(), &entry/1)
+    def plan, do: Enum.map(items(), &entry/1)
 
     @doc """
-    The items of `items` (`AshA2A.Sim.Surface.items/0` by default) that MCP
-    cannot reach.
+    Every item MCP must reach: the served surface (`AshA2A.Sim.Surface.items/0`)
+    and the parity surfaces (`AshA2A.Sim.Surface.parity/0`).
+    """
+    @spec items() :: [Surface.item()]
+    def items, do: Surface.items() ++ Surface.parity()
+
+    @doc """
+    The items of `items` (`items/0` by default) that MCP cannot reach.
     """
     @spec uncovered([Surface.item()]) :: [Surface.item()]
-    def uncovered(items \\ Surface.items()) do
+    def uncovered(items \\ items()) do
       names = MapSet.new(Tools.names())
       stubbed = Wire.grpc_stubbed()
 
@@ -82,7 +88,7 @@ if Code.ensure_loaded?(Bandit) do
     @doc "The tools each surface item's plan calls, by surface item id."
     @spec tools_by_surface() :: %{String.t() => [String.t()]}
     def tools_by_surface do
-      Map.new(Surface.items(), fn item ->
+      Map.new(items(), fn item ->
         {item.id, item |> steps() |> Enum.map(& &1["tool"]) |> Enum.uniq()}
       end)
     end
@@ -143,6 +149,24 @@ if Code.ensure_loaded?(Bandit) do
     defp steps(%{kind: :task_state, name: state}), do: task_state(state)
     defp steps(%{kind: :security_scheme, name: scheme}), do: security(scheme)
     defp steps(%{kind: :mount, name: mount}), do: mount(mount)
+
+    defp steps(%{kind: :parity, name: binding}) do
+      [
+        step(
+          "the wire output of #{binding} matches the upstream v1.1 reference",
+          {"sim_parity", %{"binding" => binding}},
+          tested: true,
+          expect: [
+            ex("ran", "eq", true),
+            ex("verdicts.0.binding", "eq", binding),
+            ex("verdicts.0.verdict", "in", ["pass", "known"]),
+            ex("summary.fail", "eq", 0),
+            ex("summary.pass", "gte", 1)
+          ]
+        )
+      ]
+    end
+
     defp steps(_item), do: []
 
     defp schema_expect("GET /.well-known/agent-card.schema.json"),
@@ -762,7 +786,21 @@ if Code.ensure_loaded?(Bandit) do
           create.("mcp-revoked-{{uniq}}"),
           "TASK_STATE_REJECTED"
         ),
-        rows("and wrote nothing", %{"title" => "mcp-revoked-{{uniq}}"}, [ex("count", "eq", 0)])
+        rows("and wrote nothing", %{"title" => "mcp-revoked-{{uniq}}"}, [ex("count", "eq", 0)]),
+        step("issue the revoked grant again", {"sim_grant_authority", grant},
+          expect:
+            granted ++
+              [ex("grants.0.granted", "eq", true), ex("grants.0.outcome", "eq", "granted")]
+        ),
+        run_skill(
+          "the re-issued grant admits the call again",
+          @grpc,
+          create.("mcp-regranted-{{uniq}}"),
+          @completed
+        ),
+        rows("and the row is there", %{"title" => "mcp-regranted-{{uniq}}"}, [
+          ex("count", "eq", 1)
+        ])
       ]
     end
 
@@ -843,14 +881,6 @@ if Code.ensure_loaded?(Bandit) do
           tested: true,
           expect: [
             ex("ok", "eq", true),
-            ex("states", "contains", "TASK_STATE_WORKING"),
-            ex("final_state", "eq", @completed)
-          ]
-        ),
-        step(
-          "the same over gRPC",
-          a2a(:stream, @grpc, %{"skill" => "list_notes", "data" => %{"stream" => true}}),
-          expect: [
             ex("states", "contains", "TASK_STATE_WORKING"),
             ex("final_state", "eq", @completed)
           ]

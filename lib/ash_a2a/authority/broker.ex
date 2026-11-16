@@ -76,6 +76,11 @@ defmodule AshA2A.Authority.Broker do
   After a successful revoke, a subsequent `verify/2` call against any
   authority sharing that same `token_id` MUST fail-closed (`{:error,
   refusal()}`), not merely against the exact struct passed to `revoke/2`.
+
+  A revoked grant may be issued again by `issue/3` to the same principal for
+  the same capability. Re-issuing does not undo the revocation: `verify/2`
+  MUST keep refusing every authority whose `issued_at` is at or before the
+  revocation, and `issue/3` MUST return an authority stamped after it.
   """
   @callback revoke(authority :: Authority.t(), opts :: keyword()) :: :ok | {:error, refusal()}
 
@@ -108,7 +113,7 @@ defmodule AshA2A.Authority.Broker do
 
   `issue/3` is deliberately not usable as a substitute: it has a real
   recording side effect and is not idempotent (a second `issue/3` under the
-  same token id refuses with `:token_id_taken`), so calling it per dispatch
+  token id of a standing grant refuses with `:token_id_taken`), so calling it per dispatch
   would both mutate broker state on every request and refuse every retry.
   """
   @callback granted?(subject :: Identity.t(), capability_id :: String.t(), opts :: keyword()) ::

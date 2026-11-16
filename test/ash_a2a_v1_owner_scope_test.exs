@@ -470,11 +470,15 @@ defmodule AshA2AV1OwnerScopeTest do
              } =
                rpc(ctx, "alice", "tasks/pushNotificationConfig/list", %{"id" => live_id})
 
-      assert %{"result" => nil} =
+      # DeleteTaskPushNotificationConfig returns google.protobuf.Empty (spec
+      # section 9.4.7; v1.0.1 and v1.1.0-rc), whose JSON form is `{}`.
+      assert %{"result" => deleted} =
                rpc(ctx, "alice", "tasks/pushNotificationConfig/delete", %{
                  "id" => live_id,
                  "pushNotificationConfigId" => cfg_id
                })
+
+      assert deleted == %{}
 
       assert %{"result" => []} =
                rpc(ctx, "alice", "tasks/pushNotificationConfig/list", %{"id" => live_id})

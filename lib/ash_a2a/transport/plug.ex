@@ -333,7 +333,10 @@ defmodule AshA2A.Transport.Plug do
             a2a_version: version
           }
 
-          case AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, ctx) do
+          case live_or_handle(decoded, conn, ctx) do
+            %Plug.Conn{} = answered ->
+              answered
+
             {:reply, response} ->
               send_json(conn, response)
 
@@ -357,7 +360,9 @@ defmodule AshA2A.Transport.Plug do
       {:error, rejected} when is_binary(rejected) ->
         conn
         |> put_resp_header("a2a-version", AshA2A.Protocol.Version.safe_echo(rejected))
-        |> send_json(Response.error(nil, Error.version_not_supported(rejected)))
+        |> send_json(
+          Response.error(refused_request_id(conn), Error.version_not_supported(rejected))
+        )
 
       # Required extension absent from the A2A-Extensions request header
       # (spec §4.5): ExtensionSupportRequiredError (-32008), before dispatch.
@@ -647,7 +652,6 @@ defmodule AshA2A.Transport.Plug do
       {:ok, %AshA2A.Protocol.Task{metadata: %{stream: enum}} = task} ->
         conn = start_sse(conn)
         conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
-        conn = send_message_updates(conn, jsonrpc_id, task, ctx)
         stream_parts(conn, jsonrpc_id, task, enum)
 
       {:ok, %AshA2A.Protocol.Message{} = msg} ->
@@ -657,7 +661,6 @@ defmodule AshA2A.Transport.Plug do
       {:ok, %AshA2A.Protocol.Task{} = task} ->
         conn = start_sse(conn)
         conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
-        conn = send_message_updates(conn, jsonrpc_id, task, ctx)
 
         conn =
           Enum.reduce(task.artifacts, conn, fn artifact, conn ->
@@ -763,31 +766,6 @@ defmodule AshA2A.Transport.Plug do
       )
   end
 
-  # v1.1 messageUpdate frames for the task timeline's client messages; a
-  # legacy (1.0/0.3) client never receives them and gets no error.
-  defp send_message_updates(conn, jsonrpc_id, task, ctx) do
-    if AshA2A.Protocol.Version.at_least?(Map.get(ctx, :a2a_version), "1.1") do
-      task.timeline
-      |> List.wrap()
-      |> Enum.reduce(conn, fn
-        %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn ->
-          send_event(
-            conn,
-            jsonrpc_id,
-            AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
-              context_id: task.context_id,
-              generation: gen
-            )
-          )
-
-        _other, conn ->
-          conn
-      end)
-    else
-      conn
-    end
-  end
-
   defp append_opts(true), do: [append: true]
   defp append_opts(false), do: []
 
@@ -843,6 +821,35 @@ defmodule AshA2A.Transport.Plug do
           {:ok, conn} -> conn
           {:error, _closed} -> conn
         end
+    end
+  end
+
+  # v1.1 `SendLiveMessage` (spec 5.3) is served by the shared live module;
+  # every other method goes to the JSON-RPC dispatcher.
+  defp live_or_handle(%{"method" => "SendLiveMessage"} = decoded, conn, ctx) do
+    metadata = Map.get(ctx.opts, :metadata, %{})
+    metadata = if auth = auth(conn), do: Map.put(metadata, "a2a.auth", auth), else: metadata
+
+    AshA2A.Transport.Live.JSONRPC.serve(conn, decoded["id"], decoded["params"], ctx.agent, %{
+      metadata: metadata,
+      principal: ctx.principal
+    })
+  end
+
+  defp live_or_handle(decoded, _conn, ctx),
+    do: AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, ctx)
+
+  # The id of a request refused before dispatch (version negotiation), so the
+  # error still answers that request (JSON-RPC 2.0). Null when unreadable.
+  defp refused_request_id(%{body_params: %{"id" => id}}) when is_binary(id) or is_number(id),
+    do: id
+
+  defp refused_request_id(conn) do
+    with {:ok, body, _conn} <- Plug.Conn.read_body(conn, length: 1_000_000),
+         {:ok, %{"id" => id}} when is_binary(id) or is_number(id) <- Jason.decode(body) do
+      id
+    else
+      _ -> nil
     end
   end
 end

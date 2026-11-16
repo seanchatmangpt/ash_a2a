@@ -160,6 +160,112 @@ defmodule AshA2A.Protocol.AgentCardServedSignatureTest do
     assert CardSigning.verify(card, key) == :ok
   end
 
+  # Bearer authentication in front of a card mount, as a host application
+  # mounts it: the extended card is only served to a verified caller.
+  defmodule AuthChain do
+    @moduledoc false
+    def init(opts), do: opts
+
+    def call(conn, %{auth: auth, mod: mod, opts: opts}) do
+      conn = AshA2A.Protocol.Plug.Auth.call(conn, auth)
+      if conn.halted, do: conn, else: mod.call(conn, opts)
+    end
+  end
+
+  def verify_bearer("bearer", token, _conn), do: {:ok, %{sub: token}}
+
+  def extended_provider(_identity, public) do
+    skill = %{"id" => "extended-only", "name" => "Extra", "description" => "added", "tags" => ["x"]}
+    {:ok, Map.update!(public, "skills", &(&1 ++ [skill]))}
+  end
+
+  defp serve_extended(mod, agent, extra) do
+    chain = %{
+      auth:
+        AshA2A.Protocol.Plug.Auth.init(
+          schemes: %{"bearer" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}},
+          verify: &__MODULE__.verify_bearer/3
+        ),
+      mod: mod,
+      opts:
+        mod.init(
+          [
+            agent: agent,
+            base_url: "http://agent.example/a2a",
+            extended_card: &__MODULE__.extended_provider/2
+          ] ++ extra
+        )
+    }
+
+    EphemeralHttp.start!({AuthChain, chain}).base_url
+  end
+
+  defp fetch_extended!(AshA2A.Transport.HTTPJSON, base) do
+    resp =
+      Req.get!(base <> "/extendedAgentCard",
+        headers: [{"authorization", "Bearer alice"}, {"a2a-version", "1.1"}],
+        decode_body: false,
+        retry: false
+      )
+
+    assert resp.status == 200
+    {resp.body, Jason.decode!(resp.body)}
+  end
+
+  defp fetch_extended!(AshA2A.A2ATransport.Plug, base) do
+    resp =
+      Req.post!(base,
+        headers: [{"authorization", "Bearer alice"}, {"a2a-version", "1.1"}],
+        json: %{"jsonrpc" => "2.0", "id" => 1, "method" => "agent/getAuthenticatedExtendedCard"},
+        decode_body: false,
+        retry: false
+      )
+
+    assert resp.status == 200
+    {resp.body, Jason.decode!(resp.body)["result"]}
+  end
+
+  for mod <- [AshA2A.A2ATransport.Plug, AshA2A.Transport.HTTPJSON] do
+    test "#{inspect(mod)}: the extended card is signed with the public card's key over the served bytes",
+         %{agent: agent} do
+      {private, public} = ec_keys("card-2026-11")
+      jwks = %{"keys" => [public]}
+
+      extra =
+        [sign_with: [jwk: private, kid: "card-2026-11"]] ++
+          if(unquote(mod) == AshA2A.A2ATransport.Plug, do: [json_rpc_path: []], else: [])
+
+      base = serve_extended(unquote(mod), agent, extra)
+      {body, card} = fetch_extended!(unquote(mod), base)
+
+      # It is the extended card (the provider's extra skill), signed once.
+      assert "extended-only" in Enum.map(card["skills"], & &1["id"])
+      assert [%{"protected" => _, "signature" => _}] = card["signatures"]
+      assert {:ok, ["card-2026-11"]} = Sig.verify(card, jwks, require: :all)
+
+      # The public card's signature does not cover the extended card, and the
+      # extended card's does not cover the public one.
+      public_card = (base <> @card_path) |> fetch!() |> Map.fetch!(:body) |> Jason.decode!()
+      assert {:ok, _} = Sig.verify(public_card, jwks)
+      refute public_card["signatures"] == card["signatures"]
+
+      assert {:error, :bad_signature} =
+               Sig.verify(Map.put(card, "signatures", public_card["signatures"]), jwks)
+
+      # One flipped byte of the served bytes is refused.
+      tampered = body |> flip_byte("extended-only") |> Jason.decode!()
+      tampered = tampered["result"] || tampered
+      refute tampered == card
+      assert {:error, :bad_signature} = Sig.verify(tampered, jwks)
+    end
+  end
+
+  test "without a signing key the extended card carries no signatures", %{agent: agent} do
+    base = serve_extended(AshA2A.Transport.HTTPJSON, agent, [])
+    {_body, card} = fetch_extended!(AshA2A.Transport.HTTPJSON, base)
+    refute Map.has_key?(card, "signatures")
+  end
+
   test "without :sign_with no mount serves a signatures member", %{agent: agent} do
     for {label, mod} <- @mounts do
       card = mod |> serve(agent, []) |> fetch!() |> Map.fetch!(:body) |> Jason.decode!()

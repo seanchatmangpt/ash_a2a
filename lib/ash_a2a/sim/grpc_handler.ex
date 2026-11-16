@@ -12,29 +12,38 @@ defmodule AshA2A.Sim.GrpcHandler do
   gRPC caller. Push-notification configs go through
   `AshA2A.A2ATransport.PushConfigRPC` and the same store the HTTP mounts use,
   so a config created over gRPC is visible over HTTP and the other way round.
-  The task a send or a cancel answers is published to the shared event log, so
-  a task finished over gRPC delivers its push notifications.
+  `AshA2A.Transport.GRPC.Server` publishes the task a send or a cancel answers
+  to the shared event log, so a task finished over gRPC delivers its push
+  notifications.
   `GetExtendedAgentCard` answers the same provider-extended card as the HTTP
   mounts and refuses a caller with no verified identity.
   """
 
   @behaviour AshA2A.Protocol.JSONRPC
 
-  alias AshA2A.A2ATransport.{PushConfigRPC, SSE, TaskEvents}
+  alias AshA2A.A2ATransport.{PushConfigRPC, TaskEvents}
   alias AshA2A.Protocol.JSONRPC.Error
   alias AshA2A.Protocol.PushNotificationConfig
   alias AshA2A.Transport.Plug, as: TransportPlug
 
   @impl true
-  def handle_send(message, params, ctx),
-    do: message |> TransportPlug.handle_send(params, ctx) |> published(ctx)
+  def handle_send(message, params, ctx) do
+    result = TransportPlug.handle_send(message, params, ctx)
+
+    # A task answered while still running is followed, so its push configs
+    # hear how it ends, as on the HTTP mounts.
+    with {:ok, %AshA2A.Protocol.Task{} = task} <- result,
+         do: AshA2A.A2ATransport.DetachedWatch.start(ctx.agent, ctx.transport, task)
+
+    result
+  end
 
   @impl true
   def handle_get(task_id, params, ctx), do: TransportPlug.handle_get(task_id, params, scoped(ctx))
 
   @impl true
   def handle_cancel(task_id, params, ctx),
-    do: task_id |> TransportPlug.handle_cancel(params, scoped(ctx)) |> published(ctx)
+    do: TransportPlug.handle_cancel(task_id, params, scoped(ctx))
 
   @impl true
   def handle_list(params, ctx), do: TransportPlug.handle_list(params, scoped(ctx))
@@ -102,35 +111,31 @@ defmodule AshA2A.Sim.GrpcHandler do
         Map.fetch!(ctx, :base_url)
       )
 
-    AshA2A.Sim.Auth.extended_card(identity, public)
+    with {:ok, extended} <- AshA2A.Sim.Auth.extended_card(identity, public) do
+      {:ok, sign_extended(extended, Map.get(ctx, :sign_with))}
+    end
+  end
+
+  # Over gRPC the card travels as a protobuf `AgentCard`, and a client
+  # verifies the ProtoJSON form of the message it received. The signature is
+  # therefore computed over that form (the card after a round trip through the
+  # proto message), with the same key as the HTTP mounts.
+  defp sign_extended(card, nil), do: card
+
+  defp sign_extended(card, sign_with) do
+    card
+    |> Map.delete("signatures")
+    |> Jason.encode!()
+    |> Protobuf.JSON.decode!(Lf.A2a.V1.AgentCard)
+    |> Protobuf.JSON.to_encodable()
+    |> case do
+      {:ok, encodable} -> encodable
+      encodable when is_map(encodable) -> encodable
+    end
+    |> AshA2A.Protocol.Plug.CardServe.sign_card(sign_with)
   end
 
   def handle_extended_card(_ctx), do: {:error, Error.invalid_request("authentication required")}
-
-  # The HTTP mounts publish the task a send or a cancel answers to the shared
-  # event log (`AshA2A.A2ATransport.Plug`, `AshA2A.Transport.HTTPJSON`), which
-  # is what fires the push-notification webhooks. The gRPC server leaves that
-  # to its handler; without it a task finished over gRPC delivers no webhook.
-  defp published({:ok, %AshA2A.Protocol.Task{} = task} = result, %{transport: transport}) do
-    if AshA2A.A2ATransport.running?(transport) do
-      final? =
-        task.status.state in [
-          :completed,
-          :canceled,
-          :cancelled,
-          :failed,
-          :rejected,
-          :input_required,
-          :auth_required
-        ]
-
-      TaskEvents.publish(transport, task.id, "task", SSE.encode_task(task), final?)
-    end
-
-    result
-  end
-
-  defp published(result, _ctx), do: result
 
   # `AshA2A.Transport.Plug` reads `ctx.principal`; an unauthenticated gRPC call
   # carries none, so it is the anonymous principal.

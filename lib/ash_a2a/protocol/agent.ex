@@ -263,6 +263,12 @@ defmodule AshA2A.Protocol.Agent do
         task before its handler starts, so `tasks/get` sees it and `cancel/3`
         interrupts it by id while this call is still blocked (a handler that
         answers a bare message completes the stored task). Off by default.
+      - `:return_immediately` — when `true`, the task is stored and answered
+        before its handler runs; the handler's outcome folds into the stored
+        task
+      - `:subscribe` — with `:return_immediately`, a pid that joins the task's
+        subscriber fan-out at admission and receives
+        `{:a2a_task_event, task_id, task}` for every later stored mutation
       - `:notify` — with `:admit_first`, a pid sent
         `{:ash_a2a_task_admitted, task_id}` once the task is stored
       """
@@ -361,7 +367,14 @@ defmodule AshA2A.Protocol.Agent do
                     {:reply, {:error, :not_continuable}, state}
 
                   immediate? ->
-                    admit_continue_immediately(message, task, extensions, from, state)
+                    admit_continue_immediately(
+                      message,
+                      task,
+                      extensions,
+                      from,
+                      Keyword.get(opts, :subscribe),
+                      state
+                    )
 
                   true ->
                     spawn_task_worker(
@@ -380,7 +393,15 @@ defmodule AshA2A.Protocol.Agent do
               {:ok, context_id} ->
                 cond do
                   immediate? ->
-                    admit_new_immediately(message, context_id, metadata, extensions, from, state)
+                    admit_new_immediately(
+                      message,
+                      context_id,
+                      metadata,
+                      extensions,
+                      from,
+                      Keyword.get(opts, :subscribe),
+                      state
+                    )
 
                   # Opt-in (`admit_first: true`): persist the task before its
                   # worker starts so it can be read/canceled by id while the
@@ -457,10 +478,18 @@ defmodule AshA2A.Protocol.Agent do
 
       # returnImmediately: admit + persist the task, answer with it now, and
       # run the handler detached; its outcome folds into the stored task.
-      defp admit_new_immediately(message, context_id, metadata, extensions, from, state) do
+      defp admit_new_immediately(
+             message,
+             context_id,
+             metadata,
+             extensions,
+             from,
+             subscriber,
+             state
+           ) do
         task = AshA2A.Protocol.Task.new(context_id: context_id, metadata: metadata)
         task = AshA2A.Protocol.Task.Generation.append_message(task, message)
-        admit_immediately(message, task, extensions, from, state)
+        admit_immediately(message, task, extensions, from, subscriber, state)
       end
 
       # Pre-admitted blocking send: the task (carrying the caller's metadata,
@@ -485,16 +514,26 @@ defmodule AshA2A.Protocol.Agent do
         end
       end
 
-      defp admit_continue_immediately(message, task, extensions, from, state) do
+      defp admit_continue_immediately(message, task, extensions, from, subscriber, state) do
         task = AshA2A.Protocol.Task.Generation.append_message(task, message)
         task = AshA2A.Protocol.Agent.State.transition(task, :working)
-        admit_immediately(message, task, extensions, from, state)
+        admit_immediately(message, task, extensions, from, subscriber, state)
       end
 
-      defp admit_immediately(message, task, extensions, from, state) do
+      # `subscriber` (the `:subscribe` call option, a pid) joins the task's
+      # subscriber fan-out in the same step that stores the task, so it is
+      # shown every later mutation: nothing can land between the admission
+      # and a separate `{:subscribe, id}` call.
+      defp admit_immediately(message, task, extensions, from, subscriber, state) do
         case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
           {:ok, state} ->
             state = AshA2A.Protocol.Agent.State.track_context(state, task)
+
+            state =
+              if is_pid(subscriber),
+                do: AshA2A.Protocol.Agent.State.add_subscriber(state, task.id, subscriber),
+                else: state
+
             reply_to(from, {:ok, task})
             spawn_task_worker({:admitted, message, task, extensions}, :detached, task.id, state)
 
@@ -656,6 +695,43 @@ defmodule AshA2A.Protocol.Agent do
           AshA2A.Protocol.Agent.State.delete_push_config(state, task_id, config_id)
 
         {:reply, result, state}
+      end
+
+      # One streamed chunk, stored as its own task mutation: the artifact gains
+      # the chunk's parts and the generation advances by one (A2A v1.1 3.2.7).
+      # Called by the stream wrapper (`AshA2A.Protocol.Agent.Runtime.wrap_stream/4`)
+      # from the process that enumerates the stream; replies `{:ok, generation}`.
+      def handle_call({:stream_chunk, task_id, artifact_id, part}, _from, state) do
+        case AshA2A.Protocol.Agent.State.get_task(state, task_id) do
+          {:ok, %{status: %{state: terminal}}}
+          when terminal in [:completed, :failed, :canceled, :rejected] ->
+            {:reply, {:error, :terminal}, state}
+
+          {:ok, task} ->
+            chunk =
+              struct(AshA2A.Protocol.Artifact, artifact_id: artifact_id, parts: List.wrap(part))
+
+            {task, _stored} = AshA2A.Protocol.Task.Generation.record_artifact(task, chunk, false)
+
+            case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+              {:ok, state} ->
+                state = notify_subscribers(state, task)
+                {:reply, {:ok, AshA2A.Protocol.Task.Generation.generation_of(task)}, state}
+
+              {:error, reason} ->
+                {:reply, {:error, reason}, state}
+            end
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+        end
+      end
+
+      # Whether this agent process holds the task in memory (it ran or
+      # continued it), as opposed to only being able to read it from the
+      # task store.
+      def handle_call({:ash_a2a_task_local?, task_id}, _from, state) do
+        {:reply, Map.has_key?(state.tasks, task_id), state}
       end
 
       def handle_call({:subscribe, task_id}, {pid, _tag}, state) do
@@ -940,8 +1016,11 @@ defmodule AshA2A.Protocol.Agent do
 
             agent_msg = AshA2A.Protocol.Message.new_agent(parts)
 
-            {task, _stored} =
-              AshA2A.Protocol.Task.Generation.record_artifact(task, artifact, true)
+            # Each chunk was already stored as its own mutation by
+            # `{:stream_chunk, ...}` (A2A v1.1 3.2.7: one event per mutation).
+            # Only parts no chunk call stored (the stream was enumerated
+            # inside this process, or a chunk call failed) are folded here.
+            task = AshA2A.Protocol.Agent.Runtime.finish_stream_artifact(task, artifact)
 
             task = %{task | history: task.history ++ [agent_msg]}
             task = %{task | metadata: Map.delete(task.metadata, :stream)}

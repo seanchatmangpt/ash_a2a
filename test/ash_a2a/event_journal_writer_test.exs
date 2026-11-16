@@ -113,6 +113,12 @@ defmodule AshA2A.EventJournalWriterTest do
     assert List.last(summaries) == {:status, g3, "TASK_STATE_COMPLETED"}
     assert Enum.count(summaries, &match?({:message, _, _}, &1)) == 2
 
+    # The artifact write is journaled as its own event, one generation before
+    # the terminal status (A2A v1.1 3.2.7: one event per mutation).
+    assert {:artifact, g3 - 1, nil} in summaries
+    assert Fixture.artifact_texts(frames) == ["finished"]
+    assert gens == Enum.to_list((g1 + 1)..g3), "one event per generation, no gap"
+
     texts =
       for %{"messageUpdate" => %{"message" => %{"parts" => [%{"text" => text}]}}} <- frames,
           do: text
@@ -137,8 +143,11 @@ defmodule AshA2A.EventJournalWriterTest do
     {:ok, done} = AshA2A.Protocol.call(Agent, "done", task_id: task_id)
     g3 = AshA2A.Protocol.Task.Generation.generation_of(done)
 
-    after_restart = Agent |> Fixture.resubscribe(task_id, g2) |> Enum.map(&Fixture.summary/1)
+    after_frames = Fixture.resubscribe(Agent, task_id, g2)
+    after_restart = Enum.map(after_frames, &Fixture.summary/1)
     assert List.last(after_restart) == {:status, g3, "TASK_STATE_COMPLETED"}
+    assert {:artifact, g3 - 1, nil} in after_restart
+    assert Fixture.artifact_texts(after_frames) == ["finished"]
     assert Enum.count(after_restart, &match?({:message, _, _}, &1)) == 1
   end
 

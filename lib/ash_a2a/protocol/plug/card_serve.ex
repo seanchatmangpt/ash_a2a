@@ -158,6 +158,15 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    @doc """
+    Signs a card map with `sign_with` (the forms of `signed_body/2`) and
+    returns the map with its `signatures` entry. Used for cards that are not
+    served through `signed_body/2`, such as the authenticated extended card.
+    """
+    @spec sign_card(map(), keyword()) :: map()
+    def sign_card(json, sign_with) when is_map(json) and is_list(sign_with),
+      do: sign(json, sign_with)
+
     defp sign(json, sign_with) do
       case Keyword.fetch(sign_with, :jwk) do
         {:ok, jwk} when is_map(jwk) -> sign_jws(json, jwk, sign_with)

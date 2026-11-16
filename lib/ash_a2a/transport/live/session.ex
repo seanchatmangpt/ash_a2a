@@ -529,20 +529,37 @@ defmodule AshA2A.Transport.Live.Session do
         end
       end)
 
-    status =
-      if last.status != task.status do
-        [
-          StatusUpdate.new(task.id, task.status,
-            context_id: ctx_id,
-            final: T.terminal?(task),
-            generation: status_gen(task)
-          )
-        ]
-      else
-        []
+    # Every status the timeline recorded since the last observation is its
+    # own event at its own generation (spec 3.2.7: one event per mutation),
+    # so a WORKING step between two observations is not skipped.
+    recorded =
+      for %{entry: {:status, status}, generation: g} <- task.timeline, g > gen(last) do
+        StatusUpdate.new(task.id, status,
+          context_id: ctx_id,
+          final: T.terminal?(task) and status == task.status,
+          generation: g
+        )
       end
 
-    messages ++ artifacts ++ status
+    status =
+      cond do
+        recorded != [] ->
+          recorded
+
+        last.status != task.status ->
+          [
+            StatusUpdate.new(task.id, task.status,
+              context_id: ctx_id,
+              final: T.terminal?(task),
+              generation: status_gen(task)
+            )
+          ]
+
+        true ->
+          []
+      end
+
+    Enum.sort_by(messages ++ artifacts ++ status, &(&1.generation || 0))
   end
 
   defp artifact_event(task, art, append?, full \\ nil) do

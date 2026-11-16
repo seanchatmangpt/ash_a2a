@@ -38,6 +38,9 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   processes. Guide: `docs/how-to/control-the-sim-over-mcp.md`. On 2026-11-16
   `python3 scripts/mcp_drive.py` printed `83 surface items served, 83 driven through MCP:
   83 pass, 0 fail; 0 uncovered` and `mix test test/ash_a2a/sim/sim_mcp_test.exs` passed.
+- MCP tool `sim_parity` runs `AshA2A.Sim.Parity` and answers one verdict per binding;
+  `AshA2A.Sim.MCP.Coverage` now also maps every `AshA2A.Sim.Surface.parity/0` item, and a
+  JSON-RPC method served only under an alias (`SendLiveMessage`) gets a tool of its own.
 - `AshA2A.Sim.Auth` accepts any `sim-agent-<name>` bearer token as an identity of its own
   with no grants.
 - `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog and runs the
@@ -95,6 +98,16 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
 
 ### Fixed
 
+- A revoked or expired standing grant can be issued again. `AshA2A.Authority.Grant.grant/3`
+  after `revoke/3` was refused `token_id_taken` for good by both brokers
+  (`AshA2A.Authority.Broker.InMemory`, `AshA2A.Authority.Broker.Ekv`), so a revocation
+  could never be undone. `issue/3` now accepts the token id of a revoked or expired grant
+  for the same principal and capability, stamps the new authority after the revocation,
+  and `verify/2` keeps refusing every authority issued at or before it, so the revoked
+  credential is not resurrected. A token id bound to another principal or capability is
+  still `token_id_taken`. Tests: `test/ash_a2a/authority_broker_in_memory_test.exs`,
+  `test/ash_a2a/authority_broker_ekv_test.exs`, and over the real transports
+  `test/ash_a2a/sim/sim_mcp_test.exs` ("a re-grant admits it again").
 - Simulation server: a task that a gRPC `SendMessage` or `CancelTask` brings to its answer
   is now published to the shared task event log by `AshA2A.Sim.GrpcHandler`, so its push
   notification webhooks fire. Before, a config stored on any binding delivered nothing when

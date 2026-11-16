@@ -445,7 +445,7 @@ defmodule AshA2A.SPIFFE.WorkloadWatcher do
   defp walk_value(payload, field, 2, acc, collector) do
     case varint(payload) do
       {:ok, len, rest} when byte_size(rest) >= len ->
-        <<value::binary-size(len), remainder::binary>> = rest
+        {value, remainder} = :erlang.split_binary(rest, len)
         do_walk(remainder, collector.(field, :length_delimited, value, acc), collector)
 
       _ ->

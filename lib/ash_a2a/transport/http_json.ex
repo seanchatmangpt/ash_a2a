@@ -778,7 +778,12 @@ defmodule AshA2A.Transport.HTTPJSON do
                 200,
                 card
                 |> strip_internal_keys()
-                |> ExtendedCard.resign(%{a2a: %{agent_card_opts: opts[:agent_card_opts] || []}})
+                |> ExtendedCard.resign(%{
+                  a2a: %{
+                    agent_card_opts: opts[:agent_card_opts] || [],
+                    sign_with: Map.get(opts, :sign_with)
+                  }
+                })
               )
 
             {:error, reason} ->
@@ -1101,7 +1106,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   # exactly like JSON-RPC ones. A no-op when no transport is configured.
   defp publish_task(%{transport: nil}, _task), do: :ok
 
-  defp publish_task(%{transport: transport}, task) do
+  defp publish_task(%{transport: transport} = opts, task) do
     if AshA2A.A2ATransport.running?(transport) do
       wire = encode_task(task, nil)
       final? = closed_state?(task.status.state)
@@ -1113,6 +1118,10 @@ defmodule AshA2A.Transport.HTTPJSON do
         %{"task" => wire},
         final?
       )
+
+      # A task answered while still running: follow it, so its push configs
+      # hear the later states too.
+      AshA2A.A2ATransport.DetachedWatch.start(opts.agent, transport, task)
     end
 
     :ok
@@ -1206,15 +1215,27 @@ defmodule AshA2A.Transport.HTTPJSON do
       Map.get(task.metadata, :stream_artifact_id) ||
         AshA2A.Protocol.ID.generate("art")
 
+    # Each chunk is a stored task mutation; its frame carries the task's
+    # generation after it (A2A v1.1 3.2.7), read when the chunk is taken.
     {conn, pending} =
       Enum.reduce(enum, {conn, nil}, fn part, {conn, pending} ->
+        gen = AshA2A.Protocol.Agent.Runtime.chunk_generation(task.id)
+
         case pending do
           nil ->
-            {conn, {:chunk, part, false}}
+            {conn, {:chunk, part, false, gen}}
 
-          {:chunk, prev_part, append?} ->
-            conn = send_chunk_frame(conn, task, artifact_id, prev_part, append_opts(append?))
-            {conn, {:chunk, part, true}}
+          {:chunk, prev_part, append?, prev_gen} ->
+            conn =
+              send_chunk_frame(
+                conn,
+                task,
+                artifact_id,
+                prev_part,
+                generation_opts(prev_gen) ++ append_opts(append?)
+              )
+
+            {conn, {:chunk, part, true, gen}}
         end
       end)
 
@@ -1223,13 +1244,13 @@ defmodule AshA2A.Transport.HTTPJSON do
         nil ->
           conn
 
-        {:chunk, part, append?} ->
+        {:chunk, part, append?, gen} ->
           send_chunk_frame(
             conn,
             task,
             artifact_id,
             part,
-            append_opts(append?) ++ [last_chunk: true]
+            generation_opts(gen) ++ append_opts(append?) ++ [last_chunk: true]
           )
       end
 
@@ -1270,14 +1291,15 @@ defmodule AshA2A.Transport.HTTPJSON do
       AshA2A.Protocol.Event.ArtifactUpdate.new(
         task.id,
         artifact,
-        [
-          context_id: task.context_id,
-          generation: AshA2A.Protocol.Task.Generation.generation_of(task)
-        ] ++ opts
+        [context_id: task.context_id] ++
+          opts ++ [generation: AshA2A.Protocol.Task.Generation.generation_of(task)]
       )
 
     send_frame(conn, event)
   end
+
+  defp generation_opts(gen) when is_integer(gen), do: [generation: gen]
+  defp generation_opts(_gen), do: []
 
   # Event generation of an artifact frame: the artifact's own stamp
   # (end_generation, else start_generation), falling back to the task's.
@@ -1638,39 +1660,79 @@ defmodule AshA2A.Transport.HTTPJSON do
           |> Enum.reject(fn {_, k, _, _} -> k == "task" end),
         else: []
 
-    st = %{floor: last_seen, seen: last_seen || gen, v11?: v11?(conn)}
+    # One event per task mutation, each at the task's generation after it and
+    # none at a generation the client already holds (A2A v1.1 3.2.7): `floor`
+    # is the highest generation delivered so far (the snapshot's, or
+    # `lastSeenGeneration`), whichever source an event comes from. `prev` is
+    # the last snapshot seen, which the agent fan-out's next one is compared
+    # with (`AshA2A.Protocol.Task.Delta`).
+    st = %{floor: last_seen || gen, seen: last_seen || gen, v11?: v11?(conn), prev: task}
 
     conn = start_sse_once(conn)
 
     # Register with the agent fan-out BEFORE the snapshot goes out. Events
     # racing the snapshot queue in the mailbox and follow it in order.
-    _ = subscribe_agent(opts.agent, task.id)
+    registered = subscribe_agent(opts.agent, task.id)
     conn = if last_seen == nil, do: send_frame(conn, Runtime.wire_task(task)), else: conn
 
-    {conn, last, final?} =
-      Enum.reduce_while(backlog, {conn, 0, false}, fn {seq, _kind, payload, final?},
-                                                      {conn, _last, _} ->
-        conn = if frame_allowed?(payload, st), do: send_raw_frame(conn, payload), else: conn
-        if final?, do: {:halt, {conn, seq, true}}, else: {:cont, {conn, seq, false}}
+    {conn, last, final?, st} =
+      Enum.reduce_while(backlog, {conn, 0, false, st}, fn {seq, _kind, payload, final?},
+                                                          {conn, _last, _, st} ->
+        {conn, st} = send_logged(conn, payload, st)
+        if final?, do: {:halt, {conn, seq, true, st}}, else: {:cont, {conn, seq, false, st}}
       end)
 
+    # A resume behind the stored task with no logged events to replay: the
+    # missed mutations are derived from the stored task itself.
     {conn, st} =
-      if is_integer(last_seen) and gen > last_seen and backlog == [] do
-        event =
-          AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-            context_id: task.context_id,
-            final: false,
-            generation: gen
-          )
-
-        {send_frame(conn, event), %{st | floor: gen, seen: gen}}
+      if is_integer(last_seen) and gen > st.floor do
+        send_delta(conn, AshA2A.Protocol.Task.Delta.events_after(task, st.floor), st)
       else
         {conn, st}
+      end
+
+    # Mutations between the read above and the fan-out registration.
+    {conn, st} =
+      case registered do
+        {:ok, %AshA2A.Protocol.Task{} = current} ->
+          {conn, st} = send_delta(conn, AshA2A.Protocol.Task.Delta.events(task, current), st)
+          {conn, %{st | prev: current}}
+
+        _ ->
+          {conn, st}
       end
 
     conn = if final?, do: conn, else: follow_subscription(conn, task.id, last, 0, st)
     if transport?, do: AshA2A.A2ATransport.TaskEvents.unsubscribe(transport, task.id)
     conn
+  end
+
+  # A logged transport event: delivered unless the client already holds its
+  # generation.
+  defp send_logged(conn, payload, st) do
+    if frame_allowed?(payload, st) do
+      gen = payload_generation(payload)
+      floor = if is_integer(gen), do: max(gen, st.floor), else: st.floor
+      {send_raw_frame(conn, payload), %{st | floor: floor, seen: max(st.seen, floor)}}
+    else
+      {conn, st}
+    end
+  end
+
+  # Events derived from a task snapshot (`Task.Delta`), newer than the floor.
+  defp send_delta(conn, events, st) do
+    Enum.reduce(events, {conn, st}, fn {gen, event}, {conn, st} ->
+      cond do
+        gen <= st.floor ->
+          {conn, st}
+
+        match?(%AshA2A.Protocol.Event.MessageUpdate{}, event) and not st.v11? ->
+          {conn, %{st | floor: gen, seen: gen}}
+
+        true ->
+          {send_frame(conn, event), %{st | floor: gen, seen: gen}}
+      end
+    end)
   end
 
   # The SSE response is started once.
@@ -1720,35 +1782,16 @@ defmodule AshA2A.Transport.HTTPJSON do
         follow_subscription(conn, task_id, last, idle, st)
 
       {:a2a_task_event, ^task_id, seq, _kind, payload, final?} when is_integer(seq) ->
-        conn = if frame_allowed?(payload, st), do: send_raw_frame(conn, payload), else: conn
+        {conn, st} = send_logged(conn, payload, st)
         if final?, do: conn, else: follow_subscription(conn, task_id, seq, 0, st)
 
       {:a2a_task_event, ^task_id, %AshA2A.Protocol.Task{} = task} ->
-        terminal? = AshA2A.Protocol.Task.terminal?(task)
-        gen = AshA2A.Protocol.Task.Generation.generation_of(task)
+        {conn, st} = send_delta(conn, AshA2A.Protocol.Task.Delta.events(st.prev, task), st)
+        st = %{st | prev: task}
 
-        if is_integer(st.floor) and gen <= st.floor and not terminal? do
-          follow_subscription(conn, task_id, last, 0, st)
-        else
-          conn = send_new_messages(conn, task, st)
-
-          event =
-            AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-              context_id: task.context_id,
-              final: terminal?,
-              generation: gen
-            )
-
-          conn = send_frame(conn, event)
-
-          st = %{
-            st
-            | seen: max(st.seen, gen),
-              floor: if(is_integer(st.floor), do: max(st.floor, gen))
-          }
-
-          if terminal?, do: conn, else: follow_subscription(conn, task_id, last, 0, st)
-        end
+        if AshA2A.Protocol.Task.terminal?(task),
+          do: conn,
+          else: follow_subscription(conn, task_id, last, 0, st)
     after
       @subscribe_heartbeat_ms ->
         idle = idle + @subscribe_heartbeat_ms
@@ -1761,27 +1804,6 @@ defmodule AshA2A.Transport.HTTPJSON do
         end
     end
   end
-
-  defp send_new_messages(conn, task, %{v11?: true, seen: seen}) do
-    task.timeline
-    |> List.wrap()
-    |> Enum.reduce(conn, fn
-      %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn
-      when gen > seen ->
-        send_frame(
-          conn,
-          AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
-            context_id: task.context_id,
-            generation: gen
-          )
-        )
-
-      _other, conn ->
-        conn
-    end)
-  end
-
-  defp send_new_messages(conn, _task, _st), do: conn
 
   # -- POST /message:live ------------------------------------------------------
   #

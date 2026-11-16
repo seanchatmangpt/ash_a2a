@@ -111,14 +111,15 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
   @a2a_domain "a2a-protocol.org"
 
   # The FULL registry, as shipped in `Error`'s constructors: {code,
-  # constructor name, exact message, ErrorInfo reason (nil = the four
-  # standard codes with no defined reason)}. -32602 is a standard code that
-  # nonetheless carries an ErrorInfo (reason INVALID_PARAMS) per the landed
-  # lane-V3 remap.
+  # constructor name, exact message, ErrorInfo reason (nil = no reason:
+  # only -32603)}. A2A spec section 9.5 (identical at v1.0.1 and v1.1.0-rc):
+  # `error.data` is an "array of objects, each containing a `@type` key", so
+  # the standard codes -32700, -32600, -32601 and -32602 carry one ErrorInfo
+  # and free-form data rides its `metadata.detail`.
   @registry [
-    {-32_700, :parse_error, "Invalid JSON payload", nil},
-    {-32_600, :invalid_request, "Request payload validation error", nil},
-    {-32_601, :method_not_found, "Method not found", nil},
+    {-32_700, :parse_error, "Invalid JSON payload", "JSON_PARSE"},
+    {-32_600, :invalid_request, "Request payload validation error", "INVALID_REQUEST"},
+    {-32_601, :method_not_found, "Method not found", "METHOD_NOT_FOUND"},
     {-32_602, :invalid_params, "Invalid parameters", "INVALID_PARAMS"},
     {-32_603, :internal_error, "Internal error", nil},
     {-32_001, :task_not_found, "Task not found", "TASK_NOT_FOUND"},
@@ -266,12 +267,15 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
   end
 
   # ---------------------------------------------------------------------------
-  # Court (c): standard JSON-RPC codes carry free-form data per spec
+  # Court (c): the one code with no ErrorInfo reason (-32603) keeps its data
   # ---------------------------------------------------------------------------
 
-  describe "court (c): standard codes keep free-form data" do
-    test "the four no-reason standard codes pass data through unwrapped and omit nil" do
-      for {code, ctor, message, nil} <- @registry do
+  describe "court (c): the no-reason standard code keeps free-form data" do
+    test "-32603 passes data through unwrapped and omits nil" do
+      no_reason = for {_, _, _, nil} = row <- @registry, do: row
+      assert [{-32_603, :internal_error, _, nil}] = no_reason
+
+      for {code, ctor, message, nil} <- no_reason do
         # Free-form data passes through as-is.
         wire = Error.to_map(apply(Error, ctor, ["boom"]))
         assert wire == %{"code" => code, "message" => message, "data" => "boom"}
@@ -376,7 +380,9 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
         -32_601 => 400,
         -32_602 => 400,
         -32_700 => 400,
-        -32_002 => 409,
+        # Spec section 5.4 (v1.0.1 and v1.1.0-rc): TaskNotCancelableError is
+        # FAILED_PRECONDITION / `400 Bad Request`.
+        -32_002 => 400,
         -32_004 => 400,
         -32_000 => 503,
         # (-32003/-32007/-32008 are NOT catch-all: PushNotificationNotSupported,
@@ -385,8 +391,11 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
         # produces -32003/-32007 on its own paths.)
         -32_603 => 500,
         -32_003 => 400,
-        -32_005 => 415,
-        -32_006 => 502,
+        # Spec section 5.4 (v1.0.1 and v1.1.0-rc): ContentTypeNotSupportedError
+        # is `400 Bad Request`, InvalidAgentResponseError is `500 Internal
+        # Server Error`.
+        -32_005 => 400,
+        -32_006 => 500,
         -32_007 => 400,
         -32_008 => 400,
         -32_009 => 400,
@@ -417,12 +426,21 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
       conn = rest_conn(opts, "post", "/message:send", "definitely not json")
       assert conn.status == 400
 
+      # Spec section 11.6: `details` is an array of `@type` objects; the
+      # parse error carries the same ErrorInfo as its JSON-RPC form (9.5).
       assert Jason.decode!(conn.resp_body) ==
                %{
                  "error" => %{
                    "code" => 400,
                    "status" => "INVALID_ARGUMENT",
-                   "message" => "Invalid JSON payload"
+                   "message" => "Invalid JSON payload",
+                   "details" => [
+                     %{
+                       "@type" => @error_info_type,
+                       "domain" => @a2a_domain,
+                       "reason" => "JSON_PARSE"
+                     }
+                   ]
                  }
                }
 
@@ -437,8 +455,20 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
 
       assert conn.status == 413
 
-      assert %{"error" => %{"code" => 413, "details" => "Body too large"}} =
-               Jason.decode!(conn.resp_body)
+      # Spec section 11.6: `details` is an array of `@type` objects, so the
+      # detail text rides the ErrorInfo metadata.
+      assert %{
+               "error" => %{
+                 "code" => 413,
+                 "details" => [
+                   %{
+                     "@type" => @error_info_type,
+                     "reason" => "INVALID_REQUEST",
+                     "metadata" => %{"detail" => "Body too large"}
+                   }
+                 ]
+               }
+             } = Jason.decode!(conn.resp_body)
 
       # -32602 invalid params -> 400
       conn = post_json(opts, "/message:send", %{"configuration" => %{}})
@@ -468,14 +498,17 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
                }
              } = Jason.decode!(conn.resp_body)
 
-      # -32002 cancel a terminal task -> 409 (pinned TCK CORE-CANCEL-002)
+      # -32002 cancel a terminal task -> 400: spec section 5.4 maps
+      # TaskNotCancelableError to `400 Bad Request` at v1.0.1 and v1.1.0-rc.
+      # (This court used to pin 409 from TCK CORE-CANCEL-002; see "Needs
+      # owner: version gating" in docs/reference/a2a-v1-1-parity-findings.md.)
       %{"task" => %{"id" => task_id}} = send_message(opts, "go")
       conn = post_json(opts, "/tasks/#{task_id}:cancel", %{})
-      assert conn.status == 409
+      assert conn.status == 400
 
       assert %{
                "error" => %{
-                 "code" => 409,
+                 "code" => 400,
                  "status" => "FAILED_PRECONDITION",
                  "details" => [%{"@type" => @error_info_type, "reason" => "TASK_NOT_CANCELABLE"}]
                }

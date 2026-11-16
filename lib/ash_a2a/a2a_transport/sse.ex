@@ -70,6 +70,17 @@ defmodule AshA2A.A2ATransport.SSE do
         # Spec §3.1.2: a message-only stream is exactly one Message, then close.
         conn |> start_sse() |> write_frame(id, nil, encode_event(reply))
 
+      {:error, {:not_streaming, %AshA2A.Protocol.Task{} = task}} ->
+        # The skill answered without a chunk stream (it finished at once, or
+        # parked at input-required / auth-required). Spec §3.1.2: the stream
+        # still opens with the Task, which already carries that state; an
+        # interrupted state is no reason to refuse the stream.
+        run_on_task(Keyword.get(sse_opts, :on_task), task)
+        snapshot = encode_task(task)
+        closed? = task.status.state not in [:submitted, :working]
+        TaskEvents.publish(transport, task.id, "task", snapshot, closed?, task_gen(task))
+        conn |> start_sse() |> write_frame(id, nil, snapshot)
+
       other ->
         # Typed errors survive (-32001 / -32602 / -32000); SEC-08: no raw
         # reason (it can carry a task with metadata["a2a.auth"]) reaches the wire.
@@ -166,6 +177,7 @@ defmodule AshA2A.A2ATransport.SSE do
   def stream_error({:error, reason}), do: stream_error(reason)
   def stream_error(:not_found), do: Error.task_not_found()
   def stream_error(:terminal), do: Error.unsupported_operation()
+  def stream_error(:generation_mismatch), do: Error.task_generation_mismatch()
 
   def stream_error({:invalid_params, detail}) when is_binary(detail),
     do: Error.invalid_params(detail)
@@ -248,7 +260,13 @@ defmodule AshA2A.A2ATransport.SSE do
     # transition (TCK STREAM-SUB-002). The {:subscribe, task_id}
     # registration delivers {:a2a_task_event, task_id, task} here at
     # every transition (handled in follow/7).
-    _ = safe_subscribe(agent, task_id)
+    # The snapshot the agent hands back is the baseline the fan-out's later
+    # snapshots are compared with (`ride_along/8`).
+    sse_opts =
+      case safe_subscribe(agent, task_id) do
+        {:ok, %AshA2A.Protocol.Task{} = baseline} -> Keyword.put(sse_opts, :baseline, baseline)
+        _ -> sse_opts
+      end
 
     replay_and_follow(conn, transport, task_id, id, backlog, after_seq, sse_opts)
   end
@@ -326,21 +344,25 @@ defmodule AshA2A.A2ATransport.SSE do
       # later part is `append: true`. One-ahead buffering (as in plug.ex): a
       # part is published when its successor arrives; the drain publishes the
       # pending final part with `last_chunk: true`.
+      # Each chunk is a stored task mutation; its event carries the task's
+      # generation after it (A2A v1.1 3.2.7), read when the chunk is taken.
       pending =
         Enum.reduce(enum, nil, fn part, pending ->
+          gen = AshA2A.Protocol.Agent.Runtime.chunk_generation(task.id)
+
           case pending do
             nil ->
-              {part, 0}
+              {part, 0, gen}
 
-            {prev, index} ->
-              publish_chunk(transport, task, artifact, prev, index, false)
-              {part, index + 1}
+            {prev, index, prev_gen} ->
+              publish_chunk(transport, task, artifact, prev, index, false, prev_gen)
+              {part, index + 1, gen}
           end
         end)
 
       case pending do
         nil -> :ok
-        {part, index} -> publish_chunk(transport, task, artifact, part, index, true)
+        {part, index, gen} -> publish_chunk(transport, task, artifact, part, index, true, gen)
       end
 
       # The agent's stream wrapper casts {:stream_done, ...} from this process
@@ -359,6 +381,9 @@ defmodule AshA2A.A2ATransport.SSE do
       # TaskState note): an interrupted state (input-/auth-required) is
       # published non-final, so subscribers stay attached for the task's
       # continuation.
+      # `once`: a subscriber riding the agent fan-out may already have
+      # published this status at the same generation.
+      gen_opts = if gen_opts == [], do: [], else: Keyword.put(gen_opts, :once, true)
       TaskEvents.publish(transport, task.id, "status-update", final, terminal?, gen_opts)
     rescue
       e -> publish_failed(transport, task, Exception.message(e))
@@ -374,15 +399,19 @@ defmodule AshA2A.A2ATransport.SSE do
     end
   end
 
-  defp publish_chunk(transport, task, artifact, part, index, last?) do
+  defp publish_chunk(transport, task, artifact, part, index, last?, gen) do
     event =
       AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, %{artifact | parts: List.wrap(part)},
         context_id: task.context_id,
         append: index > 0,
-        last_chunk: last?
+        last_chunk: last?,
+        generation: gen
       )
 
-    TaskEvents.publish(transport, task.id, "artifact-update", encode_event(event))
+    # `once: true`: a subscriber riding the agent's own fan-out may already
+    # have published this mutation; the log keeps one event per generation.
+    opts = if is_integer(gen), do: [generation: gen, once: true], else: []
+    TaskEvents.publish(transport, task.id, "artifact-update", encode_event(event), false, opts)
   end
 
   defp publish_failed(transport, task, message) do
@@ -474,6 +503,11 @@ defmodule AshA2A.A2ATransport.SSE do
           # status-update through the ordered log; the agent's terminal
           # notification races ahead of the last chunk, so it must not end the
           # stream. The log's final event does.
+          opts =
+            if Keyword.has_key?(opts, :baseline),
+              do: Keyword.put(opts, :baseline, task),
+              else: opts
+
           follow(conn, transport, task_id, id, last, opts, idle)
         else
           ride_along(conn, transport, task_id, id, last, opts, idle, task)
@@ -542,7 +576,41 @@ defmodule AshA2A.A2ATransport.SSE do
   # this one, via the 6-tuple clause of follow/7. If the log's latest
   # status-bearing event already carries this state (another subscriber
   # published it first), nothing is republished.
+  #
+  # One event per mutation between the previous snapshot and this one
+  # (`AshA2A.Protocol.Task.Delta`: status, artifact and message events, each at
+  # the task's generation after it; A2A v1.1 3.2.7). `once: true` keeps one
+  # event per generation when the stream pump or another subscriber reports
+  # the same mutation.
   defp ride_along(conn, transport, task_id, id, last, opts, idle, task) do
+    case Keyword.get(opts, :baseline) do
+      %AshA2A.Protocol.Task{} = baseline ->
+        for {gen, event} <- AshA2A.Protocol.Task.Delta.events(baseline, task) do
+          TaskEvents.publish(
+            transport,
+            task_id,
+            delta_kind(event),
+            encode_event(event),
+            Map.get(event, :final, false) == true,
+            generation: gen,
+            once: true
+          )
+        end
+
+        opts = Keyword.put(opts, :baseline, task)
+        follow(conn, transport, task_id, id, last, opts, idle)
+
+      _none ->
+        ride_along_status(conn, transport, task_id, id, last, opts, idle, task)
+    end
+  end
+
+  defp delta_kind(%AshA2A.Protocol.Event.StatusUpdate{}), do: "status-update"
+  defp delta_kind(%AshA2A.Protocol.Event.ArtifactUpdate{}), do: "artifact-update"
+  defp delta_kind(%AshA2A.Protocol.Event.MessageUpdate{}), do: "message-update"
+
+  # No baseline snapshot is held: report the status only.
+  defp ride_along_status(conn, transport, task_id, id, last, opts, idle, task) do
     terminal? = AshA2A.Protocol.Task.terminal?(task)
 
     encoded =

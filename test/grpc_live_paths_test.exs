@@ -356,7 +356,7 @@ defmodule AshA2A.GRPCLivePathsTest do
 
   # -- SubscribeToTask on a terminal task --------------------------------------
 
-  test "SubscribeToTask on a terminal task is UNIMPLEMENTED(12) UNSUPPORTED_OPERATION", %{
+  test "SubscribeToTask on a terminal task is FAILED_PRECONDITION(9) UNSUPPORTED_OPERATION", %{
     transport: t
   } do
     ch = connect(LiveAgent, t, __MODULE__.TerminalSup)
@@ -372,7 +372,7 @@ defmodule AshA2A.GRPCLivePathsTest do
 
     error = first_error(result)
 
-    assert error.status == 12
+    assert error.status == 9
     assert "UNSUPPORTED_OPERATION" in rpc_error_reasons(error)
   end
 end

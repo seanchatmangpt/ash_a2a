@@ -488,8 +488,11 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-grpc-1", rest) ==
              expected1
 
+    # `next_page_token` is a plain proto3 string of
+    # ListTaskPushNotificationConfigsResponse (v1.0.1 and v1.1.0-rc), so
+    # ProtoJSON omits it when empty.
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig", rest) ==
-             %{"configs" => [expected1], "nextPageToken" => ""}
+             %{"configs" => [expected1]}
 
     # (b) Dispatch-layer parity with credentials: the gRPC binding's own
     # dispatch layer answers the SAME proto-JSON map the REST binding
@@ -544,17 +547,18 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
                %Pb.DeleteTaskPushNotificationConfigRequest{task_id: task_id, id: "cfg-grpc-1"}
              )
 
+    # Spec section 3.1.8 (v1.0.1 and v1.1.0-rc): a configuration that does
+    # not exist is TaskNotFoundError, `404 Not Found` per section 5.4.
     assert rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/cfg-grpc-1", rest) == %{
              "error" => %{
-               "code" => 400,
-               "message" => "Invalid parameters",
-               "status" => "INVALID_ARGUMENT",
+               "code" => 404,
+               "message" => "Task not found",
+               "status" => "NOT_FOUND",
                "details" => [
                  %{
                    "@type" => @error_info_type,
                    "domain" => "a2a-protocol.org",
-                   "reason" => "INVALID_PARAMS",
-                   "metadata" => %{"detail" => "push notification config not found"}
+                   "reason" => "TASK_NOT_FOUND"
                  }
                ]
              }
@@ -584,23 +588,26 @@ defmodule AshA2A.ConferenceSim.GRPCVenueCourt do
              error_infos(error)
   end
 
-  test "court 3b: missing push config — gRPC INVALID_ARGUMENT(3)+INVALID_PARAMS vs REST 400 envelope",
+  # Spec section 3.1.8 (v1.0.1 and v1.1.0-rc): a missing push notification
+  # configuration is TaskNotFoundError; section 5.4 maps it to gRPC NOT_FOUND
+  # and HTTP 404.
+  test "court 3b: missing push config — gRPC NOT_FOUND(5)+TASK_NOT_FOUND vs REST 404 envelope",
        %{
          rest: rest,
          channel: channel
        } do
     task_id = rest_new_task(rest, "typed errors task")
 
-    assert %{"error" => %{"code" => 400, "details" => [%{"reason" => "INVALID_PARAMS"}]}} =
+    assert %{"error" => %{"code" => 404, "details" => [%{"reason" => "TASK_NOT_FOUND"}]}} =
              rest_json(:get, "/tasks/#{task_id}/pushNotificationConfig/nope", rest)
 
-    assert {:error, %GRPC.RPCError{status: 3} = error} =
+    assert {:error, %GRPC.RPCError{status: 5} = error} =
              Lf.A2a.V1.A2AService.Stub.get_task_push_notification_config(
                channel,
                %Pb.GetTaskPushNotificationConfigRequest{task_id: task_id, id: "nope"}
              )
 
-    assert [%Google.Rpc.ErrorInfo{reason: "INVALID_PARAMS", domain: "a2a-protocol.org"}] =
+    assert [%Google.Rpc.ErrorInfo{reason: "TASK_NOT_FOUND", domain: "a2a-protocol.org"}] =
              error_infos(error)
   end
 

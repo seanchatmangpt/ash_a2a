@@ -169,4 +169,78 @@ defmodule AshA2A.AuthorityBrokerInMemoryTest do
     # broker_b never observed the revoke against its own real process state.
     assert {:ok, ^authority} = InMemory.verify(authority, name: broker_b)
   end
+
+  describe "issue/3 after revoke/2" do
+    test "the grant stands again, and the revoked authority stays revoked" do
+      subject = Identity.principal("regrant-subject")
+      token = Authority.grant_token_id(subject, "widgets:write")
+      opts = [name: start_broker!()]
+
+      assert {:ok, first} = InMemory.issue(subject, "widgets:write", [token_id: token] ++ opts)
+      assert InMemory.granted?(subject, "widgets:write", opts)
+
+      # While the grant stands, its token id is taken.
+      assert {:error, %{reason: :token_id_taken}} =
+               InMemory.issue(subject, "widgets:write", [token_id: token] ++ opts)
+
+      assert :ok = InMemory.revoke(first, opts)
+      refute InMemory.granted?(subject, "widgets:write", opts)
+      assert {:error, %{reason: :revoked}} = InMemory.verify(first, opts)
+
+      assert {:ok, second} = InMemory.issue(subject, "widgets:write", [token_id: token] ++ opts)
+      assert second.token_id == first.token_id
+      assert DateTime.compare(second.issued_at, first.issued_at) == :gt
+      assert InMemory.granted?(subject, "widgets:write", opts)
+      assert {:ok, ^second} = InMemory.verify(second, opts)
+
+      # Re-issuing did not resurrect the credential that was revoked, nor a
+      # copy of it backdated to before the revocation.
+      assert {:error, %{reason: :revoked}} = InMemory.verify(first, opts)
+
+      assert {:error, %{reason: :revoked}} =
+               InMemory.verify(%{second | issued_at: first.issued_at}, opts)
+
+      # A second revoke tears the new grant down too.
+      assert :ok = InMemory.revoke(second, opts)
+      refute InMemory.granted?(subject, "widgets:write", opts)
+      assert {:error, %{reason: :revoked}} = InMemory.verify(second, opts)
+    end
+
+    test "a backdated issued_at cannot place the new authority before the revocation" do
+      subject = Identity.principal("backdate-subject")
+      token = Authority.grant_token_id(subject, "widgets:write")
+      opts = [name: start_broker!()]
+      long_ago = ~U[2020-01-01 00:00:00.000000Z]
+
+      assert {:ok, first} = InMemory.issue(subject, "widgets:write", [token_id: token] ++ opts)
+      assert :ok = InMemory.revoke(first, opts)
+
+      assert {:ok, second} =
+               InMemory.issue(
+                 subject,
+                 "widgets:write",
+                 [token_id: token, issued_at: long_ago] ++ opts
+               )
+
+      assert DateTime.compare(second.issued_at, first.issued_at) == :gt
+      assert {:ok, _} = InMemory.verify(second, opts)
+    end
+
+    test "a revoked token id cannot be issued to another principal or capability" do
+      subject = Identity.principal("owner-subject")
+      opts = [name: start_broker!()]
+
+      assert {:ok, first} = InMemory.issue(subject, "widgets:write", opts)
+      assert :ok = InMemory.revoke(first, opts)
+      taken = [token_id: first.token_id.value] ++ opts
+
+      assert {:error, %{reason: :token_id_taken}} =
+               InMemory.issue(Identity.principal("other-subject"), "widgets:write", taken)
+
+      assert {:error, %{reason: :token_id_taken}} =
+               InMemory.issue(subject, "widgets:delete", taken)
+
+      assert {:error, %{reason: :revoked}} = InMemory.verify(first, opts)
+    end
+  end
 end

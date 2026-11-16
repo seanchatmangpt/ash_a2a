@@ -143,7 +143,9 @@ defmodule AshA2A.GRPCExtensionGateTest do
 
   @bad_version [metadata: %{"a2a-version" => "99.0"}]
 
-  test "all 11 RPCs refuse an unsupported a2a-version with UNIMPLEMENTED(12)", %{transport: t} do
+  test "all 11 RPCs refuse an unsupported a2a-version with FAILED_PRECONDITION(9)", %{
+    transport: t
+  } do
     put_server(t)
     ch = start_listener()
 
@@ -197,13 +199,14 @@ defmodule AshA2A.GRPCExtensionGateTest do
 
     for {name, call} <- calls do
       error = first_error(call.())
-      assert error.status == 12, "#{name}: expected UNIMPLEMENTED(12), got #{inspect(error)}"
+      assert error.status == 9, "#{name}: expected FAILED_PRECONDITION(9), got #{inspect(error)}"
     end
   end
 
-  test "SendLiveMessage (v1.1 bidi) refuses an unsupported a2a-version with UNIMPLEMENTED(12)", %{
-    transport: t
-  } do
+  test "SendLiveMessage (v1.1 bidi) refuses an unsupported a2a-version with FAILED_PRECONDITION(9)",
+       %{
+         transport: t
+       } do
     put_server(t)
     ch = start_listener()
 
@@ -222,7 +225,7 @@ defmodule AshA2A.GRPCExtensionGateTest do
           end
       end
 
-    assert error.status == 12
+    assert error.status == 9
   end
 
   test "required extension missing -> FAILED_PRECONDITION(9); present -> ok + echoed metadata", %{
@@ -254,7 +257,7 @@ defmodule AshA2A.GRPCExtensionGateTest do
     ch = start_listener()
 
     # Absent header = "0.3" default, which this server no longer supports.
-    assert {:error, %GRPC.RPCError{status: 12}} = Stub.send_message(ch, message_request())
+    assert {:error, %GRPC.RPCError{status: 9}} = Stub.send_message(ch, message_request())
 
     assert {:ok, %Pb.SendMessageResponse{}} =
              Stub.send_message(ch, message_request(), metadata: %{"a2a-version" => "1.0"})

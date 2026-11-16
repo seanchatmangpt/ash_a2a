@@ -18,7 +18,7 @@ defmodule AshA2A.Sim.Parity do
         {:ok, report} -> report["summary"]
         {:skip, reason} -> reason
       end
-      #=> %{"pass" => 931, "fail" => 0, "known" => 37, "skip" => 2}
+      #=> %{"pass" => 1209, "fail" => 0, "known" => 0, "skip" => 0}
 
   The script needs a Python virtual environment that
   `scripts/a2a_v1_1_parity/setup.sh` creates. `check/0` says whether it is
@@ -47,19 +47,14 @@ defmodule AshA2A.Sim.Parity do
 
   @doc """
   The bindings the script reports on, in report order. The second JSON-RPC
-  entry is the owner-scoped `/jsonrpc` mount.
+  entry is the owner-scoped `/jsonrpc` mount; `"v1.0"` holds the vectors sent
+  with `A2A-Version: 1.0` and compared with the upstream v1.0.1 proto.
   """
   @spec bindings() :: [String.t()]
-  def bindings,
-    do: [
-      "grpc",
-      "http+json",
-      "jsonrpc",
-      "jsonrpc:/jsonrpc",
-      "agent-card",
-      "cross-binding",
-      "coverage"
-    ]
+  def bindings do
+    ["grpc", "http+json", "jsonrpc", "jsonrpc:/jsonrpc", "v1.0"] ++
+      ["agent-card", "cross-binding", "coverage"]
+  end
 
   @doc "The directory holding the script, its README and `setup.sh`."
   @spec script_dir() :: String.t()

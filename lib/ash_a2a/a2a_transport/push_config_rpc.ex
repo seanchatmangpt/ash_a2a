@@ -36,13 +36,34 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
   @spec handle(String.t(), map(), term(), map()) :: map()
   def handle(method, params, id, ctx) when is_map(params) do
     case run(method, params, ctx) do
-      {:ok, result} -> Response.success(id, result)
+      {:ok, result} -> Response.success(id, for_version(result, ctx))
       {:error, %Error{} = error} -> Response.error(id, error)
     end
   end
 
   def handle(_method, _params, id, _ctx),
     do: Response.error(id, Error.invalid_params("params must be an object"))
+
+  # `TaskPushNotificationConfig.protocol_version` is field 7, added in v1.1.
+  # A caller that negotiated an older version gets the v1.0 message.
+  defp for_version(result, ctx) do
+    if AshA2A.Protocol.Downgrade.applies?(Map.get(ctx, :a2a_version)),
+      do: drop_protocol_version(result),
+      else: result
+  end
+
+  defp drop_protocol_version(%{"configs" => configs} = result) when is_list(configs),
+    do: %{result | "configs" => Enum.map(configs, &drop_protocol_version/1)}
+
+  defp drop_protocol_version(%{"pushNotificationConfig" => %{} = inner} = result),
+    do: %{result | "pushNotificationConfig" => Map.delete(inner, "protocolVersion")}
+
+  defp drop_protocol_version(%{} = result), do: Map.delete(result, "protocolVersion")
+
+  defp drop_protocol_version(list) when is_list(list),
+    do: Enum.map(list, &drop_protocol_version/1)
+
+  defp drop_protocol_version(other), do: other
 
   defp run("tasks/pushNotificationConfig/set", params, ctx) do
     # `tenant` (v1 multi-tenancy) is routing-only: it selects the agent/mount

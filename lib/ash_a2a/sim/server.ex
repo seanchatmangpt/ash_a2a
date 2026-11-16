@@ -150,7 +150,9 @@ if Code.ensure_loaded?(Bandit) do
       if rest == @card_path do
         transport.call(conn, transport_opts)
       else
-        conn = AshA2A.Protocol.Plug.Auth.call(conn, auth)
+        # A refusal is answered in the error format of the mount's binding.
+        format = if transport == AshA2A.Transport.HTTPJSON, do: :http_json, else: :jsonrpc
+        conn = AshA2A.Protocol.Plug.Auth.call(conn, Map.put(auth, :error_format, format))
         if conn.halted, do: conn, else: transport.call(conn, transport_opts)
       end
     end
@@ -179,7 +181,7 @@ if Code.ensure_loaded?(Bandit) do
       * a webhook receiver (`AshA2A.Sim.PushReceiver`) that records
         push-notification deliveries.
       * an ETS event journal (`AshA2A.TaskStore.EventJournalEts`) and a fresh
-        ES256 key pair that signs every served agent card.
+        Ed25519 key pair that signs every served agent card (public and extended).
 
     ## Options
 
@@ -345,7 +347,8 @@ if Code.ensure_loaded?(Bandit) do
         opts: %{},
         transport: @transport,
         base_url: info.a2a_url,
-        agent_card_opts: [supported_interfaces: interfaces]
+        agent_card_opts: [supported_interfaces: interfaces],
+        sign_with: sign_with
       })
 
       AshA2A.Sim.Router.put_mounts(mounts(info, interfaces, sign_with))
@@ -391,22 +394,23 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
-    # A fresh ES256 (P-256) key pair per server run, as private and public JWK.
+    # A fresh Ed25519 key pair per server run, as private and public JWK.
+    # EdDSA signatures are deterministic: the same card gets the same
+    # signature on every binding and every request.
     defp card_keys do
-      {<<4, x::binary-32, y::binary-32>>, d} = :crypto.generate_key(:ecdh, :secp256r1)
+      {pub, priv} = :crypto.generate_key(:eddsa, :ed25519)
       b64 = &Base.url_encode64(&1, padding: false)
 
       public = %{
-        "kty" => "EC",
-        "crv" => "P-256",
-        "x" => b64.(x),
-        "y" => b64.(y),
+        "kty" => "OKP",
+        "crv" => "Ed25519",
+        "x" => b64.(pub),
         "kid" => @card_kid,
         "use" => "sig",
-        "alg" => "ES256"
+        "alg" => "EdDSA"
       }
 
-      {Map.put(public, "d", b64.(d)), public}
+      {Map.put(public, "d", b64.(priv)), public}
     end
 
     defp mounts(info, interfaces, sign_with) do

@@ -2,8 +2,9 @@ defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
   @moduledoc """
   `tasks/resubscribe` replays missed events through the configured
   `AshA2A.Protocol.EventJournal` and, for a non-terminal task with no local
-  live producer, closes with a `PRODUCER_UNAVAILABLE` StreamError instead of
-  hanging. Real agent, real Plug.Test conn, hand-written journal module.
+  live producer (an agent process that only reads it through the task store),
+  closes with a `PRODUCER_UNAVAILABLE` StreamError instead of hanging. Real
+  agent, real task store, real Plug.Test conn, hand-written journal module.
   """
   use ExUnit.Case, async: false
   import Plug.Test
@@ -35,10 +36,17 @@ defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
   end
 
   setup do
-    start_supervised!({AskAgent, []})
+    store = :"w202_store_#{System.unique_integer([:positive])}"
+
+    start_supervised!(%{
+      id: :store,
+      start: {AshA2A.Protocol.TaskStore.ETS, :start_link, [[name: store]]}
+    })
+
+    spec = {AskAgent, task_store: {AshA2A.Protocol.TaskStore.ETS, store}}
+    start_supervised!(spec)
 
     old = Application.get_all_env(:ash_a2a)
-    Application.put_env(:ash_a2a, :event_journal, {Journal, :w202})
     Application.put_env(:ash_a2a, :resubscribe_orphan_grace_ms, 50)
 
     on_exit(fn ->
@@ -51,6 +59,13 @@ defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
     end)
 
     {:ok, task} = AshA2A.Protocol.call(AskAgent, "hello")
+
+    # A fresh agent process: it can read the task through the store but did
+    # not run it, so it holds no producer for it.
+    :ok = stop_supervised(AskAgent)
+    start_supervised!(spec)
+    Application.put_env(:ash_a2a, :event_journal, {Journal, :w202})
+
     %{task: task, gen: AshA2A.Protocol.Task.Generation.generation_of(task)}
   end
 

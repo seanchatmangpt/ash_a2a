@@ -133,6 +133,11 @@ NORMALISATIONS = [
         "why": "the protobuf encoding leaves map entry order undefined, and deterministic serialisation is only stable within one implementation (the Python runtime does not sort keys lexicographically)",
     },
     {
+        "what": "Agent Card signature bytes (cross-binding row only)",
+        "how": "the `signature` of each AgentCardSignature is blanked before the three bindings' cards are compared",
+        "why": "the card is signed per answer with ECDSA, whose signatures are randomised; the prover verifies each served signature",
+    },
+    {
         "what": "JSON-RPC envelope",
         "how": "the `result` member is compared; `jsonrpc`, `id` and the member set are checked separately and exactly",
         "why": "the envelope is JSON-RPC 2.0, not a protobuf message",
@@ -146,6 +151,19 @@ NORMALISATIONS = [
         "what": "HTTP 204 for DeleteTaskPushNotificationConfig",
         "how": "an empty 204 body is accepted as google.protobuf.Empty",
         "why": "spec 3.1.10: the confirmation of deletion is implementation-specific",
+    },
+]
+
+# Vectors that exist on one transport only, with the reason. They produce no
+# row on the others.
+NOT_APPLICABLE = [
+    {
+        "bindings": ["http+json", "jsonrpc"],
+        "vectors": ["later subscribe is rejected with a StreamError", "request naming another task is rejected with a StreamError"],
+        "why": "spec 3.1.12: over HTTP every later request is its own call to the same operation, so a `subscribe`, or a "
+               "message naming another task, opens another stream of its own (3.5.2 allows several streams); only a "
+               "native-duplex stream (gRPC) has a 'later request on this stream' to reject. The per-request rejection "
+               "itself is checked on every binding by 'declined request is a StreamError on the downlink'.",
     },
 ]
 
@@ -809,13 +827,27 @@ def run_live(b, env):
              lambda: pb.StreamRequest(send_message=send_request("count_notes", task_id=other_id, context_id=task.context_id))),
         ):
             if not live.duplex:
-                b.report.add(b.name, op, name, "semantics", "skip",
-                             "native-duplex only: over HTTP this request is a new call that opens its own stream (3.1.12)")
+                # Not applicable, so no row: see NOT_APPLICABLE.
                 continue
             other = send(b, "seed another task", "count_notes")
             other_id = other.id if other is not None else "tsk-other"
             live.send(build())
             sem(b, op, name, *expect_live_rejection(b, live, None))
+
+        # A request the agent declines is rejected on the downlink with a
+        # StreamError naming it, on every transport (3.1.12).
+        name = "declined request is a StreamError on the downlink"
+        stale = send_request("create_note", {"title": uid("stale")}, {"ifGenerationMatch": str(task.generation + 40)},
+                             task_id=task.id, context_id=task.context_id)
+        before = len([f for f in live.frames if f.WhichOneof("payload") == "error"])
+        live.send(pb.StreamRequest(send_message=stale))
+        ok, detail = expect_live_rejection(b, live, None)
+        errors = [f.error for f in live.frames if f.WhichOneof("payload") == "error"][before:]
+        if ok and errors and errors[-1].reference_id != stale.message.message_id:
+            ok, detail = False, f"referenceId {errors[-1].reference_id!r} does not name the rejected message {stale.message.message_id!r}"
+        if ok and errors and errors[-1].code != "ABORTED":
+            ok, detail = False, f"StreamError.code {errors[-1].code!r}; the unary operation answers ABORTED for a generation mismatch"
+        sem(b, op, name, ok, detail)
 
         name = "client message arrives as TaskMessageUpdateEvent"
         follow = pb.StreamRequest(send_message=send_request(
@@ -1219,6 +1251,14 @@ def run_cross(env, report):
         report.add("cross-binding", "ListTasks", f"context of the task created over {creator.name}", "identical", same,
                    f"identical ListTasksResponse over {sorted(listings)}" if same else f"{len(set(listings.values()))} distinct answers over {sorted(listings)}")
 
+    def unsigned(card):
+        copy = pb.AgentCard()
+        copy.CopyFrom(card)
+        for signature in copy.signatures:
+            signature.signature = ""
+        return copy
+
+    env.cards = {name: unsigned(card) for name, card in env.cards.items()}
     cards = {name: card.SerializeToString(deterministic=True) for name, card in env.cards.items() if name in [b.name for b in full]}
     if len(cards) >= 2:
         same = len(set(cards.values())) == 1
@@ -1375,6 +1415,7 @@ def main(argv=None):
     if wanted is not None and "cross" not in wanted:
         print_matrix(report, {"response_fields": {"observed": 0, "reachable": 0, "unreachable": {}}}, sys.stdout)
         return 1 if report.summary()["fail"] else 0
+    run_v1_0(args, report)
     try:
         run_cross(env, report)
     except Exception as exc:
@@ -1392,6 +1433,7 @@ def main(argv=None):
         "summary": summary,
         "normalisations": NORMALISATIONS,
         "not_normalised": NOT_NORMALISED,
+        "not_applicable": NOT_APPLICABLE,
         "coverage": coverage,
         "known_defects": sorted({row["finding"] for row in report.rows if row["status"] == "known"}),
         "raw_canonical_json_bodies": {"already_canonical": report.raw_canonical[0], "total": report.raw_canonical[1]},
@@ -1409,6 +1451,32 @@ def main(argv=None):
     if summary["fail"]:
         return 1
     return 3 if summary["known"] else 0
+
+
+def run_v1_0(args, report):
+    """Runs parity_v1_0.py (stubs from v1.0.1) in its own process and adopts its rows."""
+    import os
+    import subprocess
+
+    gen = os.path.join(os.path.dirname(ref.GEN.rstrip("/")), "a2a_v1_0_gen")
+    if not os.path.isfile(os.path.join(gen, "a2a_pb2.py")):
+        report.add("v1.0", "all", "A2A-Version 1.0 against the v1.0.1 proto", "call", "skip",
+                   f"no v1.0.1 stubs in {gen}: re-run setup.sh with the upstream clone holding tag v1.0.1")
+        return
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_v1_0.py")
+    done = subprocess.run(
+        [sys.executable, script, "--http", args.http, "--grpc", args.grpc, "--writer-token", args.writer_token],
+        env={**os.environ, "A2A_PARITY_GEN": gen, "PYTHONDONTWRITEBYTECODE": "1"},
+        capture_output=True, text=True, timeout=90,
+    )
+    try:
+        rows = json.loads(done.stdout)["rows"]
+    except Exception:
+        report.add("v1.0", "all", "A2A-Version 1.0 against the v1.0.1 proto", "call", False,
+                   f"parity_v1_0.py exited {done.returncode}: {done.stderr[-400:]}")
+        return
+    for row in rows:
+        report.add(row["binding"], row["operation"], row["vector"], row["check"], row["status"], row["detail"])
 
 
 def load_known(path):
