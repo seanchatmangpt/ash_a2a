@@ -6,8 +6,8 @@ import XCTest
 
 // UNVERIFIED: written without a Swift toolchain; not compiled, not run.
 // The server below is a real unix-socket peer speaking the listener's framing, but it is a
-// stand-in: the Elixir `AuthorityService.Listener` is exercised by
-// authority_service/test/approver_mailbox_test.exs and test/ash_a2a/c2/approve_client_test.exs.
+// stand-in: the Elixir `AuthorityService.Listener` is NOT started from Swift. Interop with the
+// real listener is not tested by any test here (see docs/how-to/approve-over-the-wire.md).
 final class WireApprovalTests: XCTestCase {
     /// One-shot server: accepts one connection, captures the request frame body, replies with `reply`.
     final class OneShotServer {
