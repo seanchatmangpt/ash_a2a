@@ -47,6 +47,17 @@ defmodule AshA2A.Dsl do
       default: true,
       doc: "Whether this otherwise-public Ash action is exposed through AshA2A.Protocol."
     ],
+    reply: [
+      type: {:one_of, [:task, :message]},
+      default: :task,
+      doc:
+        "How the skill answers. `:task` (default): with a task; a stream is a " <>
+          "task lifecycle stream whose Task frame is sent before the action runs. " <>
+          "`:message`: with a bare Message carrying the action's result and no " <>
+          "task; nothing is stored, `message/send` answers that Message and a " <>
+          "stream is exactly one Message frame (A2A v1.1 3.1.2). A message-only " <>
+          "skill cannot ask for input, stream artifacts or be cancelled."
+    ],
     consequence: [
       type: {:one_of, [:observe, :change, :external_do, :unknown]},
       required: false,

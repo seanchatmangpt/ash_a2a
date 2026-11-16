@@ -48,6 +48,7 @@ defmodule AshA2A.Transport.Follow do
   def admit_opts(call_opts) do
     call_opts
     |> Keyword.put(:return_immediately, true)
+    |> Keyword.put(:stream_admit, true)
     |> Keyword.put(:subscribe, self())
   end
 

@@ -883,6 +883,8 @@ defmodule AshA2A.Transport.GRPC.Server do
   # Fail-closed: a configured-but-malformed endpoint env or a malformed auth
   # option refuses the call (INTERNAL) instead of silently admitting it.
   defp auth!(mat) do
+    AshA2A.Transport.GRPC.UnknownMethod.ensure_installed(Map.get(mat, :endpoint))
+
     case Application.get_env(:ash_a2a, AshA2A.Transport.GRPC.Server.Endpoint, []) do
       kw when is_list(kw) ->
         case Keyword.get(kw, :auth) do

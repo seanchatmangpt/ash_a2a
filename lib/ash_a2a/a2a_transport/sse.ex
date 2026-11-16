@@ -62,12 +62,16 @@ defmodule AshA2A.A2ATransport.SSE do
          admit_opts =
            call_opts
            |> Keyword.put(:return_immediately, true)
+           |> Keyword.put(:stream_admit, true)
            |> Keyword.put(:subscribe, pump),
          {:ok, %AshA2A.Protocol.Task{} = task} <- admit(agent, message, admit_opts, pump) do
       run_on_task(Keyword.get(sse_opts, :on_task), task)
       snapshot = encode_task(task)
       maybe_publish_message_update(transport, task, message)
-      TaskEvents.publish(transport, task.id, "task", snapshot, false, task_gen(task))
+      # A task the handler already settled (an agent whose handler ran first,
+      # see `c:AshA2A.Protocol.Agent.reply_mode/1`) is the whole stream.
+      settled? = AshA2A.Transport.Follow.settled?(task, :send)
+      TaskEvents.publish(transport, task.id, "task", snapshot, settled?, task_gen(task))
       send(pump, {:ash_a2a_follow, task})
 
       backlog =

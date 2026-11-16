@@ -528,10 +528,19 @@ defmodule AshA2A.V1WirePropertiesTest do
   defp expected(%Part.Text{} = p), do: p
   defp expected(%Part.Data{} = p), do: p
   # google.protobuf.Timestamp in ProtoJSON carries 0, 3, 6 or 9 fractional
-  # digits, and spec section 5.6.1 lets the fraction be omitted: a timestamp on
-  # a whole second is written without one and decodes at second precision.
-  defp expected(%Task.Status{timestamp: %DateTime{microsecond: {0, _}} = ts} = s),
-    do: %{s | timestamp: DateTime.truncate(ts, :second)}
+  # digits (spec section 5.6.1 lets the fraction be omitted or zero-filled):
+  # a whole second is written without a fraction and a whole millisecond with
+  # three digits, and each decodes at the precision that was written.
+  defp expected(%Task.Status{timestamp: %DateTime{microsecond: {usec, _}} = ts} = s) do
+    precision =
+      cond do
+        usec == 0 -> :second
+        rem(usec, 1000) == 0 -> :millisecond
+        true -> :microsecond
+      end
+
+    %{s | timestamp: DateTime.truncate(ts, precision)}
+  end
 
   defp expected(%Task.Status{} = s), do: s
   defp expected(%Artifact{} = a), do: a

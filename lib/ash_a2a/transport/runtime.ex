@@ -208,50 +208,84 @@ defmodule AshA2A.Transport.Runtime do
           do: task,
           else: State.transition(task, :working)
 
-      remember_output_modes(task, opts)
-      state = state |> State.put_task(task) |> State.track_context(task)
-
-      # `subscribe: pid` (with `return_immediately`): the pid joins the task's
-      # subscriber fan-out in the step that stores the task, so it is shown
-      # every later mutation (admit-first streaming).
-      state =
-        case Keyword.get(opts, :subscribe) do
-          pid when is_pid(pid) and immediate? -> State.add_subscriber(state, task.id, pid)
-          _ -> state
-        end
-
-      publish_message_update(task, message, config)
-      state = wake_waiters(state)
-
-      # `adapter:` selects WHAT runs (the agent's own handler, or a durable
-      # ash_pplan run via `AshA2A.Execution.PPlan`); `mode:` selects WHERE the
-      # chosen unit runs (inline on this GenServer, or off-mailbox in a
-      # monitored worker — the pplan unit included).
-      handler =
-        case Keyword.get(config, :adapter) do
-          :pplan -> fn -> pplan_reply(message, task, config) end
-          _local -> fn -> run_handler(module, message, context(task)) end
-        end
-
-      mode = if immediate?, do: :async, else: Keyword.get(config, :mode)
-
-      case mode do
-        _ when immediate? ->
-          # Reply with the stored task now; the worker's result folds into the
-          # stored task later (`finish/6`, which never overwrites a terminal
-          # state). `:detached` has no caller to answer.
-          spawn_worker(handler, task, :detached, wire?)
-          {:reply, wire_reply({:ok, task}, wire?), state}
-
-        :inline ->
-          task.id |> finish(from, handler.(), state, :inline, wire?) |> wake_reply()
-
-        _async ->
-          spawn_worker(handler, task, from, wire?)
-          {:noreply, state}
+      if message_only?(module, message, continuing?, updates) do
+        # Declared `reply: :message` (`c:AshA2A.Protocol.Agent.reply_mode/1`):
+        # the answer is a bare Message and no task. Nothing is stored and no
+        # subscriber or event log hears of it; the task built above only
+        # gives the handler its context. The caller waits for the Message
+        # whatever `return_immediately` says: there is no task to return
+        # first. Should the handler answer otherwise after all (a refusal, a
+        # request for input), `finish/6` stores the task then.
+        put_ephemeral(task)
+        spawn_worker(fn -> run_handler(module, message, context(task)) end, task, from, wire?)
+        {:noreply, state}
+      else
+        admit_task(module, config, message, task, opts, from, state, wire?, immediate?)
       end
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp message_only?(module, message, false = _continuing?, [] = _updates) do
+    function_exported?(module, :reply_mode, 1) and module.reply_mode(message) == :message
+  end
+
+  defp message_only?(_module, _message, _continuing?, _updates), do: false
+
+  @ephemeral_key :ash_a2a_message_only_tasks
+
+  defp put_ephemeral(task),
+    do: Process.put(@ephemeral_key, Map.put(Process.get(@ephemeral_key, %{}), task.id, task))
+
+  defp pop_ephemeral(task_id) do
+    {task, rest} = Map.pop(Process.get(@ephemeral_key, %{}), task_id)
+    if task, do: Process.put(@ephemeral_key, rest)
+    task
+  end
+
+  defp admit_task(module, config, message, task, opts, from, state, wire?, immediate?) do
+    remember_output_modes(task, opts)
+    state = state |> State.put_task(task) |> State.track_context(task)
+
+    # `subscribe: pid` (with `return_immediately`): the pid joins the task's
+    # subscriber fan-out in the step that stores the task, so it is shown
+    # every later mutation (admit-first streaming).
+    state =
+      case Keyword.get(opts, :subscribe) do
+        pid when is_pid(pid) and immediate? -> State.add_subscriber(state, task.id, pid)
+        _ -> state
+      end
+
+    publish_message_update(task, message, config)
+    state = wake_waiters(state)
+
+    # `adapter:` selects WHAT runs (the agent's own handler, or a durable
+    # ash_pplan run via `AshA2A.Execution.PPlan`); `mode:` selects WHERE the
+    # chosen unit runs (inline on this GenServer, or off-mailbox in a
+    # monitored worker — the pplan unit included).
+    handler =
+      case Keyword.get(config, :adapter) do
+        :pplan -> fn -> pplan_reply(message, task, config) end
+        _local -> fn -> run_handler(module, message, context(task)) end
+      end
+
+    mode = if immediate?, do: :async, else: Keyword.get(config, :mode)
+
+    case mode do
+      _ when immediate? ->
+        # Reply with the stored task now; the worker's result folds into the
+        # stored task later (`finish/6`, which never overwrites a terminal
+        # state). `:detached` has no caller to answer.
+        spawn_worker(handler, task, :detached, wire?)
+        {:reply, wire_reply({:ok, task}, wire?), state}
+
+      :inline ->
+        task.id |> finish(from, handler.(), state, :inline, wire?) |> wake_reply()
+
+      _async ->
+        spawn_worker(handler, task, from, wire?)
+        {:noreply, state}
     end
   end
 
@@ -1003,6 +1037,27 @@ defmodule AshA2A.Transport.Runtime do
   end
 
   defp finish(task_id, from, reply, state, mode, wire?) do
+    case pop_ephemeral(task_id) do
+      nil ->
+        finish_stored(task_id, from, reply, state, mode, wire?)
+
+      # A message-only send: the Message answers the caller, nothing is kept.
+      %AshA2A.Protocol.Task{} = task ->
+        case reply do
+          {:message, parts} ->
+            message = %{AshA2A.Protocol.Message.new_agent(parts) | context_id: task.context_id}
+            respond(mode, from, {:ok, message}, state, wire?)
+
+          _not_a_message ->
+            # The handler did not answer with a Message after all: the task
+            # exists from here on and carries that answer.
+            state = state |> State.put_task(task) |> State.track_context(task)
+            finish_stored(task_id, from, reply, state, mode, wire?)
+        end
+    end
+  end
+
+  defp finish_stored(task_id, from, reply, state, mode, wire?) do
     case State.get_task(state, task_id) do
       {:ok, task} ->
         if AshA2A.Protocol.Task.terminal?(task) do

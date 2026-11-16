@@ -165,12 +165,9 @@ defmodule AshA2A.V1BidiTest do
     end
   end
 
-  # The state of the LAST status frame: a stream reports every status the
-  # task took (the working status included), the final one last.
   defp final_state(frames) do
     frames
     |> Enum.map(&unwrap(elem(&1, 1)))
-    |> Enum.reverse()
     |> Enum.find_value(fn
       {:status, %{"status" => %{"state" => state}}} -> state
       _ -> nil

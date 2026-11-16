@@ -2999,6 +2999,127 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp skill_scenarios("AshA2A.Sim.Note.ping") do
+      message_only! = fn binding, reply, echo ->
+        check!(
+          match?(%{"message" => %{"role" => "ROLE_AGENT"}}, reply) and map_size(reply) == 1,
+          "#{binding} answered #{clip(inspect(reply), 200)}, not a bare Message"
+        )
+
+        check!(
+          Jason.encode!(reply) =~ echo,
+          "the Message over #{binding} does not carry the result: #{clip(inspect(reply), 200)}"
+        )
+      end
+
+      no_task! = fn info, context ->
+        listed =
+          jr_result!(caller(info, :jsonrpc, nil, nil), "tasks/list", %{"contextId" => context})
+
+        check!(
+          listed["tasks"] == [],
+          "a message-only send stored #{length(listed["tasks"])} task(s) in #{context}"
+        )
+      end
+
+      [
+        {"message/send answers a bare Message on every binding and stores no task",
+         fn info ->
+           context = "ctx-ping-" <> unique()
+           echo = "echo-" <> unique()
+           data = %{"echo" => echo}
+
+           over_jsonrpc =
+             jr_result!(
+               caller(info, :jsonrpc, nil, nil),
+               "message/send",
+               send_params("ping", data, %{}, context_id: context)
+             )
+
+           over_a2a =
+             jr_result!(
+               caller(info, :a2a, nil, nil),
+               "message/send",
+               send_params("ping", data, %{}, context_id: context)
+             )
+
+           over_rest =
+             rest_ok!(info, :post, "/message:send",
+               json: send_params("ping", data, %{}, context_id: context)
+             )
+
+           over_grpc =
+             grpc(info, :writer, fn ch, opts ->
+               request =
+                 pb(Pb.SendMessageRequest, send_params("ping", data, %{}, context_id: context))
+
+               ch |> Stub.send_message(request, opts) |> grpc_ok!("SendMessage")
+             end)
+
+           for {binding, reply} <- [
+                 {"JSON-RPC /jsonrpc", over_jsonrpc},
+                 {"JSON-RPC /a2a", over_a2a},
+                 {"HTTP+JSON", over_rest},
+                 {"gRPC", over_grpc}
+               ],
+               do: message_only!.(binding, reply, echo)
+
+           no_task!.(info, context)
+           "a bare Message on JSON-RPC (both mounts), HTTP+JSON and gRPC; no task in #{context}"
+         end},
+        {"a stream is exactly one Message frame on every binding and stores no task",
+         fn info ->
+           context = "ctx-ping-stream-" <> unique()
+           echo = "echo-" <> unique()
+           params = fn -> send_params("ping", %{"echo" => echo}, %{}, context_id: context) end
+
+           rpc = fn c ->
+             body = %{
+               "jsonrpc" => "2.0",
+               "id" => 1,
+               "method" => "message/stream",
+               "params" => params.()
+             }
+
+             timed_sse!(info, c.url, body, fn
+               %{"result" => result} -> result
+               other -> fail!("SSE frame is not a JSON-RPC result: #{clip(inspect(other))}")
+             end)
+           end
+
+           grpc_frames =
+             grpc(info, :writer, fn ch, opts ->
+               ch
+               |> Stub.send_streaming_message(pb(Pb.SendMessageRequest, params.()), opts)
+               |> grpc_stream!("SendStreamingMessage")
+             end)
+
+           streams = [
+             {"JSON-RPC /jsonrpc",
+              Enum.map(rpc.(caller(info, :jsonrpc, nil, nil)), &elem(&1, 1))},
+             {"JSON-RPC /a2a", Enum.map(rpc.(caller(info, :a2a, nil, nil)), &elem(&1, 1))},
+             {"HTTP+JSON",
+              info
+              |> timed_sse!(info.rest_url <> "/message:stream", params.(), & &1)
+              |> Enum.map(&elem(&1, 1))},
+             {"gRPC", grpc_frames}
+           ]
+
+           for {binding, frames} <- streams do
+             check!(
+               length(frames) == 1,
+               "#{binding} streamed #{length(frames)} frames: #{inspect(Enum.map(frames, &frame_kind/1))}"
+             )
+
+             message_only!.(binding, hd(frames), echo)
+           end
+
+           no_task!.(info, context)
+           "one Message frame, then the stream closed, on all four mounts; no task in #{context}"
+         end}
+      ]
+    end
+
     defp skill_scenarios("AshA2A.Sim.Note.slow_count") do
       [
         {"answers after the requested delay",

@@ -225,10 +225,8 @@ defmodule AshA2A.Protocol.StreamOrderingTest do
     task_id = await_task_id(a)
     all = drain(a)
 
-    # Admit first: seq 1 = the submitted task, seq 2 = the working status,
-    # seq 3..7 = parts; "through part 3" is seq 5.
     tail =
-      resubscribe(url, task_id, [{"last-event-id", "5"}])
+      resubscribe(url, task_id, [{"last-event-id", "4"}])
       |> Map.fetch!(:body)
       |> full_frames()
 

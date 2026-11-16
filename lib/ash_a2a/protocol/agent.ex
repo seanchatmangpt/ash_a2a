@@ -212,9 +212,43 @@ defmodule AshA2A.Protocol.Agent do
   """
   @callback handle_cancel(context()) :: :ok | {:error, String.t()}
 
+  @typedoc """
+  How the agent answers a message, declared before its handler runs.
+
+    * `:task` - with a task. A stream is admitted first: the Task is stored
+      and sent as the first frame before the handler runs.
+    * `:message` - with a bare `{:message, parts}` and no task. Nothing is
+      admitted or stored; a stream is exactly one Message, then it closes.
+    * `:undeclared` - the handler decides when it answers. The stream opens
+      once the handler has returned: with the one Message for a
+      `{:message, parts}` reply, with the Task otherwise.
+  """
+  @type reply_mode :: :task | :message | :undeclared
+
+  @doc """
+  Declares how `message` will be answered (see `t:reply_mode/0`). Optional.
+
+  A2A v1.1 (specification 3.1.2) has two stream patterns, a message-only
+  stream and a task lifecycle stream, and the first frame commits the server
+  to one of them. `use AshA2A.Protocol.Agent` defines this callback from its
+  `:reply` option (`:task`, `:message`; `:undeclared` when the option is not
+  given, which is what an agent with a hand-written `handle_message/2` got
+  before the callback existed). Override it to decide per message.
+  """
+  @callback reply_mode(AshA2A.Protocol.Message.t()) :: reply_mode()
+
+  @optional_callbacks reply_mode: 1
+
   @doc false
   defmacro __using__(opts) do
     card_ast = build_card_ast(opts)
+
+    reply_mode =
+      case Keyword.get(opts, :reply) do
+        nil -> :undeclared
+        mode when mode in [:task, :message] -> mode
+        other -> raise ArgumentError, "reply: must be :task or :message, got #{inspect(other)}"
+      end
 
     quote location: :keep do
       use GenServer
@@ -232,6 +266,11 @@ defmodule AshA2A.Protocol.Agent do
       def handle_cancel(_context), do: :ok
 
       defoverridable handle_cancel: 1
+
+      @impl AshA2A.Protocol.Agent
+      def reply_mode(_message), do: unquote(reply_mode)
+
+      defoverridable reply_mode: 1
 
       # --- GenServer client API ---
 
@@ -392,6 +431,20 @@ defmodule AshA2A.Protocol.Agent do
             case resolve_references(message, context_id, opts, state) do
               {:ok, context_id} ->
                 cond do
+                  # An admit-first stream (`stream_admit: true`) for a message
+                  # this agent has not declared a task for: the handler runs
+                  # first and decides. A bare Message answers the caller with
+                  # nothing stored; a task is stored then, with the caller as
+                  # its subscriber.
+                  immediate? and Keyword.get(opts, :stream_admit, false) == true and
+                      apply(__MODULE__, :reply_mode, [message]) != :task ->
+                    spawn_task_worker(
+                      {:new, message, context_id, metadata, extensions},
+                      {:late_admit, from, Keyword.get(opts, :subscribe)},
+                      nil,
+                      state
+                    )
+
                   immediate? ->
                     admit_new_immediately(
                       message,
@@ -867,6 +920,7 @@ defmodule AshA2A.Protocol.Agent do
       # computed `task` against a snapshot, and updates that landed while the
       # handler ran must not be clobbered by it).
       defp reply_to(:detached, _reply), do: :ok
+      defp reply_to({:late_admit, from, _subscriber}, reply), do: GenServer.reply(from, reply)
       defp reply_to(from, reply), do: GenServer.reply(from, reply)
 
       # A returnImmediately task was already answered at admission; its
@@ -897,6 +951,45 @@ defmodule AshA2A.Protocol.Agent do
             fail_worker_task(task_id, :detached, reason, state)
 
           _ ->
+            state
+        end
+      end
+
+      # A stream whose handler ran first (`{:late_admit, from, subscriber}`):
+      # a bare Message answers the caller and nothing is stored (the
+      # message-only stream). A task is stored now; the caller's stream
+      # process joins its subscriber fan-out in the same step, and a
+      # `{:stream, enum}` reply is drained here, as for any task nobody
+      # consumes inline.
+      defp apply_default_result(_task_id, {:late_admit, from, subscriber}, result, state) do
+        case result do
+          {:ok, {%AshA2A.Protocol.Message{} = agent_message, _snapshot}} ->
+            reply_to(from, {:ok, agent_message})
+            state
+
+          {:ok, {%AshA2A.Protocol.Task{} = task, _snapshot}} ->
+            case AshA2A.Protocol.Agent.State.put_task_checked(state, task) do
+              {:ok, state} ->
+                state = AshA2A.Protocol.Agent.State.track_context(state, task)
+
+                state =
+                  if is_pid(subscriber) and not AshA2A.Protocol.Task.terminal?(task),
+                    do: AshA2A.Protocol.Agent.State.add_subscriber(state, task.id, subscriber),
+                    else: state
+
+                reply_to(from, {:ok, AshA2A.Protocol.Task.strip_stream_metadata(task)})
+                task = maybe_wrap_stream(task, :detached)
+                state = AshA2A.Protocol.Agent.State.put_task(state, task)
+                AshA2A.Protocol.PushNotification.deliver(state, task)
+                state
+
+              {:error, reason} ->
+                reply_to(from, {:error, reason})
+                state
+            end
+
+          {:error, reason} ->
+            reply_to(from, {:error, reason})
             state
         end
       end

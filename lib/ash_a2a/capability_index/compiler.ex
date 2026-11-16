@@ -76,7 +76,8 @@ defmodule AshA2A.CapabilityIndex.Compiler do
       input_modes: override_value(override, :input_modes, nil),
       output_modes: override_value(override, :output_modes, nil),
       security_requirements: override_value(override, :security_requirements, nil),
-      streaming?: override_field(override, :streaming?, false)
+      streaming?: override_field(override, :streaming?, false),
+      reply: override_value(override, :reply, :task)
     }
   end
 

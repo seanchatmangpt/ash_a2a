@@ -86,28 +86,14 @@ defmodule AshA2A.SseStreamWireTest do
     end)
   end
 
-  # A stream is admitted first (A2A v1.1 3.1.2: the Task frame is sent before
-  # the handler runs, so its id is usable while the work is in flight). The
-  # server has therefore committed to a task before the agent answers; an
-  # agent that answers with a bare Message completes that task with it. It
-  # used to be a message-only stream, which the server can no longer choose
-  # after the Task frame is on the wire.
-  test "message/stream answered with a bare Message opens with the Task and completes with that message" do
+  test "message/stream answered with a bare Message yields exactly one message frame then closes" do
     url = boot(MessageAgent)
     body = post(url, "message/stream", %{"message" => message()})
-    results = body |> frames() |> Enum.map(&elem(&1, 1))
 
-    assert [%{"task" => %{"id" => task_id}} | events] = results
+    assert [{nil, %{"message" => %{"parts" => [%{"text" => "direct answer"}]}} = result}] =
+             frames(body)
 
-    assert %{
-             "statusUpdate" => %{
-               "taskId" => ^task_id,
-               "status" => %{
-                 "state" => "TASK_STATE_COMPLETED",
-                 "message" => %{"parts" => [%{"text" => "direct answer"}]}
-               }
-             }
-           } = List.last(events)
+    assert map_size(result) == 1
   end
 
   test "final artifact chunk carries lastChunk true, earlier chunks do not, one shared artifactId" do

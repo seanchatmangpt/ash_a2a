@@ -14,6 +14,7 @@ if Code.ensure_loaded?(Bandit) do
     | Task state | How to reach it |
     |---|---|
     | completed | `list_notes`, `count_notes`, or a granted `create_note` |
+    | a bare Message, no task | `ping` (optionally with `echo`) |
     | streamed artifacts | `list_notes` with `"stream" => true` in the data part |
     | input-required, then continued | `create_note` without `title`, then send `title` with the same `taskId` |
     | working, then canceled | `slow_count` with a large `delay_ms`, then `tasks/cancel` |
@@ -31,7 +32,7 @@ if Code.ensure_loaded?(Bandit) do
       description:
         "Simulation agent: an ETS note store with one skill per action type and consequence class.",
       require_authenticated_caller: true,
-      observe_generic_actions: [:count_notes, :slow_count, :step_up],
+      observe_generic_actions: [:count_notes, :ping, :slow_count, :step_up],
       security_schemes: %{
         "bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}
       },

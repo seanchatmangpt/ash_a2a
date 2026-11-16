@@ -96,7 +96,8 @@ defmodule AshA2A.Skill do
           input_modes: [String.t()] | nil,
           output_modes: [String.t()] | nil,
           security_requirements: [%{optional(String.t()) => [String.t()]}] | nil,
-          streaming?: boolean()
+          streaming?: boolean(),
+          reply: :task | :message
         }
 
   defstruct [
@@ -115,6 +116,7 @@ defmodule AshA2A.Skill do
     :output_modes,
     :security_requirements,
     streaming?: false,
+    reply: :task,
     expose?: true,
     arguments: [],
     hddl_operators: [],

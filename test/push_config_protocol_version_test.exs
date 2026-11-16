@@ -163,7 +163,11 @@ defmodule AshA2A.PushConfigProtocolVersionTest do
         [{"a2a-version", "1.0"}]
       )
 
-    assert default["protocolVersion"] == "1.0"
+    # `protocol_version` is field 7 of TaskPushNotificationConfig, new in the
+    # v1.1 proto (specification/a2a.proto at v1.1.0-rc; absent at v1.0.1), so
+    # the answer to a request negotiated at 1.0 does not carry it. The stored
+    # config still records the request version.
+    refute Map.has_key?(default, "protocolVersion")
 
     assert {:ok, %{protocol_version: "1.1"}} = PushConfigStore.get(ctx.store, tid, "e1")
     assert {:ok, %{protocol_version: "1.0"}} = PushConfigStore.get(ctx.store, tid, "d1")

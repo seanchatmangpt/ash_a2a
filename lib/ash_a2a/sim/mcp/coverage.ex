@@ -651,6 +651,31 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp skill("AshA2A.Sim.Note.ping") do
+      [
+        step(
+          "ping answers a bare Message, no task",
+          a2a(:send, @rest, %{"skill" => "ping", "data" => %{"echo" => "mcp-{{uniq}}"}}),
+          tested: true,
+          expect: [
+            ex("ok", "eq", true),
+            ex("result.message.parts.0.data.pong", "eq", "mcp-{{uniq}}"),
+            ex("result.task", "absent")
+          ]
+        ),
+        step(
+          "a ping stream over gRPC is exactly one Message frame",
+          a2a(:stream, @grpc, %{"skill" => "ping"}),
+          expect: [ex("ok", "eq", true), ex("frame_kinds", "eq", ["message"])]
+        ),
+        step(
+          "a ping stream over JSON-RPC is exactly one Message frame",
+          a2a(:stream, @jr, %{"skill" => "ping"}),
+          expect: [ex("ok", "eq", true), ex("frame_kinds", "eq", ["message"])]
+        )
+      ]
+    end
+
     defp skill("AshA2A.Sim.Note.slow_count") do
       [
         run_skill(

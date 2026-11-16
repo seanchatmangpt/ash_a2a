@@ -8,8 +8,10 @@ defmodule AshA2A.Transport.GRPC.UnknownMethod do
   #
   # The gRPC adapter's router answers such a path with a bare HTTP 404: no
   # `grpc-status`, no `content-type`. gRPC requires `UNIMPLEMENTED` for a
-  # method the server does not have, so `AshA2A.Transport.GRPC.Supervisor`
-  # appends this handler to the listener's dispatch as the last route. A gRPC
+  # method the server does not have, so this handler is appended to the
+  # listener's dispatch as the last route: by `AshA2A.Transport.GRPC.Supervisor`
+  # when it starts the listener, and by `AshA2A.Transport.GRPC.Server` on its
+  # first RPC in any other endpoint (`ensure_installed/1`). A gRPC
   # request (a `content-type` starting `application/grpc`) gets a
   # Trailers-Only response: HTTP 200 with `grpc-status: 12` in the headers.
   # Anything else keeps the 404.
@@ -40,6 +42,22 @@ defmodule AshA2A.Transport.GRPC.UnknownMethod do
 
   # grpc-message is percent-encoded (gRPC over HTTP/2: Status-Message).
   defp grpc_message(text), do: URI.encode(text, &(&1 in 0x20..0x7E and &1 != ?%))
+
+  @doc """
+  `install/1`, ignoring its result. `AshA2A.Transport.GRPC.Server` calls this
+  on every RPC with the endpoint that is serving it, so a host that runs the
+  server in an endpoint of its own (`run AshA2A.Transport.GRPC.Server`,
+  started with `GRPC.Server.Supervisor`) gets the route from its first RPC on
+  without doing anything. To have it from the first byte, such a host calls
+  `install/1` right after its endpoint started.
+  """
+  @spec ensure_installed(module() | nil) :: :ok
+  def ensure_installed(nil), do: :ok
+
+  def ensure_installed(endpoint) when is_atom(endpoint) do
+    _ = install(endpoint)
+    :ok
+  end
 
   @doc """
   Appends the catch-all route to the dispatch the gRPC adapter stored for

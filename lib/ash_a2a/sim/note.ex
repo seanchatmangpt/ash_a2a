@@ -18,6 +18,7 @@ if Code.ensure_loaded?(Bandit) do
     | `update_note` | `:update` | `:change` | standing authority grant |
     | `delete_note` | `:destroy` | `:change` | standing authority grant |
     | `count_notes` | generic `:count_notes` | `:observe` | authentication only |
+    | `ping` | generic `:ping` | `:observe` | authentication only; `reply :message` |
     | `slow_count` | generic `:slow_count` | `:observe` | authentication only |
     | `step_up` | generic `:step_up` | `:observe` | authentication only |
     | `publish_note` | generic `:publish_note` | `:external_do` | standing authority grant |
@@ -65,6 +66,14 @@ if Code.ensure_loaded?(Bandit) do
       action :count_notes, :map do
         run fn _input, _context ->
           {:ok, %{count: length(Ash.read!(__MODULE__, authorize?: false))}}
+        end
+      end
+
+      action :ping, :map do
+        argument :echo, :string
+
+        run fn input, _context ->
+          {:ok, %{pong: input.arguments[:echo] || "pong"}}
         end
       end
 
@@ -137,6 +146,12 @@ if Code.ensure_loaded?(Bandit) do
       skill :count_notes, :count_notes do
         description "Count notes (observe generic action)"
         consequence :observe
+      end
+
+      skill :ping, :ping do
+        description "Answer with a bare Message and no task (observe; message-only)"
+        consequence :observe
+        reply(:message)
       end
 
       skill :slow_count, :slow_count do

@@ -82,8 +82,6 @@ UNREACHABLE = {
     "HTTPAuthSecurityScheme.description": "the bearer scheme carries no description",
     "HTTPAuthSecurityScheme.bearer_format": "the bearer scheme declares no format",
     "ListTaskPushNotificationConfigsResponse.next_page_token": "the server returns every config of a task in one page",
-    "SendMessageResponse.message": "every Sim skill answers with a Task, never a bare Message",
-    "StreamResponse.message": "every Sim skill answers with a Task, never a bare Message",
     "TaskStatusUpdateEvent.metadata": "the Sim skills attach no event metadata",
     "TaskArtifactUpdateEvent.metadata": "the Sim skills attach no event metadata",
     "TaskMessageUpdateEvent.metadata": "the Sim skills attach no event metadata",
@@ -566,6 +564,50 @@ def run_get_list(b, env):
     earlier = b.expect(op, request, "statusTimestampAfter in the past")
     if earlier is not None:
         sem(b, op, "statusTimestampAfter in the past", len(earlier.tasks) == 3, f"{len(earlier.tasks)} tasks")
+
+
+def run_message_only(b, env):
+    """The message-only pattern (3.1.1, 3.1.2): the agent answers with a bare
+    Message and no Task. `SendMessage` answers that Message; a stream is exactly
+    one Message and then closes; no Task exists afterwards. The simulation
+    server's `ping` skill declares `reply :message`."""
+    context = uid("ctx")
+    echo = uid("echo")
+
+    vector = "message-only skill answers a Message, no Task"
+    reply = b.expect("SendMessage", send_request("ping", {"echo": echo}, context_id=context), vector)
+    if reply is not None:
+        problems = []
+        if reply.WhichOneof("payload") != "message":
+            problems.append(f"payload is {reply.WhichOneof('payload')}, not message")
+        else:
+            if reply.message.role != pb.ROLE_AGENT:
+                problems.append(f"role is {pb.Role.Name(reply.message.role)}")
+            if reply.message.task_id:
+                problems.append(f"the Message names task {reply.message.task_id}")
+            if echo not in json_format.MessageToJson(reply.message):
+                problems.append("the Message does not carry the skill's result")
+        sem(b, "SendMessage", vector, not problems, "; ".join(problems) or "payload message, ROLE_AGENT, no taskId")
+
+    vector = "message-only stream: exactly one Message, then close"
+    result = b.stream("SendStreamingMessage", send_request("ping", {"echo": echo}, context_id=context), vector,
+                      stop=None, wait=10)
+    problems = []
+    if result.error is not None:
+        problems.append("stream error: " + result.error.describe())
+    if result.kinds() != ["message"]:
+        problems.append(f"frames {result.kinds()}, the pattern is exactly one message (3.1.2)")
+    elif echo not in json_format.MessageToJson(result.frames[0].message):
+        problems.append("the Message does not carry the skill's result")
+    if not result.closed:
+        problems.append("the server did not close the stream after the Message")
+    sem(b, "SendStreamingMessage", vector, not problems, "; ".join(problems) or "1 frame: message; stream closed")
+
+    vector = "message-only: no Task is retrievable"
+    listed = b.expect("ListTasks", pb.ListTasksRequest(context_id=context), vector)
+    if listed is not None:
+        sem(b, "ListTasks", vector, len(listed.tasks) == 0,
+            f"{len(listed.tasks)} task(s) in the context of two message-only calls (3.1.2: no task tracking)")
 
 
 def run_streams(b, env):
@@ -1464,6 +1506,7 @@ def main(argv=None):
         ("send", "SendMessage", run_send, False),
         ("get", "GetTask", run_get_list, False),
         ("streams", "SendStreamingMessage", run_streams, False),
+        ("message", "SendStreamingMessage", run_message_only, False),
         ("push", "CreateTaskPushNotificationConfig", run_push, True),
         ("live", "SendLiveMessage", run_live, True),
         ("artifacts", "SendMessage", run_user_artifacts, True),
