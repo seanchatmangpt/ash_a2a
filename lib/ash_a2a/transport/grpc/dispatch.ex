@@ -94,7 +94,6 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   Deprecated alias: the pre-wave-2 label `a2a.A2AService`. `call/4` still
   accepts paths using it (only the last path segment is read).
   """
-  @deprecated "use service/0 (lf.a2a.v1.A2AService)"
   def legacy_service, do: @legacy_service
 
   @doc """

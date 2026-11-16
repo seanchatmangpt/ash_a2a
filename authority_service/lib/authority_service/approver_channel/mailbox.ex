@@ -9,7 +9,15 @@ defmodule AuthorityService.ApproverChannel.Mailbox do
   grants standing; it only holds data. State is process-local and lost on restart, which is
   safe: an approval that is not delivered simply does not count.
 
-  Refusals at submit time: `:malformed_approval`, `:duplicate_approval` (the same
+  With `start_link(verify: [registry:, audience:, skew:, clock:])` (always set by
+  `AuthorityService.Runtime`) every approval is verified at submit time BEFORE a slot or
+  nonce is consumed: signature against the approver's registered key, registry standing,
+  audience, that the signing custodian IS the `approver_id` whose slot is being filled, and
+  that the signed `effect_digest` and `generation` equal the slot's. A peer therefore cannot
+  squat a slot with a garbage or foreign approval; refusal `:approval_invalid`. Without
+  `:verify` (tests only) the mailbox only holds data and the Issuer is the sole verifier.
+
+  Refusals at submit time: `:malformed_approval`, `:approval_invalid`, `:duplicate_approval` (the same
   `(kid, nonce)` already held, or the `(digest, generation, approver)` slot already filled),
   `:mailbox_full`. Slots are first-wins, so a slot cannot be overwritten by a later submit.
   """
@@ -21,7 +29,12 @@ defmodule AuthorityService.ApproverChannel.Mailbox do
 
   @doc false
   def start_link(opts \\ []) do
-    Agent.start_link(fn -> %{slots: %{}, seen: MapSet.new()} end, Keyword.take(opts, [:name]))
+    verify = Keyword.get(opts, :verify)
+
+    Agent.start_link(
+      fn -> %{slots: %{}, seen: MapSet.new(), verify: verify} end,
+      Keyword.take(opts, [:name])
+    )
   end
 
   @doc """
@@ -33,7 +46,8 @@ defmodule AuthorityService.ApproverChannel.Mailbox do
   def submit(server, approver_id, effect_digest, generation, approval)
       when is_binary(approver_id) and is_binary(effect_digest) and is_integer(generation) and
              generation >= 0 do
-    with {:ok, %{envelope: env, message: bytes}} <- parse(approval) do
+    with {:ok, %{envelope: env, message: bytes}} <- parse(approval),
+         :ok <- verify(server, env, bytes, approver_id, effect_digest, generation) do
       key = {effect_digest, generation, approver_id}
       nonce_key = {env.kid, env.nonce}
 
@@ -58,6 +72,45 @@ defmodule AuthorityService.ApproverChannel.Mailbox do
   end
 
   def submit(_, _, _, _, _), do: {:error, :malformed_approval}
+
+  # Runs in the caller's process, before the slot Agent is touched.
+  defp verify(server, env, bytes, approver_id, digest, generation) do
+    case Agent.get(server, & &1.verify) do
+      nil -> :ok
+      v -> verify_with(v, env, bytes, approver_id, digest, generation)
+    end
+  end
+
+  defp verify_with(v, env, bytes, approver_id, digest, generation) do
+    now = (Keyword.get(v, :clock) || (&System.os_time/0)).() |> normalize_now()
+    skew = Keyword.get(v, :skew, 0)
+
+    check = fn at ->
+      Sa2aCrypto.verify_envelope(env, bytes, Keyword.fetch!(v, :registry),
+        now: at,
+        audience: Keyword.fetch!(v, :audience),
+        required_profile: :classical
+      )
+    end
+
+    result =
+      case check.(now) do
+        {:invalid, :not_yet_valid} -> check.(now + skew)
+        other -> other
+      end
+
+    with {:valid, %{custodian_id: ^approver_id}} <- result,
+         {:ok, msg} <- Sa2aCrypto.SignedMessage.parse(bytes),
+         true <- msg["effect_digest"] == digest and msg["generation"] == generation do
+      :ok
+    else
+      _ -> {:error, :approval_invalid}
+    end
+  rescue
+    _ -> {:error, :approval_invalid}
+  end
+
+  defp normalize_now(n) when is_integer(n), do: n
 
   @impl true
   def solicit(server, approver_id, %{effect_digest: d, generation: g}) do
