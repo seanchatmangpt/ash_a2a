@@ -5,7 +5,7 @@
 defmodule AshA2A.ErrorVersionTableTest do
   @moduledoc """
   Lane Y4: one table pinning every A2A error code's JSON-RPC, HTTP and gRPC row
-  (pinned TCK `ERROR_BINDINGS`), plus the absent-version rule for push delivery.
+  (specification 5.4, the same at v1.0.1 and v1.1.0-rc), plus the absent-version rule for push delivery.
   Real modules, no mocks.
   """
 
@@ -21,11 +21,11 @@ defmodule AshA2A.ErrorVersionTableTest do
   # VersionNotSupportedError are FAILED_PRECONDITION (9).
   @rows [
     {:task_not_found, -32_001, 404, 5, "TASK_NOT_FOUND"},
-    {:task_not_cancelable, -32_002, 409, 9, "TASK_NOT_CANCELABLE"},
+    {:task_not_cancelable, -32_002, 400, 9, "TASK_NOT_CANCELABLE"},
     {:push_notification_not_supported, -32_003, 400, 9, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
     {:unsupported_operation, -32_004, 400, 9, "UNSUPPORTED_OPERATION"},
-    {:content_type_not_supported, -32_005, 415, 3, "CONTENT_TYPE_NOT_SUPPORTED"},
-    {:invalid_agent_response, -32_006, 502, 13, "INVALID_AGENT_RESPONSE"},
+    {:content_type_not_supported, -32_005, 400, 3, "CONTENT_TYPE_NOT_SUPPORTED"},
+    {:invalid_agent_response, -32_006, 500, 13, "INVALID_AGENT_RESPONSE"},
     {:authenticated_extended_card_not_configured, -32_007, 400, 9,
      "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
     {:extension_support_required, -32_008, 400, 9, "EXTENSION_SUPPORT_REQUIRED"},
@@ -48,9 +48,16 @@ defmodule AshA2A.ErrorVersionTableTest do
     assert is_list(details)
   end
 
-  test "-32005 / -32006 follow the pinned TCK, not the old 400 / 500" do
-    assert Error.spec_http_status(-32_005) == 415
-    assert Error.spec_http_status(-32_006) == 502
+  # Specification 5.4 (the same row at tags v1.0.1 and v1.1.0-rc):
+  # TaskNotCancelableError 400, ContentTypeNotSupportedError 400,
+  # InvalidAgentResponseError 500. The helper used to return 409 / 415 / 502,
+  # values recorded from a TCK pin, while the HTTP+JSON binding already served
+  # the specification's (VG-01..VG-03, closed in
+  # docs/reference/a2a-v1-1-parity-findings.md).
+  test "-32002 / -32005 / -32006 follow specification 5.4, the same values the binding serves" do
+    assert Error.spec_http_status(-32_002) == 400
+    assert Error.spec_http_status(-32_005) == 400
+    assert Error.spec_http_status(-32_006) == 500
   end
 
   describe "absent protocol_version (documented rule: absent == 0.3)" do

@@ -223,45 +223,17 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
 
   # gRPC status codes (google.golang.org/grpc/codes / grpc::StatusCode).
   @grpc_ok 0
-  @grpc_invalid_argument 3
   @grpc_unknown 2
-  @grpc_not_found 5
-  @grpc_failed_precondition 9
-  @grpc_unimplemented 12
-  @grpc_internal 13
-  @grpc_unavailable 14
 
-  # A2A v1.1 §5.4 cross-binding error mapping: JSON-RPC error code ->
-  # gRPC status code. Validation (parse/request/params) is INVALID_ARGUMENT,
-  # method-level absence is UNIMPLEMENTED, resource absence is NOT_FOUND,
-  # state conflicts and unsupported features/operations/versions
-  # (-32002/-32003/-32004/-32007/-32008/-32009) are FAILED_PRECONDITION, A2A
-  # server errors are UNAVAILABLE (-32000 server busy) or INTERNAL (-32006
-  # invalid agent response). -32005 -> INVALID_ARGUMENT and -32006 -> INTERNAL are
-  # the same gRPC rows as the HTTP 415 / 502 decision (docs/reference/a2a-error-mapping-decisions.md). Matches a2a-tck tck/requirements/base.py
-  # ERROR_BINDINGS and AshA2A.Protocol.JSONRPC.Error.grpc_status/1.
-  @grpc_from_jsonrpc %{
-    -32_700 => @grpc_invalid_argument,
-    -32_600 => @grpc_invalid_argument,
-    -32_601 => @grpc_unimplemented,
-    -32_602 => @grpc_invalid_argument,
-    -32_603 => @grpc_internal,
-    -32_000 => @grpc_unavailable,
-    -32_001 => @grpc_not_found,
-    -32_002 => @grpc_failed_precondition,
-    # Spec 5.4 (v1.1): PushNotificationNotSupported, UnsupportedOperation and
-    # VersionNotSupported are FAILED_PRECONDITION. (The upstream TCK pinned
-    # UNIMPLEMENTED for these; the specification table wins.)
-    -32_003 => @grpc_failed_precondition,
-    -32_004 => @grpc_failed_precondition,
-    -32_005 => @grpc_invalid_argument,
-    -32_006 => @grpc_internal,
-    -32_007 => @grpc_failed_precondition,
-    -32_008 => @grpc_failed_precondition,
-    -32_009 => @grpc_failed_precondition,
-    # v1.1 TaskGenerationMismatchError (ifGenerationMatch) -> ABORTED
-    -32_010 => 10
-  }
+  # JSON-RPC error code -> gRPC status code: the gRPC column of the one binding
+  # table, `AshA2A.Protocol.JSONRPC.Error.bindings/1` (specification 5.4, the
+  # same at v1.0.1 and v1.1.0-rc), read at compile time. Any code the table
+  # does not know is UNKNOWN.
+  @grpc_from_jsonrpc Map.new(AshA2A.Protocol.JSONRPC.Error.bindings(:all), fn {code,
+                                                                               {_http, grpc,
+                                                                                _name}} ->
+                       {code, grpc}
+                     end)
 
   @grpc_status_names %{
     0 => "OK",

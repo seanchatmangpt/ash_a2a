@@ -339,8 +339,18 @@ defmodule AshA2A.Enterprise.AuthZENClientCourt do
     assert {decision, 1} = eval(client, table, "frank", "read", "doc-6")
     assert {:ok, %Types.Decision{decision: true}} = decision
 
+    # The PDP is down only when its whole supervision tree is: the first
+    # evaluation left a keep-alive connection in the client's pool, and the
+    # handler process of that connection outlives the listening socket until
+    # the server's shutdown reaches it. `Process.exit/2` is asynchronous and
+    # `wait_down/1` only proves that NEW connections are refused, so without
+    # waiting for the server's DOWN the next evaluation could still be
+    # answered over the pooled connection (seen in the full suite as
+    # `{:ok, _}` for "doc-9").
+    ref = Process.monitor(server_pid)
     true = Process.unlink(server_pid)
     Process.exit(server_pid, :shutdown)
+    assert_receive {:DOWN, ^ref, :process, ^server_pid, _reason}, 30_000
     wait_down(port)
 
     assert {:error, :pdp_unreachable} =

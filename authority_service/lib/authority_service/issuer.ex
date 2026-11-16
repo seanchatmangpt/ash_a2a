@@ -50,8 +50,7 @@ defmodule AuthorityService.Issuer do
   `%{"kid", "alg", "nonce", "signature"}` (`signature` base64url). Pure and explicit: the
   fields are read from the signed message and cross-checked against the envelope, and the
   actuator's key set is not widened. Returns `{:error, :malformed_certificate}` or
-  `{:error, :envelope_message_mismatch}` on any inconsistency. UNVERIFIED: not run (no
-  Elixir toolchain when written).
+  `{:error, :envelope_message_mismatch}` on any inconsistency.
   """
   @spec to_actuator_certificate(map()) :: {:ok, map()} | {:error, atom()}
   def to_actuator_certificate(%{"envelope" => env, "message" => msg})

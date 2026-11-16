@@ -1,6 +1,6 @@
 defmodule AuthorityService.ApproverChannel.Mailbox do
   @moduledoc """
-  Approver channel fed by the control plane's `"approve"` wire op (UNVERIFIED: not run).
+  Approver channel fed by the control plane's `"approve"` wire op.
 
   An approver (for example `sa2a-approver`) signs the effect digest offline and submits the
   signed approval here with `submit/5`; `solicit/3` then hands it to the Issuer, which

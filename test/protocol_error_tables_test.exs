@@ -18,15 +18,14 @@ defmodule AshA2A.ProtocolErrorTablesTest do
   @spec_rows %{
     -32_001 => {404, 5, "NOT_FOUND"},
     # gRPC column: spec section 5.4 (v1.0.1 and v1.1.0-rc) maps -32003, -32004
-    # and -32009 to FAILED_PRECONDITION (9). The HTTP column is what
-    # `Error.spec_http_status/1` returns, which still carries the TCK pins
-    # 409 / 415 / 502 for -32002 / -32005 / -32006 (VG-01..VG-03 in
-    # docs/reference/a2a-v1-1-parity-findings.md).
-    -32_002 => {409, 9, "FAILED_PRECONDITION"},
+    # and -32009 to FAILED_PRECONDITION (9). The HTTP column is the same
+    # section's: 400 / 400 / 500 for -32002 / -32005 / -32006 (VG-01..VG-03,
+    # closed in docs/reference/a2a-v1-1-parity-findings.md).
+    -32_002 => {400, 9, "FAILED_PRECONDITION"},
     -32_003 => {400, 9, "FAILED_PRECONDITION"},
     -32_004 => {400, 9, "FAILED_PRECONDITION"},
-    -32_005 => {415, 3, "INVALID_ARGUMENT"},
-    -32_006 => {502, 13, "INTERNAL"},
+    -32_005 => {400, 3, "INVALID_ARGUMENT"},
+    -32_006 => {500, 13, "INTERNAL"},
     -32_007 => {400, 9, "FAILED_PRECONDITION"},
     -32_008 => {400, 9, "FAILED_PRECONDITION"},
     -32_009 => {400, 9, "FAILED_PRECONDITION"}

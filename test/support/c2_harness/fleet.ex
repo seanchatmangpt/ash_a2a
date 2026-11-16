@@ -125,7 +125,11 @@ defmodule C2Harness.Fleet do
   @doc "Operator action: write the actuator's revocation view (`:delete` removes the file)."
   def write_revocation(fleet, view), do: GenServer.call(fleet, {:write_revocation, view})
 
-  @doc "Operator action: arm (`point`) or disarm (`nil`) an actuator crash point."
+  @doc """
+  Operator action: arm (`point`) or disarm (`nil`) an actuator crash point. Returns `:ok` once
+  the running actuator child has acknowledged the point (it is then in force for the next
+  request), or `{:error, {:crash_point_not_acknowledged, point}}` after 5 s.
+  """
   def arm_crash(fleet, point), do: GenServer.call(fleet, {:arm_crash, point})
 
   @doc """
@@ -331,14 +335,18 @@ defmodule C2Harness.Fleet do
 
   def handle_call({:arm_crash, point}, _, st) do
     path = Path.join(st.ctl_dir, "crash.point")
+    want = if point, do: Atom.to_string(point), else: ""
 
     if point do
-      File.write!(path, Atom.to_string(point))
+      File.write!(path, want)
     else
       File.rm(path)
     end
 
-    {:reply, :ok, st}
+    # The actuator child mirrors crash.point into the env var the Store reads on a 15 ms poll
+    # and acknowledges the value in force in crash.armed. Writing the file arms nothing by
+    # itself: a request completes in ~2 ms, so reply only once the child has acknowledged.
+    {:reply, await_armed(Path.join(st.ctl_dir, "crash.armed"), want, deadline_in(5_000)), st}
   end
 
   def handle_call({:km, req}, _, st), do: {:reply, Wire.lp(st.km_sock, req), st}
@@ -406,6 +414,23 @@ defmodule C2Harness.Fleet do
     ]
   end
 
+  defp deadline_in(ms), do: System.monotonic_time(:millisecond) + ms
+
+  defp await_armed(file, want, deadline) do
+    cond do
+      File.read(file) == {:ok, want} ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, {:crash_point_not_acknowledged, want}}
+
+      true ->
+        # SLEEP-CLASS: POLL-STEP (deadline-bounded poll on the child's crash.armed acknowledgement)
+        Process.sleep(5)
+        await_armed(file, want, deadline)
+    end
+  end
+
   defp do_start_actuator(st, opts) do
     Proc.stop(st.actuator)
     _ = File.rm(st.act_sock)
@@ -414,6 +439,7 @@ defmodule C2Harness.Fleet do
     skip_env = if skip == :all, do: "all", else: Enum.join(skip, ",")
 
     File.rm(Path.join(st.ctl_dir, "crash.point"))
+    File.rm(Path.join(st.ctl_dir, "crash.armed"))
     File.rm(Path.join(st.ctl_dir, "at_fault"))
 
     case Proc.start("actuator", Path.join(@root, "actuator"),

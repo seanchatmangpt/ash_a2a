@@ -84,36 +84,48 @@ Found by the first run of the check and fixed in the library.
 | F-07 (gRPC): `SendStreamingMessage` refused non-streaming and interrupting skills | `FAILED_PRECONDITION` `Task is not streamable` | every skill streams: `Task` first (sent before the handler runs, so its id is usable at once), one event per stored mutation, ending on a terminal or interrupted status (3.1.2) | `AshA2A.Transport.GRPC.Server`, `AshA2A.Transport.Runtime` (detached streams are drained) |
 | F-08 (gRPC half): inline push config and unary publication | `configuration.taskPushNotificationConfig` dropped over gRPC; a task answered by `SendMessage` / `CancelTask` fired no webhook unless the host handler published it | stored as `CreateTaskPushNotificationConfig` would; the server publishes the answered task | `AshA2A.Transport.GRPC.Server` (the `AshA2A.Sim.GrpcHandler` workaround is removed) |
 
-## Needs owner: version gating
+## Version gating: closed (VG-01..VG-03)
 
-Raised by the record lane on 2026-11-16 while repairing older tests against
-`docs/specification.md` at tags `v1.0.1` and `v1.1.0-rc`. No repaired test needed a gate: every
-changed assertion is required by text that is the same at both tags (see the table above), and
-the tests were updated to that text, not loosened. Three cases are left for the owner of
-version gating, because earlier notes in this repository say the pinned TCK expects another
-status than section 5.4 does (no TCK checkout was available to re-read):
+Decision (2026-11-16): **no gate.** Section 5.4 "Error Code Mappings" of `docs/specification.md`
+is the same table at tags `v1.0.1` and `v1.1.0-rc` for the nine error types both versions have
+(`git -C a2a show v1.0.1:docs/specification.md`, `git -C a2a show v1.1.0-rc:docs/specification.md`);
+v1.1 only adds `TaskGenerationMismatchError` (`-32010`, `ABORTED`, `409`). The two versions do not
+differ, so nothing depends on the negotiated version, and the values recorded earlier from a TCK
+pin (409 / 415 / 502) appear in neither text.
 
-| Case | Request | Section 5.4 (both tags) | TCK pin recorded in this repository | Served now |
-|---|---|---|---|---|
-| VG-01 | `POST /tasks/{id}:cancel` on a terminal task (`TaskNotCancelableError`, `-32002`) | `400 Bad Request` | `409` (`CORE-CANCEL-002`, cited by the old assertion in `test/ash_a2a_v1_error_registry_test.exs`) | `400` |
-| VG-02 | HTTP+JSON answer for `ContentTypeNotSupportedError` (`-32005`) | `400 Bad Request` | `415` (`tck/requirements/base.py`, cited in [error mapping decisions](a2a-error-mapping-decisions.md)) | `400` |
-| VG-03 | HTTP+JSON answer for `InvalidAgentResponseError` (`-32006`) | `500 Internal Server Error` | `502` (same source) | `500` |
+| Case | Error | Section 5.4, v1.0.1 and v1.1.0-rc | Served and returned by the helpers |
+|---|---|---|---|
+| VG-01 | `TaskNotCancelableError` (`-32002`) | `FAILED_PRECONDITION`, `400 Bad Request` | `400` |
+| VG-02 | `ContentTypeNotSupportedError` (`-32005`) | `INVALID_ARGUMENT`, `400 Bad Request` | `400` |
+| VG-03 | `InvalidAgentResponseError` (`-32006`) | `INTERNAL`, `500 Internal Server Error` | `500` |
 
-Two tables in `lib/` disagree on these codes: `status_for/1` in
-`lib/ash_a2a/transport/http_json.ex` answers 400 / 400 / 500, while `@spec_http` in
-`lib/ash_a2a/protocol/jsonrpc/error.ex` (`Error.spec_http_status/1`) still says 409 / 415 / 502
-and `test/error_version_table_test.exs` pins the latter. One of the two must change, or the
-difference must become an explicit gate on the negotiated version.
+One table now holds every binding's representation of every error code:
+`AshA2A.Protocol.JSONRPC.Error.bindings/1`. `AshA2A.Transport.HTTPJSON.status_for/1` and the gRPC
+dispatch table are generated from it at compile time, and `Error.http_status/1`,
+`Error.spec_http_status/1`, `Error.grpc_code/1`, `Error.grpc_status/1` and
+`Error.status_name_for_code/1` read it, so the helper and the served status cannot disagree.
 
-Also for an owner:
+Evidence: `test/http_json_error_status_table_test.exs` drives every error type through the real
+HTTP+JSON plug at `A2A-Version` 1.0 and 1.1 and compares the served status, the body's `status`
+name and `ErrorInfo` reason with the table and with the gRPC dispatch. The parity check asserts
+VG-01 (`CancelTask | completed task is not cancelable`) and VG-02
+(`SendMessage | a part in a media type the agent does not accept`) on every binding at v1.1 and
+on the v1.0 pass. VG-03 has no parity vector: nothing in the library produces
+`InvalidAgentResponseError` on the wire (only a host's own agent can return it), so the table
+test is its evidence.
 
-- `-32603` still passes free-form `data` through (`Error.internal_error("boom")` serializes
+Also closed:
+
+- `message/stream` court (h) of `test/ash_a2a_v1_owner_scope_test.exs`: the redacted
+  `{:error, reason}` answer of `lib/ash_a2a/a2a_transport/sse.ex` is still reachable and has a
+  real trigger again, court (h2): a stream to an agent that is down, whose exit reason carries
+  the whole call (message and the caller's verified credential). The answer is `-32000` with an
+  opaque ref.
+
+Still open:
+
+- `-32603` passes free-form `data` through (`Error.internal_error("boom")` serializes
   `"data": "boom"`), while section 9.5 describes `error.data` as an array of `@type` objects.
-- `message/stream` on a skill that does not chunk its output now answers a stream (3.1.2)
-  instead of `-32004`, so `test/ash_a2a_v1_owner_scope_test.exs` court (h) no longer reaches the
-  redacted `{:error, reason}` frame of `lib/ash_a2a/a2a_transport/sse.ex`. The court now pins
-  the served stream; that error branch has no transport-driven redaction test until another
-  trigger is supplied.
 
 ## Advisory
 

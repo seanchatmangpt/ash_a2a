@@ -2044,36 +2044,17 @@ defmodule AshA2A.Transport.HTTPJSON do
 
   # -- error mapping ------------------------------------------------------------
 
-  # §3.3.2/§5.4: validation -> 400, not found -> 404, state conflict
-  # (TaskNotCancelable) -> 409, system -> 500/503.
-  # Bodies stay inline (no delegator): the error-registry court extracts
-  # status_for/1 clauses structurally and asserts every body is a
-  # compile-time literal (traceability of the mapping).
+  # The HTTP status of every error code. The clauses are generated at compile
+  # time from the one binding table, `AshA2A.Protocol.JSONRPC.Error.bindings/1`
+  # (specification 5.4, the same at v1.0.1 and v1.1.0-rc), so this function
+  # and the public `Error.http_status/1` cannot disagree. Each clause body is
+  # a literal in the compiled module (the error-registry court reads them
+  # there); a code the table does not know is 500.
   @spec status_for(Error.t()) :: non_neg_integer()
-  defp status_for(%Error{code: -32_001}), do: 404
-  # Spec v1.1 section 5.4: InvalidAgentResponse -> 500, ContentTypeNotSupported -> 400.
-  defp status_for(%Error{code: -32_006}), do: 500
-  defp status_for(%Error{code: -32_005}), do: 400
+  for {code, {http, _grpc, _name}} <- Enum.sort(Error.bindings(:all)) do
+    defp status_for(%Error{code: unquote(code)}), do: unquote(http)
+  end
 
-  defp status_for(%Error{code: code})
-       when code in [
-              -32_600,
-              -32_601,
-              -32_602,
-              -32_700,
-              -32_003,
-              -32_004,
-              -32_007,
-              -32_008,
-              -32_009
-            ],
-       do: 400
-
-  # v1.1 TaskGenerationMismatch (-32010): optimistic-concurrency conflict, ABORTED.
-  defp status_for(%Error{code: -32_010}), do: 409
-  # TaskNotCancelable (-32002): `400 Bad Request` (spec v1.1 section 5.4).
-  defp status_for(%Error{code: -32_002}), do: 400
-  defp status_for(%Error{code: -32_000}), do: 503
   defp status_for(%Error{code: _code}), do: 500
 
   # Raw-code variant for paths holding a bare integer code (send_rest_error):

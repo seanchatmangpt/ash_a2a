@@ -118,13 +118,12 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
   from the config `wire.tls` block. Its 64-connection cap is tested over real `:ssl` connections
   (`actuator/test/actuator/wire_tls_cap_test.exs`), and the T4 test now forces the interleaving
   with a store-process context fun that blocks on a message. Remaining: `authority_service/`
-  items. The cap test needs `openssl`; it passed here (`cd actuator && mix test
-  test/actuator/wire_tls_cap_test.exs`, 1 passed). The whole actuator suite ran 81/83: the two
-  failures are `l10_red_team_test.exs` (UDS connection cap: a connection beyond the cap was
-  answered) and `repair_test.exs` (unwritable anchor; the run was as root, which ignores file
-  modes).
-
-## See also
-
-- `docs/reference/c2-certificate.md`
-- `docs/reference/c2-compromise-court.md`
+  items. The cap test needs `openssl`; it passed here. The whole actuator suite
+  (`cd actuator && mix test`, 2026-11-16, Elixir 1.20.4 / OTP 29) is 83 passed. Two tests were
+  corrected to get there, neither by loosening an assertion: the UDS cap test in
+  `l10_red_team_test.exs` now completes a round trip on each held connection (64 bare
+  `connect()`s in a burst left several in the listen backlog, never accepted, so the listener
+  was below its cap when the 65th arrived), and `repair_test.exs` blocks the anchor write with a
+  directory on the anchor's tmp path instead of a 0500 state dir, which root ignores.
+  Not addressed: the UDS listener uses the default listen backlog, so a burst of connects can
+  see some connections closed without service.

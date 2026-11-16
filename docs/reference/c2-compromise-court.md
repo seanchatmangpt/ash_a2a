@@ -270,9 +270,23 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
   (`consequence_class`, amount 0) and `Issuer.to_actuator_certificate/1` maps `{envelope,
   message}` to the actuator's exact certificate key set with a `signatures` list; the actuator's
   key set is unchanged. Remaining: the court harness still uses the keymaster stand-in for
-  actuator-shaped certificates until it is switched to the real issuer, and the `compat`
-  section's recorded refusals are stale until re-run. The actuator profile still refuses
-  general `PreparedEffect`s (`:payload_profile`), by design.
+  actuator-shaped certificates until it is switched to the real issuer. The `compat` section
+  was re-run on 2026-11-16: the real AuthorityService given the court's actuator-shaped effect
+  still answers `unknown_effect_class` (the court's consequence class is not in the authority
+  test policy), and the actuator given an authority-shaped effect answers `malformed_effect`;
+  the `handoff` text the harness records for the first probe predates the Issuer mapping. The
+  actuator profile still refuses general `PreparedEffect`s (`:payload_profile`), by design.
+* **Court run, 2026-11-16 (Elixir 1.20.4 / OTP 29, dirty tree on `bcab4b6`, run as root):**
+  `mix test test/ash_a2a/c2_compromise/c2_compromise_court_test.exs --include serial --include
+  serial_solo --include serial_shard`: 11 passed, report `overall=PASS`, 55 of 55 attacks pass,
+  C2C-F01..F04 and C2C-B08 ran 20 of 20. Before that run F01, F02 and F03 errored with
+  `actuator never reached fault point`: the harness armed a crash point by writing
+  `<ctl>/crash.point` and submitted at once, but the actuator child only mirrors that file into
+  `ACTUATOR_TEST_CRASH` on a 15 ms poll, so the ~2 ms request finished before the point was in
+  force (a fixed 120 ms sleep had hidden this until it was removed). The child now acknowledges
+  the point in force in `<ctl>/crash.armed` and `C2Harness.Fleet.arm_crash/2` returns only after
+  that acknowledgement; no attack, expectation or tolerance changed. `Actuator.Store`'s fault
+  points were not moved by the `resolve_ctx/1` change.
 * Check 12's `malformed_window` branch is not reachable through the wire: the crypto boundary
   (check 10) refuses a certificate whose `expires <= not_before` first with `malformed_envelope`
   (attack `C2C-A14` accepts either code).

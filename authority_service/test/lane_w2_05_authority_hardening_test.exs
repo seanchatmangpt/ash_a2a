@@ -1,5 +1,4 @@
 defmodule AuthorityService.LaneW205HardeningTest do
-  # UNVERIFIED: written without an Elixir toolchain; not yet run.
   use ExUnit.Case, async: true
   alias AuthorityService.{ApproverChannel.Mailbox, Listener, TestKit}
   alias Sa2aCrypto.Registry.Static
@@ -98,10 +97,18 @@ defmodule AuthorityService.LaneW205HardeningTest do
     defp write_pems(dir, conf) do
       sc = conf[:server_config]
       {ktype, kder} = sc[:key]
-      pem = fn ders -> :public_key.pem_encode(for c <- ders, do: {:Certificate, c, :not_encrypted}) end
+
+      pem = fn ders ->
+        :public_key.pem_encode(for c <- ders, do: {:Certificate, c, :not_encrypted})
+      end
 
       File.write!(Path.join(dir, "srv.crt"), pem.([sc[:cert] | conf[:client_config][:cacerts]]))
-      File.write!(Path.join(dir, "srv.key"), :public_key.pem_encode([{ktype, kder, :not_encrypted}]))
+
+      File.write!(
+        Path.join(dir, "srv.key"),
+        :public_key.pem_encode([{ktype, kder, :not_encrypted}])
+      )
+
       File.write!(Path.join(dir, "srv.ca"), pem.(sc[:cacerts]))
 
       [

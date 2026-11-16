@@ -1,5 +1,4 @@
 defmodule AuthorityService.ApproverMailboxTest do
-  # UNVERIFIED: written without an Elixir toolchain; not yet run.
   use ExUnit.Case, async: true
   alias AuthorityService.{ApproverChannel.Mailbox, Listener, TestKit}
   import TestKit
@@ -70,7 +69,10 @@ defmodule AuthorityService.ApproverMailboxTest do
     alice = signer_named(ctx, "alice")
     assert %{"ok" => true} = approve(ctx, "alice", approval(alice, ctx.d))
     assert %{"ok" => true} = approve(ctx, "alice", approval(alice, ctx.d), "bob")
-    assert %{"ok" => false, "refusal" => "insufficient_approvals", "detail" => detail} = issue(ctx)
+
+    assert %{"ok" => false, "refusal" => "insufficient_approvals", "detail" => detail} =
+             issue(ctx)
+
     assert "duplicate_custodian" in detail
   end
 
@@ -78,7 +80,10 @@ defmodule AuthorityService.ApproverMailboxTest do
     other = digest(effect_bytes(effect(%{"amount" => 1})))
     assert %{"ok" => true} = approve(ctx, "alice", approval(signer_named(ctx, "alice"), other))
     assert %{"ok" => true} = approve(ctx, "bob", approval(signer_named(ctx, "bob"), other))
-    assert %{"ok" => false, "refusal" => "insufficient_approvals", "detail" => detail} = issue(ctx)
+
+    assert %{"ok" => false, "refusal" => "insufficient_approvals", "detail" => detail} =
+             issue(ctx)
+
     assert "approval_effect_mismatch" in detail
 
     assert %{"ok" => false, "refusal" => "malformed_approval"} =

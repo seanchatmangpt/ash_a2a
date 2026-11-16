@@ -1,6 +1,6 @@
 defmodule Actuator.WireTlsCapTest do
   @moduledoc """
-  W2-06 (UNVERIFIED: written without an Elixir toolchain, never run). The mTLS listener's
+  W2-06. The mTLS listener's
   connection cap, driven over real :ssl connections with a real openssl-made PKI.
   """
   use ExUnit.Case, async: false

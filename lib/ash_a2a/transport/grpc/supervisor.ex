@@ -96,14 +96,23 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
   # correct outcome, so do that once instead of failing the start.
   defp start_endpoint(endpoint, port, start_opts, retry? \\ true) do
     case GRPC.Server.start_endpoint(endpoint, port, start_opts) do
-      {:error, :already_present} when retry? ->
-        _ = stop_endpoint(endpoint)
-        start_endpoint(endpoint, port, start_opts, false)
+      {:error, reason} = error when retry? ->
+        if listener_half_stopped?(reason) do
+          _ = stop_endpoint(endpoint)
+          start_endpoint(endpoint, port, start_opts, false)
+        else
+          error
+        end
 
       other ->
         other
     end
   end
+
+  # The OTP supervisor's own answer for a child spec that is registered but
+  # not running (ranch's listener between its terminate and its delete). It
+  # is a supervisor state, not a refusal this library returns to anyone.
+  defp listener_half_stopped?(reason), do: reason == :already_present
 
   defp stop_endpoint(endpoint) do
     GRPC.Server.stop_endpoint(endpoint)

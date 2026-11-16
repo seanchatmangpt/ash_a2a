@@ -70,13 +70,15 @@ defmodule Actuator.RepairTest do
     dir = Kit.tmp_dir("anch")
     one = Kit.child_fixture(dir, 1)
     {:ok, s} = Store.start_link(state_dir: dir)
-    File.chmod!(dir, 0o500)
-    on_exit(fn -> File.chmod(dir, 0o700) end)
+    # A directory squatting on the anchor's tmp path makes the anchor write fail (EISDIR) for
+    # every uid; a 0500 state dir does not stop root, which is what CI containers run as.
+    blocker = Actuator.Anchor.path(dir) <> ".tmp"
+    File.mkdir!(blocker)
     req = Kit.request(one.built)
     assert {:error, 14, :journal_unavailable} = Store.execute(s, one.built.ctx, req)
     assert :not_found = Store.status(s, req.effect.effect_instance_id)
     assert File.read!(Path.join(dir, "journal.jsonl")) == ""
-    File.chmod!(dir, 0o700)
+    File.rmdir!(blocker)
     assert {:ok, %{status: :performed}} = Store.execute(s, one.built.ctx, req)
   end
 end

@@ -819,6 +819,51 @@ defmodule AshA2AV1OwnerScopeTest do
     end
   end
 
+  # The redacted `{:error, reason}` branch of a2a_transport/sse.ex
+  # (`stream_message/7` -> `stream_error/1`) is still reachable, and its real
+  # trigger carries exactly what must not leak: when the agent is gone the
+  # send exits, and the exit reason is the whole `GenServer.call` — the
+  # message and the call options with the caller's verified `"a2a.auth"`.
+  describe "(h2) a stream that cannot start answers a redacted error (lane X2)" do
+    @tag :serial
+    test "message/stream to an agent that is down: -32000 with an opaque ref, nothing internal on the wire",
+         ctx do
+      secret = "raw-credential-of-alice"
+      marker = "w12-redact-marker-#{System.unique_integer([:positive])}"
+
+      # Positive control: the same request is served while the agent is up.
+      up = call(ctx, "alice", "message/stream", %{"message" => skill_message("stream_chunks")})
+      assert up.resp_body =~ "\"task\""
+
+      :ok = stop_supervised(AshA2AV1OwnerScopeTest.Agent)
+
+      message = put_in(skill_message("stream_chunks"), ["metadata", "note"], marker)
+      conn = call(ctx, "alice", "message/stream", %{"message" => message})
+      body = conn.resp_body
+
+      # Anti-vacuity: this IS the error answer of the stream path, not a
+      # stream and not another refusal.
+      assert %{
+               "error" => %{
+                 "code" => -32_000,
+                 "data" => %{"code" => "stream_start_failed", "ref" => ref}
+               }
+             } = Jason.decode!(body)
+
+      assert is_binary(ref) and ref != ""
+
+      # Nothing of the exit reason reaches the wire: no call tuple, no
+      # message content, no credential, no owner key, no process detail.
+      refute body =~ marker
+      refute body =~ secret
+      refute body =~ "a2a.auth"
+      refute body =~ "ash_a2a.owner"
+      refute body =~ "GenServer"
+      refute body =~ "noproc"
+      refute body =~ "%AshA2A.Protocol"
+    end
+  end
+
   # Real owner-scoped transport plug mounted after the same real bearer auth
   # middleware, over the same real agent.
   defp scoped_rpc(ctx, user, method, params) do

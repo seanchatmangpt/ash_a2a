@@ -1,6 +1,6 @@
 defmodule Actuator.L10RedTeamTest do
   @moduledoc """
-  L10 regressions (UNVERIFIED: written without an Elixir toolchain, never run).
+  L10 regressions.
   T4: the context is resolved inside the serialized store step, so a revocation that lands
   while a request is queued is honoured. Minor: UDS listener has a connection cap.
   """
@@ -84,6 +84,7 @@ defmodule Actuator.L10RedTeamTest do
     assert {:ok, %{status: :performed}} = Store.execute(store, f, req)
     assert_receive {:resolved_in, pid}
     assert pid == store
+
     assert {:error, "config", :config_unavailable} =
              Store.execute(store, fn -> {:error, :config_unavailable} end, req)
   end
@@ -97,13 +98,17 @@ defmodule Actuator.L10RedTeamTest do
     {:ok, _} = UDS.start_link(path: path, store: store, ctx_fun: fn -> {:ok, b.ctx} end)
     opts = [:binary, {:packet, 4}, {:active, false}]
 
+    # Each held connection completes a round trip, so it is known to be accepted and counted:
+    # a bare connect() can sit in (or be dropped from) the listen backlog without ever reaching
+    # the acceptor, which would leave the listener below its cap.
     held =
       for _ <- 1..UDS.max_conns() do
         {:ok, s} = :gen_tcp.connect({:local, path}, 0, opts)
+        :ok = :gen_tcp.send(s, ~s({"op":"health"}))
+        assert {:ok, _} = :gen_tcp.recv(s, 0, 2_000)
         s
       end
 
-    Process.sleep(200)
     {:ok, extra} = :gen_tcp.connect({:local, path}, 0, opts)
     _ = :gen_tcp.send(extra, ~s({"op":"health"}))
     assert {:error, _} = :gen_tcp.recv(extra, 0, 2_000)

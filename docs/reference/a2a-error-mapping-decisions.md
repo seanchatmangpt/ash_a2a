@@ -1,32 +1,28 @@
 # a2a-error-mapping-decisions
 
 Standing: VERIFIED for the applied mapping (2026-11-16, Elixir 1.20.4 / OTP 29.1.1: `mix test
-test/error_version_table_test.exs`, 5 passed). The TCK source lines cited below were not re-read:
+test/error_version_table_test.exs test/http_json_error_status_table_test.exs`). The TCK source lines cited below were not re-read:
 no TCK checkout exists in this environment.
 
 ## Decision 1: -32005 and -32006 HTTP status
 
-Superseded in part on 2026-11-16: `docs/specification.md` section 5.4 at tags `v1.0.1` and
-`v1.1.0-rc` does state HTTP statuses (`-32005` is `400 Bad Request`, `-32006` is
-`500 Internal Server Error`), and the HTTP+JSON binding (`status_for/1`) now answers those.
-`Error.spec_http_status/1` still returns the TCK values below. The open question is tracked as
-VG-02 and VG-03 in [parity findings](a2a-v1-1-parity-findings.md).
+Decided on 2026-11-16: the specification's table is followed. `docs/specification.md` section 5.4
+states the HTTP status of every A2A error type, with the same text at tags `v1.0.1` and
+`v1.1.0-rc`:
 
-| code | name | HTTP (old) | HTTP (now) | gRPC | JSON-RPC |
-|---|---|---|---|---|---|
-| -32005 | ContentTypeNotSupported | 400 | 415 | INVALID_ARGUMENT (3) | -32005 |
-| -32006 | InvalidAgentResponse | 500 | 502 | INTERNAL (13) | -32006 |
+| code | name | HTTP | gRPC | JSON-RPC |
+|---|---|---|---|---|
+| -32002 | TaskNotCancelable | 400 | FAILED_PRECONDITION (9) | -32002 |
+| -32005 | ContentTypeNotSupported | 400 | INVALID_ARGUMENT (3) | -32005 |
+| -32006 | InvalidAgentResponse | 500 | INTERNAL (13) | -32006 |
 
-Evidence: the pinned TCK `/Users/sac/a2a-tck/tck/requirements/base.py` lines 293-307 bind
-`ContentTypeNotSupportedError` to 415 and `InvalidAgentResponseError` to 502.
-`tck/validators/http_json/error_validator.py` builds `HTTP_JSON_ERROR_STATUS` from those bindings
-and compares `actual_status == expected_status`, so the TCK asserts the status. The spec corpus
-`priv/a2a_v1_1_spec_corpus/a2a.proto` carries no HTTP status for these errors (no match for
-CONTENT_TYPE / INVALID_AGENT / 415 / 502), so the TCK is the only authority and is followed.
-gRPC rows already matched the TCK and are unchanged.
-
-Applied in: `@spec_http` (`AshA2A.Protocol.JSONRPC.Error`), `status_for/1`
-(`AshA2A.Transport.HTTPJSON`). gRPC dispatch needed only a comment.
+An earlier revision of this decision followed values recorded from a TCK checkout (409, 415 and
+502) because the proto file alone states no HTTP status. The specification document does, in both
+versions, so those values are gone from the library: the HTTP+JSON binding serves the table and
+`AshA2A.Protocol.JSONRPC.Error.spec_http_status/1` returns it. The one table is
+`AshA2A.Protocol.JSONRPC.Error.bindings/1`; the transports generate their status mappings from it.
+A TCK run that still pins the older values will disagree until the TCK follows the specification.
+Closed as VG-01..VG-03 in [parity findings](a2a-v1-1-parity-findings.md).
 
 ## Decision 2: absent protocol version
 
