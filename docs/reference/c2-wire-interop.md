@@ -86,8 +86,14 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
 ## Open gaps
 
 - TLS transport is not implemented in the framed clients (UDS only).
-- Approval collection for k > 0 classes: the framed authority client forwards `ctx.approvals`
-  but the control plane has no approver channel of its own.
+- Approval collection for k > 0 classes: UNVERIFIED (written without an Elixir toolchain, not run).
+  The control plane now has an approver channel: the `"approve"` wire op deposits a signed
+  approval in `AuthorityService.ApproverChannel.Mailbox`, and the Issuer solicits it on `issue`
+  and re-verifies it (distinct custodians, `(kid, nonce)` replay refused at deposit and by the
+  journal). Tests: `authority_service/test/approver_mailbox_test.exs`. Remaining: the framed
+  client in `lib/` does not yet send `"approve"`, `sa2a-approver` does not yet speak the op, and
+  mailbox slots are first-wins and unauthenticated beyond the socket/mTLS peer (a peer can
+  squat a slot with a garbage approval until restart).
 - The actuator profile requires the actuator's own effect vocabulary in `PreparedEffect.payload`;
   general `PreparedEffect`s are refused (`:payload_profile`).
 - Red-team defects B1, B2, B3, T2, T3, T4 and the minor items are in `actuator/` and

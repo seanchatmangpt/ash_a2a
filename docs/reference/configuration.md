@@ -141,6 +141,19 @@ v1.1 Standing is PARTIAL; see [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 `["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); emitted cards carry
 `protocolVersion` 1.1; the client-side header default (`Version.default/0`) is `"1.0"`.
 
+## Application config — additional keys (UNVERIFIED: read from source, not executed)
+
+| Key | Default | Consumed by / meaning |
+| --- | --- | --- |
+| `:grpc` | unset (no listener) | `AshA2A.Application` — keyword list or map with required `:port` and `:handler`; appends `AshA2A.Transport.GRPC.Supervisor`. Without both required keys no child is added. |
+| `:dispatch_hooks` | `%{}` | `AshA2A.Dispatcher` — `%{hook_id => {Module, :fun}}` table resolving DSL `hooks` identifiers; an unresolvable pre-hook id fails closed. |
+| `:bad_request_details` | `false` | `AshA2A.ToA2AError` — only `true` attaches per-field `BadRequest` violations to invalid-params errors. |
+| `:id_generator` | `AshA2A.Protocol.Id.Generator.Default` | `AshA2A.Protocol.Id` — module that generates protocol ids. |
+| `:email_spool_dir` | `System.tmp_dir!()/ash_a2a_spool` | `AshA2A.Email.Sender.Spool` — spool directory (per-call `:spool_dir` wins). The tmp default is not durable. |
+| `:ferroplan_url` | unset | `AshA2A.Replan.Port.Ferroplan` — planner endpoint; falls back to `:beam4pm_url`. |
+| `:beam4pm_url` | unset | `AshA2A.Replan.Port.Beam4pm` and `Replan.ProviderRegistry` — endpoint whose presence marks the provider configured. |
+| `:graphlaw_allow_unpinned` | `false` | `AshA2A.GraphLaw.EngineLoad` — only `true` admits an unpinned engine, read per call. |
+
 ## Environment variables
 
 | Variable | Read by | Purpose |

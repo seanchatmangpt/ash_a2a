@@ -30,7 +30,7 @@ Reference pages in this quadrant:
   environment variable the library reads.
 - [Telemetry events](telemetry.md) — the production event catalog with
   payloads.
-- [Mix tasks](mix-tasks.md) — the 15 shipped tasks.
+- [Mix tasks](mix-tasks.md) — the shipped tasks (one section per `lib/mix/tasks` module).
 - [Performance](performance.md) — the measured v1.0 wire-path baseline
   (SA2A-B5/B9 bench run with its environment-identity receipt); a
   point-in-time observation, not a benchmark claim.
