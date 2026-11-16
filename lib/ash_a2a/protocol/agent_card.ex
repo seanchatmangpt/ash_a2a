@@ -61,6 +61,7 @@ defmodule AshA2A.Protocol.AgentCard do
           optional(:state_transition_history) => boolean(),
           optional(:extended_agent_card) => boolean(),
           optional(:user_artifacts) => boolean(),
+          optional(:live) => boolean(),
           optional(:extensions) => [AshA2A.Protocol.AgentExtension.t()]
         }
 

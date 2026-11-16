@@ -1477,9 +1477,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   # §5.3 tasks/list over REST. Per §11.5 the request parameters arrive as
   # query parameters, so the string-typed query values are coerced into the
   # JSON-RPC `tasks/list` params shapes and then validated by the very same
-  # `Request.validate_params/1` clause the JSON-RPC binding runs (read-only
-  # reuse); a value that cannot be coerced stays a binary and fails that
-  # validation, so both bindings reject the same values. The listing is
+  # `AshA2A.Protocol.ListTasksParams.validate/1` the JSON-RPC and gRPC bindings
+  # run; a value that cannot be coerced stays a binary and fails that
+  # validation, so all bindings reject the same values. The listing is
   # owner-scoped through the same `{:ash_a2a_list_tasks, principal, params}`
   # GenServer call `AshA2A.Transport.Plug.handle_list/2` makes, whose runtime
   # (`AshA2A.Transport.Runtime.list_tasks_for/3`) applies the real
@@ -1489,8 +1489,7 @@ defmodule AshA2A.Transport.HTTPJSON do
     conn = Plug.Conn.fetch_query_params(conn)
     params = list_params(conn.query_params)
 
-    with :ok <-
-           Request.validate_params(%Request{jsonrpc: "2.0", method: "tasks/list", params: params}),
+    with :ok <- validate_list_params(params),
          {:ok, %{tasks: tasks} = result} <- list_tasks(opts.agent, scoped_caller(conn), params) do
       send_json(conn, 200, %{
         "tasks" =>
@@ -1535,7 +1534,7 @@ defmodule AshA2A.Transport.HTTPJSON do
       {"pageSize", value} -> {"pageSize", integer_param(value)}
       {"timelineLength", value} -> {"timelineLength", integer_param(value)}
       {"historyLength", value} -> {"historyLength", integer_param(value)}
-      {"includeArtifacts", value} -> {"includeArtifacts", value in ["true", "1"]}
+      {"includeArtifacts", value} -> {"includeArtifacts", boolean_param(value)}
       {key, value} -> {key, value}
     end)
   end
@@ -1548,6 +1547,20 @@ defmodule AshA2A.Transport.HTTPJSON do
   end
 
   defp integer_param(value), do: value
+
+  # Only the literal query values `true`/`false` are booleans; anything else
+  # stays a binary and is refused by the shared validator (never read as false).
+  defp boolean_param("true"), do: true
+  defp boolean_param("false"), do: false
+  defp boolean_param(value), do: value
+
+  # Same validator as the JSON-RPC and gRPC bindings (400 INVALID_ARGUMENT).
+  defp validate_list_params(params) do
+    case AshA2A.Protocol.ListTasksParams.validate(params) do
+      :ok -> :ok
+      {:error, message} -> {:error, AshA2A.Protocol.ListTasksParams.to_error(message)}
+    end
+  end
 
   defp list_tasks(agent, principal, params) do
     GenServer.call(agent, {:ash_a2a_list_tasks, principal, params})

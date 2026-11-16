@@ -23,6 +23,9 @@ defmodule AshA2A.Protocol.AgentCardSignatureTest do
     {private, Map.take(private, ["kty", "crv", "x"]) |> Map.put("kid", kid)}
   end
 
+  def ec_keys_pub(kid), do: ec_keys(kid)
+  def ed_keys_pub(kid), do: ed_keys(kid)
+
   defp card,
     do: %{
       "name" => "Agent",
@@ -36,9 +39,9 @@ defmodule AshA2A.Protocol.AgentCardSignatureTest do
     Sig.attach(card(), [entry])
   end
 
-  for {name, gen} <- [es256: :ec_keys, eddsa: :ed_keys] do
+  for {name, gen} <- [es256: :ec_keys_pub, eddsa: :ed_keys_pub] do
     test "#{name} round trip, key order independent, tamper refused" do
-      {priv, pub} = apply(__MODULE__, unquote(:"#{gen}_pub"), ["k1"])
+      {priv, pub} = apply(__MODULE__, unquote(gen), ["k1"])
       jwks = %{"keys" => [pub]}
       c = signed(priv, kid: "k1")
       assert {:ok, ["k1"]} = Sig.verify(c, jwks)
@@ -49,9 +52,6 @@ defmodule AshA2A.Protocol.AgentCardSignatureTest do
       assert {:error, :unknown_kid} = Sig.verify(c, %{"keys" => []})
     end
   end
-
-  def ec_keys_pub(kid), do: ec_keys(kid)
-  def ed_keys_pub(kid), do: ed_keys(kid)
 
   test "refuses missing kid on sign and verify" do
     {priv, pub} = ec_keys("k1")

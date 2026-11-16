@@ -97,7 +97,8 @@ if Code.ensure_loaded?(Plug) do
             plan =
               case journal do
                 {:ok, _events} = ok -> ok
-                :unavailable -> replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, v11?)
+                :unavailable ->
+                  replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, v11?)
               end
 
             {resume?, replay} =

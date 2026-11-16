@@ -48,4 +48,77 @@ defmodule AshA2A.ProtocolAgentInflightCancelTest do
     # Idempotent repeat.
     assert :ok = SlowAgent.cancel(name, task_id)
   end
+
+  # UNVERIFIED (not run): cancel-by-id of a fresh blocking send (W2-03).
+  describe "admit_first: a fresh send is stored before its worker finishes" do
+    test "tasks/get sees it and cancel by id interrupts the blocked send" do
+      name = :"protocol_inflight_admit_#{System.unique_integer([:positive])}"
+      start_supervised!({SlowAgent, [name: name, push_sender: nil]})
+
+      test_pid = self()
+      probe = :erlang.term_to_binary(test_pid)
+      message = %{Message.new_user("go") | metadata: %{"probe" => probe}}
+
+      sender =
+        Task.async(fn ->
+          SlowAgent.call(name, message, admit_first: true, notify: test_pid)
+        end)
+
+      assert_receive {:ash_a2a_task_admitted, task_id}, 1_000
+
+      # The send is still blocked, yet the task is stored and readable.
+      assert {:ok, %{status: %{state: state}}} = SlowAgent.get_task(name, task_id)
+      assert state in [:submitted, :working]
+
+      assert :ok = SlowAgent.cancel(name, task_id)
+
+      # The blocked send is answered with the canceled task; the effect never runs.
+      assert {:ok, %{id: ^task_id, status: %{state: :canceled}}} = Task.await(sender, 2_000)
+      refute_receive :handler_finished, 900
+      assert {:ok, %{status: %{state: :canceled}}} = SlowAgent.get_task(name, task_id)
+    end
+
+    test "another identity cannot cancel it through the owner-gated transport" do
+      name = :"protocol_inflight_admit_owner_#{System.unique_integer([:positive])}"
+      start_supervised!({SlowAgent, [name: name, push_sender: nil]})
+
+      test_pid = self()
+      probe = :erlang.term_to_binary(test_pid)
+
+      message = %{
+        Message.new_user("go")
+        | metadata: %{"probe" => probe}
+      }
+
+      sender =
+        Task.async(fn ->
+          SlowAgent.call(name, message,
+            admit_first: true,
+            notify: test_pid,
+            metadata: %{"ash_a2a.owner" => "alice", "probe" => probe}
+          )
+        end)
+
+      assert_receive {:ash_a2a_task_admitted, task_id}, 1_000
+
+      ctx = fn principal -> %{agent: name, principal: principal} end
+
+      # Bob is refused exactly like a missing task, and nothing is canceled.
+      assert {:error, _not_found} =
+               AshA2A.Transport.Plug.handle_cancel(task_id, %{}, ctx.("bob"))
+
+      assert {:error, :not_found} =
+               GenServer.call(name, {:ash_a2a_get_task, "bob", task_id})
+
+      assert {:ok, %{status: %{state: state}}} = SlowAgent.get_task(name, task_id)
+      assert state in [:submitted, :working]
+
+      # The owner can cancel it.
+      assert {:ok, _wire_task} =
+               AshA2A.Transport.Plug.handle_cancel(task_id, %{}, ctx.("alice"))
+
+      assert {:ok, %{status: %{state: :canceled}}} = Task.await(sender, 2_000)
+      refute_receive :handler_finished, 900
+    end
+  end
 end

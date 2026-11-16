@@ -4,13 +4,15 @@ defmodule AshA2A.LaneL05.ResubscribeClaimTest do
 
   @doc_path Path.expand("../../docs/reference/a2a-spec-version-mapping.md", __DIR__)
 
-  test "durability doc keeps the node-local resubscribe gap and does not claim a durable journal" do
+  test "durability doc describes journal replay as UNVERIFIED and keeps the producer gap" do
     doc = File.read!(@doc_path)
     flat = String.replace(doc, ~r/\s+/, " ")
 
-    assert flat =~ "a mid-flight stream stays node-local"
-    assert flat =~ "no replayed events"
-    assert flat =~ "NOT implemented"
+    assert flat =~ "AshA2A.Protocol.EventJournal"
+    assert flat =~ "config :ash_a2a, :event_journal"
+    assert flat =~ "Remaining gap: no live producer migrates between nodes"
+    assert flat =~ "PRODUCER_UNAVAILABLE"
+    assert flat =~ "Status: UNVERIFIED"
     assert flat =~ "Durable cross-node task continuity: PARTIAL."
     refute flat =~ "Durable cross-node task continuity: CONFORMANT"
   end

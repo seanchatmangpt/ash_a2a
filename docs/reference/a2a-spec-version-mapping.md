@@ -131,13 +131,23 @@ through the store via `AshA2A.Transport.Runtime.list_tasks_for/3` (store tasks
 merged with the in-memory map, owner-gated, one pagination pass, store read
 failure surfaced as an error; covered by
 `test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, UNVERIFIED,
-not yet run). Pinned gap: a mid-flight stream stays node-local: the replay journal behind `tasks/resubscribe` (`lastSeenGeneration`
-replay) is the node-local ETS event log, so a resubscribe on a fresh agent or a
-second node gets the stored task snapshot from the `TaskStore` but no replayed
-events, and it never progresses by itself (no live producer is attached to that
-agent). Closing this needs a durable task-event journal; it is NOT implemented.
-Status: UNVERIFIED (no Elixir toolchain in the authoring environment; the
-narrowing is pinned by `test/lane_l05/resubscribe_claim_test.exs`, not yet run).
+not yet run). Resubscribe replay (UNVERIFIED, not yet run): `tasks/resubscribe` with
+`lastSeenGeneration` replays missed events through the
+`AshA2A.Protocol.EventJournal` behaviour (`append/3`, `replay_after/2`,
+`trim/2`), configured by `config :ash_a2a, :event_journal` (default
+`AshA2A.Protocol.EventJournal.ETS`). The module is resolved at runtime; if it is
+not loaded, errors, or retains nothing for a client that is behind, the stream
+falls back to the node-local transport event log, then to a TaskStore snapshot.
+Remaining gap: no live producer migrates between nodes. When a non-terminal
+task is resubscribed after a journal replay and this agent holds no local
+producer (heuristic: no stream-backed task in memory), the stream waits a
+bounded grace (`:resubscribe_orphan_grace_ms`, default 500) and then ends with a
+`StreamError` frame, code `PRODUCER_UNAVAILABLE`; the task is not reported
+terminal, so clients should `tasks/get` and resubscribe against the owning node.
+Journal durability across nodes depends on the configured journal module, not on
+this library. Status: UNVERIFIED (no Elixir toolchain in the authoring
+environment; pinned by `test/lane_l05/resubscribe_claim_test.exs` and
+`test/lane_w2_02/sse_journal_resubscribe_test.exs`, not yet run).
 Durable cross-node task continuity: PARTIAL.
 
 ## External TCK

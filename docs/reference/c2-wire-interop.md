@@ -89,16 +89,25 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
   `ctx.c2_tls` (`AshA2A.C2.L07Tls.Transport`): `verify_peer`, pinned CA, client certificate
   (mutual), hostname check; incomplete config or failed handshake is refused and never falls back
   to the unix socket. Test: `test/ash_a2a/c2/l07_tls_framed_test.exs` (unpinned-CA and hostname
-  refusal) drives the transport only, not yet the full clients against a TLS-listening
-  authority/actuator release (the releases' own TLS listeners are not covered here).
+  refusal) drives the transport only. The authority listener serves TLS 1.3 (`verify_peer`,
+  `fail_if_no_peer_cert`, pinned CA, 64-connection cap) and, via `AUTHORITY_LISTEN_UNIX` plus
+  `AUTHORITY_TLS_PORT`, alongside the UDS listener (UNVERIFIED, not run); tests with a real
+  `:ssl` round trip and an unpinned-client-cert refusal:
+  `authority_service/test/mtls_test.exs`, `authority_service/test/lane_w2_05_authority_hardening_test.exs`.
+  Remaining: no test yet drives the `lib/` framed client against that listener, and the
+  actuator release's own TLS listener is not covered here.
 - Approval collection for k > 0 classes: UNVERIFIED (written without an Elixir toolchain, not run).
   The control plane now has an approver channel: the `"approve"` wire op deposits a signed
   approval in `AuthorityService.ApproverChannel.Mailbox`, and the Issuer solicits it on `issue`
   and re-verifies it (distinct custodians, `(kid, nonce)` replay refused at deposit and by the
   journal). Tests: `authority_service/test/approver_mailbox_test.exs`. Remaining: the framed
   client in `lib/` does not yet send `"approve"`, `sa2a-approver` does not yet speak the op, and
-  mailbox slots are first-wins and unauthenticated beyond the socket/mTLS peer (a peer can
-  squat a slot with a garbage approval until restart).
+  the mailbox, when wired by `Runtime` (`verify:` option), verifies each approval (signature
+  against the registered key, standing, audience, custodian == slot approver, digest and
+  generation == slot) before a slot or nonce is consumed and refuses `approval_invalid`;
+  slots stay first-wins (UNVERIFIED, not run; test in
+  `lane_w2_05_authority_hardening_test.exs`). A mailbox started without `verify:` (tests
+  only) still only holds data. Policy epoch and TTL are still checked only by the Issuer.
 - The actuator profile requires the actuator's own effect vocabulary in `PreparedEffect.payload`;
   general `PreparedEffect`s are refused (`:payload_profile`).
 - Red-team defects B1, B2, B3, T2, T3, T4 and the minor items are in `actuator/` and

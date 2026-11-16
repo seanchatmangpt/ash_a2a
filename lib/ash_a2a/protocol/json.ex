@@ -897,21 +897,34 @@ defmodule AshA2A.Protocol.JSON do
     end
   end
 
-  @doc "Decodes the v1.1-relevant members of `ListTasksRequest`."
-  @spec decode_list_tasks_request(map()) :: {:ok, map()}
+  @doc """
+  Decodes the v1.1-relevant members of `ListTasksRequest`. Wrong-typed or
+  out-of-range members are refused with `{:error, {:invalid_params, message}}`
+  by the shared `AshA2A.Protocol.ListTasksParams.validate/1`.
+  """
+  @spec decode_list_tasks_request(map()) :: {:ok, map()} | {:error, {:invalid_params, String.t()}}
   def decode_list_tasks_request(%{} = map) do
-    {:ok,
-     %{
-       tenant: Map.get(map, "tenant"),
-       context_id: Map.get(map, "contextId"),
-       status: Map.get(map, "status"),
-       page_size: Map.get(map, "pageSize"),
-       page_token: Map.get(map, "pageToken"),
-       history_length: Map.get(map, "historyLength"),
-       timeline_length: Map.get(map, "timelineLength"),
-       status_timestamp_after: Map.get(map, "statusTimestampAfter"),
-       include_artifacts: Map.get(map, "includeArtifacts")
-     }}
+    with :ok <- validate_list_request(map) do
+      {:ok,
+       %{
+         tenant: Map.get(map, "tenant"),
+         context_id: Map.get(map, "contextId"),
+         status: Map.get(map, "status"),
+         page_size: Map.get(map, "pageSize"),
+         page_token: Map.get(map, "pageToken"),
+         history_length: Map.get(map, "historyLength"),
+         timeline_length: Map.get(map, "timelineLength"),
+         status_timestamp_after: Map.get(map, "statusTimestampAfter"),
+         include_artifacts: Map.get(map, "includeArtifacts")
+       }}
+    end
+  end
+
+  defp validate_list_request(map) do
+    case AshA2A.Protocol.ListTasksParams.validate(map) do
+      :ok -> :ok
+      {:error, message} -> {:error, {:invalid_params, message}}
+    end
   end
 
   @doc "Decodes `SubscribeToTaskRequest` (id, lastSeenGeneration)."
