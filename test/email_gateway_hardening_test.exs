@@ -98,8 +98,7 @@ defmodule AshA2A.EmailGatewayHardeningTest do
   test "valid webhook credential => 200 dispatch (control)", ctx do
     c = EmailPlug.call(post(params()), opts(ctx.rec, ctx.ledger))
     assert c.status == 200, c.resp_body
-    assert dispatched(ctx.rec) == [{%{id: "principal:approver"}, 1}] or
-             match?([{_, 1}], dispatched(ctx.rec))
+    assert [{%{id: "principal:approver"}, 1}] = dispatched(ctx.rec)
   end
 
   test "no :webhook option configured => 503, fail closed", ctx do

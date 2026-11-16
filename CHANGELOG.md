@@ -21,7 +21,11 @@ recorded in a cited receipt but was not re-run when this entry was written.
 
 - Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
   `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
-  dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified.
+  dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified. Hardened: the plug now
+  requires `:webhook` (authenticated ingress) and `:token_ledger` (replay protection), caps
+  body/reply/depth/nodes (413), strips CRLF from reply headers and can bind an optional
+  `:approver` to the sender. **Breaking:** `:webhook` and `:token_ledger` are required.
+  Unverified; no DKIM cryptography, and `TokenLedger` is in-memory and single-node.
 - A2A v1.1 deltas on top of the 26.11.13 entry below (target: upstream tag `v1.1.0-rc`,
   status PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and
   `A2A-Version` accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration`

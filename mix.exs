@@ -128,6 +128,9 @@ defmodule AshA2A.MixProject do
             "docs/how-to/test-governed-actions.md",
             "docs/how-to/migrate-legacy-to-strict.md",
             "docs/how-to/operate-by-email.md",
+            "docs/how-to/secure-an-a2a-deployment.md",
+            "docs/how-to/migrate-from-a2a-hex.md",
+            "docs/how-to/mount-email-gateway.md",
             # Reference
             "docs/reference/index.md",
             {"documentation/dsls/DSL-AshA2A.md",
@@ -149,11 +152,24 @@ defmodule AshA2A.MixProject do
             "docs/reference/c2-wire-interop.md",
             "docs/reference/conformance-claim.md",
             "docs/reference/conformance-profiles.md",
+            "docs/reference/v1-1-known-divergences.md",
+            "docs/reference/tck-suite.md",
+            "docs/reference/a2a-error-mapping-decisions.md",
+            "docs/reference/c2-compromise-court.md",
+            "docs/reference/ingress-attestation.md",
+            "docs/reference/module-coverage.md",
+            "docs/reference/qme-1.md",
+            "docs/reference/security-advisories.md",
+            "docs/reference/enterprise.md",
+            "docs/reference/conference-sim-model.md",
+            "docs/reference/graphlaw-v26.10.28-compat.md",
+            "docs/reference/a2a-v1_1-readiness.md",
             # Explanation
             "docs/explanation/architecture.md",
             "docs/explanation/message-lifecycle.md",
             "docs/explanation/canonical-graph-identity.md",
-            "docs/explanation/graphlaw-wasm-integration.md"
+            "docs/explanation/graphlaw-wasm-integration.md",
+            "docs/explanation/pplan-seams.md"
           ],
           # Entries already shaped as {path, opts} pass through unchanged.
           fn
@@ -205,12 +221,13 @@ defmodule AshA2A.MixProject do
            priv/sa2a_graphlaw priv/semantic priv/spg_conformance
            mix.exs README.md CHANGELOG.md LICENSE LICENSES REUSE.toml SECURITY.md
            usage-rules.md
-           documentation/dsls
+           documentation/dsls documentation/tutorials
            docs/tutorials/*.md docs/how-to/*.md docs/reference/*.md
            docs/explanation/architecture.md
            docs/explanation/message-lifecycle.md
            docs/explanation/canonical-graph-identity.md
            docs/explanation/graphlaw-wasm-integration.md
+           docs/explanation/pplan-seams.md
            sa2a_crypto/lib) ++ native_package_files()
     ]
   end

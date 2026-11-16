@@ -25,12 +25,17 @@ only the approved items are dispatched.
 
 | Condition | Response | Dispatch |
 |---|---|---|
+| Provider webhook credential missing or wrong | 401 | none |
+| `:webhook` or `:token_ledger` not configured | 503 | none |
+| Body too large, too deep or reply text too long | 413 | none |
 | Body not valid JSON or webhook unparseable | 400 | none |
 | Sender not verified (`Inbound.verify_sender/2`) | 401 | none |
 | Missing `in_reply_to` | 400 | none |
 | `in_reply_to` matches no brief | 404 | none |
 | Unparseable intent | 422 | none |
 | Tampered, missing or invalid reply token | 403 | none |
+| Brief names an `:approver` and the sender is another principal | 403 | none |
+| Reply token already used | 409 | none |
 | Graph digest differs from the brief | 409 plus a reconfirm email | none |
 
 Per-action standing in the 200 body: `dispatched`, `held`, or `refused`. A dispatch
@@ -48,15 +53,27 @@ reconfirms against current state.
 - `:dispatch` `(principal, action -> {:ok, receipt} | {:error, reason})`. Default
   `default_dispatch/3` uses `:resolver` (default refuses `:unresolvable`) and
   `:kernel_entry` (default `AshA2A.Email.KernelEntry.run/4`, via `CommandBus`).
-- `:reply_sender` `(to, subject, text -> any)`; default no-op.
+- `:reply_sender` `(to, subject, text -> any)`; default no-op. Subjects are stripped of
+  CR/LF and control characters and capped at 200 characters.
+- `:webhook` (required): `{:sendgrid | :workspace | :ses, opts}` for
+  `AshA2A.Email.Webhook.verify/3`, or `:trusted_ingress` when an upstream hop already
+  authenticated the provider. The `auth_results` in the body are not trusted otherwise.
+- `:token_ledger` (required): single-use reply tokens, message-id replay cache and per-sender
+  `:rate_limit`.
+- `:max_body_bytes`, `:max_reply_chars`: size caps (defaults 262144 and 16384).
+- Brief key `:approver`: principal id bound to the brief; set it for per-approver briefs.
 
 The request body carries `"reply_tokens"`: action number to token
 (`Brief.reply_token/2`); a token is required for every approved action.
 
 ## Test it
 
-`test/email_plug_test.exs` exercises the loop through `Plug.Test` (standing UNVERIFIED
-here; the file exists, no run cited). Unit tests: `test/email_{inbound,brief,
+`test/email_plug_test.exs` and `test/email_gateway_hardening_test.exs` exercise the loop and
+the refusals above through `Plug.Test` (standing UNVERIFIED: written without an Elixir
+toolchain, no run cited).
+
+Remaining: SES RSA signature checking needs a caller-supplied `:signature_verifier`; no DKIM
+cryptography is done here; the `TokenLedger` is in-memory and single-node. Unit tests: `test/email_{inbound,brief,
 reply_intent,kernel_entry}_test.exs`.
 
 ## See Also
