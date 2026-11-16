@@ -17,6 +17,10 @@ defmodule AshA2A.Domain.Verifiers.VerifyConfig do
   def verify(dsl_state) do
     module = Spark.Dsl.Verifier.get_persisted(dsl_state, :module)
 
+    dsl_state |> run_checks(module) |> AshA2A.Domain.Verifiers.Location.locate(dsl_state)
+  end
+
+  defp run_checks(dsl_state, module) do
     with :ok <- require_agent_name(dsl_state, module),
          :ok <- verify_scheme_kinds(dsl_state, module),
          :ok <- verify_unique_scheme_names(dsl_state, module),

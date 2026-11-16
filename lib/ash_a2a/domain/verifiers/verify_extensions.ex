@@ -12,12 +12,13 @@ defmodule AshA2A.Domain.Verifiers.VerifyExtensions do
   def verify(dsl_state) do
     module = Spark.Dsl.Verifier.get_persisted(dsl_state, :module)
 
-    dsl_state
-    |> Spark.Dsl.Verifier.get_entities([:transport])
-    |> Enum.filter(&match?(%Extension{}, &1))
-    |> Enum.frequencies_by(& &1.uri)
-    |> Enum.find(fn {_uri, count} -> count > 1 end)
-    |> case do
+    result =
+      dsl_state
+      |> Spark.Dsl.Verifier.get_entities([:transport])
+      |> Enum.filter(&match?(%Extension{}, &1))
+      |> Enum.frequencies_by(& &1.uri)
+      |> Enum.find(fn {_uri, count} -> count > 1 end)
+      |> case do
       nil ->
         :ok
 
@@ -30,5 +31,7 @@ defmodule AshA2A.Domain.Verifiers.VerifyExtensions do
              "extension uri #{inspect(uri)} is declared #{count} times; extension uris must be unique"
          )}
     end
+
+    AshA2A.Domain.Verifiers.Location.locate(result, dsl_state)
   end
 end

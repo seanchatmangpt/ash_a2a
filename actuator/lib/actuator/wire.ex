@@ -43,9 +43,9 @@ defmodule Actuator.Wire do
   defp execute(store, ctx_fun, e64, c64) do
     with {:ok, eb} <- Sa2aCrypto.Envelope.b64(e64) |> tag(:malformed_request),
          {:ok, cb} <- Sa2aCrypto.Envelope.b64(c64) |> tag(:malformed_request),
-         {:ok, ctx} <- ctx_fun.(),
          {:ok, req} <- Fence.parse(eb, cb) do
-      case Store.execute(store, ctx, req) do
+      # the context is resolved inside the store step (T4), not before queueing
+      case Store.execute(store, ctx_fun, req) do
         {:ok, %{status: s, evidence: ev}} ->
           reply(%{"ok" => true, "status" => Atom.to_string(s), "evidence" => ev})
 

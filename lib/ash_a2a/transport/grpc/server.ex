@@ -104,7 +104,7 @@ defmodule AshA2A.Transport.GRPC.Server do
 
   # Per the proto this returns google.protobuf.Empty. The runtime's dispatch
   # layer refuses push-notification-config CRUD with -32003, which the
-  # dispatch's error mapping turns into FAILED_PRECONDITION(9) before a response
+  # dispatch's error mapping turns into UNIMPLEMENTED(12) before a response
   # type is ever needed; the Empty target exists for hosts whose handler
   # implements the optional push callbacks.
   def delete_task_push_notification_config(req, mat) do

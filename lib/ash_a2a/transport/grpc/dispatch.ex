@@ -37,7 +37,9 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
       -32001 -> NOT_FOUND(5), -32600/-32602/-32700/-32005 ->
       INVALID_ARGUMENT(3), -32002/-32007/-32008 -> FAILED_PRECONDITION(9),
       -32003/-32004/-32009/-32601 -> UNIMPLEMENTED(12), -32603/-32006 ->
-      INTERNAL(13), -32000 (server busy) -> UNAVAILABLE(14). `trailers/1`
+      INTERNAL(13), -32000 (server busy) -> UNAVAILABLE(14), v1.1 -32010
+      (generation mismatch) -> ABORTED(10); any unlisted code -> UNKNOWN(2).
+      `trailers/1`
       converts a result to the `grpc-status`/`grpc-message` trailer map.
 
   `handler` is any module implementing the `AshA2A.Protocol.JSONRPC`
@@ -81,6 +83,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     }
   ]
 
+  # NOTE: legacy label kept for API compatibility; the proto's fully qualified
+  # service is `lf.a2a.v1.A2AService` (see AshA2A.Transport.GRPC.Server).
   @doc false
   def service, do: @service
 
@@ -118,9 +122,10 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
           # cache semantics are the serving host's), so the gRPC binding opts
           # in the same way the HTTP binding's router does: a handler that
           # exports `handle_extended_card/1` answers GetExtendedAgentCard
-          # directly. Without the callback the dispatcher's FAILED_PRECONDITION
-          # (-32004) refusal stands — spec-correct (§3.3.2) exactly when the served
-          # card does not declare the extendedAgentCard capability.
+          # directly. Without the callback the dispatcher's -32004 refusal stands
+          # (UNIMPLEMENTED(12) on gRPC per the pinned TCK table below) — correct
+          # exactly when the served card does not declare the extendedAgentCard
+          # capability.
           short == "GetExtendedAgentCard" and exports?(handler, :handle_extended_card, 1) ->
             case safe_extended_card(handler, ctx) do
               {:ok, card} ->
