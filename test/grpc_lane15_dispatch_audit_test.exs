@@ -7,7 +7,7 @@ end
 
 defmodule AshA2A.GRPCLane15DispatchAuditTest do
   @moduledoc """
-  Lane 15 audit (UNVERIFIED: written without an Elixir toolchain). Checks the
+  Lane 15 audit. Checks the
   gRPC dispatch table against the vendored proto and the JSON-RPC error table.
   """
 

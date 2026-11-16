@@ -26,11 +26,7 @@ defmodule AshA2A.Sim.MirrorTest do
   # Every probe allowed to report `:skip`, with the text its reason must carry.
   # A skip is a known library defect the prover observed; fixing the defect
   # turns the probe into a pass and this entry must then be removed.
-  @allowed_skips %{
-    {"grpc_rpc:SendLiveMessage",
-     "a client that half-closes after its one message still gets the task"} =>
-      "closes the live session as soon as the client half-closes"
-  }
+  @allowed_skips %{}
 
   setup_all do
     {:ok, server} = Server.start_link()

@@ -205,6 +205,46 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
              })
   end
 
+  # `localhost` is refused whenever any address it resolves to is outside the
+  # operator's `allow_cidrs`. What the host's resolver answers for `localhost`
+  # differs between machines (IPv4 only, or IPv4 and IPv6), so this test pins
+  # the dual-stack answer through the policy's `:resolver` option.
+  test "SSRF: a dual-stack localhost is refused although 127.0.0.1/32 is allowed", %{agent: agent} do
+    transport = :"a2a_transport_push_dual_#{System.unique_integer([:positive])}"
+
+    resolver = fn
+      ~c"localhost", :inet -> {:ok, [{127, 0, 0, 1}]}
+      ~c"localhost", :inet6 -> {:ok, [{0, 0, 0, 0, 0, 0, 0, 1}]}
+      _host, _family -> {:error, :nxdomain}
+    end
+
+    start_supervised!(
+      {AshA2A.A2ATransport,
+       name: transport,
+       push: [allow_http: true, allow_cidrs: ["127.0.0.1/32"], resolver: resolver]},
+      id: transport
+    )
+
+    on =
+      TransportPlug.init(
+        agent: agent,
+        base_url: "http://x/a2a",
+        transport: transport,
+        push_notifications: true
+      )
+
+    task_id = new_task(on)
+
+    assert %{"error" => %{"code" => -32_602, "data" => [%{"metadata" => %{"detail" => detail}}]}} =
+             rpc(on, "tasks/pushNotificationConfig/set", %{
+               "taskId" => task_id,
+               "pushNotificationConfig" => %{"url" => "http://localhost:1/hook"}
+             })
+
+    assert detail =~ "refused_webhook_private_address"
+    assert detail =~ "::1"
+  end
+
   test "SSRF: private, loopback, metadata and non-https URLs are refused at set", %{on: on} do
     task_id = new_task(on)
 
@@ -213,7 +253,6 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
           {"http://169.254.169.254/latest/meta-data", "refused_webhook_private_address"},
           {"http://127.0.0.2:9/hook", "refused_webhook_private_address"},
           {"http://[::1]/hook", "refused_webhook_private_address"},
-          {"http://localhost:1/hook", "refused_webhook_private_address"},
           {"ftp://example.com/hook", "refused_webhook_scheme"},
           {"http://user:pw@127.0.0.1/hook", "refused_webhook_malformed"}
         ] do

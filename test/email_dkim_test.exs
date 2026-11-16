@@ -1,8 +1,7 @@
 defmodule AshA2A.EmailDkimTest do
   @moduledoc """
   W2-07: `AshA2A.Email.Dkim` against real RSA keys (`:public_key.generate_key/1`) and real
-  signed messages built by an independent test-side signer. Standing: UNVERIFIED (not run; no
-  Elixir toolchain when written).
+  signed messages built by an independent test-side signer.
   """
   use ExUnit.Case, async: true
 

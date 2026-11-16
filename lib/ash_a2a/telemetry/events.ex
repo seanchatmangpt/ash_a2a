@@ -32,7 +32,7 @@ defmodule AshA2A.Telemetry.Events do
       consumer mentioning a name satisfies the "nothing emits it" direction.
     * `measurements` and `metadata` are the primary keys read from the emit
       sites at the time of writing. They are a guide, not a schema; a given
-      emit may add or omit keys. UNVERIFIED: nothing here was compiled or run.
+      emit may add or omit keys.
     * Span events (`:telemetry.span/3`) are listed as their `:start`, `:stop`
       and `:exception` members.
     * The conformance-court harness family `[:ash_a2a, :chicago, ...]`
@@ -473,6 +473,8 @@ defmodule AshA2A.Telemetry.Events do
         "orphan task failed by sweep"),
       e([:ash_a2a, :task, :orphan_sweep_unsupported], [:count], [:store, :reason],
         "store cannot sweep orphans"),
+      e([:ash_a2a, :event_journal, :append_failed], [:count], [:task_id, :generation, :operation],
+        "event journal append or trim failed"),
       e([:ash_a2a, :task_events, :journal_error], [:count], [:task_id, :seq],
         "task event journal error"),
       e([:ash_a2a, :transport, :plug, :list_refused], [], [:subject, :refusal, :wire_code],

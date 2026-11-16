@@ -178,6 +178,8 @@ if Code.ensure_loaded?(Bandit) do
         bearer authentication.
       * a webhook receiver (`AshA2A.Sim.PushReceiver`) that records
         push-notification deliveries.
+      * an ETS event journal (`AshA2A.TaskStore.EventJournalEts`) and a fresh
+        ES256 key pair that signs every served agent card.
 
     ## Options
 
@@ -194,6 +196,14 @@ if Code.ensure_loaded?(Bandit) do
       * `:base_url`, `:card_url`, `:jsonrpc_url`, `:a2a_url`, `:rest_url`
       * `:grpc_target` (`host:port`), `:push_url`
       * `:tokens` (see `AshA2A.Sim.Auth.tokens/0`)
+      * `:card_jwks` - the JWKS (`%{"keys" => [public_jwk]}`) that verifies the
+        `signatures` entry of every served agent card
+        (`AshA2A.Protocol.AgentCardSignature.verify/3`)
+
+    The agent's task events are journaled in an ETS
+    `AshA2A.Protocol.EventJournal` for as long as the server runs
+    (`config :ash_a2a, :event_journal` is set on start and put back on stop),
+    so `tasks/resubscribe` with `lastSeenGeneration` replays missed events.
 
     This module is compiled only when Bandit is available. ash_a2a lists
     Bandit as a dev and test dependency; add `{:bandit, "~> 1.5"}` to use the
@@ -204,7 +214,15 @@ if Code.ensure_loaded?(Bandit) do
 
     @transport AshA2A.Sim.Transport
     @host "127.0.0.1"
-    @grpc_env_keys [AshA2A.Transport.GRPC.Server, AshA2A.Transport.GRPC.Server.Endpoint]
+    # `:event_journal` is saved and restored with the gRPC keys: the server
+    # points it at its own journal while it runs.
+    @grpc_env_keys [
+      AshA2A.Transport.GRPC.Server,
+      AshA2A.Transport.GRPC.Server.Endpoint,
+      :event_journal
+    ]
+    @journal AshA2A.Sim.EventJournal
+    @card_kid "sim-card-1"
 
     @doc false
     def child_spec(opts) do
@@ -264,6 +282,16 @@ if Code.ensure_loaded?(Bandit) do
            ]}
         )
 
+      # Every task write of the agent is journaled, so `tasks/resubscribe`
+      # with `lastSeenGeneration` replays missed events (`/jsonrpc` mount).
+      {:ok, _} = Supervisor.start_child(sup, {AshA2A.TaskStore.EventJournalEts, name: @journal})
+
+      Application.put_env(
+        :ash_a2a,
+        :event_journal,
+        {AshA2A.TaskStore.EventJournalEts, @journal}
+      )
+
       {:ok, _} = Supervisor.start_child(sup, {AshA2A.Sim.Agent, []})
       :ok = AshA2A.Sim.Auth.issue_grants()
 
@@ -288,6 +316,7 @@ if Code.ensure_loaded?(Bandit) do
         )
 
       grpc_port = AshA2A.Transport.GRPC.Supervisor.port(grpc)
+      {card_private, card_public} = card_keys()
 
       info = %{
         http_port: http_port,
@@ -300,10 +329,15 @@ if Code.ensure_loaded?(Bandit) do
         rest_url: base_url <> "/rest",
         grpc_target: "#{@host}:#{grpc_port}",
         push_url: "http://#{@host}:#{push_port}/hook",
-        tokens: AshA2A.Sim.Auth.tokens()
+        tokens: AshA2A.Sim.Auth.tokens(),
+        card_jwks: %{"keys" => [card_public]}
       }
 
       interfaces = interfaces(info)
+
+      # Every HTTP mount serves its card with an `AgentCardSignature` made
+      # with this key; `info.card_jwks` is the public half.
+      sign_with = [jwk: card_private, kid: @card_kid]
 
       # The gRPC handler builds the extended card from the same facts.
       put_grpc_ctx(%{
@@ -314,7 +348,7 @@ if Code.ensure_loaded?(Bandit) do
         agent_card_opts: [supported_interfaces: interfaces]
       })
 
-      AshA2A.Sim.Router.put_mounts(mounts(info, interfaces))
+      AshA2A.Sim.Router.put_mounts(mounts(info, interfaces, sign_with))
 
       {:ok,
        %{sup: sup, grpc_env: grpc_env, info: Map.put(info, :supported_interfaces, interfaces)}}
@@ -357,7 +391,25 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
-    defp mounts(info, interfaces) do
+    # A fresh ES256 (P-256) key pair per server run, as private and public JWK.
+    defp card_keys do
+      {<<4, x::binary-32, y::binary-32>>, d} = :crypto.generate_key(:ecdh, :secp256r1)
+      b64 = &Base.url_encode64(&1, padding: false)
+
+      public = %{
+        "kty" => "EC",
+        "crv" => "P-256",
+        "x" => b64.(x),
+        "y" => b64.(y),
+        "kid" => @card_kid,
+        "use" => "sig",
+        "alg" => "ES256"
+      }
+
+      {Map.put(public, "d", b64.(d)), public}
+    end
+
+    defp mounts(info, interfaces, sign_with) do
       card_opts = [supported_interfaces: interfaces]
       provider = &AshA2A.Sim.Auth.extended_card/2
 
@@ -367,6 +419,7 @@ if Code.ensure_loaded?(Bandit) do
           base_url: base_url,
           json_rpc_path: [],
           agent_card_opts: card_opts,
+          sign_with: sign_with,
           transport: @transport,
           push_notifications: true,
           extended_card: provider
@@ -383,7 +436,8 @@ if Code.ensure_loaded?(Bandit) do
             agent: AshA2A.Sim.Agent,
             base_url: info.jsonrpc_url,
             json_rpc_path: [],
-            agent_card_opts: card_opts
+            agent_card_opts: card_opts,
+            sign_with: sign_with
           ),
         a2a: a2a.(info.a2a_url),
         rest:
@@ -391,6 +445,7 @@ if Code.ensure_loaded?(Bandit) do
             agent: AshA2A.Sim.Agent,
             base_url: info.rest_url,
             agent_card_opts: card_opts,
+            sign_with: sign_with,
             transport: @transport,
             push_notifications: true,
             extended_card: provider,

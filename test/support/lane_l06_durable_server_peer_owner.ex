@@ -11,8 +11,6 @@ defmodule AshA2A.Test.LaneL06DurableServerPeerOwner do
   `AshA2A.Test.MultinodeEkvOwner`: a transient `:erpc` worker would take the
   linked supervisor down when it exits). Lives in `test/support/` so the peer
   can load its compiled `.beam`.
-
-  UNVERIFIED: written without an Elixir toolchain; not yet run.
   """
 
   @spec start_and_wait(keyword(), keyword(), pid()) :: no_return()

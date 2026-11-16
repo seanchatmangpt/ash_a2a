@@ -33,8 +33,7 @@ defmodule AshA2A.Email.TokenLedgerStore do
     * `rate_check/4` is a node-local in-memory sliding window; it does not span nodes or survive a
       restart. Replay protection, not rate limiting, is what is durable here.
 
-  Authentication and this ledger confer no authority. Standing: UNVERIFIED (written without an
-  Elixir toolchain; no run cited).
+  Authentication and this ledger confer no authority.
 
   Options: `:store` (required, the `EKV` instance name), `:name`, `:now` (zero-arity ms clock).
   """

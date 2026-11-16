@@ -16,7 +16,7 @@ defmodule AshA2A.C2.ActuatorClient.Framed do
   `ctx` keys: `:actuator_socket` (path, required), `:policy_epoch` (the epoch the effect
   is bound to), `:c2_receive_timeout` (ms, default 5000),
   `:c2_tls` (optional mutual-TLS map, see `AshA2A.C2.L07Tls.Transport`; when present the unix
-  socket is never used, UNVERIFIED).
+  socket is never used).
 
   Result mapping: `status` `"performed"`/`"replayed"` -> `{:ok, %{"state" => "executed", ...}}`;
   a refusal -> `{:error, {:actuator_refused, code}}`.

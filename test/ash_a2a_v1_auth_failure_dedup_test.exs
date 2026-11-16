@@ -97,7 +97,7 @@ defmodule AshA2A.V1AuthFailureDedupTest do
   @moduledoc """
   Structural court: exactly ONE `auth_failure?/1` definition family in
   `AshA2A.Transport.Runtime`, one call site in `apply_reply/2`'s cond, and
-  the sibling `admission_refusal?/1` family untouched.
+  the sibling `admission_refusal?/1` family defined once and shared.
   """
 
   use ExUnit.Case, async: true
@@ -118,6 +118,25 @@ defmodule AshA2A.V1AuthFailureDedupTest do
           else
             {form, acc}
           end
+
+        form, acc ->
+          {form, acc}
+      end)
+
+    Enum.reverse(acc)
+  end
+
+  # Public clause heads, guarded (`def f(x) when ...`) or not.
+  defp def_clauses(ast, name, arity) do
+    {_, acc} =
+      Macro.prewalk(ast, [], fn
+        {:def, _meta, [{:when, _, [{^name, _, args} = head | _guard]}, _body]} = form, acc
+        when length(args) == arity ->
+          {form, [head | acc]}
+
+        {:def, _meta, [{^name, _, args} = head, _body]} = form, acc
+        when is_list(args) and length(args) == arity ->
+          {form, [head | acc]}
 
         form, acc ->
           {form, acc}
@@ -160,11 +179,27 @@ defmodule AshA2A.V1AuthFailureDedupTest do
              1
   end
 
-  test "sibling admission_refusal?/1 family is untouched (eight clauses, unique)" do
-    heads = defp_clauses(@runtime_ast, :admission_refusal?, 1)
-    assert length(heads) == 8
+  # `admission_refusal?/1` is the one classifier both task-finalizing paths
+  # share (`AshA2A.Protocol.Agent.Runtime` delegates to it), so it is a public
+  # `@doc false` family here: the seven refusal shapes, the dispatcher's
+  # `{:skill_lookup, _}` stage tag, the CommandBus refusal-code guard clause
+  # and the fallback.
+  test "sibling admission_refusal?/1 is one public family (ten clauses, unique)" do
+    assert defp_clauses(@runtime_ast, :admission_refusal?, 1) == []
+
+    heads = def_clauses(@runtime_ast, :admission_refusal?, 1)
+    assert length(heads) == 10
     patterns = Enum.map(heads, fn {_, _, [pattern]} -> pattern end)
     assert Enum.uniq(patterns) == patterns
+  end
+
+  test "the protocol agent runtime delegates to the same classifier" do
+    source =
+      File.read!(Path.expand("../lib/ash_a2a/protocol/agent/runtime.ex", __DIR__))
+
+    ast = Code.string_to_quoted!(source)
+    assert [_one] = defp_clauses(ast, :admission_refusal?, 1)
+    assert source =~ "AshA2A.Transport.Runtime.admission_refusal?(reason)"
   end
 
   test "no defp clause family in the module duplicates a head pattern" do

@@ -105,7 +105,7 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
     }
   end
 
-  # Optional `:card_signatures` passthrough (UNVERIFIED, no toolchain): a list
+  # Optional `:card_signatures` passthrough: a list
   # of signature maps is placed under the card's `signatures` key unmodified.
   # Nothing is generated or validated here; anything that is not a list of
   # maps is dropped to the empty default rather than advertised.

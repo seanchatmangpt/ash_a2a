@@ -141,7 +141,12 @@ v1.1 Standing is PARTIAL; see [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 `["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); emitted cards carry
 `protocolVersion` 1.1; the client-side header default (`Version.default/0`) is `"1.0"`.
 
-## Application config — additional keys (UNVERIFIED: read from source, not executed)
+## Application config — additional keys
+
+The defaults of `:dispatch_hooks`, `:bad_request_details`, `:id_generator`, `:email_spool_dir`
+and `:graphlaw_allow_unpinned` are checked against the running code by
+`test/ash_a2a/docs_truth_test.exs`. The `:grpc`, `:ferroplan_url` and `:beam4pm_url` rows state no
+literal default and are read from source.
 
 | Key | Default | Consumed by / meaning |
 | --- | --- | --- |

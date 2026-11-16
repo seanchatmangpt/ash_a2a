@@ -147,7 +147,9 @@ if Code.ensure_loaded?(Plug) do
               Map.put(
                 st,
                 :orphan_grace,
-                if(match?({:ok, _}, journal) and not local_producer?(agent, task_id),
+                if(
+                  match?({:ok, _}, journal) and awaiting_producer?(task, replay) and
+                    not local_producer?(agent, task_id),
                   do: orphan_grace_ms(idle_timeout)
                 )
               )
@@ -202,8 +204,8 @@ if Code.ensure_loaded?(Plug) do
     # when it is unset, not loaded, lacks `replay_after/3`, errors, or retains
     # nothing for a client that is behind (`last_seen < gen`), this is
     # `:unavailable` and the caller falls back to the node-local transport log
-    # / snapshot.
-    # UNVERIFIED: authored without an Elixir toolchain.
+    # / snapshot. The writer is `AshA2A.Protocol.EventJournal.record_task/3`,
+    # called from `AshA2A.Protocol.Agent.State.put_task_checked/2`.
     defp journal_plan(task_id, last_seen, gen, true) when is_integer(last_seen) do
       with {mod, ref} when is_atom(mod) <- Application.get_env(:ash_a2a, :event_journal),
            true <- Code.ensure_loaded?(mod),
@@ -250,6 +252,25 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp normalize_journal_event(_other), do: {0, "event", %{}, false}
+
+    # Only a task that is being worked on (submitted/working) needs a live
+    # producer to advance. An interrupted task (input/auth-required) advances
+    # on the next client message, which any node holding the TaskStore can
+    # serve, so its stream stays open. The state is the last replayed status
+    # when there is one, else the snapshot's.
+    defp awaiting_producer?(task, replay) do
+      replayed =
+        replay
+        |> Enum.reverse()
+        |> Enum.find_value(fn {_, _, payload, _} ->
+          AshA2A.A2ATransport.TaskEvents.payload_state(payload)
+        end)
+
+      case replayed do
+        nil -> task.status.state in [:submitted, :working]
+        state -> state in ["submitted", "working"]
+      end
+    end
 
     # Heuristic: only a stream-backed task keeps `metadata[:stream]` in this
     # agent's memory; a task read through the TaskStore does not.

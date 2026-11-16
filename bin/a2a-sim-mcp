@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+#
+# Serves the ash_a2a simulation server to an MCP client.
+#
+#   bin/a2a-sim-mcp                 stdio (what .mcp.json registers)
+#   bin/a2a-sim-mcp --http 4000     Streamable HTTP at http://127.0.0.1:4000/mcp
+#
+# In stdio mode standard output carries MCP messages and nothing else: the
+# real standard output becomes descriptor 3, which only the MCP transport
+# writes to, and descriptor 1 is pointed at standard error, so compiler
+# output, logs and anything else the VM prints cannot reach the client.
+#
+# Environment:
+#   A2A_SIM_MCP_LOG    append standard error to this file instead
+#   A2A_SIM_MCP_ENV    a file to source first (PATH for elixir/erl, locale)
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+if [ -n "${A2A_SIM_MCP_ENV:-}" ]; then
+  # shellcheck disable=SC1090
+  . "$A2A_SIM_MCP_ENV"
+fi
+
+if ! command -v mix >/dev/null 2>&1 && [ -f scripts/toolchain.sh ]; then
+  # shellcheck disable=SC1091
+  . scripts/toolchain.sh >/dev/null 2>&1 || true
+fi
+
+if ! command -v mix >/dev/null 2>&1; then
+  for dir in /opt/elixir/bin /opt/otp/*/bin /usr/local/bin "$HOME/.asdf/shims"; do
+    [ -d "$dir" ] && PATH="$dir:$PATH"
+  done
+  export PATH
+fi
+
+export MIX_ENV=test
+export LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-C.UTF-8}"
+export ELIXIR_ERL_OPTIONS="${ELIXIR_ERL_OPTIONS:-+fnu}"
+
+if [ -n "${A2A_SIM_MCP_LOG:-}" ]; then
+  exec 2>>"$A2A_SIM_MCP_LOG"
+fi
+
+for arg in "$@"; do
+  if [ "$arg" = "--http" ]; then
+    exec mix ash_a2a.sim.mcp "$@" 1>&2
+  fi
+done
+
+exec 3>&1 1>&2
+exec mix ash_a2a.sim.mcp --out-fd 3 "$@"

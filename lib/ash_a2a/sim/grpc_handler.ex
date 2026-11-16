@@ -12,26 +12,29 @@ defmodule AshA2A.Sim.GrpcHandler do
   gRPC caller. Push-notification configs go through
   `AshA2A.A2ATransport.PushConfigRPC` and the same store the HTTP mounts use,
   so a config created over gRPC is visible over HTTP and the other way round.
+  The task a send or a cancel answers is published to the shared event log, so
+  a task finished over gRPC delivers its push notifications.
   `GetExtendedAgentCard` answers the same provider-extended card as the HTTP
   mounts and refuses a caller with no verified identity.
   """
 
   @behaviour AshA2A.Protocol.JSONRPC
 
-  alias AshA2A.A2ATransport.{PushConfigRPC, TaskEvents}
+  alias AshA2A.A2ATransport.{PushConfigRPC, SSE, TaskEvents}
   alias AshA2A.Protocol.JSONRPC.Error
   alias AshA2A.Protocol.PushNotificationConfig
   alias AshA2A.Transport.Plug, as: TransportPlug
 
   @impl true
-  def handle_send(message, params, ctx), do: TransportPlug.handle_send(message, params, ctx)
+  def handle_send(message, params, ctx),
+    do: message |> TransportPlug.handle_send(params, ctx) |> published(ctx)
 
   @impl true
   def handle_get(task_id, params, ctx), do: TransportPlug.handle_get(task_id, params, scoped(ctx))
 
   @impl true
   def handle_cancel(task_id, params, ctx),
-    do: TransportPlug.handle_cancel(task_id, params, scoped(ctx))
+    do: task_id |> TransportPlug.handle_cancel(params, scoped(ctx)) |> published(ctx)
 
   @impl true
   def handle_list(params, ctx), do: TransportPlug.handle_list(params, scoped(ctx))
@@ -101,6 +104,31 @@ defmodule AshA2A.Sim.GrpcHandler do
   end
 
   def handle_extended_card(_ctx), do: {:error, Error.invalid_request("authentication required")}
+
+  # The HTTP mounts publish the task a send or a cancel answers to the shared
+  # event log (`AshA2A.A2ATransport.Plug`, `AshA2A.Transport.HTTPJSON`), which
+  # is what fires the push-notification webhooks. The gRPC server leaves that
+  # to its handler; without it a task finished over gRPC delivers no webhook.
+  defp published({:ok, %AshA2A.Protocol.Task{} = task} = result, %{transport: transport}) do
+    if AshA2A.A2ATransport.running?(transport) do
+      final? =
+        task.status.state in [
+          :completed,
+          :canceled,
+          :cancelled,
+          :failed,
+          :rejected,
+          :input_required,
+          :auth_required
+        ]
+
+      TaskEvents.publish(transport, task.id, "task", SSE.encode_task(task), final?)
+    end
+
+    result
+  end
+
+  defp published(result, _ctx), do: result
 
   # `AshA2A.Transport.Plug` reads `ctx.principal`; an unauthenticated gRPC call
   # carries none, so it is the anonymous principal.

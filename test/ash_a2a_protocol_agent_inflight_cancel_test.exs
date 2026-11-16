@@ -19,7 +19,7 @@ end
 
 defmodule AshA2A.ProtocolAgentInflightCancelTest do
   @moduledoc """
-  Lane L01 (UNVERIFIED, not yet run): in-flight cancel on the plain
+  Lane L01: in-flight cancel on the plain
   `AshA2A.Protocol.Agent` path (A2A v1.0 section 3.1.5). A
   `return_immediately` task whose handler is still sleeping is canceled; the
   worker is killed, so its effect never commits and the stored task stays
@@ -49,7 +49,7 @@ defmodule AshA2A.ProtocolAgentInflightCancelTest do
     assert :ok = SlowAgent.cancel(name, task_id)
   end
 
-  # UNVERIFIED (not run): cancel-by-id of a fresh blocking send (W2-03).
+  # Cancel-by-id of a fresh blocking send (W2-03).
   describe "admit_first: a fresh send is stored before its worker finishes" do
     test "tasks/get sees it and cancel by id interrupts the blocked send" do
       name = :"protocol_inflight_admit_#{System.unique_integer([:positive])}"

@@ -265,7 +265,7 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
 
 ## Known gaps and handoffs
 
-* **AuthorityService to actuator mapping (UNVERIFIED, not run: no Elixir toolchain).**
+* **AuthorityService to actuator mapping (`cd authority_service && mix test`: 66 passed, 2026-11-16).**
   `AuthorityService.Issuer` now derives the policy class from an actuator-shaped effect
   (`consequence_class`, amount 0) and `Issuer.to_actuator_certificate/1` maps `{envelope,
   message}` to the actuator's exact certificate key set with a `signatures` list; the actuator's

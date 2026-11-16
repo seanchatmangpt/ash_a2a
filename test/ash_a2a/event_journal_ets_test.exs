@@ -5,7 +5,7 @@
 defmodule AshA2A.EventJournalEtsTest do
   @moduledoc """
   `AshA2A.TaskStore.EventJournalEts` against a real, supervised ETS table.
-  Status: UNVERIFIED (not run; no Elixir toolchain when written). No mocks.
+  No mocks.
   """
   use ExUnit.Case, async: true
 

@@ -1,6 +1,8 @@
 # a2a-error-mapping-decisions
 
-Standing: UNVERIFIED
+Standing: VERIFIED for the applied mapping (2026-11-16, Elixir 1.20.4 / OTP 29.1.1: `mix test
+test/error_version_table_test.exs`, 5 passed). The TCK source lines cited below were not re-read:
+no TCK checkout exists in this environment.
 
 ## Decision 1: -32005 and -32006 HTTP status
 

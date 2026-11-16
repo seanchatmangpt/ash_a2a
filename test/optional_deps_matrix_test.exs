@@ -1,5 +1,4 @@
 defmodule AshA2A.OptionalDepsMatrixTest do
-  # UNVERIFIED: written without an Elixir toolchain; never run.
   use ExUnit.Case, async: true
 
   @root Path.expand("..", __DIR__)

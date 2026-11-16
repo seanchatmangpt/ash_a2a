@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "a2a-sim": {
+      "type": "stdio",
+      "command": "bin/a2a-sim-mcp",
+      "args": []
+    }
+  }
+}

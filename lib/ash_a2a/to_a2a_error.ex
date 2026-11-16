@@ -52,6 +52,12 @@ defmodule AshA2A.ToA2AError.Wire do
 
   def field_violations(_), do: []
 
+  @doc false
+  # Reader for `config :ash_a2a, :bad_request_details`; only `true` enables.
+  @spec bad_request_details?() :: boolean()
+  def bad_request_details?,
+    do: Application.get_env(:ash_a2a, :bad_request_details, false) == true
+
   @doc """
   `data` for a -32602 envelope. Default: the free-form message (wrapped into
   ErrorInfo by `Error.to_map/1`, unchanged legacy shape). With
@@ -62,7 +68,7 @@ defmodule AshA2A.ToA2AError.Wire do
   def invalid_data(error) do
     message = Exception.message(error)
 
-    with true <- Application.get_env(:ash_a2a, :bad_request_details, false) == true,
+    with true <- bad_request_details?(),
          [_ | _] = violations <- field_violations(error) do
       [error_info("INVALID_PARAMS", message), Error.bad_request(violations)]
     else

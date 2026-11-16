@@ -1,5 +1,4 @@
 defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
-  # UNVERIFIED: authored without an Elixir toolchain; not yet run.
   @moduledoc """
   `tasks/resubscribe` replays missed events through the configured
   `AshA2A.Protocol.EventJournal` and, for a non-terminal task with no local

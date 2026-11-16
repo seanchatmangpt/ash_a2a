@@ -7,9 +7,6 @@ defmodule AshA2A.C2.L07Tls.Transport do
   Connection setup shared by the framed control-plane clients: a unix socket (default) or
   mutual TLS.
 
-  Status: UNVERIFIED (written without an Elixir toolchain; run
-  `test/ash_a2a/c2/l07_tls_framed_test.exs` before relying on it).
-
   TLS is selected by `ctx.c2_tls`, a map with:
 
     * `:host` (string, required) and `:port` (integer, required)

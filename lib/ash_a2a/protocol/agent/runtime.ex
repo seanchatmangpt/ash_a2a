@@ -209,14 +209,14 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   #     capability resolution (`AshA2A.Agent.resolve_skill_name/2` and the
   #     dispatcher's skill lookup) could not name a capability for the
   #     request.
-  #   * `%{code: :consequence_unclassified}` -- capability consequence
-  #     classification refused the skill (RFC-SA2A-004 S21).
-  defp admission_refusal?("forbidden: " <> _), do: true
-  defp admission_refusal?(:forbidden), do: true
-  defp admission_refusal?({:forbidden, _}), do: true
-  defp admission_refusal?(:skill_not_found), do: true
-  defp admission_refusal?({:no_skill, _}), do: true
-  defp admission_refusal?({:ambiguous_skill, _}), do: true
-  defp admission_refusal?(%{code: :consequence_unclassified}), do: true
-  defp admission_refusal?(_), do: false
+  #   * `{:unknown_skill, _}` -- the dispatcher's own skill lookup found no
+  #     capability under the requested name.
+  #   * `%{code: code}` -- an `AshA2A.CommandBus` admission or authority-gate
+  #     refusal (`:consequence_unclassified`, `:authority_required`,
+  #     `:authority_mismatch`, ...): the agent decided not to perform the
+  #     task (A2A v1.1 `TASK_STATE_REJECTED`).
+  #
+  # One classifier for both task-finalizing paths:
+  # `AshA2A.Transport.Runtime.admission_refusal?/1`.
+  defp admission_refusal?(reason), do: AshA2A.Transport.Runtime.admission_refusal?(reason)
 end

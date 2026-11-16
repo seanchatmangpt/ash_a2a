@@ -1,7 +1,6 @@
 defmodule AshA2A.Receipts.Verifier do
   @moduledoc """
-  Checks a Markdown receipt against the files it cites. UNVERIFIED: written
-  without an Elixir toolchain, never compiled or run.
+  Checks a Markdown receipt against the files it cites.
 
   The core only reads files (through `:root`) and never writes. Each receipt
   is checked for:

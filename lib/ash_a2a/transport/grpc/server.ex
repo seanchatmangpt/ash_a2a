@@ -130,8 +130,17 @@ defmodule AshA2A.Transport.GRPC.Server do
   # The handler process owns the downlink (it receives `{:a2a_live, sid, event}`
   # and writes StreamResponse frames); a reader process drains the client's
   # StreamRequest uplink into `Live.uplink/2`. Per-request rejections are
-  # `StreamError` events on the downlink and never close the stream. The RPC
-  # ends on a terminal task (`:a2a_live_closed`) or client half-close.
+  # `StreamError` events on the downlink and never close the stream.
+  #
+  # A client half-close ends only the uplink: every request the client wrote
+  # before it was already handed to the session, and the downlink keeps
+  # delivering their frames. The RPC ends when the session closes — the bound
+  # task turned terminal, the agent answered with a bare message, or (after
+  # the half-close) nothing is in flight and nothing more can be owed, see
+  # `AshA2A.Transport.Live.uplink_done/1`. A first request for a task that does
+  # not exist or belongs to another caller ends the RPC NOT_FOUND
+  # (TaskNotFoundError). A client that cancels the RPC takes the handler, the
+  # reader and the session down with it; the task itself is not canceled.
   def send_live_message(req_enum, mat) do
     session_result =
       span("SendLiveMessage", fn ->
@@ -194,13 +203,18 @@ defmodule AshA2A.Transport.GRPC.Server do
     ref = make_ref()
     version = Map.get(ctx, :a2a_version)
 
+    # Linked, so a handler killed by a client cancel never leaves the reader
+    # blocked on a dead request stream.
     reader =
-      spawn(fn ->
+      spawn_link(fn ->
         try do
           Enum.each(req_enum, fn req ->
             case to_params(req) do
               {:ok, params} ->
-                AshA2A.Transport.Live.uplink(session, Map.delete(params, "tenant"))
+                case AshA2A.Transport.Live.uplink(session, Map.delete(params, "tenant")) do
+                  {:error, :not_found} -> send(parent, {ref, :not_found})
+                  _accepted_or_closed -> :ok
+                end
 
               {:error, _} ->
                 :ok
@@ -213,42 +227,45 @@ defmodule AshA2A.Transport.GRPC.Server do
         send(parent, {ref, :half_closed})
       end)
 
-    try do
-      live_loop(mat, session, ref, version)
-    after
-      Process.exit(reader, :kill)
-      AshA2A.Transport.Live.close(session)
-    end
+    # A session that dies without its closing notice still ends the RPC.
+    mon = Process.monitor(session)
 
-    {:ok, mat, :noreply}
+    outcome =
+      try do
+        live_loop(mat, session, {ref, mon}, version)
+      after
+        Process.demonitor(mon, [:flush])
+        Process.unlink(reader)
+        Process.exit(reader, :kill)
+        AshA2A.Transport.Live.close(session)
+      end
+
+    case outcome do
+      :ok -> {:ok, mat, :noreply}
+      {:error, %GRPC.RPCError{} = error} -> raise error
+    end
   end
 
-  defp live_loop(mat, session, ref, version) do
+  defp live_loop(mat, session, {ref, mon} = refs, version) do
     receive do
       {:a2a_live, _sid, event} ->
         send_live_event(mat, event, version)
-        live_loop(mat, session, ref, version)
+        live_loop(mat, session, refs, version)
 
       {:a2a_live_closed, _sid, _reason} ->
         :ok
+
+      {:DOWN, ^mon, :process, _pid, _reason} ->
+        :ok
+
+      {^ref, :not_found} ->
+        {:error, GRPC.RPCError.exception(status: 5, message: "Task not found")}
 
       {^ref, :half_closed} ->
-        # Client half-close: let the session flush what it already accepted.
-        AshA2A.Transport.Live.close(session)
-        drain_live(mat, version)
-    end
-  end
-
-  defp drain_live(mat, version) do
-    receive do
-      {:a2a_live, _sid, event} ->
-        send_live_event(mat, event, version)
-        drain_live(mat, version)
-
-      {:a2a_live_closed, _sid, _reason} ->
-        :ok
-    after
-      500 -> :ok
+        # Client half-close: the uplink is complete, the downlink is not. The
+        # session closes itself once the accepted work has answered.
+        AshA2A.Transport.Live.uplink_done(session)
+        live_loop(mat, session, refs, version)
     end
   end
 

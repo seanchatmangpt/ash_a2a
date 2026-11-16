@@ -53,6 +53,7 @@ defmodule AshA2A.Transport.Live.Session do
        last: nil,
        started?: false,
        call: nil,
+       uplink_done?: false,
        closed?: false
      }}
   end
@@ -75,6 +76,11 @@ defmodule AshA2A.Transport.Live.Session do
 
   @impl true
   def handle_cast(:close, st), do: st |> close(:closed) |> finish()
+
+  # The client finished its uplink (gRPC half-close). Nothing is cut short:
+  # `finish/1` ends the session once no request is in flight and no further
+  # event can be owed to this downlink.
+  def handle_cast(:uplink_done, st), do: finish(%{st | uplink_done?: true})
 
   @impl true
   def handle_info({:call_done, ref, result}, %{call: %{ref: ref} = call} = st) do
@@ -102,7 +108,24 @@ defmodule AshA2A.Transport.Live.Session do
   def terminate(_reason, _st), do: :ok
 
   defp finish(%{closed?: true} = st), do: {:stop, :normal, st}
+
+  defp finish(%{uplink_done?: true, call: nil} = st) do
+    if settled?(st), do: st |> close(:closed) |> finish(), else: {:noreply, st}
+  end
+
   defp finish(st), do: {:noreply, st}
+
+  # With the uplink finished and nothing in flight, the downlink is owed more
+  # only while a bound task is still running: an unbound stream has nothing to
+  # follow, and an interrupted task (`input_required` / `auth_required`) waits
+  # for input this stream can no longer carry. A terminal task has already
+  # closed the session.
+  defp settled?(%{task_id: nil}), do: true
+
+  defp settled?(%{last: %T{status: %{state: state}}}),
+    do: state in [:input_required, :auth_required]
+
+  defp settled?(_st), do: false
 
   # -- request dispatch ---------------------------------------------------------
 

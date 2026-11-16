@@ -162,8 +162,7 @@ defmodule AshA2A.Protocol.AgentCard do
   `:security_requirement_undeclared`.
 
   Without `:domain`, no mount list is known, so only the legacy default
-  `"JSONRPC"` binding is accepted unless `:bindings` says otherwise. UNVERIFIED:
-  written without an Elixir toolchain.
+  `"JSONRPC"` binding is accepted unless `:bindings` says otherwise.
   """
   @spec audit(t() | map(), keyword() | map()) :: [discrepancy()]
   def audit(card, mounted_opts \\ []) do

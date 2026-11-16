@@ -192,6 +192,114 @@ defmodule AshA2A.FuzzGen do
     }
   end
 
+  def full_card do
+    Map.merge(valid_card(), %{
+      "url" => "https://agent.example/a2a",
+      "provider" => %{"organization" => "o", "url" => "https://o.example"},
+      "documentationUrl" => "https://o.example/docs",
+      "iconUrl" => "https://o.example/icon.png",
+      "protocolVersion" => "1.1",
+      "supportedInterfaces" => [
+        %{"url" => "https://agent.example/a2a", "protocolBinding" => "JSONRPC"}
+      ],
+      "capabilities" => %{
+        "streaming" => true,
+        "extensions" => [%{"uri" => "https://o.example/ext", "required" => false}]
+      },
+      "securitySchemes" => %{
+        "key" => %{"apiKeySecurityScheme" => %{"name" => "x-api-key", "location" => "header"}},
+        "bearer" => %{"httpAuthSecurityScheme" => %{"scheme" => "bearer"}},
+        "mtls" => %{"mtlsSecurityScheme" => %{}}
+      },
+      "securityRequirements" => [%{"schemes" => %{"key" => %{"list" => []}}}],
+      "signatures" => [%{"protected" => "e30", "signature" => "c2ln"}],
+      "skills" => [
+        %{
+          "id" => "s1",
+          "name" => "Skill",
+          "description" => "Does",
+          "tags" => ["t"],
+          "inputModes" => ["text/plain"],
+          "securityRequirements" => [%{"key" => []}]
+        }
+      ]
+    })
+  end
+
+  def valid_artifact do
+    %{
+      "artifactId" => "a-#{int(1_000)}",
+      "name" => "n",
+      "parts" => [%{"data" => %{"k" => 1}}, %{"raw" => "aGk=", "mediaType" => "text/plain"}],
+      "metadata" => %{}
+    }
+  end
+
+  def valid_event do
+    case int(4) do
+      0 ->
+        %{"task" => valid_task()}
+
+      1 ->
+        %{"message" => valid_message()}
+
+      2 ->
+        %{
+          "statusUpdate" => %{
+            "taskId" => "t-1",
+            "contextId" => "c-1",
+            "status" => %{"state" => "TASK_STATE_WORKING", "message" => valid_message()},
+            "generation" => 2
+          }
+        }
+
+      3 ->
+        %{
+          "artifactUpdate" => %{
+            "taskId" => "t-1",
+            "artifact" => valid_artifact(),
+            "append" => false,
+            "lastChunk" => true
+          }
+        }
+    end
+  end
+
+  def valid_push_config do
+    %{
+      "id" => "p-1",
+      "taskId" => "t-1",
+      "url" => "https://hook.example/x",
+      "token" => "tok",
+      "authentication" => %{"schemes" => ["Bearer"], "credentials" => "c"}
+    }
+  end
+
+  def valid_send_request do
+    %{
+      "tenant" => "t",
+      "message" => valid_message(),
+      "configuration" => %{
+        "acceptedOutputModes" => ["text/plain"],
+        "historyLength" => 3,
+        "returnImmediately" => false,
+        "ifGenerationMatch" => "4"
+      },
+      "metadata" => %{},
+      "artifactUpdates" => []
+    }
+  end
+
+  def valid_stream_request do
+    if int(2) == 0,
+      do: %{"sendMessage" => valid_send_request()},
+      else: %{"subscribe" => %{"id" => "t-1", "lastSeenGeneration" => 3}}
+  end
+
+  def valid_list_result do
+    %{"tasks" => [valid_task()], "totalSize" => 1, "pageSize" => 1, "nextPageToken" => ""}
+  end
+
   def valid_list_request do
     %{"pageSize" => 1 + int(100), "contextId" => "c-1", "includeArtifacts" => pick([true, false])}
   end

@@ -1,7 +1,7 @@
 # Run the doctor
 
-Status: UNVERIFIED. No Elixir toolchain was available when this was written; the task, the
-core and their tests have never been compiled or run.
+Status: verified (2026-11-16, Elixir 1.20.4 / OTP 29.1.1): `mix test test/ash_a2a/doctor_test.exs`, 7 passed;
+`mix ash_a2a.doctor` ran against this repository and exited 1 on its findings.
 
 `mix ash_a2a.doctor` reads your compiled domains and resources and prints findings about
 how they are wired for A2A. It starts no agents and sends no requests.
@@ -32,4 +32,4 @@ Limits: the doctor checks only the config keys listed above, not every key in
 [configuration.md](../reference/configuration.md). It cannot see an auth plug you put in
 front of a mount, so `mount_missing_auth` means "no declared scheme", not "no auth". It reads
 the application env of the node that runs the task, which may differ from production.
-Tests: `test/ash_a2a/doctor_test.exs` (UNVERIFIED).
+Tests: `test/ash_a2a/doctor_test.exs`.

@@ -72,7 +72,12 @@ defmodule AshA2A.DocsTruthTest do
     :semantic_max_batch => {:inspect, {AshA2A.Semantic.Compiler, :max_batch, []}},
     :semantic_engine => {:inspect, {AshA2A.Semantic.Conformance, :semantic_engine, []}},
     :admitted_vocabulary => {:inspect, {AshA2A.Semantic.Conformance, :admitted_vocabulary, []}},
-    :root_manifest => {:inspect, {AshA2A.Semantic.Conformance, :root_manifest, []}}
+    :root_manifest => {:inspect, {AshA2A.Semantic.Conformance, :root_manifest, []}},
+    :dispatch_hooks => {:inspect, {AshA2A.Dispatcher, :dispatch_hooks, []}},
+    :bad_request_details => {:inspect, {AshA2A.ToA2AError.Wire, :bad_request_details?, []}},
+    :id_generator => {:inspect, {AshA2A.Protocol.ID, :generator, []}},
+    :email_spool_dir => {:special, :email_spool_dir},
+    :graphlaw_allow_unpinned => {:inspect, {AshA2A.GraphLaw.EngineLoad, :unpinned_allowed?, []}}
   }
 
   # Rows stating a literal default with no executable single-site oracle yet.
@@ -119,17 +124,9 @@ defmodule AshA2A.DocsTruthTest do
     :allow_legacy_authority_policy =>
       "sentinel-gated (must equal :i_accept_privilege_escalation)",
     :health_ocel_failed_max => "shared multi-key row; no literal default",
-    :standing_ledger_key => "no literal default (per-node random when unset, documented as such)",
-    :dispatch_hooks =>
-      "Dispatcher reads with default %{} inline in a private function; no public reader yet",
-    :bad_request_details =>
-      "ToA2AError reads with default false inline (only true enables); no public reader yet",
-    :id_generator =>
-      "Protocol.ID.generate/2 falls back to Id.Generator.Default inline; no public reader yet",
-    :email_spool_dir => "computed tmp-dir default, documented as not durable",
-    :graphlaw_allow_unpinned =>
-      "EngineLoad reads with default false inline in a private function; no public reader yet"
+    :standing_ledger_key => "no literal default (per-node random when unset, documented as such)"
   }
+
   setup do
     keys =
       Enum.uniq(
@@ -205,6 +202,13 @@ defmodule AshA2A.DocsTruthTest do
           {:ok, nil} -> ":legacy"
           {:error, :capability_release_closure_missing} -> ":strict"
         end
+
+      # The doc states the default relative to the system temporary directory;
+      # the reader's answer is rewritten into that form.
+      {:ok, {:special, :email_spool_dir}} ->
+        tmp = System.tmp_dir!()
+        dir = AshA2A.Email.Sender.Spool.spool_dir([])
+        "System.tmp_dir!()/" <> Path.relative_to(dir, tmp)
 
       {:ok, {:special, :authority_policy}} ->
         principal = "docs-truth-#{System.unique_integer([:positive])}"

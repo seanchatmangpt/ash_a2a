@@ -1,13 +1,14 @@
 # Ingress Attestation Reference
 
-Standing: UNVERIFIED
+Standing: VERIFIED (2026-11-16, Elixir 1.20.4 / OTP 29.1.1: `mix test test/attestation/attestation_gate_test.exs
+test/attestation/gate_grant_allowlist_test.exs test/ingress/channel_test.exs`: 34, 3 and 22 passed)
 
 Module reference for the ingress attestation surface, read from
 `lib/ash_a2a/attestation/{key,gate,gate_grant_allowlist}.ex` and
 `lib/ash_a2a/ingress/channel.ex` on 2026-11-10. Test files:
 `test/attestation/attestation_gate_test.exs`,
 `test/attestation/gate_grant_allowlist_test.exs`,
-`test/ingress/channel_test.exs`. Tests were not run for this page.
+`test/ingress/channel_test.exs`.
 
 Scope: the gate validates signature, freshness and claim consistency. It
 does not perform hardware-enclave attestation (Play Integrity, App Attest,

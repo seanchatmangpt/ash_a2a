@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshA2A.Protocol.AgentCardSignatureTest do
-  # UNVERIFIED: written without an Elixir toolchain; never run.
   use ExUnit.Case, async: true
 
   alias AshA2A.Protocol.AgentCardSignature, as: Sig

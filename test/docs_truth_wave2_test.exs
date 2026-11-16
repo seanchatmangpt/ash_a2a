@@ -1,6 +1,6 @@
 defmodule DocsTruthWave2Test do
   @moduledoc """
-  Docs-truth court (wave 2). UNVERIFIED: written without an Elixir toolchain, not yet run.
+  Docs-truth court (wave 2).
 
   Asserts from the files: cited test paths/titles exist, no row is CONFORMANT or
   REAL_INTEGRATED while its text says UNVERIFIED, every mix task is mentioned in docs,

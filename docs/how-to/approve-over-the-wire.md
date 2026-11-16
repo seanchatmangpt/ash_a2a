@@ -1,7 +1,7 @@
 # Approve Over The Wire
 
-Status: UNVERIFIED. Written without Elixir or Swift toolchains; nothing here was compiled or
-run. No row below is CONFORMANT.
+Status: PARTIAL. The Elixir client and the listener side were run on 2026-11-16, Elixir 1.20.4 / OTP 29.1.1; the
+Swift side was not (no Swift toolchain here). No row below is CONFORMANT.
 
 The authority service accepts signed human approvals on its `"approve"` op (only when it is
 started with a `:mailbox`). The approval is deposited, not trusted: the issuer re-verifies it
@@ -46,8 +46,8 @@ signature) and then submits. Unix socket only; the Swift side has no TLS client.
 
 | Claim | Status |
 |---|---|
-| `ApproveClient` frame and refusal handling | UNVERIFIED, tested only against a stand-in unix-socket peer (`test/ash_a2a/c2/approve_client_test.exs`) |
-| `sa2a-approver approve` request shape and framing | UNVERIFIED, tested only against a stand-in peer (`WireApprovalTests.swift`) |
-| Interop with the real `AuthorityService.Listener` | NOT TESTED: `authority_service` is not a dependency of this project or of the Swift package. The listener side is covered by `authority_service/test/approver_mailbox_test.exs` |
+| `ApproveClient` frame and refusal handling | Tested against a stand-in unix-socket peer only: `mix test test/ash_a2a/c2/approve_client_test.exs`, 5 passed |
+| `sa2a-approver approve` request shape and framing | UNVERIFIED: `WireApprovalTests.swift` uses a stand-in peer and was not run (no Swift toolchain in this environment) |
+| Interop with the real `AuthorityService.Listener` | NOT TESTED: `authority_service` is not a dependency of this project or of the Swift package. The listener side is covered by `authority_service/test/approver_mailbox_test.exs` (passes in `cd authority_service && mix test`, 66 passed) |
 | Swift-built envelope accepted by the issuer | NOT TESTED (needs a Swift-produced approval fed to the real listener) |
 | Mutual TLS from Swift | NOT IMPLEMENTED |

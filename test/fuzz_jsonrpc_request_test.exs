@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshA2A.FuzzJSONRPCRequestTest do
-  # Seeded fuzz of the JSON-RPC request decoder. UNVERIFIED: written without an
-  # Elixir toolchain; not yet run.
+  # Seeded fuzz of the JSON-RPC request decoder.
   use ExUnit.Case, async: true
 
   alias AshA2A.FuzzGen
@@ -12,7 +11,7 @@ defmodule AshA2A.FuzzJSONRPCRequestTest do
   alias AshA2A.Protocol.JSONRPC.Error
   alias AshA2A.Protocol.JSONRPC.Request
 
-  @iterations 400
+  @iterations 1_500
 
   @methods [
     "message/send",

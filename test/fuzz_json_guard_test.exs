@@ -3,14 +3,13 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshA2A.FuzzJSONGuardTest do
-  # Seeded fuzz of AshA2A.Protocol.JSONGuard. UNVERIFIED: written without an
-  # Elixir toolchain; not yet run.
+  # Seeded fuzz of AshA2A.Protocol.JSONGuard.
   use ExUnit.Case, async: true
 
   alias AshA2A.FuzzGen
   alias AshA2A.Protocol.JSONGuard
 
-  @iterations 300
+  @iterations 1_000
 
   defp depth(list) when is_list(list), do: 1 + Enum.reduce(list, 0, &max(depth(&1), &2))
   defp depth(%{} = map), do: 1 + Enum.reduce(Map.values(map), 0, &max(depth(&1), &2))

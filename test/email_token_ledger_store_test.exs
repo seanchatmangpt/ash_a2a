@@ -2,7 +2,6 @@ defmodule AshA2A.EmailTokenLedgerStoreTest do
   @moduledoc """
   W2-07: `AshA2A.Email.TokenLedgerStore` on a real EKV instance, driven directly and through the
   real `AshA2A.Email.Plug` (the plug is unchanged; the store answers the ledger calls).
-  Standing: UNVERIFIED (not run; no Elixir toolchain when written).
   """
   use ExUnit.Case, async: false
   @moduletag :serial

@@ -13,6 +13,12 @@ defmodule AshA2A.Sim.Auth do
   | `:reader` | `sim-reader` | yes | none |
   | `:unscoped` | `sim-unscoped` | no | none |
 
+  Any token that starts with `sim-agent-` (for example `sim-agent-7f3a`) also
+  authenticates: its identity is the token itself, it carries `a2a:invoke`,
+  and it holds no grant until one is issued for it. A fresh name gives a
+  caller whose grants can be issued and revoked without touching the fixed
+  identities.
+
   A call without a token is refused `401`. The `:unscoped` token is refused
   `403` (`insufficient_scope`). The `:reader` token passes authentication and
   can run `:observe` skills, but a mutating skill is refused by the authority
@@ -26,6 +32,7 @@ defmodule AshA2A.Sim.Auth do
 
   @scheme "bearer_auth"
   @scope "a2a:invoke"
+  @agent_prefix "sim-agent-"
 
   @tokens %{
     writer: "sim-writer-token",
@@ -62,18 +69,45 @@ defmodule AshA2A.Sim.Auth do
   for a known token that carries every scope the mount requires.
   """
   @spec verify(String.t(), term(), Plug.Conn.t()) :: {:ok, map()} | {:error, term()}
-  def verify(@scheme, token, conn) when is_map_key(@identities, token) do
-    identity = Map.fetch!(@identities, token)
-    required = Map.get(conn.assigns, :a2a_required_scopes, [])
+  def verify(@scheme, token, conn) when is_binary(token) do
+    case identity(token) do
+      nil ->
+        {:error, "unknown token"}
 
-    if Enum.all?(required, &(&1 in identity.scopes)) do
-      {:ok, identity}
-    else
-      {:error, :insufficient_scope}
+      identity ->
+        required = Map.get(conn.assigns, :a2a_required_scopes, [])
+
+        if Enum.all?(required, &(&1 in identity.scopes)) do
+          {:ok, identity}
+        else
+          {:error, :insufficient_scope}
+        end
     end
   end
 
   def verify(_scheme, _credential, _conn), do: {:error, "unknown token"}
+
+  @doc """
+  The identity a bearer token authenticates as, or `nil` for an unknown
+  token: one of the three fixed identities, or the token itself for a
+  `sim-agent-` token.
+  """
+  @spec identity(String.t()) :: %{id: String.t(), scopes: [String.t()]} | nil
+  def identity(token) when is_map_key(@identities, token), do: Map.fetch!(@identities, token)
+
+  def identity(@agent_prefix <> name = token) when name != "",
+    do: %{id: token, scopes: [@scope]}
+
+  def identity(_token), do: nil
+
+  @doc "The `AshA2A.Identity` principal a bearer token authenticates as, or `nil`."
+  @spec principal(String.t()) :: AshA2A.Identity.t() | nil
+  def principal(token) do
+    case identity(token) do
+      nil -> nil
+      identity -> AshA2A.Identity.principal(identity)
+    end
+  end
 
   @doc """
   Files the standing grant for the writer identity on every skill of

@@ -14,8 +14,8 @@ end, nil)
 
 ## Event catalog (mirrors `AshA2A.Telemetry.Events`)
 
-Status: **UNVERIFIED** - written without a compiler or test run; the module and
-`test/telemetry_catalog_test.exs` have not been executed.
+Status: verified (2026-11-16, Elixir 1.20.4 / OTP 29.1.1): `mix test test/telemetry_catalog_test.exs`,
+6 passed.
 
 This table mirrors `AshA2A.Telemetry.Events.all/0` (`lib/ash_a2a/telemetry/events.ex`)
 by hand; if the two disagree, the module wins. It lists 184 events:

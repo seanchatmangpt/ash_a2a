@@ -39,7 +39,7 @@ end
 
 defmodule AshA2A.GRPCWave2ErrorInfoTest do
   @moduledoc """
-  W2-08 (UNVERIFIED, not run): real cowboy HTTP/2 listener + real Mint gRPC
+  W2-08: real cowboy HTTP/2 listener + real Mint gRPC
   client asserting the version-gate and extension-gate refusals carry a
   google.rpc.ErrorInfo (reason, domain, metadata), activation failures too,
   and the Dispatch service label.

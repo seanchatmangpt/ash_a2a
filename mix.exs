@@ -58,7 +58,7 @@ defmodule AshA2A.MixProject do
       # otherwise override.
       # The tier tags are excluded too: files tagged only `:serial_shard` /
       # `:serial_solo` carry no `:serial` tag, so excluding `:serial` alone let
-      # them run in the default tier and again in their own lane (UNVERIFIED).
+      # them run in the default tier and again in their own lane.
       test: "test --exclude serial --exclude serial_shard --exclude serial_solo",
       "test.all":
         "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos",
@@ -312,8 +312,11 @@ defmodule AshA2A.MixProject do
       {:ash_ai, "~> 1.0", only: :test},
       # HTTP client used by AshA2A.Telemetry.OcelForwarder.
       {:req, "~> 0.5"},
-      # Local server for the OCEL forwarder test fixture.
-      {:bandit, "~> 1.5", only: :test},
+      # HTTP listener for the simulation server (`mix ash_a2a.sim`,
+      # AshA2A.Sim.Server) and the OCEL forwarder test fixture. Optional: the
+      # AshA2A.Sim.Server, PushReceiver and Prover modules compile only when
+      # it is present.
+      {:bandit, "~> 1.5", optional: true},
       # SAT solver for Ash policy verification in test fixtures (optional in Ash).
       {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
       ash_pplan_dep(),

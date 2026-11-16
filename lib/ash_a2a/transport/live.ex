@@ -25,6 +25,7 @@ defmodule AshA2A.Transport.Live do
       uplink(session_pid, stream_request_map) :: :ok | {:error, reason}
       uplink_call(agent, ctx, stream_request_map, opts \\\\ []) ::
         {:ack, Task.t() | Message.t() | nil} | {:error, reason | StreamError.t()}
+      uplink_done(session_pid) :: :ok
       close(session_pid) :: :ok
       encode(event) :: map()          # StreamResponse wrapper map (camelCase JSON shape)
       capability?(card, :streaming | :user_artifacts) :: boolean()
@@ -148,6 +149,20 @@ defmodule AshA2A.Transport.Live do
   @spec close(pid()) :: :ok
   def close(session) do
     GenServer.cast(session, :close)
+  end
+
+  @doc """
+  Tells the session the client finished its uplink (a gRPC half-close). No
+  further request will arrive, but work already accepted is not cut short: the
+  downlink keeps receiving its events and `{:a2a_live_closed, id, reason}`
+  follows when the bound task turns terminal (`:terminal`), the agent answers
+  with a bare message (`:message`), or nothing more can be owed (`:closed`: no
+  request in flight and the stream is unbound, or its task is waiting for
+  input in `input_required` / `auth_required`).
+  """
+  @spec uplink_done(pid()) :: :ok
+  def uplink_done(session) do
+    GenServer.cast(session, :uplink_done)
   end
 
   @doc "HTTP-style uplink call that returns only an acknowledgement."

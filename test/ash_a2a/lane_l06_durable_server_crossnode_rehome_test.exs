@@ -6,9 +6,6 @@ defmodule AshA2A.LaneL06DurableServerCrossnodeRehomeTest do
   @moduledoc """
   Lane L06 -- cross-node rehome evidence for `AshA2A.Durability.DurableServer`.
 
-  STATUS: UNVERIFIED. Written without an Elixir toolchain and without
-  `deps/durable_server` available to read; it has not been compiled or run.
-
   Topology (same `:peer` pattern as `receipt_store_ekv_crossnode_test.exs`):
   the test node and one real `:peer` OS-process node each run a member of a
   two-voter EKV cluster and a `DurableServer.Supervisor` sharing one name,

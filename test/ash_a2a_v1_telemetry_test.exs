@@ -406,7 +406,9 @@ defmodule AshA2A.V1TelemetryConformanceTest do
 
       message = data_message(%{}, %{metadata: %{"skill" => "no_such_skill_here"}})
 
-      assert {:ok, %AshA2A.Protocol.Task{status: %{state: :failed}} = task} =
+      # A skill the agent does not serve is refused at admission: the task is
+      # REJECTED (nothing ran), not FAILED.
+      assert {:ok, %AshA2A.Protocol.Task{status: %{state: :rejected}} = task} =
                AshA2A.Protocol.call(CrashProbeAgent, message)
 
       events = drain()

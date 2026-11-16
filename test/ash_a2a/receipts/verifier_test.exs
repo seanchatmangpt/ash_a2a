@@ -1,5 +1,4 @@
 defmodule AshA2A.Receipts.VerifierTest do
-  # UNVERIFIED: written without an Elixir toolchain, never run.
   use ExUnit.Case, async: true
 
   alias AshA2A.Receipts.Verifier

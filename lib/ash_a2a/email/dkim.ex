@@ -26,8 +26,7 @@ defmodule AshA2A.Email.Dkim do
   `:require_from_alignment` (default `true`).
 
   This proves only that the signing domain vouched for the message. It confers no authority;
-  the plug's sender allowlist, reply tokens and the kernel still decide. Standing: UNVERIFIED
-  (written without an Elixir toolchain; no run cited).
+  the plug's sender allowlist, reply tokens and the kernel still decide.
   """
 
   @skew 300

@@ -1,7 +1,7 @@
 # Agent card honesty
 
-Status: UNVERIFIED. This lane was written without an Elixir toolchain; nothing
-here has been compiled or run.
+Status: verified (2026-11-16, Elixir 1.20.4 / OTP 29.1.1): `mix test
+test/ash_a2a/protocol/agent_card_honesty_test.exs`, 7 passed.
 
 `AshA2A.Protocol.AgentCard.audit(card, mounted_opts)` returns a list of
 `%{code: atom, message: String.t()}` discrepancies between a card (struct or
@@ -32,4 +32,4 @@ dropped. Nothing is signed or verified here; signing is a separate lane.
   audit flags that case, but the default is unchanged (out of scope).
 - Audit does not check that a mounted agent process is actually running, only
   declared configuration.
-- Test: `test/ash_a2a/protocol/agent_card_honesty_test.exs` (UNVERIFIED).
+- Test: `test/ash_a2a/protocol/agent_card_honesty_test.exs`.

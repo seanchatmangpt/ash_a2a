@@ -254,6 +254,7 @@ defmodule AshA2A.Transport.HTTPJSON do
       base_url: Keyword.get(opts, :base_url),
       agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
       agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
+      sign_with: Keyword.get(opts, :sign_with),
       metadata: Keyword.get(opts, :metadata, %{}),
       max_body_bytes: Keyword.get(opts, :max_body_bytes, @default_max_body_bytes),
       transport: Keyword.get(opts, :transport),
@@ -826,7 +827,15 @@ defmodule AshA2A.Transport.HTTPJSON do
 
     conn
     |> put_resp_content_type(Map.get(conn.private, :a2a_http_json_ct, @json_ct))
-    |> send_resp(200, Jason.encode!(card_json(card, opts, base_url)))
+    |> send_resp(
+      200,
+      # `:sign_with` serves the memoised signed card (same option and schemes
+      # as the JSON-RPC plugs; see `AshA2A.Protocol.Plug.CardServe.signed_body/2`).
+      AshA2A.Protocol.Plug.CardServe.signed_body(
+        card_json(card, opts, base_url),
+        Map.get(opts, :sign_with)
+      )
+    )
   end
 
   # Same encode path as the JSON-RPC transport: the vendored encoder via the

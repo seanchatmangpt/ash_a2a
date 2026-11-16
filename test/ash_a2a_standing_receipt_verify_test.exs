@@ -1,7 +1,7 @@
 defmodule AshA2a.StandingReceiptVerifyTest do
   use ExUnit.Case, async: false
 
-  @repo "/Users/sac/ash_a2a"
+  @repo Path.expand("..", __DIR__)
   @receipt Path.join(@repo, "docs/sjira/v26.10.8/STANDING-RECEIPT.md")
   # Frozen pre-blake3 fixture, signed under the documented v26.10.8 mint key:
   # d3fcc7395405739f76d7570e0804e79d6a1e4e60b42b1b93642bf033e62d239b

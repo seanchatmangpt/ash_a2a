@@ -170,7 +170,7 @@ defmodule AshA2A.Enterprise.MonotonicGrantTest do
 
       # ...and cannot actuate beyond the narrowed set through the real agent:
       # the real CommandBus fails it closed, the ledger is untouched.
-      assert dispatch(child3, "admin_report", "a-child3-escalation").status.state == :failed
+      assert dispatch(child3, "admin_report", "a-child3-escalation").status.state == :rejected
       assert length(ledger_for(child3)) == 1
     end
   end
@@ -250,7 +250,7 @@ defmodule AshA2A.Enterprise.MonotonicGrantTest do
       child_principal = "mono-b-child"
       grant!(child_principal, :report)
 
-      assert dispatch(child_principal, "admin_report", "b-escalation").status.state == :failed
+      assert dispatch(child_principal, "admin_report", "b-escalation").status.state == :rejected
       assert ledger_for(child_principal) == []
 
       # Positive control: the same principal's LAWFUL dispatch really works
@@ -292,7 +292,7 @@ defmodule AshA2A.Enterprise.MonotonicGrantTest do
       grant!(child_principal, :report)
 
       assert dispatch(child_principal, "report", "c-intersection").status.state == :completed
-      assert dispatch(child_principal, "admin_report", "c-beyond").status.state == :failed
+      assert dispatch(child_principal, "admin_report", "c-beyond").status.state == :rejected
       assert length(ledger_for(child_principal)) == 1
     end
   end

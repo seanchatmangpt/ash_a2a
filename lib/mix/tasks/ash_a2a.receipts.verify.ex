@@ -3,7 +3,6 @@ defmodule Mix.Tasks.AshA2a.Receipts.Verify do
 
   @moduledoc """
   Verifies Markdown receipts with `AshA2A.Receipts.Verifier`. Read-only.
-  UNVERIFIED: never compiled or run.
 
   ## Usage
 

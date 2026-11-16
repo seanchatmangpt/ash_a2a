@@ -9,7 +9,7 @@ defmodule AshA2A.EventJournalEkvTest do
   pattern as `AshA2A.ReceiptStoreEkvCrossnodeTest`) proving a journal written
   on node A replays on node B, which is the resubscribe-on-a-second-node gap.
 
-  Status: UNVERIFIED (not run; no Elixir toolchain when written). No mocks.
+  No mocks.
   """
   use ExUnit.Case, async: false
 

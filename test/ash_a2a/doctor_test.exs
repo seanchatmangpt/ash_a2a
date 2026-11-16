@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-# UNVERIFIED: written without an Elixir toolchain; never compiled or run.
-
 defmodule AshA2A.DoctorTest.Items do
   @moduledoc false
   use Ash.Resource,

@@ -572,8 +572,16 @@ defmodule AshA2A.Transport.Runtime do
     callers = [parent | Process.get(:"$callers", [])]
     token = make_ref()
 
+    # The worker waits for the watcher's `{:ash_a2a_worker_go, token}` before
+    # it runs the handler, so the watcher's monitor is always in place first.
+    # (A handler that answered before the watcher monitored it used to yield a
+    # `:noproc` DOWN, logged as a spurious `{:worker_exit, :noproc}` error.)
     pid =
       spawn(fn ->
+        receive do
+          {:ash_a2a_worker_go, ^token} -> :ok
+        end
+
         Process.put(:"$callers", callers)
         send(parent, {:ash_a2a_task_done, token, handler.()})
       end)
@@ -591,12 +599,13 @@ defmodule AshA2A.Transport.Runtime do
     # generated agent) defines can be ordered ahead of it, so the
     # worker's death must instead arrive as a message the wrapper DOES
     # see. This one-shot watcher re-delivers a non-`:normal` worker exit
-    # as the very same `{:ash_a2a_task_done, token, reply}` envelope the
-    # worker itself sends, so the primary task_done handler below fails
-    # the task with the identical typed `internal_error` and replies to
-    # the caller. `:normal` is ignored: the worker only ever exits
-    # normally right after delivering its own result, in which case this
-    # watcher simply terminates alongside the already-completed cleanup.
+    # as `{:ash_a2a_worker_down, token, reason}`; the handler below fails
+    # the task with the typed `internal_error` and replies to the caller,
+    # but only while the token is still in flight, so a worker killed by an
+    # in-flight cancel (token already popped) logs nothing. `:normal` is
+    # ignored: the worker only ever exits normally right after delivering
+    # its own result, in which case this watcher simply terminates
+    # alongside the already-completed cleanup.
     #
     # The watcher also monitors the agent itself: if the agent dies the
     # worker is killed, so no handler keeps running (and acting) with no one
@@ -604,14 +613,14 @@ defmodule AshA2A.Transport.Runtime do
     spawn(fn ->
       wref = Process.monitor(pid)
       pref = Process.monitor(parent)
+      send(pid, {:ash_a2a_worker_go, token})
 
       receive do
         {:DOWN, ^wref, _, _, :normal} ->
           :ok
 
         {:DOWN, ^wref, _, _, reason} ->
-          error = SafeError.internal(:internal_error, {:worker_exit, reason})
-          send(parent, {:ash_a2a_task_done, token, {:error, error}})
+          send(parent, {:ash_a2a_worker_down, token, reason})
 
         {:DOWN, ^pref, _, _, _} ->
           Process.exit(pid, :kill)
@@ -798,6 +807,21 @@ defmodule AshA2A.Transport.Runtime do
       {mref, from, task_id, wire?} ->
         Process.demonitor(mref, [:flush])
         task_id |> finish(from, reply, state, :async, wire?) |> wake_reply()
+
+      nil ->
+        {:noreply, state}
+    end
+  end
+
+  # A worker that died without delivering a result (re-delivered by the
+  # watcher in `spawn_worker/4`). A token no longer in flight -- the task was
+  # canceled, or already finished -- is a no-op and logs nothing.
+  def handle_info({:ash_a2a_worker_down, token, reason}, state) do
+    case pop_in_flight(token) do
+      {mref, from, task_id, wire?} ->
+        Process.demonitor(mref, [:flush])
+        error = SafeError.internal(:internal_error, {:worker_exit, reason})
+        task_id |> finish(from, {:error, error}, state, :async, wire?) |> wake_reply()
 
       nil ->
         {:noreply, state}
@@ -1139,15 +1163,39 @@ defmodule AshA2A.Transport.Runtime do
 
   # Reproduction of the landed `admission_refusal?/1` classifier in
   # protocol/agent/runtime.ex — refusals produced before any handler effect
-  # land the task terminal `:rejected` (v1.0), never `:failed`.
-  defp admission_refusal?("forbidden: " <> _), do: true
-  defp admission_refusal?(:forbidden), do: true
-  defp admission_refusal?({:forbidden, _}), do: true
-  defp admission_refusal?(:skill_not_found), do: true
-  defp admission_refusal?({:no_skill, _}), do: true
-  defp admission_refusal?({:ambiguous_skill, _}), do: true
-  defp admission_refusal?(%{code: :consequence_unclassified}), do: true
-  defp admission_refusal?(_), do: false
+  # land the task terminal `:rejected`, never `:failed`. A2A v1.1
+  # `TASK_STATE_REJECTED`: "the agent has decided to not perform the task ...
+  # during initial task creation or later once an agent has determined it
+  # can't or won't proceed"; `TASK_STATE_FAILED` is "finished with an error".
+  # A skill the agent does not serve (`{:skill_lookup, {:unknown_skill, _}}`
+  # from the dispatcher) and every `AshA2A.CommandBus` admission / authority-gate
+  # refusal code are the former: nothing ran.
+  @admission_refusal_codes [
+    :consequence_unclassified,
+    :authority_required,
+    :authority_mismatch,
+    :model_authority_refused,
+    :authority_expired,
+    :authority_revoked,
+    :authority_constraint_mismatch,
+    :capability_not_found,
+    :action_not_found,
+    :ambiguous_skill
+  ]
+
+  @doc false
+  @spec admission_refusal?(term()) :: boolean()
+  def admission_refusal?("forbidden: " <> _), do: true
+  def admission_refusal?(:forbidden), do: true
+  def admission_refusal?({:forbidden, _}), do: true
+  def admission_refusal?(:skill_not_found), do: true
+  def admission_refusal?({:no_skill, _}), do: true
+  def admission_refusal?({:unknown_skill, _}), do: true
+  def admission_refusal?({:ambiguous_skill, _}), do: true
+  # The dispatcher tags its skill-resolution stage: `{:skill_lookup, reason}`.
+  def admission_refusal?({:skill_lookup, reason}), do: admission_refusal?(reason)
+  def admission_refusal?(%{code: code}) when code in @admission_refusal_codes, do: true
+  def admission_refusal?(_), do: false
 
   defp maybe_wrap_stream(%{metadata: %{stream: enum}} = task) do
     # Mint once, share everywhere: the SSE chunk emitter reads the same

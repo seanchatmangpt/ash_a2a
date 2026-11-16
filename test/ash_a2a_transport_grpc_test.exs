@@ -172,7 +172,7 @@ defmodule AshA2A.TransportGrpcTest do
                "GetExtendedAgentCard"
              ]
 
-      # W2-08 (UNVERIFIED): label moved from legacy "a2a.A2AService" to the
+      # W2-08: label moved from legacy "a2a.A2AService" to the
       # proto's fully qualified name; the legacy alias is kept.
       assert Dispatch.service() == "lf.a2a.v1.A2AService"
       assert Dispatch.legacy_service() == "a2a.A2AService"

@@ -85,8 +85,7 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   ]
 
   @doc """
-  Fully qualified proto service name, `lf.a2a.v1.A2AService` (UNVERIFIED:
-  changed from the legacy label `a2a.A2AService` in wave 2; not run).
+  Fully qualified proto service name, `lf.a2a.v1.A2AService`.
   """
   def service, do: @service
 

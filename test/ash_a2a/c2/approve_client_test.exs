@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshA2A.C2.ApproveClientTest do
-  # UNVERIFIED: written without an Elixir toolchain; not run.
   # The peer is a real unix-socket server speaking the listener's framing and approve-op field
   # contract, but it is a STAND-IN: `authority_service` is a separate release and is not a
   # dependency of this project, so the real `AuthorityService.Listener` is not started here.

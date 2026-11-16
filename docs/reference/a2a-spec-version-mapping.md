@@ -131,26 +131,39 @@ through the store via `AshA2A.Transport.Runtime.list_tasks_for/3` (store tasks
 merged with the in-memory map, owner-gated, one pagination pass, store read
 failure surfaced as an error; covered by
 `test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, UNVERIFIED,
-not yet run). Resubscribe replay (UNVERIFIED, not yet run): `tasks/resubscribe` with
+not yet run). Resubscribe replay: `tasks/resubscribe` with
 `lastSeenGeneration` replays missed events through the
 `AshA2A.Protocol.EventJournal` behaviour (`append/4`, `replay_after/3`,
 `trim/3`; see `docs/reference/event-journal.md`), configured by
 `config :ash_a2a, :event_journal, {module, ref}` (unset means no journal). The
+journal has a writer: every task write passes through
+`AshA2A.Protocol.Agent.State.put_task_checked/2`, which appends one
+`messageUpdate` / `statusUpdate` event per new timeline entry, stamped with its
+task generation (`EventJournal.record_task/3`), whether or not a subscriber is
+attached. An append failure never fails the task write; it is logged and emitted
+as `[:ash_a2a, :event_journal, :append_failed]`. A terminal task's journal is
+trimmed to `:event_journal_keep_last` events (default 256). On the read side the
 module is resolved at runtime; if it is unset, not loaded, errors, or retains
 nothing for a client that is behind, the stream
 falls back to the node-local transport event log, then to a TaskStore snapshot.
-Remaining gap: no live producer migrates between nodes, and no runtime code
-appends to the journal yet, so replay is empty until a producer calls
-`EventJournal.append/4`. When a non-terminal
-task is resubscribed after a journal replay and this agent holds no local
+Replay is by generation: artifact writes are not journaled as `artifactUpdate`
+events, and a client further behind than the retained tail gets only that tail.
+Remaining gap: no live producer migrates between nodes. When a task that is
+still being worked on (submitted or working)
+is resubscribed after a journal replay and this agent holds no local
 producer (heuristic: no stream-backed task in memory), the stream waits a
 bounded grace (`:resubscribe_orphan_grace_ms`, default 500) and then ends with a
 `StreamError` frame, code `PRODUCER_UNAVAILABLE`; the task is not reported
 terminal, so clients should `tasks/get` and resubscribe against the owning node.
+An interrupted task (input or auth required) keeps its stream open, because the
+next client message can be served by any node that reads the TaskStore.
 Journal durability across nodes depends on the configured journal module, not on
-this library. Status: UNVERIFIED (no Elixir toolchain in the authoring
-environment; pinned by `test/lane_l05/resubscribe_claim_test.exs` and
-`test/lane_w2_02/sse_journal_resubscribe_test.exs`, not yet run).
+this library. Status: verified by `test/ash_a2a/event_journal_writer_test.exs`
+(agent killed and restarted over the ETS journal),
+`test/ash_a2a/event_journal_crossnode_test.exs` (two real peer nodes over the
+EKV journal; tags `serial`, `serial_solo`),
+`test/lane_w2_02/sse_journal_resubscribe_test.exs` and
+`test/lane_l05/resubscribe_claim_test.exs`.
 Durable cross-node task continuity: PARTIAL.
 
 ## External TCK

@@ -368,12 +368,20 @@ defmodule AshA2A.Dispatcher do
     end
   end
 
+  @doc """
+  The hook table from `config :ash_a2a, :dispatch_hooks`: a map of
+  `hook_id => {Module, :fun}` that resolves the DSL `hooks` identifiers.
+  Empty when unset.
+  """
+  @spec dispatch_hooks() :: map()
+  def dispatch_hooks, do: Application.get_env(:ash_a2a, :dispatch_hooks, %{})
+
   # DSL `hooks`: identifiers resolve through `config :ash_a2a, :dispatch_hooks,
   # %{hook_id => {Module, :fun}}`; the function receives `%{phase, skill_id, message, reply}`
   # and returns `:ok | {:error, reason}`. An unresolvable id fails closed (pre) / is logged (post).
   defp run_hooks(resource_or_domain, phase, skill, message, reply \\ nil) do
     ids = Map.get(AshA2A.Info.hooks(resource_or_domain), phase, [])
-    table = Application.get_env(:ash_a2a, :dispatch_hooks, %{})
+    table = dispatch_hooks()
     event = %{phase: phase, skill_id: skill.id, message: message, reply: reply}
 
     Enum.reduce_while(ids, :ok, fn id, :ok ->

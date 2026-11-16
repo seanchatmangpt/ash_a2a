@@ -2,7 +2,7 @@ defmodule AshA2A.EmailGatewayHardeningTest do
   @moduledoc """
   L12: refusals of `AshA2A.Email.Plug` driven through `Plug.Test` with the real Brief,
   Inbound, ReplyIntent, Webhook and TokenLedger. Dispatch and reply_sender are hand-written
-  recording functions. Standing: UNVERIFIED (not run; no Elixir toolchain when written).
+  recording functions.
   """
   use ExUnit.Case, async: false
   import Plug.Test

@@ -36,10 +36,11 @@ defmodule AshA2A.Protocol.AgentCardSignature do
 
   ## Integration hook
 
-  `attach/2` appends signature entries to a card map's `"signatures"` list. See
-  `docs/how-to/sign-agent-cards.md`.
-
-  Status: UNVERIFIED (written without an Elixir toolchain; never compiled or run).
+  `attach/2` appends signature entries to a card map's `"signatures"` list.
+  The card plugs do this for you: pass `sign_with: [jwk: private_jwk, kid: kid]`
+  to `AshA2A.Protocol.Plug`, `AshA2A.A2ATransport.Plug`, `AshA2A.Transport.Plug`
+  or `AshA2A.Transport.HTTPJSON` and the served card carries one entry computed
+  over the exact served document. See `docs/how-to/sign-agent-cards.md`.
 
   This is distinct from `AshA2A.Protocol.CardSigning`, which signs the v1.0
   wire projection with its own non-standard `typ`/digest header.

@@ -121,10 +121,21 @@ if Code.ensure_loaded?(Plug) do
 
     @doc """
     Encodes `json` (the wire card map) to a body binary, signing it first when
-    `sign_with` (`[key:, alg:, kid:]`, forwarded to
-    `AshA2A.Protocol.CardSigner.sign/2`) is configured. The signed body is
-    memoised under the digest of the unsigned body and the signing options, so
-    repeated requests serve byte-identical bytes (stable `ETag`).
+    `sign_with` is configured. Two forms:
+
+      * `[jwk: private_jwk, kid: kid, alg: "ES256" | "EdDSA"]` -- a standard
+        A2A v1.1 `AgentCardSignature` entry (`protected`, `signature`): a
+        detached JWS over the RFC 8785 canonical JSON of the exact served
+        document minus `signatures`, by `AshA2A.Protocol.AgentCardSignature`.
+        `:kid` defaults to the JWK's `"kid"`; `:alg` is inferred from the key.
+        A key that cannot sign raises `ArgumentError`: a card configured to be
+        signed is never served unsigned.
+      * `[key:, alg:, kid:]` -- the older `AshA2A.Protocol.CardSigner.sign/2`
+        scheme (HS256/RS256/ES256 with a digest header).
+
+    The signed body is memoised under the digest of the unsigned body and the
+    signing options, so repeated requests serve byte-identical bytes (stable
+    `ETag`).
     """
     @spec signed_body(map(), keyword() | nil) :: binary()
     def signed_body(json, nil), do: Jason.encode!(json)
@@ -138,12 +149,38 @@ if Code.ensure_loaded?(Plug) do
 
       case :persistent_term.get(cache_key, nil) do
         nil ->
-          body = json |> AshA2A.Protocol.CardSigner.sign(sign_with) |> Jason.encode!()
+          body = json |> sign(sign_with) |> Jason.encode!()
           :persistent_term.put(cache_key, body)
           body
 
         body ->
           body
+      end
+    end
+
+    defp sign(json, sign_with) do
+      case Keyword.fetch(sign_with, :jwk) do
+        {:ok, jwk} when is_map(jwk) -> sign_jws(json, jwk, sign_with)
+        _ -> AshA2A.Protocol.CardSigner.sign(json, sign_with)
+      end
+    end
+
+    # The signature covers the document a client decodes from the served
+    # bytes: the card is normalised to its wire form (string keys) first.
+    defp sign_jws(json, jwk, sign_with) do
+      wire = json |> Jason.encode!() |> Jason.decode!()
+
+      opts =
+        sign_with
+        |> Keyword.take([:kid, :alg])
+        |> Keyword.put_new(:kid, Map.get(jwk, "kid"))
+
+      case AshA2A.Protocol.AgentCardSignature.sign(wire, jwk, opts) do
+        {:ok, entry} ->
+          AshA2A.Protocol.AgentCardSignature.attach(wire, [entry])
+
+        {:error, reason} ->
+          raise ArgumentError, "cannot sign the agent card: #{inspect(reason)}"
       end
     end
   end

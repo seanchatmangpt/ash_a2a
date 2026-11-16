@@ -6,8 +6,8 @@ defmodule AshA2A.C2.ApproveClient do
   @moduledoc """
   Submits one signed approval to the `authority_service` `"approve"` wire op.
 
-  Status: UNVERIFIED (written without an Elixir toolchain; run
-  `test/ash_a2a/c2/approve_client_test.exs`, which uses a stand-in listener, not the real one).
+  Tested by `test/ash_a2a/c2/approve_client_test.exs` against a stand-in listener that speaks
+  the same framing, not against the real `authority_service` release.
 
   Same framing and transport as `AshA2A.C2.AuthorityClient.Framed`: one `<<len::32, json>>`
   frame per connection over a unix socket (`ctx.authority_socket`) or mutual TLS

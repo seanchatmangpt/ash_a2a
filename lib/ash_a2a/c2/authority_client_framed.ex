@@ -13,7 +13,7 @@ defmodule AshA2A.C2.AuthorityClient.Framed do
 
   `ctx` keys: `:authority_socket` (path, required), `:approvals` (wire approvals, default `[]`),
   `:c2_receive_timeout` (ms, default 5000), `:c2_tls` (optional mutual-TLS map, see
-  `AshA2A.C2.L07Tls.Transport`; when present the unix socket is never used, UNVERIFIED). The certificate that comes back binds the ACTUATOR
+  `AshA2A.C2.L07Tls.Transport`; when present the unix socket is never used). The certificate that comes back binds the ACTUATOR
   digest, which the framed actuator client re-derives before sending.
   """
   @behaviour AshA2A.C2.AuthorityClient

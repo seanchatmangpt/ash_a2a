@@ -19,7 +19,7 @@ defmodule AshA2A.TaskStore.EventJournalEts do
       journal = {AshA2A.TaskStore.EventJournalEts, MyApp.EventJournal}
 
   Within one task and generation the order is exact (an atomic counter).
-  Status: UNVERIFIED (not compiled or run).
+  See `test/ash_a2a/event_journal_ets_test.exs`.
   """
 
   @behaviour AshA2A.Protocol.EventJournal

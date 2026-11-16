@@ -59,7 +59,6 @@ if Code.ensure_loaded?(Plug) do
     server, required unless `:unsafe_no_replay_ledger`): approved `(brief_id, n, token)` triples are single-use (409 `already_consumed`);
     an identical inbound `message_id` replays the cached response without re-dispatch.
     `:rate_limit` (`{max, window_ms}`) bounds requests per sender (429 `rate_limited`).
-    Status: UNVERIFIED (no Elixir toolchain was available when these checks were written).
 
     Per-action standing: `dispatched | held | refused`. Unmentioned actions are omitted.
     """

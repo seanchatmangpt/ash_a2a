@@ -4,7 +4,7 @@
 
 defmodule AshA2A.SecurityRefusalsL13Test do
   @moduledoc """
-  Lane L13 (UNVERIFIED: written without an Elixir toolchain, never run).
+  Lane L13.
 
   Refusal tests for the CHANGELOG Security items, driving the real HTTP plugs,
   the real gRPC auth module and the real push sender:

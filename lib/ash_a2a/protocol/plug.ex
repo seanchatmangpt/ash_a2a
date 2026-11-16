@@ -85,6 +85,9 @@ if Code.ensure_loaded?(Plug) do
       forwarded to `AshA2A.Protocol.CardSigner.sign/2`. The served card gets a
       detached JWS entry in `signatures`; the signed body is memoised so the
       bytes and `ETag` are stable across requests.
+      `[jwk: private_jwk, kid: kid]` instead signs with the standard A2A v1.1
+      `AgentCardSignature` scheme (`AshA2A.Protocol.AgentCardSignature`,
+      ES256 or EdDSA) over the exact served document.
 
     The agent card route honors conditional requests: `If-None-Match` (weak
     comparison, value lists, `*`) and `If-Modified-Since` answer `304 Not

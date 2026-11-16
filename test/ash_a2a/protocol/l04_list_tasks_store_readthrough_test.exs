@@ -1,5 +1,4 @@
 defmodule AshA2A.Protocol.L04ListTasksStoreReadThroughTest do
-  # UNVERIFIED: written without an Elixir toolchain; not yet run.
   use ExUnit.Case, async: true
 
   alias AshA2A.Protocol.Agent.State

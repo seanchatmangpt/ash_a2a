@@ -1,6 +1,6 @@
 # Verify receipts
 
-Status: UNVERIFIED (written without an Elixir toolchain; the task and tests have never been compiled or run).
+Status: verified (2026-11-16, Elixir 1.20.4 / OTP 29.1.1): `mix test test/ash_a2a/receipts/verifier_test.exs`, 9 passed; `mix ash_a2a.receipts.verify` ran over this repository's receipts and exited 1 with three `verified_without_run_log` findings.
 
 `mix ash_a2a.receipts.verify` checks Markdown receipts against the files they cite. It is read-only and exits non-zero when any finding has error severity.
 

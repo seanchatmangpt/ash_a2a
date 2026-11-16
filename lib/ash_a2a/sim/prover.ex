@@ -30,6 +30,7 @@ if Code.ensure_loaded?(Bandit) do
     alias AshA2A.Sim.{Note, PushReceiver, Server, Surface}
     alias Lf.A2a.V1, as: Pb
     alias Lf.A2a.V1.A2AService.Stub
+    alias AshA2A.Transport.Live.SessionSup, as: LiveSessionSup
 
     @type probe :: %{surface: String.t(), probe: String.t(), run: (map() -> term())}
     @type result :: %{
@@ -286,6 +287,28 @@ if Code.ensure_loaded?(Bandit) do
            done = jr_await!(c, task["id"], "TASK_STATE_COMPLETED")
            check!(artifacts?(done), "finished task carries no artifact")
            "returned #{first}, then tasks/get saw TASK_STATE_COMPLETED"
+         end},
+        {"a non-blocking send's task id is usable at once: get, then cancel",
+         fn c ->
+           task =
+             jr_send!(c, "slow_count", %{"delay_ms" => 30_000}, %{
+               "configuration" => %{"returnImmediately" => true}
+             })
+
+           id = task["id"]
+           got = jr_get!(c, id)
+           check!(got["id"] == id, "tasks/get answered another task")
+           check!(state(got) not in @terminal, "the just-sent task was already #{state(got)}")
+
+           jr_error!(c, "tasks/get", %{"id" => id}, -32_001, token: :reader)
+           jr_error!(c, "tasks/cancel", %{"id" => id}, -32_001, token: :reader)
+           expect_state!(jr_get!(c, id), state(got))
+           canceled = c |> jr_result!("tasks/cancel", %{"id" => id}) |> task_of!()
+           expect_state!(canceled, "TASK_STATE_CANCELED")
+           expect_state!(jr_get!(c, id), "TASK_STATE_CANCELED")
+
+           "task #{id} read back #{state(got)} and canceled right after the send returned; " <>
+             "another caller got -32001 for both"
          end}
       ]
     end
@@ -644,7 +667,79 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    # `/jsonrpc` resubscribes through `AshA2A.Protocol.Plug.SSE`, which replays
+    # from the configured `AshA2A.Protocol.EventJournal`. A finished task has
+    # no live producer and this mount has no transport event log, so the
+    # frames below can only come from the journal.
+    defp owner_scoped_scenarios("tasks/resubscribe" = method) do
+      jsonrpc_scenarios(method) ++
+        [
+          {"lastSeenGeneration replays the missed events from the event journal",
+           fn c ->
+             parked = parked_task!(c)
+             seen = wire_generation!(parked)
+             title = "journal-" <> unique()
+
+             done = jr_send!(c, "create_note", %{"title" => title}, %{}, task_id: parked["id"])
+             expect_state!(done, "TASK_STATE_COMPLETED")
+             current = wire_generation!(done)
+             check!(current > seen, "generation did not advance: #{seen} -> #{current}")
+
+             resp =
+               jr(c, "tasks/resubscribe", %{"id" => parked["id"], "lastSeenGeneration" => seen},
+                 receive_timeout: 15_000
+               )
+
+             frames = sse_results!(resp)
+             kinds = Enum.map(frames, &frame_kind/1)
+             gens = Enum.map(frames, &frame_generation/1)
+
+             check!(frames != [], "no frames replayed")
+             check!("task" not in kinds, "a resume carries no Task snapshot, got #{inspect(kinds)}")
+             check!(Enum.all?(gens, &is_integer/1), "a frame has no generation: #{inspect(kinds)}")
+             check!(gens == Enum.sort(gens), "replay out of order: #{inspect(gens)}")
+
+             check!(
+               Enum.all?(gens, &(&1 > seen and &1 <= current)),
+               "replayed generations #{inspect(gens)} are not within #{seen + 1}..#{current}"
+             )
+
+             check!("messageUpdate" in kinds, "the follow-up message was not replayed: #{inspect(kinds)}")
+
+             last = List.last(frames)
+
+             check!(
+               frame_state(last) == "TASK_STATE_COMPLETED" and List.last(gens) == current,
+               "replay ended with #{clip(inspect(last), 200)}"
+             )
+
+             "#{length(frames)} journaled frames (#{Enum.join(kinds, ", ")}), generations #{seen + 1}..#{current}"
+           end}
+        ]
+    end
+
     defp owner_scoped_scenarios(method), do: jsonrpc_scenarios(method)
+
+    defp wire_generation!(task) do
+      case task["generation"] do
+        g when is_integer(g) ->
+          g
+
+        g when is_binary(g) ->
+          String.to_integer(g)
+
+        other ->
+          fail!("task carries no generation: #{inspect(other)}")
+      end
+    end
+
+    defp frame_generation(frame) do
+      case frame |> Map.values() |> Enum.find_value(&(is_map(&1) && &1["generation"])) do
+        g when is_integer(g) -> g
+        g when is_binary(g) -> String.to_integer(g)
+        _ -> nil
+      end
+    end
 
     defp jsonrpc_negative(item, "message/send") do
       [
@@ -991,6 +1086,27 @@ if Code.ensure_loaded?(Bandit) do
 
            rest_await!(info, task["id"], "TASK_STATE_COMPLETED")
            "returned #{first}, then GET /tasks/{id} saw TASK_STATE_COMPLETED"
+         end},
+        {"a non-blocking send's task id is usable at once: get, then cancel",
+         fn info ->
+           task =
+             rest_send!(info, "slow_count", %{"delay_ms" => 30_000}, %{
+               "configuration" => %{"returnImmediately" => true}
+             })
+
+           id = task["id"]
+           got = rest_get!(info, id)
+           check!(got["id"] == id, "GET /tasks/{id} answered another task")
+           check!(state(got) not in @terminal, "the just-sent task was already #{state(got)}")
+           rest_error!(info, :get, "/tasks/#{id}", 404, token: :reader)
+           rest_error!(info, :post, "/tasks/#{id}:cancel", 404, json: %{}, token: :reader)
+           expect_state!(rest_get!(info, id), state(got))
+           canceled = info |> rest_ok!(:post, "/tasks/#{id}:cancel", json: %{}) |> task_of!()
+           expect_state!(canceled, "TASK_STATE_CANCELED")
+           expect_state!(rest_get!(info, id), "TASK_STATE_CANCELED")
+
+           "task #{id} read back #{state(got)} and canceled right after the send returned; " <>
+             "another caller got 404 for both"
          end},
         {"served under a /{tenant} prefix",
          fn info ->
@@ -1583,6 +1699,18 @@ if Code.ensure_loaded?(Bandit) do
 
     defp grpc_scenarios("SendMessage") do
       [
+        {"a message the decoder refuses (no parts) is INVALID_ARGUMENT",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             params = update_in(send_params("count_notes", %{}), ["message"], &Map.put(&1, "parts", []))
+             request = pb(Pb.SendMessageRequest, params)
+
+             error =
+               ch |> Stub.send_message(request, opts) |> grpc_status!(3, "SendMessage without parts")
+
+             "gRPC status 3 INVALID_ARGUMENT: #{clip(to_string(error.message), 80)}"
+           end)
+         end},
         {"blocking send completes",
          fn info ->
            grpc(info, :writer, fn ch, opts ->
@@ -1640,7 +1768,7 @@ if Code.ensure_loaded?(Bandit) do
              title = "grpc-refused-" <> unique()
              before = note_count()
              task = grpc_send!(ch, opts, "create_note", %{"title" => title})
-             expect_state!(task, "TASK_STATE_FAILED")
+             expect_state!(task, "TASK_STATE_REJECTED")
 
              check!(
                Jason.encode!(task) =~ "authority_required",
@@ -1685,6 +1813,44 @@ if Code.ensure_loaded?(Bandit) do
 
              "gRPC status 12: #{clip(to_string(error.message), 80)}"
            end)
+         end},
+        {"a non-blocking send's task id is usable at once: get, then cancel",
+         fn info ->
+           {id, first} =
+             grpc(info, :writer, fn ch, opts ->
+               task =
+                 grpc_send!(ch, opts, "slow_count", %{"delay_ms" => 30_000}, %{
+                   "configuration" => %{"returnImmediately" => true}
+                 })
+
+               got = grpc_get!(ch, opts, task["id"])
+               check!(got["id"] == task["id"], "GetTask answered another task")
+               check!(state(got) not in @terminal, "the just-sent task was already #{state(got)}")
+               {task["id"], state(got)}
+             end)
+
+           grpc(info, :reader, fn ch, opts ->
+             ch |> Stub.get_task(%Pb.GetTaskRequest{id: id}, opts) |> grpc_status!(5, "GetTask")
+
+             ch
+             |> Stub.cancel_task(%Pb.CancelTaskRequest{id: id}, opts)
+             |> grpc_status!(5, "CancelTask")
+           end)
+
+           grpc(info, :writer, fn ch, opts ->
+             expect_state!(grpc_get!(ch, opts, id), first)
+
+             canceled =
+               ch
+               |> Stub.cancel_task(%Pb.CancelTaskRequest{id: id}, opts)
+               |> grpc_ok!("CancelTask")
+
+             expect_state!(canceled, "TASK_STATE_CANCELED")
+             expect_state!(grpc_get!(ch, opts, id), "TASK_STATE_CANCELED")
+           end)
+
+           "task #{id} read back #{first} and canceled right after the send returned; " <>
+             "another caller got NOT_FOUND for both"
          end}
       ]
     end
@@ -1766,19 +1932,278 @@ if Code.ensure_loaded?(Bandit) do
              frames =
                stream |> GRPC.Stub.recv(timeout: 15_000) |> grpc_stream!("SendLiveMessage")
 
-             Process.sleep(300)
-             row = if note_by_title(title), do: "was", else: "was not"
+             kinds = Enum.map(frames, &frame_kind/1)
+             check!(List.first(kinds) == "task", "first frame was #{inspect(List.first(kinds))}")
+             states = frames |> Enum.map(&frame_state/1) |> Enum.reject(&is_nil/1)
 
-             if frames == [] do
-               {:skip,
-                "library defect: SendLiveMessage closes the live session as soon as the client " <>
-                  "half-closes, before the in-flight send answers, so a client that writes one " <>
-                  "StreamRequest and half-closes gets zero frames (the row #{row} written); " <>
-                  "see live_loop/4 in lib/ash_a2a/transport/grpc/server.ex"}
-             else
-               check!(note_by_title(title) != nil, "frames arrived but the row is missing")
-               "#{length(frames)} frame(s) after half-close; the row exists"
-             end
+             check!(
+               List.last(states) == "TASK_STATE_COMPLETED",
+               "the half-closed stream ended in #{inspect(List.last(states))}"
+             )
+
+             note = note_by_title(title)
+             check!(note != nil, "frames arrived but the row is missing")
+
+             check!(
+               Jason.encode!(frames) =~ note.id,
+               "the frames do not carry the created row #{note.id}"
+             )
+
+             "#{length(frames)} frame(s) after half-close ending TASK_STATE_COMPLETED; row #{note.id} exists"
+           end)
+         end},
+        {"a half-closed stream stays open until slow in-flight work answers",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             stream = Stub.send_live_message(ch, opts)
+
+             request =
+               pb(Pb.SendMessageRequest, send_params("slow_count", %{"delay_ms" => 1_500}))
+
+             started = System.monotonic_time(:millisecond)
+
+             stream =
+               GRPC.Stub.send_request(
+                 stream,
+                 %Pb.StreamRequest{payload: {:send_message, request}},
+                 end_stream: true
+               )
+
+             frames =
+               stream |> GRPC.Stub.recv(timeout: 15_000) |> grpc_stream!("SendLiveMessage")
+
+             elapsed = System.monotonic_time(:millisecond) - started
+             states = frames |> Enum.map(&frame_state/1) |> Enum.reject(&is_nil/1)
+
+             check!(
+               List.last(states) == "TASK_STATE_COMPLETED",
+               "#{length(frames)} frame(s) after #{elapsed} ms, ending in #{inspect(List.last(states))}"
+             )
+
+             check!(elapsed >= 1_500, "the stream ended after #{elapsed} ms, before the work")
+             check!(Jason.encode!(frames) =~ "count", "no frame carries the answer")
+
+             "#{length(frames)} frame(s) #{elapsed} ms after the half-close, ending TASK_STATE_COMPLETED"
+           end)
+         end},
+        {"several messages on one stream continue one task",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             context = "ctx-live-multi-" <> unique()
+             title = "live-multi-" <> unique()
+             before = note_count()
+             stream = Stub.send_live_message(ch, opts)
+
+             first =
+               pb(
+                 Pb.SendMessageRequest,
+                 send_params("create_note", %{"body" => "from message one"}, %{},
+                   context_id: context
+                 )
+               )
+
+             stream =
+               GRPC.Stub.send_request(stream, %Pb.StreamRequest{payload: {:send_message, first}})
+
+             parked =
+               await!("the first message to park its task", 5_000, fn ->
+                 listed =
+                   ch
+                   |> Stub.list_tasks(%Pb.ListTasksRequest{context_id: context}, opts)
+                   |> grpc_ok!("ListTasks")
+
+                 case listed["tasks"] do
+                   [%{"status" => %{"state" => "TASK_STATE_INPUT_REQUIRED"}} = task] -> task
+                   _other -> nil
+                 end
+               end)
+
+             check!(note_count() == before, "the incomplete first message wrote a row")
+
+             # No taskId: a later request applies to the task the stream is bound to.
+             second = pb(Pb.SendMessageRequest, send_params("create_note", %{"title" => title}))
+
+             stream =
+               GRPC.Stub.send_request(
+                 stream,
+                 %Pb.StreamRequest{payload: {:send_message, second}},
+                 end_stream: true
+               )
+
+             frames =
+               stream |> GRPC.Stub.recv(timeout: 15_000) |> grpc_stream!("SendLiveMessage")
+
+             kinds = Enum.map(frames, &frame_kind/1)
+             check!("error" not in kinds, "a request was rejected: #{clip(inspect(frames))}")
+             check!(List.first(kinds) == "task", "first frame was #{inspect(List.first(kinds))}")
+             states = frames |> Enum.map(&frame_state/1) |> Enum.reject(&is_nil/1)
+
+             check!(
+               List.first(states) == "TASK_STATE_INPUT_REQUIRED" and
+                 List.last(states) == "TASK_STATE_COMPLETED",
+               "states were #{inspect(states)}"
+             )
+
+             ids =
+               frames
+               |> Enum.map(fn frame ->
+                 get_in(frame, ["task", "id"]) || get_in(frame, [frame_kind(frame), "taskId"])
+               end)
+               |> Enum.uniq()
+
+             check!(ids == [parked["id"]], "frames name tasks #{inspect(ids)}")
+
+             check!(
+               "messageUpdate" in kinds,
+               "the second message was not echoed as a messageUpdate: #{inspect(kinds)}"
+             )
+
+             note = note_by_title(title)
+             check!(note != nil, "no row after the second message")
+
+             check!(
+               note.body == "from message one",
+               "the first message's body was lost: #{inspect(note.body)}"
+             )
+
+             "2 messages, #{length(frames)} frames on task #{parked["id"]}: " <>
+               "INPUT_REQUIRED then COMPLETED, the row holds both messages' fields"
+           end)
+         end},
+        {"a client cancel mid-stream ends the session and leaves the task running",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             context = "ctx-live-cancel-" <> unique()
+             sessions = fn -> DynamicSupervisor.count_children(LiveSessionSup).active end
+             before = sessions.()
+             stream = Stub.send_live_message(ch, opts)
+
+             request =
+               pb(
+                 Pb.SendMessageRequest,
+                 send_params("slow_count", %{"delay_ms" => 30_000}, %{}, context_id: context)
+               )
+
+             stream =
+               GRPC.Stub.send_request(stream, %Pb.StreamRequest{payload: {:send_message, request}})
+
+             working =
+               await!("the task in #{context} to be working", 5_000, fn ->
+                 listed =
+                   ch
+                   |> Stub.list_tasks(%Pb.ListTasksRequest{context_id: context}, opts)
+                   |> grpc_ok!("ListTasks")
+
+                 case listed["tasks"] do
+                   [%{"status" => %{"state" => "TASK_STATE_WORKING"}} = task] -> task
+                   _other -> nil
+                 end
+               end)
+
+             check!(sessions.() == before + 1, "the open stream holds no live session")
+             canceled = GRPC.Stub.cancel(stream)
+
+             check!(
+               match?(%{canceled: true}, canceled),
+               "cancel answered #{clip(inspect(canceled))}"
+             )
+
+             await!("the live session to end after the client cancel", 5_000, fn ->
+               sessions.() <= before
+             end)
+
+             # Canceling the RPC is not tasks/cancel: the work is still running.
+             expect_state!(grpc_get!(ch, opts, working["id"]), "TASK_STATE_WORKING")
+
+             stopped =
+               ch
+               |> Stub.cancel_task(%Pb.CancelTaskRequest{id: working["id"]}, opts)
+               |> grpc_ok!("CancelTask")
+
+             expect_state!(stopped, "TASK_STATE_CANCELED")
+
+             "the RPC cancel ended the live session; task #{working["id"]} stayed " <>
+               "TASK_STATE_WORKING until CancelTask"
+           end)
+         end},
+        {"a bad request is a StreamError frame and the stream stays usable",
+         fn info ->
+           grpc(info, :writer, fn ch, opts ->
+             stream = Stub.send_live_message(ch, opts)
+
+             # No payload at all: a payload kind the server does not recognise.
+             stream = GRPC.Stub.send_request(stream, %Pb.StreamRequest{})
+
+             # A send that would create a task but carries no message.
+             stream =
+               GRPC.Stub.send_request(stream, %Pb.StreamRequest{
+                 payload: {:send_message, %Pb.SendMessageRequest{}}
+               })
+
+             good = pb(Pb.SendMessageRequest, send_params("count_notes", %{}))
+
+             stream =
+               GRPC.Stub.send_request(
+                 stream,
+                 %Pb.StreamRequest{payload: {:send_message, good}},
+                 end_stream: true
+               )
+
+             frames =
+               stream |> GRPC.Stub.recv(timeout: 15_000) |> grpc_stream!("SendLiveMessage")
+
+             kinds = Enum.map(frames, &frame_kind/1)
+             codes = for %{"error" => error} <- frames, do: error["code"]
+
+             check!(
+               codes == ["UNIMPLEMENTED", "INVALID_ARGUMENT"],
+               "StreamError codes were #{inspect(codes)} in #{inspect(kinds)}"
+             )
+
+             check!(
+               Enum.take(kinds, 2) == ["error", "error"],
+               "the rejections did not precede the accepted work: #{inspect(kinds)}"
+             )
+
+             states = frames |> Enum.map(&frame_state/1) |> Enum.reject(&is_nil/1)
+
+             check!(
+               List.last(states) == "TASK_STATE_COMPLETED",
+               "after the rejections the stream ended in #{inspect(List.last(states))}"
+             )
+
+             "StreamError UNIMPLEMENTED and INVALID_ARGUMENT, then the same stream " <>
+               "completed a task (#{length(frames)} frames)"
+           end)
+         end},
+        {"opening on another caller's task is NOT_FOUND",
+         fn info ->
+           task = grpc(info, :writer, fn ch, opts -> grpc_parked!(ch, opts) end)
+
+           grpc(info, :reader, fn ch, opts ->
+             stream = Stub.send_live_message(ch, opts)
+
+             stream =
+               GRPC.Stub.send_request(
+                 stream,
+                 %Pb.StreamRequest{
+                   payload: {:subscribe, %Pb.SubscribeToTaskRequest{id: task["id"]}}
+                 },
+                 end_stream: true
+               )
+
+             status =
+               case GRPC.Stub.recv(stream, timeout: 15_000) do
+                 {:error, _} = error ->
+                   stream_error_status(error)
+
+                 {:ok, replies} ->
+                   replies |> Enum.take(1) |> List.first() |> stream_error_status()
+               end
+
+             check!(status == 5, "expected gRPC status 5, got #{clip(inspect(status))}")
+
+             "the reader's subscribe to the writer's task ended gRPC status 5 NOT_FOUND"
            end)
          end}
       ]
@@ -2180,7 +2605,7 @@ if Code.ensure_loaded?(Bandit) do
            title = "create-refused-" <> unique()
            before = note_count()
            task = jr_send!(c, "create_note", %{"title" => title}, %{}, token: :reader)
-           expect_state!(task, "TASK_STATE_FAILED")
+           expect_state!(task, "TASK_STATE_REJECTED")
 
            check!(
              Jason.encode!(task) =~ "authority_required",
@@ -2196,7 +2621,7 @@ if Code.ensure_loaded?(Bandit) do
            title = "create-rest-refused-" <> unique()
            before = note_count()
            task = rest_send!(info, "create_note", %{"title" => title}, %{}, token: :reader)
-           expect_state!(task, "TASK_STATE_FAILED")
+           expect_state!(task, "TASK_STATE_REJECTED")
 
            check!(
              note_by_title(title) == nil and note_count() == before,
@@ -2259,7 +2684,7 @@ if Code.ensure_loaded?(Bandit) do
                token: :reader
              )
 
-           expect_state!(task, "TASK_STATE_FAILED")
+           expect_state!(task, "TASK_STATE_REJECTED")
            same = Ash.get!(Note, note.id, authorize?: false)
 
            check!(
@@ -2331,7 +2756,7 @@ if Code.ensure_loaded?(Bandit) do
            c = caller(info, :jsonrpc, nil, nil)
            note = seed_row!(info, "destroy-refused", nil)
            task = jr_send!(c, "delete_note", %{"id" => note.id}, %{}, token: :reader)
-           expect_state!(task, "TASK_STATE_FAILED")
+           expect_state!(task, "TASK_STATE_REJECTED")
 
            check!(
              match?({:ok, _}, Ash.get(Note, note.id, authorize?: false)),
@@ -2443,7 +2868,7 @@ if Code.ensure_loaded?(Bandit) do
            c = caller(info, :jsonrpc, nil, nil)
            title = "publish-refused-" <> unique()
            task = jr_send!(c, "publish_note", %{"title" => title}, %{}, token: :reader)
-           expect_state!(task, "TASK_STATE_FAILED")
+           expect_state!(task, "TASK_STATE_REJECTED")
            check!(title not in Note.publications(), "the refused publish was recorded")
            "refused; nothing recorded"
          end}
@@ -2495,7 +2920,7 @@ if Code.ensure_loaded?(Bandit) do
                grpc_send!(ch, opts, "create_note", %{"title" => title})
              end)
 
-           expect_state!(refused, "TASK_STATE_FAILED")
+           expect_state!(refused, "TASK_STATE_REJECTED")
            check!(note_by_title(title) == nil, "the ungranted caller created the row")
 
            admitted =
@@ -2516,7 +2941,7 @@ if Code.ensure_loaded?(Bandit) do
          fn info ->
            title = "class-external-" <> unique()
            refused = rest_send!(info, "publish_note", %{"title" => title}, %{}, token: :reader)
-           expect_state!(refused, "TASK_STATE_FAILED")
+           expect_state!(refused, "TASK_STATE_REJECTED")
            check!(title not in Note.publications(), "the ungranted caller's effect happened")
            admitted = rest_send!(info, "publish_note", %{"title" => title})
            expect_state!(admitted, "TASK_STATE_COMPLETED")
@@ -2694,19 +3119,76 @@ if Code.ensure_loaded?(Bandit) do
            expect_state!(task, "TASK_STATE_REJECTED")
            "unclassified_note ended TASK_STATE_REJECTED"
          end},
-        {"an unknown skill is refused without running anything",
+        {"an unknown skill is rejected on every binding, without running anything",
          fn info ->
            before = note_count()
-           task = jr_send!(caller(info, :jsonrpc, nil, nil), "no_such_skill", %{"title" => "x"})
+           data = %{"title" => "unknown-skill-" <> unique()}
 
-           check!(
-             state(task) in ["TASK_STATE_REJECTED", "TASK_STATE_FAILED"],
-             "an unknown skill ended #{state(task)}"
-           )
+           tasks = [
+             {"JSON-RPC", jr_send!(caller(info, :jsonrpc, nil, nil), "no_such_skill", data)},
+             {"HTTP+JSON", rest_send!(info, "no_such_skill", data)},
+             {"gRPC",
+              grpc(info, :writer, fn ch, opts -> grpc_send!(ch, opts, "no_such_skill", data) end)}
+           ]
 
-           check!(not artifacts?(task), "an unknown skill produced an artifact")
+           for {binding, task} <- tasks do
+             check!(
+               state(task) == "TASK_STATE_REJECTED",
+               "an unknown skill ended #{state(task)} over #{binding}: #{clip(inspect(task["status"]))}"
+             )
+
+             check!(not artifacts?(task), "an unknown skill produced an artifact over #{binding}")
+           end
+
            check!(note_count() == before, "an unknown skill changed the table")
-           "skill \"no_such_skill\" ended #{state(task)} with no artifact and no row"
+           "skill \"no_such_skill\" ended TASK_STATE_REJECTED over JSON-RPC, HTTP+JSON and gRPC"
+         end},
+        {"an authority refusal is rejected on every binding, and the stored task agrees",
+         fn info ->
+           before = note_count()
+           c = caller(info, :jsonrpc, nil, nil)
+           title = fn -> "rejected-" <> unique() end
+
+           over_jsonrpc =
+             jr_send!(c, "create_note", %{"title" => title.()}, %{}, token: :reader)
+
+           over_rest =
+             rest_send!(info, "create_note", %{"title" => title.()}, %{}, token: :reader)
+
+           {over_grpc, stored_grpc} =
+             grpc(info, :reader, fn ch, opts ->
+               task = grpc_send!(ch, opts, "create_note", %{"title" => title.()})
+               {task, grpc_get!(ch, opts, task["id"])}
+             end)
+
+           stored_jsonrpc = jr_get!(c, over_jsonrpc["id"], token: :reader)
+
+           stored_rest =
+             info
+             |> rest_ok!(:get, "/tasks/#{over_rest["id"]}", token: :reader)
+             |> task_of!()
+
+           for {binding, task} <- [
+                 {"JSON-RPC send", over_jsonrpc},
+                 {"JSON-RPC get", stored_jsonrpc},
+                 {"HTTP+JSON send", over_rest},
+                 {"HTTP+JSON get", stored_rest},
+                 {"gRPC send", over_grpc},
+                 {"gRPC get", stored_grpc}
+               ] do
+             check!(
+               state(task) == "TASK_STATE_REJECTED",
+               "an authority refusal ended #{state(task)} over #{binding}"
+             )
+
+             check!(
+               Jason.encode!(task) =~ "authority_required",
+               "the refusal over #{binding} does not name authority"
+             )
+           end
+
+           check!(note_count() == before, "a refused create changed the table")
+           "authority_required ended TASK_STATE_REJECTED over JSON-RPC, HTTP+JSON and gRPC"
          end}
       ]
     end
@@ -2935,6 +3417,49 @@ if Code.ensure_loaded?(Bandit) do
              end
 
              "streaming #{caps["streaming"]}, pushNotifications #{caps["pushNotifications"] == true}, extendedAgentCard #{caps["extendedAgentCard"] == true}"
+           end},
+          {"the served card's signature verifies, and a changed byte is refused",
+           fn info ->
+             alias AshA2A.Protocol.AgentCardSignature, as: Signature
+
+             resp =
+               http(info, :get, mount_url(info, mount) <> "/.well-known/agent-card.json",
+                 token: :none
+               )
+
+             check!(resp.status == 200, "HTTP #{resp.status}")
+             card = resp.json
+             signatures = card["signatures"]
+
+             check!(
+               match?([%{"protected" => _, "signature" => _} | _], signatures),
+               "the card carries no signatures entry: #{clip(inspect(signatures), 200)}"
+             )
+
+             kids =
+               case Signature.verify(card, info.card_jwks, require: :all) do
+                 {:ok, kids} -> kids
+                 {:error, reason} -> fail!("signature refused: #{inspect(reason)}")
+               end
+
+             # Change one byte of the served bytes inside the signed document.
+             name = card["name"]
+             <<first, rest::binary>> = name
+             changed = <<Bitwise.bxor(first, 1)>> <> rest
+
+             tampered =
+               resp.raw
+               |> String.replace(Jason.encode!(name), Jason.encode!(changed), global: false)
+               |> Jason.decode!()
+
+             check!(tampered != card, "the tampered card equals the served card")
+
+             case Signature.verify(tampered, info.card_jwks) do
+               {:error, :bad_signature} -> :ok
+               other -> fail!("a changed byte was not refused: #{inspect(other)}")
+             end
+
+             "#{length(signatures)} signature, kid #{Enum.join(kids, ", ")} verified over #{byte_size(resp.raw)} served bytes; one changed byte refused"
            end}
         ]
 
