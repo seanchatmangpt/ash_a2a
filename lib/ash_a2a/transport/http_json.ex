@@ -165,6 +165,17 @@ defmodule AshA2A.Transport.HTTPJSON do
 
       plug AshA2A.Transport.HTTPJSON, agent: MyAgent, base_url: "https://x"
 
+  `:agent_card_opts` (default `[]`) is passed to the card encoder exactly as
+  `AshA2A.Transport.Plug` passes its own, so a mount can state the
+  `supported_interfaces` it is really served at:
+
+      plug AshA2A.Transport.HTTPJSON,
+        agent: MyAgent,
+        base_url: "https://x/rest",
+        agent_card_opts: [
+          supported_interfaces: [%{url: "https://x/rest", protocol_binding: "HTTP+JSON"}]
+        ]
+
   Passing `serve_schemas: true` (with the `:schema_index` capability-index
   source) also mounts the machine-readable schema endpoints
   (`AshA2A.Transport.SchemaEndpoints`): `GET /.well-known/agent-card.schema.json`
@@ -205,6 +216,7 @@ defmodule AshA2A.Transport.HTTPJSON do
           required(:agent) => module(),
           required(:base_url) => String.t() | nil,
           required(:agent_card_path) => [String.t(), ...],
+          optional(:agent_card_opts) => keyword(),
           required(:metadata) => map(),
           required(:max_body_bytes) => pos_integer(),
           required(:transport) => atom() | nil,
@@ -241,6 +253,7 @@ defmodule AshA2A.Transport.HTTPJSON do
       agent: Keyword.fetch!(opts, :agent),
       base_url: Keyword.get(opts, :base_url),
       agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
+      agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
       metadata: Keyword.get(opts, :metadata, %{}),
       max_body_bytes: Keyword.get(opts, :max_body_bytes, @default_max_body_bytes),
       transport: Keyword.get(opts, :transport),
@@ -820,7 +833,7 @@ defmodule AshA2A.Transport.HTTPJSON do
     AshA2A.Transport.Plug.agent_card_json(
       card,
       %{
-        agent_card_opts: [],
+        agent_card_opts: Map.get(opts, :agent_card_opts, []),
         push_notifications: push_enabled?(opts),
         extended_card: not is_nil(opts.extended_card),
         extensions: []
