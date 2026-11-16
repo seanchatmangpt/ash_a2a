@@ -85,7 +85,12 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
 
 ## Open gaps
 
-- TLS transport is not implemented in the framed clients (UDS only).
+- TLS transport (UNVERIFIED, no Elixir toolchain was available): both framed clients accept
+  `ctx.c2_tls` (`AshA2A.C2.L07Tls.Transport`): `verify_peer`, pinned CA, client certificate
+  (mutual), hostname check; incomplete config or failed handshake is refused and never falls back
+  to the unix socket. Test: `test/ash_a2a/c2/l07_tls_framed_test.exs` (unpinned-CA and hostname
+  refusal) drives the transport only, not yet the full clients against a TLS-listening
+  authority/actuator release (the releases' own TLS listeners are not covered here).
 - Approval collection for k > 0 classes: UNVERIFIED (written without an Elixir toolchain, not run).
   The control plane now has an approver channel: the `"approve"` wire op deposits a signed
   approval in `AuthorityService.ApproverChannel.Mailbox`, and the Issuer solicits it on `issue`

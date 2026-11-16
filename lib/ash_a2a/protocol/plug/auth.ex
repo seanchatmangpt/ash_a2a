@@ -92,6 +92,9 @@ if Code.ensure_loaded?(Plug) do
 
       %{
         mtls_header: mtls_header,
+        # gRPC metadata is client-controlled: `AshA2A.Transport.GRPC.Auth`
+        # honours `:mtls_header` only when this is explicitly `true`.
+        trust_forwarded_cert: Keyword.get(opts, :trust_forwarded_cert, false) == true,
         schemes: schemes,
         verify: verify,
         security: security,

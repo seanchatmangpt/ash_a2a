@@ -29,6 +29,8 @@ defmodule AshA2A.EmailPlugTest do
 
     base = [
       policy: %{allowlist: %{@sender => "principal:approver"}},
+      webhook: :trusted_ingress,
+      unsafe_no_replay_ledger: true,
       brief_lookup: fn
         ^mid -> {:ok, b, %{1 => @digest, 2 => @digest, 3 => @digest}}
         _ -> :error

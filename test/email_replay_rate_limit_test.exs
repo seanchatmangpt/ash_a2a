@@ -41,6 +41,7 @@ defmodule AshA2A.EmailReplayRateLimitTest do
 
     base = [
       policy: %{allowlist: %{@sender => "principal:approver"}},
+      webhook: :trusted_ingress,
       brief_lookup: fn
         ^mid -> {:ok, b, %{1 => @digest, 2 => @digest}}
         _ -> :error

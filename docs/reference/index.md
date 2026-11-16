@@ -62,6 +62,26 @@ Reference pages in this quadrant:
   RFC-SA2A-007 §4 statement (`mix ash_a2a.verify_conformance`).
 - [Conformance profiles](conformance-profiles.md) — the C0-C3 profiles and
   the strict C1 run's security-profile/durable-store checks.
+- [A2A v1.1 conformance statement](a2a-v1-1-conformance.md) — per-spec v1.1
+  conformance claims.
+- [v1.1 known divergences](v1-1-known-divergences.md) — the KD register for the
+  v1.1 target.
+- [TCK suite](tck-suite.md) — running the in-repo v1 conformance report and the
+  official `a2aproject/a2a-tck` suite.
+- [Error mapping decisions](a2a-error-mapping-decisions.md) — HTTP, gRPC and
+  JSON-RPC error mapping decisions against the pinned TCK.
+- [Ingress attestation](ingress-attestation.md) — attestation `Key`/`Gate`/
+  `GateGrantAllowlist` and `Ingress.Channel`.
+- [Module coverage](module-coverage.md) — public module families with no
+  dedicated doc.
+- [QME-1](qme-1.md) — the repository's role in the QME-1 ecosystem reference.
+- [Security advisories](security-advisories.md) — advisories disposition.
+- [Enterprise](enterprise.md) — enterprise reference.
+- [Conference-sim model](conference-sim-model.md) — the conference-sim model.
+- [GraphLaw v26.10.28 compatibility](graphlaw-v26.10.28-compat.md) — retired
+  ops, blake3 keys, wasm vendoring.
+- [Generated reference](generated/README.md) — machine-rendered skeletons; never
+  hand-edited.
 
 The module rows below cover the dispatch-relevant public surface with its
 real integration status; full module API detail lives in the generated
