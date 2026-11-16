@@ -205,8 +205,8 @@ if Code.ensure_loaded?(Bandit) do
     (`config :ash_a2a, :event_journal` is set on start and put back on stop),
     so `tasks/resubscribe` with `lastSeenGeneration` replays missed events.
 
-    This module is compiled only when Bandit is available. ash_a2a lists
-    Bandit as a dev and test dependency; add `{:bandit, "~> 1.5"}` to use the
+    This module is compiled only when Bandit is available. Bandit is an
+    optional dependency of ash_a2a; add `{:bandit, "~> 1.5"}` to use the
     simulation server from another project.
     """
 

@@ -31,7 +31,8 @@ if Code.ensure_loaded?(Bandit) do
 
     The `token` argument names a fixture of `AshA2A.Sim.Auth` (`"writer"`,
     `"reader"`, `"unscoped"`), `"none"` for no credentials, or any other
-    string to send as the bearer token.
+    string to send as the bearer token. A `sim-agent-<name>` token
+    authenticates as an identity of its own that holds no grants.
     """
 
     alias AshA2A.Authority.Grant
@@ -319,7 +320,7 @@ if Code.ensure_loaded?(Bandit) do
           "type" => "string",
           "default" => "writer",
           "description" =>
-            "`writer` (holds the grants), `reader` (no grants), `unscoped` (lacks a2a:invoke), `none` (no credentials), or a literal bearer token."
+            "`writer` (holds the grants), `reader` (no grants), `unscoped` (lacks a2a:invoke), `none` (no credentials), or a literal bearer token (`sim-agent-<name>` is a caller of its own)."
         },
         "timeout_ms" => %{
           "type" => "integer",

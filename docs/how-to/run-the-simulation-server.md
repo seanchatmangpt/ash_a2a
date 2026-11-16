@@ -120,10 +120,13 @@ Ash.read!(AshA2A.Sim.Note, authorize?: false)
 simulation server can run in a VM, because the agent is registered under its
 module name and the gRPC server reads one application environment.
 
-The server and the prover are compiled only when Bandit is available. In this
-repository Bandit is a test dependency, so `mix ash_a2a.sim` runs in the
-`test` Mix environment. To use the simulation server from another project,
-add `{:bandit, "~> 1.5"}` to that project's dependencies.
+The server and the prover are compiled only when Bandit is available. Bandit
+is an optional dependency of ash_a2a (`optional: true` in `mix.exs`). In this
+repository `mix ash_a2a.sim` defaults to the `test` Mix environment and also
+runs with `MIX_ENV=dev`. To use the simulation server from another project,
+add `{:bandit, "~> 1.5"}` to that project's dependencies; without it the
+library still compiles and the task stops with a message naming the missing
+dependency.
 
 ## How the mirror stays honest
 

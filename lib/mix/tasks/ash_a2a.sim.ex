@@ -29,8 +29,10 @@ defmodule Mix.Tasks.AshA2a.Sim do
   Without `--prove` the task prints the URL of each mount and the bearer
   tokens, then serves until the VM is stopped (Ctrl-C twice).
 
-  The task runs in the `test` Mix environment, where Bandit (the HTTP
-  listener the simulation server uses) is a dependency.
+  The simulation server needs Bandit (its HTTP listener), an optional
+  dependency of ash_a2a. In this repository the task defaults to the `test`
+  Mix environment and also runs with `MIX_ENV=dev`. In another project, add
+  `{:bandit, "~> 1.5"}` to that project's dependencies.
   """
 
   use Mix.Task
@@ -57,8 +59,9 @@ defmodule Mix.Tasks.AshA2a.Sim do
 
     unless Code.ensure_loaded?(server) do
       Mix.raise(
-        "the simulation server needs Bandit, which is a test-only dependency of ash_a2a. " <>
-          "Run the task with MIX_ENV=test."
+        "the simulation server needs Bandit, which is an optional dependency of ash_a2a. " <>
+          "Add {:bandit, \"~> 1.5\"} to your dependencies and recompile ash_a2a " <>
+          "(mix deps.compile ash_a2a --force)."
       )
     end
 
