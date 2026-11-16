@@ -16,11 +16,13 @@ defmodule AshA2A.Sim.Note do
   | `delete_note` | `:destroy` | `:change` | standing authority grant |
   | `count_notes` | generic `:count_notes` | `:observe` | authentication only |
   | `slow_count` | generic `:slow_count` | `:observe` | authentication only |
+  | `step_up` | generic `:step_up` | `:observe` | authentication only |
   | `publish_note` | generic `:publish_note` | `:external_do` | standing authority grant |
   | `unclassified_note` | generic `:unclassified_note` | `:unknown` | always refused |
 
   `slow_count` sleeps for `delay_ms` before answering, which gives a client a
-  task that is still running when it asks to cancel it. `publish_note` appends
+  task that is still running when it asks to cancel it. `step_up` parks its
+  task at auth-required until the caller sends an `otp`. `publish_note` appends
   to `publications/0`, a list kept outside the Ash data layer, so the
   `:external_do` effect can be observed separately from the note rows.
 
@@ -81,6 +83,21 @@ defmodule AshA2A.Sim.Note do
       end
     end
 
+    action :step_up, :term do
+      argument :otp, :string, allow_nil?: true
+
+      run fn input, _context ->
+        case input.arguments[:otp] do
+          nil ->
+            {:ok,
+             {:auth_required, [AshA2A.Protocol.Part.Text.new("send the one-time code as otp")]}}
+
+          _otp ->
+            {:ok, %{stepped_up: true}}
+        end
+      end
+    end
+
     action :unclassified_note, :map do
       run fn _input, _context -> {:ok, %{ran: true}} end
     end
@@ -121,6 +138,11 @@ defmodule AshA2A.Sim.Note do
 
     skill :slow_count, :slow_count do
       description "Count notes after sleeping delay_ms (observe; cancelable while running)"
+      consequence :observe
+    end
+
+    skill :step_up, :step_up do
+      description "Ask for a one-time code, then answer once it is sent (observe; auth-required)"
       consequence :observe
     end
 

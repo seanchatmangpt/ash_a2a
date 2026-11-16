@@ -1,6 +1,6 @@
 # Mix Tasks Reference
 
-All tasks live in `lib/mix/tasks/` (25 files, 25 tasks, each listed below).
+All tasks live in `lib/mix/tasks/` (26 files, 26 tasks, each listed below).
 Run `mix help <task>` for full flags.
 
 ## Installer
@@ -49,6 +49,7 @@ These are the repo's own regression gates (run by or alongside
 | `mix ash_a2a.doctor` | Diagnoses the A2A wiring of this application — prints findings about the compiled domains and resources and exits non-zero on any error (`--strict` makes warnings fatal, `--json`, repeatable `--domain`). See `docs/how-to/run-doctor.md`. |
 | `mix ash_a2a.receipts.verify` | Verify receipt hashes, cited tests, standing and run-log consistency for Markdown receipts (default `receipts/**/*.md` and `docs/archive/jira-releases/*/RECEIPT.md`); read-only, `--root`/`--git`, exits non-zero on any error-severity finding. See `docs/how-to/verify-receipts.md`. |
 | `mix ash_a2a.self_card` | Generate ash_a2a's own A2A agent card from its shipped protocol surface (`--output PATH`, `--url URL`; writes `priv/sa2a/self-agent-card.json`). |
+| `mix ash_a2a.sim` | Serve the simulation server, or prove every served surface over the wire (`--prove` runs every probe against real listeners and exits non-zero on a failure; `--json` prints the matrix as JSON; see [run the simulation server](../how-to/run-the-simulation-server.md)). |
 | `mix eds.ledger` | Print the real ERC ledger for this repo — the ERC (Executable Research Claim) receipts written from this project's own test-run evidence. |
 
 ## Benchmarks (non-task)

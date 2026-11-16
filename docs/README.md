@@ -36,6 +36,9 @@ Goal-oriented procedures:
 - [`how-to/release.md`](how-to/release.md) — cut an ash_a2a release.
 - [`how-to/run-conference-sim.md`](how-to/run-conference-sim.md) — run the
   conference-sim court suite end to end.
+- [`how-to/run-the-simulation-server.md`](how-to/run-the-simulation-server.md) — boot
+  every transport over one agent with real Ash mutations and prove each served
+  method, route and RPC over the wire (`mix ash_a2a.sim --prove`).
 - [`how-to/run-mutation-testing.md`](how-to/run-mutation-testing.md) — run mutation
   testing over the security surface.
 - [`how-to/run-pplan-courts.md`](how-to/run-pplan-courts.md) — run the ash_pplan parity

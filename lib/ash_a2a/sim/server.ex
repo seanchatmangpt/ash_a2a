@@ -204,6 +204,7 @@ if Code.ensure_loaded?(Bandit) do
 
     @transport AshA2A.Sim.Transport
     @host "127.0.0.1"
+    @grpc_env_keys [AshA2A.Transport.GRPC.Server, AshA2A.Transport.GRPC.Server.Endpoint]
 
     @doc false
     def child_spec(opts) do
@@ -236,6 +237,10 @@ if Code.ensure_loaded?(Bandit) do
     @impl GenServer
     def init(opts) do
       Process.flag(:trap_exit, true)
+
+      # The gRPC server reads its handler and its auth seam from the
+      # application environment; remember what was there to put it back.
+      grpc_env = Enum.map(@grpc_env_keys, &{&1, Application.fetch_env(:ash_a2a, &1)})
 
       for app <- [:bandit, :req, :grpc, :grpc_server],
           do: {:ok, _} = Application.ensure_all_started(app)
@@ -311,7 +316,8 @@ if Code.ensure_loaded?(Bandit) do
 
       AshA2A.Sim.Router.put_mounts(mounts(info, interfaces))
 
-      {:ok, %{sup: sup, info: Map.put(info, :supported_interfaces, interfaces)}}
+      {:ok,
+       %{sup: sup, grpc_env: grpc_env, info: Map.put(info, :supported_interfaces, interfaces)}}
     end
 
     @impl GenServer
@@ -322,13 +328,20 @@ if Code.ensure_loaded?(Bandit) do
     def handle_info(_other, state), do: {:noreply, state}
 
     @impl GenServer
-    def terminate(_reason, %{sup: sup}) do
+    def terminate(_reason, %{sup: sup, grpc_env: grpc_env}) do
       AshA2A.Sim.Router.erase_mounts()
 
       try do
         Supervisor.stop(sup, :normal, 10_000)
       catch
         :exit, _ -> :ok
+      end
+
+      for {key, previous} <- grpc_env do
+        case previous do
+          {:ok, value} -> Application.put_env(:ash_a2a, key, value)
+          :error -> Application.delete_env(:ash_a2a, key)
+        end
       end
 
       :ok
@@ -380,7 +393,9 @@ if Code.ensure_loaded?(Bandit) do
             agent_card_opts: card_opts,
             transport: @transport,
             push_notifications: true,
-            extended_card: provider
+            extended_card: provider,
+            serve_schemas: true,
+            schema_index: AshA2A.Sim.Note
           )
       }
     end

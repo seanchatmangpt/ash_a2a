@@ -19,6 +19,15 @@ recorded in a cited receipt but was not re-run when this entry was written.
 
 ### Added
 
+- Simulation server: `AshA2A.Sim.Server` boots every transport (JSON-RPC, HTTP+JSON, gRPC,
+  live, push delivery) over one agent with real Ash mutations, and `AshA2A.Sim.Prover`
+  drives each served method, route and RPC over the wire. `AshA2A.Sim.Surface` derives the
+  inventory from the library, so a method, route or RPC with no probe fails
+  `test/ash_a2a/sim/sim_mirror_test.exs`. Run it with `mix ash_a2a.sim --prove`. Guide:
+  `docs/how-to/run-the-simulation-server.md`. Verified: 204 probes pass, 1 skip, on a run
+  of `mix ash_a2a.sim --prove` in this tree.
+- `AshA2A.Transport.HTTPJSON` accepts `:agent_card_opts`, like `AshA2A.Transport.Plug`, so
+  its card and extended card can state the `supported_interfaces` the mount is served at.
 - Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
   `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
   dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified. Hardened: the plug now
@@ -51,6 +60,20 @@ recorded in a cited receipt but was not re-run when this entry was written.
 
 ### Fixed
 
+- `tasks/resubscribe` on `AshA2A.A2ATransport.Plug` no longer hangs until the idle bound
+  for a task started by a non-blocking `message/send`: a logged task snapshot is treated
+  as a running stream pump only while a pump process is alive. Probe: `tasks/resubscribe`
+  on `/a2a` in `test/ash_a2a/sim/sim_mirror_test.exs`.
+- `tasks/resubscribe` on `AshA2A.Transport.Plug` no longer echoes the verified identity
+  (`a2a.auth`) and the owner key in the opening task snapshot. Probe: `bearer_auth`
+  identity echo in `test/ash_a2a/sim/sim_mirror_test.exs`.
+- gRPC: a whole-number argument inside a message's data part (a double in
+  `google.protobuf.Struct`) now reaches the action as an integer, so `:integer` arguments
+  work over the gRPC binding. Probe: `SendMessage` integer argument in
+  `test/ash_a2a/sim/sim_mirror_test.exs`.
+- The input-required status message for an invalid Ash input no longer carries server
+  stack traces. Probe: `TASK_STATE_INPUT_REQUIRED` in
+  `test/ash_a2a/sim/sim_mirror_test.exs`.
 - A checkpoint the store silently dropped is no longer reported as landed
   (`Checkpoint.land/4` reads back and raises). Unverified.
 - Handover completion and claim release carry the claim token: a runner whose

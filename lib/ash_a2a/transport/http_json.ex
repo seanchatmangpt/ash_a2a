@@ -745,7 +745,11 @@ defmodule AshA2A.Transport.HTTPJSON do
 
           public =
             ExtendedCard.public_card(conn, %{
-              a2a: %{base_url: base_url, agent: opts.agent, agent_card_opts: []}
+              a2a: %{
+                base_url: base_url,
+                agent: opts.agent,
+                agent_card_opts: Map.get(opts, :agent_card_opts, [])
+              }
             })
 
           case invoke_provider(opts.extended_card, identity, public) do

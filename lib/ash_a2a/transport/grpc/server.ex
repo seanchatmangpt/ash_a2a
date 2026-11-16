@@ -1051,12 +1051,33 @@ defmodule AshA2A.Transport.GRPC.Server do
   # -- proto-JSON bridge ----------------------------------------------------
 
   defp to_params(req) do
-    {:ok, req |> Protobuf.JSON.encode!() |> Jason.decode!() |> normalize_params(req)}
+    {:ok,
+     req
+     |> Protobuf.JSON.encode!()
+     |> Jason.decode!()
+     |> integral_numbers()
+     |> normalize_params(req)}
   rescue
     e ->
       {:error,
        GRPC.RPCError.exception(status: 3, message: "bad request: #{Exception.message(e)}")}
   end
+
+  # A `google.protobuf.Struct` number is always a double, so a client's `300`
+  # reaches this bridge as `300.0`, and an Ash `:integer` argument refuses it.
+  # JSON has one number type: a whole-number double is read as the integer the
+  # HTTP bindings decode for the same message. Fractions are left alone.
+  @max_safe_integer 9_007_199_254_740_992
+
+  defp integral_numbers(%{} = map), do: Map.new(map, fn {k, v} -> {k, integral_numbers(v)} end)
+  defp integral_numbers(list) when is_list(list), do: Enum.map(list, &integral_numbers/1)
+
+  defp integral_numbers(number)
+       when is_float(number) and number == trunc(number) and
+              abs(number) < @max_safe_integer,
+       do: trunc(number)
+
+  defp integral_numbers(other), do: other
 
   # ListTasksRequest.status UNSPECIFIED(0) means "no filter" (proto3 default),
   # never a literal :unknown state filter. historyLength passes through as-is.

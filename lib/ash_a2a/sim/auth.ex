@@ -113,6 +113,7 @@ defmodule AshA2A.Sim.Auth do
       "tags" => ["sim"]
     }
 
-    {:ok, Map.update(public_card, "skills", [extra], &(&1 ++ [extra]))}
+    skills = Map.get(public_card, "skills") || []
+    {:ok, Map.put(public_card, "skills", skills ++ [extra])}
   end
 end

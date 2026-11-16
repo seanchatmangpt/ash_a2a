@@ -629,7 +629,10 @@ defmodule AshA2A.Transport.Plug do
           id,
           Map.get(ctx.opts, :resubscribe_timeout, 300_000),
           params: params,
-          version: ctx.a2a_version
+          version: ctx.a2a_version,
+          # No credential echo: the opening snapshot is the stored task, which
+          # carries the verified identity and the owner key in its metadata.
+          wire_task: &Runtime.wire_task/1
         )
 
       {:error, :not_found} ->

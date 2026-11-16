@@ -311,6 +311,9 @@ defmodule AshA2A.A2ATransport.SSE do
 
   @doc false
   def pump(transport, agent, task, enum) do
+    # Marks this process as the task's live pump for `pumped?/2`.
+    register_pump(transport, task.id)
+
     # Same id the agent's stream_done fold stamps on the final artifact
     # (:stream_artifact_id); mint only as a fallback.
     artifact_id =
@@ -507,10 +510,31 @@ defmodule AshA2A.A2ATransport.SSE do
       seqs ->
         last_snapshot = Enum.max(seqs)
 
-        not Enum.any?(log, fn {seq, kind, payload, _} ->
-          seq > last_snapshot and kind == "status-update" and TaskEvents.closing_payload?(payload)
-        end)
+        # A snapshot in the log is not proof of a pump: `message/send` logs
+        # its result too, and a non-blocking send logs a non-terminal one. The
+        # task then finishes on the agent path, so waiting for a pump's final
+        # event would hold the stream open until the idle bound.
+        pump_alive?(transport, task_id) and
+          not Enum.any?(log, fn {seq, kind, payload, _} ->
+            seq > last_snapshot and kind == "status-update" and
+              TaskEvents.closing_payload?(payload)
+          end)
     end
+  end
+
+  # A pump registers itself under `{:pump, task_id}` in the transport's
+  # registry for as long as it runs (the entry is removed when it exits).
+  defp register_pump(transport, task_id) do
+    Registry.register(A2ATransport.registry_name(transport), {:pump, task_id}, nil)
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp pump_alive?(transport, task_id) do
+    Registry.lookup(A2ATransport.registry_name(transport), {:pump, task_id}) != []
+  rescue
+    ArgumentError -> false
   end
 
   # A protocol-path transition is PUBLISHED to the TaskEvents log so it gets a

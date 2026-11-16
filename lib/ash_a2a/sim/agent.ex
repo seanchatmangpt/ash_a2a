@@ -14,6 +14,8 @@ defmodule AshA2A.Sim.Agent do
   | streamed artifacts | `list_notes` with `"stream" => true` in the data part |
   | input-required, then continued | `create_note` without `title`, then send `title` with the same `taskId` |
   | working, then canceled | `slow_count` with a large `delay_ms`, then `tasks/cancel` |
+  | auth-required, then continued | `step_up` without `otp`, then send `otp` with the same `taskId` |
+  | rejected | `unclassified_note` |
   | failed | `update_note` naming an id that does not exist, or any `:change` skill without a grant |
 
   Callers must be authenticated. `AshA2A.Sim.Server` puts the bearer scheme in
@@ -26,7 +28,7 @@ defmodule AshA2A.Sim.Agent do
     description:
       "Simulation agent: an ETS note store with one skill per action type and consequence class.",
     require_authenticated_caller: true,
-    observe_generic_actions: [:count_notes, :slow_count],
+    observe_generic_actions: [:count_notes, :slow_count, :step_up],
     security_schemes: %{
       "bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}
     },

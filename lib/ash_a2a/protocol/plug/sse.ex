@@ -109,10 +109,14 @@ if Code.ensure_loaded?(Plug) do
 
             conn = start_sse(conn)
 
+            # `:wire_task` lets an owner-scoped transport strip its internal
+            # metadata (verified identity, owner key) from the snapshot.
+            wire_task = Keyword.get(opts, :wire_task) || (& &1)
+
             conn =
               if resume?,
                 do: conn,
-                else: send_task_snapshot(conn, jsonrpc_id, task)
+                else: send_task_snapshot(conn, jsonrpc_id, wire_task.(task))
 
             conn =
               Enum.reduce(replay, conn, fn {_seq, _kind, payload, _final?}, conn ->

@@ -18,6 +18,7 @@ defmodule AshA2A.MixProject do
         "test.live": :test,
         "test.serial.shard": :test,
         "test.serial.solo": :test,
+        "ash_a2a.sim": :test,
         muzak: :test,
         "muzak.sec": :test
       ]

@@ -1050,10 +1050,10 @@ defmodule AshA2A.Dispatcher do
         {:error, class_message(:not_found, Exception.message(not_found))}
 
       tenant_required_error?(error) ->
-        {:error, class_message(:invalid_config, Exception.message(error))}
+        {:error, class_message(:invalid_config, wire_message(error))}
 
       true ->
-        {:input_required, [Part.Text.new(Exception.message(error))]}
+        {:input_required, [Part.Text.new(wire_message(error))]}
     end
   end
 
@@ -1082,16 +1082,29 @@ defmodule AshA2A.Dispatcher do
   end
 
   defp to_reply({:error, %{class: :framework} = error}) do
-    {:error, class_message(:framework, Ash.Error.to_class(error) |> Exception.message())}
+    {:error, class_message(:framework, error |> Ash.Error.to_class() |> wire_message())}
   end
 
   defp to_reply({:error, %{class: :unknown} = error}) do
-    {:error, class_message(:unknown, Ash.Error.to_class(error) |> Exception.message())}
+    {:error, class_message(:unknown, error |> Ash.Error.to_class() |> wire_message())}
   end
 
   defp to_reply({:error, reason}) do
     {:error, reason}
   end
+
+  # An Ash error class renders each nested error's stack trace into its
+  # message (`Splode.ErrorClass.error_messages/2`). That text reaches the
+  # caller as the task's status message, so the traces (server file paths,
+  # dependency versions, internal function names) are dropped first (SEC-08).
+  defp wire_message(%{errors: errors} = error) when is_list(errors) do
+    Exception.message(%{error | errors: Enum.map(errors, &drop_stacktrace/1)})
+  end
+
+  defp wire_message(error), do: Exception.message(error)
+
+  defp drop_stacktrace(%{stacktrace: _} = error), do: %{error | stacktrace: nil}
+  defp drop_stacktrace(error), do: error
 
   defp class_message(class, message) when is_atom(class) and is_binary(message) do
     "#{class}: #{message}"
