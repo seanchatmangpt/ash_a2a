@@ -54,6 +54,17 @@ Goal-oriented procedures:
   add an LLM-backed action without hardcoding a provider.
 - [`how-to/verify-authority-on-async-paths.md`](how-to/verify-authority-on-async-paths.md) —
   verify authority on async (Oban) delivery paths.
+- [`how-to/approve-over-the-wire.md`](how-to/approve-over-the-wire.md) — submit signed
+  human approvals to the authority service's `"approve"` op (UNVERIFIED).
+- [`how-to/optional-dependencies.md`](how-to/optional-dependencies.md) — which
+  dependencies are optional and what each guarded module does when one is absent
+  (UNVERIFIED).
+- [`how-to/run-doctor.md`](how-to/run-doctor.md) — diagnose an app's A2A wiring with
+  `mix ash_a2a.doctor` (UNVERIFIED).
+- [`how-to/sign-agent-cards.md`](how-to/sign-agent-cards.md) — sign and verify agent
+  cards with detached JWS (`AshA2A.Protocol.AgentCardSignature`; UNVERIFIED).
+- [`how-to/verify-receipts.md`](how-to/verify-receipts.md) — check Markdown receipts
+  against the files they cite with `mix ash_a2a.receipts.verify` (UNVERIFIED).
 
 ## Reference
 
@@ -113,6 +124,18 @@ Exact factual contracts:
 - [`reference/qme-1.md`](reference/qme-1.md) — QME-1 ecosystem reference: this
   repository's role (PreparedEffect, receipt and replay consequence protocol) and its
   binding to the canonical chatman-ecosystem specification.
+- [`reference/agent-card-honesty.md`](reference/agent-card-honesty.md) —
+  `AgentCard.audit/2`: discrepancy codes between a card's claims and the mounted
+  surface (UNVERIFIED).
+- [`reference/event-journal.md`](reference/event-journal.md) — the
+  `AshA2A.Protocol.EventJournal` callback contract for per-task event replay
+  (UNVERIFIED).
+- [`reference/fuzz-findings-v26.11.15.md`](reference/fuzz-findings-v26.11.15.md) — wire
+  decoder fuzz findings for v26.11.15 (UNVERIFIED; read from source, not observed).
+- [`reference/release-readiness-v26.11.15.md`](reference/release-readiness-v26.11.15.md) —
+  remaining release blockers for v26.11.15; a checklist, not a release claim.
+- [`reference/security-review-v26.11.15.md`](reference/security-review-v26.11.15.md) —
+  by-eye adversarial security review of unrun v26.11.15 code.
 - [`reference/generated/`](reference/generated/README.md) — GENERATED doc-hdit
   reference skeletons: a rigid, machine-rendered table of every module and public
   item on the extracted code surface (regen command in its README; never

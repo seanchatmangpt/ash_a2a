@@ -119,7 +119,16 @@ defmodule AshA2A.DocsTruthTest do
     :allow_legacy_authority_policy =>
       "sentinel-gated (must equal :i_accept_privilege_escalation)",
     :health_ocel_failed_max => "shared multi-key row; no literal default",
-    :standing_ledger_key => "no literal default (per-node random when unset, documented as such)"
+    :standing_ledger_key => "no literal default (per-node random when unset, documented as such)",
+    :dispatch_hooks =>
+      "Dispatcher reads with default %{} inline in a private function; no public reader yet",
+    :bad_request_details =>
+      "ToA2AError reads with default false inline (only true enables); no public reader yet",
+    :id_generator =>
+      "Protocol.ID.generate/2 falls back to Id.Generator.Default inline; no public reader yet",
+    :email_spool_dir => "computed tmp-dir default, documented as not durable",
+    :graphlaw_allow_unpinned =>
+      "EngineLoad reads with default false inline in a private function; no public reader yet"
   }
   setup do
     keys =
