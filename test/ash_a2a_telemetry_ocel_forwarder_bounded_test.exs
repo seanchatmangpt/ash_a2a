@@ -34,6 +34,7 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
         %{state | active: active + 1, max: max(max, active + 1)}
       end)
 
+      # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (slow ingest collaborator; models real latency)
       Process.sleep(@slow_ms)
 
       Agent.update(SlowOcelIngest.Store, fn %{active: active} = state ->
@@ -142,7 +143,7 @@ defmodule AshA2A.Telemetry.OcelForwarderBoundedTest do
     deadline = System.monotonic_time(:millisecond) + 5_000
 
     unless fun.() or System.monotonic_time(:millisecond) > deadline do
-      Process.sleep(50)
+      AshA2A.TestSupport.Eventually.pause(50)
       wait_until(fun)
     end
   end

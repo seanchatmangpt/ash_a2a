@@ -311,6 +311,7 @@ defmodule AshA2A.GraphLaw.WasmexHostHardeningTest do
               {:halt, list}
 
             list ->
+              # SLEEP-CLASS: POLL-STEP (bounded 100-try poll on supervisor restart)
               Process.sleep(50)
               {:cont, list}
           end

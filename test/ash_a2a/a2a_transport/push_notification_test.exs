@@ -364,6 +364,7 @@ defmodule AshA2A.A2ATransport.PushNotificationTest do
         flunk("expected #{n} attempts, got #{inspect(attempts)}")
 
       true ->
+        # SLEEP-CLASS: POLL-STEP (bounded poll on delivery attempts)
         Process.sleep(20)
         wait_attempts(transport, task_id, n, tries - 1)
     end

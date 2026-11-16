@@ -214,7 +214,7 @@ defmodule AshA2A.Transport.HTTPJSON.PushHTTPJSONTest do
         flunk("expected #{n} delivery attempts, got #{inspect(attempts)}")
 
       true ->
-        Process.sleep(20)
+        AshA2A.TestSupport.Eventually.pause(20)
         wait_attempts(transport, task_id, n, tries - 1)
     end
   end

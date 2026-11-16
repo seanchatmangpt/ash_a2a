@@ -240,6 +240,7 @@ defmodule AshA2A.TwinTest do
         flunk("condition not met within deadline")
       end
 
+      # SLEEP-CLASS: POLL-STEP (deadline poll)
       Process.sleep(20)
       check(fun, deadline)
     end

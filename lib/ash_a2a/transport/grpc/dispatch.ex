@@ -1,6 +1,6 @@
 defmodule AshA2A.Transport.Grpc.Dispatch do
   @moduledoc """
-  Method mapping from the A2A v1.0 proto service (`a2a.A2AService`, the
+  Method mapping from the A2A v1.0 proto service (`lf.a2a.v1.A2AService`, the
   normative `a2aproject/A2A` proto) onto the SAME internal handlers the
   HTTP/JSON binding uses — read-only consumption of
   `AshA2A.Protocol.JSONRPC.handle/3`, the transport-agnostic JSON-RPC
@@ -13,13 +13,13 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   host's own gRPC server:
 
       {:ok, proto_json_result} =
-        Dispatch.call("a2a.A2AService/SendMessage", params, handler, ctx)
+        Dispatch.call("lf.a2a.v1.A2AService/SendMessage", params, handler, ctx)
 
       {:error, 5, "Task not found"} =
         Dispatch.call("GetTask", %{"id" => "missing"}, handler, ctx)
 
-    * `call/4` accepts the full gRPC path (`"/a2a.A2AService/SendMessage"`,
-      `"a2a.A2AService/SendMessage"`) or the bare RPC name (`"SendMessage"`),
+    * `call/4` accepts the full gRPC path (`"/lf.a2a.v1.A2AService/SendMessage"`,
+      `"lf.a2a.v1.A2AService/SendMessage"`, or the deprecated `a2a.A2AService/...`) or the bare RPC name (`"SendMessage"`),
       and returns `{:ok, reply}` | `{:error, grpc_status, message}` |
       `{:stream, method, params, id}`.
     * Proto-JSON member mapping (lowerCamelCase: `taskId`, `contextId`,
@@ -47,7 +47,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   that handler requires — exactly what the HTTP binding passes.
   """
 
-  @service "a2a.A2AService"
+  @service "lf.a2a.v1.A2AService"
+  @legacy_service "a2a.A2AService"
 
   @methods [
     %{name: "SendMessage", internal: "message/send", streaming: false},
@@ -83,10 +84,26 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     }
   ]
 
-  # NOTE: legacy label kept for API compatibility; the proto's fully qualified
-  # service is `lf.a2a.v1.A2AService` (see AshA2A.Transport.GRPC.Server).
-  @doc false
+  @doc """
+  Fully qualified proto service name, `lf.a2a.v1.A2AService` (UNVERIFIED:
+  changed from the legacy label `a2a.A2AService` in wave 2; not run).
+  """
   def service, do: @service
+
+  @doc """
+  Deprecated alias: the pre-wave-2 label `a2a.A2AService`. `call/4` still
+  accepts paths using it (only the last path segment is read).
+  """
+  @deprecated "use service/0 (lf.a2a.v1.A2AService)"
+  def legacy_service, do: @legacy_service
+
+  @doc """
+  Maps a `AshA2A.Protocol.JSONRPC.Error` to `{:error, status, message, details}`
+  with the spec §5.4 `google.rpc.ErrorInfo` Any in `details` (empty for codes
+  with no spec ErrorInfo). Used by the server for extension activation failures.
+  """
+  def error_to_grpc(%AshA2A.Protocol.JSONRPC.Error{} = error),
+    do: error_tuple(AshA2A.Protocol.JSONRPC.Error.to_map(error))
 
   def methods, do: @methods
 

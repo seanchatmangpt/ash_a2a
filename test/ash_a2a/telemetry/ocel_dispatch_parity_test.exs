@@ -87,6 +87,7 @@ defmodule AshA2A.Telemetry.OcelDispatchParityTest do
         if System.monotonic_time(:millisecond) >= deadline do
           nil
         else
+          # SLEEP-CLASS: POLL-STEP (deadline poll)
           Process.sleep(10)
           poll(fun, deadline)
         end

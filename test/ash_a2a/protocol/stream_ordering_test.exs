@@ -12,6 +12,7 @@ defmodule AshA2A.Protocol.StreamOrderingTest.SlowStreamAgent do
   def handle_message(_message, _context) do
     {:stream,
      Stream.map(1..5, fn i ->
+       # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (stream fixture models real inter-part latency)
        Process.sleep(40)
        AshA2A.Protocol.Part.Text.new("part #{i}")
      end)}

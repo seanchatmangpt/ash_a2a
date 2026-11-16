@@ -10,6 +10,7 @@ defmodule AshA2A.V1SSEReplayTest.SlowStreamAgent do
   def handle_message(_message, _context) do
     {:stream,
      Stream.map(1..5, fn i ->
+       # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (stream stays live so a client can resubscribe)
        Process.sleep(60)
        AshA2A.Protocol.Part.Text.new("part #{i}")
      end)}

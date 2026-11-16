@@ -355,7 +355,7 @@ defmodule AshA2A.OcelDefaultPathSinkTest do
         events
 
       true ->
-        Process.sleep(25)
+        AshA2A.TestSupport.Eventually.pause(25)
         poll_until(min_count, deadline)
     end
   end

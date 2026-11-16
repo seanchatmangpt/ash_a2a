@@ -610,7 +610,7 @@ defmodule AshA2A.V1.ObanDeliveryTest do
         flunk("job #{job_id} never reached #{state}; last state #{job.state}")
 
       true ->
-        Process.sleep(50)
+        AshA2A.TestSupport.Eventually.pause(50)
         wait_for_job(job_id, state, tries - 1)
     end
   end
@@ -628,7 +628,7 @@ defmodule AshA2A.V1.ObanDeliveryTest do
         flunk("expected #{n} delivery attempts, got #{inspect(attempts)}")
 
       true ->
-        Process.sleep(50)
+        AshA2A.TestSupport.Eventually.pause(50)
         wait_for_attempts(transport, task_id, n, tries - 1)
     end
   end

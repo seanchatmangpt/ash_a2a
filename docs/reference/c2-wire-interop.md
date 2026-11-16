@@ -103,6 +103,12 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
   general `PreparedEffect`s are refused (`:payload_profile`).
 - Red-team defects B1, B2, B3, T2, T3, T4 and the minor items are in `actuator/` and
   `authority_service/` and are not changed here (PR #65 did not touch those projects).
+  Actuator, UNVERIFIED (no Elixir toolchain, tests never run): the optional mTLS listener
+  (`Actuator.Wire.TLS`: TLS 1.3, `verify_peer`, `fail_if_no_peer_cert`, pinned CA) is started
+  from the config `wire.tls` block. Its 64-connection cap is tested over real `:ssl` connections
+  (`actuator/test/actuator/wire_tls_cap_test.exs`), and the T4 test now forces the interleaving
+  with a store-process context fun that blocks on a message. Remaining: `authority_service/`
+  items, and the cap test needs `openssl` and has not been run.
 
 ## See also
 

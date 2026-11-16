@@ -25,3 +25,16 @@ a nonexistent provider module.
 
 Remaining: CI never compiles the library without these deps, so true compile-without
 coverage is not proven. A matrix job with the optional deps removed would close it.
+
+## Compile matrix (UNVERIFIED)
+
+`scripts/check_optional_deps.sh` builds a throwaway consumer project with a path dependency on
+this repo, then runs `mix deps.get`, a forced `mix deps.compile ash_a2a` (any `warning:` line
+fails the case) and `mix compile --warnings-as-errors`. It runs once with none of the optional
+deps and once per single optional dep. `.github/workflows/optional-deps.yml` runs it on push
+and pull request. `test/optional_deps_matrix_test.exs` asserts the script's list equals the
+`optional: true` deps in `mix.exs`.
+
+Status: UNVERIFIED. None of the script, workflow or test has been run (no Elixir toolchain was
+available). Remaining: only single-dep additions are covered, not combinations, and the
+workflow is not yet a required check.

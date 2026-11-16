@@ -1,0 +1,27 @@
+name: Optional deps
+
+# UNVERIFIED: written without an Elixir toolchain; never run in CI.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compile-without-optionals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "28"
+      - name: Compile ash_a2a with no/one optional dependency
+        run: scripts/check_optional_deps.sh

@@ -155,7 +155,7 @@ defmodule AshA2A.V1ArtifactStreamingTest do
         task
 
       _other ->
-        Process.sleep(20)
+        AshA2A.TestSupport.Eventually.pause(20)
         completed_task(plug_opts, task_id, tries - 1)
     end
   end

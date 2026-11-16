@@ -113,6 +113,7 @@ defmodule C2Harness.Proc do
             {:error, {:ready_timeout, tail(log)}}
 
           true ->
+            # SLEEP-CLASS: POLL-STEP (deadline-bounded readiness poll)
             Process.sleep(100)
             await_poll(owner, ref, log, os_pid, fun, deadline, role)
         end
@@ -167,6 +168,7 @@ defmodule C2Harness.Proc do
 
   defp wait_gone(pid, n) do
     if os_alive?(pid) do
+      # SLEEP-CLASS: POLL-STEP (bounded os_alive? poll)
       Process.sleep(20)
       wait_gone(pid, n - 1)
     else

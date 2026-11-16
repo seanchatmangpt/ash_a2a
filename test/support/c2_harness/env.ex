@@ -177,6 +177,7 @@ defmodule C2Harness.Env do
     Enum.reduce_while(1..tries, :timeout, fn _, _ ->
       case Wire.uds(cp.actuator_sock, ~s({"op":"health"}), 1_000) do
         {:ok, %{"ok" => true}} -> {:halt, :ok}
+        # SLEEP-CLASS: POLL-STEP (bounded health poll)
         _ -> Process.sleep(50) && {:cont, :timeout}
       end
     end)

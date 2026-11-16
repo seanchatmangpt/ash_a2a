@@ -58,6 +58,7 @@ defmodule AshA2A.V1Cancellation.Slow do
       argument(:probe, :string)
 
       run(fn input, _context ->
+        # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (handler is cancelled mid-flight; models real work)
         Process.sleep(1000)
         # Post-sleep effect marker: an interrupted worker never reaches it.
         # The probe name is per-test (async-safe); absent => no marker.

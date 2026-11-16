@@ -192,6 +192,7 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
           flunk("cancel did not settle to :cancelled within the deadline")
         end
 
+        # SLEEP-CLASS: POLL-STEP (deadline-bounded settle poll)
         Process.sleep(20)
         settle_cancel(store, task_id, opts, deadline)
 
@@ -309,6 +310,7 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
       1..5
       |> Enum.map(fn i ->
         Task.async(fn ->
+          # SLEEP-CLASS: RACE-JITTER (staggers concurrent resumes to vary interleaving)
           Process.sleep(rem(i, 3))
           Provider.resume(task_id, %{"worker" => i}, opts)
         end)

@@ -9,6 +9,7 @@ defmodule AshA2A.ProtocolAgentInflightCancelTest.SlowAgent do
   @impl AshA2A.Protocol.Agent
   def handle_message(message, _context) do
     probe = message.metadata && message.metadata["probe"]
+    # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (handler must still be in flight when cancelled)
     Process.sleep(600)
     # An interrupted worker never reaches this effect.
     if probe, do: send(:erlang.binary_to_term(probe), :handler_finished)

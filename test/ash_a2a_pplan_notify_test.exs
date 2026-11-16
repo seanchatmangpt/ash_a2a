@@ -259,7 +259,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
     case Enum.find(AshA2A.Providers.PPlanNotify.deliveries(notify), pred) do
       nil ->
         # SLEEP-CLASS: POLL-STEP (bounded poll on delivery observable)
-        Process.sleep(20)
+        AshA2A.TestSupport.Eventually.pause(20)
         wait_delivery(notify, pred, tries - 1)
 
       entry ->
@@ -292,7 +292,7 @@ defmodule AshA2A.Providers.PPlanNotifyTest do
     case record_version(dets_name, task_id, seq) do
       :quiet ->
         # SLEEP-CLASS: POLL-STEP (bounded poll on delivery observable)
-        Process.sleep(20)
+        AshA2A.TestSupport.Eventually.pause(20)
         wait_version_past(dets_name, task_id, seq, tries - 1)
 
       :bumped ->

@@ -960,7 +960,17 @@ defmodule AshA2A.Transport.GRPC.Server do
               )
 
       {:error, %AshA2A.Protocol.JSONRPC.Error{} = err} ->
-        raise GRPC.RPCError.exception(status: 9, message: err.message)
+        # Activation failure: status from the error's A2A code (-32008 ->
+        # FAILED_PRECONDITION(9)), with its spec ErrorInfo when the code has
+        # one, else a generic EXTENSION_ACTIVATION_FAILED ErrorInfo.
+        {:error, status, message, details} = AshA2A.Transport.Grpc.Dispatch.error_to_grpc(err)
+
+        details =
+          if details == [],
+            do: [error_info("EXTENSION_ACTIVATION_FAILED", message)],
+            else: details
+
+        raise GRPC.RPCError.exception(status: status, message: message, details: details)
     end
   end
 

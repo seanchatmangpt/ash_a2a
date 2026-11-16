@@ -191,7 +191,7 @@ defmodule AshA2A.Protocol.CardCacheTest do
         :ok
 
       {:ok, _} ->
-        Process.sleep(20)
+        AshA2A.TestSupport.Eventually.pause(20)
         wait_until_down!(base_url, attempts - 1)
     end
   end

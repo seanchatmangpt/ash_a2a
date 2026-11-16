@@ -139,6 +139,7 @@ defmodule AshA2A.Semantic.BoundedProductionTest do
              BoundedProduction.run(
                contract,
                fn state ->
+                 # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (real wall-time must elapse to hit max_wall_time_ms)
                  Process.sleep(5)
                  state + 1
                end,

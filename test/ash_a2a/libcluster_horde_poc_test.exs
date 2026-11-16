@@ -249,7 +249,7 @@ defmodule AshA2A.LibclusterHordePocTest do
     if fun.() do
       true
     else
-      Process.sleep(sleep_ms)
+      AshA2A.TestSupport.Eventually.pause(sleep_ms)
       eventually(fun, attempts - 1, sleep_ms)
     end
   end

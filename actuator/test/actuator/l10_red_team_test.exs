@@ -37,9 +37,17 @@ defmodule Actuator.L10RedTeamTest do
     kid = hd(b.records).kid
     path = Path.join(dir, "t4.sock")
     flag = :atomics.new(1, [])
+    parent = self()
 
+    # Runs inside the store process. It announces itself, then blocks until released, so the
+    # frame is provably parsed and being served before the revocation lands (no sleeps).
     ctx_fun = fn ->
-      # evaluated at store-dequeue time: revoke only now, after the frame was parsed
+      send(parent, {:ctx_reached, self()})
+
+      receive do
+        :release -> :ok
+      end
+
       if :atomics.get(flag, 1) == 1 do
         {:ok, %{b.ctx | revocation: %{b.ctx.revocation | revoked: MapSet.new([kid])}}}
       else
@@ -48,9 +56,13 @@ defmodule Actuator.L10RedTeamTest do
     end
 
     {:ok, _} = UDS.start_link(path: path, store: store, ctx_fun: ctx_fun)
-    :atomics.put(flag, 1, 1)
+    client = Task.async(fn -> uds_call(path, frame(b)) end)
 
-    assert %{"ok" => false, "refusal" => "key_revoked"} = uds_call(path, frame(b))
+    assert_receive {:ctx_reached, ^store}, 5_000
+    :atomics.put(flag, 1, 1)
+    send(store, :release)
+
+    assert %{"ok" => false, "refusal" => "key_revoked"} = Task.await(client, 5_000)
 
     ledger = Path.join(dir, "effect_ledger.jsonl")
     refute File.exists?(ledger) and File.read!(ledger) != ""

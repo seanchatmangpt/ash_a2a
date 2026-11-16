@@ -205,7 +205,8 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
       Task.Supervisor.start_child(ctx.task_supervisor, fn ->
         :ok = DrainManager.track(ctx.drain_manager, "quick", frame: %{done: [], remaining: []})
         send(ctx.report_to, :quick_tracked)
-        Process.sleep(50)
+        # SLEEP-CLASS: SIMULATED-SLOW-HANDLER (tracked work that finishes quickly)
+        AshA2A.TestSupport.Eventually.pause(50)
         File.write!(ctx.quick_flag, "1")
         :ok = DrainManager.release(ctx.drain_manager, "quick")
       end)
@@ -398,7 +399,7 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
             hit
 
           _other ->
-            Process.sleep(25)
+            AshA2A.TestSupport.Eventually.pause(25)
             poll_loop(port, want_status, deadline)
         end
     end
@@ -447,7 +448,7 @@ defmodule AshA2A.Enterprise.DrainCourtTest do
 
       if now >= deadline, do: raise(ExUnit.AssertionError, "condition not met within timeout")
 
-      Process.sleep(50)
+      AshA2A.TestSupport.Eventually.pause(50)
       wait_loop(fun, deadline)
     end
   end

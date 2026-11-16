@@ -59,10 +59,26 @@ defmodule AshA2A.Semantic.PackageStoreBoundsTest do
     store = start_store(max_entries: 10, ttl_ms: 1)
 
     :ok = PackageStore.put(package("ephemeral"), store)
-    Process.sleep(5)
+    # Wall-clock TTL expiry: poll the observable (fetch) against a deadline, not a blind sleep.
+    assert await_expired("ephemeral", store, System.monotonic_time(:millisecond) + 2_000)
 
     assert PackageStore.fetch("ephemeral", store) == :error
     assert PackageStore.size(store) == 0
+  end
+
+  defp await_expired(id, store, deadline) do
+    cond do
+      PackageStore.fetch(id, store) == :error ->
+        true
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        false
+
+      true ->
+        # SLEEP-CLASS: POLL-STEP (deadline-bounded poll on the TTL observable)
+        Process.sleep(2)
+        await_expired(id, store, deadline)
+    end
   end
 
   test "malformed bounds fall back to the bounded defaults instead of disabling eviction" do

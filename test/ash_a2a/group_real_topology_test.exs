@@ -218,7 +218,7 @@ defmodule AshA2A.GroupRealTopologyTest do
     if fun.() do
       true
     else
-      Process.sleep(25)
+      AshA2A.TestSupport.Eventually.pause(25)
       wait_until(fun, attempts - 1)
     end
   end

@@ -184,6 +184,7 @@ defmodule AshA2A.Enterprise.OcelBroadcasterCourtTest do
       :ok
     else
       if tries <= 0, do: flunk("condition not reached")
+      # SLEEP-CLASS: POLL-STEP (bounded poll)
       Process.sleep(25)
       wait_until(fun, tries - 1)
     end
