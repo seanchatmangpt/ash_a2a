@@ -11,6 +11,7 @@ defmodule AshA2A.LaneL05.ResubscribeClaimTest do
     assert flat =~ "AshA2A.Protocol.EventJournal"
     assert flat =~ "config :ash_a2a, :event_journal"
     assert flat =~ "Remaining gap: no live producer migrates between nodes"
+    assert flat =~ "no runtime code appends to the journal yet"
     assert flat =~ "PRODUCER_UNAVAILABLE"
     assert flat =~ "Status: UNVERIFIED"
     assert flat =~ "Durable cross-node task continuity: PARTIAL."

@@ -133,12 +133,15 @@ failure surfaced as an error; covered by
 `test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, UNVERIFIED,
 not yet run). Resubscribe replay (UNVERIFIED, not yet run): `tasks/resubscribe` with
 `lastSeenGeneration` replays missed events through the
-`AshA2A.Protocol.EventJournal` behaviour (`append/3`, `replay_after/2`,
-`trim/2`), configured by `config :ash_a2a, :event_journal` (default
-`AshA2A.Protocol.EventJournal.ETS`). The module is resolved at runtime; if it is
-not loaded, errors, or retains nothing for a client that is behind, the stream
+`AshA2A.Protocol.EventJournal` behaviour (`append/4`, `replay_after/3`,
+`trim/3`; see `docs/reference/event-journal.md`), configured by
+`config :ash_a2a, :event_journal, {module, ref}` (unset means no journal). The
+module is resolved at runtime; if it is unset, not loaded, errors, or retains
+nothing for a client that is behind, the stream
 falls back to the node-local transport event log, then to a TaskStore snapshot.
-Remaining gap: no live producer migrates between nodes. When a non-terminal
+Remaining gap: no live producer migrates between nodes, and no runtime code
+appends to the journal yet, so replay is empty until a producer calls
+`EventJournal.append/4`. When a non-terminal
 task is resubscribed after a journal replay and this agent holds no local
 producer (heuristic: no stream-backed task in memory), the stream waits a
 bounded grace (`:resubscribe_orphan_grace_ms`, default 500) and then ends with a

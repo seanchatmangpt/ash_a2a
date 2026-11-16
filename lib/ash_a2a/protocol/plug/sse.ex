@@ -193,18 +193,18 @@ if Code.ensure_loaded?(Plug) do
     end
 
     # Replay through the durable `AshA2A.Protocol.EventJournal` configured by
-    # `config :ash_a2a, :event_journal` (default
-    # `AshA2A.Protocol.EventJournal.ETS`). The module is resolved at runtime:
-    # when it is not loaded, lacks `replay_after/2`, errors, or retains nothing
-    # for a client that is behind (`last_seen < gen`), this is `:unavailable`
-    # and the caller falls back to the node-local transport log / snapshot.
+    # `config :ash_a2a, :event_journal, {module, ref}` (same convention as
+    # `:task_store`; unset means no journal). The module is resolved at runtime:
+    # when it is unset, not loaded, lacks `replay_after/3`, errors, or retains
+    # nothing for a client that is behind (`last_seen < gen`), this is
+    # `:unavailable` and the caller falls back to the node-local transport log
+    # / snapshot.
     # UNVERIFIED: authored without an Elixir toolchain.
     defp journal_plan(task_id, last_seen, gen, true) when is_integer(last_seen) do
-      mod = Application.get_env(:ash_a2a, :event_journal, AshA2A.Protocol.EventJournal.ETS)
-
-      with true <- is_atom(mod) and Code.ensure_loaded?(mod),
-           true <- function_exported?(mod, :replay_after, 2),
-           {:ok, raw} when is_list(raw) <- safe_replay_after(mod, task_id, last_seen) do
+      with {mod, ref} when is_atom(mod) <- Application.get_env(:ash_a2a, :event_journal),
+           true <- Code.ensure_loaded?(mod),
+           true <- function_exported?(mod, :replay_after, 3),
+           {:ok, raw} when is_list(raw) <- safe_replay_after({mod, ref}, task_id, last_seen) do
         events =
           raw
           |> Enum.map(&normalize_journal_event/1)
@@ -222,8 +222,8 @@ if Code.ensure_loaded?(Plug) do
 
     defp journal_plan(_task_id, _last_seen, _gen, _v11?), do: :unavailable
 
-    defp safe_replay_after(mod, task_id, last_seen) do
-      mod.replay_after(task_id, last_seen)
+    defp safe_replay_after(journal, task_id, last_seen) do
+      AshA2A.Protocol.EventJournal.replay_after(journal, task_id, last_seen)
     rescue
       _ -> {:error, :journal_failed}
     catch

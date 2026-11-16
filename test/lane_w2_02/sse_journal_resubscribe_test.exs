@@ -21,10 +21,10 @@ defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
 
   # Hand-written implementation of the real behaviour, backed by app env.
   defmodule Journal do
-    def append(_task_id, _generation, _event), do: :ok
-    def trim(_task_id, _keep_last), do: :ok
+    def append(_ref, _task_id, _generation, _event), do: :ok
+    def trim(_ref, _task_id, _keep_last), do: :ok
 
-    def replay_after(task_id, generation) do
+    def replay_after(_ref, task_id, generation) do
       events = Application.get_env(:ash_a2a, :w202_journal_events, [])
 
       {:ok,
@@ -39,7 +39,7 @@ defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
     start_supervised!({AskAgent, []})
 
     old = Application.get_all_env(:ash_a2a)
-    Application.put_env(:ash_a2a, :event_journal, Journal)
+    Application.put_env(:ash_a2a, :event_journal, {Journal, :w202})
     Application.put_env(:ash_a2a, :resubscribe_orphan_grace_ms, 50)
 
     on_exit(fn ->
@@ -107,7 +107,7 @@ defmodule AshA2A.LaneW202.SSEJournalResubscribeTest do
   end
 
   test "an unloadable journal module falls back without crashing", %{task: task, gen: gen} do
-    Application.put_env(:ash_a2a, :event_journal, AshA2A.LaneW202.NoSuchJournal)
+    Application.put_env(:ash_a2a, :event_journal, {AshA2A.LaneW202.NoSuchJournal, :w202})
 
     conn = resubscribe(task.id, gen)
 
