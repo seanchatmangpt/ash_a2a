@@ -204,6 +204,32 @@ Overall compatibility: **73.6%** (MUST 73.6%, SHOULD 63.6%, MAY
 100%). Per-requirement: 129 requirements total — 92 PASS, 7 FAIL,
 4 SKIPPED, 26 NOT TESTED.
 
+Reconciliation (derived only from the rows above; two different units):
+
+- The table counts **tests per transport**, not requirements. Column
+  sums: 256 tests, 228 pass, 14 fail, 14 skip (each row sums to its
+  total: 88+3+7=98, 53+7+2=62, 77+4+5=86). The 14 failing tests are
+  the same failures seen once per transport.
+- The 7 FAIL / 92 PASS figures count **distinct requirements**
+  (92+7+4+26=129). 14 failing tests and 7 failing requirements are
+  therefore not a contradiction; the table does not map tests to
+  requirements, so the 14 -> 7 collapse is UNVERIFIED beyond the
+  enumeration of 7 requirements below.
+- 73.6% = 92 PASS / (129 total - 4 SKIPPED) = 92/125. NOT TESTED
+  stays in that denominator. The per-level split (MUST 73.6%, SHOULD
+  63.6% = 7/11, MAY 100% = 4/4) implies MUST 81/110; the per-level
+  counts are UNVERIFIED (not printed in this doc's rows).
+- The 79.0% runs (2026-10-06 / 2026-10-13) use 98 PASS (MUST 87 +
+  SHOULD 7 + MAY 4); 98/124 = 79.0%, consistent with MUST 87/109 =
+  79.8%. The 124 denominator is inferred from the percentages, not
+  recorded; UNVERIFIED.
+- A 69.2% figure does not appear anywhere in this document and is not
+  derivable from its rows; it is not claimed.
+- Reproduce (needs a local `a2aproject/a2a-tck` checkout at pin
+  `263b9cfa`): `./run_tck.py --sut-host http://127.0.0.1:19999
+  --transport jsonrpc,http_json,grpc`, then read
+  `reports/compatibility.json`.
+
 Failing requirement classes (7 FAIL, all enumerated — none silent):
 
 | Class | Requirements | Observed reality |

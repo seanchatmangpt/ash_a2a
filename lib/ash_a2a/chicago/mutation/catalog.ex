@@ -325,6 +325,178 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
             "(:lease_signature_invalid)",
         killers: ["CHI-TWO-PORT"]
       }
+    ] ++ security_gate_entries()
+  end
+
+  # Security-gate mutants (appended: numbering is append-only, §136). Each
+  # entry names the Chicago killer family AND, in `description`, the ExUnit
+  # court file(s) that must go red when the mutant is live. A Chicago killer
+  # not compiled in this subject leaves the entry `:blocked` loudly.
+  defp security_gate_entries do
+    [
+      # Owner scope: a task is visible/actionable only to its recorded owner.
+      %Mutation{
+        id: "owner_scope_owned_by_true",
+        rfc_mutation: "return true from owner-scope check",
+        module: AshA2A.Transport.Runtime,
+        function: :owned_by?,
+        arity: 2,
+        clauses: :all,
+        operator: {:replace_body, "true."},
+        guard:
+          "Transport.Runtime.owned_by?/2 owner + tenant scope (foreign task reads as -32001)",
+        killers: ["SA2A-TRANSPORT"],
+        description:
+          "court: test/ash_a2a_v1_owner_scope_test.exs, " <>
+            "test/ash_a2a/protocol/list_tasks_owner_scope_test.exs"
+      },
+      # Forged identity: every caller collapses to one principal key, so the
+      # owner comparison passes for any caller; the forged-identity tests
+      # must observe the cross-principal access.
+      %Mutation{
+        id: "forged_identity_principal_collapse",
+        rfc_mutation: "trust forged identity (principal key ignores verified identity)",
+        module: AshA2A.Transport.Principal,
+        function: :from_metadata,
+        arity: 1,
+        clauses: {:clause, 1},
+        operator: {:replace_body, "<<\"sub:forged\">>."},
+        guard:
+          "Transport.Principal.from_metadata/1 derives the owner key only from the " <>
+            "transport-bound a2a.auth identity",
+        killers: ["SA2A-TRANSPORT"],
+        description:
+          "court: test/ash_a2a_v1_owner_scope_test.exs, " <>
+            "test/ash_a2a/transport/transport_court_test.exs, " <>
+            "test/auth_oidc_apikey_surface_test.exs"
+      },
+      # :strict boot refusals.
+      %Mutation{
+        id: "strict_violations_empty",
+        rfc_mutation: "skip :strict boot refusals (violation list always empty)",
+        module: AshA2A.SecurityProfile.Boot,
+        function: :violations,
+        arity: 2,
+        clauses: {:arg_literal, 1, :strict},
+        operator: {:replace_body, "[]."},
+        guard: "SecurityProfile.Boot.violations/2 :strict refusal set",
+        killers: ["CHI-FRESH"],
+        description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
+      },
+      %Mutation{
+        id: "strict_enforce_ok",
+        rfc_mutation: "skip :strict boot enforcement",
+        module: AshA2A.SecurityProfile.Boot,
+        function: :enforce!,
+        arity: 2,
+        clauses: {:arg_literal, 1, :strict},
+        operator: {:replace_body, "ok."},
+        guard: "SecurityProfile.Boot.enforce!(:strict, snapshot) raises SecurityPreflight.Error",
+        killers: ["CHI-FRESH"],
+        description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
+      },
+      %Mutation{
+        id: "strict_boot_check_swallowed",
+        rfc_mutation: "swallow receipt-store boot_check failure at boot",
+        module: AshA2A.SecurityProfile.Boot,
+        function: :boot_check!,
+        arity: 1,
+        clauses: :all,
+        operator: {:replace_body, "ok."},
+        guard:
+          "SecurityProfile.Boot.boot_check!/1 raises :receipt_store_boot_check_failed " <>
+            "under :strict / production",
+        killers: ["CHI-FRESH", "CHI-RECEIPT"],
+        description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
+      },
+      # authority_policy.
+      %Mutation{
+        id: "authority_policy_legacy_unflagged",
+        rfc_mutation: "accept legacy :transport_verified_grants_capability authority policy",
+        module: AshA2A.Authority.SecurityPreflight,
+        function: :legacy_policy_violation,
+        arity: 0,
+        clauses: :all,
+        operator: {:replace_body, "nil."},
+        guard:
+          "SecurityPreflight legacy_policy_violation/0 (:legacy_authority_policy_unacknowledged)",
+        killers: ["SA2A-AUTH"],
+        description: "court: test/ash_a2a/authority/security_preflight_test.exs"
+      },
+      %Mutation{
+        id: "authority_policy_legacy_allowed",
+        rfc_mutation: "allow legacy authority policy under :strict without acknowledgement",
+        module: AshA2A.Authority.SecurityPreflight,
+        function: :legacy_policy_allowed?,
+        arity: 0,
+        clauses: :all,
+        operator: {:replace_body, "true."},
+        guard:
+          "SecurityPreflight.legacy_policy_allowed?/0 requires :allow_legacy_authority_policy " <>
+            "ack in strict mode (:legacy_authority_policy_refused)",
+        killers: ["SA2A-AUTH"],
+        description:
+          "court: test/ash_a2a/authority/security_preflight_test.exs, " <>
+            "test/ash_a2a/authzen/authority_policy_test.exs"
+      },
+      %Mutation{
+        id: "authority_policy_strict_forbidden_dropped",
+        rfc_mutation: "drop :strict refusal of :transport_verified_grants_capability",
+        module: AshA2A.SecurityProfile.Boot,
+        function: :violations,
+        arity: 2,
+        clauses: {:arg_literal, 1, :strict},
+        operator: {:replace_body, "[]."},
+        guard: "Boot.violations/2 :transport_verified_policy_forbidden",
+        killers: ["SA2A-AUTH", "CHI-FRESH"],
+        description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
+      },
+      # ReceiptStore.boot_check.
+      %Mutation{
+        id: "receipt_store_boot_check_ok",
+        rfc_mutation: "ReceiptStore.boot_check always passes",
+        module: AshA2A.ReceiptStore,
+        function: :boot_check,
+        arity: 1,
+        clauses: :all,
+        operator: {:replace_body, "ok."},
+        guard:
+          "ReceiptStore.boot_check/1 fail-closed durability rules " <>
+            "(:non_durable_outbox_dir, :receipt_store_not_configured, ...)",
+        killers: ["CHI-RECEIPT"],
+        description: "court: test/ash_a2a/receipt_store/boot_check_test.exs"
+      },
+      %Mutation{
+        id: "receipt_store_boot_decision_ok",
+        rfc_mutation: "ReceiptStore boot decision table always admits",
+        module: AshA2A.ReceiptStore,
+        function: :boot_decision,
+        arity: 7,
+        clauses: :all,
+        operator: {:replace_body, "ok."},
+        guard: "ReceiptStore.boot_decision/7 production/durable-path decision table",
+        killers: ["CHI-RECEIPT"],
+        description: "court: test/ash_a2a/receipt_store/boot_check_test.exs"
+      }
+    ]
+  end
+
+  @doc """
+  Security gates the catalog must cover: `{gate, module, function, arity}`.
+  `test/ash_a2a_security_mutation_witness_test.exs` asserts each has an entry.
+  """
+  @spec security_gates() :: [{atom(), module(), atom(), non_neg_integer()}]
+  def security_gates do
+    [
+      {:owner_scope, AshA2A.Transport.Runtime, :owned_by?, 2},
+      {:forged_identity, AshA2A.Transport.Principal, :from_metadata, 1},
+      {:strict_boot_violations, AshA2A.SecurityProfile.Boot, :violations, 2},
+      {:strict_boot_enforce, AshA2A.SecurityProfile.Boot, :enforce!, 2},
+      {:strict_boot_check, AshA2A.SecurityProfile.Boot, :boot_check!, 1},
+      {:authority_policy_legacy, AshA2A.Authority.SecurityPreflight, :legacy_policy_violation, 0},
+      {:authority_policy_allowed, AshA2A.Authority.SecurityPreflight, :legacy_policy_allowed?, 0},
+      {:receipt_store_boot_check, AshA2A.ReceiptStore, :boot_check, 1},
+      {:receipt_store_boot_decision, AshA2A.ReceiptStore, :boot_decision, 7}
     ]
   end
 
