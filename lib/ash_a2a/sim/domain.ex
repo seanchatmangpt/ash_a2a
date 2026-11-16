@@ -2,15 +2,19 @@
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshA2A.Sim.Domain do
-  @moduledoc """
-  The Ash domain behind the simulation server. It holds `AshA2A.Sim.Note`,
-  the one resource whose public actions `AshA2A.Sim.Agent` serves as skills.
-  """
+# Compiled only when Bandit is available, like the rest of the simulation
+# server (see AshA2A.Sim.Server).
+if Code.ensure_loaded?(Bandit) do
+  defmodule AshA2A.Sim.Domain do
+    @moduledoc """
+    The Ash domain behind the simulation server. It holds `AshA2A.Sim.Note`,
+    the one resource whose public actions `AshA2A.Sim.Agent` serves as skills.
+    """
 
-  use Ash.Domain, validate_config_inclusion?: false
+    use Ash.Domain, validate_config_inclusion?: false
 
-  resources do
-    resource AshA2A.Sim.Note
+    resources do
+      resource AshA2A.Sim.Note
+    end
   end
 end

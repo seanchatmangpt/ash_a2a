@@ -83,7 +83,9 @@ defmodule AshA2A.Test.EventJournalFixture do
   back and parks so the links stay alive.
   """
   def start_node_and_wait(ekv_opts, reply_to) do
-    for app <- [:telemetry, :jason, :plug, :ekv], do: {:ok, _} = Application.ensure_all_started(app)
+    for app <- [:telemetry, :jason, :plug, :ekv],
+        do: {:ok, _} = Application.ensure_all_started(app)
+
     name = Keyword.fetch!(ekv_opts, :name)
 
     case EKV.start_link(ekv_opts) do

@@ -128,12 +128,14 @@ defmodule AshA2A.FuzzJSONDecodersTest do
     assert {:error, {:invalid_field, "parts"}} =
              JSON.decode(Map.put(header, "parts", "x"), :message)
 
-    assert {:error, {:invalid_field, "part"}} = JSON.decode(Map.put(header, "parts", [1]), :message)
+    assert {:error, {:invalid_field, "part"}} =
+             JSON.decode(Map.put(header, "parts", [1]), :message)
 
     assert {:error, {:invalid_field, "history"}} =
              JSON.decode(%{"id" => "t", "status" => status, "history" => 5}, :task)
 
-    assert {:error, {:invalid_field, "status"}} = JSON.decode(%{"id" => "t", "status" => 5}, :task)
+    assert {:error, {:invalid_field, "status"}} =
+             JSON.decode(%{"id" => "t", "status" => 5}, :task)
 
     for field <- ["skills", "capabilities"] do
       assert {:error, {:invalid_field, ^field}} =
@@ -148,7 +150,10 @@ defmodule AshA2A.FuzzJSONDecodersTest do
 
   test "an oversized int64 string is ignored without building a bignum" do
     wire = Map.put(FuzzGen.valid_task(), "generation", String.duplicate("9", 1_000_000))
-    assert {:ok, {:ok, task}} = FuzzGen.run_with_deadline(fn -> JSON.decode(wire, :task) end, 2_000)
+
+    assert {:ok, {:ok, task}} =
+             FuzzGen.run_with_deadline(fn -> JSON.decode(wire, :task) end, 2_000)
+
     assert task.generation == 1
   end
 

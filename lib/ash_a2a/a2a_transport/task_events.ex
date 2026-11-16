@@ -432,7 +432,8 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   defp put_generation(%{} = payload, gen) do
     case Enum.find(@generation_keys, &is_map(payload[&1])) do
       nil -> payload
-      key -> Map.update!(payload, key, &Map.put(&1, "generation", gen))
+      # ProtoJSON spells an int64 as a decimal string (`generation_of/1` reads both).
+      key -> Map.update!(payload, key, &Map.put(&1, "generation", Integer.to_string(gen)))
     end
   end
 

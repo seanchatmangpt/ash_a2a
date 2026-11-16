@@ -317,8 +317,10 @@ defmodule AshA2A.MixProject do
       # AshA2A.Sim.Server, PushReceiver and Prover modules compile only when
       # it is present.
       {:bandit, "~> 1.5", optional: true},
-      # SAT solver for Ash policy verification in test fixtures (optional in Ash).
-      {:simple_sat, "~> 0.1 and >= 0.1.1", only: :test},
+      # SAT solver for Ash policy verification (optional in Ash): the test
+      # fixtures and the simulation server's resource (AshA2A.Sim.Note) carry
+      # policies.
+      {:simple_sat, "~> 0.1 and >= 0.1.1", optional: true},
       ash_pplan_dep(),
       pm4exunit_dep(),
       # Mutation testing (`mix muzak.sec`); needs :test because its oracle is

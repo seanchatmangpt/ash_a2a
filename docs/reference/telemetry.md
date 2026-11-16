@@ -217,6 +217,7 @@ What the catalog does and does not promise:
 | `[:ash_a2a, :siem, :failed]` | `events`, `duration` | `platform`, `endpoint`, `reason` | SIEM batch failed |
 | `[:ash_a2a, :task, :orphan_failed]` | `count` | `task_id` | orphan task failed by sweep |
 | `[:ash_a2a, :task, :orphan_sweep_unsupported]` | `count` | `store`, `reason` | store cannot sweep orphans |
+| `[:ash_a2a, :event_journal, :append_failed]` | `count` | `task_id`, `generation`, `operation` | event journal append or trim failed |
 | `[:ash_a2a, :task_events, :journal_error]` | `count` | `task_id`, `seq` | task event journal error |
 | `[:ash_a2a, :transport, :plug, :list_refused]` | - | `subject`, `refusal`, `wire_code` | task-list wire refusal |
 | `[:ash_a2a, :transport, :request, :start]` | `system_time`, `monotonic_time` | `transport`, `method` | transport request (HTTP/JSON-RPC/gRPC) (span start) |
@@ -417,6 +418,7 @@ on the v1.1 live/generation path:
 | `[:ash_a2a, :transport, :request, :exception]` | `duration` | transport metadata, `kind`, `reason` | `AshA2A.Protocol.Telemetry` (request span exception) |
 | `[:ash_a2a, :transport, :request, :error]` | `count` | transport metadata | `AshA2A.Protocol.Telemetry` (discrete error event) |
 | `[:ash_a2a, :cluster, :drain, :task_skipped]` | `count` | `drain_manager`, `task_id`, `reason` (`:no_task_store`, `:checkpoint_failed`, `:not_checkpointed`) | `AshA2A.Cluster.DrainManager` |
+| `[:ash_a2a, :event_journal, :append_failed]` | `count` | `task_id`, `generation`, `operation` | `AshA2A.Protocol.EventJournal` |
 | `[:ash_a2a, :task_events, :journal_error]` | `count` | `task_id`, `seq` | `AshA2A.A2ATransport.TaskEvents` |
 | `[:ash_a2a, :cluster, :checkpoint, :terminal_skipped]` | `count` | `task_id`, `state` | `AshA2A.Cluster.Checkpoint` (terminal task not checkpointed) |
 | `[:ash_a2a, :ocel_broadcaster, :unconvertible]` | `count` | `broadcaster`, `kind` | `AshA2A.Telemetry.OcelBroadcaster` |

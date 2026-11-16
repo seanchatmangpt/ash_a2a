@@ -124,9 +124,11 @@ The server and the prover are compiled only when Bandit is available. Bandit
 is an optional dependency of ash_a2a (`optional: true` in `mix.exs`). In this
 repository `mix ash_a2a.sim` defaults to the `test` Mix environment and also
 runs with `MIX_ENV=dev`. To use the simulation server from another project,
-add `{:bandit, "~> 1.5"}` to that project's dependencies; without it the
-library still compiles and the task stops with a message naming the missing
-dependency.
+add `{:bandit, "~> 1.5"}` and a SAT solver for the Ash policies of the
+simulation resource (`{:simple_sat, "~> 0.1"}`, also optional here) to that
+project's dependencies. Without Bandit the library still compiles, none of
+the `AshA2A.Sim.*` modules exist, and the task stops with a message naming
+the missing dependency.
 
 ## How the mirror stays honest
 

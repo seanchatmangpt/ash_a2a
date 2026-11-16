@@ -401,7 +401,12 @@ defmodule AshA2A.TransportCourtTest do
           "tok-alice"
         )
 
-      for body <- [bad_metadata, bad_context] do
+      # A `metadata` member that is not a JSON object never reaches the agent:
+      # the wire decoder refuses it as invalid params and no task is created.
+      assert %{"error" => %{"code" => -32_602} = error} = bad_metadata
+      assert inspect(error) =~ "metadata"
+
+      for body <- [bad_context] do
         assert %{
                  "result" => %{
                    "task" => %{"status" => %{"state" => "TASK_STATE_FAILED", "message" => msg}}

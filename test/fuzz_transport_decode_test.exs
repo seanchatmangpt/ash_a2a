@@ -46,7 +46,12 @@ defmodule AshA2A.FuzzTransportDecodeTest do
   end
 
   defp jsonrpc(message),
-    do: %{"jsonrpc" => "2.0", "id" => 1, "method" => "message/send", "params" => %{"message" => message}}
+    do: %{
+      "jsonrpc" => "2.0",
+      "id" => 1,
+      "method" => "message/send",
+      "params" => %{"message" => message}
+    }
 
   for {label, mod} <- @plugs do
     test "#{label}: a message the decoder refuses is JSON-RPC -32602", %{agent: agent} do
@@ -56,8 +61,12 @@ defmodule AshA2A.FuzzTransportDecodeTest do
 
       codes =
         for message <- messages do
-          result = FuzzGen.run_with_deadline(fn -> post(unquote(mod), opts, "/", jsonrpc(message)) end)
-          assert {:ok, conn} = result, "raised on #{inspect(message, limit: 8)}: #{inspect(result, limit: 8)}"
+          result =
+            FuzzGen.run_with_deadline(fn -> post(unquote(mod), opts, "/", jsonrpc(message)) end)
+
+          assert {:ok, conn} = result,
+                 "raised on #{inspect(message, limit: 8)}: #{inspect(result, limit: 8)}"
+
           assert conn.status == 200
           body = Jason.decode!(conn.resp_body)
           code = get_in(body, ["error", "code"])
@@ -82,8 +91,13 @@ defmodule AshA2A.FuzzTransportDecodeTest do
     assert length(messages) > 50
 
     for message <- messages do
-      result = FuzzGen.run_with_deadline(fn -> post(mod, opts, "/message:send", %{"message" => message}) end)
-      assert {:ok, conn} = result, "raised on #{inspect(message, limit: 8)}: #{inspect(result, limit: 8)}"
+      result =
+        FuzzGen.run_with_deadline(fn ->
+          post(mod, opts, "/message:send", %{"message" => message})
+        end)
+
+      assert {:ok, conn} = result,
+             "raised on #{inspect(message, limit: 8)}: #{inspect(result, limit: 8)}"
 
       assert conn.status == 400,
              "#{inspect(message, limit: 8)} answered #{conn.status} #{String.slice(conn.resp_body, 0, 200)}"
@@ -92,7 +106,9 @@ defmodule AshA2A.FuzzTransportDecodeTest do
     end
   end
 
-  test "the hand-picked wrong-typed members from the findings doc are -32602 / 400", %{agent: agent} do
+  test "the hand-picked wrong-typed members from the findings doc are -32602 / 400", %{
+    agent: agent
+  } do
     header = %{"messageId" => "m", "role" => "ROLE_USER"}
 
     cases = [

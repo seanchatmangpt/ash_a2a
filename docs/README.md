@@ -39,6 +39,9 @@ Goal-oriented procedures:
 - [`how-to/run-the-simulation-server.md`](how-to/run-the-simulation-server.md) — boot
   every transport over one agent with real Ash mutations and prove each served
   method, route and RPC over the wire (`mix ash_a2a.sim --prove`).
+- [`how-to/control-the-sim-over-mcp.md`](how-to/control-the-sim-over-mcp.md) — drive
+  every A2A operation of the simulation server from an MCP client
+  (`mix ash_a2a.sim.mcp`, `bin/a2a-sim-mcp`, `scripts/mcp_drive.py`).
 - [`how-to/run-mutation-testing.md`](how-to/run-mutation-testing.md) — run mutation
   testing over the security surface.
 - [`how-to/run-pplan-courts.md`](how-to/run-pplan-courts.md) — run the ash_pplan parity

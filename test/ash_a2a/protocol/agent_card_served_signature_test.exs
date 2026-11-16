@@ -124,14 +124,24 @@ defmodule AshA2A.Protocol.AgentCardServedSignatureTest do
     url = serve(AshA2A.Protocol.Plug, agent, sign_with: [jwk: private, kid: "k"])
 
     assert {:ok, card} =
-             url |> fetch!() |> Map.fetch!(:body) |> Jason.decode!() |> AshA2A.Protocol.JSON.decode_agent_card()
+             url
+             |> fetch!()
+             |> Map.fetch!(:body)
+             |> Jason.decode!()
+             |> AshA2A.Protocol.JSON.decode_agent_card()
 
     assert [%{"protected" => _, "signature" => _}] = card.signatures
   end
 
   test "a key that cannot sign is an error, never an unsigned card", %{agent: agent} do
     {_private, public_only} = ec_keys("k")
-    opts = AshA2A.Transport.Plug.init(agent: agent, base_url: "http://x/a2a", sign_with: [jwk: public_only])
+
+    opts =
+      AshA2A.Transport.Plug.init(
+        agent: agent,
+        base_url: "http://x/a2a",
+        sign_with: [jwk: public_only]
+      )
 
     assert_raise ArgumentError, ~r/cannot sign the agent card/, fn ->
       :get |> Plug.Test.conn(@card_path) |> AshA2A.Transport.Plug.call(opts)
@@ -143,7 +153,10 @@ defmodule AshA2A.Protocol.AgentCardServedSignatureTest do
     url = serve(AshA2A.Protocol.Plug, agent, sign_with: [key: key, alg: :HS256, kid: "hs"])
 
     card = url |> fetch!() |> Map.fetch!(:body) |> Jason.decode!()
-    assert [%{"protected" => _, "signature" => _, "header" => %{"alg" => "HS256"}}] = card["signatures"]
+
+    assert [%{"protected" => _, "signature" => _, "header" => %{"alg" => "HS256"}}] =
+             card["signatures"]
+
     assert CardSigning.verify(card, key) == :ok
   end
 

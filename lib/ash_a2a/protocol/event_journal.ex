@@ -86,11 +86,13 @@ defmodule AshA2A.Protocol.EventJournal do
 
   @doc "Appends through a `{module, ref}` journal."
   @spec append(journal(), task_id(), generation(), event()) :: :ok | {:error, term()}
-  def append({mod, ref}, task_id, generation, event), do: mod.append(ref, task_id, generation, event)
+  def append({mod, ref}, task_id, generation, event),
+    do: mod.append(ref, task_id, generation, event)
 
   @doc "Replays through a `{module, ref}` journal."
   @spec replay_after(journal(), task_id(), generation()) :: {:ok, [event()]} | {:error, term()}
-  def replay_after({mod, ref}, task_id, generation), do: mod.replay_after(ref, task_id, generation)
+  def replay_after({mod, ref}, task_id, generation),
+    do: mod.replay_after(ref, task_id, generation)
 
   @doc "Trims through a `{module, ref}` journal."
   @spec trim(journal(), task_id(), non_neg_integer()) :: :ok | {:error, term()}

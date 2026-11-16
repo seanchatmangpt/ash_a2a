@@ -21,9 +21,11 @@ import uuid
 
 from google.protobuf import json_format
 
-import harness as h
-import reference as ref
-from reference import pb
+sys.dont_write_bytecode = True
+
+import harness as h  # noqa: E402
+import reference as ref  # noqa: E402
+from reference import pb  # noqa: E402
 
 SPEC = "a2a v1.1.0-rc docs/specification.md"
 DOMAIN = "a2a-protocol.org"
@@ -320,6 +322,7 @@ def run_send(b, env):
             f"generation {task.generation}, {len(task.timeline)} timeline entries, {len(task.artifacts)} artifact(s)")
 
     # Every Part kind and every Message field a client can set.
+    first_id = task.id if task is not None else None
     context = uid("ctx")
     rich = pb.SendMessageRequest(
         message=json_format.ParseDict(
@@ -336,7 +339,7 @@ def run_send(b, env):
                 ],
                 "metadata": {"skill": "list_notes", "trace": {"depth": 2}},
                 "extensions": ["https://example.com/ext/v1"],
-                "referenceTaskIds": ["tsk-ref-1", "tsk-ref-2"],
+                "referenceTaskIds": [first_id] if first_id else [],
             },
             pb.Message(),
         ),
@@ -1303,6 +1306,7 @@ def main(argv=None):
     parser.add_argument("--reader-token", default="sim-reader-token")
     parser.add_argument("--unscoped-token", default="sim-unscoped-token")
     parser.add_argument("--trace", action="store_true", help="print each row to stderr as it is recorded")
+    parser.add_argument("--groups", help="debugging: comma-separated vector groups (card,send,get,streams,push,live,artifacts,errors,cross)")
     parser.add_argument("--only", help="comma-separated bindings to run: grpc,http+json,jsonrpc,jsonrpc:/jsonrpc")
     args = parser.parse_args(argv)
 
@@ -1323,20 +1327,29 @@ def main(argv=None):
     env = Env(report, bindings, args, Webhook())
     env.cards = {}
 
-    cards = run_public_cards(env, report)
-    del cards
+    if not args.groups:
+        run_public_cards(env, report)
+    groups = [
+        ("card", "GetExtendedAgentCard", run_card, True),
+        ("send", "SendMessage", run_send, False),
+        ("get", "GetTask", run_get_list, False),
+        ("streams", "SendStreamingMessage", run_streams, False),
+        ("push", "CreateTaskPushNotificationConfig", run_push, True),
+        ("live", "SendLiveMessage", run_live, True),
+        ("artifacts", "SendMessage", run_user_artifacts, True),
+    ]
+    wanted = set(args.groups.split(",")) if args.groups else None
     for b in bindings:
-        guarded(report, b, "GetExtendedAgentCard", run_card, env) if b.full else None
-        guarded(report, b, "SendMessage", run_send, env)
-        guarded(report, b, "GetTask", run_get_list, env)
-        guarded(report, b, "SendStreamingMessage", run_streams, env)
-        if b.full:
-            guarded(report, b, "CreateTaskPushNotificationConfig", run_push, env)
-            guarded(report, b, "SendLiveMessage", run_live, env)
-            guarded(report, b, "SendMessage", run_user_artifacts, env)
-        guarded(report, b, "errors", run_errors if b.full else run_errors_core, env)
-        if b.kind == "jsonrpc":
-            run_jsonrpc_protocol_errors(b)
+        for group, operation, fn, full_only in groups:
+            if (wanted is None or group in wanted) and (b.full or not full_only):
+                guarded(report, b, operation, fn, env)
+        if wanted is None or "errors" in wanted:
+            guarded(report, b, "errors", run_errors if b.full else run_errors_core, env)
+            if b.kind == "jsonrpc":
+                run_jsonrpc_protocol_errors(b)
+    if wanted is not None and "cross" not in wanted:
+        print_matrix(report, {"response_fields": {"observed": 0, "reachable": 0, "unreachable": {}}}, sys.stdout)
+        return 1 if report.summary()["fail"] else 0
     try:
         run_cross(env, report)
     except Exception as exc:

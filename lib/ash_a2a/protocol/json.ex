@@ -1059,12 +1059,27 @@ defmodule AshA2A.Protocol.JSON do
     Map.fetch!(@state_to_string, state)
   end
 
+  # ProtoJSON `google.protobuf.Timestamp`: RFC 3339 in UTC with `Z`, and 0, 3
+  # or 6 fractional digits, whichever is the shortest that loses nothing
+  # (a DateTime holds microseconds at most). The fraction follows the value,
+  # never the struct's declared precision, so `.250000` is written `.250`.
   defp encode_timestamp(%DateTime{} = dt) do
-    dt
-    |> DateTime.shift_zone!("Etc/UTC")
+    utc = DateTime.shift_zone!(dt, "Etc/UTC")
+    {micros, _precision} = utc.microsecond
+
+    fraction =
+      cond do
+        micros == 0 -> ""
+        rem(micros, 1000) == 0 -> "." <> pad_digits(div(micros, 1000), 3)
+        true -> "." <> pad_digits(micros, 6)
+      end
+
+    %{utc | microsecond: {0, 0}}
     |> DateTime.to_iso8601(:extended)
-    |> String.replace_suffix("+00:00", "Z")
+    |> String.replace_suffix("Z", fraction <> "Z")
   end
+
+  defp pad_digits(n, width), do: n |> Integer.to_string() |> String.pad_leading(width, "0")
 
   defp encode_timestamp(nil), do: nil
 
@@ -1226,10 +1241,12 @@ defmodule AshA2A.Protocol.JSON do
     if encoded == %{}, do: nil, else: encoded
   end
 
-  # int64 generations are emitted as JSON numbers; nil/0 omitted.
+  # ProtoJSON writes a 64-bit integer as a decimal string (a JSON number
+  # loses precision past 2^53); nil/0 is the proto3 default and is omitted.
+  # Decoding accepts both spellings (`parse_int64/1`).
   defp put_generation(map, _key, nil), do: map
   defp put_generation(map, _key, 0), do: map
-  defp put_generation(map, key, n) when is_integer(n), do: Map.put(map, key, n)
+  defp put_generation(map, key, n) when is_integer(n), do: Map.put(map, key, Integer.to_string(n))
 
   # Accepts a JSON number or protojson int64 string; anything else -> nil.
   # Bounded to the signed 64-bit range (and 20 bytes of text), so a hostile
@@ -1474,13 +1491,31 @@ defmodule AshA2A.Protocol.JSON do
          {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Part.Data{
-         data: data,
+         data: integral_numbers(data),
          filename: filename,
          media_type: media_type,
          metadata: metadata
        }}
     end
   end
+
+  # `Part.data` is a `google.protobuf.Value`, whose numbers are doubles: the
+  # reference ProtoJSON encoder writes a client's `300` as `300.0`. JSON has
+  # one number type, so a whole-number double is read as the integer it
+  # denotes (the gRPC binding does the same); fractions are left alone.
+  @max_safe_integer 9_007_199_254_740_992
+
+  defp integral_numbers(%{} = map) when not is_struct(map),
+    do: Map.new(map, fn {k, v} -> {k, integral_numbers(v)} end)
+
+  defp integral_numbers(list) when is_list(list), do: Enum.map(list, &integral_numbers/1)
+
+  defp integral_numbers(number)
+       when is_float(number) and number == trunc(number) and
+              abs(number) < @max_safe_integer,
+       do: trunc(number)
+
+  defp integral_numbers(other), do: other
 
   defp decode_flat_file_part(map) do
     with {:ok, bytes} <- decode_base64(Map.get(map, "raw")),

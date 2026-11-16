@@ -32,7 +32,9 @@ defmodule AshA2A.EventJournalCrossnodeTest do
   end
 
   test "events journaled by the agent on node A replay through the agent on node B" do
-    host = Node.self() |> Atom.to_string() |> String.split("@") |> List.last() |> String.to_charlist()
+    host =
+      Node.self() |> Atom.to_string() |> String.split("@") |> List.last() |> String.to_charlist()
+
     cookie = Node.get_cookie()
     code_paths = :code.get_path()
 
@@ -101,7 +103,11 @@ defmodule AshA2A.EventJournalCrossnodeTest do
     peer_name = :"ash_a2a_ejournal_x_peer_#{System.unique_integer([:positive, :monotonic])}"
 
     {:ok, peer_pid, peer_node} =
-      :peer.start_link(%{name: peer_name, host: host, args: [~c"-setcookie", Atom.to_charlist(cookie)]})
+      :peer.start_link(%{
+        name: peer_name,
+        host: host,
+        args: [~c"-setcookie", Atom.to_charlist(cookie)]
+      })
 
     assert :ok = :rpc.call(peer_node, :code, :add_pathsz, [code_paths])
     {peer_pid, peer_node}

@@ -31,8 +31,10 @@ defmodule Mix.Tasks.AshA2a.Sim do
 
   The simulation server needs Bandit (its HTTP listener), an optional
   dependency of ash_a2a. In this repository the task defaults to the `test`
-  Mix environment and also runs with `MIX_ENV=dev`. In another project, add
-  `{:bandit, "~> 1.5"}` to that project's dependencies.
+  Mix environment and also runs with `MIX_ENV=dev`. Its resource uses Ash
+  policies, which need a SAT solver (`simple_sat`, also optional). In another
+  project, add `{:bandit, "~> 1.5"}` and `{:simple_sat, "~> 0.1"}` to that
+  project's dependencies.
   """
 
   use Mix.Task
@@ -62,6 +64,16 @@ defmodule Mix.Tasks.AshA2a.Sim do
         "the simulation server needs Bandit, which is an optional dependency of ash_a2a. " <>
           "Add {:bandit, \"~> 1.5\"} to your dependencies and recompile ash_a2a " <>
           "(mix deps.compile ash_a2a --force)."
+      )
+    end
+
+    # The simulation resource carries Ash policies, which need a SAT solver.
+    unless Code.ensure_loaded?(Module.concat([SimpleSat])) or
+             Code.ensure_loaded?(Module.concat([Picosat])) do
+      Mix.raise(
+        "the simulation server's resource uses Ash policies, which need a SAT solver. " <>
+          "Add {:simple_sat, \"~> 0.1\"} or {:picosat_elixir, \"~> 0.2\"} to your " <>
+          "dependencies and recompile ash_a2a (mix deps.compile ash_a2a --force)."
       )
     end
 
@@ -102,9 +114,10 @@ defmodule Mix.Tasks.AshA2a.Sim do
 
   defp prove(info, json?) do
     prover = Module.concat(AshA2A.Sim, Prover)
+    surface = Module.concat(AshA2A.Sim, Surface)
     results = prover.run(info)
     summary = prover.summary(results)
-    uncovered = AshA2A.Sim.Surface.uncovered(prover.probes())
+    uncovered = surface.uncovered(prover.probes())
 
     if json? do
       Mix.shell().info(
@@ -121,7 +134,7 @@ defmodule Mix.Tasks.AshA2a.Sim do
       Mix.shell().info(prover.format(results))
 
       Mix.shell().info(
-        "\n#{length(results)} probes over #{length(AshA2A.Sim.Surface.items())} surface items: " <>
+        "\n#{length(results)} probes over #{length(surface.items())} surface items: " <>
           "#{summary.pass} pass, #{summary.fail} fail, #{summary.skip} skip"
       )
 

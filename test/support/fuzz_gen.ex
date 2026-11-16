@@ -135,7 +135,9 @@ defmodule AshA2A.FuzzGen do
     end)
   end
 
-  def corrupt(list) when is_list(list), do: Enum.map(list, &if(int(4) == 0, do: corrupt(&1), else: &1))
+  def corrupt(list) when is_list(list),
+    do: Enum.map(list, &if(int(4) == 0, do: corrupt(&1), else: &1))
+
   def corrupt(other), do: if(int(3) == 0, do: wrong_value(), else: other)
 
   @doc "Nested array body `depth` deep (valid JSON)."
@@ -144,16 +146,37 @@ defmodule AshA2A.FuzzGen do
   @doc "Raw request bodies covering the hostile shapes from the lane brief."
   def raw_body do
     case int(10) do
-      0 -> nested_array(1 + int(200))
-      1 -> String.duplicate("[", 1 + int(5_000))
-      2 -> ~s({"a":1,"a":2,"a":null,"a":[]})
-      3 -> ~s({"text":") <> random_bytes(1 + int(128)) <> ~s("})
-      4 -> ~s({"n":) <> String.duplicate("9", 1 + int(2_000)) <> "}"
-      5 -> ~s({"n":1e) <> String.duplicate("9", 1 + int(20)) <> "}"
-      6 -> ~s({"s":") <> big_string() <> ~s("})
-      7 -> random_bytes(int(256))
-      8 -> Jason.encode!(json_safe(term(4, 4))) |> binary_part(0, 1) |> Kernel.<>(random_bytes(int(32)))
-      9 -> ~s({"a":[[{"b":"\\\\"}]],"c":null)
+      0 ->
+        nested_array(1 + int(200))
+
+      1 ->
+        String.duplicate("[", 1 + int(5_000))
+
+      2 ->
+        ~s({"a":1,"a":2,"a":null,"a":[]})
+
+      3 ->
+        ~s({"text":") <> random_bytes(1 + int(128)) <> ~s("})
+
+      4 ->
+        ~s({"n":) <> String.duplicate("9", 1 + int(2_000)) <> "}"
+
+      5 ->
+        ~s({"n":1e) <> String.duplicate("9", 1 + int(20)) <> "}"
+
+      6 ->
+        ~s({"s":") <> big_string() <> ~s("})
+
+      7 ->
+        random_bytes(int(256))
+
+      8 ->
+        Jason.encode!(json_safe(term(4, 4)))
+        |> binary_part(0, 1)
+        |> Kernel.<>(random_bytes(int(32)))
+
+      9 ->
+        ~s({"a":[[{"b":"\\\\"}]],"c":null)
     end
   end
 

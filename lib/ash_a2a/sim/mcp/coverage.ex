@@ -60,13 +60,16 @@ if Code.ensure_loaded?(Bandit) do
     @spec plan() :: [map()]
     def plan, do: Enum.map(Surface.items(), &entry/1)
 
-    @doc "The surface items MCP cannot reach."
-    @spec uncovered() :: [Surface.item()]
-    def uncovered do
+    @doc """
+    The items of `items` (`AshA2A.Sim.Surface.items/0` by default) that MCP
+    cannot reach.
+    """
+    @spec uncovered([Surface.item()]) :: [Surface.item()]
+    def uncovered(items \\ Surface.items()) do
       names = MapSet.new(Tools.names())
       stubbed = Wire.grpc_stubbed()
 
-      Enum.filter(Surface.items(), fn item ->
+      Enum.filter(items, fn item ->
         steps = steps(item)
 
         steps == [] or
@@ -84,7 +87,9 @@ if Code.ensure_loaded?(Bandit) do
       end)
     end
 
-    defp entry(item) do
+    @doc "The plan entry of one surface item. Its `\"steps\"` are empty when MCP has no path to it."
+    @spec entry(Surface.item()) :: map()
+    def entry(item) do
       steps = steps(item)
       tested = Enum.find(steps, & &1["tested"])
 
@@ -149,6 +154,13 @@ if Code.ensure_loaded?(Bandit) do
     # A caller of the binding's own tool: the tool a surface item derives.
     defp native(bind) do
       fn op, args ->
+        # The message id is part of the plan, so the plan is the same data on
+        # every read; `{{uniq}}` keeps it fresh on every run.
+        args =
+          if op in [:send, :stream, :live],
+            do: Map.put_new(args, "message_id", "msg-{{uniq}}-#{:erlang.phash2({op, args})}"),
+            else: args
+
         case Tools.native(op, Map.merge(bind, args)) do
           {:ok, tool, arguments} -> {tool, arguments}
           {:error, _reason} -> nil

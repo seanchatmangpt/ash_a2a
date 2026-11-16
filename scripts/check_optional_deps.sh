@@ -9,7 +9,7 @@
 # test/optional_deps_matrix_test.exs enforces that.
 set -euo pipefail
 
-OPTIONAL_DEPS="oban ash_oban ash_state_machine postgrex flame durable_server req_llm bandit"
+OPTIONAL_DEPS="oban ash_oban ash_state_machine postgrex flame durable_server req_llm bandit simple_sat"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
