@@ -324,25 +324,27 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
     end
   end
 
+  defp enc(term), do: Jason.encode!(FuzzGen.json_safe(term))
+
   defp rpc_body do
     case FuzzGen.int(6) do
       0 ->
-        Jason.encode!([])
+        enc([])
 
       1 ->
-        Jason.encode!(for(_ <- 1..(1 + FuzzGen.int(30)), do: rpc_item()))
+        enc(for(_ <- 1..(1 + FuzzGen.int(30)), do: rpc_item()))
 
       2 ->
-        Jason.encode!(rpc_item())
+        enc(rpc_item())
 
       3 ->
-        Jason.encode!([rpc_item(), 1, nil, "x", []])
+        enc([rpc_item(), 1, nil, "x", []])
 
       4 ->
         FuzzGen.raw_body()
 
       5 ->
-        Jason.encode!(
+        enc(
           for(
             _ <- 1..300,
             do: %{
