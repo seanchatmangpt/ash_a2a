@@ -53,6 +53,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
   | event journal appends and reads back          | `Protocol.EventJournal.record_task/3`, `TaskStore.EventJournalEts.append/4` |
   | control-plane TLS verify_peer / no downgrade  | `C2.L07Tls.Transport.tls_options/1`, `connect/4`         |
   | card signature alg / alg-key / tamper         | `Protocol.AgentCardSignature.check_alg/2`, `check_key_alg/2`, `raw_verify/4` |
+  | reply-token MAC binds approver and expiry; key required | `Email.Brief.mint/3`, `Email.Brief.keyring/1`   |
   | task owner gate                               | `Transport.Runtime.owned_by?/2`                          |
 
   The approver-mailbox `verify:` check lives in the separate

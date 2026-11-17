@@ -64,7 +64,7 @@ among others.
   each one for real. `AshA2A.Test.ChicagoSelfTest` (`CHI-SELFTEST`)
   qualifies the qualification machinery itself, against a court fixture
   that deliberately lies.
-- **Mutation catalog, wave 3**: 27 further mutants (46 in all) delete the
+- **Mutation catalog, wave 3**: 30 further mutants (49 in all) delete the
   guards added after the original catalog: the email gateway plug's
   `:webhook` authentication, `:token_ledger` replay protection and its
   depth, node and reply-size caps; the `AshA2A.Email.Dkim` refusals (`l=`
@@ -76,7 +76,7 @@ among others.
   journal writer (`record_task/3`) and its read-back check (`append/4`); the
   control-plane TLS transport (`verify_peer` and no downgrade to the unix
   socket); `AgentCardSignature.verify/3` (alg allow-list and `none`, alg/key
-  mismatch, tamper); and the task owner gate `owned_by?/2`. Their killer is
+  mismatch, tamper); the keyed reply-token MAC of `Email.Brief` (approver and expiry bound into the MAC; no unkeyed fallback when the key is missing); and the task owner gate `owned_by?/2`. The replacement of `Plug.Crypto.secure_compare` by `==` is not catalogued: it is timing-only, behaviourally equivalent, and no court can kill it. Their killer is
   the non-discoverable reference court `CHI-MUTWAVE3`
   (`AshA2A.Chicago.Mutation.Wave3Court`): every probe drives the real
   function or plug with real collaborators (real RSA and Ed25519 keys, a
