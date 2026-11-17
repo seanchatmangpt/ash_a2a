@@ -119,7 +119,10 @@ defmodule AshA2A.Sim.McpLauncherTest do
   test "stale build, no cache: minimal handshake at once, real server later, list_changed sent",
        %{dir: dir} do
     slow_mix!(dir, 6)
-    client = launch(dir, [{"A2A_SIM_MCP_INIT_WAIT", "1"}])
+    # A short LIST_WAIT as well: with the default (20 s) tools/list would wait
+    # for the real server, which `slow_mix!` brings up after 6 s, and answer with
+    # the real catalog instead of the empty placeholder this test pins.
+    client = launch(dir, [{"A2A_SIM_MCP_INIT_WAIT", "1"}, {"A2A_SIM_MCP_LIST_WAIT", "1"}])
 
     {elapsed, {init, _, client}} = ms(fn -> initialize(client) end)
     assert elapsed < 5_000, "initialize took #{elapsed} ms"

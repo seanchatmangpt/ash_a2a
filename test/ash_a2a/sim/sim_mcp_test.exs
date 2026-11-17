@@ -414,7 +414,9 @@ defmodule AshA2A.Sim.McpTest do
     test "initialize negotiates the revision and declares tools and resources", %{init: init} do
       assert %{"jsonrpc" => "2.0", "result" => result} = init
       assert result["protocolVersion"] == @version
-      assert result["capabilities"]["tools"] == %{"listChanged" => false}
+      # The stdio launcher (scripts/mcp_shim.py) declares `listChanged` so it can
+      # send notifications/tools/list_changed once the real server is up.
+      assert result["capabilities"]["tools"] == %{"listChanged" => true}
       assert %{"subscribe" => false} = result["capabilities"]["resources"]
       assert result["serverInfo"]["name"] == "ash-a2a-sim-mcp"
       assert is_binary(result["serverInfo"]["version"])

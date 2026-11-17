@@ -561,7 +561,7 @@ defmodule AshA2A.V1WirePropertiesTest do
   end
 
   defp expected(%Event.StatusUpdate{} = e) do
-    %{e | final: e.status.state in @derived_final_states}
+    %{e | status: expected(e.status), final: e.status.state in @derived_final_states}
   end
 
   defp expected(%AgentCard{} = card) do

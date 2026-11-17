@@ -44,7 +44,11 @@ defmodule AshA2A.Docs.ModuleIndexCourtTest do
   # Relative nested defmodules (declared without a fully-qualified name).
   @registered_names MapSet.new([
                       "AshA2A.Telemetry.TaskSupervisor",
-                      "AshA2A.Authority.SecurityPreflight.Error"
+                      # Task.Supervisor started by name in AshA2A.Application.
+                      "AshA2A.Protocol.PushTaskSupervisor",
+                      "AshA2A.Authority.SecurityPreflight.Error",
+                      # `defmodule TokenKeyError` nested inside AshA2A.Email.Brief.
+                      "AshA2A.Email.Brief.TokenKeyError"
                     ])
 
   @doc false
