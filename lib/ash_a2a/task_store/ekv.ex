@@ -9,8 +9,8 @@ defmodule AshA2A.TaskStore.Ekv do
   `AshA2A.Protocol.Agent` keeps every task in its own GenServer state; without an
   external store an agent crash or restart loses every task. `AshA2A.Protocol.Agent`
   already consults a configured `:task_store` on every write
-  (`AshA2A.Protocol.Agent.State.put_task/2`) and falls back to it on every read miss
-  (`AshA2A.Protocol.Agent.State.get_task/2`), so starting an agent with this store makes
+  (`AshA2A.Protocol.Agent.State.put_task`) and falls back to it on every read miss
+  (`AshA2A.Protocol.Agent.State.get_task`), so starting an agent with this store makes
   task state survive:
 
     * an agent process crash/restart (the store is a separate supervised
@@ -31,7 +31,7 @@ defmodule AshA2A.TaskStore.Ekv do
 
   ## Failure semantics
 
-  EKV errors and exits are NOT swallowed. `AshA2A.Protocol.Agent.State.put_task/2`
+  EKV errors and exits are NOT swallowed. `AshA2A.Protocol.Agent.State.put_task`
   ignores a store's return value, so returning `{:error, _}` from `put/2`
   would let an agent acknowledge a task it never persisted. `put/2` therefore
   raises `AshA2A.TaskStore.Ekv.WriteError` on any non-`:ok` EKV result, and

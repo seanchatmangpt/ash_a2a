@@ -53,6 +53,7 @@ defmodule AshA2A.Transport.Live.Session do
        last: nil,
        started?: false,
        call: nil,
+       uplink_done?: false,
        closed?: false
      }}
   end
@@ -75,6 +76,11 @@ defmodule AshA2A.Transport.Live.Session do
 
   @impl true
   def handle_cast(:close, st), do: st |> close(:closed) |> finish()
+
+  # The client finished its uplink (gRPC half-close). Nothing is cut short:
+  # `finish/1` ends the session once no request is in flight and no further
+  # event can be owed to this downlink.
+  def handle_cast(:uplink_done, st), do: finish(%{st | uplink_done?: true})
 
   @impl true
   def handle_info({:call_done, ref, result}, %{call: %{ref: ref} = call} = st) do
@@ -102,7 +108,24 @@ defmodule AshA2A.Transport.Live.Session do
   def terminate(_reason, _st), do: :ok
 
   defp finish(%{closed?: true} = st), do: {:stop, :normal, st}
+
+  defp finish(%{uplink_done?: true, call: nil} = st) do
+    if settled?(st), do: st |> close(:closed) |> finish(), else: {:noreply, st}
+  end
+
   defp finish(st), do: {:noreply, st}
+
+  # With the uplink finished and nothing in flight, the downlink is owed more
+  # only while a bound task is still running: an unbound stream has nothing to
+  # follow, and an interrupted task (`input_required` / `auth_required`) waits
+  # for input this stream can no longer carry. A terminal task has already
+  # closed the session.
+  defp settled?(%{task_id: nil}), do: true
+
+  defp settled?(%{last: %T{status: %{state: state}}}),
+    do: state in [:input_required, :auth_required]
+
+  defp settled?(_st), do: false
 
   # -- request dispatch ---------------------------------------------------------
 
@@ -271,7 +294,7 @@ defmodule AshA2A.Transport.Live.Session do
          "request names a different task than the one this stream is bound to"}
 
       p.artifact_updates != [] and not Live.capability?(card, :user_artifacts) ->
-        {:reject, "UNSUPPORTED_OPERATION", "userArtifacts capability is not declared"}
+        {:reject, "FAILED_PRECONDITION", "userArtifacts capability is not declared"}
 
       task_id == nil and p.message == nil ->
         {:reject, "INVALID_ARGUMENT", "message is required when creating a task"}
@@ -453,7 +476,7 @@ defmodule AshA2A.Transport.Live.Session do
     do: {"UNAVAILABLE", "agent is not accepting input right now"}
 
   def error_code({:unsupported_operation, _}),
-    do: {"UNSUPPORTED_OPERATION", "operation not supported"}
+    do: {"FAILED_PRECONDITION", "operation not supported"}
 
   def error_code({:invalid_params, detail}) when is_binary(detail),
     do: {"INVALID_ARGUMENT", detail}
@@ -506,20 +529,37 @@ defmodule AshA2A.Transport.Live.Session do
         end
       end)
 
-    status =
-      if last.status != task.status do
-        [
-          StatusUpdate.new(task.id, task.status,
-            context_id: ctx_id,
-            final: T.terminal?(task),
-            generation: status_gen(task)
-          )
-        ]
-      else
-        []
+    # Every status the timeline recorded since the last observation is its
+    # own event at its own generation (spec 3.2.7: one event per mutation),
+    # so a WORKING step between two observations is not skipped.
+    recorded =
+      for %{entry: {:status, status}, generation: g} <- task.timeline, g > gen(last) do
+        StatusUpdate.new(task.id, status,
+          context_id: ctx_id,
+          final: T.terminal?(task) and status == task.status,
+          generation: g
+        )
       end
 
-    messages ++ artifacts ++ status
+    status =
+      cond do
+        recorded != [] ->
+          recorded
+
+        last.status != task.status ->
+          [
+            StatusUpdate.new(task.id, task.status,
+              context_id: ctx_id,
+              final: T.terminal?(task),
+              generation: status_gen(task)
+            )
+          ]
+
+        true ->
+          []
+      end
+
+    Enum.sort_by(messages ++ artifacts ++ status, &(&1.generation || 0))
   end
 
   defp artifact_event(task, art, append?, full \\ nil) do

@@ -21,7 +21,7 @@ defmodule AshA2A.Executor do
     atom is dropped.
 
     (b) **Argument coercion** — the `AshA2A.Protocol.Part.Data` payload is
-    extracted with `AshA2A.Dispatcher.fetch_input/1` (reused, not duplicated)
+    extracted with `AshA2A.Dispatcher.fetch_input` (reused, not duplicated)
     and the optional `argument_mapping` (string wire name → atom argument
     name, the same field `AshA2A.Skill.argument_mapping` carries from the
     compiled capability index) is applied as a pure key rename *before* the
@@ -58,7 +58,7 @@ defmodule AshA2A.Executor do
   `:change`/`:external_do`/`:unknown` consequence skill without a durable
   `:pending` outbox anchor is refused `:brce_prepared_receipt_required`
   before any Ash call), and the W4 kernel fence
-  (`AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.admitted?/0`) — so no
+  (`AshA2A.ConsequenceKernel.Dispatch.DispatcherFence.admitted?`) — so no
   consequence-bearing dispatch can enter Ash through this module without the
   same admission a `Dispatcher.dispatch/6` call needs.
 
@@ -81,7 +81,6 @@ defmodule AshA2A.Executor do
 
   alias AshA2A.{BrceAnchor, CapabilityRelease, ContextResolver, Dispatcher, MetadataKey}
   alias AshA2A.ConsequenceKernel.Dispatch.DispatcherFence
-  alias AshA2A.Protocol.JSONRPC.Request
   alias AshA2A.Protocol.{Message, Part}
 
   @type option ::
@@ -89,7 +88,7 @@ defmodule AshA2A.Executor do
           | {:argument_mapping, %{optional(String.t()) => atom()}}
           | {:history, [Message.t()]}
           | {:domain, module()}
-          | {:json_rpc_id, Request.id()}
+          | {:json_rpc_id, String.t() | integer() | nil}
 
   @type result ::
           {:ok, [Part.t()]}
@@ -233,7 +232,7 @@ defmodule AshA2A.Executor do
 
   # -- (b) argument coercion -------------------------------------------------
 
-  # Input extraction is `AshA2A.Dispatcher.fetch_input/1` verbatim (the first
+  # Input extraction is `AshA2A.Dispatcher.fetch_input` verbatim (the first
   # `Part.Data` payload, `%{}` for a text-only message). The optional
   # mapping renames string wire keys to atom argument keys; it never creates
   # atoms from wire input (the atom side comes from compiled skill config).

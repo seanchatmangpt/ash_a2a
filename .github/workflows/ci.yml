@@ -141,7 +141,7 @@ jobs:
     env:
       # Single source of the TCK pin; docs/reference/tck-suite.md cites it
       # (court: test/tck_assert_script_test.exs).
-      TCK_PIN_SHA: 263b9cfaf16a554bdfb166a7ba5b67716e946349
+      TCK_PIN_SHA: 104a7b4ae0d83f65c075e3793e322953a830eaba
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -170,7 +170,7 @@ jobs:
       - name: Wait for SUT on :9999
         run: |
           n=0
-          until curl -fsS -o /dev/null http://127.0.0.1:9999/.well-known/agent.json; do
+          until curl -fsS -o /dev/null http://127.0.0.1:9999/.well-known/agent-card.json; do
             n=$((n+1))
             if [ "$n" -ge 60 ]; then
               echo "SUT did not come up"; cat /tmp/tck_sut.log; exit 1
@@ -182,25 +182,42 @@ jobs:
         run: |
           git clone https://github.com/a2aproject/a2a-tck.git /tmp/a2a-tck
           cd /tmp/a2a-tck && git checkout "$TCK_PIN_SHA"
-      # The pinned layout installs via pyproject (no pip requirements file).
-      # TODO(W13): re-run at 70f6f73c (#258, aligns to 1.0.1; needs Python
-      # 3.15+ at main) before moving TCK_PIN_SHA; Python 3.12 is the version
-      # witnessed green at the current pin (2026-10-13).
-      - name: Install TCK
-        run: cd /tmp/a2a-tck && pip install -e .
+      # The TCK at this pin requires Python >= 3.15 (pyproject requires-python).
+      # uv (installed with pip from the already-pinned setup-python above, so no
+      # extra third-party action) downloads the 3.15 interpreter itself and
+      # builds the venv this lane was verified in; the pinned layout installs
+      # via pyproject (no pip requirements file).
+      - name: Install TCK (Python 3.15 via uv)
+        run: |
+          pip install uv==0.11.32
+          cd /tmp/a2a-tck
+          uv venv --python 3.15 /tmp/tck_venv
+          VIRTUAL_ENV=/tmp/tck_venv uv pip install -e .
       - name: Run TCK suite
         run: |
           cd /tmp/a2a-tck
+          source /tmp/tck_venv/bin/activate
           ./run_tck.py --sut-host http://127.0.0.1:9999 \
             --transport jsonrpc,http_json,grpc | tee /tmp/tck-run.log
           echo "TCK_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
         shell: bash
       - name: Assert zero failed MUST requirements
         run: |
-          python3 scripts/tck_assert.py /tmp/a2a-tck/reports/compatibility.json
+          # Only ids in scripts/tck_expected_failures.json (and only on the TCK
+          # commits they name) are tolerated; an unlisted failure or a listed
+          # id that starts passing fails the job (pipefail via shell: bash).
+          python3 scripts/tck_assert.py /tmp/a2a-tck/reports/compatibility.json \
+            --expected-failures scripts/tck_expected_failures.json \
+            --tck-sha "$TCK_PIN_SHA" | tee /tmp/tck-assert.log
+          # run_tck.py exits 1 on any failed requirement: accepted only when
+          # the assert above passed AND matched at least one expected failure.
           if [ "${TCK_EXIT:-0}" != "0" ]; then
-            echo "run_tck.py exited ${TCK_EXIT} (assert passed; see /tmp/tck-run.log)"
-            exit 1
+            if [ "${TCK_EXIT}" = "1" ] && ! grep -q ' expected_fail=0 ' /tmp/tck-assert.log; then
+              echo "run_tck.py exited 1 only for expected failures (scripts/tck_expected_failures.json)"
+            else
+              echo "run_tck.py exited ${TCK_EXIT} (assert passed; see /tmp/tck-run.log)"
+              exit 1
+            fi
           fi
         shell: bash
       - name: Stop SUT
@@ -276,6 +293,17 @@ jobs:
       - name: Serial solo lane
         if: ${{ matrix.name == 'solo' }}
         run: mix test.serial.solo --cover --export-coverage solo
+      # Files tagged `:serial` but in neither `:serial_shard` nor `:serial_solo`
+      # matched no lane (the fast lane excludes `:serial`), so they never ran in
+      # CI. Selected by path at run time so a newly added file cannot be missed.
+      - name: Serial untiered files
+        if: ${{ matrix.name == 'solo' }}
+        shell: bash
+        run: |
+          files=$(grep -rlE '(moduletag|tag) :serial\b' test | xargs grep -LE 'serial_(shard|solo)' || true)
+          [ -z "$files" ] && { echo "no untiered serial files"; exit 0; }
+          echo "$files"
+          mix test.serial $files --cover --export-coverage rest
       - name: Serial shard (${{ matrix.name }})
         if: ${{ startsWith(matrix.name, 'shard-') }}
         env:

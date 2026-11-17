@@ -38,7 +38,7 @@ defmodule AshA2A.Planning.HddlDeterministicSynthesis do
      admitted `capability_ids` (never re-derived from a model's own claim)
      and passed to the real, unchanged `AshA2A.Planning.from_envelope/3` --
      the exact same canonical-capability re-admission
-     (`AshA2A.Planning.resolve_all/2`) the LLM path's synthesized envelope
+     (`AshA2A.Planning.resolve_all`) the LLM path's synthesized envelope
      goes through, applied here a second time for real, not skipped because
      step 1 already checked once.
   5. `GoalFacts.to_semantic_structs/2` builds the real

@@ -22,7 +22,7 @@ defmodule AshA2A.Authority do
 
   That grant decision lives in `AshA2A.Authority.Grant`, which consults the
   configured `AshA2A.Authority.Broker` before calling this constructor. The
-  real `AshA2A.Agent` dispatch path (`AshA2A.Agent.build_command/4`) goes
+  real `AshA2A.Agent` dispatch path (`AshA2A.Agent.build_command`) goes
   through `AshA2A.Authority.Grant.authorize/3`, never through this function
   directly. See `AshA2A.Authority.Grant` for the policy modes and the
   RFC-SA2A-001 S29 escalation this separation closes.

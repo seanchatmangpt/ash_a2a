@@ -21,10 +21,13 @@ verifiable v1.1 target. Dated 2026-11-13. Each row has a close condition.
   numbers (`SendMessageConfiguration.if_generation_match` 5 and `timeline_length` 6,
   `GetTaskRequest.current_generation` 4, `SubscribeToTaskRequest.last_seen_generation`
   3, `StreamError` 1-5). No upstream difference from the vendored corpus was found at
-  that granularity. The fetch is a model summary, so byte equality is UNVERIFIED;
-  the corpus court's SHA-256 pin is the only byte-level check.
-- The rc summary names no error code; `-32010` (`TaskGenerationMismatchError`) is not
-  confirmed upstream (the corpus court accepts it from "corpus docs or spec text").
+  that granularity. Byte equality was checked on 2026-11-16 against a clone of
+  `a2aproject/a2a`: `git show v1.1.0-rc:specification/a2a.proto | sha256sum` gives
+  `8d9c363f8654205780654306af307355a7a34dcf96a8e221caf251268deab127`, the hash the corpus
+  court pins for `priv/a2a_v1_1_spec_corpus/a2a.proto`.
+- `-32010` (`TaskGenerationMismatchError`) is in upstream `docs/specification.md` at tag
+  `v1.1.0-rc` (line 1381: `-32010`, gRPC `ABORTED`, HTTP `409 Conflict`), read from the same
+  clone on 2026-11-16. The proto itself names no error code.
 
 ## Register
 

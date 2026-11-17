@@ -672,7 +672,7 @@ defmodule AshA2A.Semantic.Standing do
   @doc """
   Ensures this runtime's standing-ledger key exists.
 
-  Called once from `AshA2A.Application.start/2` so the key is seeded before any
+  Called once from `AshA2A.Application.start` so the key is seeded before any
   envelope is sealed. Safe to call repeatedly; it never replaces an existing
   key.
   """

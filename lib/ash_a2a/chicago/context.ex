@@ -4,7 +4,7 @@
 
 defmodule AshA2A.Chicago.Context do
   @moduledoc """
-  Per-run context handed to every `AshA2A.Chicago.Court.run/1`.
+  Per-run context handed to every `AshA2A.Chicago.Court.run`.
 
   `stimulus/3` is the only sanctioned way for a court to drive the SUT: it
   brackets the stimulus with `[:ash_a2a, :chicago, :stimulus, :start | :stop]`

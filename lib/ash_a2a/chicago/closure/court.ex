@@ -161,7 +161,8 @@ defmodule AshA2A.Chicago.Closure do
 
   @doc """
   Analyse `modules`. Options: `:mode` (`:report | :enforce`), `:effectors`,
-  `:allowed_callers`, `:unresolved` (`:refuse | :report`, default `:refuse`).
+  `:allowed_callers`, `:unresolved` (`:refuse | :report`, default `:refuse`),
+  `:facts` (the result of `read_facts/1` for the same `modules`).
   """
   @spec run([module()], keyword()) :: {:ok, map()} | {:refused, map()}
   def run(modules, opts \\ []) do
@@ -173,6 +174,14 @@ defmodule AshA2A.Chicago.Closure do
       else: {:ok, report}
   end
 
+  @doc """
+  Reads the call facts of `modules` once. Pass the result as `facts:` to
+  `run/2` or `analyze/2` to analyse the same compiled tree several times
+  (different modes, effectors or allowed callers) without re-reading the BEAMs.
+  """
+  @spec read_facts([module()]) :: {map(), [map()]}
+  def read_facts(modules), do: read_modules(modules)
+
   @spec analyze([module()], keyword()) :: map()
   def analyze(modules, opts \\ []) do
     mode = Keyword.get(opts, :mode, :report)
@@ -180,11 +189,12 @@ defmodule AshA2A.Chicago.Closure do
     allowed = Keyword.get(opts, :allowed_callers, default_allowed_callers())
     unresolved_policy = Keyword.get(opts, :unresolved, :refuse)
 
-    {facts, unanalyzable} = read_modules(modules)
+    {facts, unanalyzable} = Keyword.get_lazy(opts, :facts, fn -> read_modules(modules) end)
     defined = MapSet.new(for {mfa, _} <- facts, do: mfa)
     sites = for {caller, calls} <- facts, call <- calls, do: {caller, call}
 
-    graph = build_graph(sites, defined)
+    arities = Enum.group_by(defined, fn {m, f, _a} -> {m, f} end, fn {_m, _f, a} -> a end)
+    graph = build_graph(sites, defined, arities)
     preds = predecessors(graph)
 
     resolved =
@@ -317,13 +327,13 @@ defmodule AshA2A.Chicago.Closure do
 
   # --- graph -----------------------------------------------------------------
 
-  defp build_graph(sites, defined) do
+  defp build_graph(sites, defined, arities) do
     Enum.reduce(sites, %{}, fn {caller, call}, acc ->
       target =
         case call do
-          {:local, f, a} -> resolve({elem(caller, 0), f, a}, defined)
-          {:remote, m, f, a} -> resolve({m, f, a}, defined)
-          {:fun_ref, m, f, a} -> resolve({m, f, a}, defined)
+          {:local, f, a} -> resolve({elem(caller, 0), f, a}, defined, arities)
+          {:remote, m, f, a} -> resolve({m, f, a}, defined, arities)
+          {:fun_ref, m, f, a} -> resolve({m, f, a}, defined, arities)
           _ -> nil
         end
 
@@ -339,13 +349,20 @@ defmodule AshA2A.Chicago.Closure do
   end
 
   # A call with defaulted arguments targets a higher-arity definition.
-  defp resolve({m, f, a} = mfa, defined) do
+  # `arities` indexes `defined` by `{module, function}` so this is a lookup, not
+  # a scan of every function in the tree per call site.
+  defp resolve({m, f, a} = mfa, defined, arities) do
     if MapSet.member?(defined, mfa) do
       mfa
     else
-      defined
-      |> Enum.filter(fn {dm, df, da} -> dm == m and df == f and da > a end)
-      |> Enum.min_by(&elem(&1, 2), fn -> nil end) || mfa
+      arities
+      |> Map.get({m, f}, [])
+      |> Enum.filter(&(&1 > a))
+      |> Enum.min(fn -> nil end)
+      |> case do
+        nil -> mfa
+        da -> {m, f, da}
+      end
     end
   end
 

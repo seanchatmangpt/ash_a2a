@@ -18,8 +18,17 @@ defmodule AshA2A.Protocol.JSONGuard do
           {:ok, term()} | {:error, {:nesting_exceeded, pos_integer()} | Jason.DecodeError.t()}
   def decode(body, max_depth \\ @default_max_depth) when is_binary(body) do
     if within_depth?(body, max_depth),
-      do: Jason.decode(body),
+      do: safe_decode(body),
       else: {:error, {:nesting_exceeded, max_depth}}
+  end
+
+  # Jason raises ArgumentError for some numeric literals it cannot represent
+  # (for example an out-of-range float exponent) on certain versions; surface
+  # that as the documented decode error instead of crashing the request process.
+  defp safe_decode(body) do
+    Jason.decode(body)
+  rescue
+    ArgumentError -> {:error, %Jason.DecodeError{position: 0, token: nil, data: body}}
   end
 
   @doc "True when the structural nesting of `body` never exceeds `max_depth`."

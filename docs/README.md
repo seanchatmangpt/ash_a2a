@@ -10,6 +10,9 @@ Learning-oriented, end-to-end paths:
 
 - [`tutorials/getting-started.md`](tutorials/getting-started.md) — install the package,
   wire the `a2a` DSL into an Ash domain, and run a first dispatch end to end.
+- [`tutorials/prove-your-agent-with-the-simulation-server.md`](tutorials/prove-your-agent-with-the-simulation-server.md) —
+  run the simulation server, call every binding, run the prover and the parity check,
+  drive it over MCP, and point the tools at your own agent.
 
 ## How-to guides
 
@@ -36,6 +39,15 @@ Goal-oriented procedures:
 - [`how-to/release.md`](how-to/release.md) — cut an ash_a2a release.
 - [`how-to/run-conference-sim.md`](how-to/run-conference-sim.md) — run the
   conference-sim court suite end to end.
+- [`how-to/run-the-simulation-server.md`](how-to/run-the-simulation-server.md) — boot
+  every transport over one agent with real Ash mutations and prove each served
+  method, route and RPC over the wire (`mix ash_a2a.sim --prove`).
+- [`how-to/check-a2a-v1-1-parity.md`](how-to/check-a2a-v1-1-parity.md) — compare every
+  response of the simulation server with a reference encoder built from the upstream
+  v1.1 proto (`mix ash_a2a.sim --parity`).
+- [`how-to/control-the-sim-over-mcp.md`](how-to/control-the-sim-over-mcp.md) — drive
+  every A2A operation of the simulation server from an MCP client
+  (`mix ash_a2a.sim.mcp`, `bin/a2a-sim-mcp`, `scripts/mcp_drive.py`).
 - [`how-to/run-mutation-testing.md`](how-to/run-mutation-testing.md) — run mutation
   testing over the security surface.
 - [`how-to/run-pplan-courts.md`](how-to/run-pplan-courts.md) — run the ash_pplan parity
@@ -54,6 +66,25 @@ Goal-oriented procedures:
   add an LLM-backed action without hardcoding a provider.
 - [`how-to/verify-authority-on-async-paths.md`](how-to/verify-authority-on-async-paths.md) —
   verify authority on async (Oban) delivery paths.
+- [`how-to/approve-over-the-wire.md`](how-to/approve-over-the-wire.md) — submit signed
+  human approvals to the authority service's `"approve"` op (the Swift approver side is
+  not run here).
+- [`how-to/optional-dependencies.md`](how-to/optional-dependencies.md) — which
+  dependencies are optional and what each guarded module does when one is absent
+  (the compile-matrix script passes locally; its CI workflow has not run).
+- [`how-to/run-doctor.md`](how-to/run-doctor.md) — diagnose an app's A2A wiring with
+  `mix ash_a2a.doctor`.
+- [`how-to/sign-agent-cards.md`](how-to/sign-agent-cards.md) — sign and verify agent
+  cards with detached JWS (`AshA2A.Protocol.AgentCardSignature`), serve them signed, and
+  rotate the signing key.
+- [`how-to/choose-a-reply-mode.md`](how-to/choose-a-reply-mode.md) — declare whether a
+  skill or agent answers with a task or a bare Message (`reply :message`).
+- [`how-to/operate-the-event-journal.md`](how-to/operate-the-event-journal.md) — wire the
+  event journal, its config keys, and replay through `tasks/resubscribe`.
+- [`how-to/mount-the-grpc-server-in-your-endpoint.md`](how-to/mount-the-grpc-server-in-your-endpoint.md) —
+  give unknown gRPC methods `UNIMPLEMENTED` in an endpoint of your own (`UnknownMethod.install/1`).
+- [`how-to/verify-receipts.md`](how-to/verify-receipts.md) — check Markdown receipts
+  against the files they cite with `mix ash_a2a.receipts.verify`.
 
 ## Reference
 
@@ -64,6 +95,8 @@ Exact factual contracts:
   full reference page catalog.
 - [`reference/a2a-error-mapping-decisions.md`](reference/a2a-error-mapping-decisions.md) — HTTP,
   gRPC and JSON-RPC error mapping decisions against the pinned TCK
+- [`reference/a2a-error-coverage.md`](reference/a2a-error-coverage.md) — every A2A error type
+  with trigger, emitter, binding mapping, test and parity vector
 - [`reference/dsl.md`](reference/dsl.md) — the `a2a` section, `skill`,
   `hddl_operator`, `semantic_requests`, and compile-time verification.
 - [`reference/configuration.md`](reference/configuration.md) — every application config
@@ -71,6 +104,9 @@ Exact factual contracts:
 - [`reference/telemetry.md`](reference/telemetry.md) — the production event catalog
   with payloads.
 - [`reference/mix-tasks.md`](reference/mix-tasks.md) — the shipped Mix tasks.
+- [`reference/environment-setup.md`](reference/environment-setup.md) — build the
+  verification environment (`scripts/dev_env_setup.sh`), run every proof
+  (`scripts/verify_all.sh`), and troubleshoot Postgres, MCP, Rust and venv.
 - [`reference/performance.md`](reference/performance.md) — the measured v1.0 wire-path
   baseline (SA2A-B5/B9 bench run with its environment-identity receipt).
 - [`reference/a2a-endpoint-contract.md`](reference/a2a-endpoint-contract.md) — the
@@ -90,6 +126,8 @@ Exact factual contracts:
   conformance report (`mix ash_a2a.v1_conformance_report`) and the official
   `a2aproject/a2a-tck` suite: court inventory, witnessed verdicts, and what
   MUST-class failures convert to.
+- [`reference/tck-upstream-issue-draft.md`](reference/tck-upstream-issue-draft.md) — unposted draft
+  of the upstream a2a-tck issue about `HTTP_JSON-SVC-001` vs `HTTP_JSON-ERR-001`.
 - [`reference/a2a-v1_1-readiness.md`](reference/a2a-v1_1-readiness.md) — the a2a
   roadmap triaged against the code on disk, with the TCK cross-reference.
 - [`reference/c2-certificate.md`](reference/c2-certificate.md) — the canonical
@@ -106,6 +144,28 @@ Exact factual contracts:
 - [`reference/enterprise.md`](reference/enterprise.md) — enterprise reference.
 - [`reference/security-advisories.md`](reference/security-advisories.md) — security
   advisories disposition.
+- [`reference/ingress-attestation.md`](reference/ingress-attestation.md) — attestation
+  `Key`/`Gate`/`GateGrantAllowlist` and `Ingress.Channel`.
+- [`reference/module-coverage.md`](reference/module-coverage.md) — public module families
+  with no dedicated doc (standing `undocumented`).
+- [`reference/qme-1.md`](reference/qme-1.md) — QME-1 ecosystem reference: this
+  repository's role (PreparedEffect, receipt and replay consequence protocol) and its
+  binding to the canonical chatman-ecosystem specification.
+- [`reference/a2a-v1-1-parity-findings.md`](reference/a2a-v1-1-parity-findings.md) —
+  open and fixed findings of the v1.1 parity check, including the version-gating cases.
+- [`reference/agent-card-honesty.md`](reference/agent-card-honesty.md) —
+  `AgentCard.audit/2`: discrepancy codes between a card's claims and the mounted
+  surface.
+- [`reference/event-journal.md`](reference/event-journal.md) — the
+  `AshA2A.Protocol.EventJournal` callback contract for per-task event replay.
+- [`reference/fuzz-findings-v26.11.15.md`](reference/fuzz-findings-v26.11.15.md) — wire
+  decoder fuzz findings for v26.11.15.
+- [`reference/release-readiness-v26.11.15.md`](reference/release-readiness-v26.11.15.md) —
+  remaining release blockers for v26.11.15; a checklist, not a release claim.
+- [`reference/security-review-v26.11.15.md`](reference/security-review-v26.11.15.md) —
+  by-eye adversarial security review of unrun v26.11.15 code.
+- [`reference/test-suite-timing.md`](reference/test-suite-timing.md) — where `mix test.all`
+  spends its time: measured slowest tests, what is ruled out, and per-owner recommendations.
 - [`reference/generated/`](reference/generated/README.md) — GENERATED doc-hdit
   reference skeletons: a rigid, machine-rendered table of every module and public
   item on the extracted code surface (regen command in its README; never
@@ -137,6 +197,12 @@ Conceptual architecture and rationale:
 - [`explanation/v26.9.29-fibo-high-value-chicago.md`](explanation/v26.9.29-fibo-high-value-chicago.md) —
   v26.9.29 Chicago court over the FIBO high-value finance corpus.
 
+## Archive
+
+`archive/` holds historical RFCs, reports, receipts, tickets and session history.
+It is evidence of past states, not current behavior; current claims live in the
+quadrants above. `sjira/` holds ticket-ontology data (`.ttl`), not prose docs.
+
 ## Capability standing rules
 
 - **ALIVE** requires observed execution against the exact admitted subject.
@@ -145,10 +211,3 @@ Conceptual architecture and rationale:
 - When local execution is unavailable, exact-head GitHub CI may qualify the changed
   subject, but only successful runs on the exact head are admitted.
 - Semantic projections and generated/read models have no ambient execution authority.
-- [`reference/ingress-attestation.md`](reference/ingress-attestation.md) — attestation
-  `Key`/`Gate`/`GateGrantAllowlist` and `Ingress.Channel`.
-- [`reference/module-coverage.md`](reference/module-coverage.md) — public module families
-  with no dedicated doc (standing `undocumented`).
-- [`reference/qme-1.md`](reference/qme-1.md) — QME-1 ecosystem reference: this
-  repository's role (PreparedEffect, receipt and replay consequence protocol) and its
-  binding to the canonical chatman-ecosystem specification.

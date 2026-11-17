@@ -1,0 +1,87 @@
+name: Proofs
+
+# Required evidence on every PR: the simulation prover (242 probes), the
+# byte-for-byte A2A v1.1 parity comparison against the upstream proto, the MCP
+# drive of the whole served surface, and the mutation gate (every mutant must be
+# killed). Each is a real OS-level run against real listeners and a real
+# PostgreSQL; the matrices are uploaded even on failure so a red verdict leaves
+# durable evidence.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Choose the ekv source build deliberately (SC-03); see ci.yml.
+  EKV_BUILD: "1"
+
+jobs:
+  proofs:
+    name: proofs (prove, parity, mcp, mutation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MIX_ENV: test
+      A2A_PARITY_VENV: ${{ github.workspace }}/.parity-venv
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ash_a2a_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      # setup-beam (version-file .tool-versions, strict), the cache, the
+      # hddl_cli and graphlaw_host cargo builds and the compile all live in the
+      # shared composite so the proofs run on the same build as every lane.
+      - uses: ./.github/actions/build
+      - name: Create parity venv (official protobuf/gRPC reference)
+        run: scripts/a2a_v1_1_parity/setup.sh "$A2A_PARITY_VENV"
+      - name: Prove the simulation (every probe over the real wire)
+        run: |
+          mkdir -p proof-out
+          mix ash_a2a.sim --prove --json | python3 -I scripts/ci_extract_json.py proof-out/prove.json
+          mix ash_a2a.sim --prove | tee proof-out/prove.txt
+      - name: Parity against the upstream v1.1 reference (strict)
+        run: |
+          mkdir -p proof-out
+          mix ash_a2a.sim --parity --strict --json | python3 -I scripts/ci_extract_json.py proof-out/parity.json
+          mix ash_a2a.sim --parity --strict | tee proof-out/parity.txt
+      # Direct mode: the stdio shim answers `initialize` from a cache of the last
+      # healthy start, which is empty on a fresh runner, so the driver would see
+      # no tools. A2A_SIM_MCP_DIRECT=1 boots the real server before answering.
+      - name: Drive every surface item through MCP
+        env:
+          A2A_SIM_MCP_DIRECT: "1"
+        run: |
+          mkdir -p proof-out
+          python3 scripts/mcp_drive.py --json --log proof-out/mcp-server.log > proof-out/mcp.json
+          python3 scripts/mcp_drive.py --log proof-out/mcp-server.log | tee proof-out/mcp.txt
+      - name: Mutation gate (every mutant killed)
+        run: mix ash_a2a.chicago.mutate --evidence-dir proof-out/mutations --require-killed
+      - name: Upload proof matrices
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: proof-matrices
+          path: proof-out/
+          if-no-files-found: warn

@@ -596,10 +596,10 @@ defmodule AshA2A.Enterprise.Pipeline do
     end
   end
 
-  defp budget_status(:budget_exceeded), do: 429
-  defp budget_status(:invalid_request), do: 400
-  defp budget_status(:missing_evidence), do: 403
-  defp budget_status(_), do: 429
+  # Any refusal code the enforcer returns beyond these maps to 429.
+  @budget_statuses %{budget_exceeded: 429, invalid_request: 400, missing_evidence: 403}
+
+  defp budget_status(code), do: Map.get(@budget_statuses, code, 429)
 
   defp header_map(conn), do: Map.new(conn.req_headers)
 

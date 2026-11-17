@@ -1,6 +1,6 @@
 # Mix Tasks Reference
 
-All tasks live in `lib/mix/tasks/` (23 files, 23 tasks, each listed below).
+All tasks live in `lib/mix/tasks/` (26 files, 26 tasks, each listed below).
 Run `mix help <task>` for full flags.
 
 ## Installer
@@ -46,7 +46,12 @@ These are the repo's own regression gates (run by or alongside
 | `mix ash_a2a.standing_ref` | Prints the newest SHA with a durable court receipt at a given standing (`--court sa2a --standing CONFORMANT`), so consumers pin that exact SHA as a git `ref:` instead of a version number. See `AshA2A.StandingRef`. |
 | `mix ash_a2a.standing_receipt.revision` | Append a receipt-revision event to the standing-receipt hash chain (`<doc>.chain.jsonl`) and prints the new chain head (`CHAIN_HEAD:<hex>`); `--in`/`--chain`; exits 1 (REFUSED) on an unreadable doc or broken chain. |
 | `mix ash_a2a.standing_receipt.verify` | Verify a standing-receipt attestation (payload digest + Ed25519 via graphlaw-attest) in stages: the payload SHA-256 must match, the signature is verified with `--trusted-key` (`BLOCKED:graphlaw-attest-absent` if the binary is absent — never faked), and when `<doc>.chain.jsonl` exists the revision chain fold is recomputed. `--in`/`--attestation`/`--trusted-key`. |
+| `mix ash_a2a.doctor` | Diagnoses the A2A wiring of this application — prints findings about the compiled domains and resources and exits non-zero on any error (`--strict` makes warnings fatal, `--json`, repeatable `--domain`). See `docs/how-to/run-doctor.md`. |
+| `mix ash_a2a.receipts.verify` | Verify receipt hashes, cited tests, standing and run-log consistency for Markdown receipts (default `receipts/**/*.md` and `docs/archive/jira-releases/*/RECEIPT.md`); read-only, `--root`/`--git`, exits non-zero on any error-severity finding. See `docs/how-to/verify-receipts.md`. |
 | `mix ash_a2a.self_card` | Generate ash_a2a's own A2A agent card from its shipped protocol surface (`--output PATH`, `--url URL`; writes `priv/sa2a/self-agent-card.json`). |
+| `scripts/tck_assert.py` (not a mix task) | Gates an a2a-tck `compatibility.json`: fails on a failed MUST, and with `--expected-failures scripts/tck_expected_failures.json --tck-sha SHA` tolerates only the listed ids (fails if a listed id starts passing or any unlisted id fails). See [TCK suite](tck-suite.md) and the [unposted upstream issue draft](tck-upstream-issue-draft.md). |
+| `mix ash_a2a.sim` | Serve the simulation server, or prove every served surface over the wire (`--prove` runs every probe against real listeners and exits non-zero on a failure; `--json` prints the matrix as JSON; see [run the simulation server](../how-to/run-the-simulation-server.md)). |
+| `mix ash_a2a.sim.mcp` | Serve the simulation server to an MCP client over stdio or Streamable HTTP (`--http PORT` serves `http://127.0.0.1:PORT/mcp` instead of stdio; `bin/a2a-sim-mcp` is the stdio launcher `.mcp.json` registers; see [control the simulation server over MCP](../how-to/control-the-sim-over-mcp.md)). |
 | `mix eds.ledger` | Print the real ERC ledger for this repo — the ERC (Executable Research Claim) receipts written from this project's own test-run evidence. |
 
 ## Benchmarks (non-task)

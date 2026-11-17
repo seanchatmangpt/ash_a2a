@@ -5,14 +5,14 @@
 defmodule AshA2A.OnCancel do
   @moduledoc """
   Behaviour for a resource author's real Ash-side compensation hook, run when
-  a task is genuinely canceled through `AshA2A.Agent.__cancel__/2`.
+  a task is genuinely canceled through `AshA2A.Agent.__cancel__`.
 
   Before this module existed, the only observable effect of a real cancel was
   a `:telemetry.execute/3` event (`[:ash_a2a, :agent, :cancel]`) -- a caller
   could *attach* to that and run compensation from the handler, but there was
   no first-class DSL-level hook a resource author could declare directly on
   the `a2a do skill ... end` entry itself (see the real-gap comment this
-  module resolves, `AshA2A.Agent.__cancel__/2`'s moduledoc-adjacent note,
+  module resolves, `AshA2A.Agent.__cancel__`'s moduledoc-adjacent note,
   pre-fix). `on_cancel:` on a skill entity closes that gap, additively: a
   skill with no `on_cancel:` declared behaves exactly as before (telemetry
   only).
@@ -36,7 +36,7 @@ defmodule AshA2A.OnCancel do
   reused without wrapping it.
 
   `exec_context` is the same `AshA2A.ExecutionContext` (`actor`, `tenant`,
-  `context`, `domain`) that `AshA2A.Agent.__cancel__/2` already resolves via
+  `context`, `domain`) that `AshA2A.Agent.__cancel__` already resolves via
   `AshA2A.ContextResolver.from_a2a_message/4` for its telemetry metadata --
   the identical, trust-boundary-crossed identity, never a value read
   straight from unauthenticated cancel-request metadata a remote caller
@@ -44,7 +44,7 @@ defmodule AshA2A.OnCancel do
 
   ## Failure handling
 
-  `AshA2A.Agent.__cancel__/2` always returns `:ok` -- that is the contract
+  `AshA2A.Agent.__cancel__` always returns `:ok` -- that is the contract
   `AshA2A.Protocol.Agent`'s own state machine requires from `handle_cancel/1`
   (`~/xaas/deps/a2a/lib/a2a/agent.ex:148-153`), and the task is already
   being transitioned to `:canceled` regardless of what a resource author's

@@ -38,7 +38,7 @@ defmodule AshA2A.Chicago.Courts.RootManifest do
   never through `RootManifest`.
 
   Measured defect found while building this court and repaired: the committed
-  manifest pinned the BRCE contract as `AshA2A.CommandBus.admit/2`, a private
+  manifest pinned the BRCE contract as `AshA2A.CommandBus.admit`, a private
   function -- the pinned contract named no exported boundary. The pin is now
   the exported sole-DO entry `run/4` (009 attacks the old pin).
   """

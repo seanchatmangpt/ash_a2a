@@ -53,7 +53,7 @@ defmodule AshA2A.Transport.Plug do
   JSON-RPC handler ctx as `:a2a_version`.
 
   `:extensions` takes negotiated extension modules (`Mod | {Mod, opts}`,
-  compiled at `init/1` via `AshA2A.Protocol.Extension.compile/1`) and/or
+  compiled at `init/1` via `AshA2A.Protocol.Extension.compile`) and/or
   advertise-only declaration maps. Required extensions missing from the
   `A2A-Extensions` request header answer `-32008` before dispatch; activated
   URIs are echoed in the `A2A-Extensions` response header and reach the agent
@@ -83,7 +83,7 @@ defmodule AshA2A.Transport.Plug do
   import Plug.Conn
 
   alias AshA2A.Protocol.JSONRPC.{Error, Response}
-  alias AshA2A.Transport.{Principal, Runtime, SafeError}
+  alias AshA2A.Transport.{Follow, Principal, Runtime, SafeError}
 
   @doc "Typed transport refusal codes, classified for S42 totality."
   @spec __sa2a_refusal_codes__() :: %{atom() => atom()}
@@ -178,8 +178,6 @@ defmodule AshA2A.Transport.Plug do
       send_resp(conn, 404, "Not Found")
     end
   end
-
-  def call(conn, _opts), do: send_resp(conn, 404, "Not Found")
 
   # -- agent card ------------------------------------------------------------
 
@@ -333,7 +331,10 @@ defmodule AshA2A.Transport.Plug do
             a2a_version: version
           }
 
-          case AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, ctx) do
+          case live_or_handle(decoded, conn, ctx) do
+            %Plug.Conn{} = answered ->
+              answered
+
             {:reply, response} ->
               send_json(conn, response)
 
@@ -357,7 +358,9 @@ defmodule AshA2A.Transport.Plug do
       {:error, rejected} when is_binary(rejected) ->
         conn
         |> put_resp_header("a2a-version", AshA2A.Protocol.Version.safe_echo(rejected))
-        |> send_json(Response.error(nil, Error.version_not_supported(rejected)))
+        |> send_json(
+          Response.error(refused_request_id(conn), Error.version_not_supported(rejected))
+        )
 
       # Required extension absent from the A2A-Extensions request header
       # (spec §4.5): ExtensionSupportRequiredError (-32008), before dispatch.
@@ -365,7 +368,7 @@ defmodule AshA2A.Transport.Plug do
         send_json(
           conn,
           Response.error(
-            nil,
+            refused_request_id(conn),
             Error.extension_support_required(
               "Client missing required extensions: " <> Enum.join(missing, ", ")
             )
@@ -373,7 +376,7 @@ defmodule AshA2A.Transport.Plug do
         )
 
       {:error, %Error{} = err} ->
-        send_json(conn, Response.error(nil, err))
+        send_json(conn, Response.error(refused_request_id(conn), err))
     end
   end
 
@@ -573,6 +576,10 @@ defmodule AshA2A.Transport.Plug do
     do: AshA2A.Protocol.InputModeValidator.to_error(reason)
 
   def reason_error(:not_continuable), do: Error.unsupported_operation("task is terminal")
+
+  def reason_error({:invalid_agent_response, _detail}),
+    do: Error.invalid_agent_response("agent reply is not a valid A2A response")
+
   def reason_error(_other), do: nil
 
   @doc false
@@ -584,7 +591,7 @@ defmodule AshA2A.Transport.Plug do
       do: reason_error(reason)
 
   def wire_error({tag, _} = reason)
-      when tag in [:unsupported_operation, :content_type_not_supported],
+      when tag in [:unsupported_operation, :content_type_not_supported, :invalid_agent_response],
       do: reason_error(reason) || Error.internal_error()
 
   # -32000 is the JSON-RPC *server-error* code (not one of the Error module's
@@ -629,7 +636,10 @@ defmodule AshA2A.Transport.Plug do
           id,
           Map.get(ctx.opts, :resubscribe_timeout, 300_000),
           params: params,
-          version: ctx.a2a_version
+          version: ctx.a2a_version,
+          # No credential echo: the opening snapshot is the stored task, which
+          # carries the verified identity and the owner key in its metadata.
+          wire_task: &Runtime.wire_task/1
         )
 
       {:error, :not_found} ->
@@ -637,185 +647,45 @@ defmodule AshA2A.Transport.Plug do
     end
   end
 
+  # Admit first (spec 3.1.2): the send is admitted with `return_immediately`
+  # and this process joins the task's subscriber fan-out at admission
+  # (`AshA2A.Transport.Follow.admit_opts/1`), so the Task frame is written
+  # before the handler runs and its id is usable at once. The stream then
+  # carries one event per stored mutation (each at the generation the task
+  # store gave it) until the task is terminal or interrupted. While the
+  # handler is quiet a `: keepalive` comment is written every tick; the stream
+  # is not cut for silence.
   defp stream_message(conn, ctx, params, jsonrpc_id) do
     message = params["message"]
+    call_opts = params |> call_opts(message, ctx) |> Follow.admit_opts()
 
-    case call_agent(ctx.agent, message, call_opts(params, message, ctx)) do
-      {:ok, %AshA2A.Protocol.Task{metadata: %{stream: enum}} = task} ->
-        conn = start_sse(conn)
-        conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
-        conn = send_message_updates(conn, jsonrpc_id, task, ctx)
-        stream_parts(conn, jsonrpc_id, task, enum)
+    case call_agent(ctx.agent, message, call_opts) do
+      {:ok, %AshA2A.Protocol.Task{} = task} ->
+        wired = Follow.wire(task)
+
+        stream_opts =
+          [subscribed?: true, keepalive: true] ++ Follow.stream_opts(Map.get(ctx, :opts, %{}))
+
+        ctx.agent
+        |> Follow.events(wired, [wired], :send, stream_opts)
+        |> Enum.reduce_while(start_sse(conn), fn
+          :keepalive, conn ->
+            case chunk(conn, ": keepalive\n\n") do
+              {:ok, conn} -> {:cont, conn}
+              {:error, _closed} -> {:halt, conn}
+            end
+
+          event, conn ->
+            {:cont, send_event(conn, jsonrpc_id, event)}
+        end)
 
       {:ok, %AshA2A.Protocol.Message{} = msg} ->
         conn = start_sse(conn)
         send_event(conn, jsonrpc_id, msg)
 
-      {:ok, %AshA2A.Protocol.Task{} = task} ->
-        conn = start_sse(conn)
-        conn = send_event(conn, jsonrpc_id, Runtime.wire_task(task))
-        conn = send_message_updates(conn, jsonrpc_id, task, ctx)
-
-        conn =
-          Enum.reduce(task.artifacts, conn, fn artifact, conn ->
-            send_event(
-              conn,
-              jsonrpc_id,
-              AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
-                context_id: task.context_id,
-                generation:
-                  artifact.end_generation || artifact.start_generation ||
-                    AshA2A.Protocol.Task.Generation.generation_of(task)
-              )
-            )
-          end)
-
-        final =
-          AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-            context_id: task.context_id,
-            final: true,
-            generation: AshA2A.Protocol.Task.Generation.generation_of(task)
-          )
-
-        send_event(conn, jsonrpc_id, final)
-
       {:error, reason} ->
         send_json(conn, Response.error(jsonrpc_id, wire_error(reason)))
     end
-  end
-
-  # v1.0 §TaskArtifactUpdateEvent: the chunk frames of one streamed artifact
-  # share ONE artifactId; `append: true` appends a chunk to the
-  # previously-sent artifact with the same id, and `lastChunk: true` marks the
-  # final chunk (so clients can reassemble by id). The first chunk is a new
-  # artifact: `append` is left unset. `last_chunk` is only set on the final
-  # chunk; `put_unless_nil` drops it from the earlier frames.
-  defp stream_parts(conn, jsonrpc_id, task, enum) do
-    # The chunk emitter and the stream_done fold share ONE stable artifact id,
-    # pre-minted by the agent runtime when it wrapped the stream
-    # (:stream_artifact_id on the task metadata); mint here only as a
-    # fallback for paths that never stamped it.
-    # Protocol.Task.metadata is typed `map()` (never nil), so the old
-    # `|| %{}` fallback was dead.
-    artifact_id =
-      Map.get(task.metadata, :stream_artifact_id) ||
-        AshA2A.Protocol.ID.generate("art")
-
-    # A lazy stream reveals its last element only by ending, so the frame for
-    # chunk i is emitted when chunk i+1 arrives and the drain emits the pending
-    # final chunk. The pending flag records whether chunk i's frame already has
-    # a predecessor on the wire (=> the next frame needs `append: true`).
-    # Frame generations are strictly increasing, starting above the snapshot.
-    base = AshA2A.Protocol.Task.Generation.generation_of(task)
-
-    {conn, pending, n} =
-      Enum.reduce(enum, {conn, nil, 0}, fn part, {conn, pending, n} ->
-        case pending do
-          nil ->
-            {conn, {:chunk, part, false}, n}
-
-          {:chunk, prev_part, append?} ->
-            conn =
-              send_chunk_frame(
-                conn,
-                jsonrpc_id,
-                task,
-                artifact_id,
-                prev_part,
-                append_opts(append?) ++ [generation: base + n + 1]
-              )
-
-            {conn, {:chunk, part, true}, n + 1}
-        end
-      end)
-
-    {conn, n} =
-      case pending do
-        nil ->
-          {conn, n}
-
-        {:chunk, part, append?} ->
-          {send_chunk_frame(
-             conn,
-             jsonrpc_id,
-             task,
-             artifact_id,
-             part,
-             append_opts(append?) ++ [last_chunk: true, generation: base + n + 1]
-           ), n + 1}
-      end
-
-    final_status(conn, jsonrpc_id, task, :completed, nil, base + n + 1)
-  rescue
-    error ->
-      %{ref: ref} = SafeError.internal(:internal_error, error, __STACKTRACE__)
-
-      final_status(
-        conn,
-        jsonrpc_id,
-        task,
-        :failed,
-        "Error: internal_error ref=#{ref}",
-        AshA2A.Protocol.Task.Generation.generation_of(task) + 1
-      )
-  end
-
-  # v1.1 messageUpdate frames for the task timeline's client messages; a
-  # legacy (1.0/0.3) client never receives them and gets no error.
-  defp send_message_updates(conn, jsonrpc_id, task, ctx) do
-    if AshA2A.Protocol.Version.at_least?(Map.get(ctx, :a2a_version), "1.1") do
-      task.timeline
-      |> List.wrap()
-      |> Enum.reduce(conn, fn
-        %AshA2A.Protocol.TimelineEntry{entry: {:message, message}, generation: gen}, conn ->
-          send_event(
-            conn,
-            jsonrpc_id,
-            AshA2A.Protocol.Event.MessageUpdate.new(task.id, message,
-              context_id: task.context_id,
-              generation: gen
-            )
-          )
-
-        _other, conn ->
-          conn
-      end)
-    else
-      conn
-    end
-  end
-
-  defp append_opts(true), do: [append: true]
-  defp append_opts(false), do: []
-
-  defp send_chunk_frame(conn, jsonrpc_id, task, artifact_id, part, opts) do
-    artifact =
-      [part]
-      |> AshA2A.Protocol.Artifact.new()
-      |> struct(artifact_id: artifact_id)
-
-    event =
-      AshA2A.Protocol.Event.ArtifactUpdate.new(
-        task.id,
-        artifact,
-        [context_id: task.context_id] ++ opts
-      )
-
-    send_event(conn, jsonrpc_id, event)
-  end
-
-  defp final_status(conn, jsonrpc_id, task, state, text, generation) do
-    message = if text, do: AshA2A.Protocol.Message.new_agent(text)
-    status = AshA2A.Protocol.Task.Status.new(state, message)
-
-    event =
-      AshA2A.Protocol.Event.StatusUpdate.new(task.id, status,
-        context_id: task.context_id,
-        final: true,
-        generation: generation
-      )
-
-    send_event(conn, jsonrpc_id, event)
   end
 
   defp start_sse(conn) do
@@ -840,6 +710,35 @@ defmodule AshA2A.Transport.Plug do
           {:ok, conn} -> conn
           {:error, _closed} -> conn
         end
+    end
+  end
+
+  # v1.1 `SendLiveMessage` (spec 5.3) is served by the shared live module;
+  # every other method goes to the JSON-RPC dispatcher.
+  defp live_or_handle(%{"method" => "SendLiveMessage"} = decoded, conn, ctx) do
+    metadata = Map.get(ctx.opts, :metadata, %{})
+    metadata = if auth = auth(conn), do: Map.put(metadata, "a2a.auth", auth), else: metadata
+
+    AshA2A.Transport.Live.JSONRPC.serve(conn, decoded["id"], decoded["params"], ctx.agent, %{
+      metadata: metadata,
+      principal: ctx.principal
+    })
+  end
+
+  defp live_or_handle(decoded, _conn, ctx),
+    do: AshA2A.Protocol.JSONRPC.handle(decoded, __MODULE__, ctx)
+
+  # The id of a request refused before dispatch (version negotiation), so the
+  # error still answers that request (JSON-RPC 2.0). Null when unreadable.
+  defp refused_request_id(%{body_params: %{"id" => id}}) when is_binary(id) or is_number(id),
+    do: id
+
+  defp refused_request_id(conn) do
+    with {:ok, body, _conn} <- Plug.Conn.read_body(conn, length: 1_000_000),
+         {:ok, %{"id" => id}} when is_binary(id) or is_number(id) <- Jason.decode(body) do
+      id
+    else
+      _ -> nil
     end
   end
 end

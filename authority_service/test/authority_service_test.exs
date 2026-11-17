@@ -204,6 +204,35 @@ defmodule AuthorityServiceTest do
       assert msg["principal"] == "agent:alice"
     end
 
+    test "an issued certificate maps to the actuator's exact key set with a signatures list" do
+      ctx = start_issuer(%{policy: internal_append_policy(0)})
+      e = actuator_effect()
+      bytes = effect_bytes(e)
+
+      req =
+        request(e, [], %{
+          "effect_digest" => digest(bytes),
+          "effect" => Base.url_encode64(bytes, padding: false)
+        })
+
+      assert {:ok, cert} = Issuer.issue(ctx.issuer, req, now: now())
+      assert {:ok, ac} = Issuer.to_actuator_certificate(cert)
+
+      assert Enum.sort(Map.keys(ac)) ==
+               Enum.sort(~w(v effect_digest principal policy_epoch revocation_epoch generation
+                            not_before expires audience signatures))
+
+      assert ac["effect_digest"] == digest(bytes)
+      assert [%{"kid" => kid, "alg" => _, "nonce" => _, "signature" => sig}] = ac["signatures"]
+      assert kid == cert["envelope"]["kid"]
+      assert sig == cert["envelope"]["signature"]
+
+      # an envelope that does not match the message is refused, never defaulted
+      tampered = put_in(cert, ["envelope", "nonce"], "other-nonce")
+      assert {:error, :envelope_message_mismatch} = Issuer.to_actuator_certificate(tampered)
+      assert {:error, :malformed_certificate} = Issuer.to_actuator_certificate(%{})
+    end
+
     test "a class the policy does not name is refused (fail closed), and k>0 still needs approvals" do
       ctx = start_issuer(%{policy: internal_append_policy(0)})
       e = actuator_effect(%{"consequence_class" => "external_payment"})

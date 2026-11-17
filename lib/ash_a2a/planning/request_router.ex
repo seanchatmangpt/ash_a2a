@@ -95,7 +95,7 @@ defmodule AshA2A.Planning.RequestRouter do
   and most-specific check first:
 
     1. **Facts tier.** The message's real input data part
-       (`AshA2A.Dispatcher.fetch_input/1`) carries a `:goal_facts`/
+       (`AshA2A.Dispatcher.fetch_input`) carries a `:goal_facts`/
        `"goal_facts"` key (`AshA2A.MetadataKey.fetch/2`'s existing
        atom-then-string convention, the same one `:skill`/
        `:semantic_request`/`:continuation_fingerprint` metadata already

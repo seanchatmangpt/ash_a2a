@@ -43,10 +43,14 @@ defmodule TckSut.Agent do
     resource_or_domain: TckSut.Resource,
     name: "tck_sut_agent",
     require_authenticated_caller: false,
-    # Pinned TCK CORE-SEND-003 sends an unsupported mediaType with no
-    # expected_error and requires a normal response: SUT opts out of input-mode
-    # admission (the library default stays on).
-    execution: [validate_input_modes: false]
+    # Input-mode admission stays at the library default (on). The TCK is
+    # self-contradictory on a part with an unlisted mediaType: the MUST probe
+    # CORE-SEND-003 (generic runner, no expected_error) needs a normal
+    # response, while HTTP_JSON-STATUS-001's ContentTypeNotSupportedError probe
+    # applies only when the card does NOT advertise the type. This echo SUT
+    # honestly accepts any media type, so it advertises `*/*`; the library's
+    # refusal path is covered by its own input-mode tests.
+    default_input_modes: ["*/*"]
 
   alias AshA2A.Protocol.Part
 
@@ -289,6 +293,8 @@ defmodule TckSut.Router do
     AshA2A.Transport.HTTPJSON.call(%{conn | path_info: rest}, opts.rest)
   end
 
+  # Always returns the already-sent `conn`: Bandit requires `call/2` to return
+  # a %Plug.Conn{} and resets the connection on any other value.
   defp rest_register_inline_push(decoded, conn, _opts) do
     with 200 <- conn.status,
          {:ok, %{"task" => %{"id" => task_id}} = task} <- Jason.decode(conn.resp_body || ""),
@@ -313,9 +319,9 @@ defmodule TckSut.Router do
         final?
       )
 
-      :ok
+      conn
     else
-      _ -> :ok
+      _ -> conn
     end
   end
 
@@ -451,8 +457,13 @@ interfaces = [
 # dependency applications, so the Req.Finch pool (Finch instance named
 # Req.Finch) must be started here or every delivery dies with
 # `unknown registry: Req.Finch` (the observed silent webhook gap).
-{:ok, _} = Application.ensure_all_started(:finch)
-{:ok, _} = Finch.start_link(name: Req.Finch)
+# Starting the `:req` application provides both `Req.Finch` and the
+# `Req.FinchSupervisor` the sender's DNS-pinned per-delivery pools live under.
+{:ok, _} = Application.ensure_all_started(:req)
+
+# Push deliveries run under the library's supervised task home, which the
+# application tree normally starts (`--no-start` boots no application).
+{:ok, _} = Task.Supervisor.start_link(name: AshA2A.Protocol.PushTaskSupervisor)
 
 {:ok, srv} =
   Bandit.start_link(
@@ -464,6 +475,13 @@ interfaces = [
           agent_card_opts: [supported_interfaces: interfaces,
                             capabilities: %{streaming: true, push_notifications: true}]},
        rest:
+         # Media type stays at the library default `application/json`: TCK
+         # 104a7b4 HTTP_JSON-ERR-001 (MUST) requires "application/json" as a
+         # substring of the error Content-Type, while HTTP_JSON-SVC-001 (SHOULD)
+         # wants exactly `application/a2a+json`; both cannot hold for an error
+         # response, and v1.1.0-rc spec §11.6 shows errors as problem+json.
+         # The MUST wins; `content_type: "application/a2a+json"` (or an Accept
+         # of that type) is supported by the library.
          {AshA2A.Transport.HTTPJSON, agent: TckSut.Agent, base_url: base_url,
           transport: TckSut.Transport, push_notifications: true}},
     port: port,

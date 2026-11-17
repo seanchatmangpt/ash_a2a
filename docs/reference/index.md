@@ -30,7 +30,7 @@ Reference pages in this quadrant:
   environment variable the library reads.
 - [Telemetry events](telemetry.md) — the production event catalog with
   payloads.
-- [Mix tasks](mix-tasks.md) — the 15 shipped tasks.
+- [Mix tasks](mix-tasks.md) — the shipped tasks (one section per `lib/mix/tasks` module).
 - [Performance](performance.md) — the measured v1.0 wire-path baseline
   (SA2A-B5/B9 bench run with its environment-identity receipt); a
   point-in-time observation, not a benchmark claim.
@@ -62,6 +62,41 @@ Reference pages in this quadrant:
   RFC-SA2A-007 §4 statement (`mix ash_a2a.verify_conformance`).
 - [Conformance profiles](conformance-profiles.md) — the C0-C3 profiles and
   the strict C1 run's security-profile/durable-store checks.
+- [A2A v1.1 conformance statement](a2a-v1-1-conformance.md) — per-spec v1.1
+  conformance claims.
+- [v1.1 known divergences](v1-1-known-divergences.md) — the KD register for the
+  v1.1 target.
+- [TCK suite](tck-suite.md) — running the in-repo v1 conformance report and the
+  official `a2aproject/a2a-tck` suite.
+- [Error mapping decisions](a2a-error-mapping-decisions.md) — HTTP, gRPC and
+  JSON-RPC error mapping decisions against the pinned TCK.
+- [Error coverage](a2a-error-coverage.md) — every A2A error type with trigger,
+  emitter, binding mapping, test and parity vector.
+- [Ingress attestation](ingress-attestation.md) — attestation `Key`/`Gate`/
+  `GateGrantAllowlist` and `Ingress.Channel`.
+- [Module coverage](module-coverage.md) — public module families with no
+  dedicated doc.
+- [QME-1](qme-1.md) — the repository's role in the QME-1 ecosystem reference.
+- [Security advisories](security-advisories.md) — advisories disposition.
+- [Enterprise](enterprise.md) — enterprise reference.
+- [Conference-sim model](conference-sim-model.md) — the conference-sim model.
+- [GraphLaw v26.10.28 compatibility](graphlaw-v26.10.28-compat.md) — retired
+  ops, blake3 keys, wasm vendoring.
+- [A2A v1.1 parity findings](a2a-v1-1-parity-findings.md) — open and fixed findings of
+  the byte-for-byte parity check, and the version each wire rule applies to.
+- [Agent card honesty](agent-card-honesty.md) — `AgentCard.audit/2`: discrepancies between
+  a card's claims and the mounted surface.
+- [Event journal](event-journal.md) — the `AshA2A.Protocol.EventJournal` callback contract
+  and its writer, for per-task event replay.
+- [Environment setup](environment-setup.md) — build a development environment and run the
+  verification script.
+- [Fuzz findings v26.11.15](fuzz-findings-v26.11.15.md) — wire decoder fuzz findings.
+- [Security review v26.11.15](security-review-v26.11.15.md) — adversarial review of the
+  v26.11.15 code.
+- [Release readiness v26.11.15](release-readiness-v26.11.15.md) — remaining release
+  blockers and the verification commands; a checklist, not a release claim.
+- [Generated reference](generated/README.md) — machine-rendered skeletons; never
+  hand-edited.
 
 The module rows below cover the dispatch-relevant public surface with its
 real integration status; full module API detail lives in the generated
@@ -229,7 +264,7 @@ dependency of this project with a real qualification test exercising it -- see
 | [`AshA2A.Delivery.ObanAuthority`](https://hexdocs.pm/ash_a2a/AshA2A.Delivery.ObanAuthority.html) | Oban `perform/1` delivery authority: re-verifies LIVE broker standing at delivery time (not enqueue time), so a revoked grant refuses the async execution. | REAL_INTEGRATED (provider, opt-in) |
 | [`AshA2A.Topology.Group`](https://hexdocs.pm/ash_a2a/AshA2A.Topology.Group.html) | Real adapter for the `Group` process/topology registry, including real cross-node purge-on-death; mutations return `RuntimeReceipt`. | REAL_INTEGRATED (provider, opt-in) |
 | [`AshA2A.Topology.Presence`](https://hexdocs.pm/ash_a2a/AshA2A.Topology.Presence.html) | Real adapter for a host application's `Phoenix.Presence` module; mutations return `RuntimeReceipt`. | REAL_INTEGRATED (provider, opt-in) |
-| [`AshA2A.Durability.DurableServer`](https://hexdocs.pm/ash_a2a/AshA2A.Durability.DurableServer.html) | Real adapter for Phoenix `DurableServer` task runtimes, keyed by A2A TaskID; real single-node kill+restart proven, cross-node rehome still unexercised (disclosed gap). | REAL_INTEGRATED (provider, opt-in) |
+| [`AshA2A.Durability.DurableServer`](https://hexdocs.pm/ash_a2a/AshA2A.Durability.DurableServer.html) | Real adapter for Phoenix `DurableServer` task runtimes, keyed by A2A TaskID; real single-node kill+restart proven; cross-node rehome test (2-node EKV + `:peer`, `lane_l06_durable_server_crossnode_rehome_test.exs`) passes (`mix test test/ash_a2a/lane_l06_durable_server_crossnode_rehome_test.exs --include serial --include serial_solo`, 1 passed, 2026-11-16, Elixir 1.20.4 / OTP 29.1.1); post-crash cross-node orphan-claim and landing-node placement remain unexercised. | PARTIAL (provider, opt-in; post-crash orphan claim untested) |
 | [`AshA2A.Execution.FLAME`](https://hexdocs.pm/ash_a2a/AshA2A.Execution.FLAME.html) | Real FLAME placement adapter (`FLAME.LocalBackend` proven); the placed closure still calls `CommandBus` for admission. | REAL_INTEGRATED (provider, opt-in) |
 | [`AshA2A.RuntimeReceipt`](https://hexdocs.pm/ash_a2a/AshA2A.RuntimeReceipt.html) | Evidence struct for consequence-bearing runtime/provider operations (topology, durability, execution adapters). | PARTIAL (not default path) |
 

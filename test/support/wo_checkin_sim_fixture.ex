@@ -42,8 +42,6 @@ defmodule AshA2A.Test.WoCheckinSim.WoVisit do
     data_layer: Ash.DataLayer.Ets,
     extensions: [AshA2A]
 
-  require Ash.Query
-
   attributes do
     uuid_primary_key(:id)
   end

@@ -8,15 +8,24 @@ defmodule AuthorityService.Listener do
   `{:tls, port, [certfile:, keyfile:, cacertfile:]}` (TLS 1.3, mutual authentication:
   `verify_peer` + `fail_if_no_peer_cert`).
 
-  Ops: `"issue"` -> `{"ok": true, "certificate": ...}` or
-  `{"ok": false, "refusal": code, "detail": [...]}`. Anything else is refused.
+  Ops: `"approve"` (only with a `:mailbox`; deposits `{approver, effect_digest, generation,
+  approval}` for `ApproverChannel.Mailbox`) -> `{"ok": true}` or a refusal; `"issue"` -> `{"ok": true, "certificate": ...}` or
+  `{"ok": false, "refusal": code, "detail": [...]}`. Anything else is refused. At most 64
+  connections are served at once per listener; one more is answered `too_many_connections`.
   """
   use GenServer
   alias AuthorityService.Issuer
 
   @default_max 65_536
   @recv_timeout 5_000
+  # A connection over the cap is answered with one `too_many_connections` refusal frame and
+  # closed. The listen backlog is sized well above the cap, so a burst of connects reaches the
+  # acceptor and is decided by the cap, never dropped by the kernel accept queue.
   @max_conns 64
+  @backlog 4 * @max_conns
+
+  def max_conns, do: @max_conns
+  def backlog, do: @backlog
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -32,6 +41,7 @@ defmodule AuthorityService.Listener do
         lsock: lsock,
         kind: kind(transport),
         issuer: Keyword.fetch!(opts, :issuer),
+        mailbox: Keyword.get(opts, :mailbox),
         max: Keyword.get(opts, :max_bytes, @default_max),
         conns: :counters.new(1, []),
         transport: transport
@@ -73,7 +83,7 @@ defmodule AuthorityService.Listener do
              {:ifaddr, {:local, String.to_charlist(tmp)}},
              {:active, false},
              {:packet, :raw},
-             {:backlog, 128}
+             {:backlog, @backlog}
            ]),
          :ok <- File.chmod(tmp, 0o660),
          :ok <- File.rename(tmp, path) do
@@ -92,6 +102,7 @@ defmodule AuthorityService.Listener do
       {:active, false},
       {:packet, :raw},
       {:reuseaddr, true},
+      {:backlog, @backlog},
       {:versions, [:"tlsv1.3"]},
       {:certfile, Keyword.fetch!(tls, :certfile)},
       {:keyfile, Keyword.fetch!(tls, :keyfile)},
@@ -105,6 +116,8 @@ defmodule AuthorityService.Listener do
     case do_accept(st) do
       {:ok, sock} ->
         if :counters.get(st.conns, 1) >= @max_conns do
+          body = Jason.encode!(refusal(:too_many_connections, []))
+          _ = send_(st.kind, sock, <<byte_size(body)::32, body::binary>>)
           close(st.kind, sock)
         else
           :counters.add(st.conns, 1, 1)
@@ -179,6 +192,28 @@ defmodule AuthorityService.Listener do
       {:refused, code, detail} -> refusal(code, detail)
     end
   end
+
+  # Approver channel: deposit one signed approval for a later `issue` (the Issuer re-verifies
+  # it; this op grants nothing). Only available when a `:mailbox` is configured.
+  defp dispatch(
+         %{
+           "op" => "approve",
+           "approver" => approver,
+           "effect_digest" => digest,
+           "generation" => gen,
+           "approval" => approval
+         },
+         %{mailbox: mb}
+       )
+       when not is_nil(mb) do
+    case AuthorityService.ApproverChannel.Mailbox.submit(mb, approver, digest, gen, approval) do
+      :ok -> %{"ok" => true}
+      {:error, code} -> refusal(code, [])
+    end
+  end
+
+  defp dispatch(%{"op" => "approve"}, %{mailbox: mb}) when not is_nil(mb),
+    do: refusal(:malformed_request, [])
 
   defp dispatch(_, _), do: refusal(:unknown_op, [])
 

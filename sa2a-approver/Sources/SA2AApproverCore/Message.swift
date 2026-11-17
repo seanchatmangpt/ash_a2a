@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 
 /// The twelve signed fields of RFC-SA2A-007 E-E. Integer typing (v, epochs, generation,

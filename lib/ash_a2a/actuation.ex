@@ -9,7 +9,7 @@ defmodule AshA2A.Actuation do
   ## Why command identity is not enough
 
   `AshA2A.CommandBus` already deduplicates on `command_id` + fingerprint via
-  `AshA2A.ReceiptStore.claim/2`. That protects against *the same command being
+  `AshA2A.ReceiptStore.claim`. That protects against *the same command being
   submitted twice*. It does not protect against *the same effect being
   requested twice under two different command ids* -- a client that retries by
   minting a fresh `command_id` (the common accident) crosses the consequence

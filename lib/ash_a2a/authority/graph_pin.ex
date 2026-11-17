@@ -60,9 +60,14 @@ defmodule AshA2A.Authority.GraphPin do
     name = __MODULE__
     defstruct pins: %{}
 
-    @doc "Starts the default store (idempotent)."
+    @doc """
+    Starts the default store (idempotent). The Agent is deliberately NOT linked
+    to the caller: it is a node-wide singleton lazily started by whichever
+    process pins first, and a linked start would kill it (and fail every other
+    concurrent caller's `Agent.get/update`) when that first caller exits.
+    """
     def start_link(_opts \\ []) do
-      case Agent.start_link(fn -> %__MODULE__{} end, name: unquote(name)) do
+      case Agent.start(fn -> %__MODULE__{} end, name: unquote(name)) do
         {:error, {:already_started, pid}} -> {:ok, pid}
         other -> other
       end
@@ -86,10 +91,9 @@ defmodule AshA2A.Authority.GraphPin do
     defp ensure_started do
       case Process.whereis(unquote(name)) do
         nil ->
-          case start_link() do
-            {:ok, _} -> :ok
-            {:error, {:already_started, _}} -> :ok
-          end
+          # `start_link/1` already maps `:already_started` to `{:ok, pid}`.
+          {:ok, _} = start_link()
+          :ok
 
         _pid ->
           :ok

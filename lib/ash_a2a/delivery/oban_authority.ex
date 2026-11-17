@@ -21,7 +21,7 @@ defmodule AshA2A.Delivery.ObanAuthority do
 
   alias AshA2A.{Authority, Authority.Grant, Identity}
 
-  @typedoc "A typed refusal reason, matching `AshA2A.Authority.Broker.refusal/0`'s shape."
+  @typedoc "A typed refusal reason, matching `AshA2A.Authority.Broker.refusal`'s shape."
   @type refusal :: map()
 
   @doc """
@@ -58,7 +58,7 @@ defmodule AshA2A.Delivery.ObanAuthority do
   faithful-but-static replay.
 
   `nil` authority in, `{:ok, nil}` out: an unauthenticated/unauthorized
-  command was never a candidate for a grant, and `AshA2A.CommandBus.admit/2`
+  command was never a candidate for a grant, and `AshA2A.CommandBus.admit`
   already fails `:change`/`:external_do` closed on a `nil` authority -- this
   function does not need to invent a refusal for a case that was already
   refused downstream.

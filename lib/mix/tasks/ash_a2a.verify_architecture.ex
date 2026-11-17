@@ -11,7 +11,7 @@ defmodule Mix.Tasks.AshA2a.VerifyArchitecture do
   Runs a small, fixed set of REAL, executable checks against this repo's own
   real compiled code (`AshA2A.ArchitectureVerifier` -- see that module for
   what each check does and why) and prints one `PASS`/`FAIL` line per check.
-  Exits non-zero (via `Mix.raise/1`, which `Mix.CLI` turns into a `System.halt(1)`
+  Exits non-zero (via `Mix.raise/1`, which the Mix CLI turns into a `System.halt(1)`
   when this task is run from a shell) if any check fails, so this is a real,
   repeatable architecture-invariant gate a CI pipeline can run directly:
 

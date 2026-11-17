@@ -23,7 +23,7 @@ defmodule AshA2A.SA2A.ResultProjection do
   This module builds *input* for the engine hash. It does not canonicalize
   RDF, and it must never be mistaken for doing so -- the engine digest is
   computed inside `praxis-graphlaw`, reached through
-  `AshA2A.GraphLaw.Runtime.call/3`.
+  `AshA2A.GraphLaw.Runtime.call`.
 
   ## The one real nondeterminism source, and how it is neutralised
 

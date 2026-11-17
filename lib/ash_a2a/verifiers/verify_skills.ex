@@ -38,7 +38,6 @@ defmodule AshA2A.Verifiers.VerifySkills do
 
   use Spark.Dsl.Verifier
 
-  alias Spark.Dsl.Transformer
   alias Spark.Dsl.Verifier
 
   # Types known to be un-representable in JSON Schema. Declaring one on an

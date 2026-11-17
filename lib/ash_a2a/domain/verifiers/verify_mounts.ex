@@ -25,6 +25,12 @@ defmodule AshA2A.Domain.Verifiers.VerifyMounts do
       |> Spark.Dsl.Verifier.get_entities([:transport])
       |> Enum.filter(&match?(%Mount{}, &1))
 
+    mounts
+    |> run_checks(module)
+    |> AshA2A.Domain.Verifiers.Location.locate(dsl_state)
+  end
+
+  defp run_checks(mounts, module) do
     with :ok <- verify_agents_exist(mounts, module),
          :ok <- verify_agent_modules(mounts, module),
          :ok <- verify_path_shape(mounts, module),

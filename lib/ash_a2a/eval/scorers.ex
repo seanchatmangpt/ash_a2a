@@ -175,10 +175,6 @@ defmodule AshA2A.Eval.Scorers do
   defp path_of(%{"type" => "schema_match"}), do: "data"
   defp path_of(_), do: "text"
 
-  defp resolve(_view, path) when not is_binary(path) do
-    {:error, {:invalid_path, path}}
-  end
-
   defp resolve(view, "text"), do: {:ok, view.text}
 
   defp resolve(view, "data"), do: resolve_data(view, [])

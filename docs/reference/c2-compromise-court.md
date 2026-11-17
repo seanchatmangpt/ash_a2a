@@ -59,7 +59,7 @@ Processes (all started with `mix run --no-halt` from their own project directory
 |---|---|---|---|
 | keymaster | `authority_service` test env, `test/support/c2_harness/keymaster_child.exs` | every private key, TLS PKI, issuance journal | UDS, court-only |
 | actuator | `actuator` test env, `actuator_child.exs` (real `Actuator.Store`, UDS + mTLS listeners) | pinned public registry only, own state dir, ledger | UDS, mTLS 1.3 |
-| authority | `authority_service` prod env (the release entrypoint, `Application` + `Runtime`) | its own policy key file (0600), approver registry, journal | UDS |
+| authority, authority 2 | `authority_service` prod env (the release entrypoint, `Application` + `Runtime`), two instances | each its own policy key file (0600), custodian identity, approver registry, journal and state dir | UDS (one socket each) |
 
 Distribution is disabled: no child is started with `--name`/`--sname`, `ERL_FLAGS=-start_epmd
 false`, and each child prints `node_alive: false` in its READY line (the court refuses to
@@ -95,7 +95,7 @@ this attack, so one violation is attributed to the attack that caused it.
 client credential, an attacker-generated rogue credential, the public registry, protocol
 constants and the private keys of the signers the threat model deliberately compromises:
 signers `A` and `A2` (one custodian, `custA`, two keys) and approver `alice`, i.e. fewer than
-k. Signers `B`, `C`, approvers `bob`/`carol`, the authority policy key and the actuator TLS
+k. Signers `B`, `C`, approvers `bob`/`carol`, both authority policy keys and the actuator TLS
 server key exist only in the keymaster and the service that owns them.
 
 `C2Harness.Scan` sends the attacker's whole readable environment (`System.get_env/0`, the
@@ -150,10 +150,12 @@ traceability, not as an assurance claim.
 | C2C-A14 | certificate whose window is malformed (expires <= not_before) | expired certificate | T1550 | CAPEC-153 | AML.T0053 | 10,12 | malformed_window, malformed_envelope |
 | C2C-A15 | stale policy epoch on the certificate and on the effect | stale policy epoch | T1562 | CAPEC-176 | AML.T0053 | 9 | policy_epoch_stale |
 | C2C-A16 | certificate older than the actuator's revocation epoch | revoked authority | T1550 | CAPEC-60 | AML.T0053 | 13 | revocation_epoch_stale |
-| C2C-A17 | certificate signed by a key the actuator's revocation view lists as revoked | revoked authority | T1078, T1550 | CAPEC-60 | AML.T0053 | 13 | key_revoked |
+| C2C-A17 | certificate signed by a key the actuator's revocation view lists as revoked (keymaster signer A; then the real authority's own key) | revoked authority | T1078, T1550 | CAPEC-60 | AML.T0053 | 13 | key_revoked, authority_key_revoked |
 | C2C-A18 | stale and missing revocation view (fail closed) | revoked authority | T1562 | CAPEC-176 | AML.T0053 | 13 | revocation_view_stale, revocation_view_missing |
 | C2C-A19 | insufficient quorum (1 valid signature where 2 custodians are required) | insufficient quorum | T1078 | CAPEC-1 | AML.T0053 | 11 | quorum_not_met |
 | C2C-A20 | single compromised signer below k, alone and with repeated nonces | single compromised signer below quorum | T1078, T1606 | CAPEC-196, CAPEC-151 | AML.T0053 | 11 | quorum_not_met |
+| C2C-A45 | certificate signed by only ONE real authority where quorum 2 is pinned (authority 1 alone, then authority 2 alone) | insufficient quorum; single compromised signer below quorum | T1078 | CAPEC-1 | AML.T0053 | 11 | quorum_not_met |
+| C2C-A46 | two valid signatures from the SAME authority key (the one signature listed twice; a second signature by the same key under a fresh nonce) | insufficient quorum; single compromised signer below quorum | T1078, T1606 | CAPEC-151, CAPEC-196 | AML.T0053 | 11 | quorum_not_met |
 | C2C-A21 | one custodian signing twice with two keys (independence tier I3) | single compromised signer below quorum | T1078 | CAPEC-151 | AML.T0053 | 11 | quorum_not_met |
 | C2C-A37 | certificate for a generation the actuator does not hold | replay of a valid certificate | T1550 | CAPEC-60 | AML.T0053 | 16 | generation_stale |
 | C2C-A38 | certificate minted for another audience | forged certificate | T1550 | CAPEC-21 | AML.T0053 | 10 | wrong_audience |
@@ -261,26 +263,104 @@ this working tree uncommitted, so `working_tree_dirty` is true in the report), 3
   survives, `{10, 11}` killed by 6 attacks; the always-allow actuator failed 37 attacks.
 * Key-material scan: 0 leaks over a 13 KB haystack; self-test planted and detected all 12 needles.
 
+After the two-authority change (2026-11-17, N = 20, `mix test test/ash_a2a/c2_compromise/
+--include serial --include serial_solo --include serial_shard`: 35 passed, 1110 s on a loaded
+host): 57 attacks (42 actuator, 8 authority, 4 fault series, 3 entrypoint), 57 `pass`; the
+mutation court is unchanged (15 of 15 killed, `{10}` alone survives, `{10, 11}` killed by 6
+attacks, the always-allow actuator failed 39 attacks; the check-11 mutant is killed by A19,
+A20, A21, A45 and A46); the key-material scan covers both authority keys (16 needles, 0 leaks,
+self-test detected all).
+
 Numbers are copied from that run's `report.json`; re-run to refresh them.
 
 ## Known gaps and handoffs
 
-* **AuthorityService cannot issue for the actuator today.** `AuthorityService.Issuer` parses
-  effects requiring `effect_class` and `amount`; `Actuator.Effect` requires an exact key set
-  without them. The authority emits `{envelope, message}` while the actuator wants
-  `{..., signatures: [...]}` (the same signed message, mechanically convertible). Until one
-  side maps
-  `consequence_class`/`params` to the policy class and amount, actuator-shaped certificates in this
-  court come from the keymaster stand-in, which journals intended issuances exactly like the real
-  issuer; the real authority is attacked on its own terms (`C2C-B*`). The `compat` section of
-  the report records both refusals (`BLOCKED`).
+* **AuthorityService to actuator: closed for intended issuance (court run 2026-11-17).** The
+  real `authority_service` process now issues for actuator-shaped effects in the court, the
+  certificate is converted with `AuthorityService.Issuer.to_actuator_certificate/1`, and the
+  real actuator executes it. The earlier `unknown_effect_class` was not a mapping defect: the
+  Issuer already read the class from `consequence_class`, but the court's authority policy
+  named only `payment`; it now names the actuator's classes (`internal_append`, `none`, k = 2).
+  One real defect was found and fixed: the service key's revocation epoch was hard-coded to 0,
+  so any actuator whose revocation view had advanced refused every real certificate
+  (`revocation_epoch_stale`); it is now operator-pinned (`AUTHORITY_KEY_REVOCATION_EPOCH`,
+  `Config.from_files(key_revocation_epoch:)`, test in `authority_service/test/config_files_test.exs`).
+  The report's `compat` section records four probes: real authority certificate at the real
+  actuator's production entrypoint with the authority key as its only registry entry and
+  quorum 1: `performed`, replay `replayed`, one ledger entry, **ACCEPTED** (no keymaster
+  signature involved); the same single-custodian certificate at the court actuator (quorum 2):
+  `quorum_not_met`, REFUSED_BY_POLICY; the court path (next paragraph): `performed`, ACCEPTED; an
+  authority-shaped effect at the actuator: `malformed_effect`, REFUSED_BY_DESIGN.
+  **Quorum 2 is now real (court run 2026-11-17).** The court actuator still pins quorum 2, and
+  an intended issuance now gets BOTH signatures from real authorities: two independent
+  `authority_service` instances (two keys, custodians `authority-service` and
+  `authority-service-b`, two journals, two state dirs, two sockets, two OS processes started by
+  `C2Harness.Fleet`), whose issued certificates the court merges with
+  `AuthorityService.Issuer.combine_actuator_certificates/1`. The keymaster signs nothing in an
+  honest certificate (its former `cosign_actuation` op is gone). Why two instances and not one
+  authority with a 2-of-2 policy: the service has no such policy. Its `k` counts distinct
+  HUMAN approvers per effect class and the Issuer signs with exactly one service key, so a
+  2-of-2 threshold would be a new signing model; the actuator, by contrast, already verifies
+  `signatures: [...]` and counts distinct `custodian_id`s (`Actuator.Fence` check 11), and
+  RFC-SA2A-006 treats the actuator quorum as independent custodians. One real change was
+  needed in `authority_service`: each `signatures` entry signs the certificate-level fields
+  (`not_before`, `expires`, ...), which an authority stamps from its own clock, so two
+  authorities issued fields that differed by a second. The `issue` request now accepts an
+  optional `"window"` (`not_before`, `expires`) so the second authority adopts the first's
+  window; it can only narrow what the authority's own policy grants (`not_before` within the
+  policy skew of its own clock, `expires` later than `not_before` and no later than the expiry
+  it would have chosen), anything else is `window_invalid` (tests:
+  `authority_service/test/multi_authority_test.exs`, including refusals over the real unix
+  socket). The same approvals go to both authorities (each journals them separately).
+  The oracle credits an honest issuance only when BOTH authority journals hold the
+  `(digest, generation)` (authority 1's entry is the one counted, so one issuance still buys at
+  most one consequence).
+  Two new attacks prove the quorum from the real side: C2C-A45 (a certificate with only ONE
+  real authority's signature, authority 1 alone and authority 2 alone, is refused
+  `quorum_not_met` by the quorum-2 actuator) and C2C-A46 (two valid signatures from the SAME
+  authority key do not satisfy it, with the exact refusal `quorum_not_met`: the real
+  signature entry listed twice, and a second signature by the same key under a fresh nonce).
+  Both are killed by the check-11 mutant.
+  Court issuance split (per attack in `attacks[].issuers`; 563 real-authority issuances and 82
+  stand-in issuances in the 2026-11-17 run, N = 20): an issuance with no options goes to the
+  two real authorities. 16 attacks use ONLY real authorities: A01, A04, A06, A08, A09, A10,
+  A16, A18, A22, A27, A35, A45, F03, F04, E02, E03. The keymaster stand-in remains in 26
+  attacks, each for something the real service refuses to do or a key holder it will not be:
+  * mis-issuance, validly signed but in no issuance journal (an authority defect): A07
+    (subject outside the allow-set), A28 (required fields deleted), A29-A32 (path, URL,
+    command and deserialization payloads in effect fields), A33 (oversized bounds and lists),
+    A39-A43 (principal, capability, class, version and instance-id mismatches), and the
+    fresh-generation probe inside F01 and F02;
+  * chosen validity windows, epochs, generations, audiences and nonces, which the real
+    authority stamps itself (its `"window"` can only narrow): A11, A12, A13, A14, A15 (policy
+    epoch), A36 (skew), A37 (generation), A38 (audience), A44 (one nonce on two
+    certificates);
+  * a chosen or compromised key holder: A17 (the revoked keymaster signer A; its second half,
+    the real authority's own key revoked, uses the real authorities), A19 (a single keymaster
+    signer where two are required), A46 (the fresh-nonce duplicate is signed by the
+    keymaster with authority 1's key, a holder of that key; the "listed twice" half is the
+    real signature).
+  A02, A03, A05, A20, A21, A34 and the authority attacks B01-B08 never need an issuer
+  (the attacker forges or the real authority is the target). The actuator profile still refuses general
+  `PreparedEffect`s (`:payload_profile`), by design.
+* **Court run, 2026-11-17 (Elixir 1.20.4 / OTP 29, dirty tree, run as root):** `mix test
+  test/ash_a2a/c2_compromise/c2_compromise_court_test.exs --include serial --include
+  serial_solo --include serial_shard`: 12 passed, report `overall=PASS`, 55 of 55 attacks pass (before
+  C2C-A45/A46 and the two-authority fleet, see "Measured result" for the later run),
+  every fence check killed by its mutant, C2C-F01..F04 and C2C-B08 ran 20 of 20. Mutant fleets
+  now start the real authority too. Fixed on 2026-11-16 and still in force: the harness waits
+  for the actuator child's `<ctl>/crash.armed` acknowledgement before submitting the request
+  it intends to crash (`C2Harness.Fleet.arm_crash/2`); writing `crash.point` alone raced the
+  child's 15 ms poll.
 * Check 12's `malformed_window` branch is not reachable through the wire: the crypto boundary
   (check 10) refuses a certificate whose `expires <= not_before` first with `malformed_envelope`
-  (attack `C2C-A14` accepts either code).
-* Hosting scope is same-uid (see above).
+  (attack `C2C-A14` accepts either code). Remains: it is the order of the fence, not a defect.
+* Hosting scope is same-uid (see above). Remains: separate OS users or hosts are an
+  infrastructure change this harness cannot make.
 * A tier with `k = 1` lets a single compromised approver obtain an issuance by policy; the
-  claim "fewer than k" is per-class.
-* ATT&CK/CAPEC/ATLAS ids are court-assigned (see above).
+  claim "fewer than k" is per-class. By design.
+* ATT&CK/CAPEC/ATLAS ids are court-assigned (see above). Remains: no published mapping to check
+  them against.
 
 ## See also
 

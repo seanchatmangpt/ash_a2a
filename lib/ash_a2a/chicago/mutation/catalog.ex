@@ -22,17 +22,44 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
 
   | § 97 mutation                          | target                                              |
   |----------------------------------------|-----------------------------------------------------|
-  | return true from authority check       | `AshA2A.CommandBus.admit/2`, `AshA2A.Authority.admits?/2` |
+  | return true from authority check       | `AshA2A.CommandBus.admit`, `AshA2A.Authority.admits?/2` |
   | ignore expiry                          | `AshA2A.Authority.expired?/1`                        |
-  | ignore revocation                      | `AshA2A.Authority.Broker.InMemory.grant_status/2`    |
-  | remove receipt preparation             | `AshA2A.CommandBus.prepare_receipt_anchor/4`         |
-  | accept unsupported profile             | `AshA2A.Semantic.Envelope.validate_profile/1`        |
-  | trust sender standing                  | `AshA2A.Semantic.Envelope.reject_declared_standing/1`|
-  | skip SHACL                             | `AshA2A.Semantic.AdmissionPipeline.run_stage/4` (`:shacl`) |
-  | skip graph-global falsifiers           | `AdmissionPipeline.run_stage/4` (`:sparql_falsifiers`), `AshA2A.Semantic.FalsifierSuite.do_admit/1` |
-  | allow caller-controlled consequence    | `AshA2A.CommandBus.inspect_target/2`, `AshA2A.Authority.Decision.classify/1` |
-  | allow root-manifest component drift    | `AshA2A.Semantic.RootManifest.verify_pins/1`         |
-  | allow replay to call actuator          | `AshA2A.CommandBus.claim_receipt/3`                  |
+  | ignore revocation                      | `AshA2A.Authority.Broker.InMemory.grant_status`    |
+  | remove receipt preparation             | `AshA2A.CommandBus.prepare_receipt_anchor`         |
+  | accept unsupported profile             | `AshA2A.Semantic.Envelope.validate_profile`        |
+  | trust sender standing                  | `AshA2A.Semantic.Envelope.reject_declared_standing`|
+  | skip SHACL                             | `AshA2A.Semantic.AdmissionPipeline.run_stage` (`:shacl`) |
+  | skip graph-global falsifiers           | `AdmissionPipeline.run_stage/4` (`:sparql_falsifiers`), `AshA2A.Semantic.FalsifierSuite.do_admit` |
+  | allow caller-controlled consequence    | `AshA2A.CommandBus.inspect_target`, `AshA2A.Authority.Decision.classify` |
+  | allow root-manifest component drift    | `AshA2A.Semantic.RootManifest.verify_pins`         |
+  | allow replay to call actuator          | `AshA2A.CommandBus.claim_receipt`                  |
+
+  ## Wave 3 (guards added after the original catalog)
+
+  `CHI-MUTWAVE3` (`AshA2A.Chicago.Mutation.Wave3Court`) is a second
+  non-discoverable reference court, driving the real functions, plugs and
+  transports of each guard below with real collaborators.
+
+  | guard removed                                 | target                                                   |
+  |-----------------------------------------------|----------------------------------------------------------|
+  | email gateway needs webhook authentication    | `Email.Plug.require_config/1`, `Email.Plug.webhook_auth/3` |
+  | email gateway needs a replay ledger           | `Email.Plug.require_config/1`                            |
+  | email body depth / node / reply caps          | `Email.Plug.walk/3` (two clauses), `Email.Plug.reply_cap/2` |
+  | DKIM `l=`, duplicate From, alignment, `x=`, weak key, body hash | `Email.Dkim.check_tags/1`, `from_domain/1`, `alignment/3`, `check_times/2`, `check_size/1`, `check_body_hash/2` |
+  | token consumed once (insert-if-absent)        | `Email.TokenLedgerStore.do_reserve/4`                    |
+  | one error-status table                        | `Protocol.JSONRPC.Error.bindings/1` (both scopes)        |
+  | REJECTED vs FAILED classifier                 | `Transport.Runtime.admission_refusal?/1` (never / always) |
+  | JSON depth cap, decoder totality              | `Protocol.JSONGuard.within_depth?/2`, `Protocol.JSON.decode/2` |
+  | event journal appends and reads back          | `Protocol.EventJournal.record_task/3`, `TaskStore.EventJournalEts.append/4` |
+  | control-plane TLS verify_peer / no downgrade  | `C2.L07Tls.Transport.tls_options/1`, `connect/4`         |
+  | card signature alg / alg-key / tamper         | `Protocol.AgentCardSignature.check_alg/2`, `check_key_alg/2`, `raw_verify/4` |
+  | reply-token MAC binds approver and expiry; key required | `Email.Brief.mint/3`, `Email.Brief.keyring/1`   |
+  | task owner gate                               | `Transport.Runtime.owned_by?/2`                          |
+
+  The approver-mailbox `verify:` check lives in the separate
+  `authority_service` project, not in the `:ash_a2a` application; the engine
+  refuses foreign targets (`mutation_target_foreign`), so that guard is
+  mutated in that project's own suite, not here.
 
   Court falsifier ids (`SA2A-MUTATION-NNN`) are bound to entry ids in
   `numbered/0`; entries are append-only so ids stay stable (§136).
@@ -44,7 +71,11 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
 
   @doc "Non-discoverable reference courts the catalog may use as killers."
   @spec reference_courts() :: [module()]
-  def reference_courts, do: [AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt]
+  def reference_courts,
+    do: [
+      AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt,
+      AshA2A.Chicago.Mutation.Wave3Court
+    ]
 
   @doc "Every §97 mutation, in court falsifier order."
   @spec entries() :: [Mutation.t()]
@@ -325,8 +356,406 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
             "(:lease_signature_invalid)",
         killers: ["CHI-TWO-PORT"]
       }
-    ] ++ security_gate_entries()
+    ] ++ wave3() ++ security_gate_entries()
   end
+
+  # Wave 3: the guards added after the original §97 catalog. Every entry is
+  # killed by the reference court `CHI-MUTWAVE3`
+  # (`AshA2A.Chicago.Mutation.Wave3Court`), whose probes drive the real
+  # function, plug or transport with real collaborators. Bodies are Erlang
+  # expressions over the aliased arguments `ChicagoArg1..N`.
+  @wave3_killer "CHI-MUTWAVE3"
+
+  defp wave3 do
+    [
+      # --- email gateway plug (lib/ash_a2a/email/plug.ex) -----------------------------------
+      wave3(
+        "email_webhook_auth_optional",
+        "request authentication optional (email gateway)",
+        AshA2A.Email.Plug,
+        :require_config,
+        1,
+        :all,
+        ~S"""
+        ChicagoLedger = proplists:get_value(token_ledger, ChicagoArg1),
+        ChicagoUnsafe = proplists:get_value(unsafe_no_replay_ledger, ChicagoArg1),
+        case erlang:is_function(proplists:get_value(brief_lookup, ChicagoArg1), 1) of
+          false -> {halt, 503, brief_lookup_unconfigured};
+          true ->
+            case (ChicagoLedger =:= undefined orelse ChicagoLedger =:= nil) andalso ChicagoUnsafe =/= true of
+              true -> {halt, 503, replay_protection_unconfigured};
+              false ->
+                case 'Elixir.AshA2A.Email.Brief':keyring(token_opts(ChicagoArg1)) of
+                  {ok, _} -> ok;
+                  {error, ChicagoReason} -> {halt, 503, ChicagoReason}
+                end
+            end
+        end.
+        """,
+        "Email.Plug.require_config/1 :webhook required (503 webhook_auth_unconfigured); the other config refusals are kept"
+      ),
+      wave3(
+        "email_replay_ledger_optional",
+        "replay protection optional (email gateway)",
+        AshA2A.Email.Plug,
+        :require_config,
+        1,
+        :all,
+        ~S"""
+        ChicagoWebhook = proplists:get_value(webhook, ChicagoArg1),
+        case ChicagoWebhook =:= undefined orelse ChicagoWebhook =:= nil orelse ChicagoWebhook =:= false of
+          true -> {halt, 503, webhook_auth_unconfigured};
+          false ->
+            case erlang:is_function(proplists:get_value(brief_lookup, ChicagoArg1), 1) of
+              false -> {halt, 503, brief_lookup_unconfigured};
+              true ->
+                case 'Elixir.AshA2A.Email.Brief':keyring(token_opts(ChicagoArg1)) of
+                  {ok, _} -> ok;
+                  {error, ChicagoReason} -> {halt, 503, ChicagoReason}
+                end
+            end
+        end.
+        """,
+        "Email.Plug.require_config/1 :token_ledger required (503 replay_protection_unconfigured); the other config refusals are kept"
+      ),
+      wave3(
+        "email_webhook_auth_skipped",
+        "skip provider webhook authentication",
+        AshA2A.Email.Plug,
+        :webhook_auth,
+        3,
+        :all,
+        "ok.",
+        "Email.Plug.webhook_auth/3 provider authentication before any body field is trusted (401 webhook_unauthorized)"
+      ),
+      wave3(
+        "email_depth_cap_ok",
+        "no depth cap on the parsed body",
+        AshA2A.Email.Plug,
+        :walk,
+        3,
+        {:clause, 1},
+        "{ok, ChicagoArg3}.",
+        "Email.Plug.walk/3 depth cap (> 8 levels -> 413 payload_too_complex)"
+      ),
+      wave3(
+        "email_node_cap_ok",
+        "no node cap on the parsed body",
+        AshA2A.Email.Plug,
+        :walk,
+        3,
+        {:clause, 2},
+        "{ok, ChicagoArg3}.",
+        "Email.Plug.walk/3 node cap (> 2000 nodes -> 413 payload_too_complex)"
+      ),
+      wave3(
+        "email_reply_cap_ok",
+        "no cap on the reply size",
+        AshA2A.Email.Plug,
+        :reply_cap,
+        2,
+        :all,
+        "ok.",
+        "Email.Plug.reply_cap/2 reply size cap (413 payload_too_large)"
+      ),
+      # --- DKIM (lib/ash_a2a/email/dkim.ex) -------------------------------------------------
+      wave3(
+        "dkim_body_length_limit_ok",
+        "accept a truncated body hash (DKIM l=)",
+        AshA2A.Email.Dkim,
+        :check_tags,
+        1,
+        :all,
+        ~S"""
+        ChicagoV = maps:get(<<"v">>, ChicagoArg1, undefined),
+        ChicagoA = maps:get(<<"a">>, ChicagoArg1, undefined),
+        ChicagoC = maps:get(<<"c">>, ChicagoArg1, undefined),
+        ChicagoMissing = lists:any(fun(ChicagoK) -> maps:get(ChicagoK, ChicagoArg1, <<>>) =:= <<>> end, [<<"d">>, <<"s">>, <<"h">>, <<"bh">>, <<"b">>]),
+        case {ChicagoV =/= <<"1">>, ChicagoA =/= <<"rsa-sha256">>, ChicagoC =/= <<"relaxed/relaxed">>} of
+          {true, _, _} -> {error, unsupported_version};
+          {_, true, _} -> {error, unsupported_algorithm};
+          {_, _, true} -> {error, unsupported_canonicalization};
+          _ -> case ChicagoMissing of true -> {error, malformed_signature}; false -> ok end
+        end.
+        """,
+        "Dkim.check_tags/1 l= refusal (:body_length_limit); every other tag check is kept"
+      ),
+      wave3(
+        "dkim_multiple_from_ok",
+        "accept duplicate From headers (use the last)",
+        AshA2A.Email.Dkim,
+        :from_domain,
+        1,
+        :all,
+        ~S"""
+        case [ChicagoV || {ChicagoN, ChicagoV} <- ChicagoArg1, string:lowercase(ChicagoN) =:= <<"from">>] of
+          [] -> {error, from_not_signed};
+          ChicagoL ->
+            case re:run(lists:last(ChicagoL), <<"@([A-Za-z0-9.-]+)">>, [global, {capture, all_but_first, binary}]) of
+              nomatch -> {error, from_misaligned};
+              {match, ChicagoM} -> {ok, string:lowercase(erlang:hd(lists:last(ChicagoM)))}
+            end
+        end.
+        """,
+        "Dkim.from_domain/1 exactly one From (:multiple_from)"
+      ),
+      wave3(
+        "dkim_from_alignment_ok",
+        "From domain need not align with d=",
+        AshA2A.Email.Dkim,
+        :alignment,
+        3,
+        :all,
+        "ok.",
+        "Dkim.alignment/3 From domain equals or is a subdomain of d= (:from_misaligned)"
+      ),
+      wave3(
+        "dkim_expiry_ok",
+        "ignore signature expiry (x=) and future timestamp",
+        AshA2A.Email.Dkim,
+        :check_times,
+        2,
+        :all,
+        "ok.",
+        "Dkim.check_times/2 x= expiry (:expired) and t= skew (:future_timestamp)"
+      ),
+      wave3(
+        "dkim_weak_key_ok",
+        "accept a weak RSA key",
+        AshA2A.Email.Dkim,
+        :check_size,
+        1,
+        {:clause, 1},
+        "{ok, ChicagoArg1}.",
+        "Dkim.check_size/1 minimum RSA modulus (:weak_key)"
+      ),
+      wave3(
+        "dkim_body_hash_ok",
+        "do not check the body hash",
+        AshA2A.Email.Dkim,
+        :check_body_hash,
+        2,
+        :all,
+        "ok.",
+        "Dkim.check_body_hash/2 bh= against the canonicalized body (:body_hash_mismatch)"
+      ),
+      # --- token ledger (lib/ash_a2a/email/token_ledger_store.ex) ----------------------------
+      wave3(
+        "token_ledger_put_unconditional",
+        "token consumption without insert-if-absent",
+        AshA2A.Email.TokenLedgerStore,
+        :do_reserve,
+        4,
+        :all,
+        ~S"""
+        ChicagoKeys = lists:usort([key(ChicagoArg2, ChicagoN, ChicagoT) || {ChicagoN, ChicagoT} <- ChicagoArg3]),
+        lists:foreach(fun(ChicagoK) -> 'Elixir.EKV':put(ChicagoArg1, ChicagoK, #{mid => ChicagoArg4}) end, ChicagoKeys),
+        ok.
+        """,
+        "TokenLedgerStore.do_reserve/4 EKV.put(..., if_vsn: nil) consumes a token exactly once (:already_consumed)"
+      ),
+      # --- status tables and classifiers ------------------------------------------------------
+      wave3(
+        "error_bindings_table_corrupt",
+        "corrupt the single error-status table",
+        AshA2A.Protocol.JSONRPC.Error,
+        :bindings,
+        1,
+        {:clause, 1},
+        ~S"""
+        #{-32001 => {500, 13, <<"INTERNAL">>}}.
+        """,
+        "JSONRPC.Error.bindings(:all): the one mapping of every error code to its HTTP/gRPC status"
+      ),
+      wave3(
+        "error_bindings_a2a_scope_all",
+        "A2A scope returns every row",
+        AshA2A.Protocol.JSONRPC.Error,
+        :bindings,
+        1,
+        {:clause, 2},
+        "'bindings'(all).",
+        "JSONRPC.Error.bindings(:a2a): only -32001..-32010"
+      ),
+      wave3(
+        "admission_refusal_never",
+        "admission refusals classified as failures",
+        AshA2A.Transport.Runtime,
+        :admission_refusal?,
+        1,
+        :all,
+        "false.",
+        "Transport.Runtime.admission_refusal?/1: a refusal is REJECTED, not FAILED"
+      ),
+      wave3(
+        "admission_refusal_always",
+        "every failure classified as an admission refusal",
+        AshA2A.Transport.Runtime,
+        :admission_refusal?,
+        1,
+        {:clause, 10},
+        "true.",
+        "Transport.Runtime.admission_refusal?/1 fallback: any other reason is FAILED, not REJECTED"
+      ),
+      # --- JSON ---------------------------------------------------------------------------------
+      wave3(
+        "json_guard_depth_ok",
+        "no depth cap on untrusted JSON",
+        AshA2A.Protocol.JSONGuard,
+        :within_depth?,
+        2,
+        :all,
+        "true.",
+        "JSONGuard.within_depth?/2 nesting cap ({:nesting_exceeded, max})"
+      ),
+      wave3(
+        "json_decode_not_total",
+        "decoder raises on a non-object payload",
+        AshA2A.Protocol.JSON,
+        :decode,
+        2,
+        {:clause, 1},
+        "erlang:error(badarg).",
+        "Protocol.JSON.decode/2 totality: a non-object is {:error, {:invalid_field, type}}"
+      ),
+      # --- event journal ------------------------------------------------------------------------
+      wave3(
+        "journal_record_task_noop",
+        "task writes are not journaled",
+        AshA2A.Protocol.EventJournal,
+        :record_task,
+        3,
+        {:clause, 2},
+        "ok.",
+        "EventJournal.record_task/3 appends one event per mutation"
+      ),
+      wave3(
+        "journal_append_unverified",
+        "append reports :ok without storing or reading back",
+        AshA2A.TaskStore.EventJournalEts,
+        :append,
+        4,
+        :all,
+        "ok.",
+        "EventJournalEts.append/4 stores the event and reads it back (:not_stored)"
+      ),
+      # --- control-plane TLS (lib/ash_a2a/c2/l07_tls/transport.ex) --------------------------------
+      wave3(
+        "tls_verify_peer_off",
+        "TLS without peer verification",
+        AshA2A.C2.L07Tls.Transport,
+        :tls_options,
+        1,
+        {:clause, 1},
+        ~S"""
+        {ok, maps:get(host, ChicagoArg1), maps:get(port, ChicagoArg1),
+         [{verify, verify_none}, {server_name_indication, erlang:binary_to_list(maps:get(host, ChicagoArg1))},
+          {cert, maps:get(cert, ChicagoArg1)}, {key, maps:get(key, ChicagoArg1)}]}.
+        """,
+        "L07Tls.Transport.tls_options/1 verify: :verify_peer against the pinned CA"
+      ),
+      wave3(
+        "tls_downgrade_to_uds",
+        "configured TLS falls back to the unix socket",
+        AshA2A.C2.L07Tls.Transport,
+        :connect,
+        4,
+        :all,
+        "'connect_uds'(ChicagoArg1, ChicagoArg3, ChicagoArg4).",
+        "L07Tls.Transport.connect/4 never downgrades when :c2_tls is configured"
+      ),
+      # --- agent card signature (lib/ash_a2a/protocol/agent_card_signature.ex) ----------------------
+      wave3(
+        "card_alg_allowlist_ok",
+        "accept any alg (alg none, :allowed_algs ignored)",
+        AshA2A.Protocol.AgentCardSignature,
+        :check_alg,
+        2,
+        {:clause, 1},
+        "ok.",
+        "AgentCardSignature.check_alg/2 alg is in :allowed_algs ({:alg_not_allowed, alg})"
+      ),
+      wave3(
+        "card_key_alg_ok",
+        "accept an alg that does not fit the key",
+        AshA2A.Protocol.AgentCardSignature,
+        :check_key_alg,
+        2,
+        :all,
+        "ok.",
+        "AgentCardSignature.check_key_alg/2 alg matches the JWK kty/crv (:alg_key_mismatch)"
+      ),
+      wave3(
+        "card_signature_verify_true",
+        "card signature always verifies",
+        AshA2A.Protocol.AgentCardSignature,
+        :raw_verify,
+        4,
+        :all,
+        "true.",
+        "AgentCardSignature.raw_verify/4 cryptographic verification (:bad_signature)"
+      ),
+      # --- keyed reply token (lib/ash_a2a/email/brief.ex) ---------------------------------------
+      wave3(
+        "brief_mac_drops_approver",
+        "reply token MAC does not bind the approver",
+        AshA2A.Email.Brief,
+        :mint,
+        3,
+        :all,
+        ~S"""
+        ChicagoKey = erlang:hd(ChicagoArg3),
+        ChicagoAction = erlang:hd([ChicagoA || ChicagoA <- sorted_actions(ChicagoArg1), maps:get(n, ChicagoA) =:= ChicagoArg2]),
+        ChicagoPayload = canon([<<"ash_a2a.email.reply_token.v2">>, brief_digest(ChicagoArg1), ChicagoArg2, maps:get(graph_digest, ChicagoAction), expires_at(ChicagoArg1)]),
+        <<(key_id(ChicagoKey))/binary, ('Elixir.Base':url_encode64(crypto:mac(hmac, sha256, ChicagoKey, ChicagoPayload), [{padding, false}]))/binary>>.
+        """,
+        "Brief.mint/3 binds the approver principal into the reply-token MAC"
+      ),
+      wave3(
+        "brief_mac_drops_expiry",
+        "reply token MAC does not bind the expiry",
+        AshA2A.Email.Brief,
+        :mint,
+        3,
+        :all,
+        ~S"""
+        ChicagoKey = erlang:hd(ChicagoArg3),
+        ChicagoAction = erlang:hd([ChicagoA || ChicagoA <- sorted_actions(ChicagoArg1), maps:get(n, ChicagoA) =:= ChicagoArg2]),
+        ChicagoPayload = canon([<<"ash_a2a.email.reply_token.v2">>, brief_digest(ChicagoArg1), ChicagoArg2, maps:get(graph_digest, ChicagoAction), approver(ChicagoArg1)]),
+        <<(key_id(ChicagoKey))/binary, ('Elixir.Base':url_encode64(crypto:mac(hmac, sha256, ChicagoKey, ChicagoPayload), [{padding, false}]))/binary>>.
+        """,
+        "Brief.mint/3 binds the expiry into the reply-token MAC (an extended expiry invalidates the token)"
+      ),
+      wave3(
+        "brief_missing_key_unkeyed_fallback",
+        "missing token key falls back to a public key",
+        AshA2A.Email.Brief,
+        :keyring,
+        1,
+        :all,
+        ~S"""
+        case {proplists:get_value(key, ChicagoArg1), application:get_env(ash_a2a, email_token_key)} of
+          {undefined, undefined} -> {ok, [<<"public-unkeyed-fallback-0123456789abcdef">>]};
+          {undefined, {ok, ChicagoK}} -> {ok, [ChicagoK]};
+          {ChicagoK, _} -> {ok, [ChicagoK]}
+        end.
+        """,
+        "Brief.keyring/1 refuses (:email_token_key_missing) when no key is configured"
+      ),
+      # --- task owner gate -----------------------------------------------------------------------
+      wave3(
+        "task_owner_gate_open",
+        "every principal owns every task",
+        AshA2A.Transport.Runtime,
+        :owned_by?,
+        2,
+        :all,
+        "true.",
+        "Transport.Runtime.owned_by?/2 owner and tenant gate of tasks/get, list, cancel and references"
+      )
+    ]
+  end
+
 
   # Security-gate mutants (appended: numbering is append-only, §136). Each
   # entry names the Chicago killer family AND, in `description`, the ExUnit
@@ -498,6 +927,20 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
       {:receipt_store_boot_check, AshA2A.ReceiptStore, :boot_check, 1},
       {:receipt_store_boot_decision, AshA2A.ReceiptStore, :boot_decision, 7}
     ]
+  end
+
+  defp wave3(id, rfc, module, function, arity, clauses, body, guard) do
+    %Mutation{
+      id: id,
+      rfc_mutation: rfc,
+      module: module,
+      function: function,
+      arity: arity,
+      clauses: clauses,
+      operator: {:replace_body, body},
+      guard: guard,
+      killers: [@wave3_killer]
+    }
   end
 
   @doc "`[{court_falsifier_id, mutation}]` -- append-only numbering."

@@ -101,7 +101,8 @@ fail-closed defaults are deliberate.
 | `:ocel_pending_dispatch_ttl_ms` | 5000 ms | `AshA2A.Telemetry.OcelForwarder` max age of a stashed CommandBus dispatch span. |
 | `:bidi_max_queue` | 1000 | `AshA2A.Bidi.Channel` max queued messages; per-channel `:max_queue` arg wins; non-positive or non-integer falls back to the module default. |
 | `:trace_max_records` | 50000 | `AshA2A.Trace.Recorder` record cap; non-positive or non-integer falls back to 50000. |
-| `:stream_idle_ms` | 60000 ms (gRPC transport ctx key, not an Application env key) | `AshA2A.Transport.GRPC.Server` stream idle timeout read from the request ctx; non-positive or non-integer falls back to 60000. |
+| `:stream_tick_ms` | 15000 | `AshA2A.Transport.Follow`: how long a `SendStreamingMessage` / gRPC `SubscribeToTask` stream waits in silence before it reads the task again from the agent and, on the SSE bindings, writes a `: keepalive` comment. A per-request ctx key of the same name wins; non-positive or non-integer falls back to 15000. |
+| `:stream_max_idle_ms` | unbounded (transport ctx key, not an Application env key) | Bound on the silence of such a stream. Unset, a quiet handler never ends the stream: it closes when the task is terminal (or, for a send, interrupted). The earlier ctx key `:stream_idle_ms` is read as this bound. |
 
 ## Application config — semantic engine / GraphLaw (opt-in surfaces)
 
@@ -138,8 +139,30 @@ v1.1 Standing is PARTIAL; see [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 | `mount ... tenant: "t"` | `nil` | Domain mount option; carried as `tenant` on the card interface. REST routes also accept a leading `/{tenant}` segment. |
 
 `A2A-Version: 1.1` selects v1.1 behavior. Accepted versions default to
-`["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); emitted cards carry
-`protocolVersion` 1.1; the client-side header default (`Version.default/0`) is `"1.0"`.
+`["0.3", "1.0", "1.1"]` (`AshA2A.Protocol.Version.supported_default/0`); emitted cards carry
+`protocolVersion` 1.1; the client-side header default (`AshA2A.Protocol.Version.default/0`) is `"1.0"`.
+
+## Application config — additional keys
+
+The defaults of `:dispatch_hooks`, `:bad_request_details`, `:id_generator`, `:email_spool_dir`
+and `:graphlaw_allow_unpinned` are checked against the running code by
+`test/ash_a2a/docs_truth_test.exs`. The `:grpc`, `:ferroplan_url` and `:beam4pm_url` rows state no
+literal default and are read from source.
+
+| Key | Default | Consumed by / meaning |
+| --- | --- | --- |
+| `:grpc` | unset (no listener) | `AshA2A.Application` — keyword list or map with required `:port` and `:handler`; appends `AshA2A.Transport.GRPC.Supervisor`. Without both required keys no child is added. |
+| `:dispatch_hooks` | `%{}` | `AshA2A.Dispatcher` — `%{hook_id => {Module, :fun}}` table resolving DSL `hooks` identifiers; an unresolvable pre-hook id fails closed. |
+| `:bad_request_details` | `false` | `lib/ash_a2a/to_a2a_error.ex` — only `true` attaches per-field `BadRequest` violations to invalid-params errors. |
+| `:id_generator` | `AshA2A.Protocol.Id.Generator.Default` | `AshA2A.Protocol.ID` — module that generates protocol ids. |
+| `:email_spool_dir` | `System.tmp_dir!()/ash_a2a_spool` | `AshA2A.Email.Sender.Spool` — spool directory (per-call `:spool_dir` wins). The tmp default is not durable. |
+| `:email_token_key` | `false` as `Brief.token_key_configured?/0` (unset; no default key, so the email gateway refuses with 503 until a key is set) | `AshA2A.Email.Brief` and `AshA2A.Email.Plug` — HMAC-SHA256 key (binary, at least 32 bytes) for reply tokens; shorter is refused `email_token_key_too_short`. `AshA2A.Email.Brief.token_key_configured?/0` reports whether a usable key is set (the oracle for the default above). `:email_token_key_previous` (same rules) is still accepted for verification while keys rotate. See [operate by email](../how-to/operate-by-email.md). |
+| `:ferroplan_url` | unset | `AshA2A.Replan.Port.Ferroplan` — planner endpoint; falls back to `:beam4pm_url`. |
+| `:beam4pm_url` | unset | `AshA2A.Replan.Port.Beam4pm` and `Replan.ProviderRegistry` — endpoint whose presence marks the provider configured. |
+| `:graphlaw_allow_unpinned` | `false` | `AshA2A.GraphLaw.EngineLoad` — only `true` admits an unpinned engine, read per call. |
+| `:event_journal` | unset (no journal) | `AshA2A.Protocol.EventJournal` — `{module, ref}` of the per-task event journal that task writes append to and `tasks/resubscribe` replays from. See [operate the event journal](../how-to/operate-the-event-journal.md). |
+| `:event_journal_keep_last` | 256 events | `AshA2A.Protocol.EventJournal.keep_last/0` — events kept per task once it is terminal; a non-integer or negative value falls back to the default. |
+| `:resubscribe_orphan_grace_ms` | 500 ms | The `tasks/resubscribe` SSE writer — how long `tasks/resubscribe` waits on a non-terminal task that has no live producer before closing with `StreamError` `PRODUCER_UNAVAILABLE`. |
 
 ## Environment variables
 

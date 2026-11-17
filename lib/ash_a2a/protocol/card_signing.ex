@@ -56,7 +56,7 @@ defmodule AshA2A.Protocol.CardSigning do
 
   ## Wire integration points
 
-  - **Serving (server side)**: `AshA2A.Protocol.Plug.init/1` accepts an
+  - **Serving (server side)**: `AshA2A.Protocol.Plug.init` accepts an
     `:agent_card_opts` keyword list that is forwarded verbatim to
     `AshA2A.Protocol.JSON.encode_agent_card/2`; the serve path is
     `serve_agent_card/2` in `lib/ash_a2a/protocol/plug.ex`

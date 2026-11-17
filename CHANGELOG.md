@@ -11,60 +11,250 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ## [Unreleased]
 
+Package version in `mix.exs` is still 26.11.13 and is **not** bumped here: the version to
+publish is an owner decision (the 26.11.14/15 notes were folded into this block, not published
+separately). The decision is recorded in `docs/reference/release-readiness-v26.11.15.md`,
+which also lists the open blockers and the exact verification commands.
+
+How to read the evidence: an entry that names a test file means that file was run with
+`mix test <file>` (or `mix test.all <file>` for `serial` files, which excludes the `serial_solo` and `serial_shard` ones such as the two-node event journal tests) and passed; the dates are
+2026-11-16 or 2026-11-17 (Elixir 1.20.4 / OTP 29.1.1) and are stated where they matter. An
+entry that names a command states what that command printed. **Unverified** means no test or
+build run is cited for that statement in this tree. The Breaking section comes first because
+it is the part that needs action.
+
+### Breaking
+
+Each item says what changed and what to do.
+
+- **Email gateway requires `:webhook` and `:token_ledger`.** `AshA2A.Email.Plug` refuses
+  every request with 503 `webhook_auth_unconfigured` unless `:webhook` (`{provider, opts}` for
+  `AshA2A.Email.Webhook.verify/3`) is set, and with 503 `replay_protection_unconfigured` unless
+  `:token_ledger` is set. Action: pass `webhook:` and `token_ledger:` (`AshA2A.Email.TokenLedger`
+  or the EKV-backed `AshA2A.Email.TokenLedgerStore`) when you mount the plug;
+  `unsafe_no_replay_ledger: true` skips the ledger for tests only. Tests: `test/email_plug_test.exs`,
+  `test/email_gateway_hardening_test.exs` (run 2026-11-17).
+- **Email reply tokens are keyed MACs and need `config :ash_a2a, :email_token_key`.** `AshA2A.Email.Brief` tokens were a hash of public brief content (forgeable by anyone who knew the brief); they are now `key_id <> base64url(HMAC-SHA256)` over (brief digest, action, graph digest, approver, expiry). With no key (>= 32 bytes) `Brief.render/2` raises and the plug answers 503 `email_token_key_missing`; briefs issued with old unkeyed tokens are refused 403. Action: set `:email_token_key` (and `:email_token_key_previous` to rotate) and re-issue open briefs. Test: `test/email_reply_token_mac_test.exs`.
+- **Admission refusals end `TASK_STATE_REJECTED`, not `TASK_STATE_FAILED`.** A refusal before
+  dispatch (no authority, unauthenticated, ambiguous skill) now lands the task in REJECTED.
+  Action: a client that treats only FAILED as an error must also handle REJECTED. Test:
+  `test/ash_a2a_authority_capability_grant_test.exs` (run 2026-11-17).
+- **HTTP+JSON statuses follow spec section 5.4.** `TaskNotCancelableError` is 400 (was 409),
+  `ContentTypeNotSupportedError` is 400 (was 415) and `InvalidAgentResponseError` is 500 (was
+  502). gRPC: `PushNotificationNotSupportedError`, `UnsupportedOperationError` and
+  `VersionNotSupportedError` are `FAILED_PRECONDITION` (were `UNIMPLEMENTED`). Action: update
+  clients that branch on the old statuses. `AshA2A.Protocol.JSONRPC.Error.spec_http_status/1`
+  still returns the old values (VG-01 to VG-03 in `docs/reference/a2a-v1-1-parity-findings.md`).
+  Tests: `test/ash_a2a_v1_error_registry_test.exs`, `test/protocol_error_tables_test.exs`,
+  `test/ash_a2a_v1_grpc_must_test.exs` (the first two run 2026-11-17).
+- **int64 members are decimal JSON strings at v1.1.** `generation`, `startGeneration` and
+  `endGeneration` are `"5"`, not `5`, on every binding when `A2A-Version: 1.1` is negotiated.
+  Action: parse them as strings (or as int64) in clients; a client that compares them to
+  integers breaks. Tests: `test/protocol_codec_v1_1_test.exs` (run 2026-11-17),
+  `test/http_json_generation_stream_test.exs`.
+- **Streams: every skill answers `message/stream`, and a bare Message is now declared.**
+  Before, `message/stream` on a skill that did not chunk its output answered `-32004`; now the
+  default is the task lifecycle stream (the Task is stored and sent as the first frame before
+  the skill runs, then one event per stored mutation). An agent that answers with a bare Message
+  (and so streamed exactly one Message frame by accident of the old behaviour) must declare it:
+  `reply :message` on the skill (`use AshA2A.Agent`), or `use AshA2A.Protocol.Agent, reply:
+  :message` for the whole agent; an agent with no declaration decides after the handler ran.
+  Action: add the declaration. Guide: `docs/how-to/choose-a-reply-mode.md`. Evidence: the `ping`
+  probes of `mix ash_a2a.sim --prove` (2026-11-17), `test/ash_a2a_v1_owner_scope_test.exs` and
+  `test/ash_a2a_transport_grpc_server_test.exs` (run 2026-11-17).
+- **`bandit` is an optional dependency.** It was a test-only dependency, so a consumer never
+  received it; the quickstart and `mix ash_a2a.sim` need it. Action: add `{:bandit, "~> 1.5"}`
+  (or any Plug server) to your own deps; `mix ash_a2a.sim` also wants `{:simple_sat, "~> 0.1"}`.
+  Without Bandit no `AshA2A.Sim.*` module exists. Tests: `test/ash_a2a/l18_optional_deps_test.exs`,
+  `test/optional_deps_matrix_test.exs` (run 2026-11-17).
+- **The gRPC service label is `lf.a2a.v1.A2AService`.** `AshA2A.Transport.Grpc.Dispatch.service/0`
+  returns it (it returned the pre-wave-2 label `a2a.A2AService`, still available as
+  `legacy_service/0`; `call/4` accepts paths with either label). Action: a host that matches on
+  `service/0` must expect the new value. Tests: `test/ash_a2a_transport_grpc_test.exs`,
+  `test/grpc_wave2_errorinfo_test.exs` (run 2026-11-17).
+- **Wire decoders return `{:error, {:invalid_field, field}}` instead of raising, and a transport
+  answers it as JSON-RPC `-32602` (HTTP 400, gRPC `INVALID_ARGUMENT`).** A wrong-typed member or
+  non-object payload used to raise inside the decoder. Action: a host that calls
+  `AshA2A.Protocol.JSON.decode_*` directly must match the error tuple. Tests:
+  `test/ash_a2a_v1_codec_fidelity_test.exs`, `test/protocol_codec_fidelity_test.exs`,
+  `test/fuzz_transport_decode_test.exs` (run 2026-11-17).
+- **Wire shapes follow `docs/specification.md` and ProtoJSON** (checked by the parity run below).
+  A missing push-notification config is `TaskNotFoundError` (`-32001`, 404, `NOT_FOUND`), not
+  `-32602`, and deleting one answers `{}`, not `null`. Default-valued members are omitted
+  (`append: false`, `lastChunk: false`, an empty `configs`, an empty `nextPageToken`) and a reply
+  sent as one artifact frame carries `lastChunk: true`. `error.data` and `error.details` are arrays
+  of typed objects (`google.rpc.ErrorInfo`). Timestamps carry 0, 3 or 6 fractional digits. Action:
+  clients that pinned the earlier shapes must change. Tests: `test/ash_a2a_v1_push_httpjson_test.exs`,
+  `test/ash_a2a_v1_artifact_streaming_test.exs`, `test/ash_a2a_v1_error_registry_test.exs`,
+  `test/ash_a2a_v1_wire_properties_test.exs`.
+- **v1.1 only:** the live uplink acknowledgement is `{"task": ...}`; `StreamError.code` uses the unary
+  codes (`NOT_FOUND`, `INVALID_ARGUMENT`); the opening client message is in the snapshot `timeline`
+  and is not replayed as a `messageUpdate` frame; JSON-RPC serves `SendLiveMessage`;
+  `protocolVersion` is withheld from push-config answers to a request negotiated at 1.0.
+  Tests: `test/http_json_live_session_test.exs`, `test/generation_gating_courts_test.exs`,
+  `test/push_config_protocol_version_test.exs`.
+- `Message.extensions` is a list of extension URIs (`[String.t()] | map()`, default `[]`), and the
+  v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
+
 ### Added
 
+- Simulation server: `AshA2A.Sim.Server` boots every transport (JSON-RPC, HTTP+JSON, gRPC,
+  live, push delivery) over one agent with real Ash mutations, and `AshA2A.Sim.Prover`
+  drives each served method, route and RPC over the wire. `AshA2A.Sim.Surface` derives the
+  inventory from the library, so a method, route or RPC with no probe fails
+  `test/ash_a2a/sim/sim_mirror_test.exs`. Run it with `mix ash_a2a.sim --prove`. Guide:
+  `docs/how-to/run-the-simulation-server.md`; tutorial:
+  `docs/tutorials/prove-your-agent-with-the-simulation-server.md`. On 2026-11-17
+  `mix ash_a2a.sim --prove` printed `243 probes over 86 surface items: 243 pass, 0 fail, 0 skip`
+  and exited 0 (on 2026-11-16: 242 probes over 85 items, in `test` and `dev`).
+- A2A v1.1 parity check: `mix ash_a2a.sim --parity` compares every response of the simulation
+  server, on gRPC, HTTP+JSON and JSON-RPC, with a reference encoder built from the upstream
+  proto at tag `v1.1.0-rc` (`scripts/a2a_v1_1_parity`; the reference shares no code with this
+  library) and the official protobuf runtime. `--strict` also fails on known defects. Guide:
+  `docs/how-to/check-a2a-v1-1-parity.md`; findings: `docs/reference/a2a-v1-1-parity-findings.md`.
+  On 2026-11-17 `mix ash_a2a.sim --parity --strict` printed `total 1283 pass, 0 fail, 0 known,
+  0 skip` and exited 0 (2026-11-16: 1267 rows). Test: `test/ash_a2a/sim/sim_parity_v1_1_test.exs`.
+- MCP control of the simulation server: `mix ash_a2a.sim.mcp` (launcher `bin/a2a-sim-mcp`,
+  registered in `.mcp.json`) serves `AshA2A.Sim.MCP.Server`, a Model Context Protocol server
+  (revision 2025-11-25; stdio and Streamable HTTP): one tool per served JSON-RPC method, HTTP+JSON
+  route and gRPC RPC, `a2a_*` tools that take `binding`, `a2a_raw_request` for malformed input,
+  and `sim_*` tools for grants, Ash rows, webhook deliveries, the surface, the coverage plan, the
+  prover and the parity check (`sim_parity`). `python3 scripts/mcp_drive.py --list` printed 70
+  tools on 2026-11-17. `AshA2A.Sim.MCP.Coverage` maps every `AshA2A.Sim.Surface` item to tool
+  calls; an item with no tool path fails `test/ash_a2a/sim/sim_mcp_test.exs`. Guide:
+  `docs/how-to/control-the-sim-over-mcp.md`. Last clean full run (2026-11-16):
+  `python3 scripts/mcp_drive.py` printed `93 surface items served, 93 driven through MCP: 93
+  pass, 0 fail; 0 uncovered`. **On 2026-11-17 the same command exited 1** (141 items served, 47
+  uncovered: the email and authority surface items added meanwhile have no MCP mapping yet);
+  `python3 scripts/mcp_drive.py --call a2a_send_message ...` and the in-session MCP tools worked.
+- `AshA2A.Sim.Auth` accepts any `sim-agent-<name>` bearer token as an identity of its own with no
+  grants.
+- Signed agent cards: every HTTP card mount takes `sign_with: [jwk: ..., kid: ...]` and serves a
+  v1.1 `AgentCardSignature` (detached JWS, ES256/EdDSA) over the RFC 8785 canonical card, public
+  and extended (`AshA2A.Protocol.AgentCardSignature`). The simulation server signs every card and
+  the prover verifies them. Guide, with key rotation: `docs/how-to/sign-agent-cards.md`. Tests:
+  `test/ash_a2a/protocol/agent_card_signature_test.exs`,
+  `test/ash_a2a/protocol/agent_card_served_signature_test.exs`.
+- Event journal: `AshA2A.Protocol.EventJournal` with `AshA2A.TaskStore.EventJournalEts` and
+  `AshA2A.TaskStore.EventJournalEkv`; `config :ash_a2a, :event_journal, {module, ref}` journals every
+  task mutation, `:event_journal_keep_last` trims a terminal task, and `tasks/resubscribe` /
+  `lastSeenGeneration` replay from it. Guide: `docs/how-to/operate-the-event-journal.md`; contract:
+  `docs/reference/event-journal.md`. Tests: `test/ash_a2a/event_journal_ets_test.exs`,
+  `test/ash_a2a/event_journal_writer_test.exs`, `test/ash_a2a/event_journal_ekv_test.exs`.
+- Declared reply mode: `reply :message | :task` on a skill and `reply: :task | :message` on a protocol
+  agent (see Breaking). `reply_mode/1` is a callback of `AshA2A.Protocol.Agent`.
+- `mix ash_a2a.doctor` diagnoses an application's A2A wiring (`--strict`, `--json`, `--domain`);
+  guide `docs/how-to/run-doctor.md`. Test: `test/ash_a2a/doctor_test.exs`. On 2026-11-17 it ran
+  against this repository and exited 1 on two findings (`authenticated_caller_disabled`,
+  `config_receipt_binding_key_unset`), as it should for the test configuration.
+- `mix ash_a2a.receipts.verify` checks Markdown receipts against the files they cite; guide
+  `docs/how-to/verify-receipts.md`; test `test/ash_a2a/receipts/verifier_test.exs` (run 2026-11-17). On 2026-11-17 it exited 1 on this repository's own receipts
+  (three `verified_without_run_log` findings: `a10-ingress-wire.md`, `f2-copilot-wire-verify.md`,
+  `z11-actuation.md`).
+- `AshA2A.Protocol.AgentCard.audit/2` reports discrepancies between a card's claims and the mounted
+  surface (`docs/reference/agent-card-honesty.md`).
+- `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog and runs the courts
+  expected to kill it (`--list` resolved 46 entries on 2026-11-17; a full `--require-killed` run that day killed 43 and
+  blocked 3 because the shared build changed under it, and those 3 rerun alone were killed, exit 0;
+  on 2026-11-16 it killed 19 of 19 mutants then in the catalog). The CI workflow
+  `.github/workflows/proofs.yml` runs the prover, parity, MCP drive and the mutation gate; it has
+  not run on a remote runner.
+- `UnknownMethod.install/1` (module `AshA2A.Transport.GRPC.UnknownMethod`, internal) gives an unknown gRPC method `UNIMPLEMENTED`
+  (status 12, Trailers-Only) in an endpoint of your own; the supervisor installs it for you. Guide:
+  `docs/how-to/mount-the-grpc-server-in-your-endpoint.md`. Test: `test/grpc_supervisor_restart_test.exs`.
+- Public readers for configuration defaults: `AshA2A.Dispatcher.dispatch_hooks/0`,
+  `ID.generator/0` (module `AshA2A.Protocol.ID`, internal), `AshA2A.Email.Sender.Spool.spool_dir/1` and
+  `AshA2A.GraphLaw.EngineLoad.unpinned_allowed?/0`. `test/ash_a2a/docs_truth_test.exs` checks
+  the documented default of each against them.
+- `AshA2A.Transport.HTTPJSON` accepts `:agent_card_opts`, like `AshA2A.Transport.Plug`, so
+  its card and extended card can state the `supported_interfaces` the mount is served at.
 - Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
   `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
-  dispatches. Guide: `docs/how-to/operate-by-email.md`. Unverified.
-- A2A v1.1 support (target: upstream tag `v1.1.0-rc`, status PARTIAL; no v1.1 TCK verdict
-  exists). Cards advertise `protocolVersion` 1.1 and `A2A-Version` accepts 0.3, 1.0 and 1.1.
-  Task `generation`/`timeline`, `ifGenerationMatch` (`-32010`, HTTP 409 `ABORTED`),
-  `POST /message:live`, `currentGeneration` long poll, `lastSeenGeneration` resume, and
-  `userArtifacts`/`artifactUpdates`. Guide: `docs/how-to/v1-1-live-and-generations.md`.
-- User-artifact support is served on the agent card (`user_artifacts`).
-- Documented configuration: `:long_poll_timeout_ms`, `:events_transport`, `user_artifacts`,
-  `cancel_in_flight`, `validate_input_modes`, and the mount `tenant` option
-  (`docs/reference/configuration.md`).
+  dispatches (guide: `docs/how-to/operate-by-email.md`); caps body/reply/depth/nodes (413), strips
+  CRLF from reply headers and can bind an optional `:approver` to the sender. `AshA2A.Email.Dkim`
+  verifies `DKIM-Signature` headers (rsa-sha256, relaxed/relaxed) and
+  `AshA2A.Email.TokenLedgerStore` is an EKV-backed ledger. Tests: `test/email_plug_test.exs`,
+  `test/email_gateway_hardening_test.exs`, `test/email_replay_rate_limit_test.exs`,
+  `test/email_dkim_test.exs`, `test/email_token_ledger_store_test.exs`. `TokenLedger` is in-memory
+  and single-node.
+- A2A v1.1 deltas on top of the 26.11.13 entry below (target: upstream tag `v1.1.0-rc`, status
+  PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and `A2A-Version`
+  accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration` resume. Guide:
+  `docs/how-to/v1-1-live-and-generations.md`. Row-level standings: `docs/reference/a2a-v1-1-conformance.md`
+  (17 rows, each citing a named court; the statement as a whole stays PARTIAL).
+- Documented configuration: `:events_transport`, `cancel_in_flight`, `validate_input_modes`, the
+  mount `tenant` option, `:event_journal`, `:event_journal_keep_last` and
+  `:resubscribe_orphan_grace_ms` (`docs/reference/configuration.md`). The first three are
+  exercised by `test/dsl_verifiers_v1_1_test.exs`, `test/ash_a2a_v1_cancellation_test.exs` and
+  `test/task_semantics_test.exs`; the `tenant` row is unverified (no test run cited).
+- C2 control plane (other lane, evidence in `docs/reference/c2-compromise-court.md`): an explicit
+  listener backlog for the actuator TLS listener, a configurable key revocation epoch in the
+  authority service, and real authority issuance accepted by the actuator (commit `bfa797b`; the
+  court result in commit `2699559` was not re-run in the documentation pass).
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
 ### Changed
 
-- `Message.extensions` is now a list of extension URIs (`[String.t()] | map()`, default `[]`).
-- The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
+- Streams are task-first: `SendStreamingMessage` stores the Task and sends it as the first frame
+  before the skill runs, so its id works with `GetTask` and `CancelTask` while the work is in flight;
+  the final artifact chunk always carries `lastChunk`; the WORKING status is emitted from the stored
+  timeline. See Breaking for the reply declaration.
+- `tasks/resubscribe` with `lastSeenGeneration` skips the snapshot when the client is current; one
+  status table serves all bindings (spec 5.4).
 - Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`.
-- The server accepts `A2A-Version` 0.3, 1.0 and 1.1; the client-header default stays 1.0.
-- README reorganized: install and quickstart first, conformance and status material last.
-
-### Changed (packaging and supervision)
-
-- `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`
-  and `req_llm` are optional dependencies; a consumer compiles `ash_a2a` without
-  them (verified against a path-dependent consumer project).
+- The client-header default stays 1.0 (`Version.default/0`); the server accepts 0.3, 1.0 and 1.1.
+- README reorganized: install and quickstart first, then the proof tools, conformance last.
+- `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`, `req_llm`, `bandit`
+  and `simple_sat` are optional dependencies, so a consumer can compile `ash_a2a` without them. A
+  path-dependent consumer build with none of them added compiled on 2026-11-16
+  (`mix compile --warnings-as-errors` exit 0; `ash_state_machine` and `postgrex` were still resolved
+  transitively). `scripts/check_optional_deps.sh` ran its ten cases on 2026-11-16 and exited 0. Its CI
+  workflow has not run. See `docs/how-to/optional-dependencies.md`. Guard tests:
+  `test/ash_a2a/l18_optional_deps_test.exs`, `test/optional_deps_matrix_test.exs`.
 - The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
+  Unverified: no test asserts the strategy (read in `lib/ash_a2a/application.ex`).
 - ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
 
-### Fixed (durability)
+### Fixed
 
+- A revoked or expired standing grant can be issued again. `AshA2A.Authority.Grant.grant/3`
+  after `revoke/3` was refused `token_id_taken` for good by both brokers
+  (`AshA2A.Authority.Broker.InMemory`, `AshA2A.Authority.Broker.Ekv`), so a revocation
+  could never be undone. `issue/3` now accepts the token id of a revoked or expired grant
+  for the same principal and capability, stamps the new authority after the revocation,
+  and `verify/2` keeps refusing every authority issued at or before it, so the revoked
+  credential is not resurrected. A token id bound to another principal or capability is
+  still `token_id_taken`. Tests: `test/ash_a2a/authority_broker_in_memory_test.exs`,
+  `test/ash_a2a/authority_broker_ekv_test.exs`, and over the real transports
+  `test/ash_a2a/sim/sim_mcp_test.exs` ("a re-grant admits it again").
+- Simulation server: a task that a gRPC `SendMessage` or `CancelTask` brings to its answer
+  is now published to the shared task event log by `AshA2A.Sim.GrpcHandler`, so its push
+  notification webhooks fire. Before, a config stored on any binding delivered nothing when
+  the task finished over gRPC. `AshA2A.Transport.GRPC.Server` itself still publishes
+  nothing for unary RPCs; a host's gRPC handler has to. Found through MCP; covered by
+  `test/ash_a2a/sim/sim_mcp_test.exs` ("a push config delivers a real webhook").
+- `tasks/resubscribe` on `AshA2A.A2ATransport.Plug` no longer hangs until the idle bound
+  for a task started by a non-blocking `message/send`: a logged task snapshot is treated
+  as a running stream pump only while a pump process is alive. Probe: `tasks/resubscribe`
+  on `/a2a` in `test/ash_a2a/sim/sim_mirror_test.exs`.
+- `tasks/resubscribe` on `AshA2A.Transport.Plug` no longer echoes the verified identity
+  (`a2a.auth`) and the owner key in the opening task snapshot. Probe: `bearer_auth`
+  identity echo in `test/ash_a2a/sim/sim_mirror_test.exs`.
+- gRPC: a whole-number argument inside a message's data part (a double in
+  `google.protobuf.Struct`) now reaches the action as an integer, so `:integer` arguments
+  work over the gRPC binding. Probe: `SendMessage` integer argument in
+  `test/ash_a2a/sim/sim_mirror_test.exs`.
+- The input-required status message for an invalid Ash input no longer carries server
+  stack traces. Probe: `TASK_STATE_INPUT_REQUIRED` in
+  `test/ash_a2a/sim/sim_mirror_test.exs`.
 - A checkpoint the store silently dropped is no longer reported as landed
-  (`Checkpoint.land/4` reads back and raises).
+  (`Checkpoint.land/4` reads back and raises). Test:
+  `test/ash_a2a/cluster/drain_isolation_test.exs`.
 - Handover completion and claim release carry the claim token: a runner whose
-  claim was taken over gets `:claim_lost` and cannot overwrite the peer.
-
-### Security
-
-- Legacy push-notification sender resolves and refuses non-public addresses and
-  never follows redirects (SSRF).
-- gRPC ignores the forwarded-certificate header unless
-  `trust_forwarded_cert: true`.
-- `A2A-Version` echoed in a response header is limited to a short printable token.
-- HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
-- Ash calls pass `authorize?: true` explicitly; `forbidden` replies and
-  extended-card provider failures no longer carry internal detail.
-
-### Fixed (runtime)
-
+  claim was taken over gets `:claim_lost` and cannot overwrite the peer. Test:
+  `test/ash_a2a/cluster/handover_fencing_test.exs`.
 - A failing checkpoint no longer aborts a node drain; a worker is evicted only
-  when its frame landed.
+  when its frame landed. Test: `test/ash_a2a/cluster/drain_isolation_test.exs`.
 - A failed task-event journal write is logged instead of crashing the events server.
 - `KillSwitch.trip/3` waits up to 30 s so a slow disk cannot fail the halt.
 - The transport worker is killed when its agent dies.
@@ -72,7 +262,22 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
   `consequence` to `observe`.
 - `ash_ai` is a test-only dependency.
 - The `lease_required?` verifier reads the persisted `:authorizers` key, so resources that
-  carry `Ash.Policy.Authorizer` are no longer refused.
+  carry `Ash.Policy.Authorizer` are no longer refused. Test:
+  `test/verify_skills_authorizer_test.exs`.
+
+### Security
+
+Tests for the entries below: `test/security_refusals_l13_test.exs` and
+`test/security_review_remediation_test.exs`.
+
+- Legacy push-notification sender resolves and refuses non-public addresses and
+  never follows redirects (SSRF).
+- gRPC ignores the forwarded-certificate header unless `trust_forwarded_cert: true`.
+- `A2A-Version` echoed in a response header is limited to a short printable token.
+- HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
+- `forbidden` replies no longer carry internal detail.
+- Ash calls pass `authorize?: true` explicitly, and extended-card provider failures no
+  longer carry internal detail. Unverified: neither statement has a test run cited.
 
 ## [26.11.13] - 2026-11-13
 
@@ -90,13 +295,15 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ### Added
 
-- A2A v1.1 capabilities (unverified; no test run is cited here): `message/live`,
+- A2A v1.1 capabilities (unverified in this entry; the evidence binding is in
+  `docs/reference/a2a-v1-1-conformance.md`): `message/live`,
   `StreamRequest` and `StreamError` frames, task `generation` and `timeline`,
   `TaskMessageUpdateEvent`, `timelineLength`, `ifGenerationMatch` (`-32010`),
   `currentGeneration` long poll, `userArtifacts`/`artifactUpdates`, and
   `TaskPushNotificationConfig.protocolVersion`. Vendored upstream proto at
   `priv/a2a_v1_1_spec_corpus/a2a.proto`; v1.0.1 remains supported and v0.3 is decode-only.
-- `config :ash_a2a, :long_poll_timeout_ms` and the `user_artifacts` agent-card capability.
+- `config :ash_a2a, :long_poll_timeout_ms` and the `user_artifacts` agent-card capability
+  (served on the agent card as `user_artifacts`).
 - `docs/reference/a2a-v1-1-conformance.md` and a corpus test that fails loudly on pending
   items.
 - `Attestation.Gate.verify_gps_trajectory/2` and `AshA2A.Attestation.GateGrantAllowlist`:

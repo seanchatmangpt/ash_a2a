@@ -293,7 +293,7 @@ defmodule AshA2A.Semantic.Conformance do
   `AshA2A.Semantic.Ontology` fingerprint. This check builds both graphs for
   real, runs the real pipeline, and reports the real colliding digest.
 
-  `AshA2A.Semantic.Ontology.fingerprint/1` is additionally a SHA-256 over
+  `AshA2A.Semantic.Ontology.fingerprint` is additionally a SHA-256 over
   `:erlang.term_to_binary/1` of a sorted Elixir term, not an RDF
   canonicalization (RDFC-1.0): it has no blank-node labeling algorithm, no IRI
   normalization, and no literal/datatype normalization. RFC S12 canonical
@@ -699,7 +699,7 @@ defmodule AshA2A.Semantic.Conformance do
   `ReceiptOutbox.anchored?/1` returns true for it), and
   `AshA2A.Receipt.finalize/2` really preserves the SAME receipt identity while
   replacing the pending outcome -- the exact mechanism
-  `AshA2A.CommandBus.execute_claimed/9` uses before DO.
+  `AshA2A.CommandBus.execute_claimed` uses before DO.
   """
   @spec check_prepared_receipts() :: requirement_status()
   def check_prepared_receipts do
@@ -1934,7 +1934,7 @@ defmodule AshA2A.Semantic.Conformance do
     * `:dynamic_apply` -- `apply(M, F, A)` (`:erlang.apply/3`, which is what
       `Kernel.apply/3` compiles to) whose module argument is not an atom
       literal. `apply/2` on a fun value is included for the same reason.
-    * `:dynamic_make_fun` -- `:erlang.make_fun/3` with a non-literal module,
+    * `:dynamic_make_fun` -- `:erlang.make_fun` with a non-literal module,
       the shape a captured `&Mod.fun/1` takes when `Mod` is computed.
 
   Returns `{:error, reason}` when abstract code is unavailable.

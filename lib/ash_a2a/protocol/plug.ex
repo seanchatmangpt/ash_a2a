@@ -85,6 +85,9 @@ if Code.ensure_loaded?(Plug) do
       forwarded to `AshA2A.Protocol.CardSigner.sign/2`. The served card gets a
       detached JWS entry in `signatures`; the signed body is memoised so the
       bytes and `ETag` are stable across requests.
+      `[jwk: private_jwk, kid: kid]` instead signs with the standard A2A v1.1
+      `AgentCardSignature` scheme (`AshA2A.Protocol.AgentCardSignature`,
+      ES256 or EdDSA) over the exact served document.
 
     The agent card route honors conditional requests: `If-None-Match` (weak
     comparison, value lists, `*`) and `If-Modified-Since` answer `304 Not
@@ -404,8 +407,6 @@ if Code.ensure_loaded?(Plug) do
       )
     end
 
-    defp closed_wire_state?(_), do: false
-
     # A client may register a webhook on the initial send rather than through
     # the CRUD methods, which is how the spec's delivery flow reads and how the
     # compliance suite drives it. The task does not exist until the call
@@ -611,7 +612,9 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp read_json_body(%{body_params: %{} = params} = conn) do
+    # Any already-decoded body: a map, or a list (a JSON-RPC batch handed on by
+    # `AshA2A.A2ATransport.Plug`), which `JSONRPC.handle/3` answers itself.
+    defp read_json_body(%{body_params: params} = conn) do
       {:ok, params, conn}
     end
 
@@ -658,7 +661,11 @@ if Code.ensure_loaded?(Plug) do
           {:error, reason}
           when reason in [:generation_mismatch, :context_mismatch, :not_continuable] or
                  (is_tuple(reason) and tuple_size(reason) == 2 and
-                    elem(reason, 0) in [:unsupported_operation, :content_type_not_supported]) ->
+                    elem(reason, 0) in [
+                      :unsupported_operation,
+                      :content_type_not_supported,
+                      :invalid_agent_response
+                    ]) ->
             {:error, internal_error_or_typed(reason)}
 
           {:error, :message_on_task} ->

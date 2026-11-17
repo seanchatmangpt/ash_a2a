@@ -35,7 +35,7 @@ defmodule AshA2A.Agent do
 
   The full `AshA2A.Protocol.Agent.context()` (`task_id`, `context_id`, `history`,
   `metadata`) that `handle_message/2` receives is never discarded: `history`
-  -- the accumulated multi-turn transcript `AshA2A.Protocol.Agent.Runtime` builds for a
+  -- the accumulated multi-turn transcript `Protocol.Agent.Runtime` builds for a
   continued (`task_id:`) task (`~/xaas/deps/a2a/lib/a2a/agent.ex:69-90,
   130-135`) -- is threaded straight through to
   `AshA2A.Dispatcher.dispatch/6`, which folds it into the Ash `context:` opt
@@ -64,9 +64,21 @@ defmodule AshA2A.Agent do
   HTTP with `AshA2A.Transport.Plug` (owner-scoped `tasks/*`, no credential
   echo, truthful AgentCard capabilities), not the raw `AshA2A.Protocol.Plug`.
 
+  ## Reply mode: task or bare Message
+
+  Every skill answers with a task unless it is declared `reply :message` in
+  the `a2a` DSL. A message-only skill answers `message/send` with a bare
+  Message carrying the action's result; nothing is stored, and a stream of it
+  is exactly one Message frame (A2A v1.1 3.1.2, the message-only pattern).
+  For every other skill a stream is admitted first: the Task is stored and
+  sent before the action runs, then one event per mutation follows. The
+  generated `reply_mode/1` (`c:AshA2A.Protocol.Agent.reply_mode/1`) reads the
+  declaration through `AshA2A.Info.skill/2`; override it to decide another
+  way.
+
   ## Send options (parity with the bare protocol agent)
 
-  `AshA2A.Protocol.Agent.call/3` options honoured here: `:return_immediately`
+  `AshA2A.Protocol.Agent.call` options honoured here: `:return_immediately`
   (reply with the stored `:submitted`/`:working` task, run the handler in a
   worker, fold the result in without overwriting a terminal state),
   `:accepted_output_modes` (applied to the final task's artifacts),
@@ -213,30 +225,17 @@ defmodule AshA2A.Agent do
       # Generated catch-all: every `handle_info` clause the ported
       # `AshA2A.Protocol.Agent` defines (task_done, DOWN/subscriber cleanup)
       # precedes this wrapper in clause order, so only messages NONE of those
-      # clauses match land here. The runtime recognizes `:ash_a2a_task_done`
-      # and its own (watcher-era, backup) DOWN shape; anything else unhandled
-      # falls through to `unexpected_info/3`. A DOWN-shaped message that no
-      # table matched is still a subscriber's monitor firing (SSE disconnect)
-      # -- dropping the registration here, exactly as the ported agent's own
-      # DOWN-miss branch does, keeps that cleanup clause-order-proof instead
-      # of leaking it into the log-and-continue swallow.
+      # clauses match land here. In particular every `{:DOWN, ...}` message is
+      # consumed by the ported agent's DOWN clause (which also drops a
+      # subscriber's monitor when it is not a task worker), so none reaches
+      # this clause. The runtime recognizes `:ash_a2a_task_done` and its own
+      # (watcher-era, backup) DOWN shape; anything else unhandled falls
+      # through to `unexpected_info/3`.
       @impl GenServer
       def handle_info(msg, state) do
         case AshA2A.Transport.Runtime.handle_info(msg, state) do
-          :unhandled ->
-            state =
-              case msg do
-                {:DOWN, ref, :process, _pid, _reason} ->
-                  AshA2A.Protocol.Agent.State.drop_subscriber(state, ref)
-
-                _other ->
-                  state
-              end
-
-            AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
-
-          reply ->
-            reply
+          :unhandled -> AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
+          reply -> reply
         end
       end
 
@@ -244,15 +243,27 @@ defmodule AshA2A.Agent do
 
       @impl AshA2A.Protocol.Agent
       def handle_message(message, context) do
-        AshA2A.Agent.__dispatch__(
-          @ash_a2a_resource_or_domain,
-          message,
-          context,
-          @ash_a2a_dispatch_opts
-        )
+        reply =
+          AshA2A.Agent.__dispatch__(
+            @ash_a2a_resource_or_domain,
+            message,
+            context,
+            @ash_a2a_dispatch_opts
+          )
+
+        AshA2A.Agent.__shape_reply__(@ash_a2a_resource_or_domain, message, reply)
       end
 
       defoverridable handle_message: 2
+
+      # A skill declared `reply: :message` answers with a bare Message and no
+      # task; every other message is answered with a task, admitted first on a
+      # stream (`c:AshA2A.Protocol.Agent.reply_mode/1`).
+      @impl AshA2A.Protocol.Agent
+      def reply_mode(message),
+        do: AshA2A.Agent.__reply_mode__(@ash_a2a_resource_or_domain, message)
+
+      defoverridable reply_mode: 1
 
       # `AshA2A.Protocol.Agent.__using__/1` (`~/xaas/deps/a2a/lib/a2a/agent.ex:192-195`)
       # already `defoverridable`s its own `handle_cancel(_context), do: :ok`
@@ -415,6 +426,44 @@ defmodule AshA2A.Agent do
   def __dispatch__(_resource_or_domain, _message, _context, _opts) do
     {:error, %{code: :invalid_message}}
   end
+
+  @doc false
+  # `:message` when the message names a skill declared `reply: :message`
+  # (`AshA2A.Info.skill/2`), else `:task`.
+  @spec __reply_mode__(module(), term()) :: :task | :message
+  def __reply_mode__(resource_or_domain, %AshA2A.Protocol.Message{} = message) do
+    with {:ok, skill_name} <- resolve_skill_name(resource_or_domain, message),
+         {:ok, %AshA2A.Skill{reply: :message}} <-
+           AshA2A.Info.skill(resource_or_domain, skill_name) do
+      :message
+    else
+      _ -> :task
+    end
+  rescue
+    _ -> :task
+  end
+
+  def __reply_mode__(_resource_or_domain, _message), do: :task
+
+  @doc false
+  # The result of a `reply: :message` skill is the Message itself. A refusal,
+  # an input request or a stream is not a result and keeps its own shape (the
+  # runtime then answers with a task after all).
+  def __shape_reply__(resource_or_domain, message, {:reply, parts} = reply) do
+    if __reply_mode__(resource_or_domain, message) == :message,
+      do: {:message, parts},
+      else: reply
+  end
+
+  def __shape_reply__(resource_or_domain, message, {:stream, enum} = reply) do
+    # A message-only skill has no task to append chunks to: its parts are one
+    # Message.
+    if __reply_mode__(resource_or_domain, message) == :message,
+      do: {:message, Enum.to_list(enum)},
+      else: reply
+  end
+
+  def __shape_reply__(_resource_or_domain, _message, reply), do: reply
 
   @doc """
   Typed refusal codes this module (and the dispatch surface it guards)

@@ -25,12 +25,20 @@ only the approved items are dispatched.
 
 | Condition | Response | Dispatch |
 |---|---|---|
+| Provider webhook credential missing or wrong | 401 | none |
+| `:webhook` or `:token_ledger` not configured | 503 | none |
+| `:email_token_key` unset (`email_token_key_missing`) or under 32 bytes (`email_token_key_too_short`) | 503 | none |
+| Reply token past the brief's `:expires_at` (`reply_token_expired`) | 403 | none |
+| Body too large, too deep or reply text too long | 413 | none |
 | Body not valid JSON or webhook unparseable | 400 | none |
 | Sender not verified (`Inbound.verify_sender/2`) | 401 | none |
 | Missing `in_reply_to` | 400 | none |
 | `in_reply_to` matches no brief | 404 | none |
 | Unparseable intent | 422 | none |
+| Envelope sender, reply text or ids differ from the raw message in `content` (the one the DKIM verifier vouched for) | 401 | none |
 | Tampered, missing or invalid reply token | 403 | none |
+| Brief names an `:approver` and the sender is another principal | 403 | none |
+| Reply token already used | 409 | none |
 | Graph digest differs from the brief | 409 plus a reconfirm email | none |
 
 Per-action standing in the 200 body: `dispatched`, `held`, or `refused`. A dispatch
@@ -48,16 +56,89 @@ reconfirms against current state.
 - `:dispatch` `(principal, action -> {:ok, receipt} | {:error, reason})`. Default
   `default_dispatch/3` uses `:resolver` (default refuses `:unresolvable`) and
   `:kernel_entry` (default `AshA2A.Email.KernelEntry.run/4`, via `CommandBus`).
-- `:reply_sender` `(to, subject, text -> any)`; default no-op.
+- `:reply_sender` `(to, subject, text -> any)`; default no-op. Subjects are stripped of
+  CR/LF and control characters and capped at 200 characters.
+- `:webhook` (required): `{:sendgrid | :workspace | :ses, opts}` for
+  `AshA2A.Email.Webhook.verify/3`, or `:trusted_ingress` when an upstream hop already
+  authenticated the provider. The `auth_results` in the body are not trusted otherwise.
+- `:token_ledger` (required): single-use reply tokens, message-id replay cache and per-sender
+  `:rate_limit`.
+- `:max_body_bytes`, `:max_reply_chars`: size caps (defaults 262144 and 16384).
+- Brief key `:approver`: principal id bound to the brief; set it for per-approver briefs.
 
 The request body carries `"reply_tokens"`: action number to token
 (`Brief.reply_token/2`); a token is required for every approved action.
 
+### Reply token key
+
+A reply token is a keyed MAC, not a hash of public content: `key_id <> base64url(HMAC-SHA256)`,
+49 characters, over the canonical bytes of (brief digest, action number, graph digest, the
+brief's `:approver`, the brief's `:expires_at` in unix seconds, `0` meaning none). Set the
+server secret:
+
+    config :ash_a2a, :email_token_key, System.fetch_env!("EMAIL_TOKEN_KEY")  # >= 32 bytes
+
+There is no default key. With no key, `Brief.render/2` raises `AshA2A.Email.Brief.TokenKeyError`
+(`:email_token_key_missing`) and the plug answers 503 `email_token_key_missing`; a key under 32
+bytes is `:email_token_key_too_short`. `Brief.token_key_configured?/0` reports whether a usable
+key is set. Tokens are compared with `Plug.Crypto.secure_compare/2`.
+
+To rotate, move the old key to `:email_token_key_previous` and set the new `:email_token_key`;
+tokens carry a key id, so briefs issued under the previous key still verify. Remove the previous
+key once those briefs are answered or expired; their tokens are then refused. Per-mount
+overrides are the plug options `:token_key` and `:token_key_previous`.
+
+**Breaking:** briefs rendered before this change carry unkeyed 16-hex tokens. They are refused
+403 `invalid_reply_token` (fail closed); re-issue the brief. Tests:
+`test/email_reply_token_mac_test.exs`, `test/email_brief_test.exs`.
+
 ## Test it
 
-`test/email_plug_test.exs` exercises the loop through `Plug.Test` (standing UNVERIFIED
-here; the file exists, no run cited). Unit tests: `test/email_{inbound,brief,
-reply_intent,kernel_entry}_test.exs`.
+`test/email_plug_test.exs` and `test/email_gateway_hardening_test.exs` exercise the loop and
+the refusals above through `Plug.Test` (run 2026-11-16, Elixir 1.20.4 / OTP 29.1.1: 6 and 12 passed).
+
+## DKIM and durable replay ledger
+
+`AshA2A.Email.Dkim` (`lib/ash_a2a/email/dkim.ex`) verifies `DKIM-Signature` headers with
+`:public_key`: rsa-sha256, relaxed/relaxed, `bh=`, `h=` (must cover `from`), key from your resolver
+(the DNS `p=` value). It refuses `l=`, expired `x=`, unsigned or duplicated From, From not aligned
+with `d=`, weak (<1024-bit) or revoked keys. Wire it as the SES `:signature_verifier`:
+
+    webhook: {:ses, signature_verifier: AshA2A.Email.Dkim.verifier(key_resolver: &MyApp.Dns.dkim_key/2)}
+
+The verifier takes a raw message, a map with `"content"`, or an SNS envelope whose `"Message"`
+JSON carries `"content"`. It proves the signing domain vouched for the message; it confers no
+authority.
+The plug acts on the envelope's `from`, `text`, `message_id` and `in_reply_to` fields, not on the
+message the signature covers, so when the envelope carries the raw message (`"content"` or `"raw"`)
+those fields must equal what that message says; otherwise the request is refused 401. Without this
+binding a valid signature on any mail from the signing domain would authenticate another mail's
+claimed sender, text and tokens. Test: `test/email_signed_content_binding_test.exs`.
+
+`AshA2A.Email.TokenLedgerStore` (`lib/ash_a2a/email/token_ledger_store.ex`) is an EKV-backed ledger
+answering the same calls as `TokenLedger`, so the plug accepts it unchanged:
+
+    {AshA2A.TaskStore.Ekv, ...}  # child_spec(name: MyApp.EmailKv, data_dir: "...")
+    {AshA2A.Email.TokenLedgerStore, name: MyApp.EmailLedger, store: MyApp.EmailKv}
+    # plug option: token_ledger: MyApp.EmailLedger
+
+Token consumption and replay results are durable and cluster-wide (EKV CAS); reply tokens are
+stored hashed. Tests: `test/email_dkim_test.exs`, `test/email_token_ledger_store_test.exs`
+(run 2026-11-16, Elixir 1.20.4 / OTP 29.1.1: 14 and 9 passed).
+
+Remaining: `rate_check/4` in `TokenLedgerStore` is node-local and in-memory; the store has no
+capacity bound or eviction; `TokenLedger` itself stays in-memory single-node. DKIM supports only
+RSA-SHA256 with relaxed/relaxed (no ed25519, simple canonicalization or DNS lookup; the resolver
+is yours). Unit tests: `test/email_{inbound,brief,reply_intent,kernel_entry}_test.exs`.
+
+## Run it against the simulation server
+
+`mix ash_a2a.sim --prove` mounts this gateway for real (`/email` with DKIM verification,
+`/email-workspace` with a webhook secret), signs real mail with a key it generates, uses the
+durable `TokenLedgerStore` and drives every refusal in the table above over HTTP, reading the Ash
+row after each one. See [How to run the simulation server](run-the-simulation-server.md) and, for
+the MCP tools `sim_email_issue_brief`, `sim_email_send_reply` and `sim_email_deliveries`,
+[How to control the simulation server over MCP](control-the-sim-over-mcp.md).
 
 ## See Also
 

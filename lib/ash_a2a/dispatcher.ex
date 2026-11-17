@@ -55,7 +55,7 @@ defmodule AshA2A.Dispatcher do
       `{:input_required, parts}` (task state `input-required`).
     * `{:auth_required, parts}` -- same shape; dispatch replies
       `{:error, {:auth_required, parts}}`, the tuple
-      `AshA2A.Protocol.Agent.Runtime` already maps to the `auth-required` task
+      `Protocol.Agent.Runtime` already maps to the `auth-required` task
       state (it is carried inside `{:error, _}` because the runtime owns the
       state mapping).
     * `%AshA2A.Artifacts{artifacts: [...]}` -- multiple artifacts; dispatch
@@ -86,7 +86,7 @@ defmodule AshA2A.Dispatcher do
 
   When streaming is requested, the query is driven through the real
   `Ash.stream!/2` API (`~/xaas/deps/ash/lib/ash.ex:2964`, the only public
-  streaming entry point — there is no non-bang `Ash.stream/2`) instead of
+  streaming entry point — there is no non-bang `Ash.stream`) instead of
   `Ash.read/2`, letting `Ash.stream!/2` pick its own best strategy (`:keyset`
   first, `:offset` or `:full_read` only if the action allows a worse one --
   this module passes `allow_stream_with: :full_read` so any read action can
@@ -101,7 +101,7 @@ defmodule AshA2A.Dispatcher do
   non-bang convention elsewhere. An error raised while the *caller* drains the
   returned stream (a query execution failure surfacing lazily on a later
   page) is not, and cannot be, intercepted here — the same limitation
-  `AshA2A.Protocol.Agent.Runtime.wrap_stream/3`
+  `AshA2A.Protocol.Agent.Runtime.wrap_stream`
   (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:51-61`) has: it observes emitted
   parts to finalize the task, it does not wrap enumeration in a rescue
   either.
@@ -368,12 +368,20 @@ defmodule AshA2A.Dispatcher do
     end
   end
 
+  @doc """
+  The hook table from `config :ash_a2a, :dispatch_hooks`: a map of
+  `hook_id => {Module, :fun}` that resolves the DSL `hooks` identifiers.
+  Empty when unset.
+  """
+  @spec dispatch_hooks() :: map()
+  def dispatch_hooks, do: Application.get_env(:ash_a2a, :dispatch_hooks, %{})
+
   # DSL `hooks`: identifiers resolve through `config :ash_a2a, :dispatch_hooks,
   # %{hook_id => {Module, :fun}}`; the function receives `%{phase, skill_id, message, reply}`
   # and returns `:ok | {:error, reason}`. An unresolvable id fails closed (pre) / is logged (post).
   defp run_hooks(resource_or_domain, phase, skill, message, reply \\ nil) do
     ids = Map.get(AshA2A.Info.hooks(resource_or_domain), phase, [])
-    table = Application.get_env(:ash_a2a, :dispatch_hooks, %{})
+    table = dispatch_hooks()
     event = %{phase: phase, skill_id: skill.id, message: message, reply: reply}
 
     Enum.reduce_while(ids, :ok, fn id, :ok ->
@@ -467,7 +475,7 @@ defmodule AshA2A.Dispatcher do
   defp tag_stage({:ok, _} = ok, _stage), do: ok
   # `{:error, {:auth_required, parts}}` is a first-class protocol reply (see the
   # generic-action return contract), not a stage failure: it passes through
-  # untagged so `AshA2A.Protocol.Agent.Runtime` can map it to `auth-required`.
+  # untagged so `Protocol.Agent.Runtime` can map it to `auth-required`.
   defp tag_stage({:error, {:auth_required, _}} = reply, _stage), do: reply
   defp tag_stage({:error, reason}, stage), do: {:error, {stage, reason}}
   defp tag_stage(reply, _stage), do: reply
@@ -814,12 +822,12 @@ defmodule AshA2A.Dispatcher do
   # Drives the query through the real `Ash.stream!/2` API
   # (`~/xaas/deps/ash/lib/ash.ex:2964`) instead of `Ash.read/2` (PRD §3.7).
   # `Ash.stream!/2` is the only public streaming entry point Ash exposes --
-  # there is no non-bang `Ash.stream/2` -- so building the stream is wrapped
+  # there is no non-bang `Ash.stream` -- so building the stream is wrapped
   # in `try/rescue` here to keep this module's fail-closed, non-raising
   # dispatch contract for the eager part of the call (query validation,
   # domain/resource resolution); errors raised lazily while the caller drains
   # the returned `Enumerable.t()` are outside what a `{:stream, _}` reply can
-  # intercept, matching `AshA2A.Protocol.Agent.Runtime.wrap_stream/3`'s own scope
+  # intercept, matching `AshA2A.Protocol.Agent.Runtime.wrap_stream`'s own scope
   # (`~/xaas/deps/a2a/lib/a2a/agent/runtime.ex:51-61`: it observes completed
   # parts, it does not rescue mid-stream failures either).
   #
@@ -1050,10 +1058,10 @@ defmodule AshA2A.Dispatcher do
         {:error, class_message(:not_found, Exception.message(not_found))}
 
       tenant_required_error?(error) ->
-        {:error, class_message(:invalid_config, Exception.message(error))}
+        {:error, class_message(:invalid_config, wire_message(error))}
 
       true ->
-        {:input_required, [Part.Text.new(Exception.message(error))]}
+        {:input_required, [Part.Text.new(wire_message(error))]}
     end
   end
 
@@ -1082,16 +1090,29 @@ defmodule AshA2A.Dispatcher do
   end
 
   defp to_reply({:error, %{class: :framework} = error}) do
-    {:error, class_message(:framework, Ash.Error.to_class(error) |> Exception.message())}
+    {:error, class_message(:framework, error |> Ash.Error.to_class() |> wire_message())}
   end
 
   defp to_reply({:error, %{class: :unknown} = error}) do
-    {:error, class_message(:unknown, Ash.Error.to_class(error) |> Exception.message())}
+    {:error, class_message(:unknown, error |> Ash.Error.to_class() |> wire_message())}
   end
 
   defp to_reply({:error, reason}) do
     {:error, reason}
   end
+
+  # An Ash error class renders each nested error's stack trace into its
+  # message (`Splode.ErrorClass.error_messages/2`). That text reaches the
+  # caller as the task's status message, so the traces (server file paths,
+  # dependency versions, internal function names) are dropped first (SEC-08).
+  defp wire_message(%{errors: errors} = error) when is_list(errors) do
+    Exception.message(%{error | errors: Enum.map(errors, &drop_stacktrace/1)})
+  end
+
+  defp wire_message(error), do: Exception.message(error)
+
+  defp drop_stacktrace(%{stacktrace: _} = error), do: %{error | stacktrace: nil}
+  defp drop_stacktrace(error), do: error
 
   defp class_message(class, message) when is_atom(class) and is_binary(message) do
     "#{class}: #{message}"

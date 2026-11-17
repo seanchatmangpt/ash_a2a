@@ -120,7 +120,7 @@ defmodule AshA2A.Semantic.AgentCard do
 
   The Spark guard is load-bearing, not defensive decoration:
   `AshA2A.Info.capability_index/1` reaches
-  `Spark.Dsl.Extension.persisted!/3`, which raises `ArgumentError` for a
+  `Spark.Dsl.Extension.persisted!`, which raises `ArgumentError` for a
   module that is not a Spark DSL module at all -- measured, not assumed
   (`test/ash_a2a_semantic_agent_card_test.exs` asserts the `[]` result this
   guard produces).

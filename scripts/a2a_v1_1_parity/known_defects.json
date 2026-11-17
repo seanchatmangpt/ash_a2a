@@ -1,0 +1,4 @@
+{
+  "about": "Failing parity rows that are known library defects. Each entry names the finding in docs/reference/a2a-v1-1-parity-findings.md that states the defect, its repro and the expected bytes. Patterns are fnmatch globs over binding, operation, vector and check. An entry that matches no failing row fails the run, so the list cannot outlive the defect.",
+  "defects": []
+}

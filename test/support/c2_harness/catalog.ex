@@ -401,13 +401,20 @@ defmodule C2Harness.Catalog do
         [
           checks: [13],
           killers_for: [13],
-          expect: ["key_revoked"],
+          expect: ["key_revoked", "authority_key_revoked"],
           mapping: m(["T1078", "T1550"], ["CAPEC-60"])
         ],
         fn env ->
+          # stand-in: the certificate must carry the signature of the specific revoked signer A
           Env.revoke(env, %{"revoked" => [kid(env.cp, "A")]})
-          l = Env.issue!(env, Env.effect())
+          l = Env.issue!(env, Env.effect(), signers: ["A", "B"])
           Env.submit(env, l.effect, l.cert)
+          # real authority: its own key revoked in the actuator's view; a certificate it
+          # really issued (by both authorities) must be refused the same way
+          Env.revoke(env, %{"revoked" => [env.cp.public_registry.authority["kid"]]})
+          l2 = Env.issue!(env, Env.effect())
+          r2 = Env.submit(env, l2.effect, l2.cert)
+          if r2[:refusal] == "key_revoked", do: Env.note(env, "authority_key_revoked")
           res([])
         end
       ),
@@ -477,6 +484,61 @@ defmodule C2Harness.Catalog do
               %{key: k, nonce: Attacker.nonce()}
             ])
           )
+
+          res([])
+        end
+      ),
+      a(
+        "C2C-A45",
+        "certificate signed by only ONE real authority where quorum 2 is pinned (authority 1 alone, then authority 2 alone)",
+        ["insufficient quorum", "single compromised signer below quorum"],
+        [
+          checks: [11],
+          killers_for: [11],
+          expect: ["quorum_not_met", "one_authority_refused:1", "one_authority_refused:2"],
+          mapping: m(["T1078"], ["CAPEC-1"])
+        ],
+        fn env ->
+          for n <- [1, 2] do
+            l = Env.issue_real!(env, Env.effect(), [n])
+            r = Env.submit(env, l.effect, l.cert)
+
+            if r[:refusal] == "quorum_not_met",
+              do: Env.note(env, "one_authority_refused:#{n}")
+          end
+
+          res([])
+        end
+      ),
+      a(
+        "C2C-A46",
+        "two valid signatures from the SAME authority key (duplicate signer: the one signature listed twice; a second signature by the same key under a fresh nonce)",
+        ["insufficient quorum", "single compromised signer below quorum"],
+        [
+          checks: [11],
+          killers_for: [11],
+          expect: [
+            "quorum_not_met",
+            "duplicate_signer_refused:listed_twice",
+            "duplicate_signer_refused:fresh_nonce"
+          ],
+          mapping: m(["T1078", "T1606"], ["CAPEC-151", "CAPEC-196"])
+        ],
+        fn env ->
+          # the real authority's single signature entry, presented twice
+          l = Env.issue_real!(env, Env.effect(), [1])
+          twice = Attacker.mutate_cert(l.cert, &Map.update!(&1, "signatures", fn s -> s ++ s end))
+          r1 = Env.submit(env, l.effect, twice)
+
+          if r1[:refusal] == "quorum_not_met",
+            do: Env.note(env, "duplicate_signer_refused:listed_twice")
+
+          # a holder of the authority key (keymaster stand-in) signs again under a fresh nonce
+          {:ok, l2} = Env.reuse_authority_key(env, Env.effect())
+          r2 = Env.submit(env, l2.effect, l2.cert)
+
+          if r2[:refusal] == "quorum_not_met",
+            do: Env.note(env, "duplicate_signer_refused:fresh_nonce")
 
           res([])
         end
@@ -710,6 +772,8 @@ defmodule C2Harness.Catalog do
           far = Env.issue!(env, Env.effect(), not_before_off: 150, expires_off: 450)
           Env.submit(env, far.effect, far.cert)
           short = Env.issue!(env, Env.effect(), not_before_off: -60, expires_off: 3)
+
+          # SLEEP-CLASS: REAL-ELAPSED-TIME (cert expires_off: 3s must really lapse; no event to await)
           Process.sleep(4_500)
           Env.submit(env, short.effect, short.cert)
           res([ok.digest])

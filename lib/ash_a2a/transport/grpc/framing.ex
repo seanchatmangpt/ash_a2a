@@ -114,9 +114,11 @@ defmodule AshA2A.Transport.Grpc.Framing do
   defp take(len, _rest, max) when len > max, do: {:error, {:frame_too_large, len}}
 
   defp take(len, rest, _max) do
-    case rest do
-      <<chunk::binary-size(len), remaining::binary>> -> {:ok, chunk, remaining}
-      _ -> {:partial, len}
+    if byte_size(rest) >= len do
+      {chunk, remaining} = :erlang.split_binary(rest, len)
+      {:ok, chunk, remaining}
+    else
+      {:partial, len}
     end
   end
 

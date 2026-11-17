@@ -29,18 +29,21 @@ defmodule AshA2A.Domain.Verifiers.VerifyExecution do
   def verify(dsl_state) do
     module = Spark.Dsl.Verifier.get_persisted(dsl_state, :module)
 
-    case Spark.Dsl.Verifier.get_option(dsl_state, [:transport], :user_artifacts, false) do
-      v when is_boolean(v) ->
-        :ok
+    result =
+      case Spark.Dsl.Verifier.get_option(dsl_state, [:transport], :user_artifacts, false) do
+        v when is_boolean(v) ->
+          :ok
 
-      other ->
-        {:error,
-         error(
-           module,
-           [:transport, :user_artifacts],
-           "`user_artifacts` must be a boolean, got #{inspect(other)}"
-         )}
-    end
+        other ->
+          {:error,
+           error(
+             module,
+             [:transport, :user_artifacts],
+             "`user_artifacts` must be a boolean, got #{inspect(other)}"
+           )}
+      end
+
+    AshA2A.Domain.Verifiers.Location.locate(result, dsl_state)
   end
 
   @doc """

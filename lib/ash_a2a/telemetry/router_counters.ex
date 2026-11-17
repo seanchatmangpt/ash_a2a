@@ -19,7 +19,7 @@ defmodule AshA2A.Telemetry.RouterCounters do
   incrementing never serializes concurrent dispatches through a single
   process: `:telemetry.execute/3` calls every attached handler
   synchronously, in the emitting process itself (the same real mechanism
-  `AshA2A.Telemetry.OcelForwarder` and `AshA2A.Agent.__cancel__/2` already
+  `AshA2A.Telemetry.OcelForwarder` and `AshA2A.Agent.__cancel__` already
   rely on), and `:counters.add/3` is safe to call from arbitrarily many
   processes at once without a bottleneck.
 
@@ -90,7 +90,7 @@ defmodule AshA2A.Telemetry.RouterCounters do
       handler_id = AshA2A.Telemetry.RouterCounters.attach!(ref, make_ref(), owner: self())
 
   A host application wanting one long-lived, application-wide instance
-  attaches once (for example from `AshA2A.Application.start/2`, the same
+  attaches once (for example from `AshA2A.Application.start`, the same
   place `AshA2A.Telemetry.OcelForwarder.attach!/0` is called) and holds the
   returned `ref` wherever it is convenient to query later (config,
   `:persistent_term`, a supervised process's state) -- this module makes

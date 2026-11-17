@@ -14,7 +14,9 @@ defmodule AshA2A.C2.ActuatorClient.Framed do
   verdict is the only admission.
 
   `ctx` keys: `:actuator_socket` (path, required), `:policy_epoch` (the epoch the effect
-  is bound to), `:c2_receive_timeout` (ms, default 5000).
+  is bound to), `:c2_receive_timeout` (ms, default 5000),
+  `:c2_tls` (optional mutual-TLS map, see `AshA2A.C2.L07Tls.Transport`; when present the unix
+  socket is never used).
 
   Result mapping: `status` `"performed"`/`"replayed"` -> `{:ok, %{"state" => "executed", ...}}`;
   a refusal -> `{:error, {:actuator_refused, code}}`.
@@ -22,6 +24,7 @@ defmodule AshA2A.C2.ActuatorClient.Framed do
   @behaviour AshA2A.C2.ActuatorClient
 
   alias AshA2A.C2.ActuatorProfile
+  alias AshA2A.C2.L07Tls.Transport
 
   @impl true
   def execute(effect, cert, ctx) do
@@ -35,7 +38,7 @@ defmodule AshA2A.C2.ActuatorClient.Framed do
              "effect" => Base.url_encode64(eff.bytes, padding: false),
              "certificate" => Base.url_encode64(cert_json, padding: false)
            }),
-         {:ok, reply} <- call(path, frame, Map.get(ctx, :c2_receive_timeout, 5_000)) do
+         {:ok, reply} <- call(path, ctx, frame, Map.get(ctx, :c2_receive_timeout, 5_000)) do
       decode(reply, eff.digest)
     end
   end
@@ -56,6 +59,9 @@ defmodule AshA2A.C2.ActuatorClient.Framed do
 
   defp decode(_, _), do: {:error, :actuator_transport_refused}
 
+  # With `ctx.c2_tls` set the socket path is ignored and never used as a fallback.
+  defp socket(%{c2_tls: _}), do: {:ok, nil}
+
   defp socket(ctx) do
     case Map.get(ctx, :actuator_socket) do
       p when is_binary(p) and p != "" -> {:ok, p}
@@ -63,24 +69,19 @@ defmodule AshA2A.C2.ActuatorClient.Framed do
     end
   end
 
-  defp call(path, frame, timeout) do
-    case :gen_tcp.connect(
-           {:local, String.to_charlist(path)},
-           0,
-           [:binary, packet: 4, active: false],
-           timeout
-         ) do
+  defp call(path, ctx, frame, timeout) do
+    case Transport.connect(path, ctx, [:binary, packet: 4, active: false], timeout) do
       {:ok, s} ->
         try do
-          with :ok <- :gen_tcp.send(s, frame),
-               {:ok, resp} <- :gen_tcp.recv(s, 0, timeout),
+          with :ok <- Transport.send(s, frame),
+               {:ok, resp} <- Transport.recv(s, 0, timeout),
                {:ok, %{} = m} <- Jason.decode(resp) do
             {:ok, m}
           else
             _ -> {:error, :actuator_transport_refused}
           end
         after
-          :gen_tcp.close(s)
+          Transport.close(s)
         end
 
       {:error, _} ->

@@ -14,6 +14,7 @@ defmodule C2Harness.ControlPlane do
   defstruct [
     :actuator_sock,
     :authority_sock,
+    :authority2_sock,
     :tls_port,
     :tls_client_cert,
     :tls_client_key,
@@ -40,8 +41,10 @@ defmodule C2Harness.Fleet do
       operator-side files, signs on request
     * ACTUATOR (`actuator` project, test env, instrumented host): the real `Actuator.Store`
       and UDS/mTLS wire from a pinned config, own state dir, crash points and mutants
-    * AUTHORITY (`authority_service` project, prod env): the real `AuthorityService`
-      release entrypoint over a unix socket
+    * AUTHORITY and AUTHORITY 2 (`authority_service` project, prod env): two independent
+      real `AuthorityService` release entrypoints, each over its own unix socket with its
+      own key, custodian identity, journal and state directory. The court actuator pins
+      quorum 2, so an honest certificate is one signature from each of them
 
   Hosting scope, recorded honestly in every report: **separate-process, same-host, same OS
   uid**. State directories are mode 0700 and never handed to the attacker API, but the
@@ -125,14 +128,20 @@ defmodule C2Harness.Fleet do
   @doc "Operator action: write the actuator's revocation view (`:delete` removes the file)."
   def write_revocation(fleet, view), do: GenServer.call(fleet, {:write_revocation, view})
 
-  @doc "Operator action: arm (`point`) or disarm (`nil`) an actuator crash point."
+  @doc """
+  Operator action: arm (`point`) or disarm (`nil`) an actuator crash point. Returns `:ok` once
+  the running actuator child has acknowledged the point (it is then in force for the next
+  request), or `{:error, {:crash_point_not_acknowledged, point}}` after 5 s.
+  """
   def arm_crash(fleet, point), do: GenServer.call(fleet, {:arm_crash, point})
 
   @doc """
   Start the actuator through its PRODUCTION entrypoint (`MIX_ENV=prod mix run --no-halt`,
   `Actuator.Application` starts the Store and listeners from `ACTUATOR_CONFIG`; no court
   script, no fault hook compiled in). Options: `config: false` omits `ACTUATOR_CONFIG` (the
-  entrypoint must refuse to boot), `env: [{name, value}]` extra child environment.
+  entrypoint must refuse to boot), `env: [{name, value}]` extra child environment,
+  `authority_only: true` boots it from a config whose registry pins only the real
+  AuthorityService key with quorum 1 and its own state dir (returns `{:ok, os_pid, state_dir}`).
   """
   def start_prod_actuator(fleet, opts \\ []),
     do: GenServer.call(fleet, {:start_prod_actuator, opts}, 180_000)
@@ -151,9 +160,9 @@ defmodule C2Harness.Fleet do
         "c2-" <> Base.url_encode64(:crypto.strong_rand_bytes(5), padding: false)
       )
 
-    dirs = for d <- ~w(act auth cp km sock), into: %{}, do: {d, Path.join(root, d)}
+    dirs = for d <- ~w(act auth auth2 cp km sock), into: %{}, do: {d, Path.join(root, d)}
     for {_, d} <- dirs, do: File.mkdir_p!(d)
-    for d <- ~w(act auth km), do: File.chmod!(dirs[d], 0o700)
+    for d <- ~w(act auth auth2 km), do: File.chmod!(dirs[d], 0o700)
     # sockets live OUTSIDE the state-owning directories: the attacker must know a socket
     # path, and the key-material scan treats the act/auth/km directory paths as protected
     # (an earlier layout put the sockets under act/ and auth/ and the scan caught it)
@@ -170,15 +179,18 @@ defmodule C2Harness.Fleet do
       km_sock: Path.join(dirs["km"], "k.sock"),
       act_sock: Path.join(dirs["sock"], "act.sock"),
       auth_sock: Path.join(dirs["sock"], "auth.sock"),
+      auth2_sock: Path.join(dirs["sock"], "auth2.sock"),
       cfg_path: Path.join(dirs["act"], "config.json"),
       state_dir: Path.join(dirs["act"], "state"),
       ctl_dir: Path.join(dirs["act"], "ctl"),
       auth_journal: Path.join(dirs["auth"], "journal.log"),
+      auth2_journal: Path.join(dirs["auth2"], "journal.log"),
       tls_port: free_port(),
       km: nil,
       hello: nil,
       actuator: nil,
       authority: nil,
+      authority2: nil,
       compromised: %{},
       mutant_skip: Keyword.get(opts, :mutant_skip, []),
       procs_log: Path.join(root, "logs")
@@ -193,6 +205,7 @@ defmodule C2Harness.Fleet do
                  [
                    {"KM_ACT_DIR", dirs["act"]},
                    {"KM_AUTH_DIR", dirs["auth"]},
+                   {"KM_AUTH2_DIR", dirs["auth2"]},
                    {"KM_CP_DIR", dirs["cp"]},
                    {"KM_DIR", dirs["km"]},
                    {"KM_SOCK", st.km_sock},
@@ -242,9 +255,11 @@ defmodule C2Harness.Fleet do
        :km_sock,
        :act_sock,
        :auth_sock,
+       :auth2_sock,
        :cfg_path,
        :state_dir,
        :auth_journal,
+       :auth2_journal,
        :tls_port,
        :hello,
        :build_root,
@@ -263,8 +278,18 @@ defmodule C2Harness.Fleet do
     Proc.stop(st.actuator)
     _ = File.rm(st.act_sock)
 
-    config_env =
-      if Keyword.get(opts, :config, true), do: [{"ACTUATOR_CONFIG", st.cfg_path}], else: []
+    {config_env, alt_state} =
+      cond do
+        Keyword.get(opts, :authority_only, false) ->
+          {path, dir} = write_authority_only_config!(st)
+          {[{"ACTUATOR_CONFIG", path}], dir}
+
+        Keyword.get(opts, :config, true) ->
+          {[{"ACTUATOR_CONFIG", st.cfg_path}], nil}
+
+        true ->
+          {[], nil}
+      end
 
     result =
       Proc.start("actuator-prod", Path.join(@root, "actuator"),
@@ -282,6 +307,7 @@ defmodule C2Harness.Fleet do
       )
 
     case result do
+      {:ok, p} when alt_state != nil -> {:reply, {:ok, p.os_pid, alt_state}, %{st | actuator: p}}
       {:ok, p} -> {:reply, {:ok, p.os_pid}, %{st | actuator: p}}
       {:error, why} -> {:reply, {:error, why}, %{st | actuator: nil}}
     end
@@ -306,7 +332,8 @@ defmodule C2Harness.Fleet do
 
   def handle_call(:kill_authority, _, st) do
     Proc.stop(st.authority)
-    {:reply, :ok, %{st | authority: nil}}
+    Proc.stop(st.authority2)
+    {:reply, :ok, %{st | authority: nil, authority2: nil}}
   end
 
   def handle_call(:authority_pid, _, st), do: {:reply, st.authority && st.authority.os_pid, st}
@@ -331,14 +358,18 @@ defmodule C2Harness.Fleet do
 
   def handle_call({:arm_crash, point}, _, st) do
     path = Path.join(st.ctl_dir, "crash.point")
+    want = if point, do: Atom.to_string(point), else: ""
 
     if point do
-      File.write!(path, Atom.to_string(point))
+      File.write!(path, want)
     else
       File.rm(path)
     end
 
-    {:reply, :ok, st}
+    # The actuator child mirrors crash.point into the env var the Store reads on a 15 ms poll
+    # and acknowledges the value in force in crash.armed. Writing the file arms nothing by
+    # itself: a request completes in ~2 ms, so reply only once the child has acknowledged.
+    {:reply, await_armed(Path.join(st.ctl_dir, "crash.armed"), want, deadline_in(5_000)), st}
   end
 
   def handle_call({:km, req}, _, st), do: {:reply, Wire.lp(st.km_sock, req), st}
@@ -351,6 +382,7 @@ defmodule C2Harness.Fleet do
     cp = %ControlPlane{
       actuator_sock: st.act_sock,
       authority_sock: st.auth_sock,
+      authority2_sock: st.auth2_sock,
       tls_port: st.tls_port,
       tls_client_cert: Path.join(d, "client.crt"),
       tls_client_key: Path.join(d, "client.key"),
@@ -361,7 +393,12 @@ defmodule C2Harness.Fleet do
       authority_audience: @authority_audience,
       policy_epoch: @policy_epoch,
       revocation_epoch: @revocation_epoch,
-      public_registry: %{signers: h["signers"], approvers: h["approvers"]},
+      public_registry: %{
+        signers: h["signers"],
+        approvers: h["approvers"],
+        authority: h["svc"],
+        authority2: h["svc2"]
+      },
       max_frame: 131_072,
       compromised: comp
     }
@@ -372,6 +409,7 @@ defmodule C2Harness.Fleet do
   def handle_call(:stop, _, st) do
     Proc.stop(st.actuator)
     Proc.stop(st.authority)
+    Proc.stop(st.authority2)
     Proc.stop(st.km)
     File.rm_rf(st.root)
     {:stop, :normal, :ok, st}
@@ -406,6 +444,23 @@ defmodule C2Harness.Fleet do
     ]
   end
 
+  defp deadline_in(ms), do: System.monotonic_time(:millisecond) + ms
+
+  defp await_armed(file, want, deadline) do
+    cond do
+      File.read(file) == {:ok, want} ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, {:crash_point_not_acknowledged, want}}
+
+      true ->
+        # SLEEP-CLASS: POLL-STEP (deadline-bounded poll on the child's crash.armed acknowledgement)
+        Process.sleep(5)
+        await_armed(file, want, deadline)
+    end
+  end
+
   defp do_start_actuator(st, opts) do
     Proc.stop(st.actuator)
     _ = File.rm(st.act_sock)
@@ -414,6 +469,7 @@ defmodule C2Harness.Fleet do
     skip_env = if skip == :all, do: "all", else: Enum.join(skip, ",")
 
     File.rm(Path.join(st.ctl_dir, "crash.point"))
+    File.rm(Path.join(st.ctl_dir, "crash.armed"))
     File.rm(Path.join(st.ctl_dir, "at_fault"))
 
     case Proc.start("actuator", Path.join(@root, "actuator"),
@@ -439,42 +495,101 @@ defmodule C2Harness.Fleet do
     end
   end
 
+  # Both real authorities, each its own OS process. `{:error, why}` if either does not come up.
   defp do_start_authority(st) do
-    Proc.stop(st.authority)
-    _ = File.rm(st.auth_sock)
-    a = st.dirs["auth"]
-
-    case Proc.start("authority", Path.join(@root, "authority_service"),
-           script: Path.join(@support, "watchdog.exs"),
-           log: Path.join(st.procs_log, "authority-#{System.unique_integer([:positive])}.log"),
-           env:
-             child_env("prod", Path.join(st.build_root, "authority-prod")) ++
-               [
-                 {"AUTHORITY_KEY_FILE", Path.join([a, "key", "policy.key"])},
-                 {"AUTHORITY_CONFIG_DIR", a},
-                 {"AUTHORITY_LISTEN_UNIX", st.auth_sock},
-                 {"AUTHORITY_AUDIENCE", @authority_audience},
-                 {"AUTHORITY_ACTUATOR_AUDIENCE", @audience},
-                 {"AUTHORITY_JOURNAL", st.auth_journal}
-               ],
-           ready:
-             {:poll,
-              fn ->
-                match?(
-                  {:ok, %{"refusal" => "unknown_op"}},
-                  Wire.lp(st.auth_sock, %{"op" => "probe"}, 2_000)
-                )
-              end}
-         ) do
-      {:ok, p} -> {:ok, %{st | authority: p}}
-      {:error, why} -> {:error, why}
+    with {:ok, p1} <-
+           start_one_authority(
+             st,
+             st.authority,
+             "authority",
+             st.dirs["auth"],
+             st.auth_sock,
+             st.auth_journal
+           ),
+         {:ok, p2} <-
+           start_one_authority(
+             st,
+             st.authority2,
+             "authority2",
+             st.dirs["auth2"],
+             st.auth2_sock,
+             st.auth2_journal
+           ) do
+      {:ok, %{st | authority: p1, authority2: p2}}
     end
   end
 
+  defp start_one_authority(st, running, name, dir, sock, journal) do
+    Proc.stop(running)
+    _ = File.rm(sock)
+
+    Proc.start(name, Path.join(@root, "authority_service"),
+      script: Path.join(@support, "watchdog.exs"),
+      log: Path.join(st.procs_log, "#{name}-#{System.unique_integer([:positive])}.log"),
+      env:
+        child_env("prod", Path.join(st.build_root, "authority-prod")) ++
+          [
+            {"AUTHORITY_KEY_FILE", Path.join([dir, "key", "policy.key"])},
+            {"AUTHORITY_CONFIG_DIR", dir},
+            {"AUTHORITY_LISTEN_UNIX", sock},
+            {"AUTHORITY_AUDIENCE", @authority_audience},
+            {"AUTHORITY_ACTUATOR_AUDIENCE", @audience},
+            {"AUTHORITY_KEY_REVOCATION_EPOCH", Integer.to_string(@revocation_epoch)},
+            {"AUTHORITY_JOURNAL", journal}
+          ],
+      ready:
+        {:poll,
+         fn ->
+           match?(
+             {:ok, %{"refusal" => "unknown_op"}},
+             Wire.lp(sock, %{"op" => "probe"}, 2_000)
+           )
+         end}
+    )
+  end
+
+  @record_keys ~w(kid alg public_key custodian_id custody_tier state revocation_epoch)
+
+  # The "authority only" actuator: the deployment the two releases are built for. Its
+  # registry pins ONLY the real AuthorityService's key and its quorum is 1, so a certificate
+  # the real authority issued is sufficient on its own (no keymaster signature anywhere).
+  defp write_authority_only_config!(st) do
+    dir = Path.join(st.dirs["act"], "state_authority_only")
+    File.mkdir_p!(dir)
+    path = Path.join(st.dirs["act"], "config.authority_only.json")
+
+    cfg = %{
+      "state_dir" => dir,
+      "audience" => @audience,
+      "policy_epoch" => @policy_epoch,
+      "allowed_subjects" => ["subject:orders/42"],
+      "quorum" => %{"internal_append" => 1, "none" => 1},
+      "quorum_default" => 1,
+      "skew" => 30,
+      "max_ttl" => 900,
+      "max_revocation_staleness" => 300,
+      "registry" => [Map.take(st.hello["svc"], @record_keys)],
+      "wire" => %{"uds_path" => st.act_sock}
+    }
+
+    File.write!(path, Jason.encode!(cfg))
+    File.chmod!(path, 0o600)
+
+    File.write!(
+      Path.join(dir, "revocation.json"),
+      Jason.encode!(%{"refreshed_at" => now(), "epoch" => @revocation_epoch, "revoked" => []})
+    )
+
+    {path, dir}
+  end
+
   defp write_config!(st) do
+    # signers A, A2, B, C (keymaster) plus the keys of the two real AuthorityService
+    # instances (distinct custodians): with quorum 2 one authority is never sufficient alone,
+    # and the two together are exactly k
     signers =
-      for s <- st.hello["signers"],
-          do: Map.take(s, ~w(kid alg public_key custodian_id custody_tier state revocation_epoch))
+      for s <- st.hello["signers"] ++ [st.hello["svc"], st.hello["svc2"]],
+          do: Map.take(s, @record_keys)
 
     cfg = %{
       "state_dir" => st.state_dir,

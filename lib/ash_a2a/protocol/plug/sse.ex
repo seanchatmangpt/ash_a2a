@@ -59,6 +59,9 @@ if Code.ensure_loaded?(Plug) do
             Error.invalid_agent_response("Message reply to a task-scoped request")
           )
 
+        {:error, {:invalid_agent_response, _} = reason} ->
+          send_jsonrpc_error(conn, jsonrpc_id, AshA2A.Transport.Plug.reason_error(reason))
+
         {:error, reason} ->
           %{ref: ref} = AshA2A.Transport.SafeError.internal(:internal_error, reason)
           send_jsonrpc_error(conn, jsonrpc_id, Error.internal_error(%{"ref" => ref}))
@@ -92,7 +95,16 @@ if Code.ensure_loaded?(Plug) do
             # fallback). With a running transport event log, newer events
             # (generation > lastSeenGeneration) are replayed instead, and
             # only an unretained range falls back to the snapshot.
-            plan = replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, v11?)
+            journal = journal_plan(task_id, last_seen, gen, v11?)
+
+            plan =
+              case journal do
+                {:ok, _events} = ok ->
+                  ok
+
+                :unavailable ->
+                  replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, v11?)
+              end
 
             {resume?, replay} =
               case plan do
@@ -102,10 +114,14 @@ if Code.ensure_loaded?(Plug) do
 
             conn = start_sse(conn)
 
+            # `:wire_task` lets an owner-scoped transport strip its internal
+            # metadata (verified identity, owner key) from the snapshot.
+            wire_task = Keyword.get(opts, :wire_task) || (& &1)
+
             conn =
               if resume?,
                 do: conn,
-                else: send_task_snapshot(conn, jsonrpc_id, task)
+                else: send_task_snapshot(conn, jsonrpc_id, wire_task.(task))
 
             conn =
               Enum.reduce(replay, conn, fn {_seq, _kind, payload, _final?}, conn ->
@@ -119,12 +135,33 @@ if Code.ensure_loaded?(Plug) do
                      AshA2A.A2ATransport.TaskEvents.terminal_payload?(payload))
               end)
 
+            # `prev` is the snapshot the agent fan-out's next one is compared
+            # with: every mutation in between is one event at its own
+            # generation (`AshA2A.Protocol.Task.Delta`, A2A v1.1 3.2.7).
             st = %{
               floor: if(resume?, do: last_seen),
               seen: gen,
+              prev: task,
               v11?: v11?,
-              id: jsonrpc_id
+              id: jsonrpc_id,
+              task_id: task_id
             }
+
+            # After a journal replay, a non-terminal task with no local live
+            # producer (fresh agent / second node: the snapshot came from the
+            # TaskStore) would otherwise wait for events nobody will send.
+            # It gets a bounded wait, then a StreamError close (see
+            # `orphan_close/3`) instead of hanging to the idle timeout.
+            st =
+              Map.put(
+                st,
+                :orphan_grace,
+                if(
+                  match?({:ok, _}, journal) and awaiting_producer?(task, replay) and
+                    not local_producer?(agent, task_id),
+                  do: orphan_grace_ms(idle_timeout)
+                )
+              )
 
             if resume? and (AshA2A.Protocol.Task.terminal?(task) or replayed_final?),
               do: conn,
@@ -152,8 +189,7 @@ if Code.ensure_loaded?(Plug) do
       with true <- is_integer(last_seen) and v11?,
            {:ok, task} <- GenServer.call(agent, {:get_task, task_id}),
            gen = AshA2A.Protocol.Task.Generation.generation_of(task),
-           {:ok, events} <-
-             replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, true) do
+           {:ok, events} <- terminal_plan(opts, task_id, last_seen, gen) do
         conn = start_sse(conn)
 
         Enum.reduce(events, conn, fn {_seq, _kind, payload, _final?}, conn ->
@@ -162,6 +198,117 @@ if Code.ensure_loaded?(Plug) do
       else
         _ -> send_jsonrpc_error(conn, jsonrpc_id, Error.unsupported_operation())
       end
+    end
+
+    defp terminal_plan(opts, task_id, last_seen, gen) do
+      case journal_plan(task_id, last_seen, gen, true) do
+        {:ok, _events} = ok -> ok
+        :unavailable -> replay_plan(Keyword.get(opts, :transport), task_id, last_seen, gen, true)
+      end
+    end
+
+    # Replay through the durable `AshA2A.Protocol.EventJournal` configured by
+    # `config :ash_a2a, :event_journal, {module, ref}` (same convention as
+    # `:task_store`; unset means no journal). The module is resolved at runtime:
+    # when it is unset, not loaded, lacks `replay_after/3`, errors, or retains
+    # nothing for a client that is behind (`last_seen < gen`), this is
+    # `:unavailable` and the caller falls back to the node-local transport log
+    # / snapshot. The writer is `AshA2A.Protocol.EventJournal.record_task/3`,
+    # called from `AshA2A.Protocol.Agent.State.put_task_checked/2`.
+    defp journal_plan(task_id, last_seen, gen, true) when is_integer(last_seen) do
+      with {mod, ref} when is_atom(mod) <- Application.get_env(:ash_a2a, :event_journal),
+           true <- Code.ensure_loaded?(mod),
+           true <- function_exported?(mod, :replay_after, 3),
+           {:ok, raw} when is_list(raw) <- safe_replay_after({mod, ref}, task_id, last_seen) do
+        events =
+          raw
+          |> Enum.map(&normalize_journal_event/1)
+          |> Enum.reject(fn {_, kind, payload, _} ->
+            g = AshA2A.A2ATransport.TaskEvents.generation_of(payload)
+            kind == "task" or not (is_integer(g) and g > last_seen)
+          end)
+          |> AshA2A.A2ATransport.TaskEvents.visible("1.1")
+
+        if events == [] and last_seen < (gen || 0), do: :unavailable, else: {:ok, events}
+      else
+        _ -> :unavailable
+      end
+    end
+
+    defp journal_plan(_task_id, _last_seen, _gen, _v11?), do: :unavailable
+
+    defp safe_replay_after(journal, task_id, last_seen) do
+      AshA2A.Protocol.EventJournal.replay_after(journal, task_id, last_seen)
+    rescue
+      _ -> {:error, :journal_failed}
+    catch
+      :exit, _ -> {:error, :journal_failed}
+    end
+
+    defp normalize_journal_event({_, _, _, _} = event), do: event
+
+    defp normalize_journal_event(%{} = payload) do
+      kind =
+        cond do
+          Map.has_key?(payload, "statusUpdate") -> "status-update"
+          Map.has_key?(payload, "artifactUpdate") -> "artifact-update"
+          Map.has_key?(payload, "messageUpdate") -> "message-update"
+          Map.has_key?(payload, "task") -> "task"
+          true -> "event"
+        end
+
+      {0, kind, payload, AshA2A.A2ATransport.TaskEvents.terminal_payload?(payload)}
+    end
+
+    defp normalize_journal_event(_other), do: {0, "event", %{}, false}
+
+    # Only a task that is being worked on (submitted/working) needs a live
+    # producer to advance. An interrupted task (input/auth-required) advances
+    # on the next client message, which any node holding the TaskStore can
+    # serve, so its stream stays open. The state is the last replayed status
+    # when there is one, else the snapshot's.
+    defp awaiting_producer?(task, replay) do
+      replayed =
+        replay
+        |> Enum.reverse()
+        |> Enum.find_value(fn {_, _, payload, _} ->
+          AshA2A.A2ATransport.TaskEvents.payload_state(payload)
+        end)
+
+      case replayed do
+        nil -> task.status.state in [:submitted, :working]
+        state -> state in ["submitted", "working"]
+      end
+    end
+
+    # A task this agent process ran or continued is held in its memory; a
+    # task it can only read through the TaskStore (fresh agent, second node)
+    # has no producer here.
+    defp local_producer?(agent, task_id) do
+      GenServer.call(agent, {:ash_a2a_task_local?, task_id}) == true
+    catch
+      :exit, _ -> false
+    end
+
+    defp orphan_grace_ms(idle_timeout) do
+      grace = Application.get_env(:ash_a2a, :resubscribe_orphan_grace_ms, 500)
+      if is_integer(idle_timeout), do: min(idle_timeout, grace), else: grace
+    end
+
+    # Documented close for a non-terminal task with no live producer: a
+    # `StreamError` frame (code `PRODUCER_UNAVAILABLE`) and the stream ends.
+    # The task is NOT reported terminal; the client should `tasks/get` and
+    # resubscribe against the node that owns the producer.
+    defp orphan_close(conn, jsonrpc_id, task_id) do
+      write_stream_error(
+        conn,
+        jsonrpc_id,
+        %AshA2A.Protocol.StreamError{
+          task_id: task_id,
+          code: "PRODUCER_UNAVAILABLE",
+          message: "No live producer for this task on this node; journal replay is complete."
+        }
+      )
     end
 
     # `{:ok, events}` (possibly empty) when a running transport log can serve
@@ -230,52 +377,64 @@ if Code.ensure_loaded?(Plug) do
     defp relay_task_events({:error, conn}, _jsonrpc_id, _idle_timeout, _st), do: conn
 
     defp relay_task_events(conn, jsonrpc_id, idle_timeout, st) do
+      wait = Map.get(st, :orphan_grace) || idle_timeout
+
       receive do
         {:a2a_stream_error, _task_id, wrapped} ->
           conn
           |> write_wrapped(jsonrpc_id, wrapped)
-          |> relay_task_events(jsonrpc_id, idle_timeout, st)
+          |> relay_task_events(jsonrpc_id, idle_timeout, Map.put(st, :orphan_grace, nil))
 
         {:a2a_task_event, _task_id, task} ->
           terminal? = AshA2A.Protocol.Task.terminal?(task)
-          gen = AshA2A.Protocol.Task.Generation.generation_of(task)
 
-          if is_integer(st.floor) and gen <= st.floor and not terminal? do
-            relay_task_events(conn, jsonrpc_id, idle_timeout, st)
-          else
-            conn = send_new_messages(conn, jsonrpc_id, task, st)
+          # One frame per mutation since the previous snapshot, each at the
+          # task's generation after it; nothing at a generation already sent.
+          events =
+            for {gen, event} <- AshA2A.Protocol.Task.Delta.events(Map.get(st, :prev), task),
+                gen > st.seen,
+                st.v11? or not match?(%AshA2A.Protocol.Event.MessageUpdate{}, event),
+                do: {gen, event}
 
-            event =
-              AshA2A.Protocol.Event.StatusUpdate.new(task.id, task.status,
-                context_id: task.context_id,
-                final: terminal?,
-                generation: gen
-              )
+          result =
+            Enum.reduce_while(events, conn, fn {_gen, event}, conn ->
+              {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
 
-            {:ok, encoded} = AshA2A.Protocol.JSON.encode_stream_response(event)
+              case send_event(conn, jsonrpc_id, encoded) do
+                {:error, conn} -> {:halt, {:error, conn}}
+                conn -> {:cont, conn}
+              end
+            end)
 
-            case send_event(conn, jsonrpc_id, encoded) do
-              {:error, conn} ->
-                conn
+          case result do
+            {:error, conn} ->
+              conn
 
-              conn ->
-                st = %{st | seen: max(st.seen, gen)}
+            conn ->
+              gen = AshA2A.Protocol.Task.Generation.generation_of(task)
 
-                if terminal?,
-                  do: conn,
-                  else: relay_task_events(conn, jsonrpc_id, idle_timeout, st)
-            end
+              st =
+                %{st | seen: max(st.seen, gen)}
+                |> Map.put(:prev, task)
+                |> Map.put(:orphan_grace, if(events == [], do: Map.get(st, :orphan_grace)))
+
+              if terminal?,
+                do: conn,
+                else: relay_task_events(conn, jsonrpc_id, idle_timeout, st)
           end
 
         # Unknown StreamResponse payloads forwarded verbatim.
         {:a2a_stream_frame, _task_id, %{} = frame} ->
           conn
           |> write_wrapped(jsonrpc_id, frame)
-          |> relay_task_events(jsonrpc_id, idle_timeout, st)
+          |> relay_task_events(jsonrpc_id, idle_timeout, Map.put(st, :orphan_grace, nil))
       after
         # A task that never reaches a terminal state would otherwise pin this
         # connection process indefinitely.
-        idle_timeout -> conn
+        wait ->
+          if Map.get(st, :orphan_grace),
+            do: orphan_close(conn, jsonrpc_id, Map.get(st, :task_id)),
+            else: conn
       end
     end
 
@@ -357,14 +516,22 @@ if Code.ensure_loaded?(Plug) do
     defp stream_parts(conn, jsonrpc_id, task, enum) do
       start = AshA2A.Protocol.Task.Generation.generation_of(task)
 
+      # Every chunk of one stream belongs to one artifact (the id the agent
+      # stores it under) and is one stored mutation: its frame carries the
+      # task's generation after it (A2A v1.1 3.2.7).
+      artifact_id =
+        Map.get(task.metadata, :stream_artifact_id) || AshA2A.Protocol.ID.generate("art")
+
       Enum.reduce_while(enum, {conn, start}, fn part, {conn, last} ->
-        artifact = AshA2A.Protocol.Artifact.new([part])
-        own = artifact.end_generation || artifact.start_generation
-        gen = if is_integer(own) and own > last, do: own, else: last + 1
+        artifact = %{AshA2A.Protocol.Artifact.new([part]) | artifact_id: artifact_id}
+        stored = AshA2A.Protocol.Agent.Runtime.chunk_generation(task.id)
+        gen = if is_integer(stored) and stored > last, do: stored, else: last + 1
 
         event =
           AshA2A.Protocol.Event.ArtifactUpdate.new(task.id, artifact,
             context_id: task.context_id,
+            append: if(last > start, do: true),
+            last_chunk: if(AshA2A.Protocol.Agent.Runtime.chunk_last?(task.id), do: true),
             generation: gen
           )
 

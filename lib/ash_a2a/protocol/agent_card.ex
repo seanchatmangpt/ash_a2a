@@ -61,6 +61,7 @@ defmodule AshA2A.Protocol.AgentCard do
           optional(:state_transition_history) => boolean(),
           optional(:extended_agent_card) => boolean(),
           optional(:user_artifacts) => boolean(),
+          optional(:live) => boolean(),
           optional(:extensions) => [AshA2A.Protocol.AgentExtension.t()]
         }
 
@@ -123,4 +124,229 @@ defmodule AshA2A.Protocol.AgentCard do
     security: [],
     signatures: []
   ]
+
+  @typedoc "One discrepancy between a card and what is mounted/enabled."
+  @type discrepancy :: %{code: atom(), message: String.t()}
+
+  @capability_keys [
+    {:streaming, "streaming"},
+    {:push_notifications, "pushNotifications"},
+    {:live, "live"},
+    {:user_artifacts, "userArtifacts"},
+    {:extended_agent_card, "extendedAgentCard"}
+  ]
+
+  @known_bindings ["JSONRPC", "GRPC", "HTTP+JSON"]
+
+  @doc """
+  Audits a card against what is actually mounted and enabled, returning a list
+  of `%{code: atom, message: String.t()}` discrepancies (`[]` means honest).
+
+  `card` is an `%AshA2A.Protocol.AgentCard{}` or its wire map (string keys).
+
+  `mounted_opts` (keyword or map) describes the mounted surface:
+
+    * `:domain` - an `AshA2A.Domain` module; unset expectations are derived
+      from `AshA2A.Domain.Info` (declared mounts, `streaming`,
+      `push_notifications`, `extended_agent_card`, `user_artifacts`, security
+      schemes) and `AshA2A.Info.released_capability_index/1` (skills).
+    * `:bindings` - allowed `protocolBinding` strings (overrides the domain).
+    * `:streaming`, `:push_notifications`, `:live`, `:user_artifacts`,
+      `:extended_agent_card` - booleans (override the domain). A capability
+      with no expectation is treated as NOT enabled, so advertising it fails.
+    * `:skill_ids` - allowed skill ids (overrides the domain's index).
+    * `:security_schemes` - allowed scheme names (overrides the domain).
+
+  Codes: `:unmounted_binding`, `:unknown_binding`, `:capability_not_enabled`,
+  `:skill_not_public`, `:security_scheme_not_configured`,
+  `:security_requirement_undeclared`.
+
+  Without `:domain`, no mount list is known, so only the legacy default
+  `"JSONRPC"` binding is accepted unless `:bindings` says otherwise.
+  """
+  @spec audit(t() | map(), keyword() | map()) :: [discrepancy()]
+  def audit(card, mounted_opts \\ []) do
+    opts = Map.new(mounted_opts)
+    view = card_view(card)
+    domain = Map.get(opts, :domain)
+
+    binding_issues(view.bindings, expected_bindings(opts, domain)) ++
+      capability_issues(view.capabilities, opts, domain) ++
+      skill_issues(view.skill_ids, expected_skill_ids(opts, domain)) ++
+      security_issues(view, expected_scheme_names(opts, domain))
+  end
+
+  defp card_view(%__MODULE__{} = card) do
+    %{
+      bindings:
+        Enum.map(
+          card.supported_interfaces || [],
+          &fetch(&1, :protocol_binding, "protocolBinding")
+        ),
+      capabilities: card.capabilities || %{},
+      skill_ids: Enum.map(card.skills || [], &fetch(&1, :id, "id")),
+      scheme_names: Enum.map(Map.keys(card.security_schemes || %{}), &to_string/1),
+      requirement_names:
+        (card.security || []) |> Enum.flat_map(&Map.keys/1) |> Enum.map(&to_string/1)
+    }
+  end
+
+  defp card_view(%{} = wire) do
+    %{
+      bindings:
+        Enum.map(
+          fetch(wire, :supported_interfaces, "supportedInterfaces") || [],
+          &fetch(&1, :protocol_binding, "protocolBinding")
+        ),
+      capabilities: fetch(wire, :capabilities, "capabilities") || %{},
+      skill_ids: Enum.map(fetch(wire, :skills, "skills") || [], &fetch(&1, :id, "id")),
+      scheme_names:
+        (fetch(wire, :security_schemes, "securitySchemes") || %{})
+        |> Map.keys()
+        |> Enum.map(&to_string/1),
+      requirement_names:
+        (fetch(wire, :security, "securityRequirements") || [])
+        |> Enum.flat_map(fn req ->
+          case req do
+            %{"schemes" => schemes} -> Map.keys(schemes)
+            flat -> Map.keys(flat)
+          end
+        end)
+        |> Enum.map(&to_string/1)
+    }
+  end
+
+  defp fetch(map, atom_key, string_key) when is_map(map) do
+    case Map.fetch(map, atom_key) do
+      {:ok, value} -> value
+      :error -> Map.get(map, string_key)
+    end
+  end
+
+  defp expected_bindings(%{bindings: bindings}, _domain) when is_list(bindings), do: bindings
+  defp expected_bindings(_opts, nil), do: ["JSONRPC"]
+
+  defp expected_bindings(_opts, domain) do
+    case AshA2A.Domain.Info.supported_interfaces(domain) do
+      [] -> ["JSONRPC"]
+      interfaces -> Enum.map(interfaces, & &1.protocol_binding)
+    end
+  end
+
+  defp binding_issues(actual, allowed) do
+    Enum.flat_map(Enum.uniq(actual), fn binding ->
+      cond do
+        binding not in @known_bindings ->
+          [
+            %{
+              code: :unknown_binding,
+              message:
+                "supportedInterfaces advertises unknown protocolBinding #{inspect(binding)}"
+            }
+          ]
+
+        binding not in allowed ->
+          [
+            %{
+              code: :unmounted_binding,
+              message:
+                "supportedInterfaces advertises #{binding} but only #{inspect(allowed)} is mounted"
+            }
+          ]
+
+        true ->
+          []
+      end
+    end)
+  end
+
+  defp expected_flag(opts, key, domain) do
+    case Map.fetch(opts, key) do
+      {:ok, value} -> value == true
+      :error -> domain_flag(domain, key)
+    end
+  end
+
+  defp domain_flag(nil, _key), do: false
+  defp domain_flag(_domain, :live), do: false
+
+  defp domain_flag(domain, key) do
+    Map.get(AshA2A.Domain.Info.transport(domain), key, false) == true
+  end
+
+  defp capability_issues(capabilities, opts, domain) do
+    Enum.flat_map(@capability_keys, fn {atom_key, wire_key} ->
+      advertised = fetch(capabilities, atom_key, wire_key) == true
+
+      if advertised and not expected_flag(opts, atom_key, domain) do
+        [
+          %{
+            code: :capability_not_enabled,
+            message: "capabilities.#{wire_key} is advertised but its code path is not enabled"
+          }
+        ]
+      else
+        []
+      end
+    end)
+  end
+
+  defp expected_skill_ids(%{skill_ids: ids}, _domain) when is_list(ids), do: ids
+  defp expected_skill_ids(_opts, nil), do: nil
+
+  defp expected_skill_ids(_opts, domain) do
+    case AshA2A.Info.capability_index(domain) do
+      nil ->
+        nil
+
+      index ->
+        Enum.map(index, fn
+          %{id: id} when is_binary(id) ->
+            id
+
+          %{resource: resource, action: action} ->
+            AshA2A.CapabilityIndex.Compiler.capability_id(resource, action)
+        end)
+    end
+  end
+
+  defp skill_issues(_actual, nil), do: []
+
+  defp skill_issues(actual, allowed) do
+    for id <- actual, id not in allowed do
+      %{
+        code: :skill_not_public,
+        message: "skill #{inspect(id)} does not derive from a public action of the subject"
+      }
+    end
+  end
+
+  defp expected_scheme_names(%{security_schemes: names}, _domain) when is_list(names),
+    do: Enum.map(names, &to_string/1)
+
+  defp expected_scheme_names(_opts, nil), do: []
+
+  defp expected_scheme_names(_opts, domain) do
+    domain |> AshA2A.Domain.Info.security_schemes() |> Enum.map(&to_string(&1.name))
+  end
+
+  defp security_issues(view, configured) do
+    unconfigured =
+      for name <- view.scheme_names, name not in configured do
+        %{
+          code: :security_scheme_not_configured,
+          message: "securitySchemes advertises #{inspect(name)} but no such auth is configured"
+        }
+      end
+
+    undeclared =
+      for name <- Enum.uniq(view.requirement_names), name not in view.scheme_names do
+        %{
+          code: :security_requirement_undeclared,
+          message: "securityRequirements references #{inspect(name)} absent from securitySchemes"
+        }
+      end
+
+    unconfigured ++ undeclared
+  end
 end

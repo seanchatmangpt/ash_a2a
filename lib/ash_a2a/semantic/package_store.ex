@@ -12,7 +12,7 @@ defmodule AshA2A.Semantic.PackageStore do
   .to_reply/1`'s `"execution_package_fingerprint"` body field) -- the
   fingerprint is a SHA-256 digest of `{source.id, ontology.fingerprint,
   planning.fingerprint, candidate.fingerprint}`
-  (`AshA2A.Semantic.ExecutionPackage.fingerprint/1`), a one-way hash, so it
+  (`AshA2A.Semantic.ExecutionPackage.fingerprint`), a one-way hash, so it
   cannot be inverted back into the real `source`/`semantic_ir`/`ontology`/
   `planning_ir`/`plan_candidate` structs `AshA2A.Semantic.Compiler.replan/4`
   needs as its second argument. Something real has to keep the full struct
@@ -24,7 +24,7 @@ defmodule AshA2A.Semantic.PackageStore do
   (`standing: :observed`), while an `ExecutionPackage` is candidate-only,
   `authority: :none` semantic-compiler output (`standing: :candidate`) --
   conflating the two stores would let a candidate be retrieved as if it were
-  receipted evidence. `AshA2A.Agent.dispatch_semantic/2` is the only production
+  receipted evidence. `AshA2A.Agent.dispatch_semantic` is the only production
   writer (every real compile and every real replan stores its own resulting
   package here, keyed by that package's own `fingerprint`); `AshA2A.Agent`'s
   continuation-replan path is the only production reader.

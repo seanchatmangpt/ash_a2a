@@ -26,11 +26,11 @@ defmodule AshA2A.Authority.Broker do
   torn down.
 
   This behaviour IS now reachable from the real, default `AshA2A.Agent`
-  dispatch path: `AshA2A.Agent.build_command/4` calls
+  dispatch path: `AshA2A.Agent.build_command` calls
   `AshA2A.Authority.Grant.authorize/3`, which calls `granted?/3` on the
   configured broker to decide whether the authenticated principal may hold
   the caller-supplied capability at all, before any authority struct reaches
-  `AshA2A.CommandBus.admit/2`. (Earlier releases described this behaviour as
+  `AshA2A.CommandBus.admit`. (Earlier releases described this behaviour as
   deliberately unreachable; that is no longer true, and the unreachability
   was itself the RFC-SA2A-001 S29 escalation -- see
   `AshA2A.Authority.Grant`.) (No separate planning or semantic-admission fence consumes this
@@ -76,6 +76,11 @@ defmodule AshA2A.Authority.Broker do
   After a successful revoke, a subsequent `verify/2` call against any
   authority sharing that same `token_id` MUST fail-closed (`{:error,
   refusal()}`), not merely against the exact struct passed to `revoke/2`.
+
+  A revoked grant may be issued again by `issue/3` to the same principal for
+  the same capability. Re-issuing does not undo the revocation: `verify/2`
+  MUST keep refusing every authority whose `issued_at` is at or before the
+  revocation, and `issue/3` MUST return an authority stamped after it.
   """
   @callback revoke(authority :: Authority.t(), opts :: keyword()) :: :ok | {:error, refusal()}
 
@@ -108,7 +113,7 @@ defmodule AshA2A.Authority.Broker do
 
   `issue/3` is deliberately not usable as a substitute: it has a real
   recording side effect and is not idempotent (a second `issue/3` under the
-  same token id refuses with `:token_id_taken`), so calling it per dispatch
+  token id of a standing grant refuses with `:token_id_taken`), so calling it per dispatch
   would both mutate broker state on every request and refuse every retry.
   """
   @callback granted?(subject :: Identity.t(), capability_id :: String.t(), opts :: keyword()) ::

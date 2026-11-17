@@ -14,7 +14,7 @@ defmodule AshA2A.Chicago.Fixtures.UnknownLlm.Gate do
     * `:unlock` -- once `current_phase(?who)` holds, asserts `has_key(?who)`
 
   `semantic_requests true` opts the resource into the production semantic
-  A2A surface (`AshA2A.Agent.__dispatch__/3`), so the KNOWN reflex is also
+  A2A surface (`AshA2A.Agent.__dispatch__`), so the KNOWN reflex is also
   exercised through the real generated-agent call site.
   """
 

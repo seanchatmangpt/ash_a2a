@@ -337,7 +337,7 @@ defmodule AshA2A.Semantic.MachineExperience do
   @doc """
   Records a compile-back into a real `AshA2A.Semantic.PlanningIR` via its
   own existing `with_observation/2` -- the codebase's established
-  evidence-feedback seam (`Receipt -> observation -> PlanningIR ->
+  evidence-feedback seam (Receipt -> observation -> PlanningIR ->
   re-synthesis with a `parent_fingerprint`), reused rather than
   paralleled.
 

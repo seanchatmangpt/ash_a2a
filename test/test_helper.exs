@@ -126,6 +126,30 @@ excluded_tags =
     [:sibling_repos | excluded_tags]
   end
 
+# `:ash_graphlaw_wasm`: tests that execute the pinned `ash_graphlaw` engine
+# (`graphlaw.wasm`, a WASI release asset that `mix ash_graphlaw.vendor` fetches
+# from the private `seanchatmangpt/graphlaw` GitHub release and verifies against
+# the SHA-256 in ash_graphlaw's `priv/graphlaw/MANIFEST.json`). It is not in the
+# Hex package and not in this repository, so on a machine without it these
+# tests are excluded with a NAMED, PRINTED reason -- never stubbed, never
+# silently passed. Run `mix ash_graphlaw.vendor [--from PATH]` and they run.
+ash_graphlaw_wasm_path = AshGraphLaw.WasmConfig.vendored_path()
+
+excluded_tags =
+  if File.exists?(ash_graphlaw_wasm_path) do
+    excluded_tags
+  else
+    IO.puts(
+      :stderr,
+      "[ash_graphlaw_wasm] EXCLUDING :ash_graphlaw_wasm tests -- no engine at " <>
+        "#{ash_graphlaw_wasm_path}; run `mix ash_graphlaw.vendor` " <>
+        "(needs access to the seanchatmangpt/graphlaw release v26.11.10) or " <>
+        "`mix ash_graphlaw.vendor --from PATH`."
+    )
+
+    [:ash_graphlaw_wasm | excluded_tags]
+  end
+
 ExUnit.configure(exclude: excluded_tags)
 
 # A2A-2601: point the receipt outbox at a fresh per-run directory so tests

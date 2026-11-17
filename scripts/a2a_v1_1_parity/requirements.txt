@@ -1,0 +1,6 @@
+# Pinned: the reference encoder must not drift under the comparison.
+grpcio==1.85.1
+grpcio-tools==1.85.1
+grpcio-status==1.85.1
+protobuf==7.36.2
+googleapis-common-protos==1.76.0

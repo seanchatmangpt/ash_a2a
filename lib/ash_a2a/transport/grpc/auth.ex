@@ -52,17 +52,17 @@ if Code.ensure_loaded?(Plug) do
     Interceptors return `{:error, :forbidden}` (or a 403 from the Auth
     pipeline) to produce it; UNAUTHENTICATED(16) stays for failed credentials.
     """
-    @spec forbidden(String.t()) :: GRPC.RPCError.t()
+    @spec forbidden(String.t()) :: %GRPC.RPCError{}
     def forbidden(message \\ ~s({"error":"Forbidden"})),
       do: GRPC.RPCError.exception(status: @grpc_permission_denied, message: message)
 
     @doc """
     Runs the `AshA2A.Protocol.Plug.Auth` pipeline over a synthetic conn built
-    from the gRPC call's metadata. `opts` is `AshA2A.Protocol.Plug.Auth.init/1`
+    from the gRPC call's metadata. `opts` is `AshA2A.Protocol.Plug.Auth.init`
     output. Returns `:ok` or `{:error, %GRPC.RPCError{}}`.
     """
-    @spec authenticate(GRPC.Server.Stream.t(), map()) ::
-            :ok | {:error, GRPC.RPCError.t()}
+    @spec authenticate(%GRPC.Server.Stream{}, map()) ::
+            :ok | {:error, %GRPC.RPCError{}}
     def authenticate(mat, opts) do
       case authenticate_identity(mat, opts) do
         {:ok, _auth} -> :ok
@@ -77,8 +77,8 @@ if Code.ensure_loaded?(Plug) do
     verified principal (task ownership over gRPC). `{:ok, nil}` when the Auth
     pipeline admitted the call without an identity.
     """
-    @spec authenticate_identity(GRPC.Server.Stream.t(), map()) ::
-            {:ok, map() | nil} | {:error, GRPC.RPCError.t()}
+    @spec authenticate_identity(%GRPC.Server.Stream{}, map()) ::
+            {:ok, map() | nil} | {:error, %GRPC.RPCError{}}
     def authenticate_identity(mat, opts) do
       conn = conn_from_metadata(GRPC.Stream.get_headers(mat) || %{})
 

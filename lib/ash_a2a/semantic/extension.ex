@@ -23,7 +23,7 @@ defmodule AshA2A.Semantic.Extension do
 
   The A2A v1.0 specification declares extensions under
   `AgentCard.capabilities.extensions`, and the ported encoder carries that
-  key: `AshA2A.Protocol.JSON.encode_capabilities/1` ends with
+  key: `AshA2A.Protocol.JSON.encode_capabilities` ends with
   `put_unless_empty("extensions", encode_agent_extensions(...))`
   (lib/ash_a2a/protocol/json.ex:656), which passes each entry through
   `encode_agent_extension/1` (json.ex:663) -- a clause accepting exactly

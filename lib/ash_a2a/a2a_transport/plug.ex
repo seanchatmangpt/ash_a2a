@@ -94,7 +94,9 @@ defmodule AshA2A.A2ATransport.Plug do
   # table above (kept separate: `method_aliases/0` mirrors JSONRPC's table 1:1
   # and a parity court pins that). `tasks/subscribe` is the slash spelling of
   # SubscribeToTask used by some v1.0 clients; it routes to `tasks/resubscribe`.
-  @extra_aliases %{"tasks/subscribe" => "tasks/resubscribe"}
+  # `SendLiveMessage` (v1.1) has no slash spelling in the specification;
+  # `message/live` is this table's name for it, mirroring `POST /message:live`.
+  @extra_aliases %{"tasks/subscribe" => "tasks/resubscribe", "SendLiveMessage" => "message/live"}
 
   # Canonical (slash) methods this plug can serve; anything else is -32601.
   @canonical_methods @method_aliases |> Map.values() |> Enum.sort()
@@ -167,6 +169,23 @@ defmodule AshA2A.A2ATransport.Plug do
   defp do_call(conn, opts), do: AshA2A.Protocol.Plug.call(conn, opts.a2a)
 
   # -- routing ------------------------------------------------------------------
+
+  # v1.1 `SendLiveMessage` (spec 5.3): served by the live module shared with
+  # `POST /message:live`, after the same version and extension negotiation.
+  defp route(conn, %{"method" => "SendLiveMessage"} = decoded, opts) do
+    case Request.parse(decoded) do
+      {:ok, req} ->
+        prechecked(conn, req, opts, fn conn ->
+          AshA2A.Transport.Live.JSONRPC.serve(conn, req.id, req.params, opts.a2a.agent, %{
+            metadata: resolved_metadata(conn, opts),
+            principal: Ownership.caller(conn)
+          })
+        end)
+
+      _malformed ->
+        delegate(conn, decoded, opts)
+    end
+  end
 
   defp route(conn, decoded, opts) do
     decoded = sanitize(decoded)
@@ -290,7 +309,7 @@ defmodule AshA2A.A2ATransport.Plug do
     do: send_json(conn, Response.error(req.id, err))
 
   defp dispatch(conn, %Request{method: "agent/getAuthenticatedExtendedCard"} = req, _raw, opts),
-    do: ExtendedCard.handle(conn, req.id, opts)
+    do: ExtendedCard.handle(conn, req.id, %{opts | a2a: advertise(opts)})
 
   defp dispatch(conn, %Request{method: "tasks/pushNotificationConfig/" <> _} = req, _raw, opts) do
     if push_enabled?(opts) do
@@ -576,6 +595,11 @@ defmodule AshA2A.A2ATransport.Plug do
       # StreamResponse wrapper: kind-"task" payloads are `{"task" => ...}` so
       # SSE frames and webhook bodies are the same v1.0 shape as sse.ex's.
       TaskEvents.publish(opts.transport, task_id, "task", %{"task" => task}, final?)
+
+      # A task answered while still running: follow it, so its push configs
+      # hear the later states too.
+      unless final?,
+        do: AshA2A.A2ATransport.DetachedWatch.start_id(opts.a2a.agent, opts.transport, task_id)
     end
 
     conn
@@ -591,6 +615,12 @@ defmodule AshA2A.A2ATransport.Plug do
   end
 
   defp closed_wire_state?(_), do: false
+
+  # v1.1 names the member `taskPushNotificationConfig`; the 1.0 spelling
+  # `pushNotificationConfig` is still read.
+  defp inline_push(%{"configuration" => %{"taskPushNotificationConfig" => config}})
+       when not is_nil(config),
+       do: config
 
   defp inline_push(%{"configuration" => %{"pushNotificationConfig" => config}})
        when not is_nil(config),
@@ -702,7 +732,8 @@ defmodule AshA2A.A2ATransport.Plug do
       agent: opts.a2a.agent,
       transport: opts.transport,
       push_opts: push_opts(opts),
-      principal: Ownership.caller(conn)
+      principal: Ownership.caller(conn),
+      a2a_version: AshA2A.Protocol.DowngradeWire.version(conn)
     }
 
   defp advertise(opts) do
@@ -726,6 +757,18 @@ defmodule AshA2A.A2ATransport.Plug do
     if auth = Map.get(overrides, :auth), do: Map.put(base, "a2a.auth", auth), else: base
   end
 
+  # `configuration.ifGenerationMatch` (v1.1, an int64: a number or a decimal
+  # string), so the streaming send enforces it like the blocking one.
+  defp if_generation_match(%{"configuration" => %{"ifGenerationMatch" => value}}) do
+    case value do
+      n when is_integer(n) -> n
+      s when is_binary(s) -> with {n, ""} <- Integer.parse(s), do: n, else: (_ -> nil)
+      _ -> nil
+    end
+  end
+
+  defp if_generation_match(_params), do: nil
+
   defp call_opts(params, metadata) do
     metadata =
       if is_map(params["metadata"]), do: Map.merge(metadata, params["metadata"]), else: metadata
@@ -733,6 +776,7 @@ defmodule AshA2A.A2ATransport.Plug do
     []
     |> put_some(:task_id, params["id"])
     |> put_some(:context_id, params["contextId"])
+    |> put_some(:if_generation_match, if_generation_match(params))
     |> put_some(:metadata, if(metadata == %{}, do: nil, else: metadata))
   end
 

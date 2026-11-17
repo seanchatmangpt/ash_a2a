@@ -8,7 +8,7 @@ defmodule C2Harness.Court do
 
       report = C2Harness.Court.run(n: 20)
 
-  Phases: (1) build the child projects, boot the fleet (keymaster, actuator, authority);
+  Phases: (1) build the child projects, boot the fleet (keymaster, actuator, two authorities);
   (2) prove the control-plane environment holds no protected key material; (3) compat
   probes (recorded integration handoffs); (4) run the attack catalog against the stock
   actuator and the real authority; (5) MUTATION court: for every fence check a fresh fleet
@@ -85,62 +85,124 @@ defmodule C2Harness.Court do
 
   # ---- compat probes -------------------------------------------------------------------------------------
 
-  # The real AuthorityService parses effects with effect_class/amount; the Actuator requires an
-  # exact key set without them. Recorded, not hidden: this is why actuator-shaped certificates
-  # come from the keymaster stand-in in this court.
+  # Each probe records what the two REAL services did with each other's artifacts:
+  #   1. the pure release path: real AuthorityService (prod build) issues for an
+  #      actuator-shaped effect, `Issuer.to_actuator_certificate/1` converts it, and the real
+  #      actuator (prod entrypoint, registry = the authority's key only, quorum 1) executes it.
+  #      No keymaster signature is involved.
+  #   2. the same certificate at the COURT actuator, which pins quorum 2: one custodian is not
+  #      enough, by policy.
+  #   3. the court path every intended issuance uses: two independent real authorities (two
+  #      keys, two custodians), signatures combined with `Issuer.combine_actuator_certificates/1`;
+  #      no keymaster signature.
+  #   4. an authority-shaped effect at the actuator: refused by design (exact key set).
   defp compat(fleet, cp) do
     alias C2Harness.{Attacker, Wire}
-    actuator_effect = Env.effect()
-    eb = Env.bytes(actuator_effect)
+    env = Env.new(fleet, cp, 1)
 
-    to_authority =
-      Wire.lp(cp.authority_sock, %{
-        "op" => "issue",
-        "effect" => Attacker.b64(eb),
-        "effect_digest" => Attacker.digest(eb),
-        "audience" => "actuator:court",
-        "generation" => 1,
-        "approvals" => []
+    real_cert = fn eb ->
+      d = Attacker.digest(eb)
+      approvals = for n <- ["bob", "carol"], do: Env.approve(env, n, d, generation: 1)
+
+      issued =
+        Wire.lp(cp.authority_sock, %{
+          "op" => "issue",
+          "effect" => Attacker.b64(eb),
+          "effect_digest" => d,
+          "audience" => cp.audience,
+          "generation" => 1,
+          "approvals" => approvals
+        })
+
+      with {:ok, %{"ok" => true, "certificate" => cert}} <- issued,
+           {:ok, %{"ok" => true, "certificate" => c}} <-
+             Fleet.km(fleet, %{"op" => "convert_actuation", "certificate" => cert}) do
+        {:ok, Base.url_decode64!(c, padding: false)}
+      end
+    end
+
+    outcome = fn
+      {:ok, %{"ok" => true, "status" => s}} -> s
+      {:ok, %{"refusal" => r}} -> r
+      other -> inspect(other)
+    end
+
+    # 2: real authority certificate alone at the quorum-2 court actuator
+    eb2 = Env.bytes(Env.effect())
+    {:ok, cert2} = real_cert.(eb2)
+    alone = outcome.(Wire.uds(cp.actuator_sock, Wire.execute_frame(eb2, cert2)))
+
+    # 3: the court's intended-issuance path
+    l3 = Env.issue!(env, Env.effect())
+    cosigned = outcome.(Wire.uds(cp.actuator_sock, Wire.execute_frame(l3.effect, l3.cert)))
+
+    # 4: authority-shaped effect at the actuator
+    ab =
+      Jcs.encode(%{
+        "effect_class" => "payment",
+        "amount" => 1,
+        "principal" => "agent:alice",
+        "idem" => "x"
       })
 
-    authority_effect = %{
-      "effect_class" => "payment",
-      "amount" => 1,
-      "principal" => "agent:alice",
-      "idem" => "x"
-    }
+    shaped = outcome.(Wire.uds(cp.actuator_sock, Wire.execute_frame(ab, l3.cert)))
 
-    ab = Jcs.encode(authority_effect)
-    {:ok, l} = Env.issue(Env.new(fleet, cp, 1), eb, [])
+    # 1: pure release path (replaces the court actuator for the probe, then restores it)
+    eb1 = Env.bytes(Env.effect())
+    {:ok, cert1} = real_cert.(eb1)
+    {:ok, _pid, alt_state} = Fleet.start_prod_actuator(fleet, authority_only: true)
+    :ok = Env.wait_healthy(env)
+    pure = outcome.(Wire.uds(cp.actuator_sock, Wire.execute_frame(eb1, cert1)))
+    replay = outcome.(Wire.uds(cp.actuator_sock, Wire.execute_frame(eb1, cert1)))
 
-    to_actuator =
-      Wire.uds(
-        cp.actuator_sock,
-        Wire.execute_frame(ab, l.cert)
-      )
+    pure_ledger =
+      case C2Harness.Oracle.ledger(alt_state) do
+        {:ok, es} -> Enum.count(es, &(&1["effect_digest"] == Attacker.digest(eb1)))
+        {:error, why, _} -> inspect(why)
+      end
+
+    :ok = Fleet.start_actuator(fleet, [])
+    :ok = Env.wait_healthy(env)
+
+    standing = fn observed, want, yes, no -> if observed == want, do: yes, else: no end
 
     [
       %{
-        probe: "real AuthorityService given an actuator-shaped PreparedEffect",
-        observed: refusal(to_authority),
-        standing: if(refusal(to_authority) == "malformed_effect", do: "BLOCKED", else: "UNKNOWN"),
-        handoff:
-          "AuthorityService.Issuer.parse_effect requires effect_class + amount at the top level; " <>
-            "Actuator.Effect requires an exact key set (consequence_class, params...). One side must map " <>
-            "consequence_class/params to the policy class and amount before the real authority can " <>
-            "issue certificates the actuator accepts (also: authority emits {envelope, message}, actuator " <>
-            "wants {..., signatures: [...]}; the same signed message, mechanically convertible)."
+        probe:
+          "real AuthorityService certificate for an actuator-shaped effect, converted with " <>
+            "Issuer.to_actuator_certificate/1, executed by the real actuator (prod entrypoint, " <>
+            "registry = authority key only, quorum 1)",
+        observed: pure,
+        replay_observed: replay,
+        ledger_entries_for_effect: pure_ledger,
+        standing:
+          if(pure == "performed" and replay == "replayed" and pure_ledger == 1,
+            do: "ACCEPTED",
+            else: "BLOCKED"
+          )
       },
       %{
-        probe: "Actuator given an authority-shaped effect",
-        observed: refusal(to_actuator),
-        standing: if(refusal(to_actuator) == "malformed_effect", do: "BLOCKED", else: "UNKNOWN")
+        probe:
+          "the same kind of certificate (one custodian: the authority) at the court actuator, " <>
+            "which pins quorum 2",
+        observed: alone,
+        standing: standing.(alone, "quorum_not_met", "REFUSED_BY_POLICY", "UNEXPECTED")
+      },
+      %{
+        probe:
+          "court issuance path: certificates from two independent real AuthorityService " <>
+            "instances combined with Issuer.combine_actuator_certificates/1 (two custodians, " <>
+            "no keymaster signature), executed by the court actuator (quorum 2)",
+        observed: cosigned,
+        standing: standing.(cosigned, "performed", "ACCEPTED", "BLOCKED")
+      },
+      %{
+        probe: "Actuator given an authority-shaped effect (effect_class + amount)",
+        observed: shaped,
+        standing: standing.(shaped, "malformed_effect", "REFUSED_BY_DESIGN", "UNEXPECTED")
       }
     ]
   end
-
-  defp refusal({:ok, %{"refusal" => r}}), do: r
-  defp refusal(other), do: inspect(other)
 
   # ---- mutation court ---------------------------------------------------------------------------------------
 
@@ -189,7 +251,7 @@ defmodule C2Harness.Court do
         Fleet.start_link(
           build_root: build_root,
           skip_build: true,
-          authority: false,
+          authority: true,
           mutant_skip: skip
         )
 

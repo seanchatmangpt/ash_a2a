@@ -6,7 +6,7 @@ defmodule AshA2A.Chicago.Ocel.SutMappings do
   @moduledoc """
   Admitted OCEL mappings for the telemetry the ash_a2a SUT already emits at
   its own boundaries (RFC-SA2A-002 §17). Courts add mappings for any further
-  events through `AshA2A.Chicago.Court.ocel_mappings/0`.
+  events through `AshA2A.Chicago.Court.ocel_mappings`.
 
   Activity vocabulary (implementation-specific, versioned by this module's
   BEAM md5 in the mapping digest):

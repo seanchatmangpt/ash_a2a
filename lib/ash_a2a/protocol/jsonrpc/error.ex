@@ -62,7 +62,13 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     # -32602 is a standard JSON-RPC code with no spec-defined reason; the
     # ErrorInfo (domain a2a-protocol.org, reason INVALID_PARAMS) is added by
     # lane V3 so validation/changeset failures carry a typed reason too.
-    -32_602 => "INVALID_PARAMS"
+    -32_602 => "INVALID_PARAMS",
+    # Spec 9.5: `error.data` is an array of objects that each carry `@type`.
+    # Free-form data on the remaining standard codes rides the ErrorInfo's
+    # `metadata.detail` instead of replacing the array.
+    -32_700 => "JSON_PARSE",
+    -32_600 => "INVALID_REQUEST",
+    -32_601 => "METHOD_NOT_FOUND"
   }
 
   @doc "Builds a parse error (-32700)."
@@ -319,80 +325,123 @@ defmodule AshA2A.Protocol.JSONRPC.Error do
     if metadata == %{}, do: base, else: Map.put(base, "metadata", metadata)
   end
 
-  # --- Spec tables (A2A v1.0 §5.4). ADDITIVE: NOT used for dispatch. -------
-  # The transports still use their own pinned maps (HTTPJSON.status_for/1,
-  # gRPC dispatch); these are the spec's table, the switch to flip once the
-  # official-TCK-vs-spec-text question is decided.
+  # --- Binding table (A2A section 5.4) ---------------------------------------
+  #
+  # THE one mapping of an error code to each binding's representation: HTTP
+  # status, gRPC status (numeric and google.rpc name). Every transport derives
+  # its own table from `bindings/1` at compile time
+  # (`AshA2A.Transport.HTTPJSON.status_for/1`, `AshA2A.Transport.Grpc.Dispatch`),
+  # and the public helpers below read the same rows.
+  #
+  # The A2A rows (-32001..-32010) are section 5.4 of the specification. The
+  # table is the same text at tags v1.0.1 and v1.1.0-rc (v1.1 only adds
+  # TaskGenerationMismatchError), so no row depends on the negotiated version.
+  # Earlier releases followed pins recorded from the TCK instead for three
+  # HTTP rows (-32002 409, -32005 415, -32006 502) and three gRPC rows
+  # (-32003/-32004/-32009 UNIMPLEMENTED); the specification text wins.
+  # The standard JSON-RPC rows and -32000 (server busy) are this library's.
 
-  @grpc_status %{
-    -32_001 => 5,
-    -32_002 => 9,
-    -32_003 => 12,
-    -32_004 => 12,
-    -32_005 => 3,
-    -32_006 => 13,
-    -32_007 => 9,
-    -32_008 => 9,
-    -32_009 => 12,
-    # ABORTED
-    -32_010 => 10
+  @bindings %{
+    -32_001 => {404, 5, "NOT_FOUND"},
+    -32_002 => {400, 9, "FAILED_PRECONDITION"},
+    -32_003 => {400, 9, "FAILED_PRECONDITION"},
+    -32_004 => {400, 9, "FAILED_PRECONDITION"},
+    -32_005 => {400, 3, "INVALID_ARGUMENT"},
+    -32_006 => {500, 13, "INTERNAL"},
+    -32_007 => {400, 9, "FAILED_PRECONDITION"},
+    -32_008 => {400, 9, "FAILED_PRECONDITION"},
+    -32_009 => {400, 9, "FAILED_PRECONDITION"},
+    -32_010 => {409, 10, "ABORTED"},
+    -32_700 => {400, 3, "INVALID_ARGUMENT"},
+    -32_600 => {400, 3, "INVALID_ARGUMENT"},
+    -32_601 => {400, 12, "UNIMPLEMENTED"},
+    -32_602 => {400, 3, "INVALID_ARGUMENT"},
+    -32_603 => {500, 13, "INTERNAL"},
+    -32_000 => {503, 14, "UNAVAILABLE"}
   }
 
-  @status_names %{
-    -32_001 => "NOT_FOUND",
-    -32_002 => "FAILED_PRECONDITION",
-    -32_003 => "FAILED_PRECONDITION",
-    # HTTP `error.status` strings stay FAILED_PRECONDITION (the HTTP-binding
-    # body); only the gRPC numeric table (`grpc_status/1`) is UNIMPLEMENTED
-    # for -32003/-32004/-32009 per the pinned TCK.
-    -32_004 => "FAILED_PRECONDITION",
-    -32_005 => "INVALID_ARGUMENT",
-    -32_006 => "INTERNAL",
-    -32_007 => "FAILED_PRECONDITION",
-    -32_008 => "FAILED_PRECONDITION",
-    -32_009 => "FAILED_PRECONDITION",
-    -32_010 => "ABORTED",
-    -32_700 => "INVALID_ARGUMENT",
-    -32_600 => "INVALID_ARGUMENT",
-    -32_601 => "UNIMPLEMENTED",
-    -32_602 => "INVALID_ARGUMENT",
-    -32_603 => "INTERNAL",
-    -32_000 => "UNAVAILABLE"
-  }
-
-  @spec_http %{
-    -32_001 => 404,
-    -32_002 => 409,
-    -32_003 => 400,
-    -32_004 => 400,
-    # Pinned TCK ERROR_BINDINGS (requirements/base.py): ContentTypeNotSupported
-    # -> 415, InvalidAgentResponse -> 502 (see docs/reference/a2a-error-mapping-decisions.md).
-    -32_005 => 415,
-    -32_006 => 502,
-    -32_007 => 400,
-    -32_008 => 400,
-    -32_009 => 400,
-    -32_010 => 409
-  }
+  @a2a_codes -32_010..-32_001//1
 
   @doc """
-  Spec-table canonical gRPC status (numeric: NOT_FOUND 5, FAILED_PRECONDITION
-  9, INVALID_ARGUMENT 3, INTERNAL 13) for an A2A code -32001..-32009, or
-  `nil`. Not yet used for dispatch.
+  The binding table: `%{jsonrpc_code => {http_status, grpc_status, grpc_name}}`
+  for every A2A error (specification 5.4, identical at v1.0.1 and v1.1.0-rc
+  apart from the v1.1-only `-32010`), the standard JSON-RPC codes and `-32000`.
+  The HTTP+JSON and gRPC transports serve exactly these statuses.
+
+  `scope` is `:all`, or `:a2a` for the A2A error types alone
+  (`-32001..-32010`).
+
+      iex> AshA2A.Protocol.JSONRPC.Error.bindings(:all)[-32_002]
+      {400, 9, "FAILED_PRECONDITION"}
+
+      iex> AshA2A.Protocol.JSONRPC.Error.bindings(:a2a) |> Map.keys() |> Enum.min_max()
+      {-32_010, -32_001}
+  """
+  @spec bindings(:all | :a2a) :: %{integer() => {pos_integer(), non_neg_integer(), String.t()}}
+  def bindings(:all), do: @bindings
+  def bindings(:a2a), do: Map.take(@bindings, Enum.to_list(@a2a_codes))
+
+  @doc """
+  The HTTP status the HTTP+JSON binding answers for a JSON-RPC error code, or
+  `nil` for a code the table does not know.
+
+      iex> AshA2A.Protocol.JSONRPC.Error.http_status(-32_005)
+      400
+  """
+  @spec http_status(integer()) :: pos_integer() | nil
+  def http_status(code) do
+    case Map.get(@bindings, code) do
+      {http, _grpc, _name} -> http
+      nil -> nil
+    end
+  end
+
+  @doc """
+  The numeric gRPC status the gRPC binding answers for a JSON-RPC error code,
+  or `nil` for a code the table does not know.
+
+      iex> AshA2A.Protocol.JSONRPC.Error.grpc_code(-32_004)
+      9
+  """
+  @spec grpc_code(integer()) :: non_neg_integer() | nil
+  def grpc_code(code) do
+    case Map.get(@bindings, code) do
+      {_http, grpc, _name} -> grpc
+      nil -> nil
+    end
+  end
+
+  @doc """
+  The specification's gRPC status (numeric) for an A2A error code
+  `-32001..-32010` (section 5.4), or `nil` for any other code. The gRPC
+  transport serves this value (`grpc_code/1` is the same table, including the
+  standard JSON-RPC codes).
   """
   @spec grpc_status(integer()) :: non_neg_integer() | nil
-  def grpc_status(code), do: Map.get(@grpc_status, code)
+  def grpc_status(code) when code in @a2a_codes, do: grpc_code(code)
+  def grpc_status(_code), do: nil
 
-  @doc "Spec-table HTTP status for -32001..-32009 (§5.4), or `nil`. Not yet used for dispatch."
+  @doc """
+  The specification's HTTP status for an A2A error code `-32001..-32010`
+  (section 5.4), or `nil` for any other code. The HTTP+JSON transport serves
+  this value (`http_status/1` is the same table, including the standard
+  JSON-RPC codes).
+  """
   @spec spec_http_status(integer()) :: non_neg_integer() | nil
-  def spec_http_status(code), do: Map.get(@spec_http, code)
+  def spec_http_status(code) when code in @a2a_codes, do: http_status(code)
+  def spec_http_status(_code), do: nil
 
   @doc """
   google.rpc status string (e.g. `"NOT_FOUND"`) for the HTTP `error.status`
   field, by JSON-RPC code, or `nil`.
   """
   @spec status_name_for_code(integer()) :: String.t() | nil
-  def status_name_for_code(code), do: Map.get(@status_names, code)
+  def status_name_for_code(code) do
+    case Map.get(@bindings, code) do
+      {_http, _grpc, name} -> name
+      nil -> nil
+    end
+  end
 
   @doc "google.rpc status string for an ErrorInfo reason that has no own code."
   @spec status_name_for_reason(String.t()) :: String.t() | nil

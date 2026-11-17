@@ -199,8 +199,10 @@ defmodule C2Harness.Faults do
   # Park the actuator exactly at the armed fault point (the instrumented Store writes
   # <ctl>/at_fault and blocks), then deliver a REAL `kill -9` from outside.
   defp crash_once(env, l, point) do
-    # arm_crash is a synchronous file write (Fleet handle_call); the fault point is armed on return.
-    Env.arm_crash(env, point)
+    # arm_crash returns :ok only after the actuator child acknowledged the point (crash.armed):
+    # the child picks crash.point up on a 15 ms poll, and a request completes in ~2 ms, so
+    # submitting right after the file write would race past the fault point.
+    :ok = Env.arm_crash(env, point)
     task = Task.async(fn -> Env.submit(env, l.effect, l.cert) end)
     wait_at_fault(env, point)
     :ok = Env.kill_actuator(env)

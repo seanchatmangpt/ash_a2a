@@ -7,12 +7,21 @@ defmodule AshA2A.Email.Sender.Spool do
   """
   @behaviour AshA2A.Email.Sender
 
+  @doc """
+  The directory messages are written to: the `:spool_dir` option, else
+  `config :ash_a2a, :email_spool_dir`, else `ash_a2a_spool` under the system
+  temporary directory.
+  """
+  @spec spool_dir(keyword()) :: Path.t()
+  def spool_dir(opts \\ []) do
+    Keyword.get(opts, :spool_dir) ||
+      Application.get_env(:ash_a2a, :email_spool_dir) ||
+      Path.join(System.tmp_dir!(), "ash_a2a_spool")
+  end
+
   @impl true
   def deliver(msg, opts \\ []) do
-    dir =
-      Keyword.get(opts, :spool_dir) ||
-        Application.get_env(:ash_a2a, :email_spool_dir) ||
-        Path.join(System.tmp_dir!(), "ash_a2a_spool")
+    dir = spool_dir(opts)
 
     id = Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
     path = Path.join(dir, "#{System.system_time(:microsecond)}-#{id}.eml")

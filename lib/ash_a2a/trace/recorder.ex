@@ -65,7 +65,7 @@ defmodule AshA2A.Trace.Recorder do
   `mono` is a `System.monotonic_time/0` value and `sys` a
   `System.system_time/0` value, both captured when the telemetry event fired.
   """
-  @type record ::
+  @type trace_record ::
           {:open, span_key(), String.t(), span_key() | nil, integer(), integer(), map()}
           | {:close, span_key(), integer(), integer(), map(), :ok | :error}
           | {:event, span_key(), String.t(), integer(), integer(), map()}
@@ -107,7 +107,7 @@ defmodule AshA2A.Trace.Recorder do
   end
 
   @doc "The recorded records of `task_id`, ordered by record sequence."
-  @spec records(task_id()) :: [{non_neg_integer(), record()}]
+  @spec records(task_id()) :: [{non_neg_integer(), trace_record()}]
   def records(task_id) do
     case :ets.info(table()) do
       :undefined ->

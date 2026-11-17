@@ -15,7 +15,7 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLease do
   actuation-claim index (`claim_actuation/3` / `decide_actuation/N`) had no
   equivalent: an in-flight actuation entry (`receipt: nil`) was refused
   forever until something explicitly called `release_actuation/2`, which
-  `AshA2A.CommandBus.dispatch_actuation_claimed/9` only does on a clean
+  `AshA2A.CommandBus.dispatch_actuation_claimed` only does on a clean
   receipt-anchor-prepare failure -- never on a genuine process crash mid-DO
   (`actuate/postcondition/commit_actuation` has no crash-safety net). RFC-
   SA2A-002 ARD §40's idempotency-store robustness requirement implicitly
@@ -23,7 +23,7 @@ defmodule AshA2A.ReceiptStore.ActuationClaimLease do
 
   This module reuses `ClaimLease`'s exact safety argument rather than
   inventing a second one: `claim_actuation/3` always runs strictly BEFORE
-  `AshA2A.CommandBus.dispatch_actuation_claimed/9` prepares the receipt
+  `AshA2A.CommandBus.dispatch_actuation_claimed` prepares the receipt
   anchor for the SAME command id (see `AshA2A.CommandBus.run/4`'s claim
   order -- the actuation claim happens, then the anchor is prepared, then
   DO). So if that claimant's own PRIMARY command claim is itself abandoned

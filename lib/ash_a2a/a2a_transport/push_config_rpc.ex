@@ -36,13 +36,34 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
   @spec handle(String.t(), map(), term(), map()) :: map()
   def handle(method, params, id, ctx) when is_map(params) do
     case run(method, params, ctx) do
-      {:ok, result} -> Response.success(id, result)
+      {:ok, result} -> Response.success(id, for_version(result, ctx))
       {:error, %Error{} = error} -> Response.error(id, error)
     end
   end
 
   def handle(_method, _params, id, _ctx),
     do: Response.error(id, Error.invalid_params("params must be an object"))
+
+  # `TaskPushNotificationConfig.protocol_version` is field 7, added in v1.1.
+  # A caller that negotiated an older version gets the v1.0 message.
+  defp for_version(result, ctx) do
+    if AshA2A.Protocol.Downgrade.applies?(Map.get(ctx, :a2a_version)),
+      do: drop_protocol_version(result),
+      else: result
+  end
+
+  defp drop_protocol_version(%{"configs" => configs} = result) when is_list(configs),
+    do: %{result | "configs" => Enum.map(configs, &drop_protocol_version/1)}
+
+  defp drop_protocol_version(%{"pushNotificationConfig" => %{} = inner} = result),
+    do: %{result | "pushNotificationConfig" => Map.delete(inner, "protocolVersion")}
+
+  defp drop_protocol_version(%{} = result), do: Map.delete(result, "protocolVersion")
+
+  defp drop_protocol_version(list) when is_list(list),
+    do: Enum.map(list, &drop_protocol_version/1)
+
+  defp drop_protocol_version(other), do: other
 
   defp run("tasks/pushNotificationConfig/set", params, ctx) do
     # `tenant` (v1 multi-tenancy) is routing-only: it selects the agent/mount
@@ -58,11 +79,12 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
   end
 
   defp run("tasks/pushNotificationConfig/get", params, ctx) do
-    with {:ok, task_id} <- task_id(params),
+    with {:ok, task_id, config_id, v1?} <- address(params),
          :ok <- task_exists(ctx, task_id) do
-      case PushConfigStore.get(store(ctx), task_id, params["pushNotificationConfigId"]) do
-        {:ok, config} -> {:ok, encode(config, v1_wire?(ctx))}
-        :error -> {:error, Error.invalid_params("push notification config not found")}
+      case PushConfigStore.get(store(ctx), task_id, config_id) do
+        {:ok, config} -> {:ok, encode(config, v1? or v1_wire?(ctx))}
+        # Spec 3.1.8: a config that does not exist is `TaskNotFoundError`.
+        :error -> {:error, Error.task_not_found()}
       end
     end
   end
@@ -71,17 +93,24 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
   # `{configs, nextPageToken}` is returned when the caller pages
   # (`pageSize`/`pageToken` present) or `ctx.wire == :v1`.
   defp run("tasks/pushNotificationConfig/list", params, ctx) do
-    with {:ok, task_id} <- task_id(params),
+    with {:ok, task_id, _config_id, v1?} <- address(params),
          :ok <- task_exists(ctx, task_id) do
       configs = ctx |> store() |> PushConfigStore.list(task_id)
-      flat? = v1_wire?(ctx)
+      flat? = v1? or v1_wire?(ctx)
 
-      if v1_wire?(ctx) or Map.has_key?(params, "pageSize") or Map.has_key?(params, "pageToken") do
+      if flat? or Map.has_key?(params, "pageSize") or Map.has_key?(params, "pageToken") do
         with {:ok, page, next} <- paginate(configs, params) do
-          result = %{
-            "configs" => Enum.map(page, &encode(&1, flat?)),
-            "nextPageToken" => next || ""
-          }
+          # Neither member is REQUIRED: an empty list and an empty token are
+          # proto3 defaults, which ProtoJSON omits.
+          result =
+            %{}
+            |> then(
+              &if(page == [],
+                do: &1,
+                else: Map.put(&1, "configs", Enum.map(page, fn c -> encode(c, flat?) end))
+              )
+            )
+            |> then(&if(next in [nil, ""], do: &1, else: Map.put(&1, "nextPageToken", next)))
 
           {:ok, result}
         end
@@ -92,15 +121,17 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
   end
 
   defp run("tasks/pushNotificationConfig/delete", params, ctx) do
-    with {:ok, task_id} <- task_id(params),
-         {:ok, config_id} <- fetch_string(params, "pushNotificationConfigId"),
+    with {:ok, task_id, config_id, _v1?} <- address(params),
+         {:ok, config_id} <-
+           fetch_string(%{"pushNotificationConfigId" => config_id}, "pushNotificationConfigId"),
          :ok <- task_exists(ctx, task_id) do
       # Idempotent per TCK PUSH-DEL-002: deleting an already-deleted (or
       # never-existing) config answers success, never an error. The unknown
       # *task* refusal above is unchanged — that is an addressing failure,
       # not a delete outcome.
       _ = PushConfigStore.delete(store(ctx), task_id, config_id)
-      {:ok, nil}
+      # `google.protobuf.Empty`, whose ProtoJSON is `{}` (not `null`).
+      {:ok, %{}}
     end
   end
 
@@ -376,6 +407,21 @@ defmodule AshA2A.A2ATransport.PushConfigRPC do
       {:error, :unavailable} -> {:error, Error.internal_error("agent unavailable")}
       {:error, _} -> {:error, Error.task_not_found()}
     end
+  end
+
+  # Two request shapes address a config. The v1 messages
+  # (`GetTaskPushNotificationConfigRequest` and friends) carry the task in
+  # `taskId` and the config in `id`; the 0.3 shape carries the task in `id`
+  # and the config in `pushNotificationConfigId`. A request with `taskId` and
+  # no `pushNotificationConfigId` is the v1 shape and is answered in it.
+  defp address(%{"taskId" => task_id} = params)
+       when is_binary(task_id) and task_id != "" and
+              not is_map_key(params, "pushNotificationConfigId"),
+       do: {:ok, task_id, params["id"], true}
+
+  defp address(params) do
+    with {:ok, task_id} <- task_id(params),
+         do: {:ok, task_id, params["pushNotificationConfigId"], false}
   end
 
   defp task_id(params) do

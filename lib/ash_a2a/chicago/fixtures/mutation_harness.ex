@@ -59,7 +59,7 @@ defmodule AshA2A.Chicago.Fixtures.MutationHarness do
   broker (the tagged principal), then `Grant.authorize/3` mints the authority
   from the RAW principal value, stamping `admitted_by` with this broker so the
   real fail-closed pre-DO authority revalidation
-  (`AshA2A.CommandBus.pre_do_gate/3`) consults the broker that actually minted
+  (`AshA2A.CommandBus.pre_do_gate`) consults the broker that actually minted
   the grant. A hand-minted `Authority.new/3` has no `admitted_by` and no
   standing grant behind it, so every consequence-bearing command it carries is
   refused before DO (`:authority_revalidation_unavailable`) -- the positive
