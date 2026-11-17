@@ -23,6 +23,8 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
     * `:auth` - `{module, opts}` interceptor, written into the endpoint env.
     * `:cred` - `GRPC.Credential.new(ssl: [...])` for TLS; plain HTTP/2 when
       absent.
+    * `:ip` - the address to bind, for example `{127, 0, 0, 1}`; every
+      interface when absent.
     * `:name` - registered name of this process.
 
   The listener starts in `init/1` and is stopped when the process terminates,
@@ -66,6 +68,9 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
     put_endpoint_env(endpoint, opts)
 
     start_opts = if cred = opts[:cred], do: [cred: cred], else: []
+
+    start_opts =
+      if ip = opts[:ip], do: Keyword.put(start_opts, :adapter_opts, ip: ip), else: start_opts
 
     case start_endpoint(endpoint, port, start_opts) do
       {:ok, _pid, bound} ->

@@ -133,6 +133,9 @@ def start_backend():
     command = os.environ.get("A2A_SIM_MCP_BACKEND")
     argv = command.split() if command else [os.path.join(ROOT, "bin", "a2a-sim-mcp")]
     env = dict(os.environ, A2A_SIM_MCP_DIRECT="1")
+    # bin/a2a-sim-mcp already pointed this process's stderr at the log; the
+    # server's stderr must come through the pipe so failures can be quoted.
+    env.pop("A2A_SIM_MCP_LOG", None)
     backend = subprocess.Popen(
         argv + sys.argv[1:], cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )

@@ -61,11 +61,12 @@ defmodule C2Harness.Env do
   Returns `{:ok, %{effect, cert, digest, nonces}}` or `{:error, refusal}`.
 
   With no options this is an INTENDED issuance and it goes to the REAL AuthorityService
-  process: two human approvals (bob, carol; never the compromised alice) are attached, the
-  service issues over its own wire and journals it, the certificate is converted with
-  `AuthorityService.Issuer.to_actuator_certificate/1`, and the keymaster's signer B co-signs
-  the same fields as the second custodian the court actuator's quorum of 2 requires
-  (`cosign_actuation`, which first verifies the authority's signature).
+  processes only. The court actuator pins quorum 2, so two independent authorities (two keys,
+  two custodian identities, two journals) each sign: approvals from bob and carol are attached
+  to an `issue` request at authority 1; authority 2 receives the same approvals plus authority
+  1's validity window (`"window"`, which it only accepts if it narrows its own policy); the two
+  issued certificates are merged with `AuthorityService.Issuer.combine_actuator_certificates/1`.
+  The keymaster signs nothing in this path.
 
   With any option the certificate comes from the keymaster stand-in (`issue_actuation`),
   because every option asks for something the real service refuses to do: `:journal` (false:
@@ -75,7 +76,15 @@ defmodule C2Harness.Env do
   """
   def issue(env, effect_map_or_bytes, opts \\ [])
 
-  def issue(%__MODULE__{} = env, effect_map_or_bytes, []) do
+  def issue(%__MODULE__{} = env, effect_map_or_bytes, []),
+    do: issue_real(env, effect_map_or_bytes, [1, 2])
+
+  @doc """
+  An intended issuance from the REAL authorities named by `which` (`[1, 2]` both, `[1]` or
+  `[2]` one). One authority is below the court actuator's quorum of 2; this exists to prove
+  that. Authorities are asked in the order given; the later ones adopt the first one's window.
+  """
+  def issue_real(%__MODULE__{} = env, effect_map_or_bytes, which) do
     eff =
       if is_binary(effect_map_or_bytes), do: effect_map_or_bytes, else: bytes(effect_map_or_bytes)
 
@@ -90,33 +99,77 @@ defmodule C2Harness.Env do
 
     approvals = for n <- ["bob", "carol"], do: approve(env, n, d, [generation: 1] ++ principal)
 
-    issued =
-      Wire.lp(env.cp.authority_sock, %{
+    which
+    |> Enum.reduce_while({:ok, [], nil}, fn n, {:ok, acc, window} ->
+      case request_issue(env, n, eff, d, approvals, window) do
+        {:ok, cert} -> {:cont, {:ok, acc ++ [cert], window || window_of(cert)}}
+        {:error, _} = e -> {:halt, e}
+      end
+    end)
+    |> case do
+      {:ok, certs, _} ->
+        with {:ok, m} <-
+               km_issued(
+                 eff,
+                 Fleet.km(env.fleet, %{"op" => "combine_actuation", "certificates" => certs})
+               ),
+             do: {:ok, Map.put(m, :issued, certs)}
+
+      {:error, _} = e ->
+        e
+    end
+  end
+
+  @doc """
+  STAND-IN for a holder of authority 1's key: authority 1 really issues, then a second
+  signature by the SAME key (fresh nonce, same fields) is appended by the keymaster. Two valid
+  signatures, one custodian.
+  """
+  def reuse_authority_key(%__MODULE__{fleet: f} = env, effect_map_or_bytes) do
+    with {:ok, %{issued: [cert]} = l} <- issue_real(env, effect_map_or_bytes, [1]) do
+      track(env, :keymaster_standin)
+
+      case km_issued(
+             l.effect,
+             Fleet.km(f, %{"op" => "reuse_authority_key", "certificate" => cert})
+           ) do
+        {:ok, again} -> {:ok, again}
+        other -> other
+      end
+    end
+  end
+
+  def issue_real!(env, eff, which) do
+    {:ok, l} = issue_real(env, eff, which)
+    l
+  end
+
+  defp request_issue(env, n, eff, d, approvals, window) do
+    sock = if n == 1, do: env.cp.authority_sock, else: env.cp.authority2_sock
+
+    req =
+      %{
         "op" => "issue",
         "effect" => Base.url_encode64(eff, padding: false),
         "effect_digest" => d,
         "audience" => env.cp.audience,
         "generation" => 1,
         "approvals" => approvals
-      })
+      }
+      |> then(&if window, do: Map.put(&1, "window", window), else: &1)
 
-    case issued do
-      {:ok, %{"ok" => true, "certificate" => cert}} ->
-        km_issued(
-          eff,
-          Fleet.km(env.fleet, %{
-            "op" => "cosign_actuation",
-            "certificate" => cert,
-            "effect" => Base.url_encode64(eff, padding: false)
-          })
-        )
-
-      {:ok, %{"refusal" => code}} ->
-        {:error, code}
-
-      other ->
-        {:error, other}
+    case Wire.lp(sock, req) do
+      {:ok, %{"ok" => true, "certificate" => cert}} -> {:ok, cert}
+      {:ok, %{"refusal" => code}} -> {:error, code}
+      other -> {:error, other}
     end
+  end
+
+  # the validity window an issued certificate carries (read from its signed message)
+  defp window_of(%{"message" => msg}) do
+    {:ok, bytes} = Base.url_decode64(msg, padding: false)
+    {:ok, m} = Sa2aCrypto.SignedMessage.parse(bytes)
+    %{"not_before" => m["not_before"], "expires" => m["expires"]}
   end
 
   def issue(%__MODULE__{fleet: f} = env, effect_map_or_bytes, opts) do

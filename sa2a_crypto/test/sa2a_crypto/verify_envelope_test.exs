@@ -10,6 +10,7 @@ defmodule Sa2aCrypto.VerifyEnvelopeTest do
 
   describe "valid standing" do
     for alg <- ["ES256", "EdDSA", "ML-DSA-65", "SLH-DSA-SHA2-128F", "ES256+ML-DSA-65"] do
+      @tag skip: Fixtures.skip_reason(alg)
       test "#{alg}" do
         f = Fixtures.signed(unquote(alg))
 
@@ -242,6 +243,7 @@ defmodule Sa2aCrypto.VerifyEnvelopeTest do
       assert {:valid, _} = verify(f, opts(required_profile: :classical))
     end
 
+    @tag skip: Fixtures.skip_reason("ES256+ML-DSA-65")
     test "pqc requirement refuses hybrid; hybrid requirement accepts hybrid and pqc" do
       h = Fixtures.signed("ES256+ML-DSA-65")
       refused(verify(h, opts(required_profile: :pqc)), :profile_downgrade)
@@ -251,6 +253,7 @@ defmodule Sa2aCrypto.VerifyEnvelopeTest do
       assert {:valid, _} = verify(p, opts(required_profile: :pqc))
     end
 
+    @tag skip: Fixtures.skip_reason("ES256+ML-DSA-65")
     test "stripping a hybrid envelope down to its classical half is refused" do
       h = Fixtures.signed("ES256+ML-DSA-65")
       {cpub, _} = h.key.public_key
@@ -276,6 +279,7 @@ defmodule Sa2aCrypto.VerifyEnvelopeTest do
       def verify(alg, m, s, k), do: Sa2aCrypto.Native.verify(alg, m, s, k)
     end
 
+    @tag skip: Fixtures.skip_reason("ML-DSA-65")
     test "registered PQ suite with no provider fails closed with :unsupported_suite" do
       f = Fixtures.signed("ML-DSA-65")
       refused(verify(f, opts(provider: NoPqProvider, required_profile: :pqc)), :unsupported_suite)

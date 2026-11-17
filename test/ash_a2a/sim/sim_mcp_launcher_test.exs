@@ -92,12 +92,17 @@ defmodule AshA2A.Sim.McpLauncherTest do
     end
   end
 
-  defp initialize(client) do
-    request(client, "initialize", %{
-      protocolVersion: "2025-11-25",
-      capabilities: %{},
-      clientInfo: %{name: "launcher_test", version: "1"}
-    })
+  defp initialize(client, timeout \\ 30_000) do
+    request(
+      client,
+      "initialize",
+      %{
+        protocolVersion: "2025-11-25",
+        capabilities: %{},
+        clientInfo: %{name: "launcher_test", version: "1"}
+      },
+      timeout
+    )
   end
 
   defp finish(%{port: port} = client) do
@@ -154,7 +159,7 @@ defmodule AshA2A.Sim.McpLauncherTest do
   test "stale build, warm cache: handshake and tool catalog answered from the cache", %{dir: dir} do
     # First run: healthy, no delay; writes the cache.
     first = launch(dir, [{"A2A_SIM_MCP_INIT_WAIT", "120"}])
-    {init, _, first} = initialize(first)
+    {init, _, first} = initialize(first, 200_000)
     assert init["result"]["serverInfo"]["name"] == "ash-a2a-sim-mcp"
     {tools, _, first} = request(first, "tools/list", %{})
     real_tools = tools["result"]["tools"]
@@ -184,7 +189,7 @@ defmodule AshA2A.Sim.McpLauncherTest do
 
   test "current build: the real server answers, stdout carries only MCP frames", %{dir: dir} do
     client = launch(dir, [{"A2A_SIM_MCP_INIT_WAIT", "120"}])
-    {init, _, client} = initialize(client)
+    {init, _, client} = initialize(client, 200_000)
     assert init["result"]["protocolVersion"] == "2025-11-25"
     assert init["result"]["serverInfo"]["name"] == "ash-a2a-sim-mcp"
 

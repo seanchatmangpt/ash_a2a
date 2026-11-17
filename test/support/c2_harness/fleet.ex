@@ -498,11 +498,21 @@ defmodule C2Harness.Fleet do
   # Both real authorities, each its own OS process. `{:error, why}` if either does not come up.
   defp do_start_authority(st) do
     with {:ok, p1} <-
-           start_one_authority(st, st.authority, "authority", st.dirs["auth"], st.auth_sock,
+           start_one_authority(
+             st,
+             st.authority,
+             "authority",
+             st.dirs["auth"],
+             st.auth_sock,
              st.auth_journal
            ),
          {:ok, p2} <-
-           start_one_authority(st, st.authority2, "authority2", st.dirs["auth2"], st.auth2_sock,
+           start_one_authority(
+             st,
+             st.authority2,
+             "authority2",
+             st.dirs["auth2"],
+             st.auth2_sock,
              st.auth2_journal
            ) do
       {:ok, %{st | authority: p1, authority2: p2}}

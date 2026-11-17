@@ -153,8 +153,30 @@ defmodule C2Harness.Runner do
     {l, j}
   end
 
+  # The issuance record the oracle holds an effect against: the keymaster's journal (stand-in
+  # issuances) plus the real authorities' journals. A real, honest issuance is two journal
+  # entries, one per authority (quorum 2); it counts once, and only if BOTH authorities
+  # journaled that `(digest, generation)` (an issuance one authority alone made cannot buy a
+  # consequence at the quorum-2 actuator, so it is not credited as one). Authority 1's entry is
+  # the one counted, so one issuance still buys at most one consequence.
   defp issuance(info) do
-    case Oracle.journal(Path.join(info.dirs["km"], "issuance_journal.log")) do
+    km = journal_bodies(Path.join(info.dirs["km"], "issuance_journal.log"))
+
+    second =
+      info.auth2_journal
+      |> journal_bodies()
+      |> MapSet.new(&{&1["effect_digest"], &1["generation"]})
+
+    real =
+      info.auth_journal
+      |> journal_bodies()
+      |> Enum.filter(&MapSet.member?(second, {&1["effect_digest"], &1["generation"]}))
+
+    km ++ real
+  end
+
+  defp journal_bodies(path) do
+    case Oracle.journal(path) do
       {:ok, b} -> b
       {:error, _, b} -> b
     end

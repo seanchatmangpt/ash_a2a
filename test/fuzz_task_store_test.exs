@@ -87,10 +87,10 @@ defmodule AshA2A.FuzzTaskStoreTest do
               fn -> mod.get(ref, "good-0") end,
               fn -> mod.get(ref, "absent") end
             ] do
-          assert FuzzGen.run_with_deadline(call) |> case do
-                   {:ok, r} -> total?(r)
-                   other -> flunk("#{inspect(mod)} get row-#{i}: #{inspect(other)}")
-                 end
+          case FuzzGen.run_with_deadline(call) do
+            {:ok, r} -> assert total?(r)
+            other -> flunk("#{inspect(mod)} get row-#{i}: #{inspect(other)}")
+          end
         end
       end
 

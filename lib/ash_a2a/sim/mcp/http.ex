@@ -22,8 +22,13 @@ if Code.ensure_loaded?(Bandit) do
     Every request after `initialize` must carry the `Mcp-Session-Id` it was
     given: `400` without one, `404` for a session that does not exist. A
     request whose `MCP-Protocol-Version` header names a revision the server
-    does not support is refused `400`. A request whose `Origin` is not a
-    loopback origin is refused `403`.
+    does not support is refused `400`. A request whose `Origin` or `Host`
+    is not a loopback name is refused `403` (DNS-rebinding defence, per the
+    MCP Streamable HTTP transport). When an auth token is configured (the
+    `:auth_token` option, default the `ASH_A2A_MCP_TOKEN` environment
+    variable) every request must carry `Authorization: Bearer <token>`,
+    else `401`. A body over 16 MB is refused `413`; at most 256 sessions
+    are kept (`429` beyond).
     """
 
     @behaviour Plug
@@ -33,6 +38,8 @@ if Code.ensure_loaded?(Bandit) do
     alias AshA2A.Sim.MCP.Server
 
     @sessions __MODULE__.Sessions
+    @max_sessions 256
+    @max_body 16_000_000
 
     @doc """
     Starts the listener. Options: `:info` (required, `AshA2A.Sim.Server.info/0`)
@@ -46,7 +53,7 @@ if Code.ensure_loaded?(Bandit) do
         %{id: @sessions, start: {Agent, :start_link, [fn -> %{} end, [name: @sessions]]}},
         Supervisor.child_spec(
           {Bandit,
-           plug: {__MODULE__, %{info: info}},
+           plug: {__MODULE__, %{info: info, token: token(opts)}},
            port: Keyword.get(opts, :port, 0),
            ip: {127, 0, 0, 1},
            startup_log: false,
@@ -56,6 +63,13 @@ if Code.ensure_loaded?(Bandit) do
       ]
 
       Supervisor.start_link(children, strategy: :one_for_one)
+    end
+
+    defp token(opts) do
+      case Keyword.get(opts, :auth_token, System.get_env("ASH_A2A_MCP_TOKEN")) do
+        t when is_binary(t) and t != "" -> t
+        _ -> nil
+      end
     end
 
     @doc "The port the listener bound."
@@ -77,6 +91,12 @@ if Code.ensure_loaded?(Bandit) do
         not loopback_origin?(conn) ->
           text(conn, 403, "Origin not allowed")
 
+        not loopback_host?(conn) ->
+          text(conn, 403, "Host not allowed")
+
+        not authorized?(conn, opts) ->
+          conn |> put_resp_header("www-authenticate", "Bearer") |> text(401, "Unauthorized")
+
         conn.method == "POST" ->
           post(conn, opts)
 
@@ -97,18 +117,49 @@ if Code.ensure_loaded?(Bandit) do
       end
     end
 
-    defp post(conn, opts) do
-      {:ok, body, conn} = read_body(conn, length: 16_000_000)
+    defp loopback_host?(conn) do
+      case get_req_header(conn, "host") do
+        [host | _] -> host_name(host) in ["localhost", "127.0.0.1", "[::1]", "::1"]
+        [] -> false
+      end
+    end
 
-      case Jason.decode(body) do
-        {:ok, message} -> route(conn, message, opts)
-        {:error, _} -> json(conn, 400, Server.parse_error())
+    defp host_name("[" <> _ = host), do: host |> String.split("]") |> hd() |> Kernel.<>("]")
+    defp host_name(host), do: host |> String.split(":") |> hd() |> String.downcase()
+
+    defp authorized?(_conn, %{token: nil}), do: true
+
+    defp authorized?(conn, %{token: token}) do
+      case get_req_header(conn, "authorization") do
+        ["Bearer " <> given | _] -> Plug.Crypto.secure_compare(given, token)
+        _ -> false
+      end
+    end
+
+    defp post(conn, opts) do
+      case read_body(conn, length: @max_body) do
+        {:ok, body, conn} ->
+          case Jason.decode(body) do
+            {:ok, message} -> route(conn, message, opts)
+            {:error, _} -> json(conn, 400, Server.parse_error())
+          end
+
+        _too_large_or_closed ->
+          text(conn, 413, "request body too large")
       end
     end
 
     defp route(conn, %{"method" => "initialize"} = message, opts) do
       {reply, session} = Server.handle(message, Server.new_session(), ctx(opts, nil))
 
+      if session.initialized and map_size(Agent.get(@sessions, & &1)) >= @max_sessions do
+        text(conn, 429, "too many sessions")
+      else
+        route_initialized(conn, reply, session)
+      end
+    end
+
+    defp route_initialized(conn, reply, session) do
       if session.initialized do
         id = Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
         Agent.update(@sessions, &Map.put(&1, id, session))

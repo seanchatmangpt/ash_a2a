@@ -489,6 +489,61 @@ defmodule C2Harness.Catalog do
         end
       ),
       a(
+        "C2C-A45",
+        "certificate signed by only ONE real authority where quorum 2 is pinned (authority 1 alone, then authority 2 alone)",
+        ["insufficient quorum", "single compromised signer below quorum"],
+        [
+          checks: [11],
+          killers_for: [11],
+          expect: ["quorum_not_met", "one_authority_refused:1", "one_authority_refused:2"],
+          mapping: m(["T1078"], ["CAPEC-1"])
+        ],
+        fn env ->
+          for n <- [1, 2] do
+            l = Env.issue_real!(env, Env.effect(), [n])
+            r = Env.submit(env, l.effect, l.cert)
+
+            if r[:refusal] == "quorum_not_met",
+              do: Env.note(env, "one_authority_refused:#{n}")
+          end
+
+          res([])
+        end
+      ),
+      a(
+        "C2C-A46",
+        "two valid signatures from the SAME authority key (duplicate signer: the one signature listed twice; a second signature by the same key under a fresh nonce)",
+        ["insufficient quorum", "single compromised signer below quorum"],
+        [
+          checks: [11],
+          killers_for: [11],
+          expect: [
+            "quorum_not_met",
+            "duplicate_signer_refused:listed_twice",
+            "duplicate_signer_refused:fresh_nonce"
+          ],
+          mapping: m(["T1078", "T1606"], ["CAPEC-151", "CAPEC-196"])
+        ],
+        fn env ->
+          # the real authority's single signature entry, presented twice
+          l = Env.issue_real!(env, Env.effect(), [1])
+          twice = Attacker.mutate_cert(l.cert, &Map.update!(&1, "signatures", fn s -> s ++ s end))
+          r1 = Env.submit(env, l.effect, twice)
+
+          if r1[:refusal] == "quorum_not_met",
+            do: Env.note(env, "duplicate_signer_refused:listed_twice")
+
+          # a holder of the authority key (keymaster stand-in) signs again under a fresh nonce
+          {:ok, l2} = Env.reuse_authority_key(env, Env.effect())
+          r2 = Env.submit(env, l2.effect, l2.cert)
+
+          if r2[:refusal] == "quorum_not_met",
+            do: Env.note(env, "duplicate_signer_refused:fresh_nonce")
+
+          res([])
+        end
+      ),
+      a(
         "C2C-A21",
         "one custodian signing twice with two keys (independence tier I3)",
         ["single compromised signer below quorum"],

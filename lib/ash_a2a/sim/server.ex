@@ -310,6 +310,7 @@ if Code.ensure_loaded?(Bandit) do
           sup,
           {AshA2A.Transport.GRPC.Supervisor,
            port: Keyword.get(opts, :grpc_port, 0),
+           ip: {127, 0, 0, 1},
            handler: AshA2A.Sim.GrpcHandler,
            ctx: %{agent: AshA2A.Sim.Agent, opts: %{}, transport: @transport},
            auth:

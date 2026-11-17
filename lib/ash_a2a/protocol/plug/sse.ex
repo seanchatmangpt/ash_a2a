@@ -59,6 +59,9 @@ if Code.ensure_loaded?(Plug) do
             Error.invalid_agent_response("Message reply to a task-scoped request")
           )
 
+        {:error, {:invalid_agent_response, _} = reason} ->
+          send_jsonrpc_error(conn, jsonrpc_id, AshA2A.Transport.Plug.reason_error(reason))
+
         {:error, reason} ->
           %{ref: ref} = AshA2A.Transport.SafeError.internal(:internal_error, reason)
           send_jsonrpc_error(conn, jsonrpc_id, Error.internal_error(%{"ref" => ref}))

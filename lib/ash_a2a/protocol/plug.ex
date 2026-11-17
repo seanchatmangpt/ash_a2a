@@ -661,7 +661,11 @@ if Code.ensure_loaded?(Plug) do
           {:error, reason}
           when reason in [:generation_mismatch, :context_mismatch, :not_continuable] or
                  (is_tuple(reason) and tuple_size(reason) == 2 and
-                    elem(reason, 0) in [:unsupported_operation, :content_type_not_supported]) ->
+                    elem(reason, 0) in [
+                      :unsupported_operation,
+                      :content_type_not_supported,
+                      :invalid_agent_response
+                    ]) ->
             {:error, internal_error_or_typed(reason)}
 
           {:error, :message_on_task} ->
