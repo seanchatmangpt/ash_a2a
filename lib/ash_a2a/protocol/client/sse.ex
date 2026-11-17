@@ -15,15 +15,15 @@ if Code.ensure_loaded?(Req) do
     @bom <<0xEF, 0xBB, 0xBF>>
 
     # `pending` is the current incomplete event as reversed iodata WITHOUT a
-    # trailing "\n" (that is `nl?`); `cr?` is a held trailing "\r" whose
-    # line-ending kind (CR or CRLF) the next chunk decides; `head` collects the
+    # (a "\n" opening the next chunk is the rest of that CRLF); `head` collects the
+    # (a "\n" opening the next chunk is the rest of that CRLF); `head`
     # first bytes while they could still be a UTF-8 BOM (ignored at stream
     # start, WHATWG SSE). Per-chunk work is proportional to the chunk, so a
     # stream delivered one byte at a time is linear overall.
     @type state :: %{
             pending: iodata(),
             nl?: boolean(),
-            cr?: boolean(),
+            skip_lf?: boolean(),
             head: binary() | nil
           }
 
@@ -31,7 +31,7 @@ if Code.ensure_loaded?(Req) do
     Creates a new SSE parser state.
     """
     @spec new() :: state()
-    def new, do: %{pending: [], nl?: false, cr?: false, head: ""}
+    def new, do: %{pending: [], nl?: false, skip_lf?: false, head: ""}
 
     @doc """
     Feeds a chunk of data into the parser.
@@ -56,18 +56,25 @@ if Code.ensure_loaded?(Req) do
     end
 
     def feed(state, chunk) when is_binary(chunk) do
-      # SSE line terminators are LF, CRLF, or CR. Normalize CR variants to LF,
-      # but hold a trailing "\r" back: a chunk boundary between "\r" and "\n"
-      # must not manufacture an event break early.
-      chunk = if state.cr?, do: "\r" <> chunk, else: chunk
+      # SSE line terminators are LF, CRLF, or CR. A chunk ending in "\r" ends
+      # its line at once; if the next chunk starts with "\n" that is the second
+      # half of the same CRLF and is dropped (`skip_lf?`).
+      raw = chunk
 
-      {body, cr?} =
-        if String.ends_with?(chunk, "\r"),
-          do: {binary_part(chunk, 0, byte_size(chunk) - 1), true},
-          else: {chunk, false}
+      chunk =
+        if state.skip_lf? and String.starts_with?(chunk, "\n"),
+          do: binary_part(chunk, 1, byte_size(chunk) - 1),
+          else: chunk
+
+      cr? =
+        cond do
+          raw == "" -> state.skip_lf?
+          chunk == "" and raw == "\n" -> false
+          true -> String.ends_with?(raw, "\r")
+        end
 
       norm =
-        body
+        chunk
         |> String.replace("\r\n", "\n")
         |> String.replace("\r", "\n")
 
@@ -75,13 +82,13 @@ if Code.ensure_loaded?(Req) do
 
       case :binary.split(scan, "\n\n", [:global]) do
         [only] ->
-          {[], %{state | cr?: cr?} |> keep(only)}
+          {[], %{state | skip_lf?: cr?} |> keep(only)}
 
         [first | rest] ->
           {complete, [last]} = Enum.split(rest, -1)
           head_event = IO.iodata_to_binary(Enum.reverse([first | state.pending]))
           events = decode_events([head_event | complete])
-          {events, %{state | pending: [], nl?: false, cr?: cr?} |> keep(last)}
+          {events, %{state | pending: [], nl?: false, skip_lf?: cr?} |> keep(last)}
       end
     end
 

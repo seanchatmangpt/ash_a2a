@@ -24,6 +24,7 @@ if Code.ensure_loaded?(Bandit) do
     | `:task_state` | the `TaskState` enum of the generated proto module |
     | `:security_scheme` | the security schemes on the agent card of `AshA2A.Sim.Agent` |
     | `:mount` | the mounts of the simulation server's router |
+    | `:authority` | the authority operations and consequence outcomes `AshA2A.Sim.Authority` lists |
     | `:parity` | the bindings `AshA2A.Sim.Parity` checks against the upstream v1.1 reference |
 
     Each item is `%{id: String.t(), kind: atom(), name: String.t(), source: String.t()}`.

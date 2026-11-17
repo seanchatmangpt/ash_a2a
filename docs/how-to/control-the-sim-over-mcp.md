@@ -91,7 +91,9 @@ not use the shim.
 | `a2a_get_agent_card`, `a2a_get_extended_agent_card` | Read the public and the authenticated card. |
 | `a2a_raw_request` | Send bytes you wrote: a malformed JSON body, a gRPC call with garbage protobuf, or raw bytes on the TCP socket. |
 | `sim_info` | The URLs, ports, bearer tokens and skills of the running server. |
-| `sim_grant_authority`, `sim_revoke_authority` | Issue or revoke the standing grant a mutating skill needs. |
+| `sim_grant_authority`, `sim_revoke_authority` | Issue or revoke the standing grant a mutating skill needs. `principal` names any principal value, `capability` any capability id, `expires_in_seconds` gives the grant a time bound (negative: already run out; on a standing grant it renews in place), and `force` grants again to see `token_id_taken` (`refusal`). Each grant reports `expires_at`. |
+| `sim_trip_kill_switch`, `sim_reset_kill_switch` | Trip the simulation's kill switch class: every `:change` and `:external_do` skill is refused (`kill_switch_tripped`) on all three bindings until it is reset. Reset uses the simulation operator's reset authority. Both report `tripped`, `reason` and the host's `configured_class`. |
+| `sim_receipts` | Read the receipt `AshA2A.CommandBus` committed for a `message_id` and verify its binding (`binding_verified`). A performed `:change` or `:external_do` skill has one; an `:observe` skill, and a refusal before the command is claimed, have none. |
 | `sim_read_rows` | Read `AshA2A.Sim.Note` from the data layer, and the recorded publications. |
 | `sim_push_deliveries` | What the webhook receiver recorded. |
 | `sim_email_issue_brief` | File an email brief (two numbered actions with reply tokens) and get the DKIM key facts, the webhook secret and the ingest URLs. |
@@ -170,6 +172,26 @@ the gateway answers `401` or `403` with `landed: false`. `scenario` runs a
 whole outcome on its own and answers `as_expected`: for example
 `{"scenario": "stale_graph_digest_refused"}`, after which
 `sim_email_deliveries` shows the reconfirm brief that was mailed.
+
+## Try the authority gate
+
+1. Call `sim_grant_authority` with `{"identity": "sim-agent-me", "skill": "create_note"}`.
+   `grants.0.granted` is `true`.
+2. Call `a2a_send_message` with `"token": "sim-agent-me"` and a fresh `message_id`
+   over each binding. The row is written, and `sim_receipts` with that
+   `message_id` answers `receipt.consequence` `change`, `receipt.terminal_status`
+   `executed` and `receipt.binding_verified` `true`.
+3. Call `sim_grant_authority` again with `"expires_in_seconds": -60`. The grant is
+   renewed into the past (`outcome` `renewed`, `granted` `false`) and the same call
+   is `TASK_STATE_REJECTED` with `authority_required`. An expired grant cannot be
+   renewed back: grant it again to issue a new one.
+4. Call `sim_trip_kill_switch` with `{}`. Every `create_note` and `publish_note`
+   call, granted or not, now fails with `kill_switch_tripped` and `count_notes`
+   still runs. `sim_reset_kill_switch` with `{}` puts it back.
+
+The items with no tool of their own (the broker's `verify`, the two-port lease
+gate, the refusal receipt) are reached with `sim_prove` and
+`{"surface_prefix": "authority:two_port_gate"}`; the coverage plan does the same.
 
 ## Prove that MCP reaches the whole surface
 

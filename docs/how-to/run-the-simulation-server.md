@@ -178,6 +178,74 @@ waiting. To read what the gateway mailed, use `AshA2A.Sim.Email.deliveries/0`
 
 The test is `mix test test/ash_a2a/sim/sim_email_test.exs`.
 
+## Drive the authority surface
+
+What makes the mutating skills admit or refuse is mirrored too
+(`AshA2A.Sim.Authority`, the `authority:` items of `AshA2A.Sim.Surface`). Each
+probe sends real requests over JSON-RPC, HTTP+JSON and gRPC, then reads the
+Ash rows (or the `publish_note` effect list) to confirm what the gate let
+through.
+
+| Item | What the probe proves |
+| --- | --- |
+| `authority:grant` | a standing grant admits the caller on every binding and the row changes; the durable (EKV) broker does the same |
+| `authority:revoke` | a revoked grant is refused `authority_required` on every binding and writes nothing |
+| `authority:verify` | `Broker.verify/2` accepts a standing authority and refuses a revoked (`revoked`) and an expired (`expired`) one, on `InMemory` and `Ekv` |
+| `authority:token_id_taken` | a second grant of a standing `(principal, capability)` is refused `token_id_taken` |
+| `authority:expiry` | a grant whose `expires_at` has passed is refused; a grant renewed into the past is refused and cannot be renewed back (`grant_not_standing`) |
+| `authority:reissue_after_revoke` | a revoked grant can be granted again and admits again, while the revoked authority still verifies as `revoked` |
+| `authority:principal_scope`, `authority:capability_scope` | a grant for another principal, or another capability, admits nothing |
+| `authority:presenter_binding` | an authority presented as another principal is refused `token_binding_mismatch` by both brokers, and the bus refuses `authority_mismatch` for a grant held by another principal |
+| `authority:authority_required` | no grant ends `TASK_STATE_REJECTED` with `authority_required` and no row or publication change |
+| `authority:kill_switch`, `authority:kill_switch_reset` | a tripped class refuses `:change` and `:external_do` skills on all three bindings while `:observe` skills run; reset admits again; a reset without the operator's authority is refused `authority_mismatch` |
+| `authority:two_port_gate:scope`, `:root`, `:clock`, `:signature` | a lease failing exactly one of the gate's four checks is refused `refused_lease` with that check's mask and code (`lease_scope_mismatch`, `lease_root_mismatch`, `lease_expired`, `lease_signature_invalid`); a valid lease admits |
+| `authority:receipt_executed` | a performed effect commits an `executed` receipt whose binding verifies (`AshA2A.Receipt.Binding`) |
+| `authority:receipt_refused` | a grant withdrawn after admission is refused before DO and commits a receipt that records the refusal and verifies |
+| `authority:outcome:<class>:<outcome>` | each consequence class by outcome: `observe` admitted, `change` and `external_do` admitted and refused, `unknown` refused |
+
+Three facts about the library the probes rest on:
+
+- The kill switch is host-wide. `AshA2A.CommandBus` consults the one class named
+  by `config :ash_a2a, :kill_switch_class` for every consequence-bearing skill.
+  The simulation names its class `"ash_a2a_sim"` (`AshA2A.Sim.Authority.kill_switch_class/0`).
+  Tripping it (`AshA2A.Sim.Authority.trip_kill_switch/2`, or the
+  `sim_trip_kill_switch` MCP tool) makes it the host's class until
+  `reset_kill_switch/1` puts the previous setting back.
+- The wire path presents no lease, so the two-port gate is driven through
+  `AshA2A.CommandBus.run/4` with real signed leases and the real data layer
+  behind it. The same goes for a grant presented by a different caller: no
+  token authenticates as another identity.
+- A refusal before the command is claimed (`authority_required`,
+  `kill_switch_tripped`, `consequence_unclassified`, a failed lease) commits no
+  receipt, and neither does an `:observe` skill. A refusal at the pre-DO gate does.
+  `AshA2A.Sim.Authority.RevokingBroker` wraps the in-memory broker and withdraws a
+  grant between admission and that gate, which is the one deterministic way to
+  reach the refusal receipt over the wire.
+
+Read a receipt with `AshA2A.Sim.Authority.fetch_receipt/1` (the command id of a
+wire call is its message id), or with the `sim_receipts` MCP tool, which also
+verifies the binding.
+
+### Authority findings
+
+Two refusals are ended or recorded less strictly than the others. The probes
+assert what the library does and name these where they touch them:
+
+- `kill_switch_tripped` ends the task `TASK_STATE_FAILED`, not
+  `TASK_STATE_REJECTED`, although nothing ran. `AshA2A.Transport.Runtime.admission_refusal?/1`
+  lists the other `CommandBus` gate codes (`authority_required`,
+  `authority_revoked`, ...) but not `kill_switch_tripped` (nor `refused_lease`,
+  `kill_switch_unavailable`).
+- The receipt of an `authority_revoked` refusal before DO says
+  `terminal_status: :failed`. `AshA2A.Receipt` documents `:failed` as "DO ran", and
+  its `@pre_do_refusal_codes` lacks `authority_revoked`, `authority_expired`,
+  `authority_constraint_mismatch`, `refused_lease` and `kill_switch_unavailable`.
+
+Fixed while writing the probes: `AshA2A.Authority.Broker.Ekv.verify/2` accepted
+an authority that carried a standing grant's token id with another subject or
+capability, which `InMemory.verify/2` refuses with `token_binding_mismatch`
+(RFC-SA2A-001 S54). `Ekv` now compares the stored `(subject, capability)`.
+
 ## Start it from code
 
 ```elixir
@@ -217,6 +285,10 @@ hand-kept list:
   `AshA2A.Transport.HTTPJSON`.
 - Skills come from `AshA2A.Info.capability_index/1`, consequence classes from
   the `a2a` DSL, and task states from the generated proto enum.
+- The `authority:` items are the operations and outcomes `AshA2A.Sim.Authority`
+  lists; the test asserts each has probes and an MCP plan, and that the lease
+  gate has one item per conjunct of `AshA2A.Authority.TwoPortGate.conjuncts/0`
+  and every consequence class has an outcome item.
 
 The test asserts that every item has at least one probe. If you add a method,
 a route or an RPC to the library, that test fails until you add a probe for
