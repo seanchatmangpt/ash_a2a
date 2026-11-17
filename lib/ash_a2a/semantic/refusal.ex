@@ -234,6 +234,7 @@ defmodule AshA2A.Semantic.Refusal do
     email_token_key_missing: :refused_authority,
     email_token_key_too_short: :refused_authority,
     reply_token_expired: :refused_authority,
+    expired_token: :refused_authority,
     approver_revoked_during_issuance: :refused_authority,
     already_claimed: :refused_consequence,
     effect_claim_missing: :refused_consequence,

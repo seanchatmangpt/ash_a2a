@@ -55,6 +55,9 @@ defmodule AshA2A.MutationWave3CatalogTest do
     "card_alg_allowlist_ok" => ~w(CHI-MUTWAVE3-024 CHI-MUTWAVE3-025),
     "card_key_alg_ok" => ~w(CHI-MUTWAVE3-026),
     "card_signature_verify_true" => ~w(CHI-MUTWAVE3-027),
+    "brief_mac_drops_approver" => ~w(CHI-MUTWAVE3-029),
+    "brief_mac_drops_expiry" => ~w(CHI-MUTWAVE3-030),
+    "brief_missing_key_unkeyed_fallback" => ~w(CHI-MUTWAVE3-031),
     "task_owner_gate_open" => ~w(CHI-MUTWAVE3-028)
   }
 

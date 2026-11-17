@@ -37,6 +37,7 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
   @activity "mutwave3.probe"
   @now 1_800_000_000
   @sendgrid_secret "0123456789abcdef-secret"
+  @brief_key String.duplicate("w", 32)
 
   @impl true
   def id, do: @id
@@ -129,6 +130,12 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
      "a card altered after signing is refused :bad_signature"},
     {"028", :negative, :owner_gate, "Transport.Runtime.owned_by?/2",
      "a task is invisible to a principal other than its owner"},
+    {"029", :negative, :brief_mac_approver, "Brief.mint/3 approver in the MAC payload",
+     "a reply token minted for one approver is refused :bad_token on a brief naming another approver"},
+    {"030", :negative, :brief_mac_expiry, "Brief.mint/3 expiry in the MAC payload",
+     "a reply token minted for one expiry is refused :bad_token on a brief with an extended expiry"},
+    {"031", :negative, :brief_key_required, "Brief.keyring/1 no unkeyed fallback",
+     "with no email token key configured a reply token cannot be minted (TokenKeyError)"},
     {"101", :positive_control, :email_gates_pass, "Email.Plug gates",
      "a correctly configured, authenticated, bounded request passes the config, webhook and cap gates"},
     {"102", :positive_control, :dkim_valid, "Dkim.verify/2",
@@ -141,6 +148,8 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
      "an untampered EdDSA-signed card verifies"},
     {"106", :positive_control, :owner_self, "Transport.Runtime.owned_by?/2",
      "a task is visible to its owner"},
+    {"108", :positive_control, :brief_token_valid, "Brief.verify_reply_token/4",
+     "a keyed reply token verifies on the brief it was minted for"},
     {"107", :positive_control, :json_total_ok, "JSONGuard.decode/2 + Protocol.JSON.decode/2",
      "a shallow body decodes and a well-formed task map decodes"}
   ]
@@ -247,6 +256,10 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
   defp probe(:email_node_cap, fx), do: p_email_node_cap(fx)
   defp probe(:email_reply_cap, fx), do: p_email_reply_cap(fx)
   defp probe(:email_gates_pass, fx), do: p_email_gates_pass(fx)
+  defp probe(:brief_mac_approver, fx), do: p_brief_mac_approver(fx)
+  defp probe(:brief_mac_expiry, fx), do: p_brief_mac_expiry(fx)
+  defp probe(:brief_key_required, fx), do: p_brief_key_required(fx)
+  defp probe(:brief_token_valid, fx), do: p_brief_token_valid(fx)
   defp probe(:dkim_body_length_limit, fx), do: p_dkim_body_length_limit(fx)
   defp probe(:dkim_multiple_from, fx), do: p_dkim_multiple_from(fx)
   defp probe(:dkim_from_misaligned, fx), do: p_dkim_from_misaligned(fx)
@@ -340,6 +353,7 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
 
   defp email_call(params, opts) do
     base = [
+      token_key: @brief_key,
       policy: %{allowlist: %{}},
       brief_lookup: fn _ -> :error end,
       dispatch: fn _principal, _action -> {:error, "unused"} end
@@ -419,6 +433,88 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
       "answered #{inspect({status, error})}"
     )
   end
+
+  # --- brief reply token probes ------------------------------------------------------
+
+  @digest "sha256:" <> String.duplicate("a", 64)
+
+  defp brief(over) do
+    Map.merge(
+      %{
+        title: "Daily",
+        date: "2026-11-13",
+        sections: [],
+        approver: "principal:a",
+        actions: [%{n: 1, summary: "Deploy", action: :deploy, args: %{}, graph_digest: @digest}]
+      },
+      over
+    )
+  end
+
+  defp p_brief_mac_approver(_fx) do
+    token = AshA2A.Email.Brief.reply_token(brief(%{}), 1, key: @brief_key)
+
+    got =
+      AshA2A.Email.Brief.verify_reply_token(brief(%{approver: "principal:b"}), 1, token,
+        key: @brief_key
+      )
+
+    verdict(got == {:error, :bad_token}, "verify answered #{inspect(got)}")
+  end
+
+  defp p_brief_mac_expiry(_fx) do
+    at = 4_000_000_000
+    token = AshA2A.Email.Brief.reply_token(brief(%{expires_at: at}), 1, key: @brief_key)
+
+    got =
+      AshA2A.Email.Brief.verify_reply_token(brief(%{expires_at: at + 1}), 1, token,
+        key: @brief_key,
+        now: 1_800_000_000
+      )
+
+    verdict(got == {:error, :bad_token}, "verify answered #{inspect(got)}")
+  end
+
+  defp p_brief_token_valid(_fx) do
+    b = brief(%{expires_at: 4_000_000_000})
+    token = AshA2A.Email.Brief.reply_token(b, 1, key: @brief_key)
+
+    got =
+      AshA2A.Email.Brief.verify_reply_token(b, 1, token, key: @brief_key, now: 1_800_000_000)
+
+    verdict(got == :ok, "verify answered #{inspect(got)}")
+  end
+
+  # Runs with no configured key (restored afterwards): minting must raise.
+  defp p_brief_key_required(_fx) do
+    saved = {
+      Application.fetch_env(:ash_a2a, :email_token_key),
+      Application.fetch_env(:ash_a2a, :email_token_key_previous)
+    }
+
+    Application.delete_env(:ash_a2a, :email_token_key)
+    Application.delete_env(:ash_a2a, :email_token_key_previous)
+
+    try do
+      got =
+        try do
+          {:minted, AshA2A.Email.Brief.reply_token(brief(%{}), 1)}
+        rescue
+          e in AshA2A.Email.Brief.TokenKeyError -> {:raised, e.reason}
+        end
+
+      verdict(match?({:raised, _}, got), "reply_token answered #{inspect(got)}")
+    after
+      case saved do
+        {a, b} ->
+          restore_env(:email_token_key, a)
+          restore_env(:email_token_key_previous, b)
+      end
+    end
+  end
+
+  defp restore_env(key, {:ok, v}), do: Application.put_env(:ash_a2a, key, v)
+  defp restore_env(_key, :error), do: :ok
 
   # --- DKIM probes --------------------------------------------------------------------
 

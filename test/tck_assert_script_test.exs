@@ -77,6 +77,70 @@ defmodule AshA2A.TckAssertScriptTest do
     end
   end
 
+  describe "expected failures (scripts/tck_expected_failures.json)" do
+    @expected Path.expand("../scripts/tck_expected_failures.json", __DIR__)
+    @sha "104a7b4ae0d83f65c075e3793e322953a830eaba"
+
+    defp report(statuses) do
+      per =
+        for {id, status} <- statuses, into: %{} do
+          {id, %{"level" => "SHOULD", "status" => status, "errors" => []}}
+        end
+
+      tmp_json(%{"summary" => %{}, "per_requirement" => per})
+    end
+
+    defp run_expected(path, sha \\ @sha) do
+      case python() do
+        nil ->
+          :skip
+
+        py ->
+          System.cmd(
+            py,
+            [@script, path, "--expected-failures", @expected, "--tck-sha", sha],
+            stderr_to_stdout: true
+          )
+      end
+    end
+
+    test "the listed id failing is tolerated; the list names both requirements" do
+      case run_expected(report(%{"HTTP_JSON-SVC-001" => "FAIL", "CARD-DISC-001" => "PASS"})) do
+        :skip ->
+          :ok
+
+        {out, status} ->
+          assert status == 0, out
+          assert out =~ "expected_fail=1 unexpected_fail=0"
+      end
+
+      entry = @expected |> File.read!() |> Jason.decode!() |> Map.fetch!("expected_failures") |> hd()
+      assert entry["id"] == "HTTP_JSON-SVC-001"
+      assert entry["contradicts"] =~ "HTTP_JSON-ERR-001"
+    end
+
+    test "an unlisted failure fails, even when the listed one also fails" do
+      case run_expected(report(%{"HTTP_JSON-SVC-001" => "FAIL", "CARD-DISC-001" => "FAIL"})) do
+        :skip -> :ok
+        {out, status} -> assert {status, out} |> elem(0) == 1 and out =~ "unexpected failure CARD-DISC-001"
+      end
+    end
+
+    test "a listed id that starts passing fails so the list cannot rot" do
+      case run_expected(report(%{"HTTP_JSON-SVC-001" => "PASS"})) do
+        :skip -> :ok
+        {out, status} -> assert status == 1 and out =~ "no longer fails"
+      end
+    end
+
+    test "on a TCK commit the entry does not name, the failure is unlisted" do
+      case run_expected(report(%{"HTTP_JSON-SVC-001" => "FAIL"}), "263b9cfa") do
+        :skip -> :ok
+        {out, status} -> assert status == 1 and out =~ "unexpected failure HTTP_JSON-SVC-001"
+      end
+    end
+  end
+
   test "TCK pin: ci.yml single variable is the one tck-suite.md cites" do
     ci = File.read!(Path.join(@root, ".github/workflows/ci.yml"))
     [_, sha] = Regex.run(~r/^\s+TCK_PIN_SHA:\s*"?([0-9a-f]{40})"?/m, ci)

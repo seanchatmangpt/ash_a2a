@@ -378,12 +378,20 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         ~S"""
         ChicagoLedger = proplists:get_value(token_ledger, ChicagoArg1),
         ChicagoUnsafe = proplists:get_value(unsafe_no_replay_ledger, ChicagoArg1),
-        case (ChicagoLedger =:= undefined orelse ChicagoLedger =:= nil) andalso ChicagoUnsafe =/= true of
-          true -> {halt, 503, replay_protection_unconfigured};
-          false -> ok
+        case erlang:is_function(proplists:get_value(brief_lookup, ChicagoArg1), 1) of
+          false -> {halt, 503, brief_lookup_unconfigured};
+          true ->
+            case (ChicagoLedger =:= undefined orelse ChicagoLedger =:= nil) andalso ChicagoUnsafe =/= true of
+              true -> {halt, 503, replay_protection_unconfigured};
+              false ->
+                case 'Elixir.AshA2A.Email.Brief':keyring(token_opts(ChicagoArg1)) of
+                  {ok, _} -> ok;
+                  {error, ChicagoReason} -> {halt, 503, ChicagoReason}
+                end
+            end
         end.
         """,
-        "Email.Plug.require_config/1 :webhook required (503 webhook_auth_unconfigured); the replay-ledger refusal is kept"
+        "Email.Plug.require_config/1 :webhook required (503 webhook_auth_unconfigured); the other config refusals are kept"
       ),
       wave3(
         "email_replay_ledger_optional",
@@ -393,14 +401,21 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         1,
         :all,
         ~S"""
-        case proplists:get_value(webhook, ChicagoArg1) of
-          undefined -> {halt, 503, webhook_auth_unconfigured};
-          nil -> {halt, 503, webhook_auth_unconfigured};
-          false -> {halt, 503, webhook_auth_unconfigured};
-          _ -> ok
+        ChicagoWebhook = proplists:get_value(webhook, ChicagoArg1),
+        case ChicagoWebhook =:= undefined orelse ChicagoWebhook =:= nil orelse ChicagoWebhook =:= false of
+          true -> {halt, 503, webhook_auth_unconfigured};
+          false ->
+            case erlang:is_function(proplists:get_value(brief_lookup, ChicagoArg1), 1) of
+              false -> {halt, 503, brief_lookup_unconfigured};
+              true ->
+                case 'Elixir.AshA2A.Email.Brief':keyring(token_opts(ChicagoArg1)) of
+                  {ok, _} -> ok;
+                  {error, ChicagoReason} -> {halt, 503, ChicagoReason}
+                end
+            end
         end.
         """,
-        "Email.Plug.require_config/1 :token_ledger required (503 replay_protection_unconfigured); the webhook refusal is kept"
+        "Email.Plug.require_config/1 :token_ledger required (503 replay_protection_unconfigured); the other config refusals are kept"
       ),
       wave3(
         "email_webhook_auth_skipped",
@@ -678,6 +693,53 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         :all,
         "true.",
         "AgentCardSignature.raw_verify/4 cryptographic verification (:bad_signature)"
+      ),
+      # --- keyed reply token (lib/ash_a2a/email/brief.ex) ---------------------------------------
+      wave3(
+        "brief_mac_drops_approver",
+        "reply token MAC does not bind the approver",
+        AshA2A.Email.Brief,
+        :mint,
+        3,
+        :all,
+        ~S"""
+        ChicagoKey = erlang:hd(ChicagoArg3),
+        ChicagoAction = erlang:hd([ChicagoA || ChicagoA <- sorted_actions(ChicagoArg1), maps:get(n, ChicagoA) =:= ChicagoArg2]),
+        ChicagoPayload = canon([<<"ash_a2a.email.reply_token.v2">>, brief_digest(ChicagoArg1), ChicagoArg2, maps:get(graph_digest, ChicagoAction), expires_at(ChicagoArg1)]),
+        <<(key_id(ChicagoKey))/binary, ('Elixir.Base':url_encode64(crypto:mac(hmac, sha256, ChicagoKey, ChicagoPayload), [{padding, false}]))/binary>>.
+        """,
+        "Brief.mint/3 binds the approver principal into the reply-token MAC"
+      ),
+      wave3(
+        "brief_mac_drops_expiry",
+        "reply token MAC does not bind the expiry",
+        AshA2A.Email.Brief,
+        :mint,
+        3,
+        :all,
+        ~S"""
+        ChicagoKey = erlang:hd(ChicagoArg3),
+        ChicagoAction = erlang:hd([ChicagoA || ChicagoA <- sorted_actions(ChicagoArg1), maps:get(n, ChicagoA) =:= ChicagoArg2]),
+        ChicagoPayload = canon([<<"ash_a2a.email.reply_token.v2">>, brief_digest(ChicagoArg1), ChicagoArg2, maps:get(graph_digest, ChicagoAction), approver(ChicagoArg1)]),
+        <<(key_id(ChicagoKey))/binary, ('Elixir.Base':url_encode64(crypto:mac(hmac, sha256, ChicagoKey, ChicagoPayload), [{padding, false}]))/binary>>.
+        """,
+        "Brief.mint/3 binds the expiry into the reply-token MAC (an extended expiry invalidates the token)"
+      ),
+      wave3(
+        "brief_missing_key_unkeyed_fallback",
+        "missing token key falls back to a public key",
+        AshA2A.Email.Brief,
+        :keyring,
+        1,
+        :all,
+        ~S"""
+        case {proplists:get_value(key, ChicagoArg1), application:get_env(ash_a2a, email_token_key)} of
+          {undefined, undefined} -> {ok, [<<"public-unkeyed-fallback-0123456789abcdef">>]};
+          {undefined, {ok, ChicagoK}} -> {ok, [ChicagoK]};
+          {ChicagoK, _} -> {ok, [ChicagoK]}
+        end.
+        """,
+        "Brief.keyring/1 refuses (:email_token_key_missing) when no key is configured"
       ),
       # --- task owner gate -----------------------------------------------------------------------
       wave3(
