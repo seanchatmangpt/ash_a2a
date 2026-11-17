@@ -27,6 +27,8 @@ only the approved items are dispatched.
 |---|---|---|
 | Provider webhook credential missing or wrong | 401 | none |
 | `:webhook` or `:token_ledger` not configured | 503 | none |
+| `:email_token_key` unset (`email_token_key_missing`) or under 32 bytes (`email_token_key_too_short`) | 503 | none |
+| Reply token past the brief's `:expires_at` (`reply_token_expired`) | 403 | none |
 | Body too large, too deep or reply text too long | 413 | none |
 | Body not valid JSON or webhook unparseable | 400 | none |
 | Sender not verified (`Inbound.verify_sender/2`) | 401 | none |
@@ -66,6 +68,29 @@ reconfirms against current state.
 
 The request body carries `"reply_tokens"`: action number to token
 (`Brief.reply_token/2`); a token is required for every approved action.
+
+### Reply token key
+
+A reply token is a keyed MAC, not a hash of public content: `key_id <> base64url(HMAC-SHA256)`,
+49 characters, over the canonical bytes of (brief digest, action number, graph digest, the
+brief's `:approver`, the brief's `:expires_at` in unix seconds, `0` meaning none). Set the
+server secret:
+
+    config :ash_a2a, :email_token_key, System.fetch_env!("EMAIL_TOKEN_KEY")  # >= 32 bytes
+
+There is no default key. With no key, `Brief.render/2` raises `AshA2A.Email.Brief.TokenKeyError`
+(`:email_token_key_missing`) and the plug answers 503 `email_token_key_missing`; a key under 32
+bytes is `:email_token_key_too_short`. `Brief.token_key_configured?/0` reports whether a usable
+key is set. Tokens are compared with `Plug.Crypto.secure_compare/2`.
+
+To rotate, move the old key to `:email_token_key_previous` and set the new `:email_token_key`;
+tokens carry a key id, so briefs issued under the previous key still verify. Remove the previous
+key once those briefs are answered or expired; their tokens are then refused. Per-mount
+overrides are the plug options `:token_key` and `:token_key_previous`.
+
+**Breaking:** briefs rendered before this change carry unkeyed 16-hex tokens. They are refused
+403 `invalid_reply_token` (fail closed); re-issue the brief. Tests:
+`test/email_reply_token_mac_test.exs`, `test/email_brief_test.exs`.
 
 ## Test it
 

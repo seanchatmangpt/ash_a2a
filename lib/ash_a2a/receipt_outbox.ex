@@ -34,7 +34,7 @@ defmodule AshA2A.ReceiptOutbox do
   -- no decoding -- and a torn file blocks reclaim only for its own command.
   Legacy entries (`<receipt id>.receipt`, written before this format) are
   still read, decoded when consulted, and migrated by `migrate_legacy/0`
-  (called from `AshA2A.ReceiptOutbox.Reconciler.init/1`); an unreadable
+  (called from `AshA2A.ReceiptOutbox.Reconciler.init`); an unreadable
   legacy entry blocks every reclaim (fail closed).
 
   ## Decoding is `:safe`

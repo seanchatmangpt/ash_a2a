@@ -11,7 +11,7 @@ defmodule AshA2A.HddlOperator do
   `AshA2A.Argument` (a structural prerequisite entity whose declared value is
   deliberately ignored by capability compilation -- see its own @moduledoc
   and `AshA2A.Verify`'s `dead_argument_warning/1`), this entity's value is a
-  *live* field: `AshA2A.CapabilityIndex.Compiler.project/3` copies it through
+  *live* field: `AshA2A.CapabilityIndex.Compiler.project` copies it through
   into the real compiled `AshA2A.Skill.hddl_operators`, because HDDL operator
   metadata has no equivalent to derive from canonical Ash action
   introspection the way arguments do.

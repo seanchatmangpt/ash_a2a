@@ -10,7 +10,7 @@ defmodule AshA2A.Transport.GRPC.Server do
   to/from the codec's proto-JSON maps via `Protobuf.JSON` (proto3 JSON).
   The two server-streaming RPCs are driven by the same per-task event log the
   SSE transport uses (`AshA2A.A2ATransport.TaskEvents`) and pump the agent's
-  stream through `AshA2A.A2ATransport.SSE.pump/4`, so gRPC and SSE
+  stream through `AshA2A.A2ATransport.SSE.pump`, so gRPC and SSE
   subscribers see the same events in the same order.
 
   ## Wiring
@@ -24,7 +24,7 @@ defmodule AshA2A.Transport.GRPC.Server do
       )
 
   Optional env keys beside `:handler`/`:ctx`: `:versions` (supported
-  A2A-Version list for the gate, default `Version.supported_default/0`) and
+  A2A-Version list for the gate, default `Version.supported_default`) and
   `:extensions` (the same entries the HTTP binding's `a2a.extensions` takes;
   required extensions are enforced, activated URIs are echoed in the
   `a2a-extensions` response metadata, -32008 is FAILED_PRECONDITION(9)).
@@ -32,7 +32,7 @@ defmodule AshA2A.Transport.GRPC.Server do
   ## TLS
 
   Pass `cred: GRPC.Credential.new(ssl: [certfile: ..., keyfile: ...])` to
-  `GRPC.Server.start_endpoint/3` (or `AshA2A.Transport.GRPC.Supervisor`'s
+  `GRPC.Server.start_endpoint` (or `AshA2A.Transport.GRPC.Supervisor`'s
   `:cred` option) to serve TLS; without it the listener is plain HTTP/2.
   Clients connect with `cred:` on `GRPC.Stub.connect/2` likewise.
 

@@ -8,7 +8,7 @@ defmodule AshA2A.Chicago.Courts.AuthorityNonImplication do
   Non-Implication) and §66 (Confused Deputy) court, id `SA2A-AUTH`.
 
   Every attack is driven through a real consequence entry point -- the real
-  `AshA2A.Protocol.Agent` dispatch path (`AshA2A.Agent.__dispatch__/3` ->
+  `AshA2A.Protocol.Agent` dispatch path (`AshA2A.Agent.__dispatch__` ->
   `AshA2A.Authority.Grant.authorize/3` -> `AshA2A.CommandBus`), the real
   `AshA2A.Protocol.Plug.Auth` + `AshA2A.Protocol.Plug` HTTP transport, or a direct
   `AshA2A.CommandBus.run/4` exactly as `Reactor`/`Oban` callers reach it -- and

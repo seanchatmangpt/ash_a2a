@@ -36,7 +36,7 @@ defmodule AshA2A.Delivery.Oban do
       the configured `AshA2A.Authority.Broker` at `perform/1` time can catch
       that. `AshA2A.Delivery.ObanAuthority.verify_live!/3` is the explicit,
       opt-in helper for exactly this: it re-checks
-      `AshA2A.Authority.Broker.granted?/3` against the SAME broker the
+      `AshA2A.Authority.Broker.granted?` against the SAME broker the
       synchronous dispatch path (`AshA2A.Authority.Grant.authorize/3`)
       consults, so a principal whose grant was revoked (or simply never
       existed under this broker) does not silently regain ambient DO merely

@@ -6,7 +6,7 @@ defmodule AshA2A.Wire.Jcs do
   @moduledoc """
   Thin wrapper over the `jcs` hex dependency (RFC 8785).
 
-  Input MUST already be validated by `AshA2A.Identity.Canonical.Encodable`
+  Input MUST already be validated by `Identity.Canonical.Encodable`
   (string keys, no floats, bounded integers); this module performs no
   validation and no exception swallowing.
   """

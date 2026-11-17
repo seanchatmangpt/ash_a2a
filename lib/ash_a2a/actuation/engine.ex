@@ -26,7 +26,7 @@ defmodule AshA2A.Actuation.Engine do
        `AshA2A.Authority.PEP.assert_standing/4` (actor = `ticket.issued_by`,
        scope = `ticket.action_iri`). Any non-`{:ok, grant}` return (or raise)
        is a typed `{:refused, :unauthorized}`.
-    5. dispatch — `AshA2A.Actuation.Adapter.execute/2`; raise/throw/exit or a
+    5. dispatch — `AshA2A.Actuation.Adapter.execute`; raise/throw/exit or a
        non-conforming return → `{:refused, {:adapter_error, _}}`.
     6. settlement — receipt recorded in the ledger. A settlement refusal after
        dispatch is `{:refused, {:settlement_failed, reason, :effect_ran}}`.

@@ -8,7 +8,7 @@ defmodule AshA2A.Protocol.PushNotificationConfig do
 
   Registering a config stores it and arms delivery: on every task state change
   the library POSTs the `StreamResponse`-wrapped update to each registered
-  webhook (see `AshA2A.Protocol.PushNotification` and
+  webhook (see `Protocol.PushNotification` and
   `AshA2A.Protocol.PushNotificationSender`). Delivery is attempted by the
   server; a config on its own is not a no-op declaration.
 

@@ -161,7 +161,8 @@ defmodule AshA2A.Chicago.Closure do
 
   @doc """
   Analyse `modules`. Options: `:mode` (`:report | :enforce`), `:effectors`,
-  `:allowed_callers`, `:unresolved` (`:refuse | :report`, default `:refuse`).
+  `:allowed_callers`, `:unresolved` (`:refuse | :report`, default `:refuse`),
+  `:facts` (the result of `read_facts/1` for the same `modules`).
   """
   @spec run([module()], keyword()) :: {:ok, map()} | {:refused, map()}
   def run(modules, opts \\ []) do
@@ -173,6 +174,14 @@ defmodule AshA2A.Chicago.Closure do
       else: {:ok, report}
   end
 
+  @doc """
+  Reads the call facts of `modules` once. Pass the result as `facts:` to
+  `run/2` or `analyze/2` to analyse the same compiled tree several times
+  (different modes, effectors or allowed callers) without re-reading the BEAMs.
+  """
+  @spec read_facts([module()]) :: {map(), [map()]}
+  def read_facts(modules), do: read_modules(modules)
+
   @spec analyze([module()], keyword()) :: map()
   def analyze(modules, opts \\ []) do
     mode = Keyword.get(opts, :mode, :report)
@@ -180,7 +189,7 @@ defmodule AshA2A.Chicago.Closure do
     allowed = Keyword.get(opts, :allowed_callers, default_allowed_callers())
     unresolved_policy = Keyword.get(opts, :unresolved, :refuse)
 
-    {facts, unanalyzable} = read_modules(modules)
+    {facts, unanalyzable} = Keyword.get_lazy(opts, :facts, fn -> read_modules(modules) end)
     defined = MapSet.new(for {mfa, _} <- facts, do: mfa)
     sites = for {caller, calls} <- facts, call <- calls, do: {caller, call}
 

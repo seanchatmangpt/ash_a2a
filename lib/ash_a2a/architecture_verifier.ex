@@ -17,7 +17,7 @@ defmodule AshA2A.ArchitectureVerifier.Fixture.Resource do
   task to only work under a special `MIX_ENV`.
 
   One real `:create` default action (public actions default to consequence
-  `:change` -- `AshA2A.CapabilityIndex.Compiler.default_consequence/1`) and
+  `:change` -- `AshA2A.CapabilityIndex.Compiler.default_consequence`) and
   one real generic `:action` with no `a2a do skill ..., consequence: ... end`
   override (public generic actions default to consequence `:unknown`) --
   exactly the two consequence classes `AshA2A.ArchitectureVerifier`'s checks
@@ -275,7 +275,7 @@ defmodule AshA2A.ArchitectureVerifier do
   Real check: a skill whose real, compiled `consequence` is `:unknown` (a
   generic `:action` with no explicit `consequence:` override -- see
   `AshA2A.Skill`'s moduledoc and
-  `AshA2A.CapabilityIndex.Compiler.default_consequence/1`) is refused by
+  `AshA2A.CapabilityIndex.Compiler.default_consequence`) is refused by
   `AshA2A.CommandBus.run/4` with the typed `:consequence_unclassified` code,
   never silently dispatched.
   """

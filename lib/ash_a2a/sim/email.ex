@@ -65,6 +65,8 @@ if Code.ensure_loaded?(Bandit) do
     @state __MODULE__.State
     @kv __MODULE__.Kv
     @ledger __MODULE__.Ledger
+    # Fixed simulation-only reply-token key (32 bytes). Never a production key.
+    @token_key "ash-a2a-sim-email-token-key-0001"
 
     @senders %{
       "approver@sim.example" => "sim-email-approver",
@@ -276,6 +278,7 @@ if Code.ensure_loaded?(Bandit) do
         resolver: &__MODULE__.resolve_action/1,
         reply_sender: &__MODULE__.record_delivery/3,
         token_ledger: @ledger,
+        token_key: @token_key,
         rate_limit: @rate,
         max_body_bytes: @max_body,
         max_reply_chars: @max_reply
@@ -512,7 +515,7 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp store(brief, graph) do
-      rendered = Brief.render(brief, domain: @domain)
+      rendered = Brief.render(brief, domain: @domain, key: @token_key)
       id = bare(rendered.message_id)
 
       Agent.update(@state, fn st ->
@@ -523,7 +526,7 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp public(brief, _graph, id) do
-      rendered = Brief.render(brief, domain: @domain)
+      rendered = Brief.render(brief, domain: @domain, key: @token_key)
 
       actions =
         for a <- brief.actions do
@@ -533,7 +536,7 @@ if Code.ensure_loaded?(Bandit) do
             "summary" => a.summary,
             "args" => Map.new(a.args, fn {k, v} -> {to_string(k), v} end),
             "graph_digest" => a.graph_digest,
-            "reply_token" => Brief.reply_token(brief, a.n)
+            "reply_token" => Brief.reply_token(brief, a.n, key: @token_key)
           }
         end
 

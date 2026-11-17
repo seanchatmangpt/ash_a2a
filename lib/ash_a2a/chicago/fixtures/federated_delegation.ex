@@ -59,7 +59,7 @@ defmodule AshA2A.Chicago.Fixtures.FederatedDelegation.PeerA do
   `AshA2A.CommandBus` exactly like any other consequence-bearing skill (it
   writes a real `DelegationLog` row proving peer A's own hop actuated), and
   its real effect is a genuine cross-process A2A call
-  (`AshA2A.Chicago.Fixtures.FederatedDelegation.delegate/3`) into a second,
+  (`AshA2A.Chicago.Fixtures.FederatedDelegation.delegate`) into a second,
   genuinely distinct real `AshA2A.Protocol.Agent` GenServer (peer B) -- never a function
   call into peer B's Ash resource directly, and never a call that mints its
   own authority for peer B.

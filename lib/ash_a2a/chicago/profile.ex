@@ -8,7 +8,7 @@ defmodule AshA2A.Chicago.Profile do
 
   Profiles are cumulative: `SA2A-LOGIC` carries every `SA2A-CORE` court,
   `SA2A-PLAN` every LOGIC court, and so on up to `SA2A-STRICT`. A court declares
-  the lowest profile it belongs to (`AshA2A.Chicago.Court.profile/0`); it is
+  the lowest profile it belongs to (`AshA2A.Chicago.Court.profile`); it is
   applicable to every profile at or above that rank.
 
   ## Required crown gates per profile

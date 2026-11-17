@@ -26,11 +26,11 @@ defmodule AshA2A.Authority.Broker do
   torn down.
 
   This behaviour IS now reachable from the real, default `AshA2A.Agent`
-  dispatch path: `AshA2A.Agent.build_command/4` calls
+  dispatch path: `AshA2A.Agent.build_command` calls
   `AshA2A.Authority.Grant.authorize/3`, which calls `granted?/3` on the
   configured broker to decide whether the authenticated principal may hold
   the caller-supplied capability at all, before any authority struct reaches
-  `AshA2A.CommandBus.admit/2`. (Earlier releases described this behaviour as
+  `AshA2A.CommandBus.admit`. (Earlier releases described this behaviour as
   deliberately unreachable; that is no longer true, and the unreachability
   was itself the RFC-SA2A-001 S29 escalation -- see
   `AshA2A.Authority.Grant`.) (No separate planning or semantic-admission fence consumes this

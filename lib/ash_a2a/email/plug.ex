@@ -38,6 +38,10 @@ if Code.ensure_loaded?(Plug) do
     Approver binding: when the brief map carries `:approver` (a principal id), the verified
     sender principal must equal it, else 403 `approver_mismatch`. Without `:approver` any
     allowlisted sender holding a valid reply token may approve; set it for per-approver briefs.
+    Reply tokens are keyed MACs (`AshA2A.Email.Brief`): the plug refuses every request 503
+    `email_token_key_missing` (or `email_token_key_too_short`) unless `config :ash_a2a,
+    :email_token_key` (>= 32 bytes) or the `:token_key` option is set; `:token_key_previous`
+    names the key still accepted during rotation. An expired token is 403 `reply_token_expired`.
 
     ## Request body
 
@@ -101,7 +105,7 @@ if Code.ensure_loaded?(Plug) do
            {:ok, brief, digests} <- find_brief(inbound, opts),
            :ok <- bind_approver(brief, principal),
            {:ok, entries, approved} <- intent(inbound, brief),
-           :ok <- verify_tokens(brief, approved, body),
+           :ok <- verify_tokens(brief, approved, body, opts),
            :ok <- stale_with(check_fresh(approved, digests), inbound, conn),
            :ok <- consume(inbound, approved, body, opts) do
         run(conn, inbound, principal, entries, approved, opts)
@@ -147,8 +151,21 @@ if Code.ensure_loaded?(Plug) do
           {:halt, 503, :replay_protection_unconfigured}
 
         true ->
-          :ok
+          case Brief.keyring(token_opts(opts)) do
+            {:ok, _} -> :ok
+            {:error, reason} -> {:halt, 503, reason}
+          end
       end
+    end
+
+    # Per-mount overrides of the application's `:email_token_key` (and `:email_token_key_previous`).
+    defp token_opts(opts) do
+      [
+        key: Keyword.get(opts, :token_key),
+        previous_key: Keyword.get(opts, :token_key_previous),
+        now: Keyword.get(opts, :now)
+      ]
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
     end
 
     defp read_json(%Plug.Conn{body_params: %{} = params} = conn, opts)
@@ -286,15 +303,16 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp verify_tokens(brief, approved, body) do
+    defp verify_tokens(brief, approved, body, opts) do
       tokens = body["reply_tokens"] || body[:reply_tokens] || %{}
       tokens = if is_map(tokens), do: tokens, else: %{}
 
       Enum.reduce_while(approved, :ok, fn %{n: n}, :ok ->
         token = Map.get(tokens, Integer.to_string(n), Map.get(tokens, n))
 
-        case Brief.verify_reply_token(brief, n, token) do
+        case Brief.verify_reply_token(brief, n, token, token_opts(opts)) do
           :ok -> {:cont, :ok}
+          {:error, :expired_token} -> {:halt, {:halt, 403, :reply_token_expired}}
           _ -> {:halt, {:halt, 403, :invalid_reply_token}}
         end
       end)

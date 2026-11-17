@@ -35,7 +35,7 @@ defmodule AshA2A.Agent do
 
   The full `AshA2A.Protocol.Agent.context()` (`task_id`, `context_id`, `history`,
   `metadata`) that `handle_message/2` receives is never discarded: `history`
-  -- the accumulated multi-turn transcript `AshA2A.Protocol.Agent.Runtime` builds for a
+  -- the accumulated multi-turn transcript `Protocol.Agent.Runtime` builds for a
   continued (`task_id:`) task (`~/xaas/deps/a2a/lib/a2a/agent.ex:69-90,
   130-135`) -- is threaded straight through to
   `AshA2A.Dispatcher.dispatch/6`, which folds it into the Ash `context:` opt
@@ -78,7 +78,7 @@ defmodule AshA2A.Agent do
 
   ## Send options (parity with the bare protocol agent)
 
-  `AshA2A.Protocol.Agent.call/3` options honoured here: `:return_immediately`
+  `AshA2A.Protocol.Agent.call` options honoured here: `:return_immediately`
   (reply with the stored `:submitted`/`:working` task, run the handler in a
   worker, fold the result in without overwriting a terminal state),
   `:accepted_output_modes` (applied to the final task's artifacts),

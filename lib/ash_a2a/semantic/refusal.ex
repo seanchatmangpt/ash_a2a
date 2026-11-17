@@ -1278,6 +1278,8 @@ defmodule AshA2A.Semantic.Refusal do
     * anything else -- `:blocked_unknown` / `:unclassified_error`, carrying
       the original term as `:detail`.
 
+  Example:
+
       iex> alias AshA2A.Semantic.Refusal
       iex> r = Refusal.from_error(%{code: :authority_required, detail: "x"}, :authorize)
       iex> {r.class, r.code, r.stage, r.detail, r.lawful?}

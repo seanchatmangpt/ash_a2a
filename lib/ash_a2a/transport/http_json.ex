@@ -136,7 +136,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   principal in `conn.private[:a2a][:auth]`; anyone else's (or an unknown) task
   is `404` -- never `403` -- so existence is not revealed, and a `GET /tasks`
   listing only ever contains tasks the verified caller owns (the same
-  `AshA2A.Transport.Runtime.list_tasks_for/3` path the JSON-RPC binding
+  `AshA2A.Transport.Runtime.list_tasks_for` path the JSON-RPC binding
   takes). The verified `"a2a.auth"` is
   merged into call metadata last, so a caller-supplied `"metadata"` field can
   never forge it, and task results are stripped of `"a2a.auth"`, the owner
@@ -147,7 +147,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   Responses are `application/json` by default (TCK-safe); the `:content_type`
   option changes the default, and an `Accept` containing `application/a2a+json`
   (§14.1.1) is answered with `application/a2a+json`. Requests with either
-  content type are accepted. `:versions` (default `Version.supported_default/0`)
+  content type are accepted. `:versions` (default `Version.supported_default`)
   sets the supported `A2A-Version`s; `A2A-Version` / `A2A-Extensions` also arrive
   as same-named query parameters when the header is absent. A missing required
   extension (`:extensions` option) answers `400` with `-32008`; activated URIs
@@ -155,7 +155,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   (default 1,000,000, mirroring `AshA2A.Transport.Plug`): an over-cap body is
   refused `400` before parse. The `A2A-Version` service parameter arrives as
   an HTTP header per §11.2 and is gated exactly like
-  `AshA2A.Transport.Plug.handle_json_rpc/2`: a supported (or absent, `0.3`
+  `AshA2A.Transport.Plug.handle_json_rpc`: a supported (or absent, `0.3`
   per §3.6.2) version dispatches with the negotiated version echoed in the
   `a2a-version` response header; an unsupported version answers `400` with
   the `VersionNotSupportedError` (-32009) envelope and echoes the rejected
@@ -374,7 +374,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   end
 
   # Every non-card route runs behind the §3.6 `A2A-Version` gate, mirroring
-  # `AshA2A.Transport.Plug.handle_json_rpc/2`: an unsupported version answers
+  # `AshA2A.Transport.Plug.handle_json_rpc`: an unsupported version answers
   # `VersionNotSupportedError` (-32009) with HTTP 400 and still echoes the
   # rejected version (§3.6.2). The version (and extensions) may arrive as the
   # `A2A-Version` / `A2A-Extensions` header or, when the header is absent, as
@@ -1429,7 +1429,7 @@ defmodule AshA2A.Transport.HTTPJSON do
   # validation, so all bindings reject the same values. The listing is
   # owner-scoped through the same `{:ash_a2a_list_tasks, principal, params}`
   # GenServer call `AshA2A.Transport.Plug.handle_list/2` makes, whose runtime
-  # (`AshA2A.Transport.Runtime.list_tasks_for/3`) applies the real
+  # (`AshA2A.Transport.Runtime.list_tasks_for`) applies the real
   # `AshA2A.Protocol.Task.Filter` semantics (sort -> filter -> paginate) over
   # only the verified caller's tasks.
   defp handle_list(conn, opts) do

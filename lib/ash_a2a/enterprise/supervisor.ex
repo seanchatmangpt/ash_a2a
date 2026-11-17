@@ -30,7 +30,7 @@ defmodule AshA2A.Enterprise.Supervisor do
   one key gates exactly the pair it governs.
 
   `:drain` installs the real OS signal disposition (`:os.set_signal(:sigterm,
-  :handle)` inside `AshA2A.Cluster.DrainManager.init/1`, default on): the OS
+  :handle)` inside `AshA2A.Cluster.DrainManager.init`, default on): the OS
   `SIGTERM` arrives as a `:sigterm` message and the two-phase drain begins.
   Pass `install_signal_handler: false` in the `:drain` keyword when another
   component owns the node's signal disposition.

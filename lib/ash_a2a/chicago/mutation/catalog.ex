@@ -22,17 +22,17 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
 
   | § 97 mutation                          | target                                              |
   |----------------------------------------|-----------------------------------------------------|
-  | return true from authority check       | `AshA2A.CommandBus.admit/2`, `AshA2A.Authority.admits?/2` |
+  | return true from authority check       | `AshA2A.CommandBus.admit`, `AshA2A.Authority.admits?/2` |
   | ignore expiry                          | `AshA2A.Authority.expired?/1`                        |
-  | ignore revocation                      | `AshA2A.Authority.Broker.InMemory.grant_status/2`    |
-  | remove receipt preparation             | `AshA2A.CommandBus.prepare_receipt_anchor/4`         |
-  | accept unsupported profile             | `AshA2A.Semantic.Envelope.validate_profile/1`        |
-  | trust sender standing                  | `AshA2A.Semantic.Envelope.reject_declared_standing/1`|
-  | skip SHACL                             | `AshA2A.Semantic.AdmissionPipeline.run_stage/4` (`:shacl`) |
-  | skip graph-global falsifiers           | `AdmissionPipeline.run_stage/4` (`:sparql_falsifiers`), `AshA2A.Semantic.FalsifierSuite.do_admit/1` |
-  | allow caller-controlled consequence    | `AshA2A.CommandBus.inspect_target/2`, `AshA2A.Authority.Decision.classify/1` |
-  | allow root-manifest component drift    | `AshA2A.Semantic.RootManifest.verify_pins/1`         |
-  | allow replay to call actuator          | `AshA2A.CommandBus.claim_receipt/3`                  |
+  | ignore revocation                      | `AshA2A.Authority.Broker.InMemory.grant_status`    |
+  | remove receipt preparation             | `AshA2A.CommandBus.prepare_receipt_anchor`         |
+  | accept unsupported profile             | `AshA2A.Semantic.Envelope.validate_profile`        |
+  | trust sender standing                  | `AshA2A.Semantic.Envelope.reject_declared_standing`|
+  | skip SHACL                             | `AshA2A.Semantic.AdmissionPipeline.run_stage` (`:shacl`) |
+  | skip graph-global falsifiers           | `AdmissionPipeline.run_stage/4` (`:sparql_falsifiers`), `AshA2A.Semantic.FalsifierSuite.do_admit` |
+  | allow caller-controlled consequence    | `AshA2A.CommandBus.inspect_target`, `AshA2A.Authority.Decision.classify` |
+  | allow root-manifest component drift    | `AshA2A.Semantic.RootManifest.verify_pins`         |
+  | allow replay to call actuator          | `AshA2A.CommandBus.claim_receipt`                  |
 
   ## Wave 3 (guards added after the original catalog)
 

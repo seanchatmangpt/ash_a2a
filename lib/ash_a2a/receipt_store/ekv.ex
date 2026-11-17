@@ -10,7 +10,7 @@ defmodule AshA2A.ReceiptStore.Ekv do
   (`:ekv`, hex `~> 0.4`), so a receipt survives process and node restarts --
   unlike `AshA2A.ReceiptStore.Memory`'s in-process `Map`. `EKV` itself must
   already be started and supervised under the configured `:name` (see
-  `AshA2A.Application.receipt_store_children/0`, which wires this up
+  `AshA2A.Application.receipt_store_children`, which wires this up
   automatically when `:ash_a2a, :receipt_store` is configured as this
   module -- or start `EKV` manually and pass `name:` in `opts`/`store_opts`
   to `claim/2`, `commit/2`, and `fetch/2`).

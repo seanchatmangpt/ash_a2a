@@ -46,7 +46,7 @@ defmodule AshA2A.ReceiptOutbox.Reconciler do
 
   ## Started by default
 
-  `AshA2A.Application.outbox_reconciler_children/0` starts this GenServer
+  `AshA2A.Application.outbox_reconciler_children` starts this GenServer
   unless `config :ash_a2a, :outbox_reconciler, false`. Hosts may also start
   their own instance with `:interval_ms` / `:stuck_attempts_threshold` /
   `:store` / `:store_opts` overrides.

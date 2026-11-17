@@ -8,7 +8,7 @@ defmodule AshA2A.KillSwitch do
   "class" (any term this module normalizes to a string -- typically a
   capability_id prefix or a resource module name) with one `trip/3` call,
   independent of `AshA2A.CommandBus`'s existing real per-command fail-closed
-  admission (`AshA2A.CommandBus.admit/2`). That existing gate refuses one
+  admission (`AshA2A.CommandBus.admit`). That existing gate refuses one
   command at a time, at dispatch, per its own authority check; nothing in
   this repo today halts an entire already-running class in one move. This
   module is that missing primitive.
@@ -37,7 +37,7 @@ defmodule AshA2A.KillSwitch do
 
   ## A real, independently-sourced expected principal is required (not optional)
 
-  `AshA2A.CommandBus.admit/2` checks `Authority.admits?/2` against a
+  `AshA2A.CommandBus.admit` checks `Authority.admits?/2` against a
   `principal_id` sourced INDEPENDENTLY of the authority struct being
   checked (`Command.principal_id`, bound at command-construction time from
   the real caller's own verified identity -- `command.ex`,

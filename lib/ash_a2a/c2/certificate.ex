@@ -6,7 +6,7 @@ defmodule AshA2A.C2.Certificate do
   @moduledoc """
   Canonical actuation certificate model of the C2 control plane (docs/reference/c2-certificate.md).
 
-  Field names follow the control-plane wire (`AshA2A.C2.Wire`): `version`, `not_before_ms`,
+  Field names follow the control-plane wire (`C2.Wire`): `version`, `not_before_ms`,
   `expires_at_ms`, `threshold`, `audience`, `nonce`. Two optional fields, `alg` and `kid`, are
   certificate-level fall-backs for a signature entry that omits its own.
 

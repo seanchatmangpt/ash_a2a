@@ -156,6 +156,7 @@ literal default and are read from source.
 | `:bad_request_details` | `false` | `lib/ash_a2a/to_a2a_error.ex` — only `true` attaches per-field `BadRequest` violations to invalid-params errors. |
 | `:id_generator` | `AshA2A.Protocol.Id.Generator.Default` | `AshA2A.Protocol.ID` — module that generates protocol ids. |
 | `:email_spool_dir` | `System.tmp_dir!()/ash_a2a_spool` | `AshA2A.Email.Sender.Spool` — spool directory (per-call `:spool_dir` wins). The tmp default is not durable. |
+| `:email_token_key` | `false` as `Brief.token_key_configured?/0` (unset; no default key, so the email gateway refuses with 503 until a key is set) | `AshA2A.Email.Brief` and `AshA2A.Email.Plug` — HMAC-SHA256 key (binary, at least 32 bytes) for reply tokens; shorter is refused `email_token_key_too_short`. `AshA2A.Email.Brief.token_key_configured?/0` reports whether a usable key is set (the oracle for the default above). `:email_token_key_previous` (same rules) is still accepted for verification while keys rotate. See [operate by email](../how-to/operate-by-email.md). |
 | `:ferroplan_url` | unset | `AshA2A.Replan.Port.Ferroplan` — planner endpoint; falls back to `:beam4pm_url`. |
 | `:beam4pm_url` | unset | `AshA2A.Replan.Port.Beam4pm` and `Replan.ProviderRegistry` — endpoint whose presence marks the provider configured. |
 | `:graphlaw_allow_unpinned` | `false` | `AshA2A.GraphLaw.EngineLoad` — only `true` admits an unpinned engine, read per call. |

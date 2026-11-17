@@ -82,7 +82,7 @@ defmodule AshA2A.Semantic.PlanPackage do
   ## Authority
 
   `standing: :candidate, authority: :none`, unconditionally -- the same
-  fence `AshA2A.Planning.candidate_fence/1` applies to every plan candidate.
+  fence `AshA2A.Planning.candidate_fence` applies to every plan candidate.
   `authority_requirements` is a *statement of what would be required*, never
   a grant. A plan package cannot be presented to `AshA2A.CommandBus` in
   place of an `AshA2A.Authority`; see `AshA2A.Semantic.CapabilityComposition`

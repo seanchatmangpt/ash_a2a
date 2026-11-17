@@ -6,6 +6,10 @@ defmodule AshA2A.Chicago.ClosureTest do
   # DB-free: reads compiled BEAM abstract code only.
   use ExUnit.Case, async: true
 
+  # One full-tree abstract-code walk in setup_all; under parallel suite load the
+  # default 60s ExUnit timeout flakes.
+  @moduletag timeout: 180_000
+
   alias AshA2A.Chicago.Closure
   alias AshA2A.ClosureFixtures.{Bypass, Dynamic, FunRefBypass, Kernel, ReadOnly, Sink}
 
@@ -98,8 +102,10 @@ defmodule AshA2A.Chicago.ClosureTest do
 
   setup_all do
     modules = Closure.app_modules()
-    {:ok, report} = Closure.run(modules, mode: :report)
-    %{modules: modules, report: report}
+    # One BEAM walk, shared by the report run and the enforce test below.
+    facts = Closure.read_facts(modules)
+    {:ok, report} = Closure.run(modules, mode: :report, facts: facts)
+    %{modules: modules, report: report, facts: facts}
   end
 
   describe "real tree" do
@@ -139,13 +145,14 @@ defmodule AshA2A.Chicago.ClosureTest do
              end)
     end
 
-    # Two full-tree abstract-code walks (setup_all report + this enforce run);
-    # under parallel suite load the default 60s ExUnit timeout flakes.
-    @tag timeout: 180_000
-    test "report mode is data; enforce refuses the current tree", %{modules: modules, report: r} do
+    test "report mode is data; enforce refuses the current tree", %{
+      modules: modules,
+      report: r,
+      facts: facts
+    } do
       assert r.mode == "report"
       assert r.summary.violating_edges > 0
-      assert {:refused, %{mode: "enforce"}} = Closure.run(modules, mode: :enforce)
+      assert {:refused, %{mode: "enforce"}} = Closure.run(modules, mode: :enforce, facts: facts)
     end
 
     test "kernel-internal callers are never violators", %{report: r} do

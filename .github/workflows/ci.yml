@@ -197,10 +197,21 @@ jobs:
         shell: bash
       - name: Assert zero failed MUST requirements
         run: |
-          python3 scripts/tck_assert.py /tmp/a2a-tck/reports/compatibility.json
+          # Only ids in scripts/tck_expected_failures.json (and only on the TCK
+          # commits they name) are tolerated; an unlisted failure or a listed
+          # id that starts passing fails the job (pipefail via shell: bash).
+          python3 scripts/tck_assert.py /tmp/a2a-tck/reports/compatibility.json \
+            --expected-failures scripts/tck_expected_failures.json \
+            --tck-sha "$TCK_PIN_SHA" | tee /tmp/tck-assert.log
+          # run_tck.py exits 1 on any failed requirement: accepted only when
+          # the assert above passed AND matched at least one expected failure.
           if [ "${TCK_EXIT:-0}" != "0" ]; then
-            echo "run_tck.py exited ${TCK_EXIT} (assert passed; see /tmp/tck-run.log)"
-            exit 1
+            if [ "${TCK_EXIT}" = "1" ] && ! grep -q ' expected_fail=0 ' /tmp/tck-assert.log; then
+              echo "run_tck.py exited 1 only for expected failures (scripts/tck_expected_failures.json)"
+            else
+              echo "run_tck.py exited ${TCK_EXIT} (assert passed; see /tmp/tck-run.log)"
+              exit 1
+            fi
           fi
         shell: bash
       - name: Stop SUT

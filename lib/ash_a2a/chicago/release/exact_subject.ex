@@ -40,7 +40,7 @@ defmodule AshA2A.Chicago.Release.ExactSubject do
       itself, deliberately independent of `AshA2A.Semantic.RootManifest`
       (whose own digest addresses the *runtime's* root manifest pin, a
       different and already-nilable-in-test concern -- see
-      `AshA2A.Chicago.Subject.root_manifest_digest/1`).
+      `AshA2A.Chicago.Subject.root_manifest_digest`).
     * `court_revision` -- this repo's own real git HEAD, obtained by
       reusing `AshA2A.Chicago.Subject.capture/1` (`.source_revision`) rather
       than re-deriving a `git rev-parse` subprocess.

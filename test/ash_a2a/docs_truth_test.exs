@@ -77,6 +77,7 @@ defmodule AshA2A.DocsTruthTest do
     :bad_request_details => {:inspect, {AshA2A.ToA2AError.Wire, :bad_request_details?, []}},
     :id_generator => {:inspect, {AshA2A.Protocol.ID, :generator, []}},
     :email_spool_dir => {:special, :email_spool_dir},
+    :email_token_key => {:inspect, {AshA2A.Email.Brief, :token_key_configured?, []}},
     :graphlaw_allow_unpinned => {:inspect, {AshA2A.GraphLaw.EngineLoad, :unpinned_allowed?, []}}
   }
 

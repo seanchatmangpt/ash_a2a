@@ -34,6 +34,7 @@ Each item says what changed and what to do.
   or the EKV-backed `AshA2A.Email.TokenLedgerStore`) when you mount the plug;
   `unsafe_no_replay_ledger: true` skips the ledger for tests only. Tests: `test/email_plug_test.exs`,
   `test/email_gateway_hardening_test.exs` (run 2026-11-17).
+- **Email reply tokens are keyed MACs and need `config :ash_a2a, :email_token_key`.** `AshA2A.Email.Brief` tokens were a hash of public brief content (forgeable by anyone who knew the brief); they are now `key_id <> base64url(HMAC-SHA256)` over (brief digest, action, graph digest, approver, expiry). With no key (>= 32 bytes) `Brief.render/2` raises and the plug answers 503 `email_token_key_missing`; briefs issued with old unkeyed tokens are refused 403. Action: set `:email_token_key` (and `:email_token_key_previous` to rotate) and re-issue open briefs. Test: `test/email_reply_token_mac_test.exs`.
 - **Admission refusals end `TASK_STATE_REJECTED`, not `TASK_STATE_FAILED`.** A refusal before
   dispatch (no authority, unauthenticated, ambiguous skill) now lands the task in REJECTED.
   Action: a client that treats only FAILED as an error must also handle REJECTED. Test:

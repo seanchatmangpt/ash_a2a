@@ -5,7 +5,7 @@
 defmodule AshA2A.SecurityProfile.Boot do
   @moduledoc """
   Boot enforcement for the compiled `AshA2A.SecurityProfile`
-  (RFC-SA2A-007). `run!/0` is called from `AshA2A.Application.start/2`
+  (RFC-SA2A-007). `run!/0` is called from `AshA2A.Application.start`
   before any child starts.
 
   ## `:strict` refuses (each a named violation)
@@ -60,7 +60,7 @@ defmodule AshA2A.SecurityProfile.Boot do
   # `Application.get_env/3` is success-typed `term()`, so every env-derived
   # key here is honestly `term()`; typing them narrower (e.g. `module()`)
   # made the `snapshot()` contract unsatisfiable, which collapsed `run!/0`
-  # to `none()` and cascaded `no_return` into `AshA2A.Application.start/2`.
+  # to `none()` and cascaded `no_return` into `AshA2A.Application.start`.
   @type snapshot :: %{
           outbox_key: binary() | nil,
           outbox_dir: term(),

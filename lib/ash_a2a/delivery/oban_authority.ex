@@ -21,7 +21,7 @@ defmodule AshA2A.Delivery.ObanAuthority do
 
   alias AshA2A.{Authority, Authority.Grant, Identity}
 
-  @typedoc "A typed refusal reason, matching `AshA2A.Authority.Broker.refusal/0`'s shape."
+  @typedoc "A typed refusal reason, matching `AshA2A.Authority.Broker.refusal`'s shape."
   @type refusal :: map()
 
   @doc """

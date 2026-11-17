@@ -53,7 +53,7 @@ defmodule AshA2A.Transport.Plug do
   JSON-RPC handler ctx as `:a2a_version`.
 
   `:extensions` takes negotiated extension modules (`Mod | {Mod, opts}`,
-  compiled at `init/1` via `AshA2A.Protocol.Extension.compile/1`) and/or
+  compiled at `init/1` via `AshA2A.Protocol.Extension.compile`) and/or
   advertise-only declaration maps. Required extensions missing from the
   `A2A-Extensions` request header answer `-32008` before dispatch; activated
   URIs are echoed in the `A2A-Extensions` response header and reach the agent

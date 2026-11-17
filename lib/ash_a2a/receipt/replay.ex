@@ -22,7 +22,7 @@ defmodule AshA2A.Receipt.Replay do
      struct -- deliberately *not* an `AshA2A.Authority`. This matters because
      `AshA2A.Authority.admits?/2` has a catch-all final clause returning
      `false` for anything that is not an `%AshA2A.Authority{}`, and
-     `AshA2A.CommandBus.admit/2` refuses a consequence-bearing command whose
+     `AshA2A.CommandBus.admit` refuses a consequence-bearing command whose
      `:authority` is not an `%AshA2A.Authority{}` with
      `:authority_required`. So a caller who takes the replayed authority
      record and stuffs it into a fresh command gets a refusal from the real
