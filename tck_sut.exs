@@ -293,6 +293,8 @@ defmodule TckSut.Router do
     AshA2A.Transport.HTTPJSON.call(%{conn | path_info: rest}, opts.rest)
   end
 
+  # Always returns the already-sent `conn`: Bandit requires `call/2` to return
+  # a %Plug.Conn{} and resets the connection on any other value.
   defp rest_register_inline_push(decoded, conn, _opts) do
     with 200 <- conn.status,
          {:ok, %{"task" => %{"id" => task_id}} = task} <- Jason.decode(conn.resp_body || ""),
@@ -317,9 +319,9 @@ defmodule TckSut.Router do
         final?
       )
 
-      :ok
+      conn
     else
-      _ -> :ok
+      _ -> conn
     end
   end
 
