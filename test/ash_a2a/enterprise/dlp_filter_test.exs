@@ -171,7 +171,7 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
     test "inspecting a 64KB payload stays within the 2.5ms budget" do
       payload = perf_payload()
       assert byte_size(payload) >= 64 * 1024
-      runs = 25
+      runs = 200
 
       # Warm-up: first calls pay regex compilation / code loading.
       for _ <- 1..5, do: DLPFilter.redact_string(payload, opts())

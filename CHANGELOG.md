@@ -11,11 +11,89 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ## [Unreleased]
 
-Package version in `mix.exs` is still 26.11.13 (the 26.11.14/15 notes were folded into
-this block, not published separately). Release target is v26.11.15; see
-`docs/reference/release-readiness-v26.11.15.md` for blockers. An entry that names a test
-file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` and passed.
-**Unverified** means no test or build run is cited for that statement in this tree.
+Package version in `mix.exs` is still 26.11.13 and is **not** bumped here: the version to
+publish is an owner decision (the 26.11.14/15 notes were folded into this block, not published
+separately). The decision is recorded in `docs/reference/release-readiness-v26.11.15.md`,
+which also lists the open blockers and the exact verification commands.
+
+How to read the evidence: an entry that names a test file means that file was run with
+`mix test <file>` (or `mix test.all <file>` for `serial` files, which excludes the `serial_solo` and `serial_shard` ones such as the two-node event journal tests) and passed; the dates are
+2026-11-16 or 2026-11-17 (Elixir 1.20.4 / OTP 29.1.1) and are stated where they matter. An
+entry that names a command states what that command printed. **Unverified** means no test or
+build run is cited for that statement in this tree. The Breaking section comes first because
+it is the part that needs action.
+
+### Breaking
+
+Each item says what changed and what to do.
+
+- **Email gateway requires `:webhook` and `:token_ledger`.** `AshA2A.Email.Plug` refuses
+  every request with 503 `webhook_auth_unconfigured` unless `:webhook` (`{provider, opts}` for
+  `AshA2A.Email.Webhook.verify/3`) is set, and with 503 `replay_protection_unconfigured` unless
+  `:token_ledger` is set. Action: pass `webhook:` and `token_ledger:` (`AshA2A.Email.TokenLedger`
+  or the EKV-backed `AshA2A.Email.TokenLedgerStore`) when you mount the plug;
+  `unsafe_no_replay_ledger: true` skips the ledger for tests only. Tests: `test/email_plug_test.exs`,
+  `test/email_gateway_hardening_test.exs` (run 2026-11-17).
+- **Admission refusals end `TASK_STATE_REJECTED`, not `TASK_STATE_FAILED`.** A refusal before
+  dispatch (no authority, unauthenticated, ambiguous skill) now lands the task in REJECTED.
+  Action: a client that treats only FAILED as an error must also handle REJECTED. Test:
+  `test/ash_a2a_authority_capability_grant_test.exs` (run 2026-11-17).
+- **HTTP+JSON statuses follow spec section 5.4.** `TaskNotCancelableError` is 400 (was 409),
+  `ContentTypeNotSupportedError` is 400 (was 415) and `InvalidAgentResponseError` is 500 (was
+  502). gRPC: `PushNotificationNotSupportedError`, `UnsupportedOperationError` and
+  `VersionNotSupportedError` are `FAILED_PRECONDITION` (were `UNIMPLEMENTED`). Action: update
+  clients that branch on the old statuses. `AshA2A.Protocol.JSONRPC.Error.spec_http_status/1`
+  still returns the old values (VG-01 to VG-03 in `docs/reference/a2a-v1-1-parity-findings.md`).
+  Tests: `test/ash_a2a_v1_error_registry_test.exs`, `test/protocol_error_tables_test.exs`,
+  `test/ash_a2a_v1_grpc_must_test.exs` (the first two run 2026-11-17).
+- **int64 members are decimal JSON strings at v1.1.** `generation`, `startGeneration` and
+  `endGeneration` are `"5"`, not `5`, on every binding when `A2A-Version: 1.1` is negotiated.
+  Action: parse them as strings (or as int64) in clients; a client that compares them to
+  integers breaks. Tests: `test/protocol_codec_v1_1_test.exs` (run 2026-11-17),
+  `test/http_json_generation_stream_test.exs`.
+- **Streams: every skill answers `message/stream`, and a bare Message is now declared.**
+  Before, `message/stream` on a skill that did not chunk its output answered `-32004`; now the
+  default is the task lifecycle stream (the Task is stored and sent as the first frame before
+  the skill runs, then one event per stored mutation). An agent that answers with a bare Message
+  (and so streamed exactly one Message frame by accident of the old behaviour) must declare it:
+  `reply :message` on the skill (`use AshA2A.Agent`), or `use AshA2A.Protocol.Agent, reply:
+  :message` for the whole agent; an agent with no declaration decides after the handler ran.
+  Action: add the declaration. Guide: `docs/how-to/choose-a-reply-mode.md`. Evidence: the `ping`
+  probes of `mix ash_a2a.sim --prove` (2026-11-17), `test/ash_a2a_v1_owner_scope_test.exs` and
+  `test/ash_a2a_transport_grpc_server_test.exs` (run 2026-11-17).
+- **`bandit` is an optional dependency.** It was a test-only dependency, so a consumer never
+  received it; the quickstart and `mix ash_a2a.sim` need it. Action: add `{:bandit, "~> 1.5"}`
+  (or any Plug server) to your own deps; `mix ash_a2a.sim` also wants `{:simple_sat, "~> 0.1"}`.
+  Without Bandit no `AshA2A.Sim.*` module exists. Tests: `test/ash_a2a/l18_optional_deps_test.exs`,
+  `test/optional_deps_matrix_test.exs` (run 2026-11-17).
+- **The gRPC service label is `lf.a2a.v1.A2AService`.** `AshA2A.Transport.Grpc.Dispatch.service/0`
+  returns it (it returned the pre-wave-2 label `a2a.A2AService`, still available as
+  `legacy_service/0`; `call/4` accepts paths with either label). Action: a host that matches on
+  `service/0` must expect the new value. Tests: `test/ash_a2a_transport_grpc_test.exs`,
+  `test/grpc_wave2_errorinfo_test.exs` (run 2026-11-17).
+- **Wire decoders return `{:error, {:invalid_field, field}}` instead of raising, and a transport
+  answers it as JSON-RPC `-32602` (HTTP 400, gRPC `INVALID_ARGUMENT`).** A wrong-typed member or
+  non-object payload used to raise inside the decoder. Action: a host that calls
+  `AshA2A.Protocol.JSON.decode_*` directly must match the error tuple. Tests:
+  `test/ash_a2a_v1_codec_fidelity_test.exs`, `test/protocol_codec_fidelity_test.exs`,
+  `test/fuzz_transport_decode_test.exs` (run 2026-11-17).
+- **Wire shapes follow `docs/specification.md` and ProtoJSON** (checked by the parity run below).
+  A missing push-notification config is `TaskNotFoundError` (`-32001`, 404, `NOT_FOUND`), not
+  `-32602`, and deleting one answers `{}`, not `null`. Default-valued members are omitted
+  (`append: false`, `lastChunk: false`, an empty `configs`, an empty `nextPageToken`) and a reply
+  sent as one artifact frame carries `lastChunk: true`. `error.data` and `error.details` are arrays
+  of typed objects (`google.rpc.ErrorInfo`). Timestamps carry 0, 3 or 6 fractional digits. Action:
+  clients that pinned the earlier shapes must change. Tests: `test/ash_a2a_v1_push_httpjson_test.exs`,
+  `test/ash_a2a_v1_artifact_streaming_test.exs`, `test/ash_a2a_v1_error_registry_test.exs`,
+  `test/ash_a2a_v1_wire_properties_test.exs`.
+- **v1.1 only:** the live uplink acknowledgement is `{"task": ...}`; `StreamError.code` uses the unary
+  codes (`NOT_FOUND`, `INVALID_ARGUMENT`); the opening client message is in the snapshot `timeline`
+  and is not replayed as a `messageUpdate` frame; JSON-RPC serves `SendLiveMessage`;
+  `protocolVersion` is withheld from push-config answers to a request negotiated at 1.0.
+  Tests: `test/http_json_live_session_test.exs`, `test/generation_gating_courts_test.exs`,
+  `test/push_config_protocol_version_test.exs`.
+- `Message.extensions` is a list of extension URIs (`[String.t()] | map()`, default `[]`), and the
+  v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
 
 ### Added
 
@@ -24,36 +102,64 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   drives each served method, route and RPC over the wire. `AshA2A.Sim.Surface` derives the
   inventory from the library, so a method, route or RPC with no probe fails
   `test/ash_a2a/sim/sim_mirror_test.exs`. Run it with `mix ash_a2a.sim --prove`. Guide:
-  `docs/how-to/run-the-simulation-server.md`. On 2026-11-16 `mix ash_a2a.sim --prove`
-  printed `242 probes over 85 surface items: 242 pass, 0 fail, 0 skip` in the `test` Mix
-  environment and again with `MIX_ENV=dev`; `test/ash_a2a/sim/sim_mirror_test.exs` passes.
+  `docs/how-to/run-the-simulation-server.md`; tutorial:
+  `docs/tutorials/prove-your-agent-with-the-simulation-server.md`. On 2026-11-17
+  `mix ash_a2a.sim --prove` printed `243 probes over 86 surface items: 243 pass, 0 fail, 0 skip`
+  and exited 0 (on 2026-11-16: 242 probes over 85 items, in `test` and `dev`).
 - A2A v1.1 parity check: `mix ash_a2a.sim --parity` compares every response of the simulation
   server, on gRPC, HTTP+JSON and JSON-RPC, with a reference encoder built from the upstream
-  proto at tag `v1.1.0-rc` and the official protobuf runtime (`--strict` also fails on known
-  defects). Guide: `docs/how-to/check-a2a-v1-1-parity.md`; findings and the version each wire
-  rule applies to: `docs/reference/a2a-v1-1-parity-findings.md`. On 2026-11-16
-  `mix ash_a2a.sim --parity --strict` printed `1267 pass, 0 fail, 0 known (), 0 skip` and
-  exited 0. Test: `test/ash_a2a/sim/sim_parity_v1_1_test.exs`.
+  proto at tag `v1.1.0-rc` (`scripts/a2a_v1_1_parity`; the reference shares no code with this
+  library) and the official protobuf runtime. `--strict` also fails on known defects. Guide:
+  `docs/how-to/check-a2a-v1-1-parity.md`; findings: `docs/reference/a2a-v1-1-parity-findings.md`.
+  On 2026-11-17 `mix ash_a2a.sim --parity --strict` printed `total 1283 pass, 0 fail, 0 known,
+  0 skip` and exited 0 (2026-11-16: 1267 rows). Test: `test/ash_a2a/sim/sim_parity_v1_1_test.exs`.
 - MCP control of the simulation server: `mix ash_a2a.sim.mcp` (launcher `bin/a2a-sim-mcp`,
   registered in `.mcp.json`) serves `AshA2A.Sim.MCP.Server`, a Model Context Protocol server
-  (revision 2025-11-25; stdio and Streamable HTTP) with 66 tools: one per served JSON-RPC
-  method, HTTP+JSON route and gRPC RPC, `a2a_*` tools that take `binding`, `a2a_raw_request`
-  for malformed input, and `sim_*` tools for grants, Ash rows, webhook deliveries, the
-  surface, the coverage plan and the prover. `AshA2A.Sim.MCP.Coverage` maps every
-  `AshA2A.Sim.Surface` item to tool calls; an item with no tool path fails
-  `test/ash_a2a/sim/sim_mcp_test.exs`, which drives the real stdio and HTTP servers as OS
-  processes. Guide: `docs/how-to/control-the-sim-over-mcp.md`. On 2026-11-16
-  `python3 scripts/mcp_drive.py` printed `93 surface items served, 93 driven through MCP:
-  93 pass, 0 fail; 0 uncovered; 267 tools/call requests; 0 outputSchema violations; 0 non-MCP
-  lines on stdout`. Test: `test/ash_a2a/sim/sim_mcp_test.exs`.
-- MCP tool `sim_parity` runs `AshA2A.Sim.Parity` and answers one verdict per binding;
-  `AshA2A.Sim.MCP.Coverage` now also maps every `AshA2A.Sim.Surface.parity/0` item, and a
-  JSON-RPC method served only under an alias (`SendLiveMessage`) gets a tool of its own.
-- `AshA2A.Sim.Auth` accepts any `sim-agent-<name>` bearer token as an identity of its own
-  with no grants.
-- `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog and runs the
-  courts expected to kill it. On 2026-11-16 `mix ash_a2a.chicago.mutate --require-killed`
-  killed 19 of 19 mutants and exited 0.
+  (revision 2025-11-25; stdio and Streamable HTTP): one tool per served JSON-RPC method, HTTP+JSON
+  route and gRPC RPC, `a2a_*` tools that take `binding`, `a2a_raw_request` for malformed input,
+  and `sim_*` tools for grants, Ash rows, webhook deliveries, the surface, the coverage plan, the
+  prover and the parity check (`sim_parity`). `python3 scripts/mcp_drive.py --list` printed 70
+  tools on 2026-11-17. `AshA2A.Sim.MCP.Coverage` maps every `AshA2A.Sim.Surface` item to tool
+  calls; an item with no tool path fails `test/ash_a2a/sim/sim_mcp_test.exs`. Guide:
+  `docs/how-to/control-the-sim-over-mcp.md`. Last clean full run (2026-11-16):
+  `python3 scripts/mcp_drive.py` printed `93 surface items served, 93 driven through MCP: 93
+  pass, 0 fail; 0 uncovered`. **On 2026-11-17 the same command exited 1** (141 items served, 47
+  uncovered: the email and authority surface items added meanwhile have no MCP mapping yet);
+  `python3 scripts/mcp_drive.py --call a2a_send_message ...` and the in-session MCP tools worked.
+- `AshA2A.Sim.Auth` accepts any `sim-agent-<name>` bearer token as an identity of its own with no
+  grants.
+- Signed agent cards: every HTTP card mount takes `sign_with: [jwk: ..., kid: ...]` and serves a
+  v1.1 `AgentCardSignature` (detached JWS, ES256/EdDSA) over the RFC 8785 canonical card, public
+  and extended (`AshA2A.Protocol.AgentCardSignature`). The simulation server signs every card and
+  the prover verifies them. Guide, with key rotation: `docs/how-to/sign-agent-cards.md`. Tests:
+  `test/ash_a2a/protocol/agent_card_signature_test.exs`,
+  `test/ash_a2a/protocol/agent_card_served_signature_test.exs`.
+- Event journal: `AshA2A.Protocol.EventJournal` with `AshA2A.TaskStore.EventJournalEts` and
+  `AshA2A.TaskStore.EventJournalEkv`; `config :ash_a2a, :event_journal, {module, ref}` journals every
+  task mutation, `:event_journal_keep_last` trims a terminal task, and `tasks/resubscribe` /
+  `lastSeenGeneration` replay from it. Guide: `docs/how-to/operate-the-event-journal.md`; contract:
+  `docs/reference/event-journal.md`. Tests: `test/ash_a2a/event_journal_ets_test.exs`,
+  `test/ash_a2a/event_journal_writer_test.exs`, `test/ash_a2a/event_journal_ekv_test.exs`.
+- Declared reply mode: `reply :message | :task` on a skill and `reply: :task | :message` on a protocol
+  agent (see Breaking). `reply_mode/1` is a callback of `AshA2A.Protocol.Agent`.
+- `mix ash_a2a.doctor` diagnoses an application's A2A wiring (`--strict`, `--json`, `--domain`);
+  guide `docs/how-to/run-doctor.md`. Test: `test/ash_a2a/doctor_test.exs`. On 2026-11-17 it ran
+  against this repository and exited 1 on two findings (`authenticated_caller_disabled`,
+  `config_receipt_binding_key_unset`), as it should for the test configuration.
+- `mix ash_a2a.receipts.verify` checks Markdown receipts against the files they cite; guide
+  `docs/how-to/verify-receipts.md`. On 2026-11-17 it exited 1 on this repository's own receipts
+  (three `verified_without_run_log` findings: `a10-ingress-wire.md`, `f2-copilot-wire-verify.md`,
+  `z11-actuation.md`).
+- `AshA2A.Protocol.AgentCard.audit/2` reports discrepancies between a card's claims and the mounted
+  surface (`docs/reference/agent-card-honesty.md`).
+- `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog and runs the courts
+  expected to kill it (`--list` resolved 46 entries on 2026-11-17; on 2026-11-16
+  `--require-killed` killed 19 of 19 mutants then in the catalog and exited 0). The CI workflow
+  `.github/workflows/proofs.yml` runs the prover, parity, MCP drive and the mutation gate; it has
+  not run on a remote runner.
+- `AshA2A.Transport.GRPC.UnknownMethod.install/1` gives an unknown gRPC method `UNIMPLEMENTED`
+  (status 12, Trailers-Only) in an endpoint of your own; the supervisor installs it for you. Guide:
+  `docs/how-to/mount-the-grpc-server-in-your-endpoint.md`. Test: `test/grpc_supervisor_restart_test.exs`.
 - Public readers for configuration defaults: `AshA2A.Dispatcher.dispatch_hooks/0`,
   `AshA2A.Protocol.ID.generator/0`, `AshA2A.Email.Sender.Spool.spool_dir/1` and
   `AshA2A.GraphLaw.EngineLoad.unpinned_allowed?/0`. `test/ash_a2a/docs_truth_test.exs` checks
@@ -62,87 +168,49 @@ file was run on 2026-11-16 (Elixir 1.20.4 / OTP 29.1.1) with `mix test <file>` a
   its card and extended card can state the `supported_interfaces` the mount is served at.
 - Email gateway: `AshA2A.Email.{Inbound,Brief,ReplyIntent,Plug,KernelEntry}` and
   `POST /v1/email:ingest`, turning an approver's reply to a mailed brief into governed
-  dispatches. Guide: `docs/how-to/operate-by-email.md`. Hardened: the plug
-  requires `:webhook` (authenticated ingress) and `:token_ledger` (replay protection), caps
-  body/reply/depth/nodes (413), strips CRLF from reply headers and can bind an optional
-  `:approver` to the sender. **Breaking:** `:webhook` and `:token_ledger` are required.
-  Tests: `test/email_plug_test.exs`, `test/email_gateway_hardening_test.exs`,
-  `test/email_replay_rate_limit_test.exs`. `TokenLedger` is in-memory and single-node.
-- `AshA2A.Email.Dkim` verifies `DKIM-Signature` headers (rsa-sha256, relaxed/relaxed) and
-  `AshA2A.Email.TokenLedgerStore` is an EKV-backed ledger the plug accepts in place of
-  `TokenLedger`. Tests: `test/email_dkim_test.exs`, `test/email_token_ledger_store_test.exs`.
-- A2A v1.1 deltas on top of the 26.11.13 entry below (target: upstream tag `v1.1.0-rc`,
-  status PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and
-  `A2A-Version` accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration`
-  resume. Guide: `docs/how-to/v1-1-live-and-generations.md`. Row-level standings from the
-  2026-11-16 court run are in `docs/reference/a2a-v1-1-conformance.md`: every court named by
-  the 17 rows passed (for example `test/protocol_codec_v1_1_test.exs`), so all 17 rows are
-  CONFORMANT in that table's sense. The statement as a whole stays PARTIAL.
-- Documented configuration: `:events_transport`, `cancel_in_flight`, `validate_input_modes`
-  and the mount `tenant` option (`docs/reference/configuration.md`). The first three are
+  dispatches (guide: `docs/how-to/operate-by-email.md`); caps body/reply/depth/nodes (413), strips
+  CRLF from reply headers and can bind an optional `:approver` to the sender. `AshA2A.Email.Dkim`
+  verifies `DKIM-Signature` headers (rsa-sha256, relaxed/relaxed) and
+  `AshA2A.Email.TokenLedgerStore` is an EKV-backed ledger. Tests: `test/email_plug_test.exs`,
+  `test/email_gateway_hardening_test.exs`, `test/email_replay_rate_limit_test.exs`,
+  `test/email_dkim_test.exs`, `test/email_token_ledger_store_test.exs`. `TokenLedger` is in-memory
+  and single-node.
+- A2A v1.1 deltas on top of the 26.11.13 entry below (target: upstream tag `v1.1.0-rc`, status
+  PARTIAL; no v1.1 TCK verdict exists). Cards advertise `protocolVersion` 1.1 and `A2A-Version`
+  accepts 0.3, 1.0 and 1.1. `POST /message:live` and `lastSeenGeneration` resume. Guide:
+  `docs/how-to/v1-1-live-and-generations.md`. Row-level standings: `docs/reference/a2a-v1-1-conformance.md`
+  (17 rows, each citing a named court; the statement as a whole stays PARTIAL).
+- Documented configuration: `:events_transport`, `cancel_in_flight`, `validate_input_modes`, the
+  mount `tenant` option, `:event_journal`, `:event_journal_keep_last` and
+  `:resubscribe_orphan_grace_ms` (`docs/reference/configuration.md`). The first three are
   exercised by `test/dsl_verifiers_v1_1_test.exs`, `test/ash_a2a_v1_cancellation_test.exs` and
   `test/task_semantics_test.exs`; the `tenant` row is unverified (no test run cited).
+- C2 control plane (other lane, evidence in `docs/reference/c2-compromise-court.md`): an explicit
+  listener backlog for the actuator TLS listener, a configurable key revocation epoch in the
+  authority service, and real authority issuance accepted by the actuator (commit `bfa797b`; the
+  court result in commit `2699559` was not re-run in the documentation pass).
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
 ### Changed
 
-- **Breaking (wire):** responses now follow `docs/specification.md` and ProtoJSON as checked by
-  the parity run above. A client that pinned the earlier shapes has to change. Unless noted,
-  the rule is the same at `v1.0.1` and `v1.1.0-rc`, so it applies to every negotiated version.
-  - A missing push-notification config is `TaskNotFoundError` (`-32001`, HTTP 404, gRPC
-    `NOT_FOUND`), not `-32602`; deleting one answers `{}`, not `null`. Tests:
-    `test/ash_a2a_v1_push_httpjson_test.exs`, `test/conference_sim/grpc_venue_court_test.exs`.
-  - Default-valued members are omitted: `append: false`, `lastChunk: false`, an empty
-    `configs` list and an empty `nextPageToken`. A reply sent as one artifact frame carries
-    `lastChunk: true`. Test: `test/ash_a2a_v1_artifact_streaming_test.exs`.
-  - `error.data` and `error.details` are arrays of typed objects: `-32700`, `-32600` and
-    `-32601` carry one `google.rpc.ErrorInfo` (`JSON_PARSE`, `INVALID_REQUEST`,
-    `METHOD_NOT_FOUND`) with free-form detail in `metadata.detail`. `-32603` still passes
-    free-form data through. Test: `test/ash_a2a_v1_error_registry_test.exs`.
-  - HTTP+JSON statuses follow section 5.4: `TaskNotCancelableError` 400 (was 409),
-    `ContentTypeNotSupportedError` 400 (was 415), `InvalidAgentResponseError` 500 (was 502).
-    `AshA2A.Protocol.JSONRPC.Error.spec_http_status/1` still returns the old values; see
-    VG-01 to VG-03 in `docs/reference/a2a-v1-1-parity-findings.md`. Test:
-    `test/ash_a2a_v1_error_registry_test.exs`.
-  - gRPC statuses follow section 5.4: `PushNotificationNotSupportedError`,
-    `UnsupportedOperationError` and `VersionNotSupportedError` are `FAILED_PRECONDITION`
-    (were `UNIMPLEMENTED`). Tests: `test/ash_a2a_v1_grpc_must_test.exs`,
-    `test/protocol_error_tables_test.exs`.
-  - A refusal before dispatch (no authority, unauthenticated, ambiguous skill) lands the task
-    in `TASK_STATE_REJECTED`, not `TASK_STATE_FAILED`. Test:
-    `test/ash_a2a_authority_capability_grant_test.exs`.
-  - `message/stream` on a skill that does not chunk its output answers a stream (task,
-    artifact, terminal status) instead of `-32004`. Test:
-    `test/ash_a2a_v1_owner_scope_test.exs`.
-  - Timestamps carry 0, 3 or 6 fractional digits. Test:
-    `test/ash_a2a_v1_wire_properties_test.exs`.
-  - v1.1 only: int64 members (`generation`, `startGeneration`, `endGeneration`) are decimal
-    strings; the live uplink acknowledgement is `{"task": ...}`; `StreamError.code` uses the
-    unary codes (`NOT_FOUND`, `INVALID_ARGUMENT`); the opening client message is in the
-    snapshot `timeline` and is not replayed as a `messageUpdate` frame; JSON-RPC serves
-    `SendLiveMessage`. `protocolVersion` is withheld from push-config answers to a request
-    negotiated at 1.0. Tests: `test/protocol_codec_v1_1_test.exs`,
-    `test/http_json_generation_stream_test.exs`, `test/http_json_live_session_test.exs`,
-    `test/generation_gating_courts_test.exs`, `test/push_config_protocol_version_test.exs`.
-- `Message.extensions` is now a list of extension URIs (`[String.t()] | map()`, default `[]`).
-- The v1.1 card decoder closes `protocolBinding` to `JSONRPC | GRPC | HTTP+JSON`.
+- Streams are task-first: `SendStreamingMessage` stores the Task and sends it as the first frame
+  before the skill runs, so its id works with `GetTask` and `CancelTask` while the work is in flight;
+  the final artifact chunk always carries `lastChunk`; the WORKING status is emitted from the stored
+  timeline. See Breaking for the reply declaration.
+- `tasks/resubscribe` with `lastSeenGeneration` skips the snapshot when the client is current; one
+  status table serves all bindings (spec 5.4).
 - Tenant-aware ownership: `tenant` is read on `AshA2A.Protocol.Plug`.
-- The client-header default stays 1.0.
-- README reorganized: install and quickstart first, conformance and status material last.
-- `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`
-  and `req_llm` are optional dependencies, so a consumer can compile `ash_a2a` without
-  them. A path-dependent consumer build with none of them added compiled on 2026-11-16
-  (`mix compile --warnings-as-errors` exit 0; `ash_state_machine` and `postgrex` were still
-  resolved transitively). `scripts/check_optional_deps.sh` ran its ten cases on 2026-11-16 and
-  exited 0 (`optional deps matrix: all cases compiled`); it now builds the dependencies before
-  forcing `ash_a2a` and fails only on a compiler warning that names an optional dependency.
-  Its CI workflow has not run. See `docs/how-to/optional-dependencies.md`. Guard tests:
+- The client-header default stays 1.0 (`Version.default/0`); the server accepts 0.3, 1.0 and 1.1.
+- README reorganized: install and quickstart first, then the proof tools, conformance last.
+- `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`, `durable_server`, `req_llm`, `bandit`
+  and `simple_sat` are optional dependencies, so a consumer can compile `ash_a2a` without them. A
+  path-dependent consumer build with none of them added compiled on 2026-11-16
+  (`mix compile --warnings-as-errors` exit 0; `ash_state_machine` and `postgrex` were still resolved
+  transitively). `scripts/check_optional_deps.sh` ran its ten cases on 2026-11-16 and exited 0. Its CI
+  workflow has not run. See `docs/how-to/optional-dependencies.md`. Guard tests:
   `test/ash_a2a/l18_optional_deps_test.exs`, `test/optional_deps_matrix_test.exs`.
 - The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
   Unverified: no test asserts the strategy (read in `lib/ash_a2a/application.ex`).
-- `bandit` and `simple_sat` are optional dependencies (they were test-only), so
-  `mix ash_a2a.sim` also runs with `MIX_ENV=dev`. Every `AshA2A.Sim.*` module is compiled
-  only when Bandit is present.
 - ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
 
 ### Fixed

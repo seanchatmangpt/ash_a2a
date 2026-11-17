@@ -47,7 +47,7 @@ defmodule AshA2A.MutationWave3CatalogTest do
     "admission_refusal_never" => ~w(CHI-MUTWAVE3-016),
     "admission_refusal_always" => ~w(CHI-MUTWAVE3-017),
     "json_guard_depth_ok" => ~w(CHI-MUTWAVE3-018),
-    "json_decode_not_total" => ~w(CHI-MUTWAVE3-019 CHI-MUTWAVE3-107),
+    "json_decode_not_total" => ~w(CHI-MUTWAVE3-019),
     "journal_record_task_noop" => ~w(CHI-MUTWAVE3-020),
     "journal_append_unverified" => ~w(CHI-MUTWAVE3-021),
     "tls_verify_peer_off" => ~w(CHI-MUTWAVE3-022),
