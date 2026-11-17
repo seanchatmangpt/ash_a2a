@@ -49,7 +49,8 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
 
   defp assert_clean(body, ctx) do
     for leak <- @leaks do
-      refute String.contains?(body, leak), "body leaks #{inspect(leak)} for #{ctx}: #{String.slice(body, 0, 300)}"
+      refute String.contains?(body, leak),
+             "body leaks #{inspect(leak)} for #{ctx}: #{String.slice(body, 0, 300)}"
     end
   end
 
@@ -122,7 +123,7 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
     "é",
     "日本語",
     "%E6%97%A5",
-    "‮",
+    "%E2%80%AE",
     "a b",
     "a%20b",
     "a+b"
@@ -182,15 +183,20 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
     "%=1",
     "k=%E2%82",
     "tenant=%2F",
-    "‮=1",
+    "%E2%80%AE=1",
     "a=" <> String.duplicate("b", 20_000)
   ]
 
   defp random_query do
     case FuzzGen.int(5) do
-      0 -> ""
-      1 -> "?" <> FuzzGen.pick(@query_pairs)
-      _ -> "?" <> Enum.join(for(_ <- 1..(1 + FuzzGen.int(4)), do: FuzzGen.pick(@query_pairs)), "&")
+      0 ->
+        ""
+
+      1 ->
+        "?" <> FuzzGen.pick(@query_pairs)
+
+      _ ->
+        "?" <> Enum.join(for(_ <- 1..(1 + FuzzGen.int(4)), do: FuzzGen.pick(@query_pairs)), "&")
     end
   end
 
@@ -205,8 +211,14 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
     for i <- 1..@iterations do
       method = FuzzGen.pick(@methods)
       target = random_path() <> random_query()
-      body = if method in [:post, :put, :patch], do: FuzzGen.pick(["", "{}", "[]", "null", "\"s\"", "{\"message\":1}", "{"]), else: nil
-      ctx = "iteration #{i} #{method} #{inspect(target, limit: 200, printable_limit: 200)} body=#{inspect(body)}"
+
+      body =
+        if method in [:post, :put, :patch],
+          do: FuzzGen.pick(["", "{}", "[]", "null", "\"s\"", "{\"message\":1}", "{"]),
+          else: nil
+
+      ctx =
+        "iteration #{i} #{method} #{inspect(target, limit: 200, printable_limit: 200)} body=#{inspect(body)}"
 
       conn =
         guarded(
@@ -216,11 +228,15 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
           ctx
         )
 
-      assert conn.status < 500, "#{ctx}: #{conn.status} #{String.slice(conn.resp_body || "", 0, 300)}"
+      assert conn.status < 500,
+             "#{ctx}: #{conn.status} #{String.slice(conn.resp_body || "", 0, 300)}"
+
       assert_clean(conn.resp_body || "", ctx)
 
       if conn.status >= 400 and method != :head and conn.resp_body not in [nil, ""] do
-        assert {:ok, %{"error" => %{} = err}} = Jason.decode(conn.resp_body), "#{ctx}: #{conn.resp_body}"
+        assert {:ok, %{"error" => %{} = err}} = Jason.decode(conn.resp_body),
+               "#{ctx}: #{conn.resp_body}"
+
         assert is_binary(err["message"]) or is_binary(err["status"]), ctx
       end
     end
@@ -231,12 +247,24 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
   } do
     mod = AshA2A.Transport.HTTPJSON
     opts = mod.init(agent: agent, base_url: "http://x/rest")
-    body = Jason.encode!(%{"message" => %{"messageId" => "m", "role" => "ROLE_USER", "parts" => [%{"text" => "hi"}]}})
+
+    body =
+      Jason.encode!(%{
+        "message" => %{"messageId" => "m", "role" => "ROLE_USER", "parts" => [%{"text" => "hi"}]}
+      })
 
     ok = call(mod, opts, :post, "/message:send", body, [{"content-type", "application/json"}])
     assert ok.status == 200
 
-    for path <- ["/message:sendx", "/message:send:send", "/xmessage:send", "/message:", "/message%3Asendx", "/message:send/x", "/%252Fmessage:send"] do
+    for path <- [
+          "/message:sendx",
+          "/message:send:send",
+          "/xmessage:send",
+          "/message:",
+          "/message%3Asendx",
+          "/message:send/x",
+          "/%252Fmessage:send"
+        ] do
       conn = call(mod, opts, :post, path, body, [{"content-type", "application/json"}])
       assert conn.status in [400, 404, 405], "#{path}: #{conn.status}"
       assert_clean(conn.resp_body, path)
@@ -255,31 +283,87 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
 
   defp rpc_item do
     case FuzzGen.int(8) do
-      0 -> %{"jsonrpc" => "2.0", "id" => FuzzGen.scalar(), "method" => "tasks/get", "params" => %{"id" => FuzzGen.evil_string()}}
-      1 -> %{"jsonrpc" => "2.0", "method" => "tasks/get", "params" => %{"id" => "x"}}
-      2 -> %{"jsonrpc" => "2.0", "id" => 1, "method" => FuzzGen.scalar()}
-      3 -> %{"jsonrpc" => FuzzGen.scalar(), "id" => 1, "method" => "message/send"}
-      4 -> %{"jsonrpc" => "2.0", "id" => 1, "method" => "message/send", "params" => FuzzGen.wrong_value()}
-      5 -> FuzzGen.json_safe(FuzzGen.term(3, 3))
-      6 -> %{"jsonrpc" => "2.0", "id" => 1, "method" => "agent/getAuthenticatedExtendedCard"}
-      7 -> %{"jsonrpc" => "2.0", "id" => 1, "method" => "tasks/list", "params" => FuzzGen.pick([%{}, %{"pageSize" => FuzzGen.number()}, []])}
+      0 ->
+        %{
+          "jsonrpc" => "2.0",
+          "id" => FuzzGen.scalar(),
+          "method" => "tasks/get",
+          "params" => %{"id" => FuzzGen.evil_string()}
+        }
+
+      1 ->
+        %{"jsonrpc" => "2.0", "method" => "tasks/get", "params" => %{"id" => "x"}}
+
+      2 ->
+        %{"jsonrpc" => "2.0", "id" => 1, "method" => FuzzGen.scalar()}
+
+      3 ->
+        %{"jsonrpc" => FuzzGen.scalar(), "id" => 1, "method" => "message/send"}
+
+      4 ->
+        %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "message/send",
+          "params" => FuzzGen.wrong_value()
+        }
+
+      5 ->
+        FuzzGen.json_safe(FuzzGen.term(3, 3))
+
+      6 ->
+        %{"jsonrpc" => "2.0", "id" => 1, "method" => "agent/getAuthenticatedExtendedCard"}
+
+      7 ->
+        %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "tasks/list",
+          "params" => FuzzGen.pick([%{}, %{"pageSize" => FuzzGen.number()}, []])
+        }
     end
   end
 
   defp rpc_body do
     case FuzzGen.int(6) do
-      0 -> Jason.encode!([])
-      1 -> Jason.encode!(for(_ <- 1..(1 + FuzzGen.int(30)), do: rpc_item()))
-      2 -> Jason.encode!(rpc_item())
-      3 -> Jason.encode!([rpc_item(), 1, nil, "x", []])
-      4 -> FuzzGen.raw_body()
-      5 -> Jason.encode!(for(_ <- 1..300, do: %{"jsonrpc" => "2.0", "id" => 1, "method" => "tasks/get", "params" => %{"id" => "x"}}))
+      0 ->
+        Jason.encode!([])
+
+      1 ->
+        Jason.encode!(for(_ <- 1..(1 + FuzzGen.int(30)), do: rpc_item()))
+
+      2 ->
+        Jason.encode!(rpc_item())
+
+      3 ->
+        Jason.encode!([rpc_item(), 1, nil, "x", []])
+
+      4 ->
+        FuzzGen.raw_body()
+
+      5 ->
+        Jason.encode!(
+          for(
+            _ <- 1..300,
+            do: %{
+              "jsonrpc" => "2.0",
+              "id" => 1,
+              "method" => "tasks/get",
+              "params" => %{"id" => "x"}
+            }
+          )
+        )
     end
   end
 
-  defp well_formed_rpc?(%{"jsonrpc" => "2.0", "error" => %{"code" => c, "message" => m}}) when is_integer(c) and is_binary(m), do: true
+  defp well_formed_rpc?(%{"jsonrpc" => "2.0", "error" => %{"code" => c, "message" => m}})
+       when is_integer(c) and is_binary(m), do: true
+
   defp well_formed_rpc?(%{"jsonrpc" => "2.0", "result" => _}), do: true
-  defp well_formed_rpc?(list) when is_list(list) and list != [], do: Enum.all?(list, &well_formed_rpc?/1)
+
+  defp well_formed_rpc?(list) when is_list(list) and list != [],
+    do: Enum.all?(list, &well_formed_rpc?/1)
+
   defp well_formed_rpc?(_), do: false
 
   for {label, mod, extra} <- [
@@ -295,15 +379,23 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
 
       for i <- 1..div(@iterations, 2) do
         body = rpc_body()
-        ctx = "#{unquote(label)} iteration #{i} body=#{inspect(body, limit: 80, printable_limit: 200)}"
 
-        conn = guarded(fn -> call(mod, opts, :post, "/", body, [{"content-type", "application/json"}]) end, ctx)
+        ctx =
+          "#{unquote(label)} iteration #{i} body=#{inspect(body, limit: 80, printable_limit: 200)}"
+
+        conn =
+          guarded(
+            fn -> call(mod, opts, :post, "/", body, [{"content-type", "application/json"}]) end,
+            ctx
+          )
 
         assert conn.status < 500, "#{ctx}: #{conn.status} #{String.slice(conn.resp_body, 0, 300)}"
         assert_clean(conn.resp_body, ctx)
 
         if conn.status == 200 do
-          assert {:ok, decoded} = Jason.decode(conn.resp_body), "#{ctx}: not JSON: #{conn.resp_body}"
+          assert {:ok, decoded} = Jason.decode(conn.resp_body),
+                 "#{ctx}: not JSON: #{conn.resp_body}"
+
           assert well_formed_rpc?(decoded), "#{ctx}: #{conn.resp_body}"
         else
           assert conn.status in [400, 401, 403, 404, 405, 406, 413, 415], "#{ctx}: #{conn.status}"

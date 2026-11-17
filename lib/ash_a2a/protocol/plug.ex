@@ -614,7 +614,9 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp read_json_body(%{body_params: %{} = params} = conn) do
+    # Any already-decoded body: a map, or a list (a JSON-RPC batch handed on by
+    # `AshA2A.A2ATransport.Plug`), which `JSONRPC.handle/3` answers itself.
+    defp read_json_body(%{body_params: params} = conn) do
       {:ok, params, conn}
     end
 

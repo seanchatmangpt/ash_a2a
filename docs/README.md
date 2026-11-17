@@ -162,6 +162,8 @@ Exact factual contracts:
   remaining release blockers for v26.11.15; a checklist, not a release claim.
 - [`reference/security-review-v26.11.15.md`](reference/security-review-v26.11.15.md) —
   by-eye adversarial security review of unrun v26.11.15 code.
+- [`reference/test-suite-timing.md`](reference/test-suite-timing.md) — where `mix test.all`
+  spends its time: measured slowest tests, what is ruled out, and per-owner recommendations.
 - [`reference/generated/`](reference/generated/README.md) — GENERATED doc-hdit
   reference skeletons: a rigid, machine-rendered table of every module and public
   item on the extracted code surface (regen command in its README; never
