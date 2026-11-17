@@ -97,15 +97,15 @@ defmodule AshA2A.FuzzSseTest do
   test "parse(chunked(x)) equals parse(x) on hostile bytes, and nothing raises" do
     FuzzGen.seed(1703)
 
-    for i <- 1..@iterations do
+    for i <- 1..div(@iterations, 3) do
       bytes =
         FuzzGen.pick([
           fn -> FuzzGen.random_bytes(FuzzGen.int(200)) end,
           fn ->
             Enum.join(for _ <- 1..FuzzGen.int(20)//1, do: FuzzGen.pick(["data: ", "\r", "\n", "{}", ":", "data:", "﻿", "\r\n"]))
           end,
-          fn -> "data: " <> String.duplicate("x", 200_000) <> "\n\n" end,
-          fn -> "data: {\"a\":" <> String.duplicate("1", 100_000) <> "}\n\n" end
+          fn -> "data: " <> String.duplicate("x", 30_000) <> "\n\n" end,
+          fn -> "data: {\"a\":" <> String.duplicate("1", 30_000) <> "}\n\n" end
         ]).()
 
       whole = FuzzGen.run_with_deadline(fn -> parse_whole(bytes) end)

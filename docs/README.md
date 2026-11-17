@@ -10,6 +10,9 @@ Learning-oriented, end-to-end paths:
 
 - [`tutorials/getting-started.md`](tutorials/getting-started.md) — install the package,
   wire the `a2a` DSL into an Ash domain, and run a first dispatch end to end.
+- [`tutorials/prove-your-agent-with-the-simulation-server.md`](tutorials/prove-your-agent-with-the-simulation-server.md) —
+  run the simulation server, call every binding, run the prover and the parity check,
+  drive it over MCP, and point the tools at your own agent.
 
 ## How-to guides
 
@@ -72,7 +75,14 @@ Goal-oriented procedures:
 - [`how-to/run-doctor.md`](how-to/run-doctor.md) — diagnose an app's A2A wiring with
   `mix ash_a2a.doctor`.
 - [`how-to/sign-agent-cards.md`](how-to/sign-agent-cards.md) — sign and verify agent
-  cards with detached JWS (`AshA2A.Protocol.AgentCardSignature`).
+  cards with detached JWS (`AshA2A.Protocol.AgentCardSignature`), serve them signed, and
+  rotate the signing key.
+- [`how-to/choose-a-reply-mode.md`](how-to/choose-a-reply-mode.md) — declare whether a
+  skill or agent answers with a task or a bare Message (`reply :message`).
+- [`how-to/operate-the-event-journal.md`](how-to/operate-the-event-journal.md) — wire the
+  event journal, its config keys, and replay through `tasks/resubscribe`.
+- [`how-to/mount-the-grpc-server-in-your-endpoint.md`](how-to/mount-the-grpc-server-in-your-endpoint.md) —
+  give unknown gRPC methods `UNIMPLEMENTED` in an endpoint of your own (`UnknownMethod.install/1`).
 - [`how-to/verify-receipts.md`](how-to/verify-receipts.md) — check Markdown receipts
   against the files they cite with `mix ash_a2a.receipts.verify`.
 

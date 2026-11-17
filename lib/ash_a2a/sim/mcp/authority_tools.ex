@@ -161,7 +161,12 @@ if Code.ensure_loaded?(Bandit) do
     def run("sim_receipts", %{"message_id" => id}) do
       case Authority.fetch_receipt(id) do
         {:ok, receipt} ->
-          {:ok, %{"found" => true, "message_id" => id, "receipt" => Authority.describe_receipt(receipt)}}
+          {:ok,
+           %{
+             "found" => true,
+             "message_id" => id,
+             "receipt" => Authority.describe_receipt(receipt)
+           }}
 
         :error ->
           {:ok, %{"found" => false, "message_id" => id, "receipt" => nil}}
@@ -277,7 +282,8 @@ if Code.ensure_loaded?(Bandit) do
 
     defp standing_expiry(subject, capability_id) do
       with {:ok, grants} <- Grant.list_grants(subject),
-           %{expires_at: %DateTime{} = at} <- Enum.find(grants, &(&1.capability_id == capability_id)) do
+           %{expires_at: %DateTime{} = at} <-
+             Enum.find(grants, &(&1.capability_id == capability_id)) do
         DateTime.to_iso8601(at)
       else
         _ -> nil
@@ -390,16 +396,23 @@ if Code.ensure_loaded?(Bandit) do
       [
         grant_step("issue the standing grant", @agent, "create_note", []),
         send_ok("granted", @jr, "create_note", "mcp-auth-revoke-{{uniq}}-ok"),
-        step("revoke the grant", "sim_revoke_authority", %{"identity" => @agent, "skill" => "create_note"},
+        step(
+          "revoke the grant",
+          "sim_revoke_authority",
+          %{"identity" => @agent, "skill" => "create_note"},
           tested: true,
           expect: [ex("grants.0.outcome", "eq", "revoked"), ex("grants.0.granted", "eq", false)]
         ),
         send_refused("revoked: JSON-RPC", @jr, "create_note", "mcp-auth-revoke-{{uniq}}-1"),
         send_refused("revoked: HTTP+JSON", @rest, "create_note", "mcp-auth-revoke-{{uniq}}-2"),
         send_refused("revoked: gRPC", @grpc, "create_note", "mcp-auth-revoke-{{uniq}}-3"),
-        rows("only the granted call wrote a row", %{"title_prefix" => "mcp-auth-revoke-{{uniq}}"}, [
-          ex("count", "eq", 1)
-        ])
+        rows(
+          "only the granted call wrote a row",
+          %{"title_prefix" => "mcp-auth-revoke-{{uniq}}"},
+          [
+            ex("count", "eq", 1)
+          ]
+        )
       ]
     end
 
@@ -437,24 +450,32 @@ if Code.ensure_loaded?(Bandit) do
           %{"identity" => @agent, "skill" => "create_note", "expires_in_seconds" => -60},
           expect: [ex("grants.0.outcome", "eq", "renewed"), ex("grants.0.granted", "eq", false)]
         ),
-        send_refused("past the bound", @jr, "create_note", "mcp-auth-expiry-{{uniq}}-1", tested: true),
+        send_refused("past the bound", @jr, "create_note", "mcp-auth-expiry-{{uniq}}-1",
+          tested: true
+        ),
         step(
-          "an expired grant cannot be renewed back",
+          "an expired grant is issued again, not renewed",
           "sim_grant_authority",
           %{"identity" => @agent, "skill" => "create_note", "expires_in_seconds" => 3600},
-          expect: [ex("grants.0.refusal", "eq", "grant_not_standing"), ex("grants.0.granted", "eq", false)]
+          expect: [ex("grants.0.outcome", "eq", "granted"), ex("grants.0.granted", "eq", true)]
         ),
-        send_refused("still refused", @grpc, "create_note", "mcp-auth-expiry-{{uniq}}-2"),
-        rows("only the call inside the bound wrote a row", %{"title_prefix" => "mcp-auth-expiry-{{uniq}}"}, [
-          ex("count", "eq", 1)
-        ])
+        send_ok("the new grant admits", @grpc, "create_note", "mcp-auth-expiry-{{uniq}}-2"),
+        rows(
+          "the two calls inside a bound wrote rows",
+          %{"title_prefix" => "mcp-auth-expiry-{{uniq}}"},
+          [ex("count", "eq", 2)]
+        ),
+        prove("authority:expiry", 2)
       ]
     end
 
     def steps("reissue_after_revoke") do
       [
         grant_step("issue the standing grant", @agent, "create_note", []),
-        step("revoke the grant", "sim_revoke_authority", %{"identity" => @agent, "skill" => "create_note"},
+        step(
+          "revoke the grant",
+          "sim_revoke_authority",
+          %{"identity" => @agent, "skill" => "create_note"},
           expect: [ex("grants.0.granted", "eq", false)]
         ),
         send_refused("refused while revoked", @jr, "create_note", "mcp-auth-reissue-{{uniq}}-0"),
@@ -475,12 +496,38 @@ if Code.ensure_loaded?(Bandit) do
 
       [
         grant_step("grant the holder", holder, "create_note", []),
-        send_refused("another principal is refused", @jr, "create_note", "mcp-auth-principal-{{uniq}}-0",
+        send_refused(
+          "another principal is refused",
+          @jr,
+          "create_note",
+          "mcp-auth-principal-{{uniq}}-0",
           token: other,
           tested: true
         ),
-        send_ok("the holder is admitted", @jr, "create_note", "mcp-auth-principal-{{uniq}}-1", token: holder),
-        send_refused("another principal over gRPC", @grpc, "create_note", "mcp-auth-principal-{{uniq}}-2",
+        send_ok("the holder is admitted", @jr, "create_note", "mcp-auth-principal-{{uniq}}-1",
+          token: holder
+        ),
+        send_refused(
+          "another principal over gRPC",
+          @grpc,
+          "create_note",
+          "mcp-auth-principal-{{uniq}}-2",
+          token: other
+        ),
+        step(
+          "grant a principal nobody authenticates as",
+          "sim_grant_authority",
+          %{"principal" => "someone-else-{{uniq}}", "skill" => "create_note"},
+          expect: [
+            ex("principal", "eq", "someone-else-{{uniq}}"),
+            ex("grants.0.granted", "eq", true)
+          ]
+        ),
+        send_refused(
+          "that grant does not admit the other caller",
+          @rest,
+          "create_note",
+          "mcp-auth-principal-{{uniq}}-3",
           token: other
         ),
         rows("only the holder wrote", %{"title_prefix" => "mcp-auth-principal-{{uniq}}"}, [
@@ -492,25 +539,34 @@ if Code.ensure_loaded?(Bandit) do
     def steps("capability_scope") do
       [
         step(
-          "grant publish_note to a principal named directly",
+          "grant publish_note only",
           "sim_grant_authority",
-          %{"principal" => @agent, "skill" => "publish_note"},
-          expect: [ex("principal", "eq", @agent), ex("grants.0.granted", "eq", true)]
+          %{"identity" => @agent, "skill" => "publish_note"},
+          expect: [ex("grants.0.granted", "eq", true)]
         ),
-        send_refused("create_note is not covered", @jr, "create_note", "mcp-auth-capability-{{uniq}}-0",
+        send_refused(
+          "create_note is not covered",
+          @jr,
+          "create_note",
+          "mcp-auth-capability-{{uniq}}-0",
           tested: true
         ),
         send_ok("publish_note is", @rest, "publish_note", "mcp-auth-capability-{{uniq}}-1"),
         step(
           "grant a capability the skills do not have",
           "sim_grant_authority",
-          %{"principal" => @agent, "capability" => "Some.Other.capability"},
+          %{"identity" => @agent, "capability" => "Some.Other.capability"},
           expect: [
             ex("grants.0.capability_id", "eq", "Some.Other.capability"),
             ex("grants.0.granted", "eq", true)
           ]
         ),
-        send_refused("create_note is still not covered", @grpc, "create_note", "mcp-auth-capability-{{uniq}}-2"),
+        send_refused(
+          "create_note is still not covered",
+          @grpc,
+          "create_note",
+          "mcp-auth-capability-{{uniq}}-2"
+        ),
         rows("only the publication happened", %{"title" => "none"}, [
           ex("publications", "contains", "mcp-auth-capability-{{uniq}}-1"),
           ex("publications", "not_contains", "mcp-auth-capability-{{uniq}}-0")
@@ -522,7 +578,9 @@ if Code.ensure_loaded?(Bandit) do
 
     def steps("authority_required") do
       [
-        send_refused("no grant: JSON-RPC", @jr, "create_note", "mcp-auth-required-{{uniq}}-1", tested: true),
+        send_refused("no grant: JSON-RPC", @jr, "create_note", "mcp-auth-required-{{uniq}}-1",
+          tested: true
+        ),
         send_refused("no grant: HTTP+JSON", @rest, "create_note", "mcp-auth-required-{{uniq}}-2"),
         send_refused("no grant: gRPC", @grpc, "create_note", "mcp-auth-required-{{uniq}}-3"),
         rows("nothing was written", %{"title_prefix" => "mcp-auth-required-{{uniq}}"}, [
@@ -536,7 +594,12 @@ if Code.ensure_loaded?(Bandit) do
         step(
           label,
           "a2a_send_message",
-          %{"binding" => binding, "skill" => skill, "data" => %{"title" => title}, "token" => @agent},
+          %{
+            "binding" => binding,
+            "skill" => skill,
+            "data" => %{"title" => title},
+            "token" => @agent
+          },
           tested: opts[:tested],
           expect: [
             ex("ok", "eq", true),
@@ -552,10 +615,34 @@ if Code.ensure_loaded?(Bandit) do
         step("trip the kill switch", "sim_trip_kill_switch", %{"reason" => "mcp coverage"},
           expect: [ex("tripped", "eq", true), ex("reason", "eq", "mcp coverage")]
         ),
-        blocked.("tripped: create_note over JSON-RPC", @jr, "create_note", "mcp-auth-kill-{{uniq}}-1", tested: true),
-        blocked.("tripped: create_note over HTTP+JSON", @rest, "create_note", "mcp-auth-kill-{{uniq}}-2", []),
-        blocked.("tripped: create_note over gRPC", @grpc, "create_note", "mcp-auth-kill-{{uniq}}-3", []),
-        blocked.("tripped: publish_note over gRPC", @grpc, "publish_note", "mcp-auth-kill-{{uniq}}-4", []),
+        blocked.(
+          "tripped: create_note over JSON-RPC",
+          @jr,
+          "create_note",
+          "mcp-auth-kill-{{uniq}}-1",
+          tested: true
+        ),
+        blocked.(
+          "tripped: create_note over HTTP+JSON",
+          @rest,
+          "create_note",
+          "mcp-auth-kill-{{uniq}}-2",
+          []
+        ),
+        blocked.(
+          "tripped: create_note over gRPC",
+          @grpc,
+          "create_note",
+          "mcp-auth-kill-{{uniq}}-3",
+          []
+        ),
+        blocked.(
+          "tripped: publish_note over gRPC",
+          @grpc,
+          "publish_note",
+          "mcp-auth-kill-{{uniq}}-4",
+          []
+        ),
         step(
           "an observe skill still runs",
           "a2a_send_message",
@@ -581,7 +668,9 @@ if Code.ensure_loaded?(Bandit) do
 
     def steps("kill_switch_reset") do
       [
-        step("trip the kill switch", "sim_trip_kill_switch", %{}, expect: [ex("tripped", "eq", true)]),
+        step("trip the kill switch", "sim_trip_kill_switch", %{},
+          expect: [ex("tripped", "eq", true)]
+        ),
         step("reset with the operator's authority", "sim_reset_kill_switch", %{},
           always: true,
           tested: true,
@@ -598,7 +687,9 @@ if Code.ensure_loaded?(Bandit) do
 
       [
         grant_step("grant create_note", @agent, "create_note", []),
-        send_ok("perform the effect", @jr, "create_note", "mcp-auth-receipt-{{uniq}}", message_id: message),
+        send_ok("perform the effect", @jr, "create_note", "mcp-auth-receipt-{{uniq}}",
+          message_id: message
+        ),
         step("read the receipt back", "sim_receipts", %{"message_id" => message},
           tested: true,
           expect: [
@@ -620,7 +711,12 @@ if Code.ensure_loaded?(Bandit) do
         step(
           "an observe skill runs for a caller with no grant",
           "a2a_send_message",
-          %{"binding" => @grpc, "skill" => "count_notes", "token" => @agent, "message_id" => message},
+          %{
+            "binding" => @grpc,
+            "skill" => "count_notes",
+            "token" => @agent,
+            "message_id" => message
+          },
           tested: true,
           expect: state(@completed)
         ),
@@ -640,7 +736,10 @@ if Code.ensure_loaded?(Bandit) do
           tested: true
         ),
         rows("the row exists", %{"title" => "mcp-auth-change-{{uniq}}"}, [ex("count", "eq", 1)]),
-        step("its receipt is a verifying change receipt", "sim_receipts", %{"message_id" => message},
+        step(
+          "its receipt is a verifying change receipt",
+          "sim_receipts",
+          %{"message_id" => message},
           expect: [
             ex("receipt.consequence", "eq", "change"),
             ex("receipt.binding_verified", "eq", true)
@@ -651,7 +750,11 @@ if Code.ensure_loaded?(Bandit) do
 
     def steps("outcome:change:refused") do
       [
-        send_refused("a change without a grant", @grpc, "create_note", "mcp-auth-change-refused-{{uniq}}",
+        send_refused(
+          "a change without a grant",
+          @grpc,
+          "create_note",
+          "mcp-auth-change-refused-{{uniq}}",
           tested: true
         ),
         rows("nothing was written", %{"title" => "mcp-auth-change-refused-{{uniq}}"}, [
@@ -665,14 +768,21 @@ if Code.ensure_loaded?(Bandit) do
 
       [
         grant_step("grant publish_note", @agent, "publish_note", []),
-        send_ok("the external effect is admitted", @grpc, "publish_note", "mcp-auth-external-{{uniq}}",
+        send_ok(
+          "the external effect is admitted",
+          @grpc,
+          "publish_note",
+          "mcp-auth-external-{{uniq}}",
           message_id: message,
           tested: true
         ),
         rows("the effect was recorded", %{"title" => "none"}, [
           ex("publications", "contains", "mcp-auth-external-{{uniq}}")
         ]),
-        step("its receipt is a verifying external_do receipt", "sim_receipts", %{"message_id" => message},
+        step(
+          "its receipt is a verifying external_do receipt",
+          "sim_receipts",
+          %{"message_id" => message},
           expect: [
             ex("receipt.consequence", "eq", "external_do"),
             ex("receipt.binding_verified", "eq", true)
@@ -770,7 +880,11 @@ if Code.ensure_loaded?(Bandit) do
     defp prove(prefix, at_least) do
       step("run the probes of #{prefix}", "sim_prove", %{"surface_prefix" => prefix},
         tested: true,
-        expect: [ex("summary.fail", "eq", 0), ex("summary.skip", "eq", 0), ex("summary.pass", "gte", at_least)]
+        expect: [
+          ex("summary.fail", "eq", 0),
+          ex("summary.skip", "eq", 0),
+          ex("summary.pass", "gte", at_least)
+        ]
       )
     end
   end

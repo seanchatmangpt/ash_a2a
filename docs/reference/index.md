@@ -82,6 +82,19 @@ Reference pages in this quadrant:
 - [Conference-sim model](conference-sim-model.md) — the conference-sim model.
 - [GraphLaw v26.10.28 compatibility](graphlaw-v26.10.28-compat.md) — retired
   ops, blake3 keys, wasm vendoring.
+- [A2A v1.1 parity findings](a2a-v1-1-parity-findings.md) — open and fixed findings of
+  the byte-for-byte parity check, and the version each wire rule applies to.
+- [Agent card honesty](agent-card-honesty.md) — `AgentCard.audit/2`: discrepancies between
+  a card's claims and the mounted surface.
+- [Event journal](event-journal.md) — the `AshA2A.Protocol.EventJournal` callback contract
+  and its writer, for per-task event replay.
+- [Environment setup](environment-setup.md) — build a development environment and run the
+  verification script.
+- [Fuzz findings v26.11.15](fuzz-findings-v26.11.15.md) — wire decoder fuzz findings.
+- [Security review v26.11.15](security-review-v26.11.15.md) — adversarial review of the
+  v26.11.15 code.
+- [Release readiness v26.11.15](release-readiness-v26.11.15.md) — remaining release
+  blockers and the verification commands; a checklist, not a release claim.
 - [Generated reference](generated/README.md) — machine-rendered skeletons; never
   hand-edited.
 
