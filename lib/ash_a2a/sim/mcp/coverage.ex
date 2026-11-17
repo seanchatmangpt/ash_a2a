@@ -149,6 +149,10 @@ if Code.ensure_loaded?(Bandit) do
     defp steps(%{kind: :task_state, name: state}), do: task_state(state)
     defp steps(%{kind: :security_scheme, name: scheme}), do: security(scheme)
     defp steps(%{kind: :mount, name: mount}), do: mount(mount)
+    defp steps(%{kind: :authority, name: name}), do: AshA2A.Sim.MCP.AuthorityTools.steps(name)
+
+    defp steps(%{kind: kind} = item) when kind in [:email_route, :email_outcome],
+      do: AshA2A.Sim.MCP.EmailTools.steps(item)
 
     defp steps(%{kind: :parity, name: binding}) do
       [

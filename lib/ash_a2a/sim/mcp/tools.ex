@@ -35,9 +35,8 @@ if Code.ensure_loaded?(Bandit) do
     authenticates as an identity of its own that holds no grants.
     """
 
-    alias AshA2A.Authority.Grant
-    alias AshA2A.Sim.MCP.{Coverage, Wire}
-    alias AshA2A.Sim.{Auth, Note, Parity, Prover, PushReceiver, Surface}
+    alias AshA2A.Sim.MCP.{AuthorityTools, Coverage, Wire}
+    alias AshA2A.Sim.{Note, Parity, Prover, PushReceiver, Surface}
 
     @bindings ~w(jsonrpc http_json grpc)
     @last_matrix {__MODULE__, :last_matrix}
@@ -133,7 +132,7 @@ if Code.ensure_loaded?(Bandit) do
     @doc "Every tool, as MCP `Tool` objects."
     @spec list() :: [map()]
     def list do
-      operation_tools() ++ a2a_tools() ++ [raw_tool()] ++ sim_tools()
+      operation_tools() ++ a2a_tools() ++ [raw_tool()] ++ sim_tools() ++ AuthorityTools.list() ++ AshA2A.Sim.MCP.EmailTools.list()
     end
 
     @doc "The names of every tool."
@@ -708,19 +707,20 @@ if Code.ensure_loaded?(Bandit) do
           "sim_grant_authority",
           "Issue a standing grant",
           "Files the standing authority grant a mutating skill needs (`AshA2A.Authority.Grant.grant/2`). " <>
-            "The writer identity holds every grant when the server boots.",
-          identity,
+            "The writer identity holds every grant when the server boots. Options: `principal`, `capability`, " <>
+            "`expires_in_seconds`, `force` (see `AshA2A.Sim.MCP.AuthorityTools`).",
+          AuthorityTools.grant_props(identity),
           [],
-          grants_output
+          AuthorityTools.grants_output(grants_output)
         ),
         sim(
           "sim_revoke_authority",
           "Revoke a standing grant",
           "Revokes a standing authority grant (`AshA2A.Authority.Grant.revoke/2`), so the skill is refused for " <>
             "that identity until `sim_grant_authority` issues the grant again. The prover needs the `writer` grants.",
-          identity,
+          AuthorityTools.revoke_props(identity),
           [],
-          grants_output
+          AuthorityTools.grants_output(grants_output)
         ),
         sim(
           "sim_read_rows",
@@ -1156,9 +1156,16 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp run("a2a_raw_request", args, ctx), do: raw(args, ctx)
+    defp run("sim_email_" <> _ = name, args, ctx),
+      do: AshA2A.Sim.MCP.EmailTools.run(name, args, ctx)
+
     defp run("sim_info", _args, ctx), do: {:ok, sim_info(ctx.info)}
-    defp run("sim_grant_authority", args, _ctx), do: authority(args, :grant)
-    defp run("sim_revoke_authority", args, _ctx), do: authority(args, :revoke)
+    defp run("sim_grant_authority", args, _ctx), do: AuthorityTools.grant(args, :grant)
+    defp run("sim_revoke_authority", args, _ctx), do: AuthorityTools.grant(args, :revoke)
+
+    defp run(name, args, _ctx)
+         when name in ["sim_trip_kill_switch", "sim_reset_kill_switch", "sim_receipts"],
+         do: AuthorityTools.run(name, args)
     defp run("sim_read_rows", args, _ctx), do: {:ok, read_rows(args)}
     defp run("sim_push_deliveries", args, _ctx), do: {:ok, push_deliveries(args)}
     defp run("sim_surface", args, _ctx), do: {:ok, surface(args)}
@@ -1859,56 +1866,6 @@ if Code.ensure_loaded?(Bandit) do
           )
       }
     end
-
-    defp authority(args, action) do
-      role = Map.get(args, "identity", "writer")
-      tokens = Map.new(Auth.tokens(), fn {name, token} -> {to_string(name), token} end)
-      authority(args, action, role, Auth.principal(Map.get(tokens, role, role)))
-    end
-
-    defp authority(_args, _action, role, nil) do
-      {:error,
-       "no identity #{inspect(role)}: use writer, reader, unscoped or a sim-agent-<name> token"}
-    end
-
-    defp authority(args, action, role, subject) do
-      wanted = Map.get(args, "skill", "all")
-
-      selected =
-        case wanted do
-          "all" -> Enum.filter(skills(), &(&1.consequence in ["change", "external_do"]))
-          one -> Enum.filter(skills(), &(&1.name == one or &1.id == one))
-        end
-
-      if selected == [] do
-        {:error,
-         "no skill named #{inspect(wanted)}; skills are #{Enum.map_join(skills(), ", ", & &1.name)}"}
-      else
-        grants =
-          for skill <- selected do
-            outcome =
-              case {action, Grant.granted?(subject, skill.id)} do
-                {:grant, true} -> "already granted"
-                {:grant, false} -> subject |> Grant.grant(skill.id) |> outcome("granted")
-                {:revoke, false} -> "not granted"
-                {:revoke, true} -> subject |> Grant.revoke(skill.id) |> outcome("revoked")
-              end
-
-            %{
-              "skill" => skill.name,
-              "capability_id" => skill.id,
-              "granted" => Grant.granted?(subject, skill.id),
-              "outcome" => outcome
-            }
-          end
-
-        {:ok, %{"identity" => role, "principal" => subject.value, "grants" => grants}}
-      end
-    end
-
-    defp outcome({:ok, _authority}, done), do: done
-    defp outcome(:ok, done), do: done
-    defp outcome({:error, refusal}, _done), do: "refused: #{inspect(refusal)}"
 
     defp read_rows(args) do
       all = Ash.read!(Note, authorize?: false)

@@ -50,9 +50,35 @@ itself.
 | --- | --- |
 | `A2A_SIM_MCP_LOG` | append standard error to this file |
 | `A2A_SIM_MCP_ENV` | source this file first (to put `mix` on `PATH`) |
+| `A2A_SIM_MCP_DIRECT` | `1` skips the launcher shim and runs `mix` directly |
+| `A2A_SIM_MCP_CACHE` | the shim's cache file (default `_build/a2a_sim_mcp_cache.json`, or under `MIX_BUILD_PATH`) |
+| `A2A_SIM_MCP_INIT_WAIT` / `A2A_SIM_MCP_LIST_WAIT` | seconds `initialize` / `tools/list` wait for the real server when there is no cache (defaults 15 / 20) |
 
 `--sim-http-port`, `--sim-grpc-port` and `--sim-push-port` pin the ports of
 the simulation server; each defaults to a free port.
+
+## Why it attaches quickly: the launcher shim
+
+An MCP client gives up on a server that has not answered `initialize` within
+its connect budget (30 s in Claude Code). A stale or cold build needs longer
+than that to compile. In stdio mode `bin/a2a-sim-mcp` therefore starts
+`scripts/mcp_shim.py` (Python 3, standard library only), which starts the real
+server in the background and meanwhile:
+
+- answers `initialize`, `ping`, `tools/list` and `resources/list` from the
+  cache written by the last healthy start (refreshed on every healthy start);
+- with no cache, waits up to `A2A_SIM_MCP_INIT_WAIT` seconds for the real
+  server, then answers a minimal `initialize` and, after
+  `A2A_SIM_MCP_LIST_WAIT` seconds, an empty tool list, and sends
+  `notifications/tools/list_changed` when the real server is up (the shim
+  always declares `tools.listChanged: true`);
+- holds every other request until the real server serves, then proxies all
+  traffic byte for byte in both directions, ids untouched;
+- if the server cannot start (a compile error), answers each held and later
+  request with a JSON-RPC error `-32603` that quotes the compile output.
+
+`bin/a2a-sim-mcp --http PORT` and `A2A_SIM_MCP_DIRECT=1 bin/a2a-sim-mcp` do
+not use the shim.
 
 ## The tools
 
@@ -156,6 +182,24 @@ The same proof runs as a test, over stdio and over Streamable HTTP:
 ```console
 mix test test/ash_a2a/sim/sim_mcp_test.exs
 ```
+
+## Troubleshooting
+
+- **The client reports a connect timeout.** Read the server log (below). The
+  first start after a pull compiles the project, and with no cache file the
+  shim can only answer a minimal handshake after `A2A_SIM_MCP_INIT_WAIT`
+  seconds; once one start has been healthy the cache answers instantly. To
+  warm the build yourself: `MIX_ENV=test mix compile`.
+- **Tools are missing or `tools/call` returns "the a2a-sim server did not
+  start".** The message quotes the compile error. Fix it and reconnect.
+- **Where the log is.** Standard error of the shim and the server goes to
+  the client's MCP log, or to the file in `A2A_SIM_MCP_LOG` when set, for
+  example `A2A_SIM_MCP_LOG=/tmp/a2a-sim.log` in the `env` of `.mcp.json`.
+  Lines from the shim start with `[a2a-sim-mcp shim]`.
+- **Run the same conversation yourself.** `python3 scripts/mcp_drive.py
+  --launcher bin/a2a-sim-mcp --list`.
+- The shim's behaviour (stale build, warm cache, current build, a build that
+  fails to compile) is tested in `test/ash_a2a/sim/sim_mcp_launcher_test.exs`.
 
 ## Known limits
 

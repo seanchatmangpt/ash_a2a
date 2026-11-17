@@ -60,7 +60,7 @@ defmodule AshA2A.FuzzSseTest do
         json = Jason.encode!(FuzzGen.json_safe(FuzzGen.term(3, 3)))
 
         lines =
-          for _ <- 1..FuzzGen.int(3), do: field_line(json)
+          for _ <- 1..FuzzGen.int(3)//1, do: field_line(json)
 
         lines = lines ++ ["data: " <> json]
         Enum.map_join(lines, &(&1 <> eol())) <> eol()
@@ -102,7 +102,7 @@ defmodule AshA2A.FuzzSseTest do
         FuzzGen.pick([
           fn -> FuzzGen.random_bytes(FuzzGen.int(200)) end,
           fn ->
-            Enum.join(for _ <- 1..FuzzGen.int(20), do: FuzzGen.pick(["data: ", "\r", "\n", "{}", ":", "data:", "﻿", "\r\n"]))
+            Enum.join(for _ <- 1..FuzzGen.int(20)//1, do: FuzzGen.pick(["data: ", "\r", "\n", "{}", ":", "data:", "﻿", "\r\n"]))
           end,
           fn -> "data: " <> String.duplicate("x", 200_000) <> "\n\n" end,
           fn -> "data: {\"a\":" <> String.duplicate("1", 100_000) <> "}\n\n" end

@@ -451,7 +451,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
           ChicagoL ->
             case re:run(lists:last(ChicagoL), <<"@([A-Za-z0-9.-]+)">>, [global, {capture, all_but_first, binary}]) of
               nomatch -> {error, from_misaligned};
-              {match, ChicagoM} -> {ok, string:lowercase(hd(lists:last(ChicagoM)))}
+              {match, ChicagoM} -> {ok, string:lowercase(erlang:hd(lists:last(ChicagoM)))}
             end
         end.
         """,
@@ -607,7 +607,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         {:clause, 1},
         ~S"""
         {ok, maps:get(host, ChicagoArg1), maps:get(port, ChicagoArg1),
-         [{verify, verify_none}, {server_name_indication, binary_to_list(maps:get(host, ChicagoArg1))},
+         [{verify, verify_none}, {server_name_indication, erlang:binary_to_list(maps:get(host, ChicagoArg1))},
           {cert, maps:get(cert, ChicagoArg1)}, {key, maps:get(key, ChicagoArg1)}]}.
         """,
         "L07Tls.Transport.tls_options/1 verify: :verify_peer against the pinned CA"

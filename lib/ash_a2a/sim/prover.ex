@@ -201,6 +201,10 @@ if Code.ensure_loaded?(Bandit) do
       for {label, fun} <- AshA2A.Sim.Authority.scenarios(name), do: p(item, label, fun)
     end
 
+    defp probes_for(%{kind: kind} = item) when kind in [:email_route, :email_outcome] do
+      for {label, fun} <- AshA2A.Sim.Email.probes(item), do: p(item, label, fun)
+    end
+
     # One probe per binding of the parity report. The script runs once per
     # server; every probe reads the same report.
     defp probes_for(%{kind: :parity, name: binding} = item) do

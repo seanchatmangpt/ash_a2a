@@ -14,7 +14,11 @@ if Code.ensure_loaded?(Req) do
       (default: `3`). Retries back off exponentially from 200ms.
     - `:require_https` — reject `http://` webhook URLs (default: `true`).
     - `:block_private_ips` — reject loopback, link-local and RFC 1918 hosts
-      (default: `true`).
+      (default: `true`). The delivery connects to the address that was
+      admitted, never to a second DNS answer.
+    - `:resolver`, `:allow_cidrs` — passed to
+      `AshA2A.A2ATransport.WebhookPolicy` (a custom resolver; CIDRs allowed
+      despite the private-address block).
 
     ## Opting out for local development
 
@@ -118,7 +122,9 @@ if Code.ensure_loaded?(Req) do
 
     defp target(_url, {%URI{} = uri, ip}) do
       host = if tuple_size(ip) == 4, do: to_string(:inet.ntoa(ip)), else: "[#{:inet.ntoa(ip)}]"
-      host_header = if URI.default_port(uri.scheme) == uri.port, do: uri.host, else: "#{uri.host}:#{uri.port}"
+
+      host_header =
+        if URI.default_port(uri.scheme) == uri.port, do: uri.host, else: "#{uri.host}:#{uri.port}"
 
       {URI.to_string(%{uri | host: host}), [{"host", host_header}], [hostname: uri.host]}
     end
@@ -169,7 +175,10 @@ if Code.ensure_loaded?(Req) do
     defp admit_resolved(url, opts) do
       allow_http = not Keyword.get(opts, :require_https, true)
 
-      case AshA2A.A2ATransport.WebhookPolicy.admit(url, allow_http: allow_http) do
+      case AshA2A.A2ATransport.WebhookPolicy.admit(
+             url,
+             [allow_http: allow_http] ++ Keyword.take(opts, [:resolver, :allow_cidrs])
+           ) do
         {:ok, %{uri: uri, addresses: [ip | _]}} -> {:ok, {uri, ip}}
         {:error, code, _detail} -> {:error, {:private_host, code}}
       end

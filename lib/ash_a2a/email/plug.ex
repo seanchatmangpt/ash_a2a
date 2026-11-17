@@ -472,7 +472,8 @@ if Code.ensure_loaded?(Plug) do
     defp summary(results) do
       lines =
         for r <- results do
-          "#{r.action}: #{r.standing}" <> if(r[:reason], do: " (#{public_reason(r.reason)})", else: "")
+          "#{r.action}: #{r.standing}" <>
+            if(r[:reason], do: " (#{public_reason(r.reason)})", else: "")
         end
 
       Enum.join(["Receipt summary:" | lines], "\n")

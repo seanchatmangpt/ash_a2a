@@ -57,7 +57,8 @@ defmodule AshA2A.SecurityWave3McpTest do
       port = victim()
       ctx = %{info: info}
 
-      for mount <- ["root", "a2a", "rest"], path <- ["@127.0.0.1:#{port}/x", "//127.0.0.1:#{port}"] do
+      for mount <- ["root", "a2a", "rest"],
+          path <- ["@127.0.0.1:#{port}/x", "//127.0.0.1:#{port}"] do
         assert {:error, text} =
                  Tools.call(
                    "a2a_raw_request",
@@ -206,10 +207,19 @@ defmodule AshA2A.SecurityWave3McpTest do
       url = "http://127.0.0.1:#{info.push_port}/hook"
 
       big = :binary.copy("a", 1_100_000)
-      assert %Req.Response{status: 413} = Req.post!(url, body: big, retry: false, headers: [{"connection", "close"}])
+
+      assert %Req.Response{status: 413} =
+               Req.post!(url, body: big, retry: false, headers: [{"connection", "close"}])
+
       assert AshA2A.Sim.PushReceiver.deliveries() == []
 
-      assert %Req.Response{status: 200} = Req.post!(url, json: %{"ok" => true}, retry: false, headers: [{"connection", "close"}])
+      assert %Req.Response{status: 200} =
+               Req.post!(url,
+                 json: %{"ok" => true},
+                 retry: false,
+                 headers: [{"connection", "close"}]
+               )
+
       assert [%{body: %{"ok" => true}}] = AshA2A.Sim.PushReceiver.deliveries()
     end
   end

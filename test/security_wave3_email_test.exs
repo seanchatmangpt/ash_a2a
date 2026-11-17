@@ -102,7 +102,9 @@ defmodule AshA2A.SecurityWave3EmailTest do
 
   test "a pre-parsed body with an oversize content-length is refused 413", %{rec: rec} do
     o = opts(rec, dispatch: fn _, _ -> {:ok, :done} end, max_body_bytes: 1_000)
-    conn = inbound() |> put_req_header("content-length", "5000000") |> then(&EmailPlug.call(&1, o))
+
+    conn =
+      inbound() |> put_req_header("content-length", "5000000") |> then(&EmailPlug.call(&1, o))
 
     assert conn.status == 413
   end
