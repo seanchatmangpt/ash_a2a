@@ -158,4 +158,109 @@ defmodule AuthorityService.LaneW205HardeningTest do
       refute match?({:ok, _}, exchange(port, rogue))
     end
   end
+
+  describe "connection cap under a burst" do
+    @extra 32
+
+    defp probe,
+      do: (fn b -> <<byte_size(b)::32, b::binary>> end).(Jason.encode!(%{"op" => "noop"}))
+
+    defp read_frame(recv) do
+      with {:ok, <<len::32>>} <- recv.(4),
+           {:ok, body} <- recv.(len),
+           do: {:ok, Jason.decode!(body)}
+    end
+
+    test "unix: cap+N bare connects all reach the listener; exactly cap served, N refused by the cap" do
+      ctx = start_issuer()
+      sock = Path.join(ctx.dir, "burst.sock")
+      {:ok, _} = Listener.start_link(issuer: ctx.issuer, transport: {:unix, sock})
+      assert Listener.backlog() >= Listener.max_conns() + @extra
+
+      # No round trip between connects: every connect must succeed (none dropped by the kernel
+      # accept queue) and the acceptor, not the backlog, decides who is served.
+      socks =
+        for _ <- 1..(Listener.max_conns() + @extra) do
+          assert {:ok, s} = :gen_tcp.connect({:local, sock}, 0, [:binary, active: false])
+          s
+        end
+
+      # arrival order: once the LAST connection has its refusal, every earlier one is decided
+      assert {:ok, %{"ok" => false, "refusal" => "too_many_connections"}} =
+               read_frame(&:gen_tcp.recv(List.last(socks), &1, 4_000))
+
+      outcomes =
+        for s <- Enum.drop(socks, -1) do
+          case :gen_tcp.recv(s, 4, 0) do
+            {:ok, <<len::32>>} ->
+              {:ok, body} = :gen_tcp.recv(s, len, 1_000)
+              assert %{"ok" => false, "refusal" => "too_many_connections"} = Jason.decode!(body)
+              :refused
+
+            {:error, :timeout} ->
+              :ok = :gen_tcp.send(s, probe())
+
+              assert {:ok, %{"ok" => false, "refusal" => "unknown_op"}} =
+                       read_frame(&:gen_tcp.recv(s, &1, 2_000))
+
+              :served
+          end
+        end
+
+      assert Enum.frequencies(outcomes) == %{served: Listener.max_conns(), refused: @extra - 1}
+      assert Enum.take(outcomes, Listener.max_conns()) |> Enum.uniq() == [:served]
+      Enum.each(socks, &:gen_tcp.close/1)
+    end
+
+    test "mutual TLS: cap+N bare TCP connects all reach the listener; exactly cap served, N refused by the cap" do
+      ctx = start_issuer()
+      conf = pki()
+      tls = write_pems(ctx.dir, conf)
+      {:ok, l} = Listener.start_link(issuer: ctx.issuer, transport: {:tls, 0, tls})
+      port = Listener.port(l)
+
+      tcp =
+        for _ <- 1..(Listener.max_conns() + @extra) do
+          assert {:ok, s} = :gen_tcp.connect(~c"localhost", port, [:binary, active: false])
+          s
+        end
+
+      ssl_opts = [verify: :verify_none, versions: [:"tlsv1.3"]] ++ conf[:client_config]
+
+      # The burst is held open: every TCP connection is established first, then each completes
+      # its handshake without sending a request. The acceptor handshakes in arrival order and
+      # applies the cap after the handshake, so the first `cap` hold a slot and every later one
+      # reads our refusal frame.
+      tls_socks =
+        for s <- tcp do
+          assert {:ok, t} = :ssl.connect(s, ssl_opts, 5_000)
+          t
+        end
+
+      assert {:ok, %{"ok" => false, "refusal" => "too_many_connections"}} =
+               read_frame(&:ssl.recv(List.last(tls_socks), &1, 4_000))
+
+      outcomes =
+        for t <- Enum.drop(tls_socks, -1) do
+          case :ssl.recv(t, 4, 0) do
+            {:ok, <<len::32>>} ->
+              {:ok, body} = :ssl.recv(t, len, 1_000)
+              assert %{"ok" => false, "refusal" => "too_many_connections"} = Jason.decode!(body)
+              :refused
+
+            {:error, :timeout} ->
+              :ok = :ssl.send(t, probe())
+
+              assert {:ok, %{"ok" => false, "refusal" => "unknown_op"}} =
+                       read_frame(&:ssl.recv(t, &1, 2_000))
+
+              :served
+          end
+        end
+
+      assert Enum.frequencies(outcomes) == %{served: Listener.max_conns(), refused: @extra - 1}
+      assert Enum.take(outcomes, Listener.max_conns()) |> Enum.uniq() == [:served]
+      Enum.each(tls_socks, &:ssl.close/1)
+    end
+  end
 end

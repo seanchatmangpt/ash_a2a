@@ -130,6 +130,22 @@ def run(b, report):
         ok = error is not None and error.code == expected and not error.problems
         report.add(b.name, "CancelTask", "1.0 client: completed task is not cancelable", "error", ok,
                    (error.describe() if error else "no error") + " (v1.0.1 5.4)")
+    # ContentTypeNotSupportedError: v1.0.1 section 5.4 has the same row as
+    # v1.1.0-rc (-32005, INVALID_ARGUMENT, 400 Bad Request).
+    vector = "1.0 client: a part in a media type the agent does not accept"
+    request = pb.SendMessageRequest(message=json_format.ParseDict({
+        "messageId": uid(),
+        "role": "ROLE_USER",
+        "parts": [{"raw": "AAEC", "mediaType": "application/x-parity-unsupported", "filename": "blob.bin"}],
+        "metadata": {"skill": "count_notes"},
+    }, pb.Message()))
+    outcome = b.unary("SendMessage", request, vector, version=V)
+    error = outcome.error
+    expected = {"grpc": "INVALID_ARGUMENT", "rest": 400, "jsonrpc": -32005}[b.kind]
+    ok = error is not None and error.code == expected and not error.problems and any(
+        i.reason == "CONTENT_TYPE_NOT_SUPPORTED" and i.domain == "a2a-protocol.org" for i in error.error_infos)
+    report.add(b.name, "SendMessage", vector, "error", ok,
+               (error.describe() if error else "no error") + " (v1.0.1 5.4)")
     time.sleep(0)
 
 

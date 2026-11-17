@@ -6,9 +6,14 @@ defmodule Actuator.Wire.UDS do
   use GenServer
   alias Actuator.Wire
 
-  # Minor item: bounded concurrent connections; a connection over the cap is closed at once.
+  # Bounded concurrent connections: a connection over the cap is answered with one
+  # `too_many_connections` refusal frame and closed. The listen backlog is sized well above the
+  # cap, so a burst of connects up to (and past) the cap reaches the acceptor and is decided by
+  # the cap, never dropped by the kernel accept queue.
   @max_conns 64
+  @backlog 4 * @max_conns
   def max_conns, do: @max_conns
+  def backlog, do: @backlog
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -49,7 +54,8 @@ defmodule Actuator.Wire.UDS do
       {:ifaddr, {:local, at}},
       {:packet, 4},
       {:packet_size, Wire.max_frame()},
-      {:active, false}
+      {:active, false},
+      {:backlog, @backlog}
     ])
   end
 
@@ -103,6 +109,7 @@ defmodule Actuator.Wire.UDS do
     case :gen_tcp.accept(lsock) do
       {:ok, sock} ->
         if :counters.get(conns, 1) >= @max_conns do
+          _ = :gen_tcp.send(sock, Wire.too_many_connections())
           :gen_tcp.close(sock)
         else
           :counters.add(conns, 1, 1)

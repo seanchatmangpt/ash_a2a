@@ -7,9 +7,14 @@ defmodule Actuator.Wire.TLS do
   use GenServer
   alias Actuator.Wire
 
-  # Minor item: bounded concurrent connections; a connection over the cap is closed at once.
+  # Bounded concurrent connections: a connection over the cap is closed before any handshake
+  # work is spent on it (the peer sees its TLS handshake fail on an established TCP
+  # connection). The listen backlog is sized well above the cap, so a burst of connects reaches
+  # the acceptor and is decided by the cap, never dropped by the kernel accept queue.
   @max_conns 64
+  @backlog 4 * @max_conns
   def max_conns, do: @max_conns
+  def backlog, do: @backlog
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -25,6 +30,7 @@ defmodule Actuator.Wire.TLS do
          {:packet_size, Wire.max_frame()},
          {:active, false},
          {:reuseaddr, true},
+         {:backlog, @backlog},
          {:ip, Keyword.get(opts, :ip, {127, 0, 0, 1})},
          {:versions, [:"tlsv1.3"]},
          {:certfile, String.to_charlist(opts[:certfile])},

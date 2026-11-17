@@ -77,6 +77,69 @@ defmodule Actuator.WireTlsCapTest do
     assert recovered?(connect, 50)
   end
 
+  @tag skip: if(@openssl, do: false, else: "openssl not installed")
+  test "burst: cap+N bare TCP connects all reach the listener; exactly cap handshake, N are closed by the cap" do
+    Process.flag(:trap_exit, true)
+    dir = Kit.tmp_dir("tlsburst")
+    {:ok, store} = Store.start_link(state_dir: dir)
+    pki = make_pki(dir)
+    b = Kit.build(state_dir: dir)
+
+    {:ok, tls} =
+      TLS.start_link(
+        store: store,
+        ctx_fun: fn -> {:ok, b.ctx} end,
+        port: 0,
+        certfile: pki.server_cert,
+        keyfile: pki.server_key,
+        cacertfile: pki.ca
+      )
+
+    port = TLS.port(tls)
+    extra = 32
+    assert TLS.backlog() >= TLS.max_conns() + extra
+
+    ssl_opts = [
+      {:versions, [:"tlsv1.3"]},
+      {:verify, :verify_peer},
+      {:cacertfile, String.to_charlist(pki.ca)},
+      {:server_name_indication, ~c"localhost"},
+      {:certfile, String.to_charlist(pki.client_cert)},
+      {:keyfile, String.to_charlist(pki.client_key)}
+    ]
+
+    # The burst: bare TCP connects, no handshake in between. Every one must be established
+    # (none dropped by the kernel accept queue).
+    tcp =
+      for _ <- 1..(TLS.max_conns() + extra) do
+        assert {:ok, s} =
+                 :gen_tcp.connect(~c"127.0.0.1", port, [:binary, {:packet, 4}, {:active, false}])
+
+        s
+      end
+
+    # The acceptor takes connections in arrival order and counts each before its handshake,
+    # so the first `cap` handshakes succeed and every later one is closed by the cap.
+    outcomes =
+      for s <- tcp do
+        case :ssl.connect(s, ssl_opts, 5_000) do
+          {:ok, t} ->
+            :ok = :ssl.send(t, ~s({"op":"health"}))
+            assert {:ok, resp} = :ssl.recv(t, 0, 5_000)
+            assert %{"ok" => true} = Jason.decode!(resp)
+            {:served, t}
+
+          {:error, _} ->
+            :refused
+        end
+      end
+
+    kinds = Enum.map(outcomes, fn o -> if o == :refused, do: :refused, else: :served end)
+    assert Enum.frequencies(kinds) == %{served: TLS.max_conns(), refused: extra}
+    assert Enum.take(kinds, TLS.max_conns()) |> Enum.uniq() == [:served]
+    for {:served, t} <- outcomes, do: :ssl.close(t)
+  end
+
   defp recovered?(_connect, 0), do: false
 
   defp recovered?(connect, n) do

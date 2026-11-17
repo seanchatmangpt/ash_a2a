@@ -110,11 +110,58 @@ defmodule Actuator.L10RedTeamTest do
       end
 
     {:ok, extra} = :gen_tcp.connect({:local, path}, 0, opts)
-    _ = :gen_tcp.send(extra, ~s({"op":"health"}))
-    assert {:error, _} = :gen_tcp.recv(extra, 0, 2_000)
+    # over the cap: one refusal frame, then the connection is closed
+    assert {:ok, frame} = :gen_tcp.recv(extra, 0, 2_000)
+    assert %{"ok" => false, "refusal" => "too_many_connections"} = Jason.decode!(frame)
+    assert {:error, :closed} = :gen_tcp.recv(extra, 0, 2_000)
 
     Enum.each(held, &:gen_tcp.close/1)
     Process.sleep(300)
     assert %{"ok" => true} = uds_call(path, ~s({"op":"health"}))
+  end
+
+  test "burst: cap+N bare connects all reach the listener; exactly cap served, N refused by the cap",
+       %{dir: dir, store: store} do
+    b = Kit.build(state_dir: dir)
+    path = Path.join(dir, "burst.sock")
+    {:ok, _} = UDS.start_link(path: path, store: store, ctx_fun: fn -> {:ok, b.ctx} end)
+    opts = [:binary, {:packet, 4}, {:active, false}]
+    extra = 32
+    assert UDS.backlog() >= UDS.max_conns() + extra
+
+    # No round trip between connects: every connect must succeed (none dropped by the kernel
+    # accept queue) and the acceptor, not the backlog, decides who is served.
+    socks =
+      for _ <- 1..(UDS.max_conns() + extra) do
+        assert {:ok, s} = :gen_tcp.connect({:local, path}, 0, opts)
+        s
+      end
+
+    # The acceptor works in arrival order: once the LAST connection has its refusal frame,
+    # every earlier one has been decided.
+    assert {:ok, last} = :gen_tcp.recv(List.last(socks), 0, 5_000)
+    assert %{"ok" => false, "refusal" => "too_many_connections"} = Jason.decode!(last)
+
+    outcomes =
+      for s <- Enum.drop(socks, -1) do
+        case :gen_tcp.recv(s, 0, 0) do
+          {:ok, frame} ->
+            assert %{"ok" => false, "stage" => "transport", "refusal" => "too_many_connections"} =
+                     Jason.decode!(frame)
+
+            :refused
+
+          {:error, :timeout} ->
+            :ok = :gen_tcp.send(s, ~s({"op":"health"}))
+            assert {:ok, resp} = :gen_tcp.recv(s, 0, 2_000)
+            assert %{"ok" => true} = Jason.decode!(resp)
+            :served
+        end
+      end
+
+    assert Enum.frequencies(outcomes) == %{served: UDS.max_conns(), refused: extra - 1}
+    # arrival order: the first `cap` connections are the served ones
+    assert Enum.take(outcomes, UDS.max_conns()) |> Enum.uniq() == [:served]
+    Enum.each(socks, &:gen_tcp.close/1)
   end
 end

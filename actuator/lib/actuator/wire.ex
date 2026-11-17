@@ -7,7 +7,8 @@ defmodule Actuator.Wire do
       {"op":"health"}
 
   Responses: `{"ok":true,"status":"performed|replayed","evidence":{...}}` or
-  `{"ok":false,"stage":<check number|"parse"|"config">,"refusal":"<code>"}`.
+  `{"ok":false,"stage":<check number|"parse"|"config"|"transport">,"refusal":"<code>"}`
+  (`"transport"` / `too_many_connections`: the listener's connection cap is reached).
   There is no operation that reconciles, changes policy or revocation, or takes a path,
   URL, command or module name; those are release/operator actions, not wire actions.
   """
@@ -39,6 +40,9 @@ defmodule Actuator.Wire do
   end
 
   def handle(_, _, _), do: refuse("parse", :malformed_request)
+
+  @doc "The frame a listener answers with when its connection cap is reached."
+  def too_many_connections, do: refuse("transport", :too_many_connections)
 
   defp execute(store, ctx_fun, e64, c64) do
     with {:ok, eb} <- Sa2aCrypto.Envelope.b64(e64) |> tag(:malformed_request),
