@@ -229,8 +229,10 @@ if Code.ensure_loaded?(Bandit) do
         http_routes() ++
         skills() ++
         consequences() ++
-        task_states() ++ security_schemes() ++ mounts() ++
-          AshA2A.Sim.Authority.items() ++ AshA2A.Sim.Email.surface_items()
+        task_states() ++
+        security_schemes() ++
+        mounts() ++
+        AshA2A.Sim.Authority.items() ++ AshA2A.Sim.Email.surface_items()
     end
 
     @doc """

@@ -94,7 +94,9 @@ defmodule AshA2A.Strain.Bridge do
   def record_observation(mesh_state, coordinator_id, %{type: type} = event)
       when is_map(mesh_state) do
     case Map.fetch(mesh_state, coordinator_id) do
-      {:ok, state} -> Map.put(mesh_state, coordinator_id, fold(state, type, event))
+      {:ok, state} ->
+        Map.put(mesh_state, coordinator_id, fold(state, type, event))
+
       :error ->
         :ok = validate_type!(type)
         mesh_state

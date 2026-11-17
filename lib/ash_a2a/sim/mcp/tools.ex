@@ -132,7 +132,9 @@ if Code.ensure_loaded?(Bandit) do
     @doc "Every tool, as MCP `Tool` objects."
     @spec list() :: [map()]
     def list do
-      operation_tools() ++ a2a_tools() ++ [raw_tool()] ++ sim_tools() ++ AuthorityTools.list() ++ AshA2A.Sim.MCP.EmailTools.list()
+      operation_tools() ++
+        a2a_tools() ++
+        [raw_tool()] ++ sim_tools() ++ AuthorityTools.list() ++ AshA2A.Sim.MCP.EmailTools.list()
     end
 
     @doc "The names of every tool."
@@ -1156,6 +1158,7 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp run("a2a_raw_request", args, ctx), do: raw(args, ctx)
+
     defp run("sim_email_" <> _ = name, args, ctx),
       do: AshA2A.Sim.MCP.EmailTools.run(name, args, ctx)
 
@@ -1166,6 +1169,7 @@ if Code.ensure_loaded?(Bandit) do
     defp run(name, args, _ctx)
          when name in ["sim_trip_kill_switch", "sim_reset_kill_switch", "sim_receipts"],
          do: AuthorityTools.run(name, args)
+
     defp run("sim_read_rows", args, _ctx), do: {:ok, read_rows(args)}
     defp run("sim_push_deliveries", args, _ctx), do: {:ok, push_deliveries(args)}
     defp run("sim_surface", args, _ctx), do: {:ok, surface(args)}
@@ -1725,7 +1729,6 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp raw_grpc(bytes, args, ctx, path) do
-
       extra =
         Enum.map(args["headers"] || %{}, fn {name, value} -> {String.downcase(name), value} end)
 
