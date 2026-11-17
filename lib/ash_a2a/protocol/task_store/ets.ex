@@ -41,8 +41,9 @@ defmodule AshA2A.Protocol.TaskStore.ETS do
   @impl AshA2A.Protocol.TaskStore
   def get(table, task_id) do
     case :ets.lookup(table, task_id) do
-      [{^task_id, task}] -> {:ok, task}
-      [] -> {:error, :not_found}
+      [{^task_id, %AshA2A.Protocol.Task{} = task}] -> {:ok, task}
+      # A missing row, or one that is not a task (a corrupted term), is not found.
+      _ -> {:error, :not_found}
     end
   end
 
@@ -70,17 +71,17 @@ defmodule AshA2A.Protocol.TaskStore.ETS do
   @impl AshA2A.Protocol.TaskStore
   def list(table, context_id) do
     tasks =
-      :ets.tab2list(table)
-      |> Enum.filter(fn {_id, task} -> task.context_id == context_id end)
-      |> Enum.map(fn {_id, task} -> task end)
+      table
+      |> all_tasks()
+      |> Enum.filter(&(&1.context_id == context_id))
 
     {:ok, tasks}
   end
 
   @impl AshA2A.Protocol.TaskStore
   def list_all(table, opts \\ []) do
-    :ets.tab2list(table)
-    |> Enum.map(fn {_id, task} -> task end)
+    table
+    |> all_tasks()
     |> AshA2A.Protocol.Task.Filter.apply(opts)
   end
 
@@ -125,6 +126,10 @@ defmodule AshA2A.Protocol.TaskStore.ETS do
     table = :ets.new(name, [:named_table, :public, :set, read_concurrency: true])
     :ets.new(push_table(name), [:named_table, :public, :set, read_concurrency: true])
     {:ok, table}
+  end
+
+  defp all_tasks(table) do
+    for {_id, %AshA2A.Protocol.Task{} = task} <- :ets.tab2list(table), do: task
   end
 
   defp push_table(name), do: :"#{name}_push"

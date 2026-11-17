@@ -362,6 +362,10 @@ def main():
     parser.add_argument("--log", help="where the server's stderr goes (default: a temp file)")
     args = parser.parse_args()
 
+    # This client does not act on notifications/tools/list_changed, so with no
+    # shim cache it must be given the real catalog: let the launcher wait.
+    os.environ.setdefault("A2A_SIM_MCP_INIT_WAIT", "900")
+    os.environ.setdefault("A2A_SIM_MCP_LIST_WAIT", "900")
     log_path = args.log or os.path.join(tempfile.gettempdir(), "a2a-sim-mcp-%d.log" % os.getpid())
     client = McpClient([args.server], log_path)
     quiet = args.json

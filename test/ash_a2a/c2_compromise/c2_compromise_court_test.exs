@@ -5,7 +5,7 @@
 defmodule AshA2A.C2Compromise.CourtTest do
   @moduledoc """
   RFC-SA2A-006 s26 C2 compromise court, run for real: separate OS processes (keymaster,
-  actuator, AuthorityService; own build roots and state dirs; distribution disabled; UDS and
+  actuator, two AuthorityServices; own build roots and state dirs; distribution disabled; UDS and
   mTLS wire), an attacker playing the compromised control plane inside this VM, and the
   actuator's hash-chained effect ledger as the oracle. DB-free.
 

@@ -66,6 +66,7 @@ if Code.ensure_loaded?(Plug) do
     @behaviour Plug
 
     import Plug.Conn
+    require Logger
 
     alias AshA2A.Email.{Brief, Inbound, ReplyIntent}
 
@@ -137,6 +138,9 @@ if Code.ensure_loaded?(Plug) do
         Keyword.get(opts, :webhook) in [nil, false] ->
           {:halt, 503, :webhook_auth_unconfigured}
 
+        not is_function(Keyword.get(opts, :brief_lookup), 1) ->
+          {:halt, 503, :brief_lookup_unconfigured}
+
         is_nil(Keyword.get(opts, :token_ledger)) and
             Keyword.get(opts, :unsafe_no_replay_ledger) != true ->
           {:halt, 503, :replay_protection_unconfigured}
@@ -146,9 +150,18 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp read_json(%Plug.Conn{body_params: %{} = params} = conn, _opts)
-         when map_size(params) > 0 and not is_struct(params, Plug.Conn.Unfetched),
-         do: {:ok, params, conn}
+    defp read_json(%Plug.Conn{body_params: %{} = params} = conn, opts)
+         when map_size(params) > 0 and not is_struct(params, Plug.Conn.Unfetched) do
+      # A pre-parsed body skips the plug's own read; honour the declared length.
+      max = Keyword.get(opts, :max_body_bytes, @max_body)
+
+      too_big? =
+        Enum.any?(get_req_header(conn, "content-length"), fn v ->
+          match?({n, ""} when n > max, Integer.parse(v))
+        end)
+
+      if too_big?, do: {:halt, 413, :payload_too_large}, else: {:ok, params, conn}
+    end
 
     defp read_json(conn, opts) do
       max = Keyword.get(opts, :max_body_bytes, @max_body)
@@ -364,7 +377,13 @@ if Code.ensure_loaded?(Plug) do
           other -> %{action: n, standing: :refused, reason: {:unexpected, other}}
         end
       rescue
-        e -> %{action: n, standing: :refused, reason: {:exception, Exception.message(e)}}
+        e ->
+          Logger.error("email dispatch raised: " <> Exception.message(e))
+          %{action: n, standing: :refused, reason: :dispatch_exception}
+      catch
+        kind, reason ->
+          Logger.error("email dispatch #{kind}: " <> inspect(reason))
+          %{action: n, standing: :refused, reason: :dispatch_exception}
       end
     end
 
@@ -425,7 +444,7 @@ if Code.ensure_loaded?(Plug) do
     defp summary(results) do
       lines =
         for r <- results do
-          "#{r.action}: #{r.standing}" <> if(r[:reason], do: " (#{inspect(r.reason)})", else: "")
+          "#{r.action}: #{r.standing}" <> if(r[:reason], do: " (#{public_reason(r.reason)})", else: "")
         end
 
       Enum.join(["Receipt summary:" | lines], "\n")
@@ -433,16 +452,26 @@ if Code.ensure_loaded?(Plug) do
 
     defp serialize(r) do
       %{"action" => r.action, "standing" => Atom.to_string(r.standing)}
-      |> put_unless_nil("reason", r[:reason] && inspect(r.reason))
-      |> put_unless_nil("receipt", r[:receipt] && inspect(r.receipt))
+      |> put_unless_nil("reason", r[:reason] && public_reason(r.reason))
+      |> put_unless_nil("receipt", r[:receipt] && public_receipt(r.receipt))
     end
+
+    # The sender and the webhook caller see a closed code, never exception
+    # text, resource names or the receipt term; the detail stays in the log.
+    defp public_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+    defp public_reason({code, _detail}) when is_atom(code), do: Atom.to_string(code)
+    defp public_reason(_reason), do: "refused"
+
+    defp public_receipt(%{id: id}) when is_binary(id), do: id
+    defp public_receipt(%{"id" => id}) when is_binary(id), do: id
+    defp public_receipt(_receipt), do: "recorded"
 
     defp put_unless_nil(map, _k, nil), do: map
     defp put_unless_nil(map, k, v), do: Map.put(map, k, v)
 
     defp to_string_safe(v) when is_binary(v), do: v
     defp to_string_safe(v) when is_atom(v), do: Atom.to_string(v)
-    defp to_string_safe(v), do: inspect(v)
+    defp to_string_safe(_v), do: "invalid_request"
 
     defp send_json(conn, status, body) do
       conn

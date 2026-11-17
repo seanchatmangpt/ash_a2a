@@ -88,7 +88,19 @@ defmodule AshA2A.TaskStore.EventJournalEts do
     keys = :ets.select(table, [{{{task_id, :"$1", :"$2"}, :_}, [], [{{task_id, :"$1", :"$2"}}]}])
     drop = max(length(keys) - keep_last, 0)
 
-    keys |> Enum.take(drop) |> Enum.each(&:ets.delete(table, &1))
+    {dropped, kept} = Enum.split(keys, drop)
+    Enum.each(dropped, &:ets.delete(table, &1))
+
+    # A generation with no event left keeps no sequence counter either, so the
+    # table does not grow by one row per generation forever.
+    kept_generations = MapSet.new(kept, fn {_task_id, gen, _seq} -> gen end)
+
+    dropped
+    |> Enum.map(fn {_task_id, gen, _seq} -> gen end)
+    |> Enum.uniq()
+    |> Enum.reject(&MapSet.member?(kept_generations, &1))
+    |> Enum.each(&:ets.delete(table, {:counter, task_id, &1}))
+
     :ok
   rescue
     ArgumentError -> {:error, :journal_unavailable}

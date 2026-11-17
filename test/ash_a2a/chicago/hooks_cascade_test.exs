@@ -31,7 +31,12 @@ defmodule AshA2A.Chicago.HooksCascadeTest do
 
   @moduletag :tmp_dir
   @moduletag :graphlaw
+  @ash_graphlaw_skip if File.exists?(AshGraphLaw.WasmConfig.vendored_path()),
+                       do: false,
+                       else:
+                         "ash_graphlaw engine graphlaw.wasm not vendored (private release asset); run `mix ash_graphlaw.vendor`"
   @moduletag :ash_graphlaw_wasm
+  @moduletag skip: @ash_graphlaw_skip
 
   @expected %{
     "SA2A-HOOK-001" => :falsifier_killed,

@@ -59,18 +59,23 @@ jobs:
       - name: Prove the simulation (every probe over the real wire)
         run: |
           mkdir -p proof-out
-          mix ash_a2a.sim --prove --json > proof-out/prove.json
-          mix ash_a2a.sim --prove
+          mix ash_a2a.sim --prove --json | python3 -I scripts/ci_extract_json.py proof-out/prove.json
+          mix ash_a2a.sim --prove | tee proof-out/prove.txt
       - name: Parity against the upstream v1.1 reference (strict)
         run: |
           mkdir -p proof-out
-          mix ash_a2a.sim --parity --strict --json > proof-out/parity.json
-          mix ash_a2a.sim --parity --strict
+          mix ash_a2a.sim --parity --strict --json | python3 -I scripts/ci_extract_json.py proof-out/parity.json
+          mix ash_a2a.sim --parity --strict | tee proof-out/parity.txt
+      # Direct mode: the stdio shim answers `initialize` from a cache of the last
+      # healthy start, which is empty on a fresh runner, so the driver would see
+      # no tools. A2A_SIM_MCP_DIRECT=1 boots the real server before answering.
       - name: Drive every surface item through MCP
+        env:
+          A2A_SIM_MCP_DIRECT: "1"
         run: |
           mkdir -p proof-out
           python3 scripts/mcp_drive.py --json --log proof-out/mcp-server.log > proof-out/mcp.json
-          python3 scripts/mcp_drive.py --log proof-out/mcp-server.log
+          python3 scripts/mcp_drive.py --log proof-out/mcp-server.log | tee proof-out/mcp.txt
       - name: Mutation gate (every mutant killed)
         run: mix ash_a2a.chicago.mutate --evidence-dir proof-out/mutations --require-killed
       - name: Upload proof matrices

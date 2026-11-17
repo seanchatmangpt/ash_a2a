@@ -159,16 +159,6 @@ if Code.ensure_loaded?(Bandit) do
       end
     end
 
-    defp route_initialized(conn, reply, session) do
-      if session.initialized do
-        id = Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
-        Agent.update(@sessions, &Map.put(&1, id, session))
-        conn |> put_resp_header("mcp-session-id", id) |> json(200, reply)
-      else
-        json(conn, 200, reply)
-      end
-    end
-
     defp route(conn, message, opts) do
       with {:ok, id} <- session_id(conn),
            {:ok, session} <- lookup_session(id),
@@ -176,6 +166,16 @@ if Code.ensure_loaded?(Bandit) do
         answer(conn, message, id, session, opts)
       else
         {:refuse, status, reason} -> text(conn, status, reason)
+      end
+    end
+
+    defp route_initialized(conn, reply, session) do
+      if session.initialized do
+        id = Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
+        Agent.update(@sessions, &Map.put(&1, id, session))
+        conn |> put_resp_header("mcp-session-id", id) |> json(200, reply)
+      else
+        json(conn, 200, reply)
       end
     end
 

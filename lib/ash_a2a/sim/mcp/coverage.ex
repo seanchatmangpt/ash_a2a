@@ -757,6 +757,22 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp skill("AshA2A.Sim.Note.bad_reply") do
+      [
+        step(
+          "a reply that is not an A2A value is -32006",
+          a2a(:send, @jr, %{"skill" => "bad_reply"}),
+          tested: true,
+          expect: [ex("ok", "eq", false), ex("error.code", "eq", -32_006)]
+        ),
+        step(
+          "the same on HTTP+JSON is HTTP 500",
+          a2a(:send, @rest, %{"skill" => "bad_reply"}),
+          expect: [ex("ok", "eq", false), ex("status", "eq", 500)]
+        )
+      ]
+    end
+
     defp skill(_id), do: []
 
     # == consequence classes =====================================================

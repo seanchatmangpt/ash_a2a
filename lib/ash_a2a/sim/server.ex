@@ -63,8 +63,18 @@ if Code.ensure_loaded?(Bandit) do
 
     @impl Plug
     def call(%{method: "POST"} = conn, _opts) do
-      {:ok, raw, conn} = read_body(conn)
+      case read_body(conn, length: 1_000_000) do
+        {:ok, raw, conn} -> record(conn, raw)
+        _too_large_or_closed -> send_resp(conn, 413, "")
+      end
+    end
 
+    def call(conn, _opts), do: send_resp(conn, 405, "")
+
+    # The newest 1 000 deliveries are kept; older ones fall off the list.
+    @max_deliveries 1_000
+
+    defp record(conn, raw) do
       body =
         case Jason.decode(raw) do
           {:ok, decoded} -> decoded
@@ -78,11 +88,9 @@ if Code.ensure_loaded?(Bandit) do
         raw: raw
       }
 
-      Agent.update(__MODULE__, &[delivery | &1])
+      Agent.update(__MODULE__, &Enum.take([delivery | &1], @max_deliveries))
       send_resp(conn, 200, "")
     end
-
-    def call(conn, _opts), do: send_resp(conn, 405, "")
   end
 
   defmodule AshA2A.Sim.Router do
@@ -141,6 +149,11 @@ if Code.ensure_loaded?(Bandit) do
 
     defp route(%{path_info: ["rest" | rest]} = conn, mounts),
       do: mount(conn, AshA2A.Transport.HTTPJSON, mounts.rest, rest, mounts.auth)
+
+    # The email gateway authenticates its own webhook (no bearer scheme).
+    defp route(%{path_info: [segment | _]} = conn, _mounts)
+         when segment in ["email", "email-workspace"],
+         do: AshA2A.Sim.Email.call(conn)
 
     defp route(conn, _mounts), do: send_resp(conn, 404, "Not Found")
 
@@ -298,6 +311,7 @@ if Code.ensure_loaded?(Bandit) do
       :ok = AshA2A.Sim.Auth.issue_grants()
 
       {:ok, _} = Supervisor.start_child(sup, AshA2A.Sim.PushReceiver)
+      :ok = AshA2A.Sim.Email.start(sup)
 
       push_port =
         listen(sup, :sim_push, AshA2A.Sim.PushReceiver, Keyword.get(opts, :push_port, 0))
@@ -374,6 +388,8 @@ if Code.ensure_loaded?(Bandit) do
       catch
         :exit, _ -> :ok
       end
+
+      AshA2A.Sim.Email.stop()
 
       for {key, previous} <- grpc_env do
         case previous do

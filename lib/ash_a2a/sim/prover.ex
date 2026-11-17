@@ -3214,6 +3214,13 @@ if Code.ensure_loaded?(Bandit) do
              "-32006 carries no INVALID_AGENT_RESPONSE ErrorInfo: #{clip(inspect(error))}"
            )
 
+           a2a_error = jr_error!(caller(info, :a2a, nil, nil), "message/send", params, -32_006)
+
+           check!(
+             Jason.encode!(a2a_error) =~ "INVALID_AGENT_RESPONSE",
+             "the /a2a mount's -32006 carries no ErrorInfo: #{clip(inspect(a2a_error))}"
+           )
+
            resp = rest_error!(info, :post, "/message:send", 500, json: params)
 
            check!(

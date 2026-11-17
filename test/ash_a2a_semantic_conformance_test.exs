@@ -116,7 +116,12 @@ defmodule AshA2ASemanticConformanceTest do
                inspect(Enum.reject(do_results, &(&1.status == :met)))
     end
 
+    @ash_graphlaw_skip if File.exists?(AshGraphLaw.WasmConfig.vendored_path()),
+                         do: false,
+                         else:
+                           "ash_graphlaw engine graphlaw.wasm not vendored (private release asset); run `mix ash_graphlaw.vendor`"
     @tag :ash_graphlaw_wasm
+    @tag skip: @ash_graphlaw_skip
     test "the real, honestly-earned level is reported and is NOT over-claimed" do
       results = Conformance.requirement_results()
       earned = Conformance.earned_level(results)

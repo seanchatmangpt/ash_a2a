@@ -113,9 +113,15 @@ defmodule AshA2A.ArchitectureVerifier.ChicagoRollupTest do
   # summed here in one test. Tagged generously, matching this repo's own
   # convention for its heavier Chicago tests (e.g.
   # `brce_gate7_test.exs`'s `@tag timeout: 300_000`).
+  @ash_graphlaw_skip if File.exists?(AshGraphLaw.WasmConfig.vendored_path()),
+                       do: false,
+                       else:
+                         "ash_graphlaw engine graphlaw.wasm not vendored (private release asset); run `mix ash_graphlaw.vendor`"
+
   @tag timeout: 600_000
   @tag :graphlaw_engine
   @tag :ash_graphlaw_wasm
+  @tag skip: @ash_graphlaw_skip
   test "ArchitectureVerifier.checks/0 rolls up all seven real Chicago courts alongside the original ten" do
     results = ArchitectureVerifier.checks()
 

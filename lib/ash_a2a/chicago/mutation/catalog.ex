@@ -44,7 +44,11 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
 
   @doc "Non-discoverable reference courts the catalog may use as killers."
   @spec reference_courts() :: [module()]
-  def reference_courts, do: [AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt]
+  def reference_courts,
+    do: [
+      AshA2A.Chicago.Fixtures.MutationHarness.GuardCourt,
+      AshA2A.Chicago.Mutation.Wave3Court
+    ]
 
   @doc "Every §97 mutation, in court falsifier order."
   @spec entries() :: [Mutation.t()]

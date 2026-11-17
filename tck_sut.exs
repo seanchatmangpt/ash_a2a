@@ -43,10 +43,14 @@ defmodule TckSut.Agent do
     resource_or_domain: TckSut.Resource,
     name: "tck_sut_agent",
     require_authenticated_caller: false,
-    # Pinned TCK CORE-SEND-003 sends an unsupported mediaType with no
-    # expected_error and requires a normal response: SUT opts out of input-mode
-    # admission (the library default stays on).
-    execution: [validate_input_modes: false]
+    # Input-mode admission stays at the library default (on). The TCK is
+    # self-contradictory on a part with an unlisted mediaType: the MUST probe
+    # CORE-SEND-003 (generic runner, no expected_error) needs a normal
+    # response, while HTTP_JSON-STATUS-001's ContentTypeNotSupportedError probe
+    # applies only when the card does NOT advertise the type. This echo SUT
+    # honestly accepts any media type, so it advertises `*/*`; the library's
+    # refusal path is covered by its own input-mode tests.
+    default_input_modes: ["*/*"]
 
   alias AshA2A.Protocol.Part
 
@@ -451,6 +455,9 @@ interfaces = [
 # dependency applications, so the Req.Finch pool (Finch instance named
 # Req.Finch) must be started here or every delivery dies with
 # `unknown registry: Req.Finch` (the observed silent webhook gap).
+# `:req` (not just `:finch`) is started: the sender's DNS-pinned per-delivery
+# pools are children of the `Req.FinchSupervisor` that application owns.
+{:ok, _} = Application.ensure_all_started(:req)
 {:ok, _} = Application.ensure_all_started(:finch)
 {:ok, _} = Finch.start_link(name: Req.Finch)
 
@@ -469,7 +476,8 @@ interfaces = [
                             capabilities: %{streaming: true, push_notifications: true}]},
        rest:
          {AshA2A.Transport.HTTPJSON, agent: TckSut.Agent, base_url: base_url,
-          transport: TckSut.Transport, push_notifications: true}},
+          transport: TckSut.Transport, push_notifications: true,
+          content_type: "application/a2a+json"}},
     port: port,
     ip: {127, 0, 0, 1}
   )

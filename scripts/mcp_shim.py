@@ -15,7 +15,8 @@ the handshake at once and starts the real server in the background:
     `<MIX_BUILD_PATH or _build>/a2a_sim_mcp_cache.json`).
   * With no cache, `initialize` waits up to `A2A_SIM_MCP_INIT_WAIT` seconds
     (default 15) for the real server and then answers a minimal capabilities
-    object; `tools/list` is an empty list until the server is up, and the shim
+    object; `tools/list` waits up to `A2A_SIM_MCP_LIST_WAIT` seconds (default
+    20) and then answers an empty list until the server is up; the shim
     then sends `notifications/tools/list_changed`. The shim therefore always
     declares `tools.listChanged: true`.
   * Any other request waits for the real server. If the server dies before it
@@ -32,6 +33,8 @@ Standard output carries MCP frames only. Environment:
                          `bin/a2a-sim-mcp` with A2A_SIM_MCP_DIRECT=1)
   A2A_SIM_MCP_CACHE      cache file path
   A2A_SIM_MCP_INIT_WAIT  seconds `initialize` waits when there is no cache
+  A2A_SIM_MCP_LIST_WAIT  seconds `tools/list` waits when there is no cache
+                         (default 20; after that it answers an empty list)
 """
 
 import collections
@@ -302,8 +305,11 @@ def handle_local(message, cache):
         return reply(ident, with_list_changed(source))
     source = live or cache
     if method == "tools/list":
+        if source is None:
+            wait_ready(float(os.environ.get("A2A_SIM_MCP_LIST_WAIT", "20")))
+            source = state.get("live")
         tools = (source or {}).get("tools", [])
-        if live is None:
+        if live is None and state.get("live") is None:
             served_tools = tools
         return reply(ident, {"tools": tools})
     if method == "resources/list":

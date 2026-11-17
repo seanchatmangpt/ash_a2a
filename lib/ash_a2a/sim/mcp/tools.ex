@@ -1648,10 +1648,43 @@ if Code.ensure_loaded?(Bandit) do
     defp raw_bytes(args) when is_map_key(args, "json"), do: {:ok, Jason.encode!(args["json"])}
     defp raw_bytes(_args), do: {:ok, nil}
 
+    # `a2a_raw_request` may only reach the sim's own listeners. The path is
+    # appended to a loopback mount URL, so it must stay a path (or query):
+    # `@evil.example/` after the bare `root` mount would otherwise turn the
+    # mount into userinfo and the request into an SSRF. The method is a closed set.
+    @raw_methods ~w(get post put patch delete head options)
+
     defp raw_http(binding, bytes, args, ctx) do
+      with {:ok, path} <- raw_path(args["path"]),
+           {:ok, method} <- raw_method(Map.get(args, "method", "POST")) do
+        raw_http(binding, bytes, args, ctx, path, method)
+      end
+    end
+
+    defp raw_path(nil), do: {:ok, ""}
+
+    defp raw_path(path) when is_binary(path) do
+      if (path == "" or String.starts_with?(path, ["/", "?"])) and
+           not String.starts_with?(path, "//") and not String.contains?(path, ["\r", "\n", " "]),
+         do: {:ok, path},
+         else: {:error, "path must start with / or ? and stay on the sim's own listener"}
+    end
+
+    defp raw_path(_other), do: {:error, "path must be a string"}
+
+    defp raw_method(method) when is_binary(method) do
+      down = String.downcase(method)
+
+      if down in @raw_methods,
+        do: {:ok, String.to_existing_atom(down)},
+        else: {:error, "method must be one of #{Enum.join(@raw_methods, ", ")}"}
+    end
+
+    defp raw_method(_other), do: {:error, "method must be a string"}
+
+    defp raw_http(binding, bytes, args, ctx, path, method) do
       mount = args["mount"] || if(binding == "jsonrpc", do: "a2a", else: "rest")
-      url = mount_url(ctx.info, mount) <> (args["path"] || "")
-      method = args |> Map.get("method", "POST") |> String.downcase() |> String.to_atom()
+      url = mount_url(ctx.info, mount) <> path
 
       extra =
         Enum.map(args["headers"] || %{}, fn {name, value} -> {String.downcase(name), value} end)
@@ -1678,7 +1711,13 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp raw_grpc(bytes, args, ctx) do
-      path = args["path"] || "/#{Wire.grpc_service()}/SendMessage"
+      case raw_path(args["path"] || "/#{Wire.grpc_service()}/SendMessage") do
+        {:ok, path} -> raw_grpc(bytes, args, ctx, path)
+        {:error, _} = error -> error
+      end
+    end
+
+    defp raw_grpc(bytes, args, ctx, path) do
 
       extra =
         Enum.map(args["headers"] || %{}, fn {name, value} -> {String.downcase(name), value} end)

@@ -5,6 +5,11 @@ defmodule AshA2A.SemanticEngineTest do
   alias AshA2A.Semantic.Engine.AshGraphLaw, as: Engine
   alias AshA2A.Semantic.HookReactor.Hook
 
+  @ash_graphlaw_skip if File.exists?(AshGraphLaw.WasmConfig.vendored_path()),
+                       do: false,
+                       else:
+                         "ash_graphlaw engine graphlaw.wasm not vendored (private release asset); run `mix ash_graphlaw.vendor`"
+
   @ttl "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\n"
 
   test "bad input is refused with a typed error, never coerced" do
@@ -16,6 +21,7 @@ defmodule AshA2A.SemanticEngineTest do
   end
 
   @tag :ash_graphlaw_wasm
+  @tag skip: @ash_graphlaw_skip
   test "datalog_closure runs on the real engine" do
     assert {:ok, res} =
              Engine.datalog_closure(
@@ -27,6 +33,7 @@ defmodule AshA2A.SemanticEngineTest do
   end
 
   @tag :ash_graphlaw_wasm
+  @tag skip: @ash_graphlaw_skip
   test "n3_closure runs on the real engine" do
     rules = "{ ?x ex:p ?y } => { ?y ex:q ?x } ."
     assert {:ok, res} = Engine.n3_closure(@ttl, "@prefix ex: <http://example.org/> .\n" <> rules)
@@ -34,6 +41,7 @@ defmodule AshA2A.SemanticEngineTest do
   end
 
   @tag :ash_graphlaw_wasm
+  @tag skip: @ash_graphlaw_skip
   test "validate_shex runs on the real engine" do
     assert {:ok, res} =
              Engine.validate_shex(
@@ -46,6 +54,7 @@ defmodule AshA2A.SemanticEngineTest do
   end
 
   @tag :ash_graphlaw_wasm
+  @tag skip: @ash_graphlaw_skip
   test "engine_capability/2 consults the engine (probe) and closure determinism runs" do
     assert Engine.probe(:datalog_closure, 2) == :ok
     assert {:error, {:no_probe, :nope, 1}} = Engine.probe(:nope, 1)

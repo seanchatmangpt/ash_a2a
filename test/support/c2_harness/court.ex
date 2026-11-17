@@ -8,7 +8,7 @@ defmodule C2Harness.Court do
 
       report = C2Harness.Court.run(n: 20)
 
-  Phases: (1) build the child projects, boot the fleet (keymaster, actuator, authority);
+  Phases: (1) build the child projects, boot the fleet (keymaster, actuator, two authorities);
   (2) prove the control-plane environment holds no protected key material; (3) compat
   probes (recorded integration handoffs); (4) run the attack catalog against the stock
   actuator and the real authority; (5) MUTATION court: for every fence check a fresh fleet
@@ -92,7 +92,9 @@ defmodule C2Harness.Court do
   #      No keymaster signature is involved.
   #   2. the same certificate at the COURT actuator, which pins quorum 2: one custodian is not
   #      enough, by policy.
-  #   3. the court path every intended issuance uses: real authority + co-signer B.
+  #   3. the court path every intended issuance uses: two independent real authorities (two
+  #      keys, two custodians), signatures combined with `Issuer.combine_actuator_certificates/1`;
+  #      no keymaster signature.
   #   4. an authority-shaped effect at the actuator: refused by design (exact key set).
   defp compat(fleet, cp) do
     alias C2Harness.{Attacker, Wire}
@@ -188,8 +190,9 @@ defmodule C2Harness.Court do
       },
       %{
         probe:
-          "court issuance path: real AuthorityService certificate co-signed by keymaster " <>
-            "signer B (second custodian), executed by the court actuator (quorum 2)",
+          "court issuance path: certificates from two independent real AuthorityService " <>
+            "instances combined with Issuer.combine_actuator_certificates/1 (two custodians, " <>
+            "no keymaster signature), executed by the court actuator (quorum 2)",
         observed: cosigned,
         standing: standing.(cosigned, "performed", "ACCEPTED", "BLOCKED")
       },

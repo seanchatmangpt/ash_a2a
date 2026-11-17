@@ -8,6 +8,11 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
   alias AshA2A.Semantic.Conformance
   alias AshA2A.Semantic.Engine.AshGraphLaw, as: Engine
 
+  @ash_graphlaw_skip if File.exists?(AshGraphLaw.WasmConfig.vendored_path()),
+                       do: false,
+                       else:
+                         "ash_graphlaw engine graphlaw.wasm not vendored (private release asset); run `mix ash_graphlaw.vendor`"
+
   describe "AshA2A.Semantic.Engine.AshGraphLaw conformance surface" do
     test "exports all five RFC engine capability functions" do
       assert function_exported?(Engine, :validate_shex, 3)
@@ -18,6 +23,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
     end
 
     @tag :ash_graphlaw_wasm
+    @tag skip: @ash_graphlaw_skip
     test "AshA2A.Semantic.Conformance.engine_capability/2 returns :met for all capabilities" do
       assert Conformance.engine_capability(:validate_shex, 3) == :met
       assert Conformance.engine_capability(:validate_shacl, 2) == :met
@@ -27,6 +33,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
     end
 
     @tag :ash_graphlaw_wasm
+    @tag skip: @ash_graphlaw_skip
     test "available?/0 returns true when AshGraphLaw is live" do
       assert Engine.available?() == true
     end
@@ -37,6 +44,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
     end
 
     @tag :ash_graphlaw_wasm
+    @tag skip: @ash_graphlaw_skip
     test "validate_shacl/2 executes against real engine" do
       data = """
       @prefix ex: <http://example.org/> .
@@ -63,6 +71,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
     end
 
     @tag :ash_graphlaw_wasm
+    @tag skip: @ash_graphlaw_skip
     test "query_sparql/2 executes against real engine" do
       data = """
       @prefix ex: <http://example.org/> .

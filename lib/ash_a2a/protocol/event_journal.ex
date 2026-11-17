@@ -145,7 +145,9 @@ defmodule AshA2A.Protocol.EventJournal do
 
     advanced? = is_nil(previous) or generation > Generation.generation_of(previous)
 
-    if advanced? and AshA2A.Protocol.Task.terminal?(task) do
+    # Trimmed on every advance, not only at the end: a long-running task
+    # must not grow the journal without bound.
+    if advanced? do
       guarded(task.id, generation, :trim, fn -> trim(journal, task.id, keep_last()) end)
     end
 
@@ -154,7 +156,7 @@ defmodule AshA2A.Protocol.EventJournal do
 
   def record_task(_journal, _previous, _task), do: :ok
 
-  @doc "How many events a terminal task keeps (`:event_journal_keep_last`, default 256)."
+  @doc "How many events a task keeps (`:event_journal_keep_last`, default 256)."
   @spec keep_last() :: non_neg_integer()
   def keep_last do
     case Application.get_env(:ash_a2a, :event_journal_keep_last, @default_keep_last) do

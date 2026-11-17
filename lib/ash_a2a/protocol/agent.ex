@@ -666,16 +666,19 @@ defmodule AshA2A.Protocol.Agent do
       # result or DOWN is a no-op) and a pending `message/send` caller is
       # answered with the canceled task rather than left to complete.
       defp interrupt_task_worker(task_id, canceled) do
-        case Enum.find(task_workers(), fn {_token, {_ref, _from, id, _pid}} -> id == task_id end) do
-          {token, {mref, from, _id, pid}} ->
-            Process.demonitor(mref, [:flush])
-            Process.exit(pid, :kill)
-            Process.put(@task_workers_key, Map.delete(task_workers(), token))
-            reply_to(from, {:ok, canceled})
+        # Cancel is best-effort for non-transactional effects: a worker that
+        # already performed one cannot take it back. Every worker of the task
+        # is stopped (not only the first), so none can commit afterwards.
+        task_workers()
+        |> Enum.filter(fn {_token, {_ref, _from, id, _pid}} -> id == task_id end)
+        |> Enum.each(fn {token, {mref, from, _id, pid}} ->
+          Process.demonitor(mref, [:flush])
+          Process.exit(pid, :kill)
+          Process.put(@task_workers_key, Map.delete(task_workers(), token))
+          reply_to(from, {:ok, canceled})
+        end)
 
-          nil ->
-            :ok
-        end
+        :ok
       end
 
       def handle_call({:get_task, task_id}, _from, state) do

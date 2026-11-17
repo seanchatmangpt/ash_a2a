@@ -45,9 +45,9 @@ if Code.ensure_loaded?(Req) do
     @impl AshA2A.Protocol.PushNotificationSender
     def deliver(config, payload, opts \\ []) do
       with :ok <- validate_auth(config),
-           :ok <- validate_url(config.url, opts) do
+           {:ok, pin} <- validate_url(config.url, opts) do
         attempts = Keyword.get(opts, :attempts, @default_attempts)
-        post_with_retry(config, payload, opts, attempts, 1)
+        post_with_retry(config, payload, Keyword.put(opts, :pin, pin), attempts, 1)
       end
     end
 
@@ -93,19 +93,34 @@ if Code.ensure_loaded?(Req) do
     end
 
     defp post(config, payload, opts) do
+      {url, extra_headers, connect_options} = target(config.url, Keyword.get(opts, :pin))
+
       req_opts = [
-        headers: headers(config),
+        headers: headers(config) ++ extra_headers,
+        connect_options: connect_options,
         receive_timeout: Keyword.get(opts, :timeout, @default_timeout),
         json: payload,
         retry: false,
         redirect: false
       ]
 
-      case Req.post(config.url, req_opts) do
+      case Req.post(url, req_opts) do
         {:ok, %Req.Response{status: status}} when status in 200..299 -> :ok
         {:ok, %Req.Response{status: status}} -> {:error, {:http_status, status}}
         {:error, reason} -> {:error, reason}
       end
+    end
+
+    # The admitted address is connected to directly (the name is only SNI and
+    # the Host header), so a DNS answer that changes between admission and
+    # delivery (rebinding) cannot redirect the request inward.
+    defp target(url, nil), do: {url, [], []}
+
+    defp target(_url, {%URI{} = uri, ip}) do
+      host = if tuple_size(ip) == 4, do: to_string(:inet.ntoa(ip)), else: "[#{:inet.ntoa(ip)}]"
+      host_header = if URI.default_port(uri.scheme) == uri.port, do: uri.host, else: "#{uri.host}:#{uri.port}"
+
+      {URI.to_string(%{uri | host: host}), [{"host", host_header}], [hostname: uri.host]}
     end
 
     # The spec requires the configured credentials to travel as an
@@ -147,7 +162,7 @@ if Code.ensure_loaded?(Req) do
           admit_resolved(url, opts)
 
         true ->
-          :ok
+          {:ok, nil}
       end
     end
 
@@ -155,7 +170,7 @@ if Code.ensure_loaded?(Req) do
       allow_http = not Keyword.get(opts, :require_https, true)
 
       case AshA2A.A2ATransport.WebhookPolicy.admit(url, allow_http: allow_http) do
-        {:ok, _admitted} -> :ok
+        {:ok, %{uri: uri, addresses: [ip | _]}} -> {:ok, {uri, ip}}
         {:error, code, _detail} -> {:error, {:private_host, code}}
       end
     end

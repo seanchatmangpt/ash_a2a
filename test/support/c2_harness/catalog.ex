@@ -410,7 +410,7 @@ defmodule C2Harness.Catalog do
           l = Env.issue!(env, Env.effect(), signers: ["A", "B"])
           Env.submit(env, l.effect, l.cert)
           # real authority: its own key revoked in the actuator's view; a certificate it
-          # really issued (and B co-signed) must be refused the same way
+          # really issued (by both authorities) must be refused the same way
           Env.revoke(env, %{"revoked" => [env.cp.public_registry.authority["kid"]]})
           l2 = Env.issue!(env, Env.effect())
           r2 = Env.submit(env, l2.effect, l2.cert)
