@@ -78,15 +78,45 @@ The top 60 tests sum to 1 371 s of the 1 761 s run. The top 3 alone are 993 s
   `lib/ash_a2a/receipt/offline_replay.ex`. They are ceilings, not waits, and are
   not touched in a normal run.
 
-## What changed in this lane
+## What changed in this lane (round 2, machine quiet)
 
-No file in the lane's scope (`test/support`, `config/test.exs`, `mix.exs`
-aliases, CI shard config) held a safe, measurable win, so no behaviour was
-changed there and the before and after numbers are the same. The time is in test
-files and `lib/ash_a2a/chicago`, which are outside this lane's scope. The
-recommendations below are what to apply there. No change was made to the tier
-tags, so `scripts/check_optional_deps.sh` and `test/optional_deps_matrix_test.exs`
-are unaffected.
+Round-1 wall numbers were inflated by load 27 to 65. Re-measured with load
+average 7 to 10 (`uptime` before 7.23, after 10.04):
+
+| Item | Before | After | Cause and fix |
+|---|---|---|---|
+| `ClosureTest` (whole module, load 2) | 114 s (52.7 s enforce test + ~50 s `setup_all`) | 2.5 s | The cost was not the BEAM read; it was `Closure.resolve/2`, which scanned every defined function in the tree for every call site (sites x functions). It now looks arities up in a `{module, function}` index built once per analysis. Same result (smallest higher arity wins). `Closure.read_facts/1` plus a `facts:` option also let the report and enforce runs share one BEAM read. |
+| `OfflineReplayTest` (module, load 2) | 7.7 s sync | unchanged | The 264 s seen in round 1 was load; nothing to fix. At load 7 to 10 inside the heavy-suspect run it took 78 s for the court test, 4.8 s when the machine is quiet. |
+| `MutationHarnessTest` SA2A-MUTATION | 571 s (load 27-65) | 370 s (load 7-10) | Not touched (mutation lane). Still the largest test. |
+| Heavy-suspect set, wall | 1761 s (load 27-65) | 1220 s (load 7-10), user CPU 4m51s to 6m21s | The sets differ: the second run has more tests (906 vs 799) added by other lanes, and 2 sim tests and 2 setup_all failures (missing graphlaw ABI wasm, vendor B subprocess) that belong to other lanes. |
+
+Closure change: `lib/ash_a2a/chicago/closure/court.ex` (+17/-9) and
+`test/ash_a2a/chicago/closure/closure_test.exs`. No `assert` or `refute` line was
+removed; the enforce assertion `{:refused, %{mode: "enforce"}} = Closure.run(...)`
+still runs a real enforce analysis over the whole tree. Verified:
+`mix test --include serial test/ash_a2a/chicago/closure test/ash_a2a/c1_closure`,
+38 passed.
+
+No tag, CI or alias change was made, so `scripts/check_optional_deps.sh` and
+`test/optional_deps_matrix_test.exs` are unaffected.
+
+## Top of the heavy-suspect set after (load 7-10)
+
+1. MutationHarnessTest SA2A-MUTATION 370 s; 2. OfflineReplayTest court 78 s;
+3. Sim.McpTest parity 23 s; 4. CrossRuntimePortability 23 s;
+5. Sim.McpTest tools/call 22 s; 6. Sim.McpLauncherTest warm cache 22 s;
+7. RedTeamCourt 14 s; 8. Sim.McpLauncherTest no cache 13 s; then everything under 10 s.
+ClosureTest left the list (158 s before).
+
+## Tier and shard balance (suggestions only, ci.yml not edited)
+
+`--partitions 3` is by file index, not cost. The one dominant file is
+`mutation_harness_test` (370 s), which sits on shard 2 and sets that lane's time;
+shards 1 and 3 hold only sub-80 s files from this set. If shard-2 is the longest
+CI lane, move nothing by hand (indices shift with every added file); instead
+shrink the mutation test (recommendation 1) or give it its own lane. `quick` runs
+fast + shard-1 and `solo` ran 5.0 min at `4a647a9`; re-read the three lane times
+from a CI run before rebalancing, since this container cannot reproduce them.
 
 ## Recommendations (ordered by saving)
 
@@ -96,12 +126,12 @@ are unaffected.
    (`mix test --only mutation_full`) and in the default tier assert only the
    resolution table plus one mutant per killer court. Largest single saving,
    several minutes of the shard that holds it.
-2. `closure/closure_test.exs`: two full-tree abstract-code walks (`setup_all`
+2. DONE (round 2): `closure/closure_test.exs`: two full-tree abstract-code walks (`setup_all`
    report and the enforce test), 115 s CPU. Derive the enforce verdict from the
    report already computed (`report.verdict == "violations"` is the refusal), or
    cache the walk per VM in a `test/support` helper keyed on the module list. The
    planted-bypass tests already prove enforce refuses. Saves about half of 115 s CPU.
-3. `offline_replay_test.exs`: 17 s CPU but 198 s wall; the wait is fresh
+3. NOT NEEDED (round 2): `offline_replay_test.exs`: 17 s CPU but 198 s wall; the wait is fresh
    `elixir` OS-process boots (`Chicago.FreshConsumer`, `OfflineReplay.verify_fresh`).
    Run the independent fresh-process verifications of one run concurrently
    (`Task.async_stream`) instead of one after another.
@@ -119,11 +149,8 @@ are unaffected.
 
 ## Projected full-suite time
 
-Measured here: the suite cannot be re-timed reliably on a shared, loaded host, so
-the table above is evidence of where time goes, not of the total. Estimate if
-recommendations 1 to 3 are applied (these are estimates, not measurements): the
-three files account for about 56 percent of the heavy-suspect set's wall time and
-most of its CPU; with a reduced default mutation matrix the sync portion should
-return towards the earlier 560 s, giving a full `mix test.all` of roughly 11 to 12
-minutes on an idle machine. With no change, the projection stays at the measured
-17 minutes.
+Measured: the closure fix removes about 110 s of CPU (about 160 s wall under
+load) from the async portion. Estimated (not measured): with the mutation test
+reduced as in recommendation 1 the sync portion falls towards the earlier 560 s
+and `mix test.all` to about 11 to 12 minutes; with only the closure fix applied
+expect about 15 minutes on a quiet machine.
