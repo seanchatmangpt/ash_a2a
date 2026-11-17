@@ -43,7 +43,7 @@ Green means the command printed what is quoted and exited 0 in this tree on that
 | Doctor | `mix ash_a2a.doctor` | exits 1 on this repository (`authenticated_caller_disabled`, `config_receipt_binding_key_unset`); expected for the test configuration |
 | Receipts | `mix ash_a2a.receipts.verify` | **red**: exit 1, three `verified_without_run_log` findings (`a10-ingress-wire.md`, `f2-copilot-wire-verify.md`, `z11-actuation.md`) |
 | MCP drive | `python3 scripts/mcp_drive.py` | **red**: exit 1, 141 items served, 47 uncovered (email and authority surface items with no MCP mapping, added while this pass ran). Last clean run: 2026-11-16, 93 of 93. `--call` and `--list` work |
-| Mutation gate | `mix ash_a2a.chicago.mutate --require-killed` | MUTATION_RESULT |
+| Mutation gate | `mix ash_a2a.chicago.mutate --require-killed` | partly green: the full run killed 43 of 46 mutants and exited 1 (`blocked: 3`, `loaded AshA2A.Protocol.AgentCardSignature differs from its on-disk BEAM`: that module was recompiled in the shared build during the run); the three blocked ids (`card_alg_allowlist_ok`, `card_key_alg_ok`, `card_signature_verify_true`) rerun alone with `--only` were all killed and exited 0. Rerun the whole gate on a private build at the release commit |
 | ExDoc | `MIX_ENV=dev mix docs` | DOCS_RESULT |
 
 Not run in this pass: `mix test.all` over the whole suite (the coordinator runs it; the last

@@ -289,7 +289,17 @@ defmodule AshA2A.Transport.HTTPJSON do
 
     # One request span per HTTP request (W15); `ok?` is false on 4xx/5xx.
     AshA2A.Protocol.Telemetry.request_span(:http_json, %{route: route_label(conn)}, fn ->
-      conn = route(conn, opts)
+      conn =
+        try do
+          route(conn, opts)
+        rescue
+          # `fetch_query_params` raises on a malformed query string (invalid
+          # percent-encoding or UTF-8). That is the client's error: answer the
+          # binding's 400 instead of letting the exception escape the plug.
+          _ in Plug.Conn.InvalidQueryError ->
+            send_error(conn, 400, Error.invalid_params("Malformed query string"))
+        end
+
       {conn, is_integer(conn.status) and conn.status < 400}
     end)
   end

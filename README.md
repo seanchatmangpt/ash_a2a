@@ -147,7 +147,8 @@ the output); they need the repository checked out, not the Hex package.
   `verified_without_run_log` findings. See [verify receipts](docs/how-to/verify-receipts.md).
 - `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog (46
   entries resolve with `--list`) and runs the courts expected to kill it;
-  `--require-killed` fails unless every mutant dies. The CI workflow
+  `--require-killed` fails unless every mutant dies (on 2026-11-17 a full run killed 43 of 46 and
+  blocked 3 when the shared build changed under it; the 3 rerun alone were killed). The CI workflow
   `.github/workflows/proofs.yml` runs the prover, parity, MCP drive and mutation gate;
   it has not run on a remote runner.
 

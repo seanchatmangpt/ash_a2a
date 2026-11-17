@@ -153,8 +153,9 @@ Each item says what changed and what to do.
 - `AshA2A.Protocol.AgentCard.audit/2` reports discrepancies between a card's claims and the mounted
   surface (`docs/reference/agent-card-honesty.md`).
 - `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog and runs the courts
-  expected to kill it (`--list` resolved 46 entries on 2026-11-17; on 2026-11-16
-  `--require-killed` killed 19 of 19 mutants then in the catalog and exited 0). The CI workflow
+  expected to kill it (`--list` resolved 46 entries on 2026-11-17; a full `--require-killed` run that day killed 43 and
+  blocked 3 because the shared build changed under it, and those 3 rerun alone were killed, exit 0;
+  on 2026-11-16 it killed 19 of 19 mutants then in the catalog). The CI workflow
   `.github/workflows/proofs.yml` runs the prover, parity, MCP drive and the mutation gate; it has
   not run on a remote runner.
 - `AshA2A.Transport.GRPC.UnknownMethod.install/1` gives an unknown gRPC method `UNIMPLEMENTED`
