@@ -26,7 +26,10 @@ defmodule AshA2A.SecurityWave3McpTest do
     {:ok, server} = Server.start_link()
     info = Server.info()
     on_exit(fn -> if Process.alive?(server), do: Server.stop(server) end)
-    {:ok, info: info}
+
+    # One MCP listener for the module (its session table is a named process).
+    {:ok, sup} = HTTP.start_link(info: info, port: 0, auth_token: "wave3-mcp-token")
+    {:ok, info: info, port: HTTP.port(sup)}
   end
 
   # A victim listener on another loopback port that records every connection.
@@ -131,12 +134,6 @@ defmodule AshA2A.SecurityWave3McpTest do
   end
 
   describe "MCP Streamable HTTP" do
-    setup %{info: info} do
-      # Linked to the test process: it stops with the test.
-      {:ok, sup} = HTTP.start_link(info: info, port: 0, auth_token: "wave3-mcp-token")
-      {:ok, port: HTTP.port(sup)}
-    end
-
     @initialize Jason.encode!(%{
                   "jsonrpc" => "2.0",
                   "id" => 1,

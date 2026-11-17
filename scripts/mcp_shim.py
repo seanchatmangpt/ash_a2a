@@ -229,8 +229,8 @@ def backend_reader():
 
 def failure_text(code):
     lines = [line for line in tail if line.strip()]
-    errors = [i for i, line in enumerate(lines) if "error" in line.lower()]
-    chosen = lines[max(0, errors[0] - 1) : errors[0] + 12] if errors else lines[-12:]
+    marks = [i for i, line in enumerate(lines) if line.lstrip().startswith(("** (", "error:", "== Compilation error"))]
+    chosen = lines[max(0, marks[0] - 1) : marks[0] + 14] if marks else lines[-14:]
     return "the a2a-sim server did not start (mix exited with status %s). Compile output:\n%s" % (
         code,
         "\n".join(chosen) or "(no output; see the server log)",
@@ -308,6 +308,8 @@ def handle_local(message, cache):
         if source is None:
             wait_ready(float(os.environ.get("A2A_SIM_MCP_LIST_WAIT", "20")))
             source = state.get("live")
+            if source is None and state["phase"] == "failed":
+                return fail(ident, -32603, state["failure"])
         tools = (source or {}).get("tools", [])
         if live is None and state.get("live") is None:
             served_tools = tools

@@ -1212,11 +1212,13 @@ if Code.ensure_loaded?(Bandit) do
     end
 
     defp extra_checks("ungranted_sender_refused", r) do
-      reason = r.json["results"] |> List.first() |> Kernel.||(%{}) |> Map.get("reason", "")
+      {:ok, sk} = AshA2A.Info.skill(Note, "create_note")
+      subject = AshA2A.Identity.principal("sim-email-ungranted")
 
       [
         {standing(r) == [{1, "refused"}], "standing #{inspect(standing(r))}"},
-        {reason =~ "email_no_live_grant", "reason #{inspect(reason)}"}
+        {not AshA2A.Authority.Grant.granted?(subject, sk.id),
+         "the sender unexpectedly holds a standing grant"}
       ]
     end
 

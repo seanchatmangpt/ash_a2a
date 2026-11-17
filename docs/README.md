@@ -94,6 +94,9 @@ Exact factual contracts:
 - [`reference/telemetry.md`](reference/telemetry.md) — the production event catalog
   with payloads.
 - [`reference/mix-tasks.md`](reference/mix-tasks.md) — the shipped Mix tasks.
+- [`reference/environment-setup.md`](reference/environment-setup.md) — build the
+  verification environment (`scripts/dev_env_setup.sh`), run every proof
+  (`scripts/verify_all.sh`), and troubleshoot Postgres, MCP, Rust and venv.
 - [`reference/performance.md`](reference/performance.md) — the measured v1.0 wire-path
   baseline (SA2A-B5/B9 bench run with its environment-identity receipt).
 - [`reference/a2a-endpoint-contract.md`](reference/a2a-endpoint-contract.md) — the

@@ -29,8 +29,7 @@ and name the library tests that drive it on the real transports.
 - -32006 used to have a constructor and a table row but no code path that emitted it on the HTTP+JSON,
   gRPC or `/jsonrpc` bindings: a reply that was not a list of parts became -32603 or crashed the
   encoder. `Transport.Runtime.safe_handle/3` now validates it. The stored task ends `FAILED` with the
-  fixed text `Error: invalid agent response`; the offending value never reaches the caller (the
-  detail is logged under no ref and kept off the wire).
+  fixed text `Error: invalid agent response`; the offending value never reaches the caller.
 - -32001 is deliberately shared with policy denial so a denied caller cannot tell "forbidden" from
   "absent" (see `Error.task_not_found/2`).
 - Standard JSON-RPC codes (-32700, -32600, -32601, -32602, -32603) and the library's -32000 (server

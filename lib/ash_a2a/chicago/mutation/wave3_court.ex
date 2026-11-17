@@ -662,7 +662,9 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
   defp p_json_total_ok(_fx) do
     shallow = AshA2A.Protocol.JSONGuard.decode(~s({"a":[1,2,{"b":null}]}), 64)
 
-    wire = AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Task.new(id: "w3-json", context_id: "ctx"))
+    {:ok, wire} =
+      AshA2A.Protocol.JSON.encode(AshA2A.Protocol.Task.new(id: "w3-json", context_id: "ctx"))
+
     decoded = AshA2A.Protocol.JSON.decode(wire, :task)
 
     verdict(
