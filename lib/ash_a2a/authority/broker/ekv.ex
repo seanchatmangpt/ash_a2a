@@ -202,8 +202,27 @@ defmodule AshA2A.Authority.Broker.Ekv do
           superseded?(ekv_name(opts), Identity.external(authority.token_id), authority) ->
         {:error, %{reason: :revoked, token_id: authority.token_id}}
 
+      # RFC-SA2A-001 S54 (confused deputy), as `InMemory.verify/2` enforces it:
+      # a token id is the grant of ONE `(subject, capability)` pair, so an
+      # authority presented with the same token id but another subject or
+      # capability is not that grant. Entries written before `:subject` was
+      # stored carry nothing to compare and still verify.
+      rebound?(ekv_name(opts), Identity.external(authority.token_id), authority) ->
+        {:error, %{reason: :token_binding_mismatch, token_id: authority.token_id}}
+
       true ->
         {:ok, authority}
+    end
+  end
+
+  defp rebound?(name, key, authority) do
+    case EKV.get(name, key) do
+      %{subject: subject, capability_id: capability_id} ->
+        subject != Identity.external(authority.subject) or
+          capability_id != authority.capability_id
+
+      _ ->
+        false
     end
   end
 

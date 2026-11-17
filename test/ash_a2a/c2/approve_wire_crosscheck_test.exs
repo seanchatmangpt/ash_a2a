@@ -202,9 +202,13 @@ defmodule AshA2A.C2.ApproveWireCrosscheckTest do
       }
 
       env = Jason.decode!(unb64u(py["envelope_b64u"]))
+      {:ok, decoded} = Envelope.decode(unb64u(py["envelope_b64u"]))
 
       assert {:valid, %{custodian_id: "alice"}} =
-               Sa2aCrypto.verify_envelope(env, bytes, Sa2aCrypto.Registry.Static.view([record]),
+               Sa2aCrypto.verify_envelope(
+                 decoded,
+                 bytes,
+                 Sa2aCrypto.Registry.Static.view([record]),
                  audience: "authority:test",
                  required_profile: :classical
                )

@@ -757,13 +757,13 @@ if Code.ensure_loaded?(Bandit) do
                result = run_bus(command, presenter, title)
 
                check!(
-                 match?({:error, %{code: :authority_required}}, result),
+                 match?({:error, %{code: :authority_mismatch}}, result),
                  "bus answered #{clip(inspect(result))}"
                )
 
                check!(note_by_title(title) == nil, "the borrowed grant wrote a row")
 
-               "CommandBus refused authority_required for a grant held by another principal; no row"
+               "CommandBus refused authority_mismatch for a grant held by another principal; no row"
              end)
            end)
          end}

@@ -689,7 +689,12 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
 
   defp p_journal_record_task(_fx) do
     with_journal(fn journal ->
-      task = AshA2A.Protocol.Task.new(id: "w3-journal-task", context_id: "ctx")
+      task =
+        AshA2A.Protocol.Task.new(id: "w3-journal-task", context_id: "ctx")
+        |> AshA2A.Protocol.Task.Generation.append_status(
+          AshA2A.Protocol.Task.Status.new(:working)
+        )
+
       :ok = AshA2A.Protocol.EventJournal.record_task(journal, nil, task)
       {:ok, events} = AshA2A.Protocol.EventJournal.replay_after(journal, task.id, 0)
       verdict(events != [], "#{length(events)} journaled events replayable")
