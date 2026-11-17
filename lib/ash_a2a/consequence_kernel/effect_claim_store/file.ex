@@ -14,11 +14,17 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.File do
   end
 
   def init(path), do: {:ok, Map.put(load(path), :path, path)}
+  @doc false
   def put(s, c), do: GenServer.call(s, {:put, c})
+  @doc false
   def fetch(s, id), do: GenServer.call(s, {:fetch, id})
+  @doc false
   def fetch_effect(s, id), do: GenServer.call(s, {:fetch_effect, id})
+  @doc false
   def transition(s, id, f, t), do: GenServer.call(s, {:transition, id, f, t})
+  @doc false
   def append_receipt(s, id, r), do: GenServer.call(s, {:append_receipt, id, r})
+  @doc false
   def receipts(s, id), do: GenServer.call(s, {:receipts, id})
 
   def handle_call({:put, %EffectClaim{} = c}, _, s) do

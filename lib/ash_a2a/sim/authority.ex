@@ -307,7 +307,7 @@ if Code.ensure_loaded?(Bandit) do
     @doc """
     The probes of one `:authority` item as `[{label, fun}]`; `fun` takes the
     `AshA2A.Sim.Server.info/0` map and answers a detail string, or raises
-    `AshA2A.Sim.Prover.Failure`.
+    `Sim.Prover.Failure`.
     """
     @spec scenarios(String.t()) :: [{String.t(), (map() -> String.t())}]
     def scenarios("grant") do

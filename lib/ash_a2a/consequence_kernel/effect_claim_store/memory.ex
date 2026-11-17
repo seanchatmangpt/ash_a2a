@@ -11,6 +11,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.Memory do
   def start_link(opts \\ []),
     do: Agent.start_link(fn -> %{claims: %{}, effects: %{}, receipts: %{}} end, opts)
 
+  @doc false
   def put(pid, %EffectClaim{} = c),
     do:
       Agent.get_and_update(pid, fn s ->
@@ -32,6 +33,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.Memory do
         end
       end)
 
+  @doc false
   def fetch(pid, id),
     do:
       Agent.get(pid, fn s ->
@@ -41,6 +43,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.Memory do
         end
       end)
 
+  @doc false
   def fetch_effect(pid, id),
     do:
       Agent.get(pid, fn s ->
@@ -50,6 +53,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.Memory do
              else: (_ -> :not_found)
       end)
 
+  @doc false
   def transition(pid, id, from, to),
     do:
       Agent.get_and_update(pid, fn s ->
@@ -62,6 +66,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.Memory do
         end
       end)
 
+  @doc false
   def append_receipt(pid, id, r) when is_map(r),
     do:
       Agent.get_and_update(pid, fn s ->
@@ -70,6 +75,7 @@ defmodule AshA2A.ConsequenceKernel.EffectClaimStore.Memory do
           else: {{:error, :effect_claim_not_found}, s}
       end)
 
+  @doc false
   def receipts(pid, id),
     do:
       Agent.get(pid, fn s ->

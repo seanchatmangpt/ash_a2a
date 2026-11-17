@@ -54,7 +54,7 @@ defmodule AshA2A.Sim.Auth do
   @spec scheme_name() :: String.t()
   def scheme_name, do: @scheme
 
-  @doc "Options for `AshA2A.Protocol.Plug.Auth.init/1`: the bearer scheme and its scope."
+  @doc "Options for `AshA2A.Protocol.Plug.Auth.init`: the bearer scheme and its scope."
   @spec plug_auth_opts() :: keyword()
   def plug_auth_opts do
     [

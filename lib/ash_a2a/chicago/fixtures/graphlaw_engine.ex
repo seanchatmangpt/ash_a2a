@@ -82,7 +82,7 @@ defmodule AshA2A.Chicago.Fixtures.GraphlawEngine do
   @doc "The engine-native condition witness for `status_iri/0`: an N3 denial over the event."
   def condition_witness(event), do: event <> "{ ?s <#{@status_iri}> ?o } => false .\n"
 
-  @doc "Non-range-restricted rule plus a denial that matches iff `e:a e:related ?w` was derived."
+  @doc "Non-range-restricted rule plus a denial that matches iff the triple `a related ?w` was derived."
   def unsafe_rule_document do
     @e <> "e:a e:edge e:b .\n{ ?x e:edge ?y } => { ?x e:related ?w } .\n" <> related_denial()
   end

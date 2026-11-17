@@ -36,7 +36,7 @@ defmodule AshA2A.Chicago.Fixtures.CanonicalIdentity do
   `[:ash_a2a, :semantic, :ir_admission, :decision]` event for the same real
   admission decision `AshA2A.Semantic.Admission.admit/2` makes; that duplicate
   was collapsed into the one event `llm_boundary.ex` already observes (see
-  `AshA2A.Semantic.Admission.emit_admission/3`) rather than keeping two
+  `AshA2A.Semantic.Admission.emit_admission`) rather than keeping two
   events for one decision.
   """
   @spec mappings() :: [Mapping.t()]

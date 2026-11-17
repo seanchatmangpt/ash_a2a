@@ -337,7 +337,7 @@ defmodule AshA2A.Protocol.JSON do
   @doc """
   Encodes an agent card into the AgentCard JSON format.
 
-  Accepts either a plain map (as returned by `AshA2A.Protocol.Agent.agent_card/0`) or a
+  Accepts either a plain map (as returned by `AshA2A.Protocol.Agent.agent_card`) or a
   fully-populated `%AshA2A.Protocol.AgentCard{}` struct. When a struct is passed, fields
   like `capabilities`, `provider`, `documentation_url`, etc. are read from
   the struct and used as defaults. Options in `opts` always take precedence

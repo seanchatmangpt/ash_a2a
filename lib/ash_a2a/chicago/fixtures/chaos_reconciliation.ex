@@ -73,7 +73,7 @@ defmodule AshA2A.Chicago.Fixtures.ChaosReconciliation.Effect do
   end
 
   @doc "Independent read of the ledger rows for one actuation identity."
-  @spec rows(String.t()) :: [Ash.Resource.record()]
+  @spec rows(String.t()) :: [struct()]
   def rows(operation_id) when is_binary(operation_id) do
     __MODULE__
     |> Ash.Query.filter(operation_id == ^operation_id)

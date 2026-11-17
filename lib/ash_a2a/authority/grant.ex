@@ -314,7 +314,7 @@ defmodule AshA2A.Authority.Grant do
   @doc """
   Renews the caller's own standing grant of `capability_id` to `subject` IN
   PLACE -- extends (or shortens) its `expires_at` through the configured
-  broker's optional `AshA2A.Authority.Broker.renew/4` callback, without a
+  broker's optional `AshA2A.Authority.Broker.renew` callback, without a
   revoke-then-reissue round trip.
 
   ## The window this closes
@@ -387,7 +387,7 @@ defmodule AshA2A.Authority.Grant do
   @doc """
   Lists every standing grant the configured broker holds for `subject` --
   the enumeration surface `granted?/3` cannot provide (see
-  `AshA2A.Authority.Broker.list_grants/2`), needed for admin tooling, audit
+  `AshA2A.Authority.Broker.list_grants`), needed for admin tooling, audit
   review, and proactive expiry sweeps rather than only a per-capability
   `granted?/3` probe.
 

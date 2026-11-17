@@ -690,8 +690,8 @@ defmodule AshA2A.Transport.Runtime do
   popped in-flight token turns a late `:ash_a2a_task_done` / `:DOWN` into a
   no-op in `handle_info/2`.
   """
-  @spec cancel_in_flight(module(), State.t(), String.t()) ::
-          :not_in_flight | {:reply, term(), State.t()}
+  @spec cancel_in_flight(module(), %State{}, String.t()) ::
+          :not_in_flight | {:reply, term(), %State{}}
   def cancel_in_flight(module, state, task_id) do
     with {token, {mref, from, _id, wire?}} <- find_in_flight(task_id),
          {:ok, task} <- State.get_task(state, task_id),
@@ -1350,8 +1350,8 @@ defmodule AshA2A.Transport.Runtime do
   sleeping) with the current task. A terminal task never advances, so it
   answers immediately.
   """
-  @spec get_task_call(State.t(), Principal.key(), String.t(), keyword(), GenServer.from()) ::
-          {:reply, term(), State.t()} | {:noreply, State.t()}
+  @spec get_task_call(%State{}, Principal.key(), String.t(), keyword(), GenServer.from()) ::
+          {:reply, term(), %State{}} | {:noreply, %State{}}
   def get_task_call(state, principal, task_id, opts, {pid, _tag} = from) do
     case get_task_for(state, principal, task_id) do
       {:ok, task} ->

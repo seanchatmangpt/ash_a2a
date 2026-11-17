@@ -1306,7 +1306,7 @@ if Code.ensure_loaded?(Bandit) do
     @doc """
     The probes of an email surface item: `[{label, fun}]`, each `fun` taking
     the server `info` and answering a detail string or raising
-    `AshA2A.Sim.Prover.Failure`.
+    `Sim.Prover.Failure`.
     """
     @spec probes(map()) :: [{String.t(), (map() -> String.t())}]
     def probes(%{kind: :email_outcome, name: name}) do

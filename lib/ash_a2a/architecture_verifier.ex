@@ -619,7 +619,7 @@ defmodule AshA2A.ArchitectureVerifier do
   `AshA2A.BrceAnchor` prepared-receipt anchor is present, before the real
   Ash action ever runs (RFC-SA2A-002 Gate 7/§38, §68 BRCE Court -- the
   sole-DO fence `AshA2A.BrceAnchor`'s moduledoc and
-  `AshA2A.Dispatcher.do_dispatch/5` both describe).
+  `AshA2A.Dispatcher.do_dispatch` both describe).
 
   This exact property is already proven end to end by the `CHI-BRCE`
   Chicago court (`test/ash_a2a/chicago/brce_gate7_test.exs`, falsifiers
@@ -726,7 +726,7 @@ defmodule AshA2A.ArchitectureVerifier do
   dispatched against `Fixture.Resource` (which never declared `a2a do
   semantic_requests true end`), real-falls-through
   `AshA2A.Agent.__dispatch__` to ordinary skill resolution --
-  `AshA2A.Agent.semantic_request?/2` requires BOTH the resource's own
+  `AshA2A.Agent.semantic_request?` requires BOTH the resource's own
   compiled opt-in AND the caller's flag before ever calling
   `AshA2A.Semantic.Compiler.compile/3`; a caller flag alone must never be
   sufficient (that would make the explicit surface into exactly the

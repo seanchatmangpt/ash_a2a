@@ -145,7 +145,7 @@ defmodule AshA2A.Delivery.Oban do
   end
 
   @doc """
-  Maps an `AshA2A.CommandBus.run/4` result to an `Oban.Worker.perform/1`
+  Maps an `AshA2A.CommandBus.run/4` result to an `Oban.Worker.perform`
   return value. Host workers should return `perform_result(CommandBus.run(...))`.
 
     * `{:ok, _}` / `:ok` -> `:ok`

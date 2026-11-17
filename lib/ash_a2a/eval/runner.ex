@@ -18,7 +18,7 @@ defmodule AshA2A.Eval.Runner do
 
   @doc """
   Runs every case in the validated `suite` map against `url`. Returns the
-  per-case results (see `AshA2A.Eval.Report.finalize/2` for aggregation into
+  per-case results (see `AshA2A.Eval.Report.finalize` for aggregation into
   a full report).
   """
   @spec run(map(), String.t(), keyword()) :: [map()]

@@ -30,7 +30,7 @@ defmodule AshA2A.ToA2AError.Wire do
   reason must be chosen by the failure class at this layer and passed
   pre-wrapped, never derived from the numeric code alone.
   """
-  @spec envelope(AshA2A.Protocol.JSONRPC.Request.id(), integer(), String.t(), term()) :: map()
+  @spec envelope(String.t() | integer() | nil, integer(), String.t(), term()) :: map()
   def envelope(id, code, message, data) do
     %{
       "jsonrpc" => "2.0",
@@ -155,7 +155,7 @@ defprotocol AshA2A.ToA2AError do
   Returns the JSON-RPC 2.0 error response envelope for `error`, addressed to
   JSON-RPC id `id`.
   """
-  @spec to_a2a_error(t(), AshA2A.Protocol.JSONRPC.Request.id()) :: map()
+  @spec to_a2a_error(t(), String.t() | integer() | nil) :: map()
   def to_a2a_error(error, id)
 end
 
