@@ -342,7 +342,7 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
     base = [
       policy: %{allowlist: %{}},
       brief_lookup: fn _ -> :error end,
-      dispatch: fn _principal, _action -> {:error, :unused} end
+      dispatch: fn _principal, _action -> {:error, "unused"} end
     ]
 
     conn =
@@ -425,7 +425,7 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
   defp dkim_resolver(p) do
     fn
       "example.com", "sel" -> {:ok, p}
-      _, _ -> {:error, :nxdomain}
+      _, _ -> {:error, "nxdomain"}
     end
   end
 
