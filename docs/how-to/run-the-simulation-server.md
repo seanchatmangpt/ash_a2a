@@ -115,6 +115,69 @@ its arguments as a data part.
 | `publish_note` | generic | external_do | Records a publication outside the data layer (`AshA2A.Sim.Note.publications/0`). |
 | `unclassified_note` | generic | unknown | Always rejected: nobody classified its consequence. |
 
+## Drive the email gateway
+
+The server also mounts the email gateway of
+[Operate by email](operate-by-email.md) (`AshA2A.Email.Plug`,
+`POST /v1/email:ingest`), with everything it needs. It authenticates its own
+webhook, so these two mounts take no bearer token.
+
+| Mount | Webhook authentication |
+| --- | --- |
+| `POST /email/v1/email:ingest` | an SES-shaped envelope; the provider check is `AshA2A.Email.Dkim.verifier/1` over the raw message in `content`, plus the SNS topic ARN |
+| `POST /email-workspace/v1/email:ingest` | a Bearer webhook secret the server generates per run |
+
+Behind both: a fresh RSA-2048 DKIM key per run (the resolver answers it for
+`sim.example`, selector `sim`), a durable replay ledger
+(`AshA2A.Email.TokenLedgerStore` on an EKV instance in a temporary directory,
+removed on stop), a sender allowlist, 64 KiB and 2000-character caps and a
+60-requests-per-minute limit per sender. A brief action runs the governed
+kernel entry against `AshA2A.Sim.Note` under the sender's standing grant:
+`approver@sim.example` and `other@sim.example` hold the `create_note` and
+`publish_note` grants, `ungranted@sim.example` holds none.
+
+`AshA2A.Sim.Email` issues briefs and signs real mail, so you can post by hand
+from `mix run` or let the prover do it:
+
+```elixir
+brief = AshA2A.Sim.Email.issue_brief()
+reply = AshA2A.Sim.Email.build_reply(brief, text: "Approve 1.")
+AshA2A.Sim.Email.post(info, reply.envelope).status
+#=> 200
+```
+
+The prover has one probe per route and one per outcome
+(`AshA2A.Sim.Email.outcomes/0`), each a real HTTP POST followed by a read of
+the Ash rows:
+
+| Outcome | Wire answer | Row changes |
+| --- | --- | --- |
+| honest approved reply | 200 `dispatched` | the note exists |
+| same message id again | 200 with `replayed: true` | no |
+| same token, new message id | 409 `already_consumed` | no |
+| one byte flipped after signing | 401 `webhook_unauthorized` | no |
+| wrong or missing webhook secret, another SNS topic | 401 | no |
+| signed with a key the resolver does not publish | 401 | no |
+| `l=` body-length tag | 401 | no |
+| From outside the signing domain | 401 | no |
+| envelope text, sender or ids that differ from the signed message | 401 | no |
+| sender off the allowlist | 401 `sender_not_allowlisted` | no |
+| brief bound to another approver | 403 `approver_mismatch` | no |
+| reply token missing or forged | 403 `invalid_reply_token` | no |
+| reply to an unknown message id | 404 `brief_not_found` | no |
+| body over 64 KiB | 413 `payload_too_large` | no |
+| body nested over 8 levels | 413 `payload_too_complex` | no |
+| graph changed since the brief | 409 `stale_graph_digest`, a reconfirm brief is mailed and can be approved | no |
+| authenticated sender with no standing grant | 200 `refused` | no |
+| 61 requests in a minute from one sender | 429 `rate_limited` | no |
+
+`AshA2A.Sim.Email.drift/1` changes the simulated graph under a brief, and
+`AshA2A.Sim.Email.advance_clock/1` empties the rate-limit window without
+waiting. To read what the gateway mailed, use `AshA2A.Sim.Email.deliveries/0`
+(or the `sim_email_deliveries` MCP tool).
+
+The test is `mix test test/ash_a2a/sim/sim_email_test.exs`.
+
 ## Start it from code
 
 ```elixir

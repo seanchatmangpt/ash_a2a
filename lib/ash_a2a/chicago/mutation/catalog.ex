@@ -34,6 +34,32 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
   | allow root-manifest component drift    | `AshA2A.Semantic.RootManifest.verify_pins/1`         |
   | allow replay to call actuator          | `AshA2A.CommandBus.claim_receipt/3`                  |
 
+  ## Wave 3 (guards added after the original catalog)
+
+  `CHI-MUTWAVE3` (`AshA2A.Chicago.Mutation.Wave3Court`) is a second
+  non-discoverable reference court, driving the real functions, plugs and
+  transports of each guard below with real collaborators.
+
+  | guard removed                                 | target                                                   |
+  |-----------------------------------------------|----------------------------------------------------------|
+  | email gateway needs webhook authentication    | `Email.Plug.require_config/1`, `Email.Plug.webhook_auth/3` |
+  | email gateway needs a replay ledger           | `Email.Plug.require_config/1`                            |
+  | email body depth / node / reply caps          | `Email.Plug.walk/3` (two clauses), `Email.Plug.reply_cap/2` |
+  | DKIM `l=`, duplicate From, alignment, `x=`, weak key, body hash | `Email.Dkim.check_tags/1`, `from_domain/1`, `alignment/3`, `check_times/2`, `check_size/1`, `check_body_hash/2` |
+  | token consumed once (insert-if-absent)        | `Email.TokenLedgerStore.do_reserve/4`                    |
+  | one error-status table                        | `Protocol.JSONRPC.Error.bindings/1` (both scopes)        |
+  | REJECTED vs FAILED classifier                 | `Transport.Runtime.admission_refusal?/1` (never / always) |
+  | JSON depth cap, decoder totality              | `Protocol.JSONGuard.within_depth?/2`, `Protocol.JSON.decode/2` |
+  | event journal appends and reads back          | `Protocol.EventJournal.record_task/3`, `TaskStore.EventJournalEts.append/4` |
+  | control-plane TLS verify_peer / no downgrade  | `C2.L07Tls.Transport.tls_options/1`, `connect/4`         |
+  | card signature alg / alg-key / tamper         | `Protocol.AgentCardSignature.check_alg/2`, `check_key_alg/2`, `raw_verify/4` |
+  | task owner gate                               | `Transport.Runtime.owned_by?/2`                          |
+
+  The approver-mailbox `verify:` check lives in the separate
+  `authority_service` project, not in the `:ash_a2a` application; the engine
+  refuses foreign targets (`mutation_target_foreign`), so that guard is
+  mutated in that project's own suite, not here.
+
   Court falsifier ids (`SA2A-MUTATION-NNN`) are bound to entry ids in
   `numbered/0`; entries are append-only so ids stay stable (§136).
   """

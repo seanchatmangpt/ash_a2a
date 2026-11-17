@@ -256,11 +256,11 @@ def handshake():
         tools = paged("tools/list", "tools", "tools")
         resources = paged("resources/list", "resources", "resources")
         fresh = {"initialize": init["result"], "tools": tools, "resources": resources, "written_at": time.time()}
+        save_cache(fresh)  # before any client can see "ready" and hang up
         with cond:
             state["live"] = fresh
             state["phase"] = "ready"
             cond.notify_all()
-        save_cache(fresh)
         log("real server is serving (%d tools, %d resources)" % (len(tools), len(resources)))
         if served_tools is not None and served_tools != tools:
             emit({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})

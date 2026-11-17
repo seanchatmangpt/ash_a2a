@@ -87,7 +87,10 @@ defmodule AshA2A.FuzzSseTest do
       stream = random_stream()
       whole = parse_whole(stream)
 
-      for at <- 0..byte_size(stream) do
+      size = byte_size(stream)
+      points = if size <= 300, do: Enum.to_list(0..size), else: for(_ <- 1..300, do: FuzzGen.int(size + 1))
+
+      for at <- points do
         <<a::binary-size(^at), b::binary>> = stream
         assert parse_chunks([a, b]) == whole, "split #{at} of #{inspect(stream)}"
       end

@@ -94,6 +94,9 @@ not use the shim.
 | `sim_grant_authority`, `sim_revoke_authority` | Issue or revoke the standing grant a mutating skill needs. |
 | `sim_read_rows` | Read `AshA2A.Sim.Note` from the data layer, and the recorded publications. |
 | `sim_push_deliveries` | What the webhook receiver recorded. |
+| `sim_email_issue_brief` | File an email brief (two numbered actions with reply tokens) and get the DKIM key facts, the webhook secret and the ingest URLs. |
+| `sim_email_send_reply` | POST to the email gateway: a canned `scenario` (every outcome), a reply the tool builds and DKIM-signs for `brief_id`, or a signed `raw` message you supply. It reports the status, the body and whether an Ash row changed. |
+| `sim_email_deliveries` | The mail the email gateway sent (receipt summaries, reconfirm briefs) and the requests it answered. |
 | `sim_surface` | The served surface, with the tools that reach each item. |
 | `sim_coverage` | A runnable plan: the tool calls that reach each surface item and what each must answer. |
 | `sim_prove` | Run `AshA2A.Sim.Prover` and return its matrix. |
@@ -143,6 +146,30 @@ Streamable HTTP, a `tools/call` from a client that accepts
 2. Call `sim_read_rows` with `{"title": "hello"}`. The row is there.
 3. Call `a2a_send_message` again with `"token": "reader"`. The `state` is
    `TASK_STATE_REJECTED` and `sim_read_rows` shows no second row.
+
+## Operate by email
+
+The server mounts the email gateway (see [Operate by email](operate-by-email.md)
+and [How to run the simulation server](run-the-simulation-server.md)). Approve
+a brief the way an operator would:
+
+1. Call `sim_email_issue_brief` with `{}`. It answers `brief_id`, `title`, the
+   `reply_tokens` and the `dkim` facts the gateway trusts.
+2. Call `sim_email_send_reply` with `{"brief_id": "<brief_id>"}`. The tool signs
+   a reply (rsa-sha256, relaxed/relaxed) and POSTs it. The result has
+   `status` `200`, `landed` `true` and `json.results.0.standing`
+   `dispatched`. `{"build_only": true}` returns the signed `raw` message
+   without sending it, and `{"raw": "<message>"}` sends one you signed.
+3. Call `sim_read_rows` with `{"title": "<title>"}`. The row is there.
+
+Every refusal must leave the rows alone, and `landed` says whether it did.
+Add `tamper: "body_byte"` (one byte flipped after signing), `sign: "foreign"`,
+`dkim_tags: " l=5;"`, `from_domain: "evil.example"`, `tokens_mode: "none"`,
+`from: "other@sim.example"` or `mount: "workspace"` with `auth: "wrong"`, and
+the gateway answers `401` or `403` with `landed: false`. `scenario` runs a
+whole outcome on its own and answers `as_expected`: for example
+`{"scenario": "stale_graph_digest_refused"}`, after which
+`sim_email_deliveries` shows the reconfirm brief that was mailed.
 
 ## Prove that MCP reaches the whole surface
 

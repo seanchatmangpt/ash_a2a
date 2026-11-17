@@ -156,10 +156,7 @@ defmodule AshA2A.Sim.EmailTest do
       assert sent["status"] == 200
       assert sent["landed"] == true
 
-      assert sent["json"]["results"] == [
-               %{"action" => 1, "receipt" => "recorded", "standing" => "dispatched"}
-             ] or
-               match?([%{"action" => 1, "standing" => "dispatched"}], sent["json"]["results"])
+      assert [%{"action" => 1, "standing" => "dispatched"}] = sent["json"]["results"]
 
       assert %{"count" => 1} = tool!(info, "sim_read_rows", %{"title" => issued["title"]})
     end

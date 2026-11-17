@@ -7,8 +7,11 @@ repository: the pinned in-repo v1 conformance courts (executed by
 statement lives in [A2A v1.0 conformance statement](a2a-v1-conformance.md);
 this page is the operator instrument over it.
 
-> v1.1 note: a2a-tck `main` is aligned to A2A 1.0.1; v1.1 requirements are not
-> yet in the TCK. v1.1 evidence is local courts only; see
+> v1.1 note: a2a-tck `main` is aligned to A2A 1.0.x; v1.1 requirements are not
+> yet in the TCK. A 2026-11-17 run at TCK `104a7b4a` (Python 3.15, all three
+> bindings) is recorded in
+> [the v1.0 statement](a2a-v1-conformance.md#a2a-tck-compatibility-run);
+> CI still pins `263b9cfa`. v1.1 evidence is local courts only; see
 > [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 
 ## The two surfaces

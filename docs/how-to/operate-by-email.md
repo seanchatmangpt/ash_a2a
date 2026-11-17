@@ -33,6 +33,7 @@ only the approved items are dispatched.
 | Missing `in_reply_to` | 400 | none |
 | `in_reply_to` matches no brief | 404 | none |
 | Unparseable intent | 422 | none |
+| Envelope sender, reply text or ids differ from the raw message in `content` (the one the DKIM verifier vouched for) | 401 | none |
 | Tampered, missing or invalid reply token | 403 | none |
 | Brief names an `:approver` and the sender is another principal | 403 | none |
 | Reply token already used | 409 | none |
@@ -83,6 +84,11 @@ with `d=`, weak (<1024-bit) or revoked keys. Wire it as the SES `:signature_veri
 The verifier takes a raw message, a map with `"content"`, or an SNS envelope whose `"Message"`
 JSON carries `"content"`. It proves the signing domain vouched for the message; it confers no
 authority.
+The plug acts on the envelope's `from`, `text`, `message_id` and `in_reply_to` fields, not on the
+message the signature covers, so when the envelope carries the raw message (`"content"` or `"raw"`)
+those fields must equal what that message says; otherwise the request is refused 401. Without this
+binding a valid signature on any mail from the signing domain would authenticate another mail's
+claimed sender, text and tokens. Test: `test/email_signed_content_binding_test.exs`.
 
 `AshA2A.Email.TokenLedgerStore` (`lib/ash_a2a/email/token_ledger_store.ex`) is an EKV-backed ledger
 answering the same calls as `TokenLedger`, so the plug accepts it unchanged:
@@ -99,6 +105,15 @@ Remaining: `rate_check/4` in `TokenLedgerStore` is node-local and in-memory; the
 capacity bound or eviction; `TokenLedger` itself stays in-memory single-node. DKIM supports only
 RSA-SHA256 with relaxed/relaxed (no ed25519, simple canonicalization or DNS lookup; the resolver
 is yours). Unit tests: `test/email_{inbound,brief,reply_intent,kernel_entry}_test.exs`.
+
+## Run it against the simulation server
+
+`mix ash_a2a.sim --prove` mounts this gateway for real (`/email` with DKIM verification,
+`/email-workspace` with a webhook secret), signs real mail with a key it generates, uses the
+durable `TokenLedgerStore` and drives every refusal in the table above over HTTP, reading the Ash
+row after each one. See [How to run the simulation server](run-the-simulation-server.md) and, for
+the MCP tools `sim_email_issue_brief`, `sim_email_send_reply` and `sim_email_deliveries`,
+[How to control the simulation server over MCP](control-the-sim-over-mcp.md).
 
 ## See Also
 

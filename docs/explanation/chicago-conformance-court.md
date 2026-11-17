@@ -64,6 +64,31 @@ among others.
   each one for real. `AshA2A.Test.ChicagoSelfTest` (`CHI-SELFTEST`)
   qualifies the qualification machinery itself, against a court fixture
   that deliberately lies.
+- **Mutation catalog, wave 3**: 27 further mutants (46 in all) delete the
+  guards added after the original catalog: the email gateway plug's
+  `:webhook` authentication, `:token_ledger` replay protection and its
+  depth, node and reply-size caps; the `AshA2A.Email.Dkim` refusals (`l=`
+  truncation, duplicate From, From misaligned with `d=`, expired `x=`, weak
+  key, body hash); the token ledger's insert-if-absent consumption; the single
+  error-status table `JSONRPC.Error.bindings/1`; the REJECTED-versus-FAILED
+  classifier `Transport.Runtime.admission_refusal?/1` (removed and
+  always-on); the `JSONGuard` depth cap and decoder totality; the event
+  journal writer (`record_task/3`) and its read-back check (`append/4`); the
+  control-plane TLS transport (`verify_peer` and no downgrade to the unix
+  socket); `AgentCardSignature.verify/3` (alg allow-list and `none`, alg/key
+  mismatch, tamper); and the task owner gate `owned_by?/2`. Their killer is
+  the non-discoverable reference court `CHI-MUTWAVE3`
+  (`AshA2A.Chicago.Mutation.Wave3Court`): every probe drives the real
+  function or plug with real collaborators (real RSA and Ed25519 keys, a
+  real `:ssl` listener, an EKV-backed ledger, an ETS journal, `Plug.Test`
+  connections), records its verdict as an OCEL event inside the stimulus
+  window, and a mutant is killed when the guard's own typed refusal goes
+  missing (`outcome=absent`). Positive controls (`CHI-MUTWAVE3-101..107`)
+  prove the lawful path still works. The approver-mailbox `verify:` check
+  lives in the separate `authority_service` project; the engine refuses
+  targets outside the `:ash_a2a` application, so it is not in this catalog.
+  Run one with `mix ash_a2a.chicago.mutate --only email_depth_cap_ok`; the
+  per-mutant tests are `test/mutation_wave3_*_test.exs`.
 
 ## The Crown
 
