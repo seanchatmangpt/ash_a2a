@@ -45,11 +45,22 @@ if [ -n "${A2A_SIM_MCP_LOG:-}" ]; then
   exec 2>>"$A2A_SIM_MCP_LOG"
 fi
 
+# Fast start: an MCP client gives up on a server that takes too long to answer
+# `initialize`. When the build is newer than every source file there is nothing
+# to compile, so skip the compile and dependency checks. Set
+# A2A_SIM_MCP_COMPILE=1 to always let mix compile first.
+manifest="_build/test/lib/ash_a2a/.mix/compile.elixir"
+fast=()
+if [ -z "${A2A_SIM_MCP_COMPILE:-}" ] && [ -f "$manifest" ] &&
+  [ -z "$(find lib mix.exs config -newer "$manifest" \( -name '*.ex' -o -name '*.exs' \) -print -quit 2>/dev/null)" ]; then
+  fast=(--no-compile)
+fi
+
 for arg in "$@"; do
   if [ "$arg" = "--http" ]; then
-    exec mix ash_a2a.sim.mcp "$@" 1>&2
+    exec mix ash_a2a.sim.mcp ${fast[@]+"${fast[@]}"} "$@" 1>&2
   fi
 done
 
 exec 3>&1 1>&2
-exec mix ash_a2a.sim.mcp --out-fd 3 "$@"
+exec mix ash_a2a.sim.mcp ${fast[@]+"${fast[@]}"} --out-fd 3 "$@"

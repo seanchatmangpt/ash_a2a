@@ -49,7 +49,8 @@ defmodule Mix.Tasks.AshA2a.Sim.Mcp do
     out_fd: :integer,
     sim_http_port: :integer,
     sim_grpc_port: :integer,
-    sim_push_port: :integer
+    sim_push_port: :integer,
+    no_compile: :boolean
   ]
 
   @impl Mix.Task
@@ -61,7 +62,11 @@ defmodule Mix.Tasks.AshA2a.Sim.Mcp do
     end
 
     logger_to_stderr()
-    Mix.Task.run("app.start")
+    # `--no-compile` skips the compile and dependency checks so the server
+    # answers `initialize` within a client's connect timeout. `bin/a2a-sim-mcp`
+    # passes it only when no source file is newer than the build.
+    start_args = if opts[:no_compile], do: ["--no-compile", "--no-deps-check"], else: []
+    Mix.Task.run("app.start", start_args)
     Logger.configure(level: :warning)
 
     runner = Module.concat(AshA2A.Sim.MCP, Runner)
