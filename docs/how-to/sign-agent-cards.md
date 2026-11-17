@@ -70,11 +70,57 @@ them on every mount and binding.
 Tests: `test/ash_a2a/protocol/agent_card_served_signature_test.exs` (real HTTP
 listeners) and `test/ash_a2a/protocol/agent_card_signature_test.exs`.
 
+## Rotate the signing key
+
+A card carries the `kid` of the key that signed it, and a verifier looks that
+`kid` up in the JWKS it trusts. Rotating without breaking clients means the
+verifier trusts the new key before the server signs with it, and keeps the old
+key until no cached card needs it.
+
+1. Generate a new key pair with a new `kid` (for example `2026-11`).
+2. Publish a JWKS that holds both public keys, and have clients load it.
+3. Change the mount's `sign_with` to the new private JWK and `kid`, and
+   restart or redeploy (the plug reads its options at init). The signed body is
+   memoised per signing options, so the new key produces a new body.
+4. After the longest cache lifetime of any card signed with the old key has
+   passed, remove the old public key from the JWKS.
+
+Run on 2026-11-17 with `mix run --no-start` against `AshA2A.Protocol.AgentCardSignature`
+(two fresh Ed25519 keys, `kid`s `2026-10` and `2026-11`):
+
+```text
+old card, old key only : {:ok, ["2026-10"]}
+new card, old key only : {:error, :unknown_kid}
+old card, overlap JWKS : {:ok, ["2026-10"]}
+new card, overlap JWKS : {:ok, ["2026-11"]}
+old card, new key only : {:error, :unknown_kid}
+```
+
+A client that still trusts only the old key refuses the new card
+(`:unknown_kid`), and a client that dropped the old key refuses a card signed
+with it. Only the overlap JWKS verifies both, which is why step 2 comes first.
+
+A hand-built card can carry both signatures during the overlap
+(`Sig.attach(card, [old_entry, new_entry])`). The mounts sign with one key; to
+serve two, sign the card map yourself. `Sig.verify/3` with `require: :any` (the
+default) accepts the card if one entry verifies; `require: :all` needs every
+entry to verify and returns `{:error, :unknown_kid}` if a client lacks one of
+the keys:
+
+```text
+both sigs, new key only (any): {:ok, ["2026-11"]}
+both sigs, new key only (all): {:error, :unknown_kid}
+both sigs, overlap (all): {:ok, ["2026-10", "2026-11"]}
+```
+
+If the old key leaked, do not overlap: remove it from the JWKS at once. Cards
+already signed with it stop verifying, which is the point.
+
 ## Not covered
 
 - Duplicate or unsorted keys in raw JSON text are not detectable from a decoded
   map. Canonical sorting is done by the JCS encoder; atom/string key collisions
   are refused. A raw-JSON strict parser is not provided.
-- JWKS fetching, key rotation policy and trust anchoring are the caller's job.
+- JWKS fetching, how long to keep an old key, and trust anchoring are the caller's job; the order of a rotation is above.
 - `AshA2A.Protocol.CardSigning` is a separate, non-standard scheme (HS256/RS256,
   wire-projected card); the two are not interoperable.

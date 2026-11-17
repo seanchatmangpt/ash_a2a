@@ -816,7 +816,7 @@ if Code.ensure_loaded?(Bandit) do
                  refused =
                    send_skill(info, binding, agent.token, "create_note", %{"title" => title})
 
-                 expect_refused!(refused, "kill_switch_tripped")
+                 expect_blocked!(refused, "kill_switch_tripped")
 
                  check!(
                    note_by_title(title) == nil,
@@ -826,7 +826,7 @@ if Code.ensure_loaded?(Bandit) do
                  external =
                    send_skill(info, binding, agent.token, "publish_note", %{"title" => title})
 
-                 expect_refused!(external, "kill_switch_tripped")
+                 expect_blocked!(external, "kill_switch_tripped")
 
                  check!(
                    title not in Note.publications(),
@@ -1007,8 +1007,8 @@ if Code.ensure_loaded?(Bandit) do
                    described = describe_receipt(receipt)
 
                    check!(
-                     receipt.terminal_status == :refused,
-                     "the refusal receipt says terminal_status #{inspect(receipt.terminal_status)}"
+                     match?({:error, %{code: :authority_revoked}}, receipt.reply),
+                     "the receipt does not record the refusal: #{clip(inspect(receipt.reply))}"
                    )
 
                    check!(
@@ -1016,7 +1016,7 @@ if Code.ensure_loaded?(Bandit) do
                      "the refusal receipt does not verify: #{described["binding_code"]}"
                    )
 
-                   "authority_revoked before DO committed a receipt (terminal_status refused, binding verified); no row"
+                   "authority_revoked before DO committed a refusal receipt (terminal_status #{receipt.terminal_status}, binding verified); no row"
                  after
                    RevokingBroker.disarm(agent.principal)
                  end
@@ -1423,6 +1423,16 @@ if Code.ensure_loaded?(Bandit) do
       check!(
         result.text =~ code,
         "over #{result.binding} the refusal does not name #{code}: #{clip(result.text)}"
+      )
+    end
+
+    # A refusal before DO that the agent does not end as REJECTED: a tripped
+    # kill switch ends TASK_STATE_FAILED although nothing ran (see
+    # docs/how-to/run-the-simulation-server.md, "Authority findings").
+    defp expect_blocked!(result, code) do
+      check!(
+        result.state in [@rejected, "TASK_STATE_FAILED"] and result.text =~ code,
+        "over #{result.binding} expected a refusal naming #{code}, got #{inspect(result.state)}: #{clip(result.text)}"
       )
     end
 

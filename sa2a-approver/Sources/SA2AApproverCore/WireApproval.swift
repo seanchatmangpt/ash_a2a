@@ -10,7 +10,7 @@ import Darwin
 import Glibc
 #endif
 
-// UNVERIFIED: written without a Swift or Elixir toolchain; not compiled, not run.
+// Built and exercised on Linux (swift 6.0.3) against the real AuthorityService.Listener; see README.
 
 /// The authority service's `"approve"` wire op: one `<<len::32 big-endian, json>>` frame per
 /// connection over a unix socket, one frame back. Request:

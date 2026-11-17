@@ -473,9 +473,15 @@ interfaces = [
           agent_card_opts: [supported_interfaces: interfaces,
                             capabilities: %{streaming: true, push_notifications: true}]},
        rest:
+         # Media type stays at the library default `application/json`: TCK
+         # 104a7b4 HTTP_JSON-ERR-001 (MUST) requires "application/json" as a
+         # substring of the error Content-Type, while HTTP_JSON-SVC-001 (SHOULD)
+         # wants exactly `application/a2a+json`; both cannot hold for an error
+         # response, and v1.1.0-rc spec §11.6 shows errors as problem+json.
+         # The MUST wins; `content_type: "application/a2a+json"` (or an Accept
+         # of that type) is supported by the library.
          {AshA2A.Transport.HTTPJSON, agent: TckSut.Agent, base_url: base_url,
-          transport: TckSut.Transport, push_notifications: true,
-          content_type: "application/a2a+json"}},
+          transport: TckSut.Transport, push_notifications: true}},
     port: port,
     ip: {127, 0, 0, 1}
   )

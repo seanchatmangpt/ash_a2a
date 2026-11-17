@@ -94,6 +94,7 @@ if Code.ensure_loaded?(Plug) do
            :ok <- bounded(body, opts),
            :ok <- webhook_auth(conn, body, opts),
            {:ok, inbound} <- stage(400, Inbound.parse(body)),
+           :ok <- signed_content_bound(body, inbound),
            :ok <- reply_cap(inbound, opts),
            {:ok, principal} <- stage(401, Inbound.verify_sender(inbound, policy(opts))),
            :ok <- rate_limit(inbound, opts),
@@ -202,6 +203,33 @@ if Code.ensure_loaded?(Plug) do
           :error -> {:halt, :error}
         end
       end)
+    end
+
+    # The DKIM verifier (`AshA2A.Email.Dkim.verifier/1`) vouches for the raw message in
+    # `"content"` / `"raw"`, but the sender, the reply text and the ids below are read from
+    # the other envelope fields. When the envelope carries the raw message, those fields
+    # must be exactly what the message says, or a valid signature on one mail would
+    # authenticate another mail's claimed sender, text and tokens.
+    defp signed_content_bound(body, %Inbound{} = inbound) do
+      raw =
+        Enum.find_value(["content", :content, "raw", :raw], fn k ->
+          case Map.get(body, k) do
+            v when is_binary(v) -> v
+            _ -> nil
+          end
+        end)
+
+      with raw when is_binary(raw) <- raw,
+           {:ok, signed} <- Inbound.parse(raw) do
+        if signed.from == inbound.from and signed.in_reply_to == inbound.in_reply_to and
+             signed.message_id == inbound.message_id and
+             Inbound.reply_text(signed) == Inbound.reply_text(inbound),
+           do: :ok,
+           else: {:halt, 401, :webhook_unauthorized}
+      else
+        nil -> :ok
+        _ -> {:halt, 401, :webhook_unauthorized}
+      end
     end
 
     defp reply_cap(%Inbound{body_text: t}, opts) do

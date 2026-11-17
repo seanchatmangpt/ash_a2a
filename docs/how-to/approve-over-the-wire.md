@@ -1,7 +1,8 @@
 # Approve Over The Wire
 
-Status: PARTIAL. The Elixir client and the listener side were run on 2026-11-16, Elixir 1.20.4 / OTP 29.1.1; the
-Swift side was not (no Swift toolchain here). No row below is CONFORMANT.
+Status: PARTIAL. Elixir client, listener, Python reference and the Swift CLI (Linux, swift 6.0.3) were run against
+the real listener on 2026-11-17; the Secure Enclave path, the macOS build and Swift mutual TLS were not. No row below
+is CONFORMANT.
 
 The authority service accepts signed human approvals on its `"approve"` op (only when it is
 started with a `:mailbox`). The approval is deposited, not trusted: the issuer re-verifies it
@@ -40,14 +41,18 @@ swift run sa2a-approver approve --message msg.bin --effect effect.json \
 ```
 
 It applies the normal WYSIWYS gate (digest recomputed locally, summary rendered, biometric
-signature) and then submits. Unix socket only; the Swift side has no TLS client.
+signature) and then submits. Unix socket only; the Swift side has no TLS client. On Linux use
+`--key software --key-file F` with `SA2A_APPROVER_DEV=1` (CI/dev only; not a human approval).
 
 ## What is and is not evidenced
 
 | Claim | Status |
 |---|---|
-| `ApproveClient` frame and refusal handling | Tested against a stand-in unix-socket peer only: `mix test test/ash_a2a/c2/approve_client_test.exs`, 5 passed |
-| `sa2a-approver approve` request shape and framing | UNVERIFIED: `WireApprovalTests.swift` uses a stand-in peer and was not run (no Swift toolchain in this environment) |
-| Interop with the real `AuthorityService.Listener` | NOT TESTED: `authority_service` is not a dependency of this project or of the Swift package. The listener side is covered by `authority_service/test/approver_mailbox_test.exs` (passes in `cd authority_service && mix test`, 66 passed) |
-| Swift-built envelope accepted by the issuer | NOT TESTED (needs a Swift-produced approval fed to the real listener) |
+| `ApproveClient` against the real `AuthorityService.Listener`, unix socket and mutual TLS (RSA test certs), acceptance and refusals | Tested: `mix test --include serial test/ash_a2a/c2/approve_wire_crosscheck_test.exs`, with `approve_client_test.exs` 9 passed |
+| `ApproveClient`, Python reference and Swift CLI produce the same bytes | Tested: Elixir vs Python pre-signature, envelope and frame bytes identical; Swift request body byte-identical to the Python builder |
+| `sa2a-approver approve` against the real listener | Tested on Linux: `python3 scripts/approver_wire_reference.py selftest --swift sa2a-approver/.build/debug/sa2a-approver`, 24 passed |
+| `swift build` / `swift test` | Linux x86_64, swift 6.0.3 + swift-crypto 3.9.1: build complete, 16 tests, 0 failures |
+| Secure Enclave signer, biometric gate, SwiftUI apps, macOS build | UNVERIFIED: need macOS/iOS |
 | Mutual TLS from Swift | NOT IMPLEMENTED |
+
+Details and exact commands: `sa2a-approver/README.md`.

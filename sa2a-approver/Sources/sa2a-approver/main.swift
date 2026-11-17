@@ -89,7 +89,7 @@ do {
         print(r.summary)
     case "approve":
         // Sign (same WYSIWYS gate as `sign`) and submit the approval to the authority service's
-        // "approve" op over a unix socket. UNVERIFIED: not built or run.
+        // "approve" op over a unix socket. Built and run on Linux against the real listener (README).
         let msg = try Data(contentsOf: URL(fileURLWithPath: need(o, "message")))
         let eff = try Data(contentsOf: URL(fileURLWithPath: need(o, "effect")))
         let r = try Approver.approve(messageBytes: msg, effectBytes: eff, signer: try makeSigner(o))

@@ -159,6 +159,9 @@ literal default and are read from source.
 | `:ferroplan_url` | unset | `AshA2A.Replan.Port.Ferroplan` — planner endpoint; falls back to `:beam4pm_url`. |
 | `:beam4pm_url` | unset | `AshA2A.Replan.Port.Beam4pm` and `Replan.ProviderRegistry` — endpoint whose presence marks the provider configured. |
 | `:graphlaw_allow_unpinned` | `false` | `AshA2A.GraphLaw.EngineLoad` — only `true` admits an unpinned engine, read per call. |
+| `:event_journal` | unset (no journal) | `AshA2A.Protocol.EventJournal` — `{module, ref}` of the per-task event journal that task writes append to and `tasks/resubscribe` replays from. See [operate the event journal](../how-to/operate-the-event-journal.md). |
+| `:event_journal_keep_last` | 256 events | `AshA2A.Protocol.EventJournal.keep_last/0` — events kept per task once it is terminal; a non-integer or negative value falls back to the default. |
+| `:resubscribe_orphan_grace_ms` | 500 ms | `AshA2A.Protocol.Plug.SSE` — how long `tasks/resubscribe` waits on a non-terminal task that has no live producer before closing with `StreamError` `PRODUCER_UNAVAILABLE`. |
 
 ## Environment variables
 

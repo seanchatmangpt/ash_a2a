@@ -120,6 +120,14 @@ if Code.ensure_loaded?(Bandit) do
           "A wrong or missing webhook secret, and an SNS envelope for another topic, are refused 401 even with passing `auth_results`."
       },
       %{
+        name: "unsigned_fields_not_trusted",
+        status: 401,
+        landed: false,
+        error: "webhook_unauthorized",
+        description:
+          "A valid DKIM signature on one mail does not vouch for the sender, text and tokens the envelope claims: fields that differ from the signed message are refused 401."
+      },
+      %{
         name: "foreign_dkim_key_refused",
         status: 401,
         landed: false,
@@ -1029,6 +1037,47 @@ if Code.ensure_loaded?(Bandit) do
         :variants,
         for({label, r} <- variants, do: %{label: label, status: r.status, landed: r.landed})
       )
+    end
+
+    defp scenario(info, "unsigned_fields_not_trusted") do
+      brief = issue_brief()
+      # The signed message says "Hold 1."; the envelope claims "Approve 1.".
+      signed = build_reply(brief, text: "Hold 1.")
+      claimed = Map.put(signed.envelope, "text", "Approve 1.")
+      before = snapshot()
+      resp = post(info, claimed)
+      after_ = snapshot()
+
+      # A valid signature on an unrelated mail, with the sender, ids and tokens forged.
+      other = build_reply(nil, in_reply_to: "unrelated", text: "hello", tokens: %{})
+
+      forged =
+        Map.merge(other.envelope, %{
+          "from" => "approver@sim.example",
+          "in_reply_to" => brief["brief_id"],
+          "message_id" => "forged-#{unique()}",
+          "text" => "Approve 1.",
+          "reply_tokens" => brief["reply_tokens"]
+        })
+
+      resp2 = post(info, forged)
+      after2 = snapshot()
+
+      %{
+        status: if(resp.status == 401, do: resp2.status, else: resp.status),
+        json: if(resp.status == 401, do: resp2.json, else: resp.json),
+        raw_body: resp.raw,
+        headers: resp.headers,
+        message_id: signed.message_id,
+        signed_raw: signed.raw,
+        landed: before != after_ or after_ != after2,
+        added: titles(after2) -- titles(before),
+        publications_before: length(before.publications),
+        publications_after: length(after2.publications),
+        rows_before: length(before.rows),
+        rows_after: length(after2.rows),
+        brief: brief
+      }
     end
 
     defp scenario(info, "foreign_dkim_key_refused") do

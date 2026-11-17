@@ -593,6 +593,9 @@ defmodule AshA2A.SA2A.Conformance.ProfilesTest do
       File.write!(signers, "t@example.com " <> pub <> "\n")
 
       git!(repo, ["config", "gpg.format", "ssh"])
+      # Hermetic: a global gpg.ssh.program (e.g. a sandbox signing wrapper that
+      # cannot verify) must not replace the real ssh-keygen verifier.
+      git!(repo, ["config", "gpg.ssh.program", System.find_executable("ssh-keygen")])
       git!(repo, ["config", "user.signingkey", key <> ".pub"])
       git!(repo, ["config", "gpg.ssh.allowedSignersFile", signers])
       git!(repo, ["tag", "-s", "v2", "-m", "release"])

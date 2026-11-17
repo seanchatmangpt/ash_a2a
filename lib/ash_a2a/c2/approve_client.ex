@@ -6,8 +6,9 @@ defmodule AshA2A.C2.ApproveClient do
   @moduledoc """
   Submits one signed approval to the `authority_service` `"approve"` wire op.
 
-  Tested by `test/ash_a2a/c2/approve_client_test.exs` against a stand-in listener that speaks
-  the same framing, not against the real `authority_service` release.
+  Tested against a stand-in listener in `test/ash_a2a/c2/approve_client_test.exs`, and against
+  the real `authority_service` listener over a unix socket and mutual TLS in
+  `test/ash_a2a/c2/approve_wire_crosscheck_test.exs`.
 
   Same framing and transport as `AshA2A.C2.AuthorityClient.Framed`: one `<<len::32, json>>`
   frame per connection over a unix socket (`ctx.authority_socket`) or mutual TLS

@@ -66,12 +66,7 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
 
     @impl true
     def commit(_receipt, _opts) do
-      # Make the journal unwritable without chmod (root ignores it): move the
-      # real directory aside and leave a dangling symlink at its path, so the
-      # final append's mkdir_p fails. The test restores it afterwards.
-      dir = ReceiptOutbox.dir()
-      :ok = File.rename(dir, dir <> ".aside")
-      :ok = File.ln_s(dir <> ".nonexistent", dir)
+      :ok = File.chmod(ReceiptOutbox.dir(), 0o500)
       {:error, :injected_primary_failure}
     end
 
@@ -92,8 +87,8 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
     on_exit(fn ->
       Application.delete_env(:ash_a2a, :receipt_commit_retry_delays_ms)
       Application.delete_env(:ash_a2a, :receipt_outbox_dir)
+      File.chmod(outbox_dir, 0o700)
       File.rm_rf!(outbox_dir)
-      File.rm_rf!(outbox_dir <> ".aside")
     end)
 
     {:ok, store_opts: [name: name], outbox_dir: outbox_dir}
@@ -215,6 +210,10 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
     assert refusal_receipt.status == :failed
   end
 
+  # The property is "the pending anchor is still readable while the journal
+  # refuses the final write" -- only a permission failure keeps the existing
+  # entry visible yet unwritable; root ignores chmod, so skip as root.
+  @tag skip: AshA2A.TestSupport.RootGuard.skip_reason()
   test "if final outcome persistence fails after DO, pending anchor remains and blocks second DO",
        %{store_opts: store_opts, outbox_dir: outbox_dir} do
     plan_name = :"outbox_pending_anchor_#{System.unique_integer([:positive])}"
@@ -231,8 +230,7 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
               receipt: final_receipt
             }} = run_command(command, FinalizationSabotageStore, store_opts)
 
-    :ok = File.rm(outbox_dir)
-    :ok = File.rename(outbox_dir <> ".aside", outbox_dir)
+    :ok = File.chmod(outbox_dir, 0o700)
 
     assert [%Receipt{receipt_id: anchor_id, status: :pending}] = ReceiptOutbox.entries()
     assert anchor_id == final_receipt.receipt_id

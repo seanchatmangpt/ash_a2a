@@ -8,10 +8,11 @@ import XCTest
 
 @testable import SA2AApproverCore
 
-// UNVERIFIED: written without a Swift toolchain; not compiled, not run.
+// Compiled and run on Linux (swift 6.0.3 + swift-crypto): see sa2a-approver/README.md.
 // The server below is a real unix-socket peer speaking the listener's framing, but it is a
 // stand-in: the Elixir `AuthorityService.Listener` is NOT started from Swift. Interop with the
-// real listener is not tested by any test here (see docs/how-to/approve-over-the-wire.md).
+// real listener is proven by `python3 scripts/approver_wire_reference.py selftest --swift ...`
+// (see sa2a-approver/README.md and docs/how-to/approve-over-the-wire.md).
 final class WireApprovalTests: XCTestCase {
     /// One-shot server: accepts one connection, captures the request frame body, replies with `reply`.
     final class OneShotServer {
