@@ -3,7 +3,7 @@ name: Proofs
 # Required evidence on every PR: the simulation prover (242 probes), the
 # byte-for-byte A2A v1.1 parity comparison against the upstream proto, the MCP
 # drive of the whole served surface, and the mutation gate (every mutant must be
-# killed). Each is a real OS-level run against real listeners and a real
+# killed, by the CLI and by `mix test.mutation`). Each is a real OS-level run against real listeners and a real
 # PostgreSQL; the matrices are uploaded even on failure so a red verdict leaves
 # durable evidence.
 on:
@@ -78,6 +78,13 @@ jobs:
           python3 scripts/mcp_drive.py --log proof-out/mcp-server.log | tee proof-out/mcp.txt
       - name: Mutation gate (every mutant killed)
         run: mix ash_a2a.chicago.mutate --evidence-dir proof-out/mutations --require-killed
+      # The exhaustive unit-test matrix (`:mutation_catalog_full`) is excluded
+      # from `mix test`, `test.serial*` and `test.all`; this is the only place it
+      # runs. It asserts per mutant the exact falsifiers that kill it, which the
+      # CLI gate (killed or not) does not. test/mutation_tier_wiring_test.exs
+      # fails if this step or the alias is removed.
+      - name: Mutation catalog test (every mutant killed by its named falsifiers)
+        run: mix test.mutation
       - name: Upload proof matrices
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

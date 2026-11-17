@@ -19,8 +19,9 @@ defmodule AshA2A.MutationWave3CatalogTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :serial
-  @moduletag :serial_shard
+  # Tier tags are per describe: the exhaustive matrix carries ONLY
+  # `:mutation_catalog_full` (ExUnit lets `--include`/`--only` win over
+  # `--exclude`, so a module-level `:serial` would defeat the exclusion).
   @moduletag :tmp_dir
   @moduletag timeout: 600_000
 
@@ -80,8 +81,11 @@ defmodule AshA2A.MutationWave3CatalogTest do
     :ok
   end
 
+  @tag :serial
+  @tag :serial_shard
   test "the catalog holds the wave-3 mutants, each resolvable with CHI-MUTWAVE3 as killer" do
-    assert length(Catalog.entries()) == 19 + map_size(@expected)
+    # At least the 19 original and the wave-3 mutants; other lanes may add more.
+    assert length(Catalog.entries()) >= 19 + map_size(@expected)
     resolution = Map.new(Catalog.resolution(), &{&1.id, &1})
 
     for id <- Map.keys(@expected) do
@@ -94,6 +98,8 @@ defmodule AshA2A.MutationWave3CatalogTest do
     assert Wave3Court in Catalog.reference_courts()
   end
 
+  @tag :serial
+  @tag :serial_shard
   test "the unmutated court is clean: every negative killed, every control passed", %{
     tmp_dir: dir
   } do
@@ -108,28 +114,54 @@ defmodule AshA2A.MutationWave3CatalogTest do
     end
   end
 
-  describe "every mutant is killed by the falsifiers that attack its guard" do
+  # One representative per guard family in the default serial_shard tier; the
+  # full 31-mutant matrix below is `:mutation_catalog_full` (`mix test.mutation`,
+  # proofs.yml). Every subset id must be in @expected (checked at compile time).
+  @subset ~w(email_depth_cap_ok dkim_expiry_ok token_ledger_put_unconditional
+             tls_verify_peer_off card_signature_verify_true task_owner_gate_open)
+  for id <- @subset,
+      not Map.has_key?(@expected, id),
+      do: raise("subset id #{id} is not in @expected")
+
+  describe "representative wave-3 mutants are killed by the falsifiers that attack their guard" do
+    @describetag :serial
+    @describetag :serial_shard
+
+    for {id, killed} <- Map.take(@expected, @subset) do
+      test "#{id}", %{tmp_dir: dir} do
+        assert_killed(unquote(id), unquote(killed), dir)
+      end
+    end
+  end
+
+  describe "full catalog: every wave-3 mutant is killed by the falsifiers that attack its guard" do
+    @describetag :mutation_catalog_full
+
     for {id, killed} <- @expected do
       @tag mutant: id
       test "#{id}", %{tmp_dir: dir} do
-        mutation = Catalog.fetch!(unquote(id))
-        {:ok, courts, []} = Mutation.killer_courts(mutation)
-        baseline = Mutation.baseline(courts, Path.join(dir, "baseline"))
-
-        verdict =
-          Mutation.qualify(mutation, evidence_dir: Path.join(dir, "mutant"), baseline: baseline)
-
-        assert verdict.verdict == :mutant_killed, inspect(verdict.detail)
-        assert verdict.mutant_calls > 0, "the mutated function was never executed"
-        assert verdict.restored.pristine == true
-
-        for falsifier <- unquote(killed) do
-          assert falsifier in verdict.killed_by,
-                 "#{falsifier} did not kill #{unquote(id)}: killed_by #{inspect(verdict.killed_by)}"
-        end
-
-        assert Mutation.pristine?(mutation.module)
+        assert_killed(unquote(id), unquote(killed), dir)
       end
     end
+  end
+
+  defp assert_killed(id, killed, dir) do
+    mutation = Catalog.fetch!(id)
+    {:ok, courts, []} = Mutation.killer_courts(mutation)
+    baseline = Mutation.baseline(courts, Path.join(dir, "baseline"))
+
+    verdict =
+      Mutation.qualify(mutation, evidence_dir: Path.join(dir, "mutant"), baseline: baseline)
+
+    assert verdict.verdict == :mutant_killed, inspect(verdict.detail)
+    assert verdict.mutant_calls > 0, "the mutated function was never executed"
+    assert verdict.restored.pristine == true
+
+    for falsifier <- killed do
+      assert falsifier in verdict.killed_by,
+             "#{falsifier} did not kill #{id}: killed_by #{inspect(verdict.killed_by)}"
+    end
+
+    assert Mutation.pristine?(mutation.module)
   end
 end

@@ -23,7 +23,7 @@ if Code.ensure_loaded?(Bandit) do
     | `:consequence` | the `consequence` option of the `a2a` DSL (`AshA2A.Dsl.sections/0`) |
     | `:task_state` | the `TaskState` enum of the generated proto module |
     | `:security_scheme` | the security schemes on the agent card of `AshA2A.Sim.Agent` |
-    | `:mount` | the mounts of the simulation server's router |
+    | `:mount` | the mounts of the simulation server's router, including the three that require `AshA2A.Sim.RequiredExtension` (`/required/a2a`, `/required/rest`, `grpc:required`) |
     | `:authority` | the authority operations and consequence outcomes `AshA2A.Sim.Authority` lists |
     | `:parity` | the bindings `AshA2A.Sim.Parity` checks against the upstream v1.1 reference |
 
@@ -406,7 +406,10 @@ if Code.ensure_loaded?(Bandit) do
         {"/jsonrpc", AshA2A.Transport.Plug},
         {"/a2a", AshA2A.A2ATransport.Plug},
         {"/rest", AshA2A.Transport.HTTPJSON},
-        {"grpc", AshA2A.Transport.GRPC.Server}
+        {"grpc", AshA2A.Transport.GRPC.Server},
+        {"/required/a2a", AshA2A.A2ATransport.Plug},
+        {"/required/rest", AshA2A.Transport.HTTPJSON},
+        {"grpc:required", AshA2A.Transport.GRPC.Server}
       ]
     end
 

@@ -90,6 +90,25 @@ among others.
   Run one with `mix ash_a2a.chicago.mutate --only email_depth_cap_ok`; the
   per-mutant tests are `test/mutation_wave3_*_test.exs`.
 
+- **Mutation test tiers**: the exhaustive "every catalog mutant is killed by
+  its named falsifiers" assertions (the whole `SA2A-MUTATION` court in
+  `test/ash_a2a/chicago/mutation_harness_test.exs`, and all 31 wave-3 mutants in
+  `test/mutation_wave3_catalog_test.exs`) carry only the tag
+  `:mutation_catalog_full`. It is excluded from `mix test`, `mix test.serial*`
+  and `mix test.all`, and run by `mix test.mutation`, which the `Proofs`
+  workflow calls after the CLI gate `mix ash_a2a.chicago.mutate
+  --require-killed`. The two gates are not redundant: the CLI requires every
+  mutant killed, the test additionally pins the exact falsifiers that kill each
+  one and checks OCEL corroboration. The default tiers keep the engine's own
+  behaviour (hot-load, restore, guardian, refusals, verdict classification:
+  killed, survived, blocked, unknown) and a representative subset of mutants
+  (two `CHI-MUTGUARD` kills, the equivalent mutant, two blocked cases, six
+  wave-3 mutants). The tag sits on its own `describe` blocks and never next to
+  `:serial`, because ExUnit lets `--include` and `--only` win over `--exclude`.
+  `test/mutation_tier_wiring_test.exs` fails if the alias, the exclusions or the
+  workflow step go missing, or if the matrix and the CLI stop covering the same
+  catalog ids.
+
 ## The Crown
 
 `AshA2A.Chicago.Crown` assembles the release-facing package on top of a

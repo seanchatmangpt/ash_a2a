@@ -48,12 +48,15 @@ defmodule AshA2A.Sim.Parity do
   @doc """
   The bindings the script reports on, in report order. The second JSON-RPC
   entry is the owner-scoped `/jsonrpc` mount; `"v1.0"` holds the vectors sent
-  with `A2A-Version: 1.0` and compared with the upstream v1.0.1 proto.
+  with `A2A-Version: 1.0` and compared with the upstream v1.0.1 proto, and
+  `"extension-gate"` holds the vectors against the mounts that require
+  `AshA2A.Sim.RequiredExtension` (`ExtensionSupportRequiredError` on all three
+  bindings).
   """
   @spec bindings() :: [String.t()]
   def bindings do
     ["grpc", "http+json", "jsonrpc", "jsonrpc:/jsonrpc", "v1.0"] ++
-      ["agent-card", "cross-binding", "coverage"]
+      ["agent-card", "extension-gate", "cross-binding", "coverage"]
   end
 
   @doc "The directory holding the script, its README and `setup.sh`."
@@ -118,7 +121,14 @@ defmodule AshA2A.Sim.Parity do
 
       args =
         [Path.join(@script_dir, "parity.py"), "--http", info.base_url, "--grpc", info.grpc_target] ++
-          ["--report", report, "--writer-token", info.tokens.writer] ++
+          [
+            "--required-grpc",
+            info.required_grpc_target,
+            "--report",
+            report,
+            "--writer-token",
+            info.tokens.writer
+          ] ++
           ["--reader-token", info.tokens.reader, "--unscoped-token", info.tokens.unscoped] ++
           known
 

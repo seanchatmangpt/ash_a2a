@@ -390,6 +390,9 @@ def until_terminal(frame):
 class Binding:
     name = "?"
     kind = "?"
+    # The `A2A-Extensions` value sent with every call, or None (spec 3.2.5,
+    # 14.2.2); the extension vectors set it around a call.
+    extensions = None
 
     def __init__(self, report, tokens):
         self.report = report
@@ -469,6 +472,8 @@ class GrpcBinding(Binding):
             metadata.append(("a2a-version", version))
         if token is not None:
             metadata.append(("authorization", "Bearer " + self.tokens.get(token, token)))
+        if self.extensions is not None:
+            metadata.append(("a2a-extensions", self.extensions))
         return metadata
 
     def _error(self, exc):
@@ -482,6 +487,12 @@ class GrpcBinding(Binding):
             details = list(status.details)
         return ErrorView("grpc", exc.code().name, exc.details(), details, problems=problems)
 
+    last_headers = {}
+
+    def response_headers(self, outcome):
+        """The initial metadata of the last unary answer (lower-case names)."""
+        return self.last_headers
+
     def raw_call(self, path, body, token="writer", version="1.1"):
         """Sends `body` unchanged as the request message of `path`; returns the
         `ErrorView` of the refusal, or None when the call succeeded."""
@@ -494,7 +505,8 @@ class GrpcBinding(Binding):
 
     def _unary(self, rpc, request, token, version):
         try:
-            raw = getattr(self.stub, rpc)(request, metadata=self._metadata(token, version), timeout=30)
+            raw, call = getattr(self.stub, rpc).with_call(request, metadata=self._metadata(token, version), timeout=30)
+            self.last_headers = {key: value for key, value in (call.initial_metadata() or ())}
         except grpc.RpcError as exc:
             return Outcome(error=self._error(exc)), {}
         message, problems = check_pb(self.report, raw, self._cls(rpc))
@@ -596,12 +608,18 @@ class GrpcLive:
 class HttpBinding(Binding):
     """Shared by the HTTP+JSON and JSON-RPC bindings."""
 
+    def response_headers(self, outcome):
+        """The response headers of the last answer (lower-case names)."""
+        return outcome.http.headers if outcome.http is not None else {}
+
     def _headers(self, token, version, body=False, extra=None):
         headers = {"accept": "application/json, text/event-stream"}
         if version is not None:
             headers["a2a-version"] = version
         if token is not None:
             headers["authorization"] = "Bearer " + self.tokens.get(token, token)
+        if self.extensions is not None:
+            headers["a2a-extensions"] = self.extensions
         if body:
             headers["content-type"] = self.request_content_type
         headers.update(extra or {})

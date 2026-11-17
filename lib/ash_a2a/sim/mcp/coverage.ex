@@ -1191,6 +1191,175 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    # The mounts that require `AshA2A.Sim.RequiredExtension` in
+    # `A2A-Extensions`. `{{required_extension}}` is the URI `sim_info` names.
+    @required_ext "{{required_extension}}"
+    @unknown_ext "https://example.com/ext/sim-unknown/v1"
+    @required_jr %{"binding" => "jsonrpc", "jsonrpc_mount" => "required_a2a"}
+
+    defp mount("/required/a2a") do
+      declared = %{"a2a-extensions" => @required_ext}
+
+      [
+        step(
+          "a call without the required extension is -32008 with ErrorInfo",
+          a2a(:send, @required_jr, %{"skill" => "count_notes"}),
+          expect: [
+            ex("ok", "eq", false),
+            ex("error.code", "eq", -32_008),
+            ex("json.error.data.0.reason", "eq", "EXTENSION_SUPPORT_REQUIRED"),
+            ex("body", "contains", @required_ext),
+            ex("headers.a2a-extensions", "absent")
+          ]
+        ),
+        run_skill(
+          "declaring the extension runs the call",
+          Map.put(@required_jr, "headers", declared),
+          %{"skill" => "count_notes"},
+          @completed,
+          tested: true,
+          expect: [ex("headers.a2a-extensions", "eq", @required_ext)]
+        ),
+        run_skill(
+          "an extra extension the server does not require is ignored",
+          Map.put(@required_jr, "headers", %{
+            "a2a-extensions" => @required_ext <> ", " <> @unknown_ext
+          }),
+          %{"skill" => "count_notes"},
+          @completed,
+          expect: [ex("headers.a2a-extensions", "eq", @required_ext)]
+        ),
+        step(
+          "its card declares the extension required",
+          {"a2a_get_agent_card", Map.put(@required_jr, "mount", "required_a2a")},
+          expect: [
+            ex("status", "eq", 200),
+            ex("json.capabilities.extensions.0.uri", "eq", @required_ext),
+            ex("json.capabilities.extensions.0.required", "eq", true)
+          ]
+        )
+      ]
+    end
+
+    defp mount("/required/rest") do
+      send_body = fn tag ->
+        %{
+          "message" => %{
+            "messageId" => "msg-{{uniq}}-required-" <> tag,
+            "role" => "ROLE_USER",
+            "parts" => [%{"data" => %{}}],
+            "metadata" => %{"skill" => "count_notes"}
+          }
+        }
+      end
+
+      post = fn tag, headers ->
+        {"a2a_raw_request",
+         %{
+           "binding" => "http_json",
+           "mount" => "required_rest",
+           "path" => "/message:send",
+           "json" => send_body.(tag),
+           "headers" => headers
+         }}
+      end
+
+      [
+        step(
+          "a call without the required extension is 400 FAILED_PRECONDITION with ErrorInfo",
+          post.("none", %{}),
+          expect: [
+            ex("status", "eq", 400),
+            ex("ok", "eq", false),
+            ex("json.error.status", "eq", "FAILED_PRECONDITION"),
+            ex("json.error.details.0.reason", "eq", "EXTENSION_SUPPORT_REQUIRED"),
+            ex("body", "contains", @required_ext),
+            ex("headers.a2a-extensions", "absent")
+          ]
+        ),
+        step(
+          "declaring the extension runs the call and the answer echoes it",
+          post.("declared", %{"a2a-extensions" => @required_ext}),
+          tested: true,
+          expect: [
+            ex("status", "eq", 200),
+            ex("state", "eq", @completed),
+            ex("headers.a2a-extensions", "eq", @required_ext)
+          ]
+        ),
+        step(
+          "an extra extension the server does not require is ignored",
+          post.("extra", %{"a2a-extensions" => @required_ext <> ", " <> @unknown_ext}),
+          expect: [
+            ex("status", "eq", 200),
+            ex("state", "eq", @completed),
+            ex("headers.a2a-extensions", "eq", @required_ext)
+          ]
+        ),
+        step(
+          "its card declares the extension required",
+          {"a2a_get_agent_card", %{"binding" => "http_json", "mount" => "required_rest"}},
+          expect: [
+            ex("status", "eq", 200),
+            ex("json.capabilities.extensions.0.uri", "eq", @required_ext),
+            ex("json.capabilities.extensions.0.required", "eq", true)
+          ]
+        )
+      ]
+    end
+
+    defp mount("grpc:required") do
+      send = fn tag, headers ->
+        {"grpc_SendMessage",
+         %{
+           "target" => "required",
+           "headers" => headers,
+           "request" => %{
+             "message" => %{
+               "messageId" => "msg-{{uniq}}-required-" <> tag,
+               "role" => "ROLE_USER",
+               "parts" => [%{"data" => %{}}],
+               "metadata" => %{"skill" => "count_notes"}
+             }
+           }
+         }}
+      end
+
+      [
+        step(
+          "a call without the required extension is FAILED_PRECONDITION(9) with ErrorInfo",
+          send.("none", %{}),
+          expect: [
+            ex("ok", "eq", false),
+            ex("status", "eq", 9),
+            ex("error.message", "contains", @required_ext),
+            ex("trailers.grpc-status", "eq", "9"),
+            ex("headers.a2a-extensions", "absent")
+          ]
+        ),
+        step(
+          "declaring the extension runs the call and the answer echoes it",
+          send.("declared", %{"a2a-extensions" => @required_ext}),
+          tested: true,
+          expect: [
+            ex("ok", "eq", true),
+            ex("status", "eq", 0),
+            ex("state", "eq", @completed),
+            ex("headers.a2a-extensions", "eq", @required_ext)
+          ]
+        ),
+        step(
+          "an extra extension the server does not require is ignored",
+          send.("extra", %{"a2a-extensions" => @required_ext <> ", " <> @unknown_ext}),
+          expect: [
+            ex("ok", "eq", true),
+            ex("state", "eq", @completed),
+            ex("headers.a2a-extensions", "eq", @required_ext)
+          ]
+        )
+      ]
+    end
+
     defp mount(_mount), do: []
 
     defp malformed_jsonrpc(mount) do

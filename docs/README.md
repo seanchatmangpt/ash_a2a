@@ -165,6 +165,7 @@ Exact factual contracts:
 - [`reference/security-review-v26.11.15.md`](reference/security-review-v26.11.15.md) —
   by-eye adversarial security review of unrun v26.11.15 code.
 - [`reference/test-suite-timing.md`](reference/test-suite-timing.md) — where `mix test.all`
+- [`reference/test-consolidation-merge.md`](reference/test-consolidation-merge.md) — how duplicated test modules were reconciled after the consolidated suite met PR #117; reproducible with `scripts/dedupe_consolidated_tests.exs`.
   spends its time: measured slowest tests, what is ruled out, and per-owner recommendations.
 - [`reference/generated/`](reference/generated/README.md) — GENERATED doc-hdit
   reference skeletons: a rigid, machine-rendered table of every module and public

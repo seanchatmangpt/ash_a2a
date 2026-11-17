@@ -42,6 +42,8 @@ if Code.ensure_loaded?(Bandit) do
           }
 
     @probe_timeout 45_000
+    # An extension URI no mount of the simulation server serves.
+    @unknown_extension "https://example.com/ext/sim-unknown/v1"
     @jsonrpc_mounts ~w(a2a jsonrpc)a
     @terminal ~w(TASK_STATE_COMPLETED TASK_STATE_FAILED TASK_STATE_CANCELED TASK_STATE_REJECTED)
 
@@ -249,7 +251,12 @@ if Code.ensure_loaded?(Bandit) do
     # A caller bound to one mount. The method under test is sent under
     # `spelling`; every other method keeps its canonical name.
     defp caller(info, mount, tested, spelling) do
-      url = if mount == :a2a, do: info.a2a_url, else: info.jsonrpc_url
+      url =
+        case mount do
+          :a2a -> info.a2a_url
+          :required_a2a -> info.required_a2a_url
+          _jsonrpc -> info.jsonrpc_url
+        end
 
       %{
         info: info,
@@ -3769,6 +3776,122 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp mount_scenarios("grpc:required") do
+      [
+        {"a call without the required extension is FAILED_PRECONDITION(9) with ErrorInfo",
+         fn info ->
+           uri = info.required_extension
+
+           calls = [
+             {"SendMessage",
+              Pb.SendMessageRequest.encode(
+                pb(Pb.SendMessageRequest, send_params("count_notes", %{}))
+              )},
+             {"SendStreamingMessage",
+              Pb.SendMessageRequest.encode(
+                pb(Pb.SendMessageRequest, send_params("count_notes", %{}))
+              )},
+             {"GetTask", Pb.GetTaskRequest.encode(%Pb.GetTaskRequest{id: "tsk-never-created"})},
+             {"ListTasks", Pb.ListTasksRequest.encode(%Pb.ListTasksRequest{})}
+           ]
+
+           for {rpc, bytes} <- calls do
+             answer = required_grpc_raw!(info, rpc, bytes, [])
+             status = answer["trailers"]["grpc-status"]
+
+             check!(
+               status == "9",
+               "#{rpc}: grpc-status #{inspect(status)}: #{inspect(answer["trailers"])}"
+             )
+
+             details =
+               Base.decode64!(answer["trailers"]["grpc-status-details-bin"] || "", padding: false)
+
+             check!(
+               details =~ "EXTENSION_SUPPORT_REQUIRED" and details =~ "a2a-protocol.org" and
+                 details =~ uri,
+               "#{rpc}: grpc-status-details-bin carries no ErrorInfo EXTENSION_SUPPORT_REQUIRED naming #{uri}"
+             )
+
+             check!(
+               not Map.has_key?(answer["headers"], "a2a-extensions"),
+               "#{rpc}: echoed an extension it refused"
+             )
+           end
+
+           "#{length(calls)} RPCs refused FAILED_PRECONDITION(9), ErrorInfo EXTENSION_SUPPORT_REQUIRED naming #{uri}"
+         end},
+        {"declaring the extension runs the call and the answer echoes it",
+         fn info ->
+           uri = info.required_extension
+           {task, headers} = required_grpc_send!(info, uri)
+           expect_state!(task, "TASK_STATE_COMPLETED")
+
+           check!(
+             headers["a2a-extensions"] == uri,
+             "a2a-extensions response metadata is #{inspect(headers["a2a-extensions"])}"
+           )
+
+           "task #{task["id"]} completed; a2a-extensions: #{uri}"
+         end},
+        {"an extra extension the server does not require is ignored, not echoed",
+         fn info ->
+           uri = info.required_extension
+           {task, headers} = required_grpc_send!(info, uri <> ", " <> @unknown_extension)
+           expect_state!(task, "TASK_STATE_COMPLETED")
+
+           check!(
+             headers["a2a-extensions"] == uri,
+             "a2a-extensions response metadata is #{inspect(headers["a2a-extensions"])}"
+           )
+
+           "accepted; only #{uri} is activated and echoed"
+         end},
+        {"an extension the server does not serve does not satisfy the requirement",
+         fn info ->
+           bytes = Pb.GetTaskRequest.encode(%Pb.GetTaskRequest{id: "tsk-never-created"})
+
+           answer =
+             required_grpc_raw!(info, "GetTask", bytes, [{"a2a-extensions", @unknown_extension}])
+
+           check!(
+             answer["trailers"]["grpc-status"] == "9",
+             "grpc-status #{inspect(answer["trailers"])}"
+           )
+
+           details =
+             Base.decode64!(answer["trailers"]["grpc-status-details-bin"] || "", padding: false)
+
+           check!(
+             details =~ info.required_extension,
+             "the ErrorInfo does not name #{info.required_extension}"
+           )
+
+           "refused FAILED_PRECONDITION(9) naming #{info.required_extension}"
+         end},
+        {"the advertised gRPC interface of the required card answers",
+         fn info ->
+           card =
+             http(info, :get, info.required_a2a_url <> "/.well-known/agent-card.json",
+               token: :none
+             ).json
+
+           target =
+             Enum.find_value(
+               card["supportedInterfaces"],
+               &(&1["protocolBinding"] == "GRPC" && &1["url"])
+             )
+
+           check!(
+             target == info.required_grpc_target,
+             "card advertises #{inspect(target)}, the listener is #{info.required_grpc_target}"
+           )
+
+           "the required card advertises #{target}"
+         end}
+      ]
+    end
+
     defp mount_scenarios(mount) do
       card_scenarios =
         [
@@ -3946,12 +4069,258 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp mount_negative("/required/a2a") do
+      [card_declares_extension("/required/a2a")] ++
+        [
+          {"a call without the required extension is -32008, with ErrorInfo and the request id",
+           fn info ->
+             uri = info.required_extension
+
+             methods = [
+               {"message/send", send_params("count_notes", %{})},
+               {"message/stream", send_params("count_notes", %{})},
+               {"tasks/get", %{"id" => "tsk-never-created"}},
+               {"tasks/list", %{}},
+               {"agent/getAuthenticatedExtendedCard", %{}}
+             ]
+
+             for {method, params} <- methods do
+               body = rpc_body(method, params)
+               resp = http(info, :post, info.required_a2a_url, json: body)
+               check!(resp.status == 200, "#{method}: HTTP #{resp.status}: #{clip(resp.raw)}")
+               error = get_in(resp.json || %{}, ["error"]) || %{}
+
+               check!(
+                 error["code"] == -32_008,
+                 "#{method} answered #{clip(inspect(resp.json || resp.raw))}"
+               )
+
+               check!(
+                 resp.json["id"] == body["id"],
+                 "#{method}: the refusal carries id #{inspect(resp.json["id"])}, the request sent #{body["id"]}"
+               )
+
+               check_extension_error_info!(error["data"], uri, method)
+               check!(not Map.has_key?(resp.headers, "a2a-extensions"), "#{method}: echoed")
+             end
+
+             "#{length(methods)} methods refused -32008 before dispatch, ErrorInfo EXTENSION_SUPPORT_REQUIRED naming #{uri}, id echoed"
+           end},
+          {"declaring the extension runs the call and the answer echoes it",
+           fn info ->
+             uri = info.required_extension
+             c = caller(info, :required_a2a, nil, nil)
+             headers = [{"a2a-extensions", uri}]
+             resp = jr(c, "message/send", send_params("count_notes", %{}), headers: headers)
+             task = resp.json |> Map.fetch!("result") |> task_of!()
+             expect_state!(task, "TASK_STATE_COMPLETED")
+             check_echo!(resp, uri)
+             task = jr_get!(c, task["id"], headers: headers)
+             expect_state!(task, "TASK_STATE_COMPLETED")
+             "task #{task["id"]} completed; A2A-Extensions: #{resp.headers["a2a-extensions"]}"
+           end},
+          {"an extra extension the server does not require is ignored, not echoed",
+           fn info ->
+             uri = info.required_extension
+             c = caller(info, :required_a2a, nil, nil)
+             headers = [{"a2a-extensions", uri <> ", " <> @unknown_extension}]
+             resp = jr(c, "message/send", send_params("count_notes", %{}), headers: headers)
+             task = resp.json |> Map.fetch!("result") |> task_of!()
+             expect_state!(task, "TASK_STATE_COMPLETED")
+             check_echo!(resp, uri)
+             "accepted; only #{uri} is activated and echoed"
+           end},
+          {"an extension the server does not serve does not satisfy the requirement",
+           fn info ->
+             c = caller(info, :required_a2a, nil, nil)
+
+             error =
+               jr_error!(c, "message/send", send_params("count_notes", %{}), -32_008,
+                 headers: [{"a2a-extensions", @unknown_extension}]
+               )
+
+             check_extension_error_info!(error["data"], info.required_extension, "message/send")
+             "refused -32008 naming #{info.required_extension}"
+           end}
+        ]
+    end
+
+    defp mount_negative("/required/rest") do
+      [card_declares_extension("/required/rest")] ++
+        [
+          {"a call without the required extension is 400 FAILED_PRECONDITION with ErrorInfo",
+           fn info ->
+             uri = info.required_extension
+             send = [json: send_params("count_notes", %{})]
+
+             routes = [
+               {:post, "/message:send", send},
+               {:post, "/message:stream", send},
+               {:get, "/tasks/tsk-never-created", []},
+               {:get, "/tasks", []},
+               {:get, "/extendedAgentCard", []}
+             ]
+
+             for {verb, path, opts} <- routes do
+               resp = http(info, verb, info.required_rest_url <> path, opts)
+
+               check!(
+                 resp.status == 400,
+                 "#{verb} #{path}: HTTP #{resp.status}: #{clip(resp.raw)}"
+               )
+
+               error = get_in(resp.json || %{}, ["error"]) || %{}
+
+               check!(
+                 error["code"] == 400 and error["status"] == "FAILED_PRECONDITION",
+                 "#{verb} #{path}: #{clip(inspect(resp.json || resp.raw))}"
+               )
+
+               check_extension_error_info!(error["details"], uri, "#{verb} #{path}")
+               check!(not Map.has_key?(resp.headers, "a2a-extensions"), "#{path}: echoed")
+             end
+
+             "#{length(routes)} routes refused 400 FAILED_PRECONDITION, ErrorInfo EXTENSION_SUPPORT_REQUIRED naming #{uri}"
+           end},
+          {"declaring the extension runs the call and the answer echoes it",
+           fn info ->
+             uri = info.required_extension
+             headers = [{"a2a-extensions", uri}]
+             send = send_params("count_notes", %{})
+
+             resp =
+               http(info, :post, info.required_rest_url <> "/message:send",
+                 json: send,
+                 headers: headers
+               )
+
+             check!(resp.status == 200, "HTTP #{resp.status}: #{clip(resp.raw)}")
+             task = resp.json |> task_of!() |> expect_state!("TASK_STATE_COMPLETED")
+             check_echo!(resp, uri)
+
+             # The extension may also arrive as the same-named query parameter.
+             query = "?" <> URI.encode_query(%{"A2A-Extensions" => uri})
+             resp = http(info, :get, info.required_rest_url <> "/tasks/#{task["id"]}" <> query)
+             check!(resp.status == 200, "query form: HTTP #{resp.status}: #{clip(resp.raw)}")
+             check_echo!(resp, uri)
+             "task #{task["id"]} completed; A2A-Extensions: #{uri} (header and query forms)"
+           end},
+          {"an extra extension the server does not require is ignored, not echoed",
+           fn info ->
+             uri = info.required_extension
+             headers = [{"a2a-extensions", uri <> ", " <> @unknown_extension}]
+             send = send_params("count_notes", %{})
+
+             resp =
+               http(info, :post, info.required_rest_url <> "/message:send",
+                 json: send,
+                 headers: headers
+               )
+
+             check!(resp.status == 200, "HTTP #{resp.status}: #{clip(resp.raw)}")
+             resp.json |> task_of!() |> expect_state!("TASK_STATE_COMPLETED")
+             check_echo!(resp, uri)
+             "accepted; only #{uri} is activated and echoed"
+           end},
+          {"an extension the server does not serve does not satisfy the requirement",
+           fn info ->
+             headers = [{"a2a-extensions", @unknown_extension}]
+             resp = http(info, :get, info.required_rest_url <> "/tasks", headers: headers)
+             check!(resp.status == 400, "HTTP #{resp.status}: #{clip(resp.raw)}")
+             error = resp.json["error"]
+
+             check!(
+               error["status"] == "FAILED_PRECONDITION",
+               "status #{inspect(error["status"])}"
+             )
+
+             check_extension_error_info!(error["details"], info.required_extension, "GET /tasks")
+             "refused 400 naming #{info.required_extension}"
+           end}
+        ]
+    end
+
     defp mount_negative(_mount), do: []
+
+    defp required_grpc_raw!(info, rpc, bytes, extra) do
+      headers =
+        [{"a2a-version", "1.1"}, {"authorization", "Bearer " <> token_value(info, :writer)}] ++
+          extra
+
+      {:ok, answer} =
+        RawWire.grpc_raw(
+          info.required_grpc_target,
+          "/lf.a2a.v1.A2AService/" <> rpc,
+          headers,
+          bytes
+        )
+
+      check!(answer["status"] == 200, "#{rpc}: HTTP #{inspect(answer["status"])}")
+      answer
+    end
+
+    defp required_grpc_send!(info, extensions) do
+      grpc(%{info | grpc_target: info.required_grpc_target}, :writer, fn ch, _opts ->
+        opts =
+          grpc_opts(info, :writer, %{"a2a-extensions" => extensions}) ++ [return_headers: true]
+
+        request = pb(Pb.SendMessageRequest, send_params("count_notes", %{}))
+
+        case Stub.send_message(ch, request, opts) do
+          {:ok, reply, %{headers: headers}} -> {reply |> unpb() |> task_of!(), headers}
+          other -> fail!("SendMessage answered #{clip(inspect(other))}")
+        end
+      end)
+    end
+
+    defp card_declares_extension(mount) do
+      {"the card declares the extension with required: true",
+       fn info ->
+         card =
+           http(info, :get, mount_url(info, mount) <> "/.well-known/agent-card.json",
+             token: :none
+           ).json
+
+         declared = get_in(card, ["capabilities", "extensions"]) || []
+
+         case Enum.find(declared, &(&1["uri"] == info.required_extension)) do
+           %{"required" => true} ->
+             "capabilities.extensions declares #{info.required_extension} required: true"
+
+           other ->
+             fail!(
+               "capabilities.extensions has #{clip(inspect(declared))}, wanted #{info.required_extension} required: #{inspect(other)}"
+             )
+         end
+       end}
+    end
+
+    # The ErrorInfo of ExtensionSupportRequiredError (spec 5.4, 9.5, 11.6):
+    # reason EXTENSION_SUPPORT_REQUIRED, domain a2a-protocol.org, naming the
+    # missing URI.
+    defp check_extension_error_info!(details, uri, what) do
+      infos = for %{"reason" => _} = info <- List.wrap(details), do: info
+
+      check!(
+        Enum.any?(infos, fn info ->
+          info["reason"] == "EXTENSION_SUPPORT_REQUIRED" and info["domain"] == "a2a-protocol.org" and
+            Jason.encode!(info) =~ uri
+        end),
+        "#{what}: no ErrorInfo EXTENSION_SUPPORT_REQUIRED naming #{uri} in #{clip(inspect(details))}"
+      )
+    end
+
+    defp check_echo!(resp, uri) do
+      echoed = resp.headers["a2a-extensions"]
+      check!(echoed == uri, "A2A-Extensions response header is #{inspect(echoed)}, wanted #{uri}")
+    end
 
     defp mount_url(info, "/"), do: info.base_url
     defp mount_url(info, "/jsonrpc"), do: info.jsonrpc_url
     defp mount_url(info, "/a2a"), do: info.a2a_url
     defp mount_url(info, "/rest"), do: info.rest_url
+    defp mount_url(info, "/required/a2a"), do: info.required_a2a_url
+    defp mount_url(info, "/required/rest"), do: info.required_rest_url
 
     # What each mount really serves, for `AgentCard.audit/2`.
     defp audit_expectations(mount) do

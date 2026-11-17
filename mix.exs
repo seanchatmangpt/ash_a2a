@@ -18,6 +18,7 @@ defmodule AshA2A.MixProject do
         "test.live": :test,
         "test.serial.shard": :test,
         "test.serial.solo": :test,
+        "test.mutation": :test,
         "ash_a2a.sim": :test,
         muzak: :test,
         "muzak.sec": :test
@@ -59,10 +60,21 @@ defmodule AshA2A.MixProject do
       # The tier tags are excluded too: files tagged only `:serial_shard` /
       # `:serial_solo` carry no `:serial` tag, so excluding `:serial` alone let
       # them run in the default tier and again in their own lane.
-      test: "test --exclude serial --exclude serial_shard --exclude serial_solo",
+      #
+      # `:mutation_catalog_full` is the exhaustive "every catalog mutant is
+      # killed" matrix (test/ash_a2a/chicago/mutation_harness_test.exs and
+      # test/mutation_wave3_catalog_test.exs, ~10 min). Its tests carry ONLY that
+      # tag (never `:serial*`: ExUnit lets `--include`/`--only` win over
+      # `--exclude`), it is excluded below from every default tier, and it runs
+      # through `mix test.mutation` (proofs.yml). test/mutation_tier_wiring_test.exs
+      # fails if any of this wiring is dropped.
+      test:
+        "test --exclude serial --exclude serial_shard --exclude serial_solo --exclude mutation_catalog_full",
       "test.all":
-        "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos",
-      "test.serial": "test --only serial --only serial_shard --only serial_solo",
+        "test --include serial --exclude graphlaw --exclude graphlaw_engine --exclude sibling_repos --exclude mutation_catalog_full",
+      "test.serial":
+        "test --only serial --only serial_shard --only serial_solo --exclude mutation_catalog_full",
+      "test.mutation": "test --only mutation_catalog_full",
       # Live, paid, networked LLM round-trips: explicit opt-in only.
       "test.live": "cmd ASH_A2A_LIVE_LLM=1 mix test --include serial --only external_api",
 
@@ -73,8 +85,8 @@ defmodule AshA2A.MixProject do
       #                   one invocation, never sharded.
       #   :serial_shard - VM-local shared state; safe to shard with
       #                   `MIX_TEST_PARTITION=<n> mix test.serial.shard --partitions <N>`.
-      "test.serial.shard": "test --only serial_shard",
-      "test.serial.solo": "test --only serial_solo",
+      "test.serial.shard": "test --only serial_shard --exclude mutation_catalog_full",
+      "test.serial.solo": "test --only serial_solo --exclude mutation_catalog_full",
 
       # Compile with stdout redirected to stderr first, so `ref=$(mix
       # ash_a2a.standing_ref)` captures only the SHA on a cold `_build`.

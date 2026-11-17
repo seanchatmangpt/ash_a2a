@@ -877,7 +877,10 @@ defmodule AshA2A.Transport.HTTPJSON do
         agent_card_opts: Map.get(opts, :agent_card_opts, []),
         push_notifications: push_enabled?(opts),
         extended_card: not is_nil(opts.extended_card),
-        extensions: []
+        extensions: [],
+        # The negotiated extensions this binding enforces are declared on its
+        # card, `required` flag included (spec 4.5).
+        compiled_extensions: opts.extensions
       },
       base_url
     )

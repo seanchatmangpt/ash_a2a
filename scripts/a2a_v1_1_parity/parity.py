@@ -66,11 +66,6 @@ UNREACHABLE = {
     "AgentProvider.organization": "AshA2A.Sim.Agent declares no provider",
     "AgentCard.documentation_url": "AshA2A.Sim.Agent declares no documentation URL",
     "AgentCard.icon_url": "AshA2A.Sim.Agent declares no icon",
-    "AgentCapabilities.extensions": "AshA2A.Sim.Agent declares no extension",
-    "AgentExtension.uri": "AshA2A.Sim.Agent declares no extension",
-    "AgentExtension.description": "AshA2A.Sim.Agent declares no extension",
-    "AgentExtension.required": "AshA2A.Sim.Agent declares no extension",
-    "AgentExtension.params": "AshA2A.Sim.Agent declares no extension",
     "AgentSkill.examples": "the Sim skills declare no examples",
     "AgentSkill.input_modes": "the Sim skills declare no per-skill modes",
     "AgentSkill.output_modes": "the Sim skills declare no per-skill modes",
@@ -209,11 +204,12 @@ def send_request(skill, data=None, configuration=None, **kw):
 
 
 class Env:
-    def __init__(self, report, bindings, args, webhook):
+    def __init__(self, report, bindings, args, webhook, tokens=None):
         self.report = report
         self.bindings = bindings
         self.args = args
         self.webhook = webhook
+        self.tokens = tokens
 
 
 def sem(b, operation, vector, ok, detail, check="semantics"):
@@ -1164,6 +1160,139 @@ def run_invalid_agent_response(b):
     expect_a2a_error(b, "SendMessage", vector, outcome, "InvalidAgentResponseError", "3.1.1 / 5.4")
 
 
+# -- the required-extension mounts (spec 3.2.5, 4.5, 4.6.3, 5.4) ------------------
+
+# The one extension the simulation server's second set of mounts requires, and
+# an extension no mount serves. Rows are reported under one binding name; the
+# vector text names the wire binding.
+REQUIRED_EXTENSION = "https://example.com/ext/sim-required/v1"
+UNKNOWN_EXTENSION = "https://example.com/ext/sim-unknown/v1"
+EXTENSION_GATE = "extension-gate"
+WIRE_LABEL = {"grpc": "gRPC", "rest": "HTTP+JSON", "jsonrpc": "JSON-RPC"}
+
+
+class declaring:
+    """Sends `A2A-Extensions: value` with every call made inside the block."""
+
+    def __init__(self, b, value):
+        self.b, self.value = b, value
+
+    def __enter__(self):
+        self.previous, self.b.extensions = self.b.extensions, self.value
+
+    def __exit__(self, *_exc):
+        self.b.extensions = self.previous
+
+
+def run_extension_gate(b, env):
+    """ExtensionSupportRequiredError (5.4: -32008, FAILED_PRECONDITION, HTTP 400,
+    ErrorInfo reason EXTENSION_SUPPORT_REQUIRED): the agent card lists an
+    extension as `required` and the request does not declare it. A request that
+    declares it is served and the answer echoes it; an extension the server does
+    not require and does not serve is ignored (4.6.3)."""
+    label = WIRE_LABEL[b.kind]
+    missing = "tsk-does-not-exist"
+    section = "3.2.5 / 4.5 / 5.4"
+
+    def refused(rpc, request, vector, stream=False):
+        vector = f"{label}: {vector}"
+        if stream:
+            outcome = b.stream(rpc, request, vector, wait=8, record=False)
+        else:
+            outcome = b.unary(rpc, request, vector)
+        expect_a2a_error(b, rpc, vector, outcome, "ExtensionSupportRequiredError", section)
+
+    calls = (
+        ("SendMessage", send_request("count_notes"), False),
+        ("SendStreamingMessage", send_request("count_notes"), True),
+        ("GetTask", pb.GetTaskRequest(id=missing), False),
+        ("ListTasks", pb.ListTasksRequest(), False),
+        ("GetExtendedAgentCard", pb.GetExtendedAgentCardRequest(), False),
+    )
+    for rpc, request, stream in calls:
+        refused(rpc, request, "no A2A-Extensions header", stream)
+    with declaring(b, UNKNOWN_EXTENSION):
+        refused("SendMessage", send_request("count_notes"), "only an extension the server does not serve", False)
+
+    vector = f"{label}: the required extension declared"
+    with declaring(b, REQUIRED_EXTENSION):
+        outcome = b.unary("SendMessage", send_request("count_notes"), vector)
+        task = None
+        if outcome.error is not None:
+            b.report.add(b.name, "SendMessage", vector, "call", False, "refused: " + outcome.error.describe())
+        elif outcome.message.WhichOneof("payload") == "task":
+            task = outcome.message.task
+            sem(b, "SendMessage", vector, task.status.state == pb.TASK_STATE_COMPLETED,
+                f"{state_name(task.status.state)}")
+            echoed = b.response_headers(outcome).get("a2a-extensions")
+            sem(b, "SendMessage", vector, echoed == REQUIRED_EXTENSION,
+                f"A2A-Extensions response header {echoed!r}, the request declared {REQUIRED_EXTENSION}")
+        if task is not None:
+            got = get(b, f"{label}: GetTask with the required extension declared", task.id)
+            if got is not None:
+                sem(b, "GetTask", f"{label}: GetTask with the required extension declared", got.id == task.id, got.id)
+        result = b.stream("SendStreamingMessage", send_request("count_notes"), f"{label}: stream with the required extension declared")
+        sem(b, "SendStreamingMessage", f"{label}: stream with the required extension declared",
+            result.error is None and bool(result.frames), f"{len(result.frames)} frame(s), error {result.error and result.error.describe()}")
+
+    vector = f"{label}: the required extension declared with one the server does not serve"
+    with declaring(b, f"{UNKNOWN_EXTENSION}, {REQUIRED_EXTENSION}"):
+        outcome = b.unary("SendMessage", send_request("count_notes"), vector)
+        if outcome.error is not None:
+            b.report.add(b.name, "SendMessage", vector, "call", False, "refused: " + outcome.error.describe())
+        else:
+            echoed = b.response_headers(outcome).get("a2a-extensions")
+            sem(b, "SendMessage", vector, echoed == REQUIRED_EXTENSION,
+                f"A2A-Extensions response header {echoed!r}: only the activated extension is echoed; "
+                f"the unknown one is ignored (4.6.3)")
+
+
+def run_extension_cards(env, report):
+    """The required mounts' Agent Cards declare the extension with `required: true`
+    (4.4.1) and advertise the second gRPC listener."""
+    base = env.args.http.rstrip("/")
+    for mount in ("/required/a2a", "/required/rest"):
+        name = f"GET {mount}/.well-known/agent-card.json"
+        resp = h.http_call("GET", base + mount + "/.well-known/agent-card.json", {"accept": "application/json"})
+        if resp.status != 200:
+            report.add(EXTENSION_GATE, name, "required-extension card", "call", False, f"HTTP {resp.status}")
+            continue
+        value = resp.json()
+        h.note_raw_canonical(report, resp.body, value)
+        card, problems = h.check_json(report, value, pb.AgentCard)
+        report.problems(EXTENSION_GATE, name, "required-extension card", problems, 1, "AgentCard")
+        if card is None:
+            continue
+        declared = [e for e in card.capabilities.extensions if e.uri == REQUIRED_EXTENSION]
+        problems = []
+        if len(declared) != 1:
+            problems.append(f"capabilities.extensions declares {[e.uri for e in card.capabilities.extensions]}")
+        elif not declared[0].required:
+            problems.append("the extension is declared without required: true")
+        targets = [i.url for i in card.supported_interfaces if i.protocol_binding == "GRPC"]
+        if targets != [env.args.required_grpc]:
+            problems.append(f"the card advertises gRPC {targets}, the required listener is {env.args.required_grpc}")
+        report.add(EXTENSION_GATE, name, "the card declares the required extension", "semantics", not problems,
+                   "; ".join(problems) or f"{REQUIRED_EXTENSION} required: true; gRPC {targets[0]}")
+
+
+def run_required_extension(env, report):
+    if not env.args.required_grpc:
+        report.add(EXTENSION_GATE, "all", "required-extension mounts", "call", "skip",
+                   "no --required-grpc target: the simulation server's second gRPC listener")
+        return
+    base = env.args.http.rstrip("/")
+    bindings = [
+        h.GrpcBinding(report, env.tokens, env.args.required_grpc),
+        h.RestBinding(report, env.tokens, base + "/required/rest"),
+        h.JsonRpcBinding(report, env.tokens, base + "/required/a2a", "jsonrpc"),
+    ]
+    for b in bindings:
+        b.name = EXTENSION_GATE
+        guarded(report, b, "extension gate", run_extension_gate, env)
+    run_extension_cards(env, report)
+
+
 def run_unconfigured_card_and_push(b, env):
     """The owner-scoped `/jsonrpc` mount configures neither push notifications nor
     an extended card: ExtendedAgentCardNotConfiguredError (-32007) and
@@ -1514,6 +1643,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--http", required=True, help="base URL of the simulation server's HTTP listener")
     parser.add_argument("--grpc", required=True, help="host:port of the gRPC endpoint")
+    parser.add_argument("--required-grpc", help="host:port of the second gRPC listener, whose A2A-Extensions gate requires the sim extension")
     parser.add_argument("--report", help="write the JSON report to this file")
     parser.add_argument("--json", action="store_true", help="print the JSON report instead of the matrix")
     parser.add_argument("--writer-token", default="sim-writer-token")
@@ -1521,7 +1651,7 @@ def main(argv=None):
     parser.add_argument("--unscoped-token", default="sim-unscoped-token")
     parser.add_argument("--trace", action="store_true", help="print each row to stderr as it is recorded")
     parser.add_argument("--known", help="JSON file of known defects; a failing row that matches one is reported as `known`")
-    parser.add_argument("--groups", help="debugging: comma-separated vector groups (card,send,get,streams,push,live,artifacts,errors,cross)")
+    parser.add_argument("--groups", help="debugging: comma-separated vector groups (card,send,get,streams,push,live,artifacts,errors,extensions,cross)")
     parser.add_argument("--only", help="comma-separated bindings to run: grpc,http+json,jsonrpc,jsonrpc:/jsonrpc")
     args = parser.parse_args(argv)
 
@@ -1539,7 +1669,7 @@ def main(argv=None):
         b.full = b.name != "jsonrpc:/jsonrpc"
     if args.only:
         bindings = [b for b in bindings if b.name in args.only.split(",")]
-    env = Env(report, bindings, args, Webhook())
+    env = Env(report, bindings, args, Webhook(), tokens)
     env.cards = {}
 
     if not args.groups:
@@ -1565,6 +1695,8 @@ def main(argv=None):
                 run_jsonrpc_protocol_errors(b)
             if b.kind == "grpc":
                 run_grpc_protocol_errors(b)
+    if wanted is None or "extensions" in wanted:
+        run_required_extension(env, report)
     if wanted is not None and "cross" not in wanted:
         print_matrix(report, {"response_fields": {"observed": 0, "reachable": 0, "unreachable": {}}}, sys.stdout)
         return 1 if report.summary()["fail"] else 0

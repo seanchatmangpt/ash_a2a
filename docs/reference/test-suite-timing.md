@@ -154,3 +154,41 @@ load) from the async portion. Estimated (not measured): with the mutation test
 reduced as in recommendation 1 the sync portion falls towards the earlier 560 s
 and `mix test.all` to about 11 to 12 minutes; with only the closure fix applied
 expect about 15 minutes on a quiet machine.
+
+## Round 3: mutation tier split (gap G2)
+
+`mutation_harness_test.exs` and `mutation_wave3_catalog_test.exs` were the
+largest contributors (the first alone set the time of CI shard 2). The exhaustive
+"every catalog mutant is killed by its named falsifiers" assertions now carry only
+`:mutation_catalog_full`; no assertion was removed or weakened (the e2e test body
+moved verbatim, the 30 per-mutant tests are generated from the same table).
+`mix test`, `test.serial*` and `test.all` exclude the tag; `mix test.mutation`
+runs it, and `.github/workflows/proofs.yml` runs it after
+`mix ash_a2a.chicago.mutate --require-killed` (both gates kept: the CLI requires
+every mutant killed; the test also pins which falsifiers kill each one).
+`test/mutation_tier_wiring_test.exs` pins the alias, the exclusions, the
+workflow steps and the CLI/test catalog-id equivalence.
+
+The default tiers keep the engine tests (hot-load, restore, guardian, refusals,
+verdict classification) plus a subset: 2 CHI-MUTGUARD kills, the equivalent mutant
+(survived), a no-killer mutant and the protected Runner mutant (blocked),
+`judge/7` (unknown), and 6 wave-3 mutants.
+
+Measured in a private snapshot copy, partition 2, `nice -n 5`, two files only
+(`test/ash_a2a/chicago/mutation_harness_test.exs`,
+`test/mutation_wave3_catalog_test.exs`):
+
+| Run | Tests | Wall (ExUnit) | Load average at start/end |
+|---|---|---|---|
+| Before, `mix test --include serial <2 files>` | 46 | 600.4 s (642 s with boot) | 0.5 / 2.4 |
+| After, `mix test.serial.shard <2 files>` | 26 run, 31 excluded | 95.0 s (99 s) | 2.6 / 4.8 |
+| After, `mix test.all <2 files + wiring test>` | 31 run, 31 excluded | 93.9 s | 4.8 |
+| `mix test.mutation` (whole suite, only the tag) | 31 | 677.5 s (683 s) | 4.2 / 4.2 |
+
+Saving in the default tiers: about 505 s per run. Projected: last measured
+`mix test.all` 1605 s (sync 1522 s) falls to about 1100 s (about 18 min), and the
+shard that held `mutation_harness_test` loses about 5 of its 4.3+ minutes, so
+shard 2 is no longer the longest lane. Estimate, not measured: re-read the lane
+times from a CI run, then update the lane comment in `ci.yml` (left unedited:
+shard balance is by file index and was not re-measured). The 677 s now sits in
+the `proofs` job (timeout 60 min).

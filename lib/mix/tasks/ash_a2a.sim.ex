@@ -138,6 +138,7 @@ defmodule Mix.Tasks.AshA2a.Sim do
       JSON-RPC       #{info.a2a_url}   (AshA2A.A2ATransport.Plug: push configs, extended card)
       HTTP+JSON      #{info.rest_url}   (AshA2A.Transport.HTTPJSON)
       gRPC           #{info.grpc_target}   (lf.a2a.v1.A2AService)
+      required ext.  #{info.required_a2a_url}, #{info.required_rest_url}, gRPC #{info.required_grpc_target}   (A2A-Extensions: #{info.required_extension})
       push receiver  #{info.push_url}
 
     Bearer tokens

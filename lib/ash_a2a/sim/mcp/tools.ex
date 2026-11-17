@@ -217,10 +217,11 @@ if Code.ensure_loaded?(Bandit) do
           },
           "mount" => %{
             "type" => "string",
-            "enum" => ["a2a", "jsonrpc"],
+            "enum" => ["a2a", "jsonrpc", "required_a2a"],
             "default" => "a2a",
             "description" =>
-              "`a2a` is AshA2A.A2ATransport.Plug (push configs, resubscribe, extended card); `jsonrpc` is AshA2A.Transport.Plug."
+              "`a2a` is AshA2A.A2ATransport.Plug (push configs, resubscribe, extended card); `jsonrpc` is AshA2A.Transport.Plug; " <>
+                "`required_a2a` is the A2ATransport mount that requires the extension `sim_info` names as `required_extension` in `A2A-Extensions`."
           },
           "method_spelling" => %{
             "type" => "string",
@@ -310,10 +311,18 @@ if Code.ensure_loaded?(Bandit) do
         "Calls `#{Wire.grpc_service()}/#{rpc}` on the gRPC endpoint of the simulation server over " <>
           "HTTP/2 and answers the reply as protobuf JSON (`body`), its protobuf bytes (`body_base64`), " <>
           "the gRPC status and the trailers. Derived from surface item `#{item.id}`.",
-        Map.put(props, "metadata", %{
+        props
+        |> Map.put("metadata", %{
           "type" => "object",
           "description" => "Extra gRPC metadata.",
           "additionalProperties" => %{"type" => "string"}
+        })
+        |> Map.put("target", %{
+          "type" => "string",
+          "enum" => ["default", "required"],
+          "default" => "default",
+          "description" =>
+            "`required` calls the second gRPC listener, whose A2A-Extensions gate requires the extension `sim_info` names as `required_extension`."
         }),
         required
       )
@@ -372,7 +381,7 @@ if Code.ensure_loaded?(Bandit) do
         },
         "jsonrpc_mount" => %{
           "type" => "string",
-          "enum" => ["a2a", "jsonrpc"],
+          "enum" => ["a2a", "jsonrpc", "required_a2a"],
           "default" => "a2a",
           "description" => "Which JSON-RPC mount to use when `binding` is `jsonrpc`."
         }
@@ -569,7 +578,10 @@ if Code.ensure_loaded?(Bandit) do
             "the JSON-RPC mount's card, `http_json` the HTTP+JSON mount's, `grpc` the root card (gRPC has no " <>
             "public card RPC). `mount` overrides that. No credentials are sent unless `token` is set.",
           binding_props()
-          |> Map.put("mount", %{"type" => "string", "enum" => ["root", "a2a", "jsonrpc", "rest"]})
+          |> Map.put("mount", %{
+            "type" => "string",
+            "enum" => ["root", "a2a", "jsonrpc", "rest", "required_a2a", "required_rest"]
+          })
           |> Map.put("token", %{
             "type" => "string",
             "default" => "none",
@@ -600,9 +612,10 @@ if Code.ensure_loaded?(Bandit) do
           "transport" => %{"type" => "string", "enum" => ["http", "tcp"], "default" => "http"},
           "mount" => %{
             "type" => "string",
-            "enum" => ["root", "a2a", "jsonrpc", "rest"],
+            "enum" => ["root", "a2a", "jsonrpc", "rest", "required_a2a", "required_rest"],
             "description" =>
-              "The HTTP mount. Defaults to `a2a` for `jsonrpc` and `rest` for `http_json`."
+              "The HTTP mount. Defaults to `a2a` for `jsonrpc` and `rest` for `http_json`. " <>
+                "`required_a2a` and `required_rest` are the mounts that require the extension named by `sim_info`."
           },
           "method" => %{
             "type" => "string",
@@ -688,6 +701,10 @@ if Code.ensure_loaded?(Bandit) do
               "a2a_url" => %{"type" => "string"},
               "rest_url" => %{"type" => "string"},
               "grpc_target" => %{"type" => "string"},
+              "required_a2a_url" => %{"type" => "string"},
+              "required_rest_url" => %{"type" => "string"},
+              "required_grpc_target" => %{"type" => "string"},
+              "required_extension" => %{"type" => "string"},
               "push_url" => %{"type" => "string"},
               "tokens" => %{"type" => "object"},
               "skills" => %{"type" => "array", "items" => %{"type" => "object"}},
@@ -699,6 +716,10 @@ if Code.ensure_loaded?(Bandit) do
               "jsonrpc_url",
               "rest_url",
               "grpc_target",
+              "required_a2a_url",
+              "required_rest_url",
+              "required_grpc_target",
+              "required_extension",
               "push_url",
               "tokens",
               "skills"
@@ -1145,7 +1166,7 @@ if Code.ensure_loaded?(Bandit) do
 
       url = mount_url(ctx.info, mount) <> "/.well-known/agent-card.json"
       args = Map.put_new(args, "token", "none")
-      binding = if mount == "rest", do: "http_json", else: "jsonrpc"
+      binding = if mount in ["rest", "required_rest"], do: "http_json", else: "jsonrpc"
 
       with {:ok, answer} <- http_request(binding, :get, url, nil, args, ctx) do
         note =
@@ -1451,10 +1472,15 @@ if Code.ensure_loaded?(Bandit) do
         on_frame: Map.get(ctx, :on_frame, fn _ -> :ok end)
       ]
 
-      with {:ok, wire} <- Wire.grpc(ctx.info.grpc_target, rpc, request, metadata, opts) do
+      target =
+        if args["target"] == "required",
+          do: ctx.info.required_grpc_target,
+          else: ctx.info.grpc_target
+
+      with {:ok, wire} <- Wire.grpc(target, rpc, request, metadata, opts) do
         described = %{
           "method" => "POST",
-          "url" => "http://#{ctx.info.grpc_target}/#{Wire.grpc_service()}/#{rpc}",
+          "url" => "http://#{target}/#{Wire.grpc_service()}/#{rpc}",
           "headers" => metadata,
           "body" => Jason.encode!(request)
         }
@@ -1484,6 +1510,8 @@ if Code.ensure_loaded?(Bandit) do
     defp mount_url(info, "a2a"), do: info.a2a_url
     defp mount_url(info, "jsonrpc"), do: info.jsonrpc_url
     defp mount_url(info, "rest"), do: info.rest_url
+    defp mount_url(info, "required_a2a"), do: info.required_a2a_url
+    defp mount_url(info, "required_rest"), do: info.required_rest_url
 
     # -- answers -----------------------------------------------------------------
 
@@ -1856,6 +1884,10 @@ if Code.ensure_loaded?(Bandit) do
         "a2a_url" => info.a2a_url,
         "rest_url" => info.rest_url,
         "grpc_target" => info.grpc_target,
+        "required_a2a_url" => info.required_a2a_url,
+        "required_rest_url" => info.required_rest_url,
+        "required_grpc_target" => info.required_grpc_target,
+        "required_extension" => info.required_extension,
         "push_url" => info.push_url,
         "http_port" => info.http_port,
         "grpc_port" => info.grpc_port,

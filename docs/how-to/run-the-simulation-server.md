@@ -70,6 +70,7 @@ pin the ports; each defaults to a free port.
 | `/rest` | `AshA2A.Transport.HTTPJSON` (HTTP+JSON, including `message:live` and the schema endpoints) |
 | gRPC port | `AshA2A.Transport.GRPC.Server` (`lf.a2a.v1.A2AService`) |
 | push port | `AshA2A.Sim.PushReceiver`, which records every webhook it receives |
+| `/required/a2a`, `/required/rest`, second gRPC port | the same agent behind `AshA2A.A2ATransport.Plug`, `AshA2A.Transport.HTTPJSON` and a second gRPC listener, each requiring one extension (see below) |
 
 Every mount except the card requires a bearer token:
 
@@ -96,6 +97,50 @@ curl -s http://127.0.0.1:PORT/jsonrpc \
 
 The same call with `sim-reader-token` answers a task in `TASK_STATE_FAILED`
 whose status names `authority_required`, and no row is written.
+
+## Drive the required-extension mounts
+
+The three standing mounts declare no extension. A second set of mounts serves
+the same agent and requires one, so `ExtensionSupportRequiredError` (`-32008`)
+can be driven on every binding without making every other client send a header.
+`mix ash_a2a.sim` prints their URLs; `AshA2A.Sim.Server.info/1` carries them as
+`required_a2a_url`, `required_rest_url`, `required_grpc_target` and
+`required_extension`.
+
+| Binding | Mount | Without the extension |
+| --- | --- | --- |
+| JSON-RPC | `/required/a2a` | HTTP 200, JSON-RPC error `-32008` with the request's `id` and an `ErrorInfo` `EXTENSION_SUPPORT_REQUIRED` in `error.data` |
+| HTTP+JSON | `/required/rest` | HTTP 400, `error.status` `FAILED_PRECONDITION`, the same `ErrorInfo` in `error.details` |
+| gRPC | `required_grpc_target` | status `FAILED_PRECONDITION` (9), the `ErrorInfo` in `grpc-status-details-bin` |
+
+The extension is `AshA2A.Sim.RequiredExtension`, URI
+`https://example.com/ext/sim-required/v1`, declared `required: true` on the
+card of each mount (`capabilities.extensions`). A call that lists the URI in
+`A2A-Extensions` (the `a2a-extensions` metadata over gRPC) runs, and the answer
+echoes it in the `A2A-Extensions` response header. A call that also lists an
+extension the server neither requires nor serves is accepted and the unknown
+URI is ignored and not echoed (spec 4.6.3). Listing only an unknown extension
+does not satisfy the requirement.
+
+```console
+curl -s http://127.0.0.1:PORT/required/rest/message:send \
+  -H 'authorization: Bearer sim-writer-token' -H 'a2a-version: 1.1' \
+  -H 'a2a-extensions: https://example.com/ext/sim-required/v1' \
+  -H 'content-type: application/json' \
+  -d '{"message":{"messageId":"m-2","role":"ROLE_USER",
+        "parts":[{"data":{}}],"metadata":{"skill":"count_notes"}}}'
+```
+
+The second gRPC listener is a second `GRPC.Endpoint`
+(`AshA2A.Sim.RequiredEndpoint`) started with the `:endpoint_config` option of
+`AshA2A.Transport.GRPC.Supervisor`, which scopes `:extensions` and `:versions`
+to that endpoint. The surface items are `mount:/required/a2a`,
+`mount:/required/rest` and `mount:grpc:required`; the parity report carries the
+refusal on all three bindings under `extension-gate`, compared with the
+`ErrorInfo` of the upstream proto and the status table of spec 5.4. Through MCP,
+pass `jsonrpc_mount: "required_a2a"`, `mount: "required_rest"` or
+`target: "required"` (gRPC tools) with the header
+`a2a-extensions`; `sim_info` names the URI.
 
 ## The skills
 

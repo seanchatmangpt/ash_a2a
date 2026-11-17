@@ -104,6 +104,8 @@ if Code.ensure_loaded?(Bandit) do
     | `/jsonrpc` | `AshA2A.Transport.Plug` (JSON-RPC 2.0, owner-scoped) |
     | `/a2a` | `AshA2A.A2ATransport.Plug` (JSON-RPC 2.0 with push configs, resubscribe and the extended card) |
     | `/rest` | `AshA2A.Transport.HTTPJSON` (HTTP+JSON, including `message:live`) |
+    | `/required/a2a` | `AshA2A.A2ATransport.Plug` with the required `AshA2A.Sim.RequiredExtension` |
+    | `/required/rest` | `AshA2A.Transport.HTTPJSON` with the required `AshA2A.Sim.RequiredExtension` |
 
     Each mount also serves its own `/.well-known/agent-card.json` without
     authentication. Every other path runs `AshA2A.Protocol.Plug.Auth` first.
@@ -150,6 +152,13 @@ if Code.ensure_loaded?(Bandit) do
     defp route(%{path_info: ["rest" | rest]} = conn, mounts),
       do: mount(conn, AshA2A.Transport.HTTPJSON, mounts.rest, rest, mounts.auth)
 
+    # The required-extension mounts: the same agent, one extension required.
+    defp route(%{path_info: ["required", "a2a" | rest]} = conn, mounts),
+      do: required_mount(conn, AshA2A.A2ATransport.Plug, mounts.required_a2a, rest, mounts.auth)
+
+    defp route(%{path_info: ["required", "rest" | rest]} = conn, mounts),
+      do: required_mount(conn, AshA2A.Transport.HTTPJSON, mounts.required_rest, rest, mounts.auth)
+
     # The email gateway authenticates its own webhook (no bearer scheme).
     defp route(%{path_info: [segment | _]} = conn, _mounts)
          when segment in ["email", "email-workspace"],
@@ -157,8 +166,14 @@ if Code.ensure_loaded?(Bandit) do
 
     defp route(conn, _mounts), do: send_resp(conn, 404, "Not Found")
 
-    defp mount(conn, transport, transport_opts, rest, auth) do
-      conn = %{conn | path_info: rest, script_name: conn.script_name ++ [hd(conn.path_info)]}
+    defp required_mount(conn, transport, transport_opts, rest, auth) do
+      [prefix, name | _] = conn.path_info
+      mount(conn, transport, transport_opts, rest, auth, [prefix, name])
+    end
+
+    defp mount(conn, transport, transport_opts, rest, auth, scripts \\ nil) do
+      scripts = scripts || [hd(conn.path_info)]
+      conn = %{conn | path_info: rest, script_name: conn.script_name ++ scripts}
 
       if rest == @card_path do
         transport.call(conn, transport_opts)
@@ -169,6 +184,18 @@ if Code.ensure_loaded?(Bandit) do
         if conn.halted, do: conn, else: transport.call(conn, transport_opts)
       end
     end
+  end
+
+  defmodule AshA2A.Sim.RequiredEndpoint do
+    @moduledoc """
+    The `GRPC.Endpoint` of the simulation server's second gRPC listener, the
+    one whose A2A-Extensions gate requires `AshA2A.Sim.RequiredExtension`
+    (see the `:endpoint_config` option of `AshA2A.Transport.GRPC.Supervisor`).
+    """
+
+    use GRPC.Endpoint
+
+    run AshA2A.Transport.GRPC.Server
   end
 
   defmodule AshA2A.Sim.Server do
@@ -191,6 +218,11 @@ if Code.ensure_loaded?(Bandit) do
         agent card at the root and at each mount.
       * the gRPC endpoint (`AshA2A.Transport.GRPC.Server`), with the same
         bearer authentication.
+      * the required-extension mounts: `AshA2A.A2ATransport.Plug` at
+        `/required/a2a`, `AshA2A.Transport.HTTPJSON` at `/required/rest` and a
+        second gRPC listener, each requiring `AshA2A.Sim.RequiredExtension`
+        in `A2A-Extensions`. The standing mounts declare no extension, so the
+        probes and clients of those keep their semantics.
       * a webhook receiver (`AshA2A.Sim.PushReceiver`) that records
         push-notification deliveries.
       * an ETS event journal (`AshA2A.TaskStore.EventJournalEts`) and a fresh
@@ -210,6 +242,8 @@ if Code.ensure_loaded?(Bandit) do
       * `:http_port`, `:grpc_port`, `:push_port`
       * `:base_url`, `:card_url`, `:jsonrpc_url`, `:a2a_url`, `:rest_url`
       * `:grpc_target` (`host:port`), `:push_url`
+      * `:required_a2a_url`, `:required_rest_url`, `:required_grpc_target` and
+        `:required_extension` (the URI) of the required-extension mounts
       * `:tokens` (see `AshA2A.Sim.Auth.tokens/0`)
       * `:card_jwks` - the JWKS (`%{"keys" => [public_jwk]}`) that verifies the
         `signatures` entry of every served agent card
@@ -333,6 +367,21 @@ if Code.ensure_loaded?(Bandit) do
         )
 
       grpc_port = AshA2A.Transport.GRPC.Supervisor.port(grpc)
+
+      # The second gRPC listener serves the same agent; only its own endpoint
+      # requires the extension.
+      {:ok, required_grpc} =
+        Supervisor.start_child(
+          sup,
+          {AshA2A.Transport.GRPC.Supervisor,
+           port: 0,
+           ip: {127, 0, 0, 1},
+           name: :sim_required_grpc,
+           endpoint: AshA2A.Sim.RequiredEndpoint,
+           endpoint_config: [extensions: [AshA2A.Sim.RequiredExtension]]}
+        )
+
+      required_grpc_port = AshA2A.Transport.GRPC.Supervisor.port(required_grpc)
       {card_private, card_public} = card_keys()
 
       info = %{
@@ -344,6 +393,10 @@ if Code.ensure_loaded?(Bandit) do
         jsonrpc_url: base_url <> "/jsonrpc",
         a2a_url: base_url <> "/a2a",
         rest_url: base_url <> "/rest",
+        required_a2a_url: base_url <> "/required/a2a",
+        required_rest_url: base_url <> "/required/rest",
+        required_grpc_target: "#{@host}:#{required_grpc_port}",
+        required_extension: AshA2A.Sim.RequiredExtension.uri(),
         grpc_target: "#{@host}:#{grpc_port}",
         push_url: "http://#{@host}:#{push_port}/hook",
         tokens: AshA2A.Sim.Auth.tokens(),
@@ -430,8 +483,19 @@ if Code.ensure_loaded?(Bandit) do
       {Map.put(public, "d", b64.(priv)), public}
     end
 
+    @doc false
+    def required_interfaces(info) do
+      [
+        %{url: info.required_a2a_url, protocol_binding: "JSONRPC", protocol_version: "1.1"},
+        %{url: info.required_rest_url, protocol_binding: "HTTP+JSON", protocol_version: "1.1"},
+        %{url: info.required_grpc_target, protocol_binding: "GRPC", protocol_version: "1.1"}
+      ]
+    end
+
     defp mounts(info, interfaces, sign_with) do
       card_opts = [supported_interfaces: interfaces]
+      required_opts = [supported_interfaces: required_interfaces(info)]
+      required = [AshA2A.Sim.RequiredExtension]
       provider = &AshA2A.Sim.Auth.extended_card/2
 
       a2a = fn base_url ->
@@ -448,6 +512,29 @@ if Code.ensure_loaded?(Bandit) do
       end
 
       %{
+        required_a2a:
+          AshA2A.A2ATransport.Plug.init(
+            agent: AshA2A.Sim.Agent,
+            base_url: info.required_a2a_url,
+            json_rpc_path: [],
+            agent_card_opts: required_opts,
+            sign_with: sign_with,
+            transport: @transport,
+            push_notifications: true,
+            extended_card: provider,
+            extensions: required
+          ),
+        required_rest:
+          AshA2A.Transport.HTTPJSON.init(
+            agent: AshA2A.Sim.Agent,
+            base_url: info.required_rest_url,
+            agent_card_opts: required_opts,
+            sign_with: sign_with,
+            transport: @transport,
+            push_notifications: true,
+            extended_card: provider,
+            extensions: required
+          ),
         auth: AshA2A.Protocol.Plug.Auth.init(AshA2A.Sim.Auth.plug_auth_opts()),
         # The root card is the full JSON-RPC mount's card: it advertises what
         # the server as a whole serves (push notifications, extended card).
