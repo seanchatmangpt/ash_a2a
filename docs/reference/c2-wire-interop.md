@@ -96,6 +96,21 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
   actuator with an advanced revocation view refuses; set `AUTHORITY_KEY_REVOCATION_EPOCH` to
   the epoch the actuator's view is at. A policy must also name the actuator's consequence
   classes or the issuer answers `unknown_effect_class`.
+- Quorum above one, end to end: closed for the court, open for `lib/`. An actuator quorum
+  counts signatures over ONE set of certificate fields from distinct custodians. The court
+  gets honest quorum-2 certificates from two independent `authority_service` processes (two
+  keys, two custodians, two journals): authority 1 issues, authority 2 issues the same effect
+  with authority 1's validity window in the optional `"window"` field (it is accepted only if
+  it narrows the authority's own policy, else `window_invalid`), and
+  `Issuer.combine_actuator_certificates/1` merges the two converted certificates (it refuses
+  differing fields and a duplicate signer). A certificate with only one real authority's
+  signature is refused `quorum_not_met` by the quorum-2 actuator, and so is one authority
+  signing twice (court attacks C2C-A45, C2C-A46). Tests:
+  `authority_service/test/multi_authority_test.exs`, the court report. Remains: nothing in
+  `lib/` collects signatures from two authorities (the framed clients speak to one), the same
+  approvals are presented to both authorities, and a second authority's window request is
+  only checked against its own clock skew, so deployed authorities need synchronised clocks
+  within the policy skew (5 s default).
 - TLS transport: both framed clients accept
   `ctx.c2_tls` (`AshA2A.C2.L07Tls.Transport`): `verify_peer`, pinned CA, client certificate
   (mutual), hostname check; incomplete config or failed handshake is refused and never falls back
@@ -134,6 +149,6 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
   zero-timeout handshake.
 - Red-team defects B1, B2, B3, T2, T3, T4 are in `actuator/` and `authority_service/`; their
   regressions run in the child suites: `cd actuator && mix test` 85 passed,
-  `cd authority_service && mix test` 68 passed (2026-11-17, Elixir 1.20.4 / OTP 29, `openssl`
+  `cd authority_service && mix test` 72 passed (2026-11-17, Elixir 1.20.4 / OTP 29, `openssl`
   present). The T4 test forces the interleaving with a store-process context fun that blocks
   on a message.

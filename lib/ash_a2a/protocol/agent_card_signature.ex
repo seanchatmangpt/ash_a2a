@@ -229,10 +229,14 @@ defmodule AshA2A.Protocol.AgentCardSignature do
   end
 
   defp strict_json?(%{} = m) when not is_struct(m),
-    do: Enum.all?(m, fn {k, v} -> is_binary(k) and strict_json?(v) end)
+    do: Enum.all?(m, fn {k, v} -> is_binary(k) and String.valid?(k) and strict_json?(v) end)
 
   defp strict_json?(l) when is_list(l), do: Enum.all?(l, &strict_json?/1)
-  defp strict_json?(v) when is_binary(v) or is_number(v) or is_boolean(v) or is_nil(v), do: true
+  # RFC 8785 numbers are IEEE-754 doubles: an integer outside +-(2^53 - 1) has no
+  # canonical form (and a huge one has no finite double at all).
+  defp strict_json?(v) when is_integer(v), do: abs(v) <= 9_007_199_254_740_991
+  defp strict_json?(v) when is_binary(v), do: String.valid?(v)
+  defp strict_json?(v) when is_float(v) or is_boolean(v) or is_nil(v), do: true
   defp strict_json?(_), do: false
 
   defp b64(bin), do: Base.url_encode64(bin, padding: false)

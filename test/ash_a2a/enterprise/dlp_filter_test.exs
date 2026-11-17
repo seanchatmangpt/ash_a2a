@@ -183,6 +183,10 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
           us
         end
 
+      {:reductions, r0} = Process.info(self(), :reductions)
+      DLPFilter.redact_string(payload, opts())
+      {:reductions, r1} = Process.info(self(), :reductions)
+      IO.puts("REDS #{r1 - r0}")
       median = times |> Enum.sort() |> Enum.at(div(runs, 2))
       best = Enum.min(times)
       # The budget protects the filter's own CPU cost per 64KB payload. Wall-clock

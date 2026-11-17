@@ -263,6 +263,14 @@ this working tree uncommitted, so `working_tree_dirty` is true in the report), 3
   survives, `{10, 11}` killed by 6 attacks; the always-allow actuator failed 37 attacks.
 * Key-material scan: 0 leaks over a 13 KB haystack; self-test planted and detected all 12 needles.
 
+After the two-authority change (2026-11-17, N = 20, `mix test test/ash_a2a/c2_compromise/
+--include serial --include serial_solo --include serial_shard`: 35 passed, 1110 s on a loaded
+host): 57 attacks (42 actuator, 8 authority, 4 fault series, 3 entrypoint), 57 `pass`; the
+mutation court is unchanged (15 of 15 killed, `{10}` alone survives, `{10, 11}` killed by 6
+attacks, the always-allow actuator failed 39 attacks; the check-11 mutant is killed by A19,
+A20, A21, A45 and A46); the key-material scan covers both authority keys (16 needles, 0 leaks,
+self-test detected all).
+
 Numbers are copied from that run's `report.json`; re-run to refresh them.
 
 ## Known gaps and handoffs
@@ -281,7 +289,7 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
   actuator's production entrypoint with the authority key as its only registry entry and
   quorum 1: `performed`, replay `replayed`, one ledger entry, **ACCEPTED** (no keymaster
   signature involved); the same single-custodian certificate at the court actuator (quorum 2):
-  `quorum_not_met`, REFUSED_BY_POLICY; the court path (below): `performed`, ACCEPTED; an
+  `quorum_not_met`, REFUSED_BY_POLICY; the court path (next paragraph): `performed`, ACCEPTED; an
   authority-shaped effect at the actuator: `malformed_effect`, REFUSED_BY_DESIGN.
   **Quorum 2 is now real (court run 2026-11-17).** The court actuator still pins quorum 2, and
   an intended issuance now gets BOTH signatures from real authorities: two independent
@@ -313,24 +321,32 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
   authority key do not satisfy it, with the exact refusal `quorum_not_met`: the real
   signature entry listed twice, and a second signature by the same key under a fresh nonce).
   Both are killed by the check-11 mutant.
-  Court issuance split (per attack in `attacks[].issuers`; see "Measured result" for this
-  run's counts): an issuance with no options goes to the real authorities (A01, A04, A06, A08,
-  A09, A10, A16, A18, A22, A27, A35, A45, F03, F04, E02, E03 entirely; the intended half of
-  A17, A28-A31, A46, F01, F02). The keymaster stand-in remains only where an attack needs a key
-  holder the real service will not be:
-  * mis-issuance outside any journal: A07, A14 (`journal: false`), A15, A28-A33, A36 (the
-    `issue!` half uses chosen windows), A39-A44, and the fresh-generation probe in F01/F02;
-  * a chosen signer set, compromised or revoked keys, or a deliberately short or duplicated
-    quorum: A17 (revoked keymaster signer A), A19 (one keymaster signer), A37, A38, A46 (the
-    fresh-nonce duplicate is signed with the authority's own key by the keymaster, a
-    compromised authority-key holder);
-  * chosen validity windows, epochs, audiences, digests, generations and nonces: A11-A13,
-    A15, A16 (revocation epoch), A36, A37, A38, A44 (chosen nonces).
-  The exact per-attack list is `attacks[].issuers.keymaster_standin` in the report. The
-  actuator profile still refuses general `PreparedEffect`s (`:payload_profile`), by design.
+  Court issuance split (per attack in `attacks[].issuers`; 563 real-authority issuances and 82
+  stand-in issuances in the 2026-11-17 run, N = 20): an issuance with no options goes to the
+  two real authorities. 16 attacks use ONLY real authorities: A01, A04, A06, A08, A09, A10,
+  A16, A18, A22, A27, A35, A45, F03, F04, E02, E03. The keymaster stand-in remains in 26
+  attacks, each for something the real service refuses to do or a key holder it will not be:
+  * mis-issuance, validly signed but in no issuance journal (an authority defect): A07
+    (subject outside the allow-set), A28 (required fields deleted), A29-A32 (path, URL,
+    command and deserialization payloads in effect fields), A33 (oversized bounds and lists),
+    A39-A43 (principal, capability, class, version and instance-id mismatches), and the
+    fresh-generation probe inside F01 and F02;
+  * chosen validity windows, epochs, generations, audiences and nonces, which the real
+    authority stamps itself (its `"window"` can only narrow): A11, A12, A13, A14, A15 (policy
+    epoch), A36 (skew), A37 (generation), A38 (audience), A44 (one nonce on two
+    certificates);
+  * a chosen or compromised key holder: A17 (the revoked keymaster signer A; its second half,
+    the real authority's own key revoked, uses the real authorities), A19 (a single keymaster
+    signer where two are required), A46 (the fresh-nonce duplicate is signed by the
+    keymaster with authority 1's key, a holder of that key; the "listed twice" half is the
+    real signature).
+  A02, A03, A05, A20, A21, A34 and the authority attacks B01-B08 never need an issuer
+  (the attacker forges or the real authority is the target). The actuator profile still refuses general
+  `PreparedEffect`s (`:payload_profile`), by design.
 * **Court run, 2026-11-17 (Elixir 1.20.4 / OTP 29, dirty tree, run as root):** `mix test
   test/ash_a2a/c2_compromise/c2_compromise_court_test.exs --include serial --include
-  serial_solo --include serial_shard`: 12 passed, report `overall=PASS`, 55 of 55 attacks pass,
+  serial_solo --include serial_shard`: 12 passed, report `overall=PASS`, 55 of 55 attacks pass (before
+  C2C-A45/A46 and the two-authority fleet, see "Measured result" for the later run),
   every fence check killed by its mutant, C2C-F01..F04 and C2C-B08 ran 20 of 20. Mutant fleets
   now start the real authority too. Fixed on 2026-11-16 and still in force: the harness waits
   for the actuator child's `<ctl>/crash.armed` acknowledgement before submitting the request
