@@ -40,7 +40,33 @@ defmodule AuthorityService.ConfigFilesTest do
     {:ok, pid} = Issuer.start_link(config: %{cfg | clock: &TestKit.now/0}, name: nil)
     e = effect()
     d = digest(effect_bytes(e))
-    assert {:ok, _} = Issuer.issue(pid, request(e, [approval(alice, d)]))
+    assert {:ok, cert0} = Issuer.issue(pid, request(e, [approval(alice, d)]))
+    assert {:ok, %{"revocation_epoch" => 0}} = Issuer.to_actuator_certificate(cert0)
+
+    # the service key's revocation epoch is operator-pinned and carried by every certificate
+    files = [
+      key_path: key,
+      policy_path: Path.join(dir, "policy.json"),
+      registry_path: Path.join(dir, "approvers.json"),
+      authority_audience: authority_audience(),
+      actuator_audience: actuator()
+    ]
+
+    assert {:ok, cfg7} =
+             Config.from_files(
+               files ++ [journal_path: Path.join(dir, "j7.log"), key_revocation_epoch: 7]
+             )
+
+    {:ok, pid7} = Issuer.start_link(config: %{cfg7 | clock: &TestKit.now/0}, name: nil)
+    assert {:ok, cert7} = Issuer.issue(pid7, request(e, [approval(alice, d)]))
+    assert {:ok, %{"revocation_epoch" => 7}} = Issuer.to_actuator_certificate(cert7)
+
+    for bad <- [-1, "7", 1.5] do
+      assert {:error, :key_revocation_epoch_malformed} =
+               Config.from_files(
+                 files ++ [journal_path: Path.join(dir, "jb.log"), key_revocation_epoch: bad]
+               )
+    end
 
     # a policy whose tier needs more approvers than registered is refused at load
     File.write!(Path.join(dir, "bad.json"), ~s({"epoch": 1, "approvers": ["a"],

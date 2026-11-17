@@ -127,9 +127,8 @@ defmodule Actuator.WireTlsCapTest do
     outcomes =
       for s <- tcp do
         t0 = System.monotonic_time(:millisecond)
-        r = :ssl.connect(s, ssl_opts, 5_000)
-        IO.inspect({System.monotonic_time(:millisecond) - t0, r}, label: "DBG")
-        case r do
+
+        case :ssl.connect(s, ssl_opts, 5_000) do
           {:ok, t} ->
             :ok = :ssl.setopts(t, [{:packet, 4}])
             :ok = :ssl.send(t, ~s({"op":"health"}))
@@ -137,7 +136,10 @@ defmodule Actuator.WireTlsCapTest do
             assert %{"ok" => true} = Jason.decode!(resp)
             {:served, t}
 
-          {:error, _} ->
+          {:error, why} ->
+            # closed by the listener at once, not left open until the client gives up
+            assert why != :timeout
+            assert System.monotonic_time(:millisecond) - t0 < 2_000
             :refused
         end
       end

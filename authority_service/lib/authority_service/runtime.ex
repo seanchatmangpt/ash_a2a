@@ -12,6 +12,7 @@ defmodule AuthorityService.Runtime do
     case Config.from_files(
            Keyword.take(rt, [
              :key_path,
+             :key_revocation_epoch,
              :policy_path,
              :registry_path,
              :authority_audience,

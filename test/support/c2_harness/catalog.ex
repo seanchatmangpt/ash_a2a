@@ -401,13 +401,20 @@ defmodule C2Harness.Catalog do
         [
           checks: [13],
           killers_for: [13],
-          expect: ["key_revoked"],
+          expect: ["key_revoked", "authority_key_revoked"],
           mapping: m(["T1078", "T1550"], ["CAPEC-60"])
         ],
         fn env ->
+          # stand-in: the certificate must carry the signature of the specific revoked signer A
           Env.revoke(env, %{"revoked" => [kid(env.cp, "A")]})
-          l = Env.issue!(env, Env.effect())
+          l = Env.issue!(env, Env.effect(), signers: ["A", "B"])
           Env.submit(env, l.effect, l.cert)
+          # real authority: its own key revoked in the actuator's view; a certificate it
+          # really issued (and B co-signed) must be refused the same way
+          Env.revoke(env, %{"revoked" => [env.cp.public_registry.authority["kid"]]})
+          l2 = Env.issue!(env, Env.effect())
+          r2 = Env.submit(env, l2.effect, l2.cert)
+          if r2[:refusal] == "key_revoked", do: Env.note(env, "authority_key_revoked")
           res([])
         end
       ),

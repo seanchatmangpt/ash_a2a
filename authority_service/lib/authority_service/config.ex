@@ -39,13 +39,18 @@ defmodule AuthorityService.Config do
   end
 
   @doc """
-  Build from files. Key material only ever comes from `key_path` (0600 file). The registry
+  Build from files. Key material only ever comes from `key_path` (0600 file).
+  `key_revocation_epoch` (non-negative integer, default 0) is the revocation epoch the
+  service key stands at; every issued certificate carries it, and an actuator refuses a
+  certificate whose epoch is older than its own revocation view (`revocation_epoch_stale`),
+  so an operator whose revocation view has advanced must pin the same epoch here. The registry
   file is JSON: `[{kid?, alg: "ES256", public_key (b64url X9.62 point), custodian_id,
   custody_tier, state, revocation_epoch, not_after?}]`.
   """
   @spec from_files(keyword()) :: {:ok, t()} | {:error, term()}
   def from_files(opts) do
     with {:ok, key} <- KeyFile.load(Keyword.fetch!(opts, :key_path)),
+         {:ok, key} <- key_epoch(key, Keyword.get(opts, :key_revocation_epoch)),
          {:ok, pjson} <- File.read(Keyword.fetch!(opts, :policy_path)),
          {:ok, policy} <- Policy.from_json(pjson),
          {:ok, rjson} <- File.read(Keyword.fetch!(opts, :registry_path)),
@@ -65,6 +70,13 @@ defmodule AuthorityService.Config do
       _ -> {:error, :config_unreadable}
     end
   end
+
+  defp key_epoch(key, nil), do: {:ok, key}
+
+  defp key_epoch(key, n) when is_integer(n) and n >= 0,
+    do: {:ok, %{key | revocation_epoch: n}}
+
+  defp key_epoch(_, _), do: {:error, :key_revocation_epoch_malformed}
 
   defp fetch_actuator(opts) do
     case Keyword.get(opts, :actuator_audience) do

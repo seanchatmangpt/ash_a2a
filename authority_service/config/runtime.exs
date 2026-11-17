@@ -32,8 +32,23 @@ if config_env() == :prod do
       _ -> nil
     end
 
+  # Revocation epoch the service key stands at (an integer, not key material). Unset => 0.
+  # A value that is not a non-negative integer is passed through and refused by Config.
+  key_revocation_epoch =
+    case System.get_env("AUTHORITY_KEY_REVOCATION_EPOCH") do
+      nil ->
+        nil
+
+      v ->
+        case Integer.parse(v) do
+          {n, ""} -> n
+          _ -> v
+        end
+    end
+
   config :authority_service, :runtime,
     key_path: System.get_env("AUTHORITY_KEY_FILE", "/etc/authority/key/policy.key"),
+    key_revocation_epoch: key_revocation_epoch,
     policy_path: Path.join(dir, "policy/policy.json"),
     registry_path: Path.join(dir, "policy/approvers.json"),
     authority_audience: System.get_env("AUTHORITY_AUDIENCE", "authority:default"),

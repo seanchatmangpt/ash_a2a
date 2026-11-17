@@ -57,15 +57,73 @@ defmodule C2Harness.Env do
   # ---- court controls (operator/authority side) ---------------------------------------------
 
   @doc """
-  Ask the keymaster (the authority trust domain) for an actuation certificate in the actuator
-  wire form. `opts`: `:journal` (default true: an INTENDED issuance recorded in the issuance
-  journal; false: a mis-issuance that is not), `:signers` (default `["A","B"]`), `:generation`,
-  `:not_before_off`, `:expires_off`, `:policy_epoch`, `:revocation_epoch`, `:audience`,
-  `:principal`, `:v`, `:digest`, `:nonces`. Returns `{:ok, %{effect, cert, digest, nonces}}`.
+  Obtain an actuation certificate in the actuator wire form.
+  Returns `{:ok, %{effect, cert, digest, nonces}}` or `{:error, refusal}`.
+
+  With no options this is an INTENDED issuance and it goes to the REAL AuthorityService
+  process: two human approvals (bob, carol; never the compromised alice) are attached, the
+  service issues over its own wire and journals it, the certificate is converted with
+  `AuthorityService.Issuer.to_actuator_certificate/1`, and the keymaster's signer B co-signs
+  the same fields as the second custodian the court actuator's quorum of 2 requires
+  (`cosign_actuation`, which first verifies the authority's signature).
+
+  With any option the certificate comes from the keymaster stand-in (`issue_actuation`),
+  because every option asks for something the real service refuses to do: `:journal` (false:
+  a mis-issuance that is in no issuance journal), `:signers` (a chosen key set, e.g. the
+  compromised A/A2 or a single custodian), `:generation`, `:not_before_off`, `:expires_off`,
+  `:policy_epoch`, `:revocation_epoch`, `:audience`, `:principal`, `:v`, `:digest`, `:nonces`.
   """
-  def issue(%__MODULE__{fleet: f}, effect_map_or_bytes, opts \\ []) do
+  def issue(env, effect_map_or_bytes, opts \\ [])
+
+  def issue(%__MODULE__{} = env, effect_map_or_bytes, []) do
     eff =
       if is_binary(effect_map_or_bytes), do: effect_map_or_bytes, else: bytes(effect_map_or_bytes)
+
+    track(env, :real_authority)
+    d = digest(eff)
+
+    principal =
+      case Jason.decode(eff) do
+        {:ok, %{"principal" => p}} when is_binary(p) -> [principal: p]
+        _ -> []
+      end
+
+    approvals = for n <- ["bob", "carol"], do: approve(env, n, d, [generation: 1] ++ principal)
+
+    issued =
+      Wire.lp(env.cp.authority_sock, %{
+        "op" => "issue",
+        "effect" => Base.url_encode64(eff, padding: false),
+        "effect_digest" => d,
+        "audience" => env.cp.audience,
+        "generation" => 1,
+        "approvals" => approvals
+      })
+
+    case issued do
+      {:ok, %{"ok" => true, "certificate" => cert}} ->
+        km_issued(
+          eff,
+          Fleet.km(env.fleet, %{
+            "op" => "cosign_actuation",
+            "certificate" => cert,
+            "effect" => Base.url_encode64(eff, padding: false)
+          })
+        )
+
+      {:ok, %{"refusal" => code}} ->
+        {:error, code}
+
+      other ->
+        {:error, other}
+    end
+  end
+
+  def issue(%__MODULE__{fleet: f} = env, effect_map_or_bytes, opts) do
+    eff =
+      if is_binary(effect_map_or_bytes), do: effect_map_or_bytes, else: bytes(effect_map_or_bytes)
+
+    track(env, :keymaster_standin)
 
     req =
       opts
@@ -75,7 +133,11 @@ defmodule C2Harness.Env do
         "effect" => Base.url_encode64(eff, padding: false)
       })
 
-    case Fleet.km(f, req) do
+    km_issued(eff, Fleet.km(f, req))
+  end
+
+  defp km_issued(eff, reply) do
+    case reply do
       {:ok, %{"ok" => true, "certificate" => c, "digest" => d, "nonces" => n}} ->
         {:ok, %{effect: eff, cert: Base.url_decode64!(c, padding: false), digest: d, nonces: n}}
 
@@ -86,6 +148,14 @@ defmodule C2Harness.Env do
         {:error, other}
     end
   end
+
+  # the table is a bag: a unique third element keeps one row per request
+  defp track(%__MODULE__{obs: obs}, path),
+    do: :ets.insert(obs, {:issuance, path, System.unique_integer()})
+
+  @doc "How many certificates this run asked each issuer for."
+  def issuance_paths(%__MODULE__{obs: obs}),
+    do: obs |> :ets.lookup(:issuance) |> Enum.frequencies_by(&elem(&1, 1))
 
   def issue!(env, eff, opts \\ []) do
     {:ok, l} = issue(env, eff, opts)

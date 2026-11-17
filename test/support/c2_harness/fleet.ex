@@ -136,7 +136,9 @@ defmodule C2Harness.Fleet do
   Start the actuator through its PRODUCTION entrypoint (`MIX_ENV=prod mix run --no-halt`,
   `Actuator.Application` starts the Store and listeners from `ACTUATOR_CONFIG`; no court
   script, no fault hook compiled in). Options: `config: false` omits `ACTUATOR_CONFIG` (the
-  entrypoint must refuse to boot), `env: [{name, value}]` extra child environment.
+  entrypoint must refuse to boot), `env: [{name, value}]` extra child environment,
+  `authority_only: true` boots it from a config whose registry pins only the real
+  AuthorityService key with quorum 1 and its own state dir (returns `{:ok, os_pid, state_dir}`).
   """
   def start_prod_actuator(fleet, opts \\ []),
     do: GenServer.call(fleet, {:start_prod_actuator, opts}, 180_000)
@@ -267,8 +269,18 @@ defmodule C2Harness.Fleet do
     Proc.stop(st.actuator)
     _ = File.rm(st.act_sock)
 
-    config_env =
-      if Keyword.get(opts, :config, true), do: [{"ACTUATOR_CONFIG", st.cfg_path}], else: []
+    {config_env, alt_state} =
+      cond do
+        Keyword.get(opts, :authority_only, false) ->
+          {path, dir} = write_authority_only_config!(st)
+          {[{"ACTUATOR_CONFIG", path}], dir}
+
+        Keyword.get(opts, :config, true) ->
+          {[{"ACTUATOR_CONFIG", st.cfg_path}], nil}
+
+        true ->
+          {[], nil}
+      end
 
     result =
       Proc.start("actuator-prod", Path.join(@root, "actuator"),
@@ -286,6 +298,7 @@ defmodule C2Harness.Fleet do
       )
 
     case result do
+      {:ok, p} when alt_state != nil -> {:reply, {:ok, p.os_pid, alt_state}, %{st | actuator: p}}
       {:ok, p} -> {:reply, {:ok, p.os_pid}, %{st | actuator: p}}
       {:error, why} -> {:reply, {:error, why}, %{st | actuator: nil}}
     end
@@ -369,7 +382,7 @@ defmodule C2Harness.Fleet do
       authority_audience: @authority_audience,
       policy_epoch: @policy_epoch,
       revocation_epoch: @revocation_epoch,
-      public_registry: %{signers: h["signers"], approvers: h["approvers"]},
+      public_registry: %{signers: h["signers"], approvers: h["approvers"], authority: h["svc"]},
       max_frame: 131_072,
       compromised: comp
     }
@@ -481,6 +494,7 @@ defmodule C2Harness.Fleet do
                  {"AUTHORITY_LISTEN_UNIX", st.auth_sock},
                  {"AUTHORITY_AUDIENCE", @authority_audience},
                  {"AUTHORITY_ACTUATOR_AUDIENCE", @audience},
+                 {"AUTHORITY_KEY_REVOCATION_EPOCH", Integer.to_string(@revocation_epoch)},
                  {"AUTHORITY_JOURNAL", st.auth_journal}
                ],
            ready:
@@ -497,10 +511,46 @@ defmodule C2Harness.Fleet do
     end
   end
 
+  @record_keys ~w(kid alg public_key custodian_id custody_tier state revocation_epoch)
+
+  # The "authority only" actuator: the deployment the two releases are built for. Its
+  # registry pins ONLY the real AuthorityService's key and its quorum is 1, so a certificate
+  # the real authority issued is sufficient on its own (no keymaster signature anywhere).
+  defp write_authority_only_config!(st) do
+    dir = Path.join(st.dirs["act"], "state_authority_only")
+    File.mkdir_p!(dir)
+    path = Path.join(st.dirs["act"], "config.authority_only.json")
+
+    cfg = %{
+      "state_dir" => dir,
+      "audience" => @audience,
+      "policy_epoch" => @policy_epoch,
+      "allowed_subjects" => ["subject:orders/42"],
+      "quorum" => %{"internal_append" => 1, "none" => 1},
+      "quorum_default" => 1,
+      "skew" => 30,
+      "max_ttl" => 900,
+      "max_revocation_staleness" => 300,
+      "registry" => [Map.take(st.hello["svc"], @record_keys)],
+      "wire" => %{"uds_path" => st.act_sock}
+    }
+
+    File.write!(path, Jason.encode!(cfg))
+    File.chmod!(path, 0o600)
+
+    File.write!(
+      Path.join(dir, "revocation.json"),
+      Jason.encode!(%{"refreshed_at" => now(), "epoch" => @revocation_epoch, "revoked" => []})
+    )
+
+    {path, dir}
+  end
+
   defp write_config!(st) do
+    # signers A, A2, B, C (keymaster) plus the real AuthorityService's key: with quorum 2 the
+    # authority is one custodian among the pinned ones, never sufficient alone
     signers =
-      for s <- st.hello["signers"],
-          do: Map.take(s, ~w(kid alg public_key custodian_id custody_tier state revocation_epoch))
+      for s <- st.hello["signers"] ++ [st.hello["svc"]], do: Map.take(s, @record_keys)
 
     cfg = %{
       "state_dir" => st.state_dir,

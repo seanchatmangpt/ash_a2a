@@ -138,12 +138,33 @@ defmodule AshA2A.C2Compromise.CourtTest do
     assert length(m["allow_all"]["killed_by"]) >= 10
   end
 
-  test "compat probes record the AuthorityService <-> Actuator schema gap explicitly", %{
-    report: r
-  } do
+  test "compat probes: the real AuthorityService's certificate is accepted by the real actuator",
+       %{report: r} do
     probes = r["compat"]
-    assert length(probes) == 2
-    assert Enum.all?(probes, &(&1["observed"] != nil))
+
+    assert Enum.map(probes, & &1["standing"]) ==
+             ["ACCEPTED", "REFUSED_BY_POLICY", "ACCEPTED", "REFUSED_BY_DESIGN"]
+
+    assert Enum.map(probes, & &1["observed"]) ==
+             ["performed", "quorum_not_met", "performed", "malformed_effect"]
+
+    [pure | _] = probes
+    assert pure["replay_observed"] == "replayed"
+    assert pure["ledger_entries_for_effect"] == 1
+  end
+
+  test "intended issuances come from the real AuthorityService, mis-issuances from the stand-in",
+       %{report: r, only: only} do
+    if is_nil(only) do
+      real = for a <- r["attacks"], (a["issuers"]["real_authority"] || 0) > 0, do: a["id"]
+      assert length(real) >= 10, "attacks using the real authority: #{inspect(real)}"
+      # these fault-injection series issue through the real authority only (F01/F02 add one
+      # stand-in mis-issuance per iteration for the fresh-generation probe)
+      for a <- r["attacks"], a["id"] in ~w(C2C-F03 C2C-F04) do
+        assert a["issuers"] == %{"real_authority" => a["issuers"]["real_authority"]}, a["id"]
+        assert a["issuers"]["real_authority"] >= a["iterations"]
+      end
+    end
   end
 
   test "overall verdict", %{report: r, only: only} do

@@ -119,6 +119,7 @@ defmodule C2Harness.Runner do
       authority_journal_before: length(before_j),
       authority_journal_after: length(after_j),
       authorized: authorized,
+      issuers: Env.issuance_paths(env),
       notes: if(ran, do: res.notes, else: []),
       iterations: if(ran, do: res.iterations, else: 0),
       duration_ms: System.monotonic_time(:millisecond) - t0

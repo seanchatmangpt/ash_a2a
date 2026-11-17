@@ -26,10 +26,20 @@
 #       approve          a human approval in the real AuthorityService wire form
 #       compromise       hands over ONLY A, A2, alice
 #
-# Why a stand-in issuer for actuator-shaped effects: the real AuthorityService parses
-# effects with `effect_class`/`amount` keys while the Actuator requires an exact key set
-# without them, so the real service cannot issue a certificate the actuator accepts
-# (recorded by the court as an integration handoff, see the report `compat` section).
+#       cosign_actuation second-custodian co-signature (signer B) over a certificate the REAL
+#                        AuthorityService issued: the certificate is converted with
+#                        `AuthorityService.Issuer.to_actuator_certificate/1`, the authority's
+#                        signature is verified against its public key, and only then does B
+#                        sign the SAME fields. The court actuator pins quorum 2, so the real
+#                        authority is one of two required custodians; B never signs anything
+#                        the authority did not certify. Journaled like issue_actuation.
+#       convert_actuation `to_actuator_certificate/1` only (no signature, no journal)
+#
+# Which issuer signs what: an intended issuance with no special options goes to the REAL
+# AuthorityService process (see `C2Harness.Env.issue/3`). `issue_actuation` remains for what
+# the real service refuses to do by design: mis-issuance (journal=false), chosen signer sets
+# (the compromised A/A2, a single custodian, three custodians), chosen nonces, validity
+# windows, epochs, audiences, digests and generations.
 alias Sa2aCrypto.{Envelope, KeyRef, SignedMessage}
 
 defmodule Km do
@@ -125,7 +135,7 @@ defmodule Km.Server do
        "node_alive" => Node.alive?(),
        "signers" => reg.(Map.values(st.signers)),
        "approvers" => reg.(Map.values(st.approvers)),
-       "svc" => %{"kid" => st.svc.kid, "public_key" => Km.b64(st.svc.pub)}
+       "svc" => Km.public(st.svc)
      }, st}
   end
 
@@ -342,6 +352,90 @@ defmodule Km.Server do
     end
   end
 
+  defp handle("convert_actuation", %{"certificate" => cert}, st) do
+    case AuthorityService.Issuer.to_actuator_certificate(cert) do
+      {:ok, ac} -> {%{"ok" => true, "certificate" => Km.b64(Jcs.encode(ac))}, st}
+      {:error, code} -> {%{"ok" => false, "refusal" => Atom.to_string(code)}, st}
+    end
+  end
+
+  defp handle("cosign_actuation", %{"certificate" => cert, "effect" => e64}, st) do
+    with {:ok, eff} <- Km.b64d(e64),
+         {:ok, emap} <- Jason.decode(eff),
+         {:ok, ac} <- AuthorityService.Issuer.to_actuator_certificate(cert),
+         [%{"kid" => kid, "nonce" => svc_nonce, "signature" => sig64}] <- ac["signatures"],
+         {:ok, msg} <- Km.b64d(cert["message"]),
+         {:ok, sig} <- Km.b64d(sig64),
+         # the co-signer countersigns only what the real authority's key signed
+         true <- kid == st.svc.kid or {:refuse, "not_authority_signed"},
+         true <-
+           :crypto.verify(:ecdsa, :sha256, msg, sig, [st.svc.pub, :secp256r1]) or
+             {:refuse, "authority_signature_invalid"},
+         true <- ac["effect_digest"] == SignedMessage.digest(eff) or {:refuse, "digest_mismatch"},
+         true <- ac["audience"] == st.actuator_audience or {:refuse, "audience_mismatch"} do
+      digest = ac["effect_digest"]
+      gen = ac["generation"]
+      b = st.signers["B"]
+      b_nonce = Km.b64(:crypto.strong_rand_bytes(12))
+
+      if Journal.issued?(st.journal, digest, gen) do
+        {%{"ok" => false, "refusal" => "already_issued"}, st}
+      else
+        entry = %{
+          "cert_kid" => "authority:" <> kid <> "+keymaster:B",
+          "nonce" => svc_nonce,
+          "effect_digest" => digest,
+          "generation" => gen,
+          "audience" => ac["audience"],
+          "expires" => ac["expires"],
+          "approvals" => [],
+          "intended" => true,
+          "instance" => emap["effect_instance_id"],
+          "signers" => ["svc", "B"],
+          "issuer" => "authority_service"
+        }
+
+        case Journal.append(st.journal, entry) do
+          {:ok, j2} ->
+            {:ok, bmsg} =
+              ac
+              |> Map.delete("signatures")
+              |> Map.merge(%{"alg" => "ES256", "kid" => b.kid, "nonce" => b_nonce})
+              |> SignedMessage.build()
+
+            bsig = %{
+              "kid" => b.kid,
+              "alg" => "ES256",
+              "nonce" => b_nonce,
+              "signature" => Km.b64(Km.sign(b, bmsg))
+            }
+
+            out = Jcs.encode(Map.put(ac, "signatures", ac["signatures"] ++ [bsig]))
+
+            {%{
+               "ok" => true,
+               "certificate" => Km.b64(out),
+               "digest" => digest,
+               "nonces" => [svc_nonce, b_nonce],
+               "journaled" => true
+             }, %{st | journal: j2}}
+
+          {:error, reason} ->
+            {%{"ok" => false, "refusal" => "journal_failed", "detail" => inspect(reason)}, st}
+        end
+      end
+    else
+      {:refuse, code} ->
+        {%{"ok" => false, "refusal" => code}, st}
+
+      {:error, code} when is_atom(code) ->
+        {%{"ok" => false, "refusal" => Atom.to_string(code)}, st}
+
+      _ ->
+        {%{"ok" => false, "refusal" => "malformed_request"}, st}
+    end
+  end
+
   defp handle(_, _, st), do: {%{"ok" => false, "refusal" => "unknown_op"}, st}
 end
 
@@ -368,7 +462,9 @@ approvers =
   |> Enum.map(&Km.key(&1, &1, :i3, 4))
   |> Map.new(&{&1.name, &1})
 
-svc = Km.key("svc", "authority-service", :i2, 0)
+# The authority's service key stands at the actuator's revocation epoch (7): the real service
+# is started with AUTHORITY_KEY_REVOCATION_EPOCH=7, and the actuator pins this public record.
+svc = Km.key("svc", "authority-service", :i2, 7)
 
 # --- real AuthorityService operator files (paths only are given to that service) --------
 Km.write!(Path.join([auth_dir, "key", "policy.key"]), Km.b64(svc.priv), 0o600)
@@ -384,7 +480,11 @@ Km.write!(
         %{"max_amount" => 10_000, "k" => 0},
         %{"max_amount" => 100_000, "k" => 1},
         %{"max_amount" => "infinity", "k" => 2}
-      ]
+      ],
+      # actuator-shaped effects carry their policy class as `consequence_class`; the
+      # actuator's two classes each need two distinct human approvers
+      "internal_append" => [%{"max_amount" => "infinity", "k" => 2}],
+      "none" => [%{"max_amount" => "infinity", "k" => 2}]
     }
   }),
   0o600

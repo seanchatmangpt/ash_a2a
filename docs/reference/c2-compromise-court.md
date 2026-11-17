@@ -150,7 +150,7 @@ traceability, not as an assurance claim.
 | C2C-A14 | certificate whose window is malformed (expires <= not_before) | expired certificate | T1550 | CAPEC-153 | AML.T0053 | 10,12 | malformed_window, malformed_envelope |
 | C2C-A15 | stale policy epoch on the certificate and on the effect | stale policy epoch | T1562 | CAPEC-176 | AML.T0053 | 9 | policy_epoch_stale |
 | C2C-A16 | certificate older than the actuator's revocation epoch | revoked authority | T1550 | CAPEC-60 | AML.T0053 | 13 | revocation_epoch_stale |
-| C2C-A17 | certificate signed by a key the actuator's revocation view lists as revoked | revoked authority | T1078, T1550 | CAPEC-60 | AML.T0053 | 13 | key_revoked |
+| C2C-A17 | certificate signed by a key the actuator's revocation view lists as revoked (keymaster signer A; then the real authority's own key) | revoked authority | T1078, T1550 | CAPEC-60 | AML.T0053 | 13 | key_revoked, authority_key_revoked |
 | C2C-A18 | stale and missing revocation view (fail closed) | revoked authority | T1562 | CAPEC-176 | AML.T0053 | 13 | revocation_view_stale, revocation_view_missing |
 | C2C-A19 | insufficient quorum (1 valid signature where 2 custodians are required) | insufficient quorum | T1078 | CAPEC-1 | AML.T0053 | 11 | quorum_not_met |
 | C2C-A20 | single compromised signer below k, alone and with repeated nonces | single compromised signer below quorum | T1078, T1606 | CAPEC-196, CAPEC-151 | AML.T0053 | 11 | quorum_not_met |
@@ -265,35 +265,53 @@ Numbers are copied from that run's `report.json`; re-run to refresh them.
 
 ## Known gaps and handoffs
 
-* **AuthorityService to actuator mapping (`cd authority_service && mix test`: 66 passed, 2026-11-16).**
-  `AuthorityService.Issuer` now derives the policy class from an actuator-shaped effect
-  (`consequence_class`, amount 0) and `Issuer.to_actuator_certificate/1` maps `{envelope,
-  message}` to the actuator's exact certificate key set with a `signatures` list; the actuator's
-  key set is unchanged. Remaining: the court harness still uses the keymaster stand-in for
-  actuator-shaped certificates until it is switched to the real issuer. The `compat` section
-  was re-run on 2026-11-16: the real AuthorityService given the court's actuator-shaped effect
-  still answers `unknown_effect_class` (the court's consequence class is not in the authority
-  test policy), and the actuator given an authority-shaped effect answers `malformed_effect`;
-  the `handoff` text the harness records for the first probe predates the Issuer mapping. The
-  actuator profile still refuses general `PreparedEffect`s (`:payload_profile`), by design.
-* **Court run, 2026-11-16 (Elixir 1.20.4 / OTP 29, dirty tree on `bcab4b6`, run as root):**
-  `mix test test/ash_a2a/c2_compromise/c2_compromise_court_test.exs --include serial --include
-  serial_solo --include serial_shard`: 11 passed, report `overall=PASS`, 55 of 55 attacks pass,
-  C2C-F01..F04 and C2C-B08 ran 20 of 20. Before that run F01, F02 and F03 errored with
-  `actuator never reached fault point`: the harness armed a crash point by writing
-  `<ctl>/crash.point` and submitted at once, but the actuator child only mirrors that file into
-  `ACTUATOR_TEST_CRASH` on a 15 ms poll, so the ~2 ms request finished before the point was in
-  force (a fixed 120 ms sleep had hidden this until it was removed). The child now acknowledges
-  the point in force in `<ctl>/crash.armed` and `C2Harness.Fleet.arm_crash/2` returns only after
-  that acknowledgement; no attack, expectation or tolerance changed. `Actuator.Store`'s fault
-  points were not moved by the `resolve_ctx/1` change.
+* **AuthorityService to actuator: closed for intended issuance (court run 2026-11-17).** The
+  real `authority_service` process now issues for actuator-shaped effects in the court, the
+  certificate is converted with `AuthorityService.Issuer.to_actuator_certificate/1`, and the
+  real actuator executes it. The earlier `unknown_effect_class` was not a mapping defect: the
+  Issuer already read the class from `consequence_class`, but the court's authority policy
+  named only `payment`; it now names the actuator's classes (`internal_append`, `none`, k = 2).
+  One real defect was found and fixed: the service key's revocation epoch was hard-coded to 0,
+  so any actuator whose revocation view had advanced refused every real certificate
+  (`revocation_epoch_stale`); it is now operator-pinned (`AUTHORITY_KEY_REVOCATION_EPOCH`,
+  `Config.from_files(key_revocation_epoch:)`, test in `authority_service/test/config_files_test.exs`).
+  The report's `compat` section records four probes: real authority certificate at the real
+  actuator's production entrypoint with the authority key as its only registry entry and
+  quorum 1: `performed`, replay `replayed`, one ledger entry, **ACCEPTED** (no keymaster
+  signature involved); the same single-custodian certificate at the court actuator (quorum 2):
+  `quorum_not_met`, REFUSED_BY_POLICY; the court path (below): `performed`, ACCEPTED; an
+  authority-shaped effect at the actuator: `malformed_effect`, REFUSED_BY_DESIGN.
+  Court issuance split (per attack in `attacks[].issuers`; 559 real, 81 stand-in in this run):
+  an issuance with no options goes to the real authority with approvals from bob and carol,
+  and keymaster signer B co-signs the same fields as the second custodian, because the court
+  actuator pins quorum 2 (B verifies the authority's signature first). That covers
+  A01, A04, A06, A08, A09, A10, A16, A18, A22, A27, A35, F03, F04, E02, E03 entirely and the
+  intended half of A17, A28-A31, F01, F02. The keymaster stand-in remains for what the real
+  service refuses to do: mis-issuance outside any journal (A28-A33, A36, A39-A44, the
+  fresh-generation probe in F01/F02), a chosen signer set including the compromised or revoked
+  A/A2 or a short quorum (A17, A19, A37, A38), and chosen windows, epochs, audiences, digests,
+  generations and nonces (A07, A11-A15). What genuinely remains: the co-signer B is still a
+  keymaster key, so a court certificate is never signed by real services alone; removing it
+  needs either a second independent authority process or a court actuator at quorum 1, which
+  would void the "fewer than k signers" attacks. The actuator profile still refuses general
+  `PreparedEffect`s (`:payload_profile`), by design.
+* **Court run, 2026-11-17 (Elixir 1.20.4 / OTP 29, dirty tree, run as root):** `mix test
+  test/ash_a2a/c2_compromise/c2_compromise_court_test.exs --include serial --include
+  serial_solo --include serial_shard`: 12 passed, report `overall=PASS`, 55 of 55 attacks pass,
+  every fence check killed by its mutant, C2C-F01..F04 and C2C-B08 ran 20 of 20. Mutant fleets
+  now start the real authority too. Fixed on 2026-11-16 and still in force: the harness waits
+  for the actuator child's `<ctl>/crash.armed` acknowledgement before submitting the request
+  it intends to crash (`C2Harness.Fleet.arm_crash/2`); writing `crash.point` alone raced the
+  child's 15 ms poll.
 * Check 12's `malformed_window` branch is not reachable through the wire: the crypto boundary
   (check 10) refuses a certificate whose `expires <= not_before` first with `malformed_envelope`
-  (attack `C2C-A14` accepts either code).
-* Hosting scope is same-uid (see above).
+  (attack `C2C-A14` accepts either code). Remains: it is the order of the fence, not a defect.
+* Hosting scope is same-uid (see above). Remains: separate OS users or hosts are an
+  infrastructure change this harness cannot make.
 * A tier with `k = 1` lets a single compromised approver obtain an issuance by policy; the
-  claim "fewer than k" is per-class.
-* ATT&CK/CAPEC/ATLAS ids are court-assigned (see above).
+  claim "fewer than k" is per-class. By design.
+* ATT&CK/CAPEC/ATLAS ids are court-assigned (see above). Remains: no published mapping to check
+  them against.
 
 ## See also
 

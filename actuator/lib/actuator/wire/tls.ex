@@ -70,7 +70,7 @@ defmodule Actuator.Wire.TLS do
     case :ssl.transport_accept(lsock) do
       {:ok, t} ->
         if :counters.get(conns, 1) >= @max_conns do
-          :ssl.close(t)
+          reject(t)
         else
           :counters.add(conns, 1, 1)
 
@@ -93,6 +93,16 @@ defmodule Actuator.Wire.TLS do
 
       {:error, _} ->
         accept(lsock, store, ctx_fun, conns)
+    end
+  end
+
+  # `:ssl.close/1` refuses a transport-accepted socket (`notsup_on_transport_accept_socket`)
+  # and would leave the TCP connection open. A zero-timeout handshake is the supported way to
+  # drop it: it fails at once and closes the connection without spending handshake work.
+  defp reject(t) do
+    case :ssl.handshake(t, 0) do
+      {:ok, sock} -> :ssl.close(sock)
+      _ -> :ok
     end
   end
 
