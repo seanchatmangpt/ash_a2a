@@ -455,11 +455,9 @@ interfaces = [
 # dependency applications, so the Req.Finch pool (Finch instance named
 # Req.Finch) must be started here or every delivery dies with
 # `unknown registry: Req.Finch` (the observed silent webhook gap).
-# `:req` (not just `:finch`) is started: the sender's DNS-pinned per-delivery
-# pools are children of the `Req.FinchSupervisor` that application owns.
+# Starting the `:req` application provides both `Req.Finch` and the
+# `Req.FinchSupervisor` the sender's DNS-pinned per-delivery pools live under.
 {:ok, _} = Application.ensure_all_started(:req)
-{:ok, _} = Application.ensure_all_started(:finch)
-{:ok, _} = Finch.start_link(name: Req.Finch)
 
 # Push deliveries run under the library's supervised task home, which the
 # application tree normally starts (`--no-start` boots no application).

@@ -197,6 +197,10 @@ if Code.ensure_loaded?(Bandit) do
       for {label, fun} <- mount_scenarios(mount), do: p(item, label, fun)
     end
 
+    defp probes_for(%{kind: :authority, name: name} = item) do
+      for {label, fun} <- AshA2A.Sim.Authority.scenarios(name), do: p(item, label, fun)
+    end
+
     # One probe per binding of the parity report. The script runs once per
     # server; every probe reads the same report.
     defp probes_for(%{kind: :parity, name: binding} = item) do

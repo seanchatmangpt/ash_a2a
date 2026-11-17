@@ -70,6 +70,8 @@ Reference pages in this quadrant:
   official `a2aproject/a2a-tck` suite.
 - [Error mapping decisions](a2a-error-mapping-decisions.md) — HTTP, gRPC and
   JSON-RPC error mapping decisions against the pinned TCK.
+- [Error coverage](a2a-error-coverage.md) — every A2A error type with trigger,
+  emitter, binding mapping, test and parity vector.
 - [Ingress attestation](ingress-attestation.md) — attestation `Key`/`Gate`/
   `GateGrantAllowlist` and `Ingress.Channel`.
 - [Module coverage](module-coverage.md) — public module families with no

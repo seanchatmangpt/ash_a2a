@@ -85,6 +85,8 @@ Exact factual contracts:
   full reference page catalog.
 - [`reference/a2a-error-mapping-decisions.md`](reference/a2a-error-mapping-decisions.md) — HTTP,
   gRPC and JSON-RPC error mapping decisions against the pinned TCK
+- [`reference/a2a-error-coverage.md`](reference/a2a-error-coverage.md) — every A2A error type
+  with trigger, emitter, binding mapping, test and parity vector
 - [`reference/dsl.md`](reference/dsl.md) — the `a2a` section, `skill`,
   `hddl_operator`, `semantic_requests`, and compile-time verification.
 - [`reference/configuration.md`](reference/configuration.md) — every application config
