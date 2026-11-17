@@ -75,7 +75,8 @@ stages =
     # fail-fast: a serial sub-stage failure fails the :test stage.
     {:test, [["mix", "test"], ["mix", "test.serial"]]},
 
-    {:spark_formatter, [["mix", "spark.formatter", "--check"]]},
+    {:spark_formatter,
+     [["mix", "spark.formatter", "--check", "--extensions", "AshA2A,AshA2A.Domain"]]},
     {:conformance,
      [
        [

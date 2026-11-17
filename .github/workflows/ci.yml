@@ -170,7 +170,7 @@ jobs:
       - name: Wait for SUT on :9999
         run: |
           n=0
-          until curl -fsS -o /dev/null http://127.0.0.1:9999/.well-known/agent.json; do
+          until curl -fsS -o /dev/null http://127.0.0.1:9999/.well-known/agent-card.json; do
             n=$((n+1))
             if [ "$n" -ge 60 ]; then
               echo "SUT did not come up"; cat /tmp/tck_sut.log; exit 1
