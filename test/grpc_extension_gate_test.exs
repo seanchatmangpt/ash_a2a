@@ -316,4 +316,49 @@ defmodule AshA2A.GRPCExtensionGateTest do
 
     assert id != ""
   end
+
+  defmodule RequiredEndpoint do
+    @moduledoc false
+    use GRPC.Endpoint
+
+    run AshA2A.Transport.GRPC.Server
+  end
+
+  test "a required extension scoped to one endpoint gates that listener only", %{transport: t} do
+    # Server-wide: no required extension. Second listener: one required.
+    put_server(t)
+
+    sup =
+      start_supervised!(
+        {AshA2A.Transport.GRPC.Supervisor,
+         port: 0,
+         endpoint: RequiredEndpoint,
+         endpoint_config: [extensions: [Ext]],
+         name: AshA2A.GRPCExtensionGateTest.RequiredListener}
+      )
+
+    scoped_port = AshA2A.Transport.GRPC.Supervisor.port(sup)
+    plain = start_listener()
+
+    {:ok, scoped} =
+      GRPC.Stub.connect("localhost:#{scoped_port}", adapter: GRPC.Client.Adapters.Mint)
+
+    # The plain listener keeps admitting calls without the extension ...
+    assert {:ok, %Pb.SendMessageResponse{}} = Stub.send_message(plain, message_request())
+
+    # ... the scoped one refuses them with FAILED_PRECONDITION(9) ...
+    assert {:error, %GRPC.RPCError{status: 9, message: msg}} =
+             Stub.send_message(scoped, message_request())
+
+    assert msg =~ Ext.uri()
+
+    # ... and accepts a call that declares the extension, echoing it.
+    assert {:ok, %Pb.SendMessageResponse{}, %{headers: headers}} =
+             Stub.send_message(scoped, message_request(),
+               metadata: %{"a2a-extensions" => Ext.uri()},
+               return_headers: true
+             )
+
+    assert headers["a2a-extensions"] == Ext.uri()
+  end
 end

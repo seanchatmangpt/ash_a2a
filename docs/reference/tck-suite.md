@@ -11,7 +11,7 @@ this page is the operator instrument over it.
 > yet in the TCK. A 2026-11-17 run at TCK `104a7b4a` (Python 3.15, all three
 > bindings) is recorded in
 > [the v1.0 statement](a2a-v1-conformance.md#a2a-tck-compatibility-run);
-> CI still pins `263b9cfa`. v1.1 evidence is local courts only; see
+> CI pins the same commit (`TCK_PIN_SHA` `104a7b4a`; the old `263b9cfa` pin is historical). v1.1 evidence is local courts only; see
 > [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 
 ## The two surfaces
@@ -76,16 +76,23 @@ protocol conformance). There is no `test/tck/` directory; TCK
 configuration lives in `tck_sut.exs`, `tck_sut_auth.exs`,
 `priv/tck/test_dy4_auth_lanes.py`, and the `tck` job in
 `.github/workflows/ci.yml`, which runs the official suite at the pin in
-its single `TCK_PIN_SHA` variable (currently `263b9cfa`) with
+its single `TCK_PIN_SHA` variable (currently `104a7b4a`, full SHA `104a7b4ae0d83f65c075e3793e322953a830eaba`) with
 `--transport jsonrpc,http_json,grpc` (the SUT serves gRPC on `:10000`),
-installs via `pip install -e .` (pyproject; no `requirements.txt`), reads
+installs the TCK with uv (`pip install uv==0.11.32`, then `uv venv --python 3.15
+/tmp/tck_venv` and `uv pip install -e .`; pyproject, no `requirements.txt`;
+uv downloads the Python 3.15 interpreter the TCK requires, so no extra
+third-party action is added), runs `run_tck.py` from that venv, reads
 `reports/compatibility.json`, and asserts with `scripts/tck_assert.py`
 (fails on any failed MUST requirement; prints pass/fail/not_tested/skipped/
 manual counts; court `test/tck_assert_script_test.exs`, fixture
-`test/fixtures/tck/compatibility_sample.json`). CI Python is 3.12, the
-version witnessed green at this pin; TCK `main` needs Python 3.15+.
+`test/fixtures/tck/compatibility_sample.json`). The CI job was reproduced
+step by step locally at the pin (SUT on `TCK_SUT_PORT`, gRPC on port+1): the
+assert line is `pass=99 fail=1 not_tested=18 skipped=6 manual=9 must_fail=0
+expected_fail=1 unexpected_fail=0`, assert exit 0, `run_tck.py` exit 1 (the
+accepted expected failure). Historical: through 2026-11-13 CI pinned
+`263b9cfa` with Python 3.12.
 TODO: re-run at `70f6f73c` (#258, aligns to spec 1.0.1) before moving
-`TCK_PIN_SHA`; the pin is deliberately not bumped here.
+`TCK_PIN_SHA` again.
 
 ### Expected TCK failures
 

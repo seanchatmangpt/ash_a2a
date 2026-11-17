@@ -27,7 +27,10 @@ defmodule AshA2A.Transport.GRPC.Server do
   A2A-Version list for the gate, default `Version.supported_default`) and
   `:extensions` (the same entries the HTTP binding's `a2a.extensions` takes;
   required extensions are enforced, activated URIs are echoed in the
-  `a2a-extensions` response metadata, -32008 is FAILED_PRECONDITION(9)).
+  `a2a-extensions` response metadata, -32008 is FAILED_PRECONDITION(9)). A
+  second listener on its own endpoint module can carry its own `:versions` and
+  `:extensions` through `AshA2A.Transport.GRPC.Supervisor`'s `:endpoint_config`
+  option; the env keeps them under `:endpoints`.
 
   ## TLS
 
@@ -941,7 +944,7 @@ defmodule AshA2A.Transport.GRPC.Server do
   defp gate_version!(mat) do
     version = AshA2A.Protocol.Version.parse_header(request_version(mat))
 
-    case AshA2A.Protocol.Version.validate(version, supported_versions()) do
+    case AshA2A.Protocol.Version.validate(version, supported_versions(mat)) do
       :ok ->
         :ok
 
@@ -967,7 +970,7 @@ defmodule AshA2A.Transport.GRPC.Server do
 
   defp gate_extensions!(mat) do
     alias AshA2A.Protocol.Extension
-    compiled = Extension.compile(configured(:extensions, []))
+    compiled = Extension.compile(scoped(mat, :extensions, configured(:extensions, [])))
     requested = Extension.parse_header(request_extensions(mat))
 
     with :ok <- Extension.validate_required(compiled, requested),
@@ -1009,8 +1012,24 @@ defmodule AshA2A.Transport.GRPC.Server do
     end
   end
 
-  defp supported_versions do
-    configured(:versions, AshA2A.Protocol.Version.supported_default())
+  defp supported_versions(mat) do
+    scoped(mat, :versions, configured(:versions, AshA2A.Protocol.Version.supported_default()))
+  end
+
+  # A listener started with `AshA2A.Transport.GRPC.Supervisor`'s
+  # `:endpoint_config` option carries its own `:versions` / `:extensions` in
+  # the env's `:endpoints` map, keyed by its endpoint module; the call's
+  # stream names that endpoint. Anything it does not set falls back to the
+  # server-wide value.
+  defp scoped(mat, key, default) do
+    with endpoint when is_atom(endpoint) and not is_nil(endpoint) <- Map.get(mat, :endpoint),
+         kw when is_list(kw) <- Application.get_env(:ash_a2a, __MODULE__),
+         %{^endpoint => own} <- Keyword.get(kw, :endpoints, %{}),
+         {:ok, value} <- Keyword.fetch(own, key) do
+      value
+    else
+      _ -> default
+    end
   end
 
   defp configured(key, default) do

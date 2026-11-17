@@ -368,7 +368,7 @@ defmodule AshA2A.Transport.Plug do
         send_json(
           conn,
           Response.error(
-            nil,
+            refused_request_id(conn),
             Error.extension_support_required(
               "Client missing required extensions: " <> Enum.join(missing, ", ")
             )
@@ -376,7 +376,7 @@ defmodule AshA2A.Transport.Plug do
         )
 
       {:error, %Error{} = err} ->
-        send_json(conn, Response.error(nil, err))
+        send_json(conn, Response.error(refused_request_id(conn), err))
     end
   end
 

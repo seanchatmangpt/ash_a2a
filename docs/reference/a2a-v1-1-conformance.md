@@ -132,7 +132,7 @@ equal (see Evidence). See [known divergences](v1-1-known-divergences.md).
 "Latest Released Version 1.0.0"); it has no v1.1 requirement set, so no v1.1
 TCK verdict exists for any row above. A real run of the TCK at commit
 `104a7b4a` (2026-11-17) against this server over JSON-RPC, HTTP+JSON and gRPC
-recorded `{pass: 99, fail: 1, not_tested: 18, skipped: 6, manual: 9}` (the one
+recorded `{pass: 99, fail: 1, not_tested: 18, skipped: 6, manual: 9}`; CI (`TCK_PIN_SHA`) now pins that same commit (the one
 failure is the SHOULD `HTTP_JSON-SVC-001`, which contradicts the MUST
 `HTTP_JSON-ERR-001`); details, skipped IDs and reasons are in the
 [v1.0 conformance statement](a2a-v1-conformance.md#a2a-tck-compatibility-run).

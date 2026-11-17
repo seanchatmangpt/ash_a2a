@@ -213,9 +213,9 @@ fails if it starts passing, and the `tck` CI job uses it; with it the assert
 prints `... must_fail=0 expected_fail=1 unexpected_fail=0` and exits 0. See
 [TCK suite](tck-suite.md#expected-tck-failures); the unposted upstream report
 text is [tck-upstream-issue-draft.md](tck-upstream-issue-draft.md). The CI pin
-is unchanged (`TCK_PIN_SHA` `263b9cfa`); the expected-failure entry names only
-`104a7b4a`, so at the current pin it is ignored and a failure there would be
-unlisted.
+(`TCK_PIN_SHA`) is `104a7b4a`, the commit this run used and the only one the
+expected-failure entry names (the former pin `263b9cfa` is historical; the
+entry would not apply there).
 
 Not-tested requirements (no test exists in the TCK at this commit):
 `AUTH-SERVER-002`, `AUTH-INTASK-001..006`, `AUTH-SCOPE-001..003`,
@@ -267,7 +267,7 @@ committed.
 
 **Staleness notice (2026-11-13).** Every TCK figure below the "Current run" subsection
 (including the 79.0% and 73.6% percentages) is bound to the old pin
-`263b9cfa` (TCK_PIN_SHA in `.github/workflows/ci.yml`) and the dated
+`263b9cfa` (the former `TCK_PIN_SHA` in `.github/workflows/ci.yml`, since moved to `104a7b4a`) and the dated
 subject named beside it; it is stale for the current tree and for
 upstream spec v1.0.1. The TCK has no GitHub release; its `main` is five
 commits past the pin, including `70f6f73c` (#258: aligns to 1.0.1,
@@ -295,7 +295,7 @@ admission) are all green at this tree.
 The full suite re-ran against the real SUT after the pagination fixes
 (page_size echo, historyLength on tasks/get-only, authorize_task_list
 filter, commit `13622178`) landed on main. TCK pinned at `263b9cfa`
-(the CI pin; note the pinned layout installs via `pip install -e .` —
+(then the CI pin; note the pinned layout installs via `pip install -e .` —
 there is no `requirements.txt` at this SHA). Environment deltas vs the
 2026-10-06 run: SUT HTTP on `:19999` and gRPC on `:20000`
 (`TCK_SUT_GRPC_PORT=20000`) because a local Docker proxy was occupying

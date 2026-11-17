@@ -290,6 +290,21 @@ defmodule AshA2A.ProtocolExtensionE2ETest do
     end
   end
 
+  # AshA2A.Protocol.Plug (the vendored-style plug) answers `id: null` to every
+  # pre-dispatch refusal, version included; the two transport plugs the
+  # served surface mounts answer the request's id.
+  test "the -32008 refusal answers the id of the request on the transport plugs", %{agent: agent} do
+    for {label, mod, opts} <- required_plugs(agent),
+        label != "Protocol.Plug",
+        method <- ["message/send", "tasks/get"] do
+      conn = call_plug(mod, opts, method, params_for(method), [])
+      body = Jason.decode!(conn.resp_body)
+
+      assert get_in(body, ["error", "code"]) == -32008
+      assert body["id"] == 1, "#{label} #{method}: -32008 answered id #{inspect(body["id"])}"
+    end
+  end
+
   test "a required extension present in the header is never refused with -32008 on any method",
        %{agent: agent} do
     for {label, mod, opts} <- required_plugs(agent), method <- @all_methods do

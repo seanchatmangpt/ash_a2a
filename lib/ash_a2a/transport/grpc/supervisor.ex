@@ -20,6 +20,10 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
       `AshA2A.Transport.GRPC.Server.Endpoint`.
     * `:handler` / `:ctx` / `:versions` / `:extensions` - written into the
       `AshA2A.Transport.GRPC.Server` application env (see its moduledoc).
+    * `:endpoint_config` - `[versions: ..., extensions: ...]` that apply to this
+      listener's endpoint only (written under the env's `:endpoints` map, keyed
+      by `:endpoint`), for a second listener whose A2A-Version or
+      A2A-Extensions gate differs from the server-wide one.
     * `:auth` - `{module, opts}` interceptor, written into the endpoint env.
     * `:cred` - `GRPC.Credential.new(ssl: [...])` for TLS; plain HTTP/2 when
       absent.
@@ -147,6 +151,18 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
     if kw != [] do
       existing = Application.get_env(:ash_a2a, AshA2A.Transport.GRPC.Server, [])
       Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server, Keyword.merge(existing, kw))
+    end
+
+    if own = opts[:endpoint_config] do
+      endpoint = Keyword.get(opts, :endpoint, AshA2A.Transport.GRPC.Server.Endpoint)
+      existing = Application.get_env(:ash_a2a, AshA2A.Transport.GRPC.Server, [])
+      endpoints = existing |> Keyword.get(:endpoints, %{}) |> Map.put(endpoint, own)
+
+      Application.put_env(
+        :ash_a2a,
+        AshA2A.Transport.GRPC.Server,
+        Keyword.put(existing, :endpoints, endpoints)
+      )
     end
   end
 
