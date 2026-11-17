@@ -66,7 +66,12 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
 
     @impl true
     def commit(_receipt, _opts) do
-      :ok = File.chmod(ReceiptOutbox.dir(), 0o500)
+      # Make the journal unwritable without chmod (root ignores it): move the
+      # real directory aside and leave a dangling symlink at its path, so the
+      # final append's mkdir_p fails. The test restores it afterwards.
+      dir = ReceiptOutbox.dir()
+      :ok = File.rename(dir, dir <> ".aside")
+      :ok = File.ln_s(dir <> ".nonexistent", dir)
       {:error, :injected_primary_failure}
     end
 
@@ -87,8 +92,8 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
     on_exit(fn ->
       Application.delete_env(:ash_a2a, :receipt_commit_retry_delays_ms)
       Application.delete_env(:ash_a2a, :receipt_outbox_dir)
-      File.chmod(outbox_dir, 0o700)
       File.rm_rf!(outbox_dir)
+      File.rm_rf!(outbox_dir <> ".aside")
     end)
 
     {:ok, store_opts: [name: name], outbox_dir: outbox_dir}
@@ -226,7 +231,8 @@ defmodule AshA2A.CommandBusOutboxChicagoTest do
               receipt: final_receipt
             }} = run_command(command, FinalizationSabotageStore, store_opts)
 
-    :ok = File.chmod(outbox_dir, 0o700)
+    :ok = File.rm(outbox_dir)
+    :ok = File.rename(outbox_dir <> ".aside", outbox_dir)
 
     assert [%Receipt{receipt_id: anchor_id, status: :pending}] = ReceiptOutbox.entries()
     assert anchor_id == final_receipt.receipt_id

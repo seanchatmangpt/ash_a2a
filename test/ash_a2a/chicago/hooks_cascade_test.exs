@@ -31,6 +31,7 @@ defmodule AshA2A.Chicago.HooksCascadeTest do
 
   @moduletag :tmp_dir
   @moduletag :graphlaw
+  @moduletag :ash_graphlaw_wasm
 
   @expected %{
     "SA2A-HOOK-001" => :falsifier_killed,

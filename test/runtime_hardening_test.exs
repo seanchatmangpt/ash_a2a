@@ -16,6 +16,8 @@ defmodule AshA2A.RuntimeHardeningTest do
   alias AshA2A.Test.Fixture.FreedomGym.{Facilitator, MeetingPlan}
   alias AshA2A.Trace.Recorder
 
+  alias AshA2A.TestSupport.RootGuard
+
   defp tmp(label) do
     dir = Path.join(System.tmp_dir!(), "lane09-#{label}-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
@@ -94,6 +96,9 @@ defmodule AshA2A.RuntimeHardeningTest do
   end
 
   describe "receipt_outbox sync_dir" do
+    # Directory-open failing while write/rename succeed is a pure permission
+    # property (0o300); root bypasses it.
+    @tag skip: RootGuard.skip_reason()
     test "an unreadable journal dir surfaces a typed telemetry warning, append still succeeds" do
       dir = tmp("outbox-sync")
       Application.put_env(:ash_a2a, :receipt_outbox_dir, dir)

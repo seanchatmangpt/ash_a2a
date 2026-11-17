@@ -23,6 +23,7 @@ if Code.ensure_loaded?(Bandit) do
     | `step_up` | generic `:step_up` | `:observe` | authentication only |
     | `publish_note` | generic `:publish_note` | `:external_do` | standing authority grant |
     | `unclassified_note` | generic `:unclassified_note` | `:unknown` | always refused |
+    | `bad_reply` | generic `:bad_reply` | `:observe` | authentication only; answers with a non-A2A value (`-32006`) |
 
     `slow_count` sleeps for `delay_ms` before answering, which gives a client a
     task that is still running when it asks to cancel it. `step_up` parks its
@@ -113,6 +114,13 @@ if Code.ensure_loaded?(Bandit) do
       action :unclassified_note, :map do
         run fn _input, _context -> {:ok, %{ran: true}} end
       end
+
+      # Answers with a value that is not a JSON value (a pid): the dispatcher
+      # cannot build an A2A Part from it, so the send is an
+      # InvalidAgentResponseError (-32006).
+      action :bad_reply, :term do
+        run fn _input, _context -> {:ok, %{not_json: self()}} end
+      end
     end
 
     # `lease_required?` needs a real Ash authorizer on the target. The policy is
@@ -168,6 +176,11 @@ if Code.ensure_loaded?(Bandit) do
         description "Record a publication outside the data layer (external_do)"
         consequence :external_do
         lease_required? true
+      end
+
+      skill :bad_reply, :bad_reply do
+        description "Answer with a value that is not an A2A part (observe; -32006)"
+        consequence :observe
       end
 
       skill :unclassified_note, :unclassified_note do

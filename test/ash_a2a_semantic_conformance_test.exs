@@ -116,6 +116,7 @@ defmodule AshA2ASemanticConformanceTest do
                inspect(Enum.reject(do_results, &(&1.status == :met)))
     end
 
+    @tag :ash_graphlaw_wasm
     test "the real, honestly-earned level is reported and is NOT over-claimed" do
       results = Conformance.requirement_results()
       earned = Conformance.earned_level(results)

@@ -3201,6 +3201,37 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp skill_scenarios("AshA2A.Sim.Note.bad_reply") do
+      [
+        {"a reply that is not an A2A value is -32006 INTERNAL on every binding",
+         fn info ->
+           c = caller(info, :jsonrpc, nil, nil)
+           params = send_params("bad_reply", %{})
+           error = jr_error!(c, "message/send", params, -32_006)
+
+           check!(
+             Jason.encode!(error) =~ "INVALID_AGENT_RESPONSE",
+             "-32006 carries no INVALID_AGENT_RESPONSE ErrorInfo: #{clip(inspect(error))}"
+           )
+
+           resp = rest_error!(info, :post, "/message:send", 500, json: params)
+
+           check!(
+             resp.raw =~ "INVALID_AGENT_RESPONSE",
+             "HTTP 500 carries no INVALID_AGENT_RESPONSE reason: #{clip(resp.raw)}"
+           )
+
+           grpc(info, :writer, fn ch, opts ->
+             ch
+             |> Stub.send_message(pb(Pb.SendMessageRequest, params), opts)
+             |> grpc_status!(13, "SendMessage")
+           end)
+
+           "-32006 over JSON-RPC, HTTP 500 over HTTP+JSON, gRPC INTERNAL(13)"
+         end}
+      ]
+    end
+
     defp skill_scenarios(_id), do: []
 
     # == consequence classes ====================================================

@@ -104,15 +104,18 @@ defmodule AshA2A.ReceiptOutboxHardeningTest do
 
     test "an outbox dir that exists but cannot be listed anchors every command (fail closed)",
          %{dir: dir} do
-      # A real permission failure on the real journal directory: the anchor
-      # evidence is unobservable, so no claim may be judged abandoned.
-      File.chmod!(dir, 0o000)
+      # A real listing failure on the real journal path that does not depend on
+      # chmod (root ignores it): the journal path is a regular file, so
+      # File.ls/1 answers :enotdir, not :enoent.
+      File.rm_rf!(dir)
+      File.write!(dir, "not a directory")
 
       try do
-        assert {:error, :eacces} = File.ls(dir)
+        assert {:error, :enotdir} = File.ls(dir)
         assert ReceiptOutbox.anchored_command?(command("unlistable").command_id)
       after
-        File.chmod!(dir, 0o755)
+        File.rm!(dir)
+        File.mkdir_p!(dir)
       end
     end
 

@@ -10,10 +10,14 @@ defmodule AshA2A.CryptoStanding.CertificateVerifierTest do
   """
   use ExUnit.Case, async: true
 
-  alias AshA2A.C2.{Certificate, CertificateVerifier, PreparedEffect}
+  alias AshA2A.C2.{Certificate, CertificateVerifier, CryptoVerifier, PreparedEffect}
   alias Sa2aCrypto.{KeyRecord, KeyRef, Registry.Static, SignedMessage}
 
   @now 1_800_000_000
+  @mldsa_skip if :mldsa65 in :crypto.supports(:public_keys),
+                do: false,
+                else:
+                  "ML-DSA-65 unsupported by this OTP/OpenSSL build (:mldsa65 absent from :crypto.supports(:public_keys); needs OpenSSL >= 3.5)"
   @audience "actuator:kernel-1"
 
   defp effect(payload \\ %{n: 1}),
@@ -164,14 +168,21 @@ defmodule AshA2A.CryptoStanding.CertificateVerifierTest do
   end
 
   describe "valid certificates" do
-    test "ES256, EdDSA and ML-DSA-65 signatures verify" do
-      for alg <- ["ES256", "EdDSA", "ML-DSA-65"] do
+    test "ES256 and EdDSA signatures verify" do
+      for alg <- ["ES256", "EdDSA"] do
         e = effect()
         k = key(alg)
-        profile = if alg == "ML-DSA-65", do: :pqc, else: :classical
-        c = ctx([k], %{required_profile: profile})
+        c = ctx([k], %{required_profile: :classical})
         assert :ok = CertificateVerifier.verify(cert(e, [sign(e, k)]), e, c), alg
       end
+    end
+
+    @tag skip: @mldsa_skip
+    test "ML-DSA-65 signatures verify" do
+      e = effect()
+      k = key("ML-DSA-65")
+      c = ctx([k], %{required_profile: :pqc})
+      assert :ok = CertificateVerifier.verify(cert(e, [sign(e, k)]), e, c)
     end
 
     test "two custodians: standings carry custodian, tier, epoch and the (kid, nonce) replay key" do
@@ -380,15 +391,98 @@ defmodule AshA2A.CryptoStanding.CertificateVerifierTest do
       assert CryptoVerifier.verify(:es256, "m", sig, pub) == true
       assert CryptoVerifier.verify(:es256, "m", sig, <<4, 1>>) == {:error, :bad_key}
 
-      {mpub, mpriv} = :crypto.generate_key(:mldsa65, [])
-      msig = :crypto.sign(:mldsa65, :none, "m", mpriv)
       assert CryptoVerifier.otp_atom(:ml_dsa) == :mldsa65
       assert CryptoVerifier.otp_atom(:slh_dsa) == :slh_dsa_sha2_128s
-      assert CryptoVerifier.verify(:ml_dsa, "m", msig, mpub) == true
-      assert CryptoVerifier.verify(:ml_dsa, "m", msig, <<1>>) == {:error, :bad_key}
       assert CryptoVerifier.supported?(:ml_dsa) and CryptoVerifier.supported?(:slh_dsa)
       refute CryptoVerifier.supported?(:rsa)
       assert CryptoVerifier.verify(:rsa, "m", "s", "k") == {:error, :unsupported_algorithm}
+    end
+
+    @tag skip: @mldsa_skip
+    test ":ml_dsa verifies a real ML-DSA-65 signature and refuses a short key" do
+      {mpub, mpriv} = :crypto.generate_key(:mldsa65, [])
+      msig = :crypto.sign(:mldsa65, :none, "m", mpriv)
+      assert CryptoVerifier.verify(:ml_dsa, "m", msig, mpub) == true
+      assert CryptoVerifier.verify(:ml_dsa, "m", msig, <<1>>) == {:error, :bad_key}
+      assert CryptoVerifier.verify(:ml_dsa, "m!", msig, mpub) == {:error, :bad_signature}
+    end
+
+    test ":ml_dsa returns a typed refusal, never raises, when the OTP build lacks it" do
+      if :mldsa65 in :crypto.supports(:public_keys) do
+        assert CryptoVerifier.verify(:ml_dsa, "m", "s", <<1>>) == {:error, :bad_key}
+      else
+        assert CryptoVerifier.verify(:ml_dsa, "m", "s", <<1>>) == {:error, :provider_required}
+      end
+    end
+  end
+
+  describe "CryptoVerifier is total" do
+    setup do
+      {p256, p256_priv} = :crypto.generate_key(:ecdh, :secp256r1)
+      {p384, _} = :crypto.generate_key(:ecdh, :secp384r1)
+      {ed, ed_priv} = :crypto.generate_key(:eddsa, :ed25519)
+      es_sig = :crypto.sign(:ecdsa, :sha256, "m", [p256_priv, :secp256r1])
+      ed_sig = :crypto.sign(:eddsa, :none, "m", [ed_priv, :ed25519])
+      %{p256: p256, p384: p384, ed: ed, es_sig: es_sig, ed_sig: ed_sig}
+    end
+
+    test "ES256 refusals", %{p256: p, p384: p384, ed: ed, es_sig: sig} do
+      assert CryptoVerifier.verify(:es256, "m", sig, p) == true
+      # wrong key type (Ed25519 key), wrong curve (P-384 point)
+      assert {:error, _} = CryptoVerifier.verify(:es256, "m", sig, ed)
+      assert {:error, _} = CryptoVerifier.verify(:es256, "m", sig, p384)
+      # truncated signature, different payload
+      assert {:error, _} = CryptoVerifier.verify(:es256, "m", binary_part(sig, 0, 20), p)
+      assert {:error, :bad_signature} = CryptoVerifier.verify(:es256, "other", sig, p)
+    end
+
+    test "EdDSA refusals", %{p256: p256, ed: ed, ed_sig: sig} do
+      assert CryptoVerifier.verify(:eddsa, "m", sig, ed) == true
+      assert {:error, _} = CryptoVerifier.verify(:eddsa, "m", sig, p256)
+
+      assert {:error, :bad_signature} =
+               CryptoVerifier.verify(:eddsa, "m", binary_part(sig, 0, 63), ed)
+
+      assert {:error, :bad_signature} = CryptoVerifier.verify(:eddsa, "other", sig, ed)
+    end
+
+    test "table of malformed inputs never raises" do
+      bad = [
+        nil,
+        :atom,
+        1,
+        1.5,
+        "",
+        <<0>>,
+        <<4>>,
+        <<0::520>>,
+        <<4, 0::512>>,
+        [],
+        %{},
+        {1, 2},
+        {"a", "b"}
+      ]
+
+      for alg <- [
+            :es256,
+            :eddsa,
+            :ml_dsa,
+            :ml_dsa_44,
+            :ml_dsa_87,
+            :slh_dsa,
+            :rsa,
+            nil,
+            "ES256",
+            1
+          ],
+          msg <- ["m", nil, 1],
+          sig <- bad ++ ["s"],
+          pub <- bad do
+        result = CryptoVerifier.verify(alg, msg, sig, pub)
+
+        assert match?({:error, atom} when is_atom(atom), result),
+               inspect({alg, msg, sig, pub, result})
+      end
     end
   end
 end

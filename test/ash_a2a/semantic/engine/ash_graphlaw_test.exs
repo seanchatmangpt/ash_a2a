@@ -17,6 +17,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
       assert function_exported?(Engine, :n3_closure, 2)
     end
 
+    @tag :ash_graphlaw_wasm
     test "AshA2A.Semantic.Conformance.engine_capability/2 returns :met for all capabilities" do
       assert Conformance.engine_capability(:validate_shex, 3) == :met
       assert Conformance.engine_capability(:validate_shacl, 2) == :met
@@ -25,6 +26,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
       assert Conformance.engine_capability(:n3_closure, 2) == :met
     end
 
+    @tag :ash_graphlaw_wasm
     test "available?/0 returns true when AshGraphLaw is live" do
       assert Engine.available?() == true
     end
@@ -34,6 +36,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
       assert byte_size(version) > 0
     end
 
+    @tag :ash_graphlaw_wasm
     test "validate_shacl/2 executes against real engine" do
       data = """
       @prefix ex: <http://example.org/> .
@@ -59,6 +62,7 @@ defmodule AshA2A.Semantic.Engine.AshGraphLawTest do
       assert res.conforms == true
     end
 
+    @tag :ash_graphlaw_wasm
     test "query_sparql/2 executes against real engine" do
       data = """
       @prefix ex: <http://example.org/> .

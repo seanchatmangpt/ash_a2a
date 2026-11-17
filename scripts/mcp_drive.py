@@ -358,7 +358,7 @@ def main():
     parser.add_argument("--only", metavar="PREFIX", help="run only surface items whose id starts with PREFIX")
     parser.add_argument("--steps", action="store_true", help="print every tool call of every item")
     parser.add_argument("--json", action="store_true", help="print the matrix as JSON")
-    parser.add_argument("--server", default=os.path.join(ROOT, "bin", "a2a-sim-mcp"), help="the MCP server command")
+    parser.add_argument("--server", "--launcher", dest="server", metavar="PATH", default=os.path.join(ROOT, "bin", "a2a-sim-mcp"), help="the MCP server command")
     parser.add_argument("--log", help="where the server's stderr goes (default: a temp file)")
     args = parser.parse_args()
 

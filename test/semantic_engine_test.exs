@@ -15,6 +15,7 @@ defmodule AshA2A.SemanticEngineTest do
     assert {:error, %{code: :engine_bad_input}} = Engine.validate_shex(nil, "s", "m")
   end
 
+  @tag :ash_graphlaw_wasm
   test "datalog_closure runs on the real engine" do
     assert {:ok, res} =
              Engine.datalog_closure(
@@ -25,12 +26,14 @@ defmodule AshA2A.SemanticEngineTest do
     assert res.count == 2
   end
 
+  @tag :ash_graphlaw_wasm
   test "n3_closure runs on the real engine" do
     rules = "{ ?x ex:p ?y } => { ?y ex:q ?x } ."
     assert {:ok, res} = Engine.n3_closure(@ttl, "@prefix ex: <http://example.org/> .\n" <> rules)
     assert is_binary(res.derived)
   end
 
+  @tag :ash_graphlaw_wasm
   test "validate_shex runs on the real engine" do
     assert {:ok, res} =
              Engine.validate_shex(
@@ -42,6 +45,7 @@ defmodule AshA2A.SemanticEngineTest do
     assert res != nil
   end
 
+  @tag :ash_graphlaw_wasm
   test "engine_capability/2 consults the engine (probe) and closure determinism runs" do
     assert Engine.probe(:datalog_closure, 2) == :ok
     assert {:error, {:no_probe, :nope, 1}} = Engine.probe(:nope, 1)

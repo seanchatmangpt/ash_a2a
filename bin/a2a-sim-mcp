@@ -16,6 +16,12 @@
 # Environment:
 #   A2A_SIM_MCP_LOG    append standard error to this file instead
 #   A2A_SIM_MCP_ENV    a file to source first (PATH for elixir/erl, locale)
+#   A2A_SIM_MCP_DIRECT set to 1 to skip scripts/mcp_shim.py and run mix directly
+#
+# stdio mode runs behind scripts/mcp_shim.py, which answers the MCP handshake
+# at once (from a cache of the last healthy start) while mix compiles and boots
+# in the background, so a stale or cold build cannot exceed a client's connect
+# timeout. See docs/how-to/control-the-sim-over-mcp.md.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -43,6 +49,12 @@ export ELIXIR_ERL_OPTIONS="${ELIXIR_ERL_OPTIONS:-+fnu}"
 
 if [ -n "${A2A_SIM_MCP_LOG:-}" ]; then
   exec 2>>"$A2A_SIM_MCP_LOG"
+fi
+
+http=
+for arg in "$@"; do [ "$arg" = "--http" ] && http=1; done
+if [ -z "${A2A_SIM_MCP_DIRECT:-}" ] && [ -z "$http" ] && command -v python3 >/dev/null 2>&1; then
+  exec python3 scripts/mcp_shim.py "$@"
 fi
 
 # Fast start: an MCP client gives up on a server that takes too long to answer

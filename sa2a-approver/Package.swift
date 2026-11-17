@@ -12,15 +12,25 @@ let package = Package(
         .executable(name: "sa2a-approver", targets: ["sa2a-approver"]),
         .executable(name: "SA2AApproverMac", targets: ["SA2AApproverMac"]),
     ],
+    dependencies: [
+        // CryptoKit is Apple-only; on Linux the same P256/SHA256 API comes from swift-crypto
+        // (module `Crypto`). The Secure Enclave signer stays macOS/iOS-only (see Signer.swift).
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "3.9.1"),
+    ],
     targets: [
-        .target(name: "SA2AApproverCore"),
+        .target(
+            name: "SA2AApproverCore",
+            dependencies: [.product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux]))]),
         .target(name: "SA2AApproverUI", dependencies: ["SA2AApproverCore"]),
         .executableTarget(name: "sa2a-approver", dependencies: ["SA2AApproverCore"]),
         .executableTarget(name: "SA2AApproverMac", dependencies: ["SA2AApproverCore", "SA2AApproverUI"]),
         // iOS app shell: source only; built by an Xcode iOS app target (see docs/how-to/approver-apps.md).
         .testTarget(
             name: "SA2AApproverCoreTests",
-            dependencies: ["SA2AApproverCore"],
+            dependencies: [
+                "SA2AApproverCore",
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux])),
+            ],
             resources: [.copy("Fixtures")]
         ),
     ]

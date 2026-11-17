@@ -12,8 +12,30 @@ defmodule AshA2A.FuzzGen do
 
   @doc "Seeds the calling process; the same `extra` always yields the same stream."
   def seed(extra \\ 0) do
-    :rand.seed(:exsss, {@base_seed, extra, 7})
+    :rand.seed(:exsss, {@base_seed + env_seed(), extra, 7})
     :ok
+  end
+
+  @doc """
+  The `FUZZ_SEED` offset (default 0). Setting it re-runs every fuzz file on a
+  different stream, e.g. `FUZZ_SEED=3 mix test test/fuzz_sse_test.exs`.
+  """
+  def env_seed do
+    case Integer.parse(System.get_env("FUZZ_SEED") || "0") do
+      {n, _} -> n
+      :error -> 0
+    end
+  end
+
+  @doc """
+  Iteration count: `FUZZ_ITERATIONS` (a multiplier percentage, default 100)
+  scales the CI `default`.
+  """
+  def iterations(default) do
+    case Integer.parse(System.get_env("FUZZ_ITERATIONS") || "100") do
+      {pct, _} when pct > 0 -> max(1, div(default * pct, 100))
+      _ -> default
+    end
   end
 
   @doc "Random integer in 0..n-1."

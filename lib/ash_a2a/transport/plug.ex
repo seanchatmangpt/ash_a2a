@@ -578,6 +578,10 @@ defmodule AshA2A.Transport.Plug do
     do: AshA2A.Protocol.InputModeValidator.to_error(reason)
 
   def reason_error(:not_continuable), do: Error.unsupported_operation("task is terminal")
+
+  def reason_error({:invalid_agent_response, _detail}),
+    do: Error.invalid_agent_response("agent reply is not a valid A2A response")
+
   def reason_error(_other), do: nil
 
   @doc false
@@ -589,7 +593,7 @@ defmodule AshA2A.Transport.Plug do
       do: reason_error(reason)
 
   def wire_error({tag, _} = reason)
-      when tag in [:unsupported_operation, :content_type_not_supported],
+      when tag in [:unsupported_operation, :content_type_not_supported, :invalid_agent_response],
       do: reason_error(reason) || Error.internal_error()
 
   # -32000 is the JSON-RPC *server-error* code (not one of the Error module's

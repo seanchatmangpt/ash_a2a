@@ -2082,6 +2082,9 @@ defmodule AshA2A.Transport.HTTPJSON do
   defp error_for({:content_type_not_supported, _data} = refusal),
     do: AshA2A.Protocol.InputModeValidator.to_error(refusal)
 
+  defp error_for({:invalid_agent_response, _detail} = refusal),
+    do: AshA2A.Transport.Plug.reason_error(refusal)
+
   defp error_for(%{code: code}) when code in [:server_busy, :rate_limited] do
     # -32000 is the JSON-RPC server-error code (not one of the Error module's
     # A2A-specific constructors), pinned by transport court tests; error.ex is

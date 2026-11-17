@@ -14,6 +14,7 @@ defmodule AuthorityService.Issuer do
 
   Refusal codes: `:malformed_request`, `:digest_mismatch`, `:malformed_effect`,
   `:non_canonical_effect`, `:unknown_effect_class`, `:already_issued`,
+  `:window_invalid` (a requested `"window"` outside the policy bounds, see below),
   `:audience_not_registered` (request named an audience other than the server-side registered
   actuator identity), `:audience_unconfigured`, `:approver_revoked_during_issuance`,
   `:insufficient_approvals` (detail = per-approval refusal codes), `:journal_failed`,
@@ -89,6 +90,44 @@ defmodule AuthorityService.Issuer do
 
   def to_actuator_certificate(_), do: {:error, :malformed_certificate}
 
+  @doc """
+  Combines certificates that independent authorities issued for the SAME effect into one
+  actuator certificate whose `signatures` list carries every authority's signature (the
+  collection path an actuator quorum greater than one needs: each authority signs the same
+  certificate fields with its own key and nonce).
+
+  Each input is an issued `%{"envelope", "message"}` and is converted with
+  `to_actuator_certificate/1`. Nothing is re-signed or defaulted. Refused:
+  `{:error, :certificate_fields_differ}` unless every certificate-level field (all but
+  `signatures`) is identical, `{:error, :duplicate_signer}` if one key signed more than once,
+  and the conversion errors of `to_actuator_certificate/1`. Whether the signatures are valid
+  and from distinct custodians is for the actuator to decide, not this function.
+  """
+  @spec combine_actuator_certificates([map()]) :: {:ok, map()} | {:error, atom()}
+  def combine_actuator_certificates([_ | _] = issued) do
+    with {:ok, converted} <- convert_all(issued),
+         [first | rest] = converted,
+         true <-
+           Enum.all?(rest, &(Map.delete(&1, "signatures") == Map.delete(first, "signatures"))) or
+             {:error, :certificate_fields_differ},
+         sigs = Enum.flat_map(converted, & &1["signatures"]),
+         true <-
+           length(Enum.uniq_by(sigs, & &1["kid"])) == length(sigs) or {:error, :duplicate_signer} do
+      {:ok, Map.put(first, "signatures", sigs)}
+    end
+  end
+
+  def combine_actuator_certificates(_), do: {:error, :malformed_certificate}
+
+  defp convert_all(issued) do
+    Enum.reduce_while(issued, {:ok, []}, fn cert, {:ok, acc} ->
+      case to_actuator_certificate(cert) do
+        {:ok, ac} -> {:cont, {:ok, acc ++ [ac]}}
+        {:error, _} = e -> {:halt, e}
+      end
+    end)
+  end
+
   @impl true
   def init(%Config{} = config) do
     case Journal.open(config.journal_path, config.anchor_path) do
@@ -148,12 +187,21 @@ defmodule AuthorityService.Issuer do
     approvals = Map.get(r, "approvals", [])
 
     with :ok <- audience_ok(Map.get(r, "audience"), aud),
+         {:ok, window} <- parse_window(Map.get(r, "window")),
          {:ok, bytes} <- Envelope.b64(eff) |> tag(:malformed_request),
          true <- byte_size(bytes) <= @max_effect_bytes or {:error, :malformed_request},
          true <-
            (is_list(approvals) and length(approvals) <= policy.max_approvals) or
              {:error, :malformed_request} do
-      {:ok, %{effect: bytes, digest: dig, audience: aud, generation: gen, approvals: approvals}}
+      {:ok,
+       %{
+         effect: bytes,
+         digest: dig,
+         audience: aud,
+         generation: gen,
+         approvals: approvals,
+         window: window
+       }}
     else
       {:error, code} when code in [:audience_not_registered, :audience_unconfigured] ->
         {:error, code}
@@ -164,6 +212,14 @@ defmodule AuthorityService.Issuer do
   end
 
   defp parse_request(_, _), do: {:error, :malformed_request}
+
+  defp parse_window(nil), do: {:ok, nil}
+
+  defp parse_window(%{"not_before" => nb, "expires" => e} = w)
+       when is_integer(nb) and is_integer(e) and nb >= 0 and map_size(w) == 2,
+       do: {:ok, %{not_before: nb, expires: e}}
+
+  defp parse_window(_), do: {:error, :malformed_request}
 
   defp audience_ok(_, aud) when not is_binary(aud) or aud == "",
     do: {:error, :audience_unconfigured}
@@ -405,7 +461,25 @@ defmodule AuthorityService.Issuer do
   defp mint(req, effect, k, counted, now, c, j) do
     policy = c.policy
     ttl = if k == 0, do: policy.automated_ttl, else: policy.human_ttl
-    expires = Enum.reduce(counted, now + ttl, fn %{expires: e}, acc -> min(e, acc) end)
+    natural = Enum.reduce(counted, now + ttl, fn %{expires: e}, acc -> min(e, acc) end)
+
+    case window(req.window, now, natural, policy) do
+      {:ok, nb, expires} -> sign_cert(req, effect, counted, nb, expires, c, j)
+      :error -> {:refused, :window_invalid, []}
+    end
+  end
+
+  # A requested window may only narrow the natural one (see the moduledoc).
+  defp window(nil, now, natural, _), do: {:ok, now, natural}
+
+  defp window(%{not_before: nb, expires: e}, now, natural, policy) do
+    if abs(nb - now) <= policy.skew and e > nb and e <= natural,
+      do: {:ok, nb, e},
+      else: :error
+  end
+
+  defp sign_cert(req, effect, counted, not_before, expires, c, j) do
+    policy = c.policy
     key = c.service_key
     nonce = fresh_nonce(j)
 
@@ -419,7 +493,7 @@ defmodule AuthorityService.Issuer do
       "revocation_epoch" => key.revocation_epoch,
       "generation" => req.generation,
       "nonce" => nonce,
-      "not_before" => now,
+      "not_before" => not_before,
       "expires" => expires,
       "audience" => c.actuator_audience
     }
@@ -448,7 +522,7 @@ defmodule AuthorityService.Issuer do
         signed_bytes_digest: SignedMessage.digest(bytes),
         signature: sig,
         nonce: nonce,
-        not_before: now,
+        not_before: not_before,
         expires: expires,
         audience: c.actuator_audience
       }

@@ -1155,6 +1155,31 @@ def run_content_type_error(b):
     expect_a2a_error(b, "SendMessage", vector, outcome, "ContentTypeNotSupportedError", "3.1.1")
 
 
+def run_invalid_agent_response(b):
+    """InvalidAgentResponseError (5.4: -32006, INTERNAL, HTTP 500; the same row at
+    v1.0.1 and v1.1.0-rc): the agent's reply is not a valid A2A response. The sim
+    skill `bad_reply` answers with a value that is not a JSON value."""
+    vector = "an agent reply that is not an A2A value"
+    outcome = b.unary("SendMessage", send_request("bad_reply"), vector)
+    expect_a2a_error(b, "SendMessage", vector, outcome, "InvalidAgentResponseError", "3.1.1 / 5.4")
+
+
+def run_unconfigured_card_and_push(b, env):
+    """The owner-scoped `/jsonrpc` mount configures neither push notifications nor
+    an extended card: ExtendedAgentCardNotConfiguredError (-32007) and
+    PushNotificationNotSupportedError (-32003), both HTTP 400 FAILED_PRECONDITION."""
+    outcome = b.unary("GetExtendedAgentCard", pb.GetExtendedAgentCardRequest(), "mount without an extended card")
+    expect_a2a_error(b, "GetExtendedAgentCard", "mount without an extended card", outcome,
+                     "ExtendedAgentCardNotConfiguredError", "3.1.11")
+    done = send(b, "seed a task for the push vector", "count_notes")
+    if done is not None:
+        outcome = b.unary("CreateTaskPushNotificationConfig",
+                          pb.TaskPushNotificationConfig(task_id=done.id, url=env.webhook.url("none")),
+                          "mount without push notifications")
+        expect_a2a_error(b, "CreateTaskPushNotificationConfig", "mount without push notifications", outcome,
+                         "PushNotificationNotSupportedError", "3.1.7")
+
+
 def run_errors(b, env):
     missing = "tsk-does-not-exist"
 
@@ -1206,6 +1231,7 @@ def run_errors(b, env):
     expect_a2a_error(b, "GetTask", "A2A-Version 9.9", outcome, "VersionNotSupportedError", "3.6.2")
 
     run_content_type_error(b)
+    run_invalid_agent_response(b)
 
     outcome = b.unary("SendMessage", pb.SendMessageRequest(), "no message")
     expect_generic_error(b, "SendMessage", "no message", outcome, "validation")
@@ -1627,6 +1653,8 @@ def run_errors_core(b, env):
     outcome = b.unary("GetTask", pb.GetTaskRequest(id=missing), "A2A-Version 9.9", version="9.9")
     expect_a2a_error(b, "GetTask", "A2A-Version 9.9", outcome, "VersionNotSupportedError", "3.6.2")
     run_content_type_error(b)
+    run_invalid_agent_response(b)
+    run_unconfigured_card_and_push(b, env)
     outcome = b.unary("SendMessage", pb.SendMessageRequest(), "no message")
     expect_generic_error(b, "SendMessage", "no message", outcome, "validation")
     outcome = b.unary("GetTask", pb.GetTaskRequest(id=missing), "no credentials", token=None)

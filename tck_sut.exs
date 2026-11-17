@@ -454,6 +454,10 @@ interfaces = [
 {:ok, _} = Application.ensure_all_started(:finch)
 {:ok, _} = Finch.start_link(name: Req.Finch)
 
+# Push deliveries run under the library's supervised task home, which the
+# application tree normally starts (`--no-start` boots no application).
+{:ok, _} = Task.Supervisor.start_link(name: AshA2A.Protocol.PushTaskSupervisor)
+
 {:ok, srv} =
   Bandit.start_link(
     plug:

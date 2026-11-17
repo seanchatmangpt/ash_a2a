@@ -20,7 +20,8 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
   alias AshA2A.Protocol.Plug.SecurityValidators
   alias AshA2A.Protocol.SecurityScheme
 
-  @now System.system_time(:second)
+  # Evaluated per call: a compile-time attribute goes stale over a long suite run.
+  defp now, do: System.system_time(:second)
 
   # -- JWT helpers --------------------------------------------------------------
 
@@ -42,7 +43,7 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
         "sub" => "user-1",
         "iss" => "https://auth.example.com",
         "aud" => "a2a-api",
-        "exp" => @now + 600,
+        "exp" => now() + 600,
         "scope" => "a2a:read a2a:write"
       },
       overrides
@@ -103,7 +104,7 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     end
 
     test "expired token refused" do
-      token = hs256_token(claims(%{"exp" => @now - 3600}), "s3cret")
+      token = hs256_token(claims(%{"exp" => now() - 3600}), "s3cret")
 
       assert {:error, %{code: :token_expired}} =
                SecurityValidators.validate_bearer(token, secret: "s3cret")
@@ -322,7 +323,7 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     end
 
     test "expired token refused", %{discovery: discovery, key: key, kid: kid} do
-      token = rs256_token(claims(%{"exp" => @now - 100}), key, kid)
+      token = rs256_token(claims(%{"exp" => now() - 100}), key, kid)
 
       assert {:error, %{code: :token_expired}} =
                SecurityValidators.validate_oidc(token, discovery: discovery)
@@ -428,7 +429,7 @@ defmodule AshA2A.Protocol.Plug.SecurityValidatorsTest do
     end
 
     test "expired bearer JWT is 401" do
-      token = hs256_token(claims(%{"exp" => @now - 3600}), "s3cret")
+      token = hs256_token(claims(%{"exp" => now() - 3600}), "s3cret")
 
       conn =
         conn(:post, "/a2a", %{})

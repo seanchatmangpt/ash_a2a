@@ -115,6 +115,7 @@ defmodule AshA2A.ArchitectureVerifier.ChicagoRollupTest do
   # `brce_gate7_test.exs`'s `@tag timeout: 300_000`).
   @tag timeout: 600_000
   @tag :graphlaw_engine
+  @tag :ash_graphlaw_wasm
   test "ArchitectureVerifier.checks/0 rolls up all seven real Chicago courts alongside the original ten" do
     results = ArchitectureVerifier.checks()
 

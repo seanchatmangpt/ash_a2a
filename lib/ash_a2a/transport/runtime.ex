@@ -1024,7 +1024,15 @@ defmodule AshA2A.Transport.Runtime do
 
   defp safe_handle(module, message, ctx) do
     case module.handle_message(message, ctx) do
-      {tag, _} = reply when tag in [:reply, :message, :stream, :input_required, :error] ->
+      {tag, parts} = reply when tag in [:reply, :message, :input_required] ->
+        # A reply that is not a list of A2A parts is the agent's fault:
+        # InvalidAgentResponseError (-32006), never an internal error.
+        case AshA2A.Protocol.AgentReply.validate_parts(parts) do
+          :ok -> reply
+          {:error, detail} -> {:invalid_agent_response, detail}
+        end
+
+      {tag, _} = reply when tag in [:stream, :error] ->
         reply
 
       other ->
@@ -1120,11 +1128,19 @@ defmodule AshA2A.Transport.Runtime do
                     state
                 end
 
+              # InvalidAgentResponseError (-32006): the task is stored failed,
+              # and the caller is answered with the error, not the task.
+              result =
+                case reply do
+                  {:invalid_agent_response, detail} -> {:error, {:invalid_agent_response, detail}}
+                  _ -> {:ok, task}
+                end
+
               if AshA2A.Protocol.Task.terminal?(task) do
                 state = AshA2A.Protocol.Agent.State.drop_subscribers(state, task.id)
-                respond(mode, from, {:ok, task}, state, wire?)
+                respond(mode, from, result, state, wire?)
               else
-                respond(mode, from, {:ok, task}, state, wire?)
+                respond(mode, from, result, state, wire?)
               end
           end
         end
@@ -1198,6 +1214,16 @@ defmodule AshA2A.Transport.Runtime do
 
         State.transition(task, :failed, error_msg)
     end
+  end
+
+  # The handler's reply is not a valid A2A response (-32006). The detail is
+  # about the agent's own output, not caller input, but stays off the wire.
+  defp apply_reply(task, {:invalid_agent_response, _detail}) do
+    State.transition(
+      task,
+      :failed,
+      AshA2A.Protocol.Message.new_agent("Error: invalid agent response")
+    )
   end
 
   defp apply_reply(task, {:stream, enum}) do
