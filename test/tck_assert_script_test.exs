@@ -114,15 +114,20 @@ defmodule AshA2A.TckAssertScriptTest do
           assert out =~ "expected_fail=1 unexpected_fail=0"
       end
 
-      entry = @expected |> File.read!() |> Jason.decode!() |> Map.fetch!("expected_failures") |> hd()
+      entry =
+        @expected |> File.read!() |> Jason.decode!() |> Map.fetch!("expected_failures") |> hd()
+
       assert entry["id"] == "HTTP_JSON-SVC-001"
       assert entry["contradicts"] =~ "HTTP_JSON-ERR-001"
     end
 
     test "an unlisted failure fails, even when the listed one also fails" do
       case run_expected(report(%{"HTTP_JSON-SVC-001" => "FAIL", "CARD-DISC-001" => "FAIL"})) do
-        :skip -> :ok
-        {out, status} -> assert {status, out} |> elem(0) == 1 and out =~ "unexpected failure CARD-DISC-001"
+        :skip ->
+          :ok
+
+        {out, status} ->
+          assert {status, out} |> elem(0) == 1 and out =~ "unexpected failure CARD-DISC-001"
       end
     end
 
