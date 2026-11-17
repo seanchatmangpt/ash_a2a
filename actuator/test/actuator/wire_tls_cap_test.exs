@@ -113,7 +113,11 @@ defmodule Actuator.WireTlsCapTest do
     tcp =
       for _ <- 1..(TLS.max_conns() + extra) do
         assert {:ok, s} =
-                 :gen_tcp.connect(~c"127.0.0.1", port, [:binary, {:packet, 4}, {:active, false}])
+                 :gen_tcp.connect(~c"127.0.0.1", port, [
+                   :binary,
+                   {:packet, :raw},
+                   {:active, false}
+                 ])
 
         s
       end
@@ -122,8 +126,12 @@ defmodule Actuator.WireTlsCapTest do
     # so the first `cap` handshakes succeed and every later one is closed by the cap.
     outcomes =
       for s <- tcp do
-        case :ssl.connect(s, ssl_opts, 5_000) do
+        t0 = System.monotonic_time(:millisecond)
+        r = :ssl.connect(s, ssl_opts, 5_000)
+        IO.inspect({System.monotonic_time(:millisecond) - t0, r}, label: "DBG")
+        case r do
           {:ok, t} ->
+            :ok = :ssl.setopts(t, [{:packet, 4}])
             :ok = :ssl.send(t, ~s({"op":"health"}))
             assert {:ok, resp} = :ssl.recv(t, 0, 5_000)
             assert %{"ok" => true} = Jason.decode!(resp)
