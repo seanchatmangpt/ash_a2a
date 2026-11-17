@@ -1,0 +1,24 @@
+{
+  "reviewed": "2026-11-17",
+  "policy": "Each entry exempts exactly one finding code (verified_without_run_log) for one receipt whose bytes still match sha256. Any edit to the receipt voids the exemption. Other findings are never exempted. Do not add new receipts here: attach a run log instead.",
+  "entries": [
+    {
+      "path": "receipts/lanes/a10-ingress-wire.md",
+      "sha256": "62f9ec4ed3346252216cf664f98f9f854a4b6d4c6330487c1cfc15088318ce97",
+      "code": "verified_without_run_log",
+      "reason": "Archived lane receipt written before the Run log convention; claims PASS in prose with no attached log."
+    },
+    {
+      "path": "receipts/lanes/f2-copilot-wire-verify.md",
+      "sha256": "bec614cbfb16f9bc45b4c6f2ba7b9e12d60dca1b981c44f5e189d365eb0a8c47",
+      "code": "verified_without_run_log",
+      "reason": "Archived lane receipt written before the Run log convention; claims PASS in prose with no attached log."
+    },
+    {
+      "path": "receipts/lanes/z11-actuation.md",
+      "sha256": "ab10c792ccd6bd368acda02900f3a749ee89964887be0961e4ba2aab1b255a66",
+      "code": "verified_without_run_log",
+      "reason": "Archived lane receipt written before the Run log convention; claims PASS in prose with no attached log."
+    }
+  ]
+}

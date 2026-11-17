@@ -24,6 +24,16 @@ defmodule AshA2A.Receipts.Verifier do
       `Standing:` line, says UNVERIFIED.
 
   Findings are maps with `:severity`, `:code`, `:receipt` and `:detail`.
+
+  ## Legacy allowlist
+
+  `verify_file/2` accepts `:legacy`, a list of entries (see `load_legacy/1`)
+  each naming a receipt `path` (relative to `:root`), the `sha256` of its
+  bytes, a `code` and a `reason`. When the receipt's current hash equals the
+  entry's, the matching error finding is reported as a `legacy_exempt`
+  warning carrying the reason, so it stays visible but does not fail the run.
+  A receipt whose bytes changed is no longer exempt, and only the listed
+  code is ever exempted.
   """
 
   @verified ~w(ALIVE VERIFIED CONFORMANT PASS)
@@ -63,11 +73,60 @@ defmodule AshA2A.Receipts.Verifier do
   def verify_file(path, opts \\ []) do
     case File.read(path) do
       {:ok, text} ->
-        verify_text(text, Path.basename(path), opts)
+        text
+        |> verify_text(Path.basename(path), opts)
+        |> apply_legacy(path, text, opts)
 
       {:error, reason} ->
         [finding(:error, :receipt_unreadable, path, inspect(reason))]
     end
+  end
+
+  @doc """
+  Reads a legacy allowlist JSON file (`{"entries": [{"path", "sha256", "code",
+  "reason"}]}`). A missing file is an empty list; a malformed one raises.
+  """
+  @spec load_legacy(Path.t()) :: [map()]
+  def load_legacy(path) do
+    case File.read(path) do
+      {:ok, json} ->
+        %{"entries" => entries} = Jason.decode!(json)
+
+        for e <- entries do
+          %{
+            path: Map.fetch!(e, "path"),
+            sha256: String.downcase(Map.fetch!(e, "sha256")),
+            code: String.to_atom(Map.fetch!(e, "code")),
+            reason: Map.fetch!(e, "reason")
+          }
+        end
+
+      {:error, :enoent} ->
+        []
+    end
+  end
+
+  defp apply_legacy(findings, path, text, opts) do
+    legacy = Keyword.get(opts, :legacy, [])
+    root = Keyword.get_lazy(opts, :root, &File.cwd!/0)
+    rel = Path.relative_to(Path.expand(path), Path.expand(root))
+    actual = :crypto.hash(:sha256, text) |> Base.encode16(case: :lower)
+
+    Enum.map(findings, fn f ->
+      entry =
+        Enum.find(legacy, &(&1.path == rel and &1.code == f.code and &1.sha256 == actual))
+
+      if f.severity == :error and entry do
+        finding(
+          :warning,
+          :legacy_exempt,
+          f.receipt,
+          "#{f.code} exempt (legacy, sha256 #{actual}): #{entry.reason}"
+        )
+      else
+        f
+      end
+    end)
   end
 
   @doc "Returns true when no finding has `:error` severity."

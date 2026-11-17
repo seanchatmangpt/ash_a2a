@@ -1,0 +1,13 @@
+{
+  "_note": "Expected a2a-tck failures. scripts/tck_assert.py --expected-failures tolerates ONLY these ids, only on the listed TCK commits, and fails if one starts passing (remove it then). See docs/reference/tck-suite.md and docs/reference/tck-upstream-issue-draft.md.",
+  "expected_failures": [
+    {
+      "id": "HTTP_JSON-SVC-001",
+      "level": "SHOULD",
+      "tck_commits": ["104a7b4ae0d83f65c075e3793e322953a830eaba"],
+      "reason": "The SUT answers HTTP+JSON error responses with Content-Type application/json. TCK test test_problem_details.py::TestHttpJsonErrorMediaType requires the media type to be exactly application/a2a+json, while the MUST HTTP_JSON-ERR-001 test (test_error_handling.py::TestRestErrorStructure::test_error_uses_aip193_format) requires the substring application/json in the same error Content-Type. A bare application/a2a+json fails the MUST; the only string passing both is a media type carrying a parameter whose value is application/json, which A2A spec 14.1.1 forbids (the a2a+json registration has no parameters), so no conforming value exists. The MUST wins.",
+      "contradicts": "HTTP_JSON-ERR-001 (MUST, spec 11.6)",
+      "spec_section": "A2A v1.1.0-rc 11.1 (SHOULD application/a2a+json), 11.6 (error body), 14.1.1 (media type registration, no parameters)"
+    }
+  ]
+}

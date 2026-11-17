@@ -15,7 +15,13 @@ defmodule Mix.Tasks.AshA2a.Receipts.Verify do
   ## Options
 
     * `--root` -- directory cited paths resolve against (default: cwd)
+    * `--legacy` -- legacy allowlist JSON (default: `receipts/legacy-receipts.json`
+      under the root, if present)
     * `--git` -- also check `Commit:` lines with `git cat-file -e`
+
+  Receipts listed in the legacy allowlist with a matching sha256 are reported
+  as `warning legacy_exempt` with their reason; a changed receipt is checked
+  normally.
 
   Exits non-zero (via `Mix.raise/1`) when any finding has error severity.
   """
@@ -26,11 +32,15 @@ defmodule Mix.Tasks.AshA2a.Receipts.Verify do
 
   @impl true
   def run(args) do
-    {opts, paths} = OptionParser.parse!(args, strict: [root: :string, git: :boolean])
+    {opts, paths} =
+      OptionParser.parse!(args, strict: [root: :string, git: :boolean, legacy: :string])
+
     root = Path.expand(opts[:root] || File.cwd!())
 
+    legacy_path = Path.expand(opts[:legacy] || "receipts/legacy-receipts.json", root)
+
     vopts =
-      [root: root] ++
+      [root: root, legacy: Verifier.load_legacy(legacy_path)] ++
         if(opts[:git], do: [commit_exists: &commit_exists?(&1, root)], else: [])
 
     files = if paths == [], do: default_files(root), else: paths

@@ -1273,6 +1273,8 @@ defmodule AshA2A.Transport.Runtime do
     :authority_expired,
     :authority_revoked,
     :authority_constraint_mismatch,
+    :kill_switch_tripped,
+    :kill_switch_unavailable,
     :capability_not_found,
     :action_not_found,
     :ambiguous_skill

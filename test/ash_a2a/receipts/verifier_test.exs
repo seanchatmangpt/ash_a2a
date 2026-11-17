@@ -100,4 +100,59 @@ defmodule AshA2A.Receipts.VerifierTest do
   test "verify_file reports an unreadable receipt", %{tmp_dir: root} do
     assert [%{code: :receipt_unreadable}] = Verifier.verify_file(Path.join(root, "absent.md"))
   end
+
+  describe "legacy allowlist" do
+    defp legacy_entry(rel, text) do
+      %{
+        path: rel,
+        sha256: sha(text),
+        code: :verified_without_run_log,
+        reason: "predates run logs"
+      }
+    end
+
+    test "matching hash is reported as legacy_exempt, not silent", %{tmp_dir: root} do
+      text = "Standing: PASS\n"
+      path = write!(root, "receipts/old.md", text)
+      legacy = [legacy_entry("receipts/old.md", text)]
+
+      found = Verifier.verify_file(path, root: root, legacy: legacy)
+      assert [%{code: :legacy_exempt, severity: :warning, detail: detail}] = found
+      assert detail =~ "predates run logs"
+      assert Verifier.ok?(found)
+    end
+
+    test "a modified legacy receipt is refused again", %{tmp_dir: root} do
+      original = "Standing: PASS\n"
+      legacy = [legacy_entry("receipts/old.md", original)]
+      path = write!(root, "receipts/old.md", original <> "edited\n")
+
+      found = Verifier.verify_file(path, root: root, legacy: legacy)
+      assert [%{code: :verified_without_run_log, severity: :error}] = found
+      refute Verifier.ok?(found)
+    end
+
+    test "only the listed code is exempted", %{tmp_dir: root} do
+      text = "Standing: PASS\n`test/nope_test.exs`\n"
+      path = write!(root, "receipts/old.md", text)
+
+      found =
+        Verifier.verify_file(path, root: root, legacy: [legacy_entry("receipts/old.md", text)])
+
+      assert :test_missing in codes(found)
+      refute Verifier.ok?(found)
+    end
+
+    test "load_legacy reads the JSON and tolerates absence", %{tmp_dir: root} do
+      assert Verifier.load_legacy(Path.join(root, "none.json")) == []
+
+      json =
+        ~s({"entries":[{"path":"a.md","sha256":"AB","code":"verified_without_run_log","reason":"r"}]})
+
+      file = write!(root, "legacy.json", json)
+
+      assert [%{path: "a.md", sha256: "ab", code: :verified_without_run_log, reason: "r"}] =
+               Verifier.load_legacy(file)
+    end
+  end
 end

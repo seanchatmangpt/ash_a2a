@@ -228,18 +228,16 @@ verifies the binding.
 
 ### Authority findings
 
-Two refusals are ended or recorded less strictly than the others. The probes
-assert what the library does and name these where they touch them:
-
-- `kill_switch_tripped` ends the task `TASK_STATE_FAILED`, not
-  `TASK_STATE_REJECTED`, although nothing ran. `AshA2A.Transport.Runtime.admission_refusal?/1`
-  lists the other `CommandBus` gate codes (`authority_required`,
-  `authority_revoked`, ...) but not `kill_switch_tripped` (nor `refused_lease`,
-  `kill_switch_unavailable`).
-- The receipt of an `authority_revoked` refusal before DO says
-  `terminal_status: :failed`. `AshA2A.Receipt` documents `:failed` as "DO ran", and
-  its `@pre_do_refusal_codes` lacks `authority_revoked`, `authority_expired`,
-  `authority_constraint_mismatch`, `refused_lease` and `kill_switch_unavailable`.
+A refusal that precedes any effect ends the task `TASK_STATE_REJECTED` (the
+agent "has decided to not perform the task") and its receipt says
+`terminal_status: :refused`; only an effect that started and failed is
+`TASK_STATE_FAILED` / `:failed`. This covers `kill_switch_tripped`,
+`kill_switch_unavailable`, `authority_revoked`, `authority_expired` and
+`authority_constraint_mismatch` on every path, through the shared
+`AshA2A.Transport.Runtime.admission_refusal?/1` and
+`AshA2A.Receipt.terminal_status/1`. No new `terminal_status` value exists, and
+receipts committed earlier with `:failed` for these codes still verify: the
+binding digests the stored value.
 
 Fixed while writing the probes: `AshA2A.Authority.Broker.Ekv.verify/2` accepted
 an authority that carried a standing grant's token id with another subject or

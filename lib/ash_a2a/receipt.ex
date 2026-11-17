@@ -99,8 +99,13 @@ defmodule AshA2A.Receipt do
   @pre_do_refusal_codes [
     :receipt_anchor_unavailable,
     :kill_switch_tripped,
+    :kill_switch_unavailable,
     :authority_required,
     :authority_mismatch,
+    :authority_expired,
+    :authority_revoked,
+    :authority_constraint_mismatch,
+    :model_authority_refused,
     :consequence_unclassified,
     :capability_release_refused,
     :capability_not_found,
