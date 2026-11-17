@@ -35,7 +35,7 @@ Green means the command printed what is quoted and exited 0 in this tree on that
 |---|---|---|
 | Prover | `mix ash_a2a.sim --prove` | green: `243 probes over 86 surface items: 243 pass, 0 fail, 0 skip` |
 | Parity | `mix ash_a2a.sim --parity --strict` | green: `total 1283 pass, 0 fail, 0 known, 0 skip` (venv from `scripts/a2a_v1_1_parity/setup.sh`) |
-| Docs tests | `mix test test/docs_truth_wave2_test.exs test/ash_a2a/docs_truth_test.exs test/docs_nav_coverage_test.exs test/ash_a2a/docs/catalogs_court_test.exs test/lane_l05/resubscribe_claim_test.exs` | green at the start of the pass (65 passed); re-run result at the end is in the hand-off |
+| Docs tests | `mix test test/docs_truth_wave2_test.exs test/ash_a2a/docs_truth_test.exs test/docs_nav_coverage_test.exs test/ash_a2a/docs/catalogs_court_test.exs test/lane_l05/resubscribe_claim_test.exs` | green at the start of the pass (65 passed); re-run at the end of the pass: 65 passed |
 | Breaking-change tests | `mix test.all` on the 15 files named in the CHANGELOG Breaking section | green: 132 passed and 34 passed across two runs; the first run's 34 failures were `The module AshA2A.Test.Fixture.* does not exist` while another process recompiled the shared build, and the same files passed on rerun |
 | Other CHANGELOG-cited files | `mix test.all` on 19 more files (grpc must, generation stream, live session, card signatures, event journal ets/writer/ekv, doctor, grpc supervisor, email dkim/ledger, parity test) | green: 137 passed (24 excluded by the `serial_solo`/`serial_shard` tags) |
 | Hex package | `mix hex.build --unpack -o <dir>` | green: exit 0; every file listed in the ExDoc extras is in the package |
@@ -44,7 +44,7 @@ Green means the command printed what is quoted and exited 0 in this tree on that
 | Receipts | `mix ash_a2a.receipts.verify` | **red**: exit 1, three `verified_without_run_log` findings (`a10-ingress-wire.md`, `f2-copilot-wire-verify.md`, `z11-actuation.md`) |
 | MCP drive | `python3 scripts/mcp_drive.py` | **red**: exit 1, 141 items served, 47 uncovered (email and authority surface items with no MCP mapping, added while this pass ran). Last clean run: 2026-11-16, 93 of 93. `--call` and `--list` work |
 | Mutation gate | `mix ash_a2a.chicago.mutate --require-killed` | partly green: the full run killed 43 of 46 mutants and exited 1 (`blocked: 3`, `loaded AshA2A.Protocol.AgentCardSignature differs from its on-disk BEAM`: that module was recompiled in the shared build during the run); the three blocked ids (`card_alg_allowlist_ok`, `card_key_alg_ok`, `card_signature_verify_true`) rerun alone with `--only` were all killed and exited 0. Rerun the whole gate on a private build at the release commit |
-| ExDoc | `MIX_ENV=dev mix docs` | DOCS_RESULT |
+| ExDoc | `MIX_ENV=dev mix docs` | green: `MIX_ENV=dev MIX_BUILD_PATH=<private> mix docs` exits 0; ExDoc warnings 258 unique (550 raw) before this pass, 165 unique (340 raw) after, none from README, CHANGELOG or `docs/`; the rest come from `@moduledoc`/`@doc` text in `lib/` |
 
 Not run in this pass: `mix test.all` over the whole suite (the coordinator runs it; the last
 full run, on an earlier tree on 2026-11-16, was 5906 of 5955 with the failures environment-bound
@@ -75,6 +75,13 @@ prints about 40 compiler warnings, so expect it to fail until they are cleared) 
 9. `mix.exs` `files:` omits `docs/archive`, yet `a2a-v1-1-conformance.md` links to
    `docs/archive/jira-releases/v26.11.13/RECEIPT.md`; the Hex copy carries a dead link. Mark the
    link repo-only or ship the file.
+
+10. The ExDoc extras now include `CONTRIBUTING.md` and the explanation pages `copilot-membrane.md`,
+    `closure-implementations.md` and `chicago-conformance-court.md`, which `mix.exs` `files:`
+    does not ship (they are linked from the README as repo-only). Docs built from the repository
+    show them; the Hex tarball does not contain them. Add them to `files:` or drop the extras.
+11. The ExDoc run still reports warnings from `@moduledoc`/`@doc` text in `lib/` (references to
+    hidden or undefined functions); see the hand-off counts. They are fixed in the source files.
 
 ## Verification commands
 

@@ -407,8 +407,6 @@ if Code.ensure_loaded?(Plug) do
       )
     end
 
-    defp closed_wire_state?(_), do: false
-
     # A client may register a webhook on the initial send rather than through
     # the CRUD methods, which is how the spec's delivery flow reads and how the
     # compliance suite drives it. The task does not exist until the call

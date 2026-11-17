@@ -32,11 +32,10 @@ defmodule AshA2A.Semantic.HookReactor.Engine do
          wasm_digest: :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower)
        }}
     else
+      # Typed refusals (including `%AshGraphLaw.Refusal{}`, which carries a
+      # `:code`) pass through unchanged.
       {:error, %{code: _} = typed} ->
         {:error, typed}
-
-      {:error, %AshGraphLaw.Refusal{message: msg}} ->
-        {:error, %{code: :hook_engine_unavailable, detail: msg}}
     end
   rescue
     error -> {:error, %{code: :hook_engine_unavailable, detail: Exception.message(error)}}

@@ -241,8 +241,8 @@ defmodule AshA2A.Protocol.CardCache do
     end
   end
 
-  defp stale_or_error(nil, reason), do: {:error, reason}
-
+  # `revalidate/6` always holds a stored entry (the cold path never gets here),
+  # so a failed revalidation serves the stored card as stale.
   defp stale_or_error(entry, _reason) do
     case decode_body(entry.body) do
       {:ok, card} -> {:ok, card, :stale}

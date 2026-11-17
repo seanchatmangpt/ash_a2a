@@ -1063,6 +1063,8 @@ defmodule AshA2A.Protocol.JSON do
   # or 6 fractional digits, whichever is the shortest that loses nothing
   # (a DateTime holds microseconds at most). The fraction follows the value,
   # never the struct's declared precision, so `.250000` is written `.250`.
+  defp encode_timestamp(nil), do: nil
+
   defp encode_timestamp(%DateTime{} = dt) do
     utc = DateTime.shift_zone!(dt, "Etc/UTC")
     {micros, _precision} = utc.microsecond
@@ -1080,8 +1082,6 @@ defmodule AshA2A.Protocol.JSON do
   end
 
   defp pad_digits(n, width), do: n |> Integer.to_string() |> String.pad_leading(width, "0")
-
-  defp encode_timestamp(nil), do: nil
 
   defp encode_bytes(nil), do: nil
   defp encode_bytes(bytes) when is_binary(bytes), do: Base.encode64(bytes)

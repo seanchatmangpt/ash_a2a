@@ -107,6 +107,8 @@ defmodule AshA2A.Sim.GrpcHandler do
     end
   end
 
+  def handle_extended_card(_ctx), do: {:error, Error.invalid_request("authentication required")}
+
   # Over gRPC the card travels as a protobuf `AgentCard`, and a client
   # verifies the ProtoJSON form of the message it received. The signature is
   # therefore computed over that form (the card after a round trip through the
@@ -121,12 +123,9 @@ defmodule AshA2A.Sim.GrpcHandler do
     |> Protobuf.JSON.to_encodable()
     |> case do
       {:ok, encodable} -> encodable
-      encodable when is_map(encodable) -> encodable
     end
     |> AshA2A.Protocol.Plug.CardServe.sign_card(sign_with)
   end
-
-  def handle_extended_card(_ctx), do: {:error, Error.invalid_request("authentication required")}
 
   # `AshA2A.Transport.Plug` reads `ctx.principal`; an unauthenticated gRPC call
   # carries none, so it is the anonymous principal.

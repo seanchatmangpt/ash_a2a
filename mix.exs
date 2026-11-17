@@ -114,8 +114,13 @@ defmodule AshA2A.MixProject do
             "README.md",
             "CHANGELOG.md",
             "usage-rules.md",
+            "CONTRIBUTING.md",
+            "CODE_OF_CONDUCT.md",
+            "SECURITY.md",
+            "LICENSE",
             # Tutorials
             "docs/tutorials/getting-started.md",
+            "docs/tutorials/prove-your-agent-with-the-simulation-server.md",
             "documentation/tutorials/a2a-your-first-agent.livemd",
             "documentation/tutorials/secure-your-agent.livemd",
             "documentation/tutorials/stream-and-elicit.livemd",
@@ -132,6 +137,20 @@ defmodule AshA2A.MixProject do
             "docs/how-to/secure-an-a2a-deployment.md",
             "docs/how-to/migrate-from-a2a-hex.md",
             "docs/how-to/mount-email-gateway.md",
+            "docs/how-to/choose-a-reply-mode.md",
+            "docs/how-to/operate-the-event-journal.md",
+            "docs/how-to/sign-agent-cards.md",
+            "docs/how-to/mount-the-grpc-server-in-your-endpoint.md",
+            "docs/how-to/run-the-simulation-server.md",
+            "docs/how-to/check-a2a-v1-1-parity.md",
+            "docs/how-to/control-the-sim-over-mcp.md",
+            "docs/how-to/run-doctor.md",
+            "docs/how-to/verify-receipts.md",
+            "docs/how-to/optional-dependencies.md",
+            "docs/how-to/v1-1-live-and-generations.md",
+            "docs/how-to/run-the-copilot-pipeline.md",
+            "docs/how-to/approver-apps.md",
+            "docs/how-to/release.md",
             # Reference
             "docs/reference/index.md",
             {"documentation/dsls/DSL-AshA2A.md",
@@ -165,12 +184,23 @@ defmodule AshA2A.MixProject do
             "docs/reference/conference-sim-model.md",
             "docs/reference/graphlaw-v26.10.28-compat.md",
             "docs/reference/a2a-v1_1-readiness.md",
+            "docs/reference/a2a-v1-1-parity-findings.md",
+            "docs/reference/a2a-error-coverage.md",
+            "docs/reference/agent-card-honesty.md",
+            "docs/reference/event-journal.md",
+            "docs/reference/environment-setup.md",
+            "docs/reference/fuzz-findings-v26.11.15.md",
+            "docs/reference/security-review-v26.11.15.md",
+            "docs/reference/release-readiness-v26.11.15.md",
             # Explanation
             "docs/explanation/architecture.md",
             "docs/explanation/message-lifecycle.md",
             "docs/explanation/canonical-graph-identity.md",
             "docs/explanation/graphlaw-wasm-integration.md",
-            "docs/explanation/pplan-seams.md"
+            "docs/explanation/pplan-seams.md",
+            "docs/explanation/copilot-membrane.md",
+            "docs/explanation/closure-implementations.md",
+            "docs/explanation/chicago-conformance-court.md"
           ],
           # Entries already shaped as {path, opts} pass through unchanged.
           fn
@@ -179,7 +209,7 @@ defmodule AshA2A.MixProject do
           end
         ),
       groups_for_extras: [
-        Project: ~r"README|CHANGELOG|usage-rules",
+        Project: ~r"README|CHANGELOG|usage-rules|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY|LICENSE",
         Tutorials: ~r"(docs|documentation)/tutorials",
         "How-to guides": ~r"docs/how-to",
         Reference: ~r"docs/reference|documentation/dsls",
@@ -187,6 +217,32 @@ defmodule AshA2A.MixProject do
       ],
       source_ref: "v#{@version}",
       source_url: "https://github.com/seanchatmangpt/ash_a2a",
+      # Pages that name internal (`@moduledoc false`) modules, functions that `use`
+      # generates into the host module, or functions that earlier releases removed
+      # (the CHANGELOG is history). Every other page must resolve cleanly.
+      skip_undefined_reference_warnings_on: [
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "docs/explanation/architecture.md",
+        "docs/explanation/message-lifecycle.md",
+        "docs/how-to/authenticate-agent-requests.md",
+        "docs/how-to/mount-the-grpc-server-in-your-endpoint.md",
+        "docs/how-to/observe-dispatch-with-ocel.md",
+        "docs/how-to/run-the-simulation-server.md",
+        "docs/how-to/secure-an-a2a-deployment.md",
+        "docs/how-to/use-role-based-llm-resolution.md",
+        "docs/how-to/verify-authority-on-async-paths.md",
+        "docs/reference/a2a-spec-version-mapping.md",
+        "docs/reference/a2a-v1-1-conformance.md",
+        "docs/reference/a2a-v1-1-parity-findings.md",
+        "docs/reference/a2a-v1-conformance.md",
+        "docs/reference/c2-certificate.md",
+        "docs/reference/configuration.md",
+        "docs/reference/conformance-profiles.md",
+        "docs/reference/dsl.md",
+        "docs/reference/event-journal.md",
+        "docs/reference/telemetry.md"
+      ],
       groups_for_modules: [
         "Getting started": [AshA2A, AshA2A.Agent, AshA2A.Info, AshA2A.Domain, AshA2A.Dsl],
         Protocol: ~r/^AshA2A\.Protocol\./,

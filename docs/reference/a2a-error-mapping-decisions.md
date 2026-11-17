@@ -26,7 +26,7 @@ Closed as VG-01..VG-03 in [parity findings](a2a-v1-1-parity-findings.md).
 
 ## Decision 2: absent protocol version
 
-Rule: an absent version is `"0.3"` everywhere (spec section 3.6.2; `Version.parse_header/1`).
+Rule: an absent version is `"0.3"` everywhere (spec section 3.6.2; `AshA2A.Protocol.Version.parse_header/1`).
 `PushDelivery.payload_for/3` now defaults a config without `protocol_version` to `"0.3"` instead
 of `"1.0"`. Behaviour is unchanged in effect, because both are below 1.1 and strip the v1.1-only
 fields; only the documented default now matches the header gate. `AshA2A.Protocol.Version`'s

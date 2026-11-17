@@ -250,7 +250,6 @@ defmodule AshA2A.Actuation.Engine do
           {:ok, claims, nonce}
         else
           {:refused, _} = refused -> refused
-          _ -> {:refused, :unattested}
         end
 
       _ ->

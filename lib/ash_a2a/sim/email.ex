@@ -1170,10 +1170,13 @@ if Code.ensure_loaded?(Bandit) do
       statuses = Enum.map(replies, & &1.status)
       last = List.last(replies)
 
-      last
-      |> Map.put(:statuses, statuses)
-      |> Map.put(:landed, Enum.any?(replies, & &1.landed))
-      |> then(fn r -> advance_clock(window + 1) && r end)
+      result =
+        last
+        |> Map.put(:statuses, statuses)
+        |> Map.put(:landed, Enum.any?(replies, & &1.landed))
+
+      :ok = advance_clock(window + 1)
+      result
     end
 
     # == judgement ================================================================

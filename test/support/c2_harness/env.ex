@@ -79,6 +79,23 @@ defmodule C2Harness.Env do
   def issue(%__MODULE__{} = env, effect_map_or_bytes, []),
     do: issue_real(env, effect_map_or_bytes, [1, 2])
 
+  def issue(%__MODULE__{fleet: f} = env, effect_map_or_bytes, opts) do
+    eff =
+      if is_binary(effect_map_or_bytes), do: effect_map_or_bytes, else: bytes(effect_map_or_bytes)
+
+    track(env, :keymaster_standin)
+
+    req =
+      opts
+      |> Map.new(fn {k, v} -> {Atom.to_string(k), v} end)
+      |> Map.merge(%{
+        "op" => "issue_actuation",
+        "effect" => Base.url_encode64(eff, padding: false)
+      })
+
+    km_issued(eff, Fleet.km(f, req))
+  end
+
   @doc """
   An intended issuance from the REAL authorities named by `which` (`[1, 2]` both, `[1]` or
   `[2]` one). One authority is below the court actuator's quorum of 2; this exists to prove
@@ -170,23 +187,6 @@ defmodule C2Harness.Env do
     {:ok, bytes} = Base.url_decode64(msg, padding: false)
     {:ok, m} = Sa2aCrypto.SignedMessage.parse(bytes)
     %{"not_before" => m["not_before"], "expires" => m["expires"]}
-  end
-
-  def issue(%__MODULE__{fleet: f} = env, effect_map_or_bytes, opts) do
-    eff =
-      if is_binary(effect_map_or_bytes), do: effect_map_or_bytes, else: bytes(effect_map_or_bytes)
-
-    track(env, :keymaster_standin)
-
-    req =
-      opts
-      |> Map.new(fn {k, v} -> {Atom.to_string(k), v} end)
-      |> Map.merge(%{
-        "op" => "issue_actuation",
-        "effect" => Base.url_encode64(eff, padding: false)
-      })
-
-    km_issued(eff, Fleet.km(f, req))
   end
 
   defp km_issued(eff, reply) do

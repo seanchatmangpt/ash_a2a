@@ -717,6 +717,8 @@ if Code.ensure_loaded?(Bandit) do
       ]
     end
 
+    defp jsonrpc_scenarios(_method), do: []
+
     # The extended card is signed with the key of the public card
     # (`info.card_jwks`), over the card each binding serves.
     defp extended_signature!(info, card) do
@@ -750,8 +752,6 @@ if Code.ensure_loaded?(Bandit) do
 
       "#{length(signatures)} signature, kid #{Enum.join(kids, ", ")} verified over the served extended card; one changed byte refused"
     end
-
-    defp jsonrpc_scenarios(_method), do: []
 
     # `AshA2A.Transport.Plug` serves the task methods itself and answers the
     # documented typed refusal for the methods it does not carry.

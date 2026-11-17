@@ -96,9 +96,6 @@ defmodule AshA2A.Eval.Runner do
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error, {:http_status, status, snippet(body)}}
 
-      {:ok, %Req.Response{} = resp} ->
-        {:error, {:http_status, resp.status, ""}}
-
       {:error, exception} ->
         {:error, {:transport, Exception.message(exception)}}
     end

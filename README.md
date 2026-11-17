@@ -432,7 +432,7 @@ release). Standing: PARTIAL (no v1.1 TCK verdict).
 
 - Emitted cards advertise `protocolVersion` 1.1; the server accepts
   `A2A-Version` 0.3, 1.0 and 1.1 (`AshA2A.Protocol.Version.supported_default/0`); the
-  client-header default (`Version.default/0`) is still 1.0. Select v1.1 with the
+  client-header default (`AshA2A.Protocol.Version.default/0`) is still 1.0. Select v1.1 with the
   `A2A-Version: 1.1` header.
 - Per the conformance statement, the default test tier ran 4705 tests with 0 failures
   at `d8f593dc` (not re-run by the doc pass); the serial tier has env-blocked tests

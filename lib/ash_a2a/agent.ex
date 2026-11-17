@@ -225,30 +225,17 @@ defmodule AshA2A.Agent do
       # Generated catch-all: every `handle_info` clause the ported
       # `AshA2A.Protocol.Agent` defines (task_done, DOWN/subscriber cleanup)
       # precedes this wrapper in clause order, so only messages NONE of those
-      # clauses match land here. The runtime recognizes `:ash_a2a_task_done`
-      # and its own (watcher-era, backup) DOWN shape; anything else unhandled
-      # falls through to `unexpected_info/3`. A DOWN-shaped message that no
-      # table matched is still a subscriber's monitor firing (SSE disconnect)
-      # -- dropping the registration here, exactly as the ported agent's own
-      # DOWN-miss branch does, keeps that cleanup clause-order-proof instead
-      # of leaking it into the log-and-continue swallow.
+      # clauses match land here. In particular every `{:DOWN, ...}` message is
+      # consumed by the ported agent's DOWN clause (which also drops a
+      # subscriber's monitor when it is not a task worker), so none reaches
+      # this clause. The runtime recognizes `:ash_a2a_task_done` and its own
+      # (watcher-era, backup) DOWN shape; anything else unhandled falls
+      # through to `unexpected_info/3`.
       @impl GenServer
       def handle_info(msg, state) do
         case AshA2A.Transport.Runtime.handle_info(msg, state) do
-          :unhandled ->
-            state =
-              case msg do
-                {:DOWN, ref, :process, _pid, _reason} ->
-                  AshA2A.Protocol.Agent.State.drop_subscriber(state, ref)
-
-                _other ->
-                  state
-              end
-
-            AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
-
-          reply ->
-            reply
+          :unhandled -> AshA2A.Transport.Runtime.unexpected_info(__MODULE__, msg, state)
+          reply -> reply
         end
       end
 

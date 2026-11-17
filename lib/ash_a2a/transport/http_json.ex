@@ -599,8 +599,6 @@ defmodule AshA2A.Transport.HTTPJSON do
     end
   end
 
-  defp dispatch(conn, _opts), do: not_found(conn)
-
   # -- push-config CRUD ----------------------------------------------------------
 
   defp push_collection(conn, opts, task_id) do

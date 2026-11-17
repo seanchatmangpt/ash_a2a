@@ -373,10 +373,7 @@ defmodule AshA2A.Telemetry.OcelBroadcaster do
 
   defp to_ocel_event(kind, _measurements, %{receipt: %AshA2A.Receipt{} = receipt}, _time)
        when kind in [:receipt_committed, :receipt_outboxed] do
-    case AshA2A.SemanticProjection.ocel_event(receipt) do
-      %{} = event -> event
-      _ -> nil
-    end
+    AshA2A.SemanticProjection.ocel_event(receipt)
   end
 
   defp to_ocel_event(:dispatch_stop, measurements, metadata, time)

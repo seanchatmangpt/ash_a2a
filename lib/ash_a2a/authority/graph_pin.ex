@@ -91,10 +91,9 @@ defmodule AshA2A.Authority.GraphPin do
     defp ensure_started do
       case Process.whereis(unquote(name)) do
         nil ->
-          case start_link() do
-            {:ok, _} -> :ok
-            {:error, {:already_started, _}} -> :ok
-          end
+          # `start_link/1` already maps `:already_started` to `{:ok, pid}`.
+          {:ok, _} = start_link()
+          :ok
 
         _pid ->
           :ok

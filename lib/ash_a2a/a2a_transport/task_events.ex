@@ -326,6 +326,11 @@ defmodule AshA2A.A2ATransport.TaskEvents do
     end
   end
 
+  def handle_call(:push_opts, _from, state), do: {:reply, state.push, state}
+
+  def handle_call({:attempts, task_id}, _from, state),
+    do: {:reply, state.attempts |> Map.get(task_id, []) |> Enum.reverse(), state}
+
   defp already_logged?(gens, task_id, kind, opts) when kind != "task" do
     gen = Keyword.get(opts, :generation)
     Keyword.get(opts, :once, false) and is_integer(gen) and gen <= Map.get(gens, task_id, 0)
@@ -398,11 +403,6 @@ defmodule AshA2A.A2ATransport.TaskEvents do
 
     {:reply, seq, state}
   end
-
-  def handle_call(:push_opts, _from, state), do: {:reply, state.push, state}
-
-  def handle_call({:attempts, task_id}, _from, state),
-    do: {:reply, state.attempts |> Map.get(task_id, []) |> Enum.reverse(), state}
 
   @impl true
   def handle_cast({:attempt, task_id, attempt}, state) do

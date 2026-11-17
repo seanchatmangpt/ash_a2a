@@ -179,8 +179,6 @@ defmodule AshA2A.Transport.Plug do
     end
   end
 
-  def call(conn, _opts), do: send_resp(conn, 404, "Not Found")
-
   # -- agent card ------------------------------------------------------------
 
   @doc """

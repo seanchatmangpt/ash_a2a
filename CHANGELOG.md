@@ -158,11 +158,11 @@ Each item says what changed and what to do.
   on 2026-11-16 it killed 19 of 19 mutants then in the catalog). The CI workflow
   `.github/workflows/proofs.yml` runs the prover, parity, MCP drive and the mutation gate; it has
   not run on a remote runner.
-- `AshA2A.Transport.GRPC.UnknownMethod.install/1` gives an unknown gRPC method `UNIMPLEMENTED`
+- `UnknownMethod.install/1` (module `AshA2A.Transport.GRPC.UnknownMethod`, internal) gives an unknown gRPC method `UNIMPLEMENTED`
   (status 12, Trailers-Only) in an endpoint of your own; the supervisor installs it for you. Guide:
   `docs/how-to/mount-the-grpc-server-in-your-endpoint.md`. Test: `test/grpc_supervisor_restart_test.exs`.
 - Public readers for configuration defaults: `AshA2A.Dispatcher.dispatch_hooks/0`,
-  `AshA2A.Protocol.ID.generator/0`, `AshA2A.Email.Sender.Spool.spool_dir/1` and
+  `ID.generator/0` (module `AshA2A.Protocol.ID`, internal), `AshA2A.Email.Sender.Spool.spool_dir/1` and
   `AshA2A.GraphLaw.EngineLoad.unpinned_allowed?/0`. `test/ash_a2a/docs_truth_test.exs` checks
   the documented default of each against them.
 - `AshA2A.Transport.HTTPJSON` accepts `:agent_card_opts`, like `AshA2A.Transport.Plug`, so

@@ -336,7 +336,6 @@ defmodule AshA2A.Transport.Runtime do
       payload =
         case AshA2A.Protocol.JSON.encode(event) do
           {:ok, map} when is_map(map) -> %{"messageUpdate" => map}
-          map when is_map(map) -> %{"messageUpdate" => map}
           _ -> %{"messageUpdate" => %{"taskId" => task.id}}
         end
 

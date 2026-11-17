@@ -139,8 +139,8 @@ v1.1 Standing is PARTIAL; see [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 | `mount ... tenant: "t"` | `nil` | Domain mount option; carried as `tenant` on the card interface. REST routes also accept a leading `/{tenant}` segment. |
 
 `A2A-Version: 1.1` selects v1.1 behavior. Accepted versions default to
-`["0.3", "1.0", "1.1"]` (`Version.supported_default/0`); emitted cards carry
-`protocolVersion` 1.1; the client-side header default (`Version.default/0`) is `"1.0"`.
+`["0.3", "1.0", "1.1"]` (`AshA2A.Protocol.Version.supported_default/0`); emitted cards carry
+`protocolVersion` 1.1; the client-side header default (`AshA2A.Protocol.Version.default/0`) is `"1.0"`.
 
 ## Application config — additional keys
 
@@ -161,7 +161,7 @@ literal default and are read from source.
 | `:graphlaw_allow_unpinned` | `false` | `AshA2A.GraphLaw.EngineLoad` — only `true` admits an unpinned engine, read per call. |
 | `:event_journal` | unset (no journal) | `AshA2A.Protocol.EventJournal` — `{module, ref}` of the per-task event journal that task writes append to and `tasks/resubscribe` replays from. See [operate the event journal](../how-to/operate-the-event-journal.md). |
 | `:event_journal_keep_last` | 256 events | `AshA2A.Protocol.EventJournal.keep_last/0` — events kept per task once it is terminal; a non-integer or negative value falls back to the default. |
-| `:resubscribe_orphan_grace_ms` | 500 ms | `AshA2A.Protocol.Plug.SSE` — how long `tasks/resubscribe` waits on a non-terminal task that has no live producer before closing with `StreamError` `PRODUCER_UNAVAILABLE`. |
+| `:resubscribe_orphan_grace_ms` | 500 ms | The `tasks/resubscribe` SSE writer — how long `tasks/resubscribe` waits on a non-terminal task that has no live producer before closing with `StreamError` `PRODUCER_UNAVAILABLE`. |
 
 ## Environment variables
 

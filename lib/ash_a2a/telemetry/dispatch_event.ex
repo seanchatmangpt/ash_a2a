@@ -110,10 +110,10 @@ defmodule AshA2A.Telemetry.DispatchEvent do
   def error_code(%{__exception__: true, __struct__: module}), do: "exception:" <> inspect(module)
 
   def error_code(error) do
-    case Redact.error_summary(error) do
-      %{kind: :exception, exception: module} -> "exception:" <> inspect(module)
-      %{kind: kind} -> to_string(kind)
-    end
+    # Exceptions are handled by the clauses above, so the summary here is
+    # always a plain `%{kind: kind}`.
+    %{kind: kind} = Redact.error_summary(error)
+    to_string(kind)
   end
 
   defp build(event_type, attributes, metadata, event_time) do

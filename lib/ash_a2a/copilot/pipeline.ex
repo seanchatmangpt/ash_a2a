@@ -341,17 +341,6 @@ defmodule AshA2A.Copilot.Pipeline do
       {:authority, {:refused, :insufficient_authority, detail}} ->
         {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
          {:refuse, %{code: :authority, reason: detail}}}
-
-      {:authority, other} ->
-        {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
-         {:refuse, %{code: :authority, reason: {:unexpected, other}}}}
-
-      {:attestation, other} ->
-        {%{state | bridge: record(state, intent.coordinator_id, :error_reported)},
-         {:refuse, %{code: :attestation, reason: {:unexpected, other}}}}
-
-      {:strain, other} ->
-        {state, {:refuse, %{code: :strain, reason: {:unexpected, other}}}}
     end
   end
 
@@ -539,8 +528,6 @@ defmodule AshA2A.Copilot.Pipeline do
       {:ok, claims}
     else
       {:refused, _} = refused -> refused
-      {:error, reason} -> {:refused, reason}
-      other -> {:refused, {:unexpected, other}}
     end
   end
 

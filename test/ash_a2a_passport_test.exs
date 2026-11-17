@@ -396,6 +396,13 @@ defmodule AshA2A.PassportTest do
 
       assert detail.expires_at == "2026-10-04T13:00:00Z"
     end
+
+    test "an unparseable expiresAt is refused as malformed, never raised" do
+      passport = %{issued(expires_at: ~U[2026-10-04 13:00:00Z]) | expires_at: "not-a-date"}
+
+      assert {:error, {:malformed, {:bad_member, "expiresAt"}}} =
+               Passport.verify(passport, @key, now: @now)
+    end
   end
 
   # ------------------------------------------------------------------
