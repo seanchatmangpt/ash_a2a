@@ -96,7 +96,11 @@ defmodule AshA2A.FuzzSseTest do
       whole = parse_whole(stream)
 
       size = byte_size(stream)
-      points = if size <= 100, do: Enum.to_list(0..size), else: for(_ <- 1..100, do: FuzzGen.int(size + 1))
+
+      points =
+        if size <= 100,
+          do: Enum.to_list(0..size),
+          else: for(_ <- 1..100, do: FuzzGen.int(size + 1))
 
       for at <- points do
         <<a::binary-size(^at), b::binary>> = stream
@@ -113,7 +117,10 @@ defmodule AshA2A.FuzzSseTest do
         FuzzGen.pick([
           fn -> FuzzGen.random_bytes(FuzzGen.int(200)) end,
           fn ->
-            Enum.join(for _ <- 1..FuzzGen.int(20)//1, do: FuzzGen.pick(["data: ", "\r", "\n", "{}", ":", "data:", "﻿", "\r\n"]))
+            Enum.join(
+              for _ <- 1..FuzzGen.int(20)//1,
+                  do: FuzzGen.pick(["data: ", "\r", "\n", "{}", ":", "data:", "﻿", "\r\n"])
+            )
           end,
           fn -> "data: " <> String.duplicate("x", 8_000) <> "\n\n" end,
           fn -> "data: {\"a\":" <> String.duplicate("1", 8_000) <> "}\n\n" end
@@ -135,7 +142,10 @@ defmodule AshA2A.FuzzSseTest do
     for _ <- 1..@iterations do
       payloads =
         for _ <- 1..(1 + FuzzGen.int(5)),
-            do: %{"result" => scrub(FuzzGen.json_safe(FuzzGen.term(3, 3))), "s" => "a\nb\rc" <> <<0xE2, 0x80, 0xA8>> <> "d\r\n"}
+            do: %{
+              "result" => scrub(FuzzGen.json_safe(FuzzGen.term(3, 3))),
+              "s" => "a\nb\rc" <> <<0xE2, 0x80, 0xA8>> <> "d\r\n"
+            }
 
       eol = eol()
 
@@ -149,7 +159,10 @@ defmodule AshA2A.FuzzSseTest do
 
       if got != payloads do
         bad = Enum.zip(got, payloads) |> Enum.find(fn {a, b} -> a != b end)
-        flunk("stream #{inspect(stream, limit: 300)} mismatch #{inspect(bad, limit: 40)} counts #{length(got)}/#{length(payloads)}")
+
+        flunk(
+          "stream #{inspect(stream, limit: 300)} mismatch #{inspect(bad, limit: 40)} counts #{length(got)}/#{length(payloads)}"
+        )
       end
     end
   end
@@ -163,5 +176,20 @@ defmodule AshA2A.FuzzSseTest do
     assert [%{"a" => 1}] = parse_whole("data: {\ndata: \"a\":\ndata: 1}\r\n\r\n")
     assert [%{"a" => 1}] = parse_whole("data:{\"a\":1}\r\r")
     assert [] = parse_whole(": only a comment\n\nretry: 5\n\nid: 3\n\n")
+  end
+
+  test "regression: a 60 KB event delivered one byte at a time is parsed in linear time" do
+    stream = "data: {\"a\":\"" <> String.duplicate("x", 60_000) <> "\"}\n\n"
+    chunks = for <<b <- stream>>, do: <<b>>
+
+    assert {:ok, [%{"a" => _}]} = FuzzGen.run_with_deadline(fn -> parse_chunks(chunks) end, 5_000)
+  end
+
+  test "regression: a stream ending in CR CR delivers its last event; CRLF split across chunks is one break" do
+    assert [%{"a" => 1}] = parse_chunks(["data: {\"a\":1}\r", "\r"])
+    assert [%{"a" => 1}] = parse_chunks(["data: {\"a\":1}\r", "\n", "\r", "\n"])
+
+    assert [%{"a" => 1}, %{"b" => 2}] =
+             parse_chunks(["data: {\"a\":1}\r\n\r\ndata: {\"b\":2}\n\n"])
   end
 end

@@ -405,4 +405,30 @@ defmodule AshA2A.FuzzHttpSurfaceTest do
       end
     end
   end
+
+  test "regression: a malformed query string is a 400 A2A error, not an escaped exception",
+       %{agent: agent} do
+    mod = AshA2A.Transport.HTTPJSON
+    opts = mod.init(agent: agent, base_url: "http://x/rest")
+
+    for q <- ["?a=%FF", "?%FF=1", "?a=%E2%82", "?pageSize=%"] do
+      conn = call(mod, opts, :get, "/tasks" <> q)
+      assert conn.status == 400, "#{q}: #{conn.status} #{conn.resp_body}"
+      assert %{"error" => %{"status" => "INVALID_ARGUMENT"}} = Jason.decode!(conn.resp_body)
+      assert_clean(conn.resp_body, q)
+    end
+  end
+
+  test "regression: a JSON-RPC batch through A2ATransport.Plug is answered, not raised", %{
+    agent: agent
+  } do
+    mod = AshA2A.A2ATransport.Plug
+    opts = mod.init(agent: agent, base_url: "http://x/a2a", json_rpc_path: [])
+
+    for body <- ["[]", "[1]", "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tasks/get\"}]"] do
+      conn = call(mod, opts, :post, "/", body, [{"content-type", "application/json"}])
+      assert conn.status == 200, body
+      assert well_formed_rpc?(Jason.decode!(conn.resp_body)), "#{body}: #{conn.resp_body}"
+    end
+  end
 end

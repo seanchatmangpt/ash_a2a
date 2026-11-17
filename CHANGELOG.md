@@ -147,7 +147,7 @@ Each item says what changed and what to do.
   against this repository and exited 1 on two findings (`authenticated_caller_disabled`,
   `config_receipt_binding_key_unset`), as it should for the test configuration.
 - `mix ash_a2a.receipts.verify` checks Markdown receipts against the files they cite; guide
-  `docs/how-to/verify-receipts.md`. On 2026-11-17 it exited 1 on this repository's own receipts
+  `docs/how-to/verify-receipts.md`; test `test/ash_a2a/receipts/verifier_test.exs` (run 2026-11-17). On 2026-11-17 it exited 1 on this repository's own receipts
   (three `verified_without_run_log` findings: `a10-ingress-wire.md`, `f2-copilot-wire-verify.md`,
   `z11-actuation.md`).
 - `AshA2A.Protocol.AgentCard.audit/2` reports discrepancies between a card's claims and the mounted
