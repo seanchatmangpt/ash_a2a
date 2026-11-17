@@ -94,7 +94,9 @@ defmodule AshA2A.FuzzGrpcFramingTest do
     for i <- 1..@iterations do
       data = FuzzGen.random_bytes(FuzzGen.int(64))
 
-      case FuzzGen.run_with_deadline(fn -> Framing.decode_frames(data, max_frame_bytes: 1_000) end) do
+      case FuzzGen.run_with_deadline(fn ->
+             Framing.decode_frames(data, max_frame_bytes: 1_000)
+           end) do
         {:ok, {:ok, l, rest}} when is_list(l) and is_binary(rest) -> :ok
         {:ok, {:error, _}} -> :ok
         other -> flunk("iteration #{i}: #{inspect(other)} for #{inspect(data)}")

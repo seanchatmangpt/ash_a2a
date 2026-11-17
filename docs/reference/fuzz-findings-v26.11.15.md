@@ -54,3 +54,39 @@ Wrong-typed scalar members (`contextId`, `taskId`, `metadata`, `name`, `text`,
 later in the code that consumed it; they are now refused at decode.
 
 Round-trip stability (decode, encode, JSON text, decode) is asserted for valid messages and tasks.
+
+
+## Wave 2: every other parser and verifier on the wire
+
+`FuzzGen.seed/1` now adds the `FUZZ_SEED` environment offset (default 0), so
+`FUZZ_SEED=3 mix test test/fuzz_sse_test.exs` re-runs a file on a different
+stream; `FuzzGen.iterations/1` scales a file's CI default with `FUZZ_ITERATIONS`
+(a percentage, default 100). Each new file stays under about 10 s at the default.
+Every new file was also run with `FUZZ_SEED=1..10`: 41 tests, all green each time.
+
+| File | Target |
+|---|---|
+| `test/fuzz_grpc_framing_test.exs` | `Transport.Grpc.Framing`: truncated header, length beyond the buffer, length 2^32-1, compressed flag without a codec, unknown flags, empty stream, 50,000 tiny frames, random chunking, trailers |
+| `test/fuzz_sse_test.exs` | `Protocol.Client.SSE`: parse(chunked(x)) == parse(x) for random chunkings and at every split point, CR/LF/CRLF, BOM, comments, `id`/`retry`/`event`, multi-line data, huge lines, the transports' frame shape |
+| `test/fuzz_email_test.exs` | `Email.Inbound.parse/1` and `Email.Dkim.verify/2`: every byte of a signed message flipped (3 masks), deletions, insertions, truncation, duplicate tags, folded and 500 KB headers, bad base64, `bh=` mismatch, random maps |
+| `test/fuzz_card_signature_test.exs` | `Wire.Jcs` and `AgentCardSignature.verify/3`: RFC 8785 vectors, idempotence, alg confusion, `crit`, `b64:false`, extra segments, non-UTF-8, every byte of a valid entry flipped |
+| `test/fuzz_task_store_test.exs` | ETS and Ekv `get`/`list`/`list_all` over corrupted rows; `EventJournal.replay_after/3` (ETS and Ekv) with out-of-order generations and corrupt rows |
+| `test/fuzz_http_surface_test.exs` | Real plugs with `Plug.Test`: HTTP+JSON paths (unicode, percent-encoding, double-encoded slashes, `message:send` suffix confusion), query strings (arrays, duplicates, malformed), JSON-RPC batch and envelopes on all three JSON-RPC plugs. Property: no raise, no 5xx, well-formed error body, no stack trace or internal detail |
+
+### Defects found and fixed
+
+1. **`Protocol.Client.SSE` quadratic parsing.** Each `feed/2` re-concatenated, re-normalized and re-split the whole buffer, so a large event delivered in small chunks cost O(n^2) (a 200 KB event one byte at a time did not finish in minutes). The parser now keeps the incomplete event as iodata and does work proportional to the new chunk. Regression: `a 60 KB event delivered one byte at a time is parsed in linear time`.
+2. **`Client.SSE` held a trailing CR.** A stream ending `...\r\r` withheld its last event until another byte arrived. A chunk ending in CR now ends its line immediately and a `\n` opening the next chunk is dropped (CRLF split across chunks is still one break).
+3. **`Client.SSE` did not ignore a leading UTF-8 BOM** (WHATWG SSE), even when split across chunks. Now ignored.
+4. **`AgentCardSignature.verify/3` and `sign/3` raised `UnicodeConversionError`** on a card containing a non-UTF-8 string or key (the canonicalizer was handed bytes that are not JSON). Now `{:error, :non_canonicalizable_card}`.
+5. **`AgentCardSignature` canonicalized integers outside +-(2^53-1)** (no RFC 8785 form; a 5,000-digit integer produced output that is not valid JSON). Now `{:error, :non_canonicalizable_card}`.
+6. **`TaskStore.ETS` raised `BadMapError` in `list/2` and `list_all/2`, and `get/2` returned `{:ok, garbage}`,** for a row that is not a task. Rows that are not `%Task{}` are now `:not_found` and absent from listings (the Ekv store already behaved this way).
+7. **`AshA2A.A2ATransport.Plug` raised `FunctionClauseError` on a JSON-RPC batch** (a JSON array body): the delegate handed the list to `Protocol.Plug.read_json_body/1`, which only accepted maps. A batch is now handed to `JSONRPC.handle/3` and answered.
+8. **`Transport.HTTPJSON` let `Plug.Conn.InvalidQueryError` escape** for a malformed query string (invalid percent-encoding or UTF-8, for example `?a=%FF`), so the host's default error page answered instead of the binding. Now HTTP 400 `INVALID_ARGUMENT`.
+
+### Checked and clean
+
+- gRPC framing: the compiler warning about `len` accessed inside `size(...)` that the brief cites for `framing.ex:118` is already gone at this commit (`take/3` uses `:erlang.split_binary/2` and the frame head match binds `len` once); the lane's regression test `the declared length (not a rebound variable) sizes each chunk` passes and pins the behaviour. The same warning does still exist for `len` in `lib/ash_a2a/attestation/key.ex:146,163` but those matches bind `len` in the same pattern, so they are correct.
+- DKIM and inbound email: no defect; every mutated message was refused with an atom reason or accepted with an unchanged meaning, and nothing raised.
+- `AgentCardSignature` entries: alg confusion (`none`, `HS256`, case, wrong key type), `crit`, extra segments, padding, non-UTF-8 protected headers, and every flipped byte are refused; a flipped `protected` byte never verifies. Header members `jwk`, `jku`, `x5c` and `b64:false` without `crit` are ignored (keys come only from the caller's keyset), not honoured.
+- JSON-RPC batch on `Protocol.Plug` and `Transport.Plug`, and every HTTP+JSON path and query shape: no 5xx, no leak.

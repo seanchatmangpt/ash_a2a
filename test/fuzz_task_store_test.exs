@@ -162,7 +162,14 @@ defmodule AshA2A.FuzzTaskStoreTest do
     :ok = EventJournal.append({ets_mod, ets}, "t", 3, :ok)
     :ets.insert(ets, {{"t", :bad, 1}, :junk})
     :ets.insert(ets, {:weird, :row})
-    :ok = EKV.put(ekv, "a2a_event/" <> Base.url_encode64("t", padding: false) <> "/zzz", %{task_id: "t", generation: :bad, event: 1})
+
+    :ok =
+      EKV.put(ekv, "a2a_event/" <> Base.url_encode64("t", padding: false) <> "/zzz", %{
+        task_id: "t",
+        generation: :bad,
+        event: 1
+      })
+
     :ok = EKV.put(ekv, "a2a_event/" <> Base.url_encode64("t", padding: false) <> "/yyy", :junk)
 
     for {mod, ref} <- [{ets_mod, ets}, {ekv_mod, ekv}], _ <- 1..@iterations do
@@ -171,7 +178,9 @@ defmodule AshA2A.FuzzTaskStoreTest do
         FuzzGen.pick([-1, 0, 3, 99, FuzzGen.huge_int(), -FuzzGen.huge_int()])
       ]
 
-      case FuzzGen.run_with_deadline(fn -> apply(EventJournal, :replay_after, [{mod, ref} | args]) end) do
+      case FuzzGen.run_with_deadline(fn ->
+             apply(EventJournal, :replay_after, [{mod, ref} | args])
+           end) do
         {:ok, {:ok, l}} when is_list(l) -> :ok
         {:ok, {:error, _}} -> :ok
         other -> flunk("#{inspect(mod)} #{inspect(args)}: #{inspect(other)}")
