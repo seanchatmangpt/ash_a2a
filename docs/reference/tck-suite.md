@@ -87,6 +87,30 @@ version witnessed green at this pin; TCK `main` needs Python 3.15+.
 TODO: re-run at `70f6f73c` (#258, aligns to spec 1.0.1) before moving
 `TCK_PIN_SHA`; the pin is deliberately not bumped here.
 
+### Expected TCK failures
+
+At TCK `104a7b4a` exactly one requirement fails, `HTTP_JSON-SVC-001`. The
+decision: our error content type (`application/json`) is kept. Spec 11.1 only
+says SHOULD `application/a2a+json`, and the 11.6 example does show it, but the
+TCK's MUST `HTTP_JSON-ERR-001` test requires the substring `application/json`
+in the same error Content-Type while the SVC-001 test requires the media type
+to be exactly `application/a2a+json`. A bare `application/a2a+json` fails the
+MUST; a string passing both needs a parameter valued `application/json`, which
+spec 14.1.1 forbids (the media type is registered with no parameters), so no
+legitimate value satisfies both and the MUST wins. The failure is recorded in
+`scripts/tck_expected_failures.json` (id, reason, contradicted requirement,
+spec sections, TCK commits). `scripts/tck_assert.py PATH --expected-failures
+scripts/tck_expected_failures.json --tck-sha SHA` tolerates only listed ids
+that still fail on the named TCK commits, and exits 1 for any unlisted failure
+or for a listed id that starts passing, so the list cannot rot (court:
+`test/tck_assert_script_test.exs`). The `tck` job's assertion step uses it and
+accepts `run_tck.py` exit 1 only when the assert passed with at least one
+expected failure. The unposted report text is
+[tck-upstream-issue-draft.md](tck-upstream-issue-draft.md). Witnessed
+2026-11-17 (all three bindings, `104a7b4a`): 240 passed, 2 failed (both
+SVC-001), 21 skipped; assert `pass=99 fail=1 not_tested=18 skipped=6 manual=9
+must_fail=0 expected_fail=1 unexpected_fail=0`, exit 0; `run_tck.py` exit 1.
+
 Optional: `mix ash_a2a.v1_conformance_report --tck-report
 reports/compatibility.json` folds a produced TCK report's counts into the
 JSON verdict.

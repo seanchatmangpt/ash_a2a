@@ -205,9 +205,17 @@ response can satisfy both. The SUT keeps the library default
 when configured (`content_type:`) or when the request `Accept`s it (spec
 section 14.1.1; "SHOULD" at the HTTP+JSON binding text). `scripts/tck_assert.py`
 reports `pass=99 fail=1 not_tested=18 skipped=6 manual=9 must_fail=0`.
-`run_tck.py` itself exits 1 because of that SHOULD failure, so the CI `tck`
-job (which also requires exit 0) would fail at this TCK commit; the CI pin is
-unchanged (`TCK_PIN_SHA` `263b9cfa`, `.github` is not edited here).
+`run_tck.py` itself exits 1 because of that SHOULD failure. The failure is
+recorded in `scripts/tck_expected_failures.json` (it cannot be fixed without
+breaking the MUST: the only common string needs a parameter that spec 14.1.1
+forbids), `scripts/tck_assert.py --expected-failures` tolerates only that id and
+fails if it starts passing, and the `tck` CI job uses it; with it the assert
+prints `... must_fail=0 expected_fail=1 unexpected_fail=0` and exits 0. See
+[TCK suite](tck-suite.md#expected-tck-failures); the unposted upstream report
+text is [tck-upstream-issue-draft.md](tck-upstream-issue-draft.md). The CI pin
+is unchanged (`TCK_PIN_SHA` `263b9cfa`); the expected-failure entry names only
+`104a7b4a`, so at the current pin it is ignored and a failure there would be
+unlisted.
 
 Not-tested requirements (no test exists in the TCK at this commit):
 `AUTH-SERVER-002`, `AUTH-INTASK-001..006`, `AUTH-SCOPE-001..003`,

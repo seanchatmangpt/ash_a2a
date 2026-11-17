@@ -126,6 +126,8 @@ Exact factual contracts:
   conformance report (`mix ash_a2a.v1_conformance_report`) and the official
   `a2aproject/a2a-tck` suite: court inventory, witnessed verdicts, and what
   MUST-class failures convert to.
+- [`reference/tck-upstream-issue-draft.md`](reference/tck-upstream-issue-draft.md) — unposted draft
+  of the upstream a2a-tck issue about `HTTP_JSON-SVC-001` vs `HTTP_JSON-ERR-001`.
 - [`reference/a2a-v1_1-readiness.md`](reference/a2a-v1_1-readiness.md) — the a2a
   roadmap triaged against the code on disk, with the TCK cross-reference.
 - [`reference/c2-certificate.md`](reference/c2-certificate.md) — the canonical
