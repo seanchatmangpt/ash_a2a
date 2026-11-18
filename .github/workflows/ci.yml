@@ -302,6 +302,17 @@ jobs:
         with:
           format: ${{ matrix.format || 'false' }}
           save-cache: ${{ matrix.save || 'false' }}
+      # FreedomGymOcelConformanceE2ETest boots beam4pm's hermetic OCEL ingest
+      # server and fails closed without a checkout (HERMETIC-INGEST-UNAVAILABLE).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ matrix.name == 'solo' }}
+        with:
+          repository: seanchatmangpt/beam4pm
+          path: beam4pm
+          persist-credentials: false
+      - name: Point the OCEL e2e court at the beam4pm checkout
+        if: ${{ matrix.name == 'solo' }}
+        run: echo "BEAM4PM_PATH=${{ github.workspace }}/beam4pm" >> "$GITHUB_ENV"
       # The HDDL planning tests execute native/hddl_cli (hddl_cli_not_built otherwise).
       - name: Build ferroplan-backed HDDL CLI
         run: |

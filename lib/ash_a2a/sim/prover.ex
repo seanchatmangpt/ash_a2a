@@ -3416,6 +3416,7 @@ if Code.ensure_loaded?(Bandit) do
              })
 
            jr_result!(c, "tasks/cancel", %{"id" => task["id"]})
+
            # SLEEP-CLASS: SCHEDULING — fixed observation window proving a canceled task stays canceled
            Process.sleep(1_200)
            after_delay = jr_get!(c, task["id"])

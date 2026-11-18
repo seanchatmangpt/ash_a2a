@@ -24,6 +24,14 @@ defmodule AshA2A.MutationWave3CatalogTest do
   @moduletag :tmp_dir
   @moduletag timeout: 600_000
 
+  # The engine hot-loads mutants and needs each module's on-disk BEAM; `mix test
+  # --cover` replaces loaded modules with cover-compiled ones, so every module
+  # would enter the test "mutated". Skipped loudly under cover; the mutation
+  # proof runs in the `proofs` CI job (`mix ash_a2a.chicago.mutate`).
+  if Process.whereis(:cover_server) != nil and :cover.modules() != [] do
+    @moduletag skip: "mutation engine needs non-cover-compiled BEAMs (mix test --cover)"
+  end
+
   alias AshA2A.Chicago.{Mutation, Runner}
   alias AshA2A.Chicago.Mutation.{Catalog, Wave3Court}
 
