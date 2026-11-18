@@ -99,7 +99,8 @@ jobs:
   # sobelow is static analysis over lib/.
   security:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A cold dev build (no restored cache) plus sobelow exceeded 15 minutes.
+    timeout-minutes: 30
     env:
       MIX_ENV: dev
     steps:
