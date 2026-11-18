@@ -81,7 +81,17 @@ defmodule AshA2A.WoCheckinSimWorkerTest do
     rpc(server, "message/send", %{"message" => encoded_message})
   end
 
+  # The artifact lands when the async executor finishes; observe it with the one
+  # audited bounded poll instead of a single read that races the worker.
   defp data_payload(server, task_id) do
+    AshA2A.TestSupport.Eventually.eventually(
+      fn -> fetch_data_payload(server, task_id) end,
+      timeout: 5_000,
+      message: "no data artifact on task #{task_id}"
+    )
+  end
+
+  defp fetch_data_payload(server, task_id) do
     {:ok, resp} =
       Req.post(server.base_url <> "/",
         body:
