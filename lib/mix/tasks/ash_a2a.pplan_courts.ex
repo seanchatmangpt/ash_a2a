@@ -211,7 +211,10 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
           env: [{~c"ASH_PPLAN_PATH", String.to_charlist(pplan_path)}]
         )
 
-      Mix.shell().info("[pplan_courts] oracle daemon started (port #{inspect(port.id)})")
+      Mix.shell().info(
+        "[pplan_courts] oracle daemon started (os_pid #{inspect(Port.info(port, :os_pid) |> elem(1))})"
+      )
+
       {:port, port, script}
     else
       Mix.shell().info(
@@ -223,7 +226,7 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
   end
 
   defp maybe_stop_oracle({:port, port, _}) do
-    Port.close(port)
+    if Port.info(port) != nil, do: Port.close(port)
     :ok
   end
 
