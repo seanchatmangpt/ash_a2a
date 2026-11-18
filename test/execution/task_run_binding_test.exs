@@ -332,11 +332,19 @@ defmodule AshA2A.Execution.TaskRunBindingTest do
         {:error, {:refused, _}} -> :refused
         {:error, :no_signal_waiter} -> :no_signal_waiter
         {:error, :taken} -> :taken
+        {:ok, :working, :claim_held} -> :claim_held
         other -> {:unexpected, other}
       end)
 
     assert :completed in outcomes
-    assert Enum.all?(outcomes, &(match?(:completed, &1) or is_tuple(&1) or match?(:taken, &1)))
+    # A caller arriving after the single consumer finished finds no parked
+    # waiter (:no_signal_waiter / :refused); one arriving while the consumer
+    # holds the claim sees :working/:claim_held. {:unexpected, _} is the only
+    # failure.
+    assert Enum.all?(
+             outcomes,
+             &(&1 in [:completed, :taken, :no_signal_waiter, :refused, :claim_held])
+           )
 
     # Binding bijection: still exactly ONE checkpoint tape, grown only by the
     # single consumer's steps (prepare standing at dispatch; await+finish land
