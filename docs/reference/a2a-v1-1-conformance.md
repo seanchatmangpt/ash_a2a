@@ -116,6 +116,20 @@ each printed.
 These are not row evidence: a row's standing comes only from the courts it names. Findings and
 the version each wire rule applies to are in [parity findings](a2a-v1-1-parity-findings.md).
 
+## External oracle
+
+`test/support/a2a_v1_1_oracle/oracle.py` is an independent Python protobuf/gRPC process built from
+the vendored upstream `v1.1.0-rc` proto. `test/ash_a2a_byte_server_conformance_test.exs` starts
+`AshA2A.Test.ByteServer` (real Bandit HTTP and gRPC listeners) and runs the oracle against it:
+agent card strict parse, JSON-RPC `message/send`, HTTP+JSON `GET /tasks/{id}`, and gRPC
+`SendMessage` / `GetTask` / `ListTasks`. Run on 2026-11-17 with
+`mix test test/ash_a2a_byte_server_conformance_test.exs --include serial`; the final line printed
+`7 tests, 0 failures`. The `oracle` job in `.github/workflows/ci.yml` runs the same command.
+
+The oracle covers only the methods listed. It does not exercise `SendLiveMessage`, `timeline`,
+`userArtifacts`, `artifactUpdates`, push-config `protocolVersion` or `-32010`; those rows stand on
+their named courts only.
+
 ## Upstream comparison
 
 Live upstream as summarized on 2026-11-13 (WebFetch): tags `v1.1.0-rc`

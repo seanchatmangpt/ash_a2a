@@ -5,7 +5,7 @@
 defmodule AshA2A.MixProject do
   use Mix.Project
 
-  @version "26.11.13"
+  @version "26.11.17"
 
   # Whole-suite line-coverage floor, enforced by `mix test.all --cover`.
   @coverage_threshold 75

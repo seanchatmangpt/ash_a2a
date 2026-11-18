@@ -142,6 +142,11 @@ jobs:
       # Single source of the TCK pin; docs/reference/tck-suite.md cites it
       # (court: test/tck_assert_script_test.exs).
       TCK_PIN_SHA: 104a7b4ae0d83f65c075e3793e322953a830eaba
+      # tck_sut.exs binds HTTP on TCK_SUT_PORT and gRPC on TCK_SUT_GRPC_PORT;
+      # explicit so a host service on 10000 (local Docker Azurite) is a visible
+      # override, never a silent port collision.
+      TCK_SUT_PORT: "9999"
+      TCK_SUT_GRPC_PORT: "10000"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -224,6 +229,31 @@ jobs:
         if: always()
         run: kill "$SUT_PID" 2>/dev/null || true
 
+  # External A2A v1.1.0-rc protobuf/gRPC oracle (test/support/a2a_v1_1_oracle):
+  # an independent Python protobuf/gRPC process validates the in-tree
+  # ByteServer's wire bytes (agent card, JSON-RPC, HTTP+JSON, gRPC over real
+  # TCP). The court test shells out to `uv run --with grpcio ...`, so uv must
+  # be on PATH.
+  oracle:
+    name: oracle (external v1.1 protobuf/gRPC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv==0.11.32
+      - uses: ./.github/actions/build
+      - name: External v1.1 oracle court
+        run: mix test test/ash_a2a_byte_server_conformance_test.exs --include serial
+
   # The suite, split along the seams mix.exs already documents: the async fast
   # lane, the `:serial_solo` files (host-level shared resources: fixed ports,
   # :peer, shared Postgres, native subprocess -- never sharded), and the
@@ -272,6 +302,11 @@ jobs:
         with:
           format: ${{ matrix.format || 'false' }}
           save-cache: ${{ matrix.save || 'false' }}
+      # The HDDL planning tests execute native/hddl_cli (hddl_cli_not_built otherwise).
+      - name: Build ferroplan-backed HDDL CLI
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          cargo +1.97.1 build --manifest-path native/hddl_cli/Cargo.toml --release --locked
       - name: Create partition database
         if: ${{ matrix.dbs }}
         env:

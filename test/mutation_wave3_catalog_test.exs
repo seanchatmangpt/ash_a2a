@@ -81,7 +81,11 @@ defmodule AshA2A.MutationWave3CatalogTest do
   end
 
   test "the catalog holds the wave-3 mutants, each resolvable with CHI-MUTWAVE3 as killer" do
-    assert length(Catalog.entries()) == 19 + map_size(@expected)
+    # The wave-3 mutants sit between the original 19 and the append-only
+    # security-gate entries; count them by their shared killer family.
+    wave3_entries = Enum.filter(Catalog.entries(), &Map.has_key?(@expected, &1.id))
+    assert length(wave3_entries) == map_size(@expected)
+    assert length(Catalog.entries()) >= 19 + map_size(@expected)
     resolution = Map.new(Catalog.resolution(), &{&1.id, &1})
 
     for id <- Map.keys(@expected) do

@@ -11,10 +11,11 @@ are unverified. See `docs/reference/a2a-v1-1-conformance.md` for row-level statu
 
 ## [Unreleased]
 
-Package version in `mix.exs` is still 26.11.13 and is **not** bumped here: the version to
-publish is an owner decision (the 26.11.14/15 notes were folded into this block, not published
-separately). The decision is recorded in `docs/reference/release-readiness-v26.11.15.md`,
-which also lists the open blockers and the exact verification commands.
+## [26.11.17] - 2026-11-17
+
+Package version is 26.11.17; the 26.11.14/15/16 notes were never published and are folded into
+this release. 26.11.13 remains the only version already published. Open blockers and the
+verification commands are in `docs/reference/release-readiness-v26.11.15.md`.
 
 How to read the evidence: an entry that names a test file means that file was run with
 `mix test <file>` (or `mix test.all <file>` for `serial` files, which excludes the `serial_solo` and `serial_shard` ones such as the two-node event journal tests) and passed; the dates are
@@ -216,6 +217,29 @@ Each item says what changed and what to do.
 - ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
 
 ### Fixed
+
+- Production-readiness repair of the PR 117 merge: the per-court test files are restored (the
+  consolidated snapshot duplicates are removed), `ByteServer` / `ByteServerConformanceTest` /
+  `PackReplayCourtTest` / `SecurityMutationWitnessTest` live in their own files, and the external
+  v1.1 oracle runs against a real `ByteServer` over HTTP and gRPC
+  (`test/ash_a2a_byte_server_conformance_test.exs`, `7 tests, 0 failures` on 2026-11-17).
+- `AshA2A.Protocol.Client.list_push_configs/3` decodes the empty v1 list `{}` as `{:ok, []}`
+  (proto3 JSON omits empty members) instead of `{:error, {:unexpected_body, %{}}}`
+  (`test/ash_a2a_client_http_json_test.exs`).
+- The 10 `security_gate_entries` mutants are killed by `CHI-MUTWAVE3` (13 new probes, 032-039 and
+  109-113 in `AshA2A.Chicago.Mutation.Wave3Court`); the families they named never reached the
+  mutated functions (`test/mutation_wave3_catalog_test.exs`,
+  `test/ash_a2a_security_mutation_witness_test.exs`, `test/ash_a2a/chicago/mutation_harness_test.exs`).
+- `AshA2A.Chicago.Release.CompositionLock` reads `mix.lock` without emitting compiler warnings,
+  which crashed when `:standard_error` was unavailable.
+- Test pins re-aligned to the shipped wire: ErrorInfo-wrapped `-32600` / 401 / 413 bodies,
+  `-32002` and `-32005` answer HTTP 400, push-list `{}` and TaskNotFound for an unknown push
+  config, `{"task": ...}` live-uplink acks, and the cancel terminal frame on a resubscribed
+  stream (a final `statusUpdate` or the closing task snapshot).
+- `generated/ash/semantic_map.ttl` removed: the installed ggen 26.11.5 pack no longer renders it
+  (`test/ash_a2a_pack_replay_court_test.exs` replays `generated/` byte-for-byte).
+- CI: the `lane` jobs build `native/hddl_cli`, the `tck` job exports `TCK_SUT_PORT` and
+  `TCK_SUT_GRPC_PORT`, and a new `oracle` job runs the external v1.1 oracle.
 
 - A revoked or expired standing grant can be issued again. `AshA2A.Authority.Grant.grant/3`
   after `revoke/3` was refused `token_id_taken` for good by both brokers

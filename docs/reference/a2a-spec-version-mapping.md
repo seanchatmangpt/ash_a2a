@@ -7,7 +7,7 @@ the in-repo `AshA2A.Protocol.Plug` (a2a-elixir 0.3.0 lineage, now
 speaking A2A protocol v1.0 wire shapes, `lib/ash_a2a/protocol/`), and
 the ash_a2a-owned `AshA2A.A2ATransport.Plug`.
 
-Version: v26.11.13
+Version: v26.11.17
 
 The method table is not hand-maintained prose:
 `test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs` drives every row
@@ -171,8 +171,9 @@ Durable cross-node task continuity: PARTIAL.
 ## External TCK
 
 The upstream A2A TCK (`a2aproject/a2a-tck`) compatibility suite ran once
-against all three bindings; latest recorded verdict 2026-10-13 at
-`13622178`: 79.0% overall, 234 passed / 31 skipped / 0 failed — see
+against all three bindings; latest recorded run 2026-11-17 at TCK pin `104a7b4a`:
+240 passed / 2 failed (both `HTTP_JSON-SVC-001`, a documented TCK contradiction listed in
+`scripts/tck_expected_failures.json`) — see
 [A2A v1.0 conformance statement](a2a-v1-conformance.md). TCK certification
 remains UNSUPPORTED (not claimed). The mapping table above is local,
 two-transport differential evidence only.
