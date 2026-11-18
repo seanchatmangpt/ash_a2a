@@ -49,6 +49,7 @@ if Code.ensure_loaded?(Bandit) do
           if System.monotonic_time(:millisecond) >= deadline do
             :timeout
           else
+            # SLEEP-CLASS: POLL-STEP — deadline-bounded poll step
             Process.sleep(25)
             do_await(match?, deadline)
           end

@@ -149,6 +149,7 @@ defmodule Mix.Tasks.AshA2a.Sim do
     Serving until stopped.
     """)
 
+    # SLEEP-CLASS: SCHEDULING — serve until stopped; the runtime owns the interval
     Process.sleep(:infinity)
   end
 

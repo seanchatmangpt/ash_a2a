@@ -35,6 +35,7 @@ if Code.ensure_loaded?(Bandit) do
             "ash_a2a sim MCP server: http://127.0.0.1:#{HTTP.port(pid)}/mcp, A2A at #{info.base_url}"
           )
 
+          # SLEEP-CLASS: SCHEDULING — serve until stopped; the runtime owns the interval
           Process.sleep(:infinity)
       end
     end
