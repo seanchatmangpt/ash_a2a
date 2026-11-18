@@ -743,19 +743,23 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         "Brief.keyring/1 refuses (:email_token_key_missing) when no key is configured"
       ),
       # --- task owner gate -----------------------------------------------------------------------
-      wave3(
-        "task_owner_gate_open",
-        "every principal owns every task",
-        AshA2A.Transport.Runtime,
-        :owned_by?,
-        2,
-        :all,
-        "true.",
-        "Transport.Runtime.owned_by?/2 owner and tenant gate of tasks/get, list, cancel and references"
-      )
+      %{
+        wave3(
+          "task_owner_gate_open",
+          "every principal owns every task",
+          AshA2A.Transport.Runtime,
+          :owned_by?,
+          2,
+          :all,
+          "true.",
+          "Transport.Runtime.owned_by?/2 owner and tenant gate of tasks/get, list, cancel and references"
+        )
+        | description:
+            "court: test/ash_a2a_v1_owner_scope_test.exs, " <>
+              "test/ash_a2a/protocol/list_tasks_owner_scope_test.exs"
+      }
     ]
   end
-
 
   # Security-gate mutants (appended: numbering is append-only, §136). Each
   # entry names the Chicago killer family AND, in `description`, the ExUnit
@@ -774,7 +778,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         operator: {:replace_body, "true."},
         guard:
           "Transport.Runtime.owned_by?/2 owner + tenant scope (foreign task reads as -32001)",
-        killers: ["SA2A-TRANSPORT"],
+        killers: ["CHI-MUTWAVE3"],
         description:
           "court: test/ash_a2a_v1_owner_scope_test.exs, " <>
             "test/ash_a2a/protocol/list_tasks_owner_scope_test.exs"
@@ -793,7 +797,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         guard:
           "Transport.Principal.from_metadata/1 derives the owner key only from the " <>
             "transport-bound a2a.auth identity",
-        killers: ["SA2A-TRANSPORT"],
+        killers: ["CHI-MUTWAVE3"],
         description:
           "court: test/ash_a2a_v1_owner_scope_test.exs, " <>
             "test/ash_a2a/transport/transport_court_test.exs, " <>
@@ -809,7 +813,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         clauses: {:arg_literal, 1, :strict},
         operator: {:replace_body, "[]."},
         guard: "SecurityProfile.Boot.violations/2 :strict refusal set",
-        killers: ["CHI-FRESH"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
       },
       %Mutation{
@@ -821,7 +825,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         clauses: {:arg_literal, 1, :strict},
         operator: {:replace_body, "ok."},
         guard: "SecurityProfile.Boot.enforce!(:strict, snapshot) raises SecurityPreflight.Error",
-        killers: ["CHI-FRESH"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
       },
       %Mutation{
@@ -835,7 +839,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         guard:
           "SecurityProfile.Boot.boot_check!/1 raises :receipt_store_boot_check_failed " <>
             "under :strict / production",
-        killers: ["CHI-FRESH", "CHI-RECEIPT"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
       },
       # authority_policy.
@@ -849,7 +853,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         operator: {:replace_body, "nil."},
         guard:
           "SecurityPreflight legacy_policy_violation/0 (:legacy_authority_policy_unacknowledged)",
-        killers: ["SA2A-AUTH"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/authority/security_preflight_test.exs"
       },
       %Mutation{
@@ -863,7 +867,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         guard:
           "SecurityPreflight.legacy_policy_allowed?/0 requires :allow_legacy_authority_policy " <>
             "ack in strict mode (:legacy_authority_policy_refused)",
-        killers: ["SA2A-AUTH"],
+        killers: ["CHI-MUTWAVE3"],
         description:
           "court: test/ash_a2a/authority/security_preflight_test.exs, " <>
             "test/ash_a2a/authzen/authority_policy_test.exs"
@@ -877,7 +881,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         clauses: {:arg_literal, 1, :strict},
         operator: {:replace_body, "[]."},
         guard: "Boot.violations/2 :transport_verified_policy_forbidden",
-        killers: ["SA2A-AUTH", "CHI-FRESH"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/security_profile/security_profile_test.exs"
       },
       # ReceiptStore.boot_check.
@@ -892,7 +896,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         guard:
           "ReceiptStore.boot_check/1 fail-closed durability rules " <>
             "(:non_durable_outbox_dir, :receipt_store_not_configured, ...)",
-        killers: ["CHI-RECEIPT"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/receipt_store/boot_check_test.exs"
       },
       %Mutation{
@@ -904,7 +908,7 @@ defmodule AshA2A.Chicago.Mutation.Catalog do
         clauses: :all,
         operator: {:replace_body, "ok."},
         guard: "ReceiptStore.boot_decision/7 production/durable-path decision table",
-        killers: ["CHI-RECEIPT"],
+        killers: ["CHI-MUTWAVE3"],
         description: "court: test/ash_a2a/receipt_store/boot_check_test.exs"
       }
     ]

@@ -82,6 +82,7 @@ if Code.ensure_loaded?(Bandit) do
         argument :delay_ms, :integer, allow_nil?: false, constraints: [min: 0, max: 60_000]
 
         run fn input, _context ->
+          # SLEEP-CLASS: SCHEDULING — simulated work interval declared by the caller
           Process.sleep(input.arguments.delay_ms)
           {:ok, %{count: length(Ash.read!(__MODULE__, authorize?: false))}}
         end

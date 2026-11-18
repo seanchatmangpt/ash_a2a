@@ -151,7 +151,36 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
     {"108", :positive_control, :brief_token_valid, "Brief.verify_reply_token/4",
      "a keyed reply token verifies on the brief it was minted for"},
     {"107", :positive_control, :json_total_ok, "JSONGuard.decode/2 + Protocol.JSON.decode/2",
-     "a shallow body decodes and a well-formed task map decodes"}
+     "a shallow body decodes and a well-formed task map decodes"},
+    {"032", :negative, :strict_violations_listed, "SecurityProfile.Boot.violations/2 :strict",
+     "an unsafe snapshot yields every named :strict violation"},
+    {"033", :negative, :strict_enforce_raises, "SecurityProfile.Boot.enforce!/2 :strict",
+     "enforce!(:strict, unsafe_snapshot) raises SecurityPreflight.Error"},
+    {"034", :negative, :strict_boot_check_raises, "SecurityProfile.Boot.boot_check!/1",
+     "a failing ReceiptStore.boot_check under production is a named violation"},
+    {"035", :negative, :authority_legacy_flagged, "SecurityPreflight.legacy_policy_violation/0",
+     "the legacy authority policy without acknowledgement is a check/0 violation"},
+    {"036", :negative, :authority_legacy_refused_strict,
+     "SecurityPreflight.legacy_policy_allowed?/0",
+     "in strict mode the legacy policy is not allowed without acknowledgement"},
+    {"037", :negative, :authority_policy_strict_forbidden,
+     "SecurityProfile.Boot.violations/2 :transport_verified_policy_forbidden",
+     "an otherwise safe snapshot with the legacy authority policy is refused under :strict"},
+    {"038", :negative, :receipt_boot_refusals, "ReceiptStore.boot_check/1",
+     "production without an explicit store, with Memory, or with a tmp outbox dir is refused"},
+    {"039", :negative, :forged_identity_collapse, "Transport.Principal.from_metadata/1",
+     "distinct verified identities map to distinct owner keys"},
+    {"109", :positive_control, :strict_good_snapshot, "SecurityProfile.Boot.violations/2",
+     "a fully safe snapshot has no :strict violations"},
+    {"110", :positive_control, :authority_ack_honoured,
+     "SecurityPreflight.legacy_policy_allowed?/0",
+     "with the explicit acknowledgement or outside strict the legacy policy is allowed"},
+    {"111", :positive_control, :receipt_boot_ok, "ReceiptStore.boot_check/1",
+     "a durable production configuration passes"},
+    {"112", :positive_control, :principal_resolves, "Transport.Principal.from_metadata/1",
+     "verified identities resolve to the subject key; none is :anonymous"},
+    {"113", :positive_control, :boot_check_bang_ok, "SecurityProfile.Boot.enforce!/2",
+     "under production a durable receipt store configuration passes enforce!"}
   ]
 
   @doc "Probe names in falsifier order."
@@ -288,6 +317,19 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
   defp probe(:card_valid, fx), do: p_card_valid(fx)
   defp probe(:owner_gate, fx), do: p_owner_gate(fx)
   defp probe(:owner_self, fx), do: p_owner_self(fx)
+  defp probe(:strict_violations_listed, fx), do: p_strict_violations_listed(fx)
+  defp probe(:strict_enforce_raises, fx), do: p_strict_enforce_raises(fx)
+  defp probe(:strict_boot_check_raises, fx), do: p_strict_boot_check_raises(fx)
+  defp probe(:authority_legacy_flagged, fx), do: p_authority_legacy_flagged(fx)
+  defp probe(:authority_legacy_refused_strict, fx), do: p_authority_legacy_refused_strict(fx)
+  defp probe(:authority_policy_strict_forbidden, fx), do: p_authority_policy_strict_forbidden(fx)
+  defp probe(:receipt_boot_refusals, fx), do: p_receipt_boot_refusals(fx)
+  defp probe(:forged_identity_collapse, fx), do: p_forged_identity_collapse(fx)
+  defp probe(:strict_good_snapshot, fx), do: p_strict_good_snapshot(fx)
+  defp probe(:authority_ack_honoured, fx), do: p_authority_ack_honoured(fx)
+  defp probe(:receipt_boot_ok, fx), do: p_receipt_boot_ok(fx)
+  defp probe(:principal_resolves, fx), do: p_principal_resolves(fx)
+  defp probe(:boot_check_bang_ok, fx), do: p_boot_check_bang_ok(fx)
 
   defp safe_probe(name, fx) do
     probe(name, fx)
@@ -1030,5 +1072,232 @@ defmodule AshA2A.Chicago.Mutation.Wave3Court do
         AshA2A.Transport.Runtime.owned_by?(task, {"alice", nil}),
       "owner sees own task"
     )
+  end
+
+  # --- security gates (Boot, SecurityPreflight, ReceiptStore, Principal) --------------------
+
+  @good_snapshot %{
+    outbox_key: String.duplicate("k", 32),
+    outbox_dir: "/var/lib/ash_a2a/outbox",
+    receipt_store: AshA2A.ReceiptStore.Ekv,
+    capability_release_mode: :strict,
+    authority_broker: AshA2A.Authority.Broker.Ekv,
+    kill_switch_class: :all,
+    authority_policy: :broker
+  }
+
+  @bad_snapshot %{
+    outbox_key: nil,
+    outbox_dir: nil,
+    receipt_store: AshA2A.ReceiptStore.Memory,
+    capability_release_mode: :legacy,
+    authority_broker: nil,
+    kill_switch_class: nil,
+    authority_policy: :transport_verified_grants_capability
+  }
+
+  @durable_boot_opts [
+    production: true,
+    receipt_store: AshA2A.ReceiptStore.Ekv,
+    receipt_outbox_dir: "/var/lib/ash_a2a/outbox",
+    receipt_store_ekv_opts: [data_dir: "/var/lib/ash_a2a/ekv", cluster_size: 3],
+    kill_switch_path: "/var/lib/ash_a2a/kill",
+    allow_memory_receipt_store: false
+  ]
+
+  defp with_env(pairs, fun) do
+    old = for {k, _} <- pairs, do: {k, Application.fetch_env(:ash_a2a, k)}
+
+    Enum.each(pairs, fn
+      {k, :__unset__} -> Application.delete_env(:ash_a2a, k)
+      {k, v} -> Application.put_env(:ash_a2a, k, v)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(old, fn
+        {k, {:ok, v}} -> Application.put_env(:ash_a2a, k, v)
+        {k, :error} -> Application.delete_env(:ash_a2a, k)
+      end)
+    end
+  end
+
+  defp codes(violations), do: Enum.map(violations, & &1.code)
+
+  defp p_strict_violations_listed(_fx) do
+    got = codes(AshA2A.SecurityProfile.Boot.violations(:strict, @bad_snapshot))
+
+    want = [
+      :outbox_key_missing,
+      :outbox_dir_not_durable,
+      :receipt_store_in_memory,
+      :capability_release_mode_legacy,
+      :authority_broker_missing,
+      :kill_switch_class_missing,
+      :transport_verified_policy_forbidden
+    ]
+
+    verdict(want -- got == [], "missing :strict violations #{inspect(want -- got)}")
+  end
+
+  defp p_strict_enforce_raises(_fx) do
+    raised? =
+      try do
+        AshA2A.SecurityProfile.Boot.enforce!(:strict, @bad_snapshot)
+        false
+      rescue
+        _e in AshA2A.Authority.SecurityPreflight.Error -> true
+      end
+
+    verdict(raised?, "enforce!(:strict, unsafe snapshot) did not raise")
+  end
+
+  defp p_strict_boot_check_raises(_fx) do
+    env = [strict_security: false, production: true, receipt_store: :__unset__]
+
+    got =
+      with_env(env, fn ->
+        try do
+          AshA2A.SecurityProfile.Boot.enforce!(:legacy_compat, @good_snapshot)
+          :returned_ok
+        rescue
+          e in AshA2A.Authority.SecurityPreflight.Error -> codes(e.violations)
+        end
+      end)
+
+    verdict(
+      is_list(got) and :receipt_store_boot_check_failed in got,
+      "enforce!(:legacy_compat) answered #{inspect(got)}"
+    )
+  end
+
+  defp p_authority_legacy_flagged(_fx) do
+    env = [
+      authority_policy: :transport_verified_grants_capability,
+      allow_legacy_authority_policy: :__unset__
+    ]
+
+    got =
+      with_env(env, fn ->
+        case AshA2A.Authority.SecurityPreflight.check() do
+          {:error, vs} -> codes(vs)
+          _ -> []
+        end
+      end)
+
+    verdict(:legacy_authority_policy_unacknowledged in got, "check/0 codes #{inspect(got)}")
+  end
+
+  defp p_authority_legacy_refused_strict(_fx) do
+    allowed? =
+      with_env([strict_security: true, allow_legacy_authority_policy: :__unset__], fn ->
+        AshA2A.Authority.SecurityPreflight.legacy_policy_allowed?()
+      end)
+
+    verdict(
+      allowed? == false,
+      "legacy policy allowed in strict without ack: #{inspect(allowed?)}"
+    )
+  end
+
+  defp p_authority_policy_strict_forbidden(_fx) do
+    snap = %{@good_snapshot | authority_policy: :transport_verified_grants_capability}
+    got = codes(AshA2A.SecurityProfile.Boot.violations(:strict, snap))
+    verdict(got == [:transport_verified_policy_forbidden], "violations #{inspect(got)}")
+  end
+
+  defp p_receipt_boot_refusals(_fx) do
+    alias AshA2A.ReceiptStore
+
+    got = [
+      ReceiptStore.boot_check(production: true, receipt_store: nil),
+      ReceiptStore.boot_check(
+        production: true,
+        receipt_store: ReceiptStore.Memory,
+        allow_memory_receipt_store: false
+      ),
+      ReceiptStore.boot_check(
+        Keyword.put(@durable_boot_opts, :receipt_outbox_dir, "/tmp/w3-outbox")
+      )
+    ]
+
+    verdict(
+      Enum.all?(got, &match?({:error, _}, &1)) and length(Enum.uniq(got)) == 3,
+      "boot_check answered #{inspect(got)}"
+    )
+  end
+
+  defp p_forged_identity_collapse(_fx) do
+    alias AshA2A.Transport.Principal
+    alice = Principal.from_metadata(%{"a2a.auth" => %{identity: %{sub: "alice"}}})
+    mallory = Principal.from_metadata(%{"a2a.auth" => %{identity: %{sub: "mallory"}}})
+
+    verdict(
+      alice != mallory and Principal.from_metadata(%{}) == :anonymous,
+      "alice=#{inspect(alice)} mallory=#{inspect(mallory)}"
+    )
+  end
+
+  defp p_strict_good_snapshot(_fx) do
+    got = AshA2A.SecurityProfile.Boot.violations(:strict, @good_snapshot)
+    verdict(got == [], "violations #{inspect(codes(got))}")
+  end
+
+  defp p_authority_ack_honoured(_fx) do
+    alias AshA2A.Authority.SecurityPreflight
+
+    acked? =
+      with_env(
+        [strict_security: true, allow_legacy_authority_policy: :i_accept_privilege_escalation],
+        fn -> SecurityPreflight.legacy_policy_allowed?() end
+      )
+
+    lax? =
+      with_env([strict_security: false, allow_legacy_authority_policy: :__unset__], fn ->
+        SecurityPreflight.legacy_policy_allowed?()
+      end)
+
+    verdict(acked? and lax?, "acked=#{acked?} lax=#{lax?}")
+  end
+
+  defp p_receipt_boot_ok(_fx) do
+    got = AshA2A.ReceiptStore.boot_check(@durable_boot_opts)
+    verdict(got == :ok, "boot_check answered #{inspect(got)}")
+  end
+
+  defp p_principal_resolves(_fx) do
+    alias AshA2A.Transport.Principal
+    atom_shape = Principal.from_metadata(%{"a2a.auth" => %{identity: %{sub: "alice"}}})
+
+    wire_shape =
+      Principal.from_metadata(%{"a2a.auth" => %{"identity" => %{"sub" => "alice"}}})
+
+    verdict(
+      atom_shape != :anonymous and atom_shape == wire_shape,
+      "atom=#{inspect(atom_shape)} wire=#{inspect(wire_shape)}"
+    )
+  end
+
+  defp p_boot_check_bang_ok(_fx) do
+    env = [
+      strict_security: false,
+      production: true,
+      receipt_store: AshA2A.ReceiptStore.Ekv,
+      receipt_outbox_dir: "/var/lib/ash_a2a/outbox",
+      receipt_store_ekv_opts: [data_dir: "/var/lib/ash_a2a/ekv", cluster_size: 3],
+      kill_switch_path: "/var/lib/ash_a2a/kill"
+    ]
+
+    got =
+      with_env(env, fn ->
+        try do
+          AshA2A.SecurityProfile.Boot.enforce!(:legacy_compat, @good_snapshot)
+        rescue
+          e -> {:raised, Exception.message(e) |> String.slice(0, 80)}
+        end
+      end)
+
+    verdict(got == :ok, "enforce!(:legacy_compat) answered #{inspect(got)}")
   end
 end

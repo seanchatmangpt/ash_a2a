@@ -140,7 +140,11 @@ defmodule AshA2A.Protocol.CardCacheTest do
   end
 
   setup do
-    {:ok, _} = Agent.start_link(Store, :initial_state, [], name: Store)
+    start_supervised!(%{
+      id: Store,
+      start: {Agent, :start_link, [Store, :initial_state, [], [name: Store]]}
+    })
+
     server = EphemeralHttp.start!(CardServer)
     cache_dir = Path.join(System.tmp_dir!(), "card-cache-test-#{System.unique_integer()}")
 

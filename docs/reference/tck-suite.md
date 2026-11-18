@@ -56,15 +56,18 @@ Runtime expectation: minutes to tens of minutes (the serial tail drives
 real Bandit loopback listeners and shared transports). Use `--only` to
 iterate on a subset.
 
+The external v1.1.0-rc protobuf/gRPC oracle (`test/support/a2a_v1_1_oracle/oracle.py`, driven by
+`test/ash_a2a_byte_server_conformance_test.exs`) runs in the `oracle` CI job with uv on PATH; see
+[A2A v1.1 conformance statement](a2a-v1-1-conformance.md).
+
 ## Court inventory (36 courts)
 
-The court set is **35 files**: the 37 files matching
+The court set is **36 files**: the 38 files matching
 `test/ash_a2a_v1_*_test.exs` minus the 2 explicit exclusions below. It is
 derived by glob at run time (`v1_courts/0` in
 `lib/mix/tasks/ash_a2a.v1_conformance_report.ex`); there is no
 hand-maintained list, and `test/tck_assert_script_test.exs` re-checks this
-count against the disk. (Earlier revisions of this page said 34; the
-list had already grown to 35 when the count was last edited.)
+count against the disk.
 
 Deliberately NOT in the list (see the module's comment block):
 `test/ash_a2a_v1_conformance_report_test.exs` (the runner's own
@@ -77,7 +80,9 @@ configuration lives in `tck_sut.exs`, `tck_sut_auth.exs`,
 `priv/tck/test_dy4_auth_lanes.py`, and the `tck` job in
 `.github/workflows/ci.yml`, which runs the official suite at the pin in
 its single `TCK_PIN_SHA` variable (currently `104a7b4a`, full SHA `104a7b4ae0d83f65c075e3793e322953a830eaba`) with
-`--transport jsonrpc,http_json,grpc` (the SUT serves gRPC on `:10000`),
+`--transport jsonrpc,http_json,grpc` (the SUT serves HTTP on `TCK_SUT_PORT` `9999` and gRPC on
+`TCK_SUT_GRPC_PORT`, default port+1 = `:10000`; set `TCK_SUT_GRPC_PORT` locally when a host
+service such as Docker Azurite holds `:10000`),
 installs the TCK with uv (`pip install uv==0.11.32`, then `uv venv --python 3.15
 /tmp/tck_venv` and `uv pip install -e .`; pyproject, no `requirements.txt`;
 uv downloads the Python 3.15 interpreter the TCK requires, so no extra

@@ -158,7 +158,7 @@ Full-suite context: `mix test.all` includes the serial tail; CI runs
 (25 courts) at subject `059ff0e3` (2026-10-05); 26 PASS / 0 FAIL at
 `a9cc903b` and `13622178` (see [TCK suite](tck-suite.md)). The count is
 derived from a glob of `test/ash_a2a_v1_*_test.exs` minus two explicit
-exclusions (37 files on disk, 2 excluded); a court count in prose is
+exclusions (38 files on disk, 2 excluded); a court count in prose is
 re-checked by `test/tck_assert_script_test.exs`. Re-run the report to renew
 a verdict at the current head; the gate is `totals.fail == 0`.
 

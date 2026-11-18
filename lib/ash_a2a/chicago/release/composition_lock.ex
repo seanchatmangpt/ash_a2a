@@ -162,7 +162,12 @@ defmodule AshA2A.Chicago.Release.CompositionLock do
   defp read_mix_lock(lock_path) do
     case File.regular?(lock_path) do
       true ->
-        {term, _bindings} = Code.eval_file(lock_path)
+        {term, _bindings} =
+          lock_path
+          |> File.read!()
+          |> Code.string_to_quoted!(emit_warnings: false)
+          |> Code.eval_quoted()
+
         if is_map(term), do: term, else: %{}
 
       false ->

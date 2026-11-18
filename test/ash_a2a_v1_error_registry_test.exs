@@ -364,6 +364,11 @@ defmodule AshA2A.Protocol.V1ErrorRegistryTest do
       end
     end
 
+    if Process.whereis(:cover_server) != nil and :cover.modules() != [] do
+      @tag skip:
+             "needs the on-disk BEAM; mix test --cover replaces it with a cover-compiled module"
+    end
+
     test "every registry code has a compiled status_for/1 clause with the pinned status" do
       table = status_for_table()
 
