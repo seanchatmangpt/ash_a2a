@@ -168,6 +168,13 @@ defmodule AshA2A.Enterprise.DLPFilterTest do
 
   describe "perf budget" do
     @tag :dlp_perf
+
+    # The budget is an absolute wall-clock bound; cover instrumentation slows the
+    # instrumented regex path several-fold, so it is skipped loudly under --cover.
+    if Process.whereis(:cover_server) != nil and :cover.modules() != [] do
+      @tag skip: "wall-clock budget is not meaningful under mix test --cover"
+    end
+
     test "inspecting a 64KB payload stays within the 2.5ms budget" do
       payload = perf_payload()
       assert byte_size(payload) >= 64 * 1024
