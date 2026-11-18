@@ -25,6 +25,14 @@ defmodule AshA2A.Chicago.FiboFinanceTest do
 
   @moduletag :serial
   @moduletag :serial_shard
+
+  # The court needs a HEAD-rebuilt graphlaw ABI wasm named by GRAPHLAW_ABI_WASM (no
+  # default: the vendored wasm is the wasm-bindgen build and cannot run under
+  # Wasmtime). Unset: skipped loudly with this reason, never a fake pass.
+  if System.get_env("GRAPHLAW_ABI_WASM") in [nil, ""] do
+    @moduletag skip: "GRAPHLAW_ABI_WASM is not set (HEAD-rebuilt graphlaw ABI wasm required)"
+  end
+
   @moduletag :tmp_dir
   @moduletag capture_log: true
   @moduletag timeout: 600_000
