@@ -109,3 +109,16 @@ Run the mutation gate alone: it replaces loaded modules in its own VM while it r
   in one change.
 - Rename `## [Unreleased]` in `CHANGELOG.md` and drop the version paragraph beneath it.
 - Run the commands above at the release commit and record the results here.
+
+## v26.11.17 addendum
+
+Observed for v26.11.17. This addendum supersedes the earlier tables only for the rows named here.
+
+| Item | Standing | Observed |
+|---|---|---|
+| pplan courts | PASS | 4 files, 36 tests, including `--with-oracle` |
+| beam4pm-dependent tests | PASS | pass when `BEAM4PM_PATH` is set |
+| A2A TCK | PASS | 240 passed, 2 expected failures |
+| Conformance report | PASS | 57/57 |
+| Hex publish | BLOCKED | authority: `HEX_API_KEY` |
+| ggen-parity | BLOCKED | ggen_igniter 26.10.5 eval: undefined variable `assigns` (nofile:5) |
