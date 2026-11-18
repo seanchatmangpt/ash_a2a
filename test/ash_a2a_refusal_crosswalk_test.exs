@@ -154,6 +154,10 @@ defmodule AshA2A.RefusalCrosswalkTest do
              "crosswalk pin drifted from live sibling ontology: #{inspect(diffs)}"
     end
 
+    unless File.exists?(@sibling_ontology) do
+      @tag skip: "sibling checkout absent: #{@sibling_ontology}"
+    end
+
     test "sabotage twin: mutating a pinned code is detected" do
       assert File.exists?(@sibling_ontology),
              "sabotage twin requires the sibling checkout: #{@sibling_ontology}"
@@ -173,6 +177,10 @@ defmodule AshA2A.RefusalCrosswalkTest do
       assert map_size(diffs) == 1 and Map.has_key?(diffs, expected_key) and
                elem(diffs["refused_shacl"], 0) == MapSet.new([-32_601]),
              "sabotaged pin was NOT detected as expected: #{inspect(diffs)}"
+    end
+
+    unless File.exists?(@sibling_ontology) do
+      @tag skip: "sibling checkout absent: #{@sibling_ontology}"
     end
 
     test "live sibling derivation is stable across two parses" do

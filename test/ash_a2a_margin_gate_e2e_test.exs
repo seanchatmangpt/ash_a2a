@@ -197,6 +197,8 @@ defmodule AshA2A.Test.Fixture.MarginGate.Agent do
 end
 
 defmodule AshA2A.MarginGateE2ETest do
+  @pack_artifact "/Users/sac/ggen-marketplace/packs/financial-margin-envelope/generated/margin_envelope.ex"
+
   @moduledoc """
   Lane I4 court: end-to-end consumer test of the margin-gated work-order
   capability manufactured by the `financial-margin-envelope` ggen-marketplace
@@ -221,6 +223,12 @@ defmodule AshA2A.MarginGateE2ETest do
   """
 
   use ExUnit.Case, async: false
+
+  # The generated pack artifact lives in the ggen-marketplace sibling checkout.
+  # Absent: skipped loudly with this reason, never a fake pass.
+  unless File.exists?(@pack_artifact) do
+    @moduletag skip: "sibling pack artifact absent: #{@pack_artifact}"
+  end
 
   import AshA2A.Test.MessageHelpers
 

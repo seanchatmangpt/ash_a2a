@@ -195,6 +195,12 @@ defmodule AshA2A.Test.ConferenceSim.InteropCourt do
   alias AshA2A.Test.ConferenceSim.Interop.VenueVerifier
 
   @ash_affidavit_dir Path.expand("../../../ash_affidavit", __DIR__)
+
+  # Vendor B runs from the ash_affidavit sibling checkout; absent: skipped loudly.
+  unless File.dir?(@ash_affidavit_dir) do
+    @moduletag skip: "sibling checkout absent: #{@ash_affidavit_dir}"
+  end
+
   @build_root "_build-ev14b"
   @domain_tag "affidavit.crypto-trust-plane.v1"
 

@@ -249,6 +249,10 @@ defmodule AshA2A.ByteServerConformanceTest do
     assert bad_resp.body["error"] =~ "dkim_crypto_failed"
   end
 
+  if is_nil(System.find_executable("uv")) and not File.exists?(Path.expand("~/.local/bin/uv")) do
+    @tag skip: "uv is not installed (the oracle runs through `uv run --with grpcio ...`)"
+  end
+
   test "external a2aproject/a2a v1.1.0-rc protobuf/gRPC oracle validates ByteServer wire bytes (unfakeable)",
        %{srv: srv} do
     oracle_script = Path.expand("support/a2a_v1_1_oracle/oracle.py", __DIR__)

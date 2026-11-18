@@ -202,6 +202,9 @@ jobs:
         run: |
           cd /tmp/a2a-tck
           source /tmp/tck_venv/bin/activate
+          # run_tck.py exits 1 on the documented expected failure; keep going so the
+          # exit code is recorded and the assert step below judges it (bash -e -o pipefail).
+          set +e
           ./run_tck.py --sut-host http://127.0.0.1:9999 \
             --transport jsonrpc,http_json,grpc | tee /tmp/tck-run.log
           echo "TCK_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"

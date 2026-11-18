@@ -350,6 +350,11 @@ defmodule AshA2A.V1ArchitectureTest do
   # ---------------------------------------------------------------------------
 
   describe "court (d): router surface inventory" do
+    if Process.whereis(:cover_server) != nil and :cover.modules() != [] do
+      @tag skip:
+             "needs the on-disk BEAM; mix test --cover replaces it with a cover-compiled module"
+    end
+
     test "all four transports implement @behaviour Plug with call/2 and init/1" do
       for transport <- @transports do
         assert Plug in compiled_behaviours(transport),
