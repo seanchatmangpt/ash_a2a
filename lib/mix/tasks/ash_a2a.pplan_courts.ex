@@ -50,6 +50,9 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
 
   use Mix.Task
 
+  # Bounded window to observe an early oracle daemon exit.
+  @oracle_startup_deadline_ms 1_500
+
   @switches [
     only: :string,
     with_oracle: :boolean,
@@ -206,16 +209,30 @@ defmodule Mix.Tasks.AshA2a.PplanCourts do
 
     if File.exists?(script) do
       port =
-        Port.open({:spawn_executable, python3()},
+        Port.open({:spawn_executable, python3()}, [
+          :exit_status,
           args: [script],
           env: [{~c"ASH_PPLAN_PATH", String.to_charlist(pplan_path)}]
-        )
+        ])
 
-      Mix.shell().info(
-        "[pplan_courts] oracle daemon started (os_pid #{inspect(Port.info(port, :os_pid) |> elem(1))})"
-      )
+      # Bounded observation of the exit event: a daemon that dies at startup
+      # (missing module, bad interpreter) reports {port, {:exit_status, s}}
+      # within the deadline; a live daemon times out and is treated as started.
+      receive do
+        {^port, {:exit_status, status}} ->
+          Mix.shell().info(
+            "[pplan_courts] oracle daemon exited early (exit status #{status}) -- LOUD SKIP"
+          )
 
-      {:port, port, script}
+          {:skipped, script}
+      after
+        @oracle_startup_deadline_ms ->
+          Mix.shell().info(
+            "[pplan_courts] oracle daemon started (os_pid #{inspect(Port.info(port, :os_pid) |> elem(1))})"
+          )
+
+          {:port, port, script}
+      end
     else
       Mix.shell().info(
         "[pplan_courts] --with-oracle requested but #{script} not found -- LOUD SKIP"
