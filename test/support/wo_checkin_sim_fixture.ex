@@ -177,7 +177,27 @@ defmodule AshA2A.Test.WoCheckinSim.MachineLaw do
   def commit(wo, visit_id, next),
     do: Agent.update(__MODULE__, &Map.put(&1, key(wo, visit_id), next))
 
-  def reset, do: Agent.start_link(fn -> %{} end, name: __MODULE__)
+  # Fresh state per test. A previous test's Agent is linked to that test process
+  # and may still be registered (alive with stale state, or mid-exit); stop it and
+  # wait for its DOWN so the new start never returns :already_started and workers
+  # never hit :noproc on a dying name.
+  def reset do
+    case Process.whereis(__MODULE__) do
+      nil ->
+        :ok
+
+      pid ->
+        ref = Process.monitor(pid)
+        Process.unlink(pid)
+        Process.exit(pid, :kill)
+
+        receive do
+          {:DOWN, ^ref, :process, ^pid, _} -> :ok
+        end
+    end
+
+    Agent.start_link(fn -> %{} end, name: __MODULE__)
+  end
 
   defp key(wo, v), do: {wo, v}
 end
