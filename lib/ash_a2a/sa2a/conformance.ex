@@ -1377,6 +1377,20 @@ defmodule AshA2A.SA2A.Conformance do
 
   defp call(mod, session, fun, args), do: mod.call(session, fun, args)
 
+  @doc """
+  Fenced dispatch: refuses (typed `:graphlaw_out_of_corpus`) any export that has
+  no passing conformance vector for the vendored artifact (`AshA2A.GraphLaw.fence/1`)
+  before calling it. Not yet applied to the internal `call/4` used by `run/1`,
+  because `validate_all` is outside the fenced corpus of the vendored v26.7.5 artifact.
+  """
+  @spec fenced_call(module(), term(), atom(), [term()]) :: {:ok, term()} | {:error, map()}
+  def fenced_call(mod, session, fun, args) when is_atom(fun) do
+    case AshA2A.GraphLaw.fence(Atom.to_string(fun)) do
+      :ok -> mod.call(session, fun, args)
+      {:error, _} = refusal -> refusal
+    end
+  end
+
   defp value({:ok, result}), do: result
   defp value({:error, _}), do: nil
 
