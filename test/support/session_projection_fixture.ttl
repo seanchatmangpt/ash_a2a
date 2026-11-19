@@ -1,0 +1,3 @@
+<urn:fixture:session-1> <urn:fixture:state> "projecting" .
+<urn:fixture:session-1> <urn:fixture:owner> "tenant-a" .
+<urn:fixture:session-1> <urn:fixture:kind> "a2a-session" .
