@@ -156,8 +156,15 @@ defmodule AshA2A.A2ATransport.Ownership do
 
   defp drop_from_history(task), do: task
 
-  defp drop_wire_metadata(%{"metadata" => %{} = metadata} = wire),
-    do: %{wire | "metadata" => Map.drop(metadata, @internal_keys)}
+  # A metadata Struct left empty by the scrub is dropped, not sent as `{}`:
+  # the other bindings omit an unset `Task.metadata`, and one task must be
+  # the same message on every binding (spec 5.1).
+  defp drop_wire_metadata(%{"metadata" => %{} = metadata} = wire) do
+    case Map.drop(metadata, @internal_keys) do
+      empty when empty == %{} -> Map.delete(wire, "metadata")
+      kept -> %{wire | "metadata" => kept}
+    end
+  end
 
   defp drop_wire_metadata(wire), do: wire
 

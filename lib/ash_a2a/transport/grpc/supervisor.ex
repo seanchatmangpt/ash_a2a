@@ -20,9 +20,15 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
       `AshA2A.Transport.GRPC.Server.Endpoint`.
     * `:handler` / `:ctx` / `:versions` / `:extensions` - written into the
       `AshA2A.Transport.GRPC.Server` application env (see its moduledoc).
+    * `:endpoint_config` - `[versions: ..., extensions: ...]` that apply to this
+      listener's endpoint only (written under the env's `:endpoints` map, keyed
+      by `:endpoint`), for a second listener whose A2A-Version or
+      A2A-Extensions gate differs from the server-wide one.
     * `:auth` - `{module, opts}` interceptor, written into the endpoint env.
     * `:cred` - `GRPC.Credential.new(ssl: [...])` for TLS; plain HTTP/2 when
       absent.
+    * `:ip` - the address to bind, for example `{127, 0, 0, 1}`; every
+      interface when absent.
     * `:name` - registered name of this process.
 
   The listener starts in `init/1` and is stopped when the process terminates,
@@ -40,7 +46,10 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
       restart: :permanent,
-      shutdown: 5_000
+      # Stopping the listener waits for its open connections (ranch gives each
+      # up to 5 s); a shorter shutdown here kills this process mid-stop and
+      # leaves the listener half removed for the next start.
+      shutdown: 15_000
     }
   end
 
@@ -64,10 +73,60 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
 
     start_opts = if cred = opts[:cred], do: [cred: cred], else: []
 
-    case GRPC.Server.start_endpoint(endpoint, port, start_opts) do
-      {:ok, _pid, bound} -> {:ok, %{endpoint: endpoint, port: bound}}
-      {:error, reason} -> {:stop, reason}
+    start_opts =
+      if ip = opts[:ip], do: Keyword.put(start_opts, :adapter_opts, ip: ip), else: start_opts
+
+    case start_endpoint(endpoint, port, start_opts) do
+      {:ok, _pid, bound} ->
+        # An RPC the service does not have answers UNIMPLEMENTED in gRPC
+        # trailers instead of the adapter's bare HTTP 404.
+        case AshA2A.Transport.GRPC.UnknownMethod.install(endpoint) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            require Logger
+
+            Logger.warning(
+              "AshA2A gRPC: unknown methods keep the adapter's HTTP 404 (#{inspect(reason)})"
+            )
+        end
+
+        {:ok, %{endpoint: endpoint, port: bound}}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
+  end
+
+  # A listener of this endpoint that is still being stopped (its connections
+  # are draining) is registered but not running: ranch answers
+  # `:already_present`. Finishing that stop and starting again is the only
+  # correct outcome, so do that once instead of failing the start.
+  defp start_endpoint(endpoint, port, start_opts, retry? \\ true) do
+    case GRPC.Server.start_endpoint(endpoint, port, start_opts) do
+      {:error, reason} = error when retry? ->
+        if listener_half_stopped?(reason) do
+          _ = stop_endpoint(endpoint)
+          start_endpoint(endpoint, port, start_opts, false)
+        else
+          error
+        end
+
+      other ->
+        other
+    end
+  end
+
+  # The OTP supervisor's own answer for a child spec that is registered but
+  # not running (ranch's listener between its terminate and its delete). It
+  # is a supervisor state, not a refusal this library returns to anyone.
+  defp listener_half_stopped?(reason), do: reason == :already_present
+
+  defp stop_endpoint(endpoint) do
+    GRPC.Server.stop_endpoint(endpoint)
+  catch
+    :exit, _ -> :ok
   end
 
   @impl true
@@ -92,6 +151,18 @@ defmodule AshA2A.Transport.GRPC.Supervisor do
     if kw != [] do
       existing = Application.get_env(:ash_a2a, AshA2A.Transport.GRPC.Server, [])
       Application.put_env(:ash_a2a, AshA2A.Transport.GRPC.Server, Keyword.merge(existing, kw))
+    end
+
+    if own = opts[:endpoint_config] do
+      endpoint = Keyword.get(opts, :endpoint, AshA2A.Transport.GRPC.Server.Endpoint)
+      existing = Application.get_env(:ash_a2a, AshA2A.Transport.GRPC.Server, [])
+      endpoints = existing |> Keyword.get(:endpoints, %{}) |> Map.put(endpoint, own)
+
+      Application.put_env(
+        :ash_a2a,
+        AshA2A.Transport.GRPC.Server,
+        Keyword.put(existing, :endpoints, endpoints)
+      )
     end
   end
 

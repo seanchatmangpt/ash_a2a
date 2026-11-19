@@ -137,7 +137,7 @@ By identity shape:
   refresh-stable, so ownership fails closed on refresh).
 
 **`-32009` version gate**. `A2A-Version` is parsed by
-`AshA2A.Protocol.Version.parse_header/1` and checked by `Version.validate/2`;
+`AshA2A.Protocol.Version.parse_header/1` and checked by `AshA2A.Protocol.Version.validate/2`;
 a rejected version is echoed in the `a2a-version` response header. Paths:
 
 | Path | Where | Envelope |

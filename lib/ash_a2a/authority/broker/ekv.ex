@@ -112,7 +112,71 @@ defmodule AshA2A.Authority.Broker.Ekv do
         {:ok, authority}
 
       {:error, reason} when reason in [:conflict, :unconfirmed] ->
-        {:error, %{reason: :token_id_taken, token_id: authority.token_id}}
+        reissue(name, key, entry, authority, 0)
+    end
+  end
+
+  # The token id is already recorded. It is taken while that grant STANDS,
+  # and for good once it is bound to another principal or capability. A grant
+  # that was revoked (or ran out) may be issued again to the same principal
+  # for the same capability: the new entry keeps the instant of the
+  # revocation as `:not_before`, the new authority is stamped strictly after
+  # it, and `verify/2` keeps refusing every authority issued at or before it,
+  # so the revoked credential itself is never resurrected.
+  defp reissue(_name, _key, _entry, authority, attempt) when attempt >= @max_cas_attempts,
+    do: {:error, %{reason: :token_id_taken, token_id: authority.token_id}}
+
+  defp reissue(name, key, entry, authority, attempt) do
+    taken = {:error, %{reason: :token_id_taken, token_id: authority.token_id}}
+
+    case EKV.lookup(name, key) do
+      nil ->
+        case EKV.put(name, key, entry, if_vsn: nil) do
+          {:ok, _vsn} -> {:ok, authority}
+          {:error, _reason} -> reissue(name, key, entry, authority, attempt + 1)
+        end
+
+      {stored, vsn} ->
+        if reissuable?(stored, entry) do
+          floor = Map.get(stored, :revoked_at) || Map.get(stored, :not_before)
+          authority = after_revocation(authority, floor)
+
+          case EKV.put(name, key, Map.put(entry, :not_before, floor), if_vsn: vsn) do
+            {:ok, _vsn} -> {:ok, authority}
+            {:error, _reason} -> reissue(name, key, entry, authority, attempt + 1)
+          end
+        else
+          taken
+        end
+    end
+  end
+
+  defp reissuable?(%{status: :issued} = stored, entry),
+    do: past?(Map.get(stored, :expires_at)) and same_binding?(stored, entry)
+
+  defp reissuable?(%{status: :revoked} = stored, entry), do: same_binding?(stored, entry)
+  defp reissuable?(_stored, _entry), do: false
+
+  # An entry revoked without ever having been issued here names no principal.
+  defp same_binding?(stored, entry) do
+    Map.get(stored, :capability_id, entry.capability_id) == entry.capability_id and
+      Map.get(stored, :subject, entry.subject) == entry.subject
+  end
+
+  defp after_revocation(authority, %DateTime{} = floor) do
+    if DateTime.compare(authority.issued_at, floor) == :gt,
+      do: authority,
+      else: %{authority | issued_at: DateTime.add(floor, 1, :microsecond)}
+  end
+
+  defp after_revocation(authority, _no_floor), do: authority
+
+  # An authority issued at or before the last revocation of its token id is
+  # the revoked credential (or a copy of it), whatever was issued since.
+  defp superseded?(name, key, authority) do
+    case EKV.get(name, key) do
+      %{not_before: %DateTime{} = floor} -> DateTime.compare(authority.issued_at, floor) != :gt
+      _ -> false
     end
   end
 
@@ -134,11 +198,31 @@ defmodule AshA2A.Authority.Broker.Ekv do
       Authority.expired?(authority) ->
         {:error, %{reason: :expired, token_id: authority.token_id}}
 
-      revoked?(ekv_name(opts), Identity.external(authority.token_id)) ->
+      revoked?(ekv_name(opts), Identity.external(authority.token_id)) or
+          superseded?(ekv_name(opts), Identity.external(authority.token_id), authority) ->
         {:error, %{reason: :revoked, token_id: authority.token_id}}
+
+      # RFC-SA2A-001 S54 (confused deputy), as `InMemory.verify/2` enforces it:
+      # a token id is the grant of ONE `(subject, capability)` pair, so an
+      # authority presented with the same token id but another subject or
+      # capability is not that grant. Entries written before `:subject` was
+      # stored carry nothing to compare and still verify.
+      rebound?(ekv_name(opts), Identity.external(authority.token_id), authority) ->
+        {:error, %{reason: :token_binding_mismatch, token_id: authority.token_id}}
 
       true ->
         {:ok, authority}
+    end
+  end
+
+  defp rebound?(name, key, authority) do
+    case EKV.get(name, key) do
+      %{subject: subject, capability_id: capability_id} ->
+        subject != Identity.external(authority.subject) or
+          capability_id != authority.capability_id
+
+      _ ->
+        false
     end
   end
 
@@ -312,7 +396,7 @@ defmodule AshA2A.Authority.Broker.Ekv do
         # different broker instance) -- still recorded durably and fail
         # closed, matching `InMemory.revoke/2`'s own unconditional
         # `MapSet.put/2` regardless of prior `issued` membership.
-        case EKV.put(name, key, %{status: :revoked}, if_vsn: nil) do
+        case EKV.put(name, key, %{status: :revoked, revoked_at: DateTime.utc_now()}, if_vsn: nil) do
           {:ok, _vsn} ->
             :ok
 
@@ -321,7 +405,9 @@ defmodule AshA2A.Authority.Broker.Ekv do
         end
 
       {entry, vsn} ->
-        case EKV.put(name, key, Map.put(entry, :status, :revoked), if_vsn: vsn) do
+        revoked = entry |> Map.put(:status, :revoked) |> Map.put(:revoked_at, DateTime.utc_now())
+
+        case EKV.put(name, key, revoked, if_vsn: vsn) do
           {:ok, _vsn} ->
             :ok
 

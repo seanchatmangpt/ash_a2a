@@ -414,7 +414,7 @@ defmodule AshA2A.Passport do
           :ok
         end
 
-      :error ->
+      {:error, _reason} ->
         {:error, {:malformed, {:bad_member, "expiresAt"}}}
     end
   end

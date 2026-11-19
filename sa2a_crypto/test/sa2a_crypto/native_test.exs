@@ -180,6 +180,7 @@ defmodule Sa2aCrypto.NativeTest do
     end
 
     for alg <- ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87", "SLH-DSA-SHA2-128F"] do
+      @tag skip: Sa2aCrypto.Fixtures.skip_reason(alg)
       test "#{alg} round trip, tamper, and wrong-size key" do
         alg = unquote(alg)
         {pub, priv} = Sa2aCrypto.Fixtures.keypair(alg)
@@ -199,6 +200,7 @@ defmodule Sa2aCrypto.NativeTest do
       end
     end
 
+    @tag skip: Sa2aCrypto.Fixtures.skip_reason("ES256+ML-DSA-65")
     test "hybrid requires both components" do
       alg = "ES256+ML-DSA-65"
       {pub, priv} = Sa2aCrypto.Fixtures.keypair(alg)
@@ -213,6 +215,16 @@ defmodule Sa2aCrypto.NativeTest do
       # classical-only signature under a hybrid alg
       <<l::32, csig::binary-size(l), _::binary>> = sig
       assert Native.verify(alg, "h", csig, pub) == {:error, :bad_signature}
+    end
+
+    test "unsupported PQ suites refuse with a typed error and never raise" do
+      for alg <- ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87", "SLH-DSA-SHA2-128F", "ES256+ML-DSA-65"],
+          msg <- ["m", nil],
+          sig <- ["s", <<>>, nil],
+          pub <- [<<1>>, nil, :x, {1, 2}] do
+        assert {:error, code} = Native.verify(alg, msg, sig, pub)
+        assert is_atom(code)
+      end
     end
 
     test "unregistered algorithms are refused" do

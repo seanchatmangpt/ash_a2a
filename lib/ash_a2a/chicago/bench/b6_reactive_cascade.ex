@@ -71,7 +71,7 @@ defmodule AshA2A.Chicago.Bench.B6ReactiveCascade do
   ## Invariants (§84), checked on every sample
 
   Re-derived from the real generation loop
-  (`AshA2A.Semantic.HookReactor.generation/4`): every terminal state --
+  (`AshA2A.Semantic.HookReactor.generation`): every terminal state --
   quiescent or bound-exhausted alike -- is reached one generation AFTER the
   last generation that actually committed a route, so `generations ==
   depth_reached + 1` holds for every case, not only the quiescent ones.

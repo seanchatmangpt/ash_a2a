@@ -85,7 +85,7 @@ defmodule AshA2A.Authority.SecurityPreflight do
   @doc """
   Runs `check/0` and raises `Error` on any violation when `strict?/0` (or
   `force: true`). Returns `:ok` otherwise. Intended to be called from
-  `AshA2A.Application.start/2` before any child starts.
+  `AshA2A.Application.start` before any child starts.
   """
   @spec check!(keyword()) :: :ok
   def check!(opts \\ []) do

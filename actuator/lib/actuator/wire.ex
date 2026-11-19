@@ -7,7 +7,8 @@ defmodule Actuator.Wire do
       {"op":"health"}
 
   Responses: `{"ok":true,"status":"performed|replayed","evidence":{...}}` or
-  `{"ok":false,"stage":<check number|"parse"|"config">,"refusal":"<code>"}`.
+  `{"ok":false,"stage":<check number|"parse"|"config"|"transport">,"refusal":"<code>"}`
+  (`"transport"` / `too_many_connections`: the listener's connection cap is reached).
   There is no operation that reconciles, changes policy or revocation, or takes a path,
   URL, command or module name; those are release/operator actions, not wire actions.
   """
@@ -40,12 +41,15 @@ defmodule Actuator.Wire do
 
   def handle(_, _, _), do: refuse("parse", :malformed_request)
 
+  @doc "The frame a listener answers with when its connection cap is reached."
+  def too_many_connections, do: refuse("transport", :too_many_connections)
+
   defp execute(store, ctx_fun, e64, c64) do
     with {:ok, eb} <- Sa2aCrypto.Envelope.b64(e64) |> tag(:malformed_request),
          {:ok, cb} <- Sa2aCrypto.Envelope.b64(c64) |> tag(:malformed_request),
-         {:ok, ctx} <- ctx_fun.(),
          {:ok, req} <- Fence.parse(eb, cb) do
-      case Store.execute(store, ctx, req) do
+      # the context is resolved inside the store step (T4), not before queueing
+      case Store.execute(store, ctx_fun, req) do
         {:ok, %{status: s, evidence: ev}} ->
           reply(%{"ok" => true, "status" => Atom.to_string(s), "evidence" => ev})
 
@@ -55,6 +59,9 @@ defmodule Actuator.Wire do
     else
       {:error, code} when is_atom(code) ->
         refuse(if(code == :config_unavailable, do: "config", else: "parse"), code)
+
+      _ ->
+        refuse("parse", :malformed_request)
     end
   end
 

@@ -9,9 +9,9 @@ defmodule AshA2A.Elicitation do
 
   The repo already had the *mechanics* -- a task parks `:input_required`
   (`AshA2A.Protocol.Agent.Runtime.handle_reply/2`,
-  `AshA2A.Transport.Runtime.apply_reply/2`) and a follow-up `message/send`
-  carrying the same `task_id` resumes it (`AshA2A.Transport.Runtime.continue/6`,
-  `AshA2A.Protocol.Agent.Runtime.continue_task/5`) -- but nothing made the
+  `AshA2A.Transport.Runtime.apply_reply`) and a follow-up `message/send`
+  carrying the same `task_id` resumes it (`AshA2A.Transport.Runtime.continue`,
+  `AshA2A.Protocol.Agent.Runtime.continue_task`) -- but nothing made the
   requested input *formal*: no schema rode with the request, so nothing could
   refuse a wrong-shape response before dispatch resumed. This module formalizes
   the request per the specs:
@@ -54,7 +54,7 @@ defmodule AshA2A.Elicitation do
     3. Expiry is configured per elicitation (`:expires_in`, milliseconds;
        default `nil` = never expires). When an expired elicitation is resumed,
        `resume/2` returns `{:error, {:elicitation_expired, id}}`, which the
-       standard error classifier (`AshA2A.Transport.Runtime.apply_reply/2` /
+       standard error classifier (`AshA2A.Transport.Runtime.apply_reply` /
        `AshA2A.Protocol.Agent.Runtime.handle_reply/2`) maps through the
        lifecycle to terminal `:failed`.
 
@@ -212,7 +212,7 @@ defmodule AshA2A.Elicitation do
   @doc """
   The complete handler reply that parks the task awaiting the elicited input.
 
-  `{:input_required, [part]}` -- the exact tuple `AshA2A.Transport.Runtime.apply_reply/2`
+  `{:input_required, [part]}` -- the exact tuple `AshA2A.Transport.Runtime.apply_reply`
   and `AshA2A.Protocol.Agent.Runtime.handle_reply/2` map to the parked
   `:input_required` state, with the elicitation part as the status message.
   """
@@ -343,7 +343,7 @@ defmodule AshA2A.Elicitation do
   end
 
   # The follow-up must NAME the elicitation it answers. Task scoping rides in
-  # the transport: `AshA2A.Transport.Runtime.continue/6` only ever resumes the
+  # the transport: `AshA2A.Transport.Runtime.continue` only ever resumes the
   # named task id, so the elicitation id is the second, in-task correlation
   # factor.
   defp matching?(pending, message) do

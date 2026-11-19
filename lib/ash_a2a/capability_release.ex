@@ -110,10 +110,10 @@ defmodule AshA2A.CapabilityRelease do
   alias __MODULE__.{Binding, Capability, Closure}
   alias AshA2A.StandingBinding
 
-  @spec candidate(String.t(), String.t(), String.t()) :: Capability.t()
+  @spec candidate(String.t(), String.t(), String.t()) :: %Capability{}
   def candidate(id, version, digest), do: candidate(id, version, digest, [])
 
-  @spec candidate(String.t(), String.t(), String.t(), keyword()) :: Capability.t()
+  @spec candidate(String.t(), String.t(), String.t(), keyword()) :: %Capability{}
   def candidate(id, version, digest, opts) when is_list(opts) do
     validate_text!(:id, id)
     validate_text!(:version, version)
@@ -128,7 +128,7 @@ defmodule AshA2A.CapabilityRelease do
     }
   end
 
-  @spec admit(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
+  @spec admit(%Capability{}, String.t()) :: {:ok, %Capability{}} | {:error, term()}
   def admit(%Capability{state: :candidate} = capability, admission_digest) do
     with :ok <- validate_digest(:admission_digest, admission_digest) do
       {:ok,
@@ -150,7 +150,7 @@ defmodule AshA2A.CapabilityRelease do
   resolved by StandingBinding/StandingRef against git-tracked or CI-artifact
   court evidence.
   """
-  @spec release(Capability.t(), keyword()) :: {:ok, Capability.t()} | {:error, term()}
+  @spec release(%Capability{}, keyword()) :: {:ok, %Capability{}} | {:error, term()}
   def release(%Capability{state: :admitted} = capability, opts) when is_list(opts) do
     with {:ok, standing_binding} <- StandingBinding.resolve(capability, opts) do
       {:ok,
@@ -169,7 +169,7 @@ defmodule AshA2A.CapabilityRelease do
   def release(%Capability{state: state}, _evidence),
     do: {:error, {:invalid_release_transition, state, :released}}
 
-  @spec retire(Capability.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
+  @spec retire(%Capability{}, String.t()) :: {:ok, %Capability{}} | {:error, term()}
   def retire(%Capability{state: :released} = capability, retirement_digest) do
     with :ok <- validate_digest(:retirement_digest, retirement_digest) do
       {:ok,
@@ -188,7 +188,7 @@ defmodule AshA2A.CapabilityRelease do
   Freezes one deployment closure. Every member must already be released and each
   capability id may occur only once. The digest is stable under input ordering.
   """
-  @spec freeze([Capability.t()]) :: {:ok, Closure.t()} | {:error, term()}
+  @spec freeze([%Capability{}]) :: {:ok, %Closure{}} | {:error, term()}
   def freeze(capabilities), do: freeze(capabilities, [])
 
   @doc """
@@ -196,7 +196,7 @@ defmodule AshA2A.CapabilityRelease do
   replays and re-admits at the closure boundary. Structural digest-shaped data
   is insufficient to manufacture an executable fleet closure.
   """
-  @spec freeze([Capability.t()], keyword()) :: {:ok, Closure.t()} | {:error, term()}
+  @spec freeze([%Capability{}], keyword()) :: {:ok, %Closure{}} | {:error, term()}
   def freeze(capabilities, opts) when is_list(capabilities) and is_list(opts) do
     with :ok <- require_released(capabilities),
          :ok <- require_unique_ids(capabilities),
@@ -209,7 +209,7 @@ defmodule AshA2A.CapabilityRelease do
     end
   end
 
-  @spec select(Closure.t(), String.t()) :: {:ok, Capability.t()} | {:error, term()}
+  @spec select(%Closure{}, String.t()) :: {:ok, %Capability{}} | {:error, term()}
   def select(%Closure{} = closure, capability_id) when is_binary(capability_id) do
     case Map.fetch(closure.capabilities, capability_id) do
       {:ok, %Capability{state: :released} = capability} -> {:ok, capability}
@@ -242,7 +242,7 @@ defmodule AshA2A.CapabilityRelease do
   The binding is evidence identity and may be recorded on a receipt, but it is
   never an authority token.
   """
-  @spec binding(String.t(), keyword()) :: {:ok, Binding.t() | nil} | {:error, term()}
+  @spec binding(String.t(), keyword()) :: {:ok, %Binding{} | nil} | {:error, term()}
   def binding(capability_id, opts \\ []) when is_binary(capability_id) and is_list(opts) do
     case release_config(opts) do
       {:legacy, _closure} ->
@@ -263,7 +263,7 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   @doc "Return released capability ids in stable lexical order."
-  @spec released_ids(Closure.t()) :: [String.t()]
+  @spec released_ids(%Closure{}) :: [String.t()]
   def released_ids(%Closure{} = closure) do
     closure.capabilities
     |> Map.keys()
@@ -306,7 +306,7 @@ defmodule AshA2A.CapabilityRelease do
   end
 
   @doc "Stable receipt/intended-effect projection of one strict release binding."
-  @spec attributes(Binding.t() | nil) :: map()
+  @spec attributes(%Binding{} | nil) :: map()
   def attributes(nil), do: %{}
 
   def attributes(%Binding{} = binding) do
@@ -440,7 +440,7 @@ defmodule AshA2A.CapabilityRelease do
   identity over JSON-native data so Python/RDF/tooling can independently
   recompute the same closure without understanding BEAM term encoding.
   """
-  @spec portable_digest([Capability.t()]) :: String.t()
+  @spec portable_digest([%Capability{}]) :: String.t()
   def portable_digest(capabilities) when is_list(capabilities) do
     members =
       capabilities

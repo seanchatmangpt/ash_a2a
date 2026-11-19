@@ -7,8 +7,11 @@ repository: the pinned in-repo v1 conformance courts (executed by
 statement lives in [A2A v1.0 conformance statement](a2a-v1-conformance.md);
 this page is the operator instrument over it.
 
-> v1.1 note: a2a-tck `main` is aligned to A2A 1.0.1; v1.1 requirements are not
-> yet in the TCK. v1.1 evidence is local courts only; see
+> v1.1 note: a2a-tck `main` is aligned to A2A 1.0.x; v1.1 requirements are not
+> yet in the TCK. A 2026-11-17 run at TCK `104a7b4a` (Python 3.15, all three
+> bindings) is recorded in
+> [the v1.0 statement](a2a-v1-conformance.md#a2a-tck-compatibility-run);
+> CI pins the same commit (`TCK_PIN_SHA` `104a7b4a`; the old `263b9cfa` pin is historical). v1.1 evidence is local courts only; see
 > [A2A v1.1 conformance](a2a-v1-1-conformance.md).
 
 ## The two surfaces
@@ -53,15 +56,18 @@ Runtime expectation: minutes to tens of minutes (the serial tail drives
 real Bandit loopback listeners and shared transports). Use `--only` to
 iterate on a subset.
 
+The external v1.1.0-rc protobuf/gRPC oracle (`test/support/a2a_v1_1_oracle/oracle.py`, driven by
+`test/ash_a2a_byte_server_conformance_test.exs`) runs in the `oracle` CI job with uv on PATH; see
+[A2A v1.1 conformance statement](a2a-v1-1-conformance.md).
+
 ## Court inventory (36 courts)
 
-The court set is **35 files**: the 37 files matching
+The court set is **36 files**: the 38 files matching
 `test/ash_a2a_v1_*_test.exs` minus the 2 explicit exclusions below. It is
 derived by glob at run time (`v1_courts/0` in
 `lib/mix/tasks/ash_a2a.v1_conformance_report.ex`); there is no
 hand-maintained list, and `test/tck_assert_script_test.exs` re-checks this
-count against the disk. (Earlier revisions of this page said 34; the
-list had already grown to 35 when the count was last edited.)
+count against the disk.
 
 Deliberately NOT in the list (see the module's comment block):
 `test/ash_a2a_v1_conformance_report_test.exs` (the runner's own
@@ -73,16 +79,49 @@ protocol conformance). There is no `test/tck/` directory; TCK
 configuration lives in `tck_sut.exs`, `tck_sut_auth.exs`,
 `priv/tck/test_dy4_auth_lanes.py`, and the `tck` job in
 `.github/workflows/ci.yml`, which runs the official suite at the pin in
-its single `TCK_PIN_SHA` variable (currently `263b9cfa`) with
-`--transport jsonrpc,http_json,grpc` (the SUT serves gRPC on `:10000`),
-installs via `pip install -e .` (pyproject; no `requirements.txt`), reads
+its single `TCK_PIN_SHA` variable (currently `104a7b4a`, full SHA `104a7b4ae0d83f65c075e3793e322953a830eaba`) with
+`--transport jsonrpc,http_json,grpc` (the SUT serves HTTP on `TCK_SUT_PORT` `9999` and gRPC on
+`TCK_SUT_GRPC_PORT`, default port+1 = `:10000`; set `TCK_SUT_GRPC_PORT` locally when a host
+service such as Docker Azurite holds `:10000`),
+installs the TCK with uv (`pip install uv==0.11.32`, then `uv venv --python 3.15
+/tmp/tck_venv` and `uv pip install -e .`; pyproject, no `requirements.txt`;
+uv downloads the Python 3.15 interpreter the TCK requires, so no extra
+third-party action is added), runs `run_tck.py` from that venv, reads
 `reports/compatibility.json`, and asserts with `scripts/tck_assert.py`
 (fails on any failed MUST requirement; prints pass/fail/not_tested/skipped/
 manual counts; court `test/tck_assert_script_test.exs`, fixture
-`test/fixtures/tck/compatibility_sample.json`). CI Python is 3.12, the
-version witnessed green at this pin; TCK `main` needs Python 3.15+.
+`test/fixtures/tck/compatibility_sample.json`). The CI job was reproduced
+step by step locally at the pin (SUT on `TCK_SUT_PORT`, gRPC on port+1): the
+assert line is `pass=99 fail=1 not_tested=18 skipped=6 manual=9 must_fail=0
+expected_fail=1 unexpected_fail=0`, assert exit 0, `run_tck.py` exit 1 (the
+accepted expected failure). Historical: through 2026-11-13 CI pinned
+`263b9cfa` with Python 3.12.
 TODO: re-run at `70f6f73c` (#258, aligns to spec 1.0.1) before moving
-`TCK_PIN_SHA`; the pin is deliberately not bumped here.
+`TCK_PIN_SHA` again.
+
+### Expected TCK failures
+
+At TCK `104a7b4a` exactly one requirement fails, `HTTP_JSON-SVC-001`. The
+decision: our error content type (`application/json`) is kept. Spec 11.1 only
+says SHOULD `application/a2a+json`, and the 11.6 example does show it, but the
+TCK's MUST `HTTP_JSON-ERR-001` test requires the substring `application/json`
+in the same error Content-Type while the SVC-001 test requires the media type
+to be exactly `application/a2a+json`. A bare `application/a2a+json` fails the
+MUST; a string passing both needs a parameter valued `application/json`, which
+spec 14.1.1 forbids (the media type is registered with no parameters), so no
+legitimate value satisfies both and the MUST wins. The failure is recorded in
+`scripts/tck_expected_failures.json` (id, reason, contradicted requirement,
+spec sections, TCK commits). `scripts/tck_assert.py PATH --expected-failures
+scripts/tck_expected_failures.json --tck-sha SHA` tolerates only listed ids
+that still fail on the named TCK commits, and exits 1 for any unlisted failure
+or for a listed id that starts passing, so the list cannot rot (court:
+`test/tck_assert_script_test.exs`). The `tck` job's assertion step uses it and
+accepts `run_tck.py` exit 1 only when the assert passed with at least one
+expected failure. The unposted report text is
+[tck-upstream-issue-draft.md](tck-upstream-issue-draft.md). Witnessed
+2026-11-17 (all three bindings, `104a7b4a`): 240 passed, 2 failed (both
+SVC-001), 21 skipped; assert `pass=99 fail=1 not_tested=18 skipped=6 manual=9
+must_fail=0 expected_fail=1 unexpected_fail=0`, exit 0; `run_tck.py` exit 1.
 
 Optional: `mix ash_a2a.v1_conformance_report --tck-report
 reports/compatibility.json` folds a produced TCK report's counts into the

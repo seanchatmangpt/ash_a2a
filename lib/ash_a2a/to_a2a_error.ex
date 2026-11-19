@@ -30,7 +30,7 @@ defmodule AshA2A.ToA2AError.Wire do
   reason must be chosen by the failure class at this layer and passed
   pre-wrapped, never derived from the numeric code alone.
   """
-  @spec envelope(AshA2A.Protocol.JSONRPC.Request.id(), integer(), String.t(), term()) :: map()
+  @spec envelope(String.t() | integer() | nil, integer(), String.t(), term()) :: map()
   def envelope(id, code, message, data) do
     %{
       "jsonrpc" => "2.0",
@@ -52,6 +52,12 @@ defmodule AshA2A.ToA2AError.Wire do
 
   def field_violations(_), do: []
 
+  @doc false
+  # Reader for `config :ash_a2a, :bad_request_details`; only `true` enables.
+  @spec bad_request_details?() :: boolean()
+  def bad_request_details?,
+    do: Application.get_env(:ash_a2a, :bad_request_details, false) == true
+
   @doc """
   `data` for a -32602 envelope. Default: the free-form message (wrapped into
   ErrorInfo by `Error.to_map/1`, unchanged legacy shape). With
@@ -62,7 +68,7 @@ defmodule AshA2A.ToA2AError.Wire do
   def invalid_data(error) do
     message = Exception.message(error)
 
-    with true <- Application.get_env(:ash_a2a, :bad_request_details, false) == true,
+    with true <- bad_request_details?(),
          [_ | _] = violations <- field_violations(error) do
       [error_info("INVALID_PARAMS", message), Error.bad_request(violations)]
     else
@@ -149,7 +155,7 @@ defprotocol AshA2A.ToA2AError do
   Returns the JSON-RPC 2.0 error response envelope for `error`, addressed to
   JSON-RPC id `id`.
   """
-  @spec to_a2a_error(t(), AshA2A.Protocol.JSONRPC.Request.id()) :: map()
+  @spec to_a2a_error(t(), String.t() | integer() | nil) :: map()
   def to_a2a_error(error, id)
 end
 

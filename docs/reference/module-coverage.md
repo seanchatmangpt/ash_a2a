@@ -256,5 +256,5 @@ Existing coverage: partial: referenced by RFC/assurance/conformance docs; no per
 ## See Also
 
 - [Reference index](index.md)
-- [Generated reference](generated/reference.md)
+- Generated reference (`generated/reference.md`)
 - [Ingress attestation](ingress-attestation.md)

@@ -4,6 +4,7 @@
 
 defmodule AshA2A.ConsequenceKernel.KeyCustody.HmacSha256 do
   @behaviour AshA2A.ConsequenceKernel.KeyCustody
+  @doc false
   def mac(payload, opts) when is_binary(payload) do
     with {:ok, key} <- fetch_key(opts) do
       {:ok,
@@ -11,6 +12,7 @@ defmodule AshA2A.ConsequenceKernel.KeyCustody.HmacSha256 do
     end
   end
 
+  @doc false
   def verify(payload, tag, opts) do
     with {:ok, expected} <- mac(payload, opts),
          true <- Plug.Crypto.secure_compare(expected, tag),

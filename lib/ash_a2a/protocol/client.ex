@@ -1725,6 +1725,10 @@ if Code.ensure_loaded?(Req) do
     defp decode_push_config_list(%{"configs" => configs}) when is_list(configs),
       do: decode_push_config_list(configs)
 
+    # v1 push list omits empty/default members: {} (or only nextPageToken) is an empty list.
+    defp decode_push_config_list(body) when is_map(body) and not is_map_key(body, "configs"),
+      do: {:ok, []}
+
     defp decode_push_config_list(configs) when is_list(configs) do
       decoded =
         Enum.reduce_while(configs, {:ok, []}, fn raw, {:ok, acc} ->

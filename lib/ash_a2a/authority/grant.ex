@@ -10,13 +10,13 @@ defmodule AshA2A.Authority.Grant do
 
   ## The escalation this closes (RFC-SA2A-001 S29)
 
-  `AshA2A.Agent.build_command/4` builds a real `AshA2A.Command` from an
+  `AshA2A.Agent.build_command` builds a real `AshA2A.Command` from an
   inbound `AshA2A.Protocol.Message`, taking `capability_id` straight from the message's
   own `skill` metadata -- a CALLER-SUPPLIED value. Before this module, it
   handed that value directly to
   `AshA2A.Authority.from_verified_identity/2`, which is a pure constructor:
   it mints a full `%AshA2A.Authority{}` for whatever capability id it is
-  given, with `source: :transport_verified`. `AshA2A.CommandBus.admit/2`
+  given, with `source: :transport_verified`. `AshA2A.CommandBus.admit`
   then checked `AshA2A.Authority.admits?/2`, which compares the authority's
   own `capability_id` against the command's -- and therefore passed by
   construction, always.
@@ -32,7 +32,7 @@ defmodule AshA2A.Authority.Grant do
   `authorize/3` is the missing decision. It asks the configured
   `AshA2A.Authority.Broker` whether THIS principal holds a standing grant for
   THIS capability, and only then synthesizes the authority struct. With no
-  grant it returns `nil`, and `AshA2A.CommandBus.admit/2`'s existing
+  grant it returns `nil`, and `AshA2A.CommandBus.admit`'s existing
   `:authority_required` refusal fails the dispatch closed before any
   actuation. `:observe` skills are untouched: `admit/2` returns `:ok` for
   them regardless of authority, by design.
@@ -42,7 +42,7 @@ defmodule AshA2A.Authority.Grant do
   Configured as `config :ash_a2a, :authority_policy, mode`:
 
     * `:broker` (**default**) -- fail-closed and RFC-conformant. Consults
-      `AshA2A.Authority.Broker.granted?/3` on the broker configured as
+      `AshA2A.Authority.Broker.granted?` on the broker configured as
       `config :ash_a2a, :authority_broker, MyBroker` (or
       `{MyBroker, opts}`). No broker configured means no grant can be
       proven, which means no authority: every consequential capability is
@@ -101,7 +101,7 @@ defmodule AshA2A.Authority.Grant do
   real `AshA2A.Authority` it holds or `nil`.
 
   `nil` in, `nil` out: an unauthenticated caller was never a candidate for a
-  grant, and `AshA2A.CommandBus.admit/2` already fails `:change`/
+  grant, and `AshA2A.CommandBus.admit` already fails `:change`/
   `:external_do` closed on a `nil` authority.
 
   Options (all defaulting to the application environment, and all present so
@@ -223,6 +223,11 @@ defmodule AshA2A.Authority.Grant do
   `renew/3` to extend or shorten a standing grant's `expires_at` in place
   rather than a `revoke/3` + `grant/3` round trip.
 
+  A grant that `revoke/3` tore down, or that ran out, can be issued again
+  with `grant/3`: the grant stands again from that call on. The authority
+  that was revoked stays revoked; the broker refuses every authority issued
+  at or before the revocation.
+
       subject = AshA2A.Identity.principal("user-1")
       {:ok, _authority} = AshA2A.Authority.Grant.grant(subject, "create_item")
   """
@@ -309,7 +314,7 @@ defmodule AshA2A.Authority.Grant do
   @doc """
   Renews the caller's own standing grant of `capability_id` to `subject` IN
   PLACE -- extends (or shortens) its `expires_at` through the configured
-  broker's optional `AshA2A.Authority.Broker.renew/4` callback, without a
+  broker's optional `AshA2A.Authority.Broker.renew` callback, without a
   revoke-then-reissue round trip.
 
   ## The window this closes
@@ -382,7 +387,7 @@ defmodule AshA2A.Authority.Grant do
   @doc """
   Lists every standing grant the configured broker holds for `subject` --
   the enumeration surface `granted?/3` cannot provide (see
-  `AshA2A.Authority.Broker.list_grants/2`), needed for admin tooling, audit
+  `AshA2A.Authority.Broker.list_grants`), needed for admin tooling, audit
   review, and proactive expiry sweeps rather than only a per-capability
   `granted?/3` probe.
 

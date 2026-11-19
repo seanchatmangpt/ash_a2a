@@ -179,9 +179,6 @@ defmodule AshA2A.Execution.PPlan do
       # unmapped status, ...): propagate, never a CaseClauseError
       {:error, _reason} = error ->
         error
-
-      other ->
-        {:error, {:unexpected_status_result, other}}
     end
   end
 

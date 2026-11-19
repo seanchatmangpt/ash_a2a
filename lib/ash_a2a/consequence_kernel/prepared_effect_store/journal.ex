@@ -13,7 +13,7 @@ defmodule AshA2A.ConsequenceKernel.PreparedEffectStore.Journal do
   ## Integrity
 
     * Entry `n` is `{n, prev_tag, event}`; its tag is the HMAC (via the
-      configured `AshA2A.ConsequenceKernel.KeyCustody` provider) of those
+      configured `ConsequenceKernel.KeyCustody` provider) of those
       bytes, and entry `n+1` embeds entry `n`'s tag. Sequence numbers must be
       exactly `1..n`; an edit, swap, duplicate or gap is refused
       (`:prepared_authentication_failed`, `:journal_corrupt`,

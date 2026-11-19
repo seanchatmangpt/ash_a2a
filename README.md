@@ -17,13 +17,17 @@ A `Spark.Dsl.Extension` that exposes your `Ash.Resource`/`Ash.Domain` actions as
 ```elixir
 def deps do
   [
-    {:ash_a2a, "~> 26.11.13"}
+    {:ash_a2a, "~> 26.11.17"}
   ]
 end
 ```
 
-The quickstart serves HTTP with `bandit`, which is not a dependency of `ash_a2a`; add
-`{:bandit, "~> 1.0"}` (or any Plug server) to your own deps.
+The quickstart serves HTTP with `bandit`, which is an optional dependency of `ash_a2a`
+(so a consumer compiles without it); add `{:bandit, "~> 1.5"}` (or any Plug server) to
+your own deps. `oban`, `ash_oban`, `ash_state_machine`, `postgrex`, `flame`,
+`durable_server`, `req_llm` and `simple_sat` are optional too; see
+[optional dependencies](docs/how-to/optional-dependencies.md) for what each guarded module
+does when one is absent.
 
 `mix ash_a2a.install` (an Igniter task) wires the extension into an existing
 project; see `Mix.Tasks.AshA2a.Install`. Requires Elixir `~> 1.19` and Ash `~> 3.0`.
@@ -108,6 +112,46 @@ base plug refuses: supervised `message/stream` fan-out with
 `tasks/resubscribe` replay, push-notification config RPCs with signed
 webhook delivery, and the authenticated extended card (same reference).
 
+## Prove it over the wire
+
+The repository ships a simulation server and the tools that check it, so you can see
+the protocol work before you write an agent. Each command below was run on 2026-11-17
+(see [the tutorial](docs/tutorials/prove-your-agent-with-the-simulation-server.md) for
+the output); they need the repository checked out, not the Hex package.
+
+- `mix ash_a2a.sim` serves a real A2A v1.1 agent (an ETS note store with real Ash
+  mutations) over JSON-RPC, HTTP+JSON and gRPC (`lf.a2a.v1.A2AService`), with push
+  delivery to a real webhook receiver. It needs `bandit` and `simple_sat`, both
+  optional dependencies.
+- `mix ash_a2a.sim --prove` boots it and drives every served method, route and RPC
+  over the wire: 243 probes, 243 pass, 0 fail. A served item with no probe fails the
+  run. See [run the simulation server](docs/how-to/run-the-simulation-server.md).
+- `mix ash_a2a.sim --parity --strict` compares each response with a reference encoder
+  built from the upstream proto at tag `v1.1.0-rc` (`scripts/a2a_v1_1_parity`; the
+  reference shares no code with this library): 1283 rows, 0 fail, 0 known, byte for byte.
+  It needs a Python virtual environment, created once by
+  `scripts/a2a_v1_1_parity/setup.sh`. See
+  [check A2A v1.1 parity](docs/how-to/check-a2a-v1-1-parity.md).
+- `mix ash_a2a.sim.mcp` (launcher `bin/a2a-sim-mcp`, registered in `.mcp.json`) puts an
+  MCP server in front of the simulation server, so an MCP client such as Claude Code can
+  send messages, stream, cancel, read the agent card and the Ash rows. `python3
+  scripts/mcp_drive.py` is a standard-library MCP client that drives every surface item
+  (93 of 93 at the last clean run, 2026-11-16; with other work in flight on 2026-11-17
+  it reported uncovered items, so rerun it). See
+  [control the sim over MCP](docs/how-to/control-the-sim-over-mcp.md).
+- `mix ash_a2a.doctor` reads your compiled domains and prints findings about their A2A
+  wiring (`--strict`, `--json`, `--domain`); it exits non-zero on an error. See
+  [run the doctor](docs/how-to/run-doctor.md).
+- `mix ash_a2a.receipts.verify` checks Markdown receipts against the files they cite;
+  run on this repository on 2026-11-17 it exited 1 with three
+  `verified_without_run_log` findings. See [verify receipts](docs/how-to/verify-receipts.md).
+- `mix ash_a2a.chicago.mutate` hot-loads each mutant of the anti-vacuity catalog (46
+  entries resolve with `--list`) and runs the courts expected to kill it;
+  `--require-killed` fails unless every mutant dies (on 2026-11-17 a full run killed 43 of 46 and
+  blocked 3 when the shared build changed under it; the 3 rerun alone were killed). The CI workflow
+  `.github/workflows/proofs.yml` runs the prover, parity, MCP drive and mutation gate;
+  it has not run on a remote runner.
+
 ## What you get
 
 Every **public** Ash action on an extended resource or domain is projected
@@ -154,9 +198,20 @@ Around that core, the package also ships:
   layer as the HTTP binding. The proto is vendored at
   `priv/proto/a2a.proto` with a SHA-256 provenance header and the full
   `protoc` regeneration recipe in that header.
-- **Signed agent cards** — `AshA2A.Protocol.CardSigning` signs a card's
-  `signatures` JWS entries and verifies each against the JCS
-  canonicalization of the card payload (`CardSigning.verify/3`).
+- **Signed agent cards** — every HTTP card mount takes `sign_with: [jwk: private_jwk,
+  kid: kid]` and serves a v1.1 `AgentCardSignature` (detached JWS, ES256 or EdDSA) over the
+  RFC 8785 canonical card; `AshA2A.Protocol.AgentCardSignature.verify/3` checks it against
+  a JWKS. The extended card is signed too. See
+  [sign agent cards](docs/how-to/sign-agent-cards.md) (including key rotation). The older
+  HS256/RS256 scheme, `AshA2A.Protocol.CardSigning`, remains a separate, non-interoperable
+  option.
+- **Declared reply mode** — a skill declares `reply :message` (or an agent
+  `use AshA2A.Protocol.Agent, reply: :task | :message`) to answer with a bare Message
+  instead of a task, which also decides what `message/stream` sends. See
+  [choose a reply mode](docs/how-to/choose-a-reply-mode.md).
+- **Event journal** — with `config :ash_a2a, :event_journal, {module, ref}` every task
+  mutation is journaled (ETS or EKV) so `tasks/resubscribe` and `lastSeenGeneration` replay
+  what a client missed. See [operate the event journal](docs/how-to/operate-the-event-journal.md).
 - **Discovery caching** — `AshA2A.Protocol.CardCache.fetch/2` implements
   A2A §8.6 client caching: `ETag`/`If-None-Match` revalidation, a
   persistent on-disk cache, and stale fallback when revalidation fails.
@@ -209,6 +264,9 @@ reference for lookup, and explanation for understanding. It is published on
 - **Tutorials** — [Getting Started](docs/tutorials/getting-started.md): a
   complete, end-to-end walkthrough from resource declaration through direct
   dispatch, a supervised agent process, and serving the agent over HTTP.
+  [Prove your agent with the simulation server](docs/tutorials/prove-your-agent-with-the-simulation-server.md):
+  run the simulation server, call every binding, run the prover and the parity check, and
+  drive it over MCP.
 - **How-to guides**:
   - [Authenticate inbound A2A requests](docs/how-to/authenticate-agent-requests.md)
     — wire `AshA2A.Protocol.Plug.Auth` so a verified credential becomes
@@ -233,6 +291,16 @@ reference for lookup, and explanation for understanding. It is published on
     through the real CommandBus with an in-process broker and store, no mocks.
   - [Migrate legacy to strict](docs/how-to/migrate-legacy-to-strict.md) — the
     seven behavior changes, what breaks, and the fix for each.
+  - [Choose a reply mode](docs/how-to/choose-a-reply-mode.md),
+    [operate the event journal](docs/how-to/operate-the-event-journal.md),
+    [sign agent cards](docs/how-to/sign-agent-cards.md) (with key rotation) and
+    [mount the gRPC server in your own endpoint](docs/how-to/mount-the-grpc-server-in-your-endpoint.md).
+  - [Run the simulation server](docs/how-to/run-the-simulation-server.md),
+    [check A2A v1.1 parity](docs/how-to/check-a2a-v1-1-parity.md),
+    [control the sim over MCP](docs/how-to/control-the-sim-over-mcp.md),
+    [run the doctor](docs/how-to/run-doctor.md),
+    [verify receipts](docs/how-to/verify-receipts.md) and
+    [optional dependencies](docs/how-to/optional-dependencies.md).
 - **Reference**:
   - [Module index](docs/reference/index.md)
   - [DSL reference](docs/reference/dsl.md) — the `a2a` section, `skill`
@@ -241,7 +309,7 @@ reference for lookup, and explanation for understanding. It is published on
     config key and environment variable the library reads.
   - [Telemetry events](docs/reference/telemetry.md) — the event catalog
     with payloads.
-  - [Mix tasks](docs/reference/mix-tasks.md) — the 23 shipped tasks.
+  - [Mix tasks](docs/reference/mix-tasks.md) — the shipped tasks.
   - [A2A endpoint contract](docs/reference/a2a-endpoint-contract.md) —
     served HTTP surface: agent card, JSON-RPC methods, error codes,
     streaming, auth.
@@ -364,7 +432,7 @@ release). Standing: PARTIAL (no v1.1 TCK verdict).
 
 - Emitted cards advertise `protocolVersion` 1.1; the server accepts
   `A2A-Version` 0.3, 1.0 and 1.1 (`AshA2A.Protocol.Version.supported_default/0`); the
-  client-header default (`Version.default/0`) is still 1.0. Select v1.1 with the
+  client-header default (`AshA2A.Protocol.Version.default/0`) is still 1.0. Select v1.1 with the
   `A2A-Version: 1.1` header.
 - Per the conformance statement, the default test tier ran 4705 tests with 0 failures
   at `d8f593dc` (not re-run by the doc pass); the serial tier has env-blocked tests
@@ -388,8 +456,8 @@ Engineering records (point-in-time, not guides) are kept in the repository:
   built on top of the protocol (the `SA2A` name refers to that layer).
 - `research/` — research notes.
 
-Versioning is calendar-based (`26.11.x`); `~> 26.11.13` pins within the 26.11
-series at or above 26.11.13. Semantic Versioning is intended after 1.0. See the
+Versioning is calendar-based (`26.11.x`); `~> 26.11.17` pins within the 26.11
+series at or above 26.11.17. Semantic Versioning is intended after 1.0. See the
 [CHANGELOG](CHANGELOG.md) — `main` routinely runs ahead of the latest published
 Hex release.
 

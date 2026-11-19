@@ -7,7 +7,7 @@ defmodule AshA2A.Transport.WireCompat do
 
   The hex `A2A.Plug` (`a2a` 0.3.0) decodes `message/send` bodies into wire
   `%A2A.Message{}` structs and hands them to the agent GenServer, but
-  `AshA2A.Agent.__dispatch__/4` only matches `%AshA2A.Protocol.Message{}` ->
+  `AshA2A.Agent.__dispatch__` only matches `%AshA2A.Protocol.Message{}` ->
   typed `:invalid_message` failure; the failed protocol task then hits
   `A2A.JSONRPC.encode_send_result/2` (no clause for protocol task structs) ->
   FunctionClauseError -> empty 200 body. No conversion existed in either dep.

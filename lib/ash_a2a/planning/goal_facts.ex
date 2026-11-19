@@ -63,7 +63,7 @@ defmodule AshA2A.Planning.GoalFacts do
 
     1. **Closed capability-id set.** `task_sequence` must be non-empty, and
        every entry's capability id must resolve via the same canonical
-       `AshA2A.Info.skill/2` that `AshA2A.Planning.resolve_all/2` uses for
+       `AshA2A.Info.skill/2` that `AshA2A.Planning.resolve_all` uses for
        real (re-run there too, once this envelope reaches
        `AshA2A.Planning.from_envelope/3` -- same function both times, zero
        duplicated logic, zero drift risk). Refuses `:noncanonical_capability`.

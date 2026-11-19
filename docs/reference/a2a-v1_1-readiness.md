@@ -44,7 +44,7 @@ NOT-STARTED predate wave 2 and are superseded by that statement once courts run.
   HEAD `d18aa92c`. The wire protocol here stays v1.0 (v1.0.1 is
   wire-compatible); every rc item below is NOT-STARTED unless a row says
   otherwise.
-- a2a-tck: no GitHub release; CI pin `263b9cfa`; `70f6f73c` (#258) aligns to
+- a2a-tck: no GitHub release; CI pin `104a7b4a` (was `263b9cfa`); `70f6f73c` (#258) aligns to
   1.0.1. Re-run there is a TODO (see [TCK suite](tck-suite.md)).
 
 ## Near-term initiatives

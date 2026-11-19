@@ -19,7 +19,7 @@ defmodule AshA2A.Skill do
   `hddl_operators` is a different kind of override field: it has no Ash-
   native equivalent to derive instead, so unlike `arguments` it IS copied
   through into the compiled capability index by
-  `AshA2A.CapabilityIndex.Compiler.project/3` -- see that function and
+  `AshA2A.CapabilityIndex.Compiler.project` -- see that function and
   `AshA2A.HddlOperator`'s own @moduledoc.
 
   ## `consequence`
@@ -31,7 +31,7 @@ defmodule AshA2A.Skill do
   data-/state-mutating or externally-effecting operation) -- `action.type`
   alone cannot distinguish the two. `consequence` is this capability's own,
   explicit classification, computed once at compile time
-  (`AshA2A.CapabilityIndex.Compiler.project/3`) and carried as real
+  (`AshA2A.CapabilityIndex.Compiler.project`) and carried as real
   capability truth alongside `id`/`resource`/`action` rather than
   recomputed ad hoc by every consumer (`AshA2A.Agent`, `AshA2A.CommandBus`):
 
@@ -52,12 +52,12 @@ defmodule AshA2A.Skill do
 
   ## `on_cancel`
 
-  Optional real Ash-side compensation hook run by `AshA2A.Agent.__cancel__/2`
+  Optional real Ash-side compensation hook run by `AshA2A.Agent.__cancel__`
   when a task under this skill is genuinely canceled (see
   `AshA2A.OnCancel`'s @moduledoc for the full contract and failure handling).
   Like `hddl_operators` and unlike `arguments`, this field has no Ash-native
   equivalent to derive instead, so it IS copied through into the compiled
-  capability index by `AshA2A.CapabilityIndex.Compiler.project/3`. `nil`
+  capability index by `AshA2A.CapabilityIndex.Compiler.project`. `nil`
   (the default) means no hook is declared -- cancellation stays telemetry-only,
   exactly as before this field existed.
 
@@ -96,7 +96,8 @@ defmodule AshA2A.Skill do
           input_modes: [String.t()] | nil,
           output_modes: [String.t()] | nil,
           security_requirements: [%{optional(String.t()) => [String.t()]}] | nil,
-          streaming?: boolean()
+          streaming?: boolean(),
+          reply: :task | :message
         }
 
   defstruct [
@@ -115,6 +116,7 @@ defmodule AshA2A.Skill do
     :output_modes,
     :security_requirements,
     streaming?: false,
+    reply: :task,
     expose?: true,
     arguments: [],
     hddl_operators: [],

@@ -66,7 +66,7 @@ defmodule AshA2A.Planning.SemanticSynthesis do
         |> LLMProfiles.req_llm_opts!()
         |> Keyword.merge(Keyword.get(opts, :req_llm_opts, []))
 
-      generate_object = Keyword.get(opts, :generate_object, &ReqLLM.generate_object/4)
+      generate_object = Keyword.get(opts, :generate_object, &default_generate_object/4)
       schema = output_schema(capability_ids)
 
       prompt =
@@ -84,6 +84,17 @@ defmodule AshA2A.Planning.SemanticSynthesis do
         {:error, %{code: _} = refusal} -> {:error, refusal}
         {:error, reason} -> {:error, refusal(:semantic_synthesis_failed, reason)}
       end
+    end
+  end
+
+  # Optional dep guard: :req_llm may be absent in a consumer build. Return a
+  # typed error instead of raising UndefinedFunctionError.
+  @doc false
+  def default_generate_object(model_spec, prompt, schema, opts) do
+    if Code.ensure_loaded?(ReqLLM) and function_exported?(ReqLLM, :generate_object, 4) do
+      apply(ReqLLM, :generate_object, [model_spec, prompt, schema, opts])
+    else
+      {:error, {:unsupported, :req_llm}}
     end
   end
 

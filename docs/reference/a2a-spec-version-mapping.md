@@ -7,7 +7,7 @@ the in-repo `AshA2A.Protocol.Plug` (a2a-elixir 0.3.0 lineage, now
 speaking A2A protocol v1.0 wire shapes, `lib/ash_a2a/protocol/`), and
 the ash_a2a-owned `AshA2A.A2ATransport.Plug`.
 
-Version: v26.11.13
+Version: v26.11.17
 
 The method table is not hand-maintained prose:
 `test/ash_a2a/a2a_transport/spec_mapping_doc_test.exs` drives every row
@@ -126,16 +126,54 @@ config store are node-local ETS. Durable tasks are implemented through the
 pluggable `AshA2A.Protocol.TaskStore` seam: `AshA2A.TaskStore.Ekv` survives an
 agent restart, and plug-created tasks are readable from a second node over a
 real 2-node EKV cluster (courts `test/ash_a2a_v1_taskstore_durability_test.exs`
-and `test/ash_a2a_v1_multinode_continuity_test.exs`). Pinned gaps:
-`tasks/list` pages the in-memory map only, and a mid-flight stream stays
-node-local (a resubscribed stream on a fresh agent never progresses by
-itself). Durable cross-node task continuity: PARTIAL.
+and `test/ash_a2a_v1_multinode_continuity_test.exs`). `tasks/list` reads
+through the store via `AshA2A.Transport.Runtime.list_tasks_for/3` (store tasks
+merged with the in-memory map, owner-gated, one pagination pass, store read
+failure surfaced as an error; covered by
+`test/ash_a2a/protocol/l04_list_tasks_store_readthrough_test.exs`, 3 passed on
+2026-11-16). Resubscribe replay: `tasks/resubscribe` with
+`lastSeenGeneration` replays missed events through the
+`AshA2A.Protocol.EventJournal` behaviour (`append/4`, `replay_after/3`,
+`trim/3`; see `docs/reference/event-journal.md`), configured by
+`config :ash_a2a, :event_journal, {module, ref}` (unset means no journal). The
+journal has a writer: every task write passes through
+`AshA2A.Protocol.Agent.State.put_task_checked/2`, which appends one
+`messageUpdate`, `statusUpdate` or `artifactUpdate` event per mutation, stamped
+with the task generation after it (`EventJournal.record_task/3`, derived by
+`AshA2A.Protocol.Task.Delta`), whether or not a subscriber is
+attached. An append failure never fails the task write; it is logged and emitted
+as `[:ash_a2a, :event_journal, :append_failed]`. A terminal task's journal is
+trimmed to `:event_journal_keep_last` events (default 256). On the read side the
+module is resolved at runtime; if it is unset, not loaded, errors, or retains
+nothing for a client that is behind, the stream
+falls back to the node-local transport event log, then to a TaskStore snapshot.
+Replay is by generation: a client further behind than the retained tail gets
+only that tail.
+Remaining gap: no live producer migrates between nodes. When a task that is
+still being worked on (submitted or working)
+is resubscribed after a journal replay and this agent holds no local
+producer (the agent process does not hold the task in memory; it can only
+read it through the TaskStore), the stream waits a
+bounded grace (`:resubscribe_orphan_grace_ms`, default 500) and then ends with a
+`StreamError` frame, code `PRODUCER_UNAVAILABLE`; the task is not reported
+terminal, so clients should `tasks/get` and resubscribe against the owning node.
+An interrupted task (input or auth required) keeps its stream open, because the
+next client message can be served by any node that reads the TaskStore.
+Journal durability across nodes depends on the configured journal module, not on
+this library. Status: verified by `test/ash_a2a/event_journal_writer_test.exs`
+(agent killed and restarted over the ETS journal),
+`test/ash_a2a/event_journal_crossnode_test.exs` (two real peer nodes over the
+EKV journal; tags `serial`, `serial_solo`),
+`test/lane_w2_02/sse_journal_resubscribe_test.exs` and
+`test/lane_l05/resubscribe_claim_test.exs`.
+Durable cross-node task continuity: PARTIAL.
 
 ## External TCK
 
 The upstream A2A TCK (`a2aproject/a2a-tck`) compatibility suite ran once
-against all three bindings; latest recorded verdict 2026-10-13 at
-`13622178`: 79.0% overall, 234 passed / 31 skipped / 0 failed — see
+against all three bindings; latest recorded run 2026-11-17 at TCK pin `104a7b4a`:
+240 passed / 2 failed (both `HTTP_JSON-SVC-001`, a documented TCK contradiction listed in
+`scripts/tck_expected_failures.json`) — see
 [A2A v1.0 conformance statement](a2a-v1-conformance.md). TCK certification
 remains UNSUPPORTED (not claimed). The mapping table above is local,
 two-transport differential evidence only.

@@ -81,11 +81,8 @@ defmodule AshA2A.Attestation.Gate do
          true <- claims_match_nonce?(claims, nonce) do
       detect_emulator(claims)
     else
-      {:refused, _} = refused -> refused
       {:error, reason} -> {:refused, reason}
       false -> {:refused, :nonce_mismatch}
-      {:ok, _} -> {:refused, :nonce_mismatch}
-      _ -> {:refused, :malformed_token}
     end
   end
 
@@ -225,7 +222,7 @@ defmodule AshA2A.Attestation.Gate do
         dist_km = haversine_km(a, b)
 
         cond do
-          not (is_number(dt) and dt >= 0) ->
+          dt < 0 ->
             {:halt, {:refused, :spoofed_payload}}
 
           dist_km == :error ->

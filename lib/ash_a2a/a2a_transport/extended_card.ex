@@ -99,23 +99,52 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
   def public_card(conn, opts) do
     base_url = AshA2A.Protocol.Plug.get_base_url(conn) || opts.a2a.base_url
     card = GenServer.call(opts.a2a.agent, :get_agent_card)
-    AshA2A.Protocol.JSON.encode_agent_card(card, [url: base_url] ++ opts.a2a.agent_card_opts)
+
+    # The extended card states the same served capabilities as the public
+    # card (`:capability_overrides`, layered over the card's own): a card
+    # answered by `GetExtendedAgentCard` cannot say `extendedAgentCard: false`.
+    agent_card_opts =
+      case Map.get(opts.a2a, :capability_overrides) do
+        overrides when is_map(overrides) and map_size(overrides) > 0 ->
+          base =
+            Keyword.get(opts.a2a.agent_card_opts, :capabilities) ||
+              Map.get(card, :capabilities, %{})
+
+          Keyword.put(opts.a2a.agent_card_opts, :capabilities, Map.merge(base, overrides))
+
+        _none ->
+          opts.a2a.agent_card_opts
+      end
+
+    AshA2A.Protocol.JSON.encode_agent_card(card, [url: base_url] ++ agent_card_opts)
   end
 
   # The provider may have changed the card (added skills), so signatures
   # inherited from the public card are stale: always drop them, then re-sign
-  # when a signing key is configured (`agent_card_opts[:sign_with]`, a keyword
-  # with :key/:alg/:kid or a `{key, opts}` tuple).
+  # the card that is served. The key is the one the public card is signed
+  # with: the plug's `:sign_with`, or `agent_card_opts[:sign_with]` (a keyword
+  # with `:jwk`/`:kid` for the A2A v1.1 `AgentCardSignature` scheme or
+  # `:key`/`:alg`/`:kid` for `AshA2A.Protocol.CardSigner`, or a `{key, opts}`
+  # tuple). A JWK that cannot sign raises, as on the public card; the older
+  # scheme keeps serving the card unsigned when it cannot sign.
   @doc false
   def resign(card, opts) do
     card = AshA2A.Protocol.CardSigner.strip_signatures(card)
-    agent_card_opts = opts.a2a.agent_card_opts || []
+    a2a = opts.a2a
+    agent_card_opts = Map.get(a2a, :agent_card_opts) || []
 
-    case signing_opts(Keyword.get(agent_card_opts, :sign_with)) do
-      nil ->
+    sign_opts =
+      signing_opts(Keyword.get(agent_card_opts, :sign_with)) ||
+        signing_opts(Map.get(a2a, :sign_with))
+
+    cond do
+      is_nil(sign_opts) ->
         card
 
-      sign_opts ->
+      Keyword.has_key?(sign_opts, :jwk) ->
+        AshA2A.Protocol.Plug.CardServe.sign_card(card, sign_opts)
+
+      true ->
         try do
           AshA2A.Protocol.CardSigner.sign(card, sign_opts)
         rescue
@@ -126,7 +155,10 @@ defmodule AshA2A.A2ATransport.ExtendedCard do
 
   defp signing_opts(nil), do: nil
   defp signing_opts({key, o}) when is_list(o), do: Keyword.put(o, :key, key)
-  defp signing_opts(o) when is_list(o), do: if(Keyword.has_key?(o, :key), do: o)
+
+  defp signing_opts(o) when is_list(o),
+    do: if(Keyword.has_key?(o, :key) or Keyword.has_key?(o, :jwk), do: o)
+
   defp signing_opts(_), do: nil
 
   defp call_provider(provider, identity, public) do

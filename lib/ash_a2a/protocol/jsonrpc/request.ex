@@ -89,25 +89,9 @@ defmodule AshA2A.Protocol.JSONRPC.Request do
   end
 
   def validate_params(%__MODULE__{method: "tasks/list", params: params}) do
-    cond do
-      bad_timeline_length?(params) ->
-        {:error, Error.invalid_params("\"timelineLength\" must be a non-negative integer")}
-
-      bad_page_size?(params) ->
-        {:error, Error.invalid_params("\"pageSize\" must be an integer between 1 and 100")}
-
-      bad_status?(params) ->
-        {:error, Error.invalid_params("\"status\" must be a valid task state")}
-
-      bad_history_length?(params) ->
-        {:error, Error.invalid_params("\"historyLength\" must be a non-negative integer")}
-
-      bad_timestamp?(params) ->
-        {:error,
-         Error.invalid_params("\"statusTimestampAfter\" must be a valid ISO 8601 timestamp")}
-
-      true ->
-        :ok
+    case AshA2A.Protocol.ListTasksParams.validate(params) do
+      :ok -> :ok
+      {:error, message} -> {:error, AshA2A.Protocol.ListTasksParams.to_error(message)}
     end
   end
 
@@ -265,19 +249,6 @@ defmodule AshA2A.Protocol.JSONRPC.Request do
   defp validate_params_field(%{"params" => _}), do: {:ok, %{}}
   defp validate_params_field(_), do: {:ok, %{}}
 
-  defp bad_page_size?(%{"pageSize" => ps}) do
-    not is_integer(ps) or ps < 1 or ps > 100
-  end
-
-  defp bad_page_size?(_), do: false
-
-  defp bad_status?(%{"status" => status}) when is_binary(status) do
-    status not in AshA2A.Protocol.JSON.valid_state_strings()
-  end
-
-  defp bad_status?(%{"status" => _}), do: true
-  defp bad_status?(_), do: false
-
   defp bad_history_length?(params) do
     bad_hl?(params) or
       case Map.get(params, "configuration") do
@@ -359,14 +330,4 @@ defmodule AshA2A.Protocol.JSONRPC.Request do
       hl -> not is_integer(hl) or hl < 0
     end
   end
-
-  defp bad_timestamp?(%{"statusTimestampAfter" => ts}) when is_binary(ts) do
-    case DateTime.from_iso8601(ts) do
-      {:ok, _, _} -> false
-      _ -> true
-    end
-  end
-
-  defp bad_timestamp?(%{"statusTimestampAfter" => _}), do: true
-  defp bad_timestamp?(_), do: false
 end

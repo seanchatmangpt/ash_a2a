@@ -1,0 +1,33 @@
+{
+  "artifact": {
+    "git_dirty?": true,
+    "git_sha": "f6011dc644ab7e54116da6f6e630a11adfee9c41",
+    "repo": "ash_a2a"
+  },
+  "claim": "A real HDDL-planned facilitator, dispatched over real A2A, produces OCEL v2 events that beam4pm's real ingest endpoint (booted hermetically in-VM from the canonical checkout) accepts (HTTP 201) for every phase transition, and the accepted events seal into a tamper-evident Affidavit receipt that re-verifies accepted: true.",
+  "depends_on": [],
+  "environment": {
+    "elixir": "1.20.4",
+    "hostname": "vm",
+    "otp": "29"
+  },
+  "evidence": {
+    "affidavit_receipt_chain_hash": "2314f0bca99993aa40290a5aaa84ed49aee79fe88cdd03905b1020f890102968",
+    "affidavit_receipt_content_address": "e4037de58a267c3ac15ca50a630c9b8bb626ba3017605dd11bfea66dd1eff408",
+    "deviant_capture_file": "/home/user/beam4pm/qualification/gym_bridge/deviant_ocel_events.json",
+    "deviant_events_accepted": 5,
+    "deviant_events_posted": 5,
+    "ingest_url": "http://127.0.0.1:36259",
+    "reference_capture_file": "/home/user/beam4pm/qualification/gym_bridge/reference_ocel_events.json",
+    "reference_events_accepted": 18,
+    "reference_events_posted": 18,
+    "reference_meetings": 3
+  },
+  "execution": {
+    "emitted_at": "2026-11-17T07:21:17.827682Z"
+  },
+  "falsifier": "Any dispatched phase transition fails to produce a 201-accepted OCEL event at beam4pm's ingest endpoint under the same real HDDL plan, or the assembled Affidavit receipt fails re-verification.",
+  "id": "ERC-001",
+  "notes": "Deviant capture deliberately omits the clean_house phase event -- consumed by beam4pm's BeamPM.PowlConformanceE2ETest (ERC-002) as the injected falsifier case for the downstream conformance claim.",
+  "state": "verified"
+}

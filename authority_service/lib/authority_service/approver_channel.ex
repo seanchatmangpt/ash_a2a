@@ -1,6 +1,6 @@
 defmodule AuthorityService.ApproverChannel do
   @moduledoc """
-  Pluggable channel to registered human signers (the sa2a-approver wire is a later lane).
+  Pluggable channel to registered human signers (`ApproverChannel.Mailbox` is fed by the `"approve"` wire op).
 
   `solicit/3` asks `approver_id` (a custodian id from the policy) to sign the presented
   effect. The response is data: the service re-verifies it exactly like an attached

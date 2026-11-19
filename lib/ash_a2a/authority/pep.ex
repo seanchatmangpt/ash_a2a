@@ -14,7 +14,7 @@ defmodule AshA2A.Authority.PEP do
   - `AshA2A.Authority` — authority evidence struct bound to principal and
     capability; its `from_verified_identity/2` is a constructor, not a grant
     decision.
-  - `AshA2A.Agent.build_command/4` → `AshA2A.Authority.Grant.authorize/3` is
+  - `AshA2A.Agent.build_command` → `AshA2A.Authority.Grant.authorize/3` is
     the real dispatch-path grant decision; `AshA2A.CommandBus` revalidates
     against the same broker immediately before DO (see `admitted_by` in
     `AshA2A.Authority`).
@@ -42,7 +42,7 @@ defmodule AshA2A.Authority.PEP do
   1. `AshA2A.Copilot.Pipeline` — WIRED (pipeline.ex, `authority_check/2` in
      `admit_path/3`): a refusal surfaces as
      `{:refuse, %{code: :authority, reason: detail}}`.
-  2. Any new external front-door before `AshA2A.Agent.build_command/4` should
+  2. Any new external front-door before `AshA2A.Agent.build_command` should
      call the PEP before identity synthesis. The PEP is an outer membrane,
      not a replacement for Grant.
   3. Do NOT double-gate inside `AshA2A.CommandBus` — it already revalidates

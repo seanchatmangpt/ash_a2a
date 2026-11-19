@@ -30,7 +30,9 @@ Smallest change on each side:
 1. `authority_service` `Issuer` derives the policy class from an actuator-shaped effect
    (`consequence_class`, tier amount 0) as well as from `effect_class`/`amount`. Unknown classes
    still refuse. One canonical byte string is now what the authority certifies and what the
-   actuator executes.
+   actuator executes. `Issuer.to_actuator_certificate/1` maps `{envelope, message}` to the
+   actuator's `signatures: [...]` certificate form (`cd authority_service && mix test`,
+   66 passed, 2026-11-16, Elixir 1.20.4 / OTP 29.1.1).
 2. Control plane: `AshA2A.C2.ActuatorProfile` (effect mapping and certificate conversions) and
    two framed clients, `AuthorityClient.Framed` (`:authority_socket`) and
    `ActuatorClient.Framed` (`:actuator_socket`). The actuator client re-derives the effect bytes
@@ -83,15 +85,70 @@ allow-list refusal. Unit coverage: `test/ash_a2a/c2/certificate_model_test.exs`,
 
 ## Open gaps
 
-- TLS transport is not implemented in the framed clients (UDS only).
-- Approval collection for k > 0 classes: the framed authority client forwards `ctx.approvals`
-  but the control plane has no approver channel of its own.
+- Authority to actuator, end to end: closed. The C2 compromise court runs the real
+  `authority_service` release build and the real actuator as separate OS processes; a
+  certificate the authority issued for an actuator-shaped effect, converted with
+  `Issuer.to_actuator_certificate/1`, is executed by the actuator's production entrypoint
+  (registry = the authority key, quorum 1): `performed`, replay `replayed`, one ledger entry
+  (`compat[0]` in `tmp/c2_court/report.json`, asserted by
+  `test/ash_a2a/c2_compromise/c2_compromise_court_test.exs`, 12 passed, 2026-11-17). Found on
+  the way: the authority's service key carried revocation epoch 0 unconditionally, which an
+  actuator with an advanced revocation view refuses; set `AUTHORITY_KEY_REVOCATION_EPOCH` to
+  the epoch the actuator's view is at. A policy must also name the actuator's consequence
+  classes or the issuer answers `unknown_effect_class`.
+- Quorum above one, end to end: closed for the court, open for `lib/`. An actuator quorum
+  counts signatures over ONE set of certificate fields from distinct custodians. The court
+  gets honest quorum-2 certificates from two independent `authority_service` processes (two
+  keys, two custodians, two journals): authority 1 issues, authority 2 issues the same effect
+  with authority 1's validity window in the optional `"window"` field (it is accepted only if
+  it narrows the authority's own policy, else `window_invalid`), and
+  `Issuer.combine_actuator_certificates/1` merges the two converted certificates (it refuses
+  differing fields and a duplicate signer). A certificate with only one real authority's
+  signature is refused `quorum_not_met` by the quorum-2 actuator, and so is one authority
+  signing twice (court attacks C2C-A45, C2C-A46). Tests:
+  `authority_service/test/multi_authority_test.exs`, the court report. Remains: nothing in
+  `lib/` collects signatures from two authorities (the framed clients speak to one), the same
+  approvals are presented to both authorities, and a second authority's window request is
+  only checked against its own clock skew, so deployed authorities need synchronised clocks
+  within the policy skew (5 s default).
+- TLS transport: both framed clients accept
+  `ctx.c2_tls` (`AshA2A.C2.L07Tls.Transport`): `verify_peer`, pinned CA, client certificate
+  (mutual), hostname check; incomplete config or failed handshake is refused and never falls back
+  to the unix socket. Test: `test/ash_a2a/c2/l07_tls_framed_test.exs` drives the transport only.
+  The authority listener serves TLS 1.3 (`verify_peer`, `fail_if_no_peer_cert`, pinned CA,
+  64-connection cap) and, via `AUTHORITY_LISTEN_UNIX` plus `AUTHORITY_TLS_PORT`, alongside the
+  UDS listener; tests with a real `:ssl` round trip and an unpinned-client-cert refusal:
+  `authority_service/test/mtls_test.exs`, `authority_service/test/lane_w2_05_authority_hardening_test.exs`.
+  The actuator's TLS listener is covered by `actuator/test/actuator/wire_tls_cap_test.exs` and
+  by the court's mTLS attacks. Remains: no test drives the `lib/` framed clients against either
+  release's TLS listener, because the court speaks the wire with its own harness client.
+- Approval collection for k > 0 classes.
+  The control plane has an approver channel: the `"approve"` wire op deposits a signed
+  approval in `AuthorityService.ApproverChannel.Mailbox`, and the Issuer solicits it on `issue`
+  and re-verifies it (distinct custodians, `(kid, nonce)` replay refused at deposit and by the
+  journal). The mailbox, when wired by `Runtime` (`verify:` option), verifies each approval
+  (signature against the registered key, standing, audience, custodian == slot approver, digest
+  and generation == slot) before a slot or nonce is consumed and refuses `approval_invalid`;
+  slots stay first-wins. Tests: `authority_service/test/approver_mailbox_test.exs`,
+  `lane_w2_05_authority_hardening_test.exs`. A mailbox started without `verify:` (tests only)
+  still only holds data. Remains: the framed client in `lib/` does not send `"approve"` and
+  `sa2a-approver` does not speak the op (neither exists yet as code to test); the court attaches
+  approvals to the `issue` request instead. Policy epoch and TTL are checked only by the Issuer.
 - The actuator profile requires the actuator's own effect vocabulary in `PreparedEffect.payload`;
-  general `PreparedEffect`s are refused (`:payload_profile`).
-- Red-team defects B1, B2, B3, T2, T3, T4 and the minor items are in `actuator/` and
-  `authority_service/` and are not changed here (PR #65 did not touch those projects).
-
-## See also
-
-- `docs/reference/c2-certificate.md`
-- `docs/reference/c2-compromise-court.md`
+  general `PreparedEffect`s are refused (`:payload_profile`). By design.
+- Listener connection caps: closed. Every listener (`Actuator.Wire.UDS`, `Actuator.Wire.TLS`,
+  `AuthorityService.Listener` unix and TLS) sets a listen backlog of 256, four times its
+  64-connection cap, so a burst is decided by the cap and not dropped by the kernel accept
+  queue. A connection over the cap gets one `too_many_connections` refusal frame and is closed;
+  the actuator's TLS listener closes it before the handshake instead. Burst tests open cap + 32
+  bare connections and assert exactly 64 served and 32 refused, in arrival order:
+  `actuator/test/actuator/l10_red_team_test.exs`, `actuator/test/actuator/wire_tls_cap_test.exs`,
+  `authority_service/test/lane_w2_05_authority_hardening_test.exs` (unix and TLS). The TLS burst
+  test exposed a leak: `:ssl.close/1` refuses a transport-accepted socket, so over-cap TLS
+  connections had been left open until the peer gave up; they are now dropped with a
+  zero-timeout handshake.
+- Red-team defects B1, B2, B3, T2, T3, T4 are in `actuator/` and `authority_service/`; their
+  regressions run in the child suites: `cd actuator && mix test` 85 passed,
+  `cd authority_service && mix test` 72 passed (2026-11-17, Elixir 1.20.4 / OTP 29, `openssl`
+  present). The T4 test forces the interleaving with a store-process context fun that blocks
+  on a message.

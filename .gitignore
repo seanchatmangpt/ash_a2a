@@ -60,3 +60,7 @@ target-lane*/
 # Root-level logs and crash dumps.
 /*.log
 /erl_crash.dump
+
+# Python bytecode of the helper scripts under scripts/.
+__pycache__/
+*.pyc

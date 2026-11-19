@@ -197,7 +197,7 @@ defmodule AshA2A.Test.ByteServer do
     Real unified Plug pipeline serving:
     - `GET /health` & `GET /ready` (`AshA2A.Health.Plug`)
     - `POST /email/inbound` (RSA-SHA256 DKIM crypto + `AshA2A.Email.Inbound` + live `Agent.call`)
-    - `/v1/*` (`AshA2A.Protocol.Plug.Auth` + `AshA2A.Transport.HTTPJSON`)
+    - `/tasks/*`, `/message:*` (`AshA2A.Protocol.Plug.Auth` + `AshA2A.Transport.HTTPJSON`)
     - `/.well-known/*` & `POST /` (`AshA2A.Protocol.Plug.Auth` + `AshA2A.Transport.Plug`)
     """
     @behaviour Plug
@@ -212,21 +212,7 @@ defmodule AshA2A.Test.ByteServer do
       dkim_pub = Keyword.fetch!(opts, :dkim_pub)
       allowlist = Keyword.fetch!(opts, :email_allowlist)
 
-      auth_opts =
-        AshA2A.Protocol.Plug.Auth.init(
-          schemes: [:bearer],
-          exempt_paths: [
-            "/.well-known/agent-card.json",
-            "/.well-known/agent-card.schema.json",
-            "/.well-known/skills.schema.json"
-          ],
-          verify: fn _conn, token, _ctx ->
-            case Map.fetch(tokens, token) do
-              {:ok, principal} -> {:ok, principal}
-              :error -> {:error, :invalid_token}
-            end
-          end
-        )
+      auth_opts = AshA2A.Test.ByteServer.auth_opts(tokens)
 
       transport_opts =
         AshA2A.Transport.Plug.init(
@@ -234,7 +220,7 @@ defmodule AshA2A.Test.ByteServer do
           base_url: base_url,
           sign_with: sign_with,
           serve_schemas: true,
-          schema_index: agent,
+          schema_index: AshA2A.Test.ByteServer.Order,
           push_notifications: true,
           last_modified: ~U[2026-11-16 00:00:00Z]
         )
@@ -260,8 +246,8 @@ defmodule AshA2A.Test.ByteServer do
     end
 
     @impl Plug
-    def call(%Plug.Conn{path_info: [p]} = conn, %{health_opts: h})
-        when p in ["health", "ready"] do
+    def call(%Plug.Conn{path_info: path} = conn, %{health_opts: h})
+        when path in [["health", "live"], ["health", "ready"], ["ready"]] do
       AshA2A.Health.Plug.call(conn, h)
     end
 
@@ -277,29 +263,22 @@ defmodule AshA2A.Test.ByteServer do
                require: [:dkim]
              }),
            {:ok, result} <-
-             GenServer.call(
+             AshA2A.Protocol.call(
                state.agent,
-               {:call,
-                %{
-                  role: "user",
-                  parts: [
-                    %{
-                      kind: "data",
-                      data: %{
-                        "skill" => "create_order",
-                        "input" => %{
-                          "reference" => parsed.subject,
-                          "amount_cents" => 1250,
-                          "status" => "email_admitted"
-                        }
-                      }
-                    }
-                  ]
-                },
-                %{
-                  "a2a.auth" => %{"identity" => principal.id},
-                  "email.from" => principal.address
-                }}
+               AshA2A.Protocol.Message.new_user([
+                 AshA2A.Protocol.Part.Data.new(%{
+                   "skill" => "create_order",
+                   "input" => %{
+                     "reference" => parsed.subject,
+                     "amount_cents" => 1250,
+                     "status" => "email_admitted"
+                   }
+                 })
+               ]),
+               metadata: %{
+                 "a2a.auth" => %{"identity" => principal.id},
+                 "email.from" => principal.address
+               }
              ) do
         body = Jason.encode!(%{"ok" => true, "principal" => principal.id, "task_id" => result.id})
 
@@ -314,7 +293,14 @@ defmodule AshA2A.Test.ByteServer do
       end
     end
 
-    def call(%Plug.Conn{path_info: ["v1" | _]} = conn, state) do
+    def call(%Plug.Conn{path_info: [seg | _]} = conn, state)
+        when seg in [
+               "tasks",
+               "message:send",
+               "message:stream",
+               "message:live",
+               "extendedAgentCard"
+             ] do
       conn = AshA2A.Protocol.Plug.Auth.call(conn, state.auth_opts)
       if conn.halted, do: conn, else: AshA2A.Transport.HTTPJSON.call(conn, state.http_json_opts)
     end
@@ -323,6 +309,27 @@ defmodule AshA2A.Test.ByteServer do
       conn = AshA2A.Protocol.Plug.Auth.call(conn, state.auth_opts)
       if conn.halted, do: conn, else: AshA2A.Transport.Plug.call(conn, state.transport_opts)
     end
+  end
+
+  @doc """
+  The bearer verification both bindings (HTTP mounts and gRPC) share:
+  `tokens` maps a bearer token to its verified principal map.
+  """
+  def auth_opts(tokens) do
+    AshA2A.Protocol.Plug.Auth.init(
+      schemes: %{"bearer_auth" => %AshA2A.Protocol.SecurityScheme.HTTPAuth{scheme: "bearer"}},
+      exempt_paths: [
+        [".well-known", "agent-card.json"],
+        [".well-known", "agent-card.schema.json"],
+        [".well-known", "skills.schema.json"]
+      ],
+      verify: fn _conn, token, _ctx ->
+        case Map.fetch(tokens, token) do
+          {:ok, principal} -> {:ok, principal}
+          :error -> {:error, :invalid_token}
+        end
+      end
+    )
   end
 
   @doc """
@@ -357,32 +364,21 @@ defmodule AshA2A.Test.ByteServer do
 
     # 4. Start real Bandit WebhookSink on ephemeral port
     {:ok, webhook_state} = Elixir.Agent.start_link(fn -> %{events: [], waiters: []} end)
+
     {:ok, webhook_bandit} =
-      Bandit.start_link(plug: {WebhookSink, agent_pid: webhook_state}, port: 0, ip: {127, 0, 0, 1})
+      Bandit.start_link(
+        plug: {WebhookSink, agent_pid: webhook_state},
+        port: 0,
+        ip: {127, 0, 0, 1}
+      )
+
     {:ok, {_, webhook_port}} = ThousandIsland.listener_info(webhook_bandit)
 
-    # 5. Start real Bandit HTTP/1.1 + HTTP/2 A2A Server on ephemeral port
-    #    We pass a dynamic base_url plug wrapper or resolve port after bind via a ref.
-    tokens = %{
-      token_a => %{"sub" => principal_a, "scope" => "orders:rw"},
-      token_b => %{"sub" => principal_b, "scope" => "orders:rw"}
-    }
+    # 5. Start the HTTP/1.1 + HTTP/2 A2A server. Transport.Plug.init/1 memoizes the
+    #    card from base_url, so the port is reserved up front (the loopback
+    #    close/rebind race is accepted).
+    tokens = %{token_a => auth_a, token_b => auth_b}
 
-    # Pre-bind ephemeral TCP port cleanly or use port 0 and configure base_url via
-    # PutBaseUrl wrapper? Transport.Plug.init/1 reads :base_url at init time, so
-    # we reserve port 0 via :gen_tcp, close, or update? Even cleaner: Bandit
-    # supports `port: 0`, and we can wrap Router so `put_base_url` is set if needed,
-    # OR let's bind `:gen_tcp.listen(0, ...)`? Wait: closing and re-binding has a tiny race;
-    # instead, `AshA2A.Protocol.Plug.put_base_url/2` works per-request, AND we can
-    # pass `base_url: "http://127.0.0.1:0"` -> better yet, start Bandit with `port: 0`
-    # and pass a `:base_url` string or set `conn.private[:a2a][:base_url]` dynamically
-    # from `conn.port`! Let's check: Transport.Plug uses `opts.base_url` at init time
-    # for the memoized card, so binding a socket or starting Bandit on an atomic port
-    # range? Wait: let's reserve an ephemeral port or use a `:persistent_term` / Agent?
-    # Actually `Bandit` accepts `port: 0` and `ThousandIsland.listener_info/1` returns it,
-    # while `AshA2A.Transport.Plug` checks `opts.base_url` at `init/1`.
-    # Using a fresh ephemeral port from `:gen_tcp.listen(0, ...)` closed right before
-    # `Bandit.start_link` on loopback is standard when `init/1` needs the URL upfront.
     {:ok, sock} = :gen_tcp.listen(0, [:binary, ip: {127, 0, 0, 1}, reuseaddr: true])
     {:ok, http_port} = :inet.port(sock)
     :ok = :gen_tcp.close(sock)
@@ -403,12 +399,19 @@ defmodule AshA2A.Test.ByteServer do
         ip: {127, 0, 0, 1}
       )
 
-    # 6. Start real HTTP/2 gRPC server on ephemeral port 0
+    # 6. Start real HTTP/2 gRPC server on ephemeral port 0: the shipped
+    #    simulation handler (owner-scoped through AshA2A.Transport.Plug) behind
+    #    the same bearer verification the HTTP mounts use.
+    grpc_transport = Module.concat(__MODULE__, :"GrpcTransport#{uniq}")
+    {:ok, grpc_transport_pid} = AshA2A.A2ATransport.start_link(name: grpc_transport)
+
     {:ok, grpc_sup} =
       AshA2A.Transport.GRPC.Supervisor.start_link(
         port: 0,
-        agent: agent_name,
-        base_url: base_url
+        ip: {127, 0, 0, 1},
+        handler: AshA2A.Sim.GrpcHandler,
+        ctx: %{agent: agent_name, opts: %{}, transport: grpc_transport},
+        auth: {AshA2A.Transport.GRPC.Auth, auth_opts(tokens)}
       )
 
     grpc_port = AshA2A.Transport.GRPC.Supervisor.port(grpc_sup)
@@ -432,7 +435,14 @@ defmodule AshA2A.Test.ByteServer do
       token_a: token_a,
       token_b: token_b,
       stop: fn ->
-        for p <- [http_bandit, webhook_bandit, grpc_sup, agent_pid, webhook_state] do
+        for p <- [
+              http_bandit,
+              webhook_bandit,
+              grpc_sup,
+              grpc_transport_pid,
+              agent_pid,
+              webhook_state
+            ] do
           if is_pid(p) and Process.alive?(p) do
             try do
               GenServer.stop(p, :normal, 1_000)
@@ -440,6 +450,20 @@ defmodule AshA2A.Test.ByteServer do
               :exit, _ -> :ok
             end
           end
+        end
+
+        # The gRPC listener's handler/ctx and bearer interceptor live in the
+        # (process-global) application env: release them with the listener so
+        # the next gRPC court starts from a clean seam.
+        Application.delete_env(:ash_a2a, AshA2A.Transport.GRPC.Server)
+
+        endpoint_key = AshA2A.Transport.GRPC.Server.Endpoint
+
+        case endpoint_key
+             |> then(&Application.get_env(:ash_a2a, &1, []))
+             |> Keyword.delete(:auth) do
+          [] -> Application.delete_env(:ash_a2a, endpoint_key)
+          rest -> Application.put_env(:ash_a2a, endpoint_key, rest)
         end
       end
     }

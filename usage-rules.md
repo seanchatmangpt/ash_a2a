@@ -156,6 +156,20 @@ so uplink calls can route by session or task id.
 (HTTP 409, `-32010` `TASK_GENERATION_MISMATCH`; `ABORTED` on live streams); `subscribe`
 with `lastSeenGeneration` skips the snapshot and replays only newer events.
 
+**Do** declare how a skill answers when it should not return a task: `reply :message` in the
+`a2a` block (or `use AshA2A.Protocol.Agent, reply: :message`) answers with a bare Message and
+`message/stream` sends exactly one Message frame. **Don't** rely on a skill that returns only a
+Message streaming one by accident: undeclared, a stream follows the task lifecycle. A
+`reply :message` skill cannot ask for input, stream artifacts or be cancelled.
+
+**Do** sign the card you serve (`sign_with: [jwk: private_jwk, kid: kid]` on a card mount) and
+publish a JWKS holding the new public key before you rotate to it.
+
+**Do** check a change against the simulation server before shipping it: `mix ash_a2a.sim --prove`
+(every served method, route and RPC) and `mix ash_a2a.sim --parity --strict` (byte for byte
+against the upstream v1.1 proto) in the library repository, and `mix ash_a2a.doctor` in your own
+application.
+
 ## Compile-time enforcement
 
 **Do** let the verifiers refuse bad declarations at compile time. `AshA2A.Verifiers.VerifySkills`
@@ -180,6 +194,8 @@ lease-capable authorizer). Fix the declaration, don't fight the verifier.
 
 - `docs/how-to/authenticate-agent-requests.md` — the real auth + grant walkthrough
 - `docs/how-to/verify-authority-on-async-paths.md` — async revocation
+- `docs/how-to/choose-a-reply-mode.md` — task or bare Message
+- `docs/tutorials/prove-your-agent-with-the-simulation-server.md` — prove, parity, MCP
 - `docs/reference/mix-tasks.md` — `mix ash_a2a.install` emits a marker-checked copy
   of these rules into your project
 - `mix usage_rules.sync AGENTS.md --all` (the `usage_rules` package) — combine these

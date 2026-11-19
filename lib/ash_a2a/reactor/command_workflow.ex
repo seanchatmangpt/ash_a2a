@@ -31,7 +31,7 @@ defmodule AshA2A.Reactor.CommandWorkflow do
   Because `:execute_command` genuinely depends on `:build_command`'s real
   output (`result(:build_command)`) and `:confirm_receipt` genuinely depends
   on `:execute_command`'s real output, a consequence-bearing command with no
-  admitted `AshA2A.Authority` is refused inside `AshA2A.CommandBus.admit/2`
+  admitted `AshA2A.Authority` is refused inside `AshA2A.CommandBus.admit`
   (a real `:authority_required` code) and `:execute_command` returns
   `{:error, ...}` -- the real Reactor engine halts the run there:
   `:confirm_receipt` never executes and `Reactor.run/2` surfaces the real

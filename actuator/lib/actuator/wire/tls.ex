@@ -7,6 +7,15 @@ defmodule Actuator.Wire.TLS do
   use GenServer
   alias Actuator.Wire
 
+  # Bounded concurrent connections: a connection over the cap is closed before any handshake
+  # work is spent on it (the peer sees its TLS handshake fail on an established TCP
+  # connection). The listen backlog is sized well above the cap, so a burst of connects reaches
+  # the acceptor and is decided by the cap, never dropped by the kernel accept queue.
+  @max_conns 64
+  @backlog 4 * @max_conns
+  def max_conns, do: @max_conns
+  def backlog, do: @backlog
+
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   @doc "SSL options for the listener, or {:error, :mtls_config_incomplete}."
@@ -21,6 +30,7 @@ defmodule Actuator.Wire.TLS do
          {:packet_size, Wire.max_frame()},
          {:active, false},
          {:reuseaddr, true},
+         {:backlog, @backlog},
          {:ip, Keyword.get(opts, :ip, {127, 0, 0, 1})},
          {:versions, [:"tlsv1.3"]},
          {:certfile, String.to_charlist(opts[:certfile])},
@@ -40,7 +50,8 @@ defmodule Actuator.Wire.TLS do
          {:ok, lsock} <- :ssl.listen(Keyword.get(opts, :port, 0), ssl) do
       store = Keyword.fetch!(opts, :store)
       ctx_fun = Keyword.fetch!(opts, :ctx_fun)
-      spawn_link(fn -> accept(lsock, store, ctx_fun) end)
+      conns = :counters.new(1, [])
+      spawn_link(fn -> accept(lsock, store, ctx_fun, conns) end)
       {:ok, %{lsock: lsock}}
     else
       {:error, reason} -> {:stop, reason}
@@ -55,23 +66,43 @@ defmodule Actuator.Wire.TLS do
     {:reply, p, st}
   end
 
-  defp accept(lsock, store, ctx_fun) do
+  defp accept(lsock, store, ctx_fun, conns) do
     case :ssl.transport_accept(lsock) do
       {:ok, t} ->
-        spawn(fn ->
-          case :ssl.handshake(t, 10_000) do
-            {:ok, sock} -> serve(sock, store, ctx_fun)
-            _ -> :ok
-          end
-        end)
+        if :counters.get(conns, 1) >= @max_conns do
+          reject(t)
+        else
+          :counters.add(conns, 1, 1)
 
-        accept(lsock, store, ctx_fun)
+          spawn(fn ->
+            try do
+              case :ssl.handshake(t, 10_000) do
+                {:ok, sock} -> serve(sock, store, ctx_fun)
+                _ -> :ok
+              end
+            after
+              :counters.sub(conns, 1, 1)
+            end
+          end)
+        end
+
+        accept(lsock, store, ctx_fun, conns)
 
       {:error, :closed} ->
         :ok
 
       {:error, _} ->
-        accept(lsock, store, ctx_fun)
+        accept(lsock, store, ctx_fun, conns)
+    end
+  end
+
+  # `:ssl.close/1` refuses a transport-accepted socket (`notsup_on_transport_accept_socket`)
+  # and would leave the TCP connection open. A zero-timeout handshake is the supported way to
+  # drop it: it fails at once and closes the connection without spending handshake work.
+  defp reject(t) do
+    case :ssl.handshake(t, 0) do
+      {:ok, sock} -> :ssl.close(sock)
+      _ -> :ok
     end
   end
 

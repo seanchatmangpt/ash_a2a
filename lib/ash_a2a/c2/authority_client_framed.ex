@@ -12,12 +12,14 @@ defmodule AshA2A.C2.AuthorityClient.Framed do
   recomputes the digest from those bytes and decides the class from them.
 
   `ctx` keys: `:authority_socket` (path, required), `:approvals` (wire approvals, default `[]`),
-  `:c2_receive_timeout` (ms, default 5000). The certificate that comes back binds the ACTUATOR
+  `:c2_receive_timeout` (ms, default 5000), `:c2_tls` (optional mutual-TLS map, see
+  `AshA2A.C2.L07Tls.Transport`; when present the unix socket is never used). The certificate that comes back binds the ACTUATOR
   digest, which the framed actuator client re-derives before sending.
   """
   @behaviour AshA2A.C2.AuthorityClient
 
   alias AshA2A.C2.{ActuatorProfile, AuthorityResponse}
+  alias AshA2A.C2.L07Tls.Transport
 
   @max_reply 1_048_576
 
@@ -34,7 +36,7 @@ defmodule AshA2A.C2.AuthorityClient.Framed do
              "generation" => request.generation,
              "approvals" => Map.get(ctx, :approvals, [])
            }),
-         {:ok, reply} <- call(path, body, Map.get(ctx, :c2_receive_timeout, 5_000)) do
+         {:ok, reply} <- call(path, ctx, body, Map.get(ctx, :c2_receive_timeout, 5_000)) do
       decode(reply, eff.digest)
     end
   end
@@ -51,6 +53,9 @@ defmodule AshA2A.C2.AuthorityClient.Framed do
 
   defp decode(_, _), do: {:error, :authority_transport_refused}
 
+  # With `ctx.c2_tls` set the socket path is ignored and never used as a fallback.
+  defp socket(%{c2_tls: _}), do: {:ok, nil}
+
   defp socket(ctx) do
     case Map.get(ctx, :authority_socket) do
       p when is_binary(p) and p != "" -> {:ok, p}
@@ -58,26 +63,21 @@ defmodule AshA2A.C2.AuthorityClient.Framed do
     end
   end
 
-  defp call(path, body, timeout) do
-    case :gen_tcp.connect(
-           {:local, String.to_charlist(path)},
-           0,
-           [:binary, packet: :raw, active: false],
-           timeout
-         ) do
+  defp call(path, ctx, body, timeout) do
+    case Transport.connect(path, ctx, [:binary, packet: :raw, active: false], timeout) do
       {:ok, s} ->
         try do
-          with :ok <- :gen_tcp.send(s, <<byte_size(body)::32, body::binary>>),
-               {:ok, <<len::32>>} <- :gen_tcp.recv(s, 4, timeout),
+          with :ok <- Transport.send(s, <<byte_size(body)::32, body::binary>>),
+               {:ok, <<len::32>>} <- Transport.recv(s, 4, timeout),
                true <- len <= @max_reply,
-               {:ok, resp} <- :gen_tcp.recv(s, len, timeout),
+               {:ok, resp} <- Transport.recv(s, len, timeout),
                {:ok, %{} = m} <- Jason.decode(resp) do
             {:ok, m}
           else
             _ -> {:error, :authority_transport_refused}
           end
         after
-          :gen_tcp.close(s)
+          Transport.close(s)
         end
 
       {:error, _} ->

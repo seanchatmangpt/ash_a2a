@@ -57,6 +57,14 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   duplicate) is replaced by `last + 1`, so no two events of one task ever
   share a generation. The resolved value is written into the logged payload.
   `"task"` snapshots never consume a generation; they only raise the floor.
+
+  A task mutation is one event (A2A v1.1 3.2.7). When the same mutation can be
+  reported by two publishers (the stream pump and a subscriber riding the
+  agent's own fan-out), each passes `once: true` with `generation:`: an event
+  whose generation is not greater than the last event logged for the task is
+  then dropped, and the current seq is returned; a newer one is logged at
+  exactly that generation. `push: false` logs the event without a webhook
+  delivery.
   """
   @spec publish(atom(), String.t(), kind(), map(), boolean(), keyword()) :: non_neg_integer()
   def publish(transport, task_id, kind, payload, final? \\ false, opts \\ []) do
@@ -310,7 +318,27 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   end
 
   @impl true
-  def handle_call({:publish, task_id, kind, payload, final?, opts}, _from, state) do
+  def handle_call({:publish, task_id, kind, payload, final?, opts}, from, state) do
+    if already_logged?(Map.get(state, :event_gens, %{}), task_id, kind, opts) do
+      {:reply, Map.get(state.seqs, task_id, 0), state}
+    else
+      do_publish(task_id, kind, payload, final?, opts, from, state)
+    end
+  end
+
+  def handle_call(:push_opts, _from, state), do: {:reply, state.push, state}
+
+  def handle_call({:attempts, task_id}, _from, state),
+    do: {:reply, state.attempts |> Map.get(task_id, []) |> Enum.reverse(), state}
+
+  defp already_logged?(gens, task_id, kind, opts) when kind != "task" do
+    gen = Keyword.get(opts, :generation)
+    Keyword.get(opts, :once, false) and is_integer(gen) and gen <= Map.get(gens, task_id, 0)
+  end
+
+  defp already_logged?(_gens, _task_id, _kind, _opts), do: false
+
+  defp do_publish(task_id, kind, payload, final?, opts, _from, state) do
     seq = Map.get(state.seqs, task_id, 0) + 1
     {payload, gens} = assign_generation(state.gens, task_id, kind, payload, opts)
     true = :ets.insert(state.table, {{task_id, seq}, kind, payload, final?})
@@ -335,8 +363,23 @@ defmodule AshA2A.A2ATransport.TaskEvents do
         })
     end
 
+    # The last generation an EVENT was logged at, per task (`once: true`
+    # compares with it; a "task" snapshot is not an event and does not count).
+    event_gens =
+      case kind != "task" && generation_of(payload) do
+        gen when is_integer(gen) ->
+          state
+          |> Map.get(:event_gens, %{})
+          |> Map.update(task_id, gen, &max(&1, gen))
+
+        _ ->
+          Map.get(state, :event_gens, %{})
+      end
+
     state =
-      %{state | seqs: Map.put(state.seqs, task_id, seq), gens: gens} |> trim(task_id, seq)
+      %{state | seqs: Map.put(state.seqs, task_id, seq), gens: gens}
+      |> Map.put(:event_gens, event_gens)
+      |> trim(task_id, seq)
 
     Registry.dispatch(A2ATransport.registry_name(state.transport), task_id, fn entries ->
       for {pid, version} <- entries,
@@ -344,10 +387,13 @@ defmodule AshA2A.A2ATransport.TaskEvents do
           do: send(pid, {:a2a_task_event, task_id, seq, kind, payload, final?})
     end)
 
+    # `push: false`: the publisher reports the same change again as a "task"
+    # snapshot, which is what the webhook receives.
     state =
-      if kind in ["task", "status-update", "message-update"],
-        do: push(state, task_id, seq, kind, payload),
-        else: state
+      if kind in ["task", "status-update", "message-update"] and
+           Keyword.get(opts, :push, true),
+         do: push(state, task_id, seq, kind, payload),
+         else: state
 
     # An interrupted (input/auth-required) event does not close the stream but
     # its log must still age out if the task never moves again; the sweep is
@@ -357,11 +403,6 @@ defmodule AshA2A.A2ATransport.TaskEvents do
 
     {:reply, seq, state}
   end
-
-  def handle_call(:push_opts, _from, state), do: {:reply, state.push, state}
-
-  def handle_call({:attempts, task_id}, _from, state),
-    do: {:reply, state.attempts |> Map.get(task_id, []) |> Enum.reverse(), state}
 
   @impl true
   def handle_cast({:attempt, task_id, attempt}, state) do
@@ -423,8 +464,19 @@ defmodule AshA2A.A2ATransport.TaskEvents do
        when kind in ["status-update", "artifact-update", "message-update"] do
     last = Map.get(gens, task_id, 0)
     explicit = Keyword.get(opts, :generation) || generation_of(payload)
-    gen = if is_integer(explicit) and explicit > last, do: explicit, else: last + 1
-    {put_generation(payload, gen), Map.put(gens, task_id, gen)}
+
+    # `once: true` publishers report a stored mutation at the task's stored
+    # generation, which is never renumbered (a "task" snapshot may already
+    # have raised the floor past it).
+    gen =
+      cond do
+        Keyword.get(opts, :once, false) and is_integer(explicit) -> explicit
+        is_integer(explicit) and explicit > last -> explicit
+        true -> last + 1
+      end
+
+    gens = Map.put(gens, task_id, max(last, gen))
+    {put_generation(payload, gen), gens}
   end
 
   defp assign_generation(gens, _task_id, _kind, payload, _opts), do: {payload, gens}
@@ -432,7 +484,8 @@ defmodule AshA2A.A2ATransport.TaskEvents do
   defp put_generation(%{} = payload, gen) do
     case Enum.find(@generation_keys, &is_map(payload[&1])) do
       nil -> payload
-      key -> Map.update!(payload, key, &Map.put(&1, "generation", gen))
+      # ProtoJSON spells an int64 as a decimal string (`generation_of/1` reads both).
+      key -> Map.update!(payload, key, &Map.put(&1, "generation", Integer.to_string(gen)))
     end
   end
 

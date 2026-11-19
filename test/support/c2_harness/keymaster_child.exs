@@ -26,10 +26,22 @@
 #       approve          a human approval in the real AuthorityService wire form
 #       compromise       hands over ONLY A, A2, alice
 #
-# Why a stand-in issuer for actuator-shaped effects: the real AuthorityService parses
-# effects with `effect_class`/`amount` keys while the Actuator requires an exact key set
-# without them, so the real service cannot issue a certificate the actuator accepts
-# (recorded by the court as an integration handoff, see the report `compat` section).
+#       convert_actuation `to_actuator_certificate/1` only (no signature, no journal)
+#       combine_actuation `AuthorityService.Issuer.combine_actuator_certificates/1` over the
+#                        certificates two independent real authorities issued for one effect
+#                        (no signature, no journal: it only merges signature lists). This is
+#                        how the court's honest quorum-2 certificate is built; the keymaster
+#                        signs nothing in it.
+#       reuse_authority_key  stand-in for a HOLDER of an authority key: a second signature,
+#                        fresh nonce, by the SAME authority key over the same fields as a
+#                        certificate that authority issued (duplicate-signer attack C2C-A46)
+#
+# Which issuer signs what: an intended issuance with no special options goes to the REAL
+# AuthorityService processes, two independent ones whose signatures are combined (see
+# `C2Harness.Env.issue/3`). `issue_actuation` remains for what
+# the real service refuses to do by design: mis-issuance (journal=false), chosen signer sets
+# (the compromised A/A2, a single custodian, three custodians), chosen nonces, validity
+# windows, epochs, audiences, digests and generations.
 alias Sa2aCrypto.{Envelope, KeyRef, SignedMessage}
 
 defmodule Km do
@@ -125,7 +137,8 @@ defmodule Km.Server do
        "node_alive" => Node.alive?(),
        "signers" => reg.(Map.values(st.signers)),
        "approvers" => reg.(Map.values(st.approvers)),
-       "svc" => %{"kid" => st.svc.kid, "public_key" => Km.b64(st.svc.pub)}
+       "svc" => Km.public(st.svc),
+       "svc2" => Km.public(st.svc2)
      }, st}
   end
 
@@ -155,7 +168,8 @@ defmodule Km.Server do
 
     keys =
       Enum.reject(
-        Map.to_list(st.signers) ++ Map.to_list(st.approvers) ++ [{"svc", st.svc}],
+        Map.to_list(st.signers) ++
+          Map.to_list(st.approvers) ++ [{"svc", st.svc}, {"svc2", st.svc2}],
         fn {n, _} -> n in granted end
       )
 
@@ -342,6 +356,68 @@ defmodule Km.Server do
     end
   end
 
+  defp handle("convert_actuation", %{"certificate" => cert}, st) do
+    case AuthorityService.Issuer.to_actuator_certificate(cert) do
+      {:ok, ac} -> {%{"ok" => true, "certificate" => Km.b64(Jcs.encode(ac))}, st}
+      {:error, code} -> {%{"ok" => false, "refusal" => Atom.to_string(code)}, st}
+    end
+  end
+
+  defp handle("combine_actuation", %{"certificates" => certs}, st) when is_list(certs) do
+    case AuthorityService.Issuer.combine_actuator_certificates(certs) do
+      {:ok, ac} ->
+        sig_nonces = Enum.map(ac["signatures"], & &1["nonce"])
+
+        {%{
+           "ok" => true,
+           "certificate" => Km.b64(Jcs.encode(ac)),
+           "digest" => ac["effect_digest"],
+           "nonces" => sig_nonces,
+           "journaled" => false
+         }, st}
+
+      {:error, code} ->
+        {%{"ok" => false, "refusal" => Atom.to_string(code)}, st}
+    end
+  end
+
+  # A holder of the authority's key signs again under a fresh nonce. The real authority
+  # never does this (one issuance per (digest, generation)); the court uses it to prove that
+  # two valid signatures from one custodian do not make a quorum.
+  defp handle("reuse_authority_key", %{"certificate" => cert}, st) do
+    with {:ok, ac} <- AuthorityService.Issuer.to_actuator_certificate(cert),
+         [%{"kid" => kid} = first] <- ac["signatures"],
+         true <- kid == st.svc.kid or {:refuse, "not_authority_signed"} do
+      nonce = Km.b64(:crypto.strong_rand_bytes(12))
+
+      {:ok, msg} =
+        ac
+        |> Map.delete("signatures")
+        |> Map.merge(%{"alg" => "ES256", "kid" => kid, "nonce" => nonce})
+        |> SignedMessage.build()
+
+      again = %{
+        "kid" => kid,
+        "alg" => "ES256",
+        "nonce" => nonce,
+        "signature" => Km.b64(Km.sign(st.svc, msg))
+      }
+
+      out = Jcs.encode(Map.put(ac, "signatures", [first, again]))
+
+      {%{
+         "ok" => true,
+         "certificate" => Km.b64(out),
+         "digest" => ac["effect_digest"],
+         "nonces" => [first["nonce"], nonce],
+         "journaled" => false
+       }, st}
+    else
+      {:refuse, code} -> {%{"ok" => false, "refusal" => code}, st}
+      _ -> {%{"ok" => false, "refusal" => "malformed_request"}, st}
+    end
+  end
+
   defp handle(_, _, st), do: {%{"ok" => false, "refusal" => "unknown_op"}, st}
 end
 
@@ -349,6 +425,7 @@ Code.eval_file(Path.join(__DIR__, "watchdog.exs"))
 env = &System.fetch_env!/1
 act_dir = env.("KM_ACT_DIR")
 auth_dir = env.("KM_AUTH_DIR")
+auth2_dir = env.("KM_AUTH2_DIR")
 cp_dir = env.("KM_CP_DIR")
 km_dir = env.("KM_DIR")
 sock_path = env.("KM_SOCK")
@@ -368,13 +445,17 @@ approvers =
   |> Enum.map(&Km.key(&1, &1, :i3, 4))
   |> Map.new(&{&1.name, &1})
 
-svc = Km.key("svc", "authority-service", :i2, 0)
+# The authority's service key stands at the actuator's revocation epoch (7): the real service
+# is started with AUTHORITY_KEY_REVOCATION_EPOCH=7, and the actuator pins this public record.
+svc = Km.key("svc", "authority-service", :i2, 7)
 
-# --- real AuthorityService operator files (paths only are given to that service) --------
-Km.write!(Path.join([auth_dir, "key", "policy.key"]), Km.b64(svc.priv), 0o600)
+# A SECOND, independent authority: its own key, its own custodian identity, its own journal
+# and policy files. Quorum 2 at the actuator counts distinct custodians, so the two real
+# authorities together are exactly k.
+svc2 = Km.key("svc2", "authority-service-b", :i2, 7)
 
-Km.write!(
-  Path.join([auth_dir, "policy", "policy.json"]),
+# --- real AuthorityService operator files (paths only are given to each service) ------
+policy_json =
   Jason.encode!(%{
     "epoch" => 3,
     "approvers" => ["alice", "bob", "carol"],
@@ -384,17 +465,21 @@ Km.write!(
         %{"max_amount" => 10_000, "k" => 0},
         %{"max_amount" => 100_000, "k" => 1},
         %{"max_amount" => "infinity", "k" => 2}
-      ]
+      ],
+      # actuator-shaped effects carry their policy class as `consequence_class`; the
+      # actuator's two classes each need two distinct human approvers
+      "internal_append" => [%{"max_amount" => "infinity", "k" => 2}],
+      "none" => [%{"max_amount" => "infinity", "k" => 2}]
     }
-  }),
-  0o600
-)
+  })
 
-Km.write!(
-  Path.join([auth_dir, "policy", "approvers.json"]),
-  Jason.encode!(Enum.map(Map.values(approvers), &Km.public/1)),
-  0o600
-)
+approvers_json = Jason.encode!(Enum.map(Map.values(approvers), &Km.public/1))
+
+for {dir, key} <- [{auth_dir, svc}, {auth2_dir, svc2}] do
+  Km.write!(Path.join([dir, "key", "policy.key"]), Km.b64(key.priv), 0o600)
+  Km.write!(Path.join([dir, "policy", "policy.json"]), policy_json, 0o600)
+  Km.write!(Path.join([dir, "policy", "approvers.json"]), approvers_json, 0o600)
+end
 
 # --- PKI: actuator mTLS server material (actuator side) + control-plane client material --
 # P-256 keys + SHA-256 signatures: the OTP defaults are rejected by a TLS 1.3 handshake
@@ -444,12 +529,19 @@ File.write!(misissue_log, "")
     signers: signers,
     approvers: approvers,
     svc: svc,
+    svc2: svc2,
     journal_path: Path.join(km_dir, "issuance_journal.log"),
     misissue_log: misissue_log,
     actuator_audience: actuator_audience,
-    paths: %{"act_dir" => act_dir, "auth_dir" => auth_dir, "km_dir" => km_dir},
+    paths: %{
+      "act_dir" => act_dir,
+      "auth_dir" => auth_dir,
+      "auth2_dir" => auth2_dir,
+      "km_dir" => km_dir
+    },
     secret_files: %{
       "authority_key" => Path.join([auth_dir, "key", "policy.key"]),
+      "authority2_key" => Path.join([auth2_dir, "key", "policy.key"]),
       "actuator_tls_key" => Path.join([act_dir, "tls", "server.key"])
     }
   })

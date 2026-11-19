@@ -12,7 +12,7 @@ defmodule AshA2A.Chicago.Courts.Known do
   Every stimulus drives the real `AshA2A.Planning.RequestRouter`, the real
   `native/hddl_cli` solver, the real `AshA2A.Semantic.Unknown` router over real
   compiled `AshA2A.Semantic.MachineExperience`, and the real generated A2A
-  handler (`AshA2A.Agent.__dispatch__/3`) over
+  handler (`AshA2A.Agent.__dispatch__`) over
   `AshA2A.Chicago.Fixtures.UnknownLlm.Gate`. Model usage is never inferred
   from the absence of a reply: it is read from the SUT's own
   `[:ash_a2a, :llm, :invoke]` (emitted on entry to every inference path),

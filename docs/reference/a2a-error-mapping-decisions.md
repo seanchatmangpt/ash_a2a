@@ -1,28 +1,32 @@
 # a2a-error-mapping-decisions
 
-Standing: UNVERIFIED
+Standing: VERIFIED for the applied mapping (2026-11-16, Elixir 1.20.4 / OTP 29.1.1: `mix test
+test/error_version_table_test.exs test/http_json_error_status_table_test.exs`). The TCK source lines cited below were not re-read:
+no TCK checkout exists in this environment.
 
 ## Decision 1: -32005 and -32006 HTTP status
 
-| code | name | HTTP (old) | HTTP (now) | gRPC | JSON-RPC |
-|---|---|---|---|---|---|
-| -32005 | ContentTypeNotSupported | 400 | 415 | INVALID_ARGUMENT (3) | -32005 |
-| -32006 | InvalidAgentResponse | 500 | 502 | INTERNAL (13) | -32006 |
+Decided on 2026-11-16: the specification's table is followed. `docs/specification.md` section 5.4
+states the HTTP status of every A2A error type, with the same text at tags `v1.0.1` and
+`v1.1.0-rc`:
 
-Evidence: the pinned TCK `/Users/sac/a2a-tck/tck/requirements/base.py` lines 293-307 bind
-`ContentTypeNotSupportedError` to 415 and `InvalidAgentResponseError` to 502.
-`tck/validators/http_json/error_validator.py` builds `HTTP_JSON_ERROR_STATUS` from those bindings
-and compares `actual_status == expected_status`, so the TCK asserts the status. The spec corpus
-`priv/a2a_v1_1_spec_corpus/a2a.proto` carries no HTTP status for these errors (no match for
-CONTENT_TYPE / INVALID_AGENT / 415 / 502), so the TCK is the only authority and is followed.
-gRPC rows already matched the TCK and are unchanged.
+| code | name | HTTP | gRPC | JSON-RPC |
+|---|---|---|---|---|
+| -32002 | TaskNotCancelable | 400 | FAILED_PRECONDITION (9) | -32002 |
+| -32005 | ContentTypeNotSupported | 400 | INVALID_ARGUMENT (3) | -32005 |
+| -32006 | InvalidAgentResponse | 500 | INTERNAL (13) | -32006 |
 
-Applied in: `@spec_http` (`AshA2A.Protocol.JSONRPC.Error`), `status_for/1`
-(`AshA2A.Transport.HTTPJSON`). gRPC dispatch needed only a comment.
+An earlier revision of this decision followed values recorded from a TCK checkout (409, 415 and
+502) because the proto file alone states no HTTP status. The specification document does, in both
+versions, so those values are gone from the library: the HTTP+JSON binding serves the table and
+`AshA2A.Protocol.JSONRPC.Error.spec_http_status/1` returns it. The one table is
+`AshA2A.Protocol.JSONRPC.Error.bindings/1`; the transports generate their status mappings from it.
+A TCK run that still pins the older values will disagree until the TCK follows the specification.
+Closed as VG-01..VG-03 in [parity findings](a2a-v1-1-parity-findings.md).
 
 ## Decision 2: absent protocol version
 
-Rule: an absent version is `"0.3"` everywhere (spec section 3.6.2; `Version.parse_header/1`).
+Rule: an absent version is `"0.3"` everywhere (spec section 3.6.2; `AshA2A.Protocol.Version.parse_header/1`).
 `PushDelivery.payload_for/3` now defaults a config without `protocol_version` to `"0.3"` instead
 of `"1.0"`. Behaviour is unchanged in effect, because both are below 1.1 and strip the v1.1-only
 fields; only the documented default now matches the header gate. `AshA2A.Protocol.Version`'s

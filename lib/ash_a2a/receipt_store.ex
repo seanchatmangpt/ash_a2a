@@ -104,7 +104,7 @@ defmodule AshA2A.ReceiptStore do
 
   @doc """
   Boot-time durability check for the at-most-once machinery (findings R2,
-  R12, PERF-09). Intended to be called from `AshA2A.Application.start/2`
+  R12, PERF-09). Intended to be called from `AshA2A.Application.start`
   before the supervision tree starts; returns `:ok` or the first violation.
 
   Inputs are read from `opts`, falling back to application env:

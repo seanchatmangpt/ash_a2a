@@ -42,8 +42,13 @@ defmodule AshA2A.Protocol.ID do
   def generate(prefix), do: generate(prefix, %{})
 
   @spec generate(String.t(), map()) :: String.t()
-  def generate(prefix, ctx) do
-    mod = Application.get_env(:ash_a2a, :id_generator) || AshA2A.Protocol.Id.Generator.Default
-    mod.generate(prefix, ctx)
-  end
+  def generate(prefix, ctx), do: generator().generate(prefix, ctx)
+
+  @doc """
+  The module that generates protocol ids: `config :ash_a2a, :id_generator`,
+  or `AshA2A.Protocol.Id.Generator.Default` when unset.
+  """
+  @spec generator() :: module()
+  def generator,
+    do: Application.get_env(:ash_a2a, :id_generator) || AshA2A.Protocol.Id.Generator.Default
 end

@@ -62,6 +62,7 @@ defmodule AshA2A.Test.HddlSolverCrossvmDispatch do
 
   defp wait_until(deadline_ms) do
     if :os.system_time(:millisecond) < deadline_ms do
+      # SLEEP-CLASS: POLL-STEP (deadline-bounded poll)
       Process.sleep(2)
       wait_until(deadline_ms)
     end

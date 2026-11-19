@@ -199,45 +199,93 @@ defmodule AshA2A.Transport.Runtime do
 
       # returnImmediately: a NEW task is stored `:submitted`, a continuation
       # `:working`; the non-immediate path always runs the task `:working`.
+      # An admit-first stream (`subscribe: pid`) is answered with the task its
+      # stream opens on, and the work starts at once: that task is `:working`.
+      stream_admit? = is_pid(Keyword.get(opts, :subscribe))
+
       task =
-        if immediate? and not continuing?,
+        if immediate? and not continuing? and not stream_admit?,
           do: task,
           else: State.transition(task, :working)
 
-      remember_output_modes(task, opts)
-      state = state |> State.put_task(task) |> State.track_context(task)
-      publish_message_update(task, message, config)
-      state = wake_waiters(state)
-
-      # `adapter:` selects WHAT runs (the agent's own handler, or a durable
-      # ash_pplan run via `AshA2A.Execution.PPlan`); `mode:` selects WHERE the
-      # chosen unit runs (inline on this GenServer, or off-mailbox in a
-      # monitored worker — the pplan unit included).
-      handler =
-        case Keyword.get(config, :adapter) do
-          :pplan -> fn -> pplan_reply(message, task, config) end
-          _local -> fn -> run_handler(module, message, context(task)) end
-        end
-
-      mode = if immediate?, do: :async, else: Keyword.get(config, :mode)
-
-      case mode do
-        _ when immediate? ->
-          # Reply with the stored task now; the worker's result folds into the
-          # stored task later (`finish/6`, which never overwrites a terminal
-          # state). `:detached` has no caller to answer.
-          spawn_worker(handler, task, :detached, wire?)
-          {:reply, wire_reply({:ok, task}, wire?), state}
-
-        :inline ->
-          task.id |> finish(from, handler.(), state, :inline, wire?) |> wake_reply()
-
-        _async ->
-          spawn_worker(handler, task, from, wire?)
-          {:noreply, state}
+      if message_only?(module, message, continuing?, updates) do
+        # Declared `reply: :message` (`c:AshA2A.Protocol.Agent.reply_mode/1`):
+        # the answer is a bare Message and no task. Nothing is stored and no
+        # subscriber or event log hears of it; the task built above only
+        # gives the handler its context. The caller waits for the Message
+        # whatever `return_immediately` says: there is no task to return
+        # first. Should the handler answer otherwise after all (a refusal, a
+        # request for input), `finish/6` stores the task then.
+        put_ephemeral(task)
+        spawn_worker(fn -> run_handler(module, message, context(task)) end, task, from, wire?)
+        {:noreply, state}
+      else
+        admit_task(module, config, message, task, opts, from, state, wire?, immediate?)
       end
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp message_only?(module, message, false = _continuing?, [] = _updates) do
+    function_exported?(module, :reply_mode, 1) and module.reply_mode(message) == :message
+  end
+
+  defp message_only?(_module, _message, _continuing?, _updates), do: false
+
+  @ephemeral_key :ash_a2a_message_only_tasks
+
+  defp put_ephemeral(task),
+    do: Process.put(@ephemeral_key, Map.put(Process.get(@ephemeral_key, %{}), task.id, task))
+
+  defp pop_ephemeral(task_id) do
+    {task, rest} = Map.pop(Process.get(@ephemeral_key, %{}), task_id)
+    if task, do: Process.put(@ephemeral_key, rest)
+    task
+  end
+
+  defp admit_task(module, config, message, task, opts, from, state, wire?, immediate?) do
+    remember_output_modes(task, opts)
+    state = state |> State.put_task(task) |> State.track_context(task)
+
+    # `subscribe: pid` (with `return_immediately`): the pid joins the task's
+    # subscriber fan-out in the step that stores the task, so it is shown
+    # every later mutation (admit-first streaming).
+    state =
+      case Keyword.get(opts, :subscribe) do
+        pid when is_pid(pid) and immediate? -> State.add_subscriber(state, task.id, pid)
+        _ -> state
+      end
+
+    publish_message_update(task, message, config)
+    state = wake_waiters(state)
+
+    # `adapter:` selects WHAT runs (the agent's own handler, or a durable
+    # ash_pplan run via `AshA2A.Execution.PPlan`); `mode:` selects WHERE the
+    # chosen unit runs (inline on this GenServer, or off-mailbox in a
+    # monitored worker — the pplan unit included).
+    handler =
+      case Keyword.get(config, :adapter) do
+        :pplan -> fn -> pplan_reply(message, task, config) end
+        _local -> fn -> run_handler(module, message, context(task)) end
+      end
+
+    mode = if immediate?, do: :async, else: Keyword.get(config, :mode)
+
+    case mode do
+      _ when immediate? ->
+        # Reply with the stored task now; the worker's result folds into the
+        # stored task later (`finish/6`, which never overwrites a terminal
+        # state). `:detached` has no caller to answer.
+        spawn_worker(handler, task, :detached, wire?)
+        {:reply, wire_reply({:ok, task}, wire?), state}
+
+      :inline ->
+        task.id |> finish(from, handler.(), state, :inline, wire?) |> wake_reply()
+
+      _async ->
+        spawn_worker(handler, task, from, wire?)
+        {:noreply, state}
     end
   end
 
@@ -288,7 +336,6 @@ defmodule AshA2A.Transport.Runtime do
       payload =
         case AshA2A.Protocol.JSON.encode(event) do
           {:ok, map} when is_map(map) -> %{"messageUpdate" => map}
-          map when is_map(map) -> %{"messageUpdate" => map}
           _ -> %{"messageUpdate" => %{"taskId" => task.id}}
         end
 
@@ -572,8 +619,16 @@ defmodule AshA2A.Transport.Runtime do
     callers = [parent | Process.get(:"$callers", [])]
     token = make_ref()
 
+    # The worker waits for the watcher's `{:ash_a2a_worker_go, token}` before
+    # it runs the handler, so the watcher's monitor is always in place first.
+    # (A handler that answered before the watcher monitored it used to yield a
+    # `:noproc` DOWN, logged as a spurious `{:worker_exit, :noproc}` error.)
     pid =
       spawn(fn ->
+        receive do
+          {:ash_a2a_worker_go, ^token} -> :ok
+        end
+
         Process.put(:"$callers", callers)
         send(parent, {:ash_a2a_task_done, token, handler.()})
       end)
@@ -591,12 +646,13 @@ defmodule AshA2A.Transport.Runtime do
     # generated agent) defines can be ordered ahead of it, so the
     # worker's death must instead arrive as a message the wrapper DOES
     # see. This one-shot watcher re-delivers a non-`:normal` worker exit
-    # as the very same `{:ash_a2a_task_done, token, reply}` envelope the
-    # worker itself sends, so the primary task_done handler below fails
-    # the task with the identical typed `internal_error` and replies to
-    # the caller. `:normal` is ignored: the worker only ever exits
-    # normally right after delivering its own result, in which case this
-    # watcher simply terminates alongside the already-completed cleanup.
+    # as `{:ash_a2a_worker_down, token, reason}`; the handler below fails
+    # the task with the typed `internal_error` and replies to the caller,
+    # but only while the token is still in flight, so a worker killed by an
+    # in-flight cancel (token already popped) logs nothing. `:normal` is
+    # ignored: the worker only ever exits normally right after delivering
+    # its own result, in which case this watcher simply terminates
+    # alongside the already-completed cleanup.
     #
     # The watcher also monitors the agent itself: if the agent dies the
     # worker is killed, so no handler keeps running (and acting) with no one
@@ -604,14 +660,14 @@ defmodule AshA2A.Transport.Runtime do
     spawn(fn ->
       wref = Process.monitor(pid)
       pref = Process.monitor(parent)
+      send(pid, {:ash_a2a_worker_go, token})
 
       receive do
         {:DOWN, ^wref, _, _, :normal} ->
           :ok
 
         {:DOWN, ^wref, _, _, reason} ->
-          error = SafeError.internal(:internal_error, {:worker_exit, reason})
-          send(parent, {:ash_a2a_task_done, token, {:error, error}})
+          send(parent, {:ash_a2a_worker_down, token, reason})
 
         {:DOWN, ^pref, _, _, _} ->
           Process.exit(pid, :kill)
@@ -634,8 +690,8 @@ defmodule AshA2A.Transport.Runtime do
   popped in-flight token turns a late `:ash_a2a_task_done` / `:DOWN` into a
   no-op in `handle_info/2`.
   """
-  @spec cancel_in_flight(module(), State.t(), String.t()) ::
-          :not_in_flight | {:reply, term(), State.t()}
+  @spec cancel_in_flight(module(), %State{}, String.t()) ::
+          :not_in_flight | {:reply, term(), %State{}}
   def cancel_in_flight(module, state, task_id) do
     with {token, {mref, from, _id, wire?}} <- find_in_flight(task_id),
          {:ok, task} <- State.get_task(state, task_id),
@@ -804,6 +860,21 @@ defmodule AshA2A.Transport.Runtime do
     end
   end
 
+  # A worker that died without delivering a result (re-delivered by the
+  # watcher in `spawn_worker/4`). A token no longer in flight -- the task was
+  # canceled, or already finished -- is a no-op and logs nothing.
+  def handle_info({:ash_a2a_worker_down, token, reason}, state) do
+    case pop_in_flight(token) do
+      {mref, from, task_id, wire?} ->
+        Process.demonitor(mref, [:flush])
+        error = SafeError.internal(:internal_error, {:worker_exit, reason})
+        task_id |> finish(from, {:error, error}, state, :async, wire?) |> wake_reply()
+
+      nil ->
+        {:noreply, state}
+    end
+  end
+
   # Long-poll deadline for a parked `tasks/get`: answer with the current task.
   def handle_info({:ash_a2a_long_poll_timeout, token}, state) do
     case pop_waiter(token) do
@@ -952,7 +1023,15 @@ defmodule AshA2A.Transport.Runtime do
 
   defp safe_handle(module, message, ctx) do
     case module.handle_message(message, ctx) do
-      {tag, _} = reply when tag in [:reply, :message, :stream, :input_required, :error] ->
+      {tag, parts} = reply when tag in [:reply, :message, :input_required] ->
+        # A reply that is not a list of A2A parts is the agent's fault:
+        # InvalidAgentResponseError (-32006), never an internal error.
+        case AshA2A.Protocol.AgentReply.validate_parts(parts) do
+          :ok -> reply
+          {:error, detail} -> {:invalid_agent_response, detail}
+        end
+
+      {tag, _} = reply when tag in [:stream, :error] ->
         reply
 
       other ->
@@ -965,6 +1044,27 @@ defmodule AshA2A.Transport.Runtime do
   end
 
   defp finish(task_id, from, reply, state, mode, wire?) do
+    case pop_ephemeral(task_id) do
+      nil ->
+        finish_stored(task_id, from, reply, state, mode, wire?)
+
+      # A message-only send: the Message answers the caller, nothing is kept.
+      %AshA2A.Protocol.Task{} = task ->
+        case reply do
+          {:message, parts} ->
+            message = %{AshA2A.Protocol.Message.new_agent(parts) | context_id: task.context_id}
+            respond(mode, from, {:ok, message}, state, wire?)
+
+          _not_a_message ->
+            # The handler did not answer with a Message after all: the task
+            # exists from here on and carries that answer.
+            state = state |> State.put_task(task) |> State.track_context(task)
+            finish_stored(task_id, from, reply, state, mode, wire?)
+        end
+    end
+  end
+
+  defp finish_stored(task_id, from, reply, state, mode, wire?) do
     case State.get_task(state, task_id) do
       {:ok, task} ->
         if AshA2A.Protocol.Task.terminal?(task) do
@@ -1003,6 +1103,7 @@ defmodule AshA2A.Transport.Runtime do
                 |> apply_output_modes()
 
               state = State.put_task(state, task)
+              drain_detached_stream(task, from)
 
               # STREAM-SUB-002: a transition persisted here is wire-observable
               # (SSE resubscribe subscribers and registered push webhooks must
@@ -1026,11 +1127,19 @@ defmodule AshA2A.Transport.Runtime do
                     state
                 end
 
+              # InvalidAgentResponseError (-32006): the task is stored failed,
+              # and the caller is answered with the error, not the task.
+              result =
+                case reply do
+                  {:invalid_agent_response, detail} -> {:error, {:invalid_agent_response, detail}}
+                  _ -> {:ok, task}
+                end
+
               if AshA2A.Protocol.Task.terminal?(task) do
                 state = AshA2A.Protocol.Agent.State.drop_subscribers(state, task.id)
-                respond(mode, from, {:ok, task}, state, wire?)
+                respond(mode, from, result, state, wire?)
               else
-                respond(mode, from, {:ok, task}, state, wire?)
+                respond(mode, from, result, state, wire?)
               end
           end
         end
@@ -1106,6 +1215,16 @@ defmodule AshA2A.Transport.Runtime do
     end
   end
 
+  # The handler's reply is not a valid A2A response (-32006). The detail is
+  # about the agent's own output, not caller input, but stays off the wire.
+  defp apply_reply(task, {:invalid_agent_response, _detail}) do
+    State.transition(
+      task,
+      :failed,
+      AshA2A.Protocol.Message.new_agent("Error: invalid agent response")
+    )
+  end
+
   defp apply_reply(task, {:stream, enum}) do
     %{task | metadata: Map.put(task.metadata, :stream, enum)}
   end
@@ -1139,15 +1258,41 @@ defmodule AshA2A.Transport.Runtime do
 
   # Reproduction of the landed `admission_refusal?/1` classifier in
   # protocol/agent/runtime.ex — refusals produced before any handler effect
-  # land the task terminal `:rejected` (v1.0), never `:failed`.
-  defp admission_refusal?("forbidden: " <> _), do: true
-  defp admission_refusal?(:forbidden), do: true
-  defp admission_refusal?({:forbidden, _}), do: true
-  defp admission_refusal?(:skill_not_found), do: true
-  defp admission_refusal?({:no_skill, _}), do: true
-  defp admission_refusal?({:ambiguous_skill, _}), do: true
-  defp admission_refusal?(%{code: :consequence_unclassified}), do: true
-  defp admission_refusal?(_), do: false
+  # land the task terminal `:rejected`, never `:failed`. A2A v1.1
+  # `TASK_STATE_REJECTED`: "the agent has decided to not perform the task ...
+  # during initial task creation or later once an agent has determined it
+  # can't or won't proceed"; `TASK_STATE_FAILED` is "finished with an error".
+  # A skill the agent does not serve (`{:skill_lookup, {:unknown_skill, _}}`
+  # from the dispatcher) and every `AshA2A.CommandBus` admission / authority-gate
+  # refusal code are the former: nothing ran.
+  @admission_refusal_codes [
+    :consequence_unclassified,
+    :authority_required,
+    :authority_mismatch,
+    :model_authority_refused,
+    :authority_expired,
+    :authority_revoked,
+    :authority_constraint_mismatch,
+    :kill_switch_tripped,
+    :kill_switch_unavailable,
+    :capability_not_found,
+    :action_not_found,
+    :ambiguous_skill
+  ]
+
+  @doc false
+  @spec admission_refusal?(term()) :: boolean()
+  def admission_refusal?("forbidden: " <> _), do: true
+  def admission_refusal?(:forbidden), do: true
+  def admission_refusal?({:forbidden, _}), do: true
+  def admission_refusal?(:skill_not_found), do: true
+  def admission_refusal?({:no_skill, _}), do: true
+  def admission_refusal?({:unknown_skill, _}), do: true
+  def admission_refusal?({:ambiguous_skill, _}), do: true
+  # The dispatcher tags its skill-resolution stage: `{:skill_lookup, reason}`.
+  def admission_refusal?({:skill_lookup, reason}), do: admission_refusal?(reason)
+  def admission_refusal?(%{code: code}) when code in @admission_refusal_codes, do: true
+  def admission_refusal?(_), do: false
 
   defp maybe_wrap_stream(%{metadata: %{stream: enum}} = task) do
     # Mint once, share everywhere: the SSE chunk emitter reads the same
@@ -1160,6 +1305,24 @@ defmodule AshA2A.Transport.Runtime do
   end
 
   defp maybe_wrap_stream(task), do: task
+
+  # No caller will ever consume a detached (returnImmediately, or admit-first
+  # streaming) task's stream, so an unmonitored drainer does: each chunk is
+  # stored as its own mutation and `:stream_done` folds the final status,
+  # exactly as `AshA2A.Protocol.Agent` does for its own detached tasks.
+  # Without it the task would stay `:working` forever.
+  defp drain_detached_stream(%{metadata: %{stream: stream}}, :detached) do
+    callers = [self() | Process.get(:"$callers", [])]
+
+    spawn(fn ->
+      Process.put(:"$callers", callers)
+      Stream.run(stream)
+    end)
+
+    :ok
+  end
+
+  defp drain_detached_stream(_task, _from), do: :ok
 
   # A terminal task never runs again, so it no longer needs the verified
   # credential; keeping it would only widen what a task store persists.
@@ -1187,8 +1350,8 @@ defmodule AshA2A.Transport.Runtime do
   sleeping) with the current task. A terminal task never advances, so it
   answers immediately.
   """
-  @spec get_task_call(State.t(), Principal.key(), String.t(), keyword(), GenServer.from()) ::
-          {:reply, term(), State.t()} | {:noreply, State.t()}
+  @spec get_task_call(%State{}, Principal.key(), String.t(), keyword(), GenServer.from()) ::
+          {:reply, term(), %State{}} | {:noreply, %State{}}
   def get_task_call(state, principal, task_id, opts, {pid, _tag} = from) do
     case get_task_for(state, principal, task_id) do
       {:ok, task} ->

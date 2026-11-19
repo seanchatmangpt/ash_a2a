@@ -68,7 +68,7 @@ jobs:
         id: subject
         run: |
           set -euo pipefail
-          version="$(sed -nE 's/^[[:space:]]*version:[[:space:]]*"([^"]+)".*/\1/p' mix.exs | head -1)"
+          version="$(sed -nE 's/^[[:space:]]*@version[[:space:]]+"([^"]+)".*/\1/p' mix.exs | head -1)"
           test -n "$version" || { echo "REFUSED(release:no mix.exs version)" >&2; exit 2; }
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             tag="${GITHUB_REF_NAME#v}"

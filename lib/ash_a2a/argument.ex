@@ -10,8 +10,9 @@ defmodule AshA2A.Argument do
   can declare `entities: [@argument]` and therefore accept a nested
   `do...end` block at all (`Spark.Dsl.Entity` requires an `entities:` list
   on the parent entity before it will accept child entities in a block).
-  Field population/validation of declared arguments against the real Ash
-  action's arguments is a separate, later concern -- not implemented here.
+  Declared nested arguments are structural only: this entity does not
+  cross-check them against the real Ash action's arguments. The A2A input
+  projection is always derived from the Ash action itself.
   """
 
   @type t :: %__MODULE__{

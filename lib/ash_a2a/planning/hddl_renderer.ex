@@ -10,7 +10,7 @@ defmodule AshA2A.Planning.HddlRenderer do
   `domain_text/2` renders one HDDL `:action` per declared
   `AshA2A.HddlOperator` on the target's compiled capability index
   (`AshA2A.Info.capability_index/1` -- real, live data built by
-  `AshA2A.CapabilityIndex.Compiler.project/3`, not a second source of truth).
+  `AshA2A.CapabilityIndex.Compiler.project`, not a second source of truth).
   `problem_text/3` renders an HDDL problem from caller-submitted, already-
   admitted goal facts (objects/init/goal/task calls) -- this module performs
   no closed-set/referential-closure admission of its own; that fence belongs

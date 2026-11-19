@@ -13,7 +13,8 @@
 #   * crash points: `Actuator.Store` compiles `fault/1` only under `fault_hook: true`
 #     (test env). This script polls `<C2_CTL_DIR>/crash.point` and mirrors it into the
 #     ACTUATOR_TEST_CRASH OS env var the Store reads at every fault point, so a court can
-#     arm a crash point in a running actuator without a reboot.
+#     arm a crash point in a running actuator without a reboot. The value in force is
+#     acknowledged in `<C2_CTL_DIR>/crash.armed`; `C2Harness.Fleet.arm_crash/2` waits for it.
 #   * mutants: ACTUATOR_MUTANT_SKIP="3,4" | "all" recompiles `Actuator.Fence` from its OWN
 #     source with those check numbers force-skipped (the documented `opts[:skip]` seam of
 #     `Actuator.Fence.run/4`, which `Actuator.Store` never passes). The patch asserts its
@@ -100,19 +101,35 @@ if t = wire["tls"] do
 end
 
 crash_file = Path.join(ctl, "crash.point")
+armed_file = Path.join(ctl, "crash.armed")
 
+# Acknowledgement: after each change of the armed point the loop publishes the value the Store
+# now reads to `<C2_CTL_DIR>/crash.armed` (tmp + rename, so a reader never sees a partial
+# write). The harness waits for that file to name the point before it submits the request it
+# intends to crash; writing crash.point alone does NOT arm anything until this loop has run.
 spawn(fn ->
-  loop = fn loop ->
-    case File.read(crash_file) do
-      {:ok, point} when point != "" -> System.put_env("ACTUATOR_TEST_CRASH", String.trim(point))
-      _ -> System.delete_env("ACTUATOR_TEST_CRASH")
+  loop = fn loop, last ->
+    now =
+      case File.read(crash_file) do
+        {:ok, point} when point != "" -> String.trim(point)
+        _ -> ""
+      end
+
+    if now != last do
+      if now == "",
+        do: System.delete_env("ACTUATOR_TEST_CRASH"),
+        else: System.put_env("ACTUATOR_TEST_CRASH", now)
+
+      tmp = armed_file <> ".tmp"
+      File.write!(tmp, now)
+      File.rename!(tmp, armed_file)
     end
 
     Process.sleep(15)
-    loop.(loop)
+    loop.(loop, now)
   end
 
-  loop.(loop)
+  loop.(loop, nil)
 end)
 
 IO.puts(

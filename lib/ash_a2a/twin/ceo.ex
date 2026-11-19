@@ -129,7 +129,7 @@ defmodule AshA2A.Twin.CEO do
 
   `claim` and `telemetry` are opaque domain terms (e.g. a blown-motor claim
   with ambient-temp telemetry). Delegates to the configured prior module's
-  `c:prior_verdict/2`. On a prior challenge/refusal, counter-punch messages
+  `prior_verdict/2`. On a prior challenge/refusal, counter-punch messages
   are demanded mechanically (e.g. blown motor + high ambient temperature ->
   winding-resistance readings).
 

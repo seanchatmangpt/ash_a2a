@@ -190,7 +190,6 @@ defmodule AshA2A.Passport.Revocation do
         {:cont,
          {:ok, [%Entry{passport_id: passport_id, reason: reason, revoked_at: revoked_at} | acc]}}
       else
-        {:error, reason} -> {:halt, {:error, reason}}
         {:missing, name} -> {:halt, {:error, {:missing_member, name}}}
       end
     end)

@@ -1,6 +1,6 @@
 defmodule AshA2A.Transport.Grpc.Dispatch do
   @moduledoc """
-  Method mapping from the A2A v1.0 proto service (`a2a.A2AService`, the
+  Method mapping from the A2A v1.0 proto service (`lf.a2a.v1.A2AService`, the
   normative `a2aproject/A2A` proto) onto the SAME internal handlers the
   HTTP/JSON binding uses — read-only consumption of
   `AshA2A.Protocol.JSONRPC.handle/3`, the transport-agnostic JSON-RPC
@@ -13,13 +13,13 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   host's own gRPC server:
 
       {:ok, proto_json_result} =
-        Dispatch.call("a2a.A2AService/SendMessage", params, handler, ctx)
+        Dispatch.call("lf.a2a.v1.A2AService/SendMessage", params, handler, ctx)
 
       {:error, 5, "Task not found"} =
         Dispatch.call("GetTask", %{"id" => "missing"}, handler, ctx)
 
-    * `call/4` accepts the full gRPC path (`"/a2a.A2AService/SendMessage"`,
-      `"a2a.A2AService/SendMessage"`) or the bare RPC name (`"SendMessage"`),
+    * `call/4` accepts the full gRPC path (`"/lf.a2a.v1.A2AService/SendMessage"`,
+      `"lf.a2a.v1.A2AService/SendMessage"`, or the deprecated `a2a.A2AService/...`) or the bare RPC name (`"SendMessage"`),
       and returns `{:ok, reply}` | `{:error, grpc_status, message}` |
       `{:stream, method, params, id}`.
     * Proto-JSON member mapping (lowerCamelCase: `taskId`, `contextId`,
@@ -35,9 +35,11 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
       this tuple is returned.
     * A2A JSON-RPC error codes are mapped to gRPC statuses per v1.0 §3.3.2:
       -32001 -> NOT_FOUND(5), -32600/-32602/-32700/-32005 ->
-      INVALID_ARGUMENT(3), -32002/-32007/-32008 -> FAILED_PRECONDITION(9),
-      -32003/-32004/-32009/-32601 -> UNIMPLEMENTED(12), -32603/-32006 ->
-      INTERNAL(13), -32000 (server busy) -> UNAVAILABLE(14). `trailers/1`
+      INVALID_ARGUMENT(3), -32002/-32003/-32004/-32007/-32008/-32009 ->
+      FAILED_PRECONDITION(9), -32601 -> UNIMPLEMENTED(12), -32603/-32006 ->
+      INTERNAL(13), -32000 (server busy) -> UNAVAILABLE(14), v1.1 -32010
+      (generation mismatch) -> ABORTED(10); any unlisted code -> UNKNOWN(2).
+      `trailers/1`
       converts a result to the `grpc-status`/`grpc-message` trailer map.
 
   `handler` is any module implementing the `AshA2A.Protocol.JSONRPC`
@@ -45,7 +47,8 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
   that handler requires — exactly what the HTTP binding passes.
   """
 
-  @service "a2a.A2AService"
+  @service "lf.a2a.v1.A2AService"
+  @legacy_service "a2a.A2AService"
 
   @methods [
     %{name: "SendMessage", internal: "message/send", streaming: false},
@@ -81,8 +84,24 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
     }
   ]
 
-  @doc false
+  @doc """
+  Fully qualified proto service name, `lf.a2a.v1.A2AService`.
+  """
   def service, do: @service
+
+  @doc """
+  Deprecated alias: the pre-wave-2 label `a2a.A2AService`. `call/4` still
+  accepts paths using it (only the last path segment is read).
+  """
+  def legacy_service, do: @legacy_service
+
+  @doc """
+  Maps a `AshA2A.Protocol.JSONRPC.Error` to `{:error, status, message, details}`
+  with the spec §5.4 `google.rpc.ErrorInfo` Any in `details` (empty for codes
+  with no spec ErrorInfo). Used by the server for extension activation failures.
+  """
+  def error_to_grpc(%AshA2A.Protocol.JSONRPC.Error{} = error),
+    do: error_tuple(AshA2A.Protocol.JSONRPC.Error.to_map(error))
 
   def methods, do: @methods
 
@@ -118,9 +137,10 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
           # cache semantics are the serving host's), so the gRPC binding opts
           # in the same way the HTTP binding's router does: a handler that
           # exports `handle_extended_card/1` answers GetExtendedAgentCard
-          # directly. Without the callback the dispatcher's FAILED_PRECONDITION
-          # (-32004) refusal stands — spec-correct (§3.3.2) exactly when the served
-          # card does not declare the extendedAgentCard capability.
+          # directly. Without the callback the dispatcher's -32004 refusal stands
+          # (FAILED_PRECONDITION(9) on gRPC, spec 5.4) — correct
+          # exactly when the served card does not declare the extendedAgentCard
+          # capability.
           short == "GetExtendedAgentCard" and exports?(handler, :handle_extended_card, 1) ->
             case safe_extended_card(handler, ctx) do
               {:ok, card} ->
@@ -203,44 +223,17 @@ defmodule AshA2A.Transport.Grpc.Dispatch do
 
   # gRPC status codes (google.golang.org/grpc/codes / grpc::StatusCode).
   @grpc_ok 0
-  @grpc_invalid_argument 3
   @grpc_unknown 2
-  @grpc_not_found 5
-  @grpc_failed_precondition 9
-  @grpc_unimplemented 12
-  @grpc_internal 13
-  @grpc_unavailable 14
 
-  # A2A v1.0 §3.3.2 cross-binding error mapping: JSON-RPC error code ->
-  # gRPC status code. Validation (parse/request/params) is INVALID_ARGUMENT,
-  # method-level absence is UNIMPLEMENTED, resource absence is NOT_FOUND,
-  # state conflicts and unsupported features/operations/versions
-  # (-32002/-32003/-32004/-32007/-32008/-32009) are FAILED_PRECONDITION, A2A
-  # server errors are UNAVAILABLE (-32000 server busy) or INTERNAL (-32006
-  # invalid agent response). -32005 -> INVALID_ARGUMENT and -32006 -> INTERNAL are
-  # the same gRPC rows as the HTTP 415 / 502 decision (docs/reference/a2a-error-mapping-decisions.md). Matches a2a-tck tck/requirements/base.py
-  # ERROR_BINDINGS and AshA2A.Protocol.JSONRPC.Error.grpc_status/1.
-  @grpc_from_jsonrpc %{
-    -32_700 => @grpc_invalid_argument,
-    -32_600 => @grpc_invalid_argument,
-    -32_601 => @grpc_unimplemented,
-    -32_602 => @grpc_invalid_argument,
-    -32_603 => @grpc_internal,
-    -32_000 => @grpc_unavailable,
-    -32_001 => @grpc_not_found,
-    -32_002 => @grpc_failed_precondition,
-    # Pinned TCK (STREAM-SUB-003, GRPC-ERR-002, binding_grpc.py): PushNotification-
-    # NotSupported, UnsupportedOperation and VersionNotSupported are UNIMPLEMENTED.
-    -32_003 => @grpc_unimplemented,
-    -32_004 => @grpc_unimplemented,
-    -32_005 => @grpc_invalid_argument,
-    -32_006 => @grpc_internal,
-    -32_007 => @grpc_failed_precondition,
-    -32_008 => @grpc_failed_precondition,
-    -32_009 => @grpc_unimplemented,
-    # v1.1 TaskGenerationMismatchError (ifGenerationMatch) -> ABORTED
-    -32_010 => 10
-  }
+  # JSON-RPC error code -> gRPC status code: the gRPC column of the one binding
+  # table, `AshA2A.Protocol.JSONRPC.Error.bindings/1` (specification 5.4, the
+  # same at v1.0.1 and v1.1.0-rc), read at compile time. Any code the table
+  # does not know is UNKNOWN.
+  @grpc_from_jsonrpc Map.new(AshA2A.Protocol.JSONRPC.Error.bindings(:all), fn {code,
+                                                                               {_http, grpc,
+                                                                                _name}} ->
+                       {code, grpc}
+                     end)
 
   @grpc_status_names %{
     0 => "OK",

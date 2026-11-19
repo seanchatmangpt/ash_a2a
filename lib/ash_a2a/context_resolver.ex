@@ -38,7 +38,7 @@ defmodule AshA2A.ContextResolver do
   on `opts.metadata` inside `resolve_opts/2`) — that opt flows into
   `GenServer.call(agent, {:message, message, opts})`
   (`~/xaas/deps/a2a/lib/a2a/plug.ex:275`) and from there into
-  `AshA2A.Protocol.Agent.Runtime.process_message/5`'s `metadata` argument
+  `AshA2A.Protocol.Agent.Runtime.process_message`'s `metadata` argument
   (`~/xaas/deps/a2a/lib/a2a/agent.ex:272,286-291`), which becomes
   `Task.new(metadata: metadata)` and ultimately `context().metadata` — the
   **second argument** `handle_message/2` receives — **never the inbound
@@ -51,7 +51,7 @@ defmodule AshA2A.ContextResolver do
   `auth_identity` argument rather than reading anything actor/tenant-shaped
   out of `a2a_message`. A correctly-wired dispatcher sources `auth_identity`
   from `AshA2A.Protocol.Agent.context().metadata["a2a.auth"]` (specifically its `:identity`
-  field, per `AshA2A.Protocol.Plug.Auth.build_identity/2`,
+  field, per `AshA2A.Protocol.Plug.Auth.build_identity`,
   `~/xaas/deps/a2a/lib/a2a/plug/auth.ex:226-242`) — never from `a2a_message`
   itself. It defaults to `nil` (unauthenticated / no actor, no tenant claim)
   when the caller supplies nothing, so an unauthenticated or not-yet-wired
@@ -83,7 +83,7 @@ defmodule AshA2A.ContextResolver do
       argument passed by the dispatcher that already knows which Ash domain owns
       the skill being invoked.
     * `:history` — never read from message metadata either; it is the
-      `AshA2A.Protocol.Agent.context().history` transcript the `AshA2A.Protocol.Agent.Runtime` builds and
+      `AshA2A.Protocol.Agent.context().history` transcript the `Protocol.Agent.Runtime` builds and
       passes to `handle_message/2` on a continued (multi-turn) task
       (`~/xaas/deps/a2a/lib/a2a/agent.ex:130-135`). Supplied explicitly by the
       dispatcher as a third argument, defaulting to `[]` for a fresh task.

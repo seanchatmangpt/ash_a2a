@@ -77,3 +77,6 @@ config :ash_a2a, :require_authenticated_caller, false
 # itself (machine-independent); the v26.9.17 topology court self-skips when
 # its 11 sibling repos are absent under the configured root.
 config :ash_a2a, :chicago_topology_root, File.cwd!()
+
+# Reply-token MAC key for AshA2A.Email.Brief (test only; production sets its own, >= 32 bytes).
+config :ash_a2a, :email_token_key, "test-only-email-token-key-0123456789abcdef"

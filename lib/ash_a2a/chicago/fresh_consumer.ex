@@ -33,7 +33,7 @@ defmodule AshA2A.Chicago.FreshConsumer do
          revision, falsifier-corpus, query-set and OCEL-mapping digests
          recompute to the receipt's; OCEL size/validation facts match; every
          declared falsifier has a result; every result re-corroborates against
-         `ocel.json` via `AshA2A.Chicago.Runner.corroborate/3`; and
+         `ocel.json` via `AshA2A.Chicago.Runner.corroborate`; and
          `AshA2A.Chicago.StandingReceipt.recompute/1` reproduces the receipt's
          gates, tallies, standing, gate evidence and claim -- both from the
          results as recorded and from the re-corroborated results.

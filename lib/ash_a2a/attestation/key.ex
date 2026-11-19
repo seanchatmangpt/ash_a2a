@@ -121,8 +121,6 @@ defmodule AshA2A.Attestation.Key do
     end
   end
 
-  defp canonical_low_s?(_), do: {:error, :bad_signature}
-
   # Sign-time normalization: :crypto.sign emits a random s, which is high
   # (s > n/2) about half the time. Since verify enforces canonical low-s,
   # every emitted signature is normalized to its low-s twin here so

@@ -62,6 +62,18 @@ defmodule Sa2aCrypto.Fixtures do
     end
   end
 
+  @doc """
+  `false` when this runtime can generate keys and sign for `alg`, else a skip message.
+  Use as `@tag skip: Fixtures.skip_reason(alg)`: PQ suites need OTP atoms (`:mldsa65`, ...)
+  that `:crypto.supports(:public_keys)` only lists on OpenSSL >= 3.5 builds.
+  """
+  def skip_reason(alg) do
+    if Native.supports?(alg),
+      do: false,
+      else:
+        "#{alg} unsupported by this OTP/OpenSSL build (PQ atom absent from :crypto.supports(:public_keys))"
+  end
+
   @doc "Returns %{env, bytes, view, key, priv, kid} for a freshly generated key."
   def signed(alg \\ "ES256", over \\ %{}, key_over \\ []) do
     {pub, priv} = keypair(alg)

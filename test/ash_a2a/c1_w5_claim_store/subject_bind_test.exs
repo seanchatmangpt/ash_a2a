@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 ash_a2a contributors <https://github.com/seanchatmangpt/ash_a2a/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+defmodule AshA2A.C1W5ClaimStore.SubjectBindTest do
+  use ExUnit.Case, async: true
+
+  test "subject_bind" do
+    vector =
+      Path.join([
+        File.cwd!(),
+        "priv",
+        "sa2a",
+        "c1",
+        "w5_claim_store_vectors",
+        "subject_bind.json"
+      ])
+
+    assert File.read!(vector) =~ "\"case\": \"subject_bind\""
+    p = %{prepared_digest: "sha256:prep", instance: %{subject_digest: "sha256:sub"}}
+    c = %{prepared_digest: "sha256:prep", subject_digest: "sha256:sub"}
+    assert :ok = AshA2A.ConsequenceKernel.Claims.Subject.bind(p, c)
+  end
+end

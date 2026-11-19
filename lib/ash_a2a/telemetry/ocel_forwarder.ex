@@ -470,10 +470,7 @@ defmodule AshA2A.Telemetry.OcelForwarder do
   end
 
   defp safe_receipt_event(receipt) do
-    case receipt_event(receipt) do
-      %{} = event -> {:ok, event}
-      _ -> :error
-    end
+    {:ok, receipt_event(receipt)}
   rescue
     _ -> :error
   end

@@ -94,8 +94,12 @@ defmodule AshA2A.Strain.Bridge do
   def record_observation(mesh_state, coordinator_id, %{type: type} = event)
       when is_map(mesh_state) do
     case Map.fetch(mesh_state, coordinator_id) do
-      {:ok, state} -> Map.put(mesh_state, coordinator_id, fold(state, type, event))
-      :error -> validate_type!(type) && mesh_state
+      {:ok, state} ->
+        Map.put(mesh_state, coordinator_id, fold(state, type, event))
+
+      :error ->
+        :ok = validate_type!(type)
+        mesh_state
     end
   end
 
@@ -107,7 +111,7 @@ defmodule AshA2A.Strain.Bridge do
     :clock_hour
   ]
 
-  defp validate_type!(type) when type in @observation_types, do: true
+  defp validate_type!(type) when type in @observation_types, do: :ok
 
   defp validate_type!(other),
     do: raise(ArgumentError, "unknown observation type: #{inspect(other)}")

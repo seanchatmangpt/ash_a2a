@@ -72,36 +72,151 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   end
 
   @doc """
-  Wraps a stream so that consuming it notifies the agent GenServer to
-  finalize the task (create the artifact, transition to a terminal state).
+  Wraps a stream so that consuming it stores every chunk and, at the end,
+  notifies the agent GenServer to finalize the task.
 
-  The notification carries how the enumeration ended. `Stream.transform/5`
-  runs its `last_fun` only on normal completion, while the `after_fun` runs
-  however enumeration stops — so the difference between the two is what
-  separates a stream that finished from one that raised or was abandoned
-  when the client disconnected. Without it the cleanup hook reports success
-  for every ending, and a failed stream is stored as completed.
+  Each element is stored as its own task mutation before it is handed to the
+  consumer (`{:stream_chunk, ...}`: the stream's artifact gains the chunk and
+  the task generation advances by one), so the generation a chunk is emitted
+  with is the generation `tasks/get` reports after it (A2A v1.1 3.2.7). The
+  final element is stored as the chunk that completes the artifact
+  (`end_generation`), which is what `lastChunk: true` is derived from; to know
+  it is final, an element is handed out when its successor arrives or the
+  stream ends.
+  `chunk_generation/1` returns that generation to the consuming process.
+
+  The closing notification carries how the enumeration ended.
+  `Stream.transform/5` runs its `last_fun` only on normal completion, while
+  the `after_fun` runs however enumeration stops — so the difference between
+  the two is what separates a stream that finished from one that raised or
+  was abandoned when the client disconnected. Without it the cleanup hook
+  reports success for every ending, and a failed stream is stored as completed.
   """
   @spec wrap_stream(Enumerable.t(), GenServer.server(), String.t(), String.t() | nil) ::
           Enumerable.t()
   def wrap_stream(enum, server, task_id, artifact_id \\ nil) do
-    # One stable artifact id per stream: the SSE chunk emitter and the
-    # stream_done fold MUST reference the same artifact (v1.0 chunk
-    # reassembly is keyed on artifactId). The caller may pre-mint it (the
-    # protocol agent stamps it onto the task metadata for the chunk emitter);
-    # otherwise one is minted here for the default path.
+    # One stable artifact id per stream: the chunk mutations, the SSE chunk
+    # emitter and the stream_done fold MUST reference the same artifact (v1.0
+    # chunk reassembly is keyed on artifactId). The caller may pre-mint it
+    # (the protocol agent stamps it onto the task metadata for the chunk
+    # emitter); otherwise one is minted here for the default path.
     artifact_id = artifact_id || AshA2A.Protocol.ID.generate("art")
 
+    # One-ahead: a lazy stream reveals its last element only by ending, so
+    # chunk i is stored and handed out when chunk i+1 arrives, and the final
+    # chunk when the stream ends. The final chunk is therefore STORED as the
+    # one that completes the artifact, and every event derived from the stored
+    # task (`AshA2A.Protocol.Task.Delta`) carries `lastChunk: true` on it and
+    # on no other, whoever reports it first.
     Stream.transform(
       enum,
-      fn -> {[], :incomplete} end,
-      fn part, {acc, outcome} -> {[part], {[part | acc], outcome}} end,
-      fn {acc, _outcome} -> {[], {acc, :complete}} end,
-      fn {acc, outcome} ->
+      fn -> {nil, [], :incomplete} end,
+      fn part, {pending, acc, outcome} ->
+        case pending do
+          nil ->
+            {[], {{:chunk, part}, [part | acc], outcome}}
+
+          {:chunk, held} ->
+            store_chunk(server, task_id, artifact_id, held, false)
+            {[held], {{:chunk, part}, [part | acc], outcome}}
+        end
+      end,
+      fn
+        {{:chunk, held}, acc, _outcome} ->
+          store_chunk(server, task_id, artifact_id, held, true)
+          {[held], {nil, acc, :complete}}
+
+        {nil, acc, _outcome} ->
+          {[], {nil, acc, :complete}}
+      end,
+      fn {_pending, acc, outcome} ->
+        # A chunk still held here (the stream raised or was abandoned) was
+        # never stored; `finish_stream_artifact/2` folds it.
         parts = Enum.reverse(acc)
         GenServer.cast(server, {:stream_done, task_id, artifact_id, parts, outcome})
       end
     )
+  end
+
+  @chunk_generation_key :ash_a2a_stream_chunk_generation
+  @chunk_last_key :ash_a2a_stream_chunk_last
+
+  @doc """
+  The task generation after the chunk the calling process last took from a
+  wrapped stream of `task_id`, or `nil` when that chunk was not stored (the
+  task was already terminal, or the agent could not be reached).
+  """
+  @spec chunk_generation(String.t()) :: pos_integer() | nil
+  def chunk_generation(task_id), do: Process.get({@chunk_generation_key, task_id})
+
+  @doc """
+  Whether the chunk the calling process last took from a wrapped stream of
+  `task_id` is the stream's final one (`lastChunk`).
+  """
+  @spec chunk_last?(String.t()) :: boolean()
+  def chunk_last?(task_id), do: Process.get({@chunk_last_key, task_id}) == true
+
+  # A stream enumerated inside the agent process itself cannot call the agent;
+  # its parts are folded by `finish_stream_artifact/2` instead.
+  defp store_chunk(server, task_id, artifact_id, part, last?) do
+    reply =
+      if server == self() do
+        :not_stored
+      else
+        try do
+          GenServer.call(server, {:stream_chunk, task_id, artifact_id, part, last?}, 15_000)
+        catch
+          :exit, _ -> :not_stored
+        end
+      end
+
+    case reply do
+      {:ok, generation} -> Process.put({@chunk_generation_key, task_id}, generation)
+      _ -> Process.delete({@chunk_generation_key, task_id})
+    end
+
+    Process.put({@chunk_last_key, task_id}, last?)
+
+    :ok
+  end
+
+  @doc """
+  Closes a stream's artifact on the stored `task`. `artifact` carries every
+  part the stream produced. Parts the chunk mutations already stored are left
+  alone and the artifact is marked complete at the task's current generation
+  (no new mutation); parts that were never stored are appended as one
+  mutation. A stream that produced no part stores no artifact.
+  """
+  @spec finish_stream_artifact(Task.t(), Artifact.t()) :: Task.t()
+  def finish_stream_artifact(%Task{} = task, %Artifact{} = artifact) do
+    parts = Enum.flat_map(artifact.parts, &List.wrap/1)
+    existing = Enum.find(task.artifacts, &(&1.artifact_id == artifact.artifact_id))
+    stored = if existing, do: length(existing.parts), else: 0
+
+    case {Enum.drop(parts, stored), existing} do
+      {[], nil} ->
+        task
+
+      {[], %Artifact{}} ->
+        generation = Task.Generation.generation_of(task)
+
+        artifacts =
+          Enum.map(task.artifacts, fn
+            %Artifact{artifact_id: id} = a when id == artifact.artifact_id ->
+              %{a | end_generation: a.end_generation || generation}
+
+            other ->
+              other
+          end)
+
+        %{task | artifacts: artifacts}
+
+      {missing, _} ->
+        {task, _stored} =
+          Task.Generation.record_artifact(task, %{artifact | parts: missing}, true)
+
+        task
+    end
   end
 
   defp run_task(module, message, task, state, extensions) do
@@ -209,14 +324,14 @@ defmodule AshA2A.Protocol.Agent.Runtime do
   #     capability resolution (`AshA2A.Agent.resolve_skill_name/2` and the
   #     dispatcher's skill lookup) could not name a capability for the
   #     request.
-  #   * `%{code: :consequence_unclassified}` -- capability consequence
-  #     classification refused the skill (RFC-SA2A-004 S21).
-  defp admission_refusal?("forbidden: " <> _), do: true
-  defp admission_refusal?(:forbidden), do: true
-  defp admission_refusal?({:forbidden, _}), do: true
-  defp admission_refusal?(:skill_not_found), do: true
-  defp admission_refusal?({:no_skill, _}), do: true
-  defp admission_refusal?({:ambiguous_skill, _}), do: true
-  defp admission_refusal?(%{code: :consequence_unclassified}), do: true
-  defp admission_refusal?(_), do: false
+  #   * `{:unknown_skill, _}` -- the dispatcher's own skill lookup found no
+  #     capability under the requested name.
+  #   * `%{code: code}` -- an `AshA2A.CommandBus` admission or authority-gate
+  #     refusal (`:consequence_unclassified`, `:authority_required`,
+  #     `:authority_mismatch`, ...): the agent decided not to perform the
+  #     task (A2A v1.1 `TASK_STATE_REJECTED`).
+  #
+  # One classifier for both task-finalizing paths:
+  # `AshA2A.Transport.Runtime.admission_refusal?/1`.
+  defp admission_refusal?(reason), do: AshA2A.Transport.Runtime.admission_refusal?(reason)
 end
