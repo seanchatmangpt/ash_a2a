@@ -100,9 +100,44 @@ defmodule AshA2A.CapabilityIndex.AgentCardBuilder do
       security_schemes: Keyword.get(opts, :security_schemes) || domain_security_schemes(domain),
       security: Keyword.get(opts, :security) || domain_security(domain),
       supported_interfaces:
-        normalize_supported_interfaces(Keyword.get(opts, :supported_interfaces), url)
+        normalize_supported_interfaces(Keyword.get(opts, :supported_interfaces), url),
+      signatures: card_signatures(Keyword.get(opts, :card_signatures))
     }
   end
+
+  # Local policy (operator ruling pending on spec provenance): a built card
+  # may not exceed this many Jason-encoded bytes.
+  @max_card_bytes 10240
+
+  @doc """
+  Size-capped build: `{:ok, card}` when the Jason-encoded card is at most
+  #{@max_card_bytes} bytes, else `{:error, {:card_too_large, size}}`.
+  `build_agent_card/2` is unchanged for existing callers.
+  """
+  @spec build_agent_card_checked([skill()], keyword()) ::
+          {:ok, AshA2A.Protocol.AgentCard.t()}
+          | {:error, {:card_too_large, non_neg_integer()}}
+  def build_agent_card_checked(skills, opts \\ []) when is_list(skills) do
+    card = build_agent_card(skills, opts)
+
+    size =
+      card
+      |> AshA2A.Protocol.JSON.encode_agent_card(url: card.url)
+      |> Jason.encode!()
+      |> byte_size()
+
+    if size <= @max_card_bytes, do: {:ok, card}, else: {:error, {:card_too_large, size}}
+  end
+
+  # Optional `:card_signatures` passthrough: a list
+  # of signature maps is placed under the card's `signatures` key unmodified.
+  # Nothing is generated or validated here; anything that is not a list of
+  # maps is dropped to the empty default rather than advertised.
+  defp card_signatures(sigs) when is_list(sigs) do
+    if Enum.all?(sigs, &is_map/1), do: sigs, else: []
+  end
+
+  defp card_signatures(_), do: []
 
   defp domain_agent(nil), do: %{}
   defp domain_agent(domain), do: AshA2A.Domain.Info.agent(domain)

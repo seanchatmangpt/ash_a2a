@@ -107,6 +107,8 @@ defmodule AshA2A.Protocol.JSON do
 
   @type encode_result :: {:ok, map()} | {:error, term()}
 
+  @internal_metadata_keys ["a2a.auth", "ash_a2a.owner", :stream]
+
   @doc """
   Encodes an Elixir struct to a JSON-ready map.
 
@@ -124,7 +126,7 @@ defmodule AshA2A.Protocol.JSON do
       |> put_unless_empty("history", encode_list(task.history))
       |> put_unless_empty("artifacts", encode_list(task.artifacts))
       |> put_unless_empty("timeline", encode_list(task.timeline))
-      |> put_unless_empty("metadata", task.metadata)
+      |> put_unless_empty("metadata", strip_internal_metadata(task.metadata))
       |> put_generation("generation", task.generation)
 
     {:ok, map}
@@ -184,7 +186,7 @@ defmodule AshA2A.Protocol.JSON do
       |> put_unless_nil("taskId", msg.task_id)
       |> put_unless_nil("contextId", msg.context_id)
       |> put_unless_empty("referenceTaskIds", msg.reference_task_ids)
-      |> put_unless_empty("metadata", msg.metadata)
+      |> put_unless_empty("metadata", strip_internal_metadata(msg.metadata))
       |> put_unless_empty("extensions", msg.extensions)
 
     {:ok, map}
@@ -266,8 +268,8 @@ defmodule AshA2A.Protocol.JSON do
     map =
       %{"taskId" => event.task_id, "artifact" => artifact}
       |> put_unless_nil("contextId", event.context_id)
-      |> put_unless_nil("append", event.append)
-      |> put_unless_nil("lastChunk", event.last_chunk)
+      |> put_if_true("append", event.append)
+      |> put_if_true("lastChunk", event.last_chunk)
       |> put_unless_empty("metadata", event.metadata)
       |> put_generation("generation", event.generation)
 
@@ -466,6 +468,36 @@ defmodule AshA2A.Protocol.JSON do
     map
   end
 
+  # Local policy (operator ruling pending on spec provenance): a served
+  # AgentCard may not exceed this many Jason-encoded bytes.
+  @max_card_bytes 10240
+
+  @doc """
+  The maximum Jason-encoded AgentCard size in bytes (local policy).
+
+      iex> AshA2A.Protocol.JSON.max_card_bytes()
+      10240
+  """
+  @spec max_card_bytes() :: pos_integer()
+  def max_card_bytes, do: @max_card_bytes
+
+  @doc """
+  Size-capped variant of `encode_agent_card/2`.
+
+  Returns `{:ok, map}` when the Jason-encoded body is at most
+  `max_card_bytes/0` bytes, else `{:error, {:card_too_large, size}}`.
+  """
+  @spec encode_agent_card_checked(
+          AshA2A.Protocol.AgentCard.t() | AshA2A.Protocol.Agent.card(),
+          keyword()
+        ) :: {:ok, map()} | {:error, {:card_too_large, non_neg_integer()}}
+  def encode_agent_card_checked(card, opts \\ []) do
+    map = encode_agent_card(card, opts)
+    size = map |> Jason.encode!() |> byte_size()
+
+    if size <= @max_card_bytes, do: {:ok, map}, else: {:error, {:card_too_large, size}}
+  end
+
   # Resolves a field from caller opts first (explicit override), then from the
   # card struct/map, then the given default. Lets callers pass a fully-populated
   # %AshA2A.Protocol.AgentCard{} OR supply fields via opts (backward compatible).
@@ -511,20 +543,28 @@ defmodule AshA2A.Protocol.JSON do
   """
   @spec decode_agent_card(map()) :: {:ok, AshA2A.Protocol.AgentCard.t()} | {:error, term()}
   def decode_agent_card(map) when is_map(map) do
-    with {:ok, name} <- require_field(map, "name"),
-         {:ok, description} <- require_field(map, "description"),
-         {:ok, version} <- require_field(map, "version"),
+    with {:ok, name} <- req(map, "name", :string),
+         {:ok, description} <- req(map, "description", :string),
+         {:ok, version} <- req(map, "version", :string),
          {:ok, skills_list} <- require_field(map, "skills"),
          {:ok, _} <- require_field(map, "supportedInterfaces"),
          {:ok, caps_map} <- require_field(map, "capabilities"),
-         {:ok, input_modes} <- require_field(map, "defaultInputModes"),
-         {:ok, output_modes} <- require_field(map, "defaultOutputModes"),
+         {:ok, input_modes} <- req(map, "defaultInputModes", :list),
+         {:ok, output_modes} <- req(map, "defaultOutputModes", :list),
          {:ok, skills} <- decode_card_skills(skills_list),
          {:ok, capabilities} <- decode_card_capabilities(caps_map),
          {:ok, schemes} <- decode_card_security_schemes(Map.get(map, "securitySchemes", %{})),
          {:ok, signatures} <- decode_card_signatures(Map.get(map, "signatures", [])),
-         {:ok, interfaces} <- decode_card_interfaces(Map.get(map, "supportedInterfaces", [])) do
-      url = Map.get(map, "url") || preferred_interface_url(interfaces)
+         {:ok, interfaces} <- decode_card_interfaces(Map.get(map, "supportedInterfaces", [])),
+         {:ok, card_url} <- opt(map, "url", :string),
+         {:ok, provider} <- opt(map, "provider", :map),
+         {:ok, documentation_url} <- opt(map, "documentationUrl", :string),
+         {:ok, icon_url} <- opt(map, "iconUrl", :string),
+         {:ok, security} <-
+           decode_card_security(
+             Map.get(map, "securityRequirements") || Map.get(map, "security", [])
+           ) do
+      url = card_url || preferred_interface_url(interfaces)
 
       card =
         %AshA2A.Protocol.AgentCard{
@@ -536,9 +576,9 @@ defmodule AshA2A.Protocol.JSON do
           capabilities: capabilities,
           default_input_modes: input_modes,
           default_output_modes: output_modes,
-          provider: decode_card_provider(Map.get(map, "provider")),
-          documentation_url: Map.get(map, "documentationUrl"),
-          icon_url: Map.get(map, "iconUrl"),
+          provider: decode_card_provider(provider),
+          documentation_url: documentation_url,
+          icon_url: icon_url,
           # Deliberately NOT read: no "preferredTransport" lookup. The v1.0
           # AgentCard proto message (priv/a2a_v1_spec_corpus/a2a.proto:362,
           # fields 1-14) defines no such member -- transport preference is
@@ -552,10 +592,7 @@ defmodule AshA2A.Protocol.JSON do
           # Reads BOTH spellings: v1.0 "securityRequirements" (preferred) and the
           # deprecated v0.3 "security" key, normalizing to the struct's flat
           # %{name => scopes} shape.
-          security:
-            decode_card_security(
-              Map.get(map, "securityRequirements") || Map.get(map, "security", [])
-            ),
+          security: security,
           signatures: signatures
         }
 
@@ -567,6 +604,8 @@ defmodule AshA2A.Protocol.JSON do
       end
     end
   end
+
+  def decode_agent_card(_other), do: {:error, {:invalid_field, "agentCard"}}
 
   defp preferred_interface_url([%{url: url} | _]) when is_binary(url), do: url
   defp preferred_interface_url(_), do: nil
@@ -606,21 +645,31 @@ defmodule AshA2A.Protocol.JSON do
   """
   @spec decode(map(), decode_type()) ::
           {:ok, struct()} | {:error, term()} | {:skip, {:unknown_payload, String.t()}}
+  # Totality: a payload that is not a JSON object is a typed refusal for every
+  # type (`:timeline_entry` is fail-open and has its own non-map clause).
+  def decode(other, type) when not is_map(other) and type != :timeline_entry,
+    do: {:error, {:invalid_field, Atom.to_string(type)}}
+
   def decode(map, :task) do
-    with {:ok, id} <- require_field(map, "id"),
+    with {:ok, id} <- req(map, "id", :string),
          {:ok, status_map} <- require_field(map, "status"),
          {:ok, status} <- decode(status_map, :status),
-         {:ok, history} <- decode_list(Map.get(map, "history", []), :message),
-         {:ok, artifacts} <- decode_list(Map.get(map, "artifacts", []), :artifact),
-         {:ok, timeline} <- decode_list(Map.get(map, "timeline") || [], :timeline_entry) do
+         {:ok, history_list} <- opt(map, "history", :list, []),
+         {:ok, history} <- decode_list(history_list, :message),
+         {:ok, artifacts_list} <- opt(map, "artifacts", :list, []),
+         {:ok, artifacts} <- decode_list(artifacts_list, :artifact),
+         {:ok, timeline_list} <- opt(map, "timeline", :list, []),
+         {:ok, timeline} <- decode_list(timeline_list, :timeline_entry),
+         {:ok, context_id} <- opt(map, "contextId", :string),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       task = %AshA2A.Protocol.Task{
         id: id,
-        context_id: Map.get(map, "contextId"),
+        context_id: context_id,
         status: status,
         history: history,
         artifacts: artifacts,
         timeline: timeline,
-        metadata: Map.get(map, "metadata", %{})
+        metadata: metadata
       }
 
       # Absent generation (v1.0 peer) keeps the struct default (1).
@@ -674,18 +723,22 @@ defmodule AshA2A.Protocol.JSON do
     with {:ok, message_id} <- require_id(map, "messageId"),
          {:ok, role_str} <- require_field(map, "role"),
          {:ok, role} <- decode_role(role_str),
-         {:ok, parts_list} <- require_field(map, "parts"),
+         {:ok, parts_list} <- req(map, "parts", :list),
          :ok <- require_non_empty(parts_list, "parts"),
-         {:ok, parts} <- decode_list(parts_list, :part) do
+         {:ok, parts} <- decode_list(parts_list, :part),
+         {:ok, task_id} <- opt(map, "taskId", :string),
+         {:ok, context_id} <- opt(map, "contextId", :string),
+         {:ok, reference_task_ids} <- opt(map, "referenceTaskIds", :strings, []),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Message{
          message_id: message_id,
          role: role,
          parts: parts,
-         task_id: Map.get(map, "taskId"),
-         context_id: Map.get(map, "contextId"),
-         reference_task_ids: Map.get(map, "referenceTaskIds", []),
-         metadata: Map.get(map, "metadata", %{}),
+         task_id: task_id,
+         context_id: context_id,
+         reference_task_ids: reference_task_ids,
+         metadata: metadata,
          extensions: decode_message_extensions(Map.get(map, "extensions"))
        }}
     end
@@ -693,17 +746,21 @@ defmodule AshA2A.Protocol.JSON do
 
   def decode(map, :artifact) do
     with {:ok, artifact_id} <- require_id(map, "artifactId"),
-         {:ok, parts_list} <- require_field(map, "parts"),
+         {:ok, parts_list} <- req(map, "parts", :list),
          :ok <- require_non_empty(parts_list, "parts"),
-         {:ok, parts} <- decode_list(parts_list, :part) do
+         {:ok, parts} <- decode_list(parts_list, :part),
+         {:ok, name} <- opt(map, "name", :string),
+         {:ok, description} <- opt(map, "description", :string),
+         {:ok, extensions} <- opt(map, "extensions", :list, []),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Artifact{
          artifact_id: artifact_id,
-         name: Map.get(map, "name"),
-         description: Map.get(map, "description"),
+         name: name,
+         description: description,
          parts: parts,
-         extensions: Map.get(map, "extensions", []),
-         metadata: Map.get(map, "metadata", %{}),
+         extensions: extensions,
+         metadata: metadata,
          start_generation: parse_int64(Map.get(map, "startGeneration")),
          end_generation: parse_int64(Map.get(map, "endGeneration")),
          role: decode_artifact_role(Map.get(map, "role"))
@@ -724,13 +781,18 @@ defmodule AshA2A.Protocol.JSON do
   def decode(map, :file_content) do
     bytes_str = Map.get(map, "bytes") || Map.get(map, "fileWithBytes")
 
-    with {:ok, bytes} <- decode_base64(bytes_str) do
+    with {:ok, bytes} <- decode_base64(bytes_str),
+         {:ok, name} <- opt(map, "name", :string),
+         {:ok, mime_type} <-
+           typed(Map.get(map, "mimeType") || Map.get(map, "mediaType"), "mimeType", :string, nil),
+         {:ok, uri} <-
+           typed(Map.get(map, "uri") || Map.get(map, "fileWithUri"), "uri", :string, nil) do
       {:ok,
        %AshA2A.Protocol.FileContent{
-         name: Map.get(map, "name"),
-         mime_type: Map.get(map, "mimeType") || Map.get(map, "mediaType"),
+         name: name,
+         mime_type: mime_type,
          bytes: bytes,
-         uri: Map.get(map, "uri") || Map.get(map, "fileWithUri")
+         uri: uri
        }}
     end
   end
@@ -752,76 +814,94 @@ defmodule AshA2A.Protocol.JSON do
   end
 
   def decode(map, :status_update_event) do
-    with {:ok, task_id} <- require_field(map, "taskId"),
+    with {:ok, task_id} <- req(map, "taskId", :string),
          {:ok, status_map} <- require_field(map, "status"),
-         {:ok, status} <- decode(status_map, :status) do
+         {:ok, status} <- decode(status_map, :status),
+         {:ok, context_id} <- opt(map, "contextId", :string),
+         {:ok, final} <- opt(map, "final", :boolean, status.state in @final_states),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Event.StatusUpdate{
          task_id: task_id,
-         context_id: Map.get(map, "contextId"),
+         context_id: context_id,
          status: status,
-         final: Map.get(map, "final", status.state in @final_states),
-         metadata: Map.get(map, "metadata", %{}),
+         final: final,
+         metadata: metadata,
          generation: parse_int64(Map.get(map, "generation"))
        }}
     end
   end
 
   def decode(map, :message_update_event) do
-    with {:ok, task_id} <- require_field(map, "taskId"),
+    with {:ok, task_id} <- req(map, "taskId", :string),
          {:ok, message_map} <- require_field(map, "message"),
-         {:ok, message} <- decode(message_map, :message) do
+         {:ok, message} <- decode(message_map, :message),
+         {:ok, context_id} <- opt(map, "contextId", :string),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Event.MessageUpdate{
          task_id: task_id,
-         context_id: Map.get(map, "contextId"),
+         context_id: context_id,
          message: message,
-         metadata: Map.get(map, "metadata", %{}),
+         metadata: metadata,
          generation: parse_int64(Map.get(map, "generation"))
        }}
     end
   end
 
   def decode(map, :stream_error) do
-    with {:ok, code} <- require_field(map, "code") do
+    with {:ok, code} <- require_field(map, "code"),
+         {:ok, task_id} <- opt(map, "taskId", :string),
+         {:ok, message} <- opt(map, "message", :string),
+         {:ok, reference_id} <- opt(map, "referenceId", :string),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.StreamError{
-         task_id: Map.get(map, "taskId"),
+         task_id: task_id,
          code: code,
-         message: Map.get(map, "message"),
-         reference_id: Map.get(map, "referenceId"),
-         metadata: Map.get(map, "metadata", %{})
+         message: message,
+         reference_id: reference_id,
+         metadata: metadata
        }}
     end
   end
 
   def decode(map, :artifact_update_event) do
-    with {:ok, task_id} <- require_field(map, "taskId"),
+    with {:ok, task_id} <- req(map, "taskId", :string),
          {:ok, artifact_map} <- require_field(map, "artifact"),
-         {:ok, artifact} <- decode(artifact_map, :artifact) do
+         {:ok, artifact} <- decode(artifact_map, :artifact),
+         {:ok, context_id} <- opt(map, "contextId", :string),
+         {:ok, append} <- opt(map, "append", :boolean),
+         {:ok, last_chunk} <- opt(map, "lastChunk", :boolean),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Event.ArtifactUpdate{
          task_id: task_id,
-         context_id: Map.get(map, "contextId"),
+         context_id: context_id,
          artifact: artifact,
-         append: Map.get(map, "append"),
-         last_chunk: Map.get(map, "lastChunk"),
-         metadata: Map.get(map, "metadata", %{}),
+         append: append,
+         last_chunk: last_chunk,
+         metadata: metadata,
          generation: parse_int64(Map.get(map, "generation"))
        }}
     end
   end
 
   def decode(map, :push_notification_config) do
-    with {:ok, url} <- require_field(map, "url") do
+    with {:ok, url} <- req(map, "url", :string),
+         {:ok, id} <- opt(map, "id", :string),
+         {:ok, task_id} <-
+           typed(Map.get(map, "taskId") || Map.get(map, "task_id"), "taskId", :string, nil),
+         {:ok, token} <- opt(map, "token", :string),
+         {:ok, protocol_version} <- opt(map, "protocolVersion", :string) do
       {:ok,
        %AshA2A.Protocol.PushNotificationConfig{
-         id: Map.get(map, "id"),
-         task_id: Map.get(map, "taskId") || Map.get(map, "task_id"),
+         id: id,
+         task_id: task_id,
          url: url,
-         token: Map.get(map, "token"),
+         token: token,
          authentication: decode_push_authentication(Map.get(map, "authentication")),
-         protocol_version: Map.get(map, "protocolVersion")
+         protocol_version: protocol_version
        }}
     end
   end
@@ -838,15 +918,18 @@ defmodule AshA2A.Protocol.JSON do
   def decode_send_message_configuration(nil), do: {:ok, nil}
 
   def decode_send_message_configuration(%{} = map) do
-    {:ok,
-     %{
-       accepted_output_modes: Map.get(map, "acceptedOutputModes", []),
-       push_notification_config: Map.get(map, "taskPushNotificationConfig"),
-       history_length: Map.get(map, "historyLength"),
-       timeline_length: Map.get(map, "timelineLength"),
-       return_immediately: Map.get(map, "returnImmediately", false),
-       if_generation_match: parse_int64(Map.get(map, "ifGenerationMatch"))
-     }}
+    with {:ok, accepted_output_modes} <- opt(map, "acceptedOutputModes", :strings, []),
+         {:ok, return_immediately} <- opt(map, "returnImmediately", :boolean, false) do
+      {:ok,
+       %{
+         accepted_output_modes: accepted_output_modes,
+         push_notification_config: Map.get(map, "taskPushNotificationConfig"),
+         history_length: Map.get(map, "historyLength"),
+         timeline_length: Map.get(map, "timelineLength"),
+         return_immediately: return_immediately,
+         if_generation_match: parse_int64(Map.get(map, "ifGenerationMatch"))
+       }}
+    end
   end
 
   def decode_send_message_configuration(_), do: {:error, {:invalid_field, "configuration"}}
@@ -863,13 +946,14 @@ defmodule AshA2A.Protocol.JSON do
          {:ok, artifact_updates} <- decode_list(updates, :artifact_update_event),
          {:ok, message} <- decode_request_message(Map.get(map, "message"), artifact_updates),
          {:ok, configuration} <-
-           decode_send_message_configuration(Map.get(map, "configuration")) do
+           decode_send_message_configuration(Map.get(map, "configuration")),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %{
          tenant: Map.get(map, "tenant"),
          message: message,
          configuration: configuration,
-         metadata: Map.get(map, "metadata", %{}),
+         metadata: metadata,
          artifact_updates: artifact_updates
        }}
     end
@@ -885,7 +969,7 @@ defmodule AshA2A.Protocol.JSON do
   @doc "Decodes `GetTaskRequest` (id, historyLength, timelineLength, currentGeneration)."
   @spec decode_get_task_request(map()) :: {:ok, map()} | {:error, term()}
   def decode_get_task_request(%{} = map) do
-    with {:ok, id} <- require_field(map, "id") do
+    with {:ok, id} <- req(map, "id", :string) do
       {:ok,
        %{
          tenant: Map.get(map, "tenant"),
@@ -897,27 +981,45 @@ defmodule AshA2A.Protocol.JSON do
     end
   end
 
-  @doc "Decodes the v1.1-relevant members of `ListTasksRequest`."
-  @spec decode_list_tasks_request(map()) :: {:ok, map()}
+  def decode_get_task_request(_other), do: {:error, {:missing_field, "id"}}
+
+  @doc """
+  Decodes the v1.1-relevant members of `ListTasksRequest`. Wrong-typed or
+  out-of-range members are refused with `{:error, {:invalid_params, message}}`
+  by the shared `AshA2A.Protocol.ListTasksParams.validate/1`.
+  """
+  @spec decode_list_tasks_request(map()) :: {:ok, map()} | {:error, {:invalid_params, String.t()}}
   def decode_list_tasks_request(%{} = map) do
-    {:ok,
-     %{
-       tenant: Map.get(map, "tenant"),
-       context_id: Map.get(map, "contextId"),
-       status: Map.get(map, "status"),
-       page_size: Map.get(map, "pageSize"),
-       page_token: Map.get(map, "pageToken"),
-       history_length: Map.get(map, "historyLength"),
-       timeline_length: Map.get(map, "timelineLength"),
-       status_timestamp_after: Map.get(map, "statusTimestampAfter"),
-       include_artifacts: Map.get(map, "includeArtifacts")
-     }}
+    with :ok <- validate_list_request(map) do
+      {:ok,
+       %{
+         tenant: Map.get(map, "tenant"),
+         context_id: Map.get(map, "contextId"),
+         status: Map.get(map, "status"),
+         page_size: Map.get(map, "pageSize"),
+         page_token: Map.get(map, "pageToken"),
+         history_length: Map.get(map, "historyLength"),
+         timeline_length: Map.get(map, "timelineLength"),
+         status_timestamp_after: Map.get(map, "statusTimestampAfter"),
+         include_artifacts: Map.get(map, "includeArtifacts")
+       }}
+    end
+  end
+
+  def decode_list_tasks_request(_other),
+    do: {:error, {:invalid_params, "params must be an object"}}
+
+  defp validate_list_request(map) do
+    case AshA2A.Protocol.ListTasksParams.validate(map) do
+      :ok -> :ok
+      {:error, message} -> {:error, {:invalid_params, message}}
+    end
   end
 
   @doc "Decodes `SubscribeToTaskRequest` (id, lastSeenGeneration)."
   @spec decode_subscribe_request(map()) :: {:ok, map()} | {:error, term()}
   def decode_subscribe_request(%{} = map) do
-    with {:ok, id} <- require_field(map, "id") do
+    with {:ok, id} <- req(map, "id", :string) do
       {:ok,
        %{
          tenant: Map.get(map, "tenant"),
@@ -926,6 +1028,8 @@ defmodule AshA2A.Protocol.JSON do
        }}
     end
   end
+
+  def decode_subscribe_request(_other), do: {:error, {:missing_field, "id"}}
 
   @doc """
   Decodes a `StreamRequest`: `{:ok, %{tenant:, payload: {:send_message, req} |
@@ -1154,17 +1258,20 @@ defmodule AshA2A.Protocol.JSON do
     if encoded == %{}, do: nil, else: encoded
   end
 
-  # int64 generations are emitted as JSON numbers; nil/0 omitted.
+  # int64 generations are emitted as ProtoJSON int64 strings; nil/0 omitted.
   defp put_generation(map, _key, nil), do: map
   defp put_generation(map, _key, 0), do: map
-  defp put_generation(map, key, n) when is_integer(n), do: Map.put(map, key, n)
+  defp put_generation(map, key, n) when is_integer(n), do: Map.put(map, key, Integer.to_string(n))
 
   # Accepts a JSON number or protojson int64 string; anything else -> nil.
-  defp parse_int64(n) when is_integer(n), do: n
+  # Bounded to the signed 64-bit range (and 20 bytes of text), so a hostile
+  # multi-megabyte digit string is never parsed into a bignum.
+  defp parse_int64(n) when is_integer(n) and n >= -0x8000000000000000 and n <= 0x7FFFFFFFFFFFFFFF,
+    do: n
 
-  defp parse_int64(s) when is_binary(s) do
+  defp parse_int64(s) when is_binary(s) and byte_size(s) <= 20 do
     case Integer.parse(s) do
-      {n, ""} -> n
+      {n, ""} -> parse_int64(n)
       _ -> nil
     end
   end
@@ -1174,6 +1281,13 @@ defmodule AshA2A.Protocol.JSON do
   defp put_unless_nil(map, _key, nil), do: map
   defp put_unless_nil(map, key, value), do: Map.put(map, key, value)
 
+  defp put_if_true(map, key, true), do: Map.put(map, key, true)
+  defp put_if_true(map, _key, _), do: map
+
+  defp strip_internal_metadata(nil), do: nil
+  defp strip_internal_metadata(%{} = metadata), do: Map.drop(metadata, @internal_metadata_keys)
+
+  defp put_unless_empty(map, _key, nil), do: map
   defp put_unless_empty(map, _key, val) when val == %{}, do: map
   defp put_unless_empty(map, _key, val) when val == [], do: map
   defp put_unless_empty(map, key, value), do: Map.put(map, key, value)
@@ -1256,13 +1370,41 @@ defmodule AshA2A.Protocol.JSON do
     end
   end
 
+  # Typed members. The decoders are total: a present member of the wrong JSON
+  # type is `{:error, {:invalid_field, field}}`, never a raise here or in the
+  # code that later consumes the struct. `req/3` refuses an absent member
+  # (`:missing_field`); `opt/4` maps absent or JSON null to `default`.
+  defp req(map, field, type) do
+    case Map.fetch(map, field) do
+      {:ok, value} ->
+        if json_type?(value, type), do: {:ok, value}, else: {:error, {:invalid_field, field}}
+
+      :error ->
+        {:error, {:missing_field, field}}
+    end
+  end
+
+  defp opt(map, field, type, default \\ nil), do: typed(Map.get(map, field), field, type, default)
+
+  defp typed(nil, _field, _type, default), do: {:ok, default}
+
+  defp typed(value, field, type, _default) do
+    if json_type?(value, type), do: {:ok, value}, else: {:error, {:invalid_field, field}}
+  end
+
+  defp json_type?(value, :string), do: is_binary(value)
+  defp json_type?(value, :map), do: is_map(value)
+  defp json_type?(value, :list), do: is_list(value)
+  defp json_type?(value, :boolean), do: is_boolean(value)
+  defp json_type?(value, :strings), do: is_list(value) and Enum.all?(value, &is_binary/1)
+
   # The spec names this field `schemes` (an array); the TCK and the v1.0 proto
   # send a singular `scheme`. Both normalize to a single scheme internally.
   defp decode_push_authentication(map) when is_map(map) do
     scheme =
-      case Map.get(map, "scheme") do
-        nil -> map |> Map.get("schemes", []) |> List.first()
-        scheme -> scheme
+      case {Map.get(map, "scheme"), Map.get(map, "schemes")} do
+        {nil, [first | _]} -> first
+        {scheme, _} -> scheme
       end
 
     auth =
@@ -1277,6 +1419,7 @@ defmodule AshA2A.Protocol.JSON do
 
   defp require_non_empty([], field), do: {:error, {:empty_field, field}}
   defp require_non_empty([_ | _], _field), do: :ok
+  defp require_non_empty(_other, field), do: {:error, {:invalid_field, field}}
 
   defp decode_role(str) when is_map_key(@string_to_role, str) do
     {:ok, @string_to_role[str]}
@@ -1293,6 +1436,8 @@ defmodule AshA2A.Protocol.JSON do
     end
   end
 
+  defp decode_timestamp(_other), do: {:error, {:invalid_field, "timestamp"}}
+
   defp decode_base64(nil), do: {:ok, nil}
 
   defp decode_base64(str) when is_binary(str) do
@@ -1302,10 +1447,12 @@ defmodule AshA2A.Protocol.JSON do
     end
   end
 
+  defp decode_base64(_other), do: {:error, :invalid_base64}
+
   defp decode_optional(nil, _type), do: {:ok, nil}
   defp decode_optional(map, type), do: decode(map, type)
 
-  defp decode_list(items, type) do
+  defp decode_list(items, type) when is_list(items) do
     Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
       case decode(item, type) do
         {:ok, decoded} -> {:cont, {:ok, [decoded | acc]}}
@@ -1317,6 +1464,8 @@ defmodule AshA2A.Protocol.JSON do
       error -> error
     end
   end
+
+  defp decode_list(_items, type), do: {:error, {:invalid_field, Atom.to_string(type)}}
 
   # Parts without "kind": v1.0 is flat ({"text"|"data"|"raw"|"url": ...}),
   # v0.3 nests file content under {"file": {...}}.
@@ -1331,53 +1480,64 @@ defmodule AshA2A.Protocol.JSON do
   end
 
   defp decode_text_part(map) do
-    with {:ok, text} <- require_field(map, "text") do
+    with {:ok, text} <- req(map, "text", :string),
+         {:ok, filename} <- opt(map, "filename", :string),
+         {:ok, media_type} <- opt(map, "mediaType", :string),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Part.Text{
          text: text,
-         filename: Map.get(map, "filename"),
-         media_type: Map.get(map, "mediaType"),
-         metadata: Map.get(map, "metadata", %{})
+         filename: filename,
+         media_type: media_type,
+         metadata: metadata
        }}
     end
   end
 
   defp decode_file_part(map) do
     with {:ok, file_map} <- require_field(map, "file"),
-         {:ok, file} <- decode(file_map, :file_content) do
+         {:ok, file} <- decode(file_map, :file_content),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Part.File{
          file: file,
-         metadata: Map.get(map, "metadata", %{})
+         metadata: metadata
        }}
     end
   end
 
   defp decode_data_part(map) do
-    with {:ok, data} <- require_field(map, "data") do
+    with {:ok, data} <- require_field(map, "data"),
+         {:ok, filename} <- opt(map, "filename", :string),
+         {:ok, media_type} <- opt(map, "mediaType", :string),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       {:ok,
        %AshA2A.Protocol.Part.Data{
          data: data,
-         filename: Map.get(map, "filename"),
-         media_type: Map.get(map, "mediaType"),
-         metadata: Map.get(map, "metadata", %{})
+         filename: filename,
+         media_type: media_type,
+         metadata: metadata
        }}
     end
   end
 
   defp decode_flat_file_part(map) do
-    with {:ok, bytes} <- decode_base64(Map.get(map, "raw")) do
+    with {:ok, bytes} <- decode_base64(Map.get(map, "raw")),
+         {:ok, filename} <- opt(map, "filename", :string),
+         {:ok, media_type} <- opt(map, "mediaType", :string),
+         {:ok, url} <- opt(map, "url", :string),
+         {:ok, metadata} <- opt(map, "metadata", :map, %{}) do
       file = %AshA2A.Protocol.FileContent{
-        name: Map.get(map, "filename"),
-        mime_type: Map.get(map, "mediaType"),
+        name: filename,
+        mime_type: media_type,
         bytes: bytes,
-        uri: Map.get(map, "url")
+        uri: url
       }
 
       {:ok,
        %AshA2A.Protocol.Part.File{
          file: file,
-         metadata: Map.get(map, "metadata", %{})
+         metadata: metadata
        }}
     end
   end
@@ -1388,20 +1548,23 @@ defmodule AshA2A.Protocol.JSON do
 
   defp decode_card_skills(skills) when is_list(skills) do
     Enum.reduce_while(skills, {:ok, []}, fn skill, {:ok, acc} ->
-      with {:ok, id} <- require_field(skill, "id"),
-           {:ok, name} <- require_field(skill, "name"),
-           {:ok, description} <- require_field(skill, "description") do
+      with :ok <- if(is_map(skill), do: :ok, else: {:error, {:invalid_field, "skills"}}),
+           {:ok, id} <- req(skill, "id", :string),
+           {:ok, name} <- req(skill, "name", :string),
+           {:ok, description} <- req(skill, "description", :string),
+           {:ok, tags} <- opt(skill, "tags", :list, []),
+           {:ok, security} <- decode_card_security(Map.get(skill, "securityRequirements")) do
         decoded =
           %{
             id: id,
             name: name,
             description: description,
-            tags: Map.get(skill, "tags", [])
+            tags: tags
           }
           |> put_skill_mode_if_present(:examples, skill, "examples")
           |> put_skill_mode_if_present(:input_modes, skill, "inputModes")
           |> put_skill_mode_if_present(:output_modes, skill, "outputModes")
-          |> put_skill_security_if_present(skill)
+          |> put_skill_security_if_present(skill, security)
 
         {:cont, {:ok, [decoded | acc]}}
       else
@@ -1436,10 +1599,10 @@ defmodule AshA2A.Protocol.JSON do
   # normalizes through the same decoder as the card-level member: both the
   # protojson wrapper shape (%{"schemes" => %{name => %{"list" => scopes}}})
   # and flat %{name => scopes} entries are accepted.
-  defp put_skill_security_if_present(map, wire_skill) do
+  defp put_skill_security_if_present(map, wire_skill, decoded) do
     case Map.get(wire_skill, "securityRequirements") do
       nil -> map
-      reqs -> Map.put(map, :security_requirements, decode_card_security(reqs))
+      _reqs -> Map.put(map, :security_requirements, decoded)
     end
   end
 
@@ -1537,6 +1700,7 @@ defmodule AshA2A.Protocol.JSON do
   defp decode_card_interfaces(_), do: {:ok, []}
 
   defp decode_card_provider(nil), do: nil
+  defp decode_card_provider(other) when not is_map(other), do: nil
 
   defp decode_card_provider(map) when is_map(map) do
     decode_known_keys(map, [
@@ -1545,6 +1709,7 @@ defmodule AshA2A.Protocol.JSON do
     ])
   end
 
+  defp decode_card_security_schemes(nil), do: {:ok, %{}}
   defp decode_card_security_schemes(schemes) when schemes == %{}, do: {:ok, %{}}
 
   defp decode_card_security_schemes(schemes) when is_map(schemes) do
@@ -1564,20 +1729,42 @@ defmodule AshA2A.Protocol.JSON do
   #   - v1.0 "securityRequirements" (preferred), in the protojson wrapper shape
   #     (%{"schemes" => %{name => %{"list" => scopes}}}) or flat maps;
   #   - deprecated v0.3 "security" (flat maps), kept for legacy peers.
-  defp decode_card_security([_ | _] = reqs) do
-    Enum.map(reqs, fn
-      %{"schemes" => schemes} when is_map(schemes) ->
-        Map.new(schemes, fn
-          {name, %{"list" => scopes}} when is_list(scopes) -> {name, scopes}
-          {name, scopes} when is_list(scopes) -> {name, scopes}
-        end)
+  #
+  # Total: an entry (or scope list) of the wrong JSON type is a refusal.
+  defp decode_card_security(nil), do: {:ok, []}
 
-      flat when is_map(flat) ->
-        flat
+  defp decode_card_security(reqs) when is_list(reqs) do
+    reqs
+    |> Enum.reduce_while({:ok, []}, fn req, {:ok, acc} ->
+      case decode_security_requirement(req) do
+        {:ok, decoded} -> {:cont, {:ok, [decoded | acc]}}
+        :error -> {:halt, {:error, {:invalid_field, "securityRequirements"}}}
+      end
+    end)
+    |> case do
+      {:ok, list} -> {:ok, Enum.reverse(list)}
+      error -> error
+    end
+  end
+
+  defp decode_card_security(flat) when is_map(flat), do: {:ok, [flat]}
+  defp decode_card_security(_other), do: {:error, {:invalid_field, "securityRequirements"}}
+
+  defp decode_security_requirement(%{"schemes" => schemes}) when is_map(schemes) do
+    Enum.reduce_while(schemes, {:ok, %{}}, fn
+      {name, %{"list" => scopes}}, {:ok, acc} when is_list(scopes) ->
+        {:cont, {:ok, Map.put(acc, name, scopes)}}
+
+      {name, scopes}, {:ok, acc} when is_list(scopes) ->
+        {:cont, {:ok, Map.put(acc, name, scopes)}}
+
+      _other, _acc ->
+        {:halt, :error}
     end)
   end
 
-  defp decode_card_security(other), do: List.wrap(other)
+  defp decode_security_requirement(flat) when is_map(flat), do: {:ok, flat}
+  defp decode_security_requirement(_other), do: :error
 
   defp decode_security_scheme(%{"apiKeySecurityScheme" => %{} = inner}) do
     # v1.0 proto field is `location`; v0.3 spelled it `in` — accept both.
