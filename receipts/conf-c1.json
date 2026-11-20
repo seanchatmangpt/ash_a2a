@@ -1,0 +1,96 @@
+{
+  "checks": [
+    {
+      "evidence": "HEAD 43d28f3010ca2ab303fc1398ecc5396037e471b0; `git status --porcelain` empty (tree equals the named commit)",
+      "id": "c0.subject_identity",
+      "profile": "c0",
+      "status": "pass",
+      "title": "subject SHA names a clean tree"
+    },
+    {
+      "evidence": "20 registered codes each refuse as themselves; 3 unknown inputs refuse as unknown_refusal_code/blocked_unknown",
+      "id": "c0.refusal_totality",
+      "profile": "c0",
+      "status": "pass",
+      "title": "refusal totality both ways"
+    },
+    {
+      "evidence": "5 cases: evidence derives standing; unknown outcome, unverified receipt and a literal standing all refuse",
+      "id": "c0.standing_derived",
+      "profile": "c0",
+      "status": "pass",
+      "title": "standing is derived, never literal"
+    },
+    {
+      "evidence": "Identity.Canonical.digest is key-order invariant and value sensitive (sha256:e84bfd61359d9bf5cf63a5cb872f69ee6bb75799926ab0085f7094ddd6c406e4)",
+      "id": "c0.canonical_digest",
+      "profile": "c0",
+      "status": "pass",
+      "title": "canonical digest deterministic"
+    },
+    {
+      "evidence": "AshA2A.SecurityProfile.current() == :strict",
+      "id": "c1.security_profile_strict",
+      "profile": "c1",
+      "status": "pass",
+      "title": "SecurityProfile is :strict"
+    },
+    {
+      "evidence": "AshA2A.ConsequenceKernel.ClosureCourt.report/0: 0 violating edges",
+      "id": "c1.closure_report",
+      "profile": "c1",
+      "status": "pass",
+      "title": "kernel-only-DO closure has zero violating edges"
+    },
+    {
+      "evidence": "AshA2A.CommandBus compiled imports contain no call into AshA2A.Dispatcher",
+      "id": "c1.command_bus_no_direct_dispatch",
+      "profile": "c1",
+      "status": "pass",
+      "title": "CommandBus does not call Dispatcher"
+    },
+    {
+      "evidence": "9 boundary module(s) inspected in compiled form: no term_to_binary; every hashing module uses Identity.Canonical",
+      "id": "c1.canonical_at_boundaries",
+      "profile": "c1",
+      "status": "pass",
+      "title": "Identity.Canonical at every boundary digest"
+    },
+    {
+      "evidence": "claim store AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile exports the ClaimStore callbacks and durable?() == true",
+      "id": "c1.durable_claim_store",
+      "profile": "c1",
+      "status": "pass",
+      "title": "durable claim store, not Memory"
+    },
+    {
+      "evidence": "journal dir /home/ubuntu/ash_a2a_data/receipt_outbox is outside tmp and writable; key provider MACs, verifies and refuses a tampered payload",
+      "id": "c1.keyed_journal",
+      "profile": "c1",
+      "status": "pass",
+      "title": "keyed non-tmp journal"
+    },
+    {
+      "evidence": "I1 (key independence) needs no deployment evidence",
+      "id": "claim.tier_supported",
+      "profile": "c1",
+      "status": "pass",
+      "title": "declared independence tier supported by evidence"
+    },
+    {
+      "evidence": "same-host-os-user is the weakest scope; no deployment evidence needed",
+      "id": "claim.scope_supported",
+      "profile": "c1",
+      "status": "pass",
+      "title": "declared hosting scope supported by evidence"
+    }
+  ],
+  "claim": "SA2A v26.9.29 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA 43d28f3010ca2ab303fc1398ecc5396037e471b0",
+  "conformant": true,
+  "profile": "c1",
+  "scope": "same-host-os-user",
+  "security_profile": "strict",
+  "subject_sha": "43d28f3010ca2ab303fc1398ecc5396037e471b0",
+  "tier": "I1",
+  "version": "v26.9.29"
+}
