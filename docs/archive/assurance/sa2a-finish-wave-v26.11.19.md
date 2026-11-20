@@ -7,10 +7,15 @@ Subject: branch `cursor/finish-semantic-a2a-bde4`. Machine reports under
 
 ## What this wave closed
 
-1. **Machine Diátaxis edges** — `semantic/sa2a-diataxis.ttl` binds all four
-   edges for discover/select/construct/do/receipt/replay. Court:
+1. **Machine Diátaxis edges** — `semantic/sa2a-diataxis.ttl` types each export
+   as `sa2a:Capability` and binds all seven CapabilityShape edges
+   (`learnedBy` / `executedBy` / `specifiedBy` / `constrainedBy` /
+   `verifiedBy` / `repairedBy` / `evidencedBy`) for
+   discover/select/construct/do/receipt/replay. Closure query matches
+   engineering-standards `closure.rq`. Court:
    `test/ash_a2a/sa2a_diataxis_closure_test.exs`.
-2. **Honest how-tos** for select / construct / replay / discover-repair.
+2. **Honest how-tos + thin-waist tutorial** for select / construct / replay /
+   discover-repair, plus `docs/tutorials/walk-the-sa2a-thin-waist.md`.
 3. **Receipts verify** — `receipts/pplan-courts-20261118.md` is
    `Standing: UNVERIFIED` (no false PASS).
 4. **Hex package files** — ExDoc extras shipped in `mix.exs` `files:`.

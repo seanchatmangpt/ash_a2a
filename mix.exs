@@ -120,6 +120,7 @@ defmodule AshA2A.MixProject do
             "LICENSE",
             # Tutorials
             "docs/tutorials/getting-started.md",
+            "docs/tutorials/walk-the-sa2a-thin-waist.md",
             "docs/tutorials/prove-your-agent-with-the-simulation-server.md",
             "documentation/tutorials/a2a-your-first-agent.livemd",
             "documentation/tutorials/secure-your-agent.livemd",
@@ -128,6 +129,10 @@ defmodule AshA2A.MixProject do
             "docs/how-to/authenticate-agent-requests.md",
             "docs/how-to/verify-authority-on-async-paths.md",
             "docs/how-to/enable-semantic-requests.md",
+            "docs/how-to/select-among-plan-packages.md",
+            "docs/how-to/construct-from-admitted-semantics.md",
+            "docs/how-to/replay-receipt-basis.md",
+            "docs/how-to/repair-agent-card-drift.md",
             "docs/how-to/observe-dispatch-with-ocel.md",
             "docs/how-to/use-role-based-llm-resolution.md",
             "docs/how-to/test-your-ash_a2a-app.md",

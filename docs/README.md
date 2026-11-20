@@ -10,6 +10,9 @@ Learning-oriented, end-to-end paths:
 
 - [`tutorials/getting-started.md`](tutorials/getting-started.md) — install the package,
   wire the `a2a` DSL into an Ash domain, and run a first dispatch end to end.
+- [`tutorials/walk-the-sa2a-thin-waist.md`](tutorials/walk-the-sa2a-thin-waist.md) —
+  learn discover → select → construct → do → receipt → replay without collapsing
+  adjacent pairs into authority (machine graph: `semantic/sa2a-diataxis.ttl`).
 - [`tutorials/prove-your-agent-with-the-simulation-server.md`](tutorials/prove-your-agent-with-the-simulation-server.md) —
   run the simulation server, call every binding, run the prover and the parity check,
   drive it over MCP, and point the tools at your own agent.

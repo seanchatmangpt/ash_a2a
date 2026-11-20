@@ -1,0 +1,22 @@
+{
+  "schema": "sa2a-diataxis/v1",
+  "repository": "seanchatmangpt/ash_a2a",
+  "role": "runtime",
+  "authority": [
+    "https://github.com/seanchatmangpt/engineering-standards/tree/main/semantic/sa2a-diataxis"
+  ],
+  "generator": "https://github.com/seanchatmangpt/engineering-standards/tree/main/semantic/sa2a-diataxis",
+  "capabilities": [
+    "discover",
+    "select",
+    "construct",
+    "do",
+    "receipt",
+    "replay"
+  ],
+  "generated_paths": [
+    "semantic/sa2a-diataxis.ttl",
+    "semantic/sa2a-diataxis-closure.rq",
+    "docs/tutorials/walk-the-sa2a-thin-waist.md"
+  ]
+}
