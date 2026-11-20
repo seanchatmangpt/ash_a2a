@@ -1,7 +1,7 @@
 {
   "checks": [
     {
-      "evidence": "HEAD 43d28f3010ca2ab303fc1398ecc5396037e471b0; `git status --porcelain` empty (tree equals the named commit)",
+      "evidence": "HEAD 8ead10be81ce5b605d476cebadbcff4da5e0920f; `git status --porcelain` empty (tree equals the named commit)",
       "id": "c0.subject_identity",
       "profile": "c0",
       "status": "pass",
@@ -85,12 +85,12 @@
       "title": "declared hosting scope supported by evidence"
     }
   ],
-  "claim": "SA2A v26.9.29 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA 43d28f3010ca2ab303fc1398ecc5396037e471b0",
+  "claim": "SA2A v26.9.29 conforms to profile C1 at independence tier I1, hosting scope same-host-os-user, on subject SHA 8ead10be81ce5b605d476cebadbcff4da5e0920f",
   "conformant": true,
   "profile": "c1",
   "scope": "same-host-os-user",
   "security_profile": "strict",
-  "subject_sha": "43d28f3010ca2ab303fc1398ecc5396037e471b0",
+  "subject_sha": "8ead10be81ce5b605d476cebadbcff4da5e0920f",
   "tier": "I1",
   "version": "v26.9.29"
 }
