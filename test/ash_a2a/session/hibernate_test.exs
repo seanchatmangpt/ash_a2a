@@ -16,8 +16,11 @@ defmodule AshA2A.Session.HibernateTest do
       ] ->
         true
 
-      System.monotonic_time(:millisecond) >= deadline -> false
-      true -> :erlang.yield() && hibernated?(pid, deadline)
+      System.monotonic_time(:millisecond) >= deadline ->
+        false
+
+      true ->
+        :erlang.yield() && hibernated?(pid, deadline)
     end
   end
 
@@ -51,7 +54,10 @@ defmodule AshA2A.Session.HibernateTest do
     {:ok, pid} = Hibernate.start_link("conn-hib3", 20)
     pre = :sys.get_state(pid)
     assert await_hibernate(pid)
-    assert {:error, {:invalid_event, :hydrating, :projected}} = Hibernate.send_event(pid, :projected)
+
+    assert {:error, {:invalid_event, :hydrating, :projected}} =
+             Hibernate.send_event(pid, :projected)
+
     assert :sys.get_state(pid) == pre
   end
 end

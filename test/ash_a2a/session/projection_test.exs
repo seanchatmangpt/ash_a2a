@@ -5,6 +5,9 @@
 defmodule AshA2A.Session.ProjectionTest do
   use ExUnit.Case, async: false
 
+  # Real AshGraphLaw.Host + vendored wasm; skipped when the engine is absent.
+  @moduletag :ash_graphlaw_wasm
+
   alias AshA2A.Session.{Hibernate, Projection}
 
   @fixture Path.expand("../../support/session_projection_fixture.ttl", __DIR__)
@@ -15,7 +18,9 @@ defmodule AshA2A.Session.ProjectionTest do
     {:ok, host: host}
   end
 
-  test "fixture graph projected through the real Host yields the literal quad count", %{host: host} do
+  test "fixture graph projected through the real Host yields the literal quad count", %{
+    host: host
+  } do
     assert AshGraphLaw.Host.available?(host)
 
     assert {:ok, %{quads: 3, nquads: nquads, id: id}} =

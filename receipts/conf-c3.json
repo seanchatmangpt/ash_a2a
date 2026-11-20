@@ -1,0 +1,166 @@
+{
+  "checks": [
+    {
+      "evidence": "HEAD f300ab7c9312e7c7caeb69d57a742384434b5418; `git status --porcelain` empty (tree equals the named commit)",
+      "id": "c0.subject_identity",
+      "profile": "c0",
+      "status": "pass",
+      "title": "subject SHA names a clean tree"
+    },
+    {
+      "evidence": "20 registered codes each refuse as themselves; 3 unknown inputs refuse as unknown_refusal_code/blocked_unknown",
+      "id": "c0.refusal_totality",
+      "profile": "c0",
+      "status": "pass",
+      "title": "refusal totality both ways"
+    },
+    {
+      "evidence": "5 cases: evidence derives standing; unknown outcome, unverified receipt and a literal standing all refuse",
+      "id": "c0.standing_derived",
+      "profile": "c0",
+      "status": "pass",
+      "title": "standing is derived, never literal"
+    },
+    {
+      "evidence": "Identity.Canonical.digest is key-order invariant and value sensitive (sha256:e84bfd61359d9bf5cf63a5cb872f69ee6bb75799926ab0085f7094ddd6c406e4)",
+      "id": "c0.canonical_digest",
+      "profile": "c0",
+      "status": "pass",
+      "title": "canonical digest deterministic"
+    },
+    {
+      "evidence": "AshA2A.SecurityProfile.current() == :strict",
+      "id": "c1.security_profile_strict",
+      "profile": "c1",
+      "status": "pass",
+      "title": "SecurityProfile is :strict"
+    },
+    {
+      "evidence": "AshA2A.ConsequenceKernel.ClosureCourt.report/0: 0 violating edges",
+      "id": "c1.closure_report",
+      "profile": "c1",
+      "status": "pass",
+      "title": "kernel-only-DO closure has zero violating edges"
+    },
+    {
+      "evidence": "AshA2A.CommandBus compiled imports contain no call into AshA2A.Dispatcher",
+      "id": "c1.command_bus_no_direct_dispatch",
+      "profile": "c1",
+      "status": "pass",
+      "title": "CommandBus does not call Dispatcher"
+    },
+    {
+      "evidence": "9 boundary module(s) inspected in compiled form: no term_to_binary; every hashing module uses Identity.Canonical",
+      "id": "c1.canonical_at_boundaries",
+      "profile": "c1",
+      "status": "pass",
+      "title": "Identity.Canonical at every boundary digest"
+    },
+    {
+      "evidence": "claim store AshA2A.ConsequenceKernel.EffectClaimStore.DurableFile exports the ClaimStore callbacks and durable?() == true",
+      "id": "c1.durable_claim_store",
+      "profile": "c1",
+      "status": "pass",
+      "title": "durable claim store, not Memory"
+    },
+    {
+      "evidence": "journal dir /home/ubuntu/ash_a2a_data/receipt_outbox is outside tmp and writable; key provider MACs, verifies and refuses a tampered payload",
+      "id": "c1.keyed_journal",
+      "profile": "c1",
+      "status": "pass",
+      "title": "keyed non-tmp journal"
+    },
+    {
+      "evidence": "6 bad signatures (garbage, wrong-size, unregistered key, wrong effect) and an unsigned certificate refused; a real Ed25519 signature accepted",
+      "id": "c2.certificate_verifier_signatures",
+      "profile": "c2",
+      "status": "pass",
+      "title": "CertificateVerifier verifies signatures"
+    },
+    {
+      "evidence": "Ed25519 verifies real signature, refuses tampered/garbage/wrong-size (no raise); ML-DSA fails closed with {:error, :provider_required}",
+      "id": "c2.crypto_verifier_primitives",
+      "profile": "c2",
+      "status": "pass",
+      "title": "crypto primitives verify and fail closed"
+    },
+    {
+      "evidence": "authority_service/ is mix project :authority_service with 1 dep(s), none on the control plane (:ash_a2a)",
+      "id": "c2.authority_service_project",
+      "profile": "c2",
+      "status": "pass",
+      "title": "authority_service/ separate mix project"
+    },
+    {
+      "evidence": "actuator/ is mix project :actuator with 3 dep(s), none on the control plane (:ash_a2a)",
+      "id": "c2.actuator_project",
+      "profile": "c2",
+      "status": "pass",
+      "title": "actuator/ separate mix project"
+    },
+    {
+      "evidence": "scanned :ash_a2a application env (PEM private keys, JWK d, *signing/private/secret_key entries) and SA2A_/ASH_A2A_ signing env vars: none",
+      "id": "c2.no_signing_key_material",
+      "profile": "c2",
+      "status": "pass",
+      "title": "no signing key material in control-plane config"
+    },
+    {
+      "evidence": "release env.sh of 2 project(s) sets RELEASE_DISTRIBUTION=none in template and built release",
+      "id": "c2.release_distribution_none",
+      "profile": "c2",
+      "status": "pass",
+      "title": "RELEASE_DISTRIBUTION=none in the separate releases"
+    },
+    {
+      "evidence": "supply-chain facts are read only with --github",
+      "id": "supply.protected_main",
+      "profile": "c2",
+      "status": "unverified",
+      "title": "main is a protected branch"
+    },
+    {
+      "evidence": "supply-chain facts are read only with --github",
+      "id": "supply.signed_tag",
+      "profile": "c2",
+      "status": "unverified",
+      "title": "subject carries a verified signed tag"
+    },
+    {
+      "evidence": "supply-chain facts are read only with --github",
+      "id": "supply.single_release_workflow",
+      "profile": "c2",
+      "status": "unverified",
+      "title": "exactly one release workflow"
+    },
+    {
+      "evidence": "real Ed25519 signers verified through the registry: custodian-distinct quorum accepted (custodians cust-A,cust-B, tier i2); two keys of one custodian refused; 6 pure invalid sets refused",
+      "id": "c3.signer_set_quorum",
+      "profile": "c3",
+      "status": "pass",
+      "title": "SignerSet quorum over registry-verified custodian-distinct kids"
+    },
+    {
+      "evidence": "I1 (key independence) needs no deployment evidence",
+      "id": "claim.tier_supported",
+      "profile": "c3",
+      "status": "pass",
+      "title": "declared independence tier supported by evidence"
+    },
+    {
+      "evidence": "same-host-os-user is the weakest scope; no deployment evidence needed",
+      "id": "claim.scope_supported",
+      "profile": "c3",
+      "status": "pass",
+      "title": "declared hosting scope supported by evidence"
+    }
+  ],
+  "claim": "NOT CONFORMANT to C3: 3 unverified (supply.protected_main, supply.signed_tag, supply.single_release_workflow)",
+  "conformant": false,
+  "profile": "c3",
+  "scope": "same-host-os-user",
+  "security_profile": "strict",
+  "subject_sha": "f300ab7c9312e7c7caeb69d57a742384434b5418",
+  "tier": "I1",
+  "version": "v26.9.29"
+}
