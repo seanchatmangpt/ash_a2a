@@ -277,7 +277,7 @@ defmodule AshA2A.MixProject do
            priv/sa2a priv/sa2a_conformance priv/sa2a_conformance_vectors
            priv/sa2a_graphlaw priv/semantic priv/spg_conformance
            mix.exs README.md CHANGELOG.md LICENSE LICENSES REUSE.toml SECURITY.md
-           usage-rules.md
+           usage-rules.md CONTRIBUTING.md CODE_OF_CONDUCT.md
            documentation/dsls documentation/tutorials
            docs/tutorials/*.md docs/how-to/*.md docs/reference/*.md
            docs/explanation/architecture.md
@@ -285,6 +285,9 @@ defmodule AshA2A.MixProject do
            docs/explanation/canonical-graph-identity.md
            docs/explanation/graphlaw-wasm-integration.md
            docs/explanation/pplan-seams.md
+           docs/explanation/copilot-membrane.md
+           docs/explanation/closure-implementations.md
+           docs/explanation/chicago-conformance-court.md
            sa2a_crypto/lib) ++ native_package_files()
     ]
   end

@@ -24,6 +24,14 @@ Goal-oriented procedures:
   authenticate inbound A2A requests and thread identity into your Ash actions.
 - [`how-to/enable-semantic-requests.md`](how-to/enable-semantic-requests.md) — enable
   the semantic-compilation A2A surface in an existing app.
+- [`how-to/construct-from-admitted-semantics.md`](how-to/construct-from-admitted-semantics.md) —
+  manufacture an artifact from admitted semantics without implying DO (S26).
+- [`how-to/select-among-plan-packages.md`](how-to/select-among-plan-packages.md) —
+  choose among plan packages without granting DO authority (S25).
+- [`how-to/replay-receipt-basis.md`](how-to/replay-receipt-basis.md) — reconstruct a
+  receipt basis without re-actuating (S32).
+- [`how-to/repair-agent-card-drift.md`](how-to/repair-agent-card-drift.md) — fix honesty
+  court failures and re-sign the agent card.
 - [`how-to/v1-1-live-and-generations.md`](how-to/v1-1-live-and-generations.md) — use live
   messaging, generations, timeline and resubscribe at A2A v1.1
 - [`how-to/migrate-from-a2a-hex.md`](how-to/migrate-from-a2a-hex.md) — drop
