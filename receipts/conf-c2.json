@@ -1,10 +1,10 @@
 {
   "checks": [
     {
-      "evidence": "dirty tree: 1 uncommitted path(s); SHA 43d28f3010ca2ab303fc1398ecc5396037e471b0 does not describe the tree under test",
+      "evidence": "HEAD 943a074a777e7a0439196f6662107d41577fcc47; `git status --porcelain` empty (tree equals the named commit)",
       "id": "c0.subject_identity",
       "profile": "c0",
-      "status": "fail",
+      "status": "pass",
       "title": "subject SHA names a clean tree"
     },
     {
@@ -148,12 +148,12 @@
       "title": "declared hosting scope supported by evidence"
     }
   ],
-  "claim": "NOT CONFORMANT to C2: 1 failing (c0.subject_identity); 3 unverified (supply.protected_main, supply.signed_tag, supply.single_release_workflow)",
+  "claim": "NOT CONFORMANT to C2: 3 unverified (supply.protected_main, supply.signed_tag, supply.single_release_workflow)",
   "conformant": false,
   "profile": "c2",
   "scope": "same-host-os-user",
   "security_profile": "strict",
-  "subject_sha": "43d28f3010ca2ab303fc1398ecc5396037e471b0",
+  "subject_sha": "943a074a777e7a0439196f6662107d41577fcc47",
   "tier": "I1",
   "version": "v26.9.29"
 }
