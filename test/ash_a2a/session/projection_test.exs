@@ -15,7 +15,9 @@ defmodule AshA2A.Session.ProjectionTest do
     {:ok, host: host}
   end
 
-  test "fixture graph projected through the real Host yields the literal quad count", %{host: host} do
+  test "fixture graph projected through the real Host yields the literal quad count", %{
+    host: host
+  } do
     assert AshGraphLaw.Host.available?(host)
 
     assert {:ok, %{quads: 3, nquads: nquads, id: id}} =

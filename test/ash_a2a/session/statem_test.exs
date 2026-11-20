@@ -5,7 +5,6 @@
 defmodule AshA2A.Session.StatemTest do
   use ExUnit.Case, async: false
 
-
   alias AshA2A.Session.Statem
   alias AshA2A.Session.Supervisor, as: Sess
 

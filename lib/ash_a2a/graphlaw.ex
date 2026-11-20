@@ -90,4 +90,40 @@ defmodule AshA2A.GraphLaw do
   @doc "Basename of the vendored artifact, as recorded in the manifest."
   @spec artifact_name() :: String.t()
   def artifact_name, do: @artifact
+
+  @doc """
+  Corpus fence for wasm export names.
+
+  Admits only function names that appear as `"fn"` in the vendored
+  `priv/graphlaw/conformance_vectors.json` suite (the finite set with a
+  recorded passing expectation against this artifact). Anything else is
+  refused as `:graphlaw_out_of_corpus` with the admitted corpus listed for
+  diagnosis. Used by `AshA2A.SA2A.Conformance.fenced_call/4`.
+  """
+  @spec fence(String.t()) :: :ok | {:error, map()}
+  def fence(fun) when is_binary(fun) do
+    corpus = corpus()
+
+    if fun in corpus do
+      :ok
+    else
+      {:error, %{code: :graphlaw_out_of_corpus, function: fun, corpus: corpus}}
+    end
+  end
+
+  @doc false
+  @spec corpus() :: [String.t()]
+  def corpus do
+    case AshA2A.GraphLaw.ConformanceVectors.vectors() do
+      {:ok, vectors} ->
+        vectors
+        |> Enum.map(& &1["fn"])
+        |> Enum.filter(&is_binary/1)
+        |> Enum.uniq()
+        |> Enum.sort()
+
+      {:error, _} ->
+        []
+    end
+  end
 end

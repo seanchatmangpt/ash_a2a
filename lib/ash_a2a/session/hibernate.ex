@@ -39,7 +39,8 @@ defmodule AshA2A.Session.Hibernate do
   end
 
   @impl true
-  def handle_event({:timeout, :idle}, :idle, _state, _data), do: {:keep_state_and_data, [:hibernate]}
+  def handle_event({:timeout, :idle}, :idle, _state, _data),
+    do: {:keep_state_and_data, [:hibernate]}
 
   def handle_event(type, content, state, %{idle_ms: idle_ms} = data) do
     case Statem.handle_event(type, content, state, data) do
