@@ -30,9 +30,10 @@ fabricating a plausible basis. Binding checks go through
 
 ## 2. Refuse to re-actuate from the replayed authority
 
-`basis.authorization` is an `AshA2A.Receipt.Replay.AuthorityRecord`. It is
-deliberately **not** an `AshA2A.Authority`. Stuffing it into a fresh
-`CommandBus` command is refused (`:authority_required`), proven by
+`basis.authorization` is an `AuthorityRecord` nested under
+`AshA2A.Receipt.Replay`. It is deliberately **not** an `AshA2A.Authority`.
+Stuffing it into a fresh `CommandBus` command is refused
+(`:authority_required`), proven by
 `test/ash_a2a_receipt_replay_counting_actuator_test.exs`.
 
 ```elixir

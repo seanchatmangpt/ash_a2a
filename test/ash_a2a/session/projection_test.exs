@@ -5,6 +5,9 @@
 defmodule AshA2A.Session.ProjectionTest do
   use ExUnit.Case, async: false
 
+  # Real AshGraphLaw.Host + vendored wasm; skipped when the engine is absent.
+  @moduletag :ash_graphlaw_wasm
+
   alias AshA2A.Session.{Hibernate, Projection}
 
   @fixture Path.expand("../../support/session_projection_fixture.ttl", __DIR__)
