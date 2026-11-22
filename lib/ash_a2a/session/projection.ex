@@ -59,7 +59,8 @@ defmodule AshA2A.Session.Projection do
   """
   @spec project(pid() | term(), GenServer.server()) :: {:ok, result()} | {:error, term()}
   def project(session, host) do
-    pid = if is_pid(session), do: session, else: GenServer.whereis(AshA2A.Session.Statem.via(session))
+    pid =
+      if is_pid(session), do: session, else: GenServer.whereis(AshA2A.Session.Statem.via(session))
 
     case pid && :sys.get_state(pid) do
       {:projecting, data} -> project_graph(host, to_ntriples(:projecting, data))

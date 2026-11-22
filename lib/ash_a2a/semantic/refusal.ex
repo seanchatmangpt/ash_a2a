@@ -716,6 +716,8 @@ defmodule AshA2A.Semantic.Refusal do
     graphlaw_unexpected_result_arity: :blocked_resource,
     graphlaw_unknown_function: :blocked_resource,
     graphlaw_unsupported_function: :blocked_resource,
+    # Corpus fence: export name has no passing conformance vector (FNOX-SJ-GLAW-3).
+    graphlaw_out_of_corpus: :refused_capability,
     graphlaw_wasm_missing: :blocked_resource,
     graphlaw_wasm_not_available: :blocked_resource,
     graphlaw_wasm_not_vendored: :blocked_resource,
@@ -1085,6 +1087,7 @@ defmodule AshA2A.Semantic.Refusal do
     coordinator_mismatch: :refused_identity,
     generation_mismatch: :refused_identity,
     unknown_session: :refused_identity,
+    no_such_session: :refused_identity,
     # REFUSED_STRUCTURE
     bad_gen: :refused_structure,
     invalid_artifact_update: :refused_structure,

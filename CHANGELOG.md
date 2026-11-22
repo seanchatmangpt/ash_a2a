@@ -187,7 +187,8 @@ Each item says what changed and what to do.
   mount `tenant` option, `:event_journal`, `:event_journal_keep_last` and
   `:resubscribe_orphan_grace_ms` (`docs/reference/configuration.md`). The first three are
   exercised by `test/dsl_verifiers_v1_1_test.exs`, `test/ash_a2a_v1_cancellation_test.exs` and
-  `test/task_semantics_test.exs`; the `tenant` row is unverified (no test run cited).
+  `test/task_semantics_test.exs`; `tenant` by `test/ash_a2a_plug_tenant_actor_test.exs` and
+  `test/tenant_isolation_wire_test.exs`.
 - C2 control plane (other lane, evidence in `docs/reference/c2-compromise-court.md`): an explicit
   listener backlog for the actuator TLS listener, a configurable key revocation epoch in the
   authority service, and real authority issuance accepted by the actuator (commit `bfa797b`; the
@@ -213,7 +214,7 @@ Each item says what changed and what to do.
   workflow has not run. See `docs/how-to/optional-dependencies.md`. Guard tests:
   `test/ash_a2a/l18_optional_deps_test.exs`, `test/optional_deps_matrix_test.exs`.
 - The root supervisor is `:rest_for_one` (stores first) with a wider restart budget.
-  Unverified: no test asserts the strategy (read in `lib/ash_a2a/application.ex`).
+  Court: `test/ash_a2a/application_rest_for_one_test.exs`.
 - ExDoc: module groups, `source_ref`, DSL reference grouped under Reference.
 
 ### Fixed
@@ -301,7 +302,9 @@ Tests for the entries below: `test/security_refusals_l13_test.exs` and
 - HTTP request bodies are depth-capped (`AshA2A.Protocol.JSONGuard`).
 - `forbidden` replies no longer carry internal detail.
 - Ash calls pass `authorize?: true` explicitly, and extended-card provider failures no
-  longer carry internal detail. Unverified: neither statement has a test run cited.
+  longer carry internal detail. Court: `test/ash_a2a/authorize_true_boundary_test.exs`
+  (authorize?: true on Executor/Dispatcher); extended-card detail refusal covered by
+  `test/security_review_remediation_test.exs`.
 
 ## [26.11.13] - 2026-11-13
 

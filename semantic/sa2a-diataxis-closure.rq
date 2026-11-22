@@ -1,18 +1,28 @@
 PREFIX sa2a: <https://seanchatmangpt.github.io/sa2a/diataxis#>
-SELECT ?capability ?missing WHERE {
+# Local projection of engineering-standards semantic/sa2a-diataxis/closure.rq,
+# scoped to capabilities this repo exports. Empty result = CapabilityShape closed.
+SELECT ?capability
+       (COUNT(?tutorial) AS ?tutorials)
+       (COUNT(?method) AS ?methods)
+       (COUNT(?contract) AS ?contracts)
+       (COUNT(?law) AS ?laws)
+       (COUNT(?gate) AS ?gates)
+       (COUNT(?repair) AS ?repairs)
+       (COUNT(?receipt) AS ?receipts)
+WHERE {
   <urn:sa2a:repo:ash_a2a> sa2a:exports ?capability .
-  {
-    FILTER NOT EXISTS { ?capability sa2a:specifiedBy ?x }
-    BIND("reference" AS ?missing)
-  } UNION {
-    FILTER NOT EXISTS { ?capability sa2a:executedBy ?x }
-    BIND("how-to" AS ?missing)
-  } UNION {
-    FILTER NOT EXISTS { ?capability sa2a:verifiedBy ?x }
-    BIND("verification" AS ?missing)
-  } UNION {
-    FILTER NOT EXISTS { ?capability sa2a:repairedBy ?x }
-    BIND("repair" AS ?missing)
-  }
+  OPTIONAL { ?capability sa2a:learnedBy ?tutorial }
+  OPTIONAL { ?capability sa2a:executedBy ?method }
+  OPTIONAL { ?capability sa2a:specifiedBy ?contract }
+  OPTIONAL { ?capability sa2a:constrainedBy ?law }
+  OPTIONAL { ?capability sa2a:verifiedBy ?gate }
+  OPTIONAL { ?capability sa2a:repairedBy ?repair }
+  OPTIONAL { ?capability sa2a:evidencedBy ?receipt }
 }
-ORDER BY ?capability ?missing
+GROUP BY ?capability
+HAVING (
+  COUNT(?tutorial) = 0 || COUNT(?method) = 0 || COUNT(?contract) = 0 ||
+  COUNT(?law) = 0 || COUNT(?gate) = 0 || COUNT(?repair) = 0 ||
+  COUNT(?receipt) = 0
+)
+ORDER BY ?capability
