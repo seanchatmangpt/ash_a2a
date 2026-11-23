@@ -47,6 +47,9 @@ defmodule AshA2A.Session.Hibernate do
       {:next_state, next, new_data, actions} ->
         {:next_state, next, new_data, actions ++ [idle_timer(idle_ms)]}
 
+      {:keep_state, new_data, actions} ->
+        {:keep_state, new_data, actions ++ [idle_timer(idle_ms)]}
+
       {:keep_state_and_data, actions} ->
         {:keep_state_and_data, actions ++ [idle_timer(idle_ms)]}
 
